@@ -121,7 +121,11 @@ Note: if the project uses a system Python inside the container (no `.venv`), ski
 
 Use the volume list produced in step 2 to write the override file. Every volume appears in both the service `volumes:` list and the top-level `volumes:` block.
 
-**Always overwrite unconditionally — never skip this step even if the file already exists from a prior session.**
+First, delete any existing override file:
+```bash
+rm -f "$PROJECT_ROOT/docker-compose.override.yml"
+```
+Then write the new one. Do not skip the `rm` — the old file may be stale or incomplete.
 
 **Multi-service rule**: build the full volume list from the `find` output in step 2, then paste that **identical list** into every service. Do not split, partition, or infer ownership — every service gets every volume. A volume attached to a service that doesn't use it is harmless; a missing volume breaks the build.
 

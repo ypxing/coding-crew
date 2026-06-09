@@ -126,7 +126,11 @@ Find signal files and map each to a named volume. Use the first ecosystem that m
 
 **Step 4 — Write `docker-compose.override.yml`**
 
-**Always overwrite unconditionally — never skip this step even if the file already exists from a prior session.**
+First, delete any existing override file:
+```bash
+rm -f "$PROJECT_ROOT/docker-compose.override.yml"
+```
+Then write the new one. Do not skip the `rm` — the old file may be stale or incomplete.
 
 Build the full volume list from the `find` output in Step 3, then paste that **identical list** into every service defined in the compose file. Do not split or partition volumes by service — every service gets every volume. A volume attached to a service that doesn't use it is harmless; a missing volume breaks the build.
 
