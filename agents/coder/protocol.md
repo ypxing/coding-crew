@@ -82,6 +82,15 @@ State the mode before continuing:
 **Never** use `docker-compose` (v1 hyphenated) — always use `docker compose` (v2 plugin).
 **Always** pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$PROJECT_ROOT/docker-compose.override.yml"` on every `docker compose` command after the override file is written.
 
+Before every `docker compose` command, verify the override file exists:
+```bash
+[ -f "$PROJECT_ROOT/docker-compose.override.yml" ] || {
+  echo "ERROR: docker-compose.override.yml missing — re-run Step 4 before continuing"
+  exit 1
+}
+```
+If it is missing, go back to Step 4, regenerate it, then retry. Never omit the `-f override` flag as a workaround.
+
 **Step 1 — Read Makefile and ensure `.env` exists**
 
 Read `$PROJECT_ROOT/Makefile` if present. Scan for targets referencing `.env`, env var names, and targets that generate credential config files (`.npmrc`, `.yarnrc.yml`, etc.) via `envsubst` or template files.
@@ -117,19 +126,23 @@ Find signal files and map each to a named volume. Use the first ecosystem that m
 
 **Step 4 — Write `docker-compose.override.yml`**
 
+**Always overwrite unconditionally — never skip this step even if the file already exists from a prior session.**
+
+Build the full volume list from the `find` output in Step 3, then paste that **identical list** into every service defined in the compose file. Do not split or partition volumes by service — every service gets every volume. A volume attached to a service that doesn't use it is harmless; a missing volume breaks the build.
+
 Check `IS_SANDBOX`:
 ```bash
 [ "$IS_SANDBOX" = "1" ] && SANDBOX=true || SANDBOX=false
 ```
 
-If `SANDBOX=true`, add proxy env vars and CA bundle mount. Proxy vars by ecosystem:
+If `SANDBOX=true`, add proxy env vars and CA bundle mount to every service. Proxy vars by ecosystem:
 - npm/pnpm/bun/yarn: `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `YARN_HTTPS_PROXY=${HTTPS_PROXY}`
 - pip/uv: `HTTPS_PROXY`, `REQUESTS_CA_BUNDLE`
 - cargo: `HTTPS_PROXY`, `SSL_CERT_FILE`
 
 CA bundle path: `/etc/ssl/certs/ca-certificates.crt` (Debian/Ubuntu/Alpine) or `/etc/pki/tls/certs/ca-bundle.crt` (RHEL).
 
-Example for Node.js (service `app`, `CONTAINER_SRC=/opt/app`, `SLUG=myproject`):
+Example for Node.js with `package.json` at root and `events/` subdirectory (single service `app`, `CONTAINER_SRC=/opt/app`, `SLUG=myproject`):
 
 Non-sandbox:
 ```yaml
@@ -137,9 +150,11 @@ services:
   app:
     volumes:
       - wt_myproject_nm_root:/opt/app/node_modules
+      - wt_myproject_nm_events:/opt/app/events/node_modules
 
 volumes:
   wt_myproject_nm_root:
+  wt_myproject_nm_events:
 ```
 
 Sandbox (Debian base image):
@@ -152,10 +167,43 @@ services:
       - YARN_HTTPS_PROXY=${HTTPS_PROXY}
     volumes:
       - wt_myproject_nm_root:/opt/app/node_modules
+      - wt_myproject_nm_events:/opt/app/events/node_modules
       - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
 
 volumes:
   wt_myproject_nm_root:
+  wt_myproject_nm_events:
+```
+
+Multi-service sandbox example (services `serverless` and `playwright`, volumes at root, `events/`, `tenants/`):
+```yaml
+services:
+  serverless:
+    environment:
+      - HTTPS_PROXY
+      - NODE_EXTRA_CA_CERTS
+      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
+    volumes:
+      - wt_myproject_nm_root:/opt/app/node_modules
+      - wt_myproject_nm_events:/opt/app/events/node_modules
+      - wt_myproject_nm_tenants:/opt/app/tenants/node_modules
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+
+  playwright:
+    environment:
+      - HTTPS_PROXY
+      - NODE_EXTRA_CA_CERTS
+      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
+    volumes:
+      - wt_myproject_nm_root:/opt/app/node_modules
+      - wt_myproject_nm_events:/opt/app/events/node_modules
+      - wt_myproject_nm_tenants:/opt/app/tenants/node_modules
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+
+volumes:
+  wt_myproject_nm_root:
+  wt_myproject_nm_events:
+  wt_myproject_nm_tenants:
 ```
 
 **Step 5 — Run install once**
@@ -179,6 +227,8 @@ docker compose \
 If the container entrypoint ignores the command, override it with `--entrypoint sh`.
 
 If install fails due to missing auth tokens, network errors, or Docker not running — stop and report blocked with verbatim error.
+
+**Retry rule**: if a later test, lint, or type-check command fails with a module-not-found or import error, treat it as an install failure. Return to Step 4, regenerate the override file, re-run install, then retry the failing command once. If it still fails, stop and report blocked.
 
 #### 2c. If USE_HOST
 
