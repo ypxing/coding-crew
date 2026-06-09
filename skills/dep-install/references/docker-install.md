@@ -123,6 +123,8 @@ Use the volume list produced in step 2 to write the override file. Every volume 
 
 **Always overwrite unconditionally — never skip this step even if the file already exists from a prior session.**
 
+**Multi-service rule**: when the compose file defines more than one service, add **all** found volumes to **all** services. Do not try to infer which subdirectory belongs to which service — a volume attached to a service that doesn't use it is harmless; a missing volume breaks the build.
+
 **Check `IS_SANDBOX`** before writing:
 
 ```bash
@@ -182,6 +184,38 @@ services:
 volumes:
   wt_myproject_nm_root:
   wt_myproject_nm_events:
+```
+
+Multi-service sandbox example (services `serverless` and `playwright`, volumes at root, `events/`, and `tenants/`):
+
+```yaml
+services:
+  serverless:
+    environment:
+      - HTTPS_PROXY
+      - NODE_EXTRA_CA_CERTS
+      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
+    volumes:
+      - wt_myproject_nm_root:/opt/app/node_modules
+      - wt_myproject_nm_events:/opt/app/events/node_modules
+      - wt_myproject_nm_tenants:/opt/app/tenants/node_modules
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+
+  playwright:
+    environment:
+      - HTTPS_PROXY
+      - NODE_EXTRA_CA_CERTS
+      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
+    volumes:
+      - wt_myproject_nm_root:/opt/app/node_modules
+      - wt_myproject_nm_events:/opt/app/events/node_modules
+      - wt_myproject_nm_tenants:/opt/app/tenants/node_modules
+      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
+
+volumes:
+  wt_myproject_nm_root:
+  wt_myproject_nm_events:
+  wt_myproject_nm_tenants:
 ```
 
 ### 4. Run install once
