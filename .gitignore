@@ -1,0 +1,4 @@
+.env*
+*sync-conflict*
+.npmrc*
+.claude/settings*.json
