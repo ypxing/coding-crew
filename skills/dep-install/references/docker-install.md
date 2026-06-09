@@ -121,6 +121,8 @@ Note: if the project uses a system Python inside the container (no `.venv`), ski
 
 Use the volume list produced in step 2 to write the override file. Every volume appears in both the service `volumes:` list and the top-level `volumes:` block.
 
+**Always overwrite unconditionally — never skip this step even if the file already exists from a prior session.**
+
 **Check `IS_SANDBOX`** before writing:
 
 ```bash
@@ -210,6 +212,17 @@ docker compose \
 Pass both `-f` flags on every `docker compose` command.
 
 ### 5. All subsequent `docker compose` commands must pass both `-f` flags
+
+Before every `docker compose` command (including test, lint, and type-check runs), verify the override file exists:
+
+```bash
+[ -f "$PROJECT_ROOT/docker-compose.override.yml" ] || {
+  echo "ERROR: docker-compose.override.yml missing — re-run dep-install Step 3 before continuing"
+  exit 1
+}
+```
+
+If it is missing, go back to Step 3, regenerate it, and then retry the command. Never omit the `-f override` flag as a workaround.
 
 ## Install failures
 

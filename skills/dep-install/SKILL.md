@@ -12,8 +12,9 @@ Two steps: detect the install mode, then follow the appropriate install guide.
 ## Must
 
 - Run the detection script in Step 1 **before** any install command — even if you can see a lock file or infer the package manager from context. Skipping it is a mistake, not an optimisation.
-- Run install **once**. Only re-run if a new package is added during implementation.
-- Stop and report `BLOCKED` if install fails. Do not attempt workarounds.
+- Run install **once**. Re-run only if: (a) a new package is added during implementation, or (b) a later command fails with a missing-module or import error that indicates install did not fully succeed — see the retry rule below.
+- **Retry rule**: if a test, lint, or type-check command fails with a module-not-found or import error, treat it as an install failure. Return to Step 1, re-run the detection script, regenerate the override file (docker mode), re-run install, then retry the failing command once. If it still fails, stop and report `BLOCKED`.
+- Stop and report `BLOCKED` if install fails on the retry. Do not attempt workarounds beyond the single retry.
 
 ## Never
 
