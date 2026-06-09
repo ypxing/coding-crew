@@ -123,7 +123,7 @@ Use the volume list produced in step 2 to write the override file. Every volume 
 
 **Always overwrite unconditionally — never skip this step even if the file already exists from a prior session.**
 
-**Multi-service rule**: when the compose file defines more than one service, add **all** found volumes to **all** services. Do not try to infer which subdirectory belongs to which service — a volume attached to a service that doesn't use it is harmless; a missing volume breaks the build.
+**Multi-service rule**: build the full volume list from the `find` output in step 2, then paste that **identical list** into every service. Do not split, partition, or infer ownership — every service gets every volume. A volume attached to a service that doesn't use it is harmless; a missing volume breaks the build.
 
 **Check `IS_SANDBOX`** before writing:
 
