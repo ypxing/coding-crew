@@ -150,8 +150,10 @@ If the base image is unknown, use the Debian/Ubuntu path and note the assumption
 
 Merge everything into one file — do **not** create a second override file.
 
-Example for a Node.js project with `package.json` at root and `events/` subdirectory
-(service `app`, `CONTAINER_SRC=/opt/app`, `SLUG=myproject`):
+**Examples below are illustrative only.** Always derive service names, volume paths, and slugs from the actual repo — never copy example values verbatim.
+
+Example for a Node.js project with `package.json` at root and one subdirectory
+(service name, `CONTAINER_SRC`, and `SLUG` come from the actual compose file and repo):
 
 Non-sandbox:
 
@@ -186,7 +188,7 @@ volumes:
   wt_myproject_nm_events:
 ```
 
-Multi-service sandbox example (services `serverless` and `playwright`, volumes at root, `events/`, and `tenants/`):
+Multi-service sandbox example (service names and subdirectories are illustrative — use the actual values from the repo):
 
 ```yaml
 services:

@@ -142,7 +142,9 @@ If `SANDBOX=true`, add proxy env vars and CA bundle mount to every service. Prox
 
 CA bundle path: `/etc/ssl/certs/ca-certificates.crt` (Debian/Ubuntu/Alpine) or `/etc/pki/tls/certs/ca-bundle.crt` (RHEL).
 
-Example for Node.js with `package.json` at root and `events/` subdirectory (single service `app`, `CONTAINER_SRC=/opt/app`, `SLUG=myproject`):
+**Examples below are illustrative only.** Always derive service names, volume paths, and slugs from the actual repo — never copy example values verbatim.
+
+Example for Node.js with `package.json` at root and one subdirectory (single service — use actual service name, `CONTAINER_SRC`, and `SLUG` from the repo):
 
 Non-sandbox:
 ```yaml
@@ -175,7 +177,7 @@ volumes:
   wt_myproject_nm_events:
 ```
 
-Multi-service sandbox example (services `serverless` and `playwright`, volumes at root, `events/`, `tenants/`):
+Multi-service sandbox example (service names and subdirectories are illustrative — use the actual values from the repo):
 ```yaml
 services:
   serverless:
