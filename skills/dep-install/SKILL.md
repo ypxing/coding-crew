@@ -21,6 +21,16 @@ Two steps: detect the install mode, then follow the appropriate install guide.
 - Never read, log, print, or inspect the contents of any credential or config files: `.env*`, `.npmrc*`, `.yarnrc*`, `.pip.conf`, `pip.ini`, `.cargo/credentials.toml`, `.bundle/config`, or any file whose name suggests it holds secrets or tokens.
 - Never modify lock files: `package-lock.json`, `yarn.lock`, `bun.lockb`, `pnpm-lock.yaml`, `uv.lock`, `poetry.lock`, `go.sum`, `Cargo.lock`, `Gemfile.lock`, `composer.lock`, or equivalent for any ecosystem.
 
+## Step 0 — Fast-path: check for existing override
+
+```bash
+[ -f "$MAIN_ROOT/docker-compose.override.yml" ] && echo "USE_DOCKER_FAST" || echo "RUN_DETECTION"
+```
+
+If this prints `USE_DOCKER_FAST`: set `INSTALL_MODE=docker`, skip Steps 1 and the override-writing sub-steps in the docker guide, and go directly to install. The override and volume definitions are already in place from a prior run.
+
+If this prints `RUN_DETECTION`: continue to Step 1.
+
 ## Step 1 — Run the detection script
 
 Run this script now. It will print either `USE_DOCKER` or `USE_HOST`.

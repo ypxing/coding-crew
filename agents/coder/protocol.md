@@ -19,7 +19,15 @@ Extract:
 
 #### 2a. Detect install mode
 
-Run this script. It prints `USE_DOCKER` or `USE_HOST`.
+**Fast-path first** — check for an existing override before running detection:
+
+```bash
+[ -f "$MAIN_ROOT/docker-compose.override.yml" ] && echo "USE_DOCKER_FAST" || echo "RUN_DETECTION"
+```
+
+If `USE_DOCKER_FAST`: set `INSTALL_MODE=docker`, skip the detection script and Sub-steps 1–4 entirely, and go straight to Sub-step 5 (run install). The override and volumes are already set up from a prior run.
+
+If `RUN_DETECTION`: run the detection script below.
 
 ```bash
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
@@ -68,7 +76,7 @@ State the mode before continuing:
 
 **Never** run any project command on the host — everything runs inside the container.
 **Never** use `docker-compose` (v1 hyphenated) — always use `docker compose` (v2 plugin).
-**Always** pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$PROJECT_ROOT/docker-compose.override.yml"` on every `docker compose` command.
+**Always** pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command.
 
 **Complete Sub-steps 1–5 in order before running any `docker compose` command. Do not skip ahead.**
 
@@ -98,8 +106,10 @@ Note:
 **Sub-step 3 — Derive slug and find vendor directories**
 
 ```bash
-SLUG=$(basename "$PROJECT_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_$//')
+SLUG=$(basename "$MAIN_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_$//')
 ```
+
+The slug is derived from `MAIN_ROOT` so all worktrees share the same volume names and reuse installed dependencies.
 
 Find signal files and map each to a named volume. Use the first ecosystem that matches:
 
@@ -109,9 +119,11 @@ Find signal files and map each to a named volume. Use the first ecosystem that m
 
 **Sub-step 4 — Write `docker-compose.override.yml`**
 
+The override file always lives at `$MAIN_ROOT/docker-compose.override.yml` — never at the worktree root. This ensures all worktrees share the same volume definitions.
+
 First, delete any existing override file:
 ```bash
-rm -f "$PROJECT_ROOT/docker-compose.override.yml"
+rm -f "$MAIN_ROOT/docker-compose.override.yml"
 ```
 Then write the new one. Do not skip the `rm` — the old file may be stale or incomplete.
 
@@ -201,7 +213,7 @@ If the Makefile has a public `install` or `deps` target:
 ```bash
 docker compose \
   -f "$PROJECT_ROOT/docker-compose.yml" \
-  -f "$PROJECT_ROOT/docker-compose.override.yml" \
+  -f "$MAIN_ROOT/docker-compose.override.yml" \
   run --rm <service> make install
 ```
 
@@ -209,7 +221,7 @@ Otherwise run the package manager directly inside the container:
 ```bash
 docker compose \
   -f "$PROJECT_ROOT/docker-compose.yml" \
-  -f "$PROJECT_ROOT/docker-compose.override.yml" \
+  -f "$MAIN_ROOT/docker-compose.override.yml" \
   run --rm <service> sh -c "cd /opt/app && <install-command>"
 ```
 

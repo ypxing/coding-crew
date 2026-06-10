@@ -14,9 +14,11 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 
 - Never run any install or project command on the host — everything runs inside the container.
 - Never use `docker-compose` (v1 hyphenated binary) — always use `docker compose` (v2 plugin).
-- Always pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$PROJECT_ROOT/docker-compose.override.yml"` on every `docker compose` command.
+- Always pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command.
 
 ## Steps
+
+> **If you arrived here via the fast-path** (override already exists at `$MAIN_ROOT/docker-compose.override.yml`): skip steps 0–3 and go directly to step 4 (run install).
 
 ### 0. Read Makefile and ensure `.env` exists
 
@@ -63,10 +65,12 @@ Note:
 ### 2. Derive slug and find all vendor directories
 
 ```bash
-SLUG=$(basename "$PROJECT_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_$//')
+SLUG=$(basename "$MAIN_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_$//')
 ```
 
-Named volumes scoped to this worktree's slug shadow the bind-mount at vendor paths so each worktree gets its own isolated, clean directory. Docker named volumes always start empty, so **install must always run inside the container** regardless of whether vendor directories exist on the host.
+The slug is derived from `MAIN_ROOT`, not `PROJECT_ROOT`. This means all worktrees for the same project share the same volume names and therefore reuse the same installed dependencies — install once, reuse everywhere.
+
+Named volumes scoped to this slug shadow the bind-mount at vendor paths. Docker named volumes always start empty on first use, so **install must always run inside the container** regardless of whether vendor directories exist on the host.
 
 Find signal files and map each to a named volume. Use the first ecosystem that matches; if multiple signal files are present, use the one that corresponds to the primary language.
 
@@ -121,9 +125,11 @@ Note: if the project uses a system Python inside the container (no `.venv`), ski
 
 Use the volume list produced in step 2 to write the override file. Every volume appears in both the service `volumes:` list and the top-level `volumes:` block.
 
+The override file always lives at `$MAIN_ROOT/docker-compose.override.yml` — never at the worktree root. This ensures all worktrees share the same volume definitions and the override is written once, not per-worktree.
+
 First, delete any existing override file:
 ```bash
-rm -f "$PROJECT_ROOT/docker-compose.override.yml"
+rm -f "$MAIN_ROOT/docker-compose.override.yml"
 ```
 Then write the new one. Do not skip the `rm` — the old file may be stale or incomplete.
 
@@ -233,7 +239,7 @@ Check whether the Makefile has a public `install` or `deps` target whose recipe 
 ```bash
 docker compose \
   -f "$PROJECT_ROOT/docker-compose.yml" \
-  -f "$PROJECT_ROOT/docker-compose.override.yml" \
+  -f "$MAIN_ROOT/docker-compose.override.yml" \
   run --rm <service> make install
 ```
 
@@ -242,7 +248,7 @@ Otherwise, run the package manager directly for each directory with a named volu
 ```bash
 docker compose \
   -f "$PROJECT_ROOT/docker-compose.yml" \
-  -f "$PROJECT_ROOT/docker-compose.override.yml" \
+  -f "$MAIN_ROOT/docker-compose.override.yml" \
   run --rm <service> sh -c "
     cd /opt/app && <install-command> &&
     cd /opt/app/events && <install-command>
@@ -255,7 +261,7 @@ Pass both `-f` flags on every `docker compose` command.
 
 **Complete steps 0–4 in order before running any `docker compose` command. Do not skip ahead.**
 
-Pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$PROJECT_ROOT/docker-compose.override.yml"` on every `docker compose` command — including test, lint, and type-check runs. Never omit the `-f override` flag.
+Pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command — including test, lint, and type-check runs. Never omit the `-f override` flag.
 
 ## Install failures
 
@@ -264,7 +270,7 @@ If install fails because the container's entrypoint ignores the command, check t
 ```bash
 docker compose \
   -f "$PROJECT_ROOT/docker-compose.yml" \
-  -f "$PROJECT_ROOT/docker-compose.override.yml" \
+  -f "$MAIN_ROOT/docker-compose.override.yml" \
   run --rm --entrypoint sh <service> -c "<install-command>"
 ```
 
