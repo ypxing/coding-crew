@@ -27,7 +27,7 @@ The caller provides one of:
 - A **file path** — read the issue from that path.
 - **Issue content** inline — use it directly.
 
-Two session-wide variables must be set before any step. If the caller (e.g. `coder`) already set them, use those values. Otherwise establish them now:
+Two session-wide variables must be set before any step. If they are already set in the current session, use those values. Otherwise establish them now:
 
 ```bash
 PROJECT_ROOT=$(pwd)
