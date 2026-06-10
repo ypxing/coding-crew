@@ -79,7 +79,7 @@ Expand the file list if exploration reveals additional files. Do not guess. Conf
 
 **Use the INSTALL_MODE established in Step 2 for all commands** — test runs, type checks, linting. If INSTALL_MODE=docker, every command runs inside docker, not on the host.
 
-Follow the `tdd` skill: plan → tracer bullet → incremental red/green loop → refactor. Honor the style contract from Step 3.
+STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
 Apply the `karpathy-guidelines` skill throughout — surgical changes, simplicity, goal-driven execution.
 
@@ -87,12 +87,16 @@ Apply the `karpathy-guidelines` skill throughout — surgical changes, simplicit
 
 **Use the same INSTALL_MODE from Step 2** — all check commands run inside docker or on the host, matching whatever was established then.
 
-Run all project checks and confirm every acceptance criterion is met.
-See [references/verification.md](references/verification.md) for how to discover and run checks.
+STOP. Read `references/verification.md` now. Run every check listed. Do not skip any.
 
-Do not proceed to commit if any check fails or any criterion is unmet.
+Do not proceed to commit if any check fails or any acceptance criterion from Step 1 is unmet.
 
 ### 6. Commit
+
+Before committing, confirm:
+- [ ] Tests were written before implementation (TDD red/green loop completed)
+- [ ] `references/verification.md` was read
+- [ ] Every check listed in `references/verification.md` passed (tests, type-check, lint, or equivalent for this stack)
 
 If there are no staged changes after implementation, verify the issue was already done and report accordingly — do not error.
 

@@ -108,6 +108,12 @@
       "source": "mattpocock/skills",
       "install": ".claude/skills/to-prd"
     },
+    "plan-sprint": {
+      "version": "1.0.0",
+      "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
+      "install": ".claude/skills/plan-sprint",
+      "deps": ["grill-with-docs", "to-prd", "to-issues"]
+    },
     "caveman": {
       "version": "1.0.0",
       "description": "Ultra-compressed communication mode. Cuts token usage ~75% by speaking like caveman while keeping full technical accuracy. Supports lite/full/ultra and wenyan intensity levels.",

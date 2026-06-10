@@ -278,6 +278,8 @@ Expand the file list if exploration reveals additional files. Do not guess. Conf
 
 **Use INSTALL_MODE from Step 2 for all commands.**
 
+STOP. Do not write a single line of implementation before you have a failing test. Follow the red/green loop below to completion before proceeding to Step 5.
+
 Apply **Karpathy guidelines** throughout:
 - **Think before coding**: state assumptions explicitly; if multiple interpretations exist, present them; if something is unclear, stop and ask.
 - **Simplicity first**: minimum code that solves the problem — no features beyond what was asked, no abstractions for single-use code, no error handling for impossible scenarios.
@@ -302,14 +304,19 @@ Tests must verify behavior through public interfaces, not implementation details
 
 **Use the same INSTALL_MODE from Step 2.**
 
-Run all project checks and confirm every acceptance criterion is met. To discover checks:
-- Look for a `Makefile` with targets like `test`, `lint`, `typecheck`, `check`, `verify`
-- Look for scripts in `package.json` (`test`, `lint`, `type-check`)
-- Look for `pytest.ini`, `jest.config.*`, `.eslintrc*`, `mypy.ini`
+STOP. Check whether `references/verification.md` exists. If it does, read it now and run every check listed — do not skip any. If it does not exist, discover checks using:
+- A `Makefile` with targets like `test`, `lint`, `typecheck`, `check`, `verify`
+- Scripts in `package.json` (`test`, `lint`, `type-check`)
+- Config files like `pytest.ini`, `jest.config.*`, `.eslintrc*`, `mypy.ini`
 
-Do not proceed to commit if any check fails or any criterion is unmet.
+Do not proceed to commit if any check fails or any acceptance criterion from Step 1 is unmet.
 
 ### 6. Commit
+
+Before committing, confirm:
+- [ ] Tests were written before implementation (TDD red/green loop completed)
+- [ ] `references/verification.md` was read (if it exists) or checks were discovered manually
+- [ ] Every check passed (tests, type-check, lint, or equivalent for this stack)
 
 If there are no staged changes after implementation, verify the issue was already done and report accordingly — do not error.
 

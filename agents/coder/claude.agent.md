@@ -94,8 +94,7 @@ Each `checks` entry:
 ```
 {
   "command": "<exact command run>",
-  "result": "pass" | "fail" | "not_run",
-  "output": "<final summary line(s) only — e.g. pass/fail counts, not individual test names; or reason not run>"
+  "result": "pass" | "fail" | "not_run"
 }
 ```
 
