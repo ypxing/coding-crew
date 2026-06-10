@@ -36,44 +36,7 @@ If this prints `RUN_DETECTION`: continue to Step 1.
 Run this script now. It will print either `USE_DOCKER` or `USE_HOST`.
 
 ```bash
-PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
-
-# 1. Explicit git config override
-_mode=$(git -C "$PROJECT_ROOT" config --local agent.install-mode 2>/dev/null)
-
-# 2. Infer from Makefile public install/deps/setup targets
-#    Only the Makefile at PROJECT_ROOT is checked — never subdirectory Makefiles.
-#    Guard: only scan when PROJECT_ROOT is at or inside the git root.
-if [ -z "$_mode" ]; then
-  _git_root=$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null) || _git_root=""
-  case "$PROJECT_ROOT/" in
-    "$_git_root/"*) ;;       # at or inside the repo root — allow Makefile scan
-    *) _mode="host" ;;       # outside repo boundary — skip scan, fall back to host
-  esac
-fi
-
-if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
-  # Match public targets (not starting with _) named install, deps, or setup.
-  # [^=] after : avoids matching variable assignments (VAR := value).
-  # Check if their recipe lines invoke docker compose directly.
-  _uses_docker=$(awk '
-    /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*:[^=]/ {
-      in_target = ($0 ~ /^(install|deps|setup)[[:space:]]*:/)
-    }
-    in_target && /^\t/ && /docker[ -]compose|docker compose/ { print "yes"; exit }
-  ' "$PROJECT_ROOT/Makefile")
-  [ "$_uses_docker" = "yes" ] && _mode="docker"
-fi
-
-# 3. Fall back to compose-file presence
-if [ -z "$_mode" ]; then
-  { [ -f "$PROJECT_ROOT/docker-compose.yml" ] || \
-    [ -f "$PROJECT_ROOT/docker-compose.yaml" ] || \
-    [ -f "$PROJECT_ROOT/compose.yml" ]; } \
-    && _mode="docker" || _mode="host"
-fi
-
-[ "$_mode" = "docker" ] && echo "USE_DOCKER" || echo "USE_HOST"
+bash "$MAIN_ROOT/.claude/skills/dep-install/scripts/detect-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
 ## Step 2 — Lock the session mode and follow the install guide

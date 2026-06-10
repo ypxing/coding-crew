@@ -27,42 +27,10 @@ Extract:
 
 If `USE_DOCKER_FAST`: set `INSTALL_MODE=docker`, skip the detection script and Sub-steps 1–4 entirely, and go straight to Sub-step 5 (run install). The override and volumes are already set up from a prior run.
 
-If `RUN_DETECTION`: run the detection script below.
+If `RUN_DETECTION`: run the detection script:
 
 ```bash
-PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
-
-# 1. Explicit git config override
-_mode=$(git -C "$PROJECT_ROOT" config --local agent.install-mode 2>/dev/null)
-
-# 2. Infer from Makefile public install/deps/setup targets
-if [ -z "$_mode" ]; then
-  _git_root=$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null) || _git_root=""
-  case "$PROJECT_ROOT/" in
-    "$_git_root/"*) ;;
-    *) _mode="host" ;;
-  esac
-fi
-
-if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
-  _uses_docker=$(awk '
-    /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*:[^=]/ {
-      in_target = ($0 ~ /^(install|deps|setup)[[:space:]]*:/)
-    }
-    in_target && /^\t/ && /docker[ -]compose|docker compose/ { print "yes"; exit }
-  ' "$PROJECT_ROOT/Makefile")
-  [ "$_uses_docker" = "yes" ] && _mode="docker"
-fi
-
-# 3. Fall back to compose-file presence
-if [ -z "$_mode" ]; then
-  { [ -f "$PROJECT_ROOT/docker-compose.yml" ] || \
-    [ -f "$PROJECT_ROOT/docker-compose.yaml" ] || \
-    [ -f "$PROJECT_ROOT/compose.yml" ]; } \
-    && _mode="docker" || _mode="host"
-fi
-
-[ "$_mode" = "docker" ] && echo "USE_DOCKER" || echo "USE_HOST"
+bash "$MAIN_ROOT/.claude/skills/dep-install/scripts/detect-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
 Lock this as `INSTALL_MODE` for the entire session — every subsequent command (test, lint, type-check, format, verify) must use the same mode. Do not switch mid-session.
