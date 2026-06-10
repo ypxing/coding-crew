@@ -101,7 +101,7 @@ Or if a `.tpl` file exists with no Makefile target: `envsubst < "$PROJECT_ROOT/<
 Run the generation script. It reads the compose file, detects the ecosystem from manifest files, and writes the override deterministically — same repo, same output every run.
 
 ```bash
-uv run "$MAIN_ROOT/.claude/skills/dep-install/scripts/gen-override.py" \
+bash "$MAIN_ROOT/.claude/skills/dep-install/scripts/gen-override.sh" \
   --project-root "$PROJECT_ROOT" \
   --main-root "$MAIN_ROOT" \
   ${IS_SANDBOX:+--sandbox}
