@@ -96,114 +96,20 @@ Or if a `.tpl` file exists with no Makefile target: `envsubst < "$PROJECT_ROOT/<
 
 **Never read, log, or print the contents of `.env*` or any credential config file.**
 
-**Sub-step 2 — Read the compose file**
+**Sub-step 2 — Generate `docker-compose.override.yml`**
 
-Note:
-- The service name (e.g. `app`)
-- The container-side source mount path (e.g. `/opt/app`) — call it `CONTAINER_SRC`
-- Any environment variable references (e.g. `${MAIN_ROOT}`) — pass each inline on every `docker compose` call
-
-**Sub-step 3 — Derive slug and find vendor directories**
+Run the generation script. It reads the compose file, detects the ecosystem from manifest files, and writes the override deterministically — same repo, same output every run.
 
 ```bash
-SLUG=$(basename "$MAIN_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_$//')
+uv run "$MAIN_ROOT/.claude/skills/dep-install/scripts/gen-override.py" \
+  --project-root "$PROJECT_ROOT" \
+  --main-root "$MAIN_ROOT" \
+  ${IS_SANDBOX:+--sandbox}
 ```
 
-The slug is derived from `MAIN_ROOT` so all worktrees share the same volume names and reuse installed dependencies.
+The script prints the ecosystem detected, services found, and the path written. If it exits non-zero, stop and report `BLOCKED` with the error message.
 
-Find signal files and map each to a named volume. Use the first ecosystem that matches:
-
-- **Node.js** (`package.json` → `node_modules`): find all `package.json` files (excluding `node_modules`), map each to `wt_${SLUG}_nm_${suffix}`
-- **Python** (`pyproject.toml` or `requirements.txt` → `.venv`): map to `wt_${SLUG}_venv_${suffix}`
-- **Ruby** (`Gemfile` → `vendor/bundle`), **Go** (`go.mod` → `vendor`), **PHP** (`composer.json` → `vendor`), **Rust** (`Cargo.toml` → `target`), **.NET** (`*.csproj` → `obj`, `bin`)
-
-**Sub-step 4 — Write `docker-compose.override.yml`**
-
-The override file always lives at `$MAIN_ROOT/docker-compose.override.yml` — never at the worktree root. This ensures all worktrees share the same volume definitions.
-
-Write the override file:
-
-Build the full volume list from the `find` output in Step 3, then paste that **identical list** into every service defined in the compose file. Do not split or partition volumes by service — every service gets every volume. A volume attached to a service that doesn't use it is harmless; a missing volume breaks the build.
-
-Check `IS_SANDBOX`:
-```bash
-[ "$IS_SANDBOX" = "1" ] && SANDBOX=true || SANDBOX=false
-```
-
-If `SANDBOX=true`, add proxy env vars and CA bundle mount to every service. Proxy vars by ecosystem:
-- npm/pnpm/bun/yarn: `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `YARN_HTTPS_PROXY=${HTTPS_PROXY}`, `NPM_TOKEN` (if referenced in Makefile or `.npmrc`)
-- pip/uv: `HTTPS_PROXY`, `REQUESTS_CA_BUNDLE`
-- cargo: `HTTPS_PROXY`, `SSL_CERT_FILE`
-
-CA bundle path: `/etc/ssl/certs/ca-certificates.crt` (Debian/Ubuntu/Alpine) or `/etc/pki/tls/certs/ca-bundle.crt` (RHEL).
-
-**Examples below are illustrative only.** Always derive service names, volume paths, and slugs from the actual repo — never copy example values verbatim.
-
-Example for Node.js with `package.json` at root and one subdirectory (single service — use actual service name, `CONTAINER_SRC`, and `SLUG` from the repo):
-
-Non-sandbox:
-```yaml
-services:
-  app:
-    volumes:
-      - wt_myproject_nm_root:/opt/app/node_modules
-      - wt_myproject_nm_events:/opt/app/events/node_modules
-
-volumes:
-  wt_myproject_nm_root:
-  wt_myproject_nm_events:
-```
-
-Sandbox (Debian base image):
-```yaml
-services:
-  app:
-    environment:
-      - HTTPS_PROXY
-      - NODE_EXTRA_CA_CERTS
-      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
-    volumes:
-      - wt_myproject_nm_root:/opt/app/node_modules
-      - wt_myproject_nm_events:/opt/app/events/node_modules
-      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-
-volumes:
-  wt_myproject_nm_root:
-  wt_myproject_nm_events:
-```
-
-Multi-service sandbox example (service names and subdirectories are illustrative — use the actual values from the repo):
-```yaml
-services:
-  serverless:
-    environment:
-      - HTTPS_PROXY
-      - NODE_EXTRA_CA_CERTS
-      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
-    volumes:
-      - wt_myproject_nm_root:/opt/app/node_modules
-      - wt_myproject_nm_events:/opt/app/events/node_modules
-      - wt_myproject_nm_tenants:/opt/app/tenants/node_modules
-      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-
-  playwright:
-    environment:
-      - HTTPS_PROXY
-      - NODE_EXTRA_CA_CERTS
-      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
-    volumes:
-      - wt_myproject_nm_root:/opt/app/node_modules
-      - wt_myproject_nm_events:/opt/app/events/node_modules
-      - wt_myproject_nm_tenants:/opt/app/tenants/node_modules
-      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-
-volumes:
-  wt_myproject_nm_root:
-  wt_myproject_nm_events:
-  wt_myproject_nm_tenants:
-```
-
-**Sub-step 5 — Run install once**
+**Sub-step 3 — Run install once**
 
 If the Makefile has a public `install` or `deps` target:
 ```bash
@@ -225,7 +131,7 @@ If the container entrypoint ignores the command, override it with `--entrypoint 
 
 If install fails due to missing auth tokens, network errors, or Docker not running — stop and report blocked with verbatim error.
 
-**Retry rule**: if a later test, lint, or type-check command fails with a module-not-found or import error, treat it as an install failure. Re-run Sub-steps 3–5 (re-derive volumes, regenerate override, re-run install), then retry the failing command once. If it still fails, stop and report blocked.
+**Retry rule**: if a later test, lint, or type-check command fails with a module-not-found or import error, treat it as an install failure. Re-run Sub-steps 2–3 (regenerate override, re-run install), then retry the failing command once. If it still fails, stop and report blocked.
 
 #### 2c. If USE_HOST
 

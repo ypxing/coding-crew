@@ -18,7 +18,7 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 
 ## Steps
 
-> **If you arrived here via the fast-path** (override already exists at `$MAIN_ROOT/docker-compose.override.yml`): skip steps 0–3 and go directly to step 4 (run install).
+> **If you arrived here via the fast-path** (override already exists at `$MAIN_ROOT/docker-compose.override.yml`): skip steps 0–1 and go directly to step 2 (run install).
 
 ### 0. Read Makefile and ensure `.env` exists
 
@@ -54,179 +54,22 @@ This step is always done — the Makefile reveals how the project works and what
 
 Always continue to step 1 — this step never blocks. If `docker compose` later fails because a required env var is missing, stop and report blocked with the verbatim error.
 
-### 1. Read the compose file
+### 1. Generate `docker-compose.override.yml`
 
-Note:
-
-- The service name (e.g. `app`)
-- The container-side source mount path (e.g. `/opt/app`) — call it `CONTAINER_SRC`
-- Any environment variable references in the file (e.g. `${MAIN_ROOT}`, `${APP_ROOT}`) — declare each one in the override file's `environment:` section (step 3). **Never pass env vars inline on the command line** — if they appear inline it means the override was skipped or incomplete.
-
-### 2. Derive slug and find all vendor directories
+Run the generation script. It reads the compose file, detects the ecosystem from manifest files (`package.json`, `pyproject.toml`, etc.), and writes the override deterministically — same repo, same output every run.
 
 ```bash
-SLUG=$(basename "$MAIN_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_$//')
+uv run "$MAIN_ROOT/.claude/skills/dep-install/scripts/gen-override.py" \
+  --project-root "$PROJECT_ROOT" \
+  --main-root "$MAIN_ROOT" \
+  ${IS_SANDBOX:+--sandbox}
 ```
 
-The slug is derived from `MAIN_ROOT`, not `PROJECT_ROOT`. This means all worktrees for the same project share the same volume names and therefore reuse the same installed dependencies — install once, reuse everywhere.
+The script prints what it wrote, which ecosystem it detected, and which services it found. If it exits non-zero, stop and report `BLOCKED` with the error message.
 
-Named volumes scoped to this slug shadow the bind-mount at vendor paths. Docker named volumes always start empty on first use, so **install must always run inside the container** regardless of whether vendor directories exist on the host.
+The override file is written to `$MAIN_ROOT/docker-compose.override.yml` and is shared across all worktrees — do not write it to `PROJECT_ROOT`.
 
-Find signal files and map each to a named volume. Use the first ecosystem that matches; if multiple signal files are present, use the one that corresponds to the primary language.
-
-**Node.js** (`package.json` -> `node_modules`):
-
-```bash
-find "$PROJECT_ROOT" -name 'package.json' \
-  -not -path '*/node_modules/*' \
-  -maxdepth 5 \
-  | while read -r pkg; do
-      dir=$(dirname "$pkg")
-      rel=$(python3 -c "import os,sys; print(os.path.relpath(sys.argv[1],sys.argv[2]))" "$dir" "$PROJECT_ROOT")
-      [ "$rel" = "." ] \
-        && container_path="$CONTAINER_SRC/node_modules" \
-        || container_path="$CONTAINER_SRC/$rel/node_modules"
-      suffix=$(echo "$rel" | tr '/.-' '___' | sed 's/^\.$/root/')
-      echo "volume: wt_${SLUG}_nm_${suffix}  ->  ${container_path}"
-    done
-```
-
-**Python** (`pyproject.toml` or `requirements.txt` -> `.venv`):
-
-```bash
-find "$PROJECT_ROOT" -maxdepth 3 \
-  \( -name 'pyproject.toml' -o -name 'requirements.txt' \) \
-  -not -path '*/.venv/*' \
-  | while read -r f; do
-      dir=$(dirname "$f")
-      rel=$(python3 -c "import os,sys; print(os.path.relpath(sys.argv[1],sys.argv[2]))" "$dir" "$PROJECT_ROOT")
-      [ "$rel" = "." ] \
-        && container_path="$CONTAINER_SRC/.venv" \
-        || container_path="$CONTAINER_SRC/$rel/.venv"
-      suffix=$(echo "$rel" | tr '/.-' '___' | sed 's/^\.$/root/')
-      echo "volume: wt_${SLUG}_venv_${suffix}  ->  ${container_path}"
-    done
-```
-
-Note: if the project uses a system Python inside the container (no `.venv`), skip the Python volume entirely — system site-packages are not a bind-mount concern.
-
-**Other ecosystems** — apply the same `find`/`realpath` pattern with these signal files and vendor dirs:
-
-| Ecosystem | Signal file     | Vendor dir                          |
-| --------- | --------------- | ----------------------------------- |
-| Ruby      | `Gemfile`       | `vendor/bundle`                     |
-| Go        | `go.mod`        | `vendor` (only if present on disk)  |
-| PHP       | `composer.json` | `vendor`                            |
-| Rust      | `Cargo.toml`    | `target`                            |
-| Java      | `pom.xml`       | `~/.m2` (shared; skip named volume) |
-| .NET      | `*.csproj`      | `obj`, `bin`                        |
-
-### 3. Write `docker-compose.override.yml`
-
-Use the volume list produced in step 2 to write the override file. Every volume appears in both the service `volumes:` list and the top-level `volumes:` block.
-
-The override file always lives at `$MAIN_ROOT/docker-compose.override.yml` — never at the worktree root. This ensures all worktrees share the same volume definitions and the override is written once, not per-worktree.
-
-Write the override file:
-
-**Multi-service rule**: build the full volume list from the `find` output in step 2, then paste that **identical list** into every service. Do not split, partition, or infer ownership — every service gets every volume. A volume attached to a service that doesn't use it is harmless; a missing volume breaks the build.
-
-**Check `IS_SANDBOX`** before writing:
-
-```bash
-[ "$IS_SANDBOX" = "1" ] && SANDBOX=true || SANDBOX=false
-```
-
-If `SANDBOX=true`, add proxy environment variables and a CA bundle volume mount to every service. Include only the proxy variables the detected ecosystem's tooling reads:
-
-| Tool                    | Proxy env var(s)                                                                |
-| ----------------------- | ------------------------------------------------------------------------------- |
-| npm / pnpm / bun / yarn | `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `YARN_HTTPS_PROXY=${HTTPS_PROXY}`, `NPM_TOKEN` (if referenced in Makefile or `.npmrc`) |
-| pip / uv                | `HTTPS_PROXY`, `REQUESTS_CA_BUNDLE`                                             |
-| cargo                   | `HTTPS_PROXY`, `SSL_CERT_FILE`                                                  |
-| general (curl/wget)     | `HTTPS_PROXY`, `SSL_CERT_FILE`                                                  |
-
-For the CA bundle bind-mount, use the path that matches the container's base image:
-
-- Debian/Ubuntu: `/etc/ssl/certs/ca-certificates.crt`
-- Alpine: `/etc/ssl/certs/ca-certificates.crt`
-- RHEL/CentOS/Fedora: `/etc/pki/tls/certs/ca-bundle.crt`
-
-If the base image is unknown, use the Debian/Ubuntu path and note the assumption.
-
-Merge everything into one file — do **not** create a second override file.
-
-**Examples below are illustrative only.** Always derive service names, volume paths, and slugs from the actual repo — never copy example values verbatim.
-
-Example for a Node.js project with `package.json` at root and one subdirectory
-(service name, `CONTAINER_SRC`, and `SLUG` come from the actual compose file and repo):
-
-Non-sandbox:
-
-```yaml
-services:
-  app:
-    volumes:
-      - wt_myproject_nm_root:/opt/app/node_modules
-      - wt_myproject_nm_events:/opt/app/events/node_modules
-
-volumes:
-  wt_myproject_nm_root:
-  wt_myproject_nm_events:
-```
-
-Sandbox (Node.js, Debian base image):
-
-```yaml
-services:
-  app:
-    environment:
-      - HTTPS_PROXY
-      - NODE_EXTRA_CA_CERTS
-      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
-    volumes:
-      - wt_myproject_nm_root:/opt/app/node_modules
-      - wt_myproject_nm_events:/opt/app/events/node_modules
-      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-
-volumes:
-  wt_myproject_nm_root:
-  wt_myproject_nm_events:
-```
-
-Multi-service sandbox example (service names and subdirectories are illustrative — use the actual values from the repo):
-
-```yaml
-services:
-  serverless:
-    environment:
-      - HTTPS_PROXY
-      - NODE_EXTRA_CA_CERTS
-      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
-    volumes:
-      - wt_myproject_nm_root:/opt/app/node_modules
-      - wt_myproject_nm_events:/opt/app/events/node_modules
-      - wt_myproject_nm_tenants:/opt/app/tenants/node_modules
-      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-
-  playwright:
-    environment:
-      - HTTPS_PROXY
-      - NODE_EXTRA_CA_CERTS
-      - YARN_HTTPS_PROXY=${HTTPS_PROXY}
-    volumes:
-      - wt_myproject_nm_root:/opt/app/node_modules
-      - wt_myproject_nm_events:/opt/app/events/node_modules
-      - wt_myproject_nm_tenants:/opt/app/tenants/node_modules
-      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro
-
-volumes:
-  wt_myproject_nm_root:
-  wt_myproject_nm_events:
-  wt_myproject_nm_tenants:
-```
-
-### 4. Run install once
+### 2. Run install once
 
 Named volumes start empty — always run install inside the container.
 
@@ -253,9 +96,9 @@ docker compose \
 
 Pass both `-f` flags on every `docker compose` command.
 
-### 5. All subsequent `docker compose` commands must pass both `-f` flags
+### 3. All subsequent `docker compose` commands must pass both `-f` flags
 
-**Complete steps 0–4 in order before running any `docker compose` command. Do not skip ahead.**
+**Complete steps 0–2 in order before running any `docker compose` command. Do not skip ahead.**
 
 Pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command — including test, lint, and type-check runs. Never omit the `-f override` flag.
 
