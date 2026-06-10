@@ -2,21 +2,9 @@
 
 Implement one issue. One issue in, committed code out.
 
-### Blocked output format
-
-When stopping due to a blocker, always output:
-
-```
-BLOCKED: <reason>
-<verbatim error or dependency name>
-```
-
-Do not attempt workarounds. Do not proceed.
-
 ### 0. Pre-flight
 
-Run `git -C "$PROJECT_ROOT" status --short`. If there are modified or staged tracked files not owned by this issue, stop:
-`BLOCKED: dirty worktree — stash or commit unrelated changes first`
+Run `git -C "$PROJECT_ROOT" status --short`. If there are modified or staged tracked files not owned by this issue, stop with `Status: blocked` and reason `dirty worktree — stash or commit unrelated changes first`.
 
 ### 1. Understand the issue
 
@@ -91,7 +79,7 @@ Before every `docker compose` command, verify the override file exists:
 ```
 If it is missing, go back to Step 4, regenerate it, then retry. Never omit the `-f override` flag as a workaround.
 
-**Step 1 — Read Makefile and ensure `.env` exists**
+**Sub-step 1 — Read Makefile and ensure `.env` exists**
 
 Read `$PROJECT_ROOT/Makefile` if present. Scan for targets referencing `.env`, env var names, and targets that generate credential config files (`.npmrc`, `.yarnrc.yml`, etc.) via `envsubst` or template files.
 
@@ -105,14 +93,14 @@ Or if a `.tpl` file exists with no Makefile target: `envsubst < "$PROJECT_ROOT/<
 
 **Never read, log, or print the contents of `.env*` or any credential config file.**
 
-**Step 2 — Read the compose file**
+**Sub-step 2 — Read the compose file**
 
 Note:
 - The service name (e.g. `app`)
 - The container-side source mount path (e.g. `/opt/app`) — call it `CONTAINER_SRC`
 - Any environment variable references (e.g. `${MAIN_ROOT}`) — pass each inline on every `docker compose` call
 
-**Step 3 — Derive slug and find vendor directories**
+**Sub-step 3 — Derive slug and find vendor directories**
 
 ```bash
 SLUG=$(basename "$PROJECT_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_$//')
@@ -124,7 +112,7 @@ Find signal files and map each to a named volume. Use the first ecosystem that m
 - **Python** (`pyproject.toml` or `requirements.txt` → `.venv`): map to `wt_${SLUG}_venv_${suffix}`
 - **Ruby** (`Gemfile` → `vendor/bundle`), **Go** (`go.mod` → `vendor`), **PHP** (`composer.json` → `vendor`), **Rust** (`Cargo.toml` → `target`), **.NET** (`*.csproj` → `obj`, `bin`)
 
-**Step 4 — Write `docker-compose.override.yml`**
+**Sub-step 4 — Write `docker-compose.override.yml`**
 
 First, delete any existing override file:
 ```bash
@@ -212,7 +200,7 @@ volumes:
   wt_myproject_nm_tenants:
 ```
 
-**Step 5 — Run install once**
+**Sub-step 5 — Run install once**
 
 If the Makefile has a public `install` or `deps` target:
 ```bash
@@ -327,7 +315,7 @@ Commit message format:
 - <key decision or tradeoff — omit if none>
 ```
 
-Append the `Co-Authored-By:` trailer specified by the caller as the last line.
+If the caller specifies a `Co-Authored-By:` trailer, append it as the last line.
 
 Do not push.
 
