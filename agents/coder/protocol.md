@@ -278,12 +278,9 @@ Expand the file list if exploration reveals additional files. Do not guess. Conf
 
 **Use INSTALL_MODE from Step 2 for all commands.**
 
-STOP. Do not write a single line of implementation before you have a failing test. Follow the red/green loop below to completion before proceeding to Step 5.
+STOP. Read and invoke the `karpathy-guidelines` skill now, before writing any code.
 
-Apply **Karpathy guidelines** throughout:
-- **Think before coding**: state assumptions explicitly; if multiple interpretations exist, present them; if something is unclear, stop and ask.
-- **Simplicity first**: minimum code that solves the problem — no features beyond what was asked, no abstractions for single-use code, no error handling for impossible scenarios.
-- **Surgical changes**: touch only what you must; match existing style; every changed line must trace directly to the task.
+STOP. Do not write a single line of implementation before you have a failing test. Follow the red/green loop below to completion before proceeding to Step 5.
 
 **TDD workflow** — vertical slices, not horizontal:
 

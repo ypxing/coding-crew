@@ -79,9 +79,9 @@ Expand the file list if exploration reveals additional files. Do not guess. Conf
 
 **Use the INSTALL_MODE established in Step 2 for all commands** — test runs, type checks, linting. If INSTALL_MODE=docker, every command runs inside docker, not on the host.
 
-STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
+STOP. Read and invoke the `karpathy-guidelines` skill now, before writing any code.
 
-Apply the `karpathy-guidelines` skill throughout — surgical changes, simplicity, goal-driven execution.
+STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
 ### 5. Verify
 
