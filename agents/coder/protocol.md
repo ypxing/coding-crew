@@ -123,7 +123,7 @@ Check `IS_SANDBOX`:
 ```
 
 If `SANDBOX=true`, add proxy env vars and CA bundle mount to every service. Proxy vars by ecosystem:
-- npm/pnpm/bun/yarn: `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `YARN_HTTPS_PROXY=${HTTPS_PROXY}`
+- npm/pnpm/bun/yarn: `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `YARN_HTTPS_PROXY=${HTTPS_PROXY}`, `NPM_TOKEN` (if referenced in Makefile or `.npmrc`)
 - pip/uv: `HTTPS_PROXY`, `REQUESTS_CA_BUNDLE`
 - cargo: `HTTPS_PROXY`, `SSL_CERT_FILE`
 

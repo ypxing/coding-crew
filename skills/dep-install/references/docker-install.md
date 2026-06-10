@@ -139,7 +139,7 @@ If `SANDBOX=true`, add proxy environment variables and a CA bundle volume mount 
 
 | Tool                    | Proxy env var(s)                                                                |
 | ----------------------- | ------------------------------------------------------------------------------- |
-| npm / pnpm / bun / yarn | `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `YARN_HTTPS_PROXY=${HTTPS_PROXY}` |
+| npm / pnpm / bun / yarn | `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`, `YARN_HTTPS_PROXY=${HTTPS_PROXY}`, `NPM_TOKEN` (if referenced in Makefile or `.npmrc`) |
 | pip / uv                | `HTTPS_PROXY`, `REQUESTS_CA_BUNDLE`                                             |
 | cargo                   | `HTTPS_PROXY`, `SSL_CERT_FILE`                                                  |
 | general (curl/wget)     | `HTTPS_PROXY`, `SSL_CERT_FILE`                                                  |
