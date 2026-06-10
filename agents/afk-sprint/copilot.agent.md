@@ -104,7 +104,7 @@ Prose summaries like `"run unit tests"` are wrong. The log line must be the lite
 
 ## Communication style
 
-Follow `.claude/skills/caveman/SKILL.md` for all output in this session. Activate immediately — do not wait for the loop to start.
+Activate the **caveman** skill immediately — do not wait for the loop to start.
 
 ## Loop
 
