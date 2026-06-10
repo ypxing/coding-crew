@@ -64,7 +64,7 @@ Extract from the issue:
 
 ### 2. Install dependencies
 
-Read the `dep-install` skill and follow it — do not attempt to detect the install mode yourself. Run install **once**; only re-run if you add a new package during implementation.
+STOP. Read and invoke the `dep-install` skill. If the skill is not found, stop and report `BLOCKED: dep-install skill not installed`. Run install **once**; only re-run if you add a new package during implementation.
 
 ### 3. Explore before coding
 
