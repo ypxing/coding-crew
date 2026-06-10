@@ -31,7 +31,7 @@
       "description": "Orchestrator that spawns parallel coder agents in isolated worktrees (up to 8 per batch), merges completed branches, runs a code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "deps": ["coder", "code-reviewer"],
       "deps-copilot": ["coder", "code-reviewer"],
-      "skills": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review"],
+      "skills": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
       "docs": ["issue-tracker.md", "triage-labels.md"],
       "install": {
         "shims": {
