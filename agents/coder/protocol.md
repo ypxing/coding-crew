@@ -72,6 +72,8 @@ State the mode before continuing:
 
 **Complete Sub-steps 1–5 in order before running any `docker compose` command. Do not skip ahead.**
 
+**Never pass env vars inline on the command line** (e.g. `HTTPS_PROXY=... docker compose ...`). All environment variables must be declared in the override file's `environment:` section (Sub-step 4). Inline vars are a sign the override was skipped or incomplete — fix the override instead.
+
 **Sub-step 1 — Read Makefile and ensure `.env` exists**
 
 Read `$PROJECT_ROOT/Makefile` if present. Scan for targets referencing `.env`, env var names, and targets that generate credential config files (`.npmrc`, `.yarnrc.yml`, etc.) via `envsubst` or template files.
