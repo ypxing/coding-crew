@@ -1,13 +1,13 @@
 ---
 name: plan-sprint
-description: Full design pipeline — grill the user about a plan, produce a PRD, then break it into issues. One handoff at the end of grilling triggers the rest automatically. Use when starting a new feature from scratch.
+description: Full design pipeline — grill the user about a plan (grill-me by default; grill-with-docs if invoked with "with docs"), produce a PRD, then break it into issues. Use when starting a new feature from scratch.
 ---
 
 Run the full design pipeline in three phases. Pause for user feedback within each phase, but do not ask the user to manually invoke the next skill — transition automatically.
 
 ## Phase 1 — Grill
 
-Run the `grill-with-docs` skill in full. At the end:
+If the user's invocation included "with docs" or "with documents", run the `grill-with-docs` skill; otherwise run the `grill-me` skill. At the end:
 
 1. Summarize all implementation decisions (not glossary terms).
 2. Save to `.scratch/<feature-slug>/decisions.md` (confirm the slug and get user consent first).
