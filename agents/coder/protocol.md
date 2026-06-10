@@ -121,11 +121,7 @@ Find signal files and map each to a named volume. Use the first ecosystem that m
 
 The override file always lives at `$MAIN_ROOT/docker-compose.override.yml` — never at the worktree root. This ensures all worktrees share the same volume definitions.
 
-First, delete any existing override file:
-```bash
-rm -f "$MAIN_ROOT/docker-compose.override.yml"
-```
-Then write the new one. Do not skip the `rm` — the old file may be stale or incomplete.
+Write the override file:
 
 Build the full volume list from the `find` output in Step 3, then paste that **identical list** into every service defined in the compose file. Do not split or partition volumes by service — every service gets every volume. A volume attached to a service that doesn't use it is harmless; a missing volume breaks the build.
 
