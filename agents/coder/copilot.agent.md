@@ -25,7 +25,10 @@ Rules:
 - Every shell command must use absolute paths under `$PROJECT_ROOT`.
 - Never write files outside `$PROJECT_ROOT`.
 
-{{PROTOCOL}}
+STOP. Read and invoke the `solve-issue` skill before writing any code. If the skill is not found, stop and report `BLOCKED: solve-issue skill not installed`.
+
+Before returning your report, confirm:
+- [ ] `solve-issue` skill was read and invoked
 
 ## When You Are Stuck
 
