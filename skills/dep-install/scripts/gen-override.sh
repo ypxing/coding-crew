@@ -106,8 +106,9 @@ fi
 # Matches volume entries like:  - .:/opt/app  or  - ${PROJECT_ROOT}:/opt/app
 CONTAINER_SRC=$(grep -E '^\s+-\s+(\.|"\."|\$\{PROJECT_ROOT\}|\$\{APP_ROOT\}):' "$COMPOSE_FILE" \
   | head -1 \
-  | sed -E 's|.*(\.|"\."|\$\{PROJECT_ROOT\}|\$\{APP_ROOT\}):([^: ]+).*|\2|' \
-  | sed 's|/$||')
+  | grep -oE ':(\/[^: ]+)' \
+  | head -1 \
+  | sed 's|^:||; s|/$||')
 
 if [[ -z "$CONTAINER_SRC" ]]; then
   CONTAINER_SRC="/app"
