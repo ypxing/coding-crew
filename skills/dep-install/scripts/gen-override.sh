@@ -127,7 +127,8 @@ ECO_PROXY_VARS=()
 
 detect_ecosystem() {
   if find "$PROJECT_ROOT" -maxdepth 5 -name 'package.json' \
-      -not -path '*/node_modules/*' -print -quit 2>/dev/null | grep -q .; then
+      -not -path '*/node_modules/*' \
+      -not -path '*/\.*/*' -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="node"; ECO_VENDOR="node_modules"; ECO_PREFIX="nm"
     ECO_DEPTH=5; ECO_EXCLUDE="node_modules"
     ECO_PROXY_VARS=("HTTPS_PROXY" "NODE_EXTRA_CA_CERTS" 'YARN_HTTPS_PROXY=${HTTPS_PROXY}')
@@ -192,10 +193,18 @@ if [[ "$ECO_NAME" == "python" ]]; then
       -not -path "*/${ECO_EXCLUDE}/*" \
       -exec dirname {} \; | sort -u
   )
+elif [[ "$ECO_NAME" == "node" ]]; then
+  mapfile -t MANIFEST_DIRS < <(
+    find "$PROJECT_ROOT" -maxdepth "$ECO_DEPTH" \
+      -name 'package.json' \
+      -not -path '*/node_modules/*' \
+      -not -path '*/.*/*' \
+      -exec dirname {} \; | sort -u
+  )
 else
   mapfile -t MANIFEST_DIRS < <(
     find "$PROJECT_ROOT" -maxdepth "$ECO_DEPTH" \
-      -name "$(case $ECO_NAME in node) echo 'package.json';; ruby) echo 'Gemfile';; rust) echo 'Cargo.toml';; php) echo 'composer.json';; go) echo 'go.mod';; esac)" \
+      -name "$(case $ECO_NAME in ruby) echo 'Gemfile';; rust) echo 'Cargo.toml';; php) echo 'composer.json';; go) echo 'go.mod';; esac)" \
       -not -path "*/${ECO_EXCLUDE}/*" \
       -exec dirname {} \; | sort -u
   )
