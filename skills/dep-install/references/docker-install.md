@@ -14,7 +14,7 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 
 - Never run any install or project command on the host — everything runs inside the container.
 - Never use `docker-compose` (v1 hyphenated binary) — always use `docker compose` (v2 plugin).
-- Always pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$PROJECT_ROOT/docker-compose.override.yml"` on every `docker compose` command after step 3.
+- Always pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$PROJECT_ROOT/docker-compose.override.yml"` on every `docker compose` command.
 
 ## Steps
 
@@ -58,7 +58,7 @@ Note:
 
 - The service name (e.g. `app`)
 - The container-side source mount path (e.g. `/opt/app`) — call it `CONTAINER_SRC`
-- Any environment variable references in the file (e.g. `${MAIN_ROOT}`, `${APP_ROOT}`) — pass each one inline on every `docker compose` call
+- Any environment variable references in the file (e.g. `${MAIN_ROOT}`, `${APP_ROOT}`) — declare each one in the override file's `environment:` section (step 3). **Never pass env vars inline on the command line** — if they appear inline it means the override was skipped or incomplete.
 
 ### 2. Derive slug and find all vendor directories
 
@@ -253,16 +253,9 @@ Pass both `-f` flags on every `docker compose` command.
 
 ### 5. All subsequent `docker compose` commands must pass both `-f` flags
 
-Before every `docker compose` command (including test, lint, and type-check runs), verify the override file exists:
+**Complete steps 0–4 in order before running any `docker compose` command. Do not skip ahead.**
 
-```bash
-[ -f "$PROJECT_ROOT/docker-compose.override.yml" ] || {
-  echo "ERROR: docker-compose.override.yml missing — re-run dep-install Step 3 before continuing"
-  exit 1
-}
-```
-
-If it is missing, go back to Step 3, regenerate it, and then retry the command. Never omit the `-f override` flag as a workaround.
+Pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$PROJECT_ROOT/docker-compose.override.yml"` on every `docker compose` command — including test, lint, and type-check runs. Never omit the `-f override` flag.
 
 ## Install failures
 
