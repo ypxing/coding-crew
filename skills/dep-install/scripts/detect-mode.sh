@@ -10,8 +10,7 @@
 #
 # Detection order:
 #   1. git config --local agent.install-mode (docker|host)
-#   2. Makefile install/deps/setup target invokes docker compose
-#   3. docker-compose.yml / docker-compose.yaml / compose.yml exists
+#   2. Makefile install/deps/setup/depend target invokes docker compose → docker; present but no match → host
 
 set -euo pipefail
 
@@ -41,18 +40,11 @@ fi
 if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
   _uses_docker=$(awk '
     /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*:[^=]/ {
-      in_target = ($0 ~ /^(install|deps|setup)[[:space:]]*:/)
+      in_target = ($0 ~ /^(install|deps|setup|depend)[[:space:]]*:/)
     }
     in_target && /^\t/ && /docker[ -]compose|docker compose/ { print "yes"; exit }
   ' "$PROJECT_ROOT/Makefile")
-  [ "$_uses_docker" = "yes" ] && _mode="docker"
-fi
-
-if [ -z "$_mode" ]; then
-  { [ -f "$PROJECT_ROOT/docker-compose.yml" ] || \
-    [ -f "$PROJECT_ROOT/docker-compose.yaml" ] || \
-    [ -f "$PROJECT_ROOT/compose.yml" ]; } \
-    && _mode="docker" || _mode="host"
+  [ "$_uses_docker" = "yes" ] && _mode="docker" || _mode="host"
 fi
 
 [ "$_mode" = "docker" ] && echo "USE_DOCKER" || echo "USE_HOST"
