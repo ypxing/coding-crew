@@ -68,16 +68,9 @@ State the mode before continuing:
 
 **Never** run any project command on the host — everything runs inside the container.
 **Never** use `docker-compose` (v1 hyphenated) — always use `docker compose` (v2 plugin).
-**Always** pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$PROJECT_ROOT/docker-compose.override.yml"` on every `docker compose` command after the override file is written.
+**Always** pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$PROJECT_ROOT/docker-compose.override.yml"` on every `docker compose` command.
 
-Before every `docker compose` command, verify the override file exists:
-```bash
-[ -f "$PROJECT_ROOT/docker-compose.override.yml" ] || {
-  echo "ERROR: docker-compose.override.yml missing — re-run Step 4 before continuing"
-  exit 1
-}
-```
-If it is missing, go back to Step 4, regenerate it, then retry. Never omit the `-f override` flag as a workaround.
+**Complete Sub-steps 1–5 in order before running any `docker compose` command. Do not skip ahead.**
 
 **Sub-step 1 — Read Makefile and ensure `.env` exists**
 
@@ -222,7 +215,7 @@ If the container entrypoint ignores the command, override it with `--entrypoint 
 
 If install fails due to missing auth tokens, network errors, or Docker not running — stop and report blocked with verbatim error.
 
-**Retry rule**: if a later test, lint, or type-check command fails with a module-not-found or import error, treat it as an install failure. Return to Step 4, regenerate the override file, re-run install, then retry the failing command once. If it still fails, stop and report blocked.
+**Retry rule**: if a later test, lint, or type-check command fails with a module-not-found or import error, treat it as an install failure. Re-run Sub-steps 3–5 (re-derive volumes, regenerate override, re-run install), then retry the failing command once. If it still fails, stop and report blocked.
 
 #### 2c. If USE_HOST
 
