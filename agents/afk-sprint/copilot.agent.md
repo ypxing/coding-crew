@@ -96,7 +96,7 @@ Then, before **every** shell command you run, log the exact command — verbatim
 argument, re-runnable as-is — to `.scratch/commands.log`:
 
 ```bash
-echo "[$(date -u +%H:%M:%SZ)] <exact command here>" >> .scratch/commands.log
+echo "<exact command here>" >> .scratch/commands.log
 <exact command here>
 ```
 
