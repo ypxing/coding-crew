@@ -72,6 +72,8 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 - `grill-with-docs` — grilling session that challenges a plan against the domain model
 - `to-issues` — break a plan or PRD into independently-grabbable issues
 - `to-prd` — synthesize conversation context into a PRD and publish to the issue tracker
+- `plan-sprint` — full design pipeline: grill → PRD → issues in one automated flow
+- `caveman` — ultra-compressed communication mode (~75% token reduction); auto-enabled in afk-sprint workers
 
 Install copies these to `.claude/skills/<skill>/SKILL.md` in the target repo.
 

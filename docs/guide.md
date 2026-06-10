@@ -24,6 +24,8 @@ THIS REPO (source)
 │   ├── tdd/
 │   ├── solve-issue/
 │   ├── grill-me/
+│   ├── plan-sprint/
+│   ├── caveman/
 │   └── ...
 └── docs/
     └── agents/
@@ -238,12 +240,14 @@ YOUR_PROJECT/
 │       ├── dep-install/
 │       ├── solve-issue/
 │       ├── address-code-review/
+│       ├── caveman/                ← installed with afk-sprint
 │       ├── address-pr-comments/    ← installed with "all"
 │       ├── improve-codebase-architecture/  ← installed with "all"
 │       ├── grill-me/               ← installed with "all"
 │       ├── grill-with-docs/        ← installed with "all"
 │       ├── to-issues/              ← installed with "all"
-│       └── to-prd/                 ← installed with "all"
+│       ├── to-prd/                 ← installed with "all"
+│       └── plan-sprint/            ← installed with "all"
 ├── .github/
 │   └── agents/
 │       ├── afk-sprint.agent.md
@@ -266,10 +270,10 @@ YOUR_PROJECT/
  ┌─────────────────────────────────────────────────────────────┐
  │  Plan & explore (optional but recommended)                  │
  │                                                             │
- │  /grill-me         stress-test your idea interactively      │
- │  /grill-with-docs  same + challenges/builds domain model    │
- │  /to-prd           synthesise into a PRD                    │
- │  /to-issues        break PRD into .scratch issues           │
+ │  auto:   /plan-sprint  (grill → PRD → issues)               │
+ │                                                             │
+ │  manual: /grill-me  (or /grill-with-docs)                   │
+ │          → /to-prd → /to-issues                             │
  └──────────────────────────┬──────────────────────────────────┘
                             │ .scratch/.../issues/*.md
                             ▼
@@ -371,12 +375,14 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 | Goal                                           | Skill                            |
 | ---------------------------------------------- | -------------------------------- |
+| Run the full grill → PRD → issues pipeline     | `/plan-sprint`                   |
 | Turn a feature idea into a PRD                 | `/to-prd`                        |
 | Break a PRD into issues                        | `/to-issues`                     |
 | Stress-test your plan interactively            | `/grill-me`                      |
 | Challenge your design against the domain model | `/grill-with-docs`               |
 | Address GitHub PR review comments              | `/address-pr-comments`           |
 | Find architecture improvement opportunities    | `/improve-codebase-architecture` |
+| Reduce token usage during long sessions        | `/caveman`                       |
 
 ---
 

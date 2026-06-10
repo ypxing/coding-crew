@@ -13,10 +13,11 @@ A distributable collection of AI agents and skills that automate the issue → i
   ┌─────────────────────────────────────────────────────┐
   │  Create issues                                      │
   │                                                     │
-  │  auto:   /grill-me (or /grill-with-docs)            │
-  │          → /to-prd → /to-issues                     │
+  │  auto:   /plan-sprint                               │
   │                                                     │
-  │  manual: write .scratch/.../issues/*.md             │
+  │  manual: /grill-me (or /grill-with-docs)            │
+  │          → /to-prd → /to-issues                     │
+  │          (or write .scratch/.../issues/*.md)        │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
@@ -52,15 +53,19 @@ TARGET_REPO=/path/to/your/project ./install.sh claude afk-sprint
 ### Auto — from an idea
 
 ```
+/plan-sprint       ← grill → PRD → issues in one flow
+```
+
+### Manual — step by step
+
+```
 /grill-me          ← stress-test your idea interactively
                    (or /grill-with-docs — challenges against your domain model, creates one if you don't have it)
 /to-prd            ← turn the refined idea into a PRD
 /to-issues         ← break the PRD into ready-for-agent issues
 ```
 
-### Manual — write them directly
-
-Create `.scratch/<feature>/issues/01-slug.md`:
+Or write issues directly. Create `.scratch/<feature>/issues/01-slug.md`:
 
 ```markdown
 Status: ready-for-agent
@@ -119,13 +124,15 @@ In order of use:
 
 | Skill                            | When                                                                              |
 | -------------------------------- | --------------------------------------------------------------------------------- |
-| `/grill-me`                      | Stress-test your idea interactively                                               |
+| `/plan-sprint`                   | Full design pipeline — grill → PRD → issues in one automated flow                 |
+| `/grill-me`                      | Stress-test your idea interactively (step-by-step alternative to `/plan-sprint`)  |
 | `/grill-with-docs`               | Same, but challenges against your domain model — creates one if you don't have it |
 | `/to-prd`                        | Turn the refined idea into a PRD                                                  |
 | `/to-issues`                     | Break the PRD into ready-for-agent issues                                         |
 | `/solve-issue`                   | Implement one issue manually (what coder uses internally)                         |
 | `/address-pr-comments`           | After a PR review — implement sensible comments with TDD                          |
 | `/improve-codebase-architecture` | Ongoing — find refactoring opportunities                                          |
+| `/caveman`                       | Switch to ultra-compressed communication to reduce token usage ~75%               |
 
 ---
 
