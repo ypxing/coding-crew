@@ -107,6 +107,12 @@
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",
       "install": ".claude/skills/to-prd"
+    },
+    "caveman": {
+      "version": "1.0.0",
+      "description": "Ultra-compressed communication mode. Cuts token usage ~75% by speaking like caveman while keeping full technical accuracy. Supports lite/full/ultra and wenyan intensity levels.",
+      "source": "JuliusBrussee/caveman",
+      "install": ".claude/skills/caveman"
     }
   },
   "docs": {
