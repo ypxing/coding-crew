@@ -81,9 +81,6 @@ const MERGE_SCHEMA = {
 // Apply to every path/branch/user-controlled value interpolated into shell commands.
 const q = v => "'" + String(v).replace(/'/g, "'\\''") + "'"
 
-const _agent = globalThis.agent
-const agent = (prompt, opts) => _agent('Use caveman style: terse, fragments OK, no filler, technical terms exact, code unchanged.\n\n' + prompt, opts)
-
 // Session state
 const mergedItems      = []        // { branch, slug, criteria } — kept alive until final code review
 const allPartial       = new Set() // slugs of partial issues across all rounds (Set prevents duplicates)

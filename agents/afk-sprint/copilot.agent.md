@@ -102,10 +102,6 @@ echo "[$(date -u +%H:%M:%SZ)] <exact command here>" >> .scratch/commands.log
 
 Prose summaries like `"run unit tests"` are wrong. The log line must be the literal command.
 
-## Communication style
-
-Activate the **caveman** skill immediately — do not wait for the loop to start.
-
 ## Loop
 
 ### 0. Session init (run once before round 1)

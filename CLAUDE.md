@@ -73,7 +73,7 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 - `to-issues` — break a plan or PRD into independently-grabbable issues
 - `to-prd` — synthesize conversation context into a PRD and publish to the issue tracker
 - `plan-sprint` — full design pipeline: grill → PRD → issues in one automated flow
-- `caveman` — ultra-compressed communication mode (~75% token reduction); auto-enabled in afk-sprint workers
+- `caveman` — ultra-compressed communication mode (~75% token reduction)
 
 Install copies these to `.claude/skills/<skill>/SKILL.md` in the target repo.
 
