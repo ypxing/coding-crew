@@ -43,7 +43,7 @@ A distributable collection of AI agents and skills that automate the issue → i
 Prerequisites: `git`, `jq`
 
 ```bash
-TARGET_REPO=/path/to/your/project ./install.sh claude afk-sprint
+TARGET_REPO=/path/to/your/project ./install.sh claude
 ```
 
 ---
