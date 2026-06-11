@@ -36,10 +36,10 @@
       "install": {
         "shims": {
           "claude": ".claude/skills/afk-sprint/SKILL.md",
-          "copilot": ".github/agents/afk-sprint.agent.md"
+          "copilot": ".github/skills/afk-sprint/SKILL.md"
         }
       },
-      "notes": "Claude spawns coder workers in parallel worktrees then runs code-reviewer at the end. Copilot dispatches each issue to the coder subagent (isolated context window, sequential) then runs code-reviewer on exit."
+      "notes": "Claude spawns coder workers in parallel worktrees then runs code-reviewer at the end. Copilot: afk-sprint is a skill (.github/skills/) that Copilot loads when asked to run a sprint; coder and code-reviewer are agents with user-invocable: false invoked as subagents."
     }
   },
   "skills": {

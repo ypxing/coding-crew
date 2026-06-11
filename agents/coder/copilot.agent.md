@@ -5,6 +5,7 @@ description: >
   deps, builds with red-green-refactor, verifies all checks pass, commits, and returns a structured
   summary. Invoked as a subagent by afk-sprint — one issue per invocation.
 tools: ["read", "edit", "execute", "search"]
+user-invocable: false
 ---
 
 # Coder
