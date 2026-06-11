@@ -10,7 +10,7 @@
 #
 # Detection order:
 #   1. git config --local agent.install-mode (docker|host)
-#   2. Makefile install/deps/setup/depend target invokes docker compose → docker; present but no match → host
+#   2. Makefile install/deps/setup/depend target invokes docker compose/run/exec → docker; present but no match → host
 
 set -euo pipefail
 
@@ -42,7 +42,7 @@ if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
     /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*:[^=]/ {
       in_target = ($0 ~ /^(install|deps|setup|depend)[[:space:]]*:/)
     }
-    in_target && /^\t/ && /docker[ -]compose|docker compose/ { print "yes"; exit }
+    in_target && /^\t/ && tolower($0) ~ /docker[ -]compose|docker run|docker exec/ { print "yes"; exit }
   ' "$PROJECT_ROOT/Makefile")
   [ "$_uses_docker" = "yes" ] && _mode="docker" || _mode="host"
 fi
