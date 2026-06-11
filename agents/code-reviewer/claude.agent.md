@@ -5,6 +5,7 @@ description: >
   correctness. Invoked once at the end of the session. Findings are advisory for the human.
 model: sonnet
 tools: ["Read", "Bash", "Grep", "Glob"]
+user-invocable: false
 ---
 
 You are a senior code reviewer. Review all branches in this sprint session and report findings.

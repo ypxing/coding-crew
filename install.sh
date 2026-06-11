@@ -25,15 +25,15 @@ usage() {
   echo "       ./install.sh --update"
   echo ""
   echo "  platform: all (default), claude, copilot"
-  echo "  agent:    all (default), afk-sprint, code-reviewer, coder"
+  echo "  agent:    all (default), code-reviewer, coder"
   echo "  --skill:  install a standalone skill (e.g. to-issues, grill-me)"
   echo "  --doc:    install a standalone doc (e.g. issue-tracker.md)"
   echo "  --update: re-install only agents/skills whose version changed since last install"
   echo ""
   echo "Examples:"
   echo "  ./install.sh                        # install everything"
-  echo "  ./install.sh copilot afk-sprint     # afk-sprint for Copilot (no coder needed)"
-  echo "  ./install.sh claude afk-sprint      # orchestrator + coder for Claude"
+  echo "  ./install.sh claude --skill afk-sprint   # afk-sprint skill + coder + code-reviewer"
+  echo "  ./install.sh copilot --skill afk-sprint  # afk-sprint (copilot variant) + agents"
   echo "  ./install.sh claude --skill to-issues  # install just the to-issues skill"
   echo "  ./install.sh claude --doc issue-tracker.md   # install just the issue-tracker doc"
   echo "  ./install.sh --update               # update all installed agents/skills"
@@ -259,8 +259,16 @@ install_single_skill() {
   fi
   INSTALLED="${INSTALLED}|skill:$skill_name|"
 
-  local skill_dest
-  skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
+  local skill_dest skill_src_primary skill_src_remove
+  if [[ "$PLATFORM" == "copilot" ]]; then
+    skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s]["install-copilot"] // .skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
+    skill_src_primary="copilot.SKILL.md"
+    skill_src_remove="SKILL.md"
+  else
+    skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
+    skill_src_primary="SKILL.md"
+    skill_src_remove="copilot.SKILL.md"
+  fi
   if [[ -z "$skill_dest" ]]; then
     echo "Error: skill '$skill_name' not found in registry.json"
     echo "Available skills: $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
@@ -270,6 +278,11 @@ install_single_skill() {
   [[ -d "$SCRIPT_DIR/skills/$skill_name" ]] || { echo "Error: skill source not found: skills/$skill_name" >&2; exit 1; }
   mkdir -p "$REPO_ROOT/$skill_dest"
   cp -r "$SCRIPT_DIR/skills/$skill_name/." "$REPO_ROOT/$skill_dest/"
+  # Remove the other platform's primary file; rename the active one to SKILL.md
+  rm -f "$REPO_ROOT/$skill_dest/$skill_src_remove"
+  if [[ "$skill_src_primary" != "SKILL.md" && -f "$REPO_ROOT/$skill_dest/$skill_src_primary" ]]; then
+    mv "$REPO_ROOT/$skill_dest/$skill_src_primary" "$REPO_ROOT/$skill_dest/SKILL.md"
+  fi
   echo "  $skill_dest/"
 
   local skill_version
@@ -284,6 +297,34 @@ install_single_skill() {
   for dep in "${deps_arr[@]+"${deps_arr[@]}"}"; do
     install_single_skill "$dep"
   done
+
+  # Resolve agent-deps — agents this skill requires at runtime
+  local agent_deps
+  agent_deps=$(jq -r --arg s "$skill_name" '.skills[$s]["agent-deps"] // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  local agent_deps_arr=()
+  while IFS= read -r _line; do [[ -n "$_line" ]] && agent_deps_arr+=("$_line"); done <<< "$agent_deps"
+  for dep in "${agent_deps_arr[@]+"${agent_deps_arr[@]}"}"; do
+    install_agent "$dep" "$PLATFORM"
+  done
+
+  # Install docs declared on the skill
+  local skill_docs
+  skill_docs=$(jq -r --arg s "$skill_name" '.skills[$s].docs // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  local skill_docs_arr=()
+  while IFS= read -r _line; do [[ -n "$_line" ]] && skill_docs_arr+=("$_line"); done <<< "$skill_docs"
+  if [[ "${#skill_docs_arr[@]}" -gt 0 ]]; then
+    mkdir -p "$REPO_ROOT/docs/agents"
+    for doc in "${skill_docs_arr[@]}"; do
+      assert_identifier "$doc" "doc"
+      [[ -f "$SCRIPT_DIR/docs/agents/$doc" ]] || { echo "Error: doc source not found: docs/agents/$doc" >&2; exit 1; }
+      if [[ ! -f "$REPO_ROOT/docs/agents/$doc" ]]; then
+        cp "$SCRIPT_DIR/docs/agents/$doc" "$REPO_ROOT/docs/agents/$doc"
+        echo "  docs/agents/$doc"
+      else
+        echo "  docs/agents/$doc (skipped — already exists)"
+      fi
+    done
+  fi
 }
 
 install_single_doc() {

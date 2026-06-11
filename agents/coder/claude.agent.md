@@ -14,6 +14,7 @@ tools:
   - Glob
 skills:
   - solve-issue
+user-invocable: false
 ---
 
 # Coder
@@ -46,6 +47,7 @@ fi
 ```
 
 Rules:
+
 - Every Read/Edit tool call must use absolute paths starting with `$PROJECT_ROOT`.
 - Every Bash command must `cd $PROJECT_ROOT` first or use absolute paths under it.
 - Never use relative paths — the Read tool rejects them.
@@ -62,6 +64,7 @@ mkdir -p "$(dirname "$CMD_LOG")"
 ```
 
 Every subsequent Bash call must log before running:
+
 ```bash
 THE_CMD='<exact command>'
 echo "[$(date -u +%H:%M:%SZ)] [$WORKER] $THE_CMD" >> "$CMD_LOG"
@@ -80,17 +83,18 @@ When `solve-issue` says to stop and output `BLOCKED:`, set `status` to `blocked`
 
 Populate these fields exactly:
 
-| Field | Type | Rules |
-|---|---|---|
-| `status` | string | `complete`, `partial`, or `blocked` |
-| `branch` | string | output of `git rev-parse --abbrev-ref HEAD` |
-| `working_directory` | string | `$PROJECT_ROOT` (pwd at startup) |
-| `checks` | array of objects | one entry per check command — see schema below |
-| `acceptance_criteria` | string | every criterion with `[x]` or `[ ]` |
-| `changes` | array of strings | every file modified |
-| `notes` | string | blockers, decisions, or `"none"` |
+| Field                 | Type             | Rules                                          |
+| --------------------- | ---------------- | ---------------------------------------------- |
+| `status`              | string           | `complete`, `partial`, or `blocked`            |
+| `branch`              | string           | output of `git rev-parse --abbrev-ref HEAD`    |
+| `working_directory`   | string           | `$PROJECT_ROOT` (pwd at startup)               |
+| `checks`              | array of objects | one entry per check command — see schema below |
+| `acceptance_criteria` | string           | every criterion with `[x]` or `[ ]`            |
+| `changes`             | array of strings | every file modified                            |
+| `notes`               | string           | blockers, decisions, or `"none"`               |
 
 Each `checks` entry:
+
 ```
 {
   "command": "<exact command run>",
@@ -101,6 +105,7 @@ Each `checks` entry:
 Never omit a check category — if no command was found, include the entry with `"result": "not_run"`.
 
 Status definitions:
+
 - **`complete`** — all criteria met, all checks pass, work committed.
 - **`partial`** — meaningful progress was made but work is NOT committed; write notes to `## Progress` in the issue file so a fresh worker can re-implement from scratch using that context. Do not commit partial work — the next worker starts from scratch.
 - **`blocked`** — cannot proceed without human input or environment fix.

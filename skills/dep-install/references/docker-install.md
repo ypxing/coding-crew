@@ -15,6 +15,7 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 - Never run any install or project command on the host — everything runs inside the container.
 - Never use `docker-compose` (v1 hyphenated binary) — always use `docker compose` (v2 plugin).
 - Always pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command.
+- **Never write `docker-compose.override.yml` manually** — always generate it via `gen-override.sh`. Hand-writing the file skips proxy env vars and produces generic volume names that collide across worktrees.
 
 ## Steps
 
@@ -61,8 +62,7 @@ Run the generation script. It reads the compose file, detects the ecosystem from
 ```bash
 bash "$MAIN_ROOT/.claude/skills/dep-install/scripts/gen-override.sh" \
   --project-root "$PROJECT_ROOT" \
-  --main-root "$MAIN_ROOT" \
-  ${IS_SANDBOX:+--sandbox}
+  --main-root "$MAIN_ROOT"
 ```
 
 The script prints what it wrote, which ecosystem it detected, and which services it found. If it exits non-zero, stop and report `BLOCKED` with the error message.

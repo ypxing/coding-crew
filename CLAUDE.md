@@ -14,7 +14,9 @@ A distributable collection of AI agents and skills that other projects install v
 
 # Install a specific agent for a specific platform
 ./install.sh claude coder
-./install.sh copilot afk-sprint
+
+# Install a skill (and its agent deps)
+./install.sh claude --skill afk-sprint
 
 # Install into a different repo
 TARGET_REPO=/path/to/other/repo ./install.sh
@@ -26,19 +28,18 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 ./install.sh claude --doc issue-tracker.md
 ```
 
-Platforms: `all` (default), `claude`, `copilot`. Agents: `all` (default), `afk-sprint`, `code-reviewer`, `coder`.
+Platforms: `all` (default), `claude`, `copilot`. Agents: `all` (default), `code-reviewer`, `coder`.
 
 ## Architecture
 
 ### Agents
 
-Three agents live under `agents/`:
+Two agents live under `agents/`:
 
 - **`coder`** — implements a single local markdown issue using TDD, verifies checks, commits, and returns a structured summary. Runs in an isolated git worktree.
-- **`afk-sprint`** — orchestrator that spawns parallel `coder` agents in isolated worktrees (up to 8 per batch), merges completed branches, runs a code-reviewer pass, and loops until all ready-for-agent issues are done.
 - **`code-reviewer`** — reviews all branches merged in a sprint session; reports CRITICAL/HIGH/MEDIUM/LOW findings per branch. Findings are advisory. Invoked once at the end of every sprint by afk-sprint.
 
-`afk-sprint` depends on `coder` and `code-reviewer` (declared in `registry.json`).
+`afk-sprint` is a **skill** (see Skills below) that declares `agent-deps` on `coder` and `code-reviewer` — installing the skill also installs both agents.
 
 ### Platform files and protocol inlining
 
@@ -60,8 +61,9 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 
 ### Skills
 
-`skills/` contains reusable skill files (`SKILL.md`) that agents depend on. See `registry.json` under `skills` for the full list. Currently:
+`skills/` contains reusable skill files (`SKILL.md`). See `registry.json` under `skills` for the full list. Currently:
 
+- `afk-sprint` — orchestrator that spawns parallel `coder` agents, merges completed branches, runs code-reviewer, and loops until all ready-for-agent issues are done. Declares `agent-deps: [coder, code-reviewer]` — installing the skill pulls in both agents automatically.
 - `karpathy-guidelines` — coding principles (think first, surgical changes, goal-driven)
 - `tdd` — red/green/refactor workflow
 - `solve-issue` — implement a single issue end-to-end: read, explore, install, TDD, verify, commit
@@ -74,6 +76,8 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 - `to-prd` — synthesize conversation context into a PRD and publish to the issue tracker
 - `plan-sprint` — full design pipeline: grill → PRD → issues in one automated flow
 - `caveman` — ultra-compressed communication mode (~75% token reduction)
+
+Skills with `agent-deps` also install the listed agents (via `install.sh`) so the skill can invoke them at runtime.
 
 Install copies these to `.claude/skills/<skill>/SKILL.md` in the target repo.
 

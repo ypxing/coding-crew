@@ -322,7 +322,7 @@ while (dry < STALL_LIMIT) {
       ...(successfulItems.length > 0 ? [() => agent(
         'If docs/agents/issue-tracker.md exists, read it for the done convention; otherwise use the default.\n' +
         'Default:\n' +
-        '1. Replace the Status line in the file with "Status: done" (sed -i "s/^Status:.*/Status: done/" <path>)\n' +
+        '1. Replace the Status line in the file with "Status: done" (sed -i "" "s/^Status:.*/Status: done/" <path>)\n' +
         '2. mkdir -p "$(dirname <path>)/done" && mv <path> "$(dirname <path>)/done/"\n\n' +
         'Do step 1 before step 2 for every file — the status update must happen before the move.\n\n' +
         'Mark each issue file as done:\n' + successfulItems.map(({ issue }) => issue.path).join('\n'),

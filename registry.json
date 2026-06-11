@@ -25,24 +25,18 @@
           "copilot": ".github/agents/coder.agent.md"
         }
       }
-    },
-    "afk-sprint": {
-      "version": "1.0.0",
-      "description": "Orchestrator that spawns parallel coder agents in isolated worktrees (up to 8 per batch), merges completed branches, runs a code-reviewer pass, and loops until all ready-for-agent issues are done.",
-      "deps": ["coder", "code-reviewer"],
-      "deps-copilot": ["coder", "code-reviewer"],
-      "skills": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
-      "docs": ["issue-tracker.md", "triage-labels.md"],
-      "install": {
-        "shims": {
-          "claude": ".claude/skills/afk-sprint/SKILL.md",
-          "copilot": ".github/skills/afk-sprint/SKILL.md"
-        }
-      },
-      "notes": "Claude spawns coder workers in parallel worktrees then runs code-reviewer at the end. Copilot: afk-sprint is a skill (.github/skills/) that Copilot loads when asked to run a sprint; coder and code-reviewer are agents with user-invocable: false invoked as subagents."
     }
   },
   "skills": {
+    "afk-sprint": {
+      "version": "1.0.0",
+      "description": "Orchestrator that spawns parallel coder agents in isolated worktrees, merges completed branches, runs a code-reviewer pass, and loops until all ready-for-agent issues are done.",
+      "install": ".claude/skills/afk-sprint",
+      "install-copilot": ".github/skills/afk-sprint",
+      "agent-deps": ["coder", "code-reviewer"],
+      "deps": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
+      "docs": ["issue-tracker.md", "triage-labels.md"]
+    },
     "karpathy-guidelines": {
       "version": "1.0.0",
       "description": "Behavioral guidelines to reduce common LLM coding mistakes (think, simplify, surgical, goal-driven).",

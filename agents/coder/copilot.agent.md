@@ -55,6 +55,9 @@ Status: complete | partial | blocked
 ### Changes
 - <file>
 
+### Skills
+- <skill name invoked — one per line>
+
 ### Notes
 <blockers, decisions, follow-up, or "none">
 ```
@@ -66,5 +69,6 @@ Rules:
 3. `### Checks` — for each check, show the command and final summary line(s) only (e.g. pass/fail counts). Do not list individual test names or passing cases.
 4. `### Acceptance Criteria` — list every criterion from the issue with `[x]` or `[ ]`.
 5. `### Changes` — list every file modified.
-6. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
-7. Do not add any text outside these sections.
+6. `### Skills` — list every skill that was read and invoked (e.g. `solve-issue`, `dep-install`, `karpathy-guidelines`, `tdd`). Never leave this section empty.
+7. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
+8. Do not add any text outside these sections.

@@ -128,7 +128,7 @@ ECO_PROXY_VARS=()
 detect_ecosystem() {
   if find "$PROJECT_ROOT" -maxdepth 5 -name 'package.json' \
       -not -path '*/node_modules/*' \
-      -not -path '*/\.*/*' -print -quit 2>/dev/null | grep -q .; then
+      -not -path "$PROJECT_ROOT/*/\.*/*" -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="node"; ECO_VENDOR="node_modules"; ECO_PREFIX="nm"
     ECO_DEPTH=5; ECO_EXCLUDE="node_modules"
     ECO_PROXY_VARS=("HTTPS_PROXY" "NODE_EXTRA_CA_CERTS" 'YARN_HTTPS_PROXY=${HTTPS_PROXY}')
@@ -173,8 +173,14 @@ detect_ecosystem() {
 
 detect_ecosystem
 
+# Worktrees may be sparse or freshly branched — fall back to MAIN_ROOT for detection and manifest scan.
+if [[ -z "$ECO_NAME" ]] && [[ "$PROJECT_ROOT" != "$MAIN_ROOT" ]]; then
+  PROJECT_ROOT="$MAIN_ROOT"
+  detect_ecosystem
+fi
+
 if [[ -z "$ECO_NAME" ]]; then
-  echo "Error: no supported ecosystem detected in $PROJECT_ROOT" >&2
+  echo "Error: no supported ecosystem detected in $PROJECT_ROOT or $MAIN_ROOT" >&2
   echo "Expected one of: package.json, pyproject.toml, requirements.txt, Gemfile, Cargo.toml, go.mod, composer.json" >&2
   exit 3
 fi
@@ -198,7 +204,8 @@ elif [[ "$ECO_NAME" == "node" ]]; then
     find "$PROJECT_ROOT" -maxdepth "$ECO_DEPTH" \
       -name 'package.json' \
       -not -path '*/node_modules/*' \
-      -not -path '*/.*/*' \
+      -not -path "$PROJECT_ROOT/.claude/worktrees/*" \
+      -not -path "$PROJECT_ROOT/*/.*/*" \
       -exec dirname {} \; | sort -u
   )
 else
@@ -234,7 +241,7 @@ generate_yaml() {
   echo "services:"
   for svc in "${SERVICES[@]}"; do
     echo "  ${svc}:"
-    if [[ "$SANDBOX" == "1" ]]; then
+    if [[ ${#ECO_PROXY_VARS[@]} -gt 0 ]]; then
       echo "    environment:"
       for var in "${ECO_PROXY_VARS[@]}"; do
         echo "      - ${var}"
