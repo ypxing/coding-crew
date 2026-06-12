@@ -123,6 +123,10 @@
     "triage-labels.md": {
       "description": "Maps canonical triage roles to this repo's label strings.",
       "install": "docs/agents/triage-labels.md"
+    },
+    "sprint-config.md": {
+      "description": "Sprint-level configuration for commit behavior and other defaults.",
+      "install": "docs/agents/sprint-config.md"
     }
   }
 }
