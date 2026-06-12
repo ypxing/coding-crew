@@ -1,12 +1,26 @@
 ---
 name: address-code-review
 description: Triage findings from the latest afk-sprint code review report, challenge each one critically, implement sensible ones using TDD, commit touched files, and print a summary. Trigger with /address-code-review.
-argument-hint: "Optional path to a review report file (defaults to the latest file in .scratch/reviews/)"
+argument-hint: "Optional: path to report file, --commit, or --no-commit"
 ---
 
 # Address Code Review
 
 You are working through the findings from an afk-sprint code review report. Follow every step below in order.
+
+## Flags
+
+- `--commit`: Force auto-commit after implementing changes (overrides config file)
+- `--no-commit`: Stage changes but skip commit (overrides config file)
+- If no flag is provided, behavior is determined by `docs/agents/sprint-config.md` (defaults to `yes` if not configured)
+
+**Examples:**
+
+```bash
+/address-code-review                              # uses config or default (yes)
+/address-code-review --no-commit                  # stages only, no commit
+/address-code-review --commit path/to/report.md   # forces commit with custom report
+```
 
 ## Step 0 — Install dependencies
 
@@ -68,10 +82,29 @@ For each **Actionable** finding (in severity order — CRITICAL first, then HIGH
 
 ## Step 5 — Commit
 
-Stage only the files touched during Step 4 (do not use `git add -A`). Create a single commit:
+Parse commit preference using three-level precedence:
+1. Check for `--commit` or `--no-commit` flag in the skill invocation arguments
+2. If no flag present, read `docs/agents/sprint-config.md` at `$MAIN_ROOT/docs/agents/sprint-config.md` for `auto_commit:` value (yes/no)
+3. If no config file exists or value cannot be parsed, default to `yes`
 
-```
+Store the result for use in this step and Step 5b.
+
+**Always stage files touched during Step 4:**
+
+Stage only the files touched during Step 4 (do not use `git add -A`):
+
+```bash
 git add <file1> <file2> …
+```
+
+**Conditionally commit:**
+
+- If commit preference is `yes`: create commit and proceed to Step 5b
+- If commit preference is `no`: stop after staging, skip commit, and skip Step 5b (do NOT archive report)
+
+Commit message format (when committing):
+
+```bash
 git commit -m "$(cat <<'EOF'
 address code review findings
 
@@ -82,18 +115,24 @@ EOF
 )"
 ```
 
-If the commit fails, stop and report the error to the user — do **not** archive the report until the commit succeeds.
+If the commit fails, stop and report the error to the user — do **not** proceed to Step 5b or archive the report until the commit succeeds.
 
 ## Step 5b — Archive the report (only after a successful commit)
 
-If the report came from a file (not inline content) **and the commit in Step 5 succeeded**, move it to the `done/` subdirectory:
+**Only if commit preference was `yes` AND the commit in Step 5 succeeded:**
 
-```
+If the report came from a file (not inline content), move it to the `done/` subdirectory:
+
+```bash
 mkdir -p .scratch/reviews/done
 mv <report-path> .scratch/reviews/done/
 ```
 
 This prevents auto-detect from picking it up again on future runs.
+
+**If commit preference was `no`:**
+
+Skip archival entirely. The report stays in place so it can be picked up on a future run after the user manually commits the staged changes.
 
 ## Step 6 — Summary
 
