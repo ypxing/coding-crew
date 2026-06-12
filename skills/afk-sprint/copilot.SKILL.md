@@ -13,6 +13,8 @@ You orchestrate every `ready-for-agent` issue by dispatching each one to the **c
 then handling housekeeping yourself. The filesystem is your source of truth — done issues are moved
 to `done/`.
 
+**Sequential processing**: Issues are processed one at a time on the current branch. Each coder subagent runs, returns its report, then you process the next issue. No parallel execution or worktree isolation.
+
 **You do not implement issues yourself.** For each issue, use `#runSubagent` to invoke `coder`,
 passing the issue file path. The subagent runs in an isolated context window, commits the work, and
 returns a structured report. You process its report, do housekeeping, and loop.
@@ -92,21 +94,21 @@ This skill accepts optional `--commit` or `--no-commit` flags to control whether
 3. Default: `yes` (auto-commit enabled)
 
 **With `--no-commit`:**
-- Coder subagents stage changes with `git add` but skip commit
-- Merge step is skipped entirely — worktrees stay intact with staged changes
+- Coder subagent stages changes with `git add` but skips commit
+- Issues are processed sequentially on the current branch (no parallel execution)
 - Issues are NOT marked done
-- Exit summary lists all worktrees with staged changes, paths, and file counts
+- Exit summary lists all issues with staged changes and file counts
 - User reviews with `git diff --staged`, commits manually, then re-runs `/afk-sprint`
 
 **With `--commit` (default):**
-- Current behavior preserved: coder subagents commit, branches are merged, issues marked done
-- Code review runs on all merged branches
-- Worktrees and branches are cleaned up after merge
+- Current behavior preserved: coder subagent commits, issues marked done
+- Code review runs on all commits
+- Sequential processing: one issue at a time on the current branch
 
 **Second run detection:**
-- When re-running with `--commit` after a `--no-commit` session, the orchestrator detects which branches have been manually committed
-- Only committed branches are merged and marked done
-- Uncommitted worktrees remain intact for further work
+- When re-running after a `--no-commit` session, the orchestrator processes remaining uncommitted issues
+- User can commit between runs to save progress on reviewed changes
+- Partial progress supported: commit some changes, leave others staged for further review
 
 ## Status Definitions
 
