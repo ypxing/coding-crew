@@ -71,6 +71,43 @@ An issue is blocked when its body contains a section like:
 Filenames are resolved relative to the issue's own directory. An issue is blocked only if at least
 one listed file is NOT present in the `done/` subdirectory alongside it.
 
+## Commit Behavior Flags
+
+This skill accepts optional `--commit` or `--no-commit` flags to control whether changes are automatically committed:
+
+```bash
+# Auto-commit (default)
+/afk-sprint
+
+# Explicitly enable auto-commit
+/afk-sprint --commit
+
+# Stage changes but don't commit (for manual review)
+/afk-sprint --no-commit
+```
+
+**Precedence** (highest to lowest):
+1. CLI flags (`--commit` or `--no-commit`) override everything
+2. Config file value at `docs/agents/sprint-config.md` (`auto_commit: yes/no`)
+3. Default: `yes` (auto-commit enabled)
+
+**With `--no-commit`:**
+- Coder subagents stage changes with `git add` but skip commit
+- Merge step is skipped entirely — worktrees stay intact with staged changes
+- Issues are NOT marked done
+- Exit summary lists all worktrees with staged changes, paths, and file counts
+- User reviews with `git diff --staged`, commits manually, then re-runs `/afk-sprint`
+
+**With `--commit` (default):**
+- Current behavior preserved: coder subagents commit, branches are merged, issues marked done
+- Code review runs on all merged branches
+- Worktrees and branches are cleaned up after merge
+
+**Second run detection:**
+- When re-running with `--commit` after a `--no-commit` session, the orchestrator detects which branches have been manually committed
+- Only committed branches are merged and marked done
+- Uncommitted worktrees remain intact for further work
+
 ## Status Definitions
 
 Use exactly one of these in every issue report:
