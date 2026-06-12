@@ -115,27 +115,10 @@ install_skills() {
   local agent_name="$1"
   local skills
   skills=$(jq -r --arg name "$agent_name" '.agents[$name].skills // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-
   local skills_arr=()
   while IFS= read -r _line; do [[ -n "$_line" ]] && skills_arr+=("$_line"); done <<< "$skills"
   for skill in "${skills_arr[@]+"${skills_arr[@]}"}"; do
-    if [[ "$INSTALLED" == *"|skill:$skill|"* ]]; then
-      continue
-    fi
-    INSTALLED="${INSTALLED}|skill:$skill|"
-
-    assert_identifier "$skill" "skill"
-    local skill_dest
-    skill_dest=$(jq -r --arg s "$skill" '.skills[$s].install' "$SCRIPT_DIR/registry.json")
-    assert_safe_path "$skill_dest" "skill install"
-    [[ -d "$SCRIPT_DIR/skills/$skill" ]] || { echo "Error: skill source not found: skills/$skill" >&2; exit 1; }
-    mkdir -p "$REPO_ROOT/$skill_dest"
-    cp -r "$SCRIPT_DIR/skills/$skill/." "$REPO_ROOT/$skill_dest/"
-    echo "  $skill_dest/"
-
-    local skill_version
-    skill_version=$(jq -r --arg s "$skill" '.skills[$s].version // "unknown"' "$SCRIPT_DIR/registry.json")
-    MANIFEST_SKILL_ENTRIES+=("$skill $skill_version")
+    install_single_skill "$skill"
   done
 }
 
@@ -253,21 +236,31 @@ install_single_skill() {
   local skill_name="$1"
   assert_identifier "$skill_name" "skill"
 
-  # Dedup — skip if already installed in this session
-  if [[ "$INSTALLED" == *"|skill:$skill_name|"* ]]; then
+  # For platform=all, fan out to both platforms independently
+  if [[ "$PLATFORM" == "all" ]]; then
+    local saved_platform="$PLATFORM"
+    PLATFORM="claude";  install_single_skill "$skill_name"
+    PLATFORM="copilot"; install_single_skill "$skill_name"
+    PLATFORM="$saved_platform"
     return
   fi
-  INSTALLED="${INSTALLED}|skill:$skill_name|"
 
-  local skill_dest skill_src_primary skill_src_remove
+  # Dedup per platform
+  if [[ "$INSTALLED" == *"|skill:$skill_name:$PLATFORM|"* ]]; then
+    return
+  fi
+  INSTALLED="${INSTALLED}|skill:$skill_name:$PLATFORM|"
+
+  local skill_dest
   if [[ "$PLATFORM" == "copilot" ]]; then
-    skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s]["install-copilot"] // .skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
-    skill_src_primary="copilot.SKILL.md"
-    skill_src_remove="SKILL.md"
+    skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s]["install-copilot"] // empty' "$SCRIPT_DIR/registry.json")
+    if [[ -z "$skill_dest" ]]; then
+      local claude_dest
+      claude_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
+      skill_dest="${claude_dest/.claude\//.copilot/}"
+    fi
   else
     skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
-    skill_src_primary="SKILL.md"
-    skill_src_remove="copilot.SKILL.md"
   fi
   if [[ -z "$skill_dest" ]]; then
     echo "Error: skill '$skill_name' not found in registry.json"
@@ -278,10 +271,13 @@ install_single_skill() {
   [[ -d "$SCRIPT_DIR/skills/$skill_name" ]] || { echo "Error: skill source not found: skills/$skill_name" >&2; exit 1; }
   mkdir -p "$REPO_ROOT/$skill_dest"
   cp -r "$SCRIPT_DIR/skills/$skill_name/." "$REPO_ROOT/$skill_dest/"
-  # Remove the other platform's primary file; rename the active one to SKILL.md
-  rm -f "$REPO_ROOT/$skill_dest/$skill_src_remove"
-  if [[ "$skill_src_primary" != "SKILL.md" && -f "$REPO_ROOT/$skill_dest/$skill_src_primary" ]]; then
-    mv "$REPO_ROOT/$skill_dest/$skill_src_primary" "$REPO_ROOT/$skill_dest/SKILL.md"
+  # Select the right SKILL.md: prefer copilot-specific if present; fall back to generic SKILL.md
+  if [[ "$PLATFORM" == "copilot" && -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" ]]; then
+    rm -f "$REPO_ROOT/$skill_dest/SKILL.md"
+    mv "$REPO_ROOT/$skill_dest/copilot.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
+  else
+    # claude install, or copilot with no platform-specific file — drop the copilot variant
+    rm -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md"
   fi
   echo "  $skill_dest/"
 

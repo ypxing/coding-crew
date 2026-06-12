@@ -32,24 +32,20 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 
 This step is always done — the Makefile reveals how the project works and what env vars are expected.
 
-**b. If `.env` does not exist at `PROJECT_ROOT`:**
+**b-c. Run the env setup script**, passing `--credential-target` only if step a identified a Makefile target for credential config files:
 
-- If `.env.example` exists: `cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"`
-- Otherwise: `touch "$PROJECT_ROOT/.env"`
+```bash
+SKILL_ROOT="${HOME}/.claude/skills/dep-install"
+if [ ! -d "$SKILL_ROOT" ]; then
+  SKILL_ROOT="$MAIN_ROOT/.claude/skills/dep-install"
+fi
+# Without a credential target:
+bash "$SKILL_ROOT/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT"
+# Or, if step a found a credential Makefile target (e.g. ".npmrc"):
+bash "$SKILL_ROOT/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT" --credential-target ".npmrc"
+```
 
-**c. Generate credential config files if the Makefile has a target for them:**
-
-- If a Makefile target generates a package-manager credential config file (identified in step a), run that target:
-  ```bash
-  make -C "$PROJECT_ROOT" <target-name>
-  ```
-- If no Makefile target exists but a `.tpl` file is present (e.g. `.npmrc.tpl`, `pip.conf.tpl`), generate via `envsubst`:
-  ```bash
-  envsubst < "$PROJECT_ROOT/<name>.tpl" > "$PROJECT_ROOT/<name>"
-  ```
-- Skip silently if neither exists.
-
-**d.** Log what was done (e.g. "Created .env from .env.example; generated .npmrc from Makefile target").
+The script prints a one-line log of what it did. It always exits 0 — this step never blocks.
 
 **Never read the contents of `.env*` or any credential config file** — not to log, not to inspect, not to verify.
 
@@ -60,7 +56,11 @@ Always continue to step 1 — this step never blocks. If `docker compose` later 
 Run the generation script. It reads the compose file, detects the ecosystem from manifest files (`package.json`, `pyproject.toml`, etc.), and writes the override deterministically — same repo, same output every run.
 
 ```bash
-bash "$MAIN_ROOT/.claude/skills/dep-install/scripts/gen-override.sh" \
+SKILL_ROOT="${HOME}/.claude/skills/dep-install"
+if [ ! -d "$SKILL_ROOT" ]; then
+  SKILL_ROOT="$MAIN_ROOT/.claude/skills/dep-install"
+fi
+bash "$SKILL_ROOT/scripts/gen-override.sh" \
   --project-root "$PROJECT_ROOT" \
   --main-root "$MAIN_ROOT"
 ```

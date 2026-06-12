@@ -36,7 +36,11 @@ If this prints `RUN_DETECTION`: continue to Step 1.
 Run this script now. It will print either `USE_DOCKER` or `USE_HOST`.
 
 ```bash
-bash "$MAIN_ROOT/.claude/skills/dep-install/scripts/detect-mode.sh" --project-root "$PROJECT_ROOT"
+SKILL_ROOT="${HOME}/.claude/skills/dep-install"
+if [ ! -d "$SKILL_ROOT" ]; then
+  SKILL_ROOT="$MAIN_ROOT/.claude/skills/dep-install"
+fi
+bash "$SKILL_ROOT/scripts/detect-mode.sh" --project-root "$PROJECT_ROOT"
 ```
 
 ## Step 2 — Lock the session mode and follow the install guide

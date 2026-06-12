@@ -3,6 +3,7 @@
 Use this when no `docker-compose.yml`, `docker-compose.yaml`, or `compose.yml` exists at `PROJECT_ROOT`.
 
 `PROJECT_ROOT` and `MAIN_ROOT` are established at session startup by the caller. Each bash tool call runs in a fresh shell — variables do not persist between calls. At the top of every bash call, assign both to their literal values from session startup:
+
 ```bash
 PROJECT_ROOT="/absolute/path/to/worktree"
 MAIN_ROOT="/absolute/path/to/main-checkout"
@@ -16,37 +17,25 @@ Check in order — use the first match, stop as soon as one is found.
 
 Read `$PROJECT_ROOT/CLAUDE.md` if it exists. If it specifies an install command, use that.
 
-### 2. Makefile
+### 2. Script (Makefile target + signal file fallback)
 
-Check `$PROJECT_ROOT/Makefile` for a public `install` or `deps` target. If one exists and its recipe does not invoke `docker compose`, run it:
+If CLAUDE.md did not specify an install command, run the detection script. It checks for a Makefile `install`/`deps` target first, then falls back to signal file detection.
 
 ```bash
-make -C "$PROJECT_ROOT" install
+SKILL_ROOT="${HOME}/.claude/skills/dep-install"
+if [ ! -d "$SKILL_ROOT" ]; then
+  SKILL_ROOT="$MAIN_ROOT/.claude/skills/dep-install"
+fi
+bash "$SKILL_ROOT/scripts/host-install.sh" --project-root "$PROJECT_ROOT"
 ```
 
-### 3. Signal file fallback
-
-No project-specific install found — use the first matching signal file. Run from `$PROJECT_ROOT`.
-
-| Signal file | Install command |
-|---|---|
-| `uv.lock` | `uv sync --frozen` |
-| `bun.lockb` | `bun install --frozen-lockfile` |
-| `pnpm-lock.yaml` | `pnpm install --frozen-lockfile` |
-| `package-lock.json` | `npm ci` |
-| `yarn.lock` | `yarn install --frozen-lockfile` |
-| `poetry.lock` | `poetry install --no-root` |
-| `go.sum` / `go.mod` | `go mod download` |
-| `requirements.txt` | `pip install -r requirements.txt --quiet` |
-| `pyproject.toml` (no lock above) | `pip install --quiet .` |
-| `Gemfile.lock` | `bundle install` |
-| `Cargo.toml` | `cargo fetch` |
-| `composer.json` | `composer install --no-interaction` |
-| `pom.xml` | `mvn dependency:resolve dependency:resolve-plugins -q` |
-| `*.csproj` | `dotnet restore` |
-| `mix.exs` | `mix deps.get` |
+Exit codes:
+- `0` — install ran successfully
+- `2` — no install method found (report blocked)
+- other — install command failed (report blocked with verbatim output)
 
 **Notes:**
+
 - `cargo fetch` downloads sources only. If the project requires compiled proc-macro crates before tests run, also run `cargo build --quiet` after `cargo fetch`.
 - `mvn dependency:resolve-plugins` ensures build and test plugins are available offline when running `mvn test` or `mvn verify`.
 

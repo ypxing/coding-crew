@@ -46,7 +46,7 @@ Two agents live under `agents/`:
 Each agent has platform files directly under `agents/<agent>/`:
 
 - `claude.*` — installed to `.claude/agents/` (agents) or `.claude/skills/` (skills) in the target repo
-- `copilot.*` — installed to `.github/agents/` in the target repo
+- `copilot.*` — installed to `.copilot/agents/` in the target repo
 
 Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, this is replaced inline with the contents of `agents/<agent>/protocol.md` or `agents/<agent>/workflow.js` (whichever exists; `protocol.md` is tried first). The installed file is self-contained. Agents that are single-platform (like `coder`) can put everything in one file with no protocol source.
 

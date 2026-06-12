@@ -9,7 +9,7 @@
       "install": {
         "shims": {
           "claude": ".claude/agents/code-reviewer.md",
-          "copilot": ".github/agents/code-reviewer.agent.md"
+          "copilot": ".copilot/agents/code-reviewer.agent.md"
         }
       }
     },
@@ -22,7 +22,7 @@
       "install": {
         "shims": {
           "claude": ".claude/agents/coder.md",
-          "copilot": ".github/agents/coder.agent.md"
+          "copilot": ".copilot/agents/coder.agent.md"
         }
       }
     }
@@ -32,7 +32,7 @@
       "version": "1.0.0",
       "description": "Orchestrator that spawns parallel coder agents in isolated worktrees, merges completed branches, runs a code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/afk-sprint",
-      "install-copilot": ".github/skills/afk-sprint",
+      "install-copilot": ".copilot/skills/afk-sprint",
       "agent-deps": ["coder", "code-reviewer"],
       "deps": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
       "docs": ["issue-tracker.md", "triage-labels.md"]
