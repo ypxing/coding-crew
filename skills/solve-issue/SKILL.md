@@ -45,6 +45,43 @@ fi
 - **`PROJECT_ROOT`** — where code lives and all commands run.
 - **`MAIN_ROOT`** — main checkout; where `.claude/`, `.scratch/`, and gitignored files live.
 
+## Commit behavior flags
+
+This skill accepts optional `--commit` or `--no-commit` flags to control whether changes are committed:
+
+```bash
+# Commit changes automatically (default)
+/solve-issue .scratch/auth/issues/01-add-logout.md
+
+# Explicitly commit changes
+/solve-issue .scratch/auth/issues/01-add-logout.md --commit
+
+# Stage changes but don't commit (for manual review)
+/solve-issue .scratch/auth/issues/01-add-logout.md --no-commit
+```
+
+**Precedence** (highest to lowest):
+1. CLI flags (`--commit` or `--no-commit`) override everything
+2. Config file value at `docs/agents/sprint-config.md` (`auto_commit: yes/no`)
+3. Default: `yes` (auto-commit enabled)
+
+**With `--no-commit`:**
+- Changes are staged with `git add` but not committed
+- Issue is NOT marked done
+- User reviews with `git diff --staged`, then commits manually
+- Re-run the skill after manual commit to mark the issue done
+
+**Examples:**
+
+```bash
+# Review before committing
+/solve-issue .scratch/auth/issues/01-add-logout.md --no-commit
+# ... skill stages changes ...
+git diff --staged  # review
+git commit -m "Add logout endpoint"
+/solve-issue .scratch/auth/issues/01-add-logout.md  # mark done
+```
+
 ## Steps
 
 ### 0. Pre-flight
@@ -93,16 +130,36 @@ Do not proceed to commit if any check fails or any acceptance criterion from Ste
 
 ### 6. Commit
 
+Parse commit preference using three-level precedence:
+1. Check for `--commit` or `--no-commit` flag in the skill invocation arguments
+2. If no flag present, read `docs/agents/sprint-config.md` at `$MAIN_ROOT/docs/agents/sprint-config.md` for `auto_commit:` value (yes/no)
+3. If no config file exists or value cannot be parsed, default to `yes`
+
+Store the result for use in this step and Step 7.
+
 Before committing, confirm:
 - [ ] Tests were written before implementation (TDD red/green loop completed)
 - [ ] `references/verification.md` was read
 - [ ] Every check listed in `references/verification.md` passed (tests, type-check, lint, or equivalent for this stack)
 
-If there are no staged changes after implementation, verify the issue was already done and report accordingly — do not error.
+If any check failed, do NOT stage or commit. Report status `partial` or `blocked`.
+
+**Always stage modified files:**
 
 Stage only the files you changed — never `git add .` or `git add -A`.
 
-Commit message format:
+```bash
+git add <file1> <file2> ...
+```
+
+If there are no changes to stage (working directory is clean), check if the issue was already implemented and committed. If so, proceed to Step 7 to mark done. If not, report accordingly.
+
+**Conditionally commit:**
+
+- If commit preference is `yes`: proceed with `git commit`
+- If commit preference is `no`: stop after staging; skip commit and proceed to Step 7
+
+Commit message format (when committing):
 ```
 <issue title>
 
@@ -115,6 +172,12 @@ Do not push.
 
 ### 7. Mark done
 
+**Only if work was committed** (commit preference from Step 6 was `yes`, or working directory was already clean because work was previously committed):
+
 Read `docs/agents/issue-tracker.md` (at `$MAIN_ROOT/docs/agents/issue-tracker.md`) and follow its "mark the ticket done" instructions using the issue file path from Step 1.
 
 If the file does not exist, use the default: run `sed -i '' "s/^Status:.*/Status: done/" "<issue-path>"` then `mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"`.
+
+**If work was NOT committed** (commit preference was `no`):
+
+Skip this step entirely. Issue stays at current status and location. User can review staged changes, commit manually, then re-run this skill to mark the issue done.
