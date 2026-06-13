@@ -11,27 +11,16 @@ You are working through the review comments on a GitHub pull request. Follow eve
 ## Usage
 
 ```bash
-/address-pr-comments [PR number or URL] [--commit | --no-commit]
+/address-pr-comments [PR number or URL]
 ```
-
-**Flags:**
-- `--commit` — always commit changes after staging (overrides config file)
-- `--no-commit` — stage changes but skip commit (overrides config file)
-- If no flag: uses `auto_commit` value from `docs/agents/sprint-config.md` (default: yes)
 
 **Examples:**
 ```bash
-# Auto-commit (default)
+# Current branch's PR
 /address-pr-comments
 
-# Review before committing
-/address-pr-comments --no-commit
-
-# Force commit even if config says no
-/address-pr-comments --commit
-
-# Specific PR with no-commit
-/address-pr-comments 123 --no-commit
+# Specific PR by number
+/address-pr-comments 123
 ```
 
 ## Step 0 — Branch safety check
@@ -123,14 +112,7 @@ For each **Actionable** comment (in dependency order — test infrastructure bef
 
 ## Step 5 — Commit
 
-Parse commit preference using three-level precedence:
-1. Check for `--commit` or `--no-commit` flag in the skill invocation arguments
-2. If no flag present, read `docs/agents/sprint-config.md` at `$MAIN_ROOT/docs/agents/sprint-config.md` for `auto_commit:` value (yes/no)
-3. If no config file exists or value cannot be parsed, default to `yes`
-
-Store the result for use in the commit logic below.
-
-**Always stage files touched during Step 4:**
+**Stage files touched during Step 4:**
 
 Stage only the files you changed — never `git add -A`.
 
@@ -138,12 +120,9 @@ Stage only the files you changed — never `git add -A`.
 git add <file1> <file2> ...
 ```
 
-**Conditionally commit:**
+**Commit:**
 
-- If commit preference is `yes`: create commit
-- If commit preference is `no`: stop after staging; skip commit and proceed to Step 6
-
-Commit message format (when committing):
+Commit message format:
 ```
 address PR review comments
 

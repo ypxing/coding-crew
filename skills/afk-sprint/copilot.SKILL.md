@@ -73,43 +73,6 @@ An issue is blocked when its body contains a section like:
 Filenames are resolved relative to the issue's own directory. An issue is blocked only if at least
 one listed file is NOT present in the `done/` subdirectory alongside it.
 
-## Commit Behavior Flags
-
-This skill accepts optional `--commit` or `--no-commit` flags to control whether changes are automatically committed:
-
-```bash
-# Auto-commit (default)
-/afk-sprint
-
-# Explicitly enable auto-commit
-/afk-sprint --commit
-
-# Stage changes but don't commit (for manual review)
-/afk-sprint --no-commit
-```
-
-**Precedence** (highest to lowest):
-1. CLI flags (`--commit` or `--no-commit`) override everything
-2. Config file value at `docs/agents/sprint-config.md` (`auto_commit: yes/no`)
-3. Default: `yes` (auto-commit enabled)
-
-**With `--no-commit`:**
-- Coder subagent stages changes with `git add` but skips commit
-- Issues are processed sequentially on the current branch (no parallel execution)
-- Issues are NOT marked done
-- Exit summary lists all issues with staged changes and file counts
-- User reviews with `git diff --staged`, commits manually, then re-runs `/afk-sprint`
-
-**With `--commit` (default):**
-- Current behavior preserved: coder subagent commits, issues marked done
-- Code review runs on all commits
-- Sequential processing: one issue at a time on the current branch
-
-**Second run detection:**
-- When re-running after a `--no-commit` session, the orchestrator processes remaining uncommitted issues
-- User can commit between runs to save progress on reviewed changes
-- Partial progress supported: commit some changes, leave others staged for further review
-
 ## Status Definitions
 
 Use exactly one of these in every issue report:
