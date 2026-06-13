@@ -65,7 +65,7 @@ else
 fi
 
 # Pass JIRA flag if provided in invocation
-bash "$PLATFORM_DIR/skills/_shared/scripts/feature-branch-setup.sh" "$ISSUE_PATH" "$@"
+bash "$PLATFORM_DIR/skills/shared-scripts/scripts/feature-branch-setup.sh" "$ISSUE_PATH" "$@"
 ```
 
 The script will:
@@ -147,7 +147,7 @@ DETAILS="- <key decision or tradeoff line 1>
 
 # Commit with prefix and co-author if provided
 if [ -n "$COAUTHOR_TRAILER" ]; then
-  bash "$PLATFORM_DIR/skills/_shared/scripts/commit-changes.sh" \
+  bash "$PLATFORM_DIR/skills/shared-scripts/scripts/commit-changes.sh" \
     --prefix "[$ISSUE_SLUG]" \
     --message "$ISSUE_TITLE${DETAILS:+
 
@@ -155,7 +155,7 @@ $DETAILS}" \
     --files "$CHANGED_FILES" \
     --coauthor "$COAUTHOR_TRAILER"
 else
-  bash "$PLATFORM_DIR/skills/_shared/scripts/commit-changes.sh" \
+  bash "$PLATFORM_DIR/skills/shared-scripts/scripts/commit-changes.sh" \
     --prefix "[$ISSUE_SLUG]" \
     --message "$ISSUE_TITLE${DETAILS:+
 

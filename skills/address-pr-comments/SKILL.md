@@ -40,7 +40,7 @@ else
   exit 1
 fi
 
-bash "$PLATFORM_DIR/skills/_shared/scripts/branch-safety-check.sh"
+bash "$PLATFORM_DIR/skills/shared-scripts/scripts/branch-safety-check.sh"
 ```
 
 If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
@@ -124,7 +124,7 @@ COMMIT_BODY="address PR review comments
 - <what changed for comment N and why>"
 
 # Commit with co-author
-bash "$PLATFORM_DIR/skills/_shared/scripts/commit-changes.sh" \
+bash "$PLATFORM_DIR/skills/shared-scripts/scripts/commit-changes.sh" \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
   --coauthor "Claude <noreply@anthropic.com>"

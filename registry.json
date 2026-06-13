@@ -34,7 +34,7 @@
       "install": ".claude/skills/afk-sprint",
       "install-copilot": ".copilot/skills/afk-sprint",
       "agent-deps": ["coder", "code-reviewer"],
-      "deps": ["_shared", "karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
+      "deps": ["shared-scripts", "karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
       "docs": ["issue-tracker.md", "triage-labels.md"]
     },
     "karpathy-guidelines": {
@@ -58,19 +58,19 @@
       "version": "1.0.0",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
-      "deps": ["_shared", "dep-install", "tdd", "karpathy-guidelines"]
+      "deps": ["shared-scripts", "dep-install", "tdd", "karpathy-guidelines"]
     },
     "address-code-review": {
       "version": "1.0.0",
       "description": "Triage and fix findings from an afk-sprint code review report using TDD.",
       "install": ".claude/skills/address-code-review",
-      "deps": ["_shared", "dep-install", "tdd"]
+      "deps": ["shared-scripts", "dep-install", "tdd"]
     },
     "address-pr-comments": {
       "version": "1.0.0",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "install": ".claude/skills/address-pr-comments",
-      "deps": ["_shared", "dep-install", "tdd"]
+      "deps": ["shared-scripts", "dep-install", "tdd"]
     },
     "improve-codebase-architecture": {
       "version": "1.0.0",
@@ -114,11 +114,11 @@
       "source": "JuliusBrussee/caveman",
       "install": ".claude/skills/caveman"
     },
-    "_shared": {
+    "shared-scripts": {
       "version": "1.0.0",
       "description": "Shared scripts library used by multiple skills (branch safety, feature branch setup, commit changes). Infrastructure skill - not invoked directly by users.",
-      "install": ".claude/skills/_shared",
-      "install-copilot": ".copilot/skills/_shared"
+      "install": ".claude/skills/shared-scripts",
+      "install-copilot": ".copilot/skills/shared-scripts"
     }
   },
   "docs": {

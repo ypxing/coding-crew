@@ -10,7 +10,7 @@ This directory contains reusable shell scripts that are shared across multiple s
 
 **Usage**:
 ```bash
-bash skills/_shared/scripts/branch-safety-check.sh [--allow-default]
+bash skills/shared-scripts/scripts/branch-safety-check.sh [--allow-default]
 ```
 
 **Arguments**:
@@ -27,10 +27,10 @@ bash skills/_shared/scripts/branch-safety-check.sh [--allow-default]
 **Example**:
 ```bash
 # Enforce non-default branch
-bash skills/_shared/scripts/branch-safety-check.sh
+bash skills/shared-scripts/scripts/branch-safety-check.sh
 
 # Allow default branch with warning
-bash skills/_shared/scripts/branch-safety-check.sh --allow-default
+bash skills/shared-scripts/scripts/branch-safety-check.sh --allow-default
 ```
 
 ---
@@ -41,7 +41,7 @@ bash skills/_shared/scripts/branch-safety-check.sh --allow-default
 
 **Usage**:
 ```bash
-bash skills/_shared/scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-123]
+bash skills/shared-scripts/scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-123]
 ```
 
 **Arguments**:
@@ -62,10 +62,10 @@ bash skills/_shared/scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-
 **Example**:
 ```bash
 # Simple feature branch
-bash skills/_shared/scripts/feature-branch-setup.sh .scratch/auth/issues/01-add-logout.md
+bash skills/shared-scripts/scripts/feature-branch-setup.sh .scratch/auth/issues/01-add-logout.md
 
 # With JIRA ticket
-bash skills/_shared/scripts/feature-branch-setup.sh .scratch/auth/issues/01-add-logout.md --jira PROJ-456
+bash skills/shared-scripts/scripts/feature-branch-setup.sh .scratch/auth/issues/01-add-logout.md --jira PROJ-456
 # Creates: feature/PROJ-456-add-logout
 ```
 
@@ -77,7 +77,7 @@ bash skills/_shared/scripts/feature-branch-setup.sh .scratch/auth/issues/01-add-
 
 **Usage**:
 ```bash
-bash skills/_shared/scripts/commit-changes.sh \
+bash skills/shared-scripts/scripts/commit-changes.sh \
   --message "msg" \
   --files "file1 file2 file3" \
   [--coauthor "Name <email>"] \
@@ -106,12 +106,12 @@ bash skills/_shared/scripts/commit-changes.sh \
 **Example**:
 ```bash
 # Simple commit
-bash skills/_shared/scripts/commit-changes.sh \
+bash skills/shared-scripts/scripts/commit-changes.sh \
   --message "Fix authentication bug" \
   --files "src/auth.ts test/auth.test.ts"
 
 # With issue prefix and co-author
-bash skills/_shared/scripts/commit-changes.sh \
+bash skills/shared-scripts/scripts/commit-changes.sh \
   --prefix "[01-auth]" \
   --message "Add logout endpoint" \
   --files "src/api/auth.ts test/api/auth.test.ts" \
@@ -125,16 +125,16 @@ bash skills/_shared/scripts/commit-changes.sh \
 ### Skills to Update
 
 1. **`solve-issue/SKILL.md`**
-   - Step 0: Replace lines 50-86 with `bash skills/_shared/scripts/feature-branch-setup.sh "$ISSUE_PATH"`
-   - Step 6: Replace lines 144-172 with `bash skills/_shared/scripts/commit-changes.sh ...`
+   - Step 0: Replace lines 50-86 with `bash skills/shared-scripts/scripts/feature-branch-setup.sh "$ISSUE_PATH"`
+   - Step 6: Replace lines 144-172 with `bash skills/shared-scripts/scripts/commit-changes.sh ...`
 
 2. **`address-pr-comments/SKILL.md`**
-   - Step 0: Replace lines 26-45 with `bash skills/_shared/scripts/branch-safety-check.sh`
-   - Step 5: Replace lines 116-134 with `bash skills/_shared/scripts/commit-changes.sh ...`
+   - Step 0: Replace lines 26-45 with `bash skills/shared-scripts/scripts/branch-safety-check.sh`
+   - Step 5: Replace lines 116-134 with `bash skills/shared-scripts/scripts/commit-changes.sh ...`
 
 3. **`address-code-review/SKILL.md`**
-   - Step 0: Replace lines 23-37 with `bash skills/_shared/scripts/branch-safety-check.sh`
-   - Step 5: Replace lines 102-122 with `bash skills/_shared/scripts/commit-changes.sh ...`
+   - Step 0: Replace lines 23-37 with `bash skills/shared-scripts/scripts/branch-safety-check.sh`
+   - Step 5: Replace lines 102-122 with `bash skills/shared-scripts/scripts/commit-changes.sh ...`
 
 ### Benefits
 
@@ -150,7 +150,7 @@ When installing skills via `install.sh`, the `_shared/` directory should be copi
 
 ```bash
 # In install.sh
-cp -r skills/_shared "$TARGET_REPO/skills/_shared"
+cp -r skills/shared-scripts "$TARGET_REPO/skills/shared-scripts"
 ```
 
 ---
@@ -172,17 +172,17 @@ When modifying these scripts:
 # Branch safety check
 cd /path/to/repo
 git checkout main
-bash skills/_shared/scripts/branch-safety-check.sh  # should error
+bash skills/shared-scripts/scripts/branch-safety-check.sh  # should error
 git checkout feature/test
-bash skills/_shared/scripts/branch-safety-check.sh  # should succeed
+bash skills/shared-scripts/scripts/branch-safety-check.sh  # should succeed
 
 # Feature branch setup
-bash skills/_shared/scripts/feature-branch-setup.sh .scratch/test/issues/01-test.md
+bash skills/shared-scripts/scripts/feature-branch-setup.sh .scratch/test/issues/01-test.md
 git branch | grep "feature/test"
 
 # Commit changes
 echo "test" > test.txt
-bash skills/_shared/scripts/commit-changes.sh \
+bash skills/shared-scripts/scripts/commit-changes.sh \
   --message "Test commit" \
   --files "test.txt"
 git log -1

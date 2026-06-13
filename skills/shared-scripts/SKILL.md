@@ -1,5 +1,5 @@
 ---
-name: _shared
+name: shared-scripts
 description: >
   Shared scripts library used by multiple skills (branch safety, feature branch setup, commit changes).
   This is infrastructure - not invoked directly by users.
@@ -25,7 +25,7 @@ Supports optional prefixes and co-authors.
 
 ## Usage
 
-Skills that depend on `_shared` should use platform detection:
+Skills that depend on `shared-scripts` should use platform detection:
 
 ```bash
 # Auto-detect platform directory
@@ -39,7 +39,7 @@ else
 fi
 
 # Call shared scripts
-bash "$PLATFORM_DIR/skills/_shared/scripts/feature-branch-setup.sh" "$@"
+bash "$PLATFORM_DIR/skills/shared-scripts/scripts/feature-branch-setup.sh" "$@"
 ```
 
 ## See Also
