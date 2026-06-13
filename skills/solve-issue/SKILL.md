@@ -169,6 +169,12 @@ Do not push.
 
 ### 7. Mark done
 
-Read `docs/agents/issue-tracker.md` (at `$MAIN_ROOT/docs/agents/issue-tracker.md`) and follow its "mark the ticket done" instructions using the issue file path from Step 1.
+Before moving, verify all acceptance criteria in the issue file are satisfied:
 
-If the file does not exist, use the default: run `sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"` then `mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"`.
+1. Check each `- [ ]` criterion against the implemented code.
+2. If all are met, check them off (`- [x]`) and move the file to done:
+   ```bash
+   sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
+   mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"
+   ```
+3. If any are unmet, do NOT move the file. Instead, add a `## Unmet criteria` section explaining what's missing and why (descoped, blocked, moved to a new issue), and ask the user how to proceed.

@@ -28,15 +28,10 @@ returns a structured report. You process its report, do housekeeping, and loop.
 - **Blocked issue**: its `## Blocked by` section names an issue not yet in `done/`.
 - **Unblocked issue**: no `## Blocked by` section, or all listed dependencies are in `done/`.
 
-## Issue Tracker
+## Issue Tracker Conventions
 
-If `docs/agents/issue-tracker.md` exists, read it first — the project may override the defaults
-below. If `docs/agents/triage-labels.md` exists, read it for custom label strings. Otherwise use
-these defaults:
+Issues live as local markdown files in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`:
 
-### Default conventions
-
-- Issues live as markdown files under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
 - Triage state is a `Status:` line near the top of each issue
 - To **list open issues**: find all `.md` files under `.scratch/*/issues/` that are NOT in a
   `done/` subdirectory — this yields file paths only; content is fetched separately
@@ -47,17 +42,18 @@ these defaults:
   mkdir -p "$(dirname <path>)/done" && mv "<path>" "$(dirname <path>)/done/"
   ```
 
-### Default triage labels
+### Triage Labels
 
-| Label             | Meaning                              |
-| ----------------- | ------------------------------------ |
-| `needs-triage`    | Maintainer needs to evaluate         |
-| `needs-info`      | Waiting on reporter                  |
-| `ready-for-agent` | Fully specified, ready for AFK agent |
-| `ready-for-human` | Requires human implementation        |
-| `wontfix`         | Will not be actioned                 |
+| Label             | Meaning                                  |
+| ----------------- | ---------------------------------------- |
+| `needs-triage`    | Maintainer needs to evaluate this issue  |
+| `needs-info`      | Waiting on reporter for more information |
+| `ready-for-agent` | Fully specified, ready for an AFK agent  |
+| `ready-for-human` | Requires human implementation            |
+| `wontfix`         | Will not be actioned                     |
+| `done`            | Issue is complete and closed             |
 
-### Default "Blocked by" format
+### "Blocked by" format
 
 An issue is blocked when its body contains a section like:
 
@@ -130,9 +126,7 @@ The script will:
 **Initialize a round counter on first entry: `round = 1`. Increment by 1 at the top of every
 subsequent iteration before doing anything else.**
 
-Read `docs/agents/issue-tracker.md` if it exists (issue tracker overrides). List all open issue
-paths (paths only), then read each file. Classify each as unblocked or blocked. Skip anything not
-`ready-for-agent`.
+List all open issue paths (paths only) using the conventions above, then read each file. Classify each as unblocked or blocked. Skip anything not `ready-for-agent`.
 
 If there are no unblocked ready issues, print `NO MORE TASKS` and stop.
 
@@ -178,8 +172,6 @@ must happen before the move so the listing agent won't re-pick the issue if the 
 sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
 mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"
 ```
-
-If `docs/agents/issue-tracker.md` exists, use its convention instead.
 
 **`Status: partial`** — write or replace the `## Progress` section in the issue file with notes on
 what was done and what remains. If a `## Progress` section already exists, replace it entirely —

@@ -7,7 +7,27 @@ description: Break a plan, spec, or PRD into independently-grabbable issues on t
 
 Break a plan into independently-grabbable issues using vertical slices (tracer bullets).
 
-Issues live as local markdown files — see `docs/agents/issue-tracker.md` for the file layout and `docs/agents/triage-labels.md` for valid status strings.
+## Issue Tracker Conventions
+
+Issues live as local markdown files in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`:
+
+- One feature per directory: `.scratch/<feature-slug>/`
+- The PRD is `.scratch/<feature-slug>/PRD.md`
+- Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
+- Triage state is recorded as a `Status:` line near the top of each issue file
+- Comments and conversation history append to the bottom under a `## Comments` heading
+- Done issues are moved to `.scratch/<feature-slug>/issues/done/`
+
+### Triage Labels
+
+| Label             | Meaning                                  |
+| ----------------- | ---------------------------------------- |
+| `needs-triage`    | Maintainer needs to evaluate this issue  |
+| `needs-info`      | Waiting on reporter for more information |
+| `ready-for-agent` | Fully specified, ready for an AFK agent  |
+| `ready-for-human` | Requires human implementation            |
+| `wontfix`         | Will not be actioned                     |
+| `done`            | Issue is complete and closed             |
 
 ## Process
 
@@ -70,11 +90,12 @@ Iterate until the user approves the breakdown.
 ### 6. Write the issues to local markdown
 
 **Re-run handling**: Before writing, check if `.scratch/<feature-slug>/issues/` already contains issue files.
+
 - If it does and a `done/` subdirectory exists with files in it, **stop** — tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
 - If it does but no issues are done (no `done/` subdirectory or it's empty), list the existing files, warn the user they'll be overwritten, and ask for confirmation before proceeding.
 - If the directory doesn't exist or is empty, proceed normally.
 
-For each approved slice, create a new markdown file under `.scratch/<feature-slug>/issues/<NN>-<slug>.md` (see `docs/agents/issue-tracker.md`). Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
+For each approved slice, create a new markdown file under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
 
 Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field.
 

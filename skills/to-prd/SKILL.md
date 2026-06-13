@@ -7,7 +7,14 @@ Synthesize the current conversation context into a PRD. Do not ask discovery que
 something is unclear, state your assumption. Do confirm technical choices (seams, contracts) with
 the user before writing the final document.
 
-Issues live as local markdown files — see `docs/agents/issue-tracker.md` for the file layout and `docs/agents/triage-labels.md` for valid status strings.
+## Issue Tracker Conventions
+
+Issues live as local markdown files in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`:
+
+- One feature per directory: `.scratch/<feature-slug>/`
+- The PRD is `.scratch/<feature-slug>/PRD.md`
+- Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
+- Done issues are moved to `.scratch/<feature-slug>/issues/done/`
 
 ## Process
 

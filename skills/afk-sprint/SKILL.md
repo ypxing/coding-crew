@@ -43,13 +43,26 @@ The script will:
 - Save session-start SHA for code review
 - Create sprint state file to track base SHA per branch
 
-## Defaults
+## Issue Tracker Conventions
 
-Read `docs/agents/issue-tracker.md` and `docs/agents/triage-labels.md` first — they may override these.
+Issues live as local markdown files in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`:
 
 - **Issue files**: `.scratch/*/issues/*.md`, skipping any inside `done/`
-- **Ready**: `Status: ready-for-agent`
+- **Triage state**: `Status:` line near the top of each issue
+- **Ready**: `Status: ready-for-agent` — fully specified, no human input needed
 - **Blocked**: has `## Blocked by` section where any listed filename is NOT present in the same `done/` directory
+- **Done**: moved to `.scratch/<feature-slug>/issues/done/`
+
+### Triage Labels
+
+| Label             | Meaning                                  |
+| ----------------- | ---------------------------------------- |
+| `needs-triage`    | Maintainer needs to evaluate this issue  |
+| `needs-info`      | Waiting on reporter for more information |
+| `ready-for-agent` | Fully specified, ready for an AFK agent  |
+| `ready-for-human` | Requires human implementation            |
+| `wontfix`         | Will not be actioned                     |
+| `done`            | Issue is complete and closed             |
 
 ## Loop
 
@@ -138,8 +151,6 @@ Spawn the following two haiku Agents **in a single response** (parallel):
 sed -i'' "s/^Status:.*/Status: done/" "<path>"
 mkdir -p "$(dirname <path>)/done" && mv "<path>" "$(dirname <path>)/done/"
 ```
-
-Use `docs/agents/issue-tracker.md` convention if it exists.
 
 **Agent B — Update partial/blocked files**:
 

@@ -21,13 +21,11 @@ MANIFEST_SKILL_ENTRIES=()  # each entry: "name version"
 usage() {
   echo "Usage: ./install.sh [platform] [agent]"
   echo "       ./install.sh [platform] --skill <skill-name>"
-  echo "       ./install.sh [platform] --doc <doc-name>"
   echo "       ./install.sh --update"
   echo ""
   echo "  platform: all (default), claude, copilot"
   echo "  agent:    all (default), code-reviewer, coder"
   echo "  --skill:  install a standalone skill (e.g. to-issues, grill-me)"
-  echo "  --doc:    install a standalone doc (e.g. issue-tracker.md)"
   echo "  --update: re-install only agents/skills whose version changed since last install"
   echo ""
   echo "Examples:"
@@ -35,14 +33,10 @@ usage() {
   echo "  ./install.sh claude --skill afk-sprint   # afk-sprint skill + coder + code-reviewer"
   echo "  ./install.sh copilot --skill afk-sprint  # afk-sprint (copilot variant) + agents"
   echo "  ./install.sh claude --skill to-issues  # install just the to-issues skill"
-  echo "  ./install.sh claude --doc issue-tracker.md   # install just the issue-tracker doc"
   echo "  ./install.sh --update               # update all installed agents/skills"
   echo ""
   echo "Available skills:"
   echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
-  echo ""
-  echo "Available docs:"
-  echo "  $(jq -r '.docs | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
   echo ""
   echo "Set TARGET_REPO to install into a different repo root."
   exit 1
@@ -59,7 +53,7 @@ done
 
 # ── Input validation ───────────────────────────────────────────────────────────
 if [[ "$UPDATE_MODE" == "false" ]]; then
-  if [[ "${1:-}" == "--skill" || "${1:-}" == "--doc" ]]; then
+  if [[ "${1:-}" == "--skill" ]]; then
     echo "Error: platform argument required before flag (e.g. ./install.sh claude --skill to-issues)" >&2
     usage
   fi
@@ -89,26 +83,6 @@ assert_identifier() {
     echo "Error: invalid $label name '$val' — must match [a-zA-Z0-9_.-]+" >&2
     exit 1
   fi
-}
-
-install_docs() {
-  local agent_name="$1"
-  local docs
-  docs=$(jq -r --arg name "$agent_name" '.agents[$name].docs // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-
-  mkdir -p "$REPO_ROOT/docs/agents"
-  local docs_arr=()
-  while IFS= read -r _line; do [[ -n "$_line" ]] && docs_arr+=("$_line"); done <<< "$docs"
-  for doc in "${docs_arr[@]+"${docs_arr[@]}"}"; do
-    assert_identifier "$doc" "doc"
-    [[ -f "$SCRIPT_DIR/docs/agents/$doc" ]] || { echo "Error: doc source not found: docs/agents/$doc" >&2; exit 1; }
-    if [[ ! -f "$REPO_ROOT/docs/agents/$doc" ]]; then
-      cp "$SCRIPT_DIR/docs/agents/$doc" "$REPO_ROOT/docs/agents/$doc"
-      echo "  docs/agents/$doc"
-    else
-      echo "  docs/agents/$doc (skipped — already exists)"
-    fi
-  done
 }
 
 install_skills() {
@@ -146,7 +120,6 @@ install_agent() {
   echo "Installing $agent_name ($platform)..."
 
   install_skills "$agent_name"
-  install_docs "$agent_name"
 
   # Locate protocol source for {{PROTOCOL}} expansion (protocol.md tried first, then workflow.js)
   local protocol_file=""
@@ -327,42 +300,6 @@ echo "  $skill_dest/"
   for dep in "${agent_deps_arr[@]+"${agent_deps_arr[@]}"}"; do
     install_agent "$dep" "$PLATFORM"
   done
-
-  # Install docs declared on the skill
-  local skill_docs
-  skill_docs=$(jq -r --arg s "$skill_name" '.skills[$s].docs // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  local skill_docs_arr=()
-  while IFS= read -r _line; do [[ -n "$_line" ]] && skill_docs_arr+=("$_line"); done <<< "$skill_docs"
-  if [[ "${#skill_docs_arr[@]}" -gt 0 ]]; then
-    mkdir -p "$REPO_ROOT/docs/agents"
-    for doc in "${skill_docs_arr[@]}"; do
-      assert_identifier "$doc" "doc"
-      [[ -f "$SCRIPT_DIR/docs/agents/$doc" ]] || { echo "Error: doc source not found: docs/agents/$doc" >&2; exit 1; }
-      if [[ ! -f "$REPO_ROOT/docs/agents/$doc" ]]; then
-        cp "$SCRIPT_DIR/docs/agents/$doc" "$REPO_ROOT/docs/agents/$doc"
-        echo "  docs/agents/$doc"
-      else
-        echo "  docs/agents/$doc (skipped — already exists)"
-      fi
-    done
-  fi
-}
-
-install_single_doc() {
-  local doc_name="$1"
-  assert_identifier "$doc_name" "doc"
-  local doc_dest
-  doc_dest=$(jq -r --arg d "$doc_name" '.docs[$d].install // empty' "$SCRIPT_DIR/registry.json")
-  if [[ -z "$doc_dest" ]]; then
-    echo "Error: doc '$doc_name' not found in registry.json"
-    echo "Available docs: $(jq -r '.docs | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
-    exit 1
-  fi
-  assert_safe_path "$doc_dest" "doc install"
-  [[ -f "$SCRIPT_DIR/docs/agents/$doc_name" ]] || { echo "Error: doc source not found: docs/agents/$doc_name" >&2; exit 1; }
-  mkdir -p "$(dirname "$REPO_ROOT/$doc_dest")"
-  cp "$SCRIPT_DIR/docs/agents/$doc_name" "$REPO_ROOT/$doc_dest"
-  echo "  $doc_dest"
 }
 
 write_manifest() {
@@ -497,18 +434,6 @@ if [[ "$AGENT" == "--skill" ]]; then
   echo "Skill: $SKILL_NAME"
   echo "---"
   install_single_skill "$SKILL_NAME"
-elif [[ "$AGENT" == "--doc" ]]; then
-  DOC_NAME="${3:-}"
-  if [[ -z "$DOC_NAME" ]]; then
-    echo "Error: --doc requires a doc name"
-    usage
-  fi
-  echo "Doc: $DOC_NAME"
-  echo "---"
-  install_single_doc "$DOC_NAME"
-  echo "---"
-  echo "Done."
-  exit 0
 elif [[ "$AGENT" == "all" ]]; then
   echo "Agent: $AGENT"
   echo "---"
