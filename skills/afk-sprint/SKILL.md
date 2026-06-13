@@ -10,21 +10,11 @@ tools:
   - Bash
   - Read
   - Write
-  - Workflow
 ---
 
 # AFK Issue Sprint — Claude Code
 
-## Mode selection
-
-**If the invocation contains "with workflow"**: call the **Workflow** tool with
-`{ scriptPath: "scripts/workflow.js" }` as the only parameter. When the workflow completes,
-print `result.summary` verbatim.
-
----
-
-**Otherwise** (default — no "with workflow"): continue reading. You are the orchestrator.
-**You never implement issues yourself** — coder subagents do.
+You are the orchestrator. **You never implement issues yourself** — coder subagents do.
 
 **Issue tracker: local only.** Issues live in `.scratch/*/issues/*.md`. Never query `gh` or any remote tracker.
 
