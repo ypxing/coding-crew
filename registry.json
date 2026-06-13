@@ -34,7 +34,7 @@
       "install": ".claude/skills/afk-sprint",
       "install-copilot": ".copilot/skills/afk-sprint",
       "agent-deps": ["coder", "code-reviewer"],
-      "deps": ["shared-scripts", "karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
+      "deps": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
       "docs": ["issue-tracker.md", "triage-labels.md"]
     },
     "karpathy-guidelines": {
@@ -58,19 +58,22 @@
       "version": "1.0.0",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
-      "deps": ["shared-scripts", "dep-install", "tdd", "karpathy-guidelines"]
+      "scripts": ["feature-branch-setup.sh", "commit-changes.sh"],
+      "deps": ["dep-install", "tdd", "karpathy-guidelines"]
     },
     "address-code-review": {
       "version": "1.0.0",
       "description": "Triage and fix findings from an afk-sprint code review report using TDD.",
       "install": ".claude/skills/address-code-review",
-      "deps": ["shared-scripts", "dep-install", "tdd"]
+      "scripts": ["branch-safety-check.sh", "commit-changes.sh"],
+      "deps": ["dep-install", "tdd"]
     },
     "address-pr-comments": {
       "version": "1.0.0",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "install": ".claude/skills/address-pr-comments",
-      "deps": ["shared-scripts", "dep-install", "tdd"]
+      "scripts": ["branch-safety-check.sh", "commit-changes.sh"],
+      "deps": ["dep-install", "tdd"]
     },
     "improve-codebase-architecture": {
       "version": "1.0.0",

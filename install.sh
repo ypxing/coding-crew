@@ -281,6 +281,25 @@ install_single_skill() {
   fi
   echo "  $skill_dest/"
 
+  # Copy scripts from shared-scripts if this skill declares any
+  local scripts
+  scripts=$(jq -r --arg s "$skill_name" '.skills[$s].scripts // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  local scripts_arr=()
+  while IFS= read -r _line; do [[ -n "$_line" ]] && scripts_arr+=("$_line"); done <<< "$scripts"
+  if [[ "${#scripts_arr[@]}" -gt 0 ]]; then
+    mkdir -p "$REPO_ROOT/$skill_dest/scripts"
+    for script in "${scripts_arr[@]}"; do
+      local script_src="$SCRIPT_DIR/skills/shared-scripts/scripts/$script"
+      if [[ ! -f "$script_src" ]]; then
+        echo "Error: script source not found: skills/shared-scripts/scripts/$script" >&2
+        exit 1
+      fi
+      cp "$script_src" "$REPO_ROOT/$skill_dest/scripts/$script"
+      chmod +x "$REPO_ROOT/$skill_dest/scripts/$script"
+    done
+    echo "  $skill_dest/scripts/ (${#scripts_arr[@]} scripts from shared-scripts)"
+  fi
+
   local skill_version
   skill_version=$(jq -r --arg s "$skill_name" '.skills[$s].version // "unknown"' "$SCRIPT_DIR/registry.json")
   MANIFEST_SKILL_ENTRIES+=("$skill_name $skill_version")

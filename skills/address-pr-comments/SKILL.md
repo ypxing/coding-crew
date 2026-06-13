@@ -25,22 +25,24 @@ You are working through the review comments on a GitHub pull request. Follow eve
 
 ## Step 0 — Branch safety check
 
+**Note:** The `scripts/branch-safety-check.sh` file is copied into this skill during installation from the central `shared-scripts` library. It won't exist in the repo until `install.sh` runs.
+
 **Check current branch:**
 
 This skill works on existing PR branches. Do not run on the default branch.
 
 ```bash
-# Auto-detect platform directory
-if [ -d ".claude" ]; then
-  PLATFORM_DIR=".claude"
-elif [ -d ".copilot" ]; then
-  PLATFORM_DIR=".copilot"
-else
-  echo "Error: No .claude or .copilot directory found" >&2
-  exit 1
-fi
+# branch-safety-check.sh - copied during installation from shared-scripts
+# Source: skills/shared-scripts/scripts/branch-safety-check.sh
+#
+# Purpose: Validate that the current branch is safe for operations (not on default branch)
+# Usage: bash scripts/branch-safety-check.sh [--allow-default]
+#
+# Exit codes:
+#   0 - Safe to proceed
+#   1 - On default branch and not allowed
 
-bash "$PLATFORM_DIR/skills/shared-scripts/scripts/branch-safety-check.sh"
+bash scripts/branch-safety-check.sh
 ```
 
 If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
@@ -123,8 +125,16 @@ COMMIT_BODY="address PR review comments
 - <what changed for comment 2 and why>
 - <what changed for comment N and why>"
 
+# commit-changes.sh - copied during installation from shared-scripts
+# Source: skills/shared-scripts/scripts/commit-changes.sh
+#
+# Purpose: Stage specific files and commit with standardized message format
+# Usage: bash scripts/commit-changes.sh --message "msg" --files "file1 file2" [--coauthor "Name <email>"] [--prefix "[slug]"]
+#
+# Safety: Never uses git add -A or git add . - only stages explicitly listed files
+
 # Commit with co-author
-bash "$PLATFORM_DIR/skills/shared-scripts/scripts/commit-changes.sh" \
+bash scripts/commit-changes.sh \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
   --coauthor "Claude <noreply@anthropic.com>"

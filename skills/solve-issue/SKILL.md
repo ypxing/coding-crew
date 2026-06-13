@@ -4,6 +4,7 @@ description: >
   Implement a single issue end-to-end: read it, explore context, install deps, build with TDD,
   verify checks, and commit. Platform-agnostic — works in worktrees or branches.
 argument-hint: "Path to issue file (e.g. .scratch/auth/issues/01-add-logout.md)"
+user-invocable: false
 ---
 
 # Solve Issue
@@ -24,6 +25,7 @@ Do not attempt workarounds. Do not proceed.
 ## Inputs
 
 The caller provides one of:
+
 - A **file path** — read the issue from that path.
 - **Issue content** inline — use it directly.
 
@@ -43,35 +45,35 @@ fi
 ```
 
 - **`PROJECT_ROOT`** — where code lives and all commands run.
-- **`MAIN_ROOT`** — main checkout; where `.claude/`, `.scratch/`, and gitignored files live.
+- **`MAIN_ROOT`** — main checkout; where `.scratch/` and gitignored files live.
 
 ## Steps
 
 ### 0. Feature Branch Setup
 
-Use the shared feature branch setup script. Parse optional `--jira` flag from invocation arguments (if present, format is `--jira TICKET-123`).
+**Note:** The `scripts/feature-branch-setup.sh` file is copied into this skill during installation from the central `shared-scripts` library. It won't exist in the repo until `install.sh` runs.
 
-**Security note**: The JIRA ticket format is validated by the script using regex `[A-Z]+-[0-9]+` which only matches uppercase letters followed by dash and digits. Invalid formats are rejected automatically.
+Use the feature branch setup script. Parse optional `--jira` flag from invocation arguments (if present, format is `--jira TICKET-123`).
 
 ```bash
-# Auto-detect platform directory
-if [ -d ".claude" ]; then
-  PLATFORM_DIR=".claude"
-elif [ -d ".copilot" ]; then
-  PLATFORM_DIR=".copilot"
-else
-  echo "Error: No .claude or .copilot directory found" >&2
-  exit 1
-fi
+# feature-branch-setup.sh - copied during installation from shared-scripts
+# Source: skills/shared-scripts/scripts/feature-branch-setup.sh
+# 
+# Purpose: Create or switch to a feature branch based on issue slug
+# Usage: bash scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-123]
+# 
+# Arguments:
+#   <issue-path>       - Path to the issue markdown file
+#   --jira TICKET-123  - Optional JIRA ticket (format: [A-Z]+-[0-9]+, validated by script)
+# 
+# Behavior:
+#   - If on default branch: creates or switches to feature/<slug> or feature/<JIRA>-<slug>
+#   - If already on non-default branch: no-op (stays on current branch)
+# 
+# Security: JIRA ticket format validated with regex [A-Z]+-[0-9]+ - invalid formats rejected
 
-# Pass JIRA flag if provided in invocation
-bash "$PLATFORM_DIR/skills/shared-scripts/scripts/feature-branch-setup.sh" "$ISSUE_PATH" "$@"
+bash scripts/feature-branch-setup.sh "$ISSUE_PATH" "$@"
 ```
-
-The script will:
-- Check current branch
-- If on default branch: create or switch to `feature/<slug>` or `feature/<JIRA>-<slug>`
-- If already on non-default branch: no-op (stays on current branch)
 
 ### 0.1. Pre-flight
 
@@ -84,6 +86,7 @@ the caller provides. Do **not** query GitHub (`gh`) or any remote issue tracker 
 explicitly says to.
 
 Extract from the issue:
+
 - Acceptance criteria
 - Hypothesized files likely to change (confirmed in Step 2)
 - Blocked-by dependencies — if any are unresolved, stop and report blocked.
@@ -95,6 +98,7 @@ STOP. Read and invoke the `dep-install` skill. If the skill is not found, stop a
 ### 3. Explore before coding
 
 For each hypothesized file from Step 1:
+
 1. Read the source file.
 2. Read the corresponding test file if one exists.
 3. Note test style, naming conventions, and patterns — these become the style contract for Step 4.
@@ -120,6 +124,7 @@ Do not proceed to commit if any check fails or any acceptance criterion from Ste
 ### 6. Commit
 
 Before committing, confirm:
+
 - [ ] Tests were written before implementation (TDD red/green loop completed)
 - [ ] `references/verification.md` was read
 - [ ] Every check listed in `references/verification.md` passed (tests, type-check, lint, or equivalent for this stack)
@@ -145,9 +150,23 @@ CHANGED_FILES="<space-separated list of files you modified>"
 DETAILS="- <key decision or tradeoff line 1>
 - <key decision or tradeoff line 2>"
 
+# commit-changes.sh - copied during installation from shared-scripts
+# Source: skills/shared-scripts/scripts/commit-changes.sh
+#
+# Purpose: Stage specific files and commit with standardized message format
+# Usage: bash scripts/commit-changes.sh --message "msg" --files "file1 file2" [--coauthor "Name <email>"] [--prefix "[slug]"]
+#
+# Arguments:
+#   --message   - Commit message body (required)
+#   --files     - Space-separated list of files to stage (required)
+#   --coauthor  - Optional Co-authored-by trailer
+#   --prefix    - Optional prefix for commit message (e.g., "[01-auth]")
+#
+# Safety: Never uses git add -A or git add . - only stages explicitly listed files
+
 # Commit with prefix and co-author if provided
 if [ -n "$COAUTHOR_TRAILER" ]; then
-  bash "$PLATFORM_DIR/skills/shared-scripts/scripts/commit-changes.sh" \
+  bash scripts/commit-changes.sh \
     --prefix "[$ISSUE_SLUG]" \
     --message "$ISSUE_TITLE${DETAILS:+
 
@@ -155,7 +174,7 @@ $DETAILS}" \
     --files "$CHANGED_FILES" \
     --coauthor "$COAUTHOR_TRAILER"
 else
-  bash "$PLATFORM_DIR/skills/shared-scripts/scripts/commit-changes.sh" \
+  bash scripts/commit-changes.sh \
     --prefix "[$ISSUE_SLUG]" \
     --message "$ISSUE_TITLE${DETAILS:+
 
