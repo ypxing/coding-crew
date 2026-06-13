@@ -209,6 +209,26 @@ mkdir -p ".scratch/$FEATURE_SLUG/issues"
 # Initialize session tracking
 mkdir -p .scratch
 git rev-parse HEAD > .scratch/.session-start-sha
+
+# Initialize sprint state tracking
+STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
+BASE_SHA=$(git rev-parse HEAD)
+
+if [ ! -f "$STATE_FILE" ]; then
+  # Create new state file with initial branch entry
+  echo "{}" | jq --arg branch "$CURRENT_BRANCH" \
+                  --arg sha "$BASE_SHA" \
+                  --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  '.branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
+                  > "$STATE_FILE"
+else
+  # Read existing state, add/update current branch entry
+  jq --arg branch "$CURRENT_BRANCH" \
+     --arg sha "$BASE_SHA" \
+     --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     '.branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
+     "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+fi
 ```
 
 ### 1. List issues

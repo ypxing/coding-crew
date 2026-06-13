@@ -11,7 +11,12 @@ For afk-sprint skill enhancements:
    bash skills/afk-sprint/references/test-session-init.sh
    ```
 
-2. **Manual verification** — Review the SKILL.md and copilot.SKILL.md files to ensure:
+2. **Test** — Run the Sprint State Tracking test script to verify state persistence
+   ```bash
+   bash skills/afk-sprint/references/test-sprint-state.sh
+   ```
+
+3. **Manual verification** — Review the SKILL.md and copilot.SKILL.md files to ensure:
    - Session Init section has been enhanced with Feature Branch Setup
    - --jira flag parsing is implemented
    - First ready issue slug extraction is implemented
@@ -19,6 +24,9 @@ For afk-sprint skill enhancements:
    - Branch creation/switching logic is implemented
    - Feature-slug derivation is implemented
    - .scratch/<feature-slug>/issues/ directory creation is implemented
+   - Sprint state tracking initialization is implemented
+   - State file uses jq for JSON manipulation
+   - State file contains branches object with base_sha and created_at fields
 
 ## Acceptance criteria
 
