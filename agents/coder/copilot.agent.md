@@ -43,7 +43,6 @@ Return **exactly** this format and nothing else:
 ```
 ## Issue: <slug>
 Status: complete | partial | blocked
-Committed: yes | no
 
 ### Checks
 <command>:
@@ -67,24 +66,20 @@ Rules:
 
 1. Start with `## Issue:` followed by the issue slug (filename without extension).
 2. `Status` must be exactly one of: `complete`, `partial`, `blocked`.
-3. `Committed` must be exactly one of: `yes`, `no`.
-   - `yes` when changes were committed (solve-issue ran with auto-commit enabled)
-   - `no` when changes were only staged (solve-issue ran with --no-commit flag or auto_commit: no config)
-4. `### Checks` — for each check, show the command and final summary line(s) only (e.g. pass/fail counts). Do not list individual test names or passing cases.
-5. `### Acceptance Criteria` — list every criterion from the issue with `[x]` or `[ ]`.
-6. `### Changes` — list every file modified.
-7. `### Skills` — list every skill that was read and invoked (e.g. `solve-issue`, `dep-install`, `karpathy-guidelines`, `tdd`). Never leave this section empty.
-8. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
-9. Do not add any text outside these sections.
+3. `### Checks` — for each check, show the command and final summary line(s) only (e.g. pass/fail counts). Do not list individual test names or passing cases.
+4. `### Acceptance Criteria` — list every criterion from the issue with `[x]` or `[ ]`.
+5. `### Changes` — list every file modified.
+6. `### Skills` — list every skill that was read and invoked (e.g. `solve-issue`, `dep-install`, `karpathy-guidelines`, `tdd`). Never leave this section empty.
+7. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
+8. Do not add any text outside these sections.
 
 ## Example Reports
 
-**Example 1: Committed work**
+**Example 1: Complete**
 
 ```
 ## Issue: 03-add-user-logout
 Status: complete
-Committed: yes
 
 ### Checks
 npm test:
@@ -109,12 +104,11 @@ npm test:
 none
 ```
 
-**Example 2: Staged but not committed**
+**Example 2: Partial**
 
 ```
 ## Issue: 04-refactor-validation
-Status: complete
-Committed: no
+Status: partial
 
 ### Checks
 npm test:

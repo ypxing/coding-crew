@@ -110,109 +110,23 @@ Prose summaries like `"run unit tests"` are wrong. The log line must be the lite
 
 ### Feature Branch Setup
 
-Parse optional `--jira` flag from invocation arguments (if present, format is `--jira TICKET-123`).
+Run the session initialization script. It handles:
+- Parsing optional `--jira TICKET-123` flag
+- Feature branch creation/switching
+- Session tracking setup
+- Git repository validation
+- jq dependency check
+- Sprint state file initialization
 
 ```bash
-# Parse --jira flag from invocation
-JIRA_TICKET=""
-if [[ "$INVOCATION" =~ --jira[[:space:]]+([A-Z]+-[0-9]+) ]]; then
-  JIRA_TICKET="${BASH_REMATCH[1]}"
-fi
-
-# Detect default branch
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-
-# Fallback to "main" if origin/HEAD is not set
-if [ -z "$DEFAULT_BRANCH" ]; then
-  DEFAULT_BRANCH="main"
-fi
-
-# If on default branch, create or switch to feature branch
-if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-  # Find first ready issue to extract slug for branch naming
-  FIRST_ISSUE=$(find .scratch/*/issues/*.md -type f ! -path '*/done/*' -print | head -n 1)
-  
-  if [ -z "$FIRST_ISSUE" ]; then
-    echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-sprint."
-    exit 1
-  fi
-  
-  # Extract issue slug from filename: strip leading digits and .md extension
-  ISSUE_SLUG=$(basename "$FIRST_ISSUE" | sed 's/^[0-9]*-//' | sed 's/\.md$//')
-  
-  # Build branch name with optional JIRA prefix
-  if [ -n "$JIRA_TICKET" ]; then
-    SUGGESTED_BRANCH="feature/$JIRA_TICKET-$ISSUE_SLUG"
-  else
-    SUGGESTED_BRANCH="feature/$ISSUE_SLUG"
-  fi
-  
-  # Check if branch exists: switch if yes, create if no
-  if git rev-parse --verify "$SUGGESTED_BRANCH" >/dev/null 2>&1; then
-    git checkout "$SUGGESTED_BRANCH"
-  else
-    git checkout -b "$SUGGESTED_BRANCH"
-  fi
-  
-  # Update current branch after switch/create
-  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-fi
-
-# Derive feature-slug from current branch name
-FEATURE_SLUG="$CURRENT_BRANCH"
-# Strip 'feature/' prefix if present
-FEATURE_SLUG="${FEATURE_SLUG#feature/}"
-# Strip JIRA prefix pattern (e.g., PROJ-123-) - using + quantifier for one-or-more
-FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]\+-[0-9]\+-//')
-
-# Validate feature-slug is non-empty after stripping
-if [ -z "$FEATURE_SLUG" ]; then
-  echo "ERROR: Could not derive feature slug from branch name '$CURRENT_BRANCH'"
-  exit 1
-fi
-
-# Auto-create .scratch/<feature-slug>/issues/ directory structure if needed
-mkdir -p ".scratch/$FEATURE_SLUG/issues"
-
-# Initialize session tracking
-mkdir -p .scratch
-
-# Validate git repository (Finding #10)
-if ! git rev-parse HEAD >/dev/null 2>&1; then
-  echo "ERROR: Not in a git repository or HEAD is invalid"
-  exit 1
-fi
-
-git rev-parse HEAD > .scratch/.session-start-sha
-
-# Check for jq dependency (Finding #7)
-if ! command -v jq >/dev/null 2>&1; then
-  echo "ERROR: jq is required but not installed."
-  echo "Install with: apt-get install jq (Debian/Ubuntu) or brew install jq (macOS)"
-  exit 1
-fi
-
-# Initialize sprint state tracking
-STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
-BASE_SHA=$(git rev-parse HEAD)
-
-if [ ! -f "$STATE_FILE" ]; then
-  # Create new state file with initial branch entry
-  echo "{}" | jq --arg branch "$CURRENT_BRANCH" \
-                  --arg sha "$BASE_SHA" \
-                  --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-                  '.branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
-                  > "$STATE_FILE"
-else
-  # Read existing state, add/update current branch entry
-  jq --arg branch "$CURRENT_BRANCH" \
-     --arg sha "$BASE_SHA" \
-     --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-     '.branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
-     "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
-fi
+bash scripts/session-init.sh "$@"
 ```
+
+The script will:
+- Create or switch to a feature branch (deriving slug from first issue if on main/default branch)
+- Initialize `.scratch/<feature-slug>/issues/` directory structure
+- Save session-start SHA for code review
+- Create sprint state file to track base SHA per branch
 
 ### 1. List issues
 
@@ -318,151 +232,26 @@ The user can re-trigger the sprint after resolving blockers.
 
 ## Squash Commits (before code review)
 
-Parse optional `--no-squash` flag from invocation. If present, skip this step entirely.
-
-```bash
-# Parse --no-squash flag from invocation
-NO_SQUASH=false
-if [[ "$INVOCATION" =~ --no-squash ]]; then
-  NO_SQUASH=true
-fi
-
-if [ "$NO_SQUASH" = true ]; then
-  echo "Skipping squash (--no-squash flag present)"
-  # Continue to code review
-fi
-```
-
-If not skipping, read sprint state file to get base SHA:
-
-```bash
-# Derive feature-slug from current branch name
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-FEATURE_SLUG="$CURRENT_BRANCH"
-# Strip 'feature/' prefix if present
-FEATURE_SLUG="${FEATURE_SLUG#feature/}"
-# Strip JIRA prefix pattern (e.g., PROJ-123-)
-FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]*-[0-9]*-//')
-
-STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
-
-if [ ! -f "$STATE_FILE" ]; then
-  echo "Warning: No sprint state file found. Skipping squash."
-  # Continue to code review
-fi
-
-BASE_SHA=$(jq -r ".branches[\"$CURRENT_BRANCH\"].base_sha // empty" "$STATE_FILE")
-
-if [ -z "$BASE_SHA" ]; then
-  echo "Warning: No base SHA found in state file. Skipping squash."
-  # Continue to code review
-fi
-```
-
-Track completed issue slugs throughout the sprint by maintaining a list of all slugs marked as done in step 3. If no completed issues, skip squashing:
+Run the squash commits script. Track completed issue slugs throughout the sprint by maintaining a list of all slugs marked as done in step 3. Pass `--no-squash` if the user specified it, `--platform copilot`, and the list of completed slugs:
 
 ```bash
 # completed_slugs array should be populated in step 3 when issues are marked done
-if [ ${#completed_slugs[@]} -eq 0 ]; then
-  echo "No completed issues to squash."
-  # Continue to code review
-fi
+bash scripts/squash-commits.sh --platform copilot "${completed_slugs[@]}"
 ```
 
-Generate squashed commit message:
+If `--no-squash` flag was specified, pass it to the script:
 
 ```bash
-# Count completed issues
-ISSUE_COUNT=${#completed_slugs[@]}
-
-# Generate summary line
-if [ $ISSUE_COUNT -eq 1 ]; then
-  SUMMARY_LINE="Implement 1 feature"
-else
-  SUMMARY_LINE="Implement $ISSUE_COUNT features"
-fi
-
-# Build bulleted issue list from completed slugs
-# Extract issue titles from issue files in done/ directories
-ISSUE_BULLETS=""
-for slug in "${completed_slugs[@]}"; do
-  # Find the done issue file
-  ISSUE_FILE=$(find .scratch/*/issues/done/${slug}.md -type f 2>/dev/null | head -n 1)
-  if [ -n "$ISSUE_FILE" ]; then
-    # Extract title from "## What to build" section - more robust extraction (Finding #12)
-    TITLE=$(sed -n '/## What to build/,/^##/p' "$ISSUE_FILE" | grep -v '^##' | grep -v '^[[:space:]]*$' | head -n1 | sed 's/^[[:space:]]*//')
-    if [ -z "$TITLE" ]; then
-      TITLE="$slug"
-    fi
-  else
-    TITLE="$slug"
-  fi
-  # Safe bullet list construction - each title on its own line
-  ISSUE_BULLETS="${ISSUE_BULLETS}- ${TITLE}
-"
-done
-
-# Co-authored-by trailer (platform-appropriate)
-# For GitHub Copilot: Co-authored-by: GitHub Copilot <noreply@github.com>
-COAUTHOR_TRAILER="Co-authored-by: GitHub Copilot <noreply@github.com>"
+bash scripts/squash-commits.sh --no-squash --platform copilot "${completed_slugs[@]}"
 ```
 
-Perform squash:
-
-```bash
-# Verify there are commits to squash
-COMMIT_COUNT=$(git rev-list ${BASE_SHA}..HEAD --count)
-
-if [ "$COMMIT_COUNT" -eq 0 ]; then
-  echo "No commits to squash."
-  # Continue to code review
-fi
-
-# Validate BASE_SHA is an ancestor of HEAD (Finding #11)
-if ! git merge-base --is-ancestor "$BASE_SHA" HEAD 2>/dev/null; then
-  echo "ERROR: Base SHA $BASE_SHA is not an ancestor of HEAD."
-  echo "State file may be corrupted or wrong branch. Manual fix needed."
-  exit 1
-fi
-
-# Perform squash using reset + commit
-git reset --soft "$BASE_SHA"
-
-if [ $? -ne 0 ]; then
-  echo "ERROR: Failed to squash commits. Manual rebase needed: git reset --soft $BASE_SHA"
-  exit 1
-fi
-
-# Create squashed commit with safe message handling (Finding #13)
-# Use git commit -F with here-doc for safe literal interpolation
-git commit -F - << EOF
-$SUMMARY_LINE
-
-$ISSUE_BULLETS
-$COAUTHOR_TRAILER
-EOF
-
-if [ $? -ne 0 ]; then
-  echo "ERROR: Failed to create squashed commit. Manual fix needed."
-  exit 1
-fi
-```
-
-Update state file with new HEAD SHA:
-
-```bash
-NEW_HEAD=$(git rev-parse HEAD)
-jq --arg branch "$CURRENT_BRANCH" \
-   --arg sha "$NEW_HEAD" \
-   '.branches[$branch].base_sha = $sha' \
-   "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
-
-if [ $? -ne 0 ]; then
-  echo "Warning: Failed to update state file with new base SHA."
-fi
-
-echo "Squashed $COMMIT_COUNT commits into 1."
-```
+The script will:
+- Parse the `--no-squash` flag and skip if present
+- Read sprint state file to get base SHA
+- Skip if no completed issues or no commits to squash
+- Generate squashed commit message from completed issue titles
+- Perform soft reset and create single commit
+- Update state file with new HEAD SHA
 
 ## Code Review (mandatory on exit)
 
