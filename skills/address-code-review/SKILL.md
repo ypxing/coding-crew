@@ -22,7 +22,30 @@ You are working through the findings from an afk-sprint code review report. Foll
 /address-code-review --commit path/to/report.md   # forces commit with custom report
 ```
 
-## Step 0 — Install dependencies
+## Step 0 — Branch safety check
+
+**Check current branch:**
+
+This skill works on existing PR branches. Do not run on the default branch.
+
+```bash
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+
+# Fallback to "main" if origin/HEAD is not set
+if [ -z "$DEFAULT_BRANCH" ]; then
+  DEFAULT_BRANCH="main"
+fi
+
+if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
+  echo "ERROR: Cannot run on default branch ($DEFAULT_BRANCH). Switch to your PR branch first: git checkout <branch-name>"
+  exit 1
+fi
+```
+
+If on the default branch, stop with an error. If on a non-default branch, continue to Step 0.1.
+
+## Step 0.1 — Install dependencies
 
 Follow the `dep-install` skill to ensure dependencies are installed.
 
