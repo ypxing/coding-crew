@@ -49,43 +49,19 @@ fi
 
 ### 0. Feature Branch Setup
 
-Parse optional `--jira` flag from invocation arguments (if present, format is `--jira TICKET-123`).
+Use the shared feature branch setup script. Parse optional `--jira` flag from invocation arguments (if present, format is `--jira TICKET-123`).
 
-**Security note**: The JIRA ticket format is validated by the regex `[A-Z]+-[0-9]+` which only matches uppercase letters followed by dash and digits. Invalid formats are rejected automatically by the pattern match failure.
-
-Check current branch:
+**Security note**: The JIRA ticket format is validated by the script using regex `[A-Z]+-[0-9]+` which only matches uppercase letters followed by dash and digits. Invalid formats are rejected automatically.
 
 ```bash
-CURRENT_BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(git -C "$PROJECT_ROOT" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-
-# Fallback to "main" if origin/HEAD is not set
-if [ -z "$DEFAULT_BRANCH" ]; then
-  DEFAULT_BRANCH="main"
-fi
-
-if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-  # On default branch - need to create or switch to feature branch
-  # Extract issue slug from filename: strip leading digits and .md extension
-  ISSUE_SLUG=$(basename "$ISSUE_PATH" | sed 's/^[0-9]*-//' | sed 's/\.md$//')
-  
-  # Build branch name with optional JIRA prefix
-  if [ -n "$JIRA_TICKET" ]; then
-    SUGGESTED_BRANCH="feature/$JIRA_TICKET-$ISSUE_SLUG"
-  else
-    SUGGESTED_BRANCH="feature/$ISSUE_SLUG"
-  fi
-  
-  # Check if branch exists: switch if yes, create if no
-  if git -C "$PROJECT_ROOT" rev-parse --verify "$SUGGESTED_BRANCH" >/dev/null 2>&1; then
-    git -C "$PROJECT_ROOT" checkout "$SUGGESTED_BRANCH"
-  else
-    git -C "$PROJECT_ROOT" checkout -b "$SUGGESTED_BRANCH"
-  fi
-fi
+# Pass JIRA flag if provided in invocation
+bash skills/_shared/scripts/feature-branch-setup.sh "$ISSUE_PATH" "$@"
 ```
 
-If already on a non-default branch, continue without making any changes.
+The script will:
+- Check current branch
+- If on default branch: create or switch to `feature/<slug>` or `feature/<JIRA>-<slug>`
+- If already on non-default branch: no-op (stays on current branch)
 
 ### 0.1. Pre-flight
 
@@ -140,34 +116,45 @@ Before committing, confirm:
 
 If any check failed, do NOT stage or commit. Report status `partial` or `blocked`.
 
-**Stage modified files:**
-
-Stage only the files you changed — never `git add .` or `git add -A`.
-
-```bash
-git add <file1> <file2> ...
-```
+**Check if work is already done:**
 
 If there are no changes to stage (working directory is clean), check if the issue was already implemented and committed. If so, proceed to Step 7 to mark done. If not, report accordingly.
 
-**Commit:**
+**Commit with shared script:**
 
-Extract the issue slug from the issue filename:
+Extract the issue slug and use the shared commit script:
 
 ```bash
 ISSUE_SLUG=$(basename "$ISSUE_PATH" | sed 's/\.md$//')
-```
+ISSUE_TITLE="<extract title from issue file>"
 
-Commit message format:
-```
-[<issue-slug>] <issue title>
+# Collect all changed files
+CHANGED_FILES="<space-separated list of files you modified>"
 
-- <key decision or tradeoff — omit if none>
+# Build commit message details (optional - omit if none)
+DETAILS="- <key decision or tradeoff line 1>
+- <key decision or tradeoff line 2>"
+
+# Commit with prefix and co-author if provided
+if [ -n "$COAUTHOR_TRAILER" ]; then
+  bash skills/_shared/scripts/commit-changes.sh \
+    --prefix "[$ISSUE_SLUG]" \
+    --message "$ISSUE_TITLE${DETAILS:+
+
+$DETAILS}" \
+    --files "$CHANGED_FILES" \
+    --coauthor "$COAUTHOR_TRAILER"
+else
+  bash skills/_shared/scripts/commit-changes.sh \
+    --prefix "[$ISSUE_SLUG]" \
+    --message "$ISSUE_TITLE${DETAILS:+
+
+$DETAILS}" \
+    --files "$CHANGED_FILES"
+fi
 ```
 
 Example: `[01-auth-logout] Add user logout endpoint`
-
-If the caller specifies a `Co-Authored-By:` git trailer, append it verbatim as the last line.
 
 Do not push.
 

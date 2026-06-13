@@ -5,58 +5,19 @@ set -euo pipefail
 # Usage: source this script or run it directly
 # Optional: Pass --jira TICKET-123 as arguments
 
-# Parse --jira flag from arguments
-JIRA_TICKET=""
-for arg in "$@"; do
-  if [[ "$arg" =~ ^--jira$ ]]; then
-    shift
-    JIRA_TICKET="$1"
-    break
-  elif [[ "$arg" =~ ^--jira[[:space:]]+([A-Z]+-[0-9]+)$ ]]; then
-    JIRA_TICKET="${BASH_REMATCH[1]}"
-    break
-  fi
-done
+# Find first ready issue to determine branch name
+FIRST_ISSUE=$(find .scratch/*/issues/*.md -type f ! -path '*/done/*' -print | head -n 1)
 
-# Detect default branch
+if [ -z "$FIRST_ISSUE" ]; then
+  echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-sprint."
+  exit 1
+fi
+
+# Use shared feature branch setup script (handles branch creation/switching with JIRA support)
+bash skills/_shared/scripts/feature-branch-setup.sh "$FIRST_ISSUE" "$@"
+
+# Get current branch after setup
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-
-# Fallback to "main" if origin/HEAD is not set
-if [ -z "$DEFAULT_BRANCH" ]; then
-  DEFAULT_BRANCH="main"
-fi
-
-# If on default branch, create or switch to feature branch
-if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-  # Find first ready issue to extract slug for branch naming
-  FIRST_ISSUE=$(find .scratch/*/issues/*.md -type f ! -path '*/done/*' -print | head -n 1)
-  
-  if [ -z "$FIRST_ISSUE" ]; then
-    echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-sprint."
-    exit 1
-  fi
-  
-  # Extract issue slug from filename: strip leading digits and .md extension
-  ISSUE_SLUG=$(basename "$FIRST_ISSUE" | sed 's/^[0-9]*-//' | sed 's/\.md$//')
-  
-  # Build branch name with optional JIRA prefix
-  if [ -n "$JIRA_TICKET" ]; then
-    SUGGESTED_BRANCH="feature/$JIRA_TICKET-$ISSUE_SLUG"
-  else
-    SUGGESTED_BRANCH="feature/$ISSUE_SLUG"
-  fi
-  
-  # Check if branch exists: switch if yes, create if no
-  if git rev-parse --verify "$SUGGESTED_BRANCH" >/dev/null 2>&1; then
-    git checkout "$SUGGESTED_BRANCH"
-  else
-    git checkout -b "$SUGGESTED_BRANCH"
-  fi
-  
-  # Update current branch after switch/create
-  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-fi
 
 # Derive feature-slug from current branch name
 FEATURE_SLUG="$CURRENT_BRANCH"

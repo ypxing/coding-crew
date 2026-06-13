@@ -30,21 +30,10 @@ You are working through the review comments on a GitHub pull request. Follow eve
 This skill works on existing PR branches. Do not run on the default branch.
 
 ```bash
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-
-# Fallback to "main" if origin/HEAD is not set
-if [ -z "$DEFAULT_BRANCH" ]; then
-  DEFAULT_BRANCH="main"
-fi
-
-if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-  echo "ERROR: Cannot run on default branch ($DEFAULT_BRANCH). Switch to your PR branch first: git checkout <branch-name>"
-  exit 1
-fi
+bash skills/_shared/scripts/branch-safety-check.sh
 ```
 
-If on the default branch, stop with an error. If on a non-default branch, continue to Step 0.1.
+If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
 
 ## Step 0.1 — Install dependencies and check prerequisites
 
@@ -112,23 +101,23 @@ For each **Actionable** comment (in dependency order — test infrastructure bef
 
 ## Step 5 — Commit
 
-**Stage files touched during Step 4:**
+**Commit with shared script:**
 
-Stage only the files you changed — never `git add -A`.
+Collect all files touched during Step 4 and create a commit message with one line per actionable comment.
 
 ```bash
-git add <file1> <file2> ...
-```
+# Build commit message body with bullet list
+COMMIT_BODY="address PR review comments
 
-**Commit:**
+- <what changed for comment 1 and why>
+- <what changed for comment 2 and why>
+- <what changed for comment N and why>"
 
-Commit message format:
-```
-address PR review comments
-
-<bullet list: one line per actionable comment — what changed and why>
-
-Co-Authored-By: Claude <noreply@anthropic.com>
+# Commit with co-author
+bash skills/_shared/scripts/commit-changes.sh \
+  --message "$COMMIT_BODY" \
+  --files "<space-separated file list>" \
+  --coauthor "Claude <noreply@anthropic.com>"
 ```
 
 Do not push — leave that to the user.

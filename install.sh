@@ -506,4 +506,16 @@ fi
 
 echo "---"
 write_manifest
+
+# Install shared scripts directory
+if [ -d "$SCRIPT_DIR/skills/_shared" ]; then
+  echo "---"
+  echo "Installing shared scripts..."
+  mkdir -p "$REPO_ROOT/skills/_shared"
+  cp -r "$SCRIPT_DIR/skills/_shared/." "$REPO_ROOT/skills/_shared/"
+  # Make scripts executable
+  find "$REPO_ROOT/skills/_shared/scripts" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+  echo "Shared scripts installed to skills/_shared/"
+fi
+
 echo "Done."

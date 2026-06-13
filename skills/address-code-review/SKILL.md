@@ -22,21 +22,10 @@ You are working through the findings from an afk-sprint code review report. Foll
 This skill works on existing PR branches. Do not run on the default branch.
 
 ```bash
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-
-# Fallback to "main" if origin/HEAD is not set
-if [ -z "$DEFAULT_BRANCH" ]; then
-  DEFAULT_BRANCH="main"
-fi
-
-if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-  echo "ERROR: Cannot run on default branch ($DEFAULT_BRANCH). Switch to your PR branch first: git checkout <branch-name>"
-  exit 1
-fi
+bash skills/_shared/scripts/branch-safety-check.sh
 ```
 
-If on the default branch, stop with an error. If on a non-default branch, continue to Step 0.1.
+If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
 
 ## Step 0.1 — Install dependencies
 
@@ -98,27 +87,23 @@ For each **Actionable** finding (in severity order — CRITICAL first, then HIGH
 
 ## Step 5 — Commit
 
-**Stage files touched during Step 4:**
+**Commit with shared script:**
 
-Stage only the files touched during Step 4 (do not use `git add -A`):
-
-```bash
-git add <file1> <file2> …
-```
-
-**Commit:**
-
-Commit message format:
+Collect all files touched during Step 4 and create a commit message with one line per actionable finding.
 
 ```bash
-git commit -m "$(cat <<'EOF'
-address code review findings
+# Build commit message body with bullet list
+COMMIT_BODY="address code review findings
 
-<bullet list: one line per actionable finding — what changed and why>
+- <what changed for finding 1 and why>
+- <what changed for finding 2 and why>
+- <what changed for finding N and why>"
 
-Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
-)"
+# Commit with co-author
+bash skills/_shared/scripts/commit-changes.sh \
+  --message "$COMMIT_BODY" \
+  --files "<space-separated file list>" \
+  --coauthor "Claude <noreply@anthropic.com>"
 ```
 
 If the commit fails, stop and report the error to the user — do **not** proceed to Step 5b or archive the report until the commit succeeds.
