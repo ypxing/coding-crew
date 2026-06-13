@@ -333,6 +333,145 @@ also run code review before stopping.
 
 The user can re-trigger the sprint after resolving blockers.
 
+## Squash Commits (before code review)
+
+Parse optional `--no-squash` flag from invocation. If present, skip this step entirely.
+
+```bash
+# Parse --no-squash flag from invocation
+NO_SQUASH=false
+if [[ "$INVOCATION" =~ --no-squash ]]; then
+  NO_SQUASH=true
+fi
+
+if [ "$NO_SQUASH" = true ]; then
+  echo "Skipping squash (--no-squash flag present)"
+  # Continue to code review
+fi
+```
+
+If not skipping, read sprint state file to get base SHA:
+
+```bash
+# Derive feature-slug from current branch name
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+FEATURE_SLUG="$CURRENT_BRANCH"
+# Strip 'feature/' prefix if present
+FEATURE_SLUG="${FEATURE_SLUG#feature/}"
+# Strip JIRA prefix pattern (e.g., PROJ-123-)
+FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]*-[0-9]*-//')
+
+STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
+
+if [ ! -f "$STATE_FILE" ]; then
+  echo "Warning: No sprint state file found. Skipping squash."
+  # Continue to code review
+fi
+
+BASE_SHA=$(jq -r ".branches[\"$CURRENT_BRANCH\"].base_sha // empty" "$STATE_FILE")
+
+if [ -z "$BASE_SHA" ]; then
+  echo "Warning: No base SHA found in state file. Skipping squash."
+  # Continue to code review
+fi
+```
+
+Track completed issue slugs throughout the sprint by maintaining a list of all slugs marked as done in step 3. If no completed issues, skip squashing:
+
+```bash
+# completed_slugs array should be populated in step 3 when issues are marked done
+if [ ${#completed_slugs[@]} -eq 0 ]; then
+  echo "No completed issues to squash."
+  # Continue to code review
+fi
+```
+
+Generate squashed commit message:
+
+```bash
+# Count completed issues
+ISSUE_COUNT=${#completed_slugs[@]}
+
+# Generate summary line
+if [ $ISSUE_COUNT -eq 1 ]; then
+  SUMMARY_LINE="Implement 1 feature"
+else
+  SUMMARY_LINE="Implement $ISSUE_COUNT features"
+fi
+
+# Build bulleted issue list from completed slugs
+# Extract issue titles from issue files in done/ directories
+ISSUE_BULLETS=""
+for slug in "${completed_slugs[@]}"; do
+  # Find the done issue file
+  ISSUE_FILE=$(find .scratch/*/issues/done/${slug}.md -type f 2>/dev/null | head -n 1)
+  if [ -n "$ISSUE_FILE" ]; then
+    # Extract title from "## What to build" section or use slug as fallback
+    TITLE=$(grep -A1 "## What to build" "$ISSUE_FILE" | tail -n1 | sed 's/^[[:space:]]*//' || echo "$slug")
+    if [ -z "$TITLE" ] || [ "$TITLE" = "## What to build" ]; then
+      TITLE="$slug"
+    fi
+  else
+    TITLE="$slug"
+  fi
+  ISSUE_BULLETS="${ISSUE_BULLETS}- ${TITLE}\n"
+done
+
+# Co-authored-by trailer (platform-appropriate)
+# For GitHub Copilot: Co-authored-by: GitHub Copilot <noreply@github.com>
+COAUTHOR_TRAILER="Co-authored-by: GitHub Copilot <noreply@github.com>"
+
+# Assemble final message
+SQUASH_MESSAGE="${SUMMARY_LINE}
+
+${ISSUE_BULLETS}
+${COAUTHOR_TRAILER}"
+```
+
+Perform squash:
+
+```bash
+# Verify there are commits to squash
+COMMIT_COUNT=$(git rev-list ${BASE_SHA}..HEAD --count)
+
+if [ "$COMMIT_COUNT" -eq 0 ]; then
+  echo "No commits to squash."
+  # Continue to code review
+fi
+
+# Perform squash using reset + commit
+git reset --soft "$BASE_SHA"
+
+if [ $? -ne 0 ]; then
+  echo "ERROR: Failed to squash commits. Manual rebase needed: git reset --soft $BASE_SHA"
+  exit 1
+fi
+
+# Commit with squashed message
+git commit -m "$SQUASH_MESSAGE"
+
+if [ $? -ne 0 ]; then
+  echo "ERROR: Failed to create squashed commit. Manual fix needed."
+  exit 1
+fi
+```
+
+Update state file with new HEAD SHA:
+
+```bash
+NEW_HEAD=$(git rev-parse HEAD)
+jq --arg branch "$CURRENT_BRANCH" \
+   --arg sha "$NEW_HEAD" \
+   '.branches[$branch].base_sha = $sha' \
+   "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+
+if [ $? -ne 0 ]; then
+  echo "Warning: Failed to update state file with new base SHA."
+fi
+
+echo "Squashed $COMMIT_COUNT commits into 1."
+```
+
 ## Code Review (mandatory on exit)
 
 **This step is required every time the loop exits — whether all issues completed or the sprint
