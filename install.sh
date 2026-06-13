@@ -285,15 +285,7 @@ install_single_skill() {
   fi
   # Drop whichever platform variants weren't selected
   rm -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" "$REPO_ROOT/$skill_dest/claude.SKILL.md"
-  # Select the right workflow.js:
-  #   claude.workflow.js — Claude-only workflow script; rename to workflow.js on Claude install
-  #   No copilot equivalent — Copilot does not support the Workflow tool
-  if [[ "$PLATFORM" == "claude" && -f "$REPO_ROOT/$skill_dest/scripts/claude.workflow.js" ]]; then
-    mv "$REPO_ROOT/$skill_dest/scripts/claude.workflow.js" "$REPO_ROOT/$skill_dest/scripts/workflow.js"
-  else
-    rm -f "$REPO_ROOT/$skill_dest/scripts/claude.workflow.js"
-  fi
-  echo "  $skill_dest/"
+echo "  $skill_dest/"
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
   local scripts
