@@ -17,15 +17,15 @@ You are working through the findings from an afk-sprint code review report. Foll
 
 ## Step 0 — Branch safety check
 
-**Note:** The `scripts/branch-safety-check.sh` file is copied into this skill during installation from the central `shared-scripts` library. It won't exist in the repo until `install.sh` runs.
+**Note:** The `scripts/branch-safety-check.sh` file is copied into this skill during installation from the central git-workflow scripts. It won't exist in the repo until `install.sh` runs.
 
 **Check current branch:**
 
 This skill works on existing PR branches. Do not run on the default branch.
 
 ```bash
-# branch-safety-check.sh - copied during installation from shared-scripts
-# Source: skills/shared-scripts/scripts/branch-safety-check.sh
+# branch-safety-check.sh - copied during installation from git-workflow
+# Source: scripts/skill-utils/git-workflow/branch-safety-check.sh
 #
 # Purpose: Validate that the current branch is safe for operations (not on default branch)
 # Usage: bash scripts/branch-safety-check.sh [--allow-default]
@@ -114,8 +114,8 @@ COMMIT_BODY="address code review findings
 - <what changed for finding 2 and why>
 - <what changed for finding N and why>"
 
-# commit-changes.sh - copied during installation from shared-scripts
-# Source: skills/shared-scripts/scripts/commit-changes.sh
+# commit-changes.sh - copied during installation from git-workflow
+# Source: scripts/skill-utils/git-workflow/commit-changes.sh
 #
 # Purpose: Stage specific files and commit with standardized message format
 # Usage: bash scripts/commit-changes.sh --message "msg" --files "file1 file2" [--coauthor "Name <email>"] [--prefix "[slug]"]

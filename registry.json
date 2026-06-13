@@ -116,12 +116,6 @@
       "description": "Ultra-compressed communication mode. Cuts token usage ~75% by speaking like caveman while keeping full technical accuracy. Supports lite/full/ultra and wenyan intensity levels.",
       "source": "JuliusBrussee/caveman",
       "install": ".claude/skills/caveman"
-    },
-    "shared-scripts": {
-      "version": "1.0.0",
-      "description": "Shared scripts library used by multiple skills (branch safety, feature branch setup, commit changes). Infrastructure skill - not invoked directly by users.",
-      "install": ".claude/skills/shared-scripts",
-      "install-copilot": ".copilot/skills/shared-scripts"
     }
   },
   "docs": {

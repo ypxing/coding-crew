@@ -51,13 +51,13 @@ fi
 
 ### 0. Feature Branch Setup
 
-**Note:** The `scripts/feature-branch-setup.sh` file is copied into this skill during installation from the central `shared-scripts` library. It won't exist in the repo until `install.sh` runs.
+**Note:** The `scripts/feature-branch-setup.sh` file is copied into this skill during installation from the central git-workflow scripts. It won't exist in the repo until `install.sh` runs.
 
 Use the feature branch setup script. Parse optional `--jira` flag from invocation arguments (if present, format is `--jira TICKET-123`).
 
 ```bash
-# feature-branch-setup.sh - copied during installation from shared-scripts
-# Source: skills/shared-scripts/scripts/feature-branch-setup.sh
+# feature-branch-setup.sh - copied during installation from git-workflow
+# Source: scripts/skill-utils/git-workflow/feature-branch-setup.sh
 # 
 # Purpose: Create or switch to a feature branch based on issue slug
 # Usage: bash scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-123]
@@ -150,8 +150,8 @@ CHANGED_FILES="<space-separated list of files you modified>"
 DETAILS="- <key decision or tradeoff line 1>
 - <key decision or tradeoff line 2>"
 
-# commit-changes.sh - copied during installation from shared-scripts
-# Source: skills/shared-scripts/scripts/commit-changes.sh
+# commit-changes.sh - copied during installation from git-workflow
+# Source: scripts/skill-utils/git-workflow/commit-changes.sh
 #
 # Purpose: Stage specific files and commit with standardized message format
 # Usage: bash scripts/commit-changes.sh --message "msg" --files "file1 file2" [--coauthor "Name <email>"] [--prefix "[slug]"]

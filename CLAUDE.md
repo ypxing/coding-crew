@@ -81,6 +81,23 @@ Skills with `agent-deps` also install the listed agents (via `install.sh`) so th
 
 Install copies these to `.claude/skills/<skill>/SKILL.md` in the target repo.
 
+### Scripts Infrastructure
+
+`scripts/skill-utils/git-workflow/` contains reusable bash scripts that are copied into skills during installation. This is **not** a skill itself — it's infrastructure for build-time script copying.
+
+**Scripts:**
+- `branch-safety-check.sh` — validates current branch is not default
+- `feature-branch-setup.sh` — creates/switches to feature branches with optional JIRA prefix
+- `commit-changes.sh` — safely stages specific files and commits with standardized messages
+
+**How it works:**
+- Skills declare needed scripts in `registry.json` via the `scripts` field
+- During `install.sh`, scripts are copied from `scripts/skill-utils/git-workflow/` into each skill's `scripts/` directory
+- Skills reference them locally: `bash scripts/branch-safety-check.sh`
+- Each skill gets its own copy — no runtime cross-skill dependencies
+
+See `scripts/skill-utils/git-workflow/README.md` for full documentation.
+
 ### Docs
 
 `docs/agents/` contains default template files that install copies to `docs/agents/` in the target repo. Consumers edit these to match their tracker and label conventions.

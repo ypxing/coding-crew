@@ -281,7 +281,7 @@ install_single_skill() {
   fi
   echo "  $skill_dest/"
 
-  # Copy scripts from shared-scripts if this skill declares any
+  # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
   local scripts
   scripts=$(jq -r --arg s "$skill_name" '.skills[$s].scripts // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
   local scripts_arr=()
@@ -289,15 +289,15 @@ install_single_skill() {
   if [[ "${#scripts_arr[@]}" -gt 0 ]]; then
     mkdir -p "$REPO_ROOT/$skill_dest/scripts"
     for script in "${scripts_arr[@]}"; do
-      local script_src="$SCRIPT_DIR/skills/shared-scripts/scripts/$script"
+      local script_src="$SCRIPT_DIR/scripts/skill-utils/git-workflow/$script"
       if [[ ! -f "$script_src" ]]; then
-        echo "Error: script source not found: skills/shared-scripts/scripts/$script" >&2
+        echo "Error: script source not found: scripts/skill-utils/git-workflow/$script" >&2
         exit 1
       fi
       cp "$script_src" "$REPO_ROOT/$skill_dest/scripts/$script"
       chmod +x "$REPO_ROOT/$skill_dest/scripts/$script"
     done
-    echo "  $skill_dest/scripts/ (${#scripts_arr[@]} scripts from shared-scripts)"
+    echo "  $skill_dest/scripts/ (${#scripts_arr[@]} scripts from skill-utils/git-workflow)"
   fi
 
   local skill_version
