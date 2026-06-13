@@ -54,8 +54,18 @@ Use the shared feature branch setup script. Parse optional `--jira` flag from in
 **Security note**: The JIRA ticket format is validated by the script using regex `[A-Z]+-[0-9]+` which only matches uppercase letters followed by dash and digits. Invalid formats are rejected automatically.
 
 ```bash
+# Auto-detect platform directory
+if [ -d ".claude" ]; then
+  PLATFORM_DIR=".claude"
+elif [ -d ".copilot" ]; then
+  PLATFORM_DIR=".copilot"
+else
+  echo "Error: No .claude or .copilot directory found" >&2
+  exit 1
+fi
+
 # Pass JIRA flag if provided in invocation
-bash skills/_shared/scripts/feature-branch-setup.sh "$ISSUE_PATH" "$@"
+bash "$PLATFORM_DIR/skills/_shared/scripts/feature-branch-setup.sh" "$ISSUE_PATH" "$@"
 ```
 
 The script will:
@@ -137,7 +147,7 @@ DETAILS="- <key decision or tradeoff line 1>
 
 # Commit with prefix and co-author if provided
 if [ -n "$COAUTHOR_TRAILER" ]; then
-  bash skills/_shared/scripts/commit-changes.sh \
+  bash "$PLATFORM_DIR/skills/_shared/scripts/commit-changes.sh" \
     --prefix "[$ISSUE_SLUG]" \
     --message "$ISSUE_TITLE${DETAILS:+
 
@@ -145,7 +155,7 @@ $DETAILS}" \
     --files "$CHANGED_FILES" \
     --coauthor "$COAUTHOR_TRAILER"
 else
-  bash skills/_shared/scripts/commit-changes.sh \
+  bash "$PLATFORM_DIR/skills/_shared/scripts/commit-changes.sh" \
     --prefix "[$ISSUE_SLUG]" \
     --message "$ISSUE_TITLE${DETAILS:+
 

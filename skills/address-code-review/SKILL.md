@@ -22,7 +22,17 @@ You are working through the findings from an afk-sprint code review report. Foll
 This skill works on existing PR branches. Do not run on the default branch.
 
 ```bash
-bash skills/_shared/scripts/branch-safety-check.sh
+# Auto-detect platform directory
+if [ -d ".claude" ]; then
+  PLATFORM_DIR=".claude"
+elif [ -d ".copilot" ]; then
+  PLATFORM_DIR=".copilot"
+else
+  echo "Error: No .claude or .copilot directory found" >&2
+  exit 1
+fi
+
+bash "$PLATFORM_DIR/skills/_shared/scripts/branch-safety-check.sh"
 ```
 
 If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
@@ -100,7 +110,7 @@ COMMIT_BODY="address code review findings
 - <what changed for finding N and why>"
 
 # Commit with co-author
-bash skills/_shared/scripts/commit-changes.sh \
+bash "$PLATFORM_DIR/skills/_shared/scripts/commit-changes.sh" \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
   --coauthor "Claude <noreply@anthropic.com>"

@@ -34,7 +34,7 @@
       "install": ".claude/skills/afk-sprint",
       "install-copilot": ".copilot/skills/afk-sprint",
       "agent-deps": ["coder", "code-reviewer"],
-      "deps": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
+      "deps": ["_shared", "karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
       "docs": ["issue-tracker.md", "triage-labels.md"]
     },
     "karpathy-guidelines": {
@@ -58,19 +58,19 @@
       "version": "1.0.0",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
-      "deps": ["dep-install", "tdd", "karpathy-guidelines"]
+      "deps": ["_shared", "dep-install", "tdd", "karpathy-guidelines"]
     },
     "address-code-review": {
       "version": "1.0.0",
       "description": "Triage and fix findings from an afk-sprint code review report using TDD.",
       "install": ".claude/skills/address-code-review",
-      "deps": ["dep-install", "tdd"]
+      "deps": ["_shared", "dep-install", "tdd"]
     },
     "address-pr-comments": {
       "version": "1.0.0",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "install": ".claude/skills/address-pr-comments",
-      "deps": ["dep-install", "tdd"]
+      "deps": ["_shared", "dep-install", "tdd"]
     },
     "improve-codebase-architecture": {
       "version": "1.0.0",
@@ -113,6 +113,12 @@
       "description": "Ultra-compressed communication mode. Cuts token usage ~75% by speaking like caveman while keeping full technical accuracy. Supports lite/full/ultra and wenyan intensity levels.",
       "source": "JuliusBrussee/caveman",
       "install": ".claude/skills/caveman"
+    },
+    "_shared": {
+      "version": "1.0.0",
+      "description": "Shared scripts library used by multiple skills (branch safety, feature branch setup, commit changes). Infrastructure skill - not invoked directly by users.",
+      "install": ".claude/skills/_shared",
+      "install-copilot": ".copilot/skills/_shared"
     }
   },
   "docs": {

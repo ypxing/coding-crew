@@ -5,6 +5,16 @@ set -euo pipefail
 # Usage: source this script or run it directly
 # Optional: Pass --jira TICKET-123 as arguments
 
+# Auto-detect platform directory
+if [ -d ".claude" ]; then
+  PLATFORM_DIR=".claude"
+elif [ -d ".copilot" ]; then
+  PLATFORM_DIR=".copilot"
+else
+  echo "Error: No .claude or .copilot directory found" >&2
+  exit 1
+fi
+
 # Find first ready issue to determine branch name
 FIRST_ISSUE=$(find .scratch/*/issues/*.md -type f ! -path '*/done/*' -print | head -n 1)
 
@@ -14,7 +24,7 @@ if [ -z "$FIRST_ISSUE" ]; then
 fi
 
 # Use shared feature branch setup script (handles branch creation/switching with JIRA support)
-bash skills/_shared/scripts/feature-branch-setup.sh "$FIRST_ISSUE" "$@"
+bash "$PLATFORM_DIR/skills/_shared/scripts/feature-branch-setup.sh" "$FIRST_ISSUE" "$@"
 
 # Get current branch after setup
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
