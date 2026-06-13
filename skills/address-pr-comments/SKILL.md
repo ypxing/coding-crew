@@ -137,7 +137,7 @@ COMMIT_BODY="address PR review comments
 bash scripts/commit-changes.sh \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
-  --coauthor "Claude <noreply@anthropic.com>"
+  --coauthor "Claude Code <claude@anthropic.com>"
 ```
 
 Do not push — leave that to the user.

@@ -126,7 +126,7 @@ COMMIT_BODY="address code review findings
 bash scripts/commit-changes.sh \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
-  --coauthor "Claude <noreply@anthropic.com>"
+  --coauthor "Claude Code <claude@anthropic.com>"
 ```
 
 If the commit fails, stop and report the error to the user — do **not** proceed to Step 5b or archive the report until the commit succeeds.

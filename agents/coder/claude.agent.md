@@ -63,12 +63,11 @@ WORKER=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | sed 's|.*/||')
 mkdir -p "$(dirname "$CMD_LOG")"
 ```
 
-Every subsequent Bash call must log before running:
+Every subsequent Bash call must log before running. Do not use eval — write the log line and the command as two separate statements:
 
 ```bash
-THE_CMD='<exact command>'
-echo "[$(date -u +%H:%M:%SZ)] [$WORKER] $THE_CMD" >> "$CMD_LOG"
-eval "$THE_CMD"
+echo "[$(date -u +%H:%M:%SZ)] [$WORKER] <exact command here>" >> "$CMD_LOG"
+<exact command here>
 ```
 
 ## Implementation

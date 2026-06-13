@@ -16,8 +16,9 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --files)
-      # Read files as space-separated string
-      IFS=' ' read -ra FILES <<< "$2"
+      # Space-separated list for simple cases. For paths with spaces, pass --files once per file.
+      IFS=' ' read -ra _batch <<< "$2"
+      FILES+=("${_batch[@]}")
       shift 2
       ;;
     --coauthor)

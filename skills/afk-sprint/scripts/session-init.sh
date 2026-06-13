@@ -16,7 +16,7 @@ else
 fi
 
 # Find first ready issue to determine branch name
-FIRST_ISSUE=$(find .scratch/*/issues/*.md -type f ! -path '*/done/*' -print | head -n 1)
+FIRST_ISSUE=$(find .scratch -path '*/issues/*.md' -not -path '*/done/*' -type f | head -n 1)
 
 if [ -z "$FIRST_ISSUE" ]; then
   echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-sprint."
@@ -24,7 +24,8 @@ if [ -z "$FIRST_ISSUE" ]; then
 fi
 
 # Use shared feature branch setup script (handles branch creation/switching with JIRA support)
-bash "$PLATFORM_DIR/skills/_shared/scripts/feature-branch-setup.sh" "$FIRST_ISSUE" "$@"
+# feature-branch-setup.sh is copied into this skill's scripts/ directory during install.sh
+bash "$(dirname "$0")/feature-branch-setup.sh" "$FIRST_ISSUE" "$@"
 
 # Get current branch after setup
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)

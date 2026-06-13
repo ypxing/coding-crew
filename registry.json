@@ -1,7 +1,7 @@
 {
   "agents": {
     "code-reviewer": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Reviews all branches merged in a sprint session; reports CRITICAL/HIGH/MEDIUM/LOW findings per branch. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
       "skills": [],
@@ -14,7 +14,7 @@
       }
     },
     "coder": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
       "skills": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue"],
@@ -29,10 +29,13 @@
   },
   "skills": {
     "afk-sprint": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Orchestrator that spawns parallel coder agents in isolated worktrees, merges completed branches, runs a code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/afk-sprint",
       "install-copilot": ".copilot/skills/afk-sprint",
+      "scripts": [
+        "feature-branch-setup.sh"
+      ],
       "agent-deps": ["coder", "code-reviewer"],
       "deps": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"],
       "docs": ["issue-tracker.md", "triage-labels.md"]
@@ -44,7 +47,7 @@
       "install": ".claude/skills/karpathy-guidelines"
     },
     "tdd": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Test-driven development with red-green-refactor loop, vertical slices.",
       "source": "mattpocock/skills",
       "install": ".claude/skills/tdd"
@@ -55,21 +58,21 @@
       "install": ".claude/skills/dep-install"
     },
     "solve-issue": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
       "scripts": ["feature-branch-setup.sh", "commit-changes.sh"],
       "deps": ["dep-install", "tdd", "karpathy-guidelines"]
     },
     "address-code-review": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Triage and fix findings from an afk-sprint code review report using TDD.",
       "install": ".claude/skills/address-code-review",
       "scripts": ["branch-safety-check.sh", "commit-changes.sh"],
       "deps": ["dep-install", "tdd"]
     },
     "address-pr-comments": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "install": ".claude/skills/address-pr-comments",
       "scripts": ["branch-safety-check.sh", "commit-changes.sh"],
@@ -106,7 +109,7 @@
       "install": ".claude/skills/to-prd"
     },
     "plan-sprint": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
       "install": ".claude/skills/plan-sprint",
       "deps": ["grill-with-docs", "to-prd", "to-issues"]

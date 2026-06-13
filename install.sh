@@ -271,6 +271,8 @@ install_single_skill() {
   [[ -d "$SCRIPT_DIR/skills/$skill_name" ]] || { echo "Error: skill source not found: skills/$skill_name" >&2; exit 1; }
   mkdir -p "$REPO_ROOT/$skill_dest"
   cp -r "$SCRIPT_DIR/skills/$skill_name/." "$REPO_ROOT/$skill_dest/"
+  # Remove development/verification test scripts — they belong in the source repo only
+  find "$REPO_ROOT/$skill_dest/references" -name "test-*.sh" -type f -delete 2>/dev/null || true
   # Select the right SKILL.md: prefer copilot-specific if present; fall back to generic SKILL.md
   if [[ "$PLATFORM" == "copilot" && -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" ]]; then
     rm -f "$REPO_ROOT/$skill_dest/SKILL.md"

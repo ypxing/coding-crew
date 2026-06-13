@@ -38,7 +38,7 @@ FEATURE_SLUG="$CURRENT_BRANCH"
 # Strip 'feature/' prefix if present
 FEATURE_SLUG="${FEATURE_SLUG#feature/}"
 # Strip JIRA prefix pattern (e.g., PROJ-123-)
-FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]*-[0-9]*-//')
+FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]\+-[0-9]\+-//')
 
 STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
 
@@ -115,11 +115,6 @@ fi
 # Perform squash using reset + commit
 git reset --soft "$BASE_SHA"
 
-if [ $? -ne 0 ]; then
-  echo "ERROR: Failed to squash commits. Manual rebase needed: git reset --soft $BASE_SHA"
-  exit 1
-fi
-
 # Create squashed commit with safe message handling
 # Use git commit -F with here-doc for safe literal interpolation
 git commit -F - << EOF
@@ -129,20 +124,16 @@ $ISSUE_BULLETS
 $COAUTHOR_TRAILER
 EOF
 
-if [ $? -ne 0 ]; then
-  echo "ERROR: Failed to create squashed commit. Manual fix needed."
-  exit 1
-fi
-
 # Update state file with new HEAD SHA
 NEW_HEAD=$(git rev-parse HEAD)
-jq --arg branch "$CURRENT_BRANCH" \
-   --arg sha "$NEW_HEAD" \
-   '.branches[$branch].base_sha = $sha' \
-   "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
-
-if [ $? -ne 0 ]; then
+if jq --arg branch "$CURRENT_BRANCH" \
+      --arg sha "$NEW_HEAD" \
+      '.branches[$branch].base_sha = $sha' \
+      "$STATE_FILE" > "$STATE_FILE.tmp"; then
+  mv "$STATE_FILE.tmp" "$STATE_FILE"
+else
   echo "Warning: Failed to update state file with new base SHA."
+  rm -f "$STATE_FILE.tmp"
 fi
 
 echo "Squashed $COMMIT_COUNT commits into 1."

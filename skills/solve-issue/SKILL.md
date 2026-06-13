@@ -4,7 +4,6 @@ description: >
   Implement a single issue end-to-end: read it, explore context, install deps, build with TDD,
   verify checks, and commit. Platform-agnostic — works in worktrees or branches.
 argument-hint: "Path to issue file (e.g. .scratch/auth/issues/01-add-logout.md)"
-user-invocable: false
 ---
 
 # Solve Issue
@@ -58,18 +57,18 @@ Use the feature branch setup script. Parse optional `--jira` flag from invocatio
 ```bash
 # feature-branch-setup.sh - copied during installation from git-workflow
 # Source: scripts/skill-utils/git-workflow/feature-branch-setup.sh
-# 
+#
 # Purpose: Create or switch to a feature branch based on issue slug
 # Usage: bash scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-123]
-# 
+#
 # Arguments:
 #   <issue-path>       - Path to the issue markdown file
 #   --jira TICKET-123  - Optional JIRA ticket (format: [A-Z]+-[0-9]+, validated by script)
-# 
+#
 # Behavior:
 #   - If on default branch: creates or switches to feature/<slug> or feature/<JIRA>-<slug>
 #   - If already on non-default branch: no-op (stays on current branch)
-# 
+#
 # Security: JIRA ticket format validated with regex [A-Z]+-[0-9]+ - invalid formats rejected
 
 bash scripts/feature-branch-setup.sh "$ISSUE_PATH" "$@"

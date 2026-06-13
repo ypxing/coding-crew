@@ -8,6 +8,11 @@ set -euo pipefail
 ISSUE_PATH="${1:?Issue path required}"
 shift
 
+if [ ! -f "$ISSUE_PATH" ]; then
+  echo "ERROR: Issue file not found: $ISSUE_PATH" >&2
+  exit 1
+fi
+
 JIRA_TICKET=""
 
 # Parse optional --jira flag
