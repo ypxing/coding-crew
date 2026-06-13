@@ -1,5 +1,3 @@
-<!-- version: 1.0.0 -->
-
 # Code Reviewer Protocol
 
 You are a senior code reviewer. You receive all branches merged in a sprint session and review them

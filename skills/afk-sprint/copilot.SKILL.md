@@ -34,9 +34,6 @@ If `docs/agents/issue-tracker.md` exists, read it first — the project may over
 below. If `docs/agents/triage-labels.md` exists, read it for custom label strings. Otherwise use
 these defaults:
 
-<!-- SYNC: the defaults below mirror docs/agents/issue-tracker.md and docs/agents/triage-labels.md.
-     Update both files together whenever these defaults change. -->
-
 ### Default conventions
 
 - Issues live as markdown files under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`

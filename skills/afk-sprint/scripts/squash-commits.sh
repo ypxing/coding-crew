@@ -60,19 +60,12 @@ if [ ${#COMPLETED_SLUGS[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Generate squashed commit message
-
-# Summary line from feature/branch name (already stripped of feature/ and JIRA prefix above)
-SUMMARY_LINE=$(echo "$FEATURE_SLUG" | tr '-' ' ' | sed 's/\b\(.\)/\u\1/g')
-
-# Build bulleted issue list from completed slugs
-# Extract issue titles from issue files in done/ directories
+# Build bulleted issue list and collect titles from completed slugs
 ISSUE_BULLETS=""
+ISSUE_TITLES=()
 for slug in "${COMPLETED_SLUGS[@]}"; do
-  # Find the done issue file
   ISSUE_FILE=$(find .scratch/*/issues/done/${slug}.md -type f 2>/dev/null | head -n 1)
   if [ -n "$ISSUE_FILE" ]; then
-    # Extract title from "## What to build" section
     TITLE=$(sed -n '/## What to build/,/^##/p' "$ISSUE_FILE" | grep -v '^##' | grep -v '^[[:space:]]*$' | head -n1 | sed 's/^[[:space:]]*//')
     if [ -z "$TITLE" ]; then
       TITLE=$(echo "$slug" | sed 's/^[0-9]*-//' | tr '-' ' ')
@@ -80,10 +73,19 @@ for slug in "${COMPLETED_SLUGS[@]}"; do
   else
     TITLE=$(echo "$slug" | sed 's/^[0-9]*-//' | tr '-' ' ')
   fi
-  # Safe bullet list construction - each title on its own line
+  ISSUE_TITLES+=("$TITLE")
   ISSUE_BULLETS="${ISSUE_BULLETS}- ${TITLE}
 "
 done
+
+# Summary: "Feature Name: first issue title (+N more)"
+FEATURE_LABEL=$(echo "$FEATURE_SLUG" | tr '-' ' ' | sed 's/\b\(.\)/\u\1/g')
+ISSUE_COUNT=${#ISSUE_TITLES[@]}
+if [ $ISSUE_COUNT -eq 1 ]; then
+  SUMMARY_LINE="$FEATURE_LABEL: ${ISSUE_TITLES[0]}"
+else
+  SUMMARY_LINE="$FEATURE_LABEL: ${ISSUE_TITLES[0]} (+$((ISSUE_COUNT - 1)) more)"
+fi
 
 # Co-authored-by trailer (platform-appropriate)
 if [ "$PLATFORM" = "claude" ]; then

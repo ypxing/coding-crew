@@ -17,26 +17,12 @@ You are working through the findings from an afk-sprint code review report. Foll
 
 ## Step 0 — Branch safety check
 
-**Note:** The `scripts/branch-safety-check.sh` file is copied into this skill during installation from the central git-workflow scripts. It won't exist in the repo until `install.sh` runs.
 
 **Check current branch:**
 
 This skill works on existing PR branches. Do not run on the default branch.
 
 ```bash
-# branch-safety-check.sh - copied during installation from git-workflow
-# Source: scripts/skill-utils/git-workflow/branch-safety-check.sh
-#
-# Purpose: Validate that the current branch is safe for operations (not on default branch)
-# Usage: bash "<skill-dir>/scripts/branch-safety-check.sh" [--allow-default]
-#
-# Arguments:
-#   --allow-default - Allow execution on default branch (prints warning instead of error)
-#
-# Exit codes:
-#   0 - Safe to proceed
-#   1 - On default branch and not allowed
-
 bash "<skill-dir>/scripts/branch-safety-check.sh"
 ```
 
@@ -113,14 +99,6 @@ COMMIT_BODY="address code review findings
 - <what changed for finding 1 and why>
 - <what changed for finding 2 and why>
 - <what changed for finding N and why>"
-
-# commit-changes.sh - copied during installation from git-workflow
-# Source: scripts/skill-utils/git-workflow/commit-changes.sh
-#
-# Purpose: Stage specific files and commit with standardized message format
-# Usage: bash scripts/commit-changes.sh --message "msg" --files "file1 file2" [--coauthor "Name <email>"] [--prefix "[slug]"]
-#
-# Safety: Never uses git add -A or git add . - only stages explicitly listed files
 
 # Commit with co-author
 bash "<skill-dir>/scripts/commit-changes.sh" \
