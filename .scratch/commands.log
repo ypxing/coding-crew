@@ -1,5 +1,0 @@
-git rev-parse HEAD > .scratch/.session-start-sha
-sed -i '' "s/^Status:.*/Status: done/" .scratch/auto-squash-commits/issues/01-solve-issue-feature-branch-detection.md
-mkdir -p .scratch/auto-squash-commits/issues/done && mv .scratch/auto-squash-commits/issues/01-solve-issue-feature-branch-detection.md .scratch/auto-squash-commits/issues/done/
-sed -i "" "s/^Status:.*/Status: done/" .scratch/auto-squash-commits/issues/01-solve-issue-feature-branch-detection.md
-mkdir -p .scratch/auto-squash-commits/issues/done && mv .scratch/auto-squash-commits/issues/01-solve-issue-feature-branch-detection.md .scratch/auto-squash-commits/issues/done/
