@@ -145,10 +145,68 @@ Prose summaries like `"run unit tests"` are wrong. The log line must be the lite
 
 ### 0. Session init (run once before round 1)
 
-Record the HEAD SHA before making any changes — needed for code review on exit.
-Persist to a file so the SHA survives across tool calls (shell variables do not persist between steps):
+### Feature Branch Setup
+
+Parse optional `--jira` flag from invocation arguments (if present, format is `--jira TICKET-123`).
 
 ```bash
+# Parse --jira flag from invocation
+JIRA_TICKET=""
+if [[ "$INVOCATION" =~ --jira[[:space:]]+([A-Z]+-[0-9]+) ]]; then
+  JIRA_TICKET="${BASH_REMATCH[1]}"
+fi
+
+# Detect default branch
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+
+# Fallback to "main" if origin/HEAD is not set
+if [ -z "$DEFAULT_BRANCH" ]; then
+  DEFAULT_BRANCH="main"
+fi
+
+# If on default branch, create or switch to feature branch
+if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
+  # Find first ready issue to extract slug for branch naming
+  FIRST_ISSUE=$(find .scratch/*/issues/*.md -type f ! -path '*/done/*' -print | head -n 1)
+  
+  if [ -z "$FIRST_ISSUE" ]; then
+    echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-sprint."
+    exit 1
+  fi
+  
+  # Extract issue slug from filename: strip leading digits and .md extension
+  ISSUE_SLUG=$(basename "$FIRST_ISSUE" | sed 's/^[0-9]*-//' | sed 's/\.md$//')
+  
+  # Build branch name with optional JIRA prefix
+  if [ -n "$JIRA_TICKET" ]; then
+    SUGGESTED_BRANCH="feature/$JIRA_TICKET-$ISSUE_SLUG"
+  else
+    SUGGESTED_BRANCH="feature/$ISSUE_SLUG"
+  fi
+  
+  # Check if branch exists: switch if yes, create if no
+  if git rev-parse --verify "$SUGGESTED_BRANCH" >/dev/null 2>&1; then
+    git checkout "$SUGGESTED_BRANCH"
+  else
+    git checkout -b "$SUGGESTED_BRANCH"
+  fi
+  
+  # Update current branch after switch/create
+  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+fi
+
+# Derive feature-slug from current branch name
+FEATURE_SLUG="$CURRENT_BRANCH"
+# Strip 'feature/' prefix if present
+FEATURE_SLUG="${FEATURE_SLUG#feature/}"
+# Strip JIRA prefix pattern (e.g., PROJ-123-)
+FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]*-[0-9]*-//')
+
+# Auto-create .scratch/<feature-slug>/issues/ directory structure if needed
+mkdir -p ".scratch/$FEATURE_SLUG/issues"
+
+# Initialize session tracking
 mkdir -p .scratch
 git rev-parse HEAD > .scratch/.session-start-sha
 ```
