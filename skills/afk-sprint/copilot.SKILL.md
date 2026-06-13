@@ -163,15 +163,35 @@ fi
 FEATURE_SLUG="$CURRENT_BRANCH"
 # Strip 'feature/' prefix if present
 FEATURE_SLUG="${FEATURE_SLUG#feature/}"
-# Strip JIRA prefix pattern (e.g., PROJ-123-)
-FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]*-[0-9]*-//')
+# Strip JIRA prefix pattern (e.g., PROJ-123-) - using + quantifier for one-or-more
+FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]\+-[0-9]\+-//')
+
+# Validate feature-slug is non-empty after stripping
+if [ -z "$FEATURE_SLUG" ]; then
+  echo "ERROR: Could not derive feature slug from branch name '$CURRENT_BRANCH'"
+  exit 1
+fi
 
 # Auto-create .scratch/<feature-slug>/issues/ directory structure if needed
 mkdir -p ".scratch/$FEATURE_SLUG/issues"
 
 # Initialize session tracking
 mkdir -p .scratch
+
+# Validate git repository (Finding #10)
+if ! git rev-parse HEAD >/dev/null 2>&1; then
+  echo "ERROR: Not in a git repository or HEAD is invalid"
+  exit 1
+fi
+
 git rev-parse HEAD > .scratch/.session-start-sha
+
+# Check for jq dependency (Finding #7)
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq is required but not installed."
+  echo "Install with: apt-get install jq (Debian/Ubuntu) or brew install jq (macOS)"
+  exit 1
+fi
 
 # Initialize sprint state tracking
 STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
@@ -369,26 +389,22 @@ for slug in "${completed_slugs[@]}"; do
   # Find the done issue file
   ISSUE_FILE=$(find .scratch/*/issues/done/${slug}.md -type f 2>/dev/null | head -n 1)
   if [ -n "$ISSUE_FILE" ]; then
-    # Extract title from "## What to build" section or use slug as fallback
-    TITLE=$(grep -A1 "## What to build" "$ISSUE_FILE" | tail -n1 | sed 's/^[[:space:]]*//' || echo "$slug")
-    if [ -z "$TITLE" ] || [ "$TITLE" = "## What to build" ]; then
+    # Extract title from "## What to build" section - more robust extraction (Finding #12)
+    TITLE=$(sed -n '/## What to build/,/^##/p' "$ISSUE_FILE" | grep -v '^##' | grep -v '^[[:space:]]*$' | head -n1 | sed 's/^[[:space:]]*//')
+    if [ -z "$TITLE" ]; then
       TITLE="$slug"
     fi
   else
     TITLE="$slug"
   fi
-  ISSUE_BULLETS="${ISSUE_BULLETS}- ${TITLE}\n"
+  # Safe bullet list construction - each title on its own line
+  ISSUE_BULLETS="${ISSUE_BULLETS}- ${TITLE}
+"
 done
 
 # Co-authored-by trailer (platform-appropriate)
 # For GitHub Copilot: Co-authored-by: GitHub Copilot <noreply@github.com>
 COAUTHOR_TRAILER="Co-authored-by: GitHub Copilot <noreply@github.com>"
-
-# Assemble final message
-SQUASH_MESSAGE="${SUMMARY_LINE}
-
-${ISSUE_BULLETS}
-${COAUTHOR_TRAILER}"
 ```
 
 Perform squash:
@@ -402,6 +418,13 @@ if [ "$COMMIT_COUNT" -eq 0 ]; then
   # Continue to code review
 fi
 
+# Validate BASE_SHA is an ancestor of HEAD (Finding #11)
+if ! git merge-base --is-ancestor "$BASE_SHA" HEAD 2>/dev/null; then
+  echo "ERROR: Base SHA $BASE_SHA is not an ancestor of HEAD."
+  echo "State file may be corrupted or wrong branch. Manual fix needed."
+  exit 1
+fi
+
 # Perform squash using reset + commit
 git reset --soft "$BASE_SHA"
 
@@ -410,8 +433,14 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Commit with squashed message
-git commit -m "$SQUASH_MESSAGE"
+# Create squashed commit with safe message handling (Finding #13)
+# Use git commit -F with here-doc for safe literal interpolation
+git commit -F - << EOF
+$SUMMARY_LINE
+
+$ISSUE_BULLETS
+$COAUTHOR_TRAILER
+EOF
 
 if [ $? -ne 0 ]; then
   echo "ERROR: Failed to create squashed commit. Manual fix needed."

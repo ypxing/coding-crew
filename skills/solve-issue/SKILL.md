@@ -51,6 +51,8 @@ fi
 
 Parse optional `--jira` flag from invocation arguments (if present, format is `--jira TICKET-123`).
 
+**Security note**: The JIRA ticket format is validated by the regex `[A-Z]+-[0-9]+` which only matches uppercase letters followed by dash and digits. Invalid formats are rejected automatically by the pattern match failure.
+
 Check current branch:
 
 ```bash

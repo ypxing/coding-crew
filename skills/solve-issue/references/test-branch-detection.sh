@@ -183,3 +183,25 @@ cd - > /dev/null
 rm -rf "$TEST_DIR"
 
 echo "All tests passed! ✓"
+
+# Test 10: Invalid JIRA ticket format (Finding #1)
+echo "Test 10: Reject invalid JIRA ticket formats"
+invalid_jira="--jira INVALID"
+result=$(parse_jira_flag "$invalid_jira")
+if [ -z "$result" ]; then
+    echo "  ✓ Invalid JIRA format rejected"
+else
+    echo "  ✗ Invalid JIRA format accepted: $result"
+    exit 1
+fi
+
+invalid_jira2="--jira 123-ABC"
+result2=$(parse_jira_flag "$invalid_jira2")
+if [ -z "$result2" ]; then
+    echo "  ✓ Invalid JIRA format (number-letters) rejected"
+else
+    echo "  ✗ Invalid JIRA format accepted: $result2"
+    exit 1
+fi
+
+echo
