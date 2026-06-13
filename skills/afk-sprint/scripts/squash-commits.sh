@@ -61,14 +61,9 @@ if [ ${#COMPLETED_SLUGS[@]} -eq 0 ]; then
 fi
 
 # Generate squashed commit message
-ISSUE_COUNT=${#COMPLETED_SLUGS[@]}
 
-# Generate summary line
-if [ $ISSUE_COUNT -eq 1 ]; then
-  SUMMARY_LINE="Implement 1 feature"
-else
-  SUMMARY_LINE="Implement $ISSUE_COUNT features"
-fi
+# Summary line from feature/branch name (already stripped of feature/ and JIRA prefix above)
+SUMMARY_LINE=$(echo "$FEATURE_SLUG" | tr '-' ' ' | sed 's/\b\(.\)/\u\1/g')
 
 # Build bulleted issue list from completed slugs
 # Extract issue titles from issue files in done/ directories
@@ -80,10 +75,10 @@ for slug in "${COMPLETED_SLUGS[@]}"; do
     # Extract title from "## What to build" section
     TITLE=$(sed -n '/## What to build/,/^##/p' "$ISSUE_FILE" | grep -v '^##' | grep -v '^[[:space:]]*$' | head -n1 | sed 's/^[[:space:]]*//')
     if [ -z "$TITLE" ]; then
-      TITLE="$slug"
+      TITLE=$(echo "$slug" | sed 's/^[0-9]*-//' | tr '-' ' ')
     fi
   else
-    TITLE="$slug"
+    TITLE=$(echo "$slug" | sed 's/^[0-9]*-//' | tr '-' ' ')
   fi
   # Safe bullet list construction - each title on its own line
   ISSUE_BULLETS="${ISSUE_BULLETS}- ${TITLE}

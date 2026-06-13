@@ -46,7 +46,7 @@ these defaults:
 - To **fetch an issue**: read the file at its path
 - To **mark done**: first update the Status line, then move the file:
   ```bash
-  sed -i '' "s/^Status:.*/Status: done/" "<path>"
+  sed -i'' "s/^Status:.*/Status: done/" "<path>"
   mkdir -p "$(dirname <path>)/done" && mv "<path>" "$(dirname <path>)/done/"
   ```
 
@@ -119,7 +119,7 @@ Run the session initialization script. It handles:
 - Sprint state file initialization
 
 ```bash
-bash scripts/session-init.sh "$@"
+bash "<skill-dir>/scripts/session-init.sh" "$@"
 ```
 
 The script will:
@@ -178,7 +178,7 @@ Wait for the subagent to return its report, then proceed to step 3.
 must happen before the move so the listing agent won't re-pick the issue if the move is slow:
 
 ```bash
-sed -i '' "s/^Status:.*/Status: done/" "<issue-path>"
+sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
 mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"
 ```
 
@@ -236,13 +236,13 @@ Run the squash commits script. Track completed issue slugs throughout the sprint
 
 ```bash
 # completed_slugs array should be populated in step 3 when issues are marked done
-bash scripts/squash-commits.sh --platform copilot "${completed_slugs[@]}"
+bash "<skill-dir>/scripts/squash-commits.sh" --platform copilot "${completed_slugs[@]}"
 ```
 
 If `--no-squash` flag was specified, pass it to the script:
 
 ```bash
-bash scripts/squash-commits.sh --no-squash --platform copilot "${completed_slugs[@]}"
+bash "<skill-dir>/scripts/squash-commits.sh" --no-squash --platform copilot "${completed_slugs[@]}"
 ```
 
 The script will:

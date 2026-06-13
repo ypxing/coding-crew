@@ -43,7 +43,7 @@ Run the session initialization script. It handles:
 - Sprint state file initialization
 
 ```bash
-bash scripts/session-init.sh "$@"
+bash "<skill-dir>/scripts/session-init.sh" "$@"
 ```
 
 The script will:
@@ -145,7 +145,7 @@ Spawn the following two haiku Agents **in a single response** (parallel):
 **Agent A — Close issues**: for each successfully merged item:
 
 ```bash
-sed -i "" "s/^Status:.*/Status: done/" "<path>"
+sed -i'' "s/^Status:.*/Status: done/" "<path>"
 mkdir -p "$(dirname <path>)/done" && mv "<path>" "$(dirname <path>)/done/"
 ```
 
@@ -168,13 +168,13 @@ Run the squash commits script. Pass `--no-squash` if the user specified it, `--p
 
 ```bash
 # Collect all_merged slugs from sprint tracking
-bash scripts/squash-commits.sh --platform claude "${all_merged[@]}"
+bash "<skill-dir>/scripts/squash-commits.sh" --platform claude "${all_merged[@]}"
 ```
 
 If `--no-squash` flag was specified, pass it to the script:
 
 ```bash
-bash scripts/squash-commits.sh --no-squash --platform claude "${all_merged[@]}"
+bash "<skill-dir>/scripts/squash-commits.sh" --no-squash --platform claude "${all_merged[@]}"
 ```
 
 The script will:

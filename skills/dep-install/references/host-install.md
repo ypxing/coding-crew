@@ -21,12 +21,10 @@ Read `$PROJECT_ROOT/CLAUDE.md` if it exists. If it specifies an install command,
 
 If CLAUDE.md did not specify an install command, run the detection script. It checks for a Makefile `install`/`deps` target first, then falls back to signal file detection.
 
+Run `scripts/host-install.sh` from the same directory you read this skill file from:
+
 ```bash
-SKILL_ROOT="${HOME}/.claude/skills/dep-install"
-if [ ! -d "$SKILL_ROOT" ]; then
-  SKILL_ROOT="$MAIN_ROOT/.claude/skills/dep-install"
-fi
-bash "$SKILL_ROOT/scripts/host-install.sh" --project-root "$PROJECT_ROOT"
+bash "<skill-dir>/scripts/host-install.sh" --project-root "$PROJECT_ROOT"
 ```
 
 Exit codes:

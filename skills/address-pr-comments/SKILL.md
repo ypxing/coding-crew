@@ -36,13 +36,13 @@ This skill works on existing PR branches. Do not run on the default branch.
 # Source: scripts/skill-utils/git-workflow/branch-safety-check.sh
 #
 # Purpose: Validate that the current branch is safe for operations (not on default branch)
-# Usage: bash scripts/branch-safety-check.sh [--allow-default]
+# Usage: bash "<skill-dir>/scripts/branch-safety-check.sh" [--allow-default]
 #
 # Exit codes:
 #   0 - Safe to proceed
 #   1 - On default branch and not allowed
 
-bash scripts/branch-safety-check.sh
+bash "<skill-dir>/scripts/branch-safety-check.sh"
 ```
 
 If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
@@ -134,7 +134,7 @@ COMMIT_BODY="address PR review comments
 # Safety: Never uses git add -A or git add . - only stages explicitly listed files
 
 # Commit with co-author
-bash scripts/commit-changes.sh \
+bash "<skill-dir>/scripts/commit-changes.sh" \
   --message "$COMMIT_BODY" \
   --files "<space-separated file list>" \
   --coauthor "Claude Code <claude@anthropic.com>"

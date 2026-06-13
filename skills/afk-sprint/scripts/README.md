@@ -80,9 +80,9 @@ Co-authored-by: Claude Code <claude@anthropic.com>
 
 ---
 
-### `workflow.js`
+### `claude.workflow.js`
 
-**Purpose**: Workflow script for running afk-sprint using the Workflow tool (Claude Code only).
+**Purpose**: Workflow script for running afk-sprint using the Workflow tool (Claude Code only). Renamed to `workflow.js` by `install.sh` during a Claude install.
 
 **Usage**: Invoked via Workflow tool when user specifies "with workflow" in the afk-sprint invocation.
 

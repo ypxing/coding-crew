@@ -50,28 +50,10 @@ fi
 
 ### 0. Feature Branch Setup
 
-**Note:** The `scripts/feature-branch-setup.sh` file is copied into this skill during installation from the central git-workflow scripts. It won't exist in the repo until `install.sh` runs.
-
-Use the feature branch setup script. Parse optional `--jira` flag from invocation arguments (if present, format is `--jira TICKET-123`).
+Use the feature branch setup script from the same directory you read this skill file from:
 
 ```bash
-# feature-branch-setup.sh - copied during installation from git-workflow
-# Source: scripts/skill-utils/git-workflow/feature-branch-setup.sh
-#
-# Purpose: Create or switch to a feature branch based on issue slug
-# Usage: bash scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-123]
-#
-# Arguments:
-#   <issue-path>       - Path to the issue markdown file
-#   --jira TICKET-123  - Optional JIRA ticket (format: [A-Z]+-[0-9]+, validated by script)
-#
-# Behavior:
-#   - If on default branch: creates or switches to feature/<slug> or feature/<JIRA>-<slug>
-#   - If already on non-default branch: no-op (stays on current branch)
-#
-# Security: JIRA ticket format validated with regex [A-Z]+-[0-9]+ - invalid formats rejected
-
-bash scripts/feature-branch-setup.sh "$ISSUE_PATH" "$@"
+bash "<skill-dir>/scripts/feature-branch-setup.sh" "$ISSUE_PATH" "$@"
 ```
 
 ### 0.1. Pre-flight
@@ -87,8 +69,20 @@ explicitly says to.
 Extract from the issue:
 
 - Acceptance criteria
-- Hypothesized files likely to change (confirmed in Step 2)
-- Blocked-by dependencies — if any are unresolved, stop and report blocked.
+- Hypothesized files likely to change (confirmed in Step 3)
+- Blocked-by dependencies
+
+**Blocked-by check:** Read the `## Blocked by` section. For each listed dependency:
+
+1. Resolve the dependency's filename relative to the current issue's directory (e.g. `03-foo.md` → sibling file or `done/03-foo.md`).
+2. Check if it has been moved to `done/`: `ls "$(dirname "$ISSUE_PATH")/done/<dep-filename>" 2>/dev/null`.
+3. If the file is **not** in `done/`, stop immediately:
+
+```
+BLOCKED: depends on <dep-filename> which is not yet done
+```
+
+Only continue if every listed dependency is confirmed in `done/`. If the section says "None", proceed.
 
 ### 2. Install dependencies
 
@@ -96,7 +90,13 @@ STOP. Read and invoke the `dep-install` skill. If the skill is not found, stop a
 
 ### 3. Explore before coding
 
-For each hypothesized file from Step 1:
+**Codebase orientation — do this first:**
+
+1. Read `CLAUDE.md` (at `$PROJECT_ROOT/CLAUDE.md`) if it exists — it may describe architecture, conventions, and key entry points.
+2. Grep for similar patterns to what you're about to implement — find existing utilities, helpers, or conventions you should follow or reuse.
+3. Identify callers of the files you plan to change — understand how they're used before modifying them.
+
+**Then for each hypothesized file from Step 1:**
 
 1. Read the source file.
 2. Read the corresponding test file if one exists.
@@ -136,36 +136,17 @@ If there are no changes to stage (working directory is clean), check if the issu
 
 **Commit with shared script:**
 
-Extract the issue slug and use the shared commit script:
+Extract the issue slug and run `commit-changes.sh` from the same directory you read this skill file from:
 
 ```bash
 ISSUE_SLUG=$(basename "$ISSUE_PATH" | sed 's/\.md$//')
 ISSUE_TITLE="<extract title from issue file>"
-
-# Collect all changed files
 CHANGED_FILES="<space-separated list of files you modified>"
-
-# Build commit message details (optional - omit if none)
 DETAILS="- <key decision or tradeoff line 1>
 - <key decision or tradeoff line 2>"
 
-# commit-changes.sh - copied during installation from git-workflow
-# Source: scripts/skill-utils/git-workflow/commit-changes.sh
-#
-# Purpose: Stage specific files and commit with standardized message format
-# Usage: bash scripts/commit-changes.sh --message "msg" --files "file1 file2" [--coauthor "Name <email>"] [--prefix "[slug]"]
-#
-# Arguments:
-#   --message   - Commit message body (required)
-#   --files     - Space-separated list of files to stage (required)
-#   --coauthor  - Optional Co-authored-by trailer
-#   --prefix    - Optional prefix for commit message (e.g., "[01-auth]")
-#
-# Safety: Never uses git add -A or git add . - only stages explicitly listed files
-
-# Commit with prefix and co-author if provided
 if [ -n "$COAUTHOR_TRAILER" ]; then
-  bash scripts/commit-changes.sh \
+  bash "<skill-dir>/scripts/commit-changes.sh" \
     --prefix "[$ISSUE_SLUG]" \
     --message "$ISSUE_TITLE${DETAILS:+
 
@@ -173,7 +154,7 @@ $DETAILS}" \
     --files "$CHANGED_FILES" \
     --coauthor "$COAUTHOR_TRAILER"
 else
-  bash scripts/commit-changes.sh \
+  bash "<skill-dir>/scripts/commit-changes.sh" \
     --prefix "[$ISSUE_SLUG]" \
     --message "$ISSUE_TITLE${DETAILS:+
 
@@ -190,4 +171,4 @@ Do not push.
 
 Read `docs/agents/issue-tracker.md` (at `$MAIN_ROOT/docs/agents/issue-tracker.md`) and follow its "mark the ticket done" instructions using the issue file path from Step 1.
 
-If the file does not exist, use the default: run `sed -i '' "s/^Status:.*/Status: done/" "<issue-path>"` then `mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"`.
+If the file does not exist, use the default: run `sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"` then `mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"`.

@@ -273,13 +273,25 @@ install_single_skill() {
   cp -r "$SCRIPT_DIR/skills/$skill_name/." "$REPO_ROOT/$skill_dest/"
   # Remove development/verification test scripts — they belong in the source repo only
   find "$REPO_ROOT/$skill_dest/references" -name "test-*.sh" -type f -delete 2>/dev/null || true
-  # Select the right SKILL.md: prefer copilot-specific if present; fall back to generic SKILL.md
+  # Select the right SKILL.md:
+  #   claude.SKILL.md / copilot.SKILL.md  — platform-specific variant wins when present
+  #   SKILL.md                             — shared fallback used by both platforms
   if [[ "$PLATFORM" == "copilot" && -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" ]]; then
     rm -f "$REPO_ROOT/$skill_dest/SKILL.md"
     mv "$REPO_ROOT/$skill_dest/copilot.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
+  elif [[ "$PLATFORM" == "claude" && -f "$REPO_ROOT/$skill_dest/claude.SKILL.md" ]]; then
+    rm -f "$REPO_ROOT/$skill_dest/SKILL.md"
+    mv "$REPO_ROOT/$skill_dest/claude.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
+  fi
+  # Drop whichever platform variants weren't selected
+  rm -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" "$REPO_ROOT/$skill_dest/claude.SKILL.md"
+  # Select the right workflow.js:
+  #   claude.workflow.js — Claude-only workflow script; rename to workflow.js on Claude install
+  #   No copilot equivalent — Copilot does not support the Workflow tool
+  if [[ "$PLATFORM" == "claude" && -f "$REPO_ROOT/$skill_dest/scripts/claude.workflow.js" ]]; then
+    mv "$REPO_ROOT/$skill_dest/scripts/claude.workflow.js" "$REPO_ROOT/$skill_dest/scripts/workflow.js"
   else
-    # claude install, or copilot with no platform-specific file — drop the copilot variant
-    rm -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md"
+    rm -f "$REPO_ROOT/$skill_dest/scripts/claude.workflow.js"
   fi
   echo "  $skill_dest/"
 

@@ -5,6 +5,7 @@ description: >
   deps, builds with red-green-refactor, verifies all checks pass, commits, and returns a structured
   summary. Invoked as a subagent by afk-sprint — one issue per invocation.
 tools: ["read", "edit", "execute", "search"]
+skills: ["solve-issue", "dep-install", "karpathy-guidelines", "tdd"]
 user-invocable: false
 ---
 
@@ -26,7 +27,7 @@ Rules:
 - Every shell command must use absolute paths under `$PROJECT_ROOT`.
 - Never write files outside `$PROJECT_ROOT`.
 
-STOP. Read and invoke the `solve-issue` skill before writing any code. If the skill is not found, stop and report `BLOCKED: solve-issue skill not installed`.
+STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: solve-issue skill not installed`.
 
 Before returning your report, confirm:
 - [ ] `solve-issue` skill was read and invoked
