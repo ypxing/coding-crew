@@ -2,3 +2,4 @@
 *sync-conflict*
 .npmrc*
 .claude/settings*.json
+.scratch/

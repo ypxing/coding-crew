@@ -24,6 +24,7 @@ Do not attempt workarounds. Do not proceed.
 ## Inputs
 
 The caller provides one of:
+
 - A **file path** — read the issue from that path.
 - **Issue content** inline — use it directly.
 
@@ -43,11 +44,19 @@ fi
 ```
 
 - **`PROJECT_ROOT`** — where code lives and all commands run.
-- **`MAIN_ROOT`** — main checkout; where `.claude/`, `.scratch/`, and gitignored files live.
+- **`MAIN_ROOT`** — main checkout; where `.scratch/` and gitignored files live.
 
 ## Steps
 
-### 0. Pre-flight
+### 0. Feature Branch Setup
+
+Use the feature branch setup script from the same directory you read this skill file from:
+
+```bash
+bash "<skill-dir>/scripts/feature-branch-setup.sh" "$ISSUE_PATH" "$@"
+```
+
+### 0.1. Pre-flight
 
 Run `git -C "$PROJECT_ROOT" status --short`. If there are modified or staged tracked files not owned by this issue, stop and report blocked: `BLOCKED: dirty worktree — stash or commit unrelated changes first`.
 
@@ -58,9 +67,22 @@ the caller provides. Do **not** query GitHub (`gh`) or any remote issue tracker 
 explicitly says to.
 
 Extract from the issue:
+
 - Acceptance criteria
-- Hypothesized files likely to change (confirmed in Step 2)
-- Blocked-by dependencies — if any are unresolved, stop and report blocked.
+- Hypothesized files likely to change (confirmed in Step 3)
+- Blocked-by dependencies
+
+**Blocked-by check:** Read the `## Blocked by` section. For each listed dependency:
+
+1. Resolve the dependency's filename relative to the current issue's directory (e.g. `03-foo.md` → sibling file or `done/03-foo.md`).
+2. Check if it has been moved to `done/`: `ls "$(dirname "$ISSUE_PATH")/done/<dep-filename>" 2>/dev/null`.
+3. If the file is **not** in `done/`, stop immediately:
+
+```
+BLOCKED: depends on <dep-filename> which is not yet done
+```
+
+Only continue if every listed dependency is confirmed in `done/`. If the section says "None", proceed.
 
 ### 2. Install dependencies
 
@@ -68,7 +90,14 @@ STOP. Read and invoke the `dep-install` skill. If the skill is not found, stop a
 
 ### 3. Explore before coding
 
-For each hypothesized file from Step 1:
+**Codebase orientation — do this first:**
+
+1. Read `CLAUDE.md` (at `$PROJECT_ROOT/CLAUDE.md`) if it exists — it may describe architecture, conventions, and key entry points.
+2. Grep for similar patterns to what you're about to implement — find existing utilities, helpers, or conventions you should follow or reuse.
+3. Identify callers of the files you plan to change — understand how they're used before modifying them.
+
+**Then for each hypothesized file from Step 1:**
+
 1. Read the source file.
 2. Read the corresponding test file if one exists.
 3. Note test style, naming conventions, and patterns — these become the style contract for Step 4.
@@ -94,22 +123,47 @@ Do not proceed to commit if any check fails or any acceptance criterion from Ste
 ### 6. Commit
 
 Before committing, confirm:
+
 - [ ] Tests were written before implementation (TDD red/green loop completed)
 - [ ] `references/verification.md` was read
 - [ ] Every check listed in `references/verification.md` passed (tests, type-check, lint, or equivalent for this stack)
 
-If there are no staged changes after implementation, verify the issue was already done and report accordingly — do not error.
+If any check failed, do NOT stage or commit. Report status `partial` or `blocked`.
 
-Stage only the files you changed — never `git add .` or `git add -A`.
+**Check if work is already done:**
 
-Commit message format:
+If there are no changes to stage (working directory is clean), check if the issue was already implemented and committed. If so, proceed to Step 7 to mark done. If not, report accordingly.
+
+**Commit with shared script:**
+
+Extract the issue slug and run `commit-changes.sh` from the same directory you read this skill file from:
+
+```bash
+ISSUE_SLUG=$(basename "$ISSUE_PATH" | sed 's/\.md$//')
+ISSUE_TITLE="<extract title from issue file>"
+CHANGED_FILES="<space-separated list of files you modified>"
+DETAILS="- <key decision or tradeoff line 1>
+- <key decision or tradeoff line 2>"
+
+if [ -n "$COAUTHOR_TRAILER" ]; then
+  bash "<skill-dir>/scripts/commit-changes.sh" \
+    --prefix "[$ISSUE_SLUG]" \
+    --message "$ISSUE_TITLE${DETAILS:+
+
+$DETAILS}" \
+    --files "$CHANGED_FILES" \
+    --coauthor "$COAUTHOR_TRAILER"
+else
+  bash "<skill-dir>/scripts/commit-changes.sh" \
+    --prefix "[$ISSUE_SLUG]" \
+    --message "$ISSUE_TITLE${DETAILS:+
+
+$DETAILS}" \
+    --files "$CHANGED_FILES"
+fi
 ```
-<issue title>
 
-- <key decision or tradeoff — omit if none>
-```
-
-If the caller specifies a `Co-Authored-By:` git trailer, append it verbatim as the last line.
+Example: `[01-auth-logout] Add user logout endpoint`
 
 Do not push.
 
@@ -117,4 +171,4 @@ Do not push.
 
 Read `docs/agents/issue-tracker.md` (at `$MAIN_ROOT/docs/agents/issue-tracker.md`) and follow its "mark the ticket done" instructions using the issue file path from Step 1.
 
-If the file does not exist, use the default: run `sed -i '' "s/^Status:.*/Status: done/" "<issue-path>"` then `mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"`.
+If the file does not exist, use the default: run `sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"` then `mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"`.

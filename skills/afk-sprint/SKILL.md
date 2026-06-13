@@ -32,13 +32,26 @@ print `result.summary` verbatim.
 
 Run before the first round:
 
+### Feature Branch Setup
+
+Run the session initialization script. It handles:
+- Parsing optional `--jira TICKET-123` flag
+- Feature branch creation/switching
+- Session tracking setup
+- Git repository validation
+- jq dependency check
+- Sprint state file initialization
+
 ```bash
-mkdir -p .scratch
-TS=$(date +%Y%m%dT%H%M%S)
-[ -s .scratch/commands.log ] && mv .scratch/commands.log ".scratch/commands-$TS.log"
-touch .scratch/commands.log
-git rev-parse HEAD > .scratch/.session-start-sha
+bash "<skill-dir>/scripts/session-init.sh" "$@"
 ```
+
+The script will:
+- Create or switch to a feature branch (deriving slug from first issue if on main/default branch)
+- Initialize `.scratch/<feature-slug>/issues/` directory structure
+- Archive previous command log and start fresh
+- Save session-start SHA for code review
+- Create sprint state file to track base SHA per branch
 
 ## Defaults
 
@@ -132,7 +145,7 @@ Spawn the following two haiku Agents **in a single response** (parallel):
 **Agent A — Close issues**: for each successfully merged item:
 
 ```bash
-sed -i "" "s/^Status:.*/Status: done/" "<path>"
+sed -i'' "s/^Status:.*/Status: done/" "<path>"
 mkdir -p "$(dirname <path>)/done" && mv "<path>" "$(dirname <path>)/done/"
 ```
 
@@ -148,6 +161,29 @@ Use `docs/agents/issue-tracker.md` convention if it exists.
 Append slugs to `all_merged` / `all_partial` / `all_blocked`. Increment `round`. Return to Step 1.
 
 ## Exit
+
+### Step 4.5 — Squash Commits
+
+Run the squash commits script. Pass `--no-squash` if the user specified it, `--platform claude`, and the list of completed slugs:
+
+```bash
+# Collect all_merged slugs from sprint tracking
+bash "<skill-dir>/scripts/squash-commits.sh" --platform claude "${all_merged[@]}"
+```
+
+If `--no-squash` flag was specified, pass it to the script:
+
+```bash
+bash "<skill-dir>/scripts/squash-commits.sh" --no-squash --platform claude "${all_merged[@]}"
+```
+
+The script will:
+- Parse the `--no-squash` flag and skip if present
+- Read sprint state file to get base SHA
+- Skip if no completed issues or no commits to squash
+- Generate squashed commit message from completed issue titles
+- Perform soft reset and create single commit
+- Update state file with new HEAD SHA
 
 ### Code review
 

@@ -40,7 +40,7 @@ fi
 if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
   _uses_docker=$(awk '
     /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*:[^=]/ {
-      in_target = ($0 ~ /^(install|deps|setup|depend)[[:space:]]*:/)
+      in_target = ($0 ~ /^(install|deps|setup|depend|bootstrap|prepare|up|build|dev)[[:space:]]*:/)
     }
     in_target && /^\t/ && tolower($0) ~ /docker[ -]compose|docker run|docker exec/ { print "yes"; exit }
   ' "$PROJECT_ROOT/Makefile")

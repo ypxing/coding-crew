@@ -271,15 +271,48 @@ install_single_skill() {
   [[ -d "$SCRIPT_DIR/skills/$skill_name" ]] || { echo "Error: skill source not found: skills/$skill_name" >&2; exit 1; }
   mkdir -p "$REPO_ROOT/$skill_dest"
   cp -r "$SCRIPT_DIR/skills/$skill_name/." "$REPO_ROOT/$skill_dest/"
-  # Select the right SKILL.md: prefer copilot-specific if present; fall back to generic SKILL.md
+  # Remove development/verification test scripts — they belong in the source repo only
+  find "$REPO_ROOT/$skill_dest/references" -name "test-*.sh" -type f -delete 2>/dev/null || true
+  # Select the right SKILL.md:
+  #   claude.SKILL.md / copilot.SKILL.md  — platform-specific variant wins when present
+  #   SKILL.md                             — shared fallback used by both platforms
   if [[ "$PLATFORM" == "copilot" && -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" ]]; then
     rm -f "$REPO_ROOT/$skill_dest/SKILL.md"
     mv "$REPO_ROOT/$skill_dest/copilot.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
+  elif [[ "$PLATFORM" == "claude" && -f "$REPO_ROOT/$skill_dest/claude.SKILL.md" ]]; then
+    rm -f "$REPO_ROOT/$skill_dest/SKILL.md"
+    mv "$REPO_ROOT/$skill_dest/claude.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
+  fi
+  # Drop whichever platform variants weren't selected
+  rm -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" "$REPO_ROOT/$skill_dest/claude.SKILL.md"
+  # Select the right workflow.js:
+  #   claude.workflow.js — Claude-only workflow script; rename to workflow.js on Claude install
+  #   No copilot equivalent — Copilot does not support the Workflow tool
+  if [[ "$PLATFORM" == "claude" && -f "$REPO_ROOT/$skill_dest/scripts/claude.workflow.js" ]]; then
+    mv "$REPO_ROOT/$skill_dest/scripts/claude.workflow.js" "$REPO_ROOT/$skill_dest/scripts/workflow.js"
   else
-    # claude install, or copilot with no platform-specific file — drop the copilot variant
-    rm -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md"
+    rm -f "$REPO_ROOT/$skill_dest/scripts/claude.workflow.js"
   fi
   echo "  $skill_dest/"
+
+  # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
+  local scripts
+  scripts=$(jq -r --arg s "$skill_name" '.skills[$s].scripts // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  local scripts_arr=()
+  while IFS= read -r _line; do [[ -n "$_line" ]] && scripts_arr+=("$_line"); done <<< "$scripts"
+  if [[ "${#scripts_arr[@]}" -gt 0 ]]; then
+    mkdir -p "$REPO_ROOT/$skill_dest/scripts"
+    for script in "${scripts_arr[@]}"; do
+      local script_src="$SCRIPT_DIR/scripts/skill-utils/git-workflow/$script"
+      if [[ ! -f "$script_src" ]]; then
+        echo "Error: script source not found: scripts/skill-utils/git-workflow/$script" >&2
+        exit 1
+      fi
+      cp "$script_src" "$REPO_ROOT/$skill_dest/scripts/$script"
+      chmod +x "$REPO_ROOT/$skill_dest/scripts/$script"
+    done
+    echo "  $skill_dest/scripts/ (${#scripts_arr[@]} scripts from skill-utils/git-workflow)"
+  fi
 
   local skill_version
   skill_version=$(jq -r --arg s "$skill_name" '.skills[$s].version // "unknown"' "$SCRIPT_DIR/registry.json")
@@ -506,4 +539,5 @@ fi
 
 echo "---"
 write_manifest
+
 echo "Done."

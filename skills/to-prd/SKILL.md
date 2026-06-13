@@ -18,7 +18,7 @@ Issues live as local markdown files — see `docs/agents/issue-tracker.md` for t
 
    Never guess the slug silently — confirm with the user if there's any ambiguity.
 
-2. Explore the repo to understand the current state of the codebase, if you haven't already. Also check for `.scratch/<feature-slug>/decisions.md` — if it exists, read it and use the resolved decisions as primary input. Use the project's domain glossary vocabulary throughout, and respect any ADRs in the area you're touching.
+2. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout, and respect any ADRs in the area you're touching. The decisions from the grilling session should be captured in the conversation context.
 
 3. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible. Present these to the user for confirmation before writing.
 

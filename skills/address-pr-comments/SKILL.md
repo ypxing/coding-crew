@@ -8,7 +8,34 @@ argument-hint: "Optional PR number or URL (defaults to current branch's open PR)
 
 You are working through the review comments on a GitHub pull request. Follow every step below in order.
 
-## Step 0 — Install dependencies and check prerequisites
+## Usage
+
+```bash
+/address-pr-comments [PR number or URL]
+```
+
+**Examples:**
+```bash
+# Current branch's PR
+/address-pr-comments
+
+# Specific PR by number
+/address-pr-comments 123
+```
+
+## Step 0 — Branch safety check
+
+**Check current branch:**
+
+This skill works on existing PR branches. Do not run on the default branch.
+
+```bash
+bash "<skill-dir>/scripts/branch-safety-check.sh"
+```
+
+If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
+
+## Step 0.1 — Install dependencies and check prerequisites
 
 Follow the `dep-install` skill to ensure dependencies are installed.
 
@@ -74,18 +101,23 @@ For each **Actionable** comment (in dependency order — test infrastructure bef
 
 ## Step 5 — Commit
 
-Stage only the files touched during Step 4 (do not use `git add -A`). Create a single commit:
+**Commit with shared script:**
 
-```
-git add <file1> <file2> …
-git commit -m "$(cat <<'EOF'
-address PR review comments
+Collect all files touched during Step 4 and create a commit message with one line per actionable comment.
 
-<bullet list: one line per actionable comment — what changed and why>
+```bash
+# Build commit message body with bullet list
+COMMIT_BODY="address PR review comments
 
-Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
-)"
+- <what changed for comment 1 and why>
+- <what changed for comment 2 and why>
+- <what changed for comment N and why>"
+
+# Commit with co-author
+bash "<skill-dir>/scripts/commit-changes.sh" \
+  --message "$COMMIT_BODY" \
+  --files "<space-separated file list>" \
+  --coauthor "Claude Code <claude@anthropic.com>"
 ```
 
 Do not push — leave that to the user.

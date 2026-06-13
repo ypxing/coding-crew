@@ -94,15 +94,17 @@ const STALL_LIMIT      = 2
 let dry                = 0
 let round              = 1
 
-// F1: Rotate commands.log so prior sessions are preserved for debugging.
-// Existing log is renamed to commands-<YYYYMMDDTHHMMSS>.log before the new session begins.
+// Session init: feature-branch setup, state file, and commands.log rotation.
+// This mirrors what session-init.sh does in the inline SKILL.md mode.
 await agent(
-  'Run:\n' +
-  'mkdir -p .scratch\n' +
-  'TS=$(date +%Y%m%dT%H%M%S)\n' +
-  'if [ -s .scratch/commands.log ]; then mv .scratch/commands.log ".scratch/commands-$TS.log"; fi\n' +
-  'touch .scratch/commands.log',
-  { label: 'rotate-commands-log', model: 'haiku' }
+  'Run scripts/session-init.sh if it exists (afk-sprint skill installed with scripts). ' +
+  'If the script does not exist, run the following steps manually:\n' +
+  '1. Find the first ready issue: find .scratch -path \'*/issues/*.md\' -not -path \'*/done/*\' -type f | head -n 1\n' +
+  '2. If no issue found, print "No issues found." and exit.\n' +
+  '3. Run: bash .claude/skills/afk-sprint/scripts/session-init.sh\n' +
+  '   (creates/switches to feature branch, initialises sprint-state.json, saves session-start SHA, rotates commands.log)\n' +
+  'If the script fails, report the error verbatim and stop.',
+  { label: 'session-init', model: 'haiku' }
 )
 
 while (dry < STALL_LIMIT) {
@@ -145,7 +147,12 @@ while (dry < STALL_LIMIT) {
 
   const [listing] = await parallel(tasks)
 
-  const issues = (listing && listing.issues) ? listing.issues : []
+  if (!listing) {
+    log('ERROR: listing agent returned null — check .scratch/ directory structure and try again.')
+    break
+  }
+
+  const issues = listing.issues || []
 
   if (issues.length === 0) {
     log('No unblocked ready-for-agent issues — stopping.')
@@ -389,6 +396,16 @@ if (pendingCleanup.length > 0) {
       { label: 'final-worktree-cleanup', model: 'haiku' }
     )
   }
+}
+
+// Squash all sprint commits into one — mirrors squash-commits.sh from inline SKILL.md mode.
+if (mergedItems.length > 0) {
+  const completedSlugs = mergedItems.map(i => i.slug).join(' ')
+  await agent(
+    'Run: bash .claude/skills/afk-sprint/scripts/squash-commits.sh --platform claude ' + completedSlugs + '\n' +
+    'If the script does not exist, skip silently.',
+    { label: 'squash-commits', model: 'haiku' }
+  )
 }
 
 // Final code review — merged branch refs still alive at this point

@@ -5,6 +5,7 @@ description: >
   deps, builds with red-green-refactor, verifies all checks pass, commits, and returns a structured
   summary. Invoked as a subagent by afk-sprint — one issue per invocation.
 tools: ["read", "edit", "execute", "search"]
+skills: ["solve-issue", "dep-install", "karpathy-guidelines", "tdd"]
 user-invocable: false
 ---
 
@@ -26,7 +27,7 @@ Rules:
 - Every shell command must use absolute paths under `$PROJECT_ROOT`.
 - Never write files outside `$PROJECT_ROOT`.
 
-STOP. Read and invoke the `solve-issue` skill before writing any code. If the skill is not found, stop and report `BLOCKED: solve-issue skill not installed`.
+STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: solve-issue skill not installed`.
 
 Before returning your report, confirm:
 - [ ] `solve-issue` skill was read and invoked
@@ -72,3 +73,62 @@ Rules:
 6. `### Skills` — list every skill that was read and invoked (e.g. `solve-issue`, `dep-install`, `karpathy-guidelines`, `tdd`). Never leave this section empty.
 7. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
 8. Do not add any text outside these sections.
+
+## Example Reports
+
+**Example 1: Complete**
+
+```
+## Issue: 03-add-user-logout
+Status: complete
+
+### Checks
+npm test:
+6 tests passed
+
+### Acceptance Criteria
+- [x] Logout endpoint added to API
+- [x] Session cleared on logout
+- [x] Tests verify behavior
+
+### Changes
+- src/api/auth.ts
+- test/api/auth.test.ts
+
+### Skills
+- solve-issue
+- dep-install
+- karpathy-guidelines
+- tdd
+
+### Notes
+none
+```
+
+**Example 2: Partial**
+
+```
+## Issue: 04-refactor-validation
+Status: partial
+
+### Checks
+npm test:
+8 tests passed
+
+### Acceptance Criteria
+- [x] Validation logic extracted to helper
+- [x] All existing tests pass
+
+### Changes
+- src/validation.ts
+- src/api/users.ts
+- test/validation.test.ts
+
+### Skills
+- solve-issue
+- dep-install
+- tdd
+
+### Notes
+Changes staged for manual review before commit
+```

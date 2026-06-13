@@ -1,14 +1,34 @@
 ---
 name: address-code-review
 description: Triage findings from the latest afk-sprint code review report, challenge each one critically, implement sensible ones using TDD, commit touched files, and print a summary. Trigger with /address-code-review.
-argument-hint: "Optional path to a review report file (defaults to the latest file in .scratch/reviews/)"
+argument-hint: "Optional: path to report file"
 ---
 
 # Address Code Review
 
 You are working through the findings from an afk-sprint code review report. Follow every step below in order.
 
-## Step 0 — Install dependencies
+**Examples:**
+
+```bash
+/address-code-review                       # uses latest report
+/address-code-review path/to/report.md    # uses custom report
+```
+
+## Step 0 — Branch safety check
+
+
+**Check current branch:**
+
+This skill works on existing PR branches. Do not run on the default branch.
+
+```bash
+bash "<skill-dir>/scripts/branch-safety-check.sh"
+```
+
+If on the default branch, the script exits with an error. If on a non-default branch, continue to Step 0.1.
+
+## Step 0.1 — Install dependencies
 
 Follow the `dep-install` skill to ensure dependencies are installed.
 
@@ -68,27 +88,32 @@ For each **Actionable** finding (in severity order — CRITICAL first, then HIGH
 
 ## Step 5 — Commit
 
-Stage only the files touched during Step 4 (do not use `git add -A`). Create a single commit:
+**Commit with shared script:**
 
+Collect all files touched during Step 4 and create a commit message with one line per actionable finding.
+
+```bash
+# Build commit message body with bullet list
+COMMIT_BODY="address code review findings
+
+- <what changed for finding 1 and why>
+- <what changed for finding 2 and why>
+- <what changed for finding N and why>"
+
+# Commit with co-author
+bash "<skill-dir>/scripts/commit-changes.sh" \
+  --message "$COMMIT_BODY" \
+  --files "<space-separated file list>" \
+  --coauthor "Claude Code <claude@anthropic.com>"
 ```
-git add <file1> <file2> …
-git commit -m "$(cat <<'EOF'
-address code review findings
 
-<bullet list: one line per actionable finding — what changed and why>
+If the commit fails, stop and report the error to the user — do **not** proceed to Step 5b or archive the report until the commit succeeds.
 
-Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
-)"
-```
+## Step 5b — Archive the report
 
-If the commit fails, stop and report the error to the user — do **not** archive the report until the commit succeeds.
+If the report came from a file (not inline content), move it to the `done/` subdirectory:
 
-## Step 5b — Archive the report (only after a successful commit)
-
-If the report came from a file (not inline content) **and the commit in Step 5 succeeded**, move it to the `done/` subdirectory:
-
-```
+```bash
 mkdir -p .scratch/reviews/done
 mv <report-path> .scratch/reviews/done/
 ```

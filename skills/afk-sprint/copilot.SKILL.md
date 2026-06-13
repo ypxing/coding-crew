@@ -13,6 +13,8 @@ You orchestrate every `ready-for-agent` issue by dispatching each one to the **c
 then handling housekeeping yourself. The filesystem is your source of truth — done issues are moved
 to `done/`.
 
+**Sequential processing**: Issues are processed one at a time on the current branch. Each coder subagent runs, returns its report, then you process the next issue. No parallel execution or worktree isolation.
+
 **You do not implement issues yourself.** For each issue, use `#runSubagent` to invoke `coder`,
 passing the issue file path. The subagent runs in an isolated context window, commits the work, and
 returns a structured report. You process its report, do housekeeping, and loop.
@@ -32,9 +34,6 @@ If `docs/agents/issue-tracker.md` exists, read it first — the project may over
 below. If `docs/agents/triage-labels.md` exists, read it for custom label strings. Otherwise use
 these defaults:
 
-<!-- SYNC: the defaults below mirror docs/agents/issue-tracker.md and docs/agents/triage-labels.md.
-     Update both files together whenever these defaults change. -->
-
 ### Default conventions
 
 - Issues live as markdown files under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
@@ -44,7 +43,7 @@ these defaults:
 - To **fetch an issue**: read the file at its path
 - To **mark done**: first update the Status line, then move the file:
   ```bash
-  sed -i '' "s/^Status:.*/Status: done/" "<path>"
+  sed -i'' "s/^Status:.*/Status: done/" "<path>"
   mkdir -p "$(dirname <path>)/done" && mv "<path>" "$(dirname <path>)/done/"
   ```
 
@@ -106,13 +105,25 @@ Prose summaries like `"run unit tests"` are wrong. The log line must be the lite
 
 ### 0. Session init (run once before round 1)
 
-Record the HEAD SHA before making any changes — needed for code review on exit.
-Persist to a file so the SHA survives across tool calls (shell variables do not persist between steps):
+### Feature Branch Setup
+
+Run the session initialization script. It handles:
+- Parsing optional `--jira TICKET-123` flag
+- Feature branch creation/switching
+- Session tracking setup
+- Git repository validation
+- jq dependency check
+- Sprint state file initialization
 
 ```bash
-mkdir -p .scratch
-git rev-parse HEAD > .scratch/.session-start-sha
+bash "<skill-dir>/scripts/session-init.sh" "$@"
 ```
+
+The script will:
+- Create or switch to a feature branch (deriving slug from first issue if on main/default branch)
+- Initialize `.scratch/<feature-slug>/issues/` directory structure
+- Save session-start SHA for code review
+- Create sprint state file to track base SHA per branch
 
 ### 1. List issues
 
@@ -164,7 +175,7 @@ Wait for the subagent to return its report, then proceed to step 3.
 must happen before the move so the listing agent won't re-pick the issue if the move is slow:
 
 ```bash
-sed -i '' "s/^Status:.*/Status: done/" "<issue-path>"
+sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
 mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"
 ```
 
@@ -215,6 +226,29 @@ After all issues in a round are reported, print a rollup line:
 also run code review before stopping.
 
 The user can re-trigger the sprint after resolving blockers.
+
+## Squash Commits (before code review)
+
+Run the squash commits script. Track completed issue slugs throughout the sprint by maintaining a list of all slugs marked as done in step 3. Pass `--no-squash` if the user specified it, `--platform copilot`, and the list of completed slugs:
+
+```bash
+# completed_slugs array should be populated in step 3 when issues are marked done
+bash "<skill-dir>/scripts/squash-commits.sh" --platform copilot "${completed_slugs[@]}"
+```
+
+If `--no-squash` flag was specified, pass it to the script:
+
+```bash
+bash "<skill-dir>/scripts/squash-commits.sh" --no-squash --platform copilot "${completed_slugs[@]}"
+```
+
+The script will:
+- Parse the `--no-squash` flag and skip if present
+- Read sprint state file to get base SHA
+- Skip if no completed issues or no commits to squash
+- Generate squashed commit message from completed issue titles
+- Perform soft reset and create single commit
+- Update state file with new HEAD SHA
 
 ## Code Review (mandatory on exit)
 
