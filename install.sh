@@ -457,6 +457,15 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
   if [[ "${#MANIFEST_AGENT_ENTRIES[@]}" -gt 0 || "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
     write_manifest
   fi
+  # Also update shared scripts
+  if [ -d "$SCRIPT_DIR/skills/_shared" ]; then
+    echo "---"
+    echo "Updating shared scripts..."
+    mkdir -p "$REPO_ROOT/skills/_shared"
+    cp -r "$SCRIPT_DIR/skills/_shared/." "$REPO_ROOT/skills/_shared/"
+    find "$REPO_ROOT/skills/_shared/scripts" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+    echo "Shared scripts updated"
+  fi
   echo "Done."
   exit 0
 fi
