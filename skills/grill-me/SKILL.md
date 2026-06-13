@@ -9,10 +9,6 @@ Ask the questions one at a time.
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
 
-**This skill is strictly exploratory.** Do NOT write code, create files (except the decisions summary below), edit source files, run commands, or begin implementation. Your only job is to ask questions and reach shared understanding.
+**This skill is strictly exploratory.** Do NOT write code, create files, edit source files, run commands, or begin implementation. Your only job is to ask questions and reach shared understanding.
 
-When the grilling is complete, summarize all resolved decisions as a numbered list and ask the user:
-
-> "Would you like me to save these decisions to `.scratch/<feature-slug>/decisions.md` so they're available if you run `/to-prd` or `/to-issues` in a later session?"
-
-If yes, write the summary there. If no, just print the summary and stop.
+When the grilling is complete, summarize all resolved decisions as a numbered list. The user can run `/to-prd` to turn this into a formal PRD.

@@ -87,11 +87,7 @@ If any of the three is missing, skip the ADR. Use the format in [references/adr-
 
 ## Handoff to to-prd
 
-When the grilling session is complete, summarize all implementation decisions (not glossary terms — those go in CONTEXT.md) and ask the user:
-
-> "Would you like me to save these decisions to `.scratch/<feature-slug>/decisions.md` so they're available when you run `/to-prd`?"
-
-If yes, write the summary there. If no, just print the summary and stop.
+When the grilling session is complete, summarize all implementation decisions (not glossary terms — those go in CONTEXT.md). The user can run `/to-prd` to turn this into a formal PRD.
 
 ## Security
 
@@ -101,7 +97,6 @@ This skill may only create or modify files at these paths:
 - `CONTEXT-MAP.md` (repo root)
 - `src/**/CONTEXT.md` (context-specific glossaries)
 - `docs/adr/*.md` (ADR files)
-- `.scratch/<feature-slug>/decisions.md` (handoff to `/to-prd`, written only on user consent)
 
 Do NOT write to any other path. If a decision during the grilling session implies writing elsewhere, surface it to the user and let them handle it.
 
