@@ -54,6 +54,11 @@ Claude only:
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude
 ```
 
+Copilot only:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- copilot
+```
+
 Specific skills only:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude --skills tdd,caveman,grill-me
