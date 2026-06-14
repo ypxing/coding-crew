@@ -83,9 +83,12 @@ remove_skill() {
   else
     echo "  $name: nothing found to remove"
   fi
-  # Also remove copilot variant if present
+  # Also remove copilot variant — explicit registry entry, or derived by replacing .claude/ with .copilot/
   local copilot_dest
   copilot_dest=$(jq -r --arg s "$name" '.skills[$s]["install-copilot"] // empty' "$SCRIPT_DIR/registry.json")
+  if [[ -z "$copilot_dest" && -n "$skill_dest" ]]; then
+    copilot_dest="${skill_dest/.claude\//.copilot/}"
+  fi
   if [[ -n "$copilot_dest" ]]; then
     local copilot_full="$REPO_ROOT/$copilot_dest"
     if [[ -d "$copilot_full" ]]; then
