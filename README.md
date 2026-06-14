@@ -40,10 +40,6 @@ A distributable collection of AI agents and skills that automate the issue → i
 
 ## 1. Install
 
-Prerequisites: `git`, `jq`
-
-### Quick (no clone required)
-
 Install everything to `$HOME` (user-level, works in any project):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
@@ -57,11 +53,6 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 Copilot only:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- copilot
-```
-
-Specific skills only:
-```bash
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude --skills tdd,caveman,grill-me
 ```
 
 Into the current project instead of `$HOME`:
@@ -88,25 +79,6 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 /to-issues         ← break the PRD into ready-for-agent issues
 ```
 
-Or write issues directly. Create `.scratch/<feature>/issues/01-slug.md`:
-
-```markdown
-Status: ready-for-agent
-
-## What to build
-
-One paragraph describing the end-to-end behavior.
-
-## Acceptance criteria
-
-- [ ] Criterion one
-- [ ] Criterion two
-
-## Blocked by
-
-- None - can start immediately
-```
-
 ---
 
 ## 3. Run the sprint
@@ -129,40 +101,10 @@ Opens the review report, triages findings, implements fixes with TDD.
 
 ---
 
-## More install options
-
-```bash
-./install.sh                                      # everything, all platforms, into project
-./install.sh --user                               # everything into $HOME (user-level)
-./install.sh claude                               # all agents + skills for Claude Code
-./install.sh copilot --skill afk-sprint            # afk-sprint for GitHub Copilot
-./install.sh claude --skill grill-me              # a standalone skill only
-./install.sh claude --skills tdd,caveman,grill-me # multiple skills at once
-./install.sh --user claude --skill tdd            # one skill into $HOME/.claude/skills/
-./install.sh --update                             # update changed agents/skills in place
-```
-
-Set `TARGET_REPO=/path/to/other/repo` to install into a repo other than the current directory.
-
----
-
 ## Uninstall
 
-### Quick (no clone required)
-
-Remove everything from `$HOME`:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
-```
-
-Remove specific skills only:
-```bash
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash -s -- --skills tdd,caveman
-```
-
-Remove from the current project instead of `$HOME`:
-```bash
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash -s -- --project
 ```
 
 ---
