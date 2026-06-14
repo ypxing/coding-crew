@@ -44,18 +44,24 @@ Prerequisites: `git`, `jq`
 
 ### Quick (no clone required)
 
+Install everything to `$HOME` (user-level, works in any project):
 ```bash
-# Install everything to $HOME (user-level, works in any project)
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
+```
 
-# Claude only
-curl -fsSL .../bootstrap.sh | bash -s -- claude
+Claude only:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude
+```
 
-# Specific skills only
-curl -fsSL .../bootstrap.sh | bash -s -- claude --skills tdd,caveman,grill-me
+Specific skills only:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude --skills tdd,caveman,grill-me
+```
 
-# Into the current project instead of $HOME
-curl -fsSL .../bootstrap.sh | bash -s -- --project
+Into the current project instead of `$HOME`:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --project
 ```
 
 ### From a local clone
@@ -150,17 +156,26 @@ Set `TARGET_REPO=/path/to/other/repo` to install into a repo other than the curr
 
 ## Uninstall
 
+### Quick (no clone required)
+
+Remove everything from `$HOME`:
 ```bash
-# Quick (no clone required)
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
+```
 
-# Remove specific skills only
-curl -fsSL .../unbootstrap.sh | bash -s -- --skills tdd,caveman
+Remove specific skills only:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash -s -- --skills tdd,caveman
+```
 
-# Remove from the current project instead of $HOME
-curl -fsSL .../unbootstrap.sh | bash -s -- --project
+Remove from the current project instead of `$HOME`:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash -s -- --project
+```
 
-# From a local clone
+### From a local clone
+
+```bash
 ./uninstall.sh --user                        # remove all from $HOME
 ./uninstall.sh --user --skills tdd,caveman   # remove specific skills from $HOME
 ./uninstall.sh --user --agent coder          # remove a specific agent
