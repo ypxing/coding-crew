@@ -122,22 +122,33 @@ elif [[ "$MODE" == "--agent" ]]; then
   remove_agent "$name"
 
 else
-  # Remove everything from manifest
-  if [[ ! -f "$MANIFEST" ]]; then
-    echo "Error: no manifest found at $MANIFEST — nothing to uninstall" >&2
-    exit 1
-  fi
+  # Remove everything — union of manifest (if present) and full registry
   echo "---"
-  while IFS= read -r name; do
-    remove_agent "$name"
-  done < <(jq -r '.agents | keys[]' "$MANIFEST")
 
-  while IFS= read -r name; do
-    remove_skill "$name"
-  done < <(jq -r '.skills | keys[]' "$MANIFEST")
+  # Collect agent names: manifest + registry
+  declare -A _agents_seen=()
+  if [[ -f "$MANIFEST" ]]; then
+    while IFS= read -r name; do _agents_seen["$name"]=1; done \
+      < <(jq -r '.agents | keys[]' "$MANIFEST")
+  fi
+  while IFS= read -r name; do _agents_seen["$name"]=1; done \
+    < <(jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json")
+  for name in "${!_agents_seen[@]}"; do remove_agent "$name"; done
 
-  rm -f "$MANIFEST"
-  echo "  removed .coding-crew.manifest.json"
+  # Collect skill names: manifest + registry
+  declare -A _skills_seen=()
+  if [[ -f "$MANIFEST" ]]; then
+    while IFS= read -r name; do _skills_seen["$name"]=1; done \
+      < <(jq -r '.skills | keys[]' "$MANIFEST")
+  fi
+  while IFS= read -r name; do _skills_seen["$name"]=1; done \
+    < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
+  for name in "${!_skills_seen[@]}"; do remove_skill "$name"; done
+
+  if [[ -f "$MANIFEST" ]]; then
+    rm -f "$MANIFEST"
+    echo "  removed .coding-crew.manifest.json"
+  fi
 fi
 
 echo "---"
