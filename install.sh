@@ -275,6 +275,8 @@ install_single_skill() {
   fi
   assert_safe_path "$skill_dest" "skill install"
   [[ -d "$SCRIPT_DIR/skills/$skill_name" ]] || { echo "Error: skill source not found: skills/$skill_name" >&2; exit 1; }
+  # Remove a stale symlink before mkdir -p; mkdir would succeed but cp into it would fail
+  [[ -L "$REPO_ROOT/$skill_dest" ]] && rm -f "$REPO_ROOT/$skill_dest"
   mkdir -p "$REPO_ROOT/$skill_dest"
   cp -r "$SCRIPT_DIR/skills/$skill_name/." "$REPO_ROOT/$skill_dest/"
   # Remove development/verification test scripts — they belong in the source repo only
