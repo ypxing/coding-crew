@@ -1,12 +1,12 @@
 #!/bin/bash
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/main/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
 #   SKILLS=tdd,caveman bash <(curl -fsSL ...)
 #   PLATFORM=claude SKILLS=afk-sprint bash <(curl -fsSL ...)
 #   PROJECT=1 bash <(curl -fsSL ...)             # install into current project instead of $HOME
 set -euo pipefail
 
-REPO="https://github.com/OWNER/REPO"
+REPO="https://github.com/ypxing/coding-crew"
 BRANCH="${BRANCH:-main}"
 PLATFORM="${PLATFORM:-all}"
 SKILLS="${SKILLS:-}"
