@@ -65,7 +65,7 @@ remove_agent() {
       removed=1
     fi
   done
-  [[ "$removed" -eq 0 ]] && echo "  $name: nothing found to remove"
+  if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 }
 
 remove_skill() {
@@ -129,16 +129,20 @@ else
   echo "---"
 
   # Collect agent names: manifest + registry, deduped via sort -u
-  {
-    if [[ -f "$MANIFEST" ]]; then jq -r '.agents | keys[]' "$MANIFEST"; fi
-    jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"
-  } | sort -u | while IFS= read -r name; do remove_agent "$name"; done
+  _agent_names=()
+  while IFS= read -r name; do _agent_names+=("$name"); done < <(
+    { if [[ -f "$MANIFEST" ]]; then jq -r '.agents | keys[]' "$MANIFEST"; fi
+      jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"; } | sort -u
+  )
+  for name in "${_agent_names[@]+"${_agent_names[@]}"}"; do remove_agent "$name"; done
 
   # Collect skill names: manifest + registry, deduped via sort -u
-  {
-    if [[ -f "$MANIFEST" ]]; then jq -r '.skills | keys[]' "$MANIFEST"; fi
-    jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"
-  } | sort -u | while IFS= read -r name; do remove_skill "$name"; done
+  _skill_names=()
+  while IFS= read -r name; do _skill_names+=("$name"); done < <(
+    { if [[ -f "$MANIFEST" ]]; then jq -r '.skills | keys[]' "$MANIFEST"; fi
+      jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"; } | sort -u
+  )
+  for name in "${_skill_names[@]+"${_skill_names[@]}"}"; do remove_skill "$name"; done
 
   if [[ -f "$MANIFEST" ]]; then
     rm -f "$MANIFEST"
