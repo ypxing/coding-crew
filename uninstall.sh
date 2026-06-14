@@ -125,25 +125,17 @@ else
   # Remove everything — union of manifest (if present) and full registry
   echo "---"
 
-  # Collect agent names: manifest + registry
-  declare -A _agents_seen=()
-  if [[ -f "$MANIFEST" ]]; then
-    while IFS= read -r name; do _agents_seen["$name"]=1; done \
-      < <(jq -r '.agents | keys[]' "$MANIFEST")
-  fi
-  while IFS= read -r name; do _agents_seen["$name"]=1; done \
-    < <(jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json")
-  for name in "${!_agents_seen[@]}"; do remove_agent "$name"; done
+  # Collect agent names: manifest + registry, deduped via sort -u
+  {
+    [[ -f "$MANIFEST" ]] && jq -r '.agents | keys[]' "$MANIFEST"
+    jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"
+  } | sort -u | while IFS= read -r name; do remove_agent "$name"; done
 
-  # Collect skill names: manifest + registry
-  declare -A _skills_seen=()
-  if [[ -f "$MANIFEST" ]]; then
-    while IFS= read -r name; do _skills_seen["$name"]=1; done \
-      < <(jq -r '.skills | keys[]' "$MANIFEST")
-  fi
-  while IFS= read -r name; do _skills_seen["$name"]=1; done \
-    < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
-  for name in "${!_skills_seen[@]}"; do remove_skill "$name"; done
+  # Collect skill names: manifest + registry, deduped via sort -u
+  {
+    [[ -f "$MANIFEST" ]] && jq -r '.skills | keys[]' "$MANIFEST"
+    jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"
+  } | sort -u | while IFS= read -r name; do remove_skill "$name"; done
 
   if [[ -f "$MANIFEST" ]]; then
     rm -f "$MANIFEST"
