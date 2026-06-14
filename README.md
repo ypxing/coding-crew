@@ -17,7 +17,6 @@ A distributable collection of AI agents and skills that automate the issue → i
   │                                                     │
   │  manual: /grill-me (or /grill-with-docs)            │
   │          → /to-prd → /to-issues                     │
-  │          (or write .scratch/.../issues/*.md)        │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
