@@ -17,7 +17,6 @@ THIS REPO (source)
 ├── install.sh              ← single installer for all platforms
 ├── registry.json           ← source of truth for paths, deps, skills
 ├── agents/
-│   ├── afk-sprint/         ← orchestrator agent
 │   ├── coder/              ← single-issue worker agent
 │   └── code-reviewer/      ← post-sprint reviewer agent
 ├── skills/                 ← reusable skill files
@@ -57,10 +56,10 @@ install.sh
 Platform files (`claude.*.md`, `copilot.agent.md`) may contain a `{{PROTOCOL}}` placeholder. During install, this is replaced line-by-line with the contents of `protocol.md` or `workflow.js` from the same agent directory. The installed file is self-contained — no runtime file references.
 
 ```
-agents/afk-sprint/
-├── claude.SKILL.md       ← contains {{PROTOCOL}}
+agents/coder/
+├── claude.agent.md       ← contains {{PROTOCOL}}
 ├── copilot.agent.md      ← contains full inline instructions (no {{PROTOCOL}})
-└── workflow.js           ← inlined into claude.SKILL.md on install
+└── protocol.md           ← inlined into claude.agent.md on install
 ```
 
 ---

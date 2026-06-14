@@ -69,19 +69,6 @@ Into the current project instead of `$HOME`:
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --project
 ```
 
-### From a local clone
-
-```bash
-# Into the current project
-./install.sh claude
-
-# Into a specific project
-TARGET_REPO=/path/to/your/project ./install.sh claude
-
-# Into $HOME for all projects (user-level)
-./install.sh --user claude
-```
-
 ---
 
 ## 2. Create issues
@@ -148,7 +135,7 @@ Opens the review report, triages findings, implements fixes with TDD.
 ./install.sh                                      # everything, all platforms, into project
 ./install.sh --user                               # everything into $HOME (user-level)
 ./install.sh claude                               # all agents + skills for Claude Code
-./install.sh copilot afk-sprint                   # afk-sprint for GitHub Copilot
+./install.sh copilot --skill afk-sprint            # afk-sprint for GitHub Copilot
 ./install.sh claude --skill grill-me              # a standalone skill only
 ./install.sh claude --skills tdd,caveman,grill-me # multiple skills at once
 ./install.sh --user claude --skill tdd            # one skill into $HOME/.claude/skills/
@@ -176,15 +163,6 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 Remove from the current project instead of `$HOME`:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash -s -- --project
-```
-
-### From a local clone
-
-```bash
-./uninstall.sh --user                        # remove all from $HOME
-./uninstall.sh --user --skills tdd,caveman   # remove specific skills from $HOME
-./uninstall.sh --user --agent coder          # remove a specific agent
-./uninstall.sh                               # remove all from current project
 ```
 
 ---

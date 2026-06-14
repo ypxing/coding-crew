@@ -24,8 +24,6 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 # Install a standalone skill
 ./install.sh claude --skill to-issues
 
-# Install a standalone doc
-./install.sh claude --doc issue-tracker.md
 ```
 
 Platforms: `all` (default), `claude`, `copilot`. Agents: `all` (default), `code-reviewer`, `coder`.
