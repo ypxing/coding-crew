@@ -42,8 +42,33 @@ A distributable collection of AI agents and skills that automate the issue → i
 
 Prerequisites: `git`, `jq`
 
+### Quick (no clone required)
+
 ```bash
+# Install everything to $HOME (user-level, works in any project)
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
+
+# Claude only
+curl -fsSL .../bootstrap.sh | bash -s -- claude
+
+# Specific skills only
+curl -fsSL .../bootstrap.sh | bash -s -- claude --skills tdd,caveman,grill-me
+
+# Into the current project instead of $HOME
+curl -fsSL .../bootstrap.sh | bash -s -- --project
+```
+
+### From a local clone
+
+```bash
+# Into the current project
+./install.sh claude
+
+# Into a specific project
 TARGET_REPO=/path/to/your/project ./install.sh claude
+
+# Into $HOME for all projects (user-level)
+./install.sh --user claude
 ```
 
 ---
@@ -109,11 +134,37 @@ Opens the review report, triages findings, implements fixes with TDD.
 ## More install options
 
 ```bash
-./install.sh                              # everything, all platforms
-./install.sh claude                       # all agents + skills for Claude Code (claude.ai/code)
-./install.sh copilot afk-sprint           # afk-sprint for GitHub Copilot
-./install.sh claude --skill grill-me      # a standalone skill only
-./install.sh --update                     # update changed agents/skills in place
+./install.sh                                      # everything, all platforms, into project
+./install.sh --user                               # everything into $HOME (user-level)
+./install.sh claude                               # all agents + skills for Claude Code
+./install.sh copilot afk-sprint                   # afk-sprint for GitHub Copilot
+./install.sh claude --skill grill-me              # a standalone skill only
+./install.sh claude --skills tdd,caveman,grill-me # multiple skills at once
+./install.sh --user claude --skill tdd            # one skill into $HOME/.claude/skills/
+./install.sh --update                             # update changed agents/skills in place
+```
+
+Set `TARGET_REPO=/path/to/other/repo` to install into a repo other than the current directory.
+
+---
+
+## Uninstall
+
+```bash
+# Quick (no clone required)
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
+
+# Remove specific skills only
+curl -fsSL .../unbootstrap.sh | bash -s -- --skills tdd,caveman
+
+# Remove from the current project instead of $HOME
+curl -fsSL .../unbootstrap.sh | bash -s -- --project
+
+# From a local clone
+./uninstall.sh --user                        # remove all from $HOME
+./uninstall.sh --user --skills tdd,caveman   # remove specific skills from $HOME
+./uninstall.sh --user --agent coder          # remove a specific agent
+./uninstall.sh                               # remove all from current project
 ```
 
 ---
