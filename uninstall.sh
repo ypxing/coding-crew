@@ -130,13 +130,13 @@ else
 
   # Collect agent names: manifest + registry, deduped via sort -u
   {
-    [[ -f "$MANIFEST" ]] && jq -r '.agents | keys[]' "$MANIFEST"
+    if [[ -f "$MANIFEST" ]]; then jq -r '.agents | keys[]' "$MANIFEST"; fi
     jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"
   } | sort -u | while IFS= read -r name; do remove_agent "$name"; done
 
   # Collect skill names: manifest + registry, deduped via sort -u
   {
-    [[ -f "$MANIFEST" ]] && jq -r '.skills | keys[]' "$MANIFEST"
+    if [[ -f "$MANIFEST" ]]; then jq -r '.skills | keys[]' "$MANIFEST"; fi
     jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"
   } | sort -u | while IFS= read -r name; do remove_skill "$name"; done
 
