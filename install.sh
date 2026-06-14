@@ -2,16 +2,45 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+
+# Pre-scan for --user flag (strip it; remaining args keep their positions)
+INSTALL_LEVEL="project"
+_filtered=()
+for _arg in "$@"; do
+  if [[ "$_arg" == "--user" ]]; then
+    INSTALL_LEVEL="user"
+  else
+    _filtered+=("$_arg")
+  fi
+done
+set -- "${_filtered[@]+"${_filtered[@]}"}"
+unset _filtered _arg
+
+if [[ "$INSTALL_LEVEL" == "user" ]]; then
+  REPO_ROOT="$HOME"
+else
+  REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+fi
 
 UPDATE_MODE=false
+SKILLS_LIST=""  # comma-separated list from --skills a,b,c
 if [[ "${1:-}" == "--update" ]]; then
   UPDATE_MODE=true
   PLATFORM="all"
   AGENT="all"
 else
   PLATFORM="${1:-all}"    # all | claude | copilot
-  AGENT="${2:-all}"       # all | afk-sprint | coder | --skill <name>
+  AGENT="${2:-all}"       # all | afk-sprint | coder | --skill <name> | --skills a,b
+fi
+
+# --skills a,b,c  (multi-skill shorthand, replaces --skill for multiple names)
+if [[ "$AGENT" == "--skills" ]]; then
+  SKILLS_LIST="${3:-}"
+  if [[ -z "$SKILLS_LIST" ]]; then
+    echo "Error: --skills requires a comma-separated list (e.g. --skills tdd,caveman)" >&2
+    usage
+  fi
+  AGENT="--skill"  # normalise so later dispatch hits the skill path
 fi
 
 INSTALLED=""
@@ -19,21 +48,25 @@ MANIFEST_AGENT_ENTRIES=()  # each entry: "name version platform"
 MANIFEST_SKILL_ENTRIES=()  # each entry: "name version"
 
 usage() {
-  echo "Usage: ./install.sh [platform] [agent]"
-  echo "       ./install.sh [platform] --skill <skill-name>"
-  echo "       ./install.sh --update"
+  echo "Usage: ./install.sh [--user] [platform] [agent]"
+  echo "       ./install.sh [--user] [platform] --skill <skill-name>"
+  echo "       ./install.sh [--user] [platform] --skills <a,b,c>"
+  echo "       ./install.sh [--user] --update"
   echo ""
-  echo "  platform: all (default), claude, copilot"
-  echo "  agent:    all (default), code-reviewer, coder"
-  echo "  --skill:  install a standalone skill (e.g. to-issues, grill-me)"
-  echo "  --update: re-install only agents/skills whose version changed since last install"
+  echo "  --user:    install to \$HOME (user-level); default installs into the current project repo"
+  echo "  platform:  all (default), claude, copilot"
+  echo "  agent:     all (default), code-reviewer, coder"
+  echo "  --skill:   install a single skill (e.g. to-issues)"
+  echo "  --skills:  install multiple skills (comma-separated, e.g. tdd,caveman,grill-me)"
+  echo "  --update:  re-install only agents/skills whose version changed since last install"
   echo ""
   echo "Examples:"
-  echo "  ./install.sh                        # install everything"
-  echo "  ./install.sh claude --skill afk-sprint   # afk-sprint skill + coder + code-reviewer"
-  echo "  ./install.sh copilot --skill afk-sprint  # afk-sprint (copilot variant) + agents"
-  echo "  ./install.sh claude --skill to-issues  # install just the to-issues skill"
-  echo "  ./install.sh --update               # update all installed agents/skills"
+  echo "  ./install.sh                                      # install everything into project"
+  echo "  ./install.sh --user                               # install everything into \$HOME"
+  echo "  ./install.sh --user claude --skill tdd            # one skill into \$HOME/.claude/skills/"
+  echo "  ./install.sh --user claude --skills tdd,caveman   # multiple skills at once"
+  echo "  ./install.sh claude --skill afk-sprint            # afk-sprint + coder + code-reviewer"
+  echo "  ./install.sh --update                             # update all installed agents/skills"
   echo ""
   echo "Available skills:"
   echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
@@ -412,7 +445,7 @@ run_update() {
   echo "$updated item(s) updated"
 }
 
-echo "Target: $REPO_ROOT"
+echo "Target: $REPO_ROOT ($INSTALL_LEVEL-level)"
 
 if [[ "$UPDATE_MODE" == "true" ]]; then
   run_update
@@ -426,14 +459,27 @@ fi
 echo "Platform: $PLATFORM"
 
 if [[ "$AGENT" == "--skill" ]]; then
-  SKILL_NAME="${3:-}"
-  if [[ -z "$SKILL_NAME" ]]; then
-    echo "Error: --skill requires a skill name"
-    usage
+  if [[ -n "$SKILLS_LIST" ]]; then
+    # --skills a,b,c  path
+    echo "Skills: $SKILLS_LIST"
+    echo "---"
+    IFS=',' read -ra _skills_arr <<< "$SKILLS_LIST"
+    for _s in "${_skills_arr[@]}"; do
+      _s="${_s// /}"  # trim spaces
+      [[ -n "$_s" ]] && install_single_skill "$_s"
+    done
+    unset _skills_arr _s
+  else
+    # --skill <name>  path
+    SKILL_NAME="${3:-}"
+    if [[ -z "$SKILL_NAME" ]]; then
+      echo "Error: --skill requires a skill name"
+      usage
+    fi
+    echo "Skill: $SKILL_NAME"
+    echo "---"
+    install_single_skill "$SKILL_NAME"
   fi
-  echo "Skill: $SKILL_NAME"
-  echo "---"
-  install_single_skill "$SKILL_NAME"
 elif [[ "$AGENT" == "all" ]]; then
   echo "Agent: $AGENT"
   echo "---"
