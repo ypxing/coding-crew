@@ -50,11 +50,32 @@ fi
 
 ### 0. Feature Branch Setup
 
+**Mandatory branch guard (always run first):**
+
+Check the current branch and enforce you are **not** on the default branch:
+
+```bash
+CURRENT_BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD)
+DEFAULT_BRANCH=$(git -C "$PROJECT_ROOT" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+
+if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
+  echo "BLOCKED: on default branch ($DEFAULT_BRANCH) — create or switch to a feature branch first"
+  exit 1
+fi
+```
+
+If blocked, stop immediately. Do not proceed to any other step.
+
+**If issue file path is provided:**
+
 Use the feature branch setup script from the same directory you read this skill file from:
 
 ```bash
 bash "<skill-dir>/scripts/feature-branch-setup.sh" "$ISSUE_PATH" "$@"
 ```
+
+If no issue file path is provided (inline content), the branch guard above is sufficient — proceed to Step 0.1.
 
 ### 0.1. Pre-flight
 
