@@ -164,7 +164,7 @@ install_skills() {
   local skills
   skills=$(jq -r --arg name "$agent_name" '.agents[$name].skills // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
   local skills_arr=()
-  while IFS= read -r _line; do [[ -n "$_line" ]] && skills_arr+=("$_line"); done <<< "$skills"
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && skills_arr+=("$_line"); done <<< "$skills"
   for skill in "${skills_arr[@]+"${skills_arr[@]}"}"; do
     install_single_skill "$skill"
   done
@@ -292,7 +292,7 @@ install_agent() {
   local deps
   deps=$(jq -r --arg name "$agent_name" --arg key "$deps_key" '.agents[$name][$key] // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
   local deps_arr=()
-  while IFS= read -r _line; do [[ -n "$_line" ]] && deps_arr+=("$_line"); done <<< "$deps"
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && deps_arr+=("$_line"); done <<< "$deps"
   for dep in "${deps_arr[@]+"${deps_arr[@]}"}"; do
     install_agent "$dep" "$platform"
   done
@@ -380,7 +380,7 @@ install_single_skill() {
   local scripts
   scripts=$(jq -r --arg s "$skill_name" '.skills[$s].scripts // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
   local scripts_arr=()
-  while IFS= read -r _line; do [[ -n "$_line" ]] && scripts_arr+=("$_line"); done <<< "$scripts"
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && scripts_arr+=("$_line"); done <<< "$scripts"
   if [[ "${#scripts_arr[@]}" -gt 0 ]]; then
     mkdir -p "$REPO_ROOT/$skill_dest/scripts"
     for script in "${scripts_arr[@]}"; do
@@ -403,7 +403,7 @@ install_single_skill() {
   local deps
   deps=$(jq -r --arg s "$skill_name" '.skills[$s].deps // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
   local deps_arr=()
-  while IFS= read -r _line; do [[ -n "$_line" ]] && deps_arr+=("$_line"); done <<< "$deps"
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && deps_arr+=("$_line"); done <<< "$deps"
   for dep in "${deps_arr[@]+"${deps_arr[@]}"}"; do
     install_single_skill "$dep"
   done
@@ -412,7 +412,7 @@ install_single_skill() {
   local agent_deps
   agent_deps=$(jq -r --arg s "$skill_name" '.skills[$s]["agent-deps"] // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
   local agent_deps_arr=()
-  while IFS= read -r _line; do [[ -n "$_line" ]] && agent_deps_arr+=("$_line"); done <<< "$agent_deps"
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && agent_deps_arr+=("$_line"); done <<< "$agent_deps"
   for dep in "${agent_deps_arr[@]+"${agent_deps_arr[@]}"}"; do
     install_agent "$dep" "$PLATFORM"
   done
@@ -859,13 +859,13 @@ elif [[ "$AGENT" == "all" ]]; then
   echo "Agent: $AGENT"
   echo "---"
   agent_names=()
-  while IFS= read -r _line; do [[ -n "$_line" ]] && agent_names+=("$_line"); done < <(jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json")
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && agent_names+=("$_line"); done < <(jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json")
   for agent_name in "${agent_names[@]}"; do
     install_agent "$agent_name" "$PLATFORM"
   done
   # Install all standalone skills — not just those wired to agents as deps
   skill_names=()
-  while IFS= read -r _line; do [[ -n "$_line" ]] && skill_names+=("$_line"); done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && skill_names+=("$_line"); done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
   for skill_name in "${skill_names[@]}"; do
     install_single_skill "$skill_name"
   done
