@@ -2,5 +2,8 @@
 *sync-conflict*
 .npmrc*
 .claude/settings*.json
+.claude/agents/
+.claude/skills/
 .scratch/
 .claude/worktrees/
+.coding-crew.manifest.json
