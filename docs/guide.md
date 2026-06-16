@@ -23,7 +23,7 @@ THIS REPO (source)
 │   ├── tdd/
 │   ├── solve-issue/
 │   ├── grill-me/
-│   ├── plan-build/
+│   ├── crew:plan/
 │   ├── caveman/
 │   └── ...
 └── docs/
@@ -246,7 +246,7 @@ YOUR_PROJECT/
 │       ├── grill-with-docs/        ← installed with "all"
 │       ├── to-issues/              ← installed with "all"
 │       ├── to-prd/                 ← installed with "all"
-│       └── plan-build/            ← installed with "all"
+│       └── crew:plan/            ← installed with "all"
 ├── .github/
 │   └── agents/
 │       ├── crew:afk.agent.md
@@ -269,7 +269,7 @@ YOUR_PROJECT/
  ┌─────────────────────────────────────────────────────────────┐
  │  Plan & explore (optional but recommended)                  │
  │                                                             │
- │  auto:   /plan-build  (grill → PRD → issues)               │
+ │  auto:   /crew:plan  (grill → PRD → issues)               │
  │                                                             │
  │  manual: /grill-me  (or /grill-with-docs)                   │
  │          → /to-prd → /to-issues                             │
@@ -374,7 +374,7 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 | Goal                                           | Skill                            |
 | ---------------------------------------------- | -------------------------------- |
-| Run the full grill → PRD → issues pipeline     | `/plan-build`                   |
+| Run the full grill → PRD → issues pipeline     | `/crew:plan`                   |
 | Turn a feature idea into a PRD                 | `/to-prd`                        |
 | Break a PRD into issues                        | `/to-issues`                     |
 | Stress-test your plan interactively            | `/grill-me`                      |

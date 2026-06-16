@@ -156,7 +156,7 @@
     },
     "crew:plan": {
       "version": "1.1.0",
-      "source-dir": "plan-build",
+      "source-dir": "plan",
       "description": "Full design pipeline: grill \u2192 PRD \u2192 issues. One handoff after grilling triggers the rest automatically.",
       "install": ".claude/skills/crew:plan",
       "deps": [
