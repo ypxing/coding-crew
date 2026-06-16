@@ -99,9 +99,6 @@ fi
 
 # ── Dependency checks ──────────────────────────────────────────────────────────
 _required_cmds=("jq" "git")
-if [[ "$LOCKFILE_MODE" == "true" ]]; then
-  _required_cmds+=("curl" "tar")
-fi
 for cmd in "${_required_cmds[@]}"; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
 done
@@ -235,6 +232,7 @@ install_agent() {
     # Check and diff, then write
     local status=0
     check_and_diff "$tmpfile" "$dest" || status=$?
+    chmod 0644 "$tmpfile"
     mv "$tmpfile" "$dest" || { rm -f "$tmpfile"; exit 1; }
     trap - RETURN
 

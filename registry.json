@@ -37,7 +37,7 @@
     "crew-afk": {
       "version": "1.1.0",
       "source-dir": "crew-afk",
-      "description": "Orchestrator that spawns parallel coder agents in isolated worktrees, merges completed branches, runs a code-reviewer pass, and loops until all ready-for-agent issues are done.",
+      "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
       "install-copilot": ".copilot/skills/crew-afk",
       "scripts": [

@@ -14,8 +14,8 @@ All skills and agents have been renamed to prevent collisions when installed alo
 
 | Old Name                        | New Name                                |
 | ------------------------------- | --------------------------------------- |
-| `afk-run`                       | `crew-afk`                              |
-| `plan-build`                    | `crew-plan`                             |
+| `crew:afk`                      | `crew-afk`                              |
+| `crew:plan`                     | `crew-plan`                             |
 | `solve-issue`                   | `crew-solve-issue`                      |
 | `address-code-review`           | `crew-address-code-review`              |
 | `address-pr-comments`           | `crew-address-pr-comments`              |
@@ -44,9 +44,9 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 ```
 
 All skill invocations now use the `crew-` prefix:
-- `/afk-run` → `/crew-afk`
-- `/plan-build` → `/crew-plan`
-- `/solve-issue` → `/crew-solve-issue`
+- `/crew:afk` → `/crew-afk`
+- `/crew:plan` → `/crew-plan`
+- `/crew:solve-issue` → `/crew-solve-issue`
 - etc.
 
 Install destination directories also use the prefix: `.claude/skills/crew-afk/`, `.claude/skills/crew-tdd/`, etc.
@@ -57,12 +57,11 @@ Agent files also use the prefix: `.claude/agents/crew-coder.md`, `.claude/agents
 - **Lockfile-based version pinning**: `install.sh --from-lockfile crew.lock` installs specific versions from a lockfile, enabling reproducible team distributions
 - **Lockfile update command**: `install.sh --update` with an existing `crew.lock` checks for newer releases, upgrades, and rewrites the lockfile with updated versions
 - **Diff-before-overwrite**: When installing over existing files, `install.sh` now prints a unified diff to show exactly what changed before overwriting
-- **CI coverage**: Automated tests now run on macOS, Linux, and WSL2 environments
+- **CI coverage**: Automated tests now run on macOS, Linux, and Windows (Git Bash)
 
 ### Changed
 
 - `registry.json`: All skill and agent keys, install paths, and dependency references updated to use `crew-` prefix
 - `install.sh`: Identifier validation updated for `crew-` style names
-- `install.sh`: Enhanced dependency checking for `curl` and `tar` (required for lockfile fetching)
 - `README.md`: All examples updated to use new skill and agent names
 - `CLAUDE.md`: Documentation updated to reflect new naming convention

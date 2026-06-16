@@ -80,13 +80,26 @@ For teams who want to standardize on specific versions of agents and skills:
 
 ### Step 1: Team lead — Create the lockfile
 
-Add this repo as a git submodule or download a release tarball, then run the installer once to generate an initial `crew.lock`:
+After installing, create a `crew.lock` manually to pin the versions you want to distribute:
 
-```bash
-./install.sh
+```json
+{
+  "registry": "https://github.com/ypxing/coding-crew",
+  "version": "1.0.0",
+  "skills": {
+    "crew-afk": "1.1.0",
+    "crew-tdd": "1.1.0"
+  }
+}
 ```
 
-This creates a `crew.lock` in your target directory (default: `$HOME`) containing version pins for all installed agents and skills.
+Or use `--update` after an install to generate one from the current manifest:
+
+```bash
+./install.sh --update
+```
+
+This creates/rewrites `crew.lock` with the latest available versions.
 
 ### Step 2: Commit the lockfile
 

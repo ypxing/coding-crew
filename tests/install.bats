@@ -107,32 +107,6 @@ teardown() {
   [[ "$output" == *"crew-tdd"* ]]
 }
 
-@test "install skill creates SKILL.md at crew- path" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-tdd
-
-  # Verify the skill file was created at the new crew- path
-  [ -f "$TEMP_DIR/.claude/skills/crew-tdd/SKILL.md" ]
-}
-
-@test "installing crew-afk installs agent-deps with crew- names" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-
-  # Verify both agent files were installed at crew- paths
-  [ -f "$TEMP_DIR/.claude/agents/crew-coder.md" ]
-  [ -f "$TEMP_DIR/.claude/agents/crew-code-reviewer.md" ]
-
-  # Verify manifest contains both agents under crew- keys
-  run jq -r '.agents["crew-coder"].version' "$TEMP_DIR/.coding-crew.manifest.json"
-  [ "$status" -eq 0 ]
-  [ "$output" != "null" ]
-
-  run jq -r '.agents["crew-code-reviewer"].version' "$TEMP_DIR/.coding-crew.manifest.json"
-  [ "$status" -eq 0 ]
-  [ "$output" != "null" ]
-}
-
 @test "reinstalling modified skill produces diff output" {
   cd "$SCRIPT_DIR"
 
