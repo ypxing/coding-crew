@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test script for afk-sprint sprint state tracking
+# Test script for afk-run sprint state tracking
 # Tests state file creation, base_sha recording, and state persistence across sprints
 
 set -e
@@ -17,7 +17,7 @@ git add file.txt
 git commit -q -m "Initial commit"
 git branch -M main
 
-echo "Testing afk-sprint sprint state tracking..."
+echo "Testing afk-run sprint state tracking..."
 echo
 
 # Helper function to init state file

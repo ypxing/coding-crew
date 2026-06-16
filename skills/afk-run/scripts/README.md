@@ -1,12 +1,12 @@
 # AFK Sprint Scripts
 
-This directory contains reusable shell scripts extracted from the afk-sprint skill files to improve maintainability and reduce duplication.
+This directory contains reusable shell scripts extracted from the afk-run skill files to improve maintainability and reduce duplication.
 
 ## Scripts
 
 ### `session-init.sh`
 
-**Purpose**: Initialize a new afk-sprint session with feature branch setup and state tracking.
+**Purpose**: Initialize a new afk-run session with feature branch setup and state tracking.
 
 **Usage**:
 ```bash
@@ -82,9 +82,9 @@ Co-authored-by: Claude Code <claude@anthropic.com>
 
 ### `claude.workflow.js`
 
-**Purpose**: Workflow script for running afk-sprint using the Workflow tool (Claude Code only). Renamed to `workflow.js` by `install.sh` during a Claude install.
+**Purpose**: Workflow script for running afk-run using the Workflow tool (Claude Code only). Renamed to `workflow.js` by `install.sh` during a Claude install.
 
-**Usage**: Invoked via Workflow tool when user specifies "with workflow" in the afk-sprint invocation.
+**Usage**: Invoked via Workflow tool when user specifies "with workflow" in the afk-run invocation.
 
 **Note**: This is a JavaScript workflow script, not a bash script. See the file itself for implementation details.
 
@@ -93,8 +93,8 @@ Co-authored-by: Claude Code <claude@anthropic.com>
 ## Integration
 
 These scripts are referenced by:
-- `skills/afk-sprint/SKILL.md` (Claude Code version)
-- `skills/afk-sprint/copilot.SKILL.md` (GitHub Copilot version)
+- `skills/afk-run/SKILL.md` (Claude Code version)
+- `skills/afk-run/copilot.SKILL.md` (GitHub Copilot version)
 
 Both platform versions use the same scripts with platform-specific flags (e.g., `--platform claude` vs `--platform copilot`).
 

@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: >
-  Reviews all branches merged in an afk-sprint sprint session for security, quality, and
+  Reviews all branches merged in an afk-run sprint session for security, quality, and
   correctness. Invoked once at the end of the session. Findings are advisory for the human.
 model: sonnet
 tools: ["Read", "Bash", "Grep", "Glob"]

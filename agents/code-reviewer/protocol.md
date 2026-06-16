@@ -6,7 +6,7 @@ blocked.
 
 ## What You Receive
 
-A list of merged branches from afk-sprint. For each:
+A list of merged branches from afk-run. For each:
 
 - Branch name and issue slug
 - Acceptance criteria from the issue

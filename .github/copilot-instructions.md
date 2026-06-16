@@ -14,7 +14,7 @@ This repo is a **distributable collection** of AI agents and skills. Nothing run
 ./install.sh claude coder
 
 # Install a skill (and its agent dependencies)
-./install.sh claude --skill afk-sprint
+./install.sh claude --skill afk-run
 
 # Install into a different repo
 TARGET_REPO=/path/to/other/repo ./install.sh
@@ -35,7 +35,7 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 ### Key Components
 
 - **`agents/`** — Two agents: `coder` (implements single issues using TDD in isolated worktrees) and `code-reviewer` (reviews merged branches at sprint end)
-- **`skills/`** — Reusable skill files (TDD, solve-issue, grill-me, plan-sprint, etc.)
+- **`skills/`** — Reusable skill files (TDD, solve-issue, grill-me, plan-build, etc.)
 - **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and doc templates
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`docs/agents/`** — Default templates (`issue-tracker.md`, `triage-labels.md`) copied to consuming repos
@@ -156,7 +156,7 @@ Use `protocol.md` for markdown instructions, `workflow.js` for Workflow scripts.
 
 | Skill | Description |
 |-------|-------------|
-| `afk-sprint` | Orchestrator that spawns parallel coder agents, merges branches, runs code-reviewer |
+| `afk-run` | Orchestrator that spawns parallel coder agents, merges branches, runs code-reviewer |
 | `karpathy-guidelines` | Coding principles to reduce LLM mistakes |
 | `tdd` | Test-driven development with red-green-refactor loop |
 | `solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
@@ -167,7 +167,7 @@ Use `protocol.md` for markdown instructions, `workflow.js` for Workflow scripts.
 | `grill-with-docs` | Grilling session that challenges plan against domain model |
 | `to-issues` | Break plan/PRD into independently-grabbable issues |
 | `to-prd` | Synthesize conversation into PRD and publish to tracker |
-| `plan-sprint` | Full design pipeline: grill → PRD → issues |
+| `plan-build` | Full design pipeline: grill → PRD → issues |
 | `caveman` | Ultra-compressed communication mode (~75% token reduction) |
 | `dep-install` | Detect install mode (host/docker) and install dependencies once |
 

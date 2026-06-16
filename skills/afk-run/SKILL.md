@@ -1,8 +1,8 @@
 ---
-name: afk-sprint
+name: afk-run
 description: >
   Spawns coder agents to implement all ready-for-agent issues in the current repo,
-  supervises until all are done, and merges work back. Trigger with /afk-sprint.
+  supervises until all are done, and merges work back. Trigger with /afk-run.
   Add "with workflow" to use the Workflow tool instead of inline Agent calls.
 model: sonnet
 tools:
@@ -226,7 +226,7 @@ Rounds: <N>
 Merged  (<count>): <slug, slug, ...> | none
 Partial (<count>): <slug, slug, ...> | none
 Blocked (<count>): <slug, slug, ...> | none
-[STALLED: resolve blockers and re-run (/afk-sprint)]   ← only if stalled
+[STALLED: resolve blockers and re-run (/afk-run)]   ← only if stalled
 
 ### Per-issue
 

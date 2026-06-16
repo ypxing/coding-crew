@@ -23,7 +23,7 @@ THIS REPO (source)
 │   ├── tdd/
 │   ├── solve-issue/
 │   ├── grill-me/
-│   ├── plan-sprint/
+│   ├── plan-build/
 │   ├── caveman/
 │   └── ...
 └── docs/
@@ -198,10 +198,10 @@ jq --version    # required
 
 ```bash
 # Claude Code — full sprint suite
-./install.sh claude afk-sprint
+./install.sh claude afk-run
 
 # GitHub Copilot — full sprint suite
-./install.sh copilot afk-sprint
+./install.sh copilot afk-run
 
 # A standalone skill
 ./install.sh claude --skill grill-me
@@ -233,23 +233,23 @@ YOUR_PROJECT/
 │   │   ├── coder.md                ← coder agent (Claude)
 │   │   └── code-reviewer.md        ← reviewer agent (Claude)
 │   └── skills/
-│       ├── afk-sprint/SKILL.md
+│       ├── afk-run/SKILL.md
 │       ├── karpathy-guidelines/
 │       ├── tdd/
 │       ├── dep-install/
 │       ├── solve-issue/
 │       ├── address-code-review/
-│       ├── caveman/                ← installed with afk-sprint
+│       ├── caveman/                ← installed with afk-run
 │       ├── address-pr-comments/    ← installed with "all"
 │       ├── improve-codebase-architecture/  ← installed with "all"
 │       ├── grill-me/               ← installed with "all"
 │       ├── grill-with-docs/        ← installed with "all"
 │       ├── to-issues/              ← installed with "all"
 │       ├── to-prd/                 ← installed with "all"
-│       └── plan-sprint/            ← installed with "all"
+│       └── plan-build/            ← installed with "all"
 ├── .github/
 │   └── agents/
-│       ├── afk-sprint.agent.md
+│       ├── afk-run.agent.md
 │       ├── coder.agent.md
 │       └── code-reviewer.agent.md
 └── docs/
@@ -269,18 +269,18 @@ YOUR_PROJECT/
  ┌─────────────────────────────────────────────────────────────┐
  │  Plan & explore (optional but recommended)                  │
  │                                                             │
- │  auto:   /plan-sprint  (grill → PRD → issues)               │
+ │  auto:   /plan-build  (grill → PRD → issues)               │
  │                                                             │
  │  manual: /grill-me  (or /grill-with-docs)                   │
  │          → /to-prd → /to-issues                             │
  └──────────────────────────┬──────────────────────────────────┘
                             │ .scratch/.../issues/*.md
                             ▼
- /afk-sprint (you trigger this)
+ /afk-run (you trigger this)
        │
        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  afk-sprint orchestrator                                    │
+│  afk-run orchestrator                                    │
 │  1. List "ready-for-agent" issues from .scratch/            │
 │  2. Spawn coder workers — up to 8 in parallel               │
 │  3. Validate output, merge complete branches                │
@@ -351,10 +351,10 @@ Use `/to-prd` → `/to-issues` to generate these from a feature description auto
 **Claude Code:**
 
 ```
-/afk-sprint
+/afk-run
 ```
 
-**Copilot:** invoke `@afk-sprint` from the chat panel.
+**Copilot:** invoke `@afk-run` from the chat panel.
 
 Sprint runs until all issues are complete, or two consecutive rounds produce zero completions (stall). On exit it saves a code review report to `.scratch/reviews/sprint-review-<timestamp>.md`.
 
@@ -374,7 +374,7 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 | Goal                                           | Skill                            |
 | ---------------------------------------------- | -------------------------------- |
-| Run the full grill → PRD → issues pipeline     | `/plan-sprint`                   |
+| Run the full grill → PRD → issues pipeline     | `/plan-build`                   |
 | Turn a feature idea into a PRD                 | `/to-prd`                        |
 | Break a PRD into issues                        | `/to-issues`                     |
 | Stress-test your plan interactively            | `/grill-me`                      |

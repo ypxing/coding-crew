@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Session initialization and feature branch setup for afk-sprint
+# Session initialization and feature branch setup for afk-run
 # Usage: source this script or run it directly
 # Optional: Pass --jira TICKET-123 as arguments
 
@@ -19,7 +19,7 @@ fi
 FIRST_ISSUE=$(find .scratch -path '*/issues/*.md' -not -path '*/done/*' -type f | head -n 1)
 
 if [ -z "$FIRST_ISSUE" ]; then
-  echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-sprint."
+  echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-run."
   exit 1
 fi
 

@@ -1,5 +1,5 @@
 ---
-name: afk-sprint
+name: afk-run
 description: >
   Implements all ready-for-agent issues in the current repo by delegating each one to the coder
   subagent, then housekeeping the result. Loops until no issues remain or all are stalled. Runs a

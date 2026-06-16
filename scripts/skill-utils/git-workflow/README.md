@@ -82,7 +82,7 @@ bash scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-123]
 
 **Used by**:
 - `solve-issue` (Step 0)
-- `afk-sprint` (for single-issue mode)
+- `afk-run` (for single-issue mode)
 
 **Example**:
 ```bash

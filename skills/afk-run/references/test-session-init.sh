@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test script for afk-sprint Session Init feature branch setup
+# Test script for afk-run Session Init feature branch setup
 # Tests branch detection, first issue slug extraction, JIRA flag parsing, and directory creation
 
 set -e
@@ -17,7 +17,7 @@ git add file.txt
 git commit -q -m "Initial commit"
 git branch -M main
 
-echo "Testing afk-sprint Session Init feature branch setup..."
+echo "Testing afk-run Session Init feature branch setup..."
 echo
 
 # Helper function to detect default branch
@@ -89,7 +89,7 @@ echo
 
 # Test 2: Parse --jira flag from invocation
 echo "Test 2: Parse --jira flag from invocation"
-result=$(parse_jira_flag "/afk-sprint --jira PROJ-123")
+result=$(parse_jira_flag "/afk-run --jira PROJ-123")
 expected="PROJ-123"
 if [ "$result" = "$expected" ]; then
     echo "✓ PASS: Parsed JIRA ticket '$result'"
@@ -101,7 +101,7 @@ echo
 
 # Test 3: Parse invocation without --jira flag
 echo "Test 3: Parse invocation without --jira flag"
-result=$(parse_jira_flag "/afk-sprint")
+result=$(parse_jira_flag "/afk-run")
 expected=""
 if [ "$result" = "$expected" ]; then
     echo "✓ PASS: No JIRA ticket found"

@@ -1,12 +1,12 @@
 ---
 name: address-code-review
-description: Triage findings from the latest afk-sprint code review report, challenge each one critically, implement sensible ones using TDD, commit touched files, and print a summary. Trigger with /address-code-review.
+description: Triage findings from the latest afk-run code review report, challenge each one critically, implement sensible ones using TDD, commit touched files, and print a summary. Trigger with /address-code-review.
 argument-hint: "Optional: path to report file"
 ---
 
 # Address Code Review
 
-You are working through the findings from an afk-sprint code review report. Follow every step below in order.
+You are working through the findings from an afk-run code review report. Follow every step below in order.
 
 **Examples:**
 

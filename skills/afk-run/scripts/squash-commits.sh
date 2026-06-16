@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Squash commits for afk-sprint
+# Squash commits for afk-run
 # Usage: squash-commits.sh [--no-squash] [--platform claude|copilot] [completed_slug1 completed_slug2 ...]
 # Completed slugs should be passed as remaining arguments after flags
 

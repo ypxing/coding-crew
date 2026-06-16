@@ -17,7 +17,7 @@ required — agents degrade gracefully — but the more you provide, the better 
 | --------------------------------- | ------------------------------------------- | ------------------------------------------------------- |
 | `docs/agents/issue-tracker.md`    | Tells agents how to list/fetch/close issues | Install copies a default; edit it to match your tracker |
 | `docs/agents/triage-labels.md`    | Maps label strings to canonical roles       | Install copies a default; edit it to match your labels  |
-| `.scratch/` directory with issues | afk-sprint needs issues to work on          | Agent finds nothing and exits immediately               |
+| `.scratch/` directory with issues | afk-run needs issues to work on          | Agent finds nothing and exits immediately               |
 
 ## CLAUDE.md — what agents look for
 

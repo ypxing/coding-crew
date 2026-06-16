@@ -1,5 +1,5 @@
 ---
-name: plan-sprint
+name: plan-build
 description: Full design pipeline — grill the user about a plan (grill-me by default; grill-with-docs if invoked with "with docs"), produce a PRD, then break it into issues. Use when starting a new feature from scratch.
 ---
 
