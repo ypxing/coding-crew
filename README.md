@@ -212,19 +212,13 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 ## Skills
 
-In order of use:
-
-| Skill                                    | When                                                                              |
-| ---------------------------------------- | --------------------------------------------------------------------------------- |
-| `/crew-plan`                             | Full design pipeline — grill → PRD → issues in one automated flow                 |
-| `/crew-grill-me`                         | Stress-test your idea interactively (step-by-step alternative to `/crew-plan`)   |
-| `/crew-grill-with-docs`                  | Same, but challenges against your domain model — creates one if you don't have it |
-| `/crew-to-prd`                           | Turn the refined idea into a PRD                                                  |
-| `/crew-to-issues`                        | Break the PRD into ready-for-agent issues                                         |
-| `/crew-solve-issue`                      | Implement one issue manually (what crew-coder uses internally)                    |
-| `/crew-address-pr-comments`              | After a PR review — implement sensible comments with TDD                          |
-| `/crew-improve-codebase-architecture`    | Ongoing — find refactoring opportunities                                          |
-| `/crew-caveman`                          | Switch to ultra-compressed communication to reduce token usage ~75%               |
+| Skill                         | When                                                               |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `/crew-plan`                  | Full design pipeline — grill → PRD → issues in one automated flow  |
+| `/crew-afk`                   | Run the sprint — parallel agents implement all ready issues        |
+| `/crew-address-code-review`   | Triage and fix the post-sprint code review report with TDD         |
+| `/crew-solve-issue`           | Implement a single issue end-to-end                                |
+| `/crew-address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones   |
 
 ---
 
