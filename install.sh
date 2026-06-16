@@ -23,14 +23,29 @@ else
 fi
 
 UPDATE_MODE=false
+LOCKFILE_MODE=false
+LOCKFILE_PATH=""
 SKILLS_LIST=""  # comma-separated list from --skills a,b,c
 if [[ "${1:-}" == "--update" ]]; then
   UPDATE_MODE=true
   PLATFORM="all"
   AGENT="all"
+elif [[ "${1:-}" == "--from-lockfile" ]]; then
+  LOCKFILE_MODE=true
+  LOCKFILE_PATH="${2:-}"
+  if [[ -z "$LOCKFILE_PATH" ]]; then
+    echo "Error: --from-lockfile requires a path to a lockfile" >&2
+    exit 1
+  fi
+  if [[ ! -f "$LOCKFILE_PATH" ]]; then
+    echo "Error: lockfile not found: $LOCKFILE_PATH" >&2
+    exit 1
+  fi
+  PLATFORM="all"
+  AGENT="all"
 else
   PLATFORM="${1:-all}"    # all | claude | copilot
-  AGENT="${2:-all}"       # all | afk-sprint | coder | --skill <name> | --skills a,b
+  AGENT="${2:-all}"       # all | afk-run | coder | --skill <name> | --skills a,b
 fi
 
 # --skills a,b,c  (multi-skill shorthand, replaces --skill for multiple names)
@@ -52,21 +67,24 @@ usage() {
   echo "       ./install.sh [--user] [platform] --skill <skill-name>"
   echo "       ./install.sh [--user] [platform] --skills <a,b,c>"
   echo "       ./install.sh [--user] --update"
+  echo "       ./install.sh [--user] --from-lockfile <path>"
   echo ""
-  echo "  --user:    install to \$HOME (user-level); default installs into the current project repo"
-  echo "  platform:  all (default), claude, copilot"
-  echo "  agent:     all (default), code-reviewer, coder"
-  echo "  --skill:   install a single skill (e.g. to-issues)"
-  echo "  --skills:  install multiple skills (comma-separated, e.g. tdd,caveman,grill-me)"
-  echo "  --update:  re-install only agents/skills whose version changed since last install"
+  echo "  --user:          install to \$HOME (user-level); default installs into the current project repo"
+  echo "  platform:        all (default), claude, copilot"
+  echo "  agent:           all (default), code-reviewer, coder"
+  echo "  --skill:         install a single skill (e.g. to-issues)"
+  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,grill-me)"
+  echo "  --update:        re-install only agents/skills whose version changed since last install"
+  echo "  --from-lockfile: install from a lockfile (fetches pinned registry version and installs listed items)"
   echo ""
   echo "Examples:"
   echo "  ./install.sh                                      # install everything into project"
   echo "  ./install.sh --user                               # install everything into \$HOME"
   echo "  ./install.sh --user claude --skill tdd            # one skill into \$HOME/.claude/skills/"
   echo "  ./install.sh --user claude --skills tdd,caveman   # multiple skills at once"
-  echo "  ./install.sh claude --skill afk-sprint            # afk-sprint + coder + code-reviewer"
+  echo "  ./install.sh claude --skill afk-run            # afk-run + coder + code-reviewer"
   echo "  ./install.sh --update                             # update all installed agents/skills"
+  echo "  ./install.sh --from-lockfile crew.lock            # install from lockfile"
   echo ""
   echo "Available skills:"
   echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
@@ -80,7 +98,11 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 # ── Dependency checks ──────────────────────────────────────────────────────────
-for cmd in jq git; do
+_required_cmds=("jq" "git")
+if [[ "$LOCKFILE_MODE" == "true" ]]; then
+  _required_cmds+=("curl" "tar")
+fi
+for cmd in "${_required_cmds[@]}"; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
 done
 
@@ -112,10 +134,29 @@ assert_safe_path() {
 
 assert_identifier() {
   local val="$1" label="$2"
-  if [[ ! "$val" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
-    echo "Error: invalid $label name '$val' — must match [a-zA-Z0-9_.-]+" >&2
+  if [[ ! "$val" =~ ^[a-zA-Z0-9_.:=-]+$ ]]; then
+    echo "Error: invalid $label name '$val' — must match [a-zA-Z0-9_.:=-]+" >&2
     exit 1
   fi
+}
+
+# Helper: print diff if destination exists and differs from incoming content
+# Args: $1=incoming_content_file $2=dest_path
+# Returns: 0=new, 1=identical, 2=changed
+# Side effect: prints labeled diff for changed files
+check_and_diff() {
+  local incoming="$1" dest="$2"
+  if [[ ! -f "$dest" ]]; then
+    return 0  # new file
+  fi
+  if cmp -s "$incoming" "$dest"; then
+    return 1  # identical
+  fi
+  # Files differ — print labeled diff
+  local rel_dest="${dest#$REPO_ROOT/}"
+  echo "  $rel_dest (updated)"
+  diff -u "$dest" "$incoming" | sed "1s|^--- .*|--- $rel_dest|; 2s|^+++ .*|+++ incoming|" || true
+  return 2  # changed
 }
 
 install_skills() {
@@ -167,6 +208,12 @@ install_agent() {
       exit 1
     fi
     mkdir -p "$(dirname "$dest")"
+    
+    # Generate content to temp file for diffing
+    local tmpfile
+    tmpfile=$(mktemp)
+    trap "rm -f '$tmpfile'" RETURN
+    
     if grep -q '{{PROTOCOL}}' "$src"; then
       {
         while IFS= read -r line; do
@@ -176,9 +223,20 @@ install_agent() {
             printf '%s\n' "$line"
           fi
         done < "$src"
-      } > "$dest" || { rm -f "$dest"; exit 1; }
+      } > "$tmpfile" || { rm -f "$tmpfile"; exit 1; }
     else
-      cp "$src" "$dest" || { rm -f "$dest"; exit 1; }
+      cp "$src" "$tmpfile" || { rm -f "$tmpfile"; exit 1; }
+    fi
+    
+    # Check and diff, then write
+    local status=0
+    check_and_diff "$tmpfile" "$dest" || status=$?
+    mv "$tmpfile" "$dest" || { rm -f "$tmpfile"; exit 1; }
+    
+    # Print path only for new files (status=0)
+    if [[ $status -eq 0 ]]; then
+      local rel_dest="${dest#$REPO_ROOT/}"
+      echo "  $rel_dest"
     fi
   }
 
@@ -195,7 +253,6 @@ install_agent() {
     if [[ -n "$claude_src" && -n "$claude_dest" ]]; then
       assert_safe_path "$claude_dest" "claude install"
       expand_shim "$claude_src" "$REPO_ROOT/$claude_dest"
-      echo "  $claude_dest"
     fi
   fi
 
@@ -212,7 +269,6 @@ install_agent() {
     if [[ -n "$copilot_src" && -n "$copilot_dest" ]]; then
       assert_safe_path "$copilot_dest" "copilot install"
       expand_shim "$copilot_src" "$REPO_ROOT/$copilot_dest"
-      echo "  $copilot_dest"
     fi
   fi
 
@@ -274,11 +330,33 @@ install_single_skill() {
     exit 1
   fi
   assert_safe_path "$skill_dest" "skill install"
-  [[ -d "$SCRIPT_DIR/skills/$skill_name" ]] || { echo "Error: skill source not found: skills/$skill_name" >&2; exit 1; }
+  
+  # Resolve source directory: use source-dir field if present, otherwise use skill name
+  local source_dir
+  source_dir=$(jq -r --arg s "$skill_name" '.skills[$s]["source-dir"] // $s' "$SCRIPT_DIR/registry.json")
+  
+  [[ -d "$SCRIPT_DIR/skills/$source_dir" ]] || { echo "Error: skill source not found: skills/$source_dir" >&2; exit 1; }
   # Remove a stale symlink before mkdir -p; mkdir would succeed but cp into it would fail
   [[ -L "$REPO_ROOT/$skill_dest" ]] && rm -f "$REPO_ROOT/$skill_dest"
   mkdir -p "$REPO_ROOT/$skill_dest"
-  cp -r "$SCRIPT_DIR/skills/$skill_name/." "$REPO_ROOT/$skill_dest/"
+  
+  # Copy files with diff output for changed files
+  while IFS= read -r -d '' src_file; do
+    local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
+    local dest_file="$REPO_ROOT/$skill_dest/$rel_path"
+    local rel_dest="${dest_file#$REPO_ROOT/}"
+    mkdir -p "$(dirname "$dest_file")"
+    
+    local status=0
+    check_and_diff "$src_file" "$dest_file" || status=$?
+    cp "$src_file" "$dest_file"
+    
+    # Print path for new files (status=0)
+    if [[ $status -eq 0 ]]; then
+      echo "  $rel_dest"
+    fi
+  done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -print0)
+  
   # Remove development/verification test scripts — they belong in the source repo only
   find "$REPO_ROOT/$skill_dest/references" -name "test-*.sh" -type f -delete 2>/dev/null || true
   # Select the right SKILL.md:
@@ -293,7 +371,6 @@ install_single_skill() {
   fi
   # Drop whichever platform variants weren't selected
   rm -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" "$REPO_ROOT/$skill_dest/claude.SKILL.md"
-echo "  $skill_dest/"
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
   local scripts
@@ -390,7 +467,191 @@ write_manifest() {
   echo "  .coding-crew.manifest.json"
 }
 
+fetch_latest_release_version() {
+  local registry_url="$1"
+  local url="${registry_url}/releases/latest"
+  
+  # Follow redirect and get final URL
+  local final_url
+  if ! final_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$url" 2>&1); then
+    echo "Error: failed to fetch latest release from $url" >&2
+    echo "Network error or no releases available" >&2
+    return 1
+  fi
+  
+  # Extract tag from URL like https://github.com/owner/repo/releases/tag/v1.2.3
+  local tag
+  tag=$(echo "$final_url" | sed -E 's|.*/releases/tag/([^/]+)$|\1|')
+  local version="${tag#v}"  # Strip leading 'v' if present
+  
+  if [[ -z "$version" ]]; then
+    echo "Error: failed to extract version from $final_url" >&2
+    return 1
+  fi
+  
+  echo "$version"
+}
+
+run_update_from_lockfile() {
+  local lockfile="$REPO_ROOT/crew.lock"
+  
+  if [[ ! -f "$lockfile" ]]; then
+    echo "Error: crew.lock not found at $lockfile" >&2
+    return 1
+  fi
+  
+  # Read lockfile
+  local current_version registry
+  current_version=$(jq -r '.version // empty' "$lockfile")
+  registry=$(jq -r '.registry // empty' "$lockfile")
+  
+  if [[ -z "$current_version" || -z "$registry" ]]; then
+    echo "Error: crew.lock missing required fields (version, registry)" >&2
+    exit 1
+  fi
+  
+  echo "Current version: $current_version (from crew.lock)"
+  echo "Checking for updates from $registry..."
+  
+  # Fetch latest release version
+  local latest_version
+  if ! latest_version=$(fetch_latest_release_version "$registry"); then
+    exit 1
+  fi
+  
+  echo "Latest version: $latest_version"
+  echo "---"
+  
+  # Compare versions
+  if [[ "$current_version" == "$latest_version" ]]; then
+    echo "Already at v${current_version} — nothing to update"
+    exit 0
+  fi
+  
+  echo "Update available: v${current_version} → v${latest_version}"
+  echo "Fetching registry tarball..."
+  
+  # Create temp directory for tarball extraction
+  local temp_dir
+  temp_dir=$(mktemp -d)
+  trap "rm -rf '$temp_dir'" EXIT
+  
+  # Fetch and extract tarball
+  local tarball_url="${registry}/archive/refs/tags/v${latest_version}.tar.gz"
+  if ! curl -fsSL "$tarball_url" | tar -xz -C "$temp_dir"; then
+    echo "Error: failed to fetch or extract tarball from $tarball_url" >&2
+    exit 1
+  fi
+  
+  # Find extracted directory
+  local extracted_dir
+  extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d | grep -v "^$temp_dir$" | head -1)
+  if [[ -z "$extracted_dir" || ! -d "$extracted_dir" ]]; then
+    echo "Error: failed to locate extracted registry directory in $temp_dir" >&2
+    exit 1
+  fi
+  
+  # Override SCRIPT_DIR to point to the extracted registry
+  SCRIPT_DIR="$extracted_dir"
+  
+  echo "---"
+  echo "Updating agents and skills..."
+  
+  local updated=0
+  local changelog=()
+  
+  # Update agents from lockfile
+  while IFS= read -r agent_name; do
+    local old_version new_version
+    old_version=$(jq -r --arg n "$agent_name" '.agents[$n] // "unknown"' "$lockfile")
+    new_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
+    
+    if [[ -z "$new_version" ]]; then
+      echo "  $agent_name: removed from registry — skipping"
+      continue
+    fi
+    
+    if [[ "$old_version" != "$new_version" ]]; then
+      changelog+=("  $agent_name: $old_version → $new_version")
+      install_agent "$agent_name" "$PLATFORM"
+      updated=$((updated + 1))
+    fi
+  done < <(jq -r '.agents | keys[]' "$lockfile")
+  
+  # Update skills from lockfile
+  while IFS= read -r skill_name; do
+    local old_version new_version
+    old_version=$(jq -r --arg n "$skill_name" '.skills[$n] // "unknown"' "$lockfile")
+    new_version=$(jq -r --arg n "$skill_name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
+    
+    if [[ -z "$new_version" ]]; then
+      echo "  $skill_name: removed from registry — skipping"
+      continue
+    fi
+    
+    if [[ "$old_version" != "$new_version" ]]; then
+      changelog+=("  $skill_name: $old_version → $new_version")
+      install_single_skill "$skill_name"
+      updated=$((updated + 1))
+    fi
+  done < <(jq -r '.skills | keys[]' "$lockfile")
+  
+  # Rewrite lockfile with new version and updated item versions
+  local new_agents_json="{}"
+  while IFS= read -r agent_name; do
+    local version
+    version=$(jq -r --arg n "$agent_name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
+    if [[ -n "$version" ]]; then
+      new_agents_json=$(jq -n --argjson base "$new_agents_json" --arg n "$agent_name" --arg v "$version" \
+        '$base | .[$n] = $v')
+    fi
+  done < <(jq -r '.agents | keys[]' "$lockfile")
+  
+  local new_skills_json="{}"
+  while IFS= read -r skill_name; do
+    local version
+    version=$(jq -r --arg n "$skill_name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
+    if [[ -n "$version" ]]; then
+      new_skills_json=$(jq -n --argjson base "$new_skills_json" --arg n "$skill_name" --arg v "$version" \
+        '$base | .[$n] = $v')
+    fi
+  done < <(jq -r '.skills | keys[]' "$lockfile")
+  
+  jq -n \
+    --arg registry "$registry" \
+    --arg version "$latest_version" \
+    --argjson agents "$new_agents_json" \
+    --argjson skills "$new_skills_json" \
+    '{
+      registry: $registry,
+      version: $version,
+      agents: $agents,
+      skills: $skills
+    }' > "$lockfile"
+  
+  echo "---"
+  if [[ "$updated" -gt 0 ]]; then
+    echo "Changes:"
+    for line in "${changelog[@]}"; do
+      echo "$line"
+    done
+    echo "---"
+  fi
+  echo "$updated item(s) updated"
+  echo "crew.lock updated to v${latest_version}"
+}
+
 run_update() {
+  # Check for crew.lock first
+  if [[ -f "$REPO_ROOT/crew.lock" ]]; then
+    run_update_from_lockfile
+    if [[ "${#MANIFEST_AGENT_ENTRIES[@]}" -gt 0 || "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
+      write_manifest
+    fi
+    return
+  fi
+  
+  # Fall back to manifest-based update (legacy mode)
   local manifest="$REPO_ROOT/.coding-crew.manifest.json"
   if [[ ! -f "$manifest" ]]; then
     echo "Error: no manifest found at $manifest — run ./install.sh first" >&2
@@ -447,6 +708,106 @@ run_update() {
   echo "$updated item(s) updated"
 }
 
+run_from_lockfile() {
+  local lockfile="$1"
+  
+  # Validate lockfile format
+  if ! jq empty "$lockfile" 2>/dev/null; then
+    echo "Error: invalid JSON in lockfile: $lockfile" >&2
+    exit 1
+  fi
+  
+  local registry version
+  registry=$(jq -r '.registry // empty' "$lockfile")
+  version=$(jq -r '.version // empty' "$lockfile")
+  
+  if [[ -z "$registry" || -z "$version" ]]; then
+    echo "Error: lockfile must contain 'registry' and 'version' fields" >&2
+    exit 1
+  fi
+  
+  echo "Lockfile: $lockfile"
+  echo "Registry: $registry"
+  echo "Version: $version"
+  echo "---"
+  
+  # Construct tarball URL
+  local tarball_url="${registry}/archive/refs/tags/v${version}.tar.gz"
+  echo "Fetching registry tarball from: $tarball_url"
+  
+  # Create temp directory with cleanup trap
+  local temp_dir
+  temp_dir=$(mktemp -d)
+  trap "rm -rf '$temp_dir'" EXIT
+  
+  # Fetch and extract tarball
+  if ! curl -fsSL "$tarball_url" | tar -xz -C "$temp_dir"; then
+    echo "Error: failed to fetch or extract tarball from $tarball_url" >&2
+    exit 1
+  fi
+  
+  # Find the extracted directory (GitHub tarballs extract to owner-repo-sha/)
+  local extracted_dir
+  extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d | grep -v "^$temp_dir$" | head -1)
+  if [[ -z "$extracted_dir" || ! -d "$extracted_dir" ]]; then
+    echo "Error: failed to locate extracted registry directory in $temp_dir" >&2
+    exit 1
+  fi
+  
+  echo "Extracted to: $extracted_dir"
+  
+  # Override SCRIPT_DIR to point to the extracted registry
+  SCRIPT_DIR="$extracted_dir"
+  
+  # Install agents from lockfile
+  local agents_json
+  agents_json=$(jq -r '.agents // {}' "$lockfile")
+  if [[ "$agents_json" != "{}" ]]; then
+    echo "---"
+    echo "Installing agents from lockfile..."
+    while IFS= read -r agent_name; do
+      local lockfile_version registry_version
+      lockfile_version=$(jq -r --arg n "$agent_name" '.agents[$n] // empty' "$lockfile")
+      registry_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
+      
+      if [[ -z "$registry_version" ]]; then
+        echo "Warning: agent '$agent_name' not found in registry $version — skipping"
+        continue
+      fi
+      
+      if [[ "$lockfile_version" != "$registry_version" ]]; then
+        echo "Warning: agent '$agent_name' version mismatch (lockfile: $lockfile_version, registry: $registry_version) — using registry version"
+      fi
+      
+      install_agent "$agent_name" "$PLATFORM"
+    done < <(jq -r '.agents | keys[]' "$lockfile")
+  fi
+  
+  # Install skills from lockfile
+  local skills_json
+  skills_json=$(jq -r '.skills // {}' "$lockfile")
+  if [[ "$skills_json" != "{}" ]]; then
+    echo "---"
+    echo "Installing skills from lockfile..."
+    while IFS= read -r skill_name; do
+      local lockfile_version registry_version
+      lockfile_version=$(jq -r --arg n "$skill_name" '.skills[$n] // empty' "$lockfile")
+      registry_version=$(jq -r --arg n "$skill_name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
+      
+      if [[ -z "$registry_version" ]]; then
+        echo "Warning: skill '$skill_name' not found in registry $version — skipping"
+        continue
+      fi
+      
+      if [[ "$lockfile_version" != "$registry_version" ]]; then
+        echo "Warning: skill '$skill_name' version mismatch (lockfile: $lockfile_version, registry: $registry_version) — using registry version"
+      fi
+      
+      install_single_skill "$skill_name"
+    done < <(jq -r '.skills | keys[]' "$lockfile")
+  fi
+}
+
 echo "Target: $REPO_ROOT ($INSTALL_LEVEL-level)"
 
 if [[ "$UPDATE_MODE" == "true" ]]; then
@@ -454,6 +815,14 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
   if [[ "${#MANIFEST_AGENT_ENTRIES[@]}" -gt 0 || "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
     write_manifest
   fi
+  echo "Done."
+  exit 0
+fi
+
+if [[ "$LOCKFILE_MODE" == "true" ]]; then
+  run_from_lockfile "$LOCKFILE_PATH"
+  echo "---"
+  write_manifest
   echo "Done."
   exit 0
 fi

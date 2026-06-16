@@ -13,14 +13,14 @@ A distributable collection of AI agents and skills that automate the issue → i
   ┌─────────────────────────────────────────────────────┐
   │  Create issues                                      │
   │                                                     │
-  │  auto:   /plan-sprint                               │
+  │  auto:   /crew:plan                                 │
   │                                                     │
-  │  manual: /grill-me (or /grill-with-docs)            │
-  │          → /to-prd → /to-issues                     │
+  │  manual: /crew:grill-me (or /crew:grill-with-docs)  │
+  │          → /crew:to-prd → /crew:to-issues           │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
-             /afk-sprint
+             /crew:afk
                     │
        ┌────────────┼────────────┐
        ▼            ▼            ▼
@@ -32,8 +32,21 @@ A distributable collection of AI agents and skills that automate the issue → i
              code-reviewer
                     │
                     ▼
-       /address-code-review
+       /crew:address-code-review
 ```
+
+---
+
+## Prerequisites
+
+Required tools:
+- `bash` (4.0+)
+- `jq` (for JSON processing)
+- `git` (for version control)
+- `curl` (for fetching remote releases)
+- `tar` (for extracting release archives)
+
+**Windows users:** You must install WSL2 (Windows Subsystem for Linux 2). Native Windows is not supported.
 
 ---
 
@@ -61,39 +74,101 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 
 ---
 
-## 2. Create issues
+## 2. Team distribution
+
+For teams who want to standardize on specific versions of agents and skills:
+
+### Step 1: Team lead — Create the lockfile
+
+Add this repo as a git submodule or download a release tarball, then run the installer once to generate an initial `crew.lock`:
+
+```bash
+./install.sh
+```
+
+This creates a `crew.lock` in your target directory (default: `$HOME`) containing version pins for all installed agents and skills.
+
+### Step 2: Commit the lockfile
+
+Add `crew.lock` to your dotfiles repo or team configuration repo:
+
+```bash
+git add crew.lock
+git commit -m "Add coding-crew lockfile for v1.0.0"
+```
+
+### Step 3: Team members — Install from lockfile
+
+Team members install the exact same versions using the lockfile:
+
+```bash
+./install.sh --from-lockfile crew.lock
+```
+
+This guarantees everyone uses identical agent and skill versions.
+
+### Step 4: Upgrading — Update and review
+
+To upgrade to a newer release:
+
+```bash
+./install.sh --update
+```
+
+This fetches the latest release, upgrades all agents and skills, and rewrites `crew.lock` with the new versions. Review the diff to see what changed:
+
+```bash
+git diff crew.lock
+```
+
+If everything looks good, commit the updated lockfile:
+
+```bash
+git add crew.lock
+git commit -m "Upgrade coding-crew to v1.1.0"
+```
+
+Team members can then pull the updated lockfile and re-run:
+
+```bash
+./install.sh --from-lockfile crew.lock
+```
+
+---
+
+## 3. Create issues
 
 ### Auto — from an idea
 
 ```
-/plan-sprint       ← grill → PRD → issues in one flow
+/crew:plan       ← grill → PRD → issues in one flow
 ```
 
 ### Manual — step by step
 
 ```
-/grill-me          ← stress-test your idea interactively
-                   (or /grill-with-docs — challenges against your domain model, creates one if you don't have it)
-/to-prd            ← turn the refined idea into a PRD
-/to-issues         ← break the PRD into ready-for-agent issues
+/crew:grill-me          ← stress-test your idea interactively
+                         (or /crew:grill-with-docs — challenges against your domain model, creates one if you don't have it)
+/crew:to-prd            ← turn the refined idea into a PRD
+/crew:to-issues         ← break the PRD into ready-for-agent issues
 ```
 
 ---
 
-## 3. Run the sprint
+## 4. Run the sprint
 
 ```
-/afk-sprint
+/crew:afk
 ```
 
 Picks up every `ready-for-agent` issue, spawns coder agents in parallel, commits, loops until done. Runs a code review pass on exit.
 
 ---
 
-## 4. Address the review
+## 5. Address the review
 
 ```
-/address-code-review
+/crew:address-code-review
 ```
 
 Opens the review report, triages findings, implements fixes with TDD.
@@ -112,17 +187,17 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 In order of use:
 
-| Skill                            | When                                                                              |
-| -------------------------------- | --------------------------------------------------------------------------------- |
-| `/plan-sprint`                   | Full design pipeline — grill → PRD → issues in one automated flow                 |
-| `/grill-me`                      | Stress-test your idea interactively (step-by-step alternative to `/plan-sprint`)  |
-| `/grill-with-docs`               | Same, but challenges against your domain model — creates one if you don't have it |
-| `/to-prd`                        | Turn the refined idea into a PRD                                                  |
-| `/to-issues`                     | Break the PRD into ready-for-agent issues                                         |
-| `/solve-issue`                   | Implement one issue manually (what coder uses internally)                         |
-| `/address-pr-comments`           | After a PR review — implement sensible comments with TDD                          |
-| `/improve-codebase-architecture` | Ongoing — find refactoring opportunities                                          |
-| `/caveman`                       | Switch to ultra-compressed communication to reduce token usage ~75%               |
+| Skill                                    | When                                                                              |
+| ---------------------------------------- | --------------------------------------------------------------------------------- |
+| `/crew:plan`                             | Full design pipeline — grill → PRD → issues in one automated flow                 |
+| `/crew:grill-me`                         | Stress-test your idea interactively (step-by-step alternative to `/crew:plan`)   |
+| `/crew:grill-with-docs`                  | Same, but challenges against your domain model — creates one if you don't have it |
+| `/crew:to-prd`                           | Turn the refined idea into a PRD                                                  |
+| `/crew:to-issues`                        | Break the PRD into ready-for-agent issues                                         |
+| `/crew:solve-issue`                      | Implement one issue manually (what coder uses internally)                         |
+| `/crew:address-pr-comments`              | After a PR review — implement sensible comments with TDD                          |
+| `/crew:improve-codebase-architecture`    | Ongoing — find refactoring opportunities                                          |
+| `/crew:caveman`                          | Switch to ultra-compressed communication to reduce token usage ~75%               |
 
 ---
 
