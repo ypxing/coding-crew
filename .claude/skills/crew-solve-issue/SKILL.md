@@ -1,5 +1,5 @@
 ---
-name: solve-issue
+name: crew-solve-issue
 description: >
   Implement a single issue end-to-end: read it, explore context, install deps, build with TDD,
   verify checks, and commit. Platform-agnostic — works in worktrees or branches.
@@ -107,7 +107,7 @@ Only continue if every listed dependency is confirmed in `done/`. If the section
 
 ### 2. Install dependencies
 
-STOP. Read and invoke the `dep-install` skill. If the skill is not found, stop and report `BLOCKED: dep-install skill not installed`. Run install **once**; only re-run if you add a new package during implementation.
+STOP. Read and invoke the `crew-dep-install` skill. If the skill is not found, stop and report `BLOCKED: crew-dep-install skill not installed`. Run install **once**; only re-run if you add a new package during implementation.
 
 ### 3. Explore before coding
 
@@ -129,9 +129,9 @@ Expand the file list if exploration reveals additional files. Do not guess. Conf
 
 **Use the INSTALL_MODE established in Step 2 for all commands** — test runs, type checks, linting. If INSTALL_MODE=docker, every command runs inside docker, not on the host.
 
-STOP. Read and invoke the `karpathy-guidelines` skill now, before writing any code.
+STOP. Read and invoke the `crew-karpathy-guidelines` skill now, before writing any code.
 
-STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
+STOP. Read and invoke the `crew-tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
 ### 5. Verify
 

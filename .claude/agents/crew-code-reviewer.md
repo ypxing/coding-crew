@@ -1,7 +1,7 @@
 ---
-name: code-reviewer
+name: crew-code-reviewer
 description: >
-  Reviews all branches merged in an afk-run sprint session for security, quality, and
+  Reviews all branches merged in a crew-afk sprint session for security, quality, and
   correctness. Invoked once at the end of the session. Findings are advisory for the human.
 model: sonnet
 tools: ["Read", "Bash", "Grep", "Glob"]
@@ -28,7 +28,7 @@ blocked.
 
 ## What You Receive
 
-A list of merged branches from afk-run. For each:
+A list of merged branches from crew-afk. For each:
 
 - Branch name and issue slug
 - Acceptance criteria from the issue

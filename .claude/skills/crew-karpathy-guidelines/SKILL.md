@@ -1,5 +1,5 @@
 ---
-name: karpathy-guidelines
+name: crew-karpathy-guidelines
 description: >
   Behavioral guidelines to reduce common LLM coding mistakes. Based on Andrej Karpathy's
   observations on LLM coding pitfalls. Apply when writing, reviewing, or refactoring code.

@@ -1,5 +1,5 @@
 ---
-name: coder
+name: crew-coder
 description: >
   Takes on a single issue, implements it in an isolated git worktree using TDD, verifies all checks
   pass, commits, and marks the issue done. Can be invoked directly with an issue path or by an
@@ -13,7 +13,7 @@ tools:
   - Bash
   - Glob
 skills:
-  - solve-issue
+  - crew-solve-issue
 user-invocable: false
 ---
 
@@ -72,11 +72,11 @@ echo "[$(date -u +%H:%M:%SZ)] [$WORKER] <exact command here>" >> "$CMD_LOG"
 
 ## Implementation
 
-Follow the `solve-issue` skill for the full procedure.
+Follow the `crew-solve-issue` skill for the full procedure.
 
 ## When You Are Stuck or Blocked
 
-When `solve-issue` says to stop and output `BLOCKED:`, set `status` to `blocked` and put the reason in `notes`. Return your structured summary immediately.
+When `crew-solve-issue` says to stop and output `BLOCKED:`, set `status` to `blocked` and put the reason in `notes`. Return your structured summary immediately.
 
 ## Structured Output
 
