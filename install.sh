@@ -45,14 +45,14 @@ elif [[ "${1:-}" == "--from-lockfile" ]]; then
   AGENT="all"
 else
   PLATFORM="${1:-all}"    # all | claude | copilot
-  AGENT="${2:-all}"       # all | afk-run | coder | --skill <name> | --skills a,b
+  AGENT="${2:-all}"       # all | crew-coder | crew-code-reviewer | --skill <name> | --skills a,b
 fi
 
 # --skills a,b,c  (multi-skill shorthand, replaces --skill for multiple names)
 if [[ "$AGENT" == "--skills" ]]; then
   SKILLS_LIST="${3:-}"
   if [[ -z "$SKILLS_LIST" ]]; then
-    echo "Error: --skills requires a comma-separated list (e.g. --skills tdd,caveman)" >&2
+    echo "Error: --skills requires a comma-separated list (e.g. --skills crew-tdd,crew-caveman)" >&2
     usage
   fi
   AGENT="--skill"  # normalise so later dispatch hits the skill path
@@ -71,18 +71,18 @@ usage() {
   echo ""
   echo "  --user:          install to \$HOME (user-level); default installs into the current project repo"
   echo "  platform:        all (default), claude, copilot"
-  echo "  agent:           all (default), code-reviewer, coder"
-  echo "  --skill:         install a single skill (e.g. to-issues)"
-  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,grill-me)"
+  echo "  agent:           all (default), crew-code-reviewer, crew-coder"
+  echo "  --skill:         install a single skill (e.g. crew-to-issues)"
+  echo "  --skills:        install multiple skills (comma-separated, e.g. crew-tdd,crew-caveman,crew-grill-me)"
   echo "  --update:        re-install only agents/skills whose version changed since last install"
   echo "  --from-lockfile: install from a lockfile (fetches pinned registry version and installs listed items)"
   echo ""
   echo "Examples:"
   echo "  ./install.sh                                      # install everything into project"
   echo "  ./install.sh --user                               # install everything into \$HOME"
-  echo "  ./install.sh --user claude --skill tdd            # one skill into \$HOME/.claude/skills/"
-  echo "  ./install.sh --user claude --skills tdd,caveman   # multiple skills at once"
-  echo "  ./install.sh claude --skill afk-run            # afk-run + coder + code-reviewer"
+  echo "  ./install.sh --user claude --skill crew-tdd            # one skill into \$HOME/.claude/skills/"
+  echo "  ./install.sh --user claude --skills crew-tdd,crew-caveman   # multiple skills at once"
+  echo "  ./install.sh claude --skill crew-afk            # crew-afk + crew-coder + crew-code-reviewer"
   echo "  ./install.sh --update                             # update all installed agents/skills"
   echo "  ./install.sh --from-lockfile crew.lock            # install from lockfile"
   echo ""
@@ -109,7 +109,7 @@ done
 # ── Input validation ───────────────────────────────────────────────────────────
 if [[ "$UPDATE_MODE" == "false" ]]; then
   if [[ "${1:-}" == "--skill" ]]; then
-    echo "Error: platform argument required before flag (e.g. ./install.sh claude --skill to-issues)" >&2
+    echo "Error: platform argument required before flag (e.g. ./install.sh claude --skill crew-to-issues)" >&2
     usage
   fi
 
@@ -195,9 +195,13 @@ install_agent() {
 
   install_skills "$agent_name"
 
+  # Resolve agent source directory: use source-dir field if present, otherwise use agent name
+  local agent_source_dir
+  agent_source_dir=$(jq -r --arg name "$agent_name" '.agents[$name]["source-dir"] // $name' "$SCRIPT_DIR/registry.json")
+
   # Locate protocol source for {{PROTOCOL}} expansion (protocol.md tried first, then workflow.js)
   local protocol_file=""
-  for candidate in "$SCRIPT_DIR/agents/$agent_name/protocol.md" "$SCRIPT_DIR/agents/$agent_name/workflow.js"; do
+  for candidate in "$SCRIPT_DIR/agents/$agent_source_dir/protocol.md" "$SCRIPT_DIR/agents/$agent_source_dir/workflow.js"; do
     if [[ -f "$candidate" ]]; then protocol_file="$candidate"; break; fi
   done
 
@@ -244,12 +248,12 @@ install_agent() {
     local claude_dest claude_src
     claude_dest=$(jq -r --arg name "$agent_name" '.agents[$name].install.shims.claude // empty' "$SCRIPT_DIR/registry.json")
     local claude_count
-    claude_count=$(find "$SCRIPT_DIR/agents/$agent_name" -maxdepth 1 -name "claude.*" | wc -l)
+    claude_count=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "claude.*" | wc -l)
     if [[ "$claude_count" -gt 1 ]]; then
-      echo "Error: multiple claude.* files in $SCRIPT_DIR/agents/$agent_name — cannot determine which to install" >&2
+      echo "Error: multiple claude.* files in $SCRIPT_DIR/agents/$agent_source_dir — cannot determine which to install" >&2
       exit 1
     fi
-    claude_src=$(find "$SCRIPT_DIR/agents/$agent_name" -maxdepth 1 -name "claude.*" | head -1)
+    claude_src=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "claude.*" | head -1)
     if [[ -n "$claude_src" && -n "$claude_dest" ]]; then
       assert_safe_path "$claude_dest" "claude install"
       expand_shim "$claude_src" "$REPO_ROOT/$claude_dest"
@@ -260,12 +264,12 @@ install_agent() {
     local copilot_dest copilot_src
     copilot_dest=$(jq -r --arg name "$agent_name" '.agents[$name].install.shims.copilot // empty' "$SCRIPT_DIR/registry.json")
     local copilot_count
-    copilot_count=$(find "$SCRIPT_DIR/agents/$agent_name" -maxdepth 1 -name "copilot.*" | wc -l)
+    copilot_count=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "copilot.*" | wc -l)
     if [[ "$copilot_count" -gt 1 ]]; then
-      echo "Error: multiple copilot.* files in $SCRIPT_DIR/agents/$agent_name — cannot determine which to install" >&2
+      echo "Error: multiple copilot.* files in $SCRIPT_DIR/agents/$agent_source_dir — cannot determine which to install" >&2
       exit 1
     fi
-    copilot_src=$(find "$SCRIPT_DIR/agents/$agent_name" -maxdepth 1 -name "copilot.*" | head -1)
+    copilot_src=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "copilot.*" | head -1)
     if [[ -n "$copilot_src" && -n "$copilot_dest" ]]; then
       assert_safe_path "$copilot_dest" "copilot install"
       expand_shim "$copilot_src" "$REPO_ROOT/$copilot_dest"

@@ -17,14 +17,14 @@ THIS REPO (source)
 ├── install.sh              ← single installer for all platforms
 ├── registry.json           ← source of truth for paths, deps, skills
 ├── agents/
-│   ├── coder/              ← single-issue worker agent
-│   └── code-reviewer/      ← post-sprint reviewer agent
+│   ├── crew-coder/         ← single-issue worker agent
+│   └── crew-code-reviewer/ ← post-sprint reviewer agent
 ├── skills/                 ← reusable skill files
-│   ├── tdd/
-│   ├── solve-issue/
-│   ├── grill-me/
-│   ├── crew:plan/
-│   ├── caveman/
+│   ├── crew-tdd/
+│   ├── crew-solve-issue/
+│   ├── crew-grill-me/
+│   ├── crew-plan/
+│   ├── crew-caveman/
 │   └── ...
 └── docs/
     └── agents/
@@ -56,7 +56,7 @@ install.sh
 Platform files (`claude.*.md`, `copilot.agent.md`) may contain a `{{PROTOCOL}}` placeholder. During install, this is replaced line-by-line with the contents of `protocol.md` or `workflow.js` from the same agent directory. The installed file is self-contained — no runtime file references.
 
 ```
-agents/coder/
+agents/crew-coder/
 ├── claude.agent.md       ← contains {{PROTOCOL}}
 ├── copilot.agent.md      ← contains full inline instructions (no {{PROTOCOL}})
 └── protocol.md           ← inlined into claude.agent.md on install
@@ -198,13 +198,13 @@ jq --version    # required
 
 ```bash
 # Claude Code — full sprint suite
-./install.sh claude --skill crew:afk
+./install.sh claude --skill crew-afk
 
 # GitHub Copilot — full sprint suite
-./install.sh copilot --skill crew:afk
+./install.sh copilot --skill crew-afk
 
 # A standalone skill
-./install.sh claude --skill grill-me
+./install.sh claude --skill crew-grill-me
 
 # A doc template only
 ./install.sh claude --doc issue-tracker.md
@@ -230,28 +230,28 @@ Re-installs only agents and skills whose version changed since last install. Rea
 YOUR_PROJECT/
 ├── .claude/
 │   ├── agents/
-│   │   ├── coder.md                ← coder agent (Claude)
-│   │   └── code-reviewer.md        ← reviewer agent (Claude)
+│   │   ├── crew-coder.md           ← crew-coder agent (Claude)
+│   │   └── crew-code-reviewer.md   ← reviewer agent (Claude)
 │   └── skills/
-│       ├── crew:afk/SKILL.md
-│       ├── karpathy-guidelines/
-│       ├── tdd/
-│       ├── dep-install/
-│       ├── solve-issue/
-│       ├── address-code-review/
-│       ├── caveman/                ← installed with crew:afk
-│       ├── address-pr-comments/    ← installed with "all"
-│       ├── improve-codebase-architecture/  ← installed with "all"
-│       ├── grill-me/               ← installed with "all"
-│       ├── grill-with-docs/        ← installed with "all"
-│       ├── to-issues/              ← installed with "all"
-│       ├── to-prd/                 ← installed with "all"
-│       └── crew:plan/            ← installed with "all"
+│       ├── crew-afk/SKILL.md
+│       ├── crew-karpathy-guidelines/
+│       ├── crew-tdd/
+│       ├── crew-dep-install/
+│       ├── crew-solve-issue/
+│       ├── crew-address-code-review/
+│       ├── crew-caveman/           ← installed with crew-afk
+│       ├── crew-address-pr-comments/    ← installed with "all"
+│       ├── crew-improve-codebase-architecture/  ← installed with "all"
+│       ├── crew-grill-me/          ← installed with "all"
+│       ├── crew-grill-with-docs/   ← installed with "all"
+│       ├── crew-to-issues/         ← installed with "all"
+│       ├── crew-to-prd/            ← installed with "all"
+│       └── crew-plan/              ← installed with "all"
 ├── .github/
 │   └── agents/
-│       ├── crew:afk.agent.md
-│       ├── coder.agent.md
-│       └── code-reviewer.agent.md
+│       ├── crew-afk.agent.md
+│       ├── crew-coder.agent.md
+│       └── crew-code-reviewer.agent.md
 └── docs/
     └── agents/
         ├── issue-tracker.md        ← edit to match your tracker
@@ -269,39 +269,39 @@ YOUR_PROJECT/
  ┌─────────────────────────────────────────────────────────────┐
  │  Plan & explore (optional but recommended)                  │
  │                                                             │
- │  auto:   /crew:plan  (grill → PRD → issues)               │
+ │  auto:   /crew-plan  (grill → PRD → issues)               │
  │                                                             │
- │  manual: /grill-me  (or /grill-with-docs)                   │
- │          → /to-prd → /to-issues                             │
+ │  manual: /crew-grill-me  (or /crew-grill-with-docs)         │
+ │          → /crew-to-prd → /crew-to-issues                   │
  └──────────────────────────┬──────────────────────────────────┘
                             │ .scratch/.../issues/*.md
                             ▼
- /crew:afk (you trigger this)
+ /crew-afk (you trigger this)
        │
        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  crew:afk orchestrator                                    │
+│  crew-afk orchestrator                                      │
 │  1. List "ready-for-agent" issues from .scratch/            │
-│  2. Spawn coder workers — up to 8 in parallel               │
+│  2. Spawn crew-coder workers — up to 8 in parallel          │
 │  3. Validate output, merge complete branches                │
 │  4. Write progress / blocked notes, loop                    │
-│  5. Run code-reviewer on exit                               │
+│  5. Run crew-code-reviewer on exit                          │
 └────────────────────┬────────────────────────────────────────┘
                      │ isolated git worktrees
           ┌──────────┴──────────┐
           ▼                     ▼
     ┌───────────┐         ┌───────────┐
-    │  coder    │   ...   │  coder    │
+    │ crew-coder│   ...   │ crew-coder│
     │ (1 issue) │         │ (1 issue) │
     └───────────┘         └───────────┘
           │ branches merged
           ▼
-    ┌──────────────────┐
-    │  code-reviewer   │  advisory findings → .scratch/reviews/
-    └──────────────────┘
+    ┌──────────────────────┐
+    │  crew-code-reviewer  │  advisory findings → .scratch/reviews/
+    └──────────────────────┘
           │
           ▼
-    /address-code-review (you trigger this)
+    /crew-address-code-review (you trigger this)
 ```
 
 ---
@@ -309,7 +309,7 @@ YOUR_PROJECT/
 ### Issue Lifecycle
 
 ```
- needs-triage  →  ready-for-agent  →  coder picks up
+ needs-triage  →  ready-for-agent  →  crew-coder picks up
                                             │
                          ┌──────────────────┼──────────────┐
                          ▼                  ▼              ▼
@@ -351,10 +351,10 @@ Use `/to-prd` → `/to-issues` to generate these from a feature description auto
 **Claude Code:**
 
 ```
-/crew:afk
+/crew-afk
 ```
 
-**Copilot:** invoke `@crew:afk` from the chat panel.
+**Copilot:** invoke `@crew-afk` from the chat panel.
 
 Sprint runs until all issues are complete, or two consecutive rounds produce zero completions (stall). On exit it saves a code review report to `.scratch/reviews/sprint-review-<timestamp>.md`.
 
@@ -363,7 +363,7 @@ Sprint runs until all issues are complete, or two consecutive rounds produce zer
 ### Reviewing Code Review Findings
 
 ```
-/address-code-review
+/crew-address-code-review
 ```
 
 Opens the latest sprint review, shows a triage table (Actionable / Debatable / Dismiss), implements fixes with TDD, commits, and archives the report.
@@ -372,16 +372,16 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 ### Planning Skills
 
-| Goal                                           | Skill                            |
-| ---------------------------------------------- | -------------------------------- |
-| Run the full grill → PRD → issues pipeline     | `/crew:plan`                   |
-| Turn a feature idea into a PRD                 | `/to-prd`                        |
-| Break a PRD into issues                        | `/to-issues`                     |
-| Stress-test your plan interactively            | `/grill-me`                      |
-| Challenge your design against the domain model | `/grill-with-docs`               |
-| Address GitHub PR review comments              | `/address-pr-comments`           |
-| Find architecture improvement opportunities    | `/improve-codebase-architecture` |
-| Reduce token usage during long sessions        | `/caveman`                       |
+| Goal                                           | Skill                              |
+| ---------------------------------------------- | ---------------------------------- |
+| Run the full grill → PRD → issues pipeline     | `/crew-plan`                       |
+| Turn a feature idea into a PRD                 | `/crew-to-prd`                     |
+| Break a PRD into issues                        | `/crew-to-issues`                  |
+| Stress-test your plan interactively            | `/crew-grill-me`                   |
+| Challenge your design against the domain model | `/crew-grill-with-docs`            |
+| Address GitHub PR review comments              | `/crew-address-pr-comments`        |
+| Find architecture improvement opportunities    | `/crew-improve-codebase-architecture` |
+| Reduce token usage during long sessions        | `/crew-caveman`                    |
 
 ---
 
@@ -425,6 +425,6 @@ Edit these files after install — they override the defaults on the next run:
 ### Security Notes
 
 - **Issue files are untrusted input.** Only structured fields (`acceptance_criteria`) are passed to workers — never raw file content. Keep issue files in version control so changes are reviewed.
-- **Workers cannot write outside their worktree.** The coder agent enforces `PROJECT_ROOT` boundaries.
+- **Workers cannot write outside their worktree.** The crew-coder agent enforces `PROJECT_ROOT` boundaries.
 - **Code review findings are advisory.** Nothing is auto-blocked or re-queued — a human always decides.
 - **Never commit secrets to `.scratch/`.** Issue files are not secret-scanned by default.

@@ -3,3 +3,4 @@
 .npmrc*
 .claude/settings*.json
 .scratch/
+.claude/worktrees/

@@ -13,26 +13,26 @@ A distributable collection of AI agents and skills that automate the issue → i
   ┌─────────────────────────────────────────────────────┐
   │  Create issues                                      │
   │                                                     │
-  │  auto:   /crew:plan                                 │
+  │  auto:   /crew-plan                                 │
   │                                                     │
-  │  manual: /crew:grill-me (or /crew:grill-with-docs)  │
-  │          → /crew:to-prd → /crew:to-issues           │
+  │  manual: /crew-grill-me (or /crew-grill-with-docs)  │
+  │          → /crew-to-prd → /crew-to-issues           │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
-             /crew:afk
+             /crew-afk
                     │
        ┌────────────┼────────────┐
        ▼            ▼            ▼
-   coder         coder        coder      (parallel, isolated worktrees)
+   crew-coder   crew-coder   crew-coder  (parallel, isolated worktrees)
    issue 1       issue 2      issue 3
        └────────────┼────────────┘
                     │ committed branches merged
                     ▼
-             code-reviewer
+             crew-code-reviewer
                     │
                     ▼
-       /crew:address-code-review
+       /crew-address-code-review
 ```
 
 ---
@@ -141,16 +141,16 @@ Team members can then pull the updated lockfile and re-run:
 ### Auto — from an idea
 
 ```
-/crew:plan       ← grill → PRD → issues in one flow
+/crew-plan       ← grill → PRD → issues in one flow
 ```
 
 ### Manual — step by step
 
 ```
-/crew:grill-me          ← stress-test your idea interactively
-                         (or /crew:grill-with-docs — challenges against your domain model, creates one if you don't have it)
-/crew:to-prd            ← turn the refined idea into a PRD
-/crew:to-issues         ← break the PRD into ready-for-agent issues
+/crew-grill-me          ← stress-test your idea interactively
+                         (or /crew-grill-with-docs — challenges against your domain model, creates one if you don't have it)
+/crew-to-prd            ← turn the refined idea into a PRD
+/crew-to-issues         ← break the PRD into ready-for-agent issues
 ```
 
 ---
@@ -158,17 +158,17 @@ Team members can then pull the updated lockfile and re-run:
 ## 4. Run the sprint
 
 ```
-/crew:afk
+/crew-afk
 ```
 
-Picks up every `ready-for-agent` issue, spawns coder agents in parallel, commits, loops until done. Runs a code review pass on exit.
+Picks up every `ready-for-agent` issue, spawns crew-coder agents in parallel, commits, loops until done. Runs a code review pass on exit.
 
 ---
 
 ## 5. Address the review
 
 ```
-/crew:address-code-review
+/crew-address-code-review
 ```
 
 Opens the review report, triages findings, implements fixes with TDD.
@@ -189,15 +189,15 @@ In order of use:
 
 | Skill                                    | When                                                                              |
 | ---------------------------------------- | --------------------------------------------------------------------------------- |
-| `/crew:plan`                             | Full design pipeline — grill → PRD → issues in one automated flow                 |
-| `/crew:grill-me`                         | Stress-test your idea interactively (step-by-step alternative to `/crew:plan`)   |
-| `/crew:grill-with-docs`                  | Same, but challenges against your domain model — creates one if you don't have it |
-| `/crew:to-prd`                           | Turn the refined idea into a PRD                                                  |
-| `/crew:to-issues`                        | Break the PRD into ready-for-agent issues                                         |
-| `/crew:solve-issue`                      | Implement one issue manually (what coder uses internally)                         |
-| `/crew:address-pr-comments`              | After a PR review — implement sensible comments with TDD                          |
-| `/crew:improve-codebase-architecture`    | Ongoing — find refactoring opportunities                                          |
-| `/crew:caveman`                          | Switch to ultra-compressed communication to reduce token usage ~75%               |
+| `/crew-plan`                             | Full design pipeline — grill → PRD → issues in one automated flow                 |
+| `/crew-grill-me`                         | Stress-test your idea interactively (step-by-step alternative to `/crew-plan`)   |
+| `/crew-grill-with-docs`                  | Same, but challenges against your domain model — creates one if you don't have it |
+| `/crew-to-prd`                           | Turn the refined idea into a PRD                                                  |
+| `/crew-to-issues`                        | Break the PRD into ready-for-agent issues                                         |
+| `/crew-solve-issue`                      | Implement one issue manually (what crew-coder uses internally)                    |
+| `/crew-address-pr-comments`              | After a PR review — implement sensible comments with TDD                          |
+| `/crew-improve-codebase-architecture`    | Ongoing — find refactoring opportunities                                          |
+| `/crew-caveman`                          | Switch to ultra-compressed communication to reduce token usage ~75%               |
 
 ---
 
