@@ -1,7 +1,7 @@
 {
   "agents": {
     "crew-code-reviewer": {
-      "version": "1.1.0",
+      "version": "1.0.0",
       "source-dir": "crew-code-reviewer",
       "description": "Reviews all branches merged in a sprint session; reports CRITICAL/HIGH/MEDIUM/LOW findings per branch. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
@@ -15,7 +15,7 @@
       }
     },
     "crew-coder": {
-      "version": "1.1.0",
+      "version": "1.0.0",
       "source-dir": "crew-coder",
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
@@ -35,7 +35,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "1.1.0",
+      "version": "1.0.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -64,7 +64,7 @@
       "install": ".claude/skills/crew-karpathy-guidelines"
     },
     "crew-tdd": {
-      "version": "1.1.0",
+      "version": "1.0.0",
       "source-dir": "crew-tdd",
       "description": "Test-driven development with red-green-refactor loop, vertical slices.",
       "source": "mattpocock/skills",
@@ -77,7 +77,7 @@
       "install": ".claude/skills/crew-dep-install"
     },
     "crew-solve-issue": {
-      "version": "1.1.0",
+      "version": "1.0.0",
       "source-dir": "crew-solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/crew-solve-issue",
@@ -92,7 +92,7 @@
       ]
     },
     "crew-address-code-review": {
-      "version": "1.1.0",
+      "version": "1.0.0",
       "source-dir": "crew-address-code-review",
       "description": "Triage and fix findings from a crew-afk code review report using TDD.",
       "install": ".claude/skills/crew-address-code-review",
@@ -106,7 +106,7 @@
       ]
     },
     "crew-address-pr-comments": {
-      "version": "1.1.0",
+      "version": "1.0.0",
       "source-dir": "crew-address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "install": ".claude/skills/crew-address-pr-comments",
@@ -157,7 +157,7 @@
       "install": ".claude/skills/crew-to-prd"
     },
     "crew-plan": {
-      "version": "1.1.0",
+      "version": "1.0.0",
       "source-dir": "crew-plan",
       "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
       "install": ".claude/skills/crew-plan",
