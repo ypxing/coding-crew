@@ -48,7 +48,7 @@ jobs:
         if: runner.os != 'Windows'
         run: bats tests/
       
-      - name: Run tests (Windows - WSL2 bash)
+      - name: Run tests (Windows - Git Bash)
         if: runner.os == 'Windows'
         shell: bash
         run: bats tests/

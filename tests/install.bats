@@ -63,34 +63,13 @@ teardown() {
 }
 
 @test "direct install is idempotent (produces identical output on repeat runs)" {
-  # Create a lockfile pointing to local registry (no network call)
-  local lockfile="$TEMP_DIR/test.lock"
-  cat > "$lockfile" <<EOF
-{
-  "registry": "file://$SCRIPT_DIR",
-  "version": "local",
-  "skills": {
-    "crew-tdd": "1.0.0"
-  }
-}
-EOF
-
-  # Direct install to temp1
-  local temp1="$TEMP_DIR/direct"
-  mkdir -p "$temp1"
+  local temp1="$TEMP_DIR/first"
+  local temp2="$TEMP_DIR/second"
+  mkdir -p "$temp1" "$temp2"
   cd "$SCRIPT_DIR"
   TARGET_REPO="$temp1" ./install.sh claude --skill crew-tdd > /dev/null
-
-  # Install from lockfile to temp2 (using local path, no network)
-  local temp2="$TEMP_DIR/lockfile"
-  mkdir -p "$temp2"
-  # For local file:// registry, we skip the tarball fetch and use SCRIPT_DIR directly
-  # The test verifies that the lockfile mechanism works in principle
-  # In production, this would fetch a tarball from GitHub
-  cd "$SCRIPT_DIR"
   TARGET_REPO="$temp2" ./install.sh claude --skill crew-tdd > /dev/null
 
-  # Compare installed SKILL.md files - they should be identical
   cmp -s "$temp1/.claude/skills/crew-tdd/SKILL.md" "$temp2/.claude/skills/crew-tdd/SKILL.md"
 }
 

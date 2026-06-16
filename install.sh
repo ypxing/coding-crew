@@ -134,8 +134,8 @@ assert_safe_path() {
 
 assert_identifier() {
   local val="$1" label="$2"
-  if [[ ! "$val" =~ ^[a-zA-Z0-9_.:=-]+$ ]]; then
-    echo "Error: invalid $label name '$val' — must match [a-zA-Z0-9_.:=-]+" >&2
+  if [[ ! "$val" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+    echo "Error: invalid $label name '$val' — must match [a-zA-Z0-9_.-]+" >&2
     exit 1
   fi
 }
@@ -236,7 +236,8 @@ install_agent() {
     local status=0
     check_and_diff "$tmpfile" "$dest" || status=$?
     mv "$tmpfile" "$dest" || { rm -f "$tmpfile"; exit 1; }
-    
+    trap - RETURN
+
     # Print path only for new files (status=0)
     if [[ $status -eq 0 ]]; then
       local rel_dest="${dest#$REPO_ROOT/}"
@@ -359,10 +360,7 @@ install_single_skill() {
     if [[ $status -eq 0 ]]; then
       echo "  $rel_dest"
     fi
-  done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -print0)
-  
-  # Remove development/verification test scripts — they belong in the source repo only
-  find "$REPO_ROOT/$skill_dest/references" -name "test-*.sh" -type f -delete 2>/dev/null || true
+  done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
   # Select the right SKILL.md:
   #   claude.SKILL.md / copilot.SKILL.md  — platform-specific variant wins when present
   #   SKILL.md                             — shared fallback used by both platforms
@@ -734,34 +732,42 @@ run_from_lockfile() {
   echo "Registry: $registry"
   echo "Version: $version"
   echo "---"
-  
-  # Construct tarball URL
-  local tarball_url="${registry}/archive/refs/tags/v${version}.tar.gz"
-  echo "Fetching registry tarball from: $tarball_url"
-  
-  # Create temp directory with cleanup trap
-  local temp_dir
-  temp_dir=$(mktemp -d)
-  trap "rm -rf '$temp_dir'" EXIT
-  
-  # Fetch and extract tarball
-  if ! curl -fsSL "$tarball_url" | tar -xz -C "$temp_dir"; then
-    echo "Error: failed to fetch or extract tarball from $tarball_url" >&2
-    exit 1
+
+  # file:// registries point directly to a local directory — no tarball fetch needed
+  if [[ "$registry" == file://* ]]; then
+    local local_path="${registry#file://}"
+    if [[ ! -d "$local_path" ]]; then
+      echo "Error: local registry path does not exist: $local_path" >&2
+      exit 1
+    fi
+    SCRIPT_DIR="$local_path"
+  else
+    # Construct tarball URL
+    local tarball_url="${registry}/archive/refs/tags/v${version}.tar.gz"
+    echo "Fetching registry tarball from: $tarball_url"
+
+    # Create temp directory with cleanup trap
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    trap "rm -rf '$temp_dir'" EXIT
+
+    # Fetch and extract tarball
+    if ! curl -fsSL "$tarball_url" | tar -xz -C "$temp_dir"; then
+      echo "Error: failed to fetch or extract tarball from $tarball_url" >&2
+      exit 1
+    fi
+
+    # Find the extracted directory (GitHub tarballs extract to owner-repo-sha/)
+    local extracted_dir
+    extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d | grep -v "^$temp_dir$" | head -1)
+    if [[ -z "$extracted_dir" || ! -d "$extracted_dir" ]]; then
+      echo "Error: failed to locate extracted registry directory in $temp_dir" >&2
+      exit 1
+    fi
+
+    echo "Extracted to: $extracted_dir"
+    SCRIPT_DIR="$extracted_dir"
   fi
-  
-  # Find the extracted directory (GitHub tarballs extract to owner-repo-sha/)
-  local extracted_dir
-  extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d | grep -v "^$temp_dir$" | head -1)
-  if [[ -z "$extracted_dir" || ! -d "$extracted_dir" ]]; then
-    echo "Error: failed to locate extracted registry directory in $temp_dir" >&2
-    exit 1
-  fi
-  
-  echo "Extracted to: $extracted_dir"
-  
-  # Override SCRIPT_DIR to point to the extracted registry
-  SCRIPT_DIR="$extracted_dir"
   
   # Install agents from lockfile
   local agents_json
