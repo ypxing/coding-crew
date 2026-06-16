@@ -74,16 +74,16 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 
 Pin to a specific release:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --version v1.0.0
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --version v1.1.0
 ```
 
 Combine options freely:
 ```bash
 # Specific version, Claude only, into current project
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude --version v1.0.0 --project
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude --version v1.1.0 --project
 
 # Specific version with selected skills
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --version v1.0.0 --skills crew-tdd,crew-caveman
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --version v1.1.0 --skills crew-tdd,crew-caveman
 ```
 
 ---
@@ -121,7 +121,7 @@ Add `crew.lock` to your dotfiles repo or team configuration repo:
 
 ```bash
 git add crew.lock
-git commit -m "Add coding-crew lockfile for v1.0.0"
+git commit -m "Add coding-crew lockfile for v1.1.0"
 ```
 
 ### Step 3: Team members — Install from lockfile
