@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Session initialization and feature branch setup for afk-run
+# Usage: source this script or run it directly
+# Optional: Pass --jira TICKET-123 as arguments
+
+# Auto-detect platform directory
+if [ -d ".claude" ]; then
+  PLATFORM_DIR=".claude"
+elif [ -d ".copilot" ]; then
+  PLATFORM_DIR=".copilot"
+else
+  echo "Error: No .claude or .copilot directory found" >&2
+  exit 1
+fi
+
+# Find first ready issue to determine branch name
+FIRST_ISSUE=$(find .scratch -path '*/issues/*.md' -not -path '*/done/*' -type f | head -n 1)
+
+if [ -z "$FIRST_ISSUE" ]; then
+  echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-run."
+  exit 1
+fi
+
+# Use shared feature branch setup script (handles branch creation/switching with JIRA support)
+# feature-branch-setup.sh is copied into this skill's scripts/ directory during install.sh
+bash "$(dirname "$0")/feature-branch-setup.sh" "$FIRST_ISSUE" "$@"
+
+# Get current branch after setup
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Derive feature-slug from current branch name
+FEATURE_SLUG="$CURRENT_BRANCH"
+# Strip 'feature/' prefix if present
+FEATURE_SLUG="${FEATURE_SLUG#feature/}"
+# Strip JIRA prefix pattern (e.g., PROJ-123-)
+FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]\+-[0-9]\+-//')
+
+# Validate feature-slug is non-empty after stripping
+if [ -z "$FEATURE_SLUG" ]; then
+  echo "ERROR: Could not derive feature slug from branch name '$CURRENT_BRANCH'"
+  exit 1
+fi
+
+# Auto-create .scratch/<feature-slug>/issues/ directory structure if needed
+mkdir -p ".scratch/$FEATURE_SLUG/issues"
+
+# Initialize session tracking
+mkdir -p .scratch
+TS=$(date +%Y%m%dT%H%M%S)
+[ -s .scratch/commands.log ] && mv .scratch/commands.log ".scratch/commands-$TS.log"
+touch .scratch/commands.log
+
+# Validate git repository
+if ! git rev-parse HEAD >/dev/null 2>&1; then
+  echo "ERROR: Not in a git repository or HEAD is invalid"
+  exit 1
+fi
+
+git rev-parse HEAD > .scratch/.session-start-sha
+
+# Check for jq dependency
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq is required but not installed."
+  echo "Install with: apt-get install jq (Debian/Ubuntu) or brew install jq (macOS)"
+  exit 1
+fi
+
+# Initialize sprint state tracking
+STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
+BASE_SHA=$(git rev-parse HEAD)
+
+if [ ! -f "$STATE_FILE" ]; then
+  # Create new state file with initial branch entry
+  echo "{}" | jq --arg branch "$CURRENT_BRANCH" \
+                  --arg sha "$BASE_SHA" \
+                  --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                  '.branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
+                  > "$STATE_FILE"
+else
+  # Read existing state, add/update current branch entry
+  jq --arg branch "$CURRENT_BRANCH" \
+     --arg sha "$BASE_SHA" \
+     --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     '.branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
+     "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+fi
+
+echo "Session initialized: branch=$CURRENT_BRANCH, feature=$FEATURE_SLUG"

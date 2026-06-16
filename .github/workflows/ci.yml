@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js (for bats)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install bats-core
+        run: npm install -g bats
+      
+      - name: Verify required tools (Ubuntu/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          which jq
+          which curl
+          which tar
+          which bats
+      
+      - name: Verify required tools (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          which jq
+          which curl
+          which tar
+          which bats
+      
+      - name: Run tests (Ubuntu/macOS)
+        if: runner.os != 'Windows'
+        run: bats tests/
+      
+      - name: Run tests (Windows - Git Bash)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: bats tests/

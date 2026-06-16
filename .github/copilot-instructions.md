@@ -11,10 +11,10 @@ This repo is a **distributable collection** of AI agents and skills. Nothing run
 ./install.sh
 
 # Install specific agent for specific platform
-./install.sh claude coder
+./install.sh claude crew-coder
 
 # Install a skill (and its agent dependencies)
-./install.sh claude --skill afk-sprint
+./install.sh claude --skill crew-afk
 
 # Install into a different repo
 TARGET_REPO=/path/to/other/repo ./install.sh
@@ -26,7 +26,7 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 **Prerequisites**: `git`, `jq`
 
 **Platforms**: `all` (default), `claude`, `copilot`  
-**Agents**: `all` (default), `code-reviewer`, `coder`
+**Agents**: `all` (default), `crew-code-reviewer`, `crew-coder`
 
 ---
 
@@ -34,8 +34,8 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 
 ### Key Components
 
-- **`agents/`** — Two agents: `coder` (implements single issues using TDD in isolated worktrees) and `code-reviewer` (reviews merged branches at sprint end)
-- **`skills/`** — Reusable skill files (TDD, solve-issue, grill-me, plan-sprint, etc.)
+- **`agents/`** — Two agents: `crew-coder` (implements single issues using TDD in isolated worktrees) and `crew-code-reviewer` (reviews merged branches at sprint end)
+- **`skills/`** — Reusable skill files (crew-tdd, crew-solve-issue, crew-grill-me, crew-plan, etc.)
 - **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and doc templates
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`docs/agents/`** — Default templates (`issue-tracker.md`, `triage-labels.md`) copied to consuming repos
@@ -60,7 +60,7 @@ Each agent/skill has platform-specific files directly under `agents/<name>/`:
 
 Example structure:
 ```
-agents/code-reviewer/
+agents/crew-code-reviewer/
 ├── claude.agent.md      ← contains {{PROTOCOL}}
 ├── copilot.agent.md     ← contains {{PROTOCOL}}
 └── protocol.md          ← inlined into both files during install
@@ -79,7 +79,7 @@ agents/code-reviewer/
   "description": "...",
   "deps": ["<other-agent>"],           // installed recursively
   "deps-copilot": ["..."],             // platform-specific override (optional)
-  "skills": ["tdd", "solve-issue"],    // bundled skills
+  "skills": ["crew-tdd", "crew-solve-issue"],    // bundled skills
   "docs": ["issue-tracker.md"],        // doc templates (skip if exist)
   "install": {
     "shims": {
@@ -97,8 +97,8 @@ agents/code-reviewer/
   "description": "...",
   "install": ".claude/skills/<name>",
   "install-copilot": ".copilot/skills/<name>",  // optional
-  "agent-deps": ["coder"],                        // pulls in agents
-  "deps": ["tdd", "dep-install"],                // other skills
+  "agent-deps": ["crew-coder"],                   // pulls in agents
+  "deps": ["crew-tdd", "crew-dep-install"],      // other skills
   "docs": ["issue-tracker.md"],                  // doc templates
   "source": "mattpocock/skills"                  // attribution (optional)
 }
@@ -125,13 +125,13 @@ Issues live in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
 
 1. Create `agents/<name>/protocol.md` (or `workflow.js`)
 2. Create `agents/<name>/claude.<type>.md` and `agents/<name>/copilot.agent.md` with `{{PROTOCOL}}` placeholder
-3. Add agent entry to `registry.json`
+3. Add agent entry to `registry.json` (use `crew-` prefix for the agent name)
 4. Test: `TARGET_REPO=/tmp/test ./install.sh claude <name>`
 
 ### Adding a New Skill
 
 1. Create `skills/<name>/SKILL.md`
-2. Add skill entry to `registry.json` with version, description, install path
+2. Add skill entry to `registry.json` with version, description, install path (use `crew-` prefix)
 3. If skill depends on agents, add `agent-deps: ["<agent>"]`
 4. Test: `./install.sh claude --skill <name>`
 
@@ -156,20 +156,20 @@ Use `protocol.md` for markdown instructions, `workflow.js` for Workflow scripts.
 
 | Skill | Description |
 |-------|-------------|
-| `afk-sprint` | Orchestrator that spawns parallel coder agents, merges branches, runs code-reviewer |
-| `karpathy-guidelines` | Coding principles to reduce LLM mistakes |
-| `tdd` | Test-driven development with red-green-refactor loop |
-| `solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
-| `address-code-review` | Triage and fix code review findings using TDD |
-| `address-pr-comments` | Fetch PR review comments, implement sensible ones with TDD |
-| `improve-codebase-architecture` | Find deepening opportunities for testability and AI-navigability |
-| `grill-me` | Interview user about a plan until reaching shared understanding |
-| `grill-with-docs` | Grilling session that challenges plan against domain model |
-| `to-issues` | Break plan/PRD into independently-grabbable issues |
-| `to-prd` | Synthesize conversation into PRD and publish to tracker |
-| `plan-sprint` | Full design pipeline: grill → PRD → issues |
-| `caveman` | Ultra-compressed communication mode (~75% token reduction) |
-| `dep-install` | Detect install mode (host/docker) and install dependencies once |
+| `crew-afk` | Orchestrator that spawns parallel crew-coder agents, merges branches, runs crew-code-reviewer |
+| `crew-karpathy-guidelines` | Coding principles to reduce LLM mistakes |
+| `crew-tdd` | Test-driven development with red-green-refactor loop |
+| `crew-solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
+| `crew-address-code-review` | Triage and fix code review findings using TDD |
+| `crew-address-pr-comments` | Fetch PR review comments, implement sensible ones with TDD |
+| `crew-improve-codebase-architecture` | Find deepening opportunities for testability and AI-navigability |
+| `crew-grill-me` | Interview user about a plan until reaching shared understanding |
+| `crew-grill-with-docs` | Grilling session that challenges plan against domain model |
+| `crew-to-issues` | Break plan/PRD into independently-grabbable issues |
+| `crew-to-prd` | Synthesize conversation into PRD and publish to tracker |
+| `crew-plan` | Full design pipeline: grill → PRD → issues |
+| `crew-caveman` | Ultra-compressed communication mode (~75% token reduction) |
+| `crew-dep-install` | Detect install mode (host/docker) and install dependencies once |
 
 ---
 

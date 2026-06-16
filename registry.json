@@ -1,122 +1,178 @@
 {
   "agents": {
-    "code-reviewer": {
-      "version": "1.1.0",
+    "crew-code-reviewer": {
+      "version": "1.0.0",
+      "source-dir": "crew-code-reviewer",
       "description": "Reviews all branches merged in a sprint session; reports CRITICAL/HIGH/MEDIUM/LOW findings per branch. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
       "skills": [],
       "docs": [],
       "install": {
         "shims": {
-          "claude": ".claude/agents/code-reviewer.md",
-          "copilot": ".copilot/agents/code-reviewer.agent.md"
+          "claude": ".claude/agents/crew-code-reviewer.md",
+          "copilot": ".copilot/agents/crew-code-reviewer.agent.md"
         }
       }
     },
-    "coder": {
-      "version": "1.1.0",
+    "crew-coder": {
+      "version": "1.0.0",
+      "source-dir": "crew-coder",
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
-      "skills": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue"],
+      "skills": [
+        "crew-karpathy-guidelines",
+        "crew-tdd",
+        "crew-dep-install",
+        "crew-solve-issue"
+      ],
       "install": {
         "shims": {
-          "claude": ".claude/agents/coder.md",
-          "copilot": ".copilot/agents/coder.agent.md"
+          "claude": ".claude/agents/crew-coder.md",
+          "copilot": ".copilot/agents/crew-coder.agent.md"
         }
       }
     }
   },
   "skills": {
-    "afk-sprint": {
-      "version": "1.1.0",
-      "description": "Orchestrator that spawns parallel coder agents in isolated worktrees, merges completed branches, runs a code-reviewer pass, and loops until all ready-for-agent issues are done.",
-      "install": ".claude/skills/afk-sprint",
-      "install-copilot": ".copilot/skills/afk-sprint",
+    "crew-afk": {
+      "version": "1.0.0",
+      "source-dir": "crew-afk",
+      "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, and loops until all ready-for-agent issues are done.",
+      "install": ".claude/skills/crew-afk",
+      "install-copilot": ".copilot/skills/crew-afk",
       "scripts": [
         "feature-branch-setup.sh"
       ],
-      "agent-deps": ["coder", "code-reviewer"],
-      "deps": ["karpathy-guidelines", "tdd", "dep-install", "solve-issue", "address-code-review", "caveman"]
+      "agent-deps": [
+        "crew-coder",
+        "crew-code-reviewer"
+      ],
+      "deps": [
+        "crew-karpathy-guidelines",
+        "crew-tdd",
+        "crew-dep-install",
+        "crew-solve-issue",
+        "crew-address-code-review",
+        "crew-caveman"
+      ]
     },
-    "karpathy-guidelines": {
+    "crew-karpathy-guidelines": {
       "version": "1.0.0",
+      "source-dir": "crew-karpathy-guidelines",
       "description": "Behavioral guidelines to reduce common LLM coding mistakes (think, simplify, surgical, goal-driven).",
       "source": "multica-ai/andrej-karpathy-skills",
-      "install": ".claude/skills/karpathy-guidelines"
+      "install": ".claude/skills/crew-karpathy-guidelines"
     },
-    "tdd": {
-      "version": "1.1.0",
+    "crew-tdd": {
+      "version": "1.0.0",
+      "source-dir": "crew-tdd",
       "description": "Test-driven development with red-green-refactor loop, vertical slices.",
       "source": "mattpocock/skills",
-      "install": ".claude/skills/tdd"
+      "install": ".claude/skills/crew-tdd"
     },
-    "dep-install": {
+    "crew-dep-install": {
       "version": "1.0.0",
+      "source-dir": "crew-dep-install",
       "description": "Detect install mode (host or docker) and install project dependencies once. Shared by solve-issue, address-code-review, and address-pr-comments.",
-      "install": ".claude/skills/dep-install"
+      "install": ".claude/skills/crew-dep-install"
     },
-    "solve-issue": {
-      "version": "1.1.0",
-      "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
-      "install": ".claude/skills/solve-issue",
-      "scripts": ["feature-branch-setup.sh", "commit-changes.sh"],
-      "deps": ["dep-install", "tdd", "karpathy-guidelines"]
-    },
-    "address-code-review": {
-      "version": "1.1.0",
-      "description": "Triage and fix findings from an afk-sprint code review report using TDD.",
-      "install": ".claude/skills/address-code-review",
-      "scripts": ["branch-safety-check.sh", "commit-changes.sh"],
-      "deps": ["dep-install", "tdd"]
-    },
-    "address-pr-comments": {
-      "version": "1.1.0",
-      "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
-      "install": ".claude/skills/address-pr-comments",
-      "scripts": ["branch-safety-check.sh", "commit-changes.sh"],
-      "deps": ["dep-install", "tdd"]
-    },
-    "improve-codebase-architecture": {
+    "crew-solve-issue": {
       "version": "1.0.0",
+      "source-dir": "crew-solve-issue",
+      "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
+      "install": ".claude/skills/crew-solve-issue",
+      "scripts": [
+        "feature-branch-setup.sh",
+        "commit-changes.sh"
+      ],
+      "deps": [
+        "crew-dep-install",
+        "crew-tdd",
+        "crew-karpathy-guidelines"
+      ]
+    },
+    "crew-address-code-review": {
+      "version": "1.0.0",
+      "source-dir": "crew-address-code-review",
+      "description": "Triage and fix findings from a crew-afk code review report using TDD.",
+      "install": ".claude/skills/crew-address-code-review",
+      "scripts": [
+        "branch-safety-check.sh",
+        "commit-changes.sh"
+      ],
+      "deps": [
+        "crew-dep-install",
+        "crew-tdd"
+      ]
+    },
+    "crew-address-pr-comments": {
+      "version": "1.0.0",
+      "source-dir": "crew-address-pr-comments",
+      "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
+      "install": ".claude/skills/crew-address-pr-comments",
+      "scripts": [
+        "branch-safety-check.sh",
+        "commit-changes.sh"
+      ],
+      "deps": [
+        "crew-dep-install",
+        "crew-tdd"
+      ]
+    },
+    "crew-improve-codebase-architecture": {
+      "version": "1.0.0",
+      "source-dir": "crew-improve-codebase-architecture",
       "description": "Find deepening opportunities — refactors that turn shallow modules into deep ones for testability and AI-navigability.",
       "source": "mattpocock/skills",
-      "install": ".claude/skills/improve-codebase-architecture",
-      "deps": ["grill-with-docs"]
+      "install": ".claude/skills/crew-improve-codebase-architecture",
+      "deps": [
+        "crew-grill-with-docs"
+      ]
     },
-    "grill-me": {
+    "crew-grill-me": {
       "version": "1.0.0",
+      "source-dir": "crew-grill-me",
       "description": "Interview the user relentlessly about a plan until reaching shared understanding. Exploratory only — no implementation.",
-      "install": ".claude/skills/grill-me"
+      "install": ".claude/skills/crew-grill-me"
     },
-    "grill-with-docs": {
+    "crew-grill-with-docs": {
       "version": "1.0.0",
+      "source-dir": "crew-grill-with-docs",
       "description": "Grilling session that challenges a plan against the domain model, sharpens terminology, updates CONTEXT.md and ADRs inline.",
       "source": "mattpocock/skills",
-      "install": ".claude/skills/grill-with-docs"
+      "install": ".claude/skills/crew-grill-with-docs"
     },
-    "to-issues": {
+    "crew-to-issues": {
       "version": "1.0.0",
+      "source-dir": "crew-to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
-      "install": ".claude/skills/to-issues"
+      "install": ".claude/skills/crew-to-issues"
     },
-    "to-prd": {
+    "crew-to-prd": {
       "version": "1.0.0",
+      "source-dir": "crew-to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",
-      "install": ".claude/skills/to-prd"
+      "install": ".claude/skills/crew-to-prd"
     },
-    "plan-sprint": {
-      "version": "1.1.0",
-      "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
-      "install": ".claude/skills/plan-sprint",
-      "deps": ["grill-with-docs", "to-prd", "to-issues"]
-    },
-    "caveman": {
+    "crew-plan": {
       "version": "1.0.0",
+      "source-dir": "crew-plan",
+      "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
+      "install": ".claude/skills/crew-plan",
+      "deps": [
+        "crew-grill-with-docs",
+        "crew-to-prd",
+        "crew-to-issues"
+      ]
+    },
+    "crew-caveman": {
+      "version": "1.0.0",
+      "source-dir": "crew-caveman",
       "description": "Ultra-compressed communication mode. Cuts token usage ~75% by speaking like caveman while keeping full technical accuracy. Supports lite/full/ultra and wenyan intensity levels.",
-      "source": "JuliusBrussee/caveman",
-      "install": ".claude/skills/caveman"
+      "source": "JuliusBrussee/crew-caveman",
+      "install": ".claude/skills/crew-caveman"
     }
   }
 }
