@@ -4,16 +4,16 @@ Run all project checks and confirm every acceptance criterion from the issue is 
 
 ## Checks
 
-For afk-run skill enhancements:
+For crew:afk skill enhancements:
 
 1. **Test** — Run the Session Init test script to verify feature branch setup logic
    ```bash
-   bash skills/afk-run/references/test-session-init.sh
+   bash skills/afk/references/test-session-init.sh
    ```
 
 2. **Test** — Run the Sprint State Tracking test script to verify state persistence
    ```bash
-   bash skills/afk-run/references/test-sprint-state.sh
+   bash skills/afk/references/test-sprint-state.sh
    ```
 
 3. **Manual verification** — Review the SKILL.md and copilot.SKILL.md files to ensure:

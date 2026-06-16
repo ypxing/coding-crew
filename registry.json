@@ -34,7 +34,7 @@
   "skills": {
     "crew:afk": {
       "version": "1.1.0",
-      "source-dir": "afk-run",
+      "source-dir": "afk",
       "description": "Orchestrator that spawns parallel coder agents in isolated worktrees, merges completed branches, runs a code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew:afk",
       "install-copilot": ".copilot/skills/crew:afk",
@@ -92,7 +92,7 @@
     "crew:address-code-review": {
       "version": "1.1.0",
       "source-dir": "address-code-review",
-      "description": "Triage and fix findings from an afk-run code review report using TDD.",
+      "description": "Triage and fix findings from a crew:afk code review report using TDD.",
       "install": ".claude/skills/crew:address-code-review",
       "scripts": [
         "branch-safety-check.sh",

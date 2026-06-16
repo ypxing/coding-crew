@@ -198,10 +198,10 @@ jq --version    # required
 
 ```bash
 # Claude Code — full sprint suite
-./install.sh claude afk-run
+./install.sh claude --skill crew:afk
 
 # GitHub Copilot — full sprint suite
-./install.sh copilot afk-run
+./install.sh copilot --skill crew:afk
 
 # A standalone skill
 ./install.sh claude --skill grill-me
@@ -233,13 +233,13 @@ YOUR_PROJECT/
 │   │   ├── coder.md                ← coder agent (Claude)
 │   │   └── code-reviewer.md        ← reviewer agent (Claude)
 │   └── skills/
-│       ├── afk-run/SKILL.md
+│       ├── crew:afk/SKILL.md
 │       ├── karpathy-guidelines/
 │       ├── tdd/
 │       ├── dep-install/
 │       ├── solve-issue/
 │       ├── address-code-review/
-│       ├── caveman/                ← installed with afk-run
+│       ├── caveman/                ← installed with crew:afk
 │       ├── address-pr-comments/    ← installed with "all"
 │       ├── improve-codebase-architecture/  ← installed with "all"
 │       ├── grill-me/               ← installed with "all"
@@ -249,7 +249,7 @@ YOUR_PROJECT/
 │       └── plan-build/            ← installed with "all"
 ├── .github/
 │   └── agents/
-│       ├── afk-run.agent.md
+│       ├── crew:afk.agent.md
 │       ├── coder.agent.md
 │       └── code-reviewer.agent.md
 └── docs/
@@ -276,11 +276,11 @@ YOUR_PROJECT/
  └──────────────────────────┬──────────────────────────────────┘
                             │ .scratch/.../issues/*.md
                             ▼
- /afk-run (you trigger this)
+ /crew:afk (you trigger this)
        │
        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  afk-run orchestrator                                    │
+│  crew:afk orchestrator                                    │
 │  1. List "ready-for-agent" issues from .scratch/            │
 │  2. Spawn coder workers — up to 8 in parallel               │
 │  3. Validate output, merge complete branches                │
@@ -351,10 +351,10 @@ Use `/to-prd` → `/to-issues` to generate these from a feature description auto
 **Claude Code:**
 
 ```
-/afk-run
+/crew:afk
 ```
 
-**Copilot:** invoke `@afk-run` from the chat panel.
+**Copilot:** invoke `@crew:afk` from the chat panel.
 
 Sprint runs until all issues are complete, or two consecutive rounds produce zero completions (stall). On exit it saves a code review report to `.scratch/reviews/sprint-review-<timestamp>.md`.
 

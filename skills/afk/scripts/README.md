@@ -93,8 +93,8 @@ Co-authored-by: Claude Code <claude@anthropic.com>
 ## Integration
 
 These scripts are referenced by:
-- `skills/afk-run/SKILL.md` (Claude Code version)
-- `skills/afk-run/copilot.SKILL.md` (GitHub Copilot version)
+- `skills/afk/SKILL.md` (Claude Code version)
+- `skills/afk/copilot.SKILL.md` (GitHub Copilot version)
 
 Both platform versions use the same scripts with platform-specific flags (e.g., `--platform claude` vs `--platform copilot`).
 
