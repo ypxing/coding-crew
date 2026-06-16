@@ -133,6 +133,26 @@ STOP. Read and invoke the `crew-karpathy-guidelines` skill now, before writing a
 
 STOP. Read and invoke the `crew-tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
+### 4.5. Update documentation
+
+After implementation, check whether the change affects anything user-facing. Ask:
+
+- Does this add, remove, or change a public API, CLI flag, config option, or install step?
+- Does this change behavior that users or consuming projects depend on?
+- Does this add or remove an agent, skill, or script?
+- Does this change architecture that `CLAUDE.md` or `docs/` describes?
+
+If **none** of the above apply (e.g. pure refactor, internal test fix, private helper), skip this step.
+
+If **any** apply, update the relevant documents before committing:
+
+- `README.md` — user-facing install instructions, usage examples, skills table
+- `CLAUDE.md` — architecture, agent/skill descriptions, conventions
+- `docs/` — guides, ADRs, or other docs that describe the changed behavior
+- Inline code comments only if the WHY is non-obvious
+
+Do not add documentation for things that are already self-evident from the code. Do not touch doc sections unrelated to this change.
+
 ### 5. Verify
 
 **Use the same INSTALL_MODE from Step 2** — all check commands run inside docker or on the host, matching whatever was established then.
@@ -148,6 +168,7 @@ Before committing, confirm:
 - [ ] Tests were written before implementation (TDD red/green loop completed)
 - [ ] `references/verification.md` was read
 - [ ] Every check listed in `references/verification.md` passed (tests, type-check, lint, or equivalent for this stack)
+- [ ] Relevant documentation was updated (Step 4.5) or explicitly determined not needed
 
 If any check failed, do NOT stage or commit. Report status `partial` or `blocked`.
 

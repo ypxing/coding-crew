@@ -77,7 +77,7 @@
       "install": ".claude/skills/crew-dep-install"
     },
     "crew-solve-issue": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "crew-solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/crew-solve-issue",
