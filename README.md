@@ -15,8 +15,8 @@ A distributable collection of AI agents and skills that automate the issue → i
   │                                                     │
   │  auto:   /crew-plan                                 │
   │                                                     │
-  │  manual: /grill-me (or /grill-with-docs)  │
-  │          → /to-prd → /to-issues           │
+  │  manual: /grill-me (or /grill-with-docs)            │
+  │          → /to-prd → /to-issues                     │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
@@ -99,10 +99,10 @@ After installing, create a `crew.lock` manually to pin the versions you want to 
 ```json
 {
   "registry": "https://github.com/ypxing/coding-crew",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "skills": {
-    "crew-afk": "1.1.0",
-    "tdd": "1.1.0"
+    "crew-afk": "1.0.0",
+    "tdd": "1.0.0"
   }
 }
 ```
@@ -174,10 +174,10 @@ Team members can then pull the updated lockfile and re-run:
 ### Manual — step by step
 
 ```
-/grill-me          ← stress-test your idea interactively
-                         (or /grill-with-docs — challenges against your domain model, creates one if you don't have it)
-/to-prd            ← turn the refined idea into a PRD
-/to-issues         ← break the PRD into ready-for-agent issues
+/grill-me        ← stress-test your idea interactively
+                   (or /grill-with-docs — challenges against your domain model)
+/to-prd          ← turn the refined idea into a PRD
+/to-issues       ← break the PRD into ready-for-agent issues
 ```
 
 ---
@@ -212,13 +212,13 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 ## Skills
 
-| Skill                         | When                                                               |
-| ----------------------------- | ------------------------------------------------------------------ |
-| `/crew-plan`                  | Full design pipeline — grill → PRD → issues in one automated flow  |
-| `/crew-afk`                   | Run the sprint — parallel agents implement all ready issues        |
-| `/address-code-review`   | Triage and fix the post-sprint code review report with TDD         |
-| `/solve-issue`           | Implement a single issue end-to-end                                |
-| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones   |
+| Skill                    | When                                                              |
+| ------------------------ | ----------------------------------------------------------------- |
+| `/crew-plan`             | Full design pipeline — grill → PRD → issues in one automated flow |
+| `/crew-afk`              | Run the sprint — parallel agents implement all ready issues       |
+| `/address-code-review`   | Triage and fix the post-sprint code review report with TDD        |
+| `/solve-issue`           | Implement a single issue end-to-end                               |
+| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones  |
 
 ---
 
