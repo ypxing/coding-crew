@@ -13,7 +13,7 @@ tools:
   - Bash
   - Glob
 skills:
-  - crew-solve-issue
+  - solve-issue
 user-invocable: false
 ---
 
@@ -72,11 +72,11 @@ echo "[$(date -u +%H:%M:%SZ)] [$WORKER] <exact command here>" >> "$CMD_LOG"
 
 ## Implementation
 
-Follow the `crew-solve-issue` skill for the full procedure.
+Follow the `solve-issue` skill for the full procedure.
 
 ## When You Are Stuck or Blocked
 
-When `crew-solve-issue` says to stop and output `BLOCKED:`, set `status` to `blocked` and put the reason in `notes`. Return your structured summary immediately.
+When `solve-issue` says to stop and output `BLOCKED:`, set `status` to `blocked` and put the reason in `notes`. Return your structured summary immediately.
 
 ## Structured Output
 

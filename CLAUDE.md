@@ -22,7 +22,7 @@ A distributable collection of AI agents and skills that other projects install v
 TARGET_REPO=/path/to/other/repo ./install.sh
 
 # Install a standalone skill
-./install.sh claude --skill crew-to-issues
+./install.sh claude --skill to-issues
 
 ```
 
@@ -62,18 +62,18 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 `skills/` contains reusable skill files (`SKILL.md`). See `registry.json` under `skills` for the full list. Currently:
 
 - `crew-afk` — orchestrator that spawns parallel `crew-coder` agents, merges completed branches, runs crew-code-reviewer, and loops until all ready-for-agent issues are done. Declares `agent-deps: [crew-coder, crew-code-reviewer]` — installing the skill pulls in both agents automatically.
-- `crew-karpathy-guidelines` — coding principles (think first, surgical changes, goal-driven)
-- `crew-tdd` — red/green/refactor workflow
-- `crew-solve-issue` — implement a single issue end-to-end: read, explore, install, TDD, verify, commit
-- `crew-address-code-review` — triage and fix findings from an afk-run code review report using TDD
-- `crew-address-pr-comments` — fetch PR review comments, challenge critically, implement sensible ones with TDD
-- `crew-improve-codebase-architecture` — find deepening opportunities for testability and AI-navigability
-- `crew-grill-me` — interview the user relentlessly about a plan until reaching shared understanding
-- `crew-grill-with-docs` — grilling session that challenges a plan against the domain model
-- `crew-to-issues` — break a plan or PRD into independently-grabbable issues
-- `crew-to-prd` — synthesize conversation context into a PRD and publish to the issue tracker
+- `karpathy-guidelines` — coding principles (think first, surgical changes, goal-driven)
+- `tdd` — red/green/refactor workflow
+- `solve-issue` — implement a single issue end-to-end: read, explore, install, TDD, verify, commit
+- `address-code-review` — triage and fix findings from an afk-run code review report using TDD
+- `address-pr-comments` — fetch PR review comments, challenge critically, implement sensible ones with TDD
+- `improve-codebase-architecture` — find deepening opportunities for testability and AI-navigability
+- `grill-me` — interview the user relentlessly about a plan until reaching shared understanding
+- `grill-with-docs` — grilling session that challenges a plan against the domain model
+- `to-issues` — break a plan or PRD into independently-grabbable issues
+- `to-prd` — synthesize conversation context into a PRD and publish to the issue tracker
 - `crew-plan` — full design pipeline: grill → PRD → issues in one automated flow
-- `crew-caveman` — ultra-compressed communication mode (~75% token reduction)
+- `caveman` — ultra-compressed communication mode (~75% token reduction)
 
 Skills with `agent-deps` also install the listed agents (via `install.sh`) so the skill can invoke them at runtime.
 

@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.2.0] - 2026-06-17
+
+### ⚠️ BREAKING CHANGES
+
+**`crew-` prefix removed from skills (except `crew-afk` and `crew-plan`)**
+
+Skills have been renamed to drop the `crew-` prefix. `crew-afk` and `crew-plan` are unchanged.
+
+| Old Name                          | New Name                          |
+| --------------------------------- | --------------------------------- |
+| `crew-karpathy-guidelines`        | `karpathy-guidelines`             |
+| `crew-tdd`                        | `tdd`                             |
+| `crew-dep-install`                | `dep-install`                     |
+| `crew-solve-issue`                | `solve-issue`                     |
+| `crew-address-code-review`        | `address-code-review`             |
+| `crew-address-pr-comments`        | `address-pr-comments`             |
+| `crew-improve-codebase-architecture` | `improve-codebase-architecture` |
+| `crew-grill-me`                   | `grill-me`                        |
+| `crew-grill-with-docs`            | `grill-with-docs`                 |
+| `crew-to-issues`                  | `to-issues`                       |
+| `crew-to-prd`                     | `to-prd`                          |
+| `crew-caveman`                    | `caveman`                         |
+
+**Migration:** Uninstall and reinstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
+```
+
+Install paths change accordingly: `.claude/skills/tdd/`, `.claude/skills/solve-issue/`, etc.
+
+---
+
 ## [1.1.0] - 2026-06-16
 
 ### Added

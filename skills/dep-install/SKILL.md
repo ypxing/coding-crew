@@ -1,5 +1,5 @@
 ---
-name: crew-dep-install
+name: dep-install
 description: >
   Detect the project's install mode (host or docker) and install dependencies once.
   Used as a shared step by solve-issue, address-code-review, and address-pr-comments.

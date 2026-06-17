@@ -20,11 +20,11 @@ THIS REPO (source)
 │   ├── crew-coder/         ← single-issue worker agent
 │   └── crew-code-reviewer/ ← post-sprint reviewer agent
 ├── skills/                 ← reusable skill files
-│   ├── crew-tdd/
-│   ├── crew-solve-issue/
-│   ├── crew-grill-me/
+│   ├── tdd/
+│   ├── solve-issue/
+│   ├── grill-me/
 │   ├── crew-plan/
-│   ├── crew-caveman/
+│   ├── caveman/
 │   └── ...
 └── docs/
     └── agents/
@@ -204,7 +204,7 @@ jq --version    # required
 ./install.sh copilot --skill crew-afk
 
 # A standalone skill
-./install.sh claude --skill crew-grill-me
+./install.sh claude --skill grill-me
 
 # A doc template only
 ./install.sh claude --doc issue-tracker.md
@@ -234,18 +234,18 @@ YOUR_PROJECT/
 │   │   └── crew-code-reviewer.md   ← reviewer agent (Claude)
 │   └── skills/
 │       ├── crew-afk/SKILL.md
-│       ├── crew-karpathy-guidelines/
-│       ├── crew-tdd/
-│       ├── crew-dep-install/
-│       ├── crew-solve-issue/
-│       ├── crew-address-code-review/
-│       ├── crew-caveman/           ← installed with crew-afk
-│       ├── crew-address-pr-comments/    ← installed with "all"
-│       ├── crew-improve-codebase-architecture/  ← installed with "all"
-│       ├── crew-grill-me/          ← installed with "all"
-│       ├── crew-grill-with-docs/   ← installed with "all"
-│       ├── crew-to-issues/         ← installed with "all"
-│       ├── crew-to-prd/            ← installed with "all"
+│       ├── karpathy-guidelines/
+│       ├── tdd/
+│       ├── dep-install/
+│       ├── solve-issue/
+│       ├── address-code-review/
+│       ├── caveman/           ← installed with crew-afk
+│       ├── address-pr-comments/    ← installed with "all"
+│       ├── improve-codebase-architecture/  ← installed with "all"
+│       ├── grill-me/          ← installed with "all"
+│       ├── grill-with-docs/   ← installed with "all"
+│       ├── to-issues/         ← installed with "all"
+│       ├── to-prd/            ← installed with "all"
 │       └── crew-plan/              ← installed with "all"
 ├── .github/
 │   └── agents/
@@ -271,8 +271,8 @@ YOUR_PROJECT/
  │                                                             │
  │  auto:   /crew-plan  (grill → PRD → issues)               │
  │                                                             │
- │  manual: /crew-grill-me  (or /crew-grill-with-docs)         │
- │          → /crew-to-prd → /crew-to-issues                   │
+ │  manual: /grill-me  (or /grill-with-docs)         │
+ │          → /to-prd → /to-issues                   │
  └──────────────────────────┬──────────────────────────────────┘
                             │ .scratch/.../issues/*.md
                             ▼
@@ -301,7 +301,7 @@ YOUR_PROJECT/
     └──────────────────────┘
           │
           ▼
-    /crew-address-code-review (you trigger this)
+    /address-code-review (you trigger this)
 ```
 
 ---
@@ -363,7 +363,7 @@ Sprint runs until all issues are complete, or two consecutive rounds produce zer
 ### Reviewing Code Review Findings
 
 ```
-/crew-address-code-review
+/address-code-review
 ```
 
 Opens the latest sprint review, shows a triage table (Actionable / Debatable / Dismiss), implements fixes with TDD, commits, and archives the report.
@@ -375,13 +375,13 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 | Goal                                           | Skill                              |
 | ---------------------------------------------- | ---------------------------------- |
 | Run the full grill → PRD → issues pipeline     | `/crew-plan`                       |
-| Turn a feature idea into a PRD                 | `/crew-to-prd`                     |
-| Break a PRD into issues                        | `/crew-to-issues`                  |
-| Stress-test your plan interactively            | `/crew-grill-me`                   |
-| Challenge your design against the domain model | `/crew-grill-with-docs`            |
-| Address GitHub PR review comments              | `/crew-address-pr-comments`        |
-| Find architecture improvement opportunities    | `/crew-improve-codebase-architecture` |
-| Reduce token usage during long sessions        | `/crew-caveman`                    |
+| Turn a feature idea into a PRD                 | `/to-prd`                     |
+| Break a PRD into issues                        | `/to-issues`                  |
+| Stress-test your plan interactively            | `/grill-me`                   |
+| Challenge your design against the domain model | `/grill-with-docs`            |
+| Address GitHub PR review comments              | `/address-pr-comments`        |
+| Find architecture improvement opportunities    | `/improve-codebase-architecture` |
+| Reduce token usage during long sessions        | `/caveman`                    |
 
 ---
 

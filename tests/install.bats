@@ -13,10 +13,10 @@ teardown() {
 
 @test "install skill creates SKILL.md at expected path" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-tdd
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
 
   # Verify the skill file was created
-  [ -f "$TEMP_DIR/.claude/skills/crew-tdd/SKILL.md" ]
+  [ -f "$TEMP_DIR/.claude/skills/tdd/SKILL.md" ]
 }
 
 @test "protocol substitution removes {{PROTOCOL}} placeholder" {
@@ -32,13 +32,13 @@ teardown() {
 
 @test "manifest contains correct skill name and version after install" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-tdd
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
 
   # Verify manifest was created
   [ -f "$TEMP_DIR/.coding-crew.manifest.json" ]
 
   # Verify skill entry exists
-  run jq -r '.skills["crew-tdd"].version' "$TEMP_DIR/.coding-crew.manifest.json"
+  run jq -r '.skills["tdd"].version' "$TEMP_DIR/.coding-crew.manifest.json"
   [ "$status" -eq 0 ]
   [ -n "$output" ]
   [ "$output" != "null" ]
@@ -67,10 +67,10 @@ teardown() {
   local temp2="$TEMP_DIR/second"
   mkdir -p "$temp1" "$temp2"
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$temp1" ./install.sh claude --skill crew-tdd > /dev/null
-  TARGET_REPO="$temp2" ./install.sh claude --skill crew-tdd > /dev/null
+  TARGET_REPO="$temp1" ./install.sh claude --skill tdd > /dev/null
+  TARGET_REPO="$temp2" ./install.sh claude --skill tdd > /dev/null
 
-  cmp -s "$temp1/.claude/skills/crew-tdd/SKILL.md" "$temp2/.claude/skills/crew-tdd/SKILL.md"
+  cmp -s "$temp1/.claude/skills/tdd/SKILL.md" "$temp2/.claude/skills/tdd/SKILL.md"
 }
 
 @test "registry.json has no crew: strings (colon-form removed)" {
@@ -96,28 +96,31 @@ teardown() {
   ! echo "$output" | grep -qxF "code-reviewer"
 }
 
-@test "registry.json skill keys use crew- prefix" {
+@test "registry.json skill keys crew-afk and crew-plan are present; others do not use crew- prefix" {
   cd "$SCRIPT_DIR"
 
   run jq -r '.skills | keys[]' registry.json
   [ "$status" -eq 0 ]
-  # All keys must use crew- (no colon form)
-  ! echo "$output" | grep -q 'crew:'
+  # crew-afk and crew-plan must be present
   [[ "$output" == *"crew-afk"* ]]
-  [[ "$output" == *"crew-tdd"* ]]
+  [[ "$output" == *"crew-plan"* ]]
+  # tdd must exist without crew- prefix
+  [[ "$output" == *"tdd"* ]]
+  # crew-tdd must not be present
+  ! echo "$output" | grep -qxF "crew-tdd"
 }
 
 @test "reinstalling modified skill produces diff output" {
   cd "$SCRIPT_DIR"
 
   # First install
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-tdd > /dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd > /dev/null
 
   # Modify the installed file
-  echo "# Modified by test" >> "$TEMP_DIR/.claude/skills/crew-tdd/SKILL.md"
+  echo "# Modified by test" >> "$TEMP_DIR/.claude/skills/tdd/SKILL.md"
 
   # Reinstall and capture output
-  run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skill crew-tdd"
+  run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skill tdd"
 
   # Verify diff markers appear in stdout
   [[ "$output" =~ "---" ]]

@@ -35,7 +35,7 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 ### Key Components
 
 - **`agents/`** — Two agents: `crew-coder` (implements single issues using TDD in isolated worktrees) and `crew-code-reviewer` (reviews merged branches at sprint end)
-- **`skills/`** — Reusable skill files (crew-tdd, crew-solve-issue, crew-grill-me, crew-plan, etc.)
+- **`skills/`** — Reusable skill files (tdd, solve-issue, grill-me, crew-plan, etc.)
 - **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and doc templates
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`docs/agents/`** — Default templates (`issue-tracker.md`, `triage-labels.md`) copied to consuming repos
@@ -79,7 +79,7 @@ agents/crew-code-reviewer/
   "description": "...",
   "deps": ["<other-agent>"],           // installed recursively
   "deps-copilot": ["..."],             // platform-specific override (optional)
-  "skills": ["crew-tdd", "crew-solve-issue"],    // bundled skills
+  "skills": ["tdd", "solve-issue"],    // bundled skills
   "docs": ["issue-tracker.md"],        // doc templates (skip if exist)
   "install": {
     "shims": {
@@ -98,7 +98,7 @@ agents/crew-code-reviewer/
   "install": ".claude/skills/<name>",
   "install-copilot": ".copilot/skills/<name>",  // optional
   "agent-deps": ["crew-coder"],                   // pulls in agents
-  "deps": ["crew-tdd", "crew-dep-install"],      // other skills
+  "deps": ["tdd", "dep-install"],      // other skills
   "docs": ["issue-tracker.md"],                  // doc templates
   "source": "mattpocock/skills"                  // attribution (optional)
 }
@@ -125,13 +125,13 @@ Issues live in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
 
 1. Create `agents/<name>/protocol.md` (or `workflow.js`)
 2. Create `agents/<name>/claude.<type>.md` and `agents/<name>/copilot.agent.md` with `{{PROTOCOL}}` placeholder
-3. Add agent entry to `registry.json` (use `crew-` prefix for the agent name)
+3. Add agent entry to `registry.json` (use `crew-` prefix for agent names)
 4. Test: `TARGET_REPO=/tmp/test ./install.sh claude <name>`
 
 ### Adding a New Skill
 
 1. Create `skills/<name>/SKILL.md`
-2. Add skill entry to `registry.json` with version, description, install path (use `crew-` prefix)
+2. Add skill entry to `registry.json` with version, description, install path 
 3. If skill depends on agents, add `agent-deps: ["<agent>"]`
 4. Test: `./install.sh claude --skill <name>`
 
@@ -157,19 +157,19 @@ Use `protocol.md` for markdown instructions, `workflow.js` for Workflow scripts.
 | Skill | Description |
 |-------|-------------|
 | `crew-afk` | Orchestrator that spawns parallel crew-coder agents, merges branches, runs crew-code-reviewer |
-| `crew-karpathy-guidelines` | Coding principles to reduce LLM mistakes |
-| `crew-tdd` | Test-driven development with red-green-refactor loop |
-| `crew-solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
-| `crew-address-code-review` | Triage and fix code review findings using TDD |
-| `crew-address-pr-comments` | Fetch PR review comments, implement sensible ones with TDD |
-| `crew-improve-codebase-architecture` | Find deepening opportunities for testability and AI-navigability |
-| `crew-grill-me` | Interview user about a plan until reaching shared understanding |
-| `crew-grill-with-docs` | Grilling session that challenges plan against domain model |
-| `crew-to-issues` | Break plan/PRD into independently-grabbable issues |
-| `crew-to-prd` | Synthesize conversation into PRD and publish to tracker |
+| `karpathy-guidelines` | Coding principles to reduce LLM mistakes |
+| `tdd` | Test-driven development with red-green-refactor loop |
+| `solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
+| `address-code-review` | Triage and fix code review findings using TDD |
+| `address-pr-comments` | Fetch PR review comments, implement sensible ones with TDD |
+| `improve-codebase-architecture` | Find deepening opportunities for testability and AI-navigability |
+| `grill-me` | Interview user about a plan until reaching shared understanding |
+| `grill-with-docs` | Grilling session that challenges plan against domain model |
+| `to-issues` | Break plan/PRD into independently-grabbable issues |
+| `to-prd` | Synthesize conversation into PRD and publish to tracker |
 | `crew-plan` | Full design pipeline: grill → PRD → issues |
-| `crew-caveman` | Ultra-compressed communication mode (~75% token reduction) |
-| `crew-dep-install` | Detect install mode (host/docker) and install dependencies once |
+| `caveman` | Ultra-compressed communication mode (~75% token reduction) |
+| `dep-install` | Detect install mode (host/docker) and install dependencies once |
 
 ---
 

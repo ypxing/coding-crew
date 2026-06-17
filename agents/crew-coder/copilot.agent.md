@@ -5,7 +5,7 @@ description: >
   deps, builds with red-green-refactor, verifies all checks pass, commits, and returns a structured
   summary. Invoked as a subagent by crew-afk — one issue per invocation.
 tools: ["read", "edit", "execute", "search"]
-skills: ["crew-solve-issue", "crew-dep-install", "crew-karpathy-guidelines", "crew-tdd"]
+skills: ["solve-issue", "dep-install", "karpathy-guidelines", "tdd"]
 user-invocable: false
 ---
 
@@ -27,10 +27,10 @@ Rules:
 - Every shell command must use absolute paths under `$PROJECT_ROOT`.
 - Never write files outside `$PROJECT_ROOT`.
 
-STOP. Follow the `crew-solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: crew-solve-issue skill not installed`.
+STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: solve-issue skill not installed`.
 
 Before returning your report, confirm:
-- [ ] `crew-solve-issue` skill was read and invoked
+- [ ] `solve-issue` skill was read and invoked
 
 ## When You Are Stuck
 
@@ -70,7 +70,7 @@ Rules:
 3. `### Checks` — for each check, show the command and final summary line(s) only (e.g. pass/fail counts). Do not list individual test names or passing cases.
 4. `### Acceptance Criteria` — list every criterion from the issue with `[x]` or `[ ]`.
 5. `### Changes` — list every file modified.
-6. `### Skills` — list every skill that was read and invoked (e.g. `crew-solve-issue`, `crew-dep-install`, `crew-karpathy-guidelines`, `crew-tdd`). Never leave this section empty.
+6. `### Skills` — list every skill that was read and invoked (e.g. `solve-issue`, `dep-install`, `karpathy-guidelines`, `tdd`). Never leave this section empty.
 7. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
 8. Do not add any text outside these sections.
 
@@ -96,10 +96,10 @@ npm test:
 - test/api/auth.test.ts
 
 ### Skills
-- crew-solve-issue
-- crew-dep-install
-- crew-karpathy-guidelines
-- crew-tdd
+- solve-issue
+- dep-install
+- karpathy-guidelines
+- tdd
 
 ### Notes
 none
@@ -125,9 +125,9 @@ npm test:
 - test/validation.test.ts
 
 ### Skills
-- crew-solve-issue
-- crew-dep-install
-- crew-tdd
+- solve-issue
+- dep-install
+- tdd
 
 ### Notes
 Changes staged for manual review before commit

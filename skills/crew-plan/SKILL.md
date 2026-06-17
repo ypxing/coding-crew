@@ -7,7 +7,7 @@ Run the full design pipeline in three phases. Pause for user feedback within eac
 
 ## Phase 1 — Grill
 
-If the user's invocation included "with docs" or "with documents", run the `crew-grill-with-docs` skill; otherwise run the `crew-grill-me` skill. At the end:
+If the user's invocation included "with docs" or "with documents", run the `grill-with-docs` skill; otherwise run the `grill-me` skill. At the end:
 
 1. Summarize all implementation decisions (not glossary terms).
 2. Save to `.scratch/<feature-slug>/decisions.md` (confirm the slug and get user consent first).
@@ -15,14 +15,14 @@ If the user's invocation included "with docs" or "with documents", run the `crew
 
 ## Phase 2 — PRD
 
-Before running `crew-to-prd`, check whether `.scratch/<feature-slug>/decisions.md` exists and read it if so — it contains the resolved decisions from Phase 1 and must be used as primary input even if the grilling session is not fresh in context.
+Before running `to-prd`, check whether `.scratch/<feature-slug>/decisions.md` exists and read it if so — it contains the resolved decisions from Phase 1 and must be used as primary input even if the grilling session is not fresh in context.
 
-Run the `crew-to-prd` skill using the same feature slug and `decisions.md` as primary input. Do not re-ask the slug.
+Run the `to-prd` skill using the same feature slug and `decisions.md` as primary input. Do not re-ask the slug.
 
 At the end of writing `PRD.md`, ask once: **"Ready to break this into issues?"** If yes, continue to Phase 3. If no, stop.
 
 ## Phase 3 — Issues
 
-Run the `crew-to-issues` skill using the same feature slug and the `PRD.md` just written as primary input. Do not re-ask the slug or whether to run `/crew-to-prd` (it was just done).
+Run the `to-issues` skill using the same feature slug and the `PRD.md` just written as primary input. Do not re-ask the slug or whether to run `/crew-to-prd` (it was just done).
 
 Complete the issue quiz and write all approved issues to `.scratch/<feature-slug>/issues/`.
