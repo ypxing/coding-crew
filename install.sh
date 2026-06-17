@@ -52,7 +52,7 @@ fi
 if [[ "$AGENT" == "--skills" ]]; then
   SKILLS_LIST="${3:-}"
   if [[ -z "$SKILLS_LIST" ]]; then
-    echo "Error: --skills requires a comma-separated list (e.g. --skills crew-tdd,crew-caveman)" >&2
+    echo "Error: --skills requires a comma-separated list (e.g. --skills tdd,caveman)" >&2
     usage
   fi
   AGENT="--skill"  # normalise so later dispatch hits the skill path
@@ -72,16 +72,16 @@ usage() {
   echo "  --user:          install to \$HOME (user-level); default installs into the current project repo"
   echo "  platform:        all (default), claude, copilot"
   echo "  agent:           all (default), crew-code-reviewer, crew-coder"
-  echo "  --skill:         install a single skill (e.g. crew-to-issues)"
-  echo "  --skills:        install multiple skills (comma-separated, e.g. crew-tdd,crew-caveman,crew-grill-me)"
+  echo "  --skill:         install a single skill (e.g. to-issues)"
+  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,grill-me)"
   echo "  --update:        re-install only agents/skills whose version changed since last install"
   echo "  --from-lockfile: install from a lockfile (fetches pinned registry version and installs listed items)"
   echo ""
   echo "Examples:"
   echo "  ./install.sh                                      # install everything into project"
   echo "  ./install.sh --user                               # install everything into \$HOME"
-  echo "  ./install.sh --user claude --skill crew-tdd            # one skill into \$HOME/.claude/skills/"
-  echo "  ./install.sh --user claude --skills crew-tdd,crew-caveman   # multiple skills at once"
+  echo "  ./install.sh --user claude --skill tdd            # one skill into \$HOME/.claude/skills/"
+  echo "  ./install.sh --user claude --skills tdd,caveman   # multiple skills at once"
   echo "  ./install.sh claude --skill crew-afk            # crew-afk + crew-coder + crew-code-reviewer"
   echo "  ./install.sh --update                             # update all installed agents/skills"
   echo "  ./install.sh --from-lockfile crew.lock            # install from lockfile"
@@ -106,7 +106,7 @@ done
 # ── Input validation ───────────────────────────────────────────────────────────
 if [[ "$UPDATE_MODE" == "false" ]]; then
   if [[ "${1:-}" == "--skill" ]]; then
-    echo "Error: platform argument required before flag (e.g. ./install.sh claude --skill crew-to-issues)" >&2
+    echo "Error: platform argument required before flag (e.g. ./install.sh claude --skill to-issues)" >&2
     usage
   fi
 

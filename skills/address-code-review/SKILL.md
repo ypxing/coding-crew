@@ -1,5 +1,5 @@
 ---
-name: crew-address-code-review
+name: address-code-review
 description: Triage findings from the latest crew-afk code review report, challenge each one critically, implement sensible ones using TDD, commit touched files, and print a summary. Trigger with /crew-address-code-review.
 argument-hint: "Optional: path to report file"
 ---
@@ -30,7 +30,7 @@ If on the default branch, the script exits with an error. If on a non-default br
 
 ## Step 0.1 — Install dependencies
 
-Follow the `crew-dep-install` skill to ensure dependencies are installed.
+Follow the `dep-install` skill to ensure dependencies are installed.
 
 ## Step 1 — Locate the report
 

@@ -1,5 +1,5 @@
 ---
-name: crew-address-pr-comments
+name: address-pr-comments
 description: Fetch all review comments on the current branch's open PR, challenge each one critically, implement sensible ones using TDD, commit touched files, and print a summary. Trigger with /address-pr-comments.
 argument-hint: "Optional PR number or URL (defaults to current branch's open PR)"
 ---
@@ -37,7 +37,7 @@ If on the default branch, the script exits with an error. If on a non-default br
 
 ## Step 0.1 — Install dependencies and check prerequisites
 
-Follow the `crew-dep-install` skill to ensure dependencies are installed.
+Follow the `dep-install` skill to ensure dependencies are installed.
 
 Check that the GitHub CLI is installed and authenticated before doing anything else:
 

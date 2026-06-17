@@ -81,7 +81,7 @@ bash scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-123]
 - `PROJECT_ROOT`: Optional, defaults to current directory
 
 **Used by**:
-- `crew-solve-issue` (Step 0)
+- `solve-issue` (Step 0)
 - `crew-afk` (for single-issue mode)
 
 **Example**:

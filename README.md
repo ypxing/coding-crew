@@ -15,8 +15,8 @@ A distributable collection of AI agents and skills that automate the issue → i
   │                                                     │
   │  auto:   /crew-plan                                 │
   │                                                     │
-  │  manual: /crew-grill-me (or /crew-grill-with-docs)  │
-  │          → /crew-to-prd → /crew-to-issues           │
+  │  manual: /grill-me (or /grill-with-docs)  │
+  │          → /to-prd → /to-issues           │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
@@ -32,7 +32,7 @@ A distributable collection of AI agents and skills that automate the issue → i
              crew-code-reviewer
                     │
                     ▼
-       /crew-address-code-review
+       /address-code-review
 ```
 
 ---
@@ -83,7 +83,7 @@ Combine options freely:
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude --version v1.1.0 --project
 
 # Specific version with selected skills
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --version v1.1.0 --skills crew-tdd,crew-caveman
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --version v1.1.0 --skills tdd,caveman
 ```
 
 ---
@@ -102,7 +102,7 @@ After installing, create a `crew.lock` manually to pin the versions you want to 
   "version": "1.0.0",
   "skills": {
     "crew-afk": "1.1.0",
-    "crew-tdd": "1.1.0"
+    "tdd": "1.1.0"
   }
 }
 ```
@@ -174,10 +174,10 @@ Team members can then pull the updated lockfile and re-run:
 ### Manual — step by step
 
 ```
-/crew-grill-me          ← stress-test your idea interactively
-                         (or /crew-grill-with-docs — challenges against your domain model, creates one if you don't have it)
-/crew-to-prd            ← turn the refined idea into a PRD
-/crew-to-issues         ← break the PRD into ready-for-agent issues
+/grill-me          ← stress-test your idea interactively
+                         (or /grill-with-docs — challenges against your domain model, creates one if you don't have it)
+/to-prd            ← turn the refined idea into a PRD
+/to-issues         ← break the PRD into ready-for-agent issues
 ```
 
 ---
@@ -195,7 +195,7 @@ Picks up every `ready-for-agent` issue, spawns crew-coder agents in parallel, co
 ## 5. Address the review
 
 ```
-/crew-address-code-review
+/address-code-review
 ```
 
 Opens the review report, triages findings, implements fixes with TDD.
@@ -216,9 +216,9 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 | ----------------------------- | ------------------------------------------------------------------ |
 | `/crew-plan`                  | Full design pipeline — grill → PRD → issues in one automated flow  |
 | `/crew-afk`                   | Run the sprint — parallel agents implement all ready issues        |
-| `/crew-address-code-review`   | Triage and fix the post-sprint code review report with TDD         |
-| `/crew-solve-issue`           | Implement a single issue end-to-end                                |
-| `/crew-address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones   |
+| `/address-code-review`   | Triage and fix the post-sprint code review report with TDD         |
+| `/solve-issue`           | Implement a single issue end-to-end                                |
+| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones   |
 
 ---
 
