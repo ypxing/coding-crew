@@ -183,6 +183,12 @@
       "description": "Ultra-compressed communication mode. Cuts token usage ~75% by speaking like caveman while keeping full technical accuracy. Supports lite/full/ultra and wenyan intensity levels.",
       "source": "JuliusBrussee/crew-caveman",
       "install": ".claude/skills/caveman"
+    },
+    "configure-tracker": {
+      "version": "1.0.0",
+      "source-dir": "configure-tracker",
+      "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level or user-level config path.",
+      "install": ".claude/skills/configure-tracker"
     }
   }
 }
