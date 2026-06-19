@@ -5,7 +5,7 @@
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export SOLVE_ISSUE="$SCRIPT_DIR/skills/solve-issue/SKILL.md"
-  export CREW_AFk="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
+  export CREW_AFK="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
   export ADDRESS_REVIEW="$SCRIPT_DIR/skills/address-code-review/SKILL.md"
 }
 
@@ -16,7 +16,7 @@ setup() {
 }
 
 @test "crew-afk/SKILL.md contains the Tracker Configuration section" {
-  grep -q '^## Tracker Configuration' "$CREW_AFk"
+  grep -q '^## Tracker Configuration' "$CREW_AFK"
 }
 
 @test "address-code-review/SKILL.md contains the Tracker Configuration section" {
@@ -29,8 +29,8 @@ setup() {
 }
 
 @test "crew-afk/SKILL.md preamble references issue-tracker.md lookup chain" {
-  grep -q 'issue-tracker.md' "$CREW_AFk"
-  grep -q 'git rev-parse --show-toplevel' "$CREW_AFk"
+  grep -q 'issue-tracker.md' "$CREW_AFK"
+  grep -q 'git rev-parse --show-toplevel' "$CREW_AFK"
 }
 
 @test "address-code-review/SKILL.md preamble references issue-tracker.md lookup chain" {
@@ -41,18 +41,18 @@ setup() {
 # --- crew-afk no longer has hardcoded tracker logic ---
 
 @test "crew-afk/SKILL.md does not contain 'Issue tracker: local only' string" {
-  ! grep -q 'Issue tracker: local only' "$CREW_AFk"
+  ! grep -q 'Issue tracker: local only' "$CREW_AFK"
 }
 
 @test "crew-afk/SKILL.md does not contain hardcoded .scratch/*/issues/*.md glob in tracker operation logic" {
   # The glob pattern used for listing issues must not appear in tracker operation logic
   # The crew-afk skill references this pattern only in the issue tracker conventions doc reference,
   # not as a hard-coded list command
-  ! grep -q 'grep -rl.*\.scratch/\*/issues/\*\.md' "$CREW_AFk"
+  ! grep -q 'grep -rl.*\.scratch/\*/issues/\*\.md' "$CREW_AFK"
 }
 
 @test "crew-afk/SKILL.md references the list operation from issue-tracker.md" {
-  grep -qE 'list.*operation|operation.*list|Execute.*list' "$CREW_AFk"
+  grep -qE 'list.*operation|operation.*list|Execute.*list' "$CREW_AFK"
 }
 
 # --- Core workflows still intact ---
@@ -62,7 +62,7 @@ setup() {
 }
 
 @test "crew-afk/SKILL.md still contains the sprint loop" {
-  grep -q '### Step 1' "$CREW_AFk" || grep -q '## Loop' "$CREW_AFk"
+  grep -q '### Step 1' "$CREW_AFK" || grep -q '## Loop' "$CREW_AFK"
 }
 
 @test "address-code-review/SKILL.md still contains triage steps" {

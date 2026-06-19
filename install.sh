@@ -419,6 +419,7 @@ install_docs() {
   # Source definitions come from registry.json .docs.templates.
   local templates
   templates=$(jq -r '.docs.templates // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  [[ -n "$templates" ]] && echo "Docs:"
   local templates_arr=()
   while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && templates_arr+=("$_line"); done <<< "$templates"
 

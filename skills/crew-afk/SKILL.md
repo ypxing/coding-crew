@@ -55,7 +55,7 @@ The script will:
 
 All tracker operations (list, fetch, mark-done, status-update) use the operation definitions in `issue-tracker.md` (located via the lookup chain in `## Tracker Configuration` above).
 
-The feature slug and workspace directory concept (`$.scratch/<feature-slug>/issues/`) remain managed by this skill. An issue is considered **blocked** when it has a `## Blocked by` section listing filenames not yet present in the same `done/` directory.
+The feature slug and workspace directory concept (`.scratch/<feature-slug>/issues/`) remain managed by this skill. An issue is considered **blocked** when it has a `## Blocked by` section listing filenames not yet present in the same `done/` directory.
 
 ## Loop
 

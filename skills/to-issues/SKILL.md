@@ -83,7 +83,7 @@ Iterate until the user approves the breakdown.
 - If it does but no issues are done (no `done/` subdirectory or it's empty), list the existing files, warn the user they'll be overwritten, and ask for confirmation before proceeding.
 - If the directory doesn't exist or is empty, proceed normally.
 
-For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file under `.scratch/<feature-slug>/issues/`. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
+For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
 
 Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field.
 

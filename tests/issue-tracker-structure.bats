@@ -43,8 +43,14 @@ setup() {
   [ -f "$TEMPLATE" ]
 }
 
-@test "docs/templates/trackers/local.md content matches issue-tracker.md" {
-  diff "$ISSUE_TRACKER" "$TEMPLATE"
+@test "docs/templates/trackers/local.md contains all seven required sections" {
+  grep -q '## Operation: list' "$TEMPLATE"
+  grep -q '## Operation: fetch' "$TEMPLATE"
+  grep -q '## Operation: publish' "$TEMPLATE"
+  grep -q '## Operation: mark-done' "$TEMPLATE"
+  grep -q '## Operation: status-update' "$TEMPLATE"
+  grep -q '## Labels' "$TEMPLATE"
+  grep -q '## Workspace' "$TEMPLATE"
 }
 
 @test "docs/agents/triage-labels.md has been removed" {

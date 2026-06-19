@@ -35,8 +35,7 @@ Available tracker templates:
 (1) local — Local markdown files in .scratch/
 ```
 
-If no templates are found, stop: "No templates found in docs/templates/trackers/. Re-run
-`./install.sh` to restore the default templates."
+If no templates are found, stop: "No templates found in docs/templates/trackers/. Install one by copying a tracker template into that directory, or re-run the crew-agents install script."
 
 ## Step 2 — Choose a template
 

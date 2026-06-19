@@ -74,6 +74,7 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 - `to-prd` — synthesize conversation context into a PRD and publish to the issue tracker
 - `crew-plan` — full design pipeline: grill → PRD → issues in one automated flow
 - `caveman` — ultra-compressed communication mode (~75% token reduction)
+- `configure-tracker` — select and install an issue tracker template
 
 Skills with `agent-deps` also install the listed agents (via `install.sh`) so the skill can invoke them at runtime.
 
@@ -98,9 +99,10 @@ See `scripts/skill-utils/git-workflow/README.md` for full documentation.
 
 ### Docs
 
-`docs/agents/` contains default template files that install copies to `docs/agents/` in the target repo. Consumers edit these to match their tracker and label conventions.
+`docs/templates/trackers/` contains tracker template files. `install.sh` copies the selected template to `docs/agents/issue-tracker.md` in the target repo (skip-if-exists). Consumers can switch trackers by running the `configure-tracker` skill.
 
-- `issue-tracker.md` — how to list, fetch, and close issues in the local markdown tracker (includes labels and workspace layout)
+- `docs/templates/trackers/local.md` — canonical local-markdown tracker template (source of truth)
+- `docs/agents/issue-tracker.md` — installed copy in the target repo; edit to customise for the project
 
 ## Issue tracker (this repo)
 

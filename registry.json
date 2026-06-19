@@ -4,8 +4,7 @@
       "issue-tracker": {
         "source": "docs/templates/trackers/local.md",
         "dest": "docs/agents/issue-tracker.md",
-        "dest-user": ".claude/docs/agents/issue-tracker.md",
-        "skip-if-exists": true
+        "dest-user": ".claude/docs/agents/issue-tracker.md"
       }
     }
   },
