@@ -21,6 +21,16 @@ BLOCKED: <reason>
 
 Do not attempt workarounds. Do not proceed.
 
+## Tracker Configuration
+
+Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
+2. `~/.claude/docs/agents/issue-tracker.md` (user-level fallback)
+
+If neither exists, stop: "No issue tracker config found. Re-run `./install.sh` or `./install.sh --user`."
+
+All tracker operations in this skill use the operation definitions in that file.
+
 ## Inputs
 
 The caller provides one of:
@@ -83,9 +93,7 @@ Run `git -C "$PROJECT_ROOT" status --short`. If there are modified or staged tra
 
 ### 1. Understand the issue
 
-**Finding the issue file:** Issues live as local markdown files in `.scratch/`. Read from the path
-the caller provides. Do **not** query GitHub (`gh`) or any remote issue tracker unless the caller
-explicitly says to.
+**Finding the issue file:** Execute the `fetch` operation from `issue-tracker.md` using the path the caller provides. Do **not** query GitHub (`gh`) or any remote issue tracker unless the caller explicitly says to.
 
 Extract from the issue:
 
