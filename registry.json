@@ -1,4 +1,14 @@
 {
+  "docs": {
+    "templates": {
+      "issue-tracker": {
+        "source": "docs/templates/trackers/local.md",
+        "dest": "docs/agents/issue-tracker.md",
+        "dest-user": ".claude/docs/agents/issue-tracker.md",
+        "skip-if-exists": true
+      }
+    }
+  },
   "agents": {
     "crew-code-reviewer": {
       "version": "1.0.0",

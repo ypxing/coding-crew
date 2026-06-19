@@ -126,3 +126,57 @@ teardown() {
   [[ "$output" =~ "---" ]]
   [[ "$output" =~ "+++" ]]
 }
+
+@test "install creates docs/agents/issue-tracker.md in target repo" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude
+
+  [ -f "$TEMP_DIR/docs/agents/issue-tracker.md" ]
+}
+
+@test "reinstall does not overwrite existing docs/agents/issue-tracker.md" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude > /dev/null
+
+  # Modify the installed file
+  echo "custom content" > "$TEMP_DIR/docs/agents/issue-tracker.md"
+
+  # Reinstall
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude > /dev/null
+
+  # Verify custom content was preserved (not overwritten)
+  grep -q "custom content" "$TEMP_DIR/docs/agents/issue-tracker.md"
+}
+
+@test "install --user creates docs/agents/issue-tracker.md under HOME/.claude, skipping if present" {
+  local fake_home
+  fake_home=$(mktemp -d)
+
+  # First install: file should be created
+  cd "$SCRIPT_DIR"
+  HOME="$fake_home" ./install.sh --user claude > /dev/null
+
+  [ -f "$fake_home/.claude/docs/agents/issue-tracker.md" ]
+
+  # Write custom content then reinstall — must not overwrite
+  echo "user custom" > "$fake_home/.claude/docs/agents/issue-tracker.md"
+  HOME="$fake_home" ./install.sh --user claude > /dev/null
+
+  grep -q "user custom" "$fake_home/.claude/docs/agents/issue-tracker.md"
+  rm -rf "$fake_home"
+}
+
+@test "registry.json docs section registers tracker template source" {
+  cd "$SCRIPT_DIR"
+
+  run jq -r '.docs.templates["issue-tracker"].source // empty' registry.json
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+}
+
+@test "install does not create triage-labels.md in target repo" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude > /dev/null
+
+  [ ! -f "$TEMP_DIR/docs/agents/triage-labels.md" ]
+}
