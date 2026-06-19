@@ -121,13 +121,23 @@ Log: `Round <N>: <C> complete / <P> partial / <B> blocked`
 
 ### Step 4 — Merge
 
+Capture the current feature branch name before spawning the merge agent:
+
+```bash
+FEATURE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+```
+
 Spawn one haiku Agent with all complete branches at once:
 
 ```
-For each branch below:
-1. git log HEAD..<branch> --oneline — if empty, already merged (success: true)
-2. git merge --no-ff <branch>
-Report success: true or false for each. Continue on failure — never abort.
+Working directory: <absolute repo root>
+Feature branch: <FEATURE_BRANCH>
+
+1. git checkout <feature-branch>  — switch to the feature branch first, always
+2. For each branch below:
+   a. git log HEAD..<branch> --oneline — if empty, already merged (success: true)
+   b. git merge --no-ff <branch>
+   Report success: true or false for each. Continue on failure — never abort.
 
 <list of complete branches>
 ```
