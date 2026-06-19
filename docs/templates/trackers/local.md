@@ -1,7 +1,4 @@
 # Issue tracker: Local Markdown
-<!-- SOURCE TEMPLATE — canonical copy lives in docs/templates/trackers/local.md.
-     docs/agents/issue-tracker.md is the installed copy in each consumer repo.
-     Edit this file to update the template; re-run install.sh to push to consumers. -->
 
 Issues and PRDs for this repo live as markdown files in `.scratch/`.
 

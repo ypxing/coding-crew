@@ -419,10 +419,10 @@ install_docs() {
   # Source definitions come from registry.json .docs.templates.
   local templates
   templates=$(jq -r '.docs.templates // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  [[ -n "$templates" ]] && echo "Docs:"
   local templates_arr=()
   while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && templates_arr+=("$_line"); done <<< "$templates"
 
+  local docs_header_printed=0
   for tpl in "${templates_arr[@]+"${templates_arr[@]}"}"; do
     local src_rel dest_rel
     src_rel=$(jq -r --arg t "$tpl" '.docs.templates[$t].source // empty' "$SCRIPT_DIR/registry.json")
@@ -444,6 +444,7 @@ install_docs() {
       continue
     fi
 
+    [[ "$docs_header_printed" -eq 0 ]] && { echo "Docs:"; docs_header_printed=1; }
     mkdir -p "$(dirname "$dest")"
     cp "$src" "$dest"
     local rel_dest="${dest#$REPO_ROOT/}"

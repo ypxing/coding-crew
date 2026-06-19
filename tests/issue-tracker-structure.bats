@@ -44,13 +44,22 @@ setup() {
 }
 
 @test "docs/templates/trackers/local.md contains all seven required sections" {
-  grep -q '## Operation: list' "$TEMPLATE"
-  grep -q '## Operation: fetch' "$TEMPLATE"
-  grep -q '## Operation: publish' "$TEMPLATE"
-  grep -q '## Operation: mark-done' "$TEMPLATE"
-  grep -q '## Operation: status-update' "$TEMPLATE"
-  grep -q '## Labels' "$TEMPLATE"
-  grep -q '## Workspace' "$TEMPLATE"
+  grep -q '^## Operation: list'          "$TEMPLATE"
+  grep -q '^## Operation: fetch'         "$TEMPLATE"
+  grep -q '^## Operation: publish'       "$TEMPLATE"
+  grep -q '^## Operation: mark-done'     "$TEMPLATE"
+  grep -q '^## Operation: status-update' "$TEMPLATE"
+  grep -q '^## Labels'                   "$TEMPLATE"
+  grep -q '^## Workspace'                "$TEMPLATE"
+}
+
+@test "docs/templates/trackers/local.md sections are all present in issue-tracker.md" {
+  # Every section heading in the template must exist in the installed copy.
+  # This catches drift when one file is updated but the other is not.
+  while IFS= read -r heading; do
+    grep -qF "$heading" "$ISSUE_TRACKER" \
+      || { echo "Missing in issue-tracker.md: $heading"; return 1; }
+  done < <(grep '^## ' "$TEMPLATE")
 }
 
 @test "docs/agents/triage-labels.md has been removed" {

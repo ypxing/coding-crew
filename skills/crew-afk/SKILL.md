@@ -121,23 +121,24 @@ Log: `Round <N>: <C> complete / <P> partial / <B> blocked`
 
 ### Step 4 — Merge
 
-Capture the current feature branch name before spawning the merge agent:
+Before spawning the merge agent, the orchestrator must switch to the feature branch:
 
 ```bash
 FEATURE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+git checkout "$FEATURE_BRANCH"
 ```
+
+If `git checkout` fails, stop — do not proceed with merging.
 
 Spawn one haiku Agent with all complete branches at once:
 
 ```
-Working directory: <absolute repo root>
 Feature branch: <FEATURE_BRANCH>
 
-1. git checkout <feature-branch>  — switch to the feature branch first, always
-2. For each branch below:
-   a. git log HEAD..<branch> --oneline — if empty, already merged (success: true)
-   b. git merge --no-ff <branch>
-   Report success: true or false for each. Continue on failure — never abort.
+For each branch below:
+1. git log HEAD..<branch> --oneline — if empty, already merged (success: true)
+2. git merge --no-ff <branch>
+Report success: true or false for each. On merge failure, continue to the next branch — never abort. The checkout in step 0 is already done; do not re-run it.
 
 <list of complete branches>
 ```
