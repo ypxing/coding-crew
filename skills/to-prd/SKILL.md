@@ -7,14 +7,15 @@ Synthesize the current conversation context into a PRD. Do not ask discovery que
 something is unclear, state your assumption. Do confirm technical choices (seams, contracts) with
 the user before writing the final document.
 
-## Issue Tracker Conventions
+## Tracker Configuration
 
-Issues live as local markdown files in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`:
+Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
+2. `~/.claude/docs/agents/issue-tracker.md` (user-level fallback)
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The PRD is `.scratch/<feature-slug>/PRD.md`
-- Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
-- Done issues are moved to `.scratch/<feature-slug>/issues/done/`
+If neither exists, stop: "No issue tracker config found. Re-run `./install.sh` or `./install.sh --user`."
+
+All tracker operations in this skill use the operation definitions in that file.
 
 ## Process
 
@@ -29,7 +30,7 @@ Issues live as local markdown files in `.scratch/<feature-slug>/issues/<NN>-<slu
 
 3. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible. Present these to the user for confirmation before writing.
 
-4. Write the PRD using the template below, then save it to `.scratch/<feature-slug>/PRD.md` (creating the directory if needed).
+4. Write the PRD using the template below, then execute the `publish` operation from `issue-tracker.md` to save it to `.scratch/<feature-slug>/PRD.md` (creating the directory if needed).
 
 **Security**: Only write to paths under `.scratch/` within the current repo. Never publish to external APIs, remote issue trackers, or paths outside the repository root.
 

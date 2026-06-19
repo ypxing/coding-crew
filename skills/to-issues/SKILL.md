@@ -7,27 +7,15 @@ description: Break a plan, spec, or PRD into independently-grabbable issues on t
 
 Break a plan into independently-grabbable issues using vertical slices (tracer bullets).
 
-## Issue Tracker Conventions
+## Tracker Configuration
 
-Issues live as local markdown files in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`:
+Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
+2. `~/.claude/docs/agents/issue-tracker.md` (user-level fallback)
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The PRD is `.scratch/<feature-slug>/PRD.md`
-- Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
-- Triage state is recorded as a `Status:` line near the top of each issue file
-- Comments and conversation history append to the bottom under a `## Comments` heading
-- Done issues are moved to `.scratch/<feature-slug>/issues/done/`
+If neither exists, stop: "No issue tracker config found. Re-run `./install.sh` or `./install.sh --user`."
 
-### Triage Labels
-
-| Label             | Meaning                                  |
-| ----------------- | ---------------------------------------- |
-| `needs-triage`    | Maintainer needs to evaluate this issue  |
-| `needs-info`      | Waiting on reporter for more information |
-| `ready-for-agent` | Fully specified, ready for an AFK agent  |
-| `ready-for-human` | Requires human implementation            |
-| `wontfix`         | Will not be actioned                     |
-| `done`            | Issue is complete and closed             |
+All tracker operations in this skill use the operation definitions in that file.
 
 ## Process
 
@@ -95,7 +83,7 @@ Iterate until the user approves the breakdown.
 - If it does but no issues are done (no `done/` subdirectory or it's empty), list the existing files, warn the user they'll be overwritten, and ask for confirmation before proceeding.
 - If the directory doesn't exist or is empty, proceed normally.
 
-For each approved slice, create a new markdown file under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
+For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file under `.scratch/<feature-slug>/issues/`. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
 
 Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field.
 
