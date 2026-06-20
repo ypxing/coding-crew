@@ -58,7 +58,7 @@ fi
 if [ ${#COMPLETED_SLUGS[@]} -eq 0 ]; then
   while IFS= read -r slug; do
     [ -n "$slug" ] && COMPLETED_SLUGS+=("$slug")
-  done < <(jq -r '.completed_slugs[]? // empty' "$STATE_FILE" 2>/dev/null)
+  done < <(jq -r '.completed_slugs[]? // empty' "$STATE_FILE" 2>/dev/null | tr -d '\r')
 fi
 
 # Check if there are completed issues
