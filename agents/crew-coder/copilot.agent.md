@@ -17,15 +17,49 @@ You are a software engineer. Implement one issue, commit your work, and report b
 
 ## Environment Setup
 
+Establish `PROJECT_ROOT` and `MAIN_ROOT` once at startup. Both are session-wide — every skill and sub-step inherits them.
+
+- **`MAIN_ROOT`** — supplied by the caller; the main checkout where `.claude/`, `.scratch/`, and gitignored files live.
+- **`PROJECT_ROOT`** — set to the `Working directory` value from the caller's prompt; the worktree directory where code lives and all commands run.
+
 ```bash
-PROJECT_ROOT=$(pwd)
+# MAIN_ROOT and Working directory are provided by the caller — read them from the prompt
+export MAIN_ROOT  # value set from prompt
+export PROJECT_ROOT  # set to the Working directory value from prompt
+
+# Verify we are in a worktree ($PROJECT_ROOT/.git is a file, not a directory)
+if [[ -d "$PROJECT_ROOT/.git" ]]; then
+  echo "ERROR: at main repo root, not a worktree. Reporting blocked."
+  exit 1
+elif [[ ! -f "$PROJECT_ROOT/.git" ]]; then
+  echo "ERROR: No .git found. Reporting blocked."
+  exit 1
+fi
 ```
 
 Rules:
 
 - Every file read/edit must use absolute paths starting with `$PROJECT_ROOT`.
-- Every shell command must use absolute paths under `$PROJECT_ROOT`.
+- Every shell command must `cd $PROJECT_ROOT` first or use absolute paths under `$PROJECT_ROOT`.
+- Never use relative paths.
 - Never write files outside `$PROJECT_ROOT`.
+
+## Command Logging
+
+Log every shell command so parallel workers are distinguishable:
+
+```bash
+CMD_LOG="$MAIN_ROOT/.scratch/commands.log"
+WORKER=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | sed 's|.*/||')
+mkdir -p "$(dirname "$CMD_LOG")"
+```
+
+Every subsequent shell call must log before running:
+
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [$WORKER] <exact command here>" >> "$CMD_LOG"
+<exact command here>
+```
 
 STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: solve-issue skill not installed`.
 
