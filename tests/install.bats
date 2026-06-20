@@ -148,22 +148,9 @@ teardown() {
   grep -q "custom content" "$TEMP_DIR/docs/agents/issue-tracker.md"
 }
 
-@test "install --user creates docs/agents/issue-tracker.md under HOME/.claude, skipping if present" {
-  local fake_home
-  fake_home=$(mktemp -d)
-
-  # First install: file should be created
-  cd "$SCRIPT_DIR"
-  HOME="$fake_home" ./install.sh --user claude > /dev/null
-
-  [ -f "$fake_home/.claude/docs/agents/issue-tracker.md" ]
-
-  # Write custom content then reinstall — must not overwrite
-  echo "user custom" > "$fake_home/.claude/docs/agents/issue-tracker.md"
-  HOME="$fake_home" ./install.sh --user claude > /dev/null
-
-  grep -q "user custom" "$fake_home/.claude/docs/agents/issue-tracker.md"
-  rm -rf "$fake_home"
+@test "install --user is rejected with an invalid platform error" {
+  run ./install.sh --user claude
+  [ "$status" -ne 0 ]
 }
 
 @test "registry.json docs section registers tracker template source" {

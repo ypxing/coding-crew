@@ -35,7 +35,7 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 ### Key Components
 
 - **`agents/`** — Two agents: `crew-coder` (implements single issues using TDD in isolated worktrees) and `crew-code-reviewer` (reviews merged branches at sprint end)
-- **`skills/`** — Reusable skill files (tdd, solve-issue, grill-me, crew-plan, etc.)
+- **`skills/`** — Reusable skill files (tdd, solve-issue, domain-modeling, crew-plan, etc.)
 - **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and doc templates
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`docs/agents/`** — Default templates (`issue-tracker.md`, `triage-labels.md`) copied to consuming repos
@@ -163,11 +163,10 @@ Use `protocol.md` for markdown instructions, `workflow.js` for Workflow scripts.
 | `crew-address-findings` | Triage and fix code review findings using TDD |
 | `address-pr-comments` | Fetch PR review comments, implement sensible ones with TDD |
 | `improve-codebase-architecture` | Find deepening opportunities for testability and AI-navigability |
-| `grill-me` | Interview user about a plan until reaching shared understanding |
-| `grill-with-docs` | Grilling session that challenges plan against domain model |
+| `domain-modeling` | Update CONTEXT.md glossary and create ADRs inline as decisions crystallise |
 | `to-issues` | Break plan/PRD into independently-grabbable issues |
 | `to-prd` | Synthesize conversation into PRD and publish to tracker |
-| `crew-plan` | Full design pipeline: grill → PRD → issues |
+| `crew-plan` | Full design pipeline: grill → PRD → issues. Add "with docs" to also update CONTEXT.md and ADRs |
 | `caveman` | Ultra-compressed communication mode (~75% token reduction) |
 | `dep-install` | Detect install mode (host/docker) and install dependencies once |
 

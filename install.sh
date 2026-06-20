@@ -3,24 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Pre-scan for --user flag (strip it; remaining args keep their positions)
-INSTALL_LEVEL="project"
-_filtered=()
-for _arg in "$@"; do
-  if [[ "$_arg" == "--user" ]]; then
-    INSTALL_LEVEL="user"
-  else
-    _filtered+=("$_arg")
-  fi
-done
-set -- "${_filtered[@]+"${_filtered[@]}"}"
-unset _filtered _arg
-
-if [[ "$INSTALL_LEVEL" == "user" ]]; then
-  REPO_ROOT="$HOME"
-else
-  REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-fi
+REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
 UPDATE_MODE=false
 LOCKFILE_MODE=false
@@ -63,26 +46,24 @@ MANIFEST_AGENT_ENTRIES=()  # each entry: "name version platform"
 MANIFEST_SKILL_ENTRIES=()  # each entry: "name version"
 
 usage() {
-  echo "Usage: ./install.sh [--user] [platform] [agent]"
-  echo "       ./install.sh [--user] [platform] --skill <skill-name>"
-  echo "       ./install.sh [--user] [platform] --skills <a,b,c>"
-  echo "       ./install.sh [--user] --update"
-  echo "       ./install.sh [--user] --from-lockfile <path>"
+  echo "Usage: ./install.sh [platform] [agent]"
+  echo "       ./install.sh [platform] --skill <skill-name>"
+  echo "       ./install.sh [platform] --skills <a,b,c>"
+  echo "       ./install.sh --update"
+  echo "       ./install.sh --from-lockfile <path>"
   echo ""
-  echo "  --user:          install to \$HOME (user-level); default installs into the current project repo"
   echo "  platform:        all (default), claude, copilot"
   echo "  agent:           all (default), crew-code-reviewer, crew-coder"
   echo "  --skill:         install a single skill (e.g. to-issues)"
-  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,grill-me)"
+  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,to-issues)"
   echo "  --update:        re-install only agents/skills whose version changed since last install"
   echo "  --from-lockfile: install from a lockfile (fetches pinned registry version and installs listed items)"
   echo ""
   echo "Examples:"
   echo "  ./install.sh                                      # install everything into project"
-  echo "  ./install.sh --user                               # install everything into \$HOME"
-  echo "  ./install.sh --user claude --skill tdd            # one skill into \$HOME/.claude/skills/"
-  echo "  ./install.sh --user claude --skills tdd,caveman   # multiple skills at once"
-  echo "  ./install.sh claude --skill crew-afk            # crew-afk + crew-coder + crew-code-reviewer"
+  echo "  ./install.sh claude --skill tdd                   # one skill into project"
+  echo "  ./install.sh claude --skills tdd,caveman          # multiple skills at once"
+  echo "  ./install.sh claude --skill crew-afk              # crew-afk + crew-coder + crew-code-reviewer"
   echo "  ./install.sh --update                             # update all installed agents/skills"
   echo "  ./install.sh --from-lockfile crew.lock            # install from lockfile"
   echo ""
@@ -426,11 +407,7 @@ install_docs() {
   for tpl in "${templates_arr[@]+"${templates_arr[@]}"}"; do
     local src_rel dest_rel
     src_rel=$(jq -r --arg t "$tpl" '.docs.templates[$t].source // empty' "$SCRIPT_DIR/registry.json")
-    if [[ "$INSTALL_LEVEL" == "user" ]]; then
-      dest_rel=$(jq -r --arg t "$tpl" '.docs.templates[$t]["dest-user"] // empty' "$SCRIPT_DIR/registry.json")
-    else
-      dest_rel=$(jq -r --arg t "$tpl" '.docs.templates[$t].dest // empty' "$SCRIPT_DIR/registry.json")
-    fi
+    dest_rel=$(jq -r --arg t "$tpl" '.docs.templates[$t].dest // empty' "$SCRIPT_DIR/registry.json")
 
     [[ -z "$src_rel" || -z "$dest_rel" ]] && continue
 
@@ -854,7 +831,7 @@ run_from_lockfile() {
   fi
 }
 
-echo "Target: $REPO_ROOT ($INSTALL_LEVEL-level)"
+echo "Target: $REPO_ROOT"
 
 if [[ "$UPDATE_MODE" == "true" ]]; then
   run_update

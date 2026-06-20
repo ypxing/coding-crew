@@ -13,10 +13,8 @@ A distributable collection of AI agents and skills that automate the issue → i
   ┌─────────────────────────────────────────────────────┐
   │  Create issues                                      │
   │                                                     │
-  │  auto:   /crew-plan                                 │
-  │                                                     │
-  │  manual: /grill-me (or /grill-with-docs)            │
-  │          → /to-prd → /to-issues                     │
+  │  /crew-plan             ← grill → PRD → issues      │
+  │  /crew-plan with docs   ← also updates domain model │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
@@ -165,20 +163,12 @@ Team members can then pull the updated lockfile and re-run:
 
 ## 3. Create issues
 
-### Auto — from an idea
+```
+/crew-plan             ← grill → PRD → issues in one flow
+/crew-plan with docs   ← same, but also updates CONTEXT.md and ADRs
+```
 
-```
-/crew-plan       ← grill → PRD → issues in one flow
-```
-
-### Manual — step by step
-
-```
-/grill-me        ← stress-test your idea interactively
-                   (or /grill-with-docs — challenges against your domain model)
-/to-prd          ← turn the refined idea into a PRD
-/to-issues       ← break the PRD into ready-for-agent issues
-```
+Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
 
 ---
 

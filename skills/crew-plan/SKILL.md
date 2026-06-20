@@ -1,13 +1,23 @@
 ---
 name: crew-plan
-description: Full design pipeline — grill the user about a plan (crew-grill-me by default; crew-grill-with-docs if invoked with "with docs"), produce a PRD, then break it into issues. Use when starting a new feature from scratch.
+description: Full design pipeline — grill the user about a plan (lite by default; add "with docs" to also update CONTEXT.md and ADRs via domain-modeling), produce a PRD, then break it into issues. Use when starting a new feature from scratch.
 ---
 
 Run the full design pipeline in three phases. Pause for user feedback within each phase, but do not ask the user to manually invoke the next skill — transition automatically.
 
 ## Phase 1 — Grill
 
-If the user's invocation included "with docs" or "with documents", run the `grill-with-docs` skill; otherwise run the `grill-me` skill. At the end:
+Interview the user relentlessly about every aspect of their plan until reaching shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
+
+Ask the questions one at a time, waiting for feedback on each question before continuing.
+
+If a question can be answered by exploring the codebase, explore the codebase instead.
+
+**This phase is strictly exploratory.** Do NOT write code, create files, edit source files, run commands, or begin implementation. Your only job is to ask questions and reach shared understanding.
+
+If the user's invocation included "with docs" or "with documents", also invoke the `domain-modeling` skill inline as decisions crystallise: update `CONTEXT.md` when terms are resolved, and offer ADRs when decisions meet the ADR threshold (hard to reverse, surprising without context, result of a real trade-off).
+
+At the end of the grilling:
 
 1. Summarize all implementation decisions (not glossary terms).
 2. Ask once: **"Ready to write the PRD?"** If yes, continue to Phase 2. If no, stop.

@@ -22,7 +22,7 @@ THIS REPO (source)
 ├── skills/                 ← reusable skill files
 │   ├── tdd/
 │   ├── solve-issue/
-│   ├── grill-me/
+│   ├── domain-modeling/
 │   ├── crew-plan/
 │   ├── caveman/
 │   └── ...
@@ -204,7 +204,7 @@ jq --version    # required
 ./install.sh copilot --skill crew-afk
 
 # A standalone skill
-./install.sh claude --skill grill-me
+./install.sh claude --skill domain-modeling
 
 # A doc template only
 ./install.sh claude --doc issue-tracker.md
@@ -242,8 +242,7 @@ YOUR_PROJECT/
 │       ├── caveman/           ← installed with crew-afk
 │       ├── address-pr-comments/    ← installed with "all"
 │       ├── improve-codebase-architecture/  ← installed with "all"
-│       ├── grill-me/          ← installed with "all"
-│       ├── grill-with-docs/   ← installed with "all"
+│       ├── domain-modeling/   ← installed with "all"
 │       ├── to-issues/         ← installed with "all"
 │       ├── to-prd/            ← installed with "all"
 │       └── crew-plan/              ← installed with "all"
@@ -269,10 +268,8 @@ YOUR_PROJECT/
  ┌─────────────────────────────────────────────────────────────┐
  │  Plan & explore (optional but recommended)                  │
  │                                                             │
- │  auto:   /crew-plan  (grill → PRD → issues)               │
- │                                                             │
- │  manual: /grill-me  (or /grill-with-docs)         │
- │          → /to-prd → /to-issues                   │
+ │  /crew-plan             (grill → PRD → issues)             │
+ │  /crew-plan with docs   (also updates CONTEXT.md + ADRs)   │
  └──────────────────────────┬──────────────────────────────────┘
                             │ .scratch/.../issues/*.md
                             ▼
@@ -374,11 +371,11 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 | Goal                                           | Skill                              |
 | ---------------------------------------------- | ---------------------------------- |
-| Run the full grill → PRD → issues pipeline     | `/crew-plan`                       |
-| Turn a feature idea into a PRD                 | `/to-prd`                     |
-| Break a PRD into issues                        | `/to-issues`                  |
-| Stress-test your plan interactively            | `/grill-me`                   |
-| Challenge your design against the domain model | `/grill-with-docs`            |
+| Grill → PRD → issues in one flow               | `/crew-plan`                       |
+| Same, also update CONTEXT.md and ADRs          | `/crew-plan with docs`             |
+| Update domain glossary and ADRs standalone     | `/domain-modeling`                 |
+| Turn a feature idea into a PRD                 | `/to-prd`                          |
+| Break a PRD into issues                        | `/to-issues`                       |
 | Address GitHub PR review comments              | `/address-pr-comments`        |
 | Find architecture improvement opportunities    | `/improve-codebase-architecture` |
 | Reduce token usage during long sessions        | `/caveman`                    |

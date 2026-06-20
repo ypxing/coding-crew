@@ -3,8 +3,7 @@
     "templates": {
       "issue-tracker": {
         "source": "docs/templates/trackers/local.md",
-        "dest": "docs/agents/issue-tracker.md",
-        "dest-user": ".claude/docs/agents/issue-tracker.md"
+        "dest": "docs/agents/issue-tracker.md"
       }
     }
   },
@@ -44,7 +43,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -86,7 +85,7 @@
       "install": ".claude/skills/dep-install"
     },
     "solve-issue": {
-      "version": "1.1.0",
+      "version": "1.2.0",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
@@ -101,7 +100,7 @@
       ]
     },
     "crew-address-findings": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "crew-address-findings",
       "description": "Triage and fix findings from a crew-afk code review report using TDD.",
       "install": ".claude/skills/crew-address-findings",
@@ -129,49 +128,36 @@
       ]
     },
     "improve-codebase-architecture": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "improve-codebase-architecture",
       "description": "Find deepening opportunities — refactors that turn shallow modules into deep ones for testability and AI-navigability.",
       "source": "mattpocock/skills",
       "install": ".claude/skills/improve-codebase-architecture",
       "deps": [
-        "grill-with-docs"
+        "domain-modeling"
       ]
     },
-    "grill-me": {
-      "version": "1.0.0",
-      "source-dir": "grill-me",
-      "description": "Interview the user relentlessly about a plan until reaching shared understanding. Exploratory only — no implementation.",
-      "install": ".claude/skills/grill-me"
-    },
-    "grill-with-docs": {
-      "version": "1.0.0",
-      "source-dir": "grill-with-docs",
-      "description": "Grilling session that challenges a plan against the domain model, sharpens terminology, updates CONTEXT.md and ADRs inline.",
-      "source": "mattpocock/skills",
-      "install": ".claude/skills/grill-with-docs"
-    },
     "to-issues": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
       "install": ".claude/skills/to-issues"
     },
     "to-prd": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",
       "install": ".claude/skills/to-prd"
     },
     "crew-plan": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "crew-plan",
       "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
       "install": ".claude/skills/crew-plan",
       "deps": [
-        "grill-with-docs",
+        "domain-modeling",
         "to-prd",
         "to-issues"
       ]
@@ -184,10 +170,16 @@
       "install": ".claude/skills/caveman"
     },
     "configure-tracker": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "configure-tracker",
-      "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level or user-level config path.",
+      "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level config path.",
       "install": ".claude/skills/configure-tracker"
+    },
+    "domain-modeling": {
+      "version": "1.0.0",
+      "source-dir": "domain-modeling",
+      "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise.",
+      "install": ".claude/skills/domain-modeling"
     }
   }
 }
