@@ -5,6 +5,7 @@
 set -e
 
 # Setup test environment
+REPO_ROOT=$(pwd)
 TEST_DIR=$(mktemp -d)
 cd "$TEST_DIR"
 git init -q
@@ -233,8 +234,79 @@ else
 fi
 echo
 
-# Cleanup
+# Test 13: Extract feature slug from path argument (.scratch/foo/issues/ -> foo)
+echo "Test 13: Extract feature slug from path argument"
+result=$(echo ".scratch/crew-address-findings/issues/" | sed 's|\.scratch/||' | sed 's|/.*||')
+expected="crew-address-findings"
+if [ "$result" = "$expected" ]; then
+    echo "✓ PASS: Extracted feature slug '$result' from path"
+else
+    echo "✗ FAIL: Expected '$expected', got '$result'"
+    exit 1
+fi
+echo
+
+# Test 14: session-init.sh accepts --feature-slug and uses it directly
+echo "Test 14: session-init.sh --feature-slug bypasses first-issue detection"
+SKILL_DIR="$REPO_ROOT/skills/crew-afk/scripts"
+TEST_DIR2=$(mktemp -d)
+cd "$TEST_DIR2"
+git init -q
+git config user.email "test@example.com"
+git config user.name "Test User"
+echo "test" > file.txt
+git add file.txt
+git commit -q -m "Initial commit"
+git branch -M main
+# No .scratch/*/issues/*.md files exist, but --feature-slug should bypass that check
+mkdir -p ".claude"
+# Use the real session-init.sh with --feature-slug
+if bash "$SKILL_DIR/session-init.sh" --feature-slug "crew-address-findings" 2>&1 | grep -q "Session initialized"; then
+    RESULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [ "$RESULT_BRANCH" = "feature/crew-address-findings" ]; then
+        echo "✓ PASS: Branch is '$RESULT_BRANCH'"
+    else
+        echo "✗ FAIL: Expected 'feature/crew-address-findings', got '$RESULT_BRANCH'"
+        cd - > /dev/null
+        rm -rf "$TEST_DIR2"
+        exit 1
+    fi
+else
+    echo "✗ FAIL: session-init.sh did not succeed with --feature-slug"
+    cd - > /dev/null
+    rm -rf "$TEST_DIR2"
+    exit 1
+fi
 cd - > /dev/null
-rm -rf "$TEST_DIR"
+rm -rf "$TEST_DIR2"
+echo
+
+# Test 15: session-init.sh --feature-slug creates sprint state at correct path
+echo "Test 15: session-init.sh --feature-slug creates sprint state at .scratch/<slug>/sprint-state.json"
+TEST_DIR3=$(mktemp -d)
+cd "$TEST_DIR3"
+git init -q
+git config user.email "test@example.com"
+git config user.name "Test User"
+echo "test" > file.txt
+git add file.txt
+git commit -q -m "Initial commit"
+git branch -M main
+mkdir -p ".claude"
+bash "$SKILL_DIR/session-init.sh" --feature-slug "my-feature" > /dev/null 2>&1
+if [ -f ".scratch/my-feature/sprint-state.json" ]; then
+    echo "✓ PASS: sprint-state.json at .scratch/my-feature/sprint-state.json"
+else
+    echo "✗ FAIL: sprint-state.json not found at .scratch/my-feature/sprint-state.json"
+    cd - > /dev/null
+    rm -rf "$TEST_DIR3"
+    exit 1
+fi
+cd - > /dev/null
+rm -rf "$TEST_DIR3"
+echo
+
+# Cleanup
+cd "$REPO_ROOT" > /dev/null
 
 echo "All tests passed! ✓"
