@@ -57,8 +57,8 @@ teardown() {
   grep -q 'docs/agents/issue-tracker.md' "$SKILL_FILE"
 }
 
-@test "configure-tracker/SKILL.md mentions user-level path ~/.claude/docs/agents/issue-tracker.md" {
-  grep -q '~/.claude/docs/agents/issue-tracker.md' "$SKILL_FILE"
+@test "configure-tracker/SKILL.md does not mention user-level path (project-level only)" {
+  ! grep -q '~/.claude/docs/agents/issue-tracker.md' "$SKILL_FILE"
 }
 
 # --- First-run deferral note ---
