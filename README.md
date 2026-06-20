@@ -14,6 +14,7 @@ A distributable collection of AI agents and skills that automate the issue → i
   │  Create issues                                      │
   │                                                     │
   │  /crew-grill             ← lightweight grill        │
+  │  OR                                                 │
   │  /crew-brainstorm        ← thorough design + spec   │
   └─────────────────┬───────────────────────────────────┘
                     │
