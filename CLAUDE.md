@@ -34,7 +34,7 @@ Platforms: `all` (default), `claude`, `copilot`. Agents: `all` (default), `crew-
 
 Two agents live under `agents/`:
 
-- **`crew-coder`** — implements a single local markdown issue using TDD, verifies checks, commits, and returns a structured summary. Runs in an isolated git worktree.
+- **`crew-coder`** — implements a single local markdown issue using TDD, verifies checks, commits, and returns a structured summary. Runs in an isolated git worktree on both Claude (runtime-managed via `isolation: worktree`) and Copilot (orchestrator-managed via `git worktree add`).
 - **`crew-code-reviewer`** — reviews all branches merged in a sprint session; reports CRITICAL/HIGH/MEDIUM/LOW findings per branch. Findings are advisory. Invoked once at the end of every sprint by crew-afk.
 
 `crew-afk` is a **skill** (see Skills below) that declares `agent-deps` on `crew-coder` and `crew-code-reviewer` — installing the skill also installs both agents.
