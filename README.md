@@ -197,6 +197,19 @@ Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
 
 Picks up every `ready-for-agent` issue, spawns crew-coder agents in parallel, commits, loops until done. Runs a code review pass on exit.
 
+**Gitignored files in worktrees (`.worktreeinclude`)**
+
+Each agent runs in an isolated git worktree. Files that are gitignored — like `.env`, `node_modules/`, or local config — are not present in a fresh worktree by default. To make them available to agents, create a `.worktreeinclude` file at your repo root listing the paths to symlink in:
+
+```
+# .worktreeinclude
+.env
+.env.local
+node_modules
+```
+
+This file is optional. If absent, agents only see tracked files. Both the Claude and Copilot platforms respect it — no per-platform configuration needed.
+
 ---
 
 ## 5. Address the review
