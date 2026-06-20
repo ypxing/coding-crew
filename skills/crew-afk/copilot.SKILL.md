@@ -364,8 +364,11 @@ If there are no commits, print `Code review: skipped (no commits this session)` 
 
 ## Worktree Cleanup (on exit)
 
-After code review, run worktree prune to remove any stale refs:
+After code review, delete all tracked `crew/*` branch refs and prune stale worktree metadata:
 
 ```bash
+git -C "$MAIN_ROOT" branch -D -- <branch1> <branch2> ... 2>/dev/null || true
 git -C "$MAIN_ROOT" worktree prune
 ```
+
+The branch list is all `crew/*` branches tracked during this sprint (collected in step 2a). The `2>/dev/null || true` ensures a missing branch doesn't abort cleanup.
