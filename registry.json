@@ -152,7 +152,7 @@
       "install": ".claude/skills/to-prd"
     },
     "crew-grill": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "crew-grill",
       "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
       "install": ".claude/skills/crew-grill",

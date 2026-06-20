@@ -133,6 +133,20 @@ teardown() {
   [ -f "$TEMP_DIR/.copilot/skills/crew-grill/SKILL.md" ]
 }
 
+@test "crew-brainstorm skill is installed to correct directory (claude)" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-brainstorm
+
+  [ -f "$TEMP_DIR/.claude/skills/crew-brainstorm/SKILL.md" ]
+}
+
+@test "crew-brainstorm skill is installed to correct directory (copilot)" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-brainstorm
+
+  [ -f "$TEMP_DIR/.copilot/skills/crew-brainstorm/SKILL.md" ]
+}
+
 @test "reinstalling modified skill produces diff output" {
   cd "$SCRIPT_DIR"
 

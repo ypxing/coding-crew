@@ -54,6 +54,8 @@ Both skills have been removed and replaced by the new `domain-modeling` skill an
 | `/grill-me`             | `/crew-plan`                        |
 | `/grill-with-docs`      | `/crew-plan with docs`              |
 
+> Note: `crew-plan` was itself renamed to `crew-grill` in v1.5.0.
+
 **Tracker install simplified to project-level only**
 
 The `--user` flag and user-level tracker fallback path have been removed from `install.sh` and all skills. All tracker operations now target the project-level path only.
