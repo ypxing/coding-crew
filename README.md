@@ -209,7 +209,7 @@ Each agent runs in an isolated git worktree. Files that are gitignored — like 
 
 This file is optional. If absent, agents only see tracked files. Both the Claude and Copilot platforms respect it — no per-platform configuration needed.
 
-**Note:** Avoid adding `node_modules/` here — symlinking it means any `npm install` run inside a worktree would mutate the main checkout's dependencies. Instead, let agents run `npm ci` (or equivalent) inside the worktree, or use a package manager with a shared global cache (pnpm, yarn berry).
+**Note:** Avoid adding `node_modules/` here — a shared `node_modules` breaks isolation if multiple worktrees run `npm install` concurrently. Let agents run `npm ci` inside the worktree instead, or use a package manager with a shared global cache (pnpm, yarn berry).
 
 ---
 
