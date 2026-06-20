@@ -188,6 +188,12 @@
       "source-dir": "configure-tracker",
       "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level or user-level config path.",
       "install": ".claude/skills/configure-tracker"
+    },
+    "domain-modeling": {
+      "version": "1.0.0",
+      "source-dir": "domain-modeling",
+      "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise.",
+      "install": ".claude/skills/domain-modeling"
     }
   }
 }
