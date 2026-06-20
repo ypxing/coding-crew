@@ -27,8 +27,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-USER_FLAG="--user"
-[[ -n "$PROJECT" ]] && USER_FLAG=""
+# Default to user-level ($HOME); --project installs into the current git repo instead
+if [[ -z "$PROJECT" ]]; then
+  export TARGET_REPO="$HOME"
+fi
 
 TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -48,7 +50,7 @@ INSTALL="$TMP_DIR/install.sh"
 chmod +x "$INSTALL"
 
 if [[ -n "$SKILLS" ]]; then
-  exec "$INSTALL" $USER_FLAG "$PLATFORM" --skills "$SKILLS"
+  exec "$INSTALL" "$PLATFORM" --skills "$SKILLS"
 else
-  exec "$INSTALL" $USER_FLAG "$PLATFORM"
+  exec "$INSTALL" "$PLATFORM"
 fi
