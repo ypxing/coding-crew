@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Session initialization and feature branch setup for afk-run
 # Usage: source this script or run it directly
-# Optional: Pass --jira TICKET-123 as arguments
+# Optional: Pass --jira TICKET-123 or --feature-slug <slug> as arguments
 
 # Auto-detect platform directory
 if [ -d ".claude" ]; then
@@ -15,27 +15,65 @@ else
   exit 1
 fi
 
-# Find first ready issue to determine branch name
-FIRST_ISSUE=$(find .scratch -path '*/issues/*.md' -not -path '*/done/*' -type f | head -n 1)
+# Parse --feature-slug flag (consumed here; remaining args forwarded to feature-branch-setup.sh)
+FEATURE_SLUG_ARG=""
+REMAINING_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --feature-slug)
+      FEATURE_SLUG_ARG="${2:?--feature-slug requires a value}"
+      shift 2
+      ;;
+    *)
+      REMAINING_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
 
-if [ -z "$FIRST_ISSUE" ]; then
-  echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-run."
-  exit 1
+if [ -n "$FEATURE_SLUG_ARG" ]; then
+  # Use the provided slug directly — bypass first-issue detection
+  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+
+  if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
+    SUGGESTED_BRANCH="feature/$FEATURE_SLUG_ARG"
+    if git rev-parse --verify "$SUGGESTED_BRANCH" >/dev/null 2>&1; then
+      echo "Switching to existing branch: $SUGGESTED_BRANCH"
+      git checkout "$SUGGESTED_BRANCH"
+    else
+      echo "Creating new feature branch: $SUGGESTED_BRANCH"
+      git checkout -b "$SUGGESTED_BRANCH"
+    fi
+  fi
+else
+  # Find first ready issue to determine branch name
+  FIRST_ISSUE=$(find .scratch -path '*/issues/*.md' -not -path '*/done/*' -type f | head -n 1)
+
+  if [ -z "$FIRST_ISSUE" ]; then
+    echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-run."
+    exit 1
+  fi
+
+  # Use shared feature branch setup script (handles branch creation/switching with JIRA support)
+  # feature-branch-setup.sh is copied into this skill's scripts/ directory during install.sh
+  bash "$(dirname "$0")/feature-branch-setup.sh" "$FIRST_ISSUE" "${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"}"
 fi
-
-# Use shared feature branch setup script (handles branch creation/switching with JIRA support)
-# feature-branch-setup.sh is copied into this skill's scripts/ directory during install.sh
-bash "$(dirname "$0")/feature-branch-setup.sh" "$FIRST_ISSUE" "$@"
 
 # Get current branch after setup
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-# Derive feature-slug from current branch name
-FEATURE_SLUG="$CURRENT_BRANCH"
-# Strip 'feature/' prefix if present
-FEATURE_SLUG="${FEATURE_SLUG#feature/}"
-# Strip JIRA prefix pattern (e.g., PROJ-123-)
-FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]\+-[0-9]\+-//')
+# Derive feature-slug: use provided value if given, otherwise derive from branch name
+if [ -n "$FEATURE_SLUG_ARG" ]; then
+  FEATURE_SLUG="$FEATURE_SLUG_ARG"
+else
+  FEATURE_SLUG="$CURRENT_BRANCH"
+  # Strip 'feature/' prefix if present
+  FEATURE_SLUG="${FEATURE_SLUG#feature/}"
+  # Strip JIRA prefix pattern (e.g., PROJ-123-)
+  FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]\+-[0-9]\+-//')
+fi
 
 # Validate feature-slug is non-empty after stripping
 if [ -z "$FEATURE_SLUG" ]; then

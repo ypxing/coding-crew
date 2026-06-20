@@ -32,8 +32,21 @@ Run before the first round:
 
 ### Feature Branch Setup
 
+Extract the feature slug from the path argument (if provided) and pass it to `session-init.sh`:
+
+```bash
+# If a path argument was provided (e.g. .scratch/crew-address-findings/issues/),
+# derive the feature slug from it: strip .scratch/ prefix and everything after the second /
+FEATURE_SLUG_FLAG=""
+if [ -n "${1:-}" ] && [[ "$1" == .scratch/* ]]; then
+  DERIVED_SLUG=$(echo "$1" | sed 's|^\.scratch/||' | sed 's|/.*||')
+  [ -n "$DERIVED_SLUG" ] && FEATURE_SLUG_FLAG="--feature-slug $DERIVED_SLUG"
+fi
+```
+
 Run the session initialization script. It handles:
 - Parsing optional `--jira TICKET-123` flag
+- Parsing optional `--feature-slug <slug>` flag (bypasses first-issue detection)
 - Feature branch creation/switching
 - Session tracking setup
 - Git repository validation
@@ -41,11 +54,11 @@ Run the session initialization script. It handles:
 - Sprint state file initialization
 
 ```bash
-bash "<skill-dir>/scripts/session-init.sh" "$@"
+bash "<skill-dir>/scripts/session-init.sh" $FEATURE_SLUG_FLAG "$@"
 ```
 
 The script will:
-- Create or switch to a feature branch (deriving slug from first issue if on main/default branch)
+- Create or switch to a feature branch (using provided slug, or deriving from first issue)
 - Initialize `.scratch/<feature-slug>/issues/` directory structure
 - Archive previous command log and start fresh
 - Save session-start SHA for code review
