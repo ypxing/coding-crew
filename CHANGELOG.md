@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### ⚠️ BREAKING CHANGES
+
+**`address-code-review` renamed to `crew-address-findings`**
+
+The skill has been renamed to clarify its purpose (acts on the `crew-code-reviewer` report, not inline PR comments) and avoid confusion with `address-pr-comments`.
+
+| Old Name                | New Name                  |
+| ----------------------- | ------------------------- |
+| `address-code-review`   | `crew-address-findings`   |
+
+**Migration:** Uninstall and reinstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
+```
+
+---
+
 ## [1.3.0] - 2026-06-20
 
 ### Added

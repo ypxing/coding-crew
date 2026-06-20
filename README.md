@@ -32,7 +32,7 @@ A distributable collection of AI agents and skills that automate the issue → i
              crew-code-reviewer
                     │
                     ▼
-       /address-code-review
+       /crew-address-findings
 ```
 
 ---
@@ -195,7 +195,7 @@ Picks up every `ready-for-agent` issue, spawns crew-coder agents in parallel, co
 ## 5. Address the review
 
 ```
-/address-code-review
+/crew-address-findings
 ```
 
 Opens the review report, triages findings, implements fixes with TDD.
@@ -216,7 +216,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 | ------------------------ | ----------------------------------------------------------------- |
 | `/crew-plan`             | Full design pipeline — grill → PRD → issues in one automated flow |
 | `/crew-afk`              | Run the sprint — parallel agents implement all ready issues       |
-| `/address-code-review`   | Triage and fix the post-sprint code review report with TDD        |
+| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD        |
 | `/solve-issue`           | Implement a single issue end-to-end                               |
 | `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones  |
 | `/configure-tracker`     | Select and install an issue tracker template                      |

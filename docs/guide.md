@@ -238,7 +238,7 @@ YOUR_PROJECT/
 │       ├── tdd/
 │       ├── dep-install/
 │       ├── solve-issue/
-│       ├── address-code-review/
+│       ├── crew-address-findings/
 │       ├── caveman/           ← installed with crew-afk
 │       ├── address-pr-comments/    ← installed with "all"
 │       ├── improve-codebase-architecture/  ← installed with "all"
@@ -301,7 +301,7 @@ YOUR_PROJECT/
     └──────────────────────┘
           │
           ▼
-    /address-code-review (you trigger this)
+    /crew-address-findings (you trigger this)
 ```
 
 ---
@@ -363,7 +363,7 @@ Sprint runs until all issues are complete, or two consecutive rounds produce zer
 ### Reviewing Code Review Findings
 
 ```
-/address-code-review
+/crew-address-findings
 ```
 
 Opens the latest sprint review, shows a triage table (Actionable / Debatable / Dismiss), implements fixes with TDD, commits, and archives the report.

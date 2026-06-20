@@ -160,7 +160,7 @@ Use `protocol.md` for markdown instructions, `workflow.js` for Workflow scripts.
 | `karpathy-guidelines` | Coding principles to reduce LLM mistakes |
 | `tdd` | Test-driven development with red-green-refactor loop |
 | `solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
-| `address-code-review` | Triage and fix code review findings using TDD |
+| `crew-address-findings` | Triage and fix code review findings using TDD |
 | `address-pr-comments` | Fetch PR review comments, implement sensible ones with TDD |
 | `improve-codebase-architecture` | Find deepening opportunities for testability and AI-navigability |
 | `grill-me` | Interview user about a plan until reaching shared understanding |

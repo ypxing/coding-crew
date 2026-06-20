@@ -6,7 +6,7 @@ setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export SOLVE_ISSUE="$SCRIPT_DIR/skills/solve-issue/SKILL.md"
   export CREW_AFK="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
-  export ADDRESS_REVIEW="$SCRIPT_DIR/skills/address-code-review/SKILL.md"
+  export ADDRESS_REVIEW="$SCRIPT_DIR/skills/crew-address-findings/SKILL.md"
 }
 
 # --- Tracker Configuration preamble ---
@@ -19,7 +19,7 @@ setup() {
   grep -q '^## Tracker Configuration' "$CREW_AFK"
 }
 
-@test "address-code-review/SKILL.md contains the Tracker Configuration section" {
+@test "crew-address-findings/SKILL.md contains the Tracker Configuration section" {
   grep -q '^## Tracker Configuration' "$ADDRESS_REVIEW"
 }
 
@@ -33,7 +33,7 @@ setup() {
   grep -q 'git rev-parse --show-toplevel' "$CREW_AFK"
 }
 
-@test "address-code-review/SKILL.md preamble references issue-tracker.md lookup chain" {
+@test "crew-address-findings/SKILL.md preamble references issue-tracker.md lookup chain" {
   grep -q 'issue-tracker.md' "$ADDRESS_REVIEW"
   grep -q 'git rev-parse --show-toplevel' "$ADDRESS_REVIEW"
 }
@@ -65,6 +65,6 @@ setup() {
   grep -q '### Step 1' "$CREW_AFK" || grep -q '## Loop' "$CREW_AFK"
 }
 
-@test "address-code-review/SKILL.md still contains triage steps" {
+@test "crew-address-findings/SKILL.md still contains triage steps" {
   grep -q 'Challenge' "$ADDRESS_REVIEW" || grep -q 'Step 3' "$ADDRESS_REVIEW"
 }

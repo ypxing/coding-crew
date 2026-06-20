@@ -47,7 +47,7 @@ bash scripts/branch-safety-check.sh [--allow-default]
 
 **Used by**:
 - `address-pr-comments` (Step 0)
-- `address-code-review` (Step 0)
+- `crew-address-findings` (Step 0)
 
 **Example**:
 ```bash
@@ -126,7 +126,7 @@ bash scripts/commit-changes.sh \
 **Used by**:
 - `solve-issue` (Step 6)
 - `address-pr-comments` (Step 5)
-- `address-code-review` (Step 5)
+- `crew-address-findings` (Step 5)
 
 **Example**:
 ```bash
