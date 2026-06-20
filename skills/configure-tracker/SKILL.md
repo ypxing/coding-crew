@@ -2,14 +2,13 @@
 name: configure-tracker
 description: >
   Select and install an issue tracker template. Presents a numbered menu of available templates
-  from docs/templates/trackers/, then writes the chosen template to either the project-level or
-  user-level config path. Use when setting up a new project's issue tracker or switching tracker
-  backends.
+  from docs/templates/trackers/, then writes the chosen template to the project-level config path.
+  Use when setting up a new project's issue tracker or switching tracker backends.
 ---
 
 # Configure Tracker
 
-Select an issue tracker template and write it to the config path of your choice.
+Select an issue tracker template and write it to the project-level config path.
 
 ## First-run deferral note
 
@@ -43,20 +42,12 @@ Ask: "Which template? Enter a number."
 
 Wait for the user to enter a valid number. If the input is invalid, re-prompt once; then stop.
 
-## Step 3 — Choose an install path
+## Step 3 — Write the template
 
-Ask: "Install to project (`docs/agents/issue-tracker.md`) or user-level
-(`~/.claude/docs/agents/issue-tracker.md`)?"
+The destination is always the project-level path:
+`$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md`
 
-- **project** → destination = `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md`
-- **user** → destination = `~/.claude/docs/agents/issue-tracker.md`
-
-Wait for the user to reply. Accept any unambiguous prefix (`p`/`proj`/`project` or
-`u`/`user`). If the input is ambiguous or empty, re-prompt once; then stop.
-
-## Step 4 — Write the template
-
-Copy the chosen template file to the chosen destination, **overwriting any existing file**
+Copy the chosen template file to the destination, **overwriting any existing file**
 (this is an explicit reconfiguration — no skip-if-exists guard here):
 
 ```bash
@@ -64,7 +55,7 @@ mkdir -p "$(dirname "<destination>")"
 cp "<chosen-template-path>" "<destination>"
 ```
 
-## Step 5 — Confirm
+## Step 4 — Confirm
 
 Print a confirmation message:
 

@@ -3,8 +3,7 @@
     "templates": {
       "issue-tracker": {
         "source": "docs/templates/trackers/local.md",
-        "dest": "docs/agents/issue-tracker.md",
-        "dest-user": ".claude/docs/agents/issue-tracker.md"
+        "dest": "docs/agents/issue-tracker.md"
       }
     }
   },
@@ -186,7 +185,7 @@
     "configure-tracker": {
       "version": "1.0.0",
       "source-dir": "configure-tracker",
-      "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level or user-level config path.",
+      "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level config path.",
       "install": ".claude/skills/configure-tracker"
     }
   }
