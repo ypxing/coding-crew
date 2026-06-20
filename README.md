@@ -163,13 +163,17 @@ Team members can then pull the updated lockfile and re-run:
 
 ## 3. Create issues
 
-```
-/crew-grill             ← lightweight: Q&A → PRD → issues (fast)
-/crew-brainstorm        ← thorough: Q&A + approaches + design.md → PRD → issues
-/crew-grill with docs   ← crew-grill, but also updates CONTEXT.md and ADRs
-```
+Pick **one**:
 
-Use `crew-grill` when the feature is well-understood. Use `crew-brainstorm` for exploratory or complex work where you want a full technical spec with architecture and code before generating issues.
+| | `/crew-grill` | `/crew-brainstorm` |
+|-|---|---|
+| **Use when** | Feature is well-understood | Exploratory or complex work |
+| **Produces** | PRD + issues | design.md + PRD + issues |
+| **Speed** | Fast | Thorough |
+
+```
+/crew-grill with docs   ← crew-grill variant that also updates CONTEXT.md and ADRs
+```
 
 Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
 
