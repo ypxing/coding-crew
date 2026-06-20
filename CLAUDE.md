@@ -68,8 +68,6 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 - `crew-address-findings` — triage and fix findings from an afk-run code review report using TDD
 - `address-pr-comments` — fetch PR review comments, challenge critically, implement sensible ones with TDD
 - `improve-codebase-architecture` — find deepening opportunities for testability and AI-navigability
-- `grill-me` — interview the user relentlessly about a plan until reaching shared understanding
-- `grill-with-docs` — grilling session that challenges a plan against the domain model
 - `to-issues` — break a plan or PRD into independently-grabbable issues
 - `to-prd` — synthesize conversation context into a PRD and publish to the issue tracker
 - `crew-plan` — full design pipeline: grill → PRD → issues in one automated flow

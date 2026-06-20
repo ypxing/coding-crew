@@ -137,19 +137,6 @@
         "domain-modeling"
       ]
     },
-    "grill-me": {
-      "version": "1.0.0",
-      "source-dir": "grill-me",
-      "description": "Interview the user relentlessly about a plan until reaching shared understanding. Exploratory only — no implementation.",
-      "install": ".claude/skills/grill-me"
-    },
-    "grill-with-docs": {
-      "version": "1.0.0",
-      "source-dir": "grill-with-docs",
-      "description": "Grilling session that challenges a plan against the domain model, sharpens terminology, updates CONTEXT.md and ADRs inline.",
-      "source": "mattpocock/skills",
-      "install": ".claude/skills/grill-with-docs"
-    },
     "to-issues": {
       "version": "1.0.0",
       "source-dir": "to-issues",
