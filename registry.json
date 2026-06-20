@@ -23,7 +23,7 @@
       }
     },
     "crew-coder": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "crew-coder",
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
@@ -43,7 +43,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "1.1.0",
+      "version": "1.2.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
