@@ -99,6 +99,12 @@ Prose summaries like `"run unit tests"` are wrong. The log line must be the lite
 
 ## Loop
 
+Initialize `MAIN_ROOT` once before the loop starts:
+
+```bash
+MAIN_ROOT=$(git rev-parse --show-toplevel)
+```
+
 ### 0. Session init (run once before round 1)
 
 ### Feature Branch Setup
@@ -152,7 +158,7 @@ For all unblocked `ready-for-agent` issues:
 For each issue, create a git worktree with branch `crew/<feature-slug>/<issue-slug>`:
 
 ```bash
-MAIN_ROOT=$(git rev-parse --show-toplevel)
+FEATURE_BRANCH=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD)
 FEATURE_SLUG=<derived from current branch or sprint state>
 ISSUE_SLUG=<slug — filename without leading digits and extension>
 BRANCH="crew/$FEATURE_SLUG/$ISSUE_SLUG"
@@ -236,10 +242,18 @@ sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
 mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"
 ```
 
-Then remove the worktree for this issue (work stays on the branch):
+Then merge the completed work onto the feature branch, then remove the worktree:
 
 ```bash
+git -C "$MAIN_ROOT" checkout "$FEATURE_BRANCH"
+git -C "$MAIN_ROOT" merge --no-ff "$BRANCH"
 git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
+```
+
+Where `FEATURE_BRANCH` is captured before dispatch in step 2a:
+
+```bash
+FEATURE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 ```
 
 **`Status: partial`** — write or replace the `## Progress` section in the issue file with notes on

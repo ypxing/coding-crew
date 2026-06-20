@@ -6,6 +6,7 @@ set -e
 
 REPO_ROOT=$(pwd)
 TEST_DIR=$(mktemp -d)
+trap 'rm -rf "$TEST_DIR"' EXIT
 PASS=0
 FAIL=0
 
