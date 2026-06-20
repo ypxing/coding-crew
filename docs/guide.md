@@ -268,10 +268,8 @@ YOUR_PROJECT/
  ┌─────────────────────────────────────────────────────────────┐
  │  Plan & explore (optional but recommended)                  │
  │                                                             │
- │  auto:   /crew-plan  (grill → PRD → issues)               │
- │                                                             │
- │  manual: /crew-plan with docs (grill + domain model) │
- │          → /to-prd → /to-issues                   │
+ │  /crew-plan             (grill → PRD → issues)             │
+ │  /crew-plan with docs   (also updates CONTEXT.md + ADRs)   │
  └──────────────────────────┬──────────────────────────────────┘
                             │ .scratch/.../issues/*.md
                             ▼
@@ -373,12 +371,11 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 | Goal                                           | Skill                              |
 | ---------------------------------------------- | ---------------------------------- |
-| Run the full grill → PRD → issues pipeline     | `/crew-plan`                       |
-| Turn a feature idea into a PRD                 | `/to-prd`                     |
-| Break a PRD into issues                        | `/to-issues`                  |
-| Stress-test your plan interactively            | `/crew-plan`                  |
-| Challenge your design against the domain model | `/crew-plan with docs`        |
-| Update domain glossary and ADRs standalone     | `/domain-modeling`            |
+| Grill → PRD → issues in one flow               | `/crew-plan`                       |
+| Same, also update CONTEXT.md and ADRs          | `/crew-plan with docs`             |
+| Update domain glossary and ADRs standalone     | `/domain-modeling`                 |
+| Turn a feature idea into a PRD                 | `/to-prd`                          |
+| Break a PRD into issues                        | `/to-issues`                       |
 | Address GitHub PR review comments              | `/address-pr-comments`        |
 | Find architecture improvement opportunities    | `/improve-codebase-architecture` |
 | Reduce token usage during long sessions        | `/caveman`                    |
