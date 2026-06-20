@@ -56,7 +56,9 @@ fi
 
 # If no slugs passed as CLI args, read from sprint-state.json
 if [ ${#COMPLETED_SLUGS[@]} -eq 0 ]; then
-  mapfile -t COMPLETED_SLUGS < <(jq -r '.completed_slugs[]? // empty' "$STATE_FILE" 2>/dev/null)
+  while IFS= read -r slug; do
+    [ -n "$slug" ] && COMPLETED_SLUGS+=("$slug")
+  done < <(jq -r '.completed_slugs[]? // empty' "$STATE_FILE" 2>/dev/null)
 fi
 
 # Check if there are completed issues

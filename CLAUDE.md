@@ -65,7 +65,7 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 - `karpathy-guidelines` — coding principles (think first, surgical changes, goal-driven)
 - `tdd` — red/green/refactor workflow
 - `solve-issue` — implement a single issue end-to-end: read, explore, install, TDD, verify, commit
-- `address-code-review` — triage and fix findings from an afk-run code review report using TDD
+- `crew-address-findings` — triage and fix findings from an afk-run code review report using TDD
 - `address-pr-comments` — fetch PR review comments, challenge critically, implement sensible ones with TDD
 - `improve-codebase-architecture` — find deepening opportunities for testability and AI-navigability
 - `grill-me` — interview the user relentlessly about a plan until reaching shared understanding

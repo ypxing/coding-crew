@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test script for branch protection logic in address-pr-comments and address-code-review Step 0
+# Test script for branch protection logic in address-pr-comments and crew-address-findings Step 0
 # Tests that default branch detection and blocking works correctly
 
 set -e

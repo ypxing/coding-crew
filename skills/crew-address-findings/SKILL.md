@@ -1,6 +1,6 @@
 ---
-name: address-code-review
-description: Triage findings from the latest crew-afk code review report, challenge each one critically, implement sensible ones using TDD, commit touched files, and print a summary. Trigger with /crew-address-code-review.
+name: crew-address-findings
+description: Triage and fix findings from a crew-afk sprint review report using TDD.
 argument-hint: "Optional: path to report file"
 ---
 
@@ -21,8 +21,8 @@ All tracker operations in this skill use the operation definitions in that file.
 **Examples:**
 
 ```bash
-/address-code-review                       # uses latest report
-/address-code-review path/to/report.md    # uses custom report
+/crew-address-findings                       # uses latest report
+/crew-address-findings path/to/report.md    # uses custom report
 ```
 
 ## Step 0 — Branch safety check
