@@ -1,5 +1,5 @@
 ---
-name: crew-plan
+name: crew-grill
 description: Full design pipeline — grill the user about a plan (lite by default; add "with docs" to also update CONTEXT.md and ADRs via domain-modeling), produce a PRD, then break it into issues. Use when starting a new feature from scratch.
 ---
 

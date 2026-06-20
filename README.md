@@ -13,8 +13,8 @@ A distributable collection of AI agents and skills that automate the issue → i
   ┌─────────────────────────────────────────────────────┐
   │  Create issues                                      │
   │                                                     │
-  │  /crew-plan             ← grill → PRD → issues      │
-  │  /crew-plan with docs   ← also updates domain model │
+  │  /crew-grill             ← grill → PRD → issues      │
+  │  /crew-grill with docs   ← also updates domain model │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
@@ -164,8 +164,8 @@ Team members can then pull the updated lockfile and re-run:
 ## 3. Create issues
 
 ```
-/crew-plan             ← grill → PRD → issues in one flow
-/crew-plan with docs   ← same, but also updates CONTEXT.md and ADRs
+/crew-grill             ← grill → PRD → issues in one flow
+/crew-grill with docs   ← same, but also updates CONTEXT.md and ADRs
 ```
 
 Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
@@ -204,7 +204,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 | Skill                    | When                                                              |
 | ------------------------ | ----------------------------------------------------------------- |
-| `/crew-plan`             | Full design pipeline — grill → PRD → issues in one automated flow |
+| `/crew-grill`             | Full design pipeline — grill → PRD → issues in one automated flow |
 | `/crew-afk`              | Run the sprint — parallel agents implement all ready issues       |
 | `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD        |
 | `/solve-issue`           | Implement a single issue end-to-end                               |

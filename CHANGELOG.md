@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.5.0] - 2026-06-20
+
+### ⚠️ BREAKING CHANGES
+
+**`crew-plan` renamed to `crew-grill`**
+
+The skill has been renamed to better reflect its role as the grill/interview phase of the design pipeline. The new `crew-brainstorm` skill now serves as the full end-to-end design orchestrator.
+
+| Old Name       | New Name      |
+| -------------- | ------------- |
+| `crew-plan`    | `crew-grill`  |
+
+**Migration:** Uninstall and reinstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
+```
+
+### Added
+
+- **`crew-brainstorm` skill**: Full design pipeline — captures slug, explores context, conducts Q&A, proposes approaches, builds `design.md` section by section, then auto-transitions to `to-prd` and `to-issues`.
+
+### Changed
+
+- **`to-issues`**: Reads `design.md` from the feature workspace when present, feeding it as context for issue generation. Issue template gains an optional `## Interfaces` section. Skill version bumped to `1.2.0`.
+
+---
+
 ## [1.4.0] - 2026-06-20
 
 ### ⚠️ BREAKING CHANGES

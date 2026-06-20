@@ -96,18 +96,41 @@ teardown() {
   ! echo "$output" | grep -qxF "code-reviewer"
 }
 
-@test "registry.json skill keys crew-afk and crew-plan are present; others do not use crew- prefix" {
+@test "registry.json skill keys crew-afk and crew-grill are present; crew-plan must not exist" {
   cd "$SCRIPT_DIR"
 
   run jq -r '.skills | keys[]' registry.json
   [ "$status" -eq 0 ]
-  # crew-afk and crew-plan must be present
+  # crew-afk and crew-grill must be present
   [[ "$output" == *"crew-afk"* ]]
-  [[ "$output" == *"crew-plan"* ]]
+  [[ "$output" == *"crew-grill"* ]]
   # tdd must exist without crew- prefix
   [[ "$output" == *"tdd"* ]]
   # crew-tdd must not be present
   ! echo "$output" | grep -qxF "crew-tdd"
+  # crew-plan must not be present (renamed to crew-grill)
+  ! echo "$output" | grep -qxF "crew-plan"
+}
+
+@test "crew-grill skill is installed to correct directory" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-grill
+
+  [ -f "$TEMP_DIR/.claude/skills/crew-grill/SKILL.md" ]
+}
+
+@test "crew-grill SKILL.md contains correct name field" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-grill
+
+  grep -q 'name: crew-grill' "$TEMP_DIR/.claude/skills/crew-grill/SKILL.md"
+}
+
+@test "crew-grill copilot skill is installed to correct directory" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-grill
+
+  [ -f "$TEMP_DIR/.copilot/skills/crew-grill/SKILL.md" ]
 }
 
 @test "reinstalling modified skill produces diff output" {

@@ -23,7 +23,7 @@ THIS REPO (source)
 │   ├── tdd/
 │   ├── solve-issue/
 │   ├── domain-modeling/
-│   ├── crew-plan/
+│   ├── crew-grill/
 │   ├── caveman/
 │   └── ...
 └── docs/
@@ -245,7 +245,7 @@ YOUR_PROJECT/
 │       ├── domain-modeling/   ← installed with "all"
 │       ├── to-issues/         ← installed with "all"
 │       ├── to-prd/            ← installed with "all"
-│       └── crew-plan/              ← installed with "all"
+│       └── crew-grill/              ← installed with "all"
 ├── .github/
 │   └── agents/
 │       ├── crew-afk.agent.md
@@ -268,8 +268,8 @@ YOUR_PROJECT/
  ┌─────────────────────────────────────────────────────────────┐
  │  Plan & explore (optional but recommended)                  │
  │                                                             │
- │  /crew-plan             (grill → PRD → issues)             │
- │  /crew-plan with docs   (also updates CONTEXT.md + ADRs)   │
+ │  /crew-grill             (grill → PRD → issues)             │
+ │  /crew-grill with docs   (also updates CONTEXT.md + ADRs)   │
  └──────────────────────────┬──────────────────────────────────┘
                             │ .scratch/.../issues/*.md
                             ▼
@@ -371,8 +371,8 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 | Goal                                           | Skill                              |
 | ---------------------------------------------- | ---------------------------------- |
-| Grill → PRD → issues in one flow               | `/crew-plan`                       |
-| Same, also update CONTEXT.md and ADRs          | `/crew-plan with docs`             |
+| Grill → PRD → issues in one flow               | `/crew-grill`                       |
+| Same, also update CONTEXT.md and ADRs          | `/crew-grill with docs`             |
 | Update domain glossary and ADRs standalone     | `/domain-modeling`                 |
 | Turn a feature idea into a PRD                 | `/to-prd`                          |
 | Break a PRD into issues                        | `/to-issues`                       |
