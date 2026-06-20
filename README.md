@@ -169,10 +169,12 @@ Pick **one**:
 |-|---|---|
 | **Use when** | Feature is well-understood | Exploratory or complex work |
 | **Produces** | PRD + issues | design.md + PRD + issues |
-| **Speed** | Fast | Thorough |
+| **Process** | Lightweight Q&A | Full Q&A, approaches, section-by-section design |
+
+Add `with docs` to `crew-grill` when you also want to update `CONTEXT.md` (domain glossary) and record architectural decisions as ADRs:
 
 ```
-/crew-grill with docs   ← crew-grill variant that also updates CONTEXT.md and ADRs
+/crew-grill with docs
 ```
 
 Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
