@@ -55,7 +55,7 @@ usage() {
   echo "  platform:        all (default), claude, copilot"
   echo "  agent:           all (default), crew-code-reviewer, crew-coder"
   echo "  --skill:         install a single skill (e.g. to-issues)"
-  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,grill-me)"
+  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,to-issues)"
   echo "  --update:        re-install only agents/skills whose version changed since last install"
   echo "  --from-lockfile: install from a lockfile (fetches pinned registry version and installs listed items)"
   echo ""
