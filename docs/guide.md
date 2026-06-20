@@ -268,8 +268,9 @@ YOUR_PROJECT/
  ┌─────────────────────────────────────────────────────────────┐
  │  Plan & explore (optional but recommended)                  │
  │                                                             │
- │  /crew-grill             (grill → PRD → issues)             │
- │  /crew-grill with docs   (also updates CONTEXT.md + ADRs)   │
+ │  /crew-grill             (lightweight: Q&A → PRD → issues)  │
+ │  /crew-brainstorm        (thorough: Q&A + design.md → PRD)  │
+ │  /crew-grill with docs   (crew-grill + CONTEXT.md + ADRs)   │
  └──────────────────────────┬──────────────────────────────────┘
                             │ .scratch/.../issues/*.md
                             ▼
@@ -369,14 +370,15 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 ### Planning Skills
 
-| Goal                                           | Skill                              |
-| ---------------------------------------------- | ---------------------------------- |
-| Grill → PRD → issues in one flow               | `/crew-grill`                       |
-| Same, also update CONTEXT.md and ADRs          | `/crew-grill with docs`             |
-| Update domain glossary and ADRs standalone     | `/domain-modeling`                 |
-| Turn a feature idea into a PRD                 | `/to-prd`                          |
-| Break a PRD into issues                        | `/to-issues`                       |
-| Address GitHub PR review comments              | `/address-pr-comments`        |
+| Goal                                                      | Skill                               |
+| --------------------------------------------------------- | ----------------------------------- |
+| Well-understood feature: Q&A → PRD → issues (fast)        | `/crew-grill`                       |
+| Complex/exploratory: Q&A + design doc with code → PRD     | `/crew-brainstorm`                  |
+| crew-grill + also update CONTEXT.md and ADRs              | `/crew-grill with docs`             |
+| Update domain glossary and ADRs standalone                | `/domain-modeling`                  |
+| Turn a feature idea into a PRD                            | `/to-prd`                           |
+| Break a PRD into issues                                   | `/to-issues`                        |
+| Address GitHub PR review comments                         | `/address-pr-comments`              |
 | Find architecture improvement opportunities    | `/improve-codebase-architecture` |
 | Reduce token usage during long sessions        | `/caveman`                    |
 

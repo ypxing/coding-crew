@@ -13,8 +13,8 @@ A distributable collection of AI agents and skills that automate the issue → i
   ┌─────────────────────────────────────────────────────┐
   │  Create issues                                      │
   │                                                     │
-  │  /crew-grill             ← grill → PRD → issues      │
-  │  /crew-grill with docs   ← also updates domain model │
+  │  /crew-grill             ← lightweight grill        │
+  │  /crew-brainstorm        ← thorough design + spec   │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
@@ -164,9 +164,12 @@ Team members can then pull the updated lockfile and re-run:
 ## 3. Create issues
 
 ```
-/crew-grill             ← grill → PRD → issues in one flow
-/crew-grill with docs   ← same, but also updates CONTEXT.md and ADRs
+/crew-grill             ← lightweight: Q&A → PRD → issues (fast)
+/crew-brainstorm        ← thorough: Q&A + approaches + design.md → PRD → issues
+/crew-grill with docs   ← crew-grill, but also updates CONTEXT.md and ADRs
 ```
+
+Use `crew-grill` when the feature is well-understood. Use `crew-brainstorm` for exploratory or complex work where you want a full technical spec with architecture and code before generating issues.
 
 Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
 
@@ -202,14 +205,15 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 ## Skills
 
-| Skill                    | When                                                              |
-| ------------------------ | ----------------------------------------------------------------- |
-| `/crew-grill`             | Full design pipeline — grill → PRD → issues in one automated flow |
-| `/crew-afk`              | Run the sprint — parallel agents implement all ready issues       |
-| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD        |
-| `/solve-issue`           | Implement a single issue end-to-end                               |
-| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones  |
-| `/configure-tracker`     | Select and install an issue tracker template                      |
+| Skill                    | When                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| `/crew-grill`            | Feature is well-understood — fast Q&A → PRD → issues                                 |
+| `/crew-brainstorm`       | Exploratory or complex feature — thorough Q&A, design doc with code, then PRD → issues |
+| `/crew-afk`              | Run the sprint — parallel agents implement all ready issues                           |
+| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD                            |
+| `/solve-issue`           | Implement a single issue end-to-end                                                   |
+| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones                      |
+| `/configure-tracker`     | Select and install an issue tracker template                                          |
 
 ---
 
