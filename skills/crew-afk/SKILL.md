@@ -163,28 +163,38 @@ mkdir -p "$(dirname <path>)/done" && mv "<path>" "$(dirname <path>)/done/"
 
 ### Step 6 — Bookkeeping
 
-Append slugs to `all_merged` / `all_partial` / `all_blocked`. Increment `round`. Return to Step 1.
+Append slugs to `all_merged` / `all_partial` / `all_blocked`. Increment `round`.
+
+For each newly merged slug, append it to `completed_slugs` in the sprint state file:
+
+```bash
+STATE_FILE=".scratch/<feature-slug>/sprint-state.json"
+for slug in <newly merged slugs>; do
+  jq --arg slug "$slug" '.completed_slugs += [$slug]' "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+done
+```
+
+Return to Step 1.
 
 ## Exit
 
 ### Step 4.5 — Squash Commits
 
-Run the squash commits script. Pass `--no-squash` if the user specified it, `--platform claude`, and the list of completed slugs:
+Run the squash commits script. Slugs are read from `sprint-state.json` automatically — no need to pass them as arguments:
 
 ```bash
-# Collect all_merged slugs from sprint tracking
-bash "<skill-dir>/scripts/squash-commits.sh" --platform claude "${all_merged[@]}"
+bash "<skill-dir>/scripts/squash-commits.sh" --platform claude
 ```
 
 If `--no-squash` flag was specified, pass it to the script:
 
 ```bash
-bash "<skill-dir>/scripts/squash-commits.sh" --no-squash --platform claude "${all_merged[@]}"
+bash "<skill-dir>/scripts/squash-commits.sh" --no-squash --platform claude
 ```
 
 The script will:
 - Parse the `--no-squash` flag and skip if present
-- Read sprint state file to get base SHA
+- Read sprint state file to get base SHA and `completed_slugs`
 - Skip if no completed issues or no commits to squash
 - Generate squashed commit message from completed issue titles
 - Perform soft reset and create single commit
