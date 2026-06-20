@@ -134,7 +134,7 @@
       "source": "mattpocock/skills",
       "install": ".claude/skills/improve-codebase-architecture",
       "deps": [
-        "grill-with-docs"
+        "domain-modeling"
       ]
     },
     "grill-me": {
@@ -170,7 +170,7 @@
       "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
       "install": ".claude/skills/crew-plan",
       "deps": [
-        "grill-with-docs",
+        "domain-modeling",
         "to-prd",
         "to-issues"
       ]
