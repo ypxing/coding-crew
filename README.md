@@ -219,6 +219,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 | `/address-code-review`   | Triage and fix the post-sprint code review report with TDD        |
 | `/solve-issue`           | Implement a single issue end-to-end                               |
 | `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones  |
+| `/configure-tracker`     | Select and install an issue tracker template                      |
 
 ---
 
