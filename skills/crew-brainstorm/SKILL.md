@@ -1,126 +1,152 @@
 ---
 name: crew-brainstorm
-description: Use when starting a new feature and you want a thorough design pipeline — capture a feature slug, explore project context, Q&A, propose approaches, build a technical spec section by section, write design.md, then auto-transition to PRD and issues.
+description: Use when starting a complex or exploratory feature and you want a thorough design pipeline before implementation — explores intent, proposes approaches, builds a full technical spec, then auto-transitions to PRD and issues.
 ---
 
-Run the full brainstorm and design pipeline. Pause for user feedback at each stage, but do not ask the user to manually invoke the next step — transition automatically.
+# Brainstorming Ideas Into Designs
 
-**Hard gate:** Do NOT invoke any implementation skill, write any code, or take any implementation action until the design is approved by the user and this pipeline is complete.
+Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
 
-## Step 1 — Capture feature slug
+Start by capturing the feature slug and understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval.
 
-Before asking any questions, capture the feature slug:
+<HARD-GATE>
+Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+</HARD-GATE>
+
+## Anti-Pattern: "This Is Too Simple To Need A Design"
+
+Every project goes through this process. A todo list, a single-function utility, a config change — all of them. "Simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
+
+## Checklist
+
+You MUST complete these items in order:
+
+1. **Capture feature slug** — get the `.scratch/<slug>/` directory name upfront
+2. **Explore project context** — check files, docs, recent commits
+3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
+4. **Propose 2-3 approaches** — with trade-offs and your recommendation
+5. **Present design** — in sections scaled to their complexity, get user approval after each section
+6. **Write design doc** — save to `.scratch/<slug>/design.md` and commit
+7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
+8. **User reviews written spec** — ask user to review the spec file before proceeding
+9. **Transition to to-prd** — invoke `to-prd` using the same feature slug
+10. **Transition to to-issues** — invoke `to-issues` using the same feature slug
+
+## Step 1 — Capture Feature Slug
+
+Before anything else, determine the feature slug (the `.scratch/<slug>/` directory name):
 
 - If the user provided a slug or path argument, extract it from there.
-- Otherwise, ask: "What feature slug should I use for this design? (Becomes `.scratch/<slug>/` — use kebab-case, e.g. `auth-flow`.)"
+- Otherwise ask: "What feature slug should I use? (Becomes `.scratch/<slug>/` — use kebab-case, e.g. `auth-flow`.)"
 
-Never proceed past this step without a confirmed slug. All `.scratch/<slug>/` paths used throughout this skill derive from the slug captured here.
+Never proceed without a confirmed slug. All paths used throughout this skill derive from it.
 
-## Step 2 — Explore project context
+## Process Flow
 
-Explore the codebase to understand the current state before asking the user anything:
+```dot
+digraph brainstorming {
+    "Capture feature slug" [shape=box];
+    "Explore project context" [shape=box];
+    "Ask clarifying questions" [shape=box];
+    "Propose 2-3 approaches" [shape=box];
+    "Present design sections" [shape=box];
+    "User approves design?" [shape=diamond];
+    "Write design doc" [shape=box];
+    "Spec self-review\n(fix inline)" [shape=box];
+    "User reviews spec?" [shape=diamond];
+    "Invoke to-prd then to-issues" [shape=doublecircle];
 
-1. Read `CLAUDE.md` if it exists — architecture, conventions, key entry points.
-2. List recent commits: `git log --oneline -20` to understand what is in flight.
-3. Grep for patterns related to the feature area — find existing utilities, helpers, seams.
-4. Note any relevant ADRs or design docs.
+    "Capture feature slug" -> "Explore project context";
+    "Explore project context" -> "Ask clarifying questions";
+    "Ask clarifying questions" -> "Propose 2-3 approaches";
+    "Propose 2-3 approaches" -> "Present design sections";
+    "Present design sections" -> "User approves design?";
+    "User approves design?" -> "Present design sections" [label="no, revise"];
+    "User approves design?" -> "Write design doc" [label="yes"];
+    "Write design doc" -> "Spec self-review\n(fix inline)";
+    "Spec self-review\n(fix inline)" -> "User reviews spec?";
+    "User reviews spec?" -> "Write design doc" [label="changes requested"];
+    "User reviews spec?" -> "Invoke to-prd then to-issues" [label="approved"];
+}
+```
 
-Use this context throughout the rest of the session. Do not ask the user for information the codebase can answer.
+**The terminal state is invoking `to-prd` then `to-issues`.** Do NOT invoke any implementation skill. The ONLY skills you invoke after brainstorming are `to-prd` and `to-issues`, in that order.
 
-## Step 3 — Scope check
+## The Process
 
-Before interviewing the user, assess whether the request spans multiple independent subsystems.
+**Understanding the idea:**
 
-If it does, surface this immediately:
+- Check out the current project state first (files, docs, recent commits)
+- Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
+- If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → PRD → issues cycle.
+- For appropriately-scoped projects, ask questions one at a time to refine the idea
+- Prefer multiple choice questions when possible, but open-ended is fine too
+- Only one question per message - if a topic needs more exploration, break it into multiple questions
+- Focus on understanding: purpose, constraints, success criteria
 
-> "This request appears to touch [A] and [B] independently. Should we design them together or decompose into two separate brainstorm sessions?"
+**Exploring approaches:**
 
-If the user chooses to decompose, help break it apart and stop — let the user re-invoke for each sub-scope. If the user wants to continue as one, proceed.
+- Propose 2-3 different approaches with trade-offs
+- Present options conversationally with your recommendation and reasoning
+- Lead with your recommended option and explain why
 
-## Step 4 — Q&A
+**Presenting the design:**
 
-Interview the user about every aspect of the design. Walk down each branch of the design tree, resolving dependencies between decisions one at a time:
+- Once you believe you understand what you're building, present the design
+- Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
+- Ask after each section whether it looks right so far
+- Cover: architecture, components, data flow, error handling, testing
+- Be ready to go back and clarify if something doesn't make sense
 
-- Ask **one question at a time**. Wait for the answer before asking the next.
-- Use **multiple-choice format** where possible — present 2–4 options.
-- Provide your **recommended answer** for each question, with brief reasoning.
-- If the codebase already answers a question, state your finding instead of asking.
+**Design for isolation and clarity:**
 
-**This step is strictly exploratory.** Do NOT write files, create issues, run implementation commands, or begin any implementation.
+- Break the system into smaller units that each have one clear purpose, communicate through well-defined interfaces, and can be understood and tested independently
+- For each unit, you should be able to answer: what does it do, how do you use it, and what does it depend on?
+- Can someone understand what a unit does without reading its internals? Can you change the internals without breaking consumers? If not, the boundaries need work.
+- Smaller, well-bounded units are also easier for you to work with - you reason better about code you can hold in context at once, and your edits are more reliable when files are focused. When a file grows large, that's often a signal that it's doing too much.
 
-At the end of Q&A:
+**Working in existing codebases:**
 
-1. Summarize all decisions reached.
-2. Ask once: **"Ready to propose design approaches?"** If yes, continue. If no, stop.
+- Explore the current structure before proposing changes. Follow existing patterns.
+- Where existing code has problems that affect the work (e.g., a file that's grown too large, unclear boundaries, tangled responsibilities), include targeted improvements as part of the design - the way a good developer improves code they're working in.
+- Don't propose unrelated refactoring. Stay focused on what serves the current goal.
 
-## Step 5 — Propose approaches
+## After the Design
 
-Present 2–3 distinct design approaches. For each approach:
+**Documentation:**
 
-- Name and one-sentence summary
-- Key trade-offs (pros/cons)
-- Estimated complexity
+- Write the validated design (spec) to `.scratch/<slug>/design.md`
+  - (User preferences for spec location override this default)
+- Commit the design document to git
 
-End with a clear recommendation and brief rationale. Ask the user to select an approach (or propose a hybrid). Iterate if needed.
+**Spec Self-Review:**
+After writing the spec document, look at it with fresh eyes:
 
-## Step 6 — Design sections
+1. **Placeholder scan:** Any "TBD", "TODO", incomplete sections, or vague requirements? Fix them.
+2. **Internal consistency:** Do any sections contradict each other? Does the architecture match the feature descriptions?
+3. **Scope check:** Is this focused enough for a single implementation plan, or does it need decomposition?
+4. **Ambiguity check:** Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
 
-Present the design in sections. Get explicit user approval after each section before proceeding to the next. Suggested sections (adapt to the feature):
+Fix any issues inline. No need to re-review — just fix and move on.
 
-1. **Architecture overview** — system diagram or description, key components
-2. **Data model / schema** — entities, relationships, contracts
-3. **API / interface design** — public seams, signatures, payloads
-4. **Implementation plan** — sequencing, dependencies, rollout order
-5. **Error handling & edge cases** — failure modes, fallbacks
-6. **Testing strategy** — what to test, at which seam, how
+**User Review Gate:**
+After the spec review loop passes, ask the user to review the written spec before proceeding:
 
-For each section, present your proposal and ask: "Does this section look right? Any changes before I continue?"
+> "Spec written and committed to `.scratch/<slug>/design.md`. Please review it and let me know if you want to make any changes before we move to the PRD."
 
-## Step 7 — Write design.md
+Wait for the user's response. If they request changes, make them and re-run the spec review loop. Only proceed once the user approves.
 
-After all sections are approved, write the complete technical specification to `.scratch/<slug>/design.md` (creating the directory if needed).
+**Implementation:**
 
-The design document must include:
+- Invoke `to-prd` using the same feature slug captured in Step 1. Do not re-ask the slug.
+- At the end of the PRD, ask once: **"Ready to break this into issues?"** If yes, invoke `to-issues`. If no, stop.
+- Do NOT invoke any other skill. `to-prd` → `to-issues` is the only path forward.
 
-- Feature slug and one-line purpose at the top
-- All sections from Step 6 with full detail
-- Code snippets, architecture diagrams (as ASCII or mermaid), type shapes, or schema — wherever they make intent unambiguous
-- Decisions and rationale (not just conclusions)
-- Out of scope items
+## Key Principles
 
-**Security**: Only write to paths under `.scratch/` within the current repo. Never write to external paths or remote APIs.
-
-After writing, print the path: `.scratch/<slug>/design.md`
-
-## Step 8 — Spec self-review
-
-Before showing the design to the user, perform an inline review pass. Fix any issues found directly in `.scratch/<slug>/design.md`:
-
-1. **Placeholder scan** — no TODO, TBD, or placeholder text should remain.
-2. **Internal consistency** — cross-references between sections should be coherent; no contradictions.
-3. **Scope check** — confirm nothing in the spec contradicts the agreed scope from Step 3.
-4. **Ambiguity check** — every interface, type shape, and contract must be precise enough for an implementing agent to act on without asking follow-up questions.
-
-If fixes are made, note them briefly to the user.
-
-## Step 9 — User review gate
-
-Ask the user to review `.scratch/<slug>/design.md` before proceeding:
-
-> "I've written the design to `.scratch/<slug>/design.md`. Please review it. Reply 'approved' to continue, or tell me what to change."
-
-Iterate on changes until the user explicitly approves. Do not proceed to Step 10 until you receive approval.
-
-**This is the hard gate.** No implementation, no PRD, no issues until approval is given here.
-
-## Step 10 — Auto-transition to to-prd
-
-Run the `to-prd` skill using the same feature slug captured in Step 1. Do not re-ask the slug. Pass the design.md content as primary context.
-
-At the end of writing the PRD, ask once: **"Ready to break this into issues?"** If yes, continue to Step 11. If no, stop.
-
-## Step 11 — Auto-transition to to-issues
-
-Run the `to-issues` skill using the same feature slug and the PRD just written as primary input. Do not re-ask the slug or whether to run `to-prd` (it was just done).
-
-Complete the issue quiz and write all approved issues to `.scratch/<slug>/issues/`.
+- **One question at a time** - Don't overwhelm with multiple questions
+- **Multiple choice preferred** - Easier to answer than open-ended when possible
+- **YAGNI ruthlessly** - Remove unnecessary features from all designs
+- **Explore alternatives** - Always propose 2-3 approaches before settling
+- **Incremental validation** - Present design, get approval before moving on
+- **Be flexible** - Go back and clarify when something doesn't make sense
