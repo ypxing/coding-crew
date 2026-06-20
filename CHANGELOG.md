@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [1.4.0] - 2026-06-20
 
 ### ⚠️ BREAKING CHANGES
 
@@ -16,12 +16,40 @@ The skill has been renamed to clarify its purpose (acts on the `crew-code-review
 | ----------------------- | ------------------------- |
 | `address-code-review`   | `crew-address-findings`   |
 
+**`grill-me` and `grill-with-docs` removed**
+
+Both skills have been removed and replaced by the new `domain-modeling` skill and an inlined grill loop inside `crew-plan`.
+
+| Removed                 | Replacement                         |
+| ----------------------- | ----------------------------------- |
+| `/grill-me`             | `/crew-plan`                        |
+| `/grill-with-docs`      | `/crew-plan with docs`              |
+
+**Tracker install simplified to project-level only**
+
+The `--user` flag and user-level tracker fallback path have been removed from `install.sh` and all skills. All tracker operations now target the project-level path only.
+
 **Migration:** Uninstall and reinstall:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
 ```
+
+### Added
+
+- **`domain-modeling` skill**: Extracted from `grill-with-docs`. Handles CONTEXT.md glossary and ADR updating behavior. Reference format files live under `skills/domain-modeling/references/`.
+
+### Changed
+
+- **`crew-plan`**: Inlines the grill interview loop directly; lite mode runs the grill only; `with docs` mode invokes the new `domain-modeling` skill.
+- **`improve-codebase-architecture`**: Updated dep reference from `grill-with-docs` to `domain-modeling`.
+- **`crew-afk`, `solve-issue`, `crew-address-findings`, `to-issues`, `to-prd`, `configure-tracker`**: Simplified tracker lookup to project-level only (no user-level fallback).
+
+### Removed
+
+- **`grill-me` skill**: Use `/crew-plan` instead.
+- **`grill-with-docs` skill**: Use `/crew-plan with docs` instead.
 
 ---
 
