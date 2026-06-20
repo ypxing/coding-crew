@@ -16,7 +16,15 @@ tools:
 
 You are the orchestrator. **You never implement issues yourself** — crew-coder subagents do.
 
-**Issue tracker: local only.** Issues live in `.scratch/*/issues/*.md`. Never query `gh` or any remote tracker.
+## Tracker Configuration
+
+Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
+2. `~/.claude/docs/agents/issue-tracker.md` (user-level fallback)
+
+If neither exists, stop: "No issue tracker config found. Re-run `./install.sh` or `./install.sh --user`."
+
+All tracker operations in this skill use the operation definitions in that file.
 
 ## Session Init (once)
 
@@ -45,24 +53,9 @@ The script will:
 
 ## Issue Tracker Conventions
 
-Issues live as local markdown files in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`:
+All tracker operations (list, fetch, mark-done, status-update) use the operation definitions in `issue-tracker.md` (located via the lookup chain in `## Tracker Configuration` above).
 
-- **Issue files**: `.scratch/*/issues/*.md`, skipping any inside `done/`
-- **Triage state**: `Status:` line near the top of each issue
-- **Ready**: `Status: ready-for-agent` — fully specified, no human input needed
-- **Blocked**: has `## Blocked by` section where any listed filename is NOT present in the same `done/` directory
-- **Done**: moved to `.scratch/<feature-slug>/issues/done/`
-
-### Triage Labels
-
-| Label             | Meaning                                  |
-| ----------------- | ---------------------------------------- |
-| `needs-triage`    | Maintainer needs to evaluate this issue  |
-| `needs-info`      | Waiting on reporter for more information |
-| `ready-for-agent` | Fully specified, ready for an AFK agent  |
-| `ready-for-human` | Requires human implementation            |
-| `wontfix`         | Will not be actioned                     |
-| `done`            | Issue is complete and closed             |
+The feature slug and workspace directory concept (`.scratch/<feature-slug>/issues/`) remain managed by this skill. An issue is considered **blocked** when it has a `## Blocked by` section listing filenames not yet present in the same `done/` directory.
 
 ## Loop
 
@@ -70,7 +63,7 @@ State: `round = 1`, `stall = 0`, `all_merged = []`, `all_partial = []`, `all_blo
 
 ### Step 1 — List
 
-Find and read all ready unblocked issues. If none: go to **Exit**.
+Execute the `list` operation from `issue-tracker.md` to find all ready unblocked issues. If none: go to **Exit**.
 
 Log: `Round <N>: <count> issue(s)`
 
@@ -128,13 +121,24 @@ Log: `Round <N>: <C> complete / <P> partial / <B> blocked`
 
 ### Step 4 — Merge
 
+Before spawning the merge agent, the orchestrator must switch to the feature branch:
+
+```bash
+FEATURE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+git checkout "$FEATURE_BRANCH"
+```
+
+If `git checkout` fails, stop — do not proceed with merging.
+
 Spawn one haiku Agent with all complete branches at once:
 
 ```
+Feature branch: <FEATURE_BRANCH>
+
 For each branch below:
 1. git log HEAD..<branch> --oneline — if empty, already merged (success: true)
 2. git merge --no-ff <branch>
-Report success: true or false for each. Continue on failure — never abort.
+Report success: true or false for each. On merge failure, continue to the next branch — never abort. The checkout in step 0 is already done; do not re-run it.
 
 <list of complete branches>
 ```

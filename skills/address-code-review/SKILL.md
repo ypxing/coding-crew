@@ -8,6 +8,16 @@ argument-hint: "Optional: path to report file"
 
 You are working through the findings from a crew-afk code review report. Follow every step below in order.
 
+## Tracker Configuration
+
+Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
+2. `~/.claude/docs/agents/issue-tracker.md` (user-level fallback)
+
+If neither exists, stop: "No issue tracker config found. Re-run `./install.sh` or `./install.sh --user`."
+
+All tracker operations in this skill use the operation definitions in that file.
+
 **Examples:**
 
 ```bash
