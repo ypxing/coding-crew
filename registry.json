@@ -138,7 +138,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.1.0",
+      "version": "1.2.0",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
@@ -151,11 +151,12 @@
       "source": "mattpocock/skills",
       "install": ".claude/skills/to-prd"
     },
-    "crew-plan": {
+    "crew-grill": {
       "version": "1.1.0",
-      "source-dir": "crew-plan",
+      "source-dir": "crew-grill",
       "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
-      "install": ".claude/skills/crew-plan",
+      "install": ".claude/skills/crew-grill",
+      "install-copilot": ".copilot/skills/crew-grill",
       "deps": [
         "domain-modeling",
         "to-prd",
@@ -180,6 +181,17 @@
       "source-dir": "domain-modeling",
       "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise.",
       "install": ".claude/skills/domain-modeling"
+    },
+    "crew-brainstorm": {
+      "version": "1.0.0",
+      "source-dir": "crew-brainstorm",
+      "description": "Thorough design pipeline: capture feature slug, explore context, Q&A, propose approaches, build design.md section by section, then auto-transition to to-prd and to-issues.",
+      "install": ".claude/skills/crew-brainstorm",
+      "install-copilot": ".copilot/skills/crew-brainstorm",
+      "deps": [
+        "to-prd",
+        "to-issues"
+      ]
     }
   }
 }

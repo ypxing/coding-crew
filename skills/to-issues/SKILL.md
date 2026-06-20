@@ -40,6 +40,12 @@ If no PRD exists, ask the user:
 
 If the user chooses to run `/to-prd`, invoke it (using the same feature slug), then continue with the resulting PRD. If the user declines, proceed with conversation context as before.
 
+### 2.5. Check for a design doc
+
+After the PRD check, look for a design doc at `.scratch/<feature-slug>/design.md`. If it exists, read it and use it as supplementary context when drafting vertical slices and writing acceptance criteria. The design doc provides technical depth (interfaces, data flows, architecture decisions) that enriches the issue breakdown beyond what the PRD contains.
+
+If no design doc exists, continue with whatever context is available from the PRD or conversation.
+
 ### 3. Explore the codebase (optional)
 
 If you have not already explored the codebase, do so to understand the current state of the code. Issue titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
@@ -110,6 +116,18 @@ Avoid specific file paths or code snippets — they go stale fast. Exception: if
 - A reference to the blocking ticket (if any)
 
 Or "None - can start immediately" if no blockers.
+
+## Interfaces
+
+> **Optional — only include this section if `## Blocked by` is non-empty (i.e. this issue has upstream dependencies). Omit entirely for issues with no blockers.**
+
+### Consumes:
+
+Exact signatures, types, or contracts expected from the blocking issues listed above. Be precise enough that a parallel agent implementing a blocker knows what shape to expose.
+
+### Exposes:
+
+Exact signatures, types, or contracts this issue produces for any downstream issues that depend on it.
 
 </issue-template>
 

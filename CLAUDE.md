@@ -70,9 +70,10 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 - `improve-codebase-architecture` — find deepening opportunities for testability and AI-navigability
 - `to-issues` — break a plan or PRD into independently-grabbable issues
 - `to-prd` — synthesize conversation context into a PRD and publish to the issue tracker
-- `crew-plan` — full design pipeline: grill → PRD → issues in one automated flow
+- `crew-grill` — full design pipeline: grill → PRD → issues in one automated flow
 - `caveman` — ultra-compressed communication mode (~75% token reduction)
 - `configure-tracker` — select and install an issue tracker template
+- `crew-brainstorm` — thorough design pipeline: capture slug, explore context, Q&A, propose approaches, build `design.md` section by section, then auto-transition to `to-prd` and `to-issues`
 
 Skills with `agent-deps` also install the listed agents (via `install.sh`) so the skill can invoke them at runtime.
 

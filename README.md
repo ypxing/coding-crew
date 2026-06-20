@@ -13,8 +13,9 @@ A distributable collection of AI agents and skills that automate the issue → i
   ┌─────────────────────────────────────────────────────┐
   │  Create issues                                      │
   │                                                     │
-  │  /crew-plan             ← grill → PRD → issues      │
-  │  /crew-plan with docs   ← also updates domain model │
+  │  /crew-grill             ← lightweight grill        │
+  │  OR                                                 │
+  │  /crew-brainstorm        ← thorough design + spec   │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
@@ -38,6 +39,7 @@ A distributable collection of AI agents and skills that automate the issue → i
 ## Prerequisites
 
 Required tools:
+
 - `bash` (4.0+)
 - `jq` (for JSON processing)
 - `git` (for version control)
@@ -51,31 +53,37 @@ Required tools:
 ## 1. Install
 
 Install everything to `$HOME` (user-level, works in any project):
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
 ```
 
 Claude only:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude
 ```
 
 Copilot only:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- copilot
 ```
 
 Into the current project instead of `$HOME`:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --project
 ```
 
 Pin to a specific release:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --version v1.2.0
 ```
 
 Combine options freely:
+
 ```bash
 # Specific version, Claude only, into current project
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude --version v1.2.0 --project
@@ -163,9 +171,18 @@ Team members can then pull the updated lockfile and re-run:
 
 ## 3. Create issues
 
+Pick **one**:
+
+|              | `/crew-grill`              | `/crew-brainstorm`                              |
+| ------------ | -------------------------- | ----------------------------------------------- |
+| **Use when** | Feature is well-understood | Exploratory or complex work                     |
+| **Produces** | PRD + issues               | design.md + PRD + issues                        |
+| **Process**  | Lightweight Q&A            | Full Q&A, approaches, section-by-section design |
+
+Add `with docs` to `crew-grill` when you also want to update `CONTEXT.md` (domain glossary) and record architectural decisions as ADRs:
+
 ```
-/crew-plan             ← grill → PRD → issues in one flow
-/crew-plan with docs   ← same, but also updates CONTEXT.md and ADRs
+/crew-grill with docs
 ```
 
 Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
@@ -202,14 +219,15 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 ## Skills
 
-| Skill                    | When                                                              |
-| ------------------------ | ----------------------------------------------------------------- |
-| `/crew-plan`             | Full design pipeline — grill → PRD → issues in one automated flow |
-| `/crew-afk`              | Run the sprint — parallel agents implement all ready issues       |
-| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD        |
-| `/solve-issue`           | Implement a single issue end-to-end                               |
-| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones  |
-| `/configure-tracker`     | Select and install an issue tracker template                      |
+| Skill                    | When                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------- |
+| `/crew-grill`            | Feature is well-understood — fast Q&A → PRD → issues                                   |
+| `/crew-brainstorm`       | Exploratory or complex feature — thorough Q&A, design doc with code, then PRD → issues |
+| `/crew-afk`              | Run the sprint — parallel agents implement all ready issues                            |
+| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD                             |
+| `/solve-issue`           | Implement a single issue end-to-end                                                    |
+| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones                       |
+| `/configure-tracker`     | Select and install an issue tracker template                                           |
 
 ---
 
@@ -225,3 +243,5 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 Several skills in this repo are borrowed directly from [Matt Pocock's skills collection](https://github.com/mattpocock/skills) (MIT License, Copyright © 2026 Matt Pocock). See [LICENSE](LICENSE) for the full copyright notice. Thanks Matt.
 
 The `karpathy-guidelines` skill is derived from [multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills), itself based on Andrej Karpathy's coding observations.
+
+The `crew-brainstorm` skill is adapted from [obra/superpowers](https://github.com/obra/superpowers) `brainstorming` skill. Thanks Jesse.
