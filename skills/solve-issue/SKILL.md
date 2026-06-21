@@ -112,6 +112,56 @@ BLOCKED: depends on <dep-filename> which is not yet done
 
 Only continue if every listed dependency is confirmed in `done/`. If the section says "None", proceed.
 
+### 1.5. Validate Issue Context
+
+**Check for Context Documents section:**
+
+Look for a `## Context Documents` section in the issue file. If it exists, extract paths to design.md and PRD.md. These paths are typically relative to `MAIN_ROOT`, formatted as:
+
+```markdown
+## Context Documents
+
+- Design: `.scratch/<feature-slug>/design.md`
+- PRD: `.scratch/<feature-slug>/PRD.md`
+```
+
+**Read context documents:**
+
+For each document path found:
+
+1. Construct the full path: `$MAIN_ROOT/<path-from-issue>`
+2. Check if the file exists: `[ -f "$MAIN_ROOT/<path>" ]`
+3. If it exists, read it and keep it in context for the implementation
+4. If it doesn't exist, note it but continue (graceful degradation)
+
+Example bash:
+
+```bash
+# Extract design.md path from issue
+DESIGN_PATH=$(grep -A 5 "## Context Documents" "$ISSUE_PATH" | grep "Design:" | sed 's/.*Design: *`\(.*\)`.*/\1/')
+
+if [ -n "$DESIGN_PATH" ]; then
+  FULL_DESIGN_PATH="$MAIN_ROOT/$DESIGN_PATH"
+  if [ -f "$FULL_DESIGN_PATH" ]; then
+    echo "Reading design.md from $FULL_DESIGN_PATH"
+    # Read and use in implementation
+  fi
+fi
+
+# Extract PRD.md path from issue
+PRD_PATH=$(grep -A 5 "## Context Documents" "$ISSUE_PATH" | grep "PRD:" | sed 's/.*PRD: *`\(.*\)`.*/\1/')
+
+if [ -n "$PRD_PATH" ]; then
+  FULL_PRD_PATH="$MAIN_ROOT/$PRD_PATH"
+  if [ -f "$FULL_PRD_PATH" ]; then
+    echo "Reading PRD.md from $FULL_PRD_PATH"
+    # Read and use in implementation
+  fi
+fi
+```
+
+If neither document exists or the Context Documents section is missing, continue normally.
+
 ### 2. Install dependencies
 
 STOP. Read and invoke the `dep-install` skill. If the skill is not found, stop and report `BLOCKED: dep-install skill not installed`. Run install **once**; only re-run if you add a new package during implementation.
@@ -220,10 +270,26 @@ Do not push.
 
 Before moving, verify all acceptance criteria in the issue file are satisfied:
 
-1. Check each `- [ ]` criterion against the implemented code.
-2. If all are met, check them off (`- [x]`) and move the file to done:
+**Validate feature acceptance criteria:**
+
+1. Check each `- [ ]` criterion in the `## Acceptance criteria` section against the implemented code.
+2. Mark each satisfied criterion with `[x]`.
+
+**Validate cross-cutting requirements (if present):**
+
+3. Check if the issue has a `## Cross-cutting Requirements` section.
+4. If it exists, check each `- [ ]` requirement in that section against the implemented code.
+5. Mark each satisfied requirement with `[x]`.
+6. If any cross-cutting requirements remain unchecked (`- [ ]`), do NOT proceed with completion. Instead:
+   - List which requirements are unmet
+   - Explain why they're unmet (not applicable, descoped, blocked, or still needs work)
+   - Ask the user how to proceed
+
+**Move to done:**
+
+7. If all acceptance criteria AND all cross-cutting requirements (if present) are met, move the file to done:
    ```bash
    sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
    mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"
    ```
-3. If any are unmet, do NOT move the file. Instead, add a `## Unmet criteria` section explaining what's missing and why (descoped, blocked, moved to a new issue), and ask the user how to proceed.
+8. If any criteria are unmet, do NOT move the file. Instead, add a `## Unmet criteria` section explaining what's missing and why (descoped, blocked, moved to a new issue), and ask the user how to proceed.
