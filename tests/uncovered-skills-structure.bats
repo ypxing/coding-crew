@@ -26,9 +26,10 @@ setup() {
   [ -f "$SCRIPT_DIR/skills/crew-grill/SKILL.md" ]
 }
 
-@test "crew-grill SKILL.md contains Phase 1 and Phase 2 headers" {
+@test "crew-grill SKILL.md contains Phase 1, Phase 2, and Phase 3 headers" {
   grep -q '## Phase 1' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
   grep -q '## Phase 2' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
+  grep -q '## Phase 3' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
 }
 
 @test "crew-grill SKILL.md references design.md" {
