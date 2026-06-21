@@ -47,14 +47,33 @@ Determine the report source in this order:
 
 1. **Inline content** — if the user pasted review findings directly into the conversation, use that content. Skip the remaining options.
 2. **File path argument** — if the user passed a file path, read it.
-3. **Auto-detect** — find the latest report:
+3. **Auto-detect** — scan for pending reviews across all feature directories:
+   ```bash
+   # Find all review files under .scratch/*/reviews/ excluding done/ subdirs
+   find .scratch -path '*/reviews/*.md' -not -path '*/reviews/done/*' 2>/dev/null | sort
    ```
-   ls -t .scratch/reviews/*.md | head -1
+   Group results by feature slug and present them to the user:
    ```
+   Found pending reviews:
+   1. auth-flow — sprint-review-20260621.md
+   2. payment-api — sprint-review-20260618.md
+
+   Which one should I address?
+   ```
+   If only one review is found, auto-select it silently without prompting.
 
 If no report is found via any of the above, tell the user and stop.
 
 If using a file, print the path so the user knows which file is being processed.
+
+## Step 1.5 — Load design context
+
+Derive `<feature-slug>` from the report path (the segment between `.scratch/` and `/reviews/`).
+Read `.scratch/<feature-slug>/design.md` and `.scratch/<feature-slug>/PRD.md` if they exist.
+
+Use this context during Step 3 triage: a finding whose proposed fix contradicts a documented
+architectural decision (e.g. a tracker abstraction rule, a naming invariant) should be classified
+**Dismiss** or **Debatable** rather than Actionable, even if the finding is technically correct.
 
 ## Step 2 — Parse all findings
 
@@ -120,11 +139,11 @@ If the commit fails, stop and report the error to the user — do **not** procee
 
 ## Step 5b — Archive the report
 
-If the report came from a file (not inline content), move it to the `done/` subdirectory:
+If the report came from a file (not inline content), move it to the `done/` subdirectory within its own feature directory:
 
 ```bash
-mkdir -p .scratch/reviews/done
-mv <report-path> .scratch/reviews/done/
+mkdir -p "$(dirname <report-path>)/done"
+mv <report-path> "$(dirname <report-path>)/done/"
 ```
 
 This prevents auto-detect from picking it up again on future runs.

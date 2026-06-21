@@ -7,7 +7,7 @@ Issues and PRDs for this repo live as markdown files in `.scratch/`.
 Find all open issues ready for an agent:
 
 ```bash
-grep -rl "Status: ready-for-agent" .scratch/*/issues/*.md 2>/dev/null
+grep -rl "Status: ready-for-agent" .scratch/*/issues/open/*.md 2>/dev/null
 ```
 
 ## Operation: fetch
@@ -15,7 +15,7 @@ grep -rl "Status: ready-for-agent" .scratch/*/issues/*.md 2>/dev/null
 Read one issue file by path. The caller normally passes the path directly:
 
 ```bash
-cat .scratch/<feature-slug>/issues/<NN>-<slug>.md
+cat .scratch/<feature-slug>/issues/open/<NN>-<slug>.md
 ```
 
 ## Operation: publish
@@ -23,7 +23,7 @@ cat .scratch/<feature-slug>/issues/<NN>-<slug>.md
 Create a new issue or PRD file under `.scratch/`:
 
 - PRD: `.scratch/<feature-slug>/PRD.md`
-- Issue: `.scratch/<feature-slug>/issues/<NN>-<slug>.md` (numbered from `01`)
+- Issue: `.scratch/<feature-slug>/issues/open/<NN>-<slug>.md` (numbered from `01`)
 
 Create the directory if it does not exist. Set a `Status:` line near the top of the file.
 
@@ -32,7 +32,12 @@ Create the directory if it does not exist. Set a `Status:` line near the top of 
 Before moving, verify all acceptance criteria in the issue file are satisfied:
 
 1. Check each `- [ ]` criterion against the implemented code.
-2. If all are met, check them off (`- [x]`) and update `Status: done`, then move the file to `.scratch/<feature-slug>/issues/done/`.
+2. If all are met, check them off (`- [x]`) and update `Status: done`, then move the file to `issues/done/` (sibling of `issues/open/`):
+   ```bash
+   sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
+   mkdir -p "$(dirname "<issue-path>")/../done"
+   mv "<issue-path>" "$(dirname "<issue-path>")/../done/"
+   ```
 3. If any are unmet, do NOT move the file. Instead, add a `## Unmet criteria` section explaining what's missing and why (descoped, blocked, moved to a new issue), and ask the user how to proceed.
 
 ## Operation: status-update
@@ -68,9 +73,10 @@ Each feature slug maps to a directory under `.scratch/`:
 .scratch/<feature-slug>/
 ├── PRD.md                    ← optional product requirements doc
 └── issues/
-    ├── 01-<slug>.md          ← implementation issues, numbered from 01
-    ├── 02-<slug>.md
-    └── done/                 ← completed issues moved here
+    ├── open/                 ← active issues
+    │   ├── 01-<slug>.md      ← implementation issues, numbered from 01
+    │   └── 02-<slug>.md
+    └── done/                 ← completed issues moved here (sibling of open/)
         └── 01-<slug>.md
 ```
 

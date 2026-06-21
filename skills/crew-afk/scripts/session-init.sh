@@ -49,10 +49,10 @@ if [ -n "$FEATURE_SLUG_ARG" ]; then
   fi
 else
   # Find first ready issue to determine branch name
-  FIRST_ISSUE=$(find .scratch -path '*/issues/*.md' -not -path '*/done/*' -type f | head -n 1)
+  FIRST_ISSUE=$(find .scratch -path '*/issues/open/*.md' -type f | head -n 1)
 
   if [ -z "$FIRST_ISSUE" ]; then
-    echo "No issues found. Create issues in .scratch/<feature-slug>/issues/ before running afk-run."
+    echo "No issues found. Create issues in .scratch/<feature-slug>/issues/open/ before running afk-run."
     exit 1
   fi
 
@@ -81,14 +81,15 @@ if [ -z "$FEATURE_SLUG" ]; then
   exit 1
 fi
 
-# Auto-create .scratch/<feature-slug>/issues/ directory structure if needed
-mkdir -p ".scratch/$FEATURE_SLUG/issues"
+# Auto-create .scratch/<feature-slug>/issues/open/ directory structure if needed
+mkdir -p ".scratch/$FEATURE_SLUG/issues/open"
 
-# Initialize session tracking
-mkdir -p .scratch
+# Archive previous traces/ dir if present, then create fresh traces/
 TS=$(date +%Y%m%dT%H%M%S)
-[ -s .scratch/commands.log ] && mv .scratch/commands.log ".scratch/commands-$TS.log"
-touch .scratch/commands.log
+if [ -d ".scratch/$FEATURE_SLUG/traces" ]; then
+  mv ".scratch/$FEATURE_SLUG/traces" ".scratch/$FEATURE_SLUG/traces-$TS"
+fi
+mkdir -p ".scratch/$FEATURE_SLUG/traces"
 
 # Validate git repository
 if ! git rev-parse HEAD >/dev/null 2>&1; then
@@ -96,7 +97,12 @@ if ! git rev-parse HEAD >/dev/null 2>&1; then
   exit 1
 fi
 
-git rev-parse HEAD > .scratch/.session-start-sha
+# Check if .scratch is gitignored
+if ! git check-ignore -q .scratch 2>/dev/null; then
+  echo "WARNING: .scratch/ is not gitignored. Add it to .gitignore to prevent committing design docs and traces."
+fi
+
+git rev-parse HEAD > ".scratch/$FEATURE_SLUG/session-start-sha"
 
 # Check for jq dependency
 if ! command -v jq >/dev/null 2>&1; then

@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.8.0] - 2026-06-21
+
+### Added
+- **`crew-code-reviewer`**: Reads `.scratch/<feature-slug>/design.md` and `PRD.md` before per-branch review; documented architectural constraints (e.g. tracker abstraction rules) now inform finding severity and proposed fixes
+- **`crew-address-findings`**: Step 1.5 loads `.scratch/<feature-slug>/design.md` and `PRD.md` before triage; findings whose proposed fix contradicts a documented design decision are classified Dismiss or Debatable
+- **`crew-coder`**: Per-agent trace logging to `.scratch/<feature-slug>/traces/<branch>.log` with `[START]`, `[PHASE]`, `[CMD]`, `[READ]`, `[WRITE]`, `[DONE]` events
+- **`crew-afk`**: Orchestrator trace logging to `.scratch/<feature-slug>/traces/orchestrator.log` with `[SESSION]`, `[ROUND]`, `[DISPATCH]`, `[RESULT]`, `[MERGE]`, `[EXIT]` events
+- **`crew-afk`**: Coverage validation at exit now checks `issues/done/` (sibling of `issues/open/`)
+- **`solve-issue`**: Reference test script `references/test-blocked-dep-path.sh`
+
+### Changed
+- **`crew-afk`**: Session SHA and sprint reviews now written under `.scratch/<feature-slug>/` (not `.scratch/` root)
+- **`crew-afk`**: Step 5 Agent A delegates to `mark-done` operation from `issue-tracker.md` instead of hardcoding `sed` + `mv`
+- **`crew-afk`**: `FEATURE_SLUG` derivation in orchestrator trace uses `sed 's|^feature/||'` + JIRA-strip, matching `session-init.sh`
+- **`crew-afk`**: Issue Tracker Conventions blocked-issue description references tracker's `done` set abstractly (no hardcoded path)
+- **`crew-afk`**: `session-init.sh` creates `issues/open/` instead of `issues/`, archives `traces/` dir as `traces-<timestamp>/`, writes `session-start-sha` under feature dir, removes `commands.log` handling, adds `.gitignore` safety warning
+- **`crew-address-findings`**: Auto-detect scans `.scratch/*/reviews/*.md` grouped by feature; auto-selects when single result; moves report to feature-scoped `reviews/done/` on completion
+- **`solve-issue`**: Blocked dependency check uses `$(dirname "$ISSUE_PATH")/../done/` for the `issues/open/` layout
+- **`crew-brainstorm`**: Explicit do-not-commit guard for `design.md` (`git add -f` named as anti-pattern)
+- **`to-prd`**: Explicit do-not-commit guard for `PRD.md` (`git add -f` named as anti-pattern)
+- **`docs/agents/issue-tracker.md`** and **`docs/templates/trackers/local.md`**: `list` op greps `issues/open/*.md`; `mark-done` moves `open/` → `done/` as siblings; workspace layout diagram updated; both files kept in sync
+
+### Fixed
+- **`crew-coder`**: `commands.log` section removed from both `claude.agent.md` and `copilot.agent.md`
+
 ## [1.7.0] - 2026-06-21
 
 ### Added

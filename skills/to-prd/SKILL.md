@@ -34,6 +34,8 @@ All tracker operations in this skill use the operation definitions in that file.
 
 **Security**: Only write to paths under `.scratch/` within the current repo. Never publish to external APIs, remote issue trackers, or paths outside the repository root.
 
+> **Never commit `PRD.md`.** This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
+
 <prd-template>
 
 ## Problem Statement
