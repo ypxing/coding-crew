@@ -48,6 +48,13 @@ For each branch:
 Also read `CLAUDE.md` if it exists — the project may define conventions that affect what counts
 as a violation.
 
+Also read `.scratch/<feature-slug>/design.md` and `.scratch/<feature-slug>/PRD.md` if they exist
+— derive `<feature-slug>` from the current branch (`git rev-parse --abbrev-ref HEAD | sed
+'s|^feature/||' | sed -E 's/^[A-Z]+-[0-9]+-//'`). These documents capture architectural
+decisions and constraints (e.g. tracker abstraction rules, naming invariants) that define what
+counts as a violation for this feature. A proposed fix that contradicts a documented design
+decision should be downgraded or dropped.
+
 ## Confidence-Based Filtering
 
 Do not flood the review with noise. Apply these filters:

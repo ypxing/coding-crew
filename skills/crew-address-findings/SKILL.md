@@ -66,6 +66,15 @@ If no report is found via any of the above, tell the user and stop.
 
 If using a file, print the path so the user knows which file is being processed.
 
+## Step 1.5 — Load design context
+
+Derive `<feature-slug>` from the report path (the segment between `.scratch/` and `/reviews/`).
+Read `.scratch/<feature-slug>/design.md` and `.scratch/<feature-slug>/PRD.md` if they exist.
+
+Use this context during Step 3 triage: a finding whose proposed fix contradicts a documented
+architectural decision (e.g. a tracker abstraction rule, a naming invariant) should be classified
+**Dismiss** or **Debatable** rather than Actionable, even if the finding is technically correct.
+
 ## Step 2 — Parse all findings
 
 Read the report file. Extract every finding — each `[CRITICAL]`, `[HIGH]`, `[MEDIUM]`, and `[LOW]` block across all branches.
