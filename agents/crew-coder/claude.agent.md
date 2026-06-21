@@ -70,6 +70,38 @@ echo "[$(date -u +%H:%M:%SZ)] [$WORKER] <exact command here>" >> "$CMD_LOG"
 <exact command here>
 ```
 
+## Read Context Documents
+
+Before invoking solve-issue, check for design.md and PRD.md in the feature's scratch directory. These documents provide architectural and requirements context that should be kept in memory during implementation.
+
+**Extract feature slug from issue path:**
+
+```bash
+FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
+```
+
+**Check for and read context documents:**
+
+```bash
+DESIGN_DOC="$MAIN_ROOT/.scratch/$FEATURE_SLUG/design.md"
+PRD_DOC="$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
+
+if [ -f "$DESIGN_DOC" ]; then
+  echo "Reading design.md for architectural context..."
+fi
+
+if [ -f "$PRD_DOC" ]; then
+  echo "Reading PRD.md for requirements context..."
+fi
+```
+
+**After checking for document existence above**, use the View tool to read the content of any documents that exist:
+
+- If `$DESIGN_DOC` exists, read it with the View tool and keep its content in memory throughout the implementation
+- If `$PRD_DOC` exists, read it with the View tool and keep its content in memory throughout the implementation
+
+If neither exists, continue normally — this is graceful degradation for issues without context documents.
+
 ## Implementation
 
 Follow the `solve-issue` skill for the full procedure.
@@ -82,15 +114,15 @@ When `solve-issue` says to stop and output `BLOCKED:`, set `status` to `blocked`
 
 Populate these fields exactly:
 
-| Field                 | Type             | Rules                                          |
-| --------------------- | ---------------- | ---------------------------------------------- |
-| `status`              | string           | `complete`, `partial`, or `blocked`            |
-| `branch`              | string           | output of `git rev-parse --abbrev-ref HEAD`    |
-| `working_directory`   | string           | `$PROJECT_ROOT` (pwd at startup)               |
-| `checks`              | array of objects | one entry per check command — see schema below |
-| `acceptance_criteria` | string           | every criterion with `[x]` or `[ ]`            |
-| `changes`             | array of strings | every file modified                            |
-| `notes`               | string           | blockers, decisions, or `"none"`               |
+| Field                 | Type             | Rules                                                                                                                                                              |
+| --------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `status`              | string           | `complete`, `partial`, or `blocked`                                                                                                                                |
+| `branch`              | string           | output of `git rev-parse --abbrev-ref HEAD`                                                                                                                        |
+| `working_directory`   | string           | `$PROJECT_ROOT` (pwd at startup)                                                                                                                                   |
+| `checks`              | array of objects | one entry per check command — see schema below                                                                                                                     |
+| `acceptance_criteria` | string           | every criterion with `[x]` or `[ ]`. If the issue has both "## Acceptance criteria" and "## Cross-cutting Requirements" sections, include items from BOTH sections |
+| `changes`             | array of strings | every file modified                                                                                                                                                |
+| `notes`               | string           | blockers, decisions, or `"none"`                                                                                                                                   |
 
 Each `checks` entry:
 

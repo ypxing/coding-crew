@@ -10,6 +10,7 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 ## Tracker Configuration
 
 Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+
 1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
 
 If it does not exist, stop: "No issue tracker config found. Re-run `./install.sh`."
@@ -80,6 +81,71 @@ Ask the user:
 
 Iterate until the user approves the breakdown.
 
+### 5.5. Extract cross-cutting requirements
+
+After the user approves the breakdown and before writing issues, extract cross-cutting requirements from design.md or PRD.md (if they exist) to include in issue checklists.
+
+**Cross-cutting requirement categories** (10 total):
+
+1. Error Handling — how errors are caught, logged, propagated
+2. Logging — what to log, format, levels
+3. Security — auth checks, input validation, sensitive data handling
+4. Performance — response time targets, resource limits
+5. Testing — test coverage requirements, types of tests needed
+6. Architecture Constraints — patterns to follow, libraries to use, interfaces to respect
+7. Data Validation — schema constraints, input sanitization rules
+8. Observability — metrics, tracing, monitoring hooks
+9. Interfaces & Contracts — API contracts, function signatures, data structures shared across components
+10. Multi-Issue Flows — end-to-end operations spanning multiple vertical slices
+
+**Extraction from design.md (preferred):**
+
+Check if `.scratch/<feature-slug>/design.md` exists. If it does, scan for:
+
+- Explicit section headings for the 10 cross-cutting requirement categories:
+  - `## Error Handling` — how errors are caught, logged, propagated
+  - `## Logging` — what to log, format, levels
+  - `## Security` — auth checks, input validation, sensitive data handling
+  - `## Performance` — response time targets, resource limits
+  - `## Testing` — test coverage requirements, types of tests needed
+  - `## Architecture Constraints` — patterns to follow, libraries to use, interfaces to respect
+  - `## Data Validation` — schema constraints, input sanitization rules
+  - `## Observability` — metrics, tracing, monitoring hooks
+  - `## Interfaces & Contracts` — API contracts, function signatures, data structures shared across components
+  - `## Multi-Issue Flows` — end-to-end operations spanning multiple vertical slices
+- Decision statements with "must", "should", "all", "every" (signals cross-cutting rules)
+  - Example: "All API endpoints must validate input using..."
+  - Example: "Every database call must include retry logic..."
+- Architecture rules: "Follow the repository pattern", "Use dependency injection for..."
+- Interface definitions: component interaction diagrams, API contracts, shared data structures
+- Flow descriptions: end-to-end operations, multi-step processes spanning components
+
+**Extraction from PRD.md (fallback when no design.md):**
+
+If design.md doesn't exist, check `.scratch/<feature-slug>/PRD.md`. If it exists, scan the `## Decisions` section for:
+
+- Statements with "must", "should", "all", "every"
+- Security, performance, testing mentions
+- Technical constraints that apply broadly
+- Integration requirements between components
+
+**Mapping requirements to issues:**
+
+For each vertical slice, determine which cross-cutting requirements apply based on what layers/components the issue touches:
+
+- **API layer issues** → apply API-related requirements, input validation, security
+- **User input handling** → apply security, validation, error handling
+- **Database access** → apply performance, error handling, retry logic
+- **Multi-component flows** → apply interface contracts, flow sequence requirements
+
+**Multi-issue flow detection:**
+
+Look in design.md or PRD.md for descriptions of end-to-end operations that span multiple vertical slices (e.g., auth flows, data pipelines, request/response cycles). For each issue that's part of such a flow, note:
+
+- Which upstream issues must complete first (dependencies)
+- Which downstream issues depend on this one
+- A brief description of this issue's role in the overall flow
+
 ### 6. Write the issues to local markdown
 
 **Re-run handling**: Before writing, check if `.scratch/<feature-slug>/issues/` already contains issue files.
@@ -94,6 +160,15 @@ Write issues in dependency order (blockers first) so you can reference earlier i
 
 <issue-template>
 Status: ready-for-agent
+
+## Context Documents
+
+> **Optional — only include this section if design.md or PRD.md exist for this feature. Omit entirely if neither document exists.**
+
+- Design: `.scratch/<feature-slug>/design.md`
+- PRD: `.scratch/<feature-slug>/PRD.md`
+
+Read these documents before implementing. They contain architecture decisions, integration constraints, and technical context essential for this issue.
 
 ## Parent
 
@@ -110,6 +185,26 @@ Avoid specific file paths or code snippets — they go stale fast. Exception: if
 - [ ] Criterion 1
 - [ ] Criterion 2
 - [ ] Criterion 3
+
+## Cross-cutting Requirements
+
+> **Optional — only include this section if cross-cutting requirements from design.md or PRD.md apply to this issue. Omit entirely if no applicable requirements exist.**
+
+Requirements from design.md/PRD.md that apply to this implementation:
+
+- [ ] [Error handling requirement]
+- [ ] [Security requirement]
+- [ ] [Performance requirement]
+
+## Part of Flow
+
+> **Optional — only include this section if this issue is part of a multi-issue flow (an end-to-end operation spanning multiple vertical slices). Omit entirely for standalone issues.**
+
+This issue implements [step description] of the [flow name] flow.
+
+**Full flow:** [brief description or reference to design.md section]
+**Upstream:** [previous step/issue or "none"]
+**Downstream:** [next step/issue or "none"]
 
 ## Blocked by
 

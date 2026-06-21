@@ -10,6 +10,7 @@ the user before writing the final document.
 ## Tracker Configuration
 
 Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+
 1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
 
 If it does not exist, stop: "No issue tracker config found. Re-run `./install.sh`."

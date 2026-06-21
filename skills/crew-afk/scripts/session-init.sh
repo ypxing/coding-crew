@@ -72,7 +72,7 @@ else
   # Strip 'feature/' prefix if present
   FEATURE_SLUG="${FEATURE_SLUG#feature/}"
   # Strip JIRA prefix pattern (e.g., PROJ-123-)
-  FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed 's/^[A-Z]\+-[0-9]\+-//')
+  FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed -E 's/^[A-Z]+-[0-9]+-//')
 fi
 
 # Validate feature-slug is non-empty after stripping

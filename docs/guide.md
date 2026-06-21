@@ -370,17 +370,17 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 ### Planning Skills
 
-| Goal                                                      | Skill                               |
-| --------------------------------------------------------- | ----------------------------------- |
-| Well-understood feature: Q&A → PRD → issues (fast)        | `/crew-grill`                       |
-| Complex/exploratory: Q&A + design doc with code → PRD     | `/crew-brainstorm`                  |
-| crew-grill + also update CONTEXT.md and ADRs              | `/crew-grill with docs`             |
-| Update domain glossary and ADRs standalone                | `/domain-modeling`                  |
-| Turn a feature idea into a PRD                            | `/to-prd`                           |
-| Break a PRD into issues                                   | `/to-issues`                        |
-| Address GitHub PR review comments                         | `/address-pr-comments`              |
-| Find architecture improvement opportunities    | `/improve-codebase-architecture` |
-| Reduce token usage during long sessions        | `/caveman`                    |
+| Goal                                                  | Skill                            |
+| ----------------------------------------------------- | -------------------------------- |
+| Well-understood feature: Q&A → PRD → issues (fast)    | `/crew-grill`                    |
+| Complex/exploratory: Q&A + design doc with code → PRD | `/crew-brainstorm`               |
+| crew-grill + also update CONTEXT.md and ADRs          | `/crew-grill with docs`          |
+| Update domain glossary and ADRs standalone            | `/domain-modeling`               |
+| Turn a feature idea into a PRD                        | `/to-prd`                        |
+| Break a PRD into issues                               | `/to-issues`                     |
+| Address GitHub PR review comments                     | `/address-pr-comments`           |
+| Find architecture improvement opportunities           | `/improve-codebase-architecture` |
+| Reduce token usage during long sessions               | `/caveman`                       |
 
 ---
 

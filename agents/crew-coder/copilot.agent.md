@@ -61,9 +61,42 @@ echo "[$(date -u +%H:%M:%SZ)] [$WORKER] <exact command here>" >> "$CMD_LOG"
 <exact command here>
 ```
 
+## Read Context Documents
+
+Before invoking solve-issue, check for design.md and PRD.md in the feature's scratch directory. These documents provide architectural and requirements context that should be kept in memory during implementation.
+
+**Extract feature slug from issue path:**
+
+```bash
+FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
+```
+
+**Check for and read context documents:**
+
+```bash
+DESIGN_DOC="$MAIN_ROOT/.scratch/$FEATURE_SLUG/design.md"
+PRD_DOC="$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
+
+if [ -f "$DESIGN_DOC" ]; then
+  echo "Reading design.md for architectural context..."
+fi
+
+if [ -f "$PRD_DOC" ]; then
+  echo "Reading PRD.md for requirements context..."
+fi
+```
+
+**After checking for document existence above**, use the view tool to read the content of any documents that exist:
+
+- If `$DESIGN_DOC` exists, read it with the view tool and keep its content in memory throughout the implementation
+- If `$PRD_DOC` exists, read it with the view tool and keep its content in memory throughout the implementation
+
+If neither exists, continue normally — this is graceful degradation for issues without context documents.
+
 STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: solve-issue skill not installed`.
 
 Before returning your report, confirm:
+
 - [ ] `solve-issue` skill was read and invoked
 
 ## When You Are Stuck
@@ -86,6 +119,8 @@ Status: complete | partial | blocked
 ### Acceptance Criteria
 - [x] <met criterion>
 - [ ] <unmet criterion — explain why after a dash>
+
+Note: If the issue has both "## Acceptance criteria" and "## Cross-cutting Requirements" sections, include items from BOTH sections in this output, maintaining their original section headings.
 
 ### Changes
 - <file>

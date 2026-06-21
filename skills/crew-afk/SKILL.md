@@ -234,6 +234,54 @@ Use the **Write tool** (never a shell heredoc) to persist the report to `.scratc
 
 If no commits: print `Code review: skipped (no commits this session)`.
 
+### Coverage validation
+
+Extract the feature slug from the current branch and check for design documentation:
+
+```bash
+FEATURE_SLUG=$(git rev-parse --abbrev-ref HEAD | sed 's|.*/||' | sed 's|-[0-9][0-9]-.*||')
+DESIGN_PATH=".scratch/$FEATURE_SLUG/design.md"
+PRD_PATH=".scratch/$FEATURE_SLUG/PRD.md"
+
+if [ ! -f "$DESIGN_PATH" ] && [ ! -f "$PRD_PATH" ]; then
+  echo "Coverage validation: skipped (no design.md or PRD.md found)"
+  # Continue to branch cleanup
+fi
+```
+
+If either `design.md` or `PRD.md` exists, spawn a haiku validation agent to generate a coverage report:
+
+```
+Extract all requirements from:
+<design.md and/or PRD.md content>
+
+Categories to extract:
+- Key User Stories
+- Technical decisions
+- Cross-cutting concerns (error handling, logging, security, performance, testing, architecture, validation, observability)
+- Interface contracts
+- Multi-issue flows
+
+For each requirement, check:
+1. Completed issues in .scratch/<feature-slug>/issues/done/ — match requirement to issue acceptance criteria
+2. Merged code — heuristic validation (grep for relevant patterns, function names, config changes)
+
+Classify each requirement as:
+✓ covered - found in both issue criteria and code
+⚠ partial - found in issue criteria OR code, but not both
+✗ missing - no evidence in either
+
+Report format:
+✓ N covered / ⚠ N partial / ✗ N missing
+
+### Details
+✓ <requirement>: <brief evidence from issues/code>
+⚠ <requirement>: <what's present and what's missing>
+✗ <requirement>: <no evidence found>
+```
+
+The validation agent output becomes the **Coverage Report** section in the final summary (inserted before per-issue details).
+
 ### Branch cleanup
 
 After code review, delete all tracked branch refs and prune worktrees:
@@ -253,6 +301,9 @@ Merged  (<count>): <slug, slug, ...> | none
 Partial (<count>): <slug, slug, ...> | none
 Blocked (<count>): <slug, slug, ...> | none
 [STALLED: resolve blockers and re-run (/crew-afk)]   ← only if stalled
+
+## Coverage Report
+<coverage report from validation agent — only if design.md or PRD.md exists>
 
 ### Per-issue
 
