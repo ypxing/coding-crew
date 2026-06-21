@@ -234,7 +234,6 @@ YOUR_PROJECT/
 │   │   └── crew-code-reviewer.md   ← reviewer agent (Claude)
 │   └── skills/
 │       ├── crew-afk/SKILL.md
-│       ├── karpathy-guidelines/
 │       ├── tdd/
 │       ├── dep-install/
 │       ├── solve-issue/

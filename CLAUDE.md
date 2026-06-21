@@ -62,7 +62,6 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 `skills/` contains reusable skill files (`SKILL.md`). See `registry.json` under `skills` for the full list. Currently:
 
 - `crew-afk` — orchestrator that spawns parallel `crew-coder` agents, merges completed branches, runs crew-code-reviewer, and loops until all ready-for-agent issues are done. Declares `agent-deps: [crew-coder, crew-code-reviewer]` — installing the skill pulls in both agents automatically.
-- `karpathy-guidelines` — coding principles (think first, surgical changes, goal-driven)
 - `tdd` — red/green/refactor workflow
 - `solve-issue` — implement a single issue end-to-end: read, explore, install, TDD, verify, commit
 - `crew-address-findings` — triage and fix findings from an afk-run code review report using TDD

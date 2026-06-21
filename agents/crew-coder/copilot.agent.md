@@ -5,7 +5,7 @@ description: >
   deps, builds with red-green-refactor, verifies all checks pass, commits, and returns a structured
   summary. Invoked as a subagent by crew-afk — one issue per invocation.
 tools: ["read", "edit", "execute", "search"]
-skills: ["solve-issue", "dep-install", "karpathy-guidelines", "tdd"]
+skills: ["solve-issue", "dep-install", "tdd"]
 user-invocable: false
 ---
 
@@ -167,7 +167,7 @@ Rules:
 3. `### Checks` — for each check, show the command and final summary line(s) only (e.g. pass/fail counts). Do not list individual test names or passing cases.
 4. `### Acceptance Criteria` — list every criterion from the issue with `[x]` or `[ ]`.
 5. `### Changes` — list every file modified.
-6. `### Skills` — list every skill that was read and invoked (e.g. `solve-issue`, `dep-install`, `karpathy-guidelines`, `tdd`). Never leave this section empty.
+6. `### Skills` — list every skill that was read and invoked (e.g. `solve-issue`, `dep-install`, `tdd`). Never leave this section empty.
 7. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
 8. Do not add any text outside these sections.
 
@@ -195,7 +195,6 @@ npm test:
 ### Skills
 - solve-issue
 - dep-install
-- karpathy-guidelines
 - tdd
 
 ### Notes
