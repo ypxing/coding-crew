@@ -68,7 +68,7 @@ The script will:
 After `session-init.sh` completes, derive `FEATURE_SLUG` and `TRACE_LOG`, then emit the SESSION line:
 
 ```bash
-FEATURE_SLUG=$(git rev-parse --abbrev-ref HEAD | sed 's|.*/||' | sed 's|-[0-9][0-9]-.*||')
+FEATURE_SLUG=$(git rev-parse --abbrev-ref HEAD | sed 's|^feature/||' | sed -E 's/^[A-Z]+-[0-9]+-//')
 TRACE_LOG=".scratch/$FEATURE_SLUG/traces/orchestrator.log"
 mkdir -p ".scratch/$FEATURE_SLUG/traces"
 echo "[$(date -u +%H:%M:%SZ)] [SESSION] feature=$FEATURE_SLUG branch=$(git rev-parse --abbrev-ref HEAD)" >> "$TRACE_LOG"
@@ -80,7 +80,7 @@ Append trace lines throughout the sprint as described in each step below.
 
 All tracker operations (list, fetch, mark-done, status-update) use the operation definitions in `issue-tracker.md` (located via the lookup chain in `## Tracker Configuration` above).
 
-The feature slug and workspace directory concept (`.scratch/<feature-slug>/issues/`) remain managed by this skill. An issue is considered **blocked** when it has a `## Blocked by` section listing filenames not yet present in the same `done/` directory.
+The feature slug and workspace directory concept (`.scratch/<feature-slug>/issues/`) remain managed by this skill. An issue is considered **blocked** when it has a `## Blocked by` section listing filenames not yet present in `issues/done/` (sibling of `issues/open/`).
 
 ## Loop
 
