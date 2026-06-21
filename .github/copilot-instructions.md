@@ -157,7 +157,6 @@ Use `protocol.md` for markdown instructions, `workflow.js` for Workflow scripts.
 | Skill | Description |
 |-------|-------------|
 | `crew-afk` | Orchestrator that spawns parallel crew-coder agents, merges branches, runs crew-code-reviewer |
-| `karpathy-guidelines` | Coding principles to reduce LLM mistakes |
 | `tdd` | Test-driven development with red-green-refactor loop |
 | `solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
 | `crew-address-findings` | Triage and fix code review findings using TDD |

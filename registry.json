@@ -28,7 +28,6 @@
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
       "skills": [
-        "karpathy-guidelines",
         "tdd",
         "dep-install",
         "solve-issue"
@@ -56,20 +55,12 @@
         "crew-code-reviewer"
       ],
       "deps": [
-        "karpathy-guidelines",
         "tdd",
         "dep-install",
         "solve-issue",
         "crew-address-findings",
         "caveman"
       ]
-    },
-    "karpathy-guidelines": {
-      "version": "1.0.0",
-      "source-dir": "karpathy-guidelines",
-      "description": "Behavioral guidelines to reduce common LLM coding mistakes (think, simplify, surgical, goal-driven).",
-      "source": "multica-ai/andrej-karpathy-skills",
-      "install": ".claude/skills/karpathy-guidelines"
     },
     "tdd": {
       "version": "1.0.0",
@@ -95,8 +86,7 @@
       ],
       "deps": [
         "dep-install",
-        "tdd",
-        "karpathy-guidelines"
+        "tdd"
       ]
     },
     "crew-address-findings": {
