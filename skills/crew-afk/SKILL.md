@@ -80,7 +80,7 @@ Append trace lines throughout the sprint as described in each step below.
 
 All tracker operations (list, fetch, mark-done, status-update) use the operation definitions in `issue-tracker.md` (located via the lookup chain in `## Tracker Configuration` above).
 
-The feature slug and workspace directory concept (`.scratch/<feature-slug>/issues/`) remain managed by this skill. An issue is considered **blocked** when it has a `## Blocked by` section listing filenames not yet present in `issues/done/` (sibling of `issues/open/`).
+The feature slug and workspace directory concept (`.scratch/<feature-slug>/issues/`) remain managed by this skill. An issue is considered **blocked** when it has a `## Blocked by` section listing filenames not yet present in the tracker's `done` set (as defined by `issue-tracker.md`).
 
 ## Loop
 
