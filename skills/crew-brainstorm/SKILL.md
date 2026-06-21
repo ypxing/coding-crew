@@ -34,12 +34,13 @@ You MUST complete these items in order:
 
 ## Step 1 — Capture Feature Slug
 
-Before anything else, determine the feature slug (the `.scratch/<slug>/` directory name):
+Before anything else, determine the feature slug (used internally as the `.scratch/<slug>/` directory name):
 
 - If the user provided a slug or path argument, extract it from there.
-- Otherwise ask: "What feature slug should I use? (Becomes `.scratch/<slug>/` — use kebab-case, e.g. `auth-flow`.)"
+- If the user's message clearly names the feature (e.g. "brainstorm auth flow"), derive the slug from it (e.g. `auth-flow`) and confirm: "I'll track this under the name **auth-flow** — does that work?"
+- Otherwise ask: "What's a short name for this feature? (e.g. `auth-flow`, `search-v2`)"
 
-Never proceed without a confirmed slug. All paths used throughout this skill derive from it.
+Never proceed without a confirmed slug. All paths used throughout this skill derive from it. Do not expose the `.scratch/` path to the user.
 
 ## Process Flow
 
