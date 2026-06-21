@@ -185,7 +185,6 @@ Requirements from design.md/PRD.md that apply to this implementation:
 - [ ] [Error handling requirement]
 - [ ] [Security requirement]
 - [ ] [Performance requirement]
-- [ ] [etc.]
 
 ## Part of Flow
 
