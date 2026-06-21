@@ -11,6 +11,7 @@ You are working through the findings from a crew-afk code review report. Follow 
 ## Tracker Configuration
 
 Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+
 1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
 
 If it does not exist, stop: "No issue tracker config found. Re-run `./install.sh`."
@@ -25,7 +26,6 @@ All tracker operations in this skill use the operation definitions in that file.
 ```
 
 ## Step 0 — Branch safety check
-
 
 **Check current branch:**
 
@@ -80,10 +80,10 @@ For every finding, do the following **before** deciding whether to act on it:
 
 Show the user a triage table before making any changes:
 
-| # | Severity | File / Line | Summary | Classification | Rationale |
-|---|----------|-------------|---------|----------------|-----------|
-| 1 | CRITICAL  | … | … | Actionable | … |
-| 2 | HIGH      | … | … | Debatable | … |
+| #   | Severity | File / Line | Summary | Classification | Rationale |
+| --- | -------- | ----------- | ------- | -------------- | --------- |
+| 1   | CRITICAL | …           | …       | Actionable     | …         |
+| 2   | HIGH     | …           | …       | Debatable      | …         |
 
 Ask the user to confirm or override any **Debatable** or **Dismiss** entries before proceeding to Step 4.
 
@@ -134,17 +134,21 @@ This prevents auto-detect from picking it up again on future runs.
 Print a markdown summary with three sections:
 
 ### Addressed
+
 One bullet per actionable finding: what was changed and which files were touched.
 
 ### Debated (not changed)
+
 One bullet per debatable finding that was dismissed after user confirmation, with your counter-argument.
 
 ### Skipped
+
 One bullet per dismissed finding with the reason.
 
 ---
 
 **Ground rules**
+
 - Never mark a finding as dismissed just because it is inconvenient. Steelman the reviewer's concern first.
 - Never commit files unrelated to the addressed findings.
 - Never modify CI/CD configs (.github/workflows/, .gitlab-ci.yml, Jenkinsfile), auth/security modules, deployment scripts, .env files, or files containing secrets without explicitly naming each file and getting per-file user confirmation. If a finding requests changes to these areas, always classify as **Debatable** regardless of apparent merit.

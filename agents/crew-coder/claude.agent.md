@@ -96,6 +96,7 @@ fi
 ```
 
 **After checking for document existence above**, use the View tool to read the content of any documents that exist:
+
 - If `$DESIGN_DOC` exists, read it with the View tool and keep its content in memory throughout the implementation
 - If `$PRD_DOC` exists, read it with the View tool and keep its content in memory throughout the implementation
 
@@ -113,15 +114,15 @@ When `solve-issue` says to stop and output `BLOCKED:`, set `status` to `blocked`
 
 Populate these fields exactly:
 
-| Field                 | Type             | Rules                                          |
-| --------------------- | ---------------- | ---------------------------------------------- |
-| `status`              | string           | `complete`, `partial`, or `blocked`            |
-| `branch`              | string           | output of `git rev-parse --abbrev-ref HEAD`    |
-| `working_directory`   | string           | `$PROJECT_ROOT` (pwd at startup)               |
-| `checks`              | array of objects | one entry per check command — see schema below |
+| Field                 | Type             | Rules                                                                                                                                                              |
+| --------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `status`              | string           | `complete`, `partial`, or `blocked`                                                                                                                                |
+| `branch`              | string           | output of `git rev-parse --abbrev-ref HEAD`                                                                                                                        |
+| `working_directory`   | string           | `$PROJECT_ROOT` (pwd at startup)                                                                                                                                   |
+| `checks`              | array of objects | one entry per check command — see schema below                                                                                                                     |
 | `acceptance_criteria` | string           | every criterion with `[x]` or `[ ]`. If the issue has both "## Acceptance criteria" and "## Cross-cutting Requirements" sections, include items from BOTH sections |
-| `changes`             | array of strings | every file modified                            |
-| `notes`               | string           | blockers, decisions, or `"none"`               |
+| `changes`             | array of strings | every file modified                                                                                                                                                |
+| `notes`               | string           | blockers, decisions, or `"none"`                                                                                                                                   |
 
 Each `checks` entry:
 

@@ -24,6 +24,7 @@ Do not attempt workarounds. Do not proceed.
 ## Tracker Configuration
 
 Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+
 1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
 
 If it does not exist, stop: "No issue tracker config found. Re-run `./install.sh`."
@@ -159,6 +160,7 @@ fi
 ```
 
 **After checking for document existence above**, use the View/Read tool to read the content of any documents that exist:
+
 - If `$FULL_DESIGN_PATH` exists, read it and keep its content in memory to inform implementation decisions
 - If `$FULL_PRD_PATH` exists, read it and keep its content in memory to inform implementation decisions
 

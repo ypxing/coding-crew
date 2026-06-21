@@ -87,6 +87,7 @@ fi
 ```
 
 **After checking for document existence above**, use the view tool to read the content of any documents that exist:
+
 - If `$DESIGN_DOC` exists, read it with the view tool and keep its content in memory throughout the implementation
 - If `$PRD_DOC` exists, read it with the view tool and keep its content in memory throughout the implementation
 
@@ -95,6 +96,7 @@ If neither exists, continue normally — this is graceful degradation for issues
 STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: solve-issue skill not installed`.
 
 Before returning your report, confirm:
+
 - [ ] `solve-issue` skill was read and invoked
 
 ## When You Are Stuck

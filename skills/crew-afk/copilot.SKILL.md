@@ -122,6 +122,7 @@ fi
 ```
 
 Run the session initialization script. It handles:
+
 - Parsing optional `--jira TICKET-123` flag
 - Parsing optional `--feature-slug <slug>` flag (bypasses first-issue detection)
 - Feature branch creation/switching
@@ -135,6 +136,7 @@ bash "<skill-dir>/scripts/session-init.sh" $FEATURE_SLUG_FLAG "$@"
 ```
 
 The script will:
+
 - Create or switch to a feature branch (using provided slug, or deriving from first issue)
 - Initialize `.scratch/<feature-slug>/issues/` directory structure
 - Save session-start SHA for code review
@@ -330,6 +332,7 @@ bash "<skill-dir>/scripts/squash-commits.sh" --no-squash --platform copilot "${c
 ```
 
 The script will:
+
 - Parse the `--no-squash` flag and skip if present
 - Read sprint state file to get base SHA
 - Skip if no completed issues or no commits to squash
@@ -355,6 +358,7 @@ git log "$SESSION_START"..HEAD --oneline
 
 If there are commits, invoke the `crew-code-reviewer` agent (`@crew-code-reviewer` in Copilot, or
 `.github/agents/crew-code-reviewer.agent.md`). Pass it:
+
 - The session-start SHA
 - A request to review all commits from `<session-start-sha>..HEAD`
 

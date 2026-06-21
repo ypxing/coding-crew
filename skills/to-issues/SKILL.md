@@ -10,6 +10,7 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 ## Tracker Configuration
 
 Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+
 1. `$(git rev-parse --show-toplevel)/docs/agents/issue-tracker.md` (project-level)
 
 If it does not exist, stop: "No issue tracker config found. Re-run `./install.sh`."
@@ -85,6 +86,7 @@ Iterate until the user approves the breakdown.
 After the user approves the breakdown and before writing issues, extract cross-cutting requirements from design.md or PRD.md (if they exist) to include in issue checklists.
 
 **Cross-cutting requirement categories** (10 total):
+
 1. Error Handling — how errors are caught, logged, propagated
 2. Logging — what to log, format, levels
 3. Security — auth checks, input validation, sensitive data handling

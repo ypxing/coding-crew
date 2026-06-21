@@ -46,6 +46,7 @@ bash "<skill-dir>/scripts/detect-mode.sh" --project-root "$PROJECT_ROOT"
 The detected mode is **session-wide**. Every command for the rest of this session — install, test, lint, type-check, format, verify — must use this mode. Do not switch modes mid-session.
 
 After running the detection script, state the mode explicitly before continuing:
+
 > "INSTALL_MODE=docker — all subsequent commands run inside docker."
 > or
 > "INSTALL_MODE=host — all subsequent commands run on the host."
