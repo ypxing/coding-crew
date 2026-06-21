@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.7.0] - 2026-06-21
+
+### Added
+- **to-issues**: Cross-cutting requirements extraction from design.md/PRD.md with automatic mapping to vertical slices
+- **to-issues**: Context Documents section in issue template (references to design.md and PRD.md)
+- **to-issues**: Cross-cutting Requirements section with checklist format for 10 requirement categories
+- **to-issues**: Part of Flow section for multi-issue flow annotations
+- **crew-coder**: Context document reading step that automatically reads design.md/PRD.md before implementation
+- **solve-issue**: Step 1.5 "Validate Issue Context" to read context documents and validate cross-cutting requirements
+- **crew-afk**: Coverage validation step at exit that compares design.md/PRD.md requirements against completed issues
+
+### Changed
+- **to-issues**: Enhanced issue template with optional sections (Context Documents, Cross-cutting Requirements, Part of Flow)
+- **to-issues**: Extraction logic scans design.md for error handling, logging, security, performance, testing, architecture constraints, data validation, observability, interfaces & contracts, and multi-issue flows
+- **to-issues**: Falls back to PRD.md Decisions section when design.md doesn't exist
+- **crew-coder**: Structured output now includes both feature acceptance criteria and cross-cutting requirements
+- **solve-issue**: Validation now checks both feature criteria and cross-cutting requirements before completion
+- **crew-afk**: Summary format includes coverage report section before per-issue details
+
+### Fixed
+- **crew-afk**: JIRA prefix stripping in coverage-validation.sh now matches session-init.sh behavior
+- **crew-coder**: Context reading instructions now explicitly specify using View/Read tools instead of bash comment placeholders
+- **solve-issue**: Context reading instructions now explicitly specify using View/Read tools instead of bash comment placeholders
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
