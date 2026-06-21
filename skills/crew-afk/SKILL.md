@@ -58,10 +58,23 @@ bash "<skill-dir>/scripts/session-init.sh" $FEATURE_SLUG_FLAG "$@"
 
 The script will:
 - Create or switch to a feature branch (using provided slug, or deriving from first issue)
-- Initialize `.scratch/<feature-slug>/issues/` directory structure
-- Archive previous command log and start fresh
-- Save session-start SHA for code review
+- Initialize `.scratch/<feature-slug>/issues/open/` directory structure
+- Archive previous traces dir and create fresh `traces/`
+- Save session-start SHA to `.scratch/<feature-slug>/session-start-sha`
 - Create sprint state file to track base SHA per branch
+
+### Orchestrator trace
+
+After `session-init.sh` completes, derive `FEATURE_SLUG` and `TRACE_LOG`, then emit the SESSION line:
+
+```bash
+FEATURE_SLUG=$(git rev-parse --abbrev-ref HEAD | sed 's|.*/||' | sed 's|-[0-9][0-9]-.*||')
+TRACE_LOG=".scratch/$FEATURE_SLUG/traces/orchestrator.log"
+mkdir -p ".scratch/$FEATURE_SLUG/traces"
+echo "[$(date -u +%H:%M:%SZ)] [SESSION] feature=$FEATURE_SLUG branch=$(git rev-parse --abbrev-ref HEAD)" >> "$TRACE_LOG"
+```
+
+Append trace lines throughout the sprint as described in each step below.
 
 ## Issue Tracker Conventions
 
@@ -79,9 +92,19 @@ Execute the `list` operation from `issue-tracker.md` to find all ready unblocked
 
 Log: `Round <N>: <count> issue(s)`
 
+Append to trace:
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [ROUND $round] issues=<count>" >> "$TRACE_LOG"
+```
+
 ### Step 2 — Sprint
 
 > **PARALLELISM**: Issue all crew-coder Agent tool calls in a **single response turn** — do not wait for one to return before issuing the others. Claude Code runs multiple Agent tool calls emitted in the same response concurrently.
+
+For each unblocked issue, before dispatching, append to trace:
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] issue=<slug>" >> "$TRACE_LOG"
+```
 
 For each unblocked issue, call the `Agent` tool:
 
@@ -124,6 +147,11 @@ Each crew-coder returns:
 
 Classify results into `complete`, `partial`, `blocked` lists. Append all branch names to `all_branches`.
 
+For each result received, append to trace:
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [RESULT] branch=<branch> status=<complete|partial|blocked>" >> "$TRACE_LOG"
+```
+
 ### Step 3 — Stall detection
 
 If `complete` is empty: increment `stall`. If `stall >= 2`, go to **Exit**.
@@ -157,16 +185,16 @@ Report success: true or false for each. On merge failure, continue to the next b
 
 Track which succeeded. Items whose branch failed to merge stay open (do not close their issues).
 
+For each merge attempt, append to trace:
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [MERGE] branch=<branch> success=<true|false>" >> "$TRACE_LOG"
+```
+
 ### Step 5 — Housekeeping
 
 Spawn the following two haiku Agents **in a single response** (parallel):
 
-**Agent A — Close issues**: for each successfully merged item:
-
-```bash
-sed -i'' "s/^Status:.*/Status: done/" "<path>"
-mkdir -p "$(dirname <path>)/done" && mv "<path>" "$(dirname <path>)/done/"
-```
+**Agent A — Close issues**: for each successfully merged item, execute the `mark-done` operation from `issue-tracker.md`. Pass the issue file path. The operation handles verifying criteria, updating the Status line, and moving the file from `issues/open/` to `issues/done/`.
 
 **Agent B — Update partial/blocked files**:
 
@@ -215,7 +243,7 @@ The script will:
 ### Code review
 
 ```bash
-SESSION_START=$(cat .scratch/.session-start-sha 2>/dev/null || echo "")
+SESSION_START=$(cat ".scratch/$FEATURE_SLUG/session-start-sha" 2>/dev/null || echo "")
 git log "$SESSION_START"..HEAD --oneline
 ```
 
@@ -230,16 +258,15 @@ Branches:
   Acceptance criteria: <criteria>
 ```
 
-Use the **Write tool** (never a shell heredoc) to persist the report to `.scratch/reviews/sprint-review-<TIMESTAMP>.md`.
+Use the **Write tool** (never a shell heredoc) to persist the report to `.scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md`.
 
 If no commits: print `Code review: skipped (no commits this session)`.
 
 ### Coverage validation
 
-Extract the feature slug from the current branch and check for design documentation:
+Check for design documentation (use `FEATURE_SLUG` established in Session Init):
 
 ```bash
-FEATURE_SLUG=$(git rev-parse --abbrev-ref HEAD | sed 's|.*/||' | sed 's|-[0-9][0-9]-.*||')
 DESIGN_PATH=".scratch/$FEATURE_SLUG/design.md"
 PRD_PATH=".scratch/$FEATURE_SLUG/PRD.md"
 
@@ -289,6 +316,11 @@ After code review, delete all tracked branch refs and prune worktrees:
 ```bash
 git branch -D -- <branch1> <branch2> ... 2>/dev/null || true
 git worktree prune
+```
+
+Before printing the summary, append the EXIT trace line:
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [EXIT] merged=${#all_merged[@]} partial=${#all_partial[@]} blocked=${#all_blocked[@]}" >> "$TRACE_LOG"
 ```
 
 ### Summary

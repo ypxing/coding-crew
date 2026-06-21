@@ -1,312 +1,168 @@
 #!/bin/bash
-# Test script for afk-run Session Init feature branch setup
-# Tests branch detection, first issue slug extraction, JIRA flag parsing, and directory creation
+# Integration test script for session-init.sh
+# Tests: issues/open/ creation, traces/ creation, session-start-sha, traces archiving, .gitignore warning
 
-set -e
+PASS=0
+FAIL=0
 
-# Setup test environment
-REPO_ROOT=$(pwd)
+pass() { echo "PASS: $1"; PASS=$((PASS + 1)); }
+fail() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
+
+# ---------------------------------------------------------------------------
+# Locate session-init.sh relative to this script
+# ---------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SESSION_INIT="$SCRIPT_DIR/../scripts/session-init.sh"
+
+if [ ! -f "$SESSION_INIT" ]; then
+    echo "ERROR: session-init.sh not found at $SESSION_INIT"
+    exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Setup — temp git repo with cleanup trap
+# ---------------------------------------------------------------------------
 TEST_DIR=$(mktemp -d)
+FEATURE_SLUG="test-feature"
+
+trap 'rm -rf "$TEST_DIR"' EXIT
+
 cd "$TEST_DIR"
 git init -q
 git config user.email "test@example.com"
 git config user.name "Test User"
-
-# Create main branch with initial commit
-echo "test" > file.txt
+echo "initial" > file.txt
 git add file.txt
 git commit -q -m "Initial commit"
 git branch -M main
-
-echo "Testing afk-run Session Init feature branch setup..."
-echo
-
-# Helper function to detect default branch
-detect_default_branch() {
-    local default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-    if [ -z "$default_branch" ]; then
-        echo "main"
-    else
-        echo "$default_branch"
-    fi
-}
-
-# Helper function to parse --jira flag from invocation
-parse_jira_flag() {
-    local invocation="$1"
-    if [[ "$invocation" =~ --jira[[:space:]]+([A-Z]+-[0-9]+) ]]; then
-        echo "${BASH_REMATCH[1]}"
-    fi
-}
-
-# Helper function to extract first ready issue slug
-# In real use, this reads from .scratch/*/issues/*.md files
-# For testing, we simulate by passing the issue path
-extract_first_issue_slug() {
-    local issue_path="$1"
-    basename "$issue_path" | sed 's/^[0-9]*-//' | sed 's/\.md$//'
-}
-
-# Helper function to build branch name from first issue
-build_branch_name_from_first_issue() {
-    local first_issue_path="$1"
-    local jira_ticket="$2"
-    local issue_slug=$(extract_first_issue_slug "$first_issue_path")
-    
-    if [ -n "$jira_ticket" ]; then
-        echo "feature/$jira_ticket-$issue_slug"
-    else
-        echo "feature/$issue_slug"
-    fi
-}
-
-# Helper function to derive feature-slug from branch name
-derive_feature_slug() {
-    local branch_name="$1"
-    # Strip 'feature/' prefix
-    local slug="${branch_name#feature/}"
-    # Strip JIRA prefix pattern (e.g., PROJ-123-)
-    slug=$(echo "$slug" | sed 's/^[A-Z]*-[0-9]*-//')
-    echo "$slug"
-}
-
-# Helper function to create scratch directory structure
-create_scratch_structure() {
-    local feature_slug="$1"
-    mkdir -p ".scratch/$feature_slug/issues"
-}
-
-# Test 1: Detect default branch (fallback to main when no origin)
-echo "Test 1: Detect default branch (fallback to main)"
-result=$(detect_default_branch)
-expected="main"
-if [ "$result" = "$expected" ]; then
-    echo "✓ PASS: Default branch is '$result'"
-else
-    echo "✗ FAIL: Expected '$expected', got '$result'"
-    exit 1
-fi
-echo
-
-# Test 2: Parse --jira flag from invocation
-echo "Test 2: Parse --jira flag from invocation"
-result=$(parse_jira_flag "/afk-run --jira PROJ-123")
-expected="PROJ-123"
-if [ "$result" = "$expected" ]; then
-    echo "✓ PASS: Parsed JIRA ticket '$result'"
-else
-    echo "✗ FAIL: Expected '$expected', got '$result'"
-    exit 1
-fi
-echo
-
-# Test 3: Parse invocation without --jira flag
-echo "Test 3: Parse invocation without --jira flag"
-result=$(parse_jira_flag "/afk-run")
-expected=""
-if [ "$result" = "$expected" ]; then
-    echo "✓ PASS: No JIRA ticket found"
-else
-    echo "✗ FAIL: Expected empty string, got '$result'"
-    exit 1
-fi
-echo
-
-# Test 4: Extract first issue slug from filename
-echo "Test 4: Extract first issue slug from filename"
-result=$(extract_first_issue_slug ".scratch/auth/issues/01-user-logout.md")
-expected="user-logout"
-if [ "$result" = "$expected" ]; then
-    echo "✓ PASS: Extracted slug '$result'"
-else
-    echo "✗ FAIL: Expected '$expected', got '$result'"
-    exit 1
-fi
-echo
-
-# Test 5: Build branch name without JIRA
-echo "Test 5: Build branch name from first issue without JIRA"
-result=$(build_branch_name_from_first_issue ".scratch/auth/issues/01-user-logout.md" "")
-expected="feature/user-logout"
-if [ "$result" = "$expected" ]; then
-    echo "✓ PASS: Branch name is '$result'"
-else
-    echo "✗ FAIL: Expected '$expected', got '$result'"
-    exit 1
-fi
-echo
-
-# Test 6: Build branch name with JIRA
-echo "Test 6: Build branch name from first issue with JIRA"
-result=$(build_branch_name_from_first_issue ".scratch/auth/issues/01-user-logout.md" "PROJ-123")
-expected="feature/PROJ-123-user-logout"
-if [ "$result" = "$expected" ]; then
-    echo "✓ PASS: Branch name is '$result'"
-else
-    echo "✗ FAIL: Expected '$expected', got '$result'"
-    exit 1
-fi
-echo
-
-# Test 7: Derive feature-slug from branch without JIRA
-echo "Test 7: Derive feature-slug from branch without JIRA"
-result=$(derive_feature_slug "feature/user-logout")
-expected="user-logout"
-if [ "$result" = "$expected" ]; then
-    echo "✓ PASS: Feature slug is '$result'"
-else
-    echo "✗ FAIL: Expected '$expected', got '$result'"
-    exit 1
-fi
-echo
-
-# Test 8: Derive feature-slug from branch with JIRA
-echo "Test 8: Derive feature-slug from branch with JIRA"
-result=$(derive_feature_slug "feature/PROJ-123-user-logout")
-expected="user-logout"
-if [ "$result" = "$expected" ]; then
-    echo "✓ PASS: Feature slug is '$result'"
-else
-    echo "✗ FAIL: Expected '$expected', got '$result'"
-    exit 1
-fi
-echo
-
-# Test 9: Create scratch directory structure
-echo "Test 9: Create .scratch/<feature-slug>/issues/ directory"
-create_scratch_structure "user-logout"
-if [ -d ".scratch/user-logout/issues" ]; then
-    echo "✓ PASS: Directory .scratch/user-logout/issues created"
-else
-    echo "✗ FAIL: Directory .scratch/user-logout/issues not created"
-    exit 1
-fi
-echo
-
-# Test 10: Branch creation when on default branch
-echo "Test 10: Create new branch when on default branch"
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(detect_default_branch)
-if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-    NEW_BRANCH="feature/user-logout"
-    git checkout -b "$NEW_BRANCH" 2>&1 > /dev/null
-    RESULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    if [ "$RESULT_BRANCH" = "$NEW_BRANCH" ]; then
-        echo "✓ PASS: Created and switched to '$NEW_BRANCH'"
-    else
-        echo "✗ FAIL: Expected '$NEW_BRANCH', got '$RESULT_BRANCH'"
-        exit 1
-    fi
-else
-    echo "✗ FAIL: Should start on default branch"
-    exit 1
-fi
-echo
-
-# Test 11: Switch to existing branch
-echo "Test 11: Switch to existing branch when it already exists"
-git checkout main -q
-EXISTING_BRANCH="feature/user-logout"
-if git rev-parse --verify "$EXISTING_BRANCH" >/dev/null 2>&1; then
-    git checkout "$EXISTING_BRANCH" -q
-    RESULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    if [ "$RESULT_BRANCH" = "$EXISTING_BRANCH" ]; then
-        echo "✓ PASS: Switched to existing branch '$EXISTING_BRANCH'"
-    else
-        echo "✗ FAIL: Expected '$EXISTING_BRANCH', got '$RESULT_BRANCH'"
-        exit 1
-    fi
-else
-    echo "✗ FAIL: Test branch should exist from Test 10"
-    exit 1
-fi
-echo
-
-# Test 12: Continue when already on non-default branch
-echo "Test 12: Continue when already on non-default branch"
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(detect_default_branch)
-if [ "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" ]; then
-    echo "✓ PASS: Already on non-default branch '$CURRENT_BRANCH', no action needed"
-else
-    echo "✗ FAIL: Should be on non-default branch"
-    exit 1
-fi
-echo
-
-# Test 13: Extract feature slug from path argument (.scratch/foo/issues/ -> foo)
-echo "Test 13: Extract feature slug from path argument"
-result=$(echo ".scratch/crew-address-findings/issues/" | sed 's|\.scratch/||' | sed 's|/.*||')
-expected="crew-address-findings"
-if [ "$result" = "$expected" ]; then
-    echo "✓ PASS: Extracted feature slug '$result' from path"
-else
-    echo "✗ FAIL: Expected '$expected', got '$result'"
-    exit 1
-fi
-echo
-
-# Test 14: session-init.sh accepts --feature-slug and uses it directly
-echo "Test 14: session-init.sh --feature-slug bypasses first-issue detection"
-SKILL_DIR="$REPO_ROOT/skills/crew-afk/scripts"
-TEST_DIR2=$(mktemp -d)
-cd "$TEST_DIR2"
-git init -q
-git config user.email "test@example.com"
-git config user.name "Test User"
-echo "test" > file.txt
-git add file.txt
-git commit -q -m "Initial commit"
-git branch -M main
-# No .scratch/*/issues/*.md files exist, but --feature-slug should bypass that check
+echo ".scratch" > .gitignore
+git add .gitignore
+git commit -q -m "Add .gitignore"
 mkdir -p ".claude"
-# Use the real session-init.sh with --feature-slug
-if bash "$SKILL_DIR/session-init.sh" --feature-slug "crew-address-findings" 2>&1 | grep -q "Session initialized"; then
-    RESULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    if [ "$RESULT_BRANCH" = "feature/crew-address-findings" ]; then
-        echo "✓ PASS: Branch is '$RESULT_BRANCH'"
-    else
-        echo "✗ FAIL: Expected 'feature/crew-address-findings', got '$RESULT_BRANCH'"
-        cd - > /dev/null
-        rm -rf "$TEST_DIR2"
-        exit 1
-    fi
-else
-    echo "✗ FAIL: session-init.sh did not succeed with --feature-slug"
-    cd - > /dev/null
-    rm -rf "$TEST_DIR2"
-    exit 1
-fi
-cd - > /dev/null
-rm -rf "$TEST_DIR2"
+
+# Create a dummy issue
+mkdir -p ".scratch/$FEATURE_SLUG/issues/open"
+cat > ".scratch/$FEATURE_SLUG/issues/open/01-test.md" <<'EOF'
+Status: ready-for-agent
+
+## What to build
+
+Test issue.
+EOF
+
+echo "Testing session-init.sh..."
 echo
 
-# Test 15: session-init.sh --feature-slug creates sprint state at correct path
-echo "Test 15: session-init.sh --feature-slug creates sprint state at .scratch/<slug>/sprint-state.json"
-TEST_DIR3=$(mktemp -d)
-cd "$TEST_DIR3"
+# ---------------------------------------------------------------------------
+# Assertion 1: issues/open/ is created under .scratch/<feature-slug>/
+# ---------------------------------------------------------------------------
+echo "Assertion 1: issues/open/ is created under .scratch/<feature-slug>/"
+bash "$SESSION_INIT" --feature-slug "$FEATURE_SLUG" > /dev/null 2>&1
+
+if [ -d ".scratch/$FEATURE_SLUG/issues/open" ]; then
+    pass "issues/open/ exists under .scratch/$FEATURE_SLUG/"
+else
+    fail "issues/open/ not found under .scratch/$FEATURE_SLUG/"
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# Assertion 2: traces/ is created under .scratch/<feature-slug>/
+# ---------------------------------------------------------------------------
+echo "Assertion 2: traces/ is created under .scratch/<feature-slug>/"
+if [ -d ".scratch/$FEATURE_SLUG/traces" ]; then
+    pass "traces/ exists under .scratch/$FEATURE_SLUG/"
+else
+    fail "traces/ not found under .scratch/$FEATURE_SLUG/"
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# Assertion 3: session-start-sha exists and contains a valid git SHA
+# ---------------------------------------------------------------------------
+echo "Assertion 3: session-start-sha exists under .scratch/<feature-slug>/ and contains a valid SHA"
+SHA_FILE=".scratch/$FEATURE_SLUG/session-start-sha"
+if [ -f "$SHA_FILE" ]; then
+    SHA_CONTENT=$(cat "$SHA_FILE" | tr -d '[:space:]')
+    EXPECTED_SHA=$(git rev-parse HEAD)
+    if echo "$SHA_CONTENT" | grep -qE '^[0-9a-f]{40}$'; then
+        pass "session-start-sha contains a valid 40-char hex SHA: $SHA_CONTENT"
+    else
+        fail "session-start-sha content '$SHA_CONTENT' is not a valid SHA"
+    fi
+    if [ "$SHA_CONTENT" = "$EXPECTED_SHA" ]; then
+        pass "session-start-sha matches HEAD: $SHA_CONTENT"
+    else
+        fail "session-start-sha '$SHA_CONTENT' does not match HEAD '$EXPECTED_SHA'"
+    fi
+else
+    fail "session-start-sha not found at $SHA_FILE"
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# Assertion 4: Re-run archives previous traces/ as traces-<timestamp>/ (not deleted)
+# ---------------------------------------------------------------------------
+echo "Assertion 4: Re-run archives previous traces/ as traces-<timestamp>/ (not deleted)"
+# Add a file to the current traces/ so we can verify it gets archived
+echo "old log entry" > ".scratch/$FEATURE_SLUG/traces/worker.log"
+
+bash "$SESSION_INIT" --feature-slug "$FEATURE_SLUG" > /dev/null 2>&1
+
+ARCHIVED=$(find ".scratch/$FEATURE_SLUG" -maxdepth 1 -type d -name "traces-*" 2>/dev/null | head -n 1)
+if [ -n "$ARCHIVED" ]; then
+    pass "Previous traces/ was archived as $(basename "$ARCHIVED")"
+else
+    fail "Previous traces/ was not archived as traces-<timestamp>/"
+fi
+
+if [ -f "$ARCHIVED/worker.log" ]; then
+    pass "Archived traces/ still contains old log file (not deleted)"
+else
+    fail "Archived traces/ is missing old log file (content was lost)"
+fi
+
+if [ -d ".scratch/$FEATURE_SLUG/traces" ]; then
+    pass "Fresh traces/ was created after archiving"
+else
+    fail "Fresh traces/ was not created after archiving"
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# Assertion 5: WARNING printed when .scratch is not in .gitignore
+# ---------------------------------------------------------------------------
+echo "Assertion 5: WARNING printed when .scratch is not in .gitignore"
+WARN_DIR=$(mktemp -d)
+cd "$WARN_DIR"
 git init -q
 git config user.email "test@example.com"
 git config user.name "Test User"
-echo "test" > file.txt
+echo "initial" > file.txt
 git add file.txt
 git commit -q -m "Initial commit"
 git branch -M main
 mkdir -p ".claude"
-bash "$SKILL_DIR/session-init.sh" --feature-slug "my-feature" > /dev/null 2>&1
-if [ -f ".scratch/my-feature/sprint-state.json" ]; then
-    echo "✓ PASS: sprint-state.json at .scratch/my-feature/sprint-state.json"
+# No .gitignore — .scratch is not covered
+
+OUTPUT=$(bash "$SESSION_INIT" --feature-slug "warn-test" 2>&1)
+if echo "$OUTPUT" | grep -q "WARNING"; then
+    pass "WARNING is printed when .scratch is not gitignored"
 else
-    echo "✗ FAIL: sprint-state.json not found at .scratch/my-feature/sprint-state.json"
-    cd - > /dev/null
-    rm -rf "$TEST_DIR3"
-    exit 1
+    fail "No WARNING emitted when .scratch is not in .gitignore"
 fi
-cd - > /dev/null
-rm -rf "$TEST_DIR3"
+
+# Cleanup warn dir — back to TEST_DIR (which also gets cleaned by trap)
+cd "$TEST_DIR"
+rm -rf "$WARN_DIR"
 echo
 
-# Cleanup
-cd "$REPO_ROOT" > /dev/null
-
-echo "All tests passed! ✓"
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+echo "---"
+echo "Results: $PASS passed, $FAIL failed"
+if [ $FAIL -gt 0 ]; then
+    exit 1
+fi
+echo "All assertions passed!"

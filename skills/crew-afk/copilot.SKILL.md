@@ -19,28 +19,23 @@ to `done/`.
 passing the issue file path. The subagent runs in an isolated context window, commits the work, and
 returns a structured report. You process its report, do housekeeping, and loop.
 
-**Issue tracker: local only.** Issues live in `.scratch/*/issues/*.md`. Never query `gh`, GitHub, or any remote issue tracker. If no local issues are found, print `NO MORE TASKS` and stop.
+**Issue tracker: local only.** Issues live in `.scratch/*/issues/open/*.md`. Never query `gh`, GitHub, or any remote issue tracker. If no local issues are found, print `NO MORE TASKS` and stop.
 
 ## Definitions
 
 - **Ready issue**: `Status: ready-for-agent` — fully specified, no human input needed.
 - **Skipped issue**: any other status — skip entirely.
-- **Blocked issue**: its `## Blocked by` section names an issue not yet in `done/`.
-- **Unblocked issue**: no `## Blocked by` section, or all listed dependencies are in `done/`.
+- **Blocked issue**: its `## Blocked by` section names an issue not yet in `issues/done/` (sibling of `issues/open/`).
+- **Unblocked issue**: no `## Blocked by` section, or all listed dependencies are in `issues/done/`.
 
 ## Issue Tracker Conventions
 
-Issues live as local markdown files in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`:
+Issues live as local markdown files in `.scratch/<feature-slug>/issues/open/<NN>-<slug>.md`:
 
 - Triage state is a `Status:` line near the top of each issue
-- To **list open issues**: find all `.md` files under `.scratch/*/issues/` that are NOT in a
-  `done/` subdirectory — this yields file paths only; content is fetched separately
+- To **list open issues**: find all `.md` files under `.scratch/*/issues/open/` — this yields file paths only; content is fetched separately
 - To **fetch an issue**: read the file at its path
-- To **mark done**: first update the Status line, then move the file:
-  ```bash
-  sed -i'' "s/^Status:.*/Status: done/" "<path>"
-  mkdir -p "$(dirname <path>)/done" && mv "<path>" "$(dirname <path>)/done/"
-  ```
+- To **mark done**: execute the `mark-done` operation from `issue-tracker.md`. It verifies criteria, updates the Status line, and moves the file from `issues/open/` to `issues/done/`.
 
 ### Triage Labels
 
@@ -63,8 +58,8 @@ An issue is blocked when its body contains a section like:
 - 02-create-table.md
 ```
 
-Filenames are resolved relative to the issue's own directory. An issue is blocked only if at least
-one listed file is NOT present in the `done/` subdirectory alongside it.
+Filenames are resolved relative to the issue's `issues/done/` directory (sibling of `issues/open/`). An issue is blocked only if at least
+one listed file is NOT present at `$(dirname "$ISSUE_PATH")/../done/<dep-filename>`.
 
 ## Status Definitions
 
@@ -78,24 +73,6 @@ Use exactly one of these in every issue report:
 - **`blocked`** — you cannot proceed without human input: a dependency is unresolved, the spec is
   ambiguous, or you hit 2 consecutive failed attempts at the same step. Do not use `partial` to
   avoid admitting you are stuck.
-
-## Command logging
-
-At the very start, before listing issues, clear the log from any previous session:
-
-```bash
-truncate -s 0 .scratch/commands.log 2>/dev/null || true
-```
-
-Then, before **every** shell command you run, log the exact command — verbatim, every flag and
-argument, re-runnable as-is — to `.scratch/commands.log`:
-
-```bash
-echo "<exact command here>" >> .scratch/commands.log
-<exact command here>
-```
-
-Prose summaries like `"run unit tests"` are wrong. The log line must be the literal command.
 
 ## Loop
 
@@ -138,9 +115,23 @@ bash "<skill-dir>/scripts/session-init.sh" $FEATURE_SLUG_FLAG "$@"
 The script will:
 
 - Create or switch to a feature branch (using provided slug, or deriving from first issue)
-- Initialize `.scratch/<feature-slug>/issues/` directory structure
-- Save session-start SHA for code review
+- Initialize `.scratch/<feature-slug>/issues/open/` directory structure
+- Archive previous traces dir and create fresh `traces/`
+- Save session-start SHA to `.scratch/<feature-slug>/session-start-sha`
 - Create sprint state file to track base SHA per branch
+
+### Orchestrator trace
+
+After `session-init.sh` completes, derive `FEATURE_SLUG` and `TRACE_LOG`, then emit the SESSION line:
+
+```bash
+FEATURE_SLUG=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD | sed 's|.*/||' | sed 's|-[0-9][0-9]-.*||')
+TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/orchestrator.log"
+mkdir -p "$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces"
+echo "[$(date -u +%H:%M:%SZ)] [SESSION] feature=$FEATURE_SLUG branch=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD)" >> "$TRACE_LOG"
+```
+
+Append trace lines throughout the sprint as described in each step below.
 
 ### 1. List issues
 
@@ -148,6 +139,11 @@ The script will:
 subsequent iteration before doing anything else.**
 
 List all open issue paths (paths only) using the conventions above, then read each file. Classify each as unblocked or blocked. Skip anything not `ready-for-agent`.
+
+Append to trace:
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [ROUND $round] issues=<count>" >> "$TRACE_LOG"
+```
 
 If there are no unblocked ready issues, print `NO MORE TASKS` and stop.
 
@@ -187,7 +183,12 @@ fi
 
 **2c. Dispatch all subagents in a single response (parallel)**
 
-After creating all worktrees, invoke all `crew-coder` subagents via `#runSubagent` in a single response — do not wait for one to return before issuing the others.
+After creating all worktrees, for each issue append to trace before dispatching:
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] issue=<slug>" >> "$TRACE_LOG"
+```
+
+Invoke all `crew-coder` subagents via `#runSubagent` in a single response — do not wait for one to return before issuing the others.
 
 For each issue:
 
@@ -232,23 +233,23 @@ Status: complete | partial | blocked
 ...
 ```
 
-Wait for all subagents to return their reports, then proceed to step 3.
+Wait for all subagents to return their reports. For each result, append to trace:
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [RESULT] branch=<branch> status=<complete|partial|blocked>" >> "$TRACE_LOG"
+```
+
+Then proceed to step 3.
 
 ### 3. Issue housekeeping
 
-**`Status: complete`** — update the Status line first, then move the file. The status update
-must happen before the move so the listing agent won't re-pick the issue if the move is slow:
-
-```bash
-sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
-mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"
-```
+**`Status: complete`** — execute the `mark-done` operation from `issue-tracker.md`. It verifies criteria, updates the Status line, and moves the file from `issues/open/` to `issues/done/`.
 
 Then merge the completed work onto the feature branch, then remove the worktree:
 
 ```bash
 git -C "$MAIN_ROOT" checkout "$FEATURE_BRANCH"
 git -C "$MAIN_ROOT" merge --no-ff "$BRANCH"
+echo "[$(date -u +%H:%M:%SZ)] [MERGE] branch=$BRANCH success=<true|false>" >> "$TRACE_LOG"
 git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
 ```
 
@@ -345,15 +346,20 @@ The script will:
 **This step is required every time the loop exits — whether all issues completed or the sprint
 stalled. Do not skip it.**
 
-When the loop exits, check whether any commits were made:
+When the loop exits, append the EXIT trace line:
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [EXIT] merged=<N> partial=<N> blocked=<N>" >> "$TRACE_LOG"
+```
+
+Then check whether any commits were made:
 
 ```bash
-SESSION_START=$(cat .scratch/.session-start-sha 2>/dev/null || echo "")
+SESSION_START=$(cat "$MAIN_ROOT/.scratch/$FEATURE_SLUG/session-start-sha" 2>/dev/null || echo "")
 if [[ -z "$SESSION_START" ]]; then
   echo "Session start SHA not found — skipping code review"
   exit 0
 fi
-git log "$SESSION_START"..HEAD --oneline
+git -C "$MAIN_ROOT" log "$SESSION_START"..HEAD --oneline
 ```
 
 If there are commits, invoke the `crew-code-reviewer` agent (`@crew-code-reviewer` in Copilot, or
@@ -361,6 +367,8 @@ If there are commits, invoke the `crew-code-reviewer` agent (`@crew-code-reviewe
 
 - The session-start SHA
 - A request to review all commits from `<session-start-sha>..HEAD`
+
+Persist the review report to `.scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md` (create `reviews/` directory if needed).
 
 Its findings are **advisory** — nothing is re-queued or blocked.
 

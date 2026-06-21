@@ -103,8 +103,8 @@ Extract from the issue:
 
 **Blocked-by check:** Read the `## Blocked by` section. For each listed dependency:
 
-1. Resolve the dependency's filename relative to the current issue's directory (e.g. `03-foo.md` → sibling file or `done/03-foo.md`).
-2. Check if it has been moved to `done/`: `ls "$(dirname "$ISSUE_PATH")/done/<dep-filename>" 2>/dev/null`.
+1. Resolve the dependency's filename relative to the current issue's directory (e.g. `03-foo.md` → sibling file or `../done/03-foo.md`).
+2. Check if it has been moved to `done/`: `ls "$(dirname "$ISSUE_PATH")/../done/<dep-filename>" 2>/dev/null`.
 3. If the file is **not** in `done/`, stop immediately:
 
 ```
@@ -291,9 +291,5 @@ Before moving, verify all acceptance criteria in the issue file are satisfied:
 
 **Move to done:**
 
-7. If all acceptance criteria AND all cross-cutting requirements (if present) are met, move the file to done:
-   ```bash
-   sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
-   mkdir -p "$(dirname <issue-path>)/done" && mv "<issue-path>" "$(dirname <issue-path>)/done/"
-   ```
+7. If all acceptance criteria AND all cross-cutting requirements (if present) are met, execute the `mark-done` operation from `issue-tracker.md` with the issue path. Do not hardcode `mv` or `sed` — delegate entirely to the tracker operation.
 8. If any criteria are unmet, do NOT move the file. Instead, add a `## Unmet criteria` section explaining what's missing and why (descoped, blocked, moved to a new issue), and ask the user how to proceed.

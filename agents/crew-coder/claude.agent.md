@@ -53,21 +53,49 @@ Rules:
 - Never use relative paths — the Read tool rejects them.
 - Never write files outside `$PROJECT_ROOT`.
 
-## Command Logging
+## Agent Trace Logging
 
-Log every Bash command so parallel workers are distinguishable:
+Each worker writes a per-agent trace file so parallel runs are fully observable in isolation.
+
+**Set up the trace file path immediately after environment setup:**
 
 ```bash
-CMD_LOG="$MAIN_ROOT/.scratch/commands.log"
-WORKER=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | sed 's|.*/||')
-mkdir -p "$(dirname "$CMD_LOG")"
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
+TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/$BRANCH.log"
+mkdir -p "$(dirname "$TRACE_LOG")"
 ```
 
-Every subsequent Bash call must log before running. Do not use eval — write the log line and the command as two separate statements:
+**Emit `[START]` as the first trace line (before any implementation work begins):**
 
 ```bash
-echo "[$(date -u +%H:%M:%SZ)] [$WORKER] <exact command here>" >> "$CMD_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [START] issue=$ISSUE_PATH title=$(basename "$ISSUE_PATH" .md) design_doc=$([ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/design.md" ] && echo yes || echo no) prd=$([ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md" ] && echo yes || echo no)" >> "$TRACE_LOG"
+```
+
+**Log `[PHASE]` at every major transition** (e.g. "exploring codebase", "writing tests", "running checks", "committing"):
+
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [PHASE] <phase description>" >> "$TRACE_LOG"
+```
+
+**Log `[CMD]` before every Bash command** (replaces the old shared log pattern). Do not use eval — write the log line and the command as two separate statements:
+
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [CMD] <exact command here>" >> "$TRACE_LOG"
 <exact command here>
+```
+
+**Log `[READ]` and `[WRITE]` for tool calls** (Read, Edit, Write tools) — not just Bash commands:
+
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [READ] <file path>" >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [WRITE] <file path>" >> "$TRACE_LOG"
+```
+
+**Emit `[DONE]` as the last action before returning structured output.** Always emit this line — including when status is `blocked`:
+
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [DONE] status=<complete|partial|blocked> reason=<notes>" >> "$TRACE_LOG"
 ```
 
 ## Read Context Documents

@@ -117,7 +117,8 @@ digraph brainstorming {
 
 - Write the validated design (spec) to `.scratch/<slug>/design.md`
   - (User preferences for spec location override this default)
-- Commit the design document to git
+
+> **Never commit `design.md`.** This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`. If git reports `.scratch/` is not gitignored, warn the user but do not attempt to fix it.
 
 **Spec Self-Review:**
 After writing the spec document, look at it with fresh eyes:

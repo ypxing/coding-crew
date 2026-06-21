@@ -105,7 +105,7 @@ See `scripts/skill-utils/git-workflow/README.md` for full documentation.
 
 ## Issue tracker (this repo)
 
-Issues live in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`. Triage state is a `Status:` line near the top. Move to `done/` subdirectory to close. See `docs/agents/issue-tracker.md` for valid status strings and workspace layout.
+Issues live in `.scratch/<feature-slug>/issues/open/<NN>-<slug>.md`. Triage state is a `Status:` line near the top. Move to `issues/done/` to close. See `docs/agents/issue-tracker.md` for valid status strings and workspace layout.
 
 ## Adding a new agent
 
