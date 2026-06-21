@@ -102,7 +102,17 @@ After the user approves the breakdown and before writing issues, extract cross-c
 
 Check if `.scratch/<feature-slug>/design.md` exists. If it does, scan for:
 
-- Explicit section headings: `## Error Handling`, `## Security`, `## Performance`, etc.
+- Explicit section headings for the 10 cross-cutting requirement categories:
+  - `## Error Handling` — how errors are caught, logged, propagated
+  - `## Logging` — what to log, format, levels
+  - `## Security` — auth checks, input validation, sensitive data handling
+  - `## Performance` — response time targets, resource limits
+  - `## Testing` — test coverage requirements, types of tests needed
+  - `## Architecture Constraints` — patterns to follow, libraries to use, interfaces to respect
+  - `## Data Validation` — schema constraints, input sanitization rules
+  - `## Observability` — metrics, tracing, monitoring hooks
+  - `## Interfaces & Contracts` — API contracts, function signatures, data structures shared across components
+  - `## Multi-Issue Flows` — end-to-end operations spanning multiple vertical slices
 - Decision statements with "must", "should", "all", "every" (signals cross-cutting rules)
   - Example: "All API endpoints must validate input using..."
   - Example: "Every database call must include retry logic..."
