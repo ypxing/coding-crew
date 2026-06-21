@@ -173,14 +173,14 @@ Team members can then pull the updated lockfile and re-run:
 
 Pick **one**:
 
-|              | `/crew-grill`                                     | `/crew-brainstorm`                                               |
-| ------------ | ------------------------------------------------- | ---------------------------------------------------------------- |
-| **Use when** | You have a plan and want it stress-tested         | You have an idea and need to develop it into a design            |
-| **Input**    | A plan — including output from Claude's plan mode | An idea, rough concept, or exploratory question                  |
-| **Produces** | decisions record (`design.md`) + PRD + issues     | Full design doc (`design.md`) + PRD + issues                     |
-| **Process**  | Relentless Q&A challenging every assumption       | Collaborative Q&A, approach proposals, section-by-section design |
+|              | `/crew-grill`                                   | `/crew-brainstorm`                                               |
+| ------------ | ----------------------------------------------- | ---------------------------------------------------------------- |
+| **Use when** | You have a plan and want it stress-tested       | You have an idea and need to develop it into a design            |
+| **Input**    | A plan — including output from any AI plan mode | An idea, rough concept, or exploratory question                  |
+| **Produces** | decisions record (`design.md`) + PRD + issues   | Full design doc (`design.md`) + PRD + issues                     |
+| **Process**  | Relentless Q&A challenging every assumption     | Collaborative Q&A, approach proposals, section-by-section design |
 
-**Tip:** Claude's built-in plan mode is a natural input for `crew-grill` — use plan mode to form your approach, then run `/crew-grill` to challenge it and produce a PRD.
+**Tip:** Any plan — including output from an AI assistant's plan mode — is a natural input for `crew-grill`. Form your approach first, then run `/crew-grill` to challenge it and produce a PRD.
 
 The `design.md` written by `crew-grill` is a **decisions record** (what was chosen and why). Implementation agents read it to understand the reasoning behind decisions and avoid reversing them when hitting edge cases.
 
