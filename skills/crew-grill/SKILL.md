@@ -19,8 +19,12 @@ If the user's invocation included "with docs" or "with documents", also invoke t
 
 At the end of the grilling:
 
-1. Summarize all implementation decisions (not glossary terms).
-2. Ask once: **"Ready to write the PRD?"** If yes, continue to Phase 2. If no, stop.
+1. Summarize all implementation decisions (not glossary terms) including the rationale for each — why that option was chosen over alternatives.
+2. Write this decisions summary to `.scratch/<feature-slug>/design.md`. Implementation agents read this file to understand the reasoning behind decisions and avoid reversing them when hitting edge cases.
+
+> **Never commit `design.md`.** This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
+
+3. Ask once: **"Ready to write the PRD?"** If yes, continue to Phase 2. If no, stop.
 
 ## Phase 2 — PRD
 

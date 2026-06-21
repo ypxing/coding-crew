@@ -13,9 +13,9 @@ A distributable collection of AI agents and skills that automate the issue → i
   ┌─────────────────────────────────────────────────────┐
   │  Create issues                                      │
   │                                                     │
-  │  /crew-grill             ← lightweight grill        │
+  │  /crew-grill             ← stress-test a plan       │
   │  OR                                                 │
-  │  /crew-brainstorm        ← thorough design + spec   │
+  │  /crew-brainstorm        ← develop an idea          │
   └─────────────────┬───────────────────────────────────┘
                     │
                     ▼
@@ -173,11 +173,16 @@ Team members can then pull the updated lockfile and re-run:
 
 Pick **one**:
 
-|              | `/crew-grill`              | `/crew-brainstorm`                              |
-| ------------ | -------------------------- | ----------------------------------------------- |
-| **Use when** | Feature is well-understood | Exploratory or complex work                     |
-| **Produces** | PRD + issues               | design.md + PRD + issues                        |
-| **Process**  | Lightweight Q&A            | Full Q&A, approaches, section-by-section design |
+|              | `/crew-grill`                                     | `/crew-brainstorm`                                               |
+| ------------ | ------------------------------------------------- | ---------------------------------------------------------------- |
+| **Use when** | You have a plan and want it stress-tested         | You have an idea and need to develop it into a design            |
+| **Input**    | A plan — including output from Claude's plan mode | An idea, rough concept, or exploratory question                  |
+| **Produces** | decisions record (`design.md`) + PRD + issues     | Full design doc (`design.md`) + PRD + issues                     |
+| **Process**  | Relentless Q&A challenging every assumption       | Collaborative Q&A, approach proposals, section-by-section design |
+
+**Tip:** Claude's built-in plan mode is a natural input for `crew-grill` — use plan mode to form your approach, then run `/crew-grill` to challenge it and produce a PRD.
+
+The `design.md` written by `crew-grill` is a **decisions record** (what was chosen and why). Implementation agents read it to understand the reasoning behind decisions and avoid reversing them when hitting edge cases.
 
 Add `with docs` to `crew-grill` when you also want to update `CONTEXT.md` (domain glossary) and record architectural decisions as ADRs:
 
@@ -231,15 +236,15 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 ## Skills
 
-| Skill                    | When                                                                                   |
-| ------------------------ | -------------------------------------------------------------------------------------- |
-| `/crew-grill`            | Feature is well-understood — fast Q&A → PRD → issues                                   |
-| `/crew-brainstorm`       | Exploratory or complex feature — thorough Q&A, design doc with code, then PRD → issues |
-| `/crew-afk`              | Run the sprint — parallel agents implement all ready issues                            |
-| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD                             |
-| `/solve-issue`           | Implement a single issue end-to-end                                                    |
-| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones                       |
-| `/configure-tracker`     | Select and install an issue tracker template                                           |
+| Skill                    | When                                                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `/crew-grill`            | You have a plan — stress-test it via Q&A, writes decisions record, then PRD → issues. Accepts plan mode output as input. |
+| `/crew-brainstorm`       | You have an idea — develop it collaboratively into a full design doc, then PRD → issues                                  |
+| `/crew-afk`              | Run the sprint — parallel agents implement all ready issues                                                              |
+| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD                                                               |
+| `/solve-issue`           | Implement a single issue end-to-end                                                                                      |
+| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones                                                         |
+| `/configure-tracker`     | Select and install an issue tracker template                                                                             |
 
 ---
 
