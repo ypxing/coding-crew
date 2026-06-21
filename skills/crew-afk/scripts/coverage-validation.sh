@@ -5,8 +5,9 @@ set -euo pipefail
 # Checks design.md/PRD.md against completed issues and merged code
 
 # Extract feature slug from current branch
+# Strip JIRA prefix (e.g., PROJ-123-) to match session-init.sh behavior
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-FEATURE_SLUG=$(echo "$CURRENT_BRANCH" | sed 's|.*/||' | sed 's|-[0-9][0-9]-.*||')
+FEATURE_SLUG=$(echo "$CURRENT_BRANCH" | sed 's|.*/||' | sed 's/^[A-Z]\+-[0-9]\+-//' | sed 's|-[0-9][0-9]-.*||')
 
 # Check for design.md or PRD.md
 DESIGN_PATH=".scratch/$FEATURE_SLUG/design.md"

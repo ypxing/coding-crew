@@ -144,7 +144,6 @@ if [ -n "$DESIGN_PATH" ]; then
   FULL_DESIGN_PATH="$MAIN_ROOT/$DESIGN_PATH"
   if [ -f "$FULL_DESIGN_PATH" ]; then
     echo "Reading design.md from $FULL_DESIGN_PATH"
-    # Read and use in implementation
   fi
 fi
 
@@ -155,10 +154,13 @@ if [ -n "$PRD_PATH" ]; then
   FULL_PRD_PATH="$MAIN_ROOT/$PRD_PATH"
   if [ -f "$FULL_PRD_PATH" ]; then
     echo "Reading PRD.md from $FULL_PRD_PATH"
-    # Read and use in implementation
   fi
 fi
 ```
+
+**After checking for document existence above**, use the View/Read tool to read the content of any documents that exist:
+- If `$FULL_DESIGN_PATH` exists, read it and keep its content in memory to inform implementation decisions
+- If `$FULL_PRD_PATH` exists, read it and keep its content in memory to inform implementation decisions
 
 If neither document exists or the Context Documents section is missing, continue normally.
 

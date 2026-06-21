@@ -49,14 +49,30 @@ teardown() {
 
 # --- Feature Slug Extraction Tests ---
 
-@test "coverage-validation.sh extracts feature slug from branch" {
-  git checkout -q -b "feature/test-feature/issue-01-hello"
+@test "coverage-validation.sh extracts feature slug from simple branch" {
+  git checkout -q -b "feature/test-feature"
+  mkdir -p .scratch/test-feature
+  echo "# Design" > .scratch/test-feature/design.md
   
-  # Mock script that just extracts the slug
-  run bash -c "cd '$TEMP_DIR' && FEATURE_SLUG=\$(git rev-parse --abbrev-ref HEAD | sed 's|.*/||' | sed 's|-[0-9][0-9]-.*||') && echo \$FEATURE_SLUG"
+  run bash "$COVERAGE_SCRIPT"
   
   [ "$status" -eq 0 ]
-  [ "$output" = "issue" ]
+  # Should NOT skip - design.md should be found
+  [[ "$output" != *"skipped"* ]]
+}
+
+@test "coverage-validation.sh strips JIRA prefix from branch name" {
+  git checkout -q -b "feature/PROJ-123-my-feature"
+  mkdir -p .scratch/my-feature
+  echo "# Design" > .scratch/my-feature/design.md
+  
+  # Run the actual script - it should find design.md at .scratch/my-feature/
+  # Currently it looks in .scratch/PROJ-123-my-feature/ (bug)
+  run bash "$COVERAGE_SCRIPT"
+  
+  [ "$status" -eq 0 ]
+  # Should NOT skip - design.md should be found
+  [[ "$output" != *"skipped"* ]]
 }
 
 # --- Skip Behavior Tests ---

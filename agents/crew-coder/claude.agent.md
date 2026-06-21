@@ -88,14 +88,16 @@ PRD_DOC="$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
 
 if [ -f "$DESIGN_DOC" ]; then
   echo "Reading design.md for architectural context..."
-  # Read and keep in context
 fi
 
 if [ -f "$PRD_DOC" ]; then
   echo "Reading PRD.md for requirements context..."
-  # Read and keep in context
 fi
 ```
+
+**After checking for document existence above**, use the View tool to read the content of any documents that exist:
+- If `$DESIGN_DOC` exists, read it with the View tool and keep its content in memory throughout the implementation
+- If `$PRD_DOC` exists, read it with the View tool and keep its content in memory throughout the implementation
 
 If neither exists, continue normally — this is graceful degradation for issues without context documents.
 
