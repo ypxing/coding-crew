@@ -14,6 +14,7 @@ AI agents that take your ideas from planning to code.
   │  plan & design                                      │
   │                                                     │
   │  /crew-grill         ← stress-test a plan           │
+  │  OR                                                 │
   │  /crew-brainstorm    ← develop an idea              │
   └─────────────────────┬───────────────────────────────┘
                         │
@@ -92,20 +93,19 @@ Opens the review report, triages findings, implements fixes with TDD.
 
 **Main flow**
 
-| Skill                    | When                                                                         |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| `/crew-grill`            | Stress-test a plan via Q&A → decisions record → PRD → issues                 |
-| `/crew-brainstorm`       | Develop an idea collaboratively → full design doc → PRD → issues             |
-| `/crew-afk`              | Parallel agents implement all ready issues, then code review                 |
-| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD                   |
+| Skill                               | When                                                                |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| `/crew-grill` or `/crew-brainstorm` | Plan and design — stress-test a plan or develop an idea into issues |
+| `/crew-afk`                         | Parallel agents implement all ready issues, then code review        |
+| `/crew-address-findings`            | Triage and fix the post-sprint code review report with TDD          |
 
 **Also available**
 
-| Skill                  | When                                                         |
-| ---------------------- | ------------------------------------------------------------ |
-| `/solve-issue`         | Implement a single issue end-to-end                          |
+| Skill                  | When                                                             |
+| ---------------------- | ---------------------------------------------------------------- |
+| `/solve-issue`         | Implement a single issue end-to-end                              |
 | `/address-pr-comments` | Fetch PR review comments from GitHub and implement sensible ones |
-| `/configure-tracker`   | Select and install an issue tracker template                 |
+| `/configure-tracker`   | Select and install an issue tracker template                     |
 
 ---
 
