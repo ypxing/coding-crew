@@ -1,42 +1,41 @@
 # Coding Crew
 
-A distributable collection of AI agents and skills that automate the issue → implementation → review cycle.
+AI agents that take your ideas from planning to code.
 
 ---
 
 ## The flow
 
 ```
-  you have an idea
-       │
-       ▼
+  you have an idea or plan
+           │
+           ▼
   ┌─────────────────────────────────────────────────────┐
-  │  Create issues                                      │
+  │  plan & design                                      │
   │                                                     │
-  │  /crew-grill             ← stress-test a plan       │
-  │  OR                                                 │
-  │  /crew-brainstorm        ← develop an idea          │
-  └─────────────────┬───────────────────────────────────┘
-                    │
-                    ▼
-             /crew-afk
-                    │
-       ┌────────────┼────────────┐
-       ▼            ▼            ▼
-   crew-coder   crew-coder   crew-coder  (parallel, isolated worktrees)
-   issue 1       issue 2      issue 3
-       └────────────┼────────────┘
-                    │ committed branches merged
-                    ▼
-             crew-code-reviewer
-                    │
-                    ▼
-       /crew-address-findings
+  │  /crew-grill         ← stress-test a plan           │
+  │  /crew-brainstorm    ← develop an idea              │
+  └─────────────────────┬───────────────────────────────┘
+                        │
+                        ▼
+                 /crew-afk
+                        │
+         ┌──────────────┼──────────────┐
+         ▼              ▼              ▼
+     crew-coder     crew-coder     crew-coder   (parallel, isolated worktrees)
+     issue 1        issue 2        issue 3
+         └──────────────┼──────────────┘
+                        │ committed branches merged
+                        ▼
+               crew-code-reviewer
+                        │
+                        ▼
+         /crew-address-findings
 ```
 
 ---
 
-## 1. Create issues
+## 1. Plan and design
 
 Pick **one**:
 
@@ -47,11 +46,9 @@ Pick **one**:
 | **Produces** | decisions record (`design.md`) + PRD + issues   | Full design doc (`design.md`) + PRD + issues                     |
 | **Process**  | Relentless Q&A challenging every assumption     | Collaborative Q&A, approach proposals, section-by-section design |
 
-**Tip:** Any plan — including output from an AI assistant's plan mode — is a natural input for `crew-grill`. Form your approach first, then run `/crew-grill` to challenge it and produce a PRD.
+The `design.md` produced here is a decisions record — implementation agents read it to avoid reversing choices when hitting edge cases.
 
-The `design.md` written by `crew-grill` is a **decisions record** (what was chosen and why). Implementation agents read it to understand the reasoning behind decisions and avoid reversing them when hitting edge cases.
-
-Add `with docs` to `crew-grill` when you also want to update `CONTEXT.md` (domain glossary) and record architectural decisions as ADRs:
+Add `with docs` to also update `CONTEXT.md` and record ADRs:
 
 ```
 /crew-grill with docs
@@ -61,7 +58,7 @@ Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
 
 ---
 
-## 2. Run the sprint
+## 2. Handoff to agents
 
 ```
 /crew-afk
@@ -71,15 +68,13 @@ Picks up every `ready-for-agent` issue, spawns crew-coder agents in parallel, co
 
 **Gitignored files in worktrees (`.worktreeinclude`)**
 
-Each agent runs in an isolated git worktree. Files that are gitignored — like `.env`, `node_modules/`, or local config — are not present in a fresh worktree by default. To make them available to agents, create a `.worktreeinclude` file at your repo root listing the paths to symlink in:
+Each agent runs in an isolated git worktree. Gitignored files like `.env` or `node_modules/` aren't present by default. To make them available, create a `.worktreeinclude` at your repo root:
 
 ```
 # .worktreeinclude
 .env
 .env.local
 ```
-
-This file is optional. If absent, agents only see tracked files.
 
 ---
 
@@ -95,15 +90,22 @@ Opens the review report, triages findings, implements fixes with TDD.
 
 ## Skills
 
-| Skill                    | When                                                                                                                     |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `/crew-grill`            | You have a plan — stress-test it via Q&A, writes decisions record, then PRD → issues. Accepts plan mode output as input. |
-| `/crew-brainstorm`       | You have an idea — develop it collaboratively into a full design doc, then PRD → issues                                  |
-| `/crew-afk`              | Run the sprint — parallel agents implement all ready issues                                                              |
-| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD                                                               |
-| `/solve-issue`           | Implement a single issue end-to-end                                                                                      |
-| `/address-pr-comments`   | Fetch PR review comments from GitHub and implement sensible ones                                                         |
-| `/configure-tracker`     | Select and install an issue tracker template                                                                             |
+**Main flow**
+
+| Skill                    | When                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `/crew-grill`            | Stress-test a plan via Q&A → decisions record → PRD → issues                 |
+| `/crew-brainstorm`       | Develop an idea collaboratively → full design doc → PRD → issues             |
+| `/crew-afk`              | Parallel agents implement all ready issues, then code review                 |
+| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD                   |
+
+**Also available**
+
+| Skill                  | When                                                         |
+| ---------------------- | ------------------------------------------------------------ |
+| `/solve-issue`         | Implement a single issue end-to-end                          |
+| `/address-pr-comments` | Fetch PR review comments from GitHub and implement sensible ones |
+| `/configure-tracker`   | Select and install an issue tracker template                 |
 
 ---
 
@@ -113,14 +115,14 @@ Opens the review report, triages findings, implements fixes with TDD.
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
 ```
 
-This installs to `$HOME` (user-level, works in any project). Common flags:
+Installs to `$HOME` (user-level, works in any project). Common flags:
 
-| Flag | Effect |
-| ---- | ------ |
-| `claude` | Claude only (default: all platforms) |
-| `copilot` | Copilot only |
-| `--project` | Install into the current project instead of `$HOME` |
-| `--version v1.2.0` | Pin to a specific release |
+| Flag               | Effect                                              |
+| ------------------ | --------------------------------------------------- |
+| `claude`           | Claude only (default: all platforms)                |
+| `copilot`          | Copilot only                                        |
+| `--project`        | Install into the current project instead of `$HOME` |
+| `--version v1.2.0` | Pin to a specific release                           |
 
 **Requirements:** `bash` 4.0+, `jq`, `git`, `curl`, `tar`. Windows: WSL2 required.
 
@@ -134,7 +136,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 ## Team distribution
 
-To standardize on a specific version across a team, commit a `crew.lock` to your dotfiles or team config repo:
+Commit a `crew.lock` to your dotfiles or team config repo to pin a version:
 
 ```json
 {
@@ -166,6 +168,6 @@ Team members install from it:
 
 ## Acknowledgements
 
-Several skills in this repo are borrowed directly from [Matt Pocock's skills collection](https://github.com/mattpocock/skills) (MIT License, Copyright © 2026 Matt Pocock). See [LICENSE](LICENSE) for the full copyright notice. Thanks Matt.
+Several skills are borrowed from [Matt Pocock's skills collection](https://github.com/mattpocock/skills) (MIT License, Copyright © 2026 Matt Pocock). See [LICENSE](LICENSE) for the full notice. Thanks Matt.
 
-The `crew-brainstorm` skill is adapted from [obra/superpowers](https://github.com/obra/superpowers) `brainstorming` skill. Thanks Jesse.
+The `crew-brainstorm` skill is adapted from [obra/superpowers](https://github.com/obra/superpowers). Thanks Jesse.
