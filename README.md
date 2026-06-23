@@ -7,31 +7,32 @@ AI agents that take your ideas from planning to code.
 ## The flow
 
 ```
-  you have an idea or plan
+  an idea or plan
            │
            ▼
   ┌─────────────────────────────────────────────────────┐
-  │  plan & design                                      │
-  │                                                     │
   │  /crew-grill         ← stress-test a plan           │
   │  OR                                                 │
   │  /crew-brainstorm    ← develop an idea              │
   └─────────────────────┬───────────────────────────────┘
                         │
                         ▼
-                 /crew-afk
+  ┌─────────────────────────────────────────────────────┐
+  │  /crew-afk                                          │
+  │                                                     │
+  │          ┌──────────┬──────────┐                    │
+  │          ▼          ▼          ▼                    │
+  │        coder      coder      coder                  │
+  │       issue 1    issue 2    issue 3                 │
+  │         (TDD, isolated worktrees)                   │
+  │          └──────────┼──────────┘                    │
+  │                     │ parallel, committed           │
+  │                     ▼                               │
+  │               code-reviewer                         │
+  └─────────────────────────────────────────────────────┘
                         │
-         ┌──────────────┼──────────────┐
-         ▼              ▼              ▼
-     crew-coder     crew-coder     crew-coder   (parallel, isolated worktrees)
-     issue 1        issue 2        issue 3
-         └──────────────┼──────────────┘
-                        │ committed branches merged
                         ▼
-               crew-code-reviewer
-                        │
-                        ▼
-         /crew-address-findings
+             /crew-address-findings
 ```
 
 ---
