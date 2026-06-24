@@ -1,10 +1,10 @@
 #!/usr/bin/env bats
 
-# Tests for the restructured docs/agents/issue-tracker.md and related files
+# Tests for the tracker template and install destination paths
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export ISSUE_TRACKER="$SCRIPT_DIR/docs/agents/issue-tracker.md"
+  export ISSUE_TRACKER="$SCRIPT_DIR/docs/templates/trackers/local.md"
   export TEMPLATE="$SCRIPT_DIR/docs/templates/trackers/local.md"
 }
 
@@ -53,15 +53,6 @@ setup() {
   grep -q '^## Workspace'                "$TEMPLATE"
 }
 
-@test "docs/templates/trackers/local.md sections are all present in issue-tracker.md" {
-  # Every section heading in the template must exist in the installed copy.
-  # This catches drift when one file is updated but the other is not.
-  while IFS= read -r heading; do
-    grep -qF "$heading" "$ISSUE_TRACKER" \
-      || { echo "Missing in issue-tracker.md: $heading"; return 1; }
-  done < <(grep '^## ' "$TEMPLATE")
-}
-
-@test "docs/agents/triage-labels.md has been removed" {
-  [ ! -f "$SCRIPT_DIR/docs/agents/triage-labels.md" ]
+@test "docs/agents/ directory has been removed from source repo" {
+  [ ! -d "$SCRIPT_DIR/docs/agents" ]
 }
