@@ -5,16 +5,6 @@ set -euo pipefail
 # Usage: source this script or run it directly
 # Optional: Pass --jira TICKET-123 or --feature-slug <slug> as arguments
 
-# Auto-detect platform directory
-if [ -d ".claude" ]; then
-  PLATFORM_DIR=".claude"
-elif [ -d ".copilot" ]; then
-  PLATFORM_DIR=".copilot"
-else
-  echo "Error: No .claude or .copilot directory found" >&2
-  exit 1
-fi
-
 # Parse --feature-slug flag (consumed here; remaining args forwarded to feature-branch-setup.sh)
 FEATURE_SLUG_ARG=""
 REMAINING_ARGS=()
