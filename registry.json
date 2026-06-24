@@ -3,7 +3,7 @@
     "templates": {
       "issue-tracker": {
         "source": "docs/templates/trackers/local.md",
-        "dest": "docs/agents/issue-tracker.md"
+        "dest": ".coding-crew/docs/issue-tracker.md"
       }
     }
   },
@@ -42,7 +42,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "1.4.0",
+      "version": "1.4.1",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -76,7 +76,7 @@
       "install": ".claude/skills/dep-install"
     },
     "solve-issue": {
-      "version": "1.4.0",
+      "version": "1.4.1",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
@@ -90,7 +90,7 @@
       ]
     },
     "crew-address-findings": {
-      "version": "1.2.0",
+      "version": "1.2.1",
       "source-dir": "crew-address-findings",
       "description": "Triage and fix findings from a crew-afk code review report using TDD.",
       "install": ".claude/skills/crew-address-findings",
@@ -128,14 +128,14 @@
       ]
     },
     "to-issues": {
-      "version": "1.3.0",
+      "version": "1.3.1",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
       "install": ".claude/skills/to-issues"
     },
     "to-prd": {
-      "version": "1.2.0",
+      "version": "1.2.1",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",
@@ -161,7 +161,7 @@
       "install": ".claude/skills/caveman"
     },
     "configure-tracker": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "source-dir": "configure-tracker",
       "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level config path.",
       "install": ".claude/skills/configure-tracker"
@@ -173,7 +173,7 @@
       "install": ".claude/skills/domain-modeling"
     },
     "crew-brainstorm": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "source-dir": "crew-brainstorm",
       "description": "Thorough design pipeline: capture feature slug, explore context, Q&A, propose approaches, build design.md section by section, then auto-transition to to-prd and to-issues.",
       "install": ".claude/skills/crew-brainstorm",

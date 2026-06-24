@@ -387,10 +387,10 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 Edit these files after install — they override the defaults on the next run:
 
-| File                           | Purpose                                   |
-| ------------------------------ | ----------------------------------------- |
-| `docs/agents/issue-tracker.md` | Where issues live, how to list/close them |
-| `docs/agents/triage-labels.md` | Map canonical roles to your label strings |
+| File                                 | Purpose                                   |
+| ------------------------------------ | ----------------------------------------- |
+| `.coding-crew/docs/issue-tracker.md` | Where issues live, how to list/close them |
+| `docs/agents/triage-labels.md`       | Map canonical roles to your label strings |
 
 ---
 

@@ -427,6 +427,21 @@ install_docs() {
     local rel_dest="${dest#$REPO_ROOT/}"
     echo "  $rel_dest"
   done
+
+  # Copy tracker template files so configure-tracker can present them as options.
+  local trackers_src="$SCRIPT_DIR/docs/templates/trackers"
+  local trackers_dest="$REPO_ROOT/.coding-crew/docs/templates/trackers"
+  if [[ -d "$trackers_src" ]]; then
+    mkdir -p "$trackers_dest"
+    while IFS= read -r -d '' tpl_file; do
+      local tpl_dest="$trackers_dest/$(basename "$tpl_file")"
+      if [[ ! -f "$tpl_dest" ]]; then
+        [[ "$docs_header_printed" -eq 0 ]] && { echo "Docs:"; docs_header_printed=1; }
+        cp "$tpl_file" "$tpl_dest"
+        echo "  .coding-crew/docs/templates/trackers/$(basename "$tpl_file")"
+      fi
+    done < <(find "$trackers_src" -maxdepth 1 -name "*.md" -print0)
+  fi
 }
 
 write_manifest() {

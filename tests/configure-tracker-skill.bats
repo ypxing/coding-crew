@@ -43,8 +43,8 @@ teardown() {
 
 # --- Skill content: menu behaviour ---
 
-@test "configure-tracker/SKILL.md references docs/templates/trackers/ directory" {
-  grep -q 'docs/templates/trackers' "$SKILL_FILE"
+@test "configure-tracker/SKILL.md references .coding-crew/docs/templates/trackers/ directory" {
+  grep -q '\.coding-crew/docs/templates/trackers' "$SKILL_FILE"
 }
 
 @test "configure-tracker/SKILL.md describes listing .md files from trackers directory" {
@@ -53,16 +53,16 @@ teardown() {
 
 # --- Skill content: write paths ---
 
-@test "configure-tracker/SKILL.md mentions project-level path docs/agents/issue-tracker.md" {
-  grep -q 'docs/agents/issue-tracker.md' "$SKILL_FILE"
+@test "configure-tracker/SKILL.md mentions project-level path .coding-crew/docs/issue-tracker.md" {
+  grep -q '\.coding-crew/docs/issue-tracker.md' "$SKILL_FILE"
 }
 
 @test "configure-tracker/SKILL.md does not mention user-level path (project-level only)" {
-  ! grep -q '~/.claude/docs/agents/issue-tracker.md' "$SKILL_FILE"
+  ! grep -q '~/.claude' "$SKILL_FILE"
 }
 
-# --- First-run deferral note ---
+# --- Auto-select behaviour ---
 
-@test "configure-tracker/SKILL.md contains first-run deferral note mentioning 2+ templates" {
-  grep -qE '2\+|two.*template|first.run|not yet active' "$SKILL_FILE"
+@test "configure-tracker/SKILL.md auto-selects when exactly one template is found" {
+  grep -qE 'exactly one|one template|skip.*Step 2|automatically' "$SKILL_FILE"
 }

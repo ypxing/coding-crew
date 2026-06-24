@@ -164,25 +164,25 @@ teardown() {
   [[ "$output" =~ "+++" ]]
 }
 
-@test "install creates docs/agents/issue-tracker.md in target repo" {
+@test "install creates .coding-crew/docs/issue-tracker.md in target repo" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude
 
-  [ -f "$TEMP_DIR/docs/agents/issue-tracker.md" ]
+  [ -f "$TEMP_DIR/.coding-crew/docs/issue-tracker.md" ]
 }
 
-@test "reinstall does not overwrite existing docs/agents/issue-tracker.md" {
+@test "reinstall does not overwrite existing .coding-crew/docs/issue-tracker.md" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude > /dev/null
 
   # Modify the installed file
-  echo "custom content" > "$TEMP_DIR/docs/agents/issue-tracker.md"
+  echo "custom content" > "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
 
   # Reinstall
   TARGET_REPO="$TEMP_DIR" ./install.sh claude > /dev/null
 
   # Verify custom content was preserved (not overwritten)
-  grep -q "custom content" "$TEMP_DIR/docs/agents/issue-tracker.md"
+  grep -q "custom content" "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
 }
 
 @test "install --user is rejected with an invalid platform error" {
