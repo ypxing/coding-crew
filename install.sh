@@ -445,7 +445,8 @@ install_docs() {
 }
 
 write_manifest() {
-  local manifest="$REPO_ROOT/.coding-crew.manifest.json"
+  local manifest="$REPO_ROOT/.coding-crew/manifest.json"
+  mkdir -p "$(dirname "$manifest")"
 
   local source_sha source_remote
   source_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
@@ -494,7 +495,7 @@ write_manifest() {
       skills: ($existing_skills * $new_skills)
     }' > "$manifest"
 
-  echo "  .coding-crew.manifest.json"
+  echo "  .coding-crew/manifest.json"
 }
 
 fetch_latest_release_version() {
@@ -682,9 +683,9 @@ run_update() {
   fi
   
   # Fall back to manifest-based update (legacy mode)
-  local manifest="$REPO_ROOT/.coding-crew.manifest.json"
+  local manifest="$REPO_ROOT/.coding-crew/manifest.json"
   if [[ ! -f "$manifest" ]]; then
-    echo "Error: no manifest found at $manifest — run ./install.sh first" >&2
+    echo "Error: no manifest found at $manifest (or legacy .coding-crew.manifest.json) — run ./install.sh first" >&2
     exit 1
   fi
 
