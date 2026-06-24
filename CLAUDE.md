@@ -97,14 +97,14 @@ See `scripts/skill-utils/git-workflow/README.md` for full documentation.
 
 ### Docs
 
-`docs/templates/trackers/` contains tracker template files. `install.sh` copies the selected template to `docs/agents/issue-tracker.md` in the target repo (skip-if-exists). Consumers can switch trackers by running the `configure-tracker` skill.
+`docs/templates/trackers/` contains tracker template files. `install.sh` copies the selected template to `.coding-crew/docs/issue-tracker.md` in the target repo (skip-if-exists). Consumers can switch trackers by running the `configure-tracker` skill.
 
 - `docs/templates/trackers/local.md` — canonical local-markdown tracker template (source of truth)
-- `docs/agents/issue-tracker.md` — installed copy in the target repo; edit to customise for the project
+- `.coding-crew/docs/issue-tracker.md` — installed copy in the target repo; edit to customise for the project
 
 ## Issue tracker (this repo)
 
-Issues live in `.scratch/<feature-slug>/issues/open/<NN>-<slug>.md`. Triage state is a `Status:` line near the top. Move to `issues/done/` to close. See `docs/agents/issue-tracker.md` for valid status strings and workspace layout.
+Issues live in `.scratch/<feature-slug>/issues/open/<NN>-<slug>.md`. Triage state is a `Status:` line near the top. Move to `issues/done/` to close. See `.coding-crew/docs/issue-tracker.md` for valid status strings and workspace layout.
 
 ## Adding a new agent
 

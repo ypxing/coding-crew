@@ -3,7 +3,7 @@
     "templates": {
       "issue-tracker": {
         "source": "docs/templates/trackers/local.md",
-        "dest": "docs/agents/issue-tracker.md"
+        "dest": ".coding-crew/docs/issue-tracker.md"
       }
     }
   },
