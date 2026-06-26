@@ -35,10 +35,10 @@ teardown() {
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
 
   # Verify manifest was created
-  [ -f "$TEMP_DIR/.coding-crew.manifest.json" ]
+  [ -f "$TEMP_DIR/.coding-crew/manifest.json" ]
 
   # Verify skill entry exists
-  run jq -r '.skills["tdd"].version' "$TEMP_DIR/.coding-crew.manifest.json"
+  run jq -r '.skills["tdd"].version' "$TEMP_DIR/.coding-crew/manifest.json"
   [ "$status" -eq 0 ]
   [ -n "$output" ]
   [ "$output" != "null" ]
@@ -53,11 +53,11 @@ teardown() {
   [ -f "$TEMP_DIR/.claude/agents/crew-code-reviewer.md" ]
 
   # Verify manifest contains both agents
-  run jq -r '.agents["crew-coder"].version' "$TEMP_DIR/.coding-crew.manifest.json"
+  run jq -r '.agents["crew-coder"].version' "$TEMP_DIR/.coding-crew/manifest.json"
   [ "$status" -eq 0 ]
   [ "$output" != "null" ]
 
-  run jq -r '.agents["crew-code-reviewer"].version' "$TEMP_DIR/.coding-crew.manifest.json"
+  run jq -r '.agents["crew-code-reviewer"].version' "$TEMP_DIR/.coding-crew/manifest.json"
   [ "$status" -eq 0 ]
   [ "$output" != "null" ]
 }
