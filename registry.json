@@ -186,6 +186,6 @@
       "source-dir": "domain-modeling",
       "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise.",
       "install": ".claude/skills/domain-modeling"
-    },
+    }
   }
 }
