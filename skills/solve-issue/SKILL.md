@@ -117,39 +117,18 @@ Only continue if every listed dependency is confirmed in `done/`. If the section
 
 **Check for Context Documents section:**
 
-Look for a `## Context Documents` section in the issue file. If it exists, extract paths to design.md and PRD.md. These paths are typically relative to `MAIN_ROOT`, formatted as:
+Look for a `## Context Documents` section in the issue file. If it exists, extract the PRD path. It is typically formatted as:
 
 ```markdown
 ## Context Documents
 
-- Design: `.scratch/<feature-slug>/design.md`
 - PRD: `.scratch/<feature-slug>/PRD.md`
 ```
 
 **Read context documents:**
 
-For each document path found:
-
-1. Construct the full path: `$MAIN_ROOT/<path-from-issue>`
-2. Check if the file exists: `[ -f "$MAIN_ROOT/<path>" ]`
-3. If it exists, read it and keep it in context for the implementation
-4. If it doesn't exist, note it but continue (graceful degradation)
-
-Example bash:
-
 ```bash
-# Extract design.md path from issue
-DESIGN_PATH=$(grep -A 5 "## Context Documents" "$ISSUE_PATH" | grep "Design:" | sed 's/.*Design: *`\(.*\)`.*/\1/')
-
-if [ -n "$DESIGN_PATH" ]; then
-  FULL_DESIGN_PATH="$MAIN_ROOT/$DESIGN_PATH"
-  if [ -f "$FULL_DESIGN_PATH" ]; then
-    echo "Reading design.md from $FULL_DESIGN_PATH"
-  fi
-fi
-
-# Extract PRD.md path from issue
-PRD_PATH=$(grep -A 5 "## Context Documents" "$ISSUE_PATH" | grep "PRD:" | sed 's/.*PRD: *`\(.*\)`.*/\1/')
+PRD_PATH=$(grep -A 3 "## Context Documents" "$ISSUE_PATH" | grep "PRD:" | sed 's/.*PRD: *`\(.*\)`.*/\1/')
 
 if [ -n "$PRD_PATH" ]; then
   FULL_PRD_PATH="$MAIN_ROOT/$PRD_PATH"
@@ -159,12 +138,9 @@ if [ -n "$PRD_PATH" ]; then
 fi
 ```
 
-**After checking for document existence above**, use the View/Read tool to read the content of any documents that exist:
+**After checking for document existence above**, use the View/Read tool to read `PRD.md` if it exists and keep its content in memory throughout the implementation.
 
-- If `$FULL_DESIGN_PATH` exists, read it and keep its content in memory to inform implementation decisions
-- If `$FULL_PRD_PATH` exists, read it and keep its content in memory to inform implementation decisions
-
-If neither document exists or the Context Documents section is missing, continue normally.
+If the PRD does not exist or the Context Documents section is missing, continue normally.
 
 ### 2. Install dependencies
 

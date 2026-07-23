@@ -94,7 +94,7 @@ State: `round = 1`, `stall = 0`, `all_merged = []`, `all_partial = []`, `all_blo
 
 ### Step 1 — List
 
-Execute the `list` operation from `issue-tracker.md` to find all ready unblocked issues. If none: go to **Exit**.
+Execute the `list` operation from `issue-tracker.md` to find all ready unblocked issues. If none: go to **## Wrap Up** and execute every step there.
 
 Log: `Round <N>: <count> issue(s)`
 
@@ -105,7 +105,7 @@ echo "[$(date -u +%H:%M:%SZ)] [ROUND $round] issues=<count>" >> "$TRACE_LOG"
 
 ### Step 2 — Sprint
 
-> **PARALLELISM**: Issue all crew-coder Agent tool calls in a **single response turn** — do not wait for one to return before issuing the others. Claude Code runs multiple Agent tool calls emitted in the same response concurrently.
+> **PARALLELISM**: Dispatch crew-coder agents in batches of **3** — issue up to 3 Agent tool calls in a single response turn, wait for all 3 to complete, then dispatch the next batch of up to 3, and so on. This caps concurrent LLM requests to avoid rate-limit (429) errors.
 
 For each unblocked issue, before dispatching, append to trace:
 ```bash
@@ -160,7 +160,7 @@ echo "[$(date -u +%H:%M:%SZ)] [RESULT] branch=<branch> status=<complete|partial|
 
 ### Step 3 — Stall detection
 
-If `complete` is empty: increment `stall`. If `stall >= 2`, go to **Exit**.
+If `complete` is empty: increment `stall`. If `stall >= 2`, go to **## Wrap Up** and execute every step there.
 Otherwise reset `stall = 0`.
 
 Log: `Round <N>: <C> complete / <P> partial / <B> blocked`
@@ -222,7 +222,9 @@ done
 
 Return to Step 1.
 
-## Exit
+## Wrap Up
+
+**Execute all steps in this section in order — do not skip any step even if there are no merged issues.**
 
 ### Step 4.5 — Squash Commits
 
@@ -248,12 +250,14 @@ The script will:
 
 ### Code review
 
+**Always run this step — do not skip it.**
+
 ```bash
 SESSION_START=$(cat ".scratch/$FEATURE_SLUG/session-start-sha" 2>/dev/null || echo "")
 git log "$SESSION_START"..HEAD --oneline
 ```
 
-If commits exist, call the `crew-code-reviewer` Agent:
+If commits exist (output is non-empty), call the `crew-code-reviewer` Agent:
 
 ```
 Review all branches merged in this sprint session.
@@ -273,20 +277,19 @@ If no commits: print `Code review: skipped (no commits this session)`.
 Check for design documentation (use `FEATURE_SLUG` established in Session Init):
 
 ```bash
-DESIGN_PATH=".scratch/$FEATURE_SLUG/design.md"
 PRD_PATH=".scratch/$FEATURE_SLUG/PRD.md"
 
-if [ ! -f "$DESIGN_PATH" ] && [ ! -f "$PRD_PATH" ]; then
-  echo "Coverage validation: skipped (no design.md or PRD.md found)"
+if [ ! -f "$PRD_PATH" ]; then
+  echo "Coverage validation: skipped (no PRD.md found)"
   # Continue to branch cleanup
 fi
 ```
 
-If either `design.md` or `PRD.md` exists, spawn a haiku validation agent to generate a coverage report:
+If `PRD.md` exists, spawn a haiku validation agent to generate a coverage report:
 
 ```
 Extract all requirements from:
-<design.md and/or PRD.md content>
+<PRD.md content>
 
 Categories to extract:
 - Key User Stories
@@ -341,7 +344,7 @@ Blocked (<count>): <slug, slug, ...> | none
 [STALLED: resolve blockers and re-run (/crew-afk)]   ← only if stalled
 
 ## Coverage Report
-<coverage report from validation agent — only if design.md or PRD.md exists>
+<coverage report from validation agent — only if PRD.md exists>
 
 ### Per-issue
 

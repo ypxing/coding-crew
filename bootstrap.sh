@@ -5,6 +5,9 @@
 #   curl -fsSL .../bootstrap.sh | bash -s -- copilot --skills tdd,caveman
 #   curl -fsSL .../bootstrap.sh | bash -s -- --project
 #   curl -fsSL .../bootstrap.sh | bash -s -- --version v1.0.0
+#   curl -fsSL .../bootstrap.sh | bash -s -- --from-lockfile
+#   curl -fsSL .../bootstrap.sh | bash -s -- --from-lockfile path/to/crew.lock
+#   curl -fsSL .../bootstrap.sh | bash -s -- --update
 set -euo pipefail
 
 REPO="https://github.com/ypxing/coding-crew"
@@ -13,6 +16,9 @@ VERSION="${VERSION:-}"
 PLATFORM="${PLATFORM:-all}"
 SKILLS="${SKILLS:-}"
 PROJECT="${PROJECT:-}"
+UPDATE="${UPDATE:-}"
+LOCKFILE_MODE="${LOCKFILE_MODE:-}"
+LOCKFILE="${LOCKFILE:-}"
 
 # Positional args override env vars
 while [[ $# -gt 0 ]]; do
@@ -22,10 +28,26 @@ while [[ $# -gt 0 ]]; do
     --version) VERSION="${2:-}"; shift 2 ;;
     --skills=*) SKILLS="${1#--skills=}"; shift ;;
     --skills) SKILLS="${2:-}"; shift 2 ;;
+    --update) UPDATE=1; shift ;;
+    --from-lockfile=*) LOCKFILE_MODE=1; LOCKFILE="${1#--from-lockfile=}"; shift ;;
+    --from-lockfile)
+      LOCKFILE_MODE=1; shift
+      if [[ $# -gt 0 && "$1" != --* && "$1" != all && "$1" != claude && "$1" != copilot ]]; then
+        LOCKFILE="$1"; shift
+      fi
+      ;;
     all|claude|copilot) PLATFORM="$1"; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
+
+if [[ -n "$LOCKFILE_MODE" ]]; then
+  LOCKFILE="${LOCKFILE:-crew.lock}"
+  if [[ ! -f "$LOCKFILE" ]]; then
+    echo "Error: lockfile not found: $LOCKFILE" >&2
+    exit 1
+  fi
+fi
 
 # Default to user-level ($HOME); --project installs into the current git repo instead
 if [[ -z "$PROJECT" ]]; then
@@ -49,8 +71,19 @@ fi
 INSTALL="$TMP_DIR/install.sh"
 chmod +x "$INSTALL"
 
-if [[ -n "$SKILLS" ]]; then
-  exec "$INSTALL" "$PLATFORM" --skills "$SKILLS"
+# A tarball extract has no .git dir, so install.sh can't derive the registry URL
+# itself when writing crew.lock — pass it through explicitly whenever pinning.
+PIN_ARGS=()
+if [[ -n "$VERSION" ]]; then
+  PIN_ARGS=(--version "$VERSION" --registry "$REPO")
+fi
+
+if [[ -n "$UPDATE" ]]; then
+  exec "$INSTALL" --update
+elif [[ -n "$LOCKFILE_MODE" ]]; then
+  exec "$INSTALL" --from-lockfile "$LOCKFILE"
+elif [[ -n "$SKILLS" ]]; then
+  exec "$INSTALL" "$PLATFORM" --skills "$SKILLS" "${PIN_ARGS[@]+"${PIN_ARGS[@]}"}"
 else
-  exec "$INSTALL" "$PLATFORM"
+  exec "$INSTALL" "$PLATFORM" "${PIN_ARGS[@]+"${PIN_ARGS[@]}"}"
 fi

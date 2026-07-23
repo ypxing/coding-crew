@@ -5,6 +5,23 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
+# Pull --version/--registry out of the args wherever they appear, before positional
+# parsing below assigns platform/agent from $1/$2/$3. Passing --version pins the
+# install to that tag AND writes crew.lock recording it — see write_lockfile().
+PIN_VERSION=""
+PIN_REGISTRY=""
+_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version=*) PIN_VERSION="${1#--version=}"; shift ;;
+    --version) PIN_VERSION="${2:-}"; shift 2 ;;
+    --registry=*) PIN_REGISTRY="${1#--registry=}"; shift ;;
+    --registry) PIN_REGISTRY="${2:-}"; shift 2 ;;
+    *) _ARGS+=("$1"); shift ;;
+  esac
+done
+set -- "${_ARGS[@]+"${_ARGS[@]}"}"
+
 UPDATE_MODE=false
 LOCKFILE_MODE=false
 LOCKFILE_PATH=""
@@ -15,11 +32,7 @@ if [[ "${1:-}" == "--update" ]]; then
   AGENT="all"
 elif [[ "${1:-}" == "--from-lockfile" ]]; then
   LOCKFILE_MODE=true
-  LOCKFILE_PATH="${2:-}"
-  if [[ -z "$LOCKFILE_PATH" ]]; then
-    echo "Error: --from-lockfile requires a path to a lockfile" >&2
-    exit 1
-  fi
+  LOCKFILE_PATH="${2:-$REPO_ROOT/crew.lock}"
   if [[ ! -f "$LOCKFILE_PATH" ]]; then
     echo "Error: lockfile not found: $LOCKFILE_PATH" >&2
     exit 1
@@ -50,14 +63,14 @@ usage() {
   echo "       ./install.sh [platform] --skill <skill-name>"
   echo "       ./install.sh [platform] --skills <a,b,c>"
   echo "       ./install.sh --update"
-  echo "       ./install.sh --from-lockfile <path>"
+  echo "       ./install.sh --from-lockfile [path]"
   echo ""
   echo "  platform:        all (default), claude, copilot"
   echo "  agent:           all (default), crew-code-reviewer, crew-coder"
   echo "  --skill:         install a single skill (e.g. to-issues)"
   echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,to-issues)"
   echo "  --update:        re-install only agents/skills whose version changed since last install"
-  echo "  --from-lockfile: install from a lockfile (fetches pinned registry version and installs listed items)"
+  echo "  --from-lockfile: install from a lockfile (defaults to ./crew.lock; fetches pinned registry version and installs listed items)"
   echo ""
   echo "Examples:"
   echo "  ./install.sh                                      # install everything into project"
@@ -65,7 +78,8 @@ usage() {
   echo "  ./install.sh claude --skills tdd,caveman          # multiple skills at once"
   echo "  ./install.sh claude --skill crew-afk              # crew-afk + crew-coder + crew-code-reviewer"
   echo "  ./install.sh --update                             # update all installed agents/skills"
-  echo "  ./install.sh --from-lockfile crew.lock            # install from lockfile"
+  echo "  ./install.sh --from-lockfile                      # install from ./crew.lock"
+  echo "  ./install.sh --from-lockfile path/to/crew.lock    # install from a specific lockfile"
   echo ""
   echo "Available skills:"
   echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
@@ -498,6 +512,50 @@ write_manifest() {
   echo "  .coding-crew/manifest.json"
 }
 
+# Writes crew.lock recording the pinned version/registry plus the agents/skills
+# just installed. Only called when --version was passed — see PIN_VERSION above.
+write_lockfile() {
+  local registry="$PIN_REGISTRY"
+  if [[ -z "$registry" ]]; then
+    registry=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "")
+    registry="${registry%.git}"
+  fi
+  if [[ -z "$registry" ]]; then
+    echo "Warning: could not determine registry URL (no git remote and no --registry given) — skipping crew.lock" >&2
+    return
+  fi
+
+  local agents_json="{}"
+  for entry in "${MANIFEST_AGENT_ENTRIES[@]+"${MANIFEST_AGENT_ENTRIES[@]}"}"; do
+    local name version platform_val
+    read -r name version platform_val <<< "$entry"
+    agents_json=$(jq -n --argjson base "$agents_json" --arg n "$name" --arg v "$version" \
+      '$base | .[$n] = {version: $v}')
+  done
+
+  local skills_json="{}"
+  for entry in "${MANIFEST_SKILL_ENTRIES[@]+"${MANIFEST_SKILL_ENTRIES[@]}"}"; do
+    local name version
+    read -r name version <<< "$entry"
+    skills_json=$(jq -n --argjson base "$skills_json" --arg n "$name" --arg v "$version" \
+      '$base | .[$n] = {version: $v}')
+  done
+
+  jq -n \
+    --arg registry "$registry" \
+    --arg version "$PIN_VERSION" \
+    --argjson agents "$agents_json" \
+    --argjson skills "$skills_json" \
+    '{
+      registry: $registry,
+      version: $version,
+      agents: $agents,
+      skills: $skills
+    }' > "$REPO_ROOT/crew.lock"
+
+  echo "  crew.lock (pinned to $PIN_VERSION)"
+}
+
 fetch_latest_release_version() {
   local registry_url="$1"
   local url="${registry_url}/releases/latest"
@@ -913,5 +971,8 @@ fi
 install_docs
 echo "---"
 write_manifest
+if [[ -n "$PIN_VERSION" ]]; then
+  write_lockfile
+fi
 
 echo "Done."

@@ -142,10 +142,21 @@
       "source": "mattpocock/skills",
       "install": ".claude/skills/to-prd"
     },
+    "crew-brainstorm": {
+      "version": "1.1.0",
+      "source-dir": "crew-brainstorm",
+      "description": "Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to PRD and issues.",
+      "install": ".claude/skills/crew-brainstorm",
+      "install-copilot": ".copilot/skills/crew-brainstorm",
+      "deps": [
+        "to-prd",
+        "to-issues"
+      ]
+    },
     "crew-grill": {
       "version": "1.1.0",
       "source-dir": "crew-grill",
-      "description": "Full design pipeline: grill → PRD → issues. One handoff after grilling triggers the rest automatically.",
+      "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then produce a PRD and issues.",
       "install": ".claude/skills/crew-grill",
       "install-copilot": ".copilot/skills/crew-grill",
       "deps": [
@@ -176,16 +187,5 @@
       "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise.",
       "install": ".claude/skills/domain-modeling"
     },
-    "crew-brainstorm": {
-      "version": "1.1.1",
-      "source-dir": "crew-brainstorm",
-      "description": "Thorough design pipeline: capture feature slug, explore context, Q&A, propose approaches, build design.md section by section, then auto-transition to to-prd and to-issues.",
-      "install": ".claude/skills/crew-brainstorm",
-      "install-copilot": ".copilot/skills/crew-brainstorm",
-      "deps": [
-        "to-prd",
-        "to-issues"
-      ]
-    }
   }
 }

@@ -60,7 +60,7 @@ mkdir -p "$(dirname "$TRACE_LOG")"
 **Emit `[START]` as the first trace line (before any implementation work begins):**
 
 ```bash
-echo "[$(date -u +%H:%M:%SZ)] [START] issue=$ISSUE_PATH title=$(basename "$ISSUE_PATH" .md) design_doc=$([ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/design.md" ] && echo yes || echo no) prd=$([ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md" ] && echo yes || echo no)" >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [START] issue=$ISSUE_PATH title=$(basename "$ISSUE_PATH" .md) prd=$([ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md" ] && echo yes || echo no)" >> "$TRACE_LOG"
 ```
 
 **Log `[PHASE]` at every major transition** (e.g. "exploring codebase", "writing tests", "running checks", "committing"):
@@ -91,7 +91,7 @@ echo "[$(date -u +%H:%M:%SZ)] [DONE] status=<complete|partial|blocked> reason=<n
 
 ## Read Context Documents
 
-Before invoking solve-issue, check for design.md and PRD.md in the feature's scratch directory. These documents provide architectural and requirements context that should be kept in memory during implementation.
+Before invoking solve-issue, check for `PRD.md` in the feature's scratch directory. It contains architecture decisions, integration constraints, and requirements context that should be kept in memory during implementation.
 
 **Extract feature slug from issue path:**
 
@@ -99,27 +99,19 @@ Before invoking solve-issue, check for design.md and PRD.md in the feature's scr
 FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
 ```
 
-**Check for and read context documents:**
+**Check for and read the PRD:**
 
 ```bash
-DESIGN_DOC="$MAIN_ROOT/.scratch/$FEATURE_SLUG/design.md"
 PRD_DOC="$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
 
-if [ -f "$DESIGN_DOC" ]; then
-  echo "Reading design.md for architectural context..."
-fi
-
 if [ -f "$PRD_DOC" ]; then
-  echo "Reading PRD.md for requirements context..."
+  echo "Reading PRD.md for architecture and requirements context..."
 fi
 ```
 
-**After checking for document existence above**, use the view tool to read the content of any documents that exist:
+**After checking for document existence above**, use the view tool to read `PRD.md` if it exists and keep its content in memory throughout the implementation.
 
-- If `$DESIGN_DOC` exists, read it with the view tool and keep its content in memory throughout the implementation
-- If `$PRD_DOC` exists, read it with the view tool and keep its content in memory throughout the implementation
-
-If neither exists, continue normally — this is graceful degradation for issues without context documents.
+If it does not exist, continue normally — this is graceful degradation for issues without context documents.
 
 STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: solve-issue skill not installed`.
 

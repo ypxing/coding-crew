@@ -34,7 +34,7 @@ Platforms: `all` (default), `claude`, `copilot`. Agents: `all` (default), `crew-
 
 Two agents live under `agents/`:
 
-- **`crew-coder`** — implements a single local markdown issue using TDD, verifies checks, commits, and returns a structured summary. Runs in an isolated git worktree on both Claude (runtime-managed via `isolation: worktree`) and Copilot (orchestrator-managed via `git worktree add`). Before implementing, reads design.md and PRD.md from `.scratch/<feature-slug>/` if they exist, keeping architectural and requirements context in memory.
+- **`crew-coder`** — implements a single local markdown issue using TDD, verifies checks, commits, and returns a structured summary. Runs in an isolated git worktree on both Claude (runtime-managed via `isolation: worktree`) and Copilot (orchestrator-managed via `git worktree add`). Before implementing, reads `PRD.md` from `.scratch/<feature-slug>/` if it exists, keeping architecture decisions and requirements context in memory.
 - **`crew-code-reviewer`** — reviews all branches merged in a sprint session; reports CRITICAL/HIGH/MEDIUM/LOW findings per branch. Findings are advisory. Invoked once at the end of every sprint by crew-afk.
 
 `crew-afk` is a **skill** (see Skills below) that declares `agent-deps` on `crew-coder` and `crew-code-reviewer` — installing the skill also installs both agents.
@@ -67,12 +67,12 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 - `crew-address-findings` — triage and fix findings from an afk-run code review report using TDD
 - `address-pr-comments` — fetch PR review comments, challenge critically, implement sensible ones with TDD
 - `improve-codebase-architecture` — find deepening opportunities for testability and AI-navigability
-- `to-issues` — break a plan or PRD into independently-grabbable issues; extracts cross-cutting requirements from design.md/PRD.md and adds them as checklists in issues
+- `to-issues` — break a plan or PRD into independently-grabbable issues; extracts cross-cutting requirements from `PRD.md` and adds them as checklists in issues
 - `to-prd` — synthesize conversation context into a PRD and publish to the issue tracker
-- `crew-grill` — full design pipeline: grill → PRD → issues in one automated flow
+- `crew-brainstorm` — collaborative design pipeline: explore intent, propose 2–3 approaches, build a design doc, then hand off to PRD and issues
+- `crew-grill` — adversarial design pipeline: stress-test every assumption, capture decisions, then produce a PRD and issues
 - `caveman` — ultra-compressed communication mode (~75% token reduction)
 - `configure-tracker` — select and install an issue tracker template
-- `crew-brainstorm` — thorough design pipeline: capture slug, explore context, Q&A, propose approaches, build `design.md` section by section, then auto-transition to `to-prd` and `to-issues`
 
 Skills with `agent-deps` also install the listed agents (via `install.sh`) so the skill can invoke them at runtime.
 

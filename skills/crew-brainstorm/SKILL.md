@@ -26,10 +26,10 @@ You MUST complete these items in order:
 3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation
 5. **Present design** — in sections scaled to their complexity, get user approval after each section
-6. **Write design doc** — save to `.scratch/<slug>/design.md` and commit
+6. **Write decisions to PRD.md** — save agreed decisions to `.scratch/<slug>/PRD.md` under `## Decisions`
 7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
-8. **User reviews written spec** — ask user to review the spec file before proceeding
-9. **Transition to to-prd** — invoke `to-prd` using the same feature slug
+8. **User reviews written decisions** — ask user to review before proceeding
+9. **Transition to to-prd** — invoke `to-prd` using the same feature slug to complete the PRD
 10. **Transition to to-issues** — invoke `to-issues` using the same feature slug
 
 ## Step 1 — Capture Feature Slug
@@ -52,9 +52,9 @@ digraph brainstorming {
     "Propose 2-3 approaches" [shape=box];
     "Present design sections" [shape=box];
     "User approves design?" [shape=diamond];
-    "Write design doc" [shape=box];
+    "Write decisions to PRD.md" [shape=box];
     "Spec self-review\n(fix inline)" [shape=box];
-    "User reviews spec?" [shape=diamond];
+    "User reviews decisions?" [shape=diamond];
     "Invoke to-prd then to-issues" [shape=doublecircle];
 
     "Capture feature slug" -> "Explore project context";
@@ -63,11 +63,11 @@ digraph brainstorming {
     "Propose 2-3 approaches" -> "Present design sections";
     "Present design sections" -> "User approves design?";
     "User approves design?" -> "Present design sections" [label="no, revise"];
-    "User approves design?" -> "Write design doc" [label="yes"];
-    "Write design doc" -> "Spec self-review\n(fix inline)";
-    "Spec self-review\n(fix inline)" -> "User reviews spec?";
-    "User reviews spec?" -> "Write design doc" [label="changes requested"];
-    "User reviews spec?" -> "Invoke to-prd then to-issues" [label="approved"];
+    "User approves design?" -> "Write decisions to PRD.md" [label="yes"];
+    "Write decisions to PRD.md" -> "Spec self-review\n(fix inline)";
+    "Spec self-review\n(fix inline)" -> "User reviews decisions?";
+    "User reviews decisions?" -> "Write decisions to PRD.md" [label="changes requested"];
+    "User reviews decisions?" -> "Invoke to-prd then to-issues" [label="approved"];
 }
 ```
 
@@ -79,7 +79,7 @@ digraph brainstorming {
 
 - Check out the current project state first (files, docs, recent commits)
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
-- If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → PRD → issues cycle.
+- If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own PRD → issues cycle.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
 - Prefer multiple choice questions when possible, but open-ended is fine too
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
@@ -114,33 +114,32 @@ digraph brainstorming {
 
 ## After the Design
 
-**Documentation:**
+**Writing decisions to PRD.md:**
 
-- Write the validated design (spec) to `.scratch/<slug>/design.md`
-  - (User preferences for spec location override this default)
+Write the agreed decisions (with rationale) to `.scratch/<feature-slug>/PRD.md` under a `## Decisions` section. This pre-seeds the PRD for `to-prd` — it will read this section and complete the remaining sections. Write only the `## Decisions` section here; leave the other sections for `to-prd`.
 
-> **Never commit `design.md`.** This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`. If git reports `.scratch/` is not gitignored, warn the user but do not attempt to fix it.
+> **Never commit `PRD.md`.** This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`. If git reports `.scratch/` is not gitignored, warn the user but do not attempt to fix it.
 
 **Spec Self-Review:**
-After writing the spec document, look at it with fresh eyes:
+After writing the decisions, look at them with fresh eyes:
 
-1. **Placeholder scan:** Any "TBD", "TODO", incomplete sections, or vague requirements? Fix them.
-2. **Internal consistency:** Do any sections contradict each other? Does the architecture match the feature descriptions?
+1. **Placeholder scan:** Any "TBD", "TODO", incomplete decisions, or vague requirements? Fix them.
+2. **Internal consistency:** Do any decisions contradict each other?
 3. **Scope check:** Is this focused enough for a single implementation plan, or does it need decomposition?
 4. **Ambiguity check:** Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
 
 Fix any issues inline. No need to re-review — just fix and move on.
 
 **User Review Gate:**
-After the spec review loop passes, ask the user to review the written spec before proceeding:
+After the spec review passes, ask the user to review the written decisions before proceeding:
 
-> "Spec written and committed to `.scratch/<slug>/design.md`. Please review it and let me know if you want to make any changes before we move to the PRD."
+> "Decisions written to PRD.md. Please review and let me know if you want any changes before we complete the PRD."
 
-Wait for the user's response. If they request changes, make them and re-run the spec review loop. Only proceed once the user approves.
+Wait for the user's response. If they request changes, make them and re-run the spec review. Only proceed once the user approves.
 
 **Implementation:**
 
-- Invoke `to-prd` using the same feature slug captured in Step 1. Do not re-ask the slug.
+- Invoke `to-prd` using the same feature slug captured in Step 1. Do not re-ask the slug. `to-prd` will read the `## Decisions` section and complete the remaining sections — skip re-confirming decisions already settled here.
 - At the end of the PRD, ask once: **"Ready to break this into issues?"** If yes, invoke `to-issues`. If no, stop.
 - Do NOT invoke any other skill. `to-prd` → `to-issues` is the only path forward.
 

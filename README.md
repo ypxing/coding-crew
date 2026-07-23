@@ -7,14 +7,18 @@ AI agents that take your ideas from planning to code.
 ## The flow
 
 ```
-  an idea or plan
-           │
+        an idea or plan
+               │
+┌──────────────┴──────────────┐
+       ▼               ▼
+/crew-brainstorm  /crew-grill
+ explore & build   stress-test
+    a design       every flaw
+└──────────────┬──────────────┘
+               │ PRD + issues
            ▼
   ┌─────────────────────────────────────────────────────┐
-  │  /crew-grill         ← stress-test a plan           │
-  │  OR                                                 │
-  │  /crew-brainstorm    ← develop an idea              │
-  └─────────────────────┬───────────────────────────────┘
+  │  /crew-afk                                          │
                         │
                         ▼
   ┌─────────────────────────────────────────────────────┐
@@ -39,22 +43,31 @@ AI agents that take your ideas from planning to code.
 
 ## 1. Plan and design
 
-Pick **one**:
+Two entry points depending on where you're starting from:
 
-|              | `/crew-grill`                                   | `/crew-brainstorm`                                               |
-| ------------ | ----------------------------------------------- | ---------------------------------------------------------------- |
-| **Use when** | You have a plan and want it stress-tested       | You have an idea and need to develop it into a design            |
-| **Input**    | A plan — including output from any AI plan mode | An idea, rough concept, or exploratory question                  |
-| **Produces** | decisions record (`design.md`) + PRD + issues   | Full design doc (`design.md`) + PRD + issues                     |
-| **Process**  | Relentless Q&A challenging every assumption     | Collaborative Q&A, approach proposals, section-by-section design |
+**Exploratory idea** — use `/crew-brainstorm`:
 
-The `design.md` produced here is a decisions record — implementation agents read it to avoid reversing choices when hitting edge cases.
+```
+/crew-brainstorm
+```
 
-Add `with docs` to also update `CONTEXT.md` and record ADRs:
+Collaborative dialogue: asks questions one at a time, proposes 2–3 approaches with trade-offs, builds a design doc, then hands off to PRD and issues. Best when the idea is still forming.
+
+**Concrete plan** — use `/crew-grill`:
+
+```
+/crew-grill
+```
+
+Adversarial interrogation: challenges every assumption, resolves every dependency, then produces a PRD and issues. Best when you have a plan and want it stress-tested before a line of code is written.
+
+Add `with docs` to also update `CONTEXT.md` and record ADRs (crew-grill only):
 
 ```
 /crew-grill with docs
 ```
+
+Both produce a PRD as the single source of truth — implementation agents read it to understand architecture decisions, integration constraints, and requirements.
 
 Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
 
@@ -94,11 +107,12 @@ Opens the review report, triages findings, implements fixes with TDD.
 
 **Main flow**
 
-| Skill                               | When                                                                |
-| ----------------------------------- | ------------------------------------------------------------------- |
-| `/crew-grill` or `/crew-brainstorm` | Plan and design — stress-test a plan or develop an idea into issues |
-| `/crew-afk`                         | Parallel agents implement all ready issues, then code review        |
-| `/crew-address-findings`            | Triage and fix the post-sprint code review report with TDD          |
+| Skill                    | When                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `/crew-brainstorm`       | Exploratory idea — collaborate, propose approaches, build spec → PRD         |
+| `/crew-grill`            | Concrete plan — stress-test every assumption → PRD                           |
+| `/crew-afk`              | Parallel agents implement all ready issues, then code review                 |
+| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD                   |
 
 **Also available**
 
@@ -118,12 +132,14 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 
 Installs to `$HOME` (user-level, works in any project). Common flags:
 
-| Flag               | Effect                                              |
-| ------------------ | --------------------------------------------------- |
-| `claude`           | Claude only (default: all platforms)                |
-| `copilot`          | Copilot only                                        |
-| `--project`        | Install into the current project instead of `$HOME` |
-| `--version v1.2.0` | Pin to a specific release                           |
+| Flag                     | Effect                                                                                    |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| `claude`                 | Claude only (default: all platforms)                                                      |
+| `copilot`                | Copilot only                                                                              |
+| `--project`              | Install into the current project instead of `$HOME`                                       |
+| `--version v1.2.0`       | Pin to a specific release and write a `crew.lock` recording it                            |
+| `--from-lockfile [path]` | Install the versions pinned in `crew.lock` (defaults to `./crew.lock`)                    |
+| `--update`               | Check for and apply updates (uses `crew.lock` if present, otherwise the install manifest) |
 
 **Requirements:** `bash` 4.0+, `jq`, `git`, `curl`, `tar`. Windows: WSL2 required.
 
@@ -137,25 +153,25 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 ## Team distribution
 
-Commit a `crew.lock` to your dotfiles or team config repo to pin a version:
-
-```json
-{
-  "registry": "https://github.com/ypxing/coding-crew",
-  "version": "1.2.0"
-}
-```
-
-Generate one from the current install:
+Pinning to a version writes a `crew.lock` automatically — commit it to your dotfiles or team config repo:
 
 ```bash
-./install.sh --update
+./install.sh --version v1.2.0
+# or, without a local clone:
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --project --version v1.2.0
 ```
 
-Team members install from it:
+Team members install from it (defaults to `./crew.lock`; pass a path for a different location):
 
 ```bash
-./install.sh --from-lockfile crew.lock
+./install.sh --from-lockfile
+```
+
+Or without a local clone:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --from-lockfile
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --update
 ```
 
 ---
@@ -171,4 +187,4 @@ Team members install from it:
 
 Several skills are borrowed from [Matt Pocock's skills collection](https://github.com/mattpocock/skills) (MIT License, Copyright © 2026 Matt Pocock). See [LICENSE](LICENSE) for the full notice. Thanks Matt.
 
-The `crew-brainstorm` skill is adapted from [obra/superpowers](https://github.com/obra/superpowers). Thanks Jesse.
+The `/crew-grill` design pipeline incorporates ideas from [obra/superpowers](https://github.com/obra/superpowers). Thanks Jesse.

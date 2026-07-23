@@ -41,15 +41,12 @@ If no PRD exists, ask the user:
 
 If the user chooses to run `/to-prd`, invoke it (using the same feature slug), then continue with the resulting PRD. If the user declines, proceed with conversation context as before.
 
-### 2.5. Check for a design doc
-
-After the PRD check, look for a design doc at `.scratch/<feature-slug>/design.md`. If it exists, read it and use it as supplementary context when drafting vertical slices and writing acceptance criteria. The design doc provides technical depth (interfaces, data flows, architecture decisions) that enriches the issue breakdown beyond what the PRD contains.
-
-If no design doc exists, continue with whatever context is available from the PRD or conversation.
 
 ### 3. Explore the codebase (optional)
 
 If you have not already explored the codebase, do so to understand the current state of the code. Issue titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
+
+While exploring, look for **prefactoring opportunities** — changes that would make the feature implementation significantly easier. "Make the change easy, then make the easy change." Prefactoring issues must be sliced and sequenced first so downstream feature issues can build on a clean foundation.
 
 ### 4. Draft vertical slices
 
@@ -60,8 +57,18 @@ Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an
 <vertical-slice-rules>
 - Each slice delivers a narrow but COMPLETE path through every layer (schema, API, UI, tests)
 - A completed slice is demoable or verifiable on its own
+- Each slice is sized to fit in a single fresh context window — if a slice requires multiple agent sessions it must be split further
 - Prefer many thin slices over few thick ones
+- Any prefactoring should be sequenced first
 </vertical-slice-rules>
+
+**Wide refactors are the exception to vertical slicing.** A wide refactor is one mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase so no vertical slice can land green on its own. Don't force it into a tracer bullet; sequence it as **expand–contract**:
+
+1. **Expand** — add the new form beside the old so nothing breaks
+2. **Migrate** — move call sites over in batches (per package, per directory), each batch its own issue blocked by the expand, keeping CI green batch to batch because the old form still exists
+3. **Contract** — delete the old form once no caller remains, blocked by every migrate batch
+
+When even the batches can't stay green independently, let them share an integration branch and block a final integrate-and-verify issue — green is promised only there.
 
 ### 5. Quiz the user
 
@@ -70,12 +77,12 @@ Present the proposed breakdown as a numbered list. For each slice, show:
 - **Title**: short descriptive name
 - **Type**: HITL / AFK
 - **Blocked by**: which other slices (if any) must complete first
-- **User stories covered**: which user stories this addresses (if the source material has them)
+- **What it delivers**: the end-to-end behaviour this slice makes work, from the user's perspective
 
 Ask the user:
 
 - Does the granularity feel right? (too coarse / too fine)
-- Are the dependency relationships correct?
+- Are the blocking edges correct — does each issue only depend on issues that genuinely gate it?
 - Should any slices be merged or split further?
 - Are the correct slices marked as HITL and AFK?
 
@@ -83,7 +90,7 @@ Iterate until the user approves the breakdown.
 
 ### 5.5. Extract cross-cutting requirements
 
-After the user approves the breakdown and before writing issues, extract cross-cutting requirements from design.md or PRD.md (if they exist) to include in issue checklists.
+After the user approves the breakdown and before writing issues, extract cross-cutting requirements from `PRD.md` (if it exists) to include in issue checklists.
 
 **Cross-cutting requirement categories** (10 total):
 
@@ -98,36 +105,17 @@ After the user approves the breakdown and before writing issues, extract cross-c
 9. Interfaces & Contracts — API contracts, function signatures, data structures shared across components
 10. Multi-Issue Flows — end-to-end operations spanning multiple vertical slices
 
-**Extraction from design.md (preferred):**
+**Extraction from PRD.md:**
 
-Check if `.scratch/<feature-slug>/design.md` exists. If it does, scan for:
+Read `.scratch/<feature-slug>/PRD.md` if it exists. Scan for cross-cutting requirements across all sections — especially `## Decisions`, `## Testing Decisions`, and `## Further Notes`:
 
-- Explicit section headings for the 10 cross-cutting requirement categories:
-  - `## Error Handling` — how errors are caught, logged, propagated
-  - `## Logging` — what to log, format, levels
-  - `## Security` — auth checks, input validation, sensitive data handling
-  - `## Performance` — response time targets, resource limits
-  - `## Testing` — test coverage requirements, types of tests needed
-  - `## Architecture Constraints` — patterns to follow, libraries to use, interfaces to respect
-  - `## Data Validation` — schema constraints, input sanitization rules
-  - `## Observability` — metrics, tracing, monitoring hooks
-  - `## Interfaces & Contracts` — API contracts, function signatures, data structures shared across components
-  - `## Multi-Issue Flows` — end-to-end operations spanning multiple vertical slices
+- Explicit headings for any of the 10 categories above
 - Decision statements with "must", "should", "all", "every" (signals cross-cutting rules)
   - Example: "All API endpoints must validate input using..."
   - Example: "Every database call must include retry logic..."
 - Architecture rules: "Follow the repository pattern", "Use dependency injection for..."
-- Interface definitions: component interaction diagrams, API contracts, shared data structures
-- Flow descriptions: end-to-end operations, multi-step processes spanning components
-
-**Extraction from PRD.md (fallback when no design.md):**
-
-If design.md doesn't exist, check `.scratch/<feature-slug>/PRD.md`. If it exists, scan the `## Decisions` section for:
-
-- Statements with "must", "should", "all", "every"
-- Security, performance, testing mentions
-- Technical constraints that apply broadly
-- Integration requirements between components
+- Interface definitions: API contracts, function signatures, shared data structures
+- Flow descriptions: end-to-end operations spanning multiple components
 
 **Mapping requirements to issues:**
 
@@ -140,7 +128,7 @@ For each vertical slice, determine which cross-cutting requirements apply based 
 
 **Multi-issue flow detection:**
 
-Look in design.md or PRD.md for descriptions of end-to-end operations that span multiple vertical slices (e.g., auth flows, data pipelines, request/response cycles). For each issue that's part of such a flow, note:
+Look in `PRD.md` for descriptions of end-to-end operations that span multiple vertical slices (e.g., auth flows, data pipelines, request/response cycles). For each issue that's part of such a flow, note:
 
 - Which upstream issues must complete first (dependencies)
 - Which downstream issues depend on this one
@@ -156,19 +144,18 @@ Look in design.md or PRD.md for descriptions of end-to-end operations that span 
 
 For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
 
-Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field.
+Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field. Work the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, publish all currently unblocked issues before their dependents.
 
 <issue-template>
 Status: ready-for-agent
 
 ## Context Documents
 
-> **Optional — only include this section if design.md or PRD.md exist for this feature. Omit entirely if neither document exists.**
+> **Optional — only include this section if a PRD exists for this feature. Omit entirely if no PRD exists.**
 
-- Design: `.scratch/<feature-slug>/design.md`
 - PRD: `.scratch/<feature-slug>/PRD.md`
 
-Read these documents before implementing. They contain architecture decisions, integration constraints, and technical context essential for this issue.
+Read this document before implementing. It contains architecture decisions, integration constraints, and technical context essential for this issue.
 
 ## Parent
 
@@ -188,9 +175,9 @@ Avoid specific file paths or code snippets — they go stale fast. Exception: if
 
 ## Cross-cutting Requirements
 
-> **Optional — only include this section if cross-cutting requirements from design.md or PRD.md apply to this issue. Omit entirely if no applicable requirements exist.**
+> **Optional — only include this section if cross-cutting requirements from `PRD.md` apply to this issue. Omit entirely if no applicable requirements exist.**
 
-Requirements from design.md/PRD.md that apply to this implementation:
+Requirements from `PRD.md` that apply to this implementation:
 
 - [ ] [Error handling requirement]
 - [ ] [Security requirement]
@@ -202,7 +189,7 @@ Requirements from design.md/PRD.md that apply to this implementation:
 
 This issue implements [step description] of the [flow name] flow.
 
-**Full flow:** [brief description or reference to design.md section]
+**Full flow:** [brief description or reference to PRD.md section]
 **Upstream:** [previous step/issue or "none"]
 **Downstream:** [next step/issue or "none"]
 

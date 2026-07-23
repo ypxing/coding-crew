@@ -7,11 +7,11 @@ Run the full design pipeline in three phases. Pause for user feedback within eac
 
 ## Phase 1 — Grill
 
-Interview the user relentlessly about every aspect of their plan until reaching shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
+Interview the user relentlessly about every aspect of their plan until reaching shared understanding. Walk down each branch of the decision tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
 
-Ask the questions one at a time, waiting for feedback on each question before continuing.
+Ask the questions one at a time, waiting for feedback on each question before continuing. Asking multiple questions at once is bewildering.
 
-If a question can be answered by exploring the codebase, explore the codebase instead.
+If a *fact* can be found by exploring the codebase, look it up rather than asking. The *decisions*, though, belong to the user — put each one and wait for their answer.
 
 **This phase is strictly exploratory.** Do NOT write code, create files, edit source files, run commands, or begin implementation. Your only job is to ask questions and reach shared understanding.
 
@@ -20,20 +20,16 @@ If the user's invocation included "with docs" or "with documents", also invoke t
 At the end of the grilling:
 
 1. Summarize all implementation decisions (not glossary terms) including the rationale for each — why that option was chosen over alternatives.
-2. Write this decisions summary to `.scratch/<feature-slug>/design.md`. Implementation agents read this file to understand the reasoning behind decisions and avoid reversing them when hitting edge cases.
-
-> **Never commit `design.md`.** This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
-
-3. Ask once: **"Ready to write the PRD?"** If yes, continue to Phase 2. If no, stop.
+2. Ask once: **"Ready to write the PRD?"** If yes, continue to Phase 2. If no, stop.
 
 ## Phase 2 — PRD
 
-Run the `to-prd` skill using the same feature slug. Do not re-ask the slug.
+Run the `to-prd` skill. Pass the decisions summary from Phase 1 as input — the PRD must include an **Decisions** section capturing each decision and its rationale, so implementation agents can read `PRD.md` as the single source of truth for both requirements and architectural choices.
 
 At the end of writing `PRD.md`, ask once: **"Ready to break this into issues?"** If yes, continue to Phase 3. If no, stop.
 
 ## Phase 3 — Issues
 
-Run the `to-issues` skill using the same feature slug and the `PRD.md` just written as primary input. Do not re-ask the slug or whether to run `/crew-to-prd` (it was just done).
+Run the `to-issues` skill using the `PRD.md` just written as primary input. Do not re-ask the slug or whether to run `/to-prd` (it was just done).
 
 Complete the issue quiz and write all approved issues to `.scratch/<feature-slug>/issues/`.
