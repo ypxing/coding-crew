@@ -21,19 +21,19 @@ AI agents that take your ideas from planning to code.
   ┌─────────────────────────────────────────────────────┐
   │  /crew-afk                                          │
   │                                                     │
-  │          ┌──────────┬──────────┐                    │
-  │          ▼          ▼          ▼                    │
-  │        coder      coder      coder                  │
-  │       issue 1    issue 2    issue 3                 │
-  │         (TDD, isolated worktrees)                   │
-  │          └──────────┼──────────┘                    │
-  │                     │ parallel, committed           │
-  │                     ▼                               │
-  │               code-reviewer                         │
+  │          ┌───────────────┬───────────────┐          │
+  │          ▼               ▼               ▼          │
+  │        coder          coder           coder         │
+  │       issue 1        issue 2         issue 3        │
+  │              (TDD, isolated worktrees)              │
+  │          └───────────────┼───────────────┘          │
+  │                          │ parallel, committed      │
+  │                          ▼                          │
+  │                    code-reviewer                    │
   └─────────────────────────────────────────────────────┘
-                        │
-                        ▼
-             /crew-address-findings
+                             │
+                             ▼
+                   /crew-address-findings
 ```
 
 ---
