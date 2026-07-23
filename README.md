@@ -7,20 +7,17 @@ AI agents that take your ideas from planning to code.
 ## The flow
 
 ```
-        an idea or plan
-               │
-┌──────────────┴──────────────┐
-       ▼               ▼
-/crew-brainstorm  /crew-grill
- explore & build   stress-test
-    a design       every flaw
-└──────────────┬──────────────┘
-               │ PRD + issues
-           ▼
-  ┌─────────────────────────────────────────────────────┐
-  │  /crew-afk                                          │
-                        │
-                        ▼
+                      an idea or plan
+                             │
+              ┌──────────────┴──────────────┐
+              ▼                             ▼
+      /crew-brainstorm                /crew-grill
+      explore & build        OR        stress-test
+          a design                     every flaw
+              └─────────────┬───────────────┘
+                            │ PRD + issues
+                            │
+                            ▼
   ┌─────────────────────────────────────────────────────┐
   │  /crew-afk                                          │
   │                                                     │
@@ -107,12 +104,12 @@ Opens the review report, triages findings, implements fixes with TDD.
 
 **Main flow**
 
-| Skill                    | When                                                                         |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| `/crew-brainstorm`       | Exploratory idea — collaborate, propose approaches, build spec → PRD         |
-| `/crew-grill`            | Concrete plan — stress-test every assumption → PRD                           |
-| `/crew-afk`              | Parallel agents implement all ready issues, then code review                 |
-| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD                   |
+| Skill                    | When                                                                 |
+| ------------------------ | -------------------------------------------------------------------- |
+| `/crew-brainstorm`       | Exploratory idea — collaborate, propose approaches, build spec → PRD |
+| `/crew-grill`            | Concrete plan — stress-test every assumption → PRD                   |
+| `/crew-afk`              | Parallel agents implement all ready issues, then code review         |
+| `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD           |
 
 **Also available**
 
