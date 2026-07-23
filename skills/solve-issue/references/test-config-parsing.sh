@@ -4,9 +4,11 @@
 
 set -e
 
-PROJECT_ROOT="/Users/yunpengxing/repo/shared/temp/ai-agents"
-MAIN_ROOT="$PROJECT_ROOT"
-CONFIG_FILE="$MAIN_ROOT/docs/agents/sprint-config.md"
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+CONFIG_FILE="$TMPDIR/sprint-config.md"
+echo "auto_commit: yes" > "$CONFIG_FILE"
 
 echo "Testing config parsing precedence..."
 echo
@@ -15,7 +17,7 @@ echo
 parse_commit_preference() {
     local args="$1"
     local SHOULD_COMMIT="yes"  # default
-    
+
     # 1. Check for flags in invocation
     if [[ "$args" == *"--no-commit"* ]]; then
         SHOULD_COMMIT="no"
@@ -29,7 +31,7 @@ parse_commit_preference() {
         fi
     fi
     # 3. Default remains "yes" from initial assignment
-    
+
     echo "$SHOULD_COMMIT"
 }
 
@@ -68,13 +70,9 @@ echo
 
 # Test 4: Config file with auto_commit: no (without flag override)
 echo "Test 4: Config file precedence (auto_commit: no)"
-# Backup original config
-cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
-# Set config to no
-sed -i 's/^auto_commit: yes/auto_commit: no/' "$CONFIG_FILE"
+echo "auto_commit: no" > "$CONFIG_FILE"
 result=$(parse_commit_preference "")
-# Restore original config
-mv "$CONFIG_FILE.backup" "$CONFIG_FILE"
+echo "auto_commit: yes" > "$CONFIG_FILE"
 
 if [ "$result" = "no" ]; then
     echo "✓ PASS: Config file 'auto_commit: no' returns 'no'"
@@ -86,12 +84,9 @@ echo
 
 # Test 5: Flag overrides config (--commit with auto_commit: no)
 echo "Test 5: --commit flag overrides auto_commit: no"
-# Backup and modify config
-cp "$CONFIG_FILE" "$CONFIG_FILE.backup"
-sed -i 's/^auto_commit: yes/auto_commit: no/' "$CONFIG_FILE"
+echo "auto_commit: no" > "$CONFIG_FILE"
 result=$(parse_commit_preference "--commit")
-# Restore config
-mv "$CONFIG_FILE.backup" "$CONFIG_FILE"
+echo "auto_commit: yes" > "$CONFIG_FILE"
 
 if [ "$result" = "yes" ]; then
     echo "✓ PASS: --commit flag overrides config 'no' to 'yes'"
@@ -101,7 +96,7 @@ else
 fi
 echo
 
-# Test 6: Flag with path argument
+# Test 6: Flag parsing with issue path
 echo "Test 6: Flag parsing with issue path"
 result=$(parse_commit_preference ".scratch/test/issues/01-test.md --no-commit")
 if [ "$result" = "no" ]; then
