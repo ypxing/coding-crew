@@ -4,7 +4,7 @@ description: >
   Spawns crew-coder agents to implement all ready-for-agent issues in the current repo,
   supervises until all are done, and merges work back. Trigger with /crew-afk.
   Add "with workflow" to use the Workflow tool instead of inline Agent calls.
-model: sonnet
+  Optional: --model <alias|inherit> to override the coder's default model (sonnet).
 tools:
   - Agent
   - Bash
@@ -69,6 +69,29 @@ The script will:
 - Save session-start SHA to `.scratch/<feature-slug>/session-start-sha`
 - Create sprint state file to track base SHA per branch
 
+### Model resolution
+
+Parse the optional `--model` flag from the command arguments. The resolved value is either the
+alias provided (e.g. `opus`, `haiku`, `sonnet`) or `inherit` to use the session model. If omitted,
+the coder's own frontmatter default (`sonnet`) applies and `RESOLVED_MODEL` is set to `sonnet`.
+
+```bash
+RESOLVED_MODEL="sonnet"  # coder's frontmatter default
+for arg in "$@"; do
+  if [[ "$arg" == "--model" ]]; then
+    _next_is_model=1
+  elif [[ "${_next_is_model:-0}" == "1" ]]; then
+    RESOLVED_MODEL="$arg"
+    _next_is_model=0
+  fi
+done
+```
+
+When `--model inherit` is passed, omit the `model` parameter from Agent tool calls so the agent
+inherits the session model. For any other alias, pass it as the Agent tool's `model` parameter.
+
+The same `--model` flag applies to both the coder and the reviewer dispatch.
+
 ### Orchestrator trace
 
 After `session-init.sh` completes, derive `FEATURE_SLUG` and `TRACE_LOG`, then emit the SESSION line:
@@ -78,6 +101,7 @@ FEATURE_SLUG=$(git rev-parse --abbrev-ref HEAD | sed 's|^feature/||' | sed -E 's
 TRACE_LOG=".scratch/$FEATURE_SLUG/traces/orchestrator.log"
 mkdir -p ".scratch/$FEATURE_SLUG/traces"
 echo "[$(date -u +%H:%M:%SZ)] [SESSION] feature=$FEATURE_SLUG branch=$(git rev-parse --abbrev-ref HEAD)" >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [MODEL] resolved=$RESOLVED_MODEL" >> "$TRACE_LOG"
 ```
 
 Append trace lines throughout the sprint as described in each step below.
@@ -338,6 +362,7 @@ Print verbatim:
 
 ```
 Rounds: <N>
+Model:  <RESOLVED_MODEL>
 Merged  (<count>): <slug, slug, ...> | none
 Partial (<count>): <slug, slug, ...> | none
 Blocked (<count>): <slug, slug, ...> | none

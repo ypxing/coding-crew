@@ -78,6 +78,22 @@ Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
 
 Picks up every `ready-for-agent` issue, spawns crew-coder agents in parallel, commits, loops until done. Runs a code review pass on exit.
 
+**Model selection**
+
+By default, coders run on `sonnet`. Pass `--model` to use a different tier:
+
+```
+/crew-afk --model opus      # use a higher tier for this sprint
+/crew-afk --model haiku     # use a lighter tier
+/crew-afk --model inherit   # omit model param, inherit from session
+```
+
+The reviewer always inherits the session model — it is deliberately not pinned.
+
+On Copilot, `--model` is accepted but has no effect: the IDE selects the model, and an explicit notice is printed when the flag is used.
+
+The resolved model is written to the orchestrator trace log and included in the sprint summary.
+
 **Gitignored files in worktrees (`.worktreeinclude`)**
 
 Each agent runs in an isolated git worktree. Gitignored files like `.env` or `node_modules/` aren't present by default. To make them available, create a `.worktreeinclude` at your repo root:
