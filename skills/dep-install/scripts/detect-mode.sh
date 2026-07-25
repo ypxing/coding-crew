@@ -39,10 +39,22 @@ fi
 
 if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
   _uses_docker=$(awk '
+    /^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*[:?+]?=/ {
+      if (tolower($0) ~ /docker[ -]compose|docker run|docker exec/) {
+        split($0, a, /[[:space:]]*[:?+]?=/)
+        gsub(/[[:space:]]/, "", a[1])
+        docker_vars[a[1]] = 1
+      }
+    }
     /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*:[^=]/ {
       in_target = ($0 ~ /^(install|deps|setup|depend|bootstrap|prepare|up|build|dev)[[:space:]]*:/)
     }
-    in_target && /^\t/ && tolower($0) ~ /docker[ -]compose|docker run|docker exec/ { print "yes"; exit }
+    in_target && /^\t/ {
+      if (tolower($0) ~ /docker[ -]compose|docker run|docker exec/) { print "yes"; exit }
+      for (v in docker_vars) {
+        if ($0 ~ "\\$\\(" v "\\)") { print "yes"; exit }
+      }
+    }
   ' "$PROJECT_ROOT/Makefile")
   [ "$_uses_docker" = "yes" ] && _mode="docker" || _mode="host"
 fi
