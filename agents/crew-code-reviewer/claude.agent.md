@@ -3,7 +3,6 @@ name: crew-code-reviewer
 description: >
   Reviews all branches merged in a crew-afk sprint session for security, quality, and
   correctness. Invoked once at the end of the session. Findings are advisory for the human.
-model: sonnet
 tools: ["Read", "Bash", "Grep", "Glob"]
 user-invocable: false
 ---

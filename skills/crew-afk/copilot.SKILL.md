@@ -120,6 +120,31 @@ The script will:
 - Save session-start SHA to `.scratch/<feature-slug>/session-start-sha`
 - Create sprint state file to track base SHA per branch
 
+### Model flag (--model is accepted but ignored on Copilot)
+
+The `--model <alias|inherit>` flag is accepted for compatibility with the Claude platform interface.
+On Copilot the model is IDE-selected and cannot be overridden programmatically — `#runSubagent` has
+no model parameter. If `--model` is present, print an explicit notice:
+
+```
+Note: --model <value> was passed but is ignored on Copilot — the model is IDE-selected.
+```
+
+Set `RESOLVED_MODEL` to `"IDE-selected (--model ignored)"` for trace and summary output.
+
+```bash
+RESOLVED_MODEL="IDE-selected"
+for arg in "$@"; do
+  if [[ "$arg" == "--model" ]]; then
+    _next_is_model=1
+  elif [[ "${_next_is_model:-0}" == "1" ]]; then
+    echo "Note: --model $arg was passed but is ignored on Copilot — the model is IDE-selected."
+    RESOLVED_MODEL="IDE-selected (--model $arg ignored)"
+    _next_is_model=0
+  fi
+done
+```
+
 ### Orchestrator trace
 
 After `session-init.sh` completes, derive `FEATURE_SLUG` and `TRACE_LOG`, then emit the SESSION line:
@@ -129,6 +154,7 @@ FEATURE_SLUG=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD | sed 's|.*/||' |
 TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/orchestrator.log"
 mkdir -p "$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces"
 echo "[$(date -u +%H:%M:%SZ)] [SESSION] feature=$FEATURE_SLUG branch=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD)" >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [MODEL] resolved=$RESOLVED_MODEL" >> "$TRACE_LOG"
 ```
 
 Append trace lines throughout the sprint as described in each step below.
@@ -303,6 +329,7 @@ After all issues in a round are reported, print a rollup line:
 
 ```
 ### Sprint: <N complete> / <N partial> / <N blocked> / <N remaining>
+Model: <RESOLVED_MODEL>
 ```
 
 **Stall detection**: if **two consecutive rounds** both produce **zero new completions** (every result is `partial` or `blocked`), do not loop again. A single dry round does not stall — retry once first. Instead:
