@@ -242,13 +242,20 @@ Then proceed to step 3.
 
 ### 3. Issue housekeeping
 
-**`Status: complete`** — execute the `mark-done` operation from `issue-tracker.md`. It verifies criteria, updates the Status line, and moves the file from `issues/open/` to `issues/done/`.
+**`Status: complete`** — verify acceptance criteria, close the issue, then merge:
 
-Then merge the completed work onto the feature branch, then remove the worktree:
+1. **Verify acceptance criteria** — confirm every criterion in `## Acceptance criteria` is genuinely met. This is a correctness gate and must not run on a cheap tier.
+2. Run `close-issue.sh` to perform the mechanical close (Status rewrite + file move):
+
+```bash
+bash "<skill-dir>/scripts/close-issue.sh" "<issue-file-path>"
+```
+
+3. Merge the completed work onto the feature branch, then remove the worktree:
 
 ```bash
 git -C "$MAIN_ROOT" checkout "$FEATURE_BRANCH"
-git -C "$MAIN_ROOT" merge --no-ff "$BRANCH"
+bash "<skill-dir>/scripts/merge-branches.sh" "$FEATURE_BRANCH" "$BRANCH"
 echo "[$(date -u +%H:%M:%SZ)] [MERGE] branch=$BRANCH success=<true|false>" >> "$TRACE_LOG"
 git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
 ```
