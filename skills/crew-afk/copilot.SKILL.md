@@ -408,6 +408,49 @@ Its findings are **advisory** — nothing is re-queued or blocked.
 
 If there are no commits, print `Code review: skipped (no commits this session)` and stop.
 
+## Coverage Validation (after code review)
+
+Run the coverage validation script. It locates the feature's PRD and prints either a skip message or the PRD path:
+
+```bash
+bash "<skill-dir>/scripts/coverage-validation.sh"
+```
+
+If the output contains `"skipped"`, continue to worktree cleanup.
+
+If `PRD.md` exists (output does not contain `"skipped"`), spawn a validation agent to generate a coverage report. Do **not** use a cheap model tier for this step — coverage validation does genuine reasoning (matching PRD requirements against merged code and issue acceptance criteria):
+
+```
+Extract all requirements from:
+<PRD.md content>
+
+Categories to extract:
+- Key User Stories
+- Technical decisions
+- Cross-cutting concerns (error handling, logging, security, performance, testing, architecture, validation, observability)
+- Interface contracts
+- Multi-issue flows
+
+For each requirement, check:
+1. Completed issues in .scratch/<feature-slug>/issues/done/ — match requirement to issue acceptance criteria
+2. Merged code — heuristic validation (grep for relevant patterns, function names, config changes)
+
+Classify each requirement as:
+✓ covered - found in both issue criteria and code
+⚠ partial - found in issue criteria OR code, but not both
+✗ missing - no evidence in either
+
+Report format:
+✓ N covered / ⚠ N partial / ✗ N missing
+
+### Details
+✓ <requirement>: <brief evidence from issues/code>
+⚠ <requirement>: <what's present and what's missing>
+✗ <requirement>: <no evidence found>
+```
+
+The validation agent output becomes the **Coverage Report** section in the final summary.
+
 ## Worktree Cleanup (on exit)
 
 After code review, delete all tracked `crew/*` branch refs and prune stale worktree metadata:

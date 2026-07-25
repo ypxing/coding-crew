@@ -294,18 +294,15 @@ If no commits: print `Code review: skipped (no commits this session)`.
 
 ### Coverage validation
 
-Check for design documentation (use `FEATURE_SLUG` established in Session Init):
+Run the coverage validation script. It locates the feature's PRD and prints either a skip message or the PRD path:
 
 ```bash
-PRD_PATH=".scratch/$FEATURE_SLUG/PRD.md"
-
-if [ ! -f "$PRD_PATH" ]; then
-  echo "Coverage validation: skipped (no PRD.md found)"
-  # Continue to branch cleanup
-fi
+bash "<skill-dir>/scripts/coverage-validation.sh"
 ```
 
-If `PRD.md` exists, spawn a haiku validation agent to generate a coverage report:
+If the output contains `"skipped"`, continue to branch cleanup.
+
+If `PRD.md` exists (output does not contain `"skipped"`), spawn a validation agent to generate a coverage report. Do **not** use a cheap model tier for this step — coverage validation does genuine reasoning (matching PRD requirements against merged code and issue acceptance criteria):
 
 ```
 Extract all requirements from:
