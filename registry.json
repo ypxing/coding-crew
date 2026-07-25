@@ -77,7 +77,7 @@
       "install": ".claude/skills/dep-install"
     },
     "solve-issue": {
-      "version": "1.4.1",
+      "version": "1.5.0",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
