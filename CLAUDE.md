@@ -61,7 +61,7 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 
 `skills/` contains reusable skill files (`SKILL.md`). See `registry.json` under `skills` for the full list. Currently:
 
-- `crew-afk` — orchestrator that spawns parallel `crew-coder` agents, merges completed branches, runs crew-code-reviewer, and loops until all ready-for-agent issues are done. Declares `agent-deps: [crew-coder, crew-code-reviewer]` — installing the skill pulls in both agents automatically.
+- `crew-afk` — orchestrator that spawns parallel `crew-coder` agents, merges completed branches, runs crew-code-reviewer, and loops until all ready-for-agent issues are done. Declares `agent-deps: [crew-coder, crew-code-reviewer]` — installing the skill pulls in both agents automatically. Skill-local scripts in `skills/crew-afk/scripts/`: `merge-branches.sh` (per-branch no-ff merge with conflict abort), `close-issue.sh` (Status rewrite + file move), `squash-commits.sh`, `session-init.sh`, `coverage-validation.sh`.
 - `tdd` — red/green/refactor workflow
 - `solve-issue` — implement a single issue end-to-end: read, explore, install, TDD, verify, commit
 - `crew-address-findings` — triage and fix findings from an afk-run code review report using TDD
