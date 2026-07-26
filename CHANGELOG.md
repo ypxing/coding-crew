@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.10.0] - 2026-07-26
+
+### Added
+- **Frontier Unlock**: `crew-coder` now inherits all tools from the spawning session with `disallowedTools: [Agent]` only, replacing the explicit allowlist. This enables the agent to use any MCP servers the consumer configured.
+- **Model selection policy**: Made explicit and overridable — consumers can set default and override models for agents and workflows
+- **Mechanical steps as scripts**: Refactored merge/close operations into reusable scripts in `scripts/skill-utils/git-workflow/`
+- **Copilot resume parity**: Completed feature parity between Claude and Copilot agent implementations
+
+### Changed
+- **`crew-coder`**: Tool allowlist replaced with denylist (only `Agent` withheld)
+- **`close-issue.sh`**: Fixed macOS compatibility (sed -i requires -e flag or inline suffix)
+
+### Fixed
+- **`close-issue.sh`**: Portable sed implementation for both macOS and Linux
+- **Design.md tests**: Updated stale test fixtures and documentation
+- PR review comments integration
+
 ## [1.8.0] - 2026-06-21
 
 ### Added
