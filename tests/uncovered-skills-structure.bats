@@ -32,8 +32,10 @@ setup() {
   grep -q '## Phase 3' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
 }
 
-@test "crew-grill SKILL.md references design.md" {
-  grep -q 'design\.md' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
+@test "crew-grill SKILL.md references PRD.md as the design artifact" {
+  # design.md was consolidated into PRD.md as the single context document.
+  grep -q 'PRD\.md' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
+  ! grep -q 'design\.md' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
 }
 
 # --- tdd ---

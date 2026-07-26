@@ -69,18 +69,12 @@ echo "[$(date -u +%H:%M:%SZ)] [START] issue=$ISSUE_PATH title=$(basename "$ISSUE
 echo "[$(date -u +%H:%M:%SZ)] [PHASE] <phase description>" >> "$TRACE_LOG"
 ```
 
-**Log `[CMD]` before every shell command** (replaces the old shared log pattern). Write the log line and the command as two separate statements:
+**At each phase transition, log what commands and files the phase covers** using `[CMD]`, `[READ]`, and `[WRITE]` markers in the phase entry or as a brief batch immediately after the `[PHASE]` line. Do not emit a separate log line before every individual shell call or tool call — batch them at the phase boundary so the trace stays readable without doubling tool calls:
 
 ```bash
-echo "[$(date -u +%H:%M:%SZ)] [CMD] <exact command here>" >> "$TRACE_LOG"
-<exact command here>
-```
-
-**Log `[READ]` and `[WRITE]` for tool calls** (read, edit, write tools) — not just shell commands:
-
-```bash
-echo "[$(date -u +%H:%M:%SZ)] [READ] <file path>" >> "$TRACE_LOG"
-echo "[$(date -u +%H:%M:%SZ)] [WRITE] <file path>" >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [PHASE] exploring codebase" >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [CMD] git status; grep ...; bats ..." >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [READ] agents/crew-coder/copilot.agent.md" >> "$TRACE_LOG"
 ```
 
 **Emit `[DONE]` as the last action before returning the report.** Always emit this line — including when status is `blocked`:
@@ -99,25 +93,36 @@ Before invoking solve-issue, check for `PRD.md` in the feature's scratch directo
 FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
 ```
 
-**Check for and read the PRD:**
+**Read the PRD if it exists:**
 
 ```bash
 PRD_DOC="$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
-
-if [ -f "$PRD_DOC" ]; then
-  echo "Reading PRD.md for architecture and requirements context..."
-fi
 ```
 
-**After checking for document existence above**, use the view tool to read `PRD.md` if it exists and keep its content in memory throughout the implementation.
+Use the view tool to read `PRD.md` if it exists and keep its content in memory throughout the implementation.
 
 If it does not exist, continue normally — this is graceful degradation for issues without context documents.
+
+## Code Search
+
+When searching the codebase, prefer tools in this order:
+
+1. **CodeGraph CLI** — if `.codegraph/` exists at the repo root and the `codegraph` binary is on PATH, run `codegraph explore "<query>"` via the execute tool. It returns verbatim source and call paths in one call, including dynamic-dispatch hops keyword search cannot follow.
+2. **Keyword search** — use when no `.codegraph/` exists at the repo root, when `codegraph` is not installed, or for quick pattern matching.
+
+Copilot has no MCP tool, so the CLI is the only CodeGraph path here — there is no `codegraph_explore` equivalent to try first.
 
 STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: solve-issue skill not installed`.
 
 Before returning your report, confirm:
 
 - [ ] `solve-issue` skill was read and invoked
+
+## Status Definitions
+
+- **`complete`** — all acceptance criteria met, all checks pass, work is committed.
+- **`partial`** — meaningful progress was made but not all checks pass or criteria are met. Commit the work to this branch with a `[WIP]` marker in the commit message so the code is preserved. Write notes to `## Progress` as context alongside the preserved code (not a substitute for it). The next round resumes on this branch.
+- **`blocked`** — cannot proceed without human input; use when stuck after 2 consecutive failed attempts, not to avoid `partial`.
 
 ## When You Are Stuck
 

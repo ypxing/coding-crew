@@ -6,12 +6,8 @@ description: >
   orchestrator that supplies pre-fetched content.
 model: sonnet
 isolation: worktree
-tools:
-  - Read
-  - Edit
-  - Write
-  - Bash
-  - Glob
+disallowedTools:
+  - Agent
 skills:
   - solve-issue
 user-invocable: false
@@ -78,18 +74,12 @@ echo "[$(date -u +%H:%M:%SZ)] [START] issue=$ISSUE_PATH title=$(basename "$ISSUE
 echo "[$(date -u +%H:%M:%SZ)] [PHASE] <phase description>" >> "$TRACE_LOG"
 ```
 
-**Log `[CMD]` before every Bash command** (replaces the old shared log pattern). Do not use eval — write the log line and the command as two separate statements:
+**At each phase transition, log what commands and files the phase covers** using `[CMD]`, `[READ]`, and `[WRITE]` markers in the phase entry or as a brief batch immediately after the `[PHASE]` line. Do not emit a separate log line before every individual Bash call or tool call — batch them at the phase boundary so the trace stays readable without doubling tool calls:
 
 ```bash
-echo "[$(date -u +%H:%M:%SZ)] [CMD] <exact command here>" >> "$TRACE_LOG"
-<exact command here>
-```
-
-**Log `[READ]` and `[WRITE]` for tool calls** (Read, Edit, Write tools) — not just Bash commands:
-
-```bash
-echo "[$(date -u +%H:%M:%SZ)] [READ] <file path>" >> "$TRACE_LOG"
-echo "[$(date -u +%H:%M:%SZ)] [WRITE] <file path>" >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [PHASE] exploring codebase" >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [CMD] git status; grep ...; bats ..." >> "$TRACE_LOG"
+echo "[$(date -u +%H:%M:%SZ)] [READ] agents/crew-coder/claude.agent.md" >> "$TRACE_LOG"
 ```
 
 **Emit `[DONE]` as the last action before returning structured output.** Always emit this line — including when status is `blocked`:
@@ -108,19 +98,23 @@ Before invoking solve-issue, check for `PRD.md` in the feature's scratch directo
 FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
 ```
 
-**Check for and read the PRD:**
+**Read the PRD if it exists:**
 
 ```bash
 PRD_DOC="$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
-
-if [ -f "$PRD_DOC" ]; then
-  echo "Reading PRD.md for architecture and requirements context..."
-fi
 ```
 
-**After checking for document existence above**, use the View tool to read `PRD.md` if it exists and keep its content in memory throughout the implementation.
+Use the View tool to read `PRD.md` if it exists and keep its content in memory throughout the implementation.
 
 If it does not exist, continue normally — this is graceful degradation for issues without context documents.
+
+## Code Search
+
+When searching the codebase, prefer tools in this order:
+
+1. **CodeGraph MCP tool** — if the `codegraph` MCP server is available in this session, use `codegraph_explore` for code exploration. It returns verbatim source and call paths in one call.
+2. **CodeGraph CLI** — if `.codegraph/` exists at the repo root but no MCP server is configured, use `codegraph explore "<query>"` via Bash. Preferred over Grep when the index is present.
+3. **Grep** — use when no `.codegraph/` exists at the repo root, or for quick pattern matching.
 
 ## Implementation
 
@@ -158,5 +152,5 @@ Never omit a check category — if no command was found, include the entry with 
 Status definitions:
 
 - **`complete`** — all criteria met, all checks pass, work committed.
-- **`partial`** — meaningful progress was made but work is NOT committed; write notes to `## Progress` in the issue file so a fresh worker can re-implement from scratch using that context. Do not commit partial work — the next worker starts from scratch.
+- **`partial`** — meaningful progress was made but not all checks pass or criteria are met. Commit the work to this branch with a `[WIP]` marker in the commit message so the code is preserved. Write notes to `## Progress` in the issue file as context alongside the preserved code (not as a substitute for it). The next round resumes on this branch.
 - **`blocked`** — cannot proceed without human input or environment fix.

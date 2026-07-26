@@ -29,7 +29,15 @@ AI agents that take your ideas from planning to code.
   │          └───────────────┼───────────────┘          │
   │                          │ parallel, committed      │
   │                          ▼                          │
-  │                    code-reviewer                    │
+  │              verify-worktree.sh (per branch)        │
+  │              independent check run before merge     │
+  │                          │                          │
+  │                          ▼                          │
+  │              code-reviewer (per branch)             │
+  │              before merge, findings advisory        │
+  │                          │                          │
+  │                          ▼                          │
+  │                   merge + squash                    │
   └─────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -76,7 +84,25 @@ Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
 /crew-afk
 ```
 
-Picks up every `ready-for-agent` issue, spawns crew-coder agents in parallel, commits, loops until done. Runs a code review pass on exit.
+Picks up every `ready-for-agent` issue, spawns crew-coder agents in parallel, commits, loops until done. Before any branch merges, the orchestrator independently runs the project's checks in the worker's worktree (`verify-worktree.sh`) — a branch that fails verification is treated as partial and never merged. Then a code reviewer reviews each verified branch's diff before the merge, with findings written to `.scratch/<feature>/reviews/`. Review is advisory and never blocks a merge.
+
+**Partial work is committed and retained.** When a worker cannot finish (partial status or failed verification), it commits its work-in-progress with a `[WIP]` marker to its own branch. That branch is not merged and not deleted — it survives wrap-up so the next round's worker resumes on it instead of starting from scratch. Retained branches are listed in the sprint summary with their reason.
+
+**Model selection**
+
+By default, coders run on `sonnet`. Pass `--model` to use a different tier:
+
+```
+/crew-afk --model opus      # use a higher tier for this sprint
+/crew-afk --model haiku     # use a lighter tier
+/crew-afk --model inherit   # omit model param, inherit from session
+```
+
+The reviewer always inherits the session model — it is deliberately not pinned.
+
+On Copilot, `--model` is accepted but has no effect: the IDE selects the model, and an explicit notice is printed when the flag is used.
+
+The resolved model is written to the orchestrator trace log and included in the sprint summary.
 
 **Gitignored files in worktrees (`.worktreeinclude`)**
 

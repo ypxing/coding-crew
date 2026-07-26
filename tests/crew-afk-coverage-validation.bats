@@ -4,6 +4,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 SKILL_FILE="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
+COPILOT_SKILL_FILE="$SCRIPT_DIR/skills/crew-afk/copilot.SKILL.md"
 COVERAGE_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/coverage-validation.sh"
 
 setup() {
@@ -26,14 +27,15 @@ teardown() {
   grep -q '### Coverage validation' "$SKILL_FILE"
 }
 
-@test "Coverage validation section appears between Code review and Branch cleanup" {
-  # Extract line numbers for each section
-  code_review_line=$(grep -n "### Code review" "$SKILL_FILE" | head -1 | cut -d: -f1)
+@test "Coverage validation section appears between squash and Branch cleanup" {
+  # Code review now runs per-branch before merge (Step 4), not in Wrap Up.
+  # Coverage validation is in Wrap Up, between squash and branch cleanup.
+  squash_line=$(grep -n "squash-commits.sh\|Squash Commit" "$SKILL_FILE" | head -1 | cut -d: -f1)
   coverage_line=$(grep -n "### Coverage validation" "$SKILL_FILE" | head -1 | cut -d: -f1)
   cleanup_line=$(grep -n "### Branch cleanup" "$SKILL_FILE" | head -1 | cut -d: -f1)
 
-  # Verify order
-  [ "$code_review_line" -lt "$coverage_line" ]
+  # Verify order: squash -> coverage validation -> branch cleanup
+  [ "$squash_line" -lt "$coverage_line" ]
   [ "$coverage_line" -lt "$cleanup_line" ]
 }
 
@@ -43,34 +45,85 @@ teardown() {
   [ -f "$COVERAGE_SCRIPT" ]
 }
 
-@test "coverage-validation.sh is executable" {
-  [ -x "$COVERAGE_SCRIPT" ]
+@test "coverage-validation.sh is invoked via bash in SKILL.md" {
+  # Per D2: scripts are called as 'bash "<skill-dir>/scripts/<name>.sh"' not executed directly
+  grep -q 'bash.*coverage-validation\.sh' "$SKILL_FILE"
 }
 
-# --- Feature Slug Extraction Tests ---
-
-@test "coverage-validation.sh extracts feature slug from simple branch" {
-  git checkout -q -b "feature/test-feature"
-  mkdir -p .scratch/test-feature
-  echo "# Design" > .scratch/test-feature/design.md
-  
-  run bash "$COVERAGE_SCRIPT"
-  
-  [ "$status" -eq 0 ]
-  # Should NOT skip - design.md should be found
-  [[ "$output" != *"skipped"* ]]
+@test "coverage-validation.sh is invoked via bash in copilot.SKILL.md" {
+  # Platform parity: Copilot must also use the script
+  grep -q 'bash.*coverage-validation\.sh' "$COPILOT_SKILL_FILE"
 }
 
 # --- Skip Behavior Tests ---
 
-@test "coverage-validation.sh skips when neither design.md nor PRD.md exists" {
+@test "coverage-validation.sh skips when no PRD.md exists" {
   git checkout -q -b "feature/test-feature"
   mkdir -p .scratch/test-feature/issues
-  
+
   run bash "$COVERAGE_SCRIPT"
-  
+
   [ "$status" -eq 0 ]
   [[ "$output" == *"Coverage validation: skipped"* ]]
+}
+
+@test "coverage-validation.sh skip message includes reason" {
+  git checkout -q -b "feature/test-feature"
+  mkdir -p .scratch/test-feature/issues
+
+  run bash "$COVERAGE_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no PRD.md found"* ]]
+}
+
+@test "coverage-validation.sh outputs PRD path when PRD.md exists" {
+  git checkout -q -b "feature/test-feature"
+  mkdir -p .scratch/test-feature
+  echo "# PRD" > .scratch/test-feature/PRD.md
+
+  run bash "$COVERAGE_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  # Must NOT output a skip message
+  [[ "$output" != *"skipped"* ]]
+  # Must output the PRD path so the orchestrator knows what to read
+  [[ "$output" == *"PRD.md"* ]]
+}
+
+# --- No Dead Stub Tests ---
+
+@test "coverage-validation.sh does not contain 'not yet implemented'" {
+  run grep -c "not yet implemented" "$COVERAGE_SCRIPT"
+  [ "$output" -eq 0 ]
+}
+
+@test "No script file body only reports 'not yet implemented'" {
+  # Scan all scripts in skills/crew-afk/scripts/ for stub bodies
+  for f in "$SCRIPT_DIR/skills/crew-afk/scripts/"*.sh; do
+    count=$(grep -c "not yet implemented" "$f" 2>/dev/null || echo 0)
+    if [ "$count" -gt 0 ]; then
+      echo "Dead stub found in: $f"
+      return 1
+    fi
+  done
+}
+
+# --- Model Tier Tests ---
+
+@test "Coverage validation does not use haiku model tier" {
+  # The coverage validation agent must NOT be on a cheap tier
+  # Extract the coverage validation section and check it doesn't say haiku
+  coverage_start=$(grep -n "### Coverage validation" "$SKILL_FILE" | head -1 | cut -d: -f1)
+  cleanup_start=$(grep -n "### Branch cleanup" "$SKILL_FILE" | head -1 | cut -d: -f1)
+
+  if [ -z "$coverage_start" ] || [ -z "$cleanup_start" ]; then
+    skip "Could not find section boundaries"
+  fi
+
+  # Extract lines between coverage validation and branch cleanup
+  section=$(sed -n "${coverage_start},${cleanup_start}p" "$SKILL_FILE")
+  echo "$section" | grep -q -i "haiku" && { echo "FAIL: haiku found in coverage validation section"; return 1; } || true
 }
 
 # --- Documentation Format Tests ---
@@ -84,4 +137,10 @@ teardown() {
 @test "SKILL.md mentions validation agent prompt structure" {
   grep -qi 'validation agent' "$SKILL_FILE"
   grep -qi 'extract.*requirements' "$SKILL_FILE"
+}
+
+# --- Copilot Parity Tests ---
+
+@test "copilot.SKILL.md includes Coverage validation section" {
+  grep -q -i 'coverage' "$COPILOT_SKILL_FILE"
 }

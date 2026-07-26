@@ -23,8 +23,10 @@ setup() {
 
 # --- Extraction Logic References ---
 
-@test "to-issues/SKILL.md mentions design.md as context source" {
-  grep -q 'design\.md' "$SKILL_FILE"
+@test "to-issues/SKILL.md names PRD.md as the context source" {
+  # design.md was consolidated into PRD.md as the single context document.
+  grep -q 'PRD\.md' "$SKILL_FILE"
+  ! grep -q 'design\.md' "$SKILL_FILE"
 }
 
 @test "to-issues/SKILL.md mentions 10 requirement categories or cross-cutting concerns" {

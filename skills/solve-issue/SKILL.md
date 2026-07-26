@@ -38,20 +38,7 @@ The caller provides one of:
 - A **file path** — read the issue from that path.
 - **Issue content** inline — use it directly.
 
-Two session-wide variables must be set before any step. If they are already set in the current session, use those values. Otherwise establish them now:
-
-```bash
-PROJECT_ROOT=$(pwd)
-
-# If .git is a file we are inside a worktree — derive MAIN_ROOT from the common git dir.
-# If .git is a directory we are at the main repo root — MAIN_ROOT equals PROJECT_ROOT.
-if [ -f "$PROJECT_ROOT/.git" ]; then
-  _common=$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir)
-  MAIN_ROOT=$(cd "$_common/.." && pwd)
-else
-  MAIN_ROOT="$PROJECT_ROOT"
-fi
-```
+Two session-wide variables must be set before any step. Use the values already established by the caller (crew-coder sets these at startup). Both are inherited by this skill — do not re-derive them.
 
 - **`PROJECT_ROOT`** — where code lives and all commands run.
 - **`MAIN_ROOT`** — main checkout; where `.scratch/` and gitignored files live.
@@ -129,16 +116,16 @@ Look for a `## Context Documents` section in the issue file. If it exists, extra
 
 ```bash
 PRD_PATH=$(grep -A 3 "## Context Documents" "$ISSUE_PATH" | grep "PRD:" | sed 's/.*PRD: *`\(.*\)`.*/\1/')
-
+# Only derive the full path when a PRD path was actually found — otherwise
+# FULL_PRD_PATH would be "$MAIN_ROOT/", a misleading path pointing at the repo root.
 if [ -n "$PRD_PATH" ]; then
   FULL_PRD_PATH="$MAIN_ROOT/$PRD_PATH"
-  if [ -f "$FULL_PRD_PATH" ]; then
-    echo "Reading PRD.md from $FULL_PRD_PATH"
-  fi
+else
+  FULL_PRD_PATH=""
 fi
 ```
 
-**After checking for document existence above**, use the View/Read tool to read `PRD.md` if it exists and keep its content in memory throughout the implementation.
+If `$FULL_PRD_PATH` is non-empty, use the View/Read tool to read `PRD.md` at that path if it exists, and keep its content in memory throughout the implementation.
 
 If the PRD does not exist or the Context Documents section is missing, continue normally.
 
