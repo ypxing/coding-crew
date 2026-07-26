@@ -182,3 +182,40 @@ EOF
   run bash "$CLOSE_SCRIPT" "/nonexistent/path/to/issue.md"
   [ "$status" -ne 0 ]
 }
+
+# ─── portability: no non-portable in-place sed (macOS/BSD) ───────────────────
+# GNU sed accepts a bare `-i`; BSD/macOS sed reads the NEXT argument as a backup
+# suffix and then finds no script, so the command fails and set -e aborts.
+# `-i''` is not a fix — the shell strips the empty quotes, yielding a bare `-i`.
+
+@test "crew-afk scripts use no non-portable in-place sed" {
+  SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts"
+  # Matches `sed -i` and `sed -i''`/`sed -i""`, both of which reach sed as bare -i.
+  # Strip comment lines first so explanatory prose does not trip the check.
+  ! cat "$SCRIPTS_DIR"/*.sh | grep -vE '^\s*#' | grep -qE "sed +-i( |'')"
+}
+
+@test "close-issue: rewrites Status without relying on in-place sed" {
+  # Ignore comment lines — the explanation of why in-place sed is avoided
+  # legitimately mentions it.
+  ! grep -vE '^\s*#' "$CLOSE_SCRIPT" | grep -qE "sed +-i"
+}
+
+@test "close-issue: leaves no temp or backup file behind" {
+  ISSUE_PATH=$(_make_issue "07-portable")
+
+  run bash "$CLOSE_SCRIPT" "$ISSUE_PATH"
+  [ "$status" -eq 0 ]
+
+  # Only the moved file should exist — no .tmp/.bak siblings in either directory.
+  run bash -c "find '$TEMP_DIR/.scratch/my-feature/issues' -type f | sort"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"done/07-portable.md" ]]
+  [[ "$output" != *".tmp"* ]]
+  [[ "$output" != *".bak"* ]]
+}
+
+@test "tracker template documents no non-portable in-place sed" {
+  TEMPLATE="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/templates/trackers/local.md"
+  ! grep -vE '^\s*(#|>)' "$TEMPLATE" | grep -qE "sed +-i( |'')"
+}

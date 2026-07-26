@@ -34,7 +34,10 @@ Before moving, verify all acceptance criteria in the issue file are satisfied:
 1. Check each `- [ ]` criterion against the implemented code.
 2. If all are met, check them off (`- [x]`) and update `Status: done`, then move the file to `issues/done/` (sibling of `issues/open/`):
    ```bash
-   sed -i'' "s/^Status:.*/Status: done/" "<issue-path>"
+   # Rewrite via temp file — `sed -i` is not portable (GNU takes a bare -i, BSD/macOS
+   # reads the next arg as a backup suffix; `-i''` does not help, the shell strips it).
+   sed "s/^Status:.*/Status: done/" "<issue-path>" > "<issue-path>.tmp" \
+     && mv "<issue-path>.tmp" "<issue-path>"
    mkdir -p "$(dirname "<issue-path>")/../done"
    mv "<issue-path>" "$(dirname "<issue-path>")/../done/"
    ```
@@ -45,7 +48,8 @@ Before moving, verify all acceptance criteria in the issue file are satisfied:
 Update the `Status:` line in an issue file:
 
 ```bash
-sed -i'' "s/^Status:.*/Status: <new-status>/" "<issue-path>"
+sed "s/^Status:.*/Status: <new-status>/" "<issue-path>" > "<issue-path>.tmp" \
+  && mv "<issue-path>.tmp" "<issue-path>"
 ```
 
 Valid status strings are listed in `## Labels` below.

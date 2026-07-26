@@ -43,7 +43,7 @@
   "skills": {
     "crew-afk": {
 
-      "version": "1.8.2",
+      "version": "1.8.3",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",

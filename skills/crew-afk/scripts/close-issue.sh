@@ -26,8 +26,14 @@ if [ ! -f "$ISSUE_PATH" ]; then
   exit 1
 fi
 
-# Rewrite the Status line in-place
-sed -i 's/^Status: .*/Status: done/' "$ISSUE_PATH"
+# Rewrite the Status line. Done via temp file rather than `sed -i` because in-place
+# editing is not portable: GNU sed accepts bare `-i`, but BSD/macOS sed reads the
+# next argument as a backup suffix and then finds no script. `-i''` does not help —
+# the shell strips the empty quotes, so sed still receives a bare `-i`. Writing to a
+# temp file and moving it works identically on both platforms.
+TMP_FILE="${ISSUE_PATH}.tmp.$$"
+sed 's/^Status: *.*/Status: done/' "$ISSUE_PATH" > "$TMP_FILE"
+mv "$TMP_FILE" "$ISSUE_PATH"
 
 # Move to sibling done/ directory
 OPEN_DIR=$(dirname "$ISSUE_PATH")
