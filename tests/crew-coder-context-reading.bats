@@ -17,20 +17,23 @@ setup() {
   grep -q "sed 's|.*\\\\.scratch/||'" "$COPILOT_AGENT"
 }
 
-@test "copilot.agent.md checks for design.md at MAIN_ROOT/.scratch/FEATURE_SLUG/design.md" {
-  grep -q "MAIN_ROOT.*\.scratch.*FEATURE_SLUG.*design\.md\|\.scratch.*FEATURE_SLUG.*design\.md.*MAIN_ROOT" "$COPILOT_AGENT"
-}
-
 @test "copilot.agent.md checks for PRD.md at MAIN_ROOT/.scratch/FEATURE_SLUG/PRD.md" {
   grep -q "MAIN_ROOT.*\.scratch.*FEATURE_SLUG.*PRD\.md\|\.scratch.*FEATURE_SLUG.*PRD\.md.*MAIN_ROOT" "$COPILOT_AGENT"
 }
 
-@test "copilot.agent.md logs when reading design.md" {
-  grep -q "Reading design\.md for architectural context" "$COPILOT_AGENT"
+@test "copilot.agent.md does not reference the retired design.md context document" {
+  # design.md was consolidated into PRD.md as the single context document.
+  ! grep -q 'design\.md' "$COPILOT_AGENT"
 }
 
-@test "copilot.agent.md logs when reading PRD.md" {
-  grep -q "Reading PRD\.md for requirements context" "$COPILOT_AGENT"
+@test "copilot.agent.md instructs reading the PRD for context" {
+  # Assert the behavioral marker, not a literal echo — the echo-only block that
+  # merely announced the read was removed as redundant prescription.
+  grep -qi 'read .*PRD\.md\|PRD\.md.*keep its content in memory' "$COPILOT_AGENT"
+}
+
+@test "copilot.agent.md degrades gracefully when no PRD exists" {
+  grep -qi 'does not exist.*continue normally\|continue normally' "$COPILOT_AGENT"
 }
 
 @test "copilot.agent.md Read Context Documents section positioned after Environment Setup" {
@@ -50,20 +53,23 @@ setup() {
   grep -q "sed 's|.*\\\\.scratch/||'" "$CLAUDE_AGENT"
 }
 
-@test "claude.agent.md checks for design.md at MAIN_ROOT/.scratch/FEATURE_SLUG/design.md" {
-  grep -q "MAIN_ROOT.*\.scratch.*FEATURE_SLUG.*design\.md\|\.scratch.*FEATURE_SLUG.*design\.md.*MAIN_ROOT" "$CLAUDE_AGENT"
-}
-
 @test "claude.agent.md checks for PRD.md at MAIN_ROOT/.scratch/FEATURE_SLUG/PRD.md" {
   grep -q "MAIN_ROOT.*\.scratch.*FEATURE_SLUG.*PRD\.md\|\.scratch.*FEATURE_SLUG.*PRD\.md.*MAIN_ROOT" "$CLAUDE_AGENT"
 }
 
-@test "claude.agent.md logs when reading design.md" {
-  grep -q "Reading design\.md for architectural context" "$CLAUDE_AGENT"
+@test "claude.agent.md does not reference the retired design.md context document" {
+  # design.md was consolidated into PRD.md as the single context document.
+  ! grep -q 'design\.md' "$CLAUDE_AGENT"
 }
 
-@test "claude.agent.md logs when reading PRD.md" {
-  grep -q "Reading PRD\.md for requirements context" "$CLAUDE_AGENT"
+@test "claude.agent.md instructs reading the PRD for context" {
+  # Assert the behavioral marker, not a literal echo — the echo-only block that
+  # merely announced the read was removed as redundant prescription.
+  grep -qi 'read .*PRD\.md\|PRD\.md.*keep its content in memory' "$CLAUDE_AGENT"
+}
+
+@test "claude.agent.md degrades gracefully when no PRD exists" {
+  grep -qi 'does not exist.*continue normally\|continue normally' "$CLAUDE_AGENT"
 }
 
 @test "copilot.agent.md structured output mentions Acceptance Criteria section" {

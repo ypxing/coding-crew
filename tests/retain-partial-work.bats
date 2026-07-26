@@ -211,3 +211,27 @@ MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scr
   # The prior round's branch name must be persisted somewhere the next round reads.
   grep -qiE 'retained_branches|sprint-state|previous round.*branch name|branch name.*previous round' "$CLAUDE_SKILL"
 }
+
+# ─── retained_branches is both written and read on each platform ─────────────
+# The resume dispatch reads .retained_branches; if nothing ever writes it the
+# lookup silently returns empty and every partial restarts from scratch.
+
+@test "claude SKILL.md writes retained_branches, not just reads it" {
+  grep -q 'retained_branches\[\$slug\] = \$branch' "$CLAUDE_SKILL"
+}
+
+@test "copilot SKILL.md writes retained_branches, not just reads it" {
+  grep -q 'retained_branches\[\$slug\] = \$branch' "$COPILOT_SKILL"
+}
+
+@test "claude SKILL.md clears the retention entry when an issue completes" {
+  grep -q "del(.retained_branches\[\$slug\])" "$CLAUDE_SKILL"
+}
+
+@test "copilot SKILL.md clears the retention entry when an issue completes" {
+  grep -q "del(.retained_branches\[\$slug\])" "$COPILOT_SKILL"
+}
+
+@test "copilot SKILL.md gives a concrete branch-existence check for resume dispatch" {
+  grep -q 'branch --list' "$COPILOT_SKILL"
+}
