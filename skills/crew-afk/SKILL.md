@@ -462,4 +462,6 @@ Acceptance criteria:
 
 ## Code Review
 <path to sprint-review-<TIMESTAMP>.md written during Step 4, or "skipped (no verified branches)">
+<if review was written: inline the "## Session Review Summary" section verbatim from that file>
+<if review was written: "To address findings: /crew-address-findings">
 ```
