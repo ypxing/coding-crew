@@ -21,6 +21,13 @@ WORKTREE_DIR=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dir)
+      # Guard before reading $2 — under `set -u` a bare `--dir` would otherwise
+      # abort with "$2: unbound variable" instead of the usage message.
+      if [ $# -lt 2 ]; then
+        echo "ERROR: --dir requires a value" >&2
+        echo "Usage: $0 --dir <worktree-path>" >&2
+        exit 1
+      fi
       WORKTREE_DIR="$2"
       shift 2
       ;;
@@ -164,6 +171,88 @@ _discover_test_command() {
   echo ""
 }
 
+# _discover_lint_command <worktree-dir>
+# Returns the lint command or empty string if none found.
+_discover_lint_command() {
+  local dir="$1"
+
+  local cmd
+  cmd=$(_discover_from_claude_md "lint" "$dir")
+  if [ -n "$cmd" ]; then
+    echo "$cmd"
+    return
+  fi
+
+  # Makefile: lint, then check (verification.md names eslint/lint/check targets)
+  local target
+  for target in lint check; do
+    if _has_makefile_target "$target" "$dir"; then
+      echo "make -C \"$dir\" $target"
+      return
+    fi
+  done
+
+  # npm/pnpm/yarn: package.json with a lint script
+  if [ -f "$dir/package.json" ] && grep -q '"lint"' "$dir/package.json" 2>/dev/null; then
+    echo "npm run lint --prefix \"$dir\""
+    return
+  fi
+
+  # Go: vet ships with the toolchain
+  if [ -f "$dir/go.mod" ]; then
+    echo "go vet ./..."
+    return
+  fi
+
+  # Rust: clippy
+  if [ -f "$dir/Cargo.toml" ]; then
+    echo "cargo clippy --manifest-path \"$dir/Cargo.toml\""
+    return
+  fi
+
+  echo ""
+}
+
+# _discover_typecheck_command <worktree-dir>
+# Returns the type check command or empty string if none found.
+_discover_typecheck_command() {
+  local dir="$1"
+
+  local cmd
+  cmd=$(_discover_from_claude_md "typecheck" "$dir")
+  if [ -n "$cmd" ]; then
+    echo "$cmd"
+    return
+  fi
+  cmd=$(_discover_from_claude_md "type check" "$dir")
+  if [ -n "$cmd" ]; then
+    echo "$cmd"
+    return
+  fi
+
+  local target
+  for target in typecheck types; do
+    if _has_makefile_target "$target" "$dir"; then
+      echo "make -C \"$dir\" $target"
+      return
+    fi
+  done
+
+  # TypeScript
+  if [ -f "$dir/tsconfig.json" ]; then
+    echo "npx tsc --noEmit -p \"$dir/tsconfig.json\""
+    return
+  fi
+
+  # Go: build acts as the type check
+  if [ -f "$dir/go.mod" ]; then
+    echo "go build ./..."
+    return
+  fi
+
+  echo ""
+}
+
 # ─── run checks ──────────────────────────────────────────────────────────────
 
 OVERALL_EXIT=0
@@ -171,26 +260,62 @@ OVERALL_EXIT=0
 echo "Verifying worktree: $WORKTREE_DIR"
 echo ""
 
-# Discover and run test command
-TEST_CMD=$(_discover_test_command "$WORKTREE_DIR")
+NOT_RUN=()
 
-if [ -z "$TEST_CMD" ]; then
-  echo "TEST: not_run — no command found (checked CLAUDE.md, Makefile, and ecosystem conventions)"
-  OVERALL_EXIT=1
-else
-  echo "TEST: running: $TEST_CMD"
+# _run_category <LABEL> <command> <required>
+# Runs one check category. An empty command is reported as not_run and collected
+# for the summary — never silently treated as passing.
+#
+# `required=yes` (TEST only) makes a missing command fatal: with no test command
+# nothing was verified at all, so the gate cannot vouch for the branch. For lint
+# and typecheck, not_run is loud but non-fatal — many projects legitimately have
+# neither, and failing them would stall every sprint on a false positive, which
+# is worse for an unattended run than the gap it would close.
+_run_category() {
+  local label="$1"
+  local cmd="$2"
+  local required="${3:-no}"
+
+  if [ -z "$cmd" ]; then
+    echo "$label: not_run — no command found (checked CLAUDE.md, Makefile, and ecosystem conventions)"
+    NOT_RUN+=("$label")
+    if [ "$required" = "yes" ]; then
+      echo "$label: not_run is fatal — nothing was verified"
+      OVERALL_EXIT=1
+    fi
+    return
+  fi
+
+  echo "$label: running: $cmd"
   # Run in the worktree directory so relative paths resolve correctly
-  if (cd "$WORKTREE_DIR" && eval "$TEST_CMD") 2>&1; then
-    echo "TEST: pass"
+  if (cd "$WORKTREE_DIR" && eval "$cmd") 2>&1; then
+    echo "$label: pass"
   else
-    echo "TEST: fail"
+    echo "$label: fail"
     OVERALL_EXIT=1
   fi
-fi
+}
+
+# Order follows verification.md: type check, then lint, then tests.
+_run_category "TYPECHECK" "$(_discover_typecheck_command "$WORKTREE_DIR")" no
+echo ""
+_run_category "LINT" "$(_discover_lint_command "$WORKTREE_DIR")" no
+echo ""
+_run_category "TEST" "$(_discover_test_command "$WORKTREE_DIR")" yes
 
 echo ""
+# Report bounded coverage explicitly — a category that never ran must not read as
+# passing just because the overall gate succeeded.
+if [ "${#NOT_RUN[@]}" -gt 0 ]; then
+  echo "Verification: coverage gap — not_run: ${NOT_RUN[*]}"
+fi
+
 if [ "$OVERALL_EXIT" -eq 0 ]; then
-  echo "Verification: success — all checks pass"
+  if [ "${#NOT_RUN[@]}" -gt 0 ]; then
+    echo "Verification: success — all discovered checks pass (${#NOT_RUN[@]} category not run)"
+  else
+    echo "Verification: success — all checks pass"
+  fi
 else
   echo "Verification: fail — one or more checks did not pass"
 fi

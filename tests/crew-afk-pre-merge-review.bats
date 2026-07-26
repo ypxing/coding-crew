@@ -21,7 +21,8 @@ frontmatter() {
 
 @test "reviewer claude.agent.md description does not claim end-of-session invocation" {
   # The reviewer is now dispatched per-branch before merge, not once at the end.
-  ! frontmatter "$REVIEWER_CLAUDE" | grep -qi 'once at the end\|end of the session'
+  # grep -E for alternation: `\|` is a GNU BRE extension, not portable to BSD/macOS.
+  ! frontmatter "$REVIEWER_CLAUDE" | grep -qiE 'once at the end|end of the session'
 }
 
 @test "reviewer copilot.agent.md description does not claim batch review of all branches" {

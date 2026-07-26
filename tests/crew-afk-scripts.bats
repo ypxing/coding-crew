@@ -219,3 +219,43 @@ EOF
   TEMPLATE="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/templates/trackers/local.md"
   ! grep -vE '^\s*(#|>)' "$TEMPLATE" | grep -qE "sed +-i( |'')"
 }
+
+# ─── missing branch must fail, not read as already-merged ────────────────────
+# `git log HEAD..<branch>` errors on an unknown ref; with stderr suppressed that
+# leaves PENDING empty, which is indistinguishable from "already merged". A typo'd
+# or deleted branch would report success and be silently skipped.
+
+@test "merge-branches: non-existent branch exits non-zero" {
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "no-such-branch"
+  [ "$status" -ne 0 ]
+}
+
+@test "merge-branches: non-existent branch is not reported as already-merged" {
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "no-such-branch"
+  [[ "$output" != *"already-merged"* ]]
+  [[ "$output" == *"no-such-branch"* ]]
+}
+
+@test "merge-branches: missing branch does not stop a later valid branch merging" {
+  git checkout -q -b "crew/my-feature/valid-after-missing"
+  echo "v" > v.txt && git add v.txt && git commit -q -m "valid work"
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "no-such-branch" "crew/my-feature/valid-after-missing"
+  [ "$status" -ne 0 ]
+
+  run git show HEAD:v.txt
+  [ "$status" -eq 0 ]
+  [[ "$output" == "v" ]]
+}
+
+@test "merge-branches: genuinely already-merged branch still reports already-merged" {
+  git checkout -q -b "crew/my-feature/really-merged"
+  echo "r" > r.txt && git add r.txt && git commit -q -m "r work"
+  git checkout -q "$FEATURE_BRANCH"
+  git merge --no-ff "crew/my-feature/really-merged" -m "merge r" -q
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "crew/my-feature/really-merged"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already-merged"* ]]
+}

@@ -297,7 +297,11 @@ bash "<skill-dir>/scripts/verify-worktree.sh" --dir "<working_directory from wor
 echo "[$(date -u +%H:%M:%SZ)] [VERIFY] branch=$BRANCH result=<pass|fail>" >> "$TRACE_LOG"
 ```
 
-If verification exits non-zero: demote this result to `partial`. Do not review, close, or merge. Record the verification failure in the sprint summary with the branch name. Then remove the worktree and continue to the next issue.
+Runs three categories in `verification.md` order: typecheck, lint, tests.
+
+If verification exits non-zero — a check failed, or no test command could be discovered (nothing was verified) — demote this result to `partial`. Do not review, close, or merge. Record the verification failure in the sprint summary with the branch name. Then remove the worktree and continue to the next issue.
+
+A `Verification: coverage gap — not_run: ...` line means lint and/or typecheck had no discoverable command. This does not block the merge — many projects legitimately have neither, and failing them would stall every sprint on a false positive. Carry the listed categories into the sprint summary so the gap is visible rather than reading as a clean pass.
 
 ```bash
 git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"

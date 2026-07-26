@@ -148,6 +148,84 @@ EOF
   [[ "$output" != *"--project-root"* ]]
 }
 
+# ─── argument validation ─────────────────────────────────────────────────────
+
+@test "verify-worktree: --dir with no value reports usage, not an unbound variable" {
+  run bash "$VERIFY_SCRIPT" --dir
+  [ "$status" -ne 0 ]
+  [[ "$output" != *"unbound variable"* ]]
+  [[ "$output" == *"--dir"* ]]
+}
+
+# ─── all three check categories are discovered and reported ──────────────────
+# verification.md makes tests, lint, and typecheck all mandatory. A category with
+# no discoverable command must be reported explicitly, never treated as passing.
+
+@test "verify-worktree: reports all three check categories" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+test:
+	@exit 0
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [[ "$output" == *"TEST"* ]]
+  [[ "$output" == *"LINT"* ]]
+  [[ "$output" == *"TYPECHECK"* ]]
+}
+
+@test "verify-worktree: failing lint target exits non-zero even when tests pass" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+test:
+	@exit 0
+lint:
+	@exit 1
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"LINT: fail"* ]]
+}
+
+@test "verify-worktree: failing typecheck target exits non-zero even when tests pass" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+test:
+	@exit 0
+typecheck:
+	@exit 1
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"TYPECHECK: fail"* ]]
+}
+
+@test "verify-worktree: all three passing Makefile targets exit zero" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+test:
+	@exit 0
+lint:
+	@exit 0
+typecheck:
+	@exit 0
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "verify-worktree: undiscoverable lint category is reported as not_run, not passing" {
+  # Only a test command exists; lint/typecheck have no discoverable command.
+  cat > "$TEMP_DIR/CLAUDE.md" <<'EOF'
+## Tests
+
+Run: `bash -c 'exit 0'`
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [[ "$output" == *"LINT: not_run"* ]]
+  [[ "$output" == *"TYPECHECK: not_run"* ]]
+}
+
 # ─── schema pre-filter ───────────────────────────────────────────────────────
 
 @test "verify-worktree: accepts --dir flag" {
@@ -159,4 +237,47 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -eq 0 ]
+}
+
+# ─── not_run policy: loud but non-fatal for lint/typecheck, fatal for TEST ────
+# Failing on a missing lint/typecheck command would stall every sprint in a repo
+# that legitimately has neither (this repo included) — a false-positive gate is
+# worse for an unattended run than the gap it closes. A missing TEST command is
+# fatal because it means nothing was verified at all.
+
+@test "verify-worktree: missing lint and typecheck do not fail the gate when tests pass" {
+  cat > "$TEMP_DIR/CLAUDE.md" <<'EOF'
+## Tests
+
+Run: `bash -c 'exit 0'`
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+}
+
+@test "verify-worktree: coverage gap is reported in the summary, not hidden by success" {
+  cat > "$TEMP_DIR/CLAUDE.md" <<'EOF'
+## Tests
+
+Run: `bash -c 'exit 0'`
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"coverage gap"* ]]
+  [[ "$output" == *"not_run"* ]]
+}
+
+@test "verify-worktree: missing TEST command is fatal even when lint and typecheck pass" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+lint:
+	@exit 0
+typecheck:
+	@exit 0
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"TEST: not_run"* ]]
 }

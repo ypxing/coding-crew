@@ -31,6 +31,16 @@ fi
 FAILED=0
 
 for BRANCH in "${BRANCHES[@]}"; do
+  # Resolve the ref first. Without this, `git log HEAD..<branch>` errors on an
+  # unknown ref and (with stderr suppressed) leaves PENDING empty — which is
+  # indistinguishable from "already merged", so a typo'd or deleted branch would
+  # report success and be silently skipped.
+  if ! git rev-parse --verify --quiet "${BRANCH}^{commit}" >/dev/null; then
+    echo "MERGE: $BRANCH failed (no such branch)" >&2
+    FAILED=1
+    continue
+  fi
+
   # Check if already merged: git log HEAD..<branch> is empty when already merged
   PENDING=$(git log "HEAD..${BRANCH}" --oneline 2>/dev/null)
   if [ -z "$PENDING" ]; then

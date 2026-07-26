@@ -116,10 +116,16 @@ Look for a `## Context Documents` section in the issue file. If it exists, extra
 
 ```bash
 PRD_PATH=$(grep -A 3 "## Context Documents" "$ISSUE_PATH" | grep "PRD:" | sed 's/.*PRD: *`\(.*\)`.*/\1/')
-FULL_PRD_PATH="$MAIN_ROOT/$PRD_PATH"
+# Only derive the full path when a PRD path was actually found — otherwise
+# FULL_PRD_PATH would be "$MAIN_ROOT/", a misleading path pointing at the repo root.
+if [ -n "$PRD_PATH" ]; then
+  FULL_PRD_PATH="$MAIN_ROOT/$PRD_PATH"
+else
+  FULL_PRD_PATH=""
+fi
 ```
 
-Use the View/Read tool to read `PRD.md` at `$FULL_PRD_PATH` if it exists and keep its content in memory throughout the implementation.
+If `$FULL_PRD_PATH` is non-empty, use the View/Read tool to read `PRD.md` at that path if it exists, and keep its content in memory throughout the implementation.
 
 If the PRD does not exist or the Context Documents section is missing, continue normally.
 

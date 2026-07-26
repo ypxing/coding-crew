@@ -222,8 +222,11 @@ A branch that fails verification is demoted to `partial` and skipped for review 
 bash "<skill-dir>/scripts/verify-worktree.sh" --dir "<working_directory from worker report>"
 ```
 
-- Exit 0: checks passed — proceed to per-branch review.
-- Non-zero: checks failed or a check category had no discoverable command — demote this result to `partial`, do not review or merge. Record the verification failure in the sprint summary with the branch name.
+Runs three categories in `verification.md` order: typecheck, lint, tests.
+
+- Exit 0: all discovered checks passed — proceed to per-branch review.
+- Non-zero: a check failed, or no test command could be discovered (nothing was verified) — demote this result to `partial`, do not review or merge. Record the verification failure in the sprint summary with the branch name.
+- A `Verification: coverage gap — not_run: ...` line means lint and/or typecheck had no discoverable command. This does not block the merge — many projects legitimately have neither, and failing them would stall every sprint on a false positive. Carry the listed categories into the sprint summary so the gap is visible rather than reading as a clean pass.
 
 Append to trace for each verification:
 ```bash
