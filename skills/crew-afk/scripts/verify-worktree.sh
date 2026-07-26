@@ -95,6 +95,12 @@ _has_makefile_target() {
 
 # _discover_test_command <worktree-dir>
 # Returns the test command or empty string if none found.
+#
+# Every command returned here is executed under `cd "$WORKTREE_DIR"` (see the
+# run section below), so a command needs no path argument to be correct. Where
+# one is embedded anyway (make -C, bats, cargo --manifest-path) it is
+# belt-and-braces; where it is absent (go test ./...) the cd is what makes it
+# right. Do not run a returned command outside that subshell.
 _discover_test_command() {
   local dir="$1"
 
@@ -113,9 +119,14 @@ _discover_test_command() {
   fi
 
   # 3. Ecosystem conventions
-  # bats: .bats files present
-  if ls "$dir"/tests/*.bats >/dev/null 2>&1 || ls "$dir"/*.bats >/dev/null 2>&1; then
+  # bats: point bats at the directory the .bats files are actually in — a repo
+  # with root-level .bats files and no tests/ dir must not be handed tests/.
+  if ls "$dir"/tests/*.bats >/dev/null 2>&1; then
     echo "bats \"$dir\"/tests/"
+    return
+  fi
+  if ls "$dir"/*.bats >/dev/null 2>&1; then
+    echo "bats \"$dir\""
     return
   fi
 
@@ -144,8 +155,9 @@ _discover_test_command() {
   fi
 
   # Ruby: bundle exec rspec
+  # No path flag: rspec has no --project-root, and the cd below already sets cwd.
   if [ -f "$dir/Gemfile" ]; then
-    echo "bundle exec rspec --project-root \"$dir\""
+    echo "bundle exec rspec"
     return
   fi
 

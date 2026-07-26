@@ -153,11 +153,25 @@ For each unblocked issue, call the `Agent` tool:
   ---
   ```
 
-  Append if the issue has a `## Progress` section and the branch from the previous round still exists:
+  If the issue has a `## Progress` section, determine whether the previous round's branch still
+  exists before choosing which note to append. Read the branch name recorded for this issue slug in
+  `retained_branches` in the sprint state file, then test for the ref:
 
-  > A previous worker made partial progress and committed it to this branch. Resume on the existing branch — the code is preserved. Notes in ## Progress are context alongside the existing code, not a substitute for it.
+  ```bash
+  STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
+  PRIOR_BRANCH=$(jq -r --arg slug "<slug>" '.retained_branches[$slug] // empty' "$STATE_FILE")
+  if [ -n "$PRIOR_BRANCH" ] && [ -n "$(git branch --list "$PRIOR_BRANCH")" ]; then
+    echo "resume: $PRIOR_BRANCH"
+  else
+    echo "no prior branch"
+  fi
+  ```
 
-  Append if the issue has a `## Progress` section but no prior branch exists (first attempt after a no-commit partial):
+  Append if it printed `resume: <branch>` — pass that branch name through in the prompt:
+
+  > A previous worker made partial progress and committed it to branch `<PRIOR_BRANCH>`. Resume on that existing branch — the code is preserved. Notes in ## Progress are context alongside the existing code, not a substitute for it.
+
+  Append if it printed `no prior branch` (first attempt after a no-commit partial):
 
   > A previous worker made partial progress — notes are in ## Progress. Use them as context.
 
@@ -295,6 +309,19 @@ for slug in <newly merged slugs>; do
 done
 ```
 
+For each retained (partial or verification-failed) slug, record its branch name under
+`retained_branches` so the next round's dispatch can find and resume it. Clear the entry for any
+slug that completed this round, so a stale branch is never offered for resume:
+
+```bash
+# Retained this round — record slug → branch
+jq --arg slug "<slug>" --arg branch "<branch>" \
+   '.retained_branches[$slug] = $branch' "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+
+# Completed this round — drop any prior retention entry
+jq --arg slug "<slug>" 'del(.retained_branches[$slug])' "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+```
+
 Return to Step 1.
 
 ## Wrap Up
@@ -370,14 +397,29 @@ The validation agent output becomes the **Coverage Report** section in the final
 
 Delete only the branches that were successfully merged into the feature branch (`all_merged`).
 Branches that are partial or failed verification are **retained** — do not delete them. Their
-worktrees have already been torn down by the runtime; the branch ref stays so the next round's
-worker can resume on it.
+branch refs and worktrees stay so the next round's worker can resume in place.
+
+A branch ref cannot be deleted while a worktree still has it checked out — `git branch -D` fails
+with `used by worktree`. Do not assume the runtime removed the worktree on agent return; it may
+still be checked out. So remove each merged branch's worktree first, then delete its ref.
 
 ```bash
-# Delete only merged branches — retained (partial/verification-failed) branches are left intact
+# For each merged branch, remove its worktree first — a checked-out branch ref cannot be deleted.
+# Only ever pass merged worktrees here; retained ones must stay checked out.
+git worktree remove --force <merged-worktree-path> 2>/dev/null || true
+
+# Then delete only merged branch refs — retained (partial/verification-failed) branches are left intact
 git branch -D -- <merged-branch1> <merged-branch2> ... 2>/dev/null || true
+
+# Safe to run unconditionally: prune only clears stale metadata for worktrees whose
+# directory is already gone. It never removes a live, checked-out worktree.
 git worktree prune
 ```
+
+Before removing anything, confirm the merged branch's content really is in `HEAD`
+(`git diff --stat HEAD <branch>`) and that its worktree has no uncommitted changes
+(`git -C <worktree-path> status --short`). Never report a branch as cleaned up when it was
+retained, or vice versa — the summary must match actual repository state.
 
 Before printing the summary, collect retained branches (partial + verification-failed) and append the EXIT trace line:
 ```bash

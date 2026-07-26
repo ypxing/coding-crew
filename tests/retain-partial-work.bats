@@ -178,3 +178,36 @@ MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scr
 
   rm -rf "$TEMP_DIR"
 }
+
+# ─── cleanup prose is accurate about worktree state (review finding) ─────────
+
+@test "claude SKILL.md does not claim the runtime has already torn down worktrees" {
+  # Proven false in practice: git branch -D failed with "used by worktree" for
+  # every branch in a real sprint, because the worktrees were still checked out.
+  ! grep -qi 'already been torn down by the runtime' "$CLAUDE_SKILL"
+}
+
+@test "claude SKILL.md cleanup removes merged worktrees before deleting their branch refs" {
+  # A branch ref cannot be deleted while a worktree has it checked out, so the
+  # cleanup must remove the merged worktree first.
+  grep -q 'worktree remove' "$CLAUDE_SKILL"
+}
+
+@test "claude SKILL.md states worktree prune does not remove live worktrees" {
+  # Verified: `git worktree prune` only clears stale metadata, so it is safe to
+  # run while retained worktrees are still checked out.
+  grep -qiE 'prune.*(stale|metadata)|(stale|metadata).*prune' "$CLAUDE_SKILL"
+}
+
+# ─── resume dispatch specifies how to test for the prior branch ──────────────
+
+@test "claude SKILL.md gives a concrete branch-existence check for resume dispatch" {
+  # The orchestrator must be able to choose between the resume and
+  # context-only dispatch messages, so the check has to be spelled out.
+  grep -q 'git branch --list' "$CLAUDE_SKILL"
+}
+
+@test "claude SKILL.md records the branch name needed to resume across rounds" {
+  # The prior round's branch name must be persisted somewhere the next round reads.
+  grep -qiE 'retained_branches|sprint-state|previous round.*branch name|branch name.*previous round' "$CLAUDE_SKILL"
+}

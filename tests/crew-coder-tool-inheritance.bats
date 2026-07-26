@@ -72,5 +72,23 @@ frontmatter() {
 }
 
 @test "claude.agent.md codegraph fallback falls back to Grep when codegraph absent" {
-  grep -q -i 'else.*[Gg]rep\|[Gg]rep.*else\|[Ff]all.*[Gg]rep\|[Gg]rep.*fallback\|[Gg]rep.*when.*codegraph\|codegraph.*else.*[Gg]rep' "$CLAUDE_AGENT"
+  # Assert the actual condition the prose states — Grep is for when no index
+  # exists — rather than a permissive multi-pattern regex that any reflow of
+  # the prose would still satisfy.
+  grep -q 'Grep' "$CLAUDE_AGENT"
+  grep -qE 'use when no .?\.codegraph/|no .?\.codegraph/.? exists' "$CLAUDE_AGENT"
+}
+
+# --- CodeGraph CLI fallback prose in copilot.agent.md (D8 parity) ---
+
+@test "copilot.agent.md mentions codegraph explore as CLI fallback" {
+  grep -q 'codegraph explore' "$COPILOT_AGENT"
+}
+
+@test "copilot.agent.md codegraph fallback keys on .codegraph/ at the repo root" {
+  grep -q '\.codegraph/' "$COPILOT_AGENT"
+}
+
+@test "copilot.agent.md names a keyword-search fallback when no codegraph index exists" {
+  grep -qE 'use when no .?\.codegraph/|no .?\.codegraph/.? exists' "$COPILOT_AGENT"
 }

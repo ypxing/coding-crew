@@ -1,8 +1,9 @@
 ---
 name: crew-code-reviewer
 description: >
-  Reviews all branches or commits from a crew-afk sprint session for security, quality, and
-  correctness. Findings are advisory for the human — nothing is re-queued or blocked.
+  Reviews one branch from a crew-afk sprint session for security, quality, and correctness.
+  Dispatched per-branch before that branch is merged and before any squash. Findings are
+  advisory for the human — nothing is re-queued or blocked.
 tools: ["read", "execute", "search"]
 user-invocable: false
 ---

@@ -488,8 +488,13 @@ branches (partial or verification-failed) are left intact — their worktrees we
 step 3, and the branch refs must survive so the next round's worker can resume on them.
 
 ```bash
-# Only delete successfully merged branches — retained branches are excluded
+# Only delete successfully merged branches — retained branches are excluded.
+# A branch ref cannot be deleted while a worktree still has it checked out; on this
+# platform merged worktrees were already removed in step 3, so the refs are free.
 git -C "$MAIN_ROOT" branch -D -- <merged-branch1> <merged-branch2> ... 2>/dev/null || true
+
+# Safe to run unconditionally: prune only clears stale metadata for worktrees whose
+# directory is already gone. It never removes a live, checked-out worktree.
 git -C "$MAIN_ROOT" worktree prune
 ```
 

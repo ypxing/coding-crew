@@ -110,6 +110,44 @@ EOF
   [[ "$output" == *"not_run"* ]] || [[ "$output" == *"no command"* ]] || [[ "$output" == *"NOT RUN"* ]]
 }
 
+# ─── bats discovery targets the directory the files are actually in ──────────
+
+@test "verify-worktree: root-level .bats files are run from the repo root, not tests/" {
+  # A repo whose bats files live at the root with no tests/ subdirectory.
+  # Discovery must not point bats at a non-existent tests/ directory.
+  printf '@test "trivial" { true; }\n' > "$TEMP_DIR/sample.bats"
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"does not exist"* ]]
+}
+
+@test "verify-worktree: tests/ .bats files are run from tests/" {
+  mkdir -p "$TEMP_DIR/tests"
+  printf '@test "trivial" { true; }\n' > "$TEMP_DIR/tests/sample.bats"
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tests"* ]]
+}
+
+@test "verify-worktree: failing root-level bats test still exits non-zero" {
+  printf '@test "failing" { false; }\n' > "$TEMP_DIR/sample.bats"
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -ne 0 ]
+}
+
+# ─── discovered commands use only valid flags ────────────────────────────────
+
+@test "verify-worktree: ruby discovery does not emit the invalid --project-root flag" {
+  # rspec has no --project-root flag; emitting it fails every Ruby project.
+  touch "$TEMP_DIR/Gemfile"
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [[ "$output" != *"--project-root"* ]]
+}
+
 # ─── schema pre-filter ───────────────────────────────────────────────────────
 
 @test "verify-worktree: accepts --dir flag" {

@@ -8,6 +8,34 @@ setup() {
   export CLAUDE_SKILL="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
   export COPILOT_SKILL="$SCRIPT_DIR/skills/crew-afk/copilot.SKILL.md"
   export REVIEWER_PROTOCOL="$SCRIPT_DIR/agents/crew-code-reviewer/protocol.md"
+  export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
+  export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"
+}
+
+# Extract YAML frontmatter (between first pair of --- delimiters)
+frontmatter() {
+  awk 'BEGIN{f=0} /^---/{f++; next} f==1{print}' "$1"
+}
+
+# ─── Agent descriptions match per-branch pre-merge invocation ────────────────
+
+@test "reviewer claude.agent.md description does not claim end-of-session invocation" {
+  # The reviewer is now dispatched per-branch before merge, not once at the end.
+  ! frontmatter "$REVIEWER_CLAUDE" | grep -qi 'once at the end\|end of the session'
+}
+
+@test "reviewer copilot.agent.md description does not claim batch review of all branches" {
+  ! frontmatter "$REVIEWER_COPILOT" | grep -qi 'all branches'
+}
+
+@test "reviewer agent descriptions state per-branch review on both platforms" {
+  frontmatter "$REVIEWER_CLAUDE" | grep -qiE 'one branch|per-branch|single branch'
+  frontmatter "$REVIEWER_COPILOT" | grep -qiE 'one branch|per-branch|single branch'
+}
+
+@test "reviewer agent descriptions still state findings are advisory on both platforms" {
+  frontmatter "$REVIEWER_CLAUDE" | grep -qi 'advisory'
+  frontmatter "$REVIEWER_COPILOT" | grep -qi 'advisory'
 }
 
 # ─── Snippet requirement at all severities ───────────────────────────────────

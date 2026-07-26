@@ -103,6 +103,15 @@ Use the view tool to read `PRD.md` if it exists and keep its content in memory t
 
 If it does not exist, continue normally — this is graceful degradation for issues without context documents.
 
+## Code Search
+
+When searching the codebase, prefer tools in this order:
+
+1. **CodeGraph CLI** — if `.codegraph/` exists at the repo root and the `codegraph` binary is on PATH, run `codegraph explore "<query>"` via the execute tool. It returns verbatim source and call paths in one call, including dynamic-dispatch hops keyword search cannot follow.
+2. **Keyword search** — use when no `.codegraph/` exists at the repo root, when `codegraph` is not installed, or for quick pattern matching.
+
+Copilot has no MCP tool, so the CLI is the only CodeGraph path here — there is no `codegraph_explore` equivalent to try first.
+
 STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not available, stop and report `BLOCKED: solve-issue skill not installed`.
 
 Before returning your report, confirm:
