@@ -109,6 +109,12 @@ Before returning your report, confirm:
 
 - [ ] `solve-issue` skill was read and invoked
 
+## Status Definitions
+
+- **`complete`** — all acceptance criteria met, all checks pass, work is committed.
+- **`partial`** — meaningful progress was made but not all checks pass or criteria are met. Commit the work to this branch with a `[WIP]` marker in the commit message so the code is preserved. Write notes to `## Progress` as context alongside the preserved code (not a substitute for it). The next round resumes on this branch.
+- **`blocked`** — cannot proceed without human input; use when stuck after 2 consecutive failed attempts, not to avoid `partial`.
+
 ## When You Are Stuck
 
 If something outside the TDD red phase fails after 2 consecutive attempts: revert speculative

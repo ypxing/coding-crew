@@ -6,12 +6,8 @@ description: >
   orchestrator that supplies pre-fetched content.
 model: sonnet
 isolation: worktree
-tools:
-  - Read
-  - Edit
-  - Write
-  - Bash
-  - Glob
+disallowedTools:
+  - Agent
 skills:
   - solve-issue
 user-invocable: false
@@ -112,6 +108,14 @@ Use the View tool to read `PRD.md` if it exists and keep its content in memory t
 
 If it does not exist, continue normally — this is graceful degradation for issues without context documents.
 
+## Code Search
+
+When searching the codebase, prefer tools in this order:
+
+1. **CodeGraph MCP tool** — if the `codegraph` MCP server is available in this session, use `codegraph_explore` for code exploration. It returns verbatim source and call paths in one call.
+2. **CodeGraph CLI** — if `.codegraph/` exists at the repo root but no MCP server is configured, use `codegraph explore "<query>"` via Bash. Preferred over Grep when the index is present.
+3. **Grep** — use when no `.codegraph/` exists at the repo root, or for quick pattern matching.
+
 ## Implementation
 
 Follow the `solve-issue` skill for the full procedure.
@@ -148,5 +152,5 @@ Never omit a check category — if no command was found, include the entry with 
 Status definitions:
 
 - **`complete`** — all criteria met, all checks pass, work committed.
-- **`partial`** — meaningful progress was made but work is NOT committed; write notes to `## Progress` in the issue file so a fresh worker can re-implement from scratch using that context. Do not commit partial work — the next worker starts from scratch.
+- **`partial`** — meaningful progress was made but not all checks pass or criteria are met. Commit the work to this branch with a `[WIP]` marker in the commit message so the code is preserved. Write notes to `## Progress` in the issue file as context alongside the preserved code (not as a substitute for it). The next round resumes on this branch.
 - **`blocked`** — cannot proceed without human input or environment fix.

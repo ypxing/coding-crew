@@ -6,12 +6,14 @@ blocked.
 
 ## What You Receive
 
-A list of merged branches from crew-afk. For each:
+One branch to review, dispatched before it merges. For each invocation you receive:
 
 - Branch name and issue slug
 - Acceptance criteria from the issue
 
-Gather each diff yourself: `git diff <merge-base>..<branch>`
+Gather the diff yourself: `git diff <merge-base>..<branch>`
+
+If you are invoked for a session summary (all branches), you receive a list of branches with their slugs and criteria.
 
 ## Review Process
 
@@ -79,15 +81,20 @@ Before writing a finding, answer all four. If any answer is "no" or "unsure", do
 4. **Is the severity defensible?** A missing JSDoc is never HIGH. A single `any` in a test
    fixture is never CRITICAL. Severity inflation erodes trust faster than missed findings.
 
-### HIGH / CRITICAL Require Proof
+### Snippet-Anchored Citations — Required at Every Severity
 
-For any finding tagged HIGH or CRITICAL, include:
+Every finding at every severity (CRITICAL, HIGH, MEDIUM, LOW) must include a short code snippet
+alongside its file and line reference. Findings are consumed after merge and squash, and a
+conflicting merge can shift line numbers — a snippet lets the consumer locate the code by content
+when the line has drifted.
 
-- The exact snippet and line number
+For CRITICAL and HIGH, additionally include:
+
 - The specific failure scenario: input, state, and outcome
 - Why existing guards (types, validation, framework defaults) do not catch it
 
-If you cannot produce all three, demote to MEDIUM or drop.
+If you cannot provide a snippet and a concrete file:line reference, drop the finding entirely — a
+finding without a locatable anchor is not actionable.
 
 ### Zero Findings Is Valid
 
@@ -219,7 +226,8 @@ codebase does.
 
 ## Output Format
 
-For each branch produce one block:
+For each branch produce one block. Branch attribution is required so a finding can be traced to
+the branch that introduced it.
 
 ```
 ## Branch: <branch-name> (<slug>)
@@ -227,16 +235,52 @@ For each branch produce one block:
 ### Findings
 [CRITICAL] <title>
 File: <path>:<line>
+Snippet:
+```
+<exact code from file at cited line>
+```
 Issue: <concrete failure mode — input, state, outcome>
 Fix: <specific change required>
 
 [HIGH] <title>
 File: <path>:<line>
+Snippet:
+```
+<exact code from file at cited line>
+```
 Issue: <concrete failure mode>
+Fix: <specific change>
+
+[MEDIUM] <title>
+File: <path>:<line>
+Snippet:
+```
+<exact code from file at cited line>
+```
+Issue: <what is wrong>
+Fix: <specific change>
+
+[LOW] <title>
+File: <path>:<line>
+Snippet:
+```
+<exact code from file at cited line>
+```
+Issue: <what is wrong>
 Fix: <specific change>
 ```
 
 If no findings: `### Findings\nnone`
+
+If the branch diff was empty, or exceeded 2000 lines and could not be scoped, or dispatch failed,
+say so explicitly rather than omitting the branch block:
+
+```
+## Branch: <branch-name> (<slug>)
+
+### Findings
+SKIPPED: <reason — empty diff | diff too large to scope | dispatch failure>
+```
 
 End with a session summary:
 

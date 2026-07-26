@@ -27,14 +27,15 @@ teardown() {
   grep -q '### Coverage validation' "$SKILL_FILE"
 }
 
-@test "Coverage validation section appears between Code review and Branch cleanup" {
-  # Extract line numbers for each section
-  code_review_line=$(grep -n "### Code review" "$SKILL_FILE" | head -1 | cut -d: -f1)
+@test "Coverage validation section appears between squash and Branch cleanup" {
+  # Code review now runs per-branch before merge (Step 4), not in Wrap Up.
+  # Coverage validation is in Wrap Up, between squash and branch cleanup.
+  squash_line=$(grep -n "squash-commits.sh\|Squash Commit" "$SKILL_FILE" | head -1 | cut -d: -f1)
   coverage_line=$(grep -n "### Coverage validation" "$SKILL_FILE" | head -1 | cut -d: -f1)
   cleanup_line=$(grep -n "### Branch cleanup" "$SKILL_FILE" | head -1 | cut -d: -f1)
 
-  # Verify order
-  [ "$code_review_line" -lt "$coverage_line" ]
+  # Verify order: squash -> coverage validation -> branch cleanup
+  [ "$squash_line" -lt "$coverage_line" ]
   [ "$coverage_line" -lt "$cleanup_line" ]
 }
 
