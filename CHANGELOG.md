@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-07-28
+
+### Fixed
+- **`uninstall.sh`**: read the manifest from `.coding-crew/manifest.json` (where `install.sh` writes it) instead of the legacy top-level `.coding-crew.manifest.json`, with a fallback to the legacy path for repos installed by older versions
+- **`uninstall.sh`**: `.coding-crew/` is removed only when empty, so a customised `docs/issue-tracker.md` and the tracker templates survive an uninstall
+- **`install.sh`**: `--update` now actually falls back to the legacy `.coding-crew.manifest.json` its error message already advertised, and reports the canonical manifest path when neither exists
+
 ## [1.13.0] - 2026-07-28
 
 ### Added

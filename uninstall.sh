@@ -22,7 +22,12 @@ else
   REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 fi
 
-MANIFEST="$REPO_ROOT/.coding-crew.manifest.json"
+# Current manifest location; fall back to the legacy top-level file if present.
+MANIFEST="$REPO_ROOT/.coding-crew/manifest.json"
+LEGACY_MANIFEST="$REPO_ROOT/.coding-crew.manifest.json"
+if [[ ! -f "$MANIFEST" && -f "$LEGACY_MANIFEST" ]]; then
+  MANIFEST="$LEGACY_MANIFEST"
+fi
 
 usage() {
   echo "Usage: ./uninstall.sh [--user]"
@@ -34,7 +39,7 @@ usage() {
   echo "  --skill:  remove a single skill"
   echo "  --skills: remove multiple skills (comma-separated)"
   echo "  --agent:  remove a single agent"
-  echo "  (no args) remove everything listed in .coding-crew.manifest.json"
+  echo "  (no args) remove everything listed in .coding-crew/manifest.json"
   echo ""
   echo "Examples:"
   echo "  ./uninstall.sh --user                        # remove all from \$HOME"
@@ -158,7 +163,12 @@ else
 
   if [[ -f "$MANIFEST" ]]; then
     rm -f "$MANIFEST"
-    echo "  removed .coding-crew.manifest.json"
+    echo "  removed ${MANIFEST#$REPO_ROOT/}"
+  fi
+  # Drop .coding-crew/ only when nothing is left in it — issue-tracker.md and
+  # tracker templates are user-customisable and must survive an uninstall.
+  if [[ -d "$REPO_ROOT/.coding-crew" ]]; then
+    rmdir "$REPO_ROOT/.coding-crew" 2>/dev/null && echo "  removed .coding-crew/" || true
   fi
 fi
 

@@ -793,8 +793,12 @@ run_update() {
   
   # Fall back to manifest-based update (legacy mode)
   local manifest="$REPO_ROOT/.coding-crew/manifest.json"
+  local legacy_manifest="$REPO_ROOT/.coding-crew.manifest.json"
+  if [[ ! -f "$manifest" && -f "$legacy_manifest" ]]; then
+    manifest="$legacy_manifest"
+  fi
   if [[ ! -f "$manifest" ]]; then
-    echo "Error: no manifest found at $manifest (or legacy .coding-crew.manifest.json) — run ./install.sh first" >&2
+    echo "Error: no manifest found at $REPO_ROOT/.coding-crew/manifest.json (or legacy .coding-crew.manifest.json) — run ./install.sh first" >&2
     exit 1
   fi
 
