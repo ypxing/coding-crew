@@ -15,6 +15,9 @@ A distributable collection of AI agents and skills that other projects install v
 # Install a specific agent for a specific platform
 ./install.sh claude crew-coder
 
+# Install everything for pi only
+./install.sh pi
+
 # Install a skill (and its agent deps)
 ./install.sh claude --skill crew-afk
 
@@ -26,7 +29,7 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 
 ```
 
-Platforms: `all` (default), `claude`, `copilot`. Agents: `all` (default), `crew-code-reviewer`, `crew-coder`.
+Platforms: `all` (default), `claude`, `copilot`, `pi`. Agents: `all` (default), `crew-code-reviewer`, `crew-coder`.
 
 ## Architecture
 
@@ -34,7 +37,7 @@ Platforms: `all` (default), `claude`, `copilot`. Agents: `all` (default), `crew-
 
 Two agents live under `agents/`:
 
-- **`crew-coder`** — implements a single local markdown issue using TDD, verifies checks, commits, and returns a structured summary. Runs in an isolated git worktree on both Claude (runtime-managed via `isolation: worktree`) and Copilot (orchestrator-managed via `git worktree add`). Before implementing, reads `PRD.md` from `.scratch/<feature-slug>/` if it exists, keeping architecture decisions and requirements context in memory. On Claude, inherits all tools from the spawning session (`disallowedTools: [Agent]` only) — so it gets `Grep`, `WebFetch`, `WebSearch`, and any MCP servers the consumer configured. `Agent` is withheld to prevent recursive spawning and unpredictable rate-limit stalls in unattended runs.
+- **`crew-coder`** — implements a single local markdown issue using TDD, verifies checks, commits, and returns a structured summary. Runs in an isolated git worktree on Claude (runtime-managed via `isolation: worktree`), Copilot, and pi (orchestrator-managed via `git worktree add`). Before implementing, reads `PRD.md` from `.scratch/<feature-slug>/` if it exists, keeping architecture decisions and requirements context in memory. On Claude, inherits all tools from the spawning session (`disallowedTools: [Agent]` only) — so it gets `Grep`, `WebFetch`, `WebSearch`, and any MCP servers the consumer configured. `Agent` is withheld to prevent recursive spawning and unpredictable rate-limit stalls in unattended runs.
 - **`crew-code-reviewer`** — reviews branches before they merge in a crew-afk sprint; reports CRITICAL/HIGH/MEDIUM/LOW findings per branch with snippet-anchored citations at every severity. Findings are advisory and never block a merge. Invoked per-branch in Step 4 of crew-afk, before the merge and before squash.
 
 `crew-afk` is a **skill** (see Skills below) that declares `agent-deps` on `crew-coder` and `crew-code-reviewer` — installing the skill also installs both agents.
@@ -45,8 +48,23 @@ Each agent has platform files directly under `agents/<agent>/`:
 
 - `claude.*` — installed to `.claude/agents/` (agents) or `.claude/skills/` (skills) in the target repo
 - `copilot.*` — installed to `.copilot/agents/` in the target repo
+- `pi.*` — installed to `.pi/agents/` in the target repo (`~/.pi/agent/agents/` for a user-level install, since that is where pi looks)
 
 Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, this is replaced inline with the contents of `agents/<agent>/protocol.md` or `agents/<agent>/workflow.js` (whichever exists; `protocol.md` is tried first). The installed file is self-contained. Agents that are single-platform (like `crew-coder`) can put everything in one file with no protocol source.
+
+### Platforms
+
+`install.sh` supports three platforms, listed in the `PLATFORMS` array in `install.sh` (and mirrored in `uninstall.sh`):
+
+| Platform  | Project paths                       | User-level paths (`TARGET_REPO=$HOME`)          |
+| --------- | ----------------------------------- | ----------------------------------------------- |
+| `claude`  | `.claude/agents/`, `.claude/skills/` | same                                            |
+| `copilot` | `.copilot/agents/`, `.copilot/skills/` | same                                          |
+| `pi`      | `.pi/agents/`, `.pi/skills/`        | `.pi/agent/agents/`, `.pi/agent/skills/`        |
+
+Skill destinations resolve as: `install-<platform>` in `registry.json` if present, otherwise the `install` (Claude) path with `.claude/` swapped for `.<platform>/`. Platform-specific skill bodies use `<platform>.SKILL.md` (e.g. `pi.SKILL.md`); a plain `SKILL.md` is the shared fallback and unselected variants are deleted after copy.
+
+**pi specifics:** pi has no native subagent tool, so `crew-afk`'s pi variant dispatches each worker as a separate `pi -p` process through `skills/crew-afk/scripts/dispatch-agent.sh`. That script resolves the agent definition (`.pi/agents/<name>.md`, then `~/.pi/agent/agents/<name>.md`), strips its frontmatter into `--append-system-prompt`, maps `tools:` onto `--tools`, applies `model:`/`--model`, and runs the worker with the issue's worktree as cwd. Workers write their structured report to `.scratch/<slug>/dispatch/<slug>.report.md`, which the orchestrator reads after `wait`.
 
 ### Registry
 

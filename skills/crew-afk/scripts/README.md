@@ -4,6 +4,29 @@ This directory contains reusable shell scripts extracted from the afk-run skill 
 
 ## Scripts
 
+### `dispatch-agent.sh` (pi only)
+
+**Purpose**: Run a crew agent as an isolated `pi -p` subprocess — pi has no built-in subagent tool, so this script is the pi equivalent of Claude's `Agent` tool / Copilot's `#runSubagent`.
+
+**Usage**:
+```bash
+bash scripts/dispatch-agent.sh --agent crew-coder --dir <worktree> \
+  --prompt-file <file> [--out <report-file>] [--log <trace-file>] [--model <alias|inherit>]
+```
+
+**What it does**:
+- Resolves the agent definition: `$MAIN_ROOT/.pi/agents/<name>.md`, then `~/.pi/agent/agents/<name>.md`
+- Strips YAML frontmatter and passes the body via `--append-system-prompt`
+- Maps frontmatter `tools:` onto `--tools` and `model:` onto `--model` (`--model inherit` passes nothing, so the worker uses the orchestrator's session model)
+- Runs `pi -p` with the worktree as cwd and `MAIN_ROOT` exported
+- Streams the agent's final report to stdout and, with `--out`, to a file
+
+**Exit code**: pi's exit code; `2` for bad arguments, a missing agent definition, or a missing `pi` CLI.
+
+**Parallelism**: the orchestrator launches one invocation per issue with `&` and then `wait`.
+
+---
+
 ### `session-init.sh`
 
 **Purpose**: Initialize a new afk-run session with feature branch setup and state tracking.

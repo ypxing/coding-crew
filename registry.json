@@ -9,7 +9,7 @@
   },
   "agents": {
     "crew-code-reviewer": {
-      "version": "1.3.1",
+      "version": "1.4.0",
       "source-dir": "crew-code-reviewer",
       "description": "Reviews one branch per dispatch, before that branch merges and before any squash; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
@@ -18,12 +18,13 @@
       "install": {
         "shims": {
           "claude": ".claude/agents/crew-code-reviewer.md",
-          "copilot": ".copilot/agents/crew-code-reviewer.agent.md"
+          "copilot": ".copilot/agents/crew-code-reviewer.agent.md",
+          "pi": ".pi/agents/crew-code-reviewer.md"
         }
       }
     },
     "crew-coder": {
-      "version": "1.5.1",
+      "version": "1.6.0",
       "source-dir": "crew-coder",
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
@@ -35,7 +36,8 @@
       "install": {
         "shims": {
           "claude": ".claude/agents/crew-coder.md",
-          "copilot": ".copilot/agents/crew-coder.agent.md"
+          "copilot": ".copilot/agents/crew-coder.agent.md",
+          "pi": ".pi/agents/crew-coder.md"
         }
       }
     }
@@ -43,11 +45,12 @@
   "skills": {
     "crew-afk": {
 
-      "version": "1.9.0",
+      "version": "1.10.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
       "install-copilot": ".copilot/skills/crew-afk",
+      "install-pi": ".pi/skills/crew-afk",
       "scripts": [
         "feature-branch-setup.sh",
         "configure-tracker-auto.sh"
@@ -149,6 +152,7 @@
       "description": "Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to PRD and issues.",
       "install": ".claude/skills/crew-brainstorm",
       "install-copilot": ".copilot/skills/crew-brainstorm",
+      "install-pi": ".pi/skills/crew-brainstorm",
       "deps": [
         "to-prd",
         "to-issues"
@@ -160,6 +164,7 @@
       "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then produce a PRD and issues.",
       "install": ".claude/skills/crew-grill",
       "install-copilot": ".copilot/skills/crew-grill",
+      "install-pi": ".pi/skills/crew-grill",
       "deps": [
         "domain-modeling",
         "to-prd",

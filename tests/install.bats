@@ -228,3 +228,36 @@ teardown() {
   # Verify the old address-code-review directory does not exist
   [ ! -d "$TEMP_DIR/.claude/skills/address-code-review/" ]
 }
+
+@test "--version latest resolves to a concrete tag in crew.lock" {
+  # Stub curl so the test never touches the network: mimic GitHub's
+  # /releases/latest -> /releases/tag/<tag> redirect that install.sh follows.
+  local bindir="$TEMP_DIR/bin"
+  mkdir -p "$bindir"
+  cat > "$bindir/curl" <<'STUB'
+#!/usr/bin/env bash
+echo "https://github.com/ypxing/coding-crew/releases/tag/v2.3.4"
+STUB
+  chmod +x "$bindir/curl"
+
+  cd "$SCRIPT_DIR"
+  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh claude --skill tdd \
+    --version latest --registry https://github.com/ypxing/coding-crew
+  [ "$status" -eq 0 ]
+
+  run jq -r '.version' "$TEMP_DIR/crew.lock"
+  [ "$output" = "v2.3.4" ]
+}
+
+@test "--version latest fails loudly when no registry can be determined" {
+  local bindir="$TEMP_DIR/bin"
+  mkdir -p "$bindir"
+  printf '#!/usr/bin/env bash\nexit 22\n' > "$bindir/curl"
+  chmod +x "$bindir/curl"
+
+  cd "$SCRIPT_DIR"
+  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh claude --skill tdd \
+    --version latest --registry https://github.com/ypxing/coding-crew
+  [ "$status" -ne 0 ]
+  [ ! -f "$TEMP_DIR/crew.lock" ]
+}

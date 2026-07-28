@@ -52,14 +52,23 @@ fi
 # ─── check discovery ─────────────────────────────────────────────────────────
 
 # _discover_from_claude_md <category> <worktree-dir>
-# Looks for a "Run: `command`" line under a ## <category> section in CLAUDE.md.
+# Looks for a "Run: `command`" line under a ## <category> section in an agent
+# context file (CLAUDE.md, then AGENTS.md — pi and other harnesses use the latter).
 # Prints the command if found, empty string otherwise.
 _discover_from_claude_md() {
   local category="$1"
   local dir="$2"
-  local claude_md="$dir/CLAUDE.md"
+  local claude_md=""
+  local candidate
 
-  if [ ! -f "$claude_md" ]; then
+  for candidate in "$dir/CLAUDE.md" "$dir/AGENTS.md"; do
+    if [ -f "$candidate" ]; then
+      claude_md="$candidate"
+      break
+    fi
+  done
+
+  if [ -z "$claude_md" ]; then
     echo ""
     return
   fi

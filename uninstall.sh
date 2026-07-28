@@ -50,15 +50,27 @@ for cmd in jq; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
 done
 
+PLATFORMS=(claude copilot pi)
+
+# pi keeps user-level resources under ~/.pi/agent/, project-level ones under .pi/
+adjust_platform_path() {
+  local platform="$1" path="$2"
+  if [[ "$platform" == "pi" && "$path" == .pi/* && "$REPO_ROOT" == "$HOME" ]]; then
+    printf '.pi/agent/%s' "${path#.pi/}"
+  else
+    printf '%s' "$path"
+  fi
+}
+
 remove_agent() {
   local name="$1"
-  local claude_dest copilot_dest
-  claude_dest=$(jq -r --arg n "$name" '.agents[$n].install.shims.claude // empty' "$SCRIPT_DIR/registry.json")
-  copilot_dest=$(jq -r --arg n "$name" '.agents[$n].install.shims.copilot // empty' "$SCRIPT_DIR/registry.json")
   local removed=0
-  for path in "$claude_dest" "$copilot_dest"; do
+  local platform path full
+  for platform in "${PLATFORMS[@]}"; do
+    path=$(jq -r --arg n "$name" --arg p "$platform" '.agents[$n].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
     [[ -z "$path" ]] && continue
-    local full="$REPO_ROOT/$path"
+    path=$(adjust_platform_path "$platform" "$path")
+    full="$REPO_ROOT/$path"
     if [[ -f "$full" ]]; then
       rm -f "$full"
       echo "  removed $path"
@@ -70,32 +82,32 @@ remove_agent() {
 
 remove_skill() {
   local name="$1"
-  local skill_dest
-  skill_dest=$(jq -r --arg s "$name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
-  if [[ -z "$skill_dest" ]]; then
+  local claude_dest
+  claude_dest=$(jq -r --arg s "$name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
+  if [[ -z "$claude_dest" ]]; then
     echo "  $name: not found in registry — skipping"
     return
   fi
-  local full="$REPO_ROOT/$skill_dest"
-  if [[ -d "$full" ]]; then
-    rm -rf "$full"
-    echo "  removed $skill_dest/"
-  else
-    echo "  $name: nothing found to remove"
-  fi
-  # Also remove copilot variant — explicit registry entry, or derived by replacing .claude/ with .copilot/
-  local copilot_dest
-  copilot_dest=$(jq -r --arg s "$name" '.skills[$s]["install-copilot"] // empty' "$SCRIPT_DIR/registry.json")
-  if [[ -z "$copilot_dest" && -n "$skill_dest" ]]; then
-    copilot_dest="${skill_dest/.claude\//.copilot/}"
-  fi
-  if [[ -n "$copilot_dest" ]]; then
-    local copilot_full="$REPO_ROOT/$copilot_dest"
-    if [[ -d "$copilot_full" ]]; then
-      rm -rf "$copilot_full"
-      echo "  removed $copilot_dest/"
+
+  local removed=0
+  local platform dest full
+  for platform in "${PLATFORMS[@]}"; do
+    if [[ "$platform" == "claude" ]]; then
+      dest="$claude_dest"
+    else
+      dest=$(jq -r --arg s "$name" --arg p "install-$platform" '.skills[$s][$p] // empty' "$SCRIPT_DIR/registry.json")
+      [[ -z "$dest" ]] && dest="${claude_dest/.claude\//.$platform/}"
     fi
-  fi
+    [[ -z "$dest" ]] && continue
+    dest=$(adjust_platform_path "$platform" "$dest")
+    full="$REPO_ROOT/$dest"
+    if [[ -d "$full" ]]; then
+      rm -rf "$full"
+      echo "  removed $dest/"
+      removed=1
+    fi
+  done
+  if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 }
 
 echo "Target: $REPO_ROOT ($INSTALL_LEVEL-level)"

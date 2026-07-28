@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Squash commits for afk-run
-# Usage: squash-commits.sh [--no-squash] [--platform claude|copilot] [completed_slug1 completed_slug2 ...]
+# Usage: squash-commits.sh [--no-squash] [--platform claude|copilot|pi] [completed_slug1 completed_slug2 ...]
 # Completed slugs should be passed as remaining arguments after flags
 
 # Parse arguments
@@ -97,6 +97,8 @@ fi
 # Co-authored-by trailer (platform-appropriate)
 if [ "$PLATFORM" = "claude" ]; then
   COAUTHOR_TRAILER="Co-authored-by: Claude Code <claude@anthropic.com>"
+elif [ "$PLATFORM" = "pi" ]; then
+  COAUTHOR_TRAILER="Co-authored-by: pi <noreply@earendil.works>"
 else
   COAUTHOR_TRAILER="Co-authored-by: GitHub Copilot <noreply@github.com>"
 fi

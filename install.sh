@@ -8,6 +8,8 @@ REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 # Pull --version/--registry out of the args wherever they appear, before positional
 # parsing below assigns platform/agent from $1/$2/$3. Passing --version pins the
 # install to that tag AND writes crew.lock recording it — see write_lockfile().
+# --version latest resolves to the newest published release tag before pinning, so
+# crew.lock always records a concrete version, never the moving "latest" alias.
 PIN_VERSION=""
 PIN_REGISTRY=""
 _ARGS=()
@@ -40,7 +42,7 @@ elif [[ "${1:-}" == "--from-lockfile" ]]; then
   PLATFORM="all"
   AGENT="all"
 else
-  PLATFORM="${1:-all}"    # all | claude | copilot
+  PLATFORM="${1:-all}"    # all | claude | copilot | pi
   AGENT="${2:-all}"       # all | crew-coder | crew-code-reviewer | --skill <name> | --skills a,b
 fi
 
@@ -65,11 +67,12 @@ usage() {
   echo "       ./install.sh --update"
   echo "       ./install.sh --from-lockfile [path]"
   echo ""
-  echo "  platform:        all (default), claude, copilot"
+  echo "  platform:        all (default), claude, copilot, pi"
   echo "  agent:           all (default), crew-code-reviewer, crew-coder"
   echo "  --skill:         install a single skill (e.g. to-issues)"
   echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,to-issues)"
   echo "  --update:        re-install only agents/skills whose version changed since last install"
+  echo "  --version:       pin to a release tag (e.g. v1.2.0) or 'latest' to resolve the newest release"
   echo "  --from-lockfile: install from a lockfile (defaults to ./crew.lock; fetches pinned registry version and installs listed items)"
   echo ""
   echo "Examples:"
@@ -80,6 +83,7 @@ usage() {
   echo "  ./install.sh --update                             # update all installed agents/skills"
   echo "  ./install.sh --from-lockfile                      # install from ./crew.lock"
   echo "  ./install.sh --from-lockfile path/to/crew.lock    # install from a specific lockfile"
+  echo "  ./install.sh --version latest                     # pin to the newest published release"
   echo ""
   echo "Available skills:"
   echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
@@ -105,8 +109,8 @@ if [[ "$UPDATE_MODE" == "false" ]]; then
     usage
   fi
 
-  if [[ ! "$PLATFORM" =~ ^(all|claude|copilot)$ ]]; then
-    echo "Error: invalid platform '$PLATFORM' — must be: all, claude, or copilot" >&2
+  if [[ ! "$PLATFORM" =~ ^(all|claude|copilot|pi)$ ]]; then
+    echo "Error: invalid platform '$PLATFORM' — must be: all, claude, copilot, or pi" >&2
     usage
   fi
 fi
@@ -121,6 +125,20 @@ assert_safe_path() {
   if [[ "$path" == *..* || "$path" == /* ]]; then
     echo "Error: unsafe $label path in registry: $path" >&2
     exit 1
+  fi
+}
+
+# Every platform install.sh knows about. Order matters only for output readability.
+PLATFORMS=(claude copilot pi)
+
+# pi keeps user-level resources under ~/.pi/agent/ but project-level ones under .pi/.
+# Registry paths are written project-style; rewrite them when targeting $HOME.
+adjust_platform_path() {
+  local platform="$1" path="$2"
+  if [[ "$platform" == "pi" && "$path" == .pi/* && "$REPO_ROOT" == "$HOME" ]]; then
+    printf '.pi/agent/%s' "${path#.pi/}"
+  else
+    printf '%s' "$path"
   fi
 }
 
@@ -168,7 +186,9 @@ install_agent() {
 
   assert_identifier "$agent_name" "agent"
 
-  if [[ "$INSTALLED" == *"|$agent_name|"* ]]; then
+  # Dedup per platform — `install_single_skill` fans platform=all out one platform at
+  # a time, so keying on name alone would install an agent for the first platform only.
+  if [[ "$INSTALLED" == *"|agent:$agent_name:$platform|"* ]]; then
     return
   fi
 
@@ -181,7 +201,7 @@ install_agent() {
     fi
   fi
 
-  INSTALLED="${INSTALLED}|$agent_name|"
+  INSTALLED="${INSTALLED}|agent:$agent_name:$platform|"
 
   echo "Installing $agent_name ($platform)..."
 
@@ -238,37 +258,24 @@ install_agent() {
     fi
   }
 
-  if [[ "$platform" == "claude" || "$platform" == "all" ]]; then
-    local claude_dest claude_src
-    claude_dest=$(jq -r --arg name "$agent_name" '.agents[$name].install.shims.claude // empty' "$SCRIPT_DIR/registry.json")
-    local claude_count
-    claude_count=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "claude.*" | wc -l)
-    if [[ "$claude_count" -gt 1 ]]; then
-      echo "Error: multiple claude.* files in $SCRIPT_DIR/agents/$agent_source_dir — cannot determine which to install" >&2
-      exit 1
-    fi
-    claude_src=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "claude.*" | head -1)
-    if [[ -n "$claude_src" && -n "$claude_dest" ]]; then
-      assert_safe_path "$claude_dest" "claude install"
-      expand_shim "$claude_src" "$REPO_ROOT/$claude_dest"
-    fi
-  fi
+  local target_platform
+  for target_platform in "${PLATFORMS[@]}"; do
+    [[ "$platform" == "$target_platform" || "$platform" == "all" ]] || continue
 
-  if [[ "$platform" == "copilot" || "$platform" == "all" ]]; then
-    local copilot_dest copilot_src
-    copilot_dest=$(jq -r --arg name "$agent_name" '.agents[$name].install.shims.copilot // empty' "$SCRIPT_DIR/registry.json")
-    local copilot_count
-    copilot_count=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "copilot.*" | wc -l)
-    if [[ "$copilot_count" -gt 1 ]]; then
-      echo "Error: multiple copilot.* files in $SCRIPT_DIR/agents/$agent_source_dir — cannot determine which to install" >&2
+    local shim_dest shim_src shim_count
+    shim_dest=$(jq -r --arg name "$agent_name" --arg p "$target_platform" '.agents[$name].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
+    shim_count=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "$target_platform.*" | wc -l)
+    if [[ "$shim_count" -gt 1 ]]; then
+      echo "Error: multiple $target_platform.* files in $SCRIPT_DIR/agents/$agent_source_dir — cannot determine which to install" >&2
       exit 1
     fi
-    copilot_src=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "copilot.*" | head -1)
-    if [[ -n "$copilot_src" && -n "$copilot_dest" ]]; then
-      assert_safe_path "$copilot_dest" "copilot install"
-      expand_shim "$copilot_src" "$REPO_ROOT/$copilot_dest"
+    shim_src=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "$target_platform.*" | head -1)
+    if [[ -n "$shim_src" && -n "$shim_dest" ]]; then
+      assert_safe_path "$shim_dest" "$target_platform install"
+      shim_dest=$(adjust_platform_path "$target_platform" "$shim_dest")
+      expand_shim "$shim_src" "$REPO_ROOT/$shim_dest"
     fi
-  fi
+  done
 
   local agent_version
   agent_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // "unknown"' "$SCRIPT_DIR/registry.json")
@@ -296,11 +303,13 @@ install_single_skill() {
   local skill_name="$1"
   assert_identifier "$skill_name" "skill"
 
-  # For platform=all, fan out to both platforms independently
+  # For platform=all, fan out to every platform independently
   if [[ "$PLATFORM" == "all" ]]; then
     local saved_platform="$PLATFORM"
-    PLATFORM="claude";  install_single_skill "$skill_name"
-    PLATFORM="copilot"; install_single_skill "$skill_name"
+    local fan_platform
+    for fan_platform in "${PLATFORMS[@]}"; do
+      PLATFORM="$fan_platform"; install_single_skill "$skill_name"
+    done
     PLATFORM="$saved_platform"
     return
   fi
@@ -312,12 +321,14 @@ install_single_skill() {
   INSTALLED="${INSTALLED}|skill:$skill_name:$PLATFORM|"
 
   local skill_dest
-  if [[ "$PLATFORM" == "copilot" ]]; then
-    skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s]["install-copilot"] // empty' "$SCRIPT_DIR/registry.json")
+  if [[ "$PLATFORM" != "claude" ]]; then
+    # Non-Claude platforms may declare install-<platform>; otherwise the Claude path
+    # is reused with .claude/ swapped for .<platform>/.
+    skill_dest=$(jq -r --arg s "$skill_name" --arg p "install-$PLATFORM" '.skills[$s][$p] // empty' "$SCRIPT_DIR/registry.json")
     if [[ -z "$skill_dest" ]]; then
       local claude_dest
       claude_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
-      skill_dest="${claude_dest/.claude\//.copilot/}"
+      skill_dest="${claude_dest/.claude\//.$PLATFORM/}"
     fi
   else
     skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
@@ -328,6 +339,7 @@ install_single_skill() {
     exit 1
   fi
   assert_safe_path "$skill_dest" "skill install"
+  skill_dest=$(adjust_platform_path "$PLATFORM" "$skill_dest")
   
   # Resolve source directory: use source-dir field if present, otherwise use skill name
   local source_dir
@@ -355,17 +367,17 @@ install_single_skill() {
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
   # Select the right SKILL.md:
-  #   claude.SKILL.md / copilot.SKILL.md  — platform-specific variant wins when present
-  #   SKILL.md                             — shared fallback used by both platforms
-  if [[ "$PLATFORM" == "copilot" && -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" ]]; then
+  #   claude.SKILL.md / copilot.SKILL.md / pi.SKILL.md — platform-specific variant wins when present
+  #   SKILL.md                                         — shared fallback used by every platform
+  if [[ -f "$REPO_ROOT/$skill_dest/$PLATFORM.SKILL.md" ]]; then
     rm -f "$REPO_ROOT/$skill_dest/SKILL.md"
-    mv "$REPO_ROOT/$skill_dest/copilot.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
-  elif [[ "$PLATFORM" == "claude" && -f "$REPO_ROOT/$skill_dest/claude.SKILL.md" ]]; then
-    rm -f "$REPO_ROOT/$skill_dest/SKILL.md"
-    mv "$REPO_ROOT/$skill_dest/claude.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
+    mv "$REPO_ROOT/$skill_dest/$PLATFORM.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
   fi
   # Drop whichever platform variants weren't selected
-  rm -f "$REPO_ROOT/$skill_dest/copilot.SKILL.md" "$REPO_ROOT/$skill_dest/claude.SKILL.md"
+  local variant_platform
+  for variant_platform in "${PLATFORMS[@]}"; do
+    rm -f "$REPO_ROOT/$skill_dest/$variant_platform.SKILL.md"
+  done
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
   local scripts
@@ -512,18 +524,32 @@ write_manifest() {
   echo "  .coding-crew/manifest.json"
 }
 
+# git remotes are often SSH (git@github.com:owner/repo.git); the release/tarball
+# endpoints need an https URL, so normalise before using or recording one.
+normalize_registry_url() {
+  local url="${1%.git}"
+  case "$url" in
+    git@*:*)
+      url="${url#git@}"          # github.com:owner/repo
+      url="https://${url/://}"   # https://github.com/owner/repo
+      ;;
+    ssh://git@*) url="https://${url#ssh://git@}" ;;
+  esac
+  printf '%s' "$url"
+}
+
 # Writes crew.lock recording the pinned version/registry plus the agents/skills
 # just installed. Only called when --version was passed — see PIN_VERSION above.
 write_lockfile() {
   local registry="$PIN_REGISTRY"
   if [[ -z "$registry" ]]; then
     registry=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "")
-    registry="${registry%.git}"
   fi
   if [[ -z "$registry" ]]; then
     echo "Warning: could not determine registry URL (no git remote and no --registry given) — skipping crew.lock" >&2
     return
   fi
+  registry=$(normalize_registry_url "$registry")
 
   local agents_json="{}"
   for entry in "${MANIFEST_AGENT_ENTRIES[@]+"${MANIFEST_AGENT_ENTRIES[@]}"}"; do
@@ -557,7 +583,8 @@ write_lockfile() {
 }
 
 fetch_latest_release_version() {
-  local registry_url="$1"
+  local registry_url
+  registry_url=$(normalize_registry_url "$1")
   local url="${registry_url}/releases/latest"
   
   # Follow redirect and get final URL
@@ -579,6 +606,30 @@ fetch_latest_release_version() {
   fi
   
   echo "$version"
+}
+
+# Turns --version latest into the concrete newest release tag; any other value is
+# left untouched. Called just before write_lockfile so the recorded version is
+# always reproducible.
+resolve_pin_version() {
+  [[ "$PIN_VERSION" == "latest" ]] || return 0
+
+  local registry="$PIN_REGISTRY"
+  if [[ -z "$registry" ]]; then
+    registry=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "")
+  fi
+  if [[ -z "$registry" ]]; then
+    echo "Error: --version latest needs a registry URL (no git remote and no --registry given)" >&2
+    exit 1
+  fi
+  registry=$(normalize_registry_url "$registry")
+
+  local resolved
+  if ! resolved=$(fetch_latest_release_version "$registry"); then
+    exit 1
+  fi
+  PIN_VERSION="v${resolved#v}"
+  echo "Resolved --version latest to $PIN_VERSION"
 }
 
 run_update_from_lockfile() {
@@ -972,6 +1023,7 @@ install_docs
 echo "---"
 write_manifest
 if [[ -n "$PIN_VERSION" ]]; then
+  resolve_pin_version
   write_lockfile
 fi
 

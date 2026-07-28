@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+## [1.13.0] - 2026-07-28
+
+### Added
+- **New platform: `pi`** — `./install.sh pi` (and `bootstrap.sh pi`) installs agents to `.pi/agents/` and skills to `.pi/skills/`, or `~/.pi/agent/{agents,skills}/` for a user-level install, which is where pi actually discovers them
+- **`crew-coder` / `crew-code-reviewer`**: `pi.agent.md` definitions using pi's built-in tool names (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`)
+- **`crew-afk`**: `pi.SKILL.md` variant plus `scripts/dispatch-agent.sh` — pi has no native subagent tool, so each worker runs as its own `pi -p` process in the issue's worktree, with the agent definition supplying system prompt, tool allowlist, and model; reports are written to `.scratch/<slug>/dispatch/<slug>.report.md`
+- **`verify-worktree.sh`**: check discovery now falls back to `AGENTS.md` when `CLAUDE.md` is absent
+- **`install.sh` / `bootstrap.sh`**: `--version latest` resolves the newest published GitHub release before pinning, so `crew.lock` always records a concrete tag (never the moving `latest` alias)
+
+### Fixed
+- **`install.sh`**: agents are now deduplicated per platform, so a `platform=all` skill install writes the agent shims for every platform instead of only the first
+- **`install.sh`**: SSH git remotes (`git@github.com:owner/repo.git`) are normalised to `https://` before being used for release lookups or written into `crew.lock`
+
 ## [1.8.0] - 2026-06-21
 
 ### Added

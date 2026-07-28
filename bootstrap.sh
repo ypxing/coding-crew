@@ -2,9 +2,11 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
 #   curl -fsSL .../bootstrap.sh | bash -s -- copilot
+#   curl -fsSL .../bootstrap.sh | bash -s -- pi
 #   curl -fsSL .../bootstrap.sh | bash -s -- copilot --skills tdd,caveman
 #   curl -fsSL .../bootstrap.sh | bash -s -- --project
 #   curl -fsSL .../bootstrap.sh | bash -s -- --version v1.0.0
+#   curl -fsSL .../bootstrap.sh | bash -s -- --version latest
 #   curl -fsSL .../bootstrap.sh | bash -s -- --from-lockfile
 #   curl -fsSL .../bootstrap.sh | bash -s -- --from-lockfile path/to/crew.lock
 #   curl -fsSL .../bootstrap.sh | bash -s -- --update
@@ -32,11 +34,11 @@ while [[ $# -gt 0 ]]; do
     --from-lockfile=*) LOCKFILE_MODE=1; LOCKFILE="${1#--from-lockfile=}"; shift ;;
     --from-lockfile)
       LOCKFILE_MODE=1; shift
-      if [[ $# -gt 0 && "$1" != --* && "$1" != all && "$1" != claude && "$1" != copilot ]]; then
+      if [[ $# -gt 0 && "$1" != --* && "$1" != all && "$1" != claude && "$1" != copilot && "$1" != pi ]]; then
         LOCKFILE="$1"; shift
       fi
       ;;
-    all|claude|copilot) PLATFORM="$1"; shift ;;
+    all|claude|copilot|pi) PLATFORM="$1"; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -57,6 +59,22 @@ fi
 TMP_DIR="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
+
+# "latest" is an alias for the newest published release: resolve it to a concrete
+# tag here so the tarball URL, the console output, and crew.lock all agree.
+if [[ "$VERSION" == "latest" ]]; then
+  echo "Resolving latest release..."
+  final_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$REPO/releases/latest") || {
+    echo "Error: failed to resolve latest release from $REPO/releases/latest" >&2
+    exit 1
+  }
+  VERSION=$(printf '%s' "$final_url" | sed -E 's|.*/releases/tag/([^/]+)$|\1|')
+  if [[ -z "$VERSION" || "$VERSION" == "$final_url" ]]; then
+    echo "Error: no published releases found at $REPO" >&2
+    exit 1
+  fi
+  echo "Latest release: $VERSION"
+fi
 
 if [[ -n "$VERSION" ]]; then
   echo "Downloading coding-crew ($VERSION)..."

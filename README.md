@@ -159,12 +159,20 @@ Installs to `$HOME` (user-level, works in any project). Common flags:
 | ------------------------ | ----------------------------------------------------------------------------------------- |
 | `claude`                 | Claude only (default: all platforms)                                                      |
 | `copilot`                | Copilot only                                                                              |
+| `pi`                     | pi only                                                                                   |
 | `--project`              | Install into the current project instead of `$HOME`                                       |
 | `--version v1.2.0`       | Pin to a specific release and write a `crew.lock` recording it                            |
+| `--version latest`       | Resolve the newest published release, then pin to it (`crew.lock` records the real tag)   |
 | `--from-lockfile [path]` | Install the versions pinned in `crew.lock` (defaults to `./crew.lock`)                    |
 | `--update`               | Check for and apply updates (uses `crew.lock` if present, otherwise the install manifest) |
 
 **Requirements:** `bash` 4.0+, `jq`, `git`, `curl`, `tar`. Windows: WSL2 required.
+
+**Supported agents:** Claude Code (`.claude/`), GitHub Copilot (`.copilot/`), and
+[pi](https://github.com/badlogic/pi-mono) (`.pi/` per project, `~/.pi/agent/` when installed
+user-level). pi has no built-in subagent tool, so `/crew-afk` dispatches each coder as its own
+`pi -p` process via `scripts/dispatch-agent.sh` — same isolation, one process per issue. The `pi`
+CLI must be on `PATH`.
 
 To uninstall:
 
@@ -180,6 +188,8 @@ Pinning to a version writes a `crew.lock` automatically — commit it to your do
 
 ```bash
 ./install.sh --version v1.2.0
+# newest published release, resolved to a concrete tag before pinning:
+./install.sh --version latest
 # or, without a local clone:
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --project --version v1.2.0
 ```
