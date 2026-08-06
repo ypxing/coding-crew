@@ -147,7 +147,7 @@ teardown() {
   [ -f "$TEMP_DIR/.copilot/skills/crew-brainstorm/SKILL.md" ]
 }
 
-@test "reinstalling modified skill produces diff output" {
+@test "reinstalling modified skill reports the update without a diff body" {
   cd "$SCRIPT_DIR"
 
   # First install
@@ -159,9 +159,22 @@ teardown() {
   # Reinstall and capture output
   run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skill tdd"
 
-  # Verify diff markers appear in stdout
-  [[ "$output" =~ "---" ]]
-  [[ "$output" =~ "+++" ]]
+  # The changed file is named once, marked (updated)
+  [[ "$output" =~ "SKILL.md (updated)" ]]
+  # No diff body: no unified-diff headers or hunk markers
+  [[ ! "$output" =~ "+++ incoming" ]]
+  [[ ! "$output" =~ "@@" ]]
+}
+
+@test "reinstalling an unmodified install reports no updates" {
+  cd "$SCRIPT_DIR"
+
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk > /dev/null
+
+  run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skill crew-afk"
+
+  # Nothing changed on disk, so nothing should be reported as updated
+  [[ ! "$output" =~ "(updated)" ]]
 }
 
 @test "install creates .coding-crew/docs/issue-tracker.md in target repo" {

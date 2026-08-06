@@ -9,6 +9,14 @@
 - **`crew-afk`**: `codex.SKILL.md` variant plus `scripts/dispatch-codex-agent.sh` — each worker runs as its own `codex exec` process pinned to the issue's worktree via `--cd`, with the report captured through `--output-last-message`; Codex's native subagents are deliberately not used for implementation because they share the parent's working root
 - **`squash-commits.sh`**: `--platform codex` writes a Codex `Co-authored-by` trailer
 
+### Changed
+
+- **`install.sh`**: installing over existing files no longer prints a unified diff. A changed file is reported as a single `path (updated)` line; unchanged files are silent. This supersedes the diff-before-overwrite behaviour added in 1.0.0
+
+### Fixed
+
+- **`install.sh`**: skills that ship a platform-specific `SKILL.md` variant (`crew-afk` under `pi` and `codex`) no longer report `SKILL.md` as updated on every re-install. The variant is now resolved before the copy loop and written straight to `SKILL.md`, instead of copying the shared fallback and selecting the variant afterwards — which compared the incoming shared file against the previously installed variant and always saw a difference
+
 ## [1.13.1] - 2026-07-28
 
 ### Fixed

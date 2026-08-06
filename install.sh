@@ -164,11 +164,11 @@ assert_identifier() {
   fi
 }
 
-# Helper: print diff if destination exists and differs from incoming content
+# Helper: report whether an incoming file is new, identical, or changed
 # Args: $1=incoming_content_file $2=dest_path
 # Returns: 0=new, 1=identical, 2=changed
-# Side effect: prints labeled diff for changed files
-check_and_diff() {
+# Side effect: prints a one-line notice for changed files
+check_dest_status() {
   local incoming="$1" dest="$2"
   if [[ ! -f "$dest" ]]; then
     return 0  # new file
@@ -176,10 +176,8 @@ check_and_diff() {
   if cmp -s "$incoming" "$dest"; then
     return 1  # identical
   fi
-  # Files differ — print labeled diff
   local rel_dest="${dest#$REPO_ROOT/}"
   echo "  $rel_dest (updated)"
-  diff -u "$dest" "$incoming" | sed "1s|^--- .*|--- $rel_dest|; 2s|^+++ .*|+++ incoming|" || true
   return 2  # changed
 }
 
@@ -260,7 +258,7 @@ install_agent() {
     
     # Check and diff, then write
     local status=0
-    check_and_diff "$tmpfile" "$dest" || status=$?
+    check_dest_status "$tmpfile" "$dest" || status=$?
     chmod 0644 "$tmpfile"
     mv "$tmpfile" "$dest" || { rm -f "$tmpfile"; exit 1; }
     trap - RETURN
@@ -364,15 +362,28 @@ install_single_skill() {
   [[ -L "$REPO_ROOT/$skill_dest" ]] && rm -f "$REPO_ROOT/$skill_dest"
   mkdir -p "$REPO_ROOT/$skill_dest"
   
+  # Resolve which SKILL.md this platform gets BEFORE copying. The installed file is
+  # always named SKILL.md, so diffing the shared fallback against a previously
+  # installed platform variant reports the entire file as changed on every
+  # re-install. Pick the source now and copy it straight to SKILL.md.
+  local skill_md_source="SKILL.md"
+  [[ -f "$SCRIPT_DIR/skills/$source_dir/$PLATFORM.SKILL.md" ]] && skill_md_source="$PLATFORM.SKILL.md"
+
   # Copy files with diff output for changed files
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
+    # Every *.SKILL.md competes for one destination: SKILL.md. Copy only the variant
+    # this platform resolved to and skip the rest.
+    if [[ "$rel_path" == "SKILL.md" || "$rel_path" == *".SKILL.md" ]]; then
+      [[ "$rel_path" == "$skill_md_source" ]] || continue
+      rel_path="SKILL.md"
+    fi
     local dest_file="$REPO_ROOT/$skill_dest/$rel_path"
     local rel_dest="${dest_file#$REPO_ROOT/}"
     mkdir -p "$(dirname "$dest_file")"
     
     local status=0
-    check_and_diff "$src_file" "$dest_file" || status=$?
+    check_dest_status "$src_file" "$dest_file" || status=$?
     cp "$src_file" "$dest_file"
     
     # Print path for new files (status=0)
@@ -380,14 +391,8 @@ install_single_skill() {
       echo "  $rel_dest"
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
-  # Select the right SKILL.md:
-  #   claude.SKILL.md / copilot.SKILL.md / pi.SKILL.md / codex.SKILL.md — platform-specific variant wins when present
-  #   SKILL.md                                         — shared fallback used by every platform
-  if [[ -f "$REPO_ROOT/$skill_dest/$PLATFORM.SKILL.md" ]]; then
-    rm -f "$REPO_ROOT/$skill_dest/SKILL.md"
-    mv "$REPO_ROOT/$skill_dest/$PLATFORM.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
-  fi
-  # Drop whichever platform variants weren't selected
+  # Drop platform variants left behind by older installs, which copied every variant
+  # and selected one afterwards.
   local variant_platform
   for variant_platform in "${PLATFORMS[@]}"; do
     rm -f "$REPO_ROOT/$skill_dest/$variant_platform.SKILL.md"
