@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **New platform: `codex`** — `./install.sh codex` (and `bootstrap.sh codex`) installs skills to `.agents/skills/` (the repo/user location Codex actually scans) and agents to `.codex/agents/<name>.toml` (Codex's custom-agent format)
+- **`crew-coder` / `crew-code-reviewer`**: `codex.agent.toml` definitions with `name`, `description`, `developer_instructions`, `model_reasoning_effort`, and `sandbox_mode` (`workspace-write` for the coder, `read-only` for the reviewer)
+- **`crew-afk`**: `codex.SKILL.md` variant plus `scripts/dispatch-codex-agent.sh` — each worker runs as its own `codex exec` process pinned to the issue's worktree via `--cd`, with the report captured through `--output-last-message`; Codex's native subagents are deliberately not used for implementation because they share the parent's working root
+- **`squash-commits.sh`**: `--platform codex` writes a Codex `Co-authored-by` trailer
+
 ## [1.13.1] - 2026-07-28
 
 ### Fixed
+
 - **`uninstall.sh`**: read the manifest from `.coding-crew/manifest.json` (where `install.sh` writes it) instead of the legacy top-level `.coding-crew.manifest.json`, with a fallback to the legacy path for repos installed by older versions
 - **`uninstall.sh`**: `.coding-crew/` is removed only when empty, so a customised `docs/issue-tracker.md` and the tracker templates survive an uninstall
 - **`install.sh`**: `--update` now actually falls back to the legacy `.coding-crew.manifest.json` its error message already advertised, and reports the canonical manifest path when neither exists
@@ -12,6 +20,7 @@
 ## [1.13.0] - 2026-07-28
 
 ### Added
+
 - **New platform: `pi`** — `./install.sh pi` (and `bootstrap.sh pi`) installs agents to `.pi/agents/` and skills to `.pi/skills/`, or `~/.pi/agent/{agents,skills}/` for a user-level install, which is where pi actually discovers them
 - **`crew-coder` / `crew-code-reviewer`**: `pi.agent.md` definitions using pi's built-in tool names (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`)
 - **`crew-afk`**: `pi.SKILL.md` variant plus `scripts/dispatch-agent.sh` — pi has no native subagent tool, so each worker runs as its own `pi -p` process in the issue's worktree, with the agent definition supplying system prompt, tool allowlist, and model; reports are written to `.scratch/<slug>/dispatch/<slug>.report.md`
@@ -19,12 +28,14 @@
 - **`install.sh` / `bootstrap.sh`**: `--version latest` resolves the newest published GitHub release before pinning, so `crew.lock` always records a concrete tag (never the moving `latest` alias)
 
 ### Fixed
+
 - **`install.sh`**: agents are now deduplicated per platform, so a `platform=all` skill install writes the agent shims for every platform instead of only the first
 - **`install.sh`**: SSH git remotes (`git@github.com:owner/repo.git`) are normalised to `https://` before being used for release lookups or written into `crew.lock`
 
 ## [1.8.0] - 2026-06-21
 
 ### Added
+
 - **`crew-code-reviewer`**: Reads `.scratch/<feature-slug>/design.md` and `PRD.md` before per-branch review; documented architectural constraints (e.g. tracker abstraction rules) now inform finding severity and proposed fixes
 - **`crew-address-findings`**: Step 1.5 loads `.scratch/<feature-slug>/design.md` and `PRD.md` before triage; findings whose proposed fix contradicts a documented design decision are classified Dismiss or Debatable
 - **`crew-coder`**: Per-agent trace logging to `.scratch/<feature-slug>/traces/<branch>.log` with `[START]`, `[PHASE]`, `[CMD]`, `[READ]`, `[WRITE]`, `[DONE]` events
@@ -33,6 +44,7 @@
 - **`solve-issue`**: Reference test script `references/test-blocked-dep-path.sh`
 
 ### Changed
+
 - **`crew-afk`**: Session SHA and sprint reviews now written under `.scratch/<feature-slug>/` (not `.scratch/` root)
 - **`crew-afk`**: Step 5 Agent A delegates to `mark-done` operation from `issue-tracker.md` instead of hardcoding `sed` + `mv`
 - **`crew-afk`**: `FEATURE_SLUG` derivation in orchestrator trace uses `sed 's|^feature/||'` + JIRA-strip, matching `session-init.sh`
@@ -45,11 +57,13 @@
 - **`docs/agents/issue-tracker.md`** and **`docs/templates/trackers/local.md`**: `list` op greps `issues/open/*.md`; `mark-done` moves `open/` → `done/` as siblings; workspace layout diagram updated; both files kept in sync
 
 ### Fixed
+
 - **`crew-coder`**: `commands.log` section removed from both `claude.agent.md` and `copilot.agent.md`
 
 ## [1.7.0] - 2026-06-21
 
 ### Added
+
 - **to-issues**: Cross-cutting requirements extraction from design.md/PRD.md with automatic mapping to vertical slices
 - **to-issues**: Context Documents section in issue template (references to design.md and PRD.md)
 - **to-issues**: Cross-cutting Requirements section with checklist format for 10 requirement categories
@@ -59,6 +73,7 @@
 - **crew-afk**: Coverage validation step at exit that compares design.md/PRD.md requirements against completed issues
 
 ### Changed
+
 - **to-issues**: Enhanced issue template with optional sections (Context Documents, Cross-cutting Requirements, Part of Flow)
 - **to-issues**: Extraction logic scans design.md for error handling, logging, security, performance, testing, architecture constraints, data validation, observability, interfaces & contracts, and multi-issue flows
 - **to-issues**: Falls back to PRD.md Decisions section when design.md doesn't exist
@@ -67,6 +82,7 @@
 - **crew-afk**: Summary format includes coverage report section before per-issue details
 
 ### Fixed
+
 - **crew-afk**: JIRA prefix stripping in coverage-validation.sh now matches session-init.sh behavior
 - **crew-coder**: Context reading instructions now explicitly specify using View/Read tools instead of bash comment placeholders
 - **solve-issue**: Context reading instructions now explicitly specify using View/Read tools instead of bash comment placeholders
@@ -83,9 +99,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 The skill has been renamed to better reflect its role as the grill/interview phase of the design pipeline. The new `crew-brainstorm` skill now serves as the full end-to-end design orchestrator.
 
-| Old Name       | New Name      |
-| -------------- | ------------- |
-| `crew-plan`    | `crew-grill`  |
+| Old Name    | New Name     |
+| ----------- | ------------ |
+| `crew-plan` | `crew-grill` |
 
 **Migration:** Uninstall and reinstall:
 
@@ -112,18 +128,18 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 
 The skill has been renamed to clarify its purpose (acts on the `crew-code-reviewer` report, not inline PR comments) and avoid confusion with `address-pr-comments`.
 
-| Old Name                | New Name                  |
-| ----------------------- | ------------------------- |
-| `address-code-review`   | `crew-address-findings`   |
+| Old Name              | New Name                |
+| --------------------- | ----------------------- |
+| `address-code-review` | `crew-address-findings` |
 
 **`grill-me` and `grill-with-docs` removed**
 
 Both skills have been removed and replaced by the new `domain-modeling` skill and an inlined grill loop inside `crew-plan`.
 
-| Removed                 | Replacement                         |
-| ----------------------- | ----------------------------------- |
-| `/grill-me`             | `/crew-plan`                        |
-| `/grill-with-docs`      | `/crew-plan with docs`              |
+| Removed            | Replacement            |
+| ------------------ | ---------------------- |
+| `/grill-me`        | `/crew-plan`           |
+| `/grill-with-docs` | `/crew-plan with docs` |
 
 > Note: `crew-plan` was itself renamed to `crew-grill` in v1.5.0.
 
@@ -171,20 +187,20 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 
 Skills have been renamed to drop the `crew-` prefix. `crew-afk` and `crew-plan` are unchanged.
 
-| Old Name                          | New Name                          |
-| --------------------------------- | --------------------------------- |
-| `crew-karpathy-guidelines`        | `karpathy-guidelines`             |
-| `crew-tdd`                        | `tdd`                             |
-| `crew-dep-install`                | `dep-install`                     |
-| `crew-solve-issue`                | `solve-issue`                     |
-| `crew-address-code-review`        | `address-code-review`             |
-| `crew-address-pr-comments`        | `address-pr-comments`             |
+| Old Name                             | New Name                        |
+| ------------------------------------ | ------------------------------- |
+| `crew-karpathy-guidelines`           | `karpathy-guidelines`           |
+| `crew-tdd`                           | `tdd`                           |
+| `crew-dep-install`                   | `dep-install`                   |
+| `crew-solve-issue`                   | `solve-issue`                   |
+| `crew-address-code-review`           | `address-code-review`           |
+| `crew-address-pr-comments`           | `address-pr-comments`           |
 | `crew-improve-codebase-architecture` | `improve-codebase-architecture` |
-| `crew-grill-me`                   | `grill-me`                        |
-| `crew-grill-with-docs`            | `grill-with-docs`                 |
-| `crew-to-issues`                  | `to-issues`                       |
-| `crew-to-prd`                     | `to-prd`                          |
-| `crew-caveman`                    | `caveman`                         |
+| `crew-grill-me`                      | `grill-me`                      |
+| `crew-grill-with-docs`               | `grill-with-docs`               |
+| `crew-to-issues`                     | `to-issues`                     |
+| `crew-to-prd`                        | `to-prd`                        |
+| `crew-caveman`                       | `caveman`                       |
 
 **Migration:** Uninstall and reinstall:
 
@@ -214,24 +230,24 @@ Install paths change accordingly: `.claude/skills/tdd/`, `.claude/skills/solve-i
 
 All skills and agents have been renamed to prevent collisions when installed alongside other skill registries:
 
-| Old Name                        | New Name                                |
-| ------------------------------- | --------------------------------------- |
-| `crew:afk`                      | `crew-afk`                              |
-| `crew:plan`                     | `crew-plan`                             |
-| `solve-issue`                   | `crew-solve-issue`                      |
-| `address-code-review`           | `crew-address-code-review`              |
-| `address-pr-comments`           | `crew-address-pr-comments`              |
-| `tdd`                           | `crew-tdd`                              |
-| `karpathy-guidelines`           | `crew-karpathy-guidelines`              |
-| `dep-install`                   | `crew-dep-install`                      |
-| `grill-me`                      | `crew-grill-me`                         |
-| `grill-with-docs`               | `crew-grill-with-docs`                  |
-| `to-issues`                     | `crew-to-issues`                        |
-| `to-prd`                        | `crew-to-prd`                           |
-| `improve-codebase-architecture` | `crew-improve-codebase-architecture`    |
-| `caveman`                       | `crew-caveman`                          |
-| `coder` (agent)                 | `crew-coder`                            |
-| `code-reviewer` (agent)         | `crew-code-reviewer`                    |
+| Old Name                        | New Name                             |
+| ------------------------------- | ------------------------------------ |
+| `crew:afk`                      | `crew-afk`                           |
+| `crew:plan`                     | `crew-plan`                          |
+| `solve-issue`                   | `crew-solve-issue`                   |
+| `address-code-review`           | `crew-address-code-review`           |
+| `address-pr-comments`           | `crew-address-pr-comments`           |
+| `tdd`                           | `crew-tdd`                           |
+| `karpathy-guidelines`           | `crew-karpathy-guidelines`           |
+| `dep-install`                   | `crew-dep-install`                   |
+| `grill-me`                      | `crew-grill-me`                      |
+| `grill-with-docs`               | `crew-grill-with-docs`               |
+| `to-issues`                     | `crew-to-issues`                     |
+| `to-prd`                        | `crew-to-prd`                        |
+| `improve-codebase-architecture` | `crew-improve-codebase-architecture` |
+| `caveman`                       | `crew-caveman`                       |
+| `coder` (agent)                 | `crew-coder`                         |
+| `code-reviewer` (agent)         | `crew-code-reviewer`                 |
 
 **Migration:**
 
@@ -246,6 +262,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 ```
 
 All skill invocations now use the `crew-` prefix:
+
 - `/crew:afk` → `/crew-afk`
 - `/crew:plan` → `/crew-plan`
 - `/crew:solve-issue` → `/crew-solve-issue`

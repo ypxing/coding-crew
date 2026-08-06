@@ -18,6 +18,9 @@ A distributable collection of AI agents and skills that other projects install v
 # Install everything for pi only
 ./install.sh pi
 
+# Install everything for Codex only
+./install.sh codex
+
 # Install a skill (and its agent deps)
 ./install.sh claude --skill crew-afk
 
@@ -29,7 +32,7 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 
 ```
 
-Platforms: `all` (default), `claude`, `copilot`, `pi`. Agents: `all` (default), `crew-code-reviewer`, `crew-coder`.
+Platforms: `all` (default), `claude`, `copilot`, `pi`, `codex`. Agents: `all` (default), `crew-code-reviewer`, `crew-coder`.
 
 ## Architecture
 
@@ -49,22 +52,26 @@ Each agent has platform files directly under `agents/<agent>/`:
 - `claude.*` — installed to `.claude/agents/` (agents) or `.claude/skills/` (skills) in the target repo
 - `copilot.*` — installed to `.copilot/agents/` in the target repo
 - `pi.*` — installed to `.pi/agents/` in the target repo (`~/.pi/agent/agents/` for a user-level install, since that is where pi looks)
+- `codex.agent.toml` — installed to `.codex/agents/<name>.toml` (Codex's custom-agent TOML format: `name`, `description`, `developer_instructions`, plus optional `model`, `model_reasoning_effort`, `sandbox_mode`). Put `{{PROTOCOL}}` inside the `'''` literal block so markdown needs no escaping.
 
 Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, this is replaced inline with the contents of `agents/<agent>/protocol.md` or `agents/<agent>/workflow.js` (whichever exists; `protocol.md` is tried first). The installed file is self-contained. Agents that are single-platform (like `crew-coder`) can put everything in one file with no protocol source.
 
 ### Platforms
 
-`install.sh` supports three platforms, listed in the `PLATFORMS` array in `install.sh` (and mirrored in `uninstall.sh`):
+`install.sh` supports four platforms, listed in the `PLATFORMS` array in `install.sh` (and mirrored in `uninstall.sh`):
 
-| Platform  | Project paths                       | User-level paths (`TARGET_REPO=$HOME`)          |
-| --------- | ----------------------------------- | ----------------------------------------------- |
-| `claude`  | `.claude/agents/`, `.claude/skills/` | same                                            |
-| `copilot` | `.copilot/agents/`, `.copilot/skills/` | same                                          |
-| `pi`      | `.pi/agents/`, `.pi/skills/`        | `.pi/agent/agents/`, `.pi/agent/skills/`        |
+| Platform  | Project paths                          | User-level paths (`TARGET_REPO=$HOME`)   |
+| --------- | -------------------------------------- | ---------------------------------------- |
+| `claude`  | `.claude/agents/`, `.claude/skills/`   | same                                     |
+| `copilot` | `.copilot/agents/`, `.copilot/skills/` | same                                     |
+| `pi`      | `.pi/agents/`, `.pi/skills/`           | `.pi/agent/agents/`, `.pi/agent/skills/` |
+| `codex`   | `.codex/agents/`, `.agents/skills/`    | same                                     |
 
-Skill destinations resolve as: `install-<platform>` in `registry.json` if present, otherwise the `install` (Claude) path with `.claude/` swapped for `.<platform>/`. Platform-specific skill bodies use `<platform>.SKILL.md` (e.g. `pi.SKILL.md`); a plain `SKILL.md` is the shared fallback and unselected variants are deleted after copy.
+Skill destinations resolve as: `install-<platform>` in `registry.json` if present, otherwise the `install` (Claude) path with `.claude/` swapped for `.<platform>/` — except `codex`, which swaps to `.agents/` because Codex scans `.agents/skills` (repo) and `~/.agents/skills` (user), never `.codex/skills`. See `default_skill_dest()` in `install.sh`/`uninstall.sh`. Platform-specific skill bodies use `<platform>.SKILL.md` (e.g. `pi.SKILL.md`, `codex.SKILL.md`); a plain `SKILL.md` is the shared fallback and unselected variants are deleted after copy.
 
 **pi specifics:** pi has no native subagent tool, so `crew-afk`'s pi variant dispatches each worker as a separate `pi -p` process through `skills/crew-afk/scripts/dispatch-agent.sh`. That script resolves the agent definition (`.pi/agents/<name>.md`, then `~/.pi/agent/agents/<name>.md`), strips its frontmatter into `--append-system-prompt`, maps `tools:` onto `--tools`, applies `model:`/`--model`, and runs the worker with the issue's worktree as cwd. Workers write their structured report to `.scratch/<slug>/dispatch/<slug>.report.md`, which the orchestrator reads after `wait`.
+
+**codex specifics:** Codex has native subagents, but they share the parent's working root, so `crew-afk`'s codex variant dispatches each worker as a separate `codex exec` process through `skills/crew-afk/scripts/dispatch-codex-agent.sh`. That script resolves `.codex/agents/<name>.toml` (then `~/.codex/agents/<name>.toml`), prepends `developer_instructions` to the prompt (codex exec has no `--append-system-prompt`), maps `model`/`model_reasoning_effort`/`sandbox_mode` onto CLI flags, runs `codex exec --cd <worktree> --add-dir $MAIN_ROOT`, and captures the report via `--output-last-message`. Reports land in the same `.scratch/<slug>/dispatch/<slug>.report.md` path.
 
 ### Registry
 
@@ -101,11 +108,13 @@ Install copies these to `.claude/skills/<skill>/SKILL.md` in the target repo.
 `scripts/skill-utils/git-workflow/` contains reusable bash scripts that are copied into skills during installation. This is **not** a skill itself — it's infrastructure for build-time script copying.
 
 **Scripts:**
+
 - `branch-safety-check.sh` — validates current branch is not default
 - `feature-branch-setup.sh` — creates/switches to feature branches with optional JIRA prefix
 - `commit-changes.sh` — safely stages specific files and commits with standardized messages
 
 **How it works:**
+
 - Skills declare needed scripts in `registry.json` via the `scripts` field
 - During `install.sh`, scripts are copied from `scripts/skill-utils/git-workflow/` into each skill's `scripts/` directory
 - Skills reference them locally: `bash scripts/branch-safety-check.sh`

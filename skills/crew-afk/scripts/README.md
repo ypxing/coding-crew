@@ -27,6 +27,30 @@ bash scripts/dispatch-agent.sh --agent crew-coder --dir <worktree> \
 
 ---
 
+### `dispatch-codex-agent.sh` (Codex only)
+
+**Purpose**: Run a crew agent as an isolated `codex exec` subprocess. Codex can spawn native subagents, but they share the parent's working root — a sprint worker must own a git worktree and write its report to a known file, so it runs as its own process instead.
+
+**Usage**:
+```bash
+bash scripts/dispatch-codex-agent.sh --agent crew-coder --dir <worktree> \
+  --prompt-file <file> [--out <report-file>] [--log <trace-file>] [--model <name|inherit>] \
+  [--sandbox <read-only|workspace-write|danger-full-access>]
+```
+
+**What it does**:
+- Resolves the agent definition: `$MAIN_ROOT/.codex/agents/<name>.toml`, then `~/.codex/agents/<name>.toml` (the same custom-agent file Codex reads natively)
+- Reads `developer_instructions` from the `'''` block and prepends it to the task prompt (codex exec has no `--append-system-prompt`)
+- Maps `model` onto `--model` (`--model inherit` passes nothing, so the worker uses the session model), `model_reasoning_effort` onto `-c model_reasoning_effort=...`, and `sandbox_mode` onto `--sandbox` (override with `--sandbox` or `CREW_CODEX_SANDBOX`)
+- Runs `codex exec --cd <worktree>`, adds `--add-dir $MAIN_ROOT` so traces and reports under `.scratch/` are writable, and enables network access for `workspace-write` so dep installs work
+- Writes the agent's final report via `--output-last-message` when `--out` is given
+
+**Exit code**: codex's exit code; `2` for bad arguments, a missing agent definition, or a missing `codex` CLI.
+
+**Parallelism**: the orchestrator launches one invocation per issue with `&` and then `wait`.
+
+---
+
 ### `session-init.sh`
 
 **Purpose**: Initialize a new afk-run session with feature branch setup and state tracking.

@@ -42,7 +42,7 @@ elif [[ "${1:-}" == "--from-lockfile" ]]; then
   PLATFORM="all"
   AGENT="all"
 else
-  PLATFORM="${1:-all}"    # all | claude | copilot | pi
+  PLATFORM="${1:-all}"    # all | claude | copilot | pi | codex
   AGENT="${2:-all}"       # all | crew-coder | crew-code-reviewer | --skill <name> | --skills a,b
 fi
 
@@ -67,7 +67,7 @@ usage() {
   echo "       ./install.sh --update"
   echo "       ./install.sh --from-lockfile [path]"
   echo ""
-  echo "  platform:        all (default), claude, copilot, pi"
+  echo "  platform:        all (default), claude, copilot, pi, codex"
   echo "  agent:           all (default), crew-code-reviewer, crew-coder"
   echo "  --skill:         install a single skill (e.g. to-issues)"
   echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,to-issues)"
@@ -109,8 +109,8 @@ if [[ "$UPDATE_MODE" == "false" ]]; then
     usage
   fi
 
-  if [[ ! "$PLATFORM" =~ ^(all|claude|copilot|pi)$ ]]; then
-    echo "Error: invalid platform '$PLATFORM' — must be: all, claude, copilot, or pi" >&2
+  if [[ ! "$PLATFORM" =~ ^(all|claude|copilot|pi|codex)$ ]]; then
+    echo "Error: invalid platform '$PLATFORM' — must be: all, claude, copilot, pi, or codex" >&2
     usage
   fi
 fi
@@ -129,10 +129,24 @@ assert_safe_path() {
 }
 
 # Every platform install.sh knows about. Order matters only for output readability.
-PLATFORMS=(claude copilot pi)
+PLATFORMS=(claude copilot pi codex)
+
+# Registry skill paths are written Claude-style (.claude/skills/<name>). When a skill
+# declares no install-<platform> override, swap the leading directory for the one that
+# platform actually scans. Codex is the odd one out: it reads skills from .agents/skills
+# (repo scope) and $HOME/.agents/skills (user scope), not .codex/skills.
+default_skill_dest() {
+  local platform="$1" claude_dest="$2"
+  case "$platform" in
+    codex) printf '%s' "${claude_dest/.claude\//.agents/}" ;;
+    *) printf '%s' "${claude_dest/.claude\//.$platform/}" ;;
+  esac
+}
 
 # pi keeps user-level resources under ~/.pi/agent/ but project-level ones under .pi/.
 # Registry paths are written project-style; rewrite them when targeting $HOME.
+# Codex needs no adjustment: .agents/skills and .codex/agents are the same relative
+# paths at both project and user level.
 adjust_platform_path() {
   local platform="$1" path="$2"
   if [[ "$platform" == "pi" && "$path" == .pi/* && "$REPO_ROOT" == "$HOME" ]]; then
@@ -328,7 +342,7 @@ install_single_skill() {
     if [[ -z "$skill_dest" ]]; then
       local claude_dest
       claude_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
-      skill_dest="${claude_dest/.claude\//.$PLATFORM/}"
+      [[ -n "$claude_dest" ]] && skill_dest=$(default_skill_dest "$PLATFORM" "$claude_dest")
     fi
   else
     skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
@@ -367,7 +381,7 @@ install_single_skill() {
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
   # Select the right SKILL.md:
-  #   claude.SKILL.md / copilot.SKILL.md / pi.SKILL.md — platform-specific variant wins when present
+  #   claude.SKILL.md / copilot.SKILL.md / pi.SKILL.md / codex.SKILL.md — platform-specific variant wins when present
   #   SKILL.md                                         — shared fallback used by every platform
   if [[ -f "$REPO_ROOT/$skill_dest/$PLATFORM.SKILL.md" ]]; then
     rm -f "$REPO_ROOT/$skill_dest/SKILL.md"

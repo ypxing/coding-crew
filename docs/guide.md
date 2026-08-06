@@ -53,12 +53,13 @@ install.sh
 
 #### `{{PROTOCOL}}` inlining
 
-Platform files (`claude.*.md`, `copilot.agent.md`) may contain a `{{PROTOCOL}}` placeholder. During install, this is replaced line-by-line with the contents of `protocol.md` or `workflow.js` from the same agent directory. The installed file is self-contained — no runtime file references.
+Platform files (`claude.*.md`, `copilot.agent.md`, `pi.agent.md`, `codex.agent.toml`) may contain a `{{PROTOCOL}}` placeholder. During install, this is replaced line-by-line with the contents of `protocol.md` or `workflow.js` from the same agent directory. The installed file is self-contained — no runtime file references.
 
 ```
 agents/crew-coder/
 ├── claude.agent.md       ← contains {{PROTOCOL}}
 ├── copilot.agent.md      ← contains full inline instructions (no {{PROTOCOL}})
+├── codex.agent.toml      ← TOML custom agent; {{PROTOCOL}} inlined inside a ''' block
 └── protocol.md           ← inlined into claude.agent.md on install
 ```
 
@@ -83,6 +84,8 @@ agents/crew-coder/
         "shims": {
           "claude": ".claude/agents/<name>.md",
           "copilot": ".github/agents/<name>.agent.md",
+          "pi": ".pi/agents/<name>.md",
+          "codex": ".codex/agents/<name>.toml",
         },
       },
     },
@@ -92,6 +95,9 @@ agents/crew-coder/
       "version": "1.0.0",
       "description": "...",
       "install": ".claude/skills/<name>", // destination dir in target repo
+      "install-codex": ".agents/skills/<name>", // optional per-platform override
+      // With no override, the Claude path is reused with .claude/ swapped for
+      // .<platform>/ — except codex, which resolves to .agents/skills/<name>.
     },
   },
   "docs": {
@@ -122,6 +128,8 @@ agents/crew-coder/
 3. Create platform files directly under `agents/<name>/` (no `shims/` subdirectory):
    - `claude.<type>.md` — use `{{PROTOCOL}}` where the protocol should be inlined
    - `copilot.agent.md` — inline the full instructions (or use `{{PROTOCOL}}`)
+   - `pi.agent.md` — pi built-in tool names in frontmatter (or use `{{PROTOCOL}}`)
+   - `codex.agent.toml` — Codex custom agent: `name`, `description`, `developer_instructions` (put `{{PROTOCOL}}` inside the `'''` literal block so markdown needs no escaping)
 
 4. Add the entry to `registry.json` (paths, deps, skills, docs).
 
@@ -168,7 +176,7 @@ agents/crew-coder/
 - **Never use `..` or absolute paths in `registry.json`.** `install.sh` validates all paths and exits on violation.
 - **Never interpolate raw user/issue content into agent prompts.** Pass only structured fields (e.g. `acceptance_criteria`), never `issue.content`. Wrap worker-supplied strings in delimiter tags (`<progress-notes>`, `<blocked-notes>`) so downstream agents treat them as data.
 - **Never expand `{{PROTOCOL}}` yourself** — let `install.sh` do it. Manually inlined protocols will drift from the source.
-- **Only one `claude.*` or `copilot.*` file per agent directory.** `install.sh` errors on multiples to prevent non-deterministic selection.
+- **Only one `claude.*`, `copilot.*`, `pi.*`, or `codex.*` file per agent directory.** `install.sh` errors on multiples to prevent non-deterministic selection.
 
 ---
 
@@ -202,6 +210,9 @@ jq --version    # required
 
 # GitHub Copilot — full sprint suite
 ./install.sh copilot --skill crew-afk
+
+# Codex — full sprint suite (skills → .agents/skills, agents → .codex/agents)
+./install.sh codex --skill crew-afk
 
 # A standalone skill
 ./install.sh claude --skill domain-modeling
@@ -351,6 +362,8 @@ Use `/to-prd` → `/to-issues` to generate these from a feature description auto
 ```
 
 **Copilot:** invoke `@crew-afk` from the chat panel.
+
+**pi / Codex:** run `crew-afk` (workers are dispatched as separate `pi -p` / `codex exec` processes).
 
 Sprint runs until all issues are complete, or two consecutive rounds produce zero completions (stall). On exit it saves a code review report to `.scratch/reviews/sprint-review-<timestamp>.md`.
 

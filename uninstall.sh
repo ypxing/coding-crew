@@ -55,7 +55,17 @@ for cmd in jq; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
 done
 
-PLATFORMS=(claude copilot pi)
+PLATFORMS=(claude copilot pi codex)
+
+# Registry skill paths are Claude-style; codex reads skills from .agents/skills, every
+# other platform from .<platform>/skills.
+default_skill_dest() {
+  local platform="$1" claude_dest="$2"
+  case "$platform" in
+    codex) printf '%s' "${claude_dest/.claude\//.agents/}" ;;
+    *) printf '%s' "${claude_dest/.claude\//.$platform/}" ;;
+  esac
+}
 
 # pi keeps user-level resources under ~/.pi/agent/, project-level ones under .pi/
 adjust_platform_path() {
@@ -101,7 +111,7 @@ remove_skill() {
       dest="$claude_dest"
     else
       dest=$(jq -r --arg s "$name" --arg p "install-$platform" '.skills[$s][$p] // empty' "$SCRIPT_DIR/registry.json")
-      [[ -z "$dest" ]] && dest="${claude_dest/.claude\//.$platform/}"
+      [[ -z "$dest" ]] && dest=$(default_skill_dest "$platform" "$claude_dest")
     fi
     [[ -z "$dest" ]] && continue
     dest=$(adjust_platform_path "$platform" "$dest")
