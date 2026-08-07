@@ -181,6 +181,14 @@ On Codex, each coder runs as its own `codex exec` process via `scripts/dispatch-
 native subagent would share the parent's working root, which breaks per-issue worktree isolation);
 the `codex` CLI must be on `PATH`.
 
+**Codex support means the local Codex CLI only.** The `codex` platform requires a real shell where
+`codex exec` can be spawned as a child process, a local git clone to create worktrees in, and
+already-completed auth (there is no interactive login inside a dispatch). The hosted Codex surfaces
+— Codex in ChatGPT and the Codex cloud/web agent — are not supported: the orchestrator cannot launch
+and `wait` on background worker processes there, and there is no persistent working root for
+per-issue worktrees or the `.scratch/<slug>/dispatch/*.report.md` files it reads back.
+Same applies to `pi`: local CLI only.
+
 To uninstall:
 
 ```bash

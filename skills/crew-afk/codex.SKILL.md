@@ -26,6 +26,9 @@ worker's `developer_instructions`, reasoning effort, and sandbox mode.
 Do **not** use Codex's native subagent spawning for implementation work in this sprint: native
 subagents share the parent's working root, so two workers would edit the same checkout.
 
+**Requires the local Codex CLI.** Every worker is a background `codex exec` child process against a
+local git clone. If `codex` is not on `PATH`, stop and say so — do not implement issues yourself.
+
 **Parallel processing with worktree isolation**: before dispatch, create a dedicated git worktree for
 each unblocked ready issue, launch every worker in the background with `&`, then `wait`. Each worker
 commits its work in its own worktree and writes a structured report to a file you read afterwards.

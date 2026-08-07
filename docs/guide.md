@@ -364,6 +364,10 @@ Use `/to-prd` → `/to-issues` to generate these from a feature description auto
 **Copilot:** invoke `@crew-afk` from the chat panel.
 
 **pi / Codex:** run `crew-afk` (workers are dispatched as separate `pi -p` / `codex exec` processes).
+Both require the respective **local CLI** on `PATH` — a sprint spawns background child processes
+against a local git clone. The hosted Codex surfaces (Codex in ChatGPT, Codex cloud/web) cannot run
+this sprint: no parent process to `wait` on, and no persistent working root for per-issue worktrees
+or dispatch report files.
 
 Sprint runs until all issues are complete, or two consecutive rounds produce zero completions (stall). On exit it saves a code review report to `.scratch/reviews/sprint-review-<timestamp>.md`.
 

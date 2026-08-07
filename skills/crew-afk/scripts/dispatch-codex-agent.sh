@@ -60,7 +60,7 @@ for candidate in \
 done
 [[ -n "$AGENT_FILE" ]] || die "agent definition not found for '$AGENT' (looked in .codex/agents and ~/.codex/agents)"
 
-command -v codex >/dev/null 2>&1 || die "codex CLI not found on PATH"
+command -v codex >/dev/null 2>&1 || die "codex CLI not found on PATH (crew-afk requires the local Codex CLI; hosted Codex in ChatGPT / Codex cloud is not supported)"
 
 # Scalar TOML value:  key = "value"
 toml_scalar() {
