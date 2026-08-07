@@ -107,6 +107,7 @@ remove_agent() {
   local platform path full
   for platform in "${PLATFORMS[@]}"; do
     path=$(jq -r --arg n "$name" --arg p "$platform" '.agents[$n].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
+    path="${path%$'\r'}"
     [[ -z "$path" ]] && continue
     path=$(adjust_platform_path "$platform" "$path")
     full="$REPO_ROOT/$path"
@@ -124,6 +125,7 @@ remove_skill() {
   local name="$1"
   local claude_dest
   claude_dest=$(jq -r --arg s "$name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
+  claude_dest="${claude_dest%$'\r'}"
   if [[ -z "$claude_dest" ]]; then
     echo "  $name: not found in registry — skipping"
     return
@@ -136,6 +138,7 @@ remove_skill() {
       dest="$claude_dest"
     else
       dest=$(jq -r --arg s "$name" --arg p "install-$platform" '.skills[$s][$p] // empty' "$SCRIPT_DIR/registry.json")
+      dest="${dest%$'\r'}"
       [[ -z "$dest" ]] && dest=$(default_skill_dest "$platform" "$claude_dest")
     fi
     [[ -z "$dest" ]] && continue
@@ -181,19 +184,26 @@ else
   # Remove everything — union of manifest (if present) and full registry
   echo "---"
 
-  # Collect agent names: manifest + registry, deduped via sort -u
+  # Collect agent names: manifest + registry, deduped via sort -u.
+  # jq on Windows emits CRLF, so every line is stripped of a trailing \r before use.
   _agent_names=()
-  while IFS= read -r name; do _agent_names+=("$name"); done < <(
+  while IFS= read -r name; do
+    name="${name%$'\r'}"
+    [[ -n "$name" ]] && _agent_names+=("$name")
+  done < <(
     { if [[ -f "$MANIFEST" ]]; then jq -r '.agents | keys[]' "$MANIFEST"; fi
-      jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"; } | sort -u
+      jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u
   )
   for name in "${_agent_names[@]+"${_agent_names[@]}"}"; do remove_agent "$name"; done
 
   # Collect skill names: manifest + registry, deduped via sort -u
   _skill_names=()
-  while IFS= read -r name; do _skill_names+=("$name"); done < <(
+  while IFS= read -r name; do
+    name="${name%$'\r'}"
+    [[ -n "$name" ]] && _skill_names+=("$name")
+  done < <(
     { if [[ -f "$MANIFEST" ]]; then jq -r '.skills | keys[]' "$MANIFEST"; fi
-      jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"; } | sort -u
+      jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u
   )
   for name in "${_skill_names[@]+"${_skill_names[@]}"}"; do remove_skill "$name"; done
 

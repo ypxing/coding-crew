@@ -278,12 +278,16 @@ STUB
 @test "uninstall leaves no empty platform directories behind" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh >/dev/null
-  TARGET_REPO="$TEMP_DIR" ./uninstall.sh >/dev/null
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
+  [ "$status" -eq 0 ]
 
   for dir in .claude .copilot .pi .codex .agents; do
     if [ -d "$TEMP_DIR/$dir" ]; then
-      echo "leftover $dir contains:"
-      find "$TEMP_DIR/$dir" | head -20
+      echo "REPO_ROOT was: $TEMP_DIR"
+      echo "--- uninstall output ---"
+      echo "$output"
+      echo "--- leftover $dir ---"
+      find "$TEMP_DIR/$dir" | head -5
     fi
     [ ! -d "$TEMP_DIR/$dir" ]
   done
