@@ -46,9 +46,39 @@ jobs:
       
       - name: Run tests (Ubuntu/macOS)
         if: runner.os != 'Windows'
-        run: bats --print-output-on-failure tests/
+        run: |
+          set -o pipefail
+          bats --print-output-on-failure tests/ 2>&1 | tee bats.log && exit 0
+          echo "::group::Failure summary"
+          if grep -q "^not ok" bats.log; then
+            grep -n -A 20 "^not ok" bats.log
+          else
+            echo "No 'not ok' lines: bats itself failed (setup_file/teardown/harness), not a test body."
+            tail -40 bats.log
+          fi
+          echo "::endgroup::"
+          exit 1
       
       - name: Run tests (Windows - Git Bash)
         if: runner.os == 'Windows'
         shell: bash
-        run: bats --print-output-on-failure tests/
+        run: |
+          set -o pipefail
+          bats --print-output-on-failure tests/ 2>&1 | tee bats.log && exit 0
+          echo "::group::Failure summary"
+          if grep -q "^not ok" bats.log; then
+            grep -n -A 20 "^not ok" bats.log
+          else
+            echo "No 'not ok' lines: bats itself failed (setup_file/teardown/harness), not a test body."
+            tail -40 bats.log
+          fi
+          echo "::endgroup::"
+          exit 1
+      
+      - name: Upload bats log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bats-log-${{ matrix.os }}
+          path: bats.log
+          if-no-files-found: ignore

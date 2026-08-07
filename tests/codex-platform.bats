@@ -37,13 +37,15 @@ teardown() {
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
 
   for agent in crew-coder crew-code-reviewer; do
-    run python3 -c "
+    # Content goes in on stdin, not as a path: on Windows the runner's python3 is a
+    # native build that cannot resolve MSYS paths like /tmp/tmp.XXXX/...
+    run bash -c "python3 -c \"
 import tomllib, sys
-d = tomllib.load(open('$TEMP_DIR/.codex/agents/$agent.toml', 'rb'))
+d = tomllib.loads(sys.stdin.buffer.read().decode('utf-8'))
 for key in ('name', 'description', 'developer_instructions'):
     assert d.get(key), 'missing ' + key
 assert len(d['developer_instructions']) > 200
-"
+\" < '$TEMP_DIR/.codex/agents/$agent.toml'"
     [ "$status" -eq 0 ]
   done
 }

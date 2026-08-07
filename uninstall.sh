@@ -77,6 +77,17 @@ adjust_platform_path() {
   fi
 }
 
+# rmdir that tolerates Windows' lazy directory-entry removal: a child deleted a
+# moment ago can keep the parent looking non-empty for a few milliseconds, which
+# would otherwise abort the prune walk and leave empty platform dirs behind.
+rmdir_if_empty() {
+  local dir="$1"
+  rmdir "$dir" 2>/dev/null && return 0
+  [[ -d "$dir" ]] || return 0
+  sleep 0.2
+  rmdir "$dir" 2>/dev/null
+}
+
 # Walk up from a removed path removing now-empty directories, stopping at REPO_ROOT.
 prune_empty_dirs() {
   local dir
@@ -84,7 +95,7 @@ prune_empty_dirs() {
   local root="$dir"
   dir="$(dirname "$REPO_ROOT/$1")"
   while [[ "$dir" != "$root" && "$dir" == "$root"/* ]]; do
-    rmdir "$dir" 2>/dev/null || break
+    rmdir_if_empty "$dir" || break
     echo "  removed ${dir#$root/}/"
     dir="$(dirname "$dir")"
   done
@@ -193,7 +204,7 @@ else
   # Drop .coding-crew/ only when nothing is left in it — issue-tracker.md and
   # tracker templates are user-customisable and must survive an uninstall.
   if [[ -d "$REPO_ROOT/.coding-crew" ]]; then
-    rmdir "$REPO_ROOT/.coding-crew" 2>/dev/null && echo "  removed .coding-crew/" || true
+    rmdir_if_empty "$REPO_ROOT/.coding-crew" && echo "  removed .coding-crew/" || true
   fi
 fi
 

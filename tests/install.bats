@@ -281,6 +281,10 @@ STUB
   TARGET_REPO="$TEMP_DIR" ./uninstall.sh >/dev/null
 
   for dir in .claude .copilot .pi .codex .agents; do
+    if [ -d "$TEMP_DIR/$dir" ]; then
+      echo "leftover $dir contains:"
+      find "$TEMP_DIR/$dir" | head -20
+    fi
     [ ! -d "$TEMP_DIR/$dir" ]
   done
   # .coding-crew survives only because it still holds user-customisable docs
