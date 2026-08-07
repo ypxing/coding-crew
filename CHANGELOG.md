@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-08-07
+
 ### Added
 
 - **New platform: `codex`** — `./install.sh codex` (and `bootstrap.sh codex`) installs skills to `.agents/skills/` (the repo/user location Codex actually scans) and agents to `.codex/agents/<name>.toml` (Codex's custom-agent format)
