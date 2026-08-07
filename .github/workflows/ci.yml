@@ -46,9 +46,9 @@ jobs:
       
       - name: Run tests (Ubuntu/macOS)
         if: runner.os != 'Windows'
-        run: bats tests/
+        run: bats --print-output-on-failure tests/
       
       - name: Run tests (Windows - Git Bash)
         if: runner.os == 'Windows'
         shell: bash
-        run: bats tests/
+        run: bats --print-output-on-failure tests/
