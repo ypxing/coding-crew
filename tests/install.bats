@@ -274,3 +274,15 @@ STUB
   [ "$status" -ne 0 ]
   [ ! -f "$TEMP_DIR/crew.lock" ]
 }
+
+@test "uninstall leaves no empty platform directories behind" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./uninstall.sh >/dev/null
+
+  for dir in .claude .copilot .pi .codex .agents; do
+    [ ! -d "$TEMP_DIR/$dir" ]
+  done
+  # .coding-crew survives only because it still holds user-customisable docs
+  [ -f "$TEMP_DIR/.coding-crew/docs/issue-tracker.md" ]
+}

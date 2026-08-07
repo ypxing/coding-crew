@@ -77,6 +77,19 @@ adjust_platform_path() {
   fi
 }
 
+# Walk up from a removed path removing now-empty directories, stopping at REPO_ROOT.
+prune_empty_dirs() {
+  local dir
+  dir=$(cd "$REPO_ROOT" 2>/dev/null && pwd) || return 0
+  local root="$dir"
+  dir="$(dirname "$REPO_ROOT/$1")"
+  while [[ "$dir" != "$root" && "$dir" == "$root"/* ]]; do
+    rmdir "$dir" 2>/dev/null || break
+    echo "  removed ${dir#$root/}/"
+    dir="$(dirname "$dir")"
+  done
+}
+
 remove_agent() {
   local name="$1"
   local removed=0
@@ -89,6 +102,7 @@ remove_agent() {
     if [[ -f "$full" ]]; then
       rm -f "$full"
       echo "  removed $path"
+      prune_empty_dirs "$path"
       removed=1
     fi
   done
@@ -119,6 +133,7 @@ remove_skill() {
     if [[ -d "$full" ]]; then
       rm -rf "$full"
       echo "  removed $dest/"
+      prune_empty_dirs "$dest"
       removed=1
     fi
   done

@@ -369,6 +369,23 @@ install_single_skill() {
   local skill_md_source="SKILL.md"
   [[ -f "$SCRIPT_DIR/skills/$source_dir/$PLATFORM.SKILL.md" ]] && skill_md_source="$PLATFORM.SKILL.md"
 
+  # platform-files gates individual source files to a single platform, so e.g. pi's
+  # dispatch-agent.sh never lands in a codex install. Build two lists: paths gated to
+  # some other platform (skipped, and pruned if an older install left them behind) and
+  # paths gated to this one (copied normally).
+  local -a foreign_files=()
+  local foreign_index="|"
+  local gate_platform gate_path
+  for gate_platform in "${PLATFORMS[@]}"; do
+    [[ "$gate_platform" == "$PLATFORM" ]] && continue
+    while IFS= read -r gate_path; do
+      gate_path="${gate_path%$'\r'}"
+      [[ -n "$gate_path" ]] || continue
+      foreign_files+=("$gate_path")
+      foreign_index="${foreign_index}${gate_path}|"
+    done < <(jq -r --arg s "$skill_name" --arg p "$gate_platform" '.skills[$s]["platform-files"][$p] // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  done
+
   # Copy files with diff output for changed files
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
@@ -377,6 +394,10 @@ install_single_skill() {
     if [[ "$rel_path" == "SKILL.md" || "$rel_path" == *".SKILL.md" ]]; then
       [[ "$rel_path" == "$skill_md_source" ]] || continue
       rel_path="SKILL.md"
+    fi
+    # Skip files another platform owns
+    if [[ "$foreign_index" == *"|$rel_path|"* ]]; then
+      continue
     fi
     local dest_file="$REPO_ROOT/$skill_dest/$rel_path"
     local rel_dest="${dest_file#$REPO_ROOT/}"
@@ -396,6 +417,12 @@ install_single_skill() {
   local variant_platform
   for variant_platform in "${PLATFORMS[@]}"; do
     rm -f "$REPO_ROOT/$skill_dest/$variant_platform.SKILL.md"
+  done
+  # Drop other platforms' gated files left behind by older installs, which copied
+  # every file regardless of platform.
+  local foreign_file
+  for foreign_file in "${foreign_files[@]+"${foreign_files[@]}"}"; do
+    rm -f "$REPO_ROOT/$skill_dest/$foreign_file"
   done
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any

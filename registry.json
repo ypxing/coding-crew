@@ -58,6 +58,14 @@
         "feature-branch-setup.sh",
         "configure-tracker-auto.sh"
       ],
+      "platform-files": {
+        "pi": [
+          "scripts/dispatch-agent.sh"
+        ],
+        "codex": [
+          "scripts/dispatch-codex-agent.sh"
+        ]
+      },
       "agent-deps": [
         "crew-coder",
         "crew-code-reviewer"

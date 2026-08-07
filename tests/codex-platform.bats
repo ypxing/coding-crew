@@ -176,3 +176,21 @@ assert len(d['developer_instructions']) > 200
   run grep -n '\.pi/\|dispatch-agent\.sh\|pi -p' skills/crew-afk/codex.SKILL.md
   [ "$status" -ne 0 ]
 }
+
+@test "codex install excludes pi's dispatch-agent.sh" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
+
+  [ -f "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
+  [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-agent.sh" ]
+}
+
+@test "reinstall prunes a foreign dispatch script left by an older install" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
+  # Simulate the pre-gating install that copied every platform's scripts
+  touch "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-agent.sh"
+
+  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
+  [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-agent.sh" ]
+}
