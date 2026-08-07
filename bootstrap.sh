@@ -3,6 +3,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
 #   curl -fsSL .../bootstrap.sh | bash -s -- copilot
 #   curl -fsSL .../bootstrap.sh | bash -s -- pi
+#   curl -fsSL .../bootstrap.sh | bash -s -- codex
 #   curl -fsSL .../bootstrap.sh | bash -s -- copilot --skills tdd,caveman
 #   curl -fsSL .../bootstrap.sh | bash -s -- --project
 #   curl -fsSL .../bootstrap.sh | bash -s -- --version v1.0.0
@@ -34,11 +35,11 @@ while [[ $# -gt 0 ]]; do
     --from-lockfile=*) LOCKFILE_MODE=1; LOCKFILE="${1#--from-lockfile=}"; shift ;;
     --from-lockfile)
       LOCKFILE_MODE=1; shift
-      if [[ $# -gt 0 && "$1" != --* && "$1" != all && "$1" != claude && "$1" != copilot && "$1" != pi ]]; then
+      if [[ $# -gt 0 && "$1" != --* && "$1" != all && "$1" != claude && "$1" != copilot && "$1" != pi && "$1" != codex ]]; then
         LOCKFILE="$1"; shift
       fi
       ;;
-    all|claude|copilot|pi) PLATFORM="$1"; shift ;;
+    all|claude|copilot|pi|codex) PLATFORM="$1"; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done

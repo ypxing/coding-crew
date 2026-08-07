@@ -19,6 +19,7 @@ You are the orchestrator. **You never implement issues yourself** — crew-coder
 ## Tracker Configuration
 
 Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
+
 1. `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md` (project-level)
 
 If it does not exist, run this script directly and then continue immediately — **do not invoke a sub-skill**:
@@ -50,6 +51,7 @@ fi
 ```
 
 Run the session initialization script. It handles:
+
 - Parsing optional `--jira TICKET-123` flag
 - Parsing optional `--feature-slug <slug>` flag (bypasses first-issue detection)
 - Feature branch creation/switching
@@ -63,6 +65,7 @@ bash "<skill-dir>/scripts/session-init.sh" $FEATURE_SLUG_FLAG "$@"
 ```
 
 The script will:
+
 - Create or switch to a feature branch (using provided slug, or deriving from first issue)
 - Initialize `.scratch/<feature-slug>/issues/open/` directory structure
 - Archive previous traces dir and create fresh `traces/`
@@ -123,6 +126,7 @@ Execute the `list` operation from `issue-tracker.md` to find all ready unblocked
 Log: `Round <N>: <count> issue(s)`
 
 Append to trace:
+
 ```bash
 echo "[$(date -u +%H:%M:%SZ)] [ROUND $round] issues=<count>" >> "$TRACE_LOG"
 ```
@@ -132,6 +136,7 @@ echo "[$(date -u +%H:%M:%SZ)] [ROUND $round] issues=<count>" >> "$TRACE_LOG"
 > **PARALLELISM**: Dispatch crew-coder agents in batches of **3** — issue up to 3 Agent tool calls in a single response turn, wait for all 3 to complete, then dispatch the next batch of up to 3, and so on. This caps concurrent LLM requests to avoid rate-limit (429) errors.
 
 For each unblocked issue, before dispatching, append to trace:
+
 ```bash
 echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] issue=<slug>" >> "$TRACE_LOG"
 ```
@@ -196,6 +201,7 @@ Each crew-coder returns:
 Classify results into `complete`, `partial`, `blocked` lists. Append all branch names to `all_branches`.
 
 For each result received, append to trace:
+
 ```bash
 echo "[$(date -u +%H:%M:%SZ)] [RESULT] branch=<branch> status=<complete|partial|blocked>" >> "$TRACE_LOG"
 ```
@@ -229,6 +235,7 @@ Runs three categories in `verification.md` order: typecheck, lint, tests.
 - A `Verification: coverage gap — not_run: ...` line means lint and/or typecheck had no discoverable command. This does not block the merge — many projects legitimately have neither, and failing them would stall every sprint on a false positive. Carry the listed categories into the sprint summary so the gap is visible rather than reading as a clean pass.
 
 Append to trace for each verification:
+
 ```bash
 echo "[$(date -u +%H:%M:%SZ)] [VERIFY] branch=<branch> result=<pass|fail>" >> "$TRACE_LOG"
 ```
@@ -240,6 +247,7 @@ before it merges. Each review is independent — do not wait for all branches be
 first review. The reviewer has no edit capability and does not block the merge.
 
 Pass to the reviewer:
+
 ```
 Review this branch before it merges.
 Branch: <branch>
@@ -259,6 +267,7 @@ If there are no verified branches to review (all demoted to partial), print:
 `Code review: skipped (no verified branches this round)` and write no report for this round.
 
 Append to trace for each review:
+
 ```bash
 echo "[$(date -u +%H:%M:%SZ)] [REVIEW] branch=<branch> result=<done|skipped>" >> "$TRACE_LOG"
 ```
@@ -279,6 +288,7 @@ The script handles per-branch logic: already-merged branches are reported as suc
 Track which succeeded (exit 0 per branch reported as `success` in script output). Items whose branch failed to merge stay open (do not close their issues).
 
 For each merge attempt, append to trace:
+
 ```bash
 echo "[$(date -u +%H:%M:%SZ)] [MERGE] branch=<branch> success=<true|false>" >> "$TRACE_LOG"
 ```
@@ -346,6 +356,7 @@ bash "<skill-dir>/scripts/squash-commits.sh" --no-squash --platform claude
 ```
 
 The script will:
+
 - Parse the `--no-squash` flag and skip if present
 - Read sprint state file to get base SHA and `completed_slugs`
 - Skip if no completed issues or no commits to squash
@@ -425,6 +436,7 @@ Before removing anything, confirm the merged branch's content really is in `HEAD
 retained, or vice versa — the summary must match actual repository state.
 
 Before printing the summary, collect retained branches (partial + verification-failed) and append the EXIT trace line:
+
 ```bash
 echo "[$(date -u +%H:%M:%SZ)] [EXIT] merged=${#all_merged[@]} partial=${#all_partial[@]} blocked=${#all_blocked[@]}" >> "$TRACE_LOG"
 ```

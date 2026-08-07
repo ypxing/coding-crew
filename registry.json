@@ -9,7 +9,7 @@
   },
   "agents": {
     "crew-code-reviewer": {
-      "version": "1.4.0",
+      "version": "1.5.0",
       "source-dir": "crew-code-reviewer",
       "description": "Reviews one branch per dispatch, before that branch merges and before any squash; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
@@ -19,12 +19,13 @@
         "shims": {
           "claude": ".claude/agents/crew-code-reviewer.md",
           "copilot": ".copilot/agents/crew-code-reviewer.agent.md",
-          "pi": ".pi/agents/crew-code-reviewer.md"
+          "pi": ".pi/agents/crew-code-reviewer.md",
+          "codex": ".codex/agents/crew-code-reviewer.toml"
         }
       }
     },
     "crew-coder": {
-      "version": "1.6.0",
+      "version": "1.7.0",
       "source-dir": "crew-coder",
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
@@ -37,7 +38,8 @@
         "shims": {
           "claude": ".claude/agents/crew-coder.md",
           "copilot": ".copilot/agents/crew-coder.agent.md",
-          "pi": ".pi/agents/crew-coder.md"
+          "pi": ".pi/agents/crew-coder.md",
+          "codex": ".codex/agents/crew-coder.toml"
         }
       }
     }
@@ -45,16 +47,25 @@
   "skills": {
     "crew-afk": {
 
-      "version": "1.10.0",
+      "version": "1.11.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
       "install-copilot": ".copilot/skills/crew-afk",
       "install-pi": ".pi/skills/crew-afk",
+      "install-codex": ".agents/skills/crew-afk",
       "scripts": [
         "feature-branch-setup.sh",
         "configure-tracker-auto.sh"
       ],
+      "platform-files": {
+        "pi": [
+          "scripts/dispatch-agent.sh"
+        ],
+        "codex": [
+          "scripts/dispatch-codex-agent.sh"
+        ]
+      },
       "agent-deps": [
         "crew-coder",
         "crew-code-reviewer"
@@ -153,6 +164,7 @@
       "install": ".claude/skills/crew-brainstorm",
       "install-copilot": ".copilot/skills/crew-brainstorm",
       "install-pi": ".pi/skills/crew-brainstorm",
+      "install-codex": ".agents/skills/crew-brainstorm",
       "deps": [
         "to-prd",
         "to-issues"
@@ -165,6 +177,7 @@
       "install": ".claude/skills/crew-grill",
       "install-copilot": ".copilot/skills/crew-grill",
       "install-pi": ".pi/skills/crew-grill",
+      "install-codex": ".agents/skills/crew-grill",
       "deps": [
         "domain-modeling",
         "to-prd",

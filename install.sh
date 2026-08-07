@@ -42,7 +42,7 @@ elif [[ "${1:-}" == "--from-lockfile" ]]; then
   PLATFORM="all"
   AGENT="all"
 else
-  PLATFORM="${1:-all}"    # all | claude | copilot | pi
+  PLATFORM="${1:-all}"    # all | claude | copilot | pi | codex
   AGENT="${2:-all}"       # all | crew-coder | crew-code-reviewer | --skill <name> | --skills a,b
 fi
 
@@ -67,7 +67,7 @@ usage() {
   echo "       ./install.sh --update"
   echo "       ./install.sh --from-lockfile [path]"
   echo ""
-  echo "  platform:        all (default), claude, copilot, pi"
+  echo "  platform:        all (default), claude, copilot, pi, codex"
   echo "  agent:           all (default), crew-code-reviewer, crew-coder"
   echo "  --skill:         install a single skill (e.g. to-issues)"
   echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,to-issues)"
@@ -109,8 +109,8 @@ if [[ "$UPDATE_MODE" == "false" ]]; then
     usage
   fi
 
-  if [[ ! "$PLATFORM" =~ ^(all|claude|copilot|pi)$ ]]; then
-    echo "Error: invalid platform '$PLATFORM' — must be: all, claude, copilot, or pi" >&2
+  if [[ ! "$PLATFORM" =~ ^(all|claude|copilot|pi|codex)$ ]]; then
+    echo "Error: invalid platform '$PLATFORM' — must be: all, claude, copilot, pi, or codex" >&2
     usage
   fi
 fi
@@ -129,10 +129,24 @@ assert_safe_path() {
 }
 
 # Every platform install.sh knows about. Order matters only for output readability.
-PLATFORMS=(claude copilot pi)
+PLATFORMS=(claude copilot pi codex)
+
+# Registry skill paths are written Claude-style (.claude/skills/<name>). When a skill
+# declares no install-<platform> override, swap the leading directory for the one that
+# platform actually scans. Codex is the odd one out: it reads skills from .agents/skills
+# (repo scope) and $HOME/.agents/skills (user scope), not .codex/skills.
+default_skill_dest() {
+  local platform="$1" claude_dest="$2"
+  case "$platform" in
+    codex) printf '%s' "${claude_dest/.claude\//.agents/}" ;;
+    *) printf '%s' "${claude_dest/.claude\//.$platform/}" ;;
+  esac
+}
 
 # pi keeps user-level resources under ~/.pi/agent/ but project-level ones under .pi/.
 # Registry paths are written project-style; rewrite them when targeting $HOME.
+# Codex needs no adjustment: .agents/skills and .codex/agents are the same relative
+# paths at both project and user level.
 adjust_platform_path() {
   local platform="$1" path="$2"
   if [[ "$platform" == "pi" && "$path" == .pi/* && "$REPO_ROOT" == "$HOME" ]]; then
@@ -150,11 +164,11 @@ assert_identifier() {
   fi
 }
 
-# Helper: print diff if destination exists and differs from incoming content
+# Helper: report whether an incoming file is new, identical, or changed
 # Args: $1=incoming_content_file $2=dest_path
 # Returns: 0=new, 1=identical, 2=changed
-# Side effect: prints labeled diff for changed files
-check_and_diff() {
+# Side effect: prints a one-line notice for changed files
+check_dest_status() {
   local incoming="$1" dest="$2"
   if [[ ! -f "$dest" ]]; then
     return 0  # new file
@@ -162,10 +176,8 @@ check_and_diff() {
   if cmp -s "$incoming" "$dest"; then
     return 1  # identical
   fi
-  # Files differ — print labeled diff
   local rel_dest="${dest#$REPO_ROOT/}"
   echo "  $rel_dest (updated)"
-  diff -u "$dest" "$incoming" | sed "1s|^--- .*|--- $rel_dest|; 2s|^+++ .*|+++ incoming|" || true
   return 2  # changed
 }
 
@@ -246,7 +258,7 @@ install_agent() {
     
     # Check and diff, then write
     local status=0
-    check_and_diff "$tmpfile" "$dest" || status=$?
+    check_dest_status "$tmpfile" "$dest" || status=$?
     chmod 0644 "$tmpfile"
     mv "$tmpfile" "$dest" || { rm -f "$tmpfile"; exit 1; }
     trap - RETURN
@@ -328,7 +340,7 @@ install_single_skill() {
     if [[ -z "$skill_dest" ]]; then
       local claude_dest
       claude_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
-      skill_dest="${claude_dest/.claude\//.$PLATFORM/}"
+      [[ -n "$claude_dest" ]] && skill_dest=$(default_skill_dest "$PLATFORM" "$claude_dest")
     fi
   else
     skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
@@ -350,15 +362,49 @@ install_single_skill() {
   [[ -L "$REPO_ROOT/$skill_dest" ]] && rm -f "$REPO_ROOT/$skill_dest"
   mkdir -p "$REPO_ROOT/$skill_dest"
   
+  # Resolve which SKILL.md this platform gets BEFORE copying. The installed file is
+  # always named SKILL.md, so diffing the shared fallback against a previously
+  # installed platform variant reports the entire file as changed on every
+  # re-install. Pick the source now and copy it straight to SKILL.md.
+  local skill_md_source="SKILL.md"
+  [[ -f "$SCRIPT_DIR/skills/$source_dir/$PLATFORM.SKILL.md" ]] && skill_md_source="$PLATFORM.SKILL.md"
+
+  # platform-files gates individual source files to a single platform, so e.g. pi's
+  # dispatch-agent.sh never lands in a codex install. Build two lists: paths gated to
+  # some other platform (skipped, and pruned if an older install left them behind) and
+  # paths gated to this one (copied normally).
+  local -a foreign_files=()
+  local foreign_index="|"
+  local gate_platform gate_path
+  for gate_platform in "${PLATFORMS[@]}"; do
+    [[ "$gate_platform" == "$PLATFORM" ]] && continue
+    while IFS= read -r gate_path; do
+      gate_path="${gate_path%$'\r'}"
+      [[ -n "$gate_path" ]] || continue
+      foreign_files+=("$gate_path")
+      foreign_index="${foreign_index}${gate_path}|"
+    done < <(jq -r --arg s "$skill_name" --arg p "$gate_platform" '.skills[$s]["platform-files"][$p] // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  done
+
   # Copy files with diff output for changed files
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
+    # Every *.SKILL.md competes for one destination: SKILL.md. Copy only the variant
+    # this platform resolved to and skip the rest.
+    if [[ "$rel_path" == "SKILL.md" || "$rel_path" == *".SKILL.md" ]]; then
+      [[ "$rel_path" == "$skill_md_source" ]] || continue
+      rel_path="SKILL.md"
+    fi
+    # Skip files another platform owns
+    if [[ "$foreign_index" == *"|$rel_path|"* ]]; then
+      continue
+    fi
     local dest_file="$REPO_ROOT/$skill_dest/$rel_path"
     local rel_dest="${dest_file#$REPO_ROOT/}"
     mkdir -p "$(dirname "$dest_file")"
     
     local status=0
-    check_and_diff "$src_file" "$dest_file" || status=$?
+    check_dest_status "$src_file" "$dest_file" || status=$?
     cp "$src_file" "$dest_file"
     
     # Print path for new files (status=0)
@@ -366,17 +412,17 @@ install_single_skill() {
       echo "  $rel_dest"
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
-  # Select the right SKILL.md:
-  #   claude.SKILL.md / copilot.SKILL.md / pi.SKILL.md — platform-specific variant wins when present
-  #   SKILL.md                                         — shared fallback used by every platform
-  if [[ -f "$REPO_ROOT/$skill_dest/$PLATFORM.SKILL.md" ]]; then
-    rm -f "$REPO_ROOT/$skill_dest/SKILL.md"
-    mv "$REPO_ROOT/$skill_dest/$PLATFORM.SKILL.md" "$REPO_ROOT/$skill_dest/SKILL.md"
-  fi
-  # Drop whichever platform variants weren't selected
+  # Drop platform variants left behind by older installs, which copied every variant
+  # and selected one afterwards.
   local variant_platform
   for variant_platform in "${PLATFORMS[@]}"; do
     rm -f "$REPO_ROOT/$skill_dest/$variant_platform.SKILL.md"
+  done
+  # Drop other platforms' gated files left behind by older installs, which copied
+  # every file regardless of platform.
+  local foreign_file
+  for foreign_file in "${foreign_files[@]+"${foreign_files[@]}"}"; do
+    rm -f "$REPO_ROOT/$skill_dest/$foreign_file"
   done
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any

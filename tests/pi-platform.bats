@@ -132,3 +132,11 @@ teardown() {
   run grep -n "PLATFORM\" = \"pi\"" skills/crew-afk/scripts/squash-commits.sh
   [ "$status" -eq 0 ]
 }
+
+@test "pi install excludes codex's dispatch-codex-agent.sh" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
+
+  [ -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh" ]
+  [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
+}

@@ -147,7 +147,7 @@ teardown() {
   [ -f "$TEMP_DIR/.copilot/skills/crew-brainstorm/SKILL.md" ]
 }
 
-@test "reinstalling modified skill produces diff output" {
+@test "reinstalling modified skill reports the update without a diff body" {
   cd "$SCRIPT_DIR"
 
   # First install
@@ -159,9 +159,22 @@ teardown() {
   # Reinstall and capture output
   run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skill tdd"
 
-  # Verify diff markers appear in stdout
-  [[ "$output" =~ "---" ]]
-  [[ "$output" =~ "+++" ]]
+  # The changed file is named once, marked (updated)
+  [[ "$output" =~ "SKILL.md (updated)" ]]
+  # No diff body: no unified-diff headers or hunk markers
+  [[ ! "$output" =~ "+++ incoming" ]]
+  [[ ! "$output" =~ "@@" ]]
+}
+
+@test "reinstalling an unmodified install reports no updates" {
+  cd "$SCRIPT_DIR"
+
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk > /dev/null
+
+  run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skill crew-afk"
+
+  # Nothing changed on disk, so nothing should be reported as updated
+  [[ ! "$output" =~ "(updated)" ]]
 }
 
 @test "install creates .coding-crew/docs/issue-tracker.md in target repo" {
@@ -260,4 +273,24 @@ STUB
     --version latest --registry https://github.com/ypxing/coding-crew
   [ "$status" -ne 0 ]
   [ ! -f "$TEMP_DIR/crew.lock" ]
+}
+
+@test "uninstall leaves no empty platform directories behind" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh >/dev/null
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
+  [ "$status" -eq 0 ]
+
+  for dir in .claude .copilot .pi .codex .agents; do
+    if [ -d "$TEMP_DIR/$dir" ]; then
+      echo "REPO_ROOT was: $TEMP_DIR"
+      echo "--- uninstall output ---"
+      echo "$output"
+      echo "--- leftover $dir ---"
+      find "$TEMP_DIR/$dir" | head -5
+    fi
+    [ ! -d "$TEMP_DIR/$dir" ]
+  done
+  # .coding-crew survives only because it still holds user-customisable docs
+  [ -f "$TEMP_DIR/.coding-crew/docs/issue-tracker.md" ]
 }
