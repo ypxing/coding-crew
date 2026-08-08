@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-08-08
+
 ### Fixed
 
 All of the following were found by running the pi crew-afk pipeline end to end against a fresh
