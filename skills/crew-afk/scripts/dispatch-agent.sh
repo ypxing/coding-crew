@@ -82,6 +82,19 @@ SYSTEM_PROMPT=$(awk '
 AGENT_TOOLS=$(frontmatter_value tools)
 AGENT_MODEL=$(frontmatter_value model)
 
+# Preflight the allowlist. pi silently ignores names it does not recognise, so a tool
+# list copied from another platform's agent file (Claude's Grep/Glob/LS, for example)
+# degrades quietly into a smaller-than-intended toolset. Warn loudly instead.
+PI_KNOWN_TOOLS="read bash edit write web_search fetch_content get_search_content source_check mcp mcpScript"
+if [[ -n "$AGENT_TOOLS" ]]; then
+  for _t in $(printf '%s' "$AGENT_TOOLS" | tr -d '[]"' | tr ',' ' '); do
+    case " $PI_KNOWN_TOOLS " in
+      *" $_t "*) ;;
+      *) echo "dispatch-agent: warning: '$_t' is unknown to the pi CLI (not a pi tool) — check tools: in $AGENT_FILE" >&2 ;;
+    esac
+  done
+fi
+
 # --model inherit means "whatever the orchestrator session uses" — pass nothing.
 EFFECTIVE_MODEL=""
 if [[ -n "$MODEL" && "$MODEL" != "inherit" ]]; then
@@ -109,10 +122,10 @@ fi
 # runs with the worktree as cwd, which is what its PROJECT_ROOT check expects.
 if [[ -n "$OUT" ]]; then
   mkdir -p "$(dirname "$OUT")"
-  (cd "$DIR" && MAIN_ROOT="$MAIN_ROOT" pi "${ARGS[@]}" "$(cat "$PROMPT_FILE")") 2>>"${LOG:-/dev/null}" | tee "$OUT"
+  (cd "$DIR" && MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 pi "${ARGS[@]}" "$(cat "$PROMPT_FILE")") 2>>"${LOG:-/dev/null}" | tee "$OUT"
   status=${PIPESTATUS[0]}
 else
-  (cd "$DIR" && MAIN_ROOT="$MAIN_ROOT" pi "${ARGS[@]}" "$(cat "$PROMPT_FILE")") 2>>"${LOG:-/dev/null}"
+  (cd "$DIR" && MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 pi "${ARGS[@]}" "$(cat "$PROMPT_FILE")") 2>>"${LOG:-/dev/null}"
   status=$?
 fi
 

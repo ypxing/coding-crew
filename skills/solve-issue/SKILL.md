@@ -253,4 +253,11 @@ Before moving, verify all acceptance criteria in the issue file are satisfied:
 **Move to done:**
 
 7. If all acceptance criteria AND all cross-cutting requirements (if present) are met, execute the `mark-done` operation from `issue-tracker.md` with the issue path. Do not hardcode `mv` or `sed` — delegate entirely to the tracker operation.
+
+   **Exception — orchestrated runs.** Skip this step entirely if `CREW_ORCHESTRATED=1` is set in the
+   environment, or if your instructions say an orchestrator closes issues. In a crew-afk sprint the
+   orchestrator closes the issue only after independent verification, acceptance-criteria
+   verification, and code review pass on your branch. Closing it here would hide the issue from the
+   next round if one of those gates later demotes the result, orphaning the unmerged branch. Report
+   the outcome and leave the file in `issues/open/`.
 8. If any criteria are unmet, do NOT move the file. Instead, add a `## Unmet criteria` section explaining what's missing and why (descoped, blocked, moved to a new issue), and ask the user how to proceed.

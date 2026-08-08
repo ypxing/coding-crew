@@ -100,7 +100,12 @@ The same `--model` flag applies to both the coder and the reviewer dispatch.
 After `session-init.sh` completes, derive `FEATURE_SLUG` and `TRACE_LOG`, then emit the SESSION line:
 
 ```bash
-FEATURE_SLUG=$(git rev-parse --abbrev-ref HEAD | sed 's|^feature/||' | sed -E 's/^[A-Z]+-[0-9]+-//')
+FEATURE_SLUG=$(jq -r '.feature_slug // empty' "$(ls -1 .scratch/*/sprint-state.json | head -n1)")
+# session-init.sh recorded the slug from the directory the issues actually live in.
+# Never re-derive it from the branch name: a branch may be named anything, and the
+# old derivation silently pointed traces, resume state and the PRD lookup at a
+# directory containing no issues.
+[ -n "$FEATURE_SLUG" ] || { echo "ERROR: no feature_slug in sprint-state.json — rerun session-init.sh"; exit 1; }
 TRACE_LOG=".scratch/$FEATURE_SLUG/traces/orchestrator.log"
 mkdir -p ".scratch/$FEATURE_SLUG/traces"
 echo "[$(date -u +%H:%M:%SZ)] [SESSION] feature=$FEATURE_SLUG branch=$(git rev-parse --abbrev-ref HEAD)" >> "$TRACE_LOG"
@@ -206,7 +211,7 @@ For each result received, append to trace:
 echo "[$(date -u +%H:%M:%SZ)] [RESULT] branch=<branch> status=<complete|partial|blocked>" >> "$TRACE_LOG"
 ```
 
-**Schema pre-filter:** before stall detection, inspect every `complete` result. If any reported check has result `not_run` or `fail`, demote that result to `partial` — a worker that admits skipping a check is not complete. Move demoted items to the `partial` list immediately. This is pure report validation; it does not replace independent verification in Step 4.
+**Schema pre-filter:** inspect every `complete` result and demote it to `partial` if any reported check has result `fail`, or if `not_run` is reported for the test category — a worker that ran no tests has verified nothing. Move demoted items to the `partial` list immediately. A `not_run` for **lint or typecheck only** is a **coverage gap**, not a demotion: many projects legitimately have neither command, and demoting on that would stall every sprint on a false positive. This is the same policy `verify-worktree.sh` enforces — it is fatal only on a missing test command — so the two gates cannot disagree. Carry any coverage gap into the sprint summary so it never reads as a clean pass. This is pure report validation; it does not replace independent verification in Step 4.
 
 ### Step 3 — Stall detection
 
@@ -215,14 +220,15 @@ Otherwise reset `stall = 0`.
 
 Log: `Round <N>: <C> complete / <P> partial / <B> blocked`
 
-### Step 4 — Verify, Review, then Merge
+### Step 4 — Verify, Check Criteria, Review, then Merge
 
-**Pipeline order per branch: worker returns → schema pre-filter → verify → per-branch review → merge**
+**Pipeline order per branch: worker returns → schema pre-filter → verify-worktree → AC verify → per-branch review → merge → squash**
 
-For each `complete` branch, run in order: independent verification, then code review, then merge.
-A branch that fails verification is demoted to `partial` and skipped for review and merge.
+For each `complete` branch, run in order: independent verification, acceptance-criteria
+verification, code review, then merge. A branch that fails either verification gate is demoted to
+`partial` and skipped for review and merge — nothing unverified reaches the feature branch.
 
-**Per-branch verification (run before review and merge):**
+**Per-branch check verification (run first):**
 
 ```bash
 bash "<skill-dir>/scripts/verify-worktree.sh" --dir "<working_directory from worker report>"
@@ -240,9 +246,41 @@ Append to trace for each verification:
 echo "[$(date -u +%H:%M:%SZ)] [VERIFY] branch=<branch> result=<pass|fail>" >> "$TRACE_LOG"
 ```
 
-**Per-branch code review (run after verification passes, before merge):**
+**Per-branch acceptance-criteria verification (run after checks pass, before review and merge):**
 
-For each verified branch, dispatch a `crew-code-reviewer` Agent to review that branch's diff
+For each verified branch, spawn a regular (non-cheap) Agent to read the issue file and the branch
+diff and confirm every criterion in `## Acceptance criteria` (and `## Cross-cutting Requirements`,
+if present) is genuinely met. This is a correctness gate and must not run on a cheap tier. Run it
+here — before the merge — so a falsely-reported `complete` never lands on the feature branch.
+
+Pass to the agent:
+
+```
+Verify acceptance criteria for a branch that is about to merge. Do not edit any files.
+Branch: <branch>
+Issue file: <issue-file-path>
+Diff: git diff $(git merge-base <feature-branch> <branch>)..<branch>
+
+For each criterion in ## Acceptance criteria (and ## Cross-cutting Requirements if present),
+report `met` or `unmet` with the file and line that satisfies it. Report `unmet` when you cannot
+point at concrete evidence — the worker's own claim is not evidence.
+End with exactly one line: `AC: all-met` or `AC: unmet — <criterion>, <criterion>`.
+```
+
+- `AC: all-met` — proceed to per-branch review.
+- `AC: unmet — ...` — demote this result to `partial`, do not review or merge. Record the unmet
+  criteria in the sprint summary with the branch name, and retain the branch (Step 6 records it
+  under `retained_branches`) so the next round resumes in place.
+
+Append to trace for each criteria check:
+
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [ACVERIFY] branch=<branch> result=<all-met|unmet>" >> "$TRACE_LOG"
+```
+
+**Per-branch code review (run after both verification gates pass, before merge):**
+
+For each verified, criteria-met branch, dispatch a `crew-code-reviewer` Agent to review that branch's diff
 before it merges. Each review is independent — do not wait for all branches before starting the
 first review. The reviewer has no edit capability and does not block the merge.
 
@@ -263,7 +301,7 @@ Collect each reviewer's output. After all reviews complete, concatenate all bran
 the **Write tool**, never a shell heredoc) to `.scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md`.
 Create the `reviews/` directory if needed.
 
-If there are no verified branches to review (all demoted to partial), print:
+If there are no branches left to review (all demoted to partial), print:
 `Code review: skipped (no verified branches this round)` and write no report for this round.
 
 Append to trace for each review:
@@ -295,10 +333,9 @@ echo "[$(date -u +%H:%M:%SZ)] [MERGE] branch=<branch> success=<true|false>" >> "
 
 ### Step 5 — Housekeeping
 
-**Verify then close (per merged issue):** for each successfully merged item:
-
-1. **Verify acceptance criteria** — spawn a regular (non-cheap) Agent to read the issue file and confirm every criterion in `## Acceptance criteria` is genuinely met. This is a correctness gate and must not run on a cheap tier.
-2. If criteria are met, run `close-issue.sh` to perform the mechanical close (Status rewrite + file move):
+**Close (per merged issue):** acceptance criteria were already verified in Step 4, before the
+merge — do not re-verify here. For each successfully merged item, run `close-issue.sh` to perform
+the mechanical close (Status rewrite + file move):
 
 ```bash
 bash "<skill-dir>/scripts/close-issue.sh" "<issue-file-path>"
@@ -322,7 +359,7 @@ for slug in <newly merged slugs>; do
 done
 ```
 
-For each retained (partial or verification-failed) slug, record its branch name under
+For each retained (partial, verification-failed, or criteria-unmet) slug, record its branch name under
 `retained_branches` so the next round's dispatch can find and resume it. Clear the entry for any
 slug that completed this round, so a stale branch is never offered for resume:
 
@@ -422,7 +459,7 @@ still be checked out. So remove each merged branch's worktree first, then delete
 # Only ever pass merged worktrees here; retained ones must stay checked out.
 git worktree remove --force <merged-worktree-path> 2>/dev/null || true
 
-# Then delete only merged branch refs — retained (partial/verification-failed) branches are left intact
+# Then delete only merged branch refs — retained (partial/verification-failed/criteria-unmet) branches are left intact
 git branch -D -- <merged-branch1> <merged-branch2> ... 2>/dev/null || true
 
 # Safe to run unconditionally: prune only clears stale metadata for worktrees whose
@@ -435,7 +472,7 @@ Before removing anything, confirm the merged branch's content really is in `HEAD
 (`git -C <worktree-path> status --short`). Never report a branch as cleaned up when it was
 retained, or vice versa — the summary must match actual repository state.
 
-Before printing the summary, collect retained branches (partial + verification-failed) and append the EXIT trace line:
+Before printing the summary, collect retained branches (partial + verification-failed + criteria-unmet) and append the EXIT trace line:
 
 ```bash
 echo "[$(date -u +%H:%M:%SZ)] [EXIT] merged=${#all_merged[@]} partial=${#all_partial[@]} blocked=${#all_blocked[@]}" >> "$TRACE_LOG"
@@ -458,8 +495,8 @@ Blocked (<count>): <slug, slug, ...> | none
 - <branch>: <reason (failed checks or no command found)>
 
 ## Retained Branches
-<list of branches that were NOT deleted — partial or verification-failed. Omit section if none.>
-- <branch>: retained (<partial — committed WIP | verification-failed — checks did not pass>)
+<list of branches that were NOT deleted — partial, verification-failed, or criteria-unmet. Omit section if none.>
+- <branch>: retained (<partial — committed WIP | verification-failed — checks did not pass | criteria-unmet — <criterion>>)
 
 ## Coverage Report
 <coverage report from validation agent — only if PRD.md exists>

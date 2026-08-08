@@ -131,7 +131,7 @@ fi
 
 # MAIN_ROOT is exported so the agent's own environment setup can read it. The agent
 # runs with the worktree as its working root, which its PROJECT_ROOT check expects.
-MAIN_ROOT="$MAIN_ROOT" codex "${ARGS[@]}" - < "$COMBINED" 2>>"${LOG:-/dev/null}"
+MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 codex "${ARGS[@]}" - < "$COMBINED" 2>>"${LOG:-/dev/null}"
 status=$?
 
 if [[ -n "$LOG" ]]; then

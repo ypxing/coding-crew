@@ -8,6 +8,20 @@ argument-hint: "Optional PR number or URL (defaults to current branch's open PR)
 
 You are working through the review comments on a GitHub pull request. Follow every step below in order.
 
+## GitHub data access constraint
+
+All **GitHub issue and PR data** — PRs, issues, reviews, review comments, thread state, labels, files-changed — must be retrieved with the **`gh` CLI** (`gh pr ...`, `gh issue ...`, `gh api ...`, `gh api graphql`).
+
+Do not obtain that data any other way:
+
+- No GitHub MCP server tools, even if one is configured.
+- No web fetching / scraping of `github.com` PR or issue pages.
+- No direct calls to `api.github.com` via `curl`, `wget`, or an HTTP client with a hand-rolled token.
+- If a PR URL is passed as an argument, parse owner/repo/number out of it and pass those to `gh`; do not fetch the URL.
+- If `gh` seems unable to return something, try `gh api graphql` (see Step 2) before concluding it is unavailable. If it is genuinely unavailable, report the gap rather than switching transport.
+
+This applies only to GitHub issue/PR data. Fetching non-GitHub URLs (a spec or article linked in a comment), reading library docs, and using unrelated MCP tools are all fine — and encouraged when judging whether a reviewer is correct.
+
 ## Usage
 
 ```bash
@@ -43,9 +57,16 @@ Follow the `dep-install` skill to ensure dependencies are installed.
 Check that the GitHub CLI is installed and authenticated before doing anything else:
 
 ```bash
-command -v gh >/dev/null 2>&1 || { echo "Error: gh CLI not found — install from https://cli.github.com/"; exit 1; }
-gh auth status >/dev/null 2>&1 || { echo "Error: not authenticated — run 'gh auth login' first"; exit 1; }
+command -v gh >/dev/null 2>&1 || {
+  echo "Error: gh CLI not found — this skill requires it."
+  echo "  macOS:  brew install gh"
+  echo "  other:  https://cli.github.com/"
+  exit 1
+}
+gh auth status >/dev/null 2>&1 || { echo "Error: gh found but not authenticated — run 'gh auth login' first"; exit 1; }
 ```
+
+`gh` is a hard prerequisite, not a preference — every GitHub read in this skill is a `gh` invocation. If it is missing, stop and report; do not substitute another GitHub data source.
 
 ## Step 1 — Identify the PR
 
@@ -64,6 +85,21 @@ Fetch both inline review comments and top-level PR review comments:
 ```
 gh pr view <number> --json reviews,comments
 gh api repos/{owner}/{repo}/pulls/<number>/comments --paginate
+```
+
+Resolved-thread state is only available via GraphQL — still through `gh`:
+
+```bash
+gh api graphql -f query='
+  query($owner:String!,$repo:String!,$number:Int!){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$number){
+        reviewThreads(first:100){
+          nodes{ isResolved isOutdated path line comments(first:50){ nodes{ author{login} body } } }
+        }
+      }
+    }
+  }' -F owner=<owner> -F repo=<repo> -F number=<number>
 ```
 
 Group comments by file + thread so related replies are read together. Ignore comments that are already marked as resolved (`in_reply_to_id` chains where the root is resolved) unless the user says otherwise.
@@ -143,6 +179,7 @@ One bullet per dismissed comment with the reason.
 
 **Ground rules**
 
+- GitHub issue/PR data comes from the `gh` CLI only — no GitHub MCP tools, no scraping github.com, no raw `api.github.com` calls. Fetching non-GitHub reference material is fine.
 - Never mark a comment as dismissed just because it is inconvenient. Steelman the reviewer's concern first.
 - Never commit files unrelated to the addressed comments.
 - Never modify CI/CD configs (.github/workflows/, .gitlab-ci.yml, Jenkinsfile), auth/security modules, deployment scripts, .env files, or files containing secrets without explicitly naming each file and getting per-file user confirmation. If a comment requests changes to these areas, always classify as **Debatable** regardless of apparent merit.

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Fixed
+
+All of the following were found by running the pi crew-afk pipeline end to end against a fresh
+`git init` repo with no remote, no lint command and no typecheck command — the configuration under
+which a sprint previously failed at every stage. Regression tests live in
+`tests/workflow-integrity.bats`.
+
+- **`feature-branch-setup.sh`**: `git symbolic-ref refs/remotes/origin/HEAD` exits 128 when a repo has no remote or an unset `origin/HEAD`. With `set -euo pipefail` and stderr suppressed, that aborted the script — and therefore `session-init.sh` — with **exit 128 and no output**. Failure is now swallowed explicitly so the `main` default applies. Affected both `crew-afk` and `solve-issue`
+- **`crew-coder` (all platforms)**: the worker no longer closes its own issue. `solve-issue` step 7 moved the file to `issues/done/` before the orchestrator ran check verification, acceptance-criteria verification, and code review. A result later demoted to `partial` was then invisible to the next round (which lists only `issues/open/`), so the issue was never re-dispatched and its unmerged branch was silently orphaned. New **Issue Ownership** section in all four agent variants; `solve-issue` step 7 gains an explicit carve-out for orchestrated runs; dispatchers export `CREW_ORCHESTRATED=1`
+- **`crew-afk` (all four variants)**: the schema pre-filter demoted any `complete` result whose report contained `not_run`, while `verify-worktree.sh` deliberately treats a missing lint/typecheck as a non-fatal coverage gap. Since `crew-coder` is *required* to report `not_run` for absent commands, every sprint in a repo without both lint and typecheck stalled at zero merges. The pre-filter now demotes on `fail`, or on `not_run` for the **test** category only, matching `verify-worktree.sh`
+- **`squash-commits.sh`**: an issue with no `## What to build` section made `grep -v` filter everything out and return 1, killing the script under `pipefail` before the existing `-z "$TITLE"` slug fallback could run. The sprint ended with commits unsquashed and no error message. The fallback is now reachable
+- **`session-init.sh` / `crew-afk` (all variants) / `squash-commits.sh`**: the feature slug was derived three incompatible ways (first issue's slug, branch basename minus `-NN-`, branch minus `feature/` and JIRA prefix). Running `/crew-afk` without a path argument created a second `.scratch/<first-issue-slug>/` tree and wrote sprint state, traces and `session-start-sha` there while the issues, PRD and dispatch files stayed in the real feature directory. `session-init.sh` now derives the slug from the issue path and records it as `.feature_slug` in `sprint-state.json`, which is the single source of truth everywhere downstream
+- **`crew-coder` / `crew-code-reviewer` (pi)**: both pinned `model: sonnet`, a Claude alias. `dispatch-agent.sh` forwarded it as `pi --model sonnet`, which fuzzy-matched an inaccessible `amazon-bedrock` entry and killed **every** dispatch with `Validation error: The provided model identifier is invalid` and an empty report. Neither definition pins a model now, matching the policy `tests/model-policy.bats` already asserted for the reviewer
+- **`crew-afk` (pi, codex)**: the per-branch reviewer dispatch omitted `$MODEL_FLAG`, so review ran on a different model than the sprint was asked to use — and, before the fix above, failed outright
+- **`close-issue.sh`**: now idempotent. An issue already in `done/` is normalised and reported as `already closed` (exit 0) instead of aborting the orchestrator mid-pipeline
+- **`crew-code-reviewer`**: only emits `## Session Review Summary` for multi-branch invocations. Per-branch dispatch (what `crew-afk` does) produced N duplicate "session" summaries, dependency audits and one-row totals tables in the appended report
+- **`crew-coder` (all platforms)**: "Never write files outside `$PROJECT_ROOT`" contradicted the same file's requirement to write a trace log under `$MAIN_ROOT`. The rule now names its two exceptions
+- **`verify-worktree.sh`**: pluralises `(2 categories not run)`
+
+### Changed
+
+- **`crew-coder` / `crew-code-reviewer` (pi)**: `tools:` no longer lists `grep`, `find` and `ls` — tool names carried over from the Claude definitions that the pi CLI does not provide. pi ignores unknown names silently, so the agents were being told they had capabilities they lacked
+- **`dispatch-agent.sh`**: preflights the frontmatter `tools:` list against pi's tool registry and warns on unknown names, so the next cross-platform copy-paste is caught at dispatch time
+- **`install.sh`**: warns when a user-level copy of `crew-afk`, `crew-coder`, `crew-code-reviewer` or `solve-issue` exists that may shadow the project install (pi resolves the user-level definition first, which makes a project install look like a no-op)
+
 ## [1.14.0] - 2026-08-07
 
 ### Added

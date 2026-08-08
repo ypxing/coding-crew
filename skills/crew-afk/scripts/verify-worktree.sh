@@ -321,7 +321,8 @@ fi
 
 if [ "$OVERALL_EXIT" -eq 0 ]; then
   if [ "${#NOT_RUN[@]}" -gt 0 ]; then
-    echo "Verification: success — all discovered checks pass (${#NOT_RUN[@]} category not run)"
+    if [ "${#NOT_RUN[@]}" -eq 1 ]; then CATEGORY_WORD="category"; else CATEGORY_WORD="categories"; fi
+    echo "Verification: success — all discovered checks pass (${#NOT_RUN[@]} $CATEGORY_WORD not run)"
   else
     echo "Verification: success — all checks pass"
   fi
