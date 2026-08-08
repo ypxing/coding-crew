@@ -46,6 +46,12 @@ else
     exit 1
   fi
 
+  # The feature slug is a property of where the issues live, not of the branch name.
+  # Deriving it from the branch (which feature-branch-setup.sh names after the first
+  # issue) would point sprint state, traces and the PRD lookup at a directory that
+  # holds no issues.
+  DERIVED_FROM_PATH=$(printf '%s' "$FIRST_ISSUE" | sed 's|^\./||' | sed 's|^\.scratch/||' | sed 's|/.*||')
+
   # Use shared feature branch setup script (handles branch creation/switching with JIRA support)
   # feature-branch-setup.sh is copied into this skill's scripts/ directory during install.sh
   bash "$(dirname "$0")/feature-branch-setup.sh" "$FIRST_ISSUE" "${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"}"
@@ -54,15 +60,12 @@ fi
 # Get current branch after setup
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-# Derive feature-slug: use provided value if given, otherwise derive from branch name
+# Derive feature-slug: use provided value if given, otherwise use the directory the
+# issues actually live in. Never derive it from the branch name — see above.
 if [ -n "$FEATURE_SLUG_ARG" ]; then
   FEATURE_SLUG="$FEATURE_SLUG_ARG"
 else
-  FEATURE_SLUG="$CURRENT_BRANCH"
-  # Strip 'feature/' prefix if present
-  FEATURE_SLUG="${FEATURE_SLUG#feature/}"
-  # Strip JIRA prefix pattern (e.g., PROJ-123-)
-  FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed -E 's/^[A-Z]+-[0-9]+-//')
+  FEATURE_SLUG="$DERIVED_FROM_PATH"
 fi
 
 # Validate feature-slug is non-empty after stripping
@@ -109,15 +112,17 @@ if [ ! -f "$STATE_FILE" ]; then
   # Create new state file with initial branch entry
   echo "{}" | jq --arg branch "$CURRENT_BRANCH" \
                   --arg sha "$BASE_SHA" \
+                  --arg slug "$FEATURE_SLUG" \
                   --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-                  '.branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
+                  '.feature_slug = $slug | .branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
                   > "$STATE_FILE"
 else
   # Read existing state, add/update current branch entry
   jq --arg branch "$CURRENT_BRANCH" \
      --arg sha "$BASE_SHA" \
+     --arg slug "$FEATURE_SLUG" \
      --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-     '.branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
+     '.feature_slug = $slug | .branches[$branch] = {base_sha: $sha, created_at: $timestamp}' \
      "$STATE_FILE" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
 fi
 

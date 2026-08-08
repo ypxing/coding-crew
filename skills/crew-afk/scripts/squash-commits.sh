@@ -32,15 +32,33 @@ if [ "$NO_SQUASH" = true ]; then
   exit 0
 fi
 
-# Derive feature-slug from current branch name
+# Resolve the feature slug. The state file written by session-init.sh is the single
+# source of truth (`.feature_slug`); the branch name is only a fallback for state
+# files written by an older version, because a branch may be named anything.
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-FEATURE_SLUG="$CURRENT_BRANCH"
-# Strip 'feature/' prefix if present
-FEATURE_SLUG="${FEATURE_SLUG#feature/}"
-# Strip JIRA prefix pattern (e.g., PROJ-123-)
-FEATURE_SLUG=$(echo "$FEATURE_SLUG" | sed -E 's/^[A-Z]+-[0-9]+-//')
 
-STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
+BRANCH_DERIVED="${CURRENT_BRANCH#feature/}"
+BRANCH_DERIVED=$(echo "$BRANCH_DERIVED" | sed -E 's/^[A-Z]+-[0-9]+-//')
+
+STATE_FILE=""
+FEATURE_SLUG=""
+for candidate in .scratch/*/sprint-state.json; do
+  [ -f "$candidate" ] || continue
+  candidate_slug=$(jq -r '.feature_slug // empty' "$candidate")
+  candidate_dir=$(basename "$(dirname "$candidate")")
+  [ -n "$candidate_slug" ] || candidate_slug="$candidate_dir"
+  # Prefer the state file that knows about the branch we are on.
+  if [ "$(jq -r --arg b "$CURRENT_BRANCH" '.branches[$b] // empty' "$candidate")" != "" ]; then
+    STATE_FILE="$candidate"
+    FEATURE_SLUG="$candidate_slug"
+    break
+  fi
+done
+
+if [ -z "$STATE_FILE" ]; then
+  FEATURE_SLUG="$BRANCH_DERIVED"
+  STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
+fi
 
 if [ ! -f "$STATE_FILE" ]; then
   echo "Warning: No sprint state file found. Skipping squash."
@@ -73,7 +91,10 @@ ISSUE_TITLES=()
 for slug in "${COMPLETED_SLUGS[@]}"; do
   ISSUE_FILE=$(find .scratch/*/issues/done -name "*${slug}.md" -type f 2>/dev/null | head -n 1)
   if [ -n "$ISSUE_FILE" ]; then
-    TITLE=$(sed -n '/## What to build/,/^##/p' "$ISSUE_FILE" | grep -v '^##' | grep -v '^[[:space:]]*$' | head -n1 | sed 's/^[[:space:]]*//')
+    # `grep -v` exits 1 when it filters everything out, which under `set -euo pipefail`
+    # would kill the script before the fallback below could run. Guard the pipeline so
+    # an issue without a `## What to build` section degrades to the slug instead.
+    TITLE=$(sed -n '/## What to build/,/^##/p' "$ISSUE_FILE" | grep -v '^##' | grep -v '^[[:space:]]*$' | head -n1 | sed 's/^[[:space:]]*//' || true)
     if [ -z "$TITLE" ]; then
       TITLE=$(echo "$slug" | sed 's/^[0-9]*-//' | tr '-' ' ')
     fi

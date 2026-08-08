@@ -4,8 +4,7 @@ description: >
   Reviews one branch from a crew-afk sprint session for security, quality, and correctness.
   Dispatched per-branch before that branch is merged and before any squash. Findings are
   advisory for the human — no branch is blocked or re-queued.
-tools: read, bash, grep, find, ls
-model: sonnet
+tools: read, bash
 user-invocable: false
 ---
 

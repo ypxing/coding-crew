@@ -11,7 +11,7 @@ set -euo pipefail
 #   3. Moves the file from .../issues/open/ to .../issues/done/.
 #
 # What it does NOT do:
-#   - Verify acceptance criteria (that is a separate agent step, run before this).
+#   - Verify acceptance criteria (that is a separate agent step, run pre-merge, before this).
 #   - Any judgment or content analysis.
 
 ISSUE_PATH="${1:-}"
@@ -22,6 +22,18 @@ if [ -z "$ISSUE_PATH" ]; then
 fi
 
 if [ ! -f "$ISSUE_PATH" ]; then
+  # A worker that closed the issue itself, or a re-run of this step, leaves the file
+  # in the sibling done/ directory. That is the desired end state, so report it and
+  # succeed rather than aborting the orchestrator mid-pipeline.
+  _open_dir=$(dirname "$ISSUE_PATH")
+  _already="$(dirname "$_open_dir")/done/$(basename "$ISSUE_PATH")"
+  if [ -f "$_already" ]; then
+    TMP_FILE="${_already}.tmp.$$"
+    sed 's/^Status: *.*/Status: done/' "$_already" > "$TMP_FILE"
+    mv "$TMP_FILE" "$_already"
+    echo "Closed: $(basename "$ISSUE_PATH") → $_already (already closed)"
+    exit 0
+  fi
   echo "ERROR: issue file not found: $ISSUE_PATH" >&2
   exit 1
 fi

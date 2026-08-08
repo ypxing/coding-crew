@@ -282,7 +282,13 @@ say so explicitly rather than omitting the branch block:
 SKIPPED: <reason — empty diff | diff too large to scope | dispatch failure>
 ```
 
-End with a session summary:
+End with a session summary **only when you were given more than one branch to review**. When the
+caller names a single branch — which is what crew-afk does per-branch, before each merge — stop
+after that branch's `## Branch:` block. A per-branch invocation that also emits
+`## Session Review Summary`, a dependency audit, and a one-row totals table produces N duplicate
+"session" summaries in the appended report, none of which describe the session.
+
+For multi-branch invocations, end with:
 
 ```
 ## Session Review Summary

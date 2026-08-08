@@ -170,7 +170,12 @@ fi
 After `session-init.sh` completes, derive `FEATURE_SLUG` and `TRACE_LOG`, then emit the SESSION line:
 
 ```bash
-FEATURE_SLUG=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD | sed 's|.*/||' | sed 's|-[0-9][0-9]-.*||')
+FEATURE_SLUG=$(jq -r '.feature_slug // empty' "$(ls -1 "$MAIN_ROOT"/.scratch/*/sprint-state.json | head -n1)")
+# session-init.sh recorded the slug from the directory the issues actually live in.
+# Never re-derive it from the branch name: a branch may be named anything, and the
+# old derivation silently pointed traces, resume state and the PRD lookup at a
+# directory containing no issues.
+[ -n "$FEATURE_SLUG" ] || { echo "ERROR: no feature_slug in sprint-state.json — rerun session-init.sh"; exit 1; }
 TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/orchestrator.log"
 mkdir -p "$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces"
 echo "[$(date -u +%H:%M:%SZ)] [SESSION] feature=$FEATURE_SLUG branch=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD)" >> "$TRACE_LOG"
@@ -203,7 +208,7 @@ For each issue, create a git worktree with branch `crew/<feature-slug>/<issue-sl
 
 ```bash
 FEATURE_BRANCH=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD)
-FEATURE_SLUG=<derived from current branch or sprint state>
+FEATURE_SLUG=<the value read from sprint-state.json above — never re-derived>
 ISSUE_SLUG=<slug — filename without leading digits and extension>
 BRANCH="crew/$FEATURE_SLUG/$ISSUE_SLUG"
 WORKTREE_PATH="$MAIN_ROOT/.scratch/worktrees/$BRANCH"
@@ -326,18 +331,18 @@ After `wait` returns, read every report file. For each result, append to trace:
 echo "[$(date -u +%H:%M:%SZ)] [RESULT] branch=<branch> status=<complete|partial|blocked>" >> "$TRACE_LOG"
 ```
 
-**Schema pre-filter:** before proceeding to step 3, inspect every `complete` result. If any reported check has result `not_run` or `fail`, demote that result to `partial` — a worker that admits skipping a check is not complete. This is pure report validation; it does not replace independent verification in step 3.
+**Schema pre-filter:** inspect every `complete` result and demote it to `partial` if any reported check has result `fail`, or if `not_run` is reported for the test category — a worker that ran no tests has verified nothing. A `not_run` for **lint or typecheck only** is a **coverage gap**, not a demotion: many projects legitimately have neither command, and demoting on that would stall every sprint on a false positive. This is the same policy `verify-worktree.sh` enforces — it is fatal only on a missing test command — so the two gates cannot disagree. Carry any coverage gap into the sprint summary so it never reads as a clean pass. This is pure report validation; it does not replace independent verification in step 3.
 
 Then proceed to step 3.
 
 ### 3. Issue housekeeping
 
-**Pipeline order per branch: verify → per-branch review → close → merge**
+**Pipeline order per branch: verify → AC verify → per-branch review → close → merge**
 
-**`Status: complete`** — independently verify checks in the worktree, run per-branch code review,
-then verify acceptance criteria, close the issue, and merge:
+**`Status: complete`** — independently verify checks in the worktree, verify acceptance criteria,
+run per-branch code review, then close the issue and merge:
 
-1. **Independent verification (before review and merge):** run project checks in the worker's worktree before teardown:
+1. **Independent verification (before AC verify, review, and merge):** run project checks in the worker's worktree before teardown:
 
 ```bash
 bash "<skill-dir>/scripts/verify-worktree.sh" --dir "<working_directory from worker report>"
@@ -354,7 +359,24 @@ A `Verification: coverage gap — not_run: ...` line means lint and/or typecheck
 git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
 ```
 
-2. **Per-branch code review (after verification passes, before merge):** dispatch
+2. **Verify acceptance criteria (after checks pass, before review and merge):** do this yourself in
+   this session (there is no dedicated verifier agent on Codex) — read the issue file and the branch
+   diff, and confirm every criterion in `## Acceptance criteria` (and `## Cross-cutting
+   Requirements`, if present) is genuinely met. Treat a criterion as **unmet** unless you can point
+   at the file and line that satisfies it; the worker's own `[x]` is a claim, not evidence. This is
+   a correctness gate and must not run on a cheap tier — run it here, before the merge, so a
+   falsely-reported `complete` never lands on the feature branch.
+
+   ```bash
+   git -C "$MAIN_ROOT" diff $(git -C "$MAIN_ROOT" merge-base "$FEATURE_BRANCH" "$BRANCH").."$BRANCH"
+   echo "[$(date -u +%H:%M:%SZ)] [ACVERIFY] branch=$BRANCH result=<all-met|unmet>" >> "$TRACE_LOG"
+   ```
+
+   If any criterion is unmet: demote this result to `partial`. Do not review, close, or merge.
+   Record the unmet criteria in the sprint summary with the branch name and retain the branch so the
+   next round resumes in place. Then continue to the next issue.
+
+3. **Per-branch code review (after both verification gates pass, before merge):** dispatch
    `crew-code-reviewer` the same way, from the main checkout. The reviewer is read-only and does not
    block the merge — findings are advisory.
 
@@ -374,8 +396,12 @@ git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
      --dir "$MAIN_ROOT" \
      --prompt-file "$DISPATCH_DIR/$SLUG.review-prompt.md" \
      --out "$DISPATCH_DIR/$SLUG.review.md" \
-     --log "$TRACE_LOG"
+     --log "$TRACE_LOG" \
+     $MODEL_FLAG
    ```
+
+   The reviewer takes the same `$MODEL_FLAG` as the coder — omitting it here would silently review
+   on a different model than the sprint was asked to run on.
 
    Append the reviewer's output block from `$DISPATCH_DIR/$SLUG.review.md` (starting with
    `## Branch: <branch-name>`) to
@@ -390,7 +416,6 @@ git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
    echo "[$(date -u +%H:%M:%SZ)] [REVIEW] branch=$BRANCH result=done" >> "$TRACE_LOG"
    ```
 
-3. **Verify acceptance criteria** — confirm every criterion in `## Acceptance criteria` is genuinely met. This is a correctness gate and must not run on a cheap tier.
 4. Run `close-issue.sh` to perform the mechanical close (Status rewrite + file move):
 
 ```bash
@@ -575,7 +600,7 @@ The validation agent output becomes the **Coverage Report** section in the final
 ## Worktree Cleanup (on exit)
 
 After squash and coverage validation, delete only the branch refs for **merged** branches. Retained
-branches (partial or verification-failed) are left intact — their worktrees were already removed in
+branches (partial, verification-failed, or criteria-unmet) are left intact — their worktrees were already removed in
 step 3, and the branch refs must survive so the next round's worker can resume on them.
 
 ```bash
@@ -596,7 +621,7 @@ After cleanup, list retained branches in the sprint summary so the human is awar
 
 ```
 ## Retained Branches
-- <branch>: retained (<partial — committed WIP | verification-failed — checks did not pass>)
+- <branch>: retained (<partial — committed WIP | verification-failed — checks did not pass | criteria-unmet — <criterion>>)
 ```
 
 Omit the section if no branches were retained.

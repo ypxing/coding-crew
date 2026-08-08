@@ -42,7 +42,12 @@ done
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
 
 CURRENT_BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(git -C "$PROJECT_ROOT" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+# `git symbolic-ref refs/remotes/origin/HEAD` exits 128 when there is no remote, or
+# when origin/HEAD was never set (common in local-only repos and in clones made with
+# --no-checkout or a bare mirror). Under `set -euo pipefail` an unguarded pipeline
+# here aborts the whole script with no message, so failure must be swallowed
+# explicitly and fall through to the "main" default below.
+DEFAULT_BRANCH=$(git -C "$PROJECT_ROOT" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
 
 # Fallback to "main" if origin/HEAD is not set
 if [ -z "$DEFAULT_BRANCH" ]; then

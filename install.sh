@@ -516,6 +516,39 @@ install_docs() {
   fi
 }
 
+# A user-level install of the same skill or agent can take precedence over the copy we
+# just wrote into the project, so a project install silently has no effect and the
+# consumer debugs against a stale definition. We cannot change the host agent's
+# resolution order, so say so plainly instead.
+warn_shadowing_user_installs() {
+  [[ "$REPO_ROOT" == "$HOME" ]] && return 0
+
+  local found=()
+  local d
+  for d in "$HOME/.pi/agent/skills" "$HOME/.pi/agent/agents" \
+           "$HOME/.claude/skills" "$HOME/.claude/agents" \
+           "$HOME/.copilot/skills" "$HOME/.copilot/agents" \
+           "$HOME/.agents/skills" "$HOME/.codex/agents"; do
+    [[ -d "$d" ]] || continue
+    local name
+    for name in crew-afk crew-coder crew-code-reviewer solve-issue; do
+      if [[ -e "$d/$name" || -e "$d/$name.md" || -e "$d/$name.toml" || -e "$d/$name.agent.md" ]]; then
+        found+=("$d/$name")
+      fi
+    done
+  done
+
+  [[ ${#found[@]} -eq 0 ]] && return 0
+
+  echo "---"
+  echo "WARNING: user-level copies exist and may shadow this project install:"
+  local f
+  for f in "${found[@]}"; do echo "  $f"; done
+  echo "  Some hosts (pi included) resolve the user-level definition first, so edits here"
+  echo "  can appear to have no effect. Remove or update those copies, or re-run with"
+  echo "  TARGET_REPO=\$HOME to install at user level instead."
+}
+
 write_manifest() {
   local manifest="$REPO_ROOT/.coding-crew/manifest.json"
   mkdir -p "$(dirname "$manifest")"
@@ -1076,5 +1109,7 @@ if [[ -n "$PIN_VERSION" ]]; then
   resolve_pin_version
   write_lockfile
 fi
+
+warn_shadowing_user_installs
 
 echo "Done."
