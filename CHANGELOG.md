@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-08-11
+
+### Added
+
+- **`crew-grill`**: Phase 1 now routes every frontier decision before asking it, so the user is only interrupted for choices they'd regret not being consulted on. Each node gets a single counterfactual — *if I decide this myself and the user only finds out at review time, would they be annoyed I didn't ask?* — which sorts it into one of three lanes: **Ask** (full `❓`/`➡️` treatment, and the round waits), **Notify** (one `🔎 Decided on your behalf:` line, no response required), or **Silent** (nothing in-flight). Trivia is *not* reported as it happens: listing it for the user to check merely trades a questioning burden for a reporting burden.
+  - *Annoyed* topics are named explicitly and always asked: schema/migrations/data model, wire formats and external contracts, auth/permissions/PII, anything costing money or moving scope, user-visible behaviour, and **conflicting** in-repo precedent (two live patterns means the user picks the winner)
+  - A claimed repo precedent must cite `path:line`. An uncited precedent is not a precedent and escalates to Notify or Ask
+  - Bias is stated asymmetrically — **escalation is cheap, silence is expensive** — because silently deciding something important is a far worse failure than asking about something trivial. Notify is the release valve, so the Silent criteria never have to be perfect
+  - Guards both directions: a round with zero questions that touched an *annoyed* topic is flagged as a routing smell, Notify is capped at ~3 per round (more than that means they were really Silent), and a user override forces a re-check of anything derived from it
+
+### Changed
+
+- **`crew-grill`**: the `~4 questions per round` cap is now explicitly a *budget* to spend on **depth rather than breadth** — sub-questions on the consequential fork and assumption-probing — on the grounds that trivia both consumes slots consequential questions need and trains the user to skim, degrading the answers to the questions that mattered
+- **`crew-grill`**: the instruction "The *decisions* are the user's — put each one and wait" contradicted the new routing and was reworded rather than supplemented: "A decision with one dominant answer is not a decision — it is a fact lookup plus a default, and it is yours. Genuine forks are the user's: put each one and wait"
+- **`crew-grill`**: the Phase 1 summary and the Phase 2 PRD handoff now carry Silent/Notify decisions tagged `(auto)`. Since these were never put to the user, `PRD.md`'s `## Decisions` section is the only place a reviewer or `crew-code-reviewer` can catch them
+
 ## [1.14.1] - 2026-08-08
 
 ### Fixed
