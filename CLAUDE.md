@@ -43,6 +43,10 @@ Two agents live under `agents/`:
 - **`crew-coder`** — implements a single local markdown issue using TDD, verifies checks, commits, and returns a structured summary. Runs in an isolated git worktree on Claude (runtime-managed via `isolation: worktree`), Copilot, and pi (orchestrator-managed via `git worktree add`). Before implementing, reads `PRD.md` from `.scratch/<feature-slug>/` if it exists, keeping architecture decisions and requirements context in memory. On Claude, inherits all tools from the spawning session (`disallowedTools: [Agent]` only) — so it gets `Grep`, `WebFetch`, `WebSearch`, and any MCP servers the consumer configured. `Agent` is withheld to prevent recursive spawning and unpredictable rate-limit stalls in unattended runs.
 - **`crew-code-reviewer`** — reviews branches before they merge in a crew-afk sprint; reports CRITICAL/HIGH/MEDIUM/LOW findings per branch with snippet-anchored citations at every severity. Findings are advisory and never block a merge. Invoked per-branch in Step 4 of crew-afk, before the merge and before squash.
 
+  **Conditional checklists (agent assets).** `protocol.md` carries only what applies everywhere — the always-on CRITICAL security classes, the AI-code correctness priorities, the Pre-Report Gate, the snippet requirement, Common False Positives, Zero-Findings, and the output format. The framework checklists live in `agents/crew-code-reviewer/assets/references/` (`quality.md`, `web-security.md`, `react.md`, `backend.md`) and which ones apply is decided by `assets/scripts/review-context.sh` from signal files (`package.json` deps, `go.mod`, `requirements.txt`, `Gemfile`, `.tsx`/`.html` files), which prints `STACK:` and one `REFERENCE:` line per file to read. `quality.md` is language-agnostic and always selected; React and backend blocks are not loaded in a repo that is neither. The six-row dependency-audit table the model used to execute by hand is now `assets/scripts/dependency-audit.sh` (verbatim tool output, `NOT RUN: <tool> not found`, always exit 0 — a missing audit tool is not a failed review). Nothing was deleted: `tests/crew-code-reviewer-references.bats` asserts that every pre-trim checklist item still exists in the protocol-plus-references union, and negative greps keep the framework blocks from creeping back inline.
+
+  Assets install **once**, to a platform-neutral path (`.coding-crew/code-review/`) declared as `install.assets` in `registry.json`, so four platforms do not get four copies of the same references; like `.coding-crew/scripts/` they are always overwritten and removed on uninstall, because a stale reference would be a checklist that no longer matches the protocol pointing at it. The reviewer always runs from the main checkout, so `$ROOT/.coding-crew/code-review/` resolves for every platform. When the scripts are absent (an older install) the protocol falls back to reading every file in `references/`, and with neither it reviews on the always-on classes alone.
+
 `crew-afk` is a **skill** (see Skills below) that declares `agent-deps` on `crew-coder` and `crew-code-reviewer` — installing the skill also installs both agents.
 
 ### Platform files and protocol inlining
@@ -55,6 +59,8 @@ Each agent has platform files directly under `agents/<agent>/`:
 - `codex.agent.toml` — installed to `.codex/agents/<name>.toml` (Codex's custom-agent TOML format: `name`, `description`, `developer_instructions`, plus optional `model`, `model_reasoning_effort`, `sandbox_mode`). Put `{{PROTOCOL}}` inside the `'''` literal block so markdown needs no escaping.
 
 Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, this is replaced inline with the contents of `agents/<agent>/protocol.md` or `agents/<agent>/workflow.js` (whichever exists; `protocol.md` is tried first). The installed file is self-contained. Agents that are single-platform (like `crew-coder`) can put everything in one file with no protocol source.
+
+An agent may also declare `install.assets` (`{ "source": "<dir under the agent dir>", "dest": "<repo-relative dir>" }`). That tree is copied once per install — not per platform — with `*.sh` made executable, always overwritten, and removed by `uninstall.sh --agent <name>`. Use it for runtime files the agent reads or executes itself (conditional references, helper scripts), not for prompt text: prompt text belongs inline via `{{PROTOCOL}}`.
 
 ### Platforms
 
@@ -95,7 +101,7 @@ bash scripts/render-skill.sh crew-afk codex | less
 
 `registry.json` is the source of truth for:
 
-- Install destination paths (per agent, per platform)
+- Install destination paths (per agent, per platform), plus `install.assets` for an agent's platform-neutral runtime files
 - Which source body each platform's `SKILL.md` is rendered from (`body` map)
 - Dependency graph (`deps` field — see each agent entry for its full dependency list)
 - Which skills to bundle with each agent
@@ -177,5 +183,5 @@ Issues live in `.scratch/<feature-slug>/issues/open/<NN>-<slug>.md`. Triage stat
 
 1. Create `agents/<name>/protocol.md` (markdown instructions) or `agents/<name>/workflow.js` (a Workflow script) — whichever applies. `install.sh` tries `protocol.md` first, then `workflow.js`.
 2. Create `agents/<name>/claude.<type>.md` and `agents/<name>/copilot.agent.md` directly under the agent directory (no `shims/` subdirectory). Use `{{PROTOCOL}}` where the protocol should be inlined.
-3. Add the agent entry to `registry.json` (install paths, deps, skills, docs).
+3. Add the agent entry to `registry.json` (install paths, deps, skills, docs). Add `install.assets` if the agent ships references or scripts it reads at runtime.
 4. Test: `TARGET_REPO=/tmp/test-repo ./install.sh claude <name>` and inspect the output.

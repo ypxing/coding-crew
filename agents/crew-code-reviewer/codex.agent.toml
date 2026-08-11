@@ -19,7 +19,8 @@ ROOT=$(pwd)
 
 All file reads and git commands use absolute paths under `$ROOT`.
 
-You are read-only: read files, grep, and run `git` for inspection only.
+You are read-only: read files, grep, and run `git` for inspection — plus the protocol's own
+`.coding-crew/code-review/scripts/*` helpers.
 Never edit, write, commit, or change branches — your output is a report, nothing else.
 
 ---

@@ -192,6 +192,36 @@ install_skills() {
   done
 }
 
+# Agent assets are platform-neutral runtime files the agent reads or executes itself — the
+# conditional review references and the scripts that select and run them. They install once, to a
+# shared path outside any platform directory, so four platforms do not get four copies. Like
+# .coding-crew/scripts they are mechanism, not user text, so they are always overwritten: a stale
+# reference would be a checklist that no longer matches the protocol pointing at it.
+install_agent_assets() {
+  local agent_name="$1" agent_source_dir="$2"
+  local src_rel dest_rel
+  src_rel=$(jq -r --arg n "$agent_name" '.agents[$n].install.assets.source // empty' "$SCRIPT_DIR/registry.json")
+  dest_rel=$(jq -r --arg n "$agent_name" '.agents[$n].install.assets.dest // empty' "$SCRIPT_DIR/registry.json")
+  [[ -n "$src_rel" && -n "$dest_rel" ]] || return 0
+  assert_safe_path "$src_rel" "agent assets source"
+  assert_safe_path "$dest_rel" "agent assets dest"
+
+  local src="$SCRIPT_DIR/agents/$agent_source_dir/$src_rel"
+  [[ -d "$src" ]] || { echo "Error: agent assets source not found: agents/$agent_source_dir/$src_rel" >&2; exit 1; }
+
+  local asset_file rel_path dest_file status
+  while IFS= read -r -d '' asset_file; do
+    rel_path="${asset_file#$src/}"
+    dest_file="$REPO_ROOT/$dest_rel/$rel_path"
+    mkdir -p "$(dirname "$dest_file")"
+    status=0
+    check_dest_status "$asset_file" "$dest_file" || status=$?
+    cp "$asset_file" "$dest_file"
+    [[ "$rel_path" == *.sh ]] && chmod +x "$dest_file"
+    if [[ $status -eq 0 ]]; then echo "  $dest_rel/$rel_path"; fi
+  done < <(find "$src" -type f -print0)
+}
+
 install_agent() {
   local agent_name="$1"
   local platform="$2"
@@ -292,6 +322,8 @@ install_agent() {
   local agent_version
   agent_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // "unknown"' "$SCRIPT_DIR/registry.json")
   MANIFEST_AGENT_ENTRIES+=("$agent_name $agent_version $platform")
+
+  install_agent_assets "$agent_name" "$agent_source_dir"
 
   # Install deps recursively (platform-specific deps take priority)
   local deps_key="deps"

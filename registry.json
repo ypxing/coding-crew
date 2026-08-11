@@ -15,7 +15,7 @@
   },
   "agents": {
     "crew-code-reviewer": {
-      "version": "1.6.0",
+      "version": "1.7.0",
       "source-dir": "crew-code-reviewer",
       "description": "Reviews one branch per dispatch, before that branch merges and before any squash; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
@@ -27,6 +27,10 @@
           "copilot": ".copilot/agents/crew-code-reviewer.agent.md",
           "pi": ".pi/agents/crew-code-reviewer.md",
           "codex": ".codex/agents/crew-code-reviewer.toml"
+        },
+        "assets": {
+          "source": "assets",
+          "dest": ".coding-crew/code-review"
         }
       }
     },

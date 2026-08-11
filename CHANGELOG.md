@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.22.0] - 2026-08-12
+
+### Added
+
+- **Conditional code review references and asset infrastructure.** `crew-code-reviewer` now loads framework-specific checklists (React, backend, web security) only when the codebase contains signal files (package.json deps, `go.mod`, `requirements.txt`, `.tsx`/`.html` files), reducing token usage and review scope creep
+  - New **review-context.sh** — detects stack signals and selects applicable references. Runs once per branch, output piped to the protocol as `STACK:` and one `REFERENCE:` line each
+  - New **conditional references** — `quality.md` (always), `react.md` (React), `backend.md` (Go/Python/Ruby), `web-security.md` (web frameworks)
+  - New **dependency-audit.sh** — runs language-specific audit tools (`npm audit`, `go mod verify`, `pip check`, `bundle check`) sequentially, verbatim output, always exits 0. Tool unavailability is `NOT RUN: <tool>` not a failure — audits are opt-in discovery, not blockers
+  - Registry gains `install.assets` — platform-neutral runtime files copied once per install (never per platform), always overwritten on re-install, removed on uninstall. Asset paths are named in `install.sh` so build inputs are never shipped to consumers
+  - Protocol now references `$ROOT/.coding-crew/code-review/` for all files; fallback reads every file in `references/` if script/assets are absent (older installs remain functional but unoptimized)
+  - Covered by `tests/crew-code-reviewer-references.bats` (18 tests): reference union completeness (every pre-trim item still exists), no unused references, script signal detection, dependency audit tool discovery, install/uninstall asset handling, and pre-trim/post-trim file consistency
+
 ## [1.21.0] - 2026-08-12
 
 ### Changed

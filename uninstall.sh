@@ -118,6 +118,17 @@ remove_agent() {
       removed=1
     fi
   done
+  # Agent assets install once to a platform-neutral path and are always overwritten by
+  # install.sh, so uninstall owns them too.
+  local assets_dest
+  assets_dest=$(jq -r --arg n "$name" '.agents[$n].install.assets.dest // empty' "$SCRIPT_DIR/registry.json")
+  assets_dest="${assets_dest%$'\r'}"
+  if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
+    rm -rf "$REPO_ROOT/$assets_dest"
+    echo "  removed $assets_dest/"
+    prune_empty_dirs "$assets_dest"
+    removed=1
+  fi
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 }
 
