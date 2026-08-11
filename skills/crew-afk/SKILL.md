@@ -304,6 +304,52 @@ Create the `reviews/` directory if needed.
 If there are no branches left to review (all demoted to partial), print:
 `Code review: skipped (no verified branches this round)` and write no report for this round.
 
+**Promote CRITICAL/HIGH findings (immediately after the report is written):**
+
+Findings are advisory and the branch merges regardless, so CRITICAL/HIGH findings need a route
+back into the sprint. Read `references/findings-promotion.md` for the policy, then for each
+reviewed branch whose review block contains at least one `[CRITICAL]` or `[HIGH]` finding:
+
+1. Check the depth bound — a fix issue's own findings are never promoted again:
+
+   ```bash
+   bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file-path>"
+   ```
+
+   If it prints `guard: skip — source-guarded`, leave the findings in the report and move on to
+   the next branch. Only continue when it prints `guard: promotable`.
+
+2. Write one criteria file for the branch — **one `- [ ]` line per CRITICAL/HIGH finding**,
+   restating the finding as a verifiable criterion (use the **Write tool**, never a heredoc):
+
+   ```
+   - [ ] <CRITICAL finding 1 restated as a criterion, with the file:line it cites>
+   - [ ] <HIGH finding 1 restated as a criterion, with the file:line it cites>
+   ```
+
+3. Park one fix issue for that branch (one issue per reviewed branch, never one per finding):
+
+   ```bash
+   bash "<skill-dir>/scripts/promote-findings.sh" defer \
+     --feature-slug "$FEATURE_SLUG" --branch "<branch>" --slug "<slug>" \
+     --title "Fix review findings: <issue title>" \
+     --report ".scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md" \
+     --criteria-file "<criteria file path>"
+   ```
+
+The issue is written with `Status: deferred-findings`, which the Step 1 `list` operation does not
+select — so it does **not** compete with in-flight issues and does not delay this or any later
+Phase 1 round. It is picked up only by the flush at the top of **## Wrap Up**.
+
+Do not promote MEDIUM or LOW findings; they stay in the report for a human to triage via
+`/crew-address-findings`.
+
+Append to trace for each promotion:
+
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [PROMOTE] branch=<branch> issue=<issue-path> severities=<CRITICAL,HIGH>" >> "$TRACE_LOG"
+```
+
 Append to trace for each review:
 
 ```bash
@@ -377,6 +423,34 @@ Return to Step 1.
 ## Wrap Up
 
 **Execute all steps in this section in order — do not skip any step even if there are no merged issues.**
+
+### Step 4.0 — Findings flush (before anything else)
+
+Every exit funnels through here — the no-issues exit in Step 1 and the stall exit in Step 3 alike.
+A sprint that stalled on unrelated issues still merged code that may carry a CRITICAL finding, so
+the flush runs regardless of why the loop ended.
+
+```bash
+bash "<skill-dir>/scripts/promote-findings.sh" flush --feature-slug "$FEATURE_SLUG"
+```
+
+- `FLUSH: promoted=<N>` — parked fix issues are now `ready-for-agent` (**Phase 2**). Set
+  `stall = 0` and **return to Step 1**, so the fixes run through the same pipeline as any other
+  issue: worktree, TDD, verification, AC verification, their own review, merge. Resetting `stall`
+  matters — entering Phase 2 at the stall limit would abort it on the first `partial` round
+  instead of granting the same one-dry-round retry Phase 1 gets. Do **not** run squash, coverage
+  validation, or cleanup on this pass.
+- `FLUSH: none` — nothing was parked. Continue to Step 4.5 below and finish the sprint.
+
+This terminates after at most one extra phase: fix issues carry a `Source:` line, so the Step 4
+`guard` check refuses to promote their findings, the parked set stays empty, and the next time
+Wrap Up runs the flush prints `FLUSH: none`. Because the flush rewrites `Status:` on disk rather
+than tracking a phase in memory or in `sprint-state.json`, it is idempotent and an interrupted
+sprint resumes with the fix issues looking like ordinary ready-for-agent work.
+
+```bash
+echo "[$(date -u +%H:%M:%SZ)] [FLUSH] promoted=<N|0>" >> "$TRACE_LOG"
+```
 
 ### Step 4.5 — Squash Commits
 
@@ -498,6 +572,10 @@ Blocked (<count>): <slug, slug, ...> | none
 <list of branches that were NOT deleted — partial, verification-failed, or criteria-unmet. Omit section if none.>
 - <branch>: retained (<partial — committed WIP | verification-failed — checks did not pass | criteria-unmet — <criterion>>)
 
+## Promoted Findings
+<CRITICAL/HIGH findings promoted to fix issues and run in Phase 2 — omit section if none>
+- <source branch>: <N> finding(s) → <fix issue slug> (<merged | partial | blocked>)
+
 ## Coverage Report
 <coverage report from validation agent — only if PRD.md exists>
 
@@ -510,7 +588,32 @@ Acceptance criteria:
 <criteria>
 
 ## Code Review
-<path to sprint-review-<TIMESTAMP>.md written during Step 4, or "skipped (no verified branches)">
+<paths to sprint-review-<TIMESTAMP>.md written during Step 4, or "skipped (no verified branches)">
 <if review was written: inline the "## Session Review Summary" section verbatim from that file>
-<if review was written: "To address findings: /crew-address-findings">
 ```
+
+### Findings reminder (last thing printed)
+
+Promotion in Step 4 only covered CRITICAL/HIGH findings on Phase 1 branches. MEDIUM/LOW findings,
+and any finding raised against a Phase 2 fix branch, are still unaddressed and need a human — so
+end the sprint by telling the user, with a real count rather than a blanket nudge:
+
+```bash
+bash "<skill-dir>/scripts/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG"
+```
+
+- `FINDINGS: open=<N> (<breakdown>)` plus one `report: <path>` line per report — print:
+
+  ```
+  ## Next Step
+  <N> review finding(s) still need triage (<breakdown>).
+  Reports: <report paths>
+  Run: /crew-address-findings
+  ```
+
+  Say `still need triage`, never `unfixed` — some will be correctly dismissed on review. If the
+  breakdown includes CRITICAL or HIGH, add: `Includes CRITICAL/HIGH findings raised against fix
+  branches, which are report-only by design — review these first.`
+
+- `FINDINGS: none` — print `No open review findings.` and nothing else. Do not suggest
+  `/crew-address-findings` when there is nothing for it to do.

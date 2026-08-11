@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`crew-afk`** (1.13.0): CRITICAL/HIGH review findings are now routed back into the same sprint as a second fix phase instead of waiting for a human. Policy lives in `skills/crew-afk/references/findings-promotion.md`; the mechanical half is `scripts/promote-findings.sh` (`guard` / `defer` / `flush` / `list` / `remind`) so all four platform variants behave identically
+  - **Phase 1** — after a branch's review is written, its CRITICAL/HIGH findings become a *parked* fix issue with `Status: deferred-findings` (one issue per reviewed branch, one acceptance criterion per finding). Parked issues are invisible to the loop's `ready-for-agent` selection, so they never delay the original queue. Grouping per branch rather than per finding is deliberate: findings from one branch cite one diff, so they cluster in the same files and cannot conflict with each other
+  - **Phase 2** — when the loop is about to exit, via *either* the no-issues path or the stall path, `flush` flips parked issues to `ready-for-agent`, resets the stall counter, and re-enters the loop. Fix issues run the identical pipeline: worktree, TDD, `verify-worktree.sh`, AC verification, their own review, merge
+  - Termination is structural, not counted: every fix issue carries a `Source:` line and `guard` refuses to promote findings raised against a `Source:`-bearing issue, so there is never a Phase 3. Phase is deliberately *not* mirrored into `sprint-state.json` — the on-disk `Status:` lines are the only record, which is what makes flush idempotent and crash-safe
+  - MEDIUM/LOW are never promoted. Because promotion is partial by design, every variant ends the sprint with `promote-findings.sh remind`, which counts the findings **not** covered by a promotion marker and prints either `## Next Step` with a real count and the report paths, or `No open review findings.` — so the user is never nudged toward an empty queue, and a CRITICAL raised against a Phase 2 fix branch (report-only by the depth bound) never ends the sprint in silence
+  - Self-tests in `skills/crew-afk/references/test-promote-findings.sh` (not installed — `install.sh` skips `test-*.sh`)
+
+### Changed
+
+- **`crew-address-findings`** (1.3.0): skips findings listed under a report's `## Promoted Findings` section — those `(branch, severity)` pairs were auto-promoted and already fixed in a later round of the same sprint. Findings from the same branch at *other* severities are still triaged normally, and skipped pairs are reported once under **Skipped**
+
 ## [1.15.0] - 2026-08-11
 
 ### Added

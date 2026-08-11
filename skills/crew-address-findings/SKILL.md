@@ -81,6 +81,14 @@ Read the report file. Extract every finding — each `[CRITICAL]`, `[HIGH]`, `[M
 
 Group findings by branch so related items are reviewed together.
 
+**Skip findings crew-afk already fixed.** If the report has a `## Promoted Findings` section, each
+line reads `<branch>: <severities> → <fix issue path>`. Those findings were auto-promoted to fix
+issues and implemented in a later round of the same sprint, so exclude every finding matching a
+listed (branch, severity) pair from the triage table entirely — do not re-read, re-triage, or
+re-implement them. Findings from the same branch at *other* severities (typically MEDIUM/LOW) are
+still open and must be triaged normally. List the skipped pairs once under **Skipped** in Step 6 as
+`already fixed in sprint (issue <path>)`.
+
 ## Step 3 — Challenge each finding
 
 For every finding, do the following **before** deciding whether to act on it:

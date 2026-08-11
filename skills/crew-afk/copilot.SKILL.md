@@ -173,7 +173,9 @@ Append to trace:
 echo "[$(date -u +%H:%M:%SZ)] [ROUND $round] issues=<count>" >> "$TRACE_LOG"
 ```
 
-If there are no unblocked ready issues, print `NO MORE TASKS` and stop.
+If there are no unblocked ready issues, run **## Findings Flush** first — it may promote parked
+fix issues and send you back here. Only if it prints `FLUSH: none` do you print `NO MORE TASKS`
+and stop.
 
 ### 2. Dispatch issues to crew-coder subagents
 
@@ -357,6 +359,44 @@ git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
    echo "[$(date -u +%H:%M:%SZ)] [REVIEW] branch=$BRANCH result=done" >> "$TRACE_LOG"
    ```
 
+   **Then promote CRITICAL/HIGH findings.** Findings are advisory and the branch merges anyway, so
+   CRITICAL/HIGH findings need a route back into the sprint. Read
+   `references/findings-promotion.md` for the policy. If this branch's review block contains at
+   least one `[CRITICAL]` or `[HIGH]` finding:
+
+   ```bash
+   REPORT=".scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md"
+
+   # Depth bound — a fix issue's own findings are never promoted again.
+   bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file-path>"
+   ```
+
+   If that prints `guard: skip — source-guarded`, leave the findings in the report and move on.
+   Only when it prints `guard: promotable`, write one criteria file with **one `- [ ]` line per
+   CRITICAL/HIGH finding** (restate each as a verifiable criterion including the file:line it
+   cites) and park a single fix issue for the whole branch:
+
+   ```bash
+   CRITERIA_FILE=".scratch/$FEATURE_SLUG/reviews/$SLUG.criteria.md"
+   cat > "$CRITERIA_FILE" <<'CRITERIA'
+   - [ ] <CRITICAL finding 1 restated as a criterion, with the file:line it cites>
+   - [ ] <HIGH finding 1 restated as a criterion, with the file:line it cites>
+   CRITERIA
+
+   bash "<skill-dir>/scripts/promote-findings.sh" defer \
+     --feature-slug "$FEATURE_SLUG" --branch "$BRANCH" --slug "$SLUG" \
+     --title "Fix review findings: $SLUG" \
+     --report "$REPORT" \
+     --criteria-file "$CRITERIA_FILE"
+
+   echo "[$(date -u +%H:%M:%SZ)] [PROMOTE] branch=$BRANCH severities=CRITICAL,HIGH" >> "$TRACE_LOG"
+   ```
+
+   One fix issue per reviewed branch, never one per finding. The issue is written with
+   `Status: deferred-findings`, which step 1 does not select — so it never competes with in-flight
+   issues and never delays a Phase 1 round. It is picked up only by **## Findings Flush**. Do not
+   promote MEDIUM or LOW findings; they stay in the report for a human via `/crew-address-findings`.
+
 4. Run `close-issue.sh` to perform the mechanical close (Status rewrite + file move):
 
 ```bash
@@ -450,13 +490,41 @@ Retained branches: <branch: reason> | none
 **Stall detection**: if **two consecutive rounds** both produce **zero new completions** (every result is `partial` or `blocked`), do not loop again. A single dry round does not stall — retry once first. Instead:
 
 1. Print the rollup.
-2. Print `NO MORE TASKS`.
-3. Stop.
+2. Run **## Findings Flush** — a sprint that stalled on unrelated issues still merged code that may
+   carry a CRITICAL finding, so the flush runs regardless of why the loop ended. If it promotes,
+   reset the stall counter and return to step 1.
+3. Print `NO MORE TASKS`.
+4. Stop.
 
-**Normal exit** (no more unblocked issues): after printing the final rollup and `NO MORE TASKS`,
-stop. Code review already ran per-branch before each merge in step 3.
+**Normal exit** (no more unblocked issues): run **## Findings Flush**, then after printing the
+final rollup and `NO MORE TASKS`, stop. Code review already ran per-branch before each merge in
+step 3.
 
 The user can re-trigger the sprint after resolving blockers.
+
+## Findings Flush
+
+Run this before **every** exit — the no-issues exit in step 1 and the stall exit alike. It is the
+Phase 1 → Phase 2 transition described in `references/findings-promotion.md`.
+
+```bash
+bash "<skill-dir>/scripts/promote-findings.sh" flush --feature-slug "$FEATURE_SLUG"
+echo "[$(date -u +%H:%M:%SZ)] [FLUSH] promoted=<N|0>" >> "$TRACE_LOG"
+```
+
+- `FLUSH: promoted=<N>` — parked fix issues are now `ready-for-agent` (**Phase 2**). Reset the
+  stall counter to `0` and **return to step 1**. The fixes run through the identical pipeline —
+  worktree, TDD, `verify-worktree.sh`, AC verification, their own code review, merge. Resetting
+  stall matters: entering Phase 2 at the stall limit would abort it on the first `partial` round
+  instead of granting the one-dry-round retry Phase 1 gets. Do **not** run squash, coverage
+  validation, or worktree cleanup on this pass.
+- `FLUSH: none` — nothing was parked. Proceed to **## Squash Commits** and finish the sprint.
+
+This adds at most one extra phase. Fix issues carry a `Source:` line, so the `guard` check in step
+3 refuses to promote their findings; the parked set stays empty and the next flush prints
+`FLUSH: none`. Because flush rewrites `Status:` on disk instead of tracking a phase in memory or in
+`sprint-state.json`, it is idempotent and an interrupted sprint resumes with the fix issues looking
+like ordinary ready-for-agent work.
 
 ## Squash Commits
 
@@ -565,3 +633,36 @@ After cleanup, list retained branches in the sprint summary so the human is awar
 ```
 
 Omit the section if no branches were retained.
+
+Also list any findings promoted this sprint (omit the section if none):
+
+```
+## Promoted Findings
+- <source branch>: <N> finding(s) → <fix issue slug> (<merged | partial | blocked>)
+```
+
+## Findings Reminder (last thing printed)
+
+Promotion only covered CRITICAL/HIGH findings on Phase 1 branches. MEDIUM/LOW findings, and any
+finding raised against a Phase 2 fix branch, are still unaddressed and need a human — so end the
+sprint by telling the user, with a real count rather than a blanket nudge:
+
+```bash
+bash "<skill-dir>/scripts/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG"
+```
+
+- `FINDINGS: open=<N> (<breakdown>)` plus one `report: <path>` line per report — print:
+
+  ```
+  ## Next Step
+  <N> review finding(s) still need triage (<breakdown>).
+  Reports: <report paths>
+  Run: /crew-address-findings
+  ```
+
+  Say `still need triage`, never `unfixed` — some will be correctly dismissed on review. If the
+  breakdown includes CRITICAL or HIGH, add: `Includes CRITICAL/HIGH findings raised against fix
+  branches, which are report-only by design — review these first.`
+
+- `FINDINGS: none` — print `No open review findings.` and nothing else. Do not suggest
+  `/crew-address-findings` when there is nothing for it to do.
