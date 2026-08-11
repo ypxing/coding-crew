@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Release automation** (`.github/workflows/release.yml`): pushing a `vX.Y.Z` tag now publishes the matching GitHub Release automatically, with notes lifted from that version's `CHANGELOG.md` section and the title taken from the tag annotation
+  - This closes a silent distribution failure: `bootstrap.sh` and `install.sh` resolve `--version latest` through GitHub's `/releases/latest` redirect, which only sees Release **objects** — a bare tag is invisible to it. `v1.15.0`, `v1.16.0`, and `v1.17.0` were each tagged hours to days before their Release existed, so every `--version latest` install in those windows resolved to `v1.14.1` and wrote it into `crew.lock`. The lockfile was correct; the release process was not
+  - Fatal if the tagged version has no `CHANGELOG.md` section — a release with no notes is the failure mode being removed. Idempotent: re-running (or re-pushing a tag) edits the existing release instead of failing
+- **CI release parity check** (`release-parity` job in `ci.yml`): fails the build when any `v*` tag has no corresponding GitHub Release, so the gap is caught on the next push rather than from a consumer's stale `crew.lock`
+  - Backfilled the three tags this check found already orphaned: `v1.8.1`, `v1.9.1`, `v1.10.0` (the last had never been pushed at all)
+
 ## [1.17.1] - 2026-08-11
 
 ### Fixed

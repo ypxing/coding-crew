@@ -1,0 +1,70 @@
+name: Release
+
+# Publishes a GitHub Release whenever a vX.Y.Z tag is pushed.
+#
+# Why this exists: bootstrap.sh and install.sh resolve `--version latest` through
+# GitHub's /releases/latest redirect, which only sees Release *objects* — a bare
+# tag is invisible to it. Tags pushed without a matching Release silently pin
+# every consumer to the last released version (v1.15.0/v1.16.0/v1.17.0 each
+# stranded consumers on v1.14.1 this way). Automating it removes the manual step.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish release for ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+
+          # Pull the body of this version's CHANGELOG section (stop at the next
+          # "## [" heading). Missing section is fatal: a release with no notes is
+          # the thing we're trying to stop shipping.
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { f = 1; next }
+            f && /^## \[/          { exit }
+            f                      { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [[ ! -s release-notes.md ]]; then
+            echo "::error::No CHANGELOG.md section found for [$version] — add one before tagging." >&2
+            exit 1
+          fi
+
+          # Title: the tag's annotation subject if it has one, else the version.
+          title=$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")
+          echo "title=${title:-$GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Idempotent: a re-pushed tag or a re-run updates the existing release
+          # rather than failing the workflow.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "${{ steps.notes.outputs.title }}" \
+              --notes-file release-notes.md \
+              --latest
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "${{ steps.notes.outputs.title }}" \
+              --notes-file release-notes.md \
+              --latest
+          fi

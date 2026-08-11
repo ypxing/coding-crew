@@ -82,3 +82,34 @@ jobs:
           name: bats-log-${{ matrix.os }}
           path: bats.log
           if-no-files-found: ignore
+
+  release-parity:
+    name: Every tag has a GitHub Release
+    runs-on: ubuntu-latest
+    # `--version latest` resolves through /releases/latest, which cannot see a
+    # bare tag — so a pushed tag with no Release silently pins consumers to an
+    # older version. Fail the build instead of discovering it from a stale
+    # crew.lock weeks later.
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare tags against releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort > /tmp/tags
+          gh release list --limit 200 --json tagName \
+            --template '{{range .}}{{.tagName}}{{"\n"}}{{end}}' | sort > /tmp/releases
+
+          missing=$(comm -23 /tmp/tags /tmp/releases)
+          if [[ -n "$missing" ]]; then
+            echo "::error::Tags with no GitHub Release (consumers on --version latest cannot see these):"
+            echo "$missing"
+            echo "Fix: gh release create <tag> --notes-file <notes>  (or re-push the tag to trigger release.yml)"
+            exit 1
+          fi
+          echo "All $(wc -l < /tmp/tags) tags have releases."
