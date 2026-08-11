@@ -617,8 +617,27 @@ normalize_registry_url() {
   printf '%s' "$url"
 }
 
-# Writes crew.lock recording the pinned version/registry plus the agents/skills
-# just installed. Only called when --version was passed — see PIN_VERSION above.
+# crew.lock records the release as "v<semver>", but tarball URLs and version
+# comparisons need the bare semver. Normalise on read rather than changing the
+# recorded format, so lockfiles written by older versions keep working.
+lock_bare_version() { printf '%s' "${1#v}"; }
+
+# Reads one item's version out of a lockfile. write_lockfile records objects
+# ({"version": "1.2.3"}); older lockfiles recorded a bare string, so accept both
+# — reading the object as if it were a string is what made every comparison
+# downstream see a mismatch and reinstall unconditionally.
+lock_item_version() {
+  local lockfile="$1" section="$2" name="$3"
+  jq -r --arg s "$section" --arg n "$name" \
+    'getpath([$s, $n]) as $e
+     | if ($e | type) == "object" then ($e.version // empty)
+       elif ($e | type) == "string" then $e
+       else empty end' "$lockfile"
+}
+
+# Writes crew.lock recording the pinned version/registry, the platform installed
+# for, plus the agents/skills just installed. Only called when --version was
+# passed — see PIN_VERSION above.
 write_lockfile() {
   local registry="$PIN_REGISTRY"
   if [[ -z "$registry" ]]; then
@@ -646,14 +665,18 @@ write_lockfile() {
       '$base | .[$n] = {version: $v}')
   done
 
+  # Record the platform too: without it, --update from a lockfile fell back to
+  # "all" and reinstalled every platform over a single-platform install.
   jq -n \
     --arg registry "$registry" \
-    --arg version "$PIN_VERSION" \
+    --arg version "v$(lock_bare_version "$PIN_VERSION")" \
+    --arg platform "$PLATFORM" \
     --argjson agents "$agents_json" \
     --argjson skills "$skills_json" \
     '{
       registry: $registry,
       version: $version,
+      platform: $platform,
       agents: $agents,
       skills: $skills
     }' > "$REPO_ROOT/crew.lock"
@@ -720,16 +743,30 @@ run_update_from_lockfile() {
   fi
   
   # Read lockfile
-  local current_version registry
+  local current_version registry lock_platform
   current_version=$(jq -r '.version // empty' "$lockfile")
   registry=$(jq -r '.registry // empty' "$lockfile")
+  lock_platform=$(jq -r '.platform // empty' "$lockfile")
   
   if [[ -z "$current_version" || -z "$registry" ]]; then
     echo "Error: crew.lock missing required fields (version, registry)" >&2
     exit 1
   fi
+
+  # Lockfiles written before platform was recorded fall back to the manifest,
+  # then to "all" — never silently widen a single-platform install.
+  if [[ -z "$lock_platform" ]]; then
+    local prior_manifest="$REPO_ROOT/.coding-crew/manifest.json"
+    if [[ -f "$prior_manifest" ]]; then
+      lock_platform=$(jq -r '.platform // empty' "$prior_manifest")
+    fi
+  fi
+  PLATFORM="${lock_platform:-all}"
+
+  current_version=$(lock_bare_version "$current_version")
   
-  echo "Current version: $current_version (from crew.lock)"
+  echo "Current version: v${current_version} (from crew.lock)"
+  echo "Platform: $PLATFORM (from crew.lock)"
   echo "Checking for updates from $registry..."
   
   # Fetch latest release version
@@ -737,8 +774,9 @@ run_update_from_lockfile() {
   if ! latest_version=$(fetch_latest_release_version "$registry"); then
     exit 1
   fi
+  latest_version=$(lock_bare_version "$latest_version")
   
-  echo "Latest version: $latest_version"
+  echo "Latest version: v${latest_version}"
   echo "---"
   
   # Compare versions
@@ -782,7 +820,8 @@ run_update_from_lockfile() {
   # Update agents from lockfile
   while IFS= read -r agent_name; do
     local old_version new_version
-    old_version=$(jq -r --arg n "$agent_name" '.agents[$n] // "unknown"' "$lockfile")
+    old_version=$(lock_item_version "$lockfile" agents "$agent_name")
+    old_version="${old_version:-unknown}"
     new_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
     
     if [[ -z "$new_version" ]]; then
@@ -800,7 +839,8 @@ run_update_from_lockfile() {
   # Update skills from lockfile
   while IFS= read -r skill_name; do
     local old_version new_version
-    old_version=$(jq -r --arg n "$skill_name" '.skills[$n] // "unknown"' "$lockfile")
+    old_version=$(lock_item_version "$lockfile" skills "$skill_name")
+    old_version="${old_version:-unknown}"
     new_version=$(jq -r --arg n "$skill_name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
     
     if [[ -z "$new_version" ]]; then
@@ -815,14 +855,15 @@ run_update_from_lockfile() {
     fi
   done < <(jq -r '.skills | keys[]' "$lockfile")
   
-  # Rewrite lockfile with new version and updated item versions
+  # Rewrite lockfile with new version and updated item versions. Item entries stay
+  # in write_lockfile's object form so the next --update can read them back.
   local new_agents_json="{}"
   while IFS= read -r agent_name; do
     local version
     version=$(jq -r --arg n "$agent_name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
     if [[ -n "$version" ]]; then
       new_agents_json=$(jq -n --argjson base "$new_agents_json" --arg n "$agent_name" --arg v "$version" \
-        '$base | .[$n] = $v')
+        '$base | .[$n] = {version: $v}')
     fi
   done < <(jq -r '.agents | keys[]' "$lockfile")
   
@@ -832,18 +873,20 @@ run_update_from_lockfile() {
     version=$(jq -r --arg n "$skill_name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
     if [[ -n "$version" ]]; then
       new_skills_json=$(jq -n --argjson base "$new_skills_json" --arg n "$skill_name" --arg v "$version" \
-        '$base | .[$n] = $v')
+        '$base | .[$n] = {version: $v}')
     fi
   done < <(jq -r '.skills | keys[]' "$lockfile")
   
   jq -n \
     --arg registry "$registry" \
-    --arg version "$latest_version" \
+    --arg version "v${latest_version}" \
+    --arg platform "$PLATFORM" \
     --argjson agents "$new_agents_json" \
     --argjson skills "$new_skills_json" \
     '{
       registry: $registry,
       version: $version,
+      platform: $platform,
       agents: $agents,
       skills: $skills
     }' > "$lockfile"
@@ -940,18 +983,25 @@ run_from_lockfile() {
     exit 1
   fi
   
-  local registry version
+  local registry version lock_platform
   registry=$(jq -r '.registry // empty' "$lockfile")
   version=$(jq -r '.version // empty' "$lockfile")
+  lock_platform=$(jq -r '.platform // empty' "$lockfile")
   
   if [[ -z "$registry" || -z "$version" ]]; then
     echo "Error: lockfile must contain 'registry' and 'version' fields" >&2
     exit 1
   fi
+
+  # The lockfile records "v<semver>"; tags/URLs are built from the bare semver.
+  version=$(lock_bare_version "$version")
+  # Reproduce the platform the lockfile was written for, not "all".
+  PLATFORM="${lock_platform:-all}"
   
   echo "Lockfile: $lockfile"
   echo "Registry: $registry"
-  echo "Version: $version"
+  echo "Version: v${version}"
+  echo "Platform: $PLATFORM"
   echo "---"
 
   # file:// registries point directly to a local directory — no tarball fetch needed
@@ -998,15 +1048,15 @@ run_from_lockfile() {
     echo "Installing agents from lockfile..."
     while IFS= read -r agent_name; do
       local lockfile_version registry_version
-      lockfile_version=$(jq -r --arg n "$agent_name" '.agents[$n] // empty' "$lockfile")
+      lockfile_version=$(lock_item_version "$lockfile" agents "$agent_name")
       registry_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
       
       if [[ -z "$registry_version" ]]; then
-        echo "Warning: agent '$agent_name' not found in registry $version — skipping"
+        echo "Warning: agent '$agent_name' not found in registry v${version} — skipping"
         continue
       fi
       
-      if [[ "$lockfile_version" != "$registry_version" ]]; then
+      if [[ -n "$lockfile_version" && "$lockfile_version" != "$registry_version" ]]; then
         echo "Warning: agent '$agent_name' version mismatch (lockfile: $lockfile_version, registry: $registry_version) — using registry version"
       fi
       
@@ -1022,15 +1072,15 @@ run_from_lockfile() {
     echo "Installing skills from lockfile..."
     while IFS= read -r skill_name; do
       local lockfile_version registry_version
-      lockfile_version=$(jq -r --arg n "$skill_name" '.skills[$n] // empty' "$lockfile")
+      lockfile_version=$(lock_item_version "$lockfile" skills "$skill_name")
       registry_version=$(jq -r --arg n "$skill_name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
       
       if [[ -z "$registry_version" ]]; then
-        echo "Warning: skill '$skill_name' not found in registry $version — skipping"
+        echo "Warning: skill '$skill_name' not found in registry v${version} — skipping"
         continue
       fi
       
-      if [[ "$lockfile_version" != "$registry_version" ]]; then
+      if [[ -n "$lockfile_version" && "$lockfile_version" != "$registry_version" ]]; then
         echo "Warning: skill '$skill_name' version mismatch (lockfile: $lockfile_version, registry: $registry_version) — using registry version"
       fi
       

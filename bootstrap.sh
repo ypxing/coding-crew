@@ -78,6 +78,9 @@ if [[ "$VERSION" == "latest" ]]; then
 fi
 
 if [[ -n "$VERSION" ]]; then
+  # Release tags are always v-prefixed; accept --version 1.2.0 as well as v1.2.0
+  # so the tarball URL below can't 404 on a missing "v".
+  VERSION="v${VERSION#v}"
   echo "Downloading coding-crew ($VERSION)..."
   curl -fsSL "$REPO/archive/refs/tags/$VERSION.tar.gz" \
     | tar xz -C "$TMP_DIR" --strip-components=1

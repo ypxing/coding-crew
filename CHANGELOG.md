@@ -1,6 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [1.17.1] - 2026-08-11
+
+### Fixed
+
+- **`install.sh` / `bootstrap.sh`**: the `crew.lock` round trip worked in neither direction — three bugs that compounded
+  - `write_lockfile` records the release as `v1.17.0`, but `--from-lockfile` built its tarball URL as `v${version}` → `.../tags/vv1.17.0.tar.gz` → 404. Any lockfile written by `--version` was uninstallable, which is the entire team-distribution path in the README. Versions are now normalised to bare semver on read (`lock_bare_version`), so both `v1.2.0` and `1.2.0` lockfiles resolve
+  - `--update` compared the lockfile's `v1.17.0` against `fetch_latest_release_version`'s `1.17.0` with plain `==`, so the `Already at v… — nothing to update` branch was unreachable: every `--update` re-downloaded the tarball, reinstalled everything, and announced `Update available: vv1.17.0 → v1.17.0`
+  - `crew.lock` never recorded the platform, so `--update` (which prefers the lockfile over the manifest) fell back to `all` and widened a `pi`-only install into `.claude/`, `.copilot/`, and `.codex/`. `write_lockfile` now records `platform`, and both `--update` and `--from-lockfile` install for it; lockfiles predating the field fall back to `manifest.json`'s platform, then to `all`
+  - Item versions are also read tolerantly: `write_lockfile` emits `{"version": "1.2.3"}` but the update path read `.agents[$n]` as a string (getting the whole object), so every item looked changed. `run_update_from_lockfile` now rewrites entries in the same object form it reads, instead of flattening them to bare strings and breaking the next run
+  - `bootstrap.sh` normalises `--version 1.2.0` to the `v`-prefixed tag before building its own tarball URL
+  - Covered by four new tests in `tests/install.bats`
 
 ## [1.17.0] - 2026-08-11
 
