@@ -26,7 +26,12 @@ FEATURE_BRANCH="$1"
 shift
 BRANCHES=("$@")
 
-RECEIPTS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/receipts.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
+
+# Each script traces its own step, so a merge that happened is always in the trace and
+# a merge that was skipped can never be traced as if it had run.
+_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
 
 # Ensure we are on the feature branch
 CURRENT=$(git rev-parse --abbrev-ref HEAD)
@@ -43,6 +48,7 @@ for BRANCH in "${BRANCHES[@]}"; do
   # report success and be silently skipped.
   if ! git rev-parse --verify --quiet "${BRANCH}^{commit}" >/dev/null; then
     echo "MERGE: $BRANCH failed (no such branch)" >&2
+    _trace MERGE "branch=$BRANCH success=false reason=no-such-branch"
     FAILED=1
     continue
   fi
@@ -53,6 +59,7 @@ for BRANCH in "${BRANCHES[@]}"; do
   if [ -f "$RECEIPTS_SCRIPT" ]; then
     if ! bash "$RECEIPTS_SCRIPT" check verify --branch "$BRANCH"; then
       echo "MERGE: $BRANCH failed (unverified — see receipt error above)" >&2
+      _trace MERGE "branch=$BRANCH success=false reason=unverified"
       FAILED=1
       continue
     fi
@@ -62,16 +69,19 @@ for BRANCH in "${BRANCHES[@]}"; do
   PENDING=$(git log "HEAD..${BRANCH}" --oneline 2>/dev/null)
   if [ -z "$PENDING" ]; then
     echo "MERGE: $BRANCH already-merged success"
+    _trace MERGE "branch=$BRANCH success=true reason=already-merged"
     continue
   fi
 
   # Attempt merge
   if git merge --no-ff "$BRANCH" -m "Merge branch '$BRANCH'" 2>&1; then
     echo "MERGE: $BRANCH success"
+    _trace MERGE "branch=$BRANCH success=true"
   else
     # Abort the failed merge to leave a clean state
     git merge --abort 2>/dev/null || true
     echo "MERGE: $BRANCH failed (conflict — aborted cleanly)" >&2
+    _trace MERGE "branch=$BRANCH success=false reason=conflict"
     FAILED=1
     # Continue to next branch
   fi

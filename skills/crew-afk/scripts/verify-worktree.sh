@@ -341,12 +341,23 @@ fi
 # never change the check outcome: this script's exit code must keep meaning "the
 # checks passed", and a missing receipt already fails closed at merge time.
 RECEIPTS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/receipts.sh"
-if [ -x "$RECEIPTS_SCRIPT" ] || [ -f "$RECEIPTS_SCRIPT" ]; then
+TRACE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/trace.sh"
+if [ -f "$RECEIPTS_SCRIPT" ]; then
   if [ "$OVERALL_EXIT" -eq 0 ]; then
     bash "$RECEIPTS_SCRIPT" write verify --dir "$WORKTREE_DIR" || true
   else
     bash "$RECEIPTS_SCRIPT" clear verify --dir "$WORKTREE_DIR" || true
   fi
+fi
+
+# Trace the gate result from the gate itself. The branch name comes from the worktree,
+# so the trace cannot disagree with what was actually checked.
+if [ -f "$TRACE_SCRIPT" ]; then
+  _vw_branch=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+  if [ "$OVERALL_EXIT" -eq 0 ]; then _vw_result=pass; else _vw_result=fail; fi
+  _vw_gap=""
+  [ "${#NOT_RUN[@]}" -gt 0 ] && _vw_gap=" not_run=${NOT_RUN[*]}"
+  bash "$TRACE_SCRIPT" VERIFY "branch=$_vw_branch result=$_vw_result$_vw_gap" 2>/dev/null || true
 fi
 
 exit "$OVERALL_EXIT"

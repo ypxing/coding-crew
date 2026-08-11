@@ -1,6 +1,5 @@
-3. **Per-branch code review (after both verification gates pass, before merge):** dispatch
-   `crew-code-reviewer` the same way, from the main checkout. The reviewer is read-only and does not
-   block the merge — findings are advisory.
+3. **Per-branch code review (after both gates pass, before merge):** dispatch `crew-code-reviewer`
+   the same way, from the main checkout. It is read-only and advisory — it does not block the merge.
 
    ```bash
    cat > "$DISPATCH_DIR/$SLUG.review-prompt.md" <<PROMPT
@@ -22,5 +21,4 @@
      $MODEL_FLAG
    ```
 
-   The reviewer takes the same `$MODEL_FLAG` as the coder — omitting it here would silently review
-   on a different model than the sprint was asked to run on.
+   The reviewer takes the coder's `$MODEL_FLAG`: omitting it silently reviews on another model.

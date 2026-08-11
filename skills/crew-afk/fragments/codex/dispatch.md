@@ -1,16 +1,9 @@
-**2c. Dispatch all workers in parallel**
+**2d. Dispatch all workers in parallel**
 
-After creating all worktrees, for each issue append to trace before dispatching:
-```bash
-echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] issue=<slug>" >> "$TRACE_LOG"
-```
-
-Write one prompt file per issue, then launch every worker in the background and wait for all of
-them. Prompts and reports live under `.scratch/$FEATURE_SLUG/dispatch/` so they survive the round
-and stay readable after the fact.
+Write one prompt file per issue under `$DISPATCH_DIR`, then launch every worker in the background and
+wait for all of them. The dispatch script writes the `DISPATCH` trace line itself.
 
 ```bash
-DISPATCH_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/dispatch"
 mkdir -p "$DISPATCH_DIR"
 
 # Per issue — write the prompt file (heredoc is quoted so nothing is expanded early):
@@ -38,10 +31,7 @@ bash "<skill-dir>/scripts/dispatch-codex-agent.sh" \
 wait
 ```
 
-Read each `$DISPATCH_DIR/<slug>.report.md` after `wait` returns — that file holds the worker's
-structured report. A non-zero exit or an empty report file means the worker died before reporting;
-treat that issue as `blocked` with reason `worker process failed — see traces/`.
-
-Per-worker traces are written by the worker itself to
-`.scratch/$FEATURE_SLUG/traces/<branch>.log`; the worker's stderr is appended to the orchestrator
-trace log.
+Read each `$DISPATCH_DIR/<slug>.report.md` after `wait` returns. A non-zero exit or an empty report
+means the worker died before reporting — treat that issue as `blocked`, reason
+`worker process failed — see traces/`. Workers trace to `traces/<branch>.log`; their stderr lands in
+the orchestrator log.

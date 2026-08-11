@@ -204,10 +204,10 @@ MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scr
 
 # ─── resume dispatch specifies how to test for the prior branch ──────────────
 
+# The lookup + ref test is mechanical, so it moved into state.sh resume (behaviour is
+# covered in tests/crew-afk-state.bats). The body only has to ask.
 @test "claude SKILL.md gives a concrete branch-existence check for resume dispatch" {
-  # The orchestrator must be able to choose between the resume and
-  # context-only dispatch messages, so the check has to be spelled out.
-  grep -q 'git branch --list' "$CLAUDE_SKILL"
+  grep -qE 'state\.sh" resume|git branch --list' "$CLAUDE_SKILL"
 }
 
 @test "claude SKILL.md records the branch name needed to resume across rounds" {
@@ -220,21 +220,29 @@ MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scr
 # lookup silently returns empty and every partial restarts from scratch.
 
 @test "claude SKILL.md writes retained_branches, not just reads it" {
-  grep -q 'retained_branches\[\$slug\] = \$branch' "$CLAUDE_SKILL"
+  grep -qE 'state\.sh" retain|retained_branches\[\$slug\] = \$branch' "$CLAUDE_SKILL"
 }
 
 @test "copilot SKILL.md writes retained_branches, not just reads it" {
-  grep -q 'retained_branches\[\$slug\] = \$branch' "$COPILOT_SKILL"
+  grep -qE 'state\.sh" retain|retained_branches\[\$slug\] = \$branch' "$COPILOT_SKILL"
 }
 
 @test "claude SKILL.md clears the retention entry when an issue completes" {
-  grep -q "del(.retained_branches\[\$slug\])" "$CLAUDE_SKILL"
+  grep -qE 'state\.sh" complete|del\(.retained_branches' "$CLAUDE_SKILL"
 }
 
 @test "copilot SKILL.md clears the retention entry when an issue completes" {
-  grep -q "del(.retained_branches\[\$slug\])" "$COPILOT_SKILL"
+  grep -qE 'state\.sh" complete|del\(.retained_branches' "$COPILOT_SKILL"
 }
 
 @test "copilot SKILL.md gives a concrete branch-existence check for resume dispatch" {
-  grep -q 'branch --list' "$COPILOT_SKILL"
+  grep -qE 'state\.sh" resume|branch --list' "$COPILOT_SKILL"
+}
+
+# The jq that these greps used to assert on now lives in state.sh, where it is executed
+# rather than described. Both halves of the round-trip are asserted here so a body that
+# calls the script cannot pass while the script has stopped writing the entry.
+@test "state.sh implements the retained_branches write and clear the prose used to spell out" {
+  grep -q 'retained_branches\[\$s\] = \$b' "$SCRIPT_DIR/skills/crew-afk/scripts/state.sh"
+  grep -q 'del(.\[\$s\])' "$SCRIPT_DIR/skills/crew-afk/scripts/state.sh"
 }

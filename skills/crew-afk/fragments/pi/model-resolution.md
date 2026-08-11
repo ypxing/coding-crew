@@ -1,11 +1,10 @@
 ### Model resolution
 
 Parse the optional `--model <alias|inherit>` flag. `inherit` means "use whatever model this
-orchestrator session runs on" — the dispatch script then passes no `--model` to the worker. When the
-flag is absent, the worker runs on pi's configured default model (the agent definitions pin no
-model — see above). Any value passed here must be a pattern the local `pi` CLI resolves; check it
-with `pi --list-models <pattern>` before a long unattended run, because an unresolvable pattern
-kills every dispatch instantly.
+orchestrator session runs on" — the dispatch script then passes no `--model` to the worker. Absent
+the flag, workers run on pi's configured default. Any value must be a pattern the local `pi` CLI
+resolves; check it with `pi --list-models <pattern>` before a long unattended run, because an
+unresolvable pattern kills every dispatch instantly.
 
 ```bash
 MODEL_FLAG=""
@@ -19,12 +18,8 @@ for arg in "$@"; do
     _next_is_model=0
   fi
 done
-```
 
-Also confirm the worker agent is installed before round 1 — a missing definition means every
-dispatch would fail:
-
-```bash
+# A missing agent definition would fail every dispatch — check once, before round 1.
 if [ ! -f "$MAIN_ROOT/.pi/agents/crew-coder.md" ] && [ ! -f "$HOME/.pi/agent/agents/crew-coder.md" ]; then
   echo "ERROR: crew-coder agent not installed. Run: ./install.sh pi --skill crew-afk"
   exit 1

@@ -1,9 +1,8 @@
 ### Model resolution
 
 Parse the optional `--model <alias|inherit>` flag. `inherit` means "use whatever model this
-orchestrator session runs on" — the dispatch script then passes no `--model` to the worker. When the
-flag is absent, the model recorded in the agent definition (`.codex/agents/<name>.toml`) applies;
-when that file pins no `model`, Codex resolves it from your own config.
+orchestrator session runs on" — the dispatch script then passes no `--model` to the worker. Absent
+the flag, the `model` in `.codex/agents/<name>.toml` applies, or your own config when it pins none.
 
 ```bash
 MODEL_FLAG=""
@@ -17,12 +16,8 @@ for arg in "$@"; do
     _next_is_model=0
   fi
 done
-```
 
-Also confirm the worker agent is installed before round 1 — a missing definition means every
-dispatch would fail:
-
-```bash
+# A missing agent definition would fail every dispatch — check once, before round 1.
 if [ ! -f "$MAIN_ROOT/.codex/agents/crew-coder.toml" ] && [ ! -f "$HOME/.codex/agents/crew-coder.toml" ]; then
   echo "ERROR: crew-coder agent not installed. Run: ./install.sh codex --skill crew-afk"
   exit 1

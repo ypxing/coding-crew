@@ -101,6 +101,63 @@ bash scripts/cleanup-worktrees.sh [--main-root <path>] [--feature-slug <slug>] \
 
 ---
 
+### `trace.sh`
+
+**Purpose**: Append one line to the sprint's orchestrator trace log. Every script that performs a pipeline step calls it directly, so a marker is emitted by the code that did the work rather than by a prose instruction to echo it afterwards — a step that ran is always traced, and a step that was skipped can never be traced as if it had run. `[DISPATCH]` used to be logged twice (once by `dispatch-agent.sh`, once by the prompt).
+
+**Usage**:
+```bash
+bash scripts/trace.sh [--log <file>] <MARKER> "<key=value ...>"
+```
+
+**Log resolution**: `--log`, then `$TRACE_LOG`, then `$MAIN_ROOT/.scratch/sprint.env`. With none of those it exits 0 without writing — tracing must never fail the caller that is making progress.
+
+**Markers written by scripts**: `SESSION` (session-init), `DISPATCH` (dispatch-agent / dispatch-codex-agent), `VERIFY` (verify-worktree), `MERGE` (merge-branches), `CLOSE` (close-issue), `PROMOTE` / `FLUSH` / `REVIEW result=not_run` (promote-findings), `CLEANUP` (cleanup-worktrees), `SQUASH` (squash-commits), `MODEL` / `ROUND` / `STATE` (state.sh), `EXIT` (crew-summary). The orchestrator writes only what it decides itself: `ACVERIFY`, and `DISPATCH` on Copilot.
+
+---
+
+### `state.sh`
+
+**Purpose**: The sprint's bookkeeping. Completions, retentions, blocks, the resolved model, the round counter and coverage gaps were prose instructions to "append to `all_merged` / `all_partial` / `all_blocked`" plus raw jq one-liners in the prompt — a list carried across a long sprint loses entries, and a dropped entry becomes a branch reported as cleaned up that was never deleted.
+
+**Usage**:
+```bash
+bash scripts/state.sh model <alias>
+bash scripts/state.sh round <n> [--issues <count>]
+bash scripts/state.sh complete --slug <slug> --branch <branch>
+bash scripts/state.sh retain   --slug <slug> --branch <branch> --reason <reason>
+bash scripts/state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>]
+bash scripts/state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
+bash scripts/state.sh resume --slug <slug>
+bash scripts/state.sh get <merged|retained|completed|partial|blocked|model|round|rounds|feature-slug|state-file>
+bash scripts/state.sh show
+# any command also accepts [--feature-slug <slug>] [--state-file <path>]
+```
+
+**Notes**:
+- `retain` is the single entry point for every branch that must survive the sprint (`partial`, `verification-failed`, `criteria-unmet`, `merge-failed`, `blocked`). Its reason string is what the summary prints, and `get retained` is what feeds `cleanup-worktrees.sh --retain`, so a recorded branch cannot be deleted. `complete` clears the retention, so a stale branch is never offered for resume.
+- `resume` answers `resume: <branch>` or `no prior branch` — the recorded name plus a ref-existence check, previously a jq call and a `git branch --list` in the prompt.
+- The state file is resolved from `--state-file`, `--feature-slug`, `$STATE_FILE`, or `.scratch/sprint.env` — never by globbing `.scratch/*/sprint-state.json`, which picks the alphabetically-first feature.
+
+**Exit code**: 0 on success; 1 on bad arguments or an unresolvable state file.
+
+---
+
+### `crew-summary.sh`
+
+**Purpose**: Render the end-of-sprint summary and the findings reminder from `sprint-state.json` and the review reports. This was ~430 words of print template filled in from lists the orchestrator had carried since round 1 — the one place where a dropped entry is invisible, because a retained branch missing from the summary reads as a clean teardown and a review gap missing from the reminder reads as a clean review.
+
+**Usage**:
+```bash
+bash scripts/crew-summary.sh [--feature-slug <slug>] [--stalled] [--no-reminder]
+```
+
+**What it prints**: the `Rounds / Model / Merged / Partial / Blocked` rollup, then `## Verification Failures`, `## Coverage Gaps`, `## Retained Branches` and `## Promoted Findings` — each omitted when empty. It writes the `EXIT` trace line, then ends with `promote-findings.sh remind` rendered as `## Next Step`, `No open review findings.`, and/or `## Unreviewed Branches`. A gap is never suppressed by a clean findings count, and gaps are never added to the findings count.
+
+**Use `--no-reminder`** for the per-round rollup, so the reminder is printed exactly once, last.
+
+---
+
 ### `session-init.sh`
 
 **Purpose**: Initialize a new afk-run session with feature branch setup and state tracking.
@@ -119,12 +176,15 @@ bash scripts/session-init.sh [--jira TICKET-123]
 - Saves session-start SHA for code review
 - Validates git repository and checks for jq dependency
 - Creates/updates sprint state file to track base SHA per branch
+- Writes `sprint.env` — the one file the orchestrator sources, exporting `MAIN_ROOT`, `FEATURE_SLUG`, `FEATURE_BRANCH`, `SPRINT_DIR`, `STATE_FILE`, `TRACE_LOG`, `DISPATCH_DIR`, `REVIEW_DIR` and `CREW_SCRIPTS`. The slug is known here exactly once, so it is written here instead of being re-derived downstream from a branch name or an alphabetical glob.
+- Traces the `SESSION` line
 
 **Outputs**:
 - `.scratch/<feature-slug>/issues/` directory
-- `.scratch/.session-start-sha` file
+- `.scratch/<feature-slug>/session-start-sha` file
 - `.scratch/<feature-slug>/sprint-state.json` file
-- `.scratch/commands.log` (fresh)
+- `.scratch/<feature-slug>/sprint.env`, plus `.scratch/sprint.env` pointing at it
+- `.scratch/<feature-slug>/traces/` (fresh; a previous traces dir is archived)
 
 **Requirements**:
 - Git repository with at least one commit
@@ -139,7 +199,7 @@ bash scripts/session-init.sh [--jira TICKET-123]
 
 **Usage**:
 ```bash
-bash scripts/squash-commits.sh [--no-squash] [--platform claude|copilot] [completed_slug1 completed_slug2 ...]
+bash scripts/squash-commits.sh [--no-squash] [--platform claude|copilot|pi|codex] [completed_slug1 completed_slug2 ...]
 ```
 
 **Arguments**:
@@ -147,7 +207,7 @@ bash scripts/squash-commits.sh [--no-squash] [--platform claude|copilot] [comple
 - `--platform <name>`: Set platform for Co-authored-by trailer (default: claude)
   - `claude`: Uses "Claude Code <claude@anthropic.com>"
   - `copilot`: Uses "GitHub Copilot <noreply@github.com>"
-- Remaining args: List of completed issue slugs (used to build commit message)
+- Remaining args: list of completed issue slugs. Omit them — with no slugs the script reads `completed_slugs` from `sprint-state.json`, where `state.sh complete` records them.
 
 **What it does**:
 - Reads sprint state file to get base SHA

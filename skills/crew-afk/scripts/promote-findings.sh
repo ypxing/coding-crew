@@ -27,6 +27,11 @@ set -euo pipefail
 # Invocation: bash "<skill-dir>/scripts/promote-findings.sh" <command> [options]
 # (install.sh does not chmod+x skill-local scripts)
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Each subcommand traces its own outcome, so promotion, the phase flip and a review gap
+# are all in the trace whether or not the orchestrator remembered to echo them.
+_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
+
 DEFERRED_STATUS="deferred-findings"
 READY_STATUS="ready-for-agent"
 
@@ -170,6 +175,7 @@ cmd_defer() {
   fi
   echo "- $branch: $severities → $issue_path" >> "$report"
 
+  _trace PROMOTE "branch=$branch issue=$issue_path severities=$severities"
   echo "defer: $issue_path"
 }
 
@@ -200,8 +206,10 @@ cmd_flush() {
   done
 
   if [ "$count" -eq 0 ]; then
+    _trace FLUSH "promoted=0"
     echo "FLUSH: none"
   else
+    _trace FLUSH "promoted=$count"
     echo "FLUSH: promoted=$count"
   fi
 }
@@ -276,6 +284,7 @@ cmd_mark_not_run() {
     echo "findings. Review it manually, or re-run the reviewer against the merged range."
   } >> "$report"
 
+  _trace REVIEW "branch=$branch result=not_run"
   echo "mark-not-run: not_run recorded — $branch ($reason)"
 }
 

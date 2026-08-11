@@ -5,75 +5,27 @@ name: crew-afk
 
 {{FRAGMENT:intro}}
 
-**Issue tracker: local only.** Issues live in `.scratch/*/issues/open/*.md`. Never query `gh`, GitHub, or any remote issue tracker. If no local issues are found, print `NO MORE TASKS` and stop.
+**Issue tracker: local only.** Issues are markdown files under `.scratch/*/issues/open/*.md`. Never query `gh`, GitHub, or any remote tracker. If there are no local issues, print `NO MORE TASKS` and stop.
 
 ## Definitions
 
-- **Ready issue**: `Status: ready-for-agent` — fully specified, no human input needed.
-- **Skipped issue**: any other status — skip entirely.
-- **Blocked issue**: its `## Blocked by` section names an issue not yet in `issues/done/` (sibling of `issues/open/`).
-- **Unblocked issue**: no `## Blocked by` section, or all listed dependencies are in `issues/done/`.
+- **Ready**: `Status: ready-for-agent`. Every other status is skipped — including `deferred-findings`, which only **## Findings Flush** picks up.
+- **Blocked**: a `## Blocked by` section lists a filename that is not present in `$(dirname "$ISSUE_PATH")/../done/`. No such section, or all listed files present → unblocked.
+- **Slug**: the issue filename without leading digits or extension. Branch: `crew/$FEATURE_SLUG/$SLUG`.
+- **Result status** a worker may report — use exactly one:
+  - `complete` — all acceptance criteria met, all checks pass, work committed.
+  - `partial` — real progress, committed with a `[WIP]` marker so the code survives. `## Progress` notes are context alongside that code, never a substitute for it.
+  - `blocked` — needs human input: unresolved dependency, ambiguous spec, or 2 consecutive failed attempts at the same step. Never use `partial` to avoid admitting you are stuck.
 
-## Issue Tracker Conventions
-
-Issues live as local markdown files in `.scratch/<feature-slug>/issues/open/<NN>-<slug>.md`:
-
-- Triage state is a `Status:` line near the top of each issue
-- To **list open issues**: find all `.md` files under `.scratch/*/issues/open/` — this yields file paths only; content is fetched separately
-- To **fetch an issue**: read the file at its path
-- To **mark done**: execute the `mark-done` operation from `issue-tracker.md`. It verifies criteria, updates the Status line, and moves the file from `issues/open/` to `issues/done/`.
-
-### Triage Labels
-
-| Label             | Meaning                                  |
-| ----------------- | ---------------------------------------- |
-| `needs-triage`    | Maintainer needs to evaluate this issue  |
-| `needs-info`      | Waiting on reporter for more information |
-| `ready-for-agent` | Fully specified, ready for an AFK agent  |
-| `ready-for-human` | Requires human implementation            |
-| `wontfix`         | Will not be actioned                     |
-| `done`            | Issue is complete and closed             |
-
-### "Blocked by" format
-
-An issue is blocked when its body contains a section like:
-
-```
-## Blocked by
-- 01-add-schema.md
-- 02-create-table.md
-```
-
-Filenames are resolved relative to the issue's `issues/done/` directory (sibling of `issues/open/`). An issue is blocked only if at least
-one listed file is NOT present at `$(dirname "$ISSUE_PATH")/../done/<dep-filename>`.
-
-## Status Definitions
-
-Use exactly one of these in every issue report:
-
-- **`complete`** — all acceptance criteria met, all checks pass, work is committed.
-- **`partial`** — meaningful progress was made but not all checks pass or criteria are met. The worker commits the work to the branch with a `[WIP]` marker so the code is preserved. Write notes to `## Progress` as context alongside the preserved code (not a substitute for it). The next round resumes on this branch.
-- **`blocked`** — you cannot proceed without human input: a dependency is unresolved, the spec is
-  ambiguous, or you hit 2 consecutive failed attempts at the same step. Do not use `partial` to
-  avoid admitting you are stuck.
+Triage labels you will see in `Status:` lines: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `deferred-findings`, `wontfix`, `done`.
 
 ## Loop
 
-Initialize `MAIN_ROOT` once before the loop starts:
+### 0. Session init (once, before round 1)
+
+If a path argument was given, derive the feature slug from it:
 
 ```bash
-MAIN_ROOT=$(git rev-parse --show-toplevel)
-```
-
-### 0. Session init (run once before round 1)
-
-### Feature Branch Setup
-
-Extract the feature slug from the path argument (if provided) and pass it to `session-init.sh`:
-
-```bash
-# If a path argument was provided (e.g. .scratch/crew-address-findings/issues/),
-# derive the feature slug from it: strip .scratch/ prefix and everything after the second /
 FEATURE_SLUG_FLAG=""
 if [ -n "${1:-}" ] && [[ "$1" == .scratch/* ]]; then
   DERIVED_SLUG=$(echo "$1" | sed 's|^\.scratch/||' | sed 's|/.*||')
@@ -81,453 +33,291 @@ if [ -n "${1:-}" ] && [[ "$1" == .scratch/* ]]; then
 fi
 ```
 
-Run the session initialization script. It handles:
-
-- Parsing optional `--jira TICKET-123` flag
-- Parsing optional `--feature-slug <slug>` flag (bypasses first-issue detection)
-- Feature branch creation/switching
-- Session tracking setup
-- Git repository validation
-- jq dependency check
-- Sprint state file initialization
+`session-init.sh` parses `--jira`/`--feature-slug`, creates or switches to the feature branch, creates `.scratch/<feature-slug>/issues/open/`, archives the previous `traces/`, records the session-start SHA, initialises `sprint-state.json`, and writes `sprint.env`:
 
 ```bash
 bash "<skill-dir>/scripts/session-init.sh" $FEATURE_SLUG_FLAG "$@"
+source "$(git rev-parse --show-toplevel)/.scratch/sprint.env"
 ```
 
-The script will:
+**Start every later bash block with that `source` line.** It exports `MAIN_ROOT`, `FEATURE_SLUG`,
+`FEATURE_BRANCH`, `STATE_FILE`, `TRACE_LOG`, `DISPATCH_DIR` and `REVIEW_DIR`. Never re-derive the
+feature slug — not from the branch name, and not by globbing `.scratch/*/sprint-state.json`, which
+picks the alphabetically-first feature and silently points traces, resume state and the PRD lookup
+at the wrong directory.
 
-- Create or switch to a feature branch (using provided slug, or deriving from first issue)
-- Initialize `.scratch/<feature-slug>/issues/open/` directory structure
-- Archive previous traces dir and create fresh `traces/`
-- Save session-start SHA to `.scratch/<feature-slug>/session-start-sha`
-- Create sprint state file to track base SHA per branch
+Trace lines are written by the scripts that perform each step (`SESSION`, `DISPATCH`, `VERIFY`,
+`MERGE`, `CLOSE`, `PROMOTE`, `FLUSH`, `CLEANUP`, `SQUASH`, `EXIT`). You only trace what you decide
+yourself, with `bash "<skill-dir>/scripts/trace.sh" <MARKER> "<key=value ...>"`.
 
 {{FRAGMENT:model-resolution}}
 
-### Orchestrator trace
-
-After `session-init.sh` completes, derive `FEATURE_SLUG` and `TRACE_LOG`, then emit the SESSION line:
-
 ```bash
-FEATURE_SLUG=$(jq -r '.feature_slug // empty' "$(ls -1 "$MAIN_ROOT"/.scratch/*/sprint-state.json | head -n1)")
-# session-init.sh recorded the slug from the directory the issues actually live in.
-# Never re-derive it from the branch name: a branch may be named anything, and the
-# old derivation silently pointed traces, resume state and the PRD lookup at a
-# directory containing no issues.
-[ -n "$FEATURE_SLUG" ] || { echo "ERROR: no feature_slug in sprint-state.json — rerun session-init.sh"; exit 1; }
-TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/orchestrator.log"
-mkdir -p "$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces"
-echo "[$(date -u +%H:%M:%SZ)] [SESSION] feature=$FEATURE_SLUG branch=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD)" >> "$TRACE_LOG"
-echo "[$(date -u +%H:%M:%SZ)] [MODEL] resolved=$RESOLVED_MODEL" >> "$TRACE_LOG"
+bash "<skill-dir>/scripts/state.sh" model "$RESOLVED_MODEL"
 ```
-
-Append trace lines throughout the sprint as described in each step below.
 
 ### 1. List issues
 
-**Initialize a round counter on first entry: `round = 1`. Increment by 1 at the top of every
-subsequent iteration before doing anything else.**
-
-List all open issue paths (paths only) using the conventions above, then read each file. Classify each as unblocked or blocked. Skip anything not `ready-for-agent`.
-
-Append to trace:
 ```bash
-echo "[$(date -u +%H:%M:%SZ)] [ROUND $round] issues=<count>" >> "$TRACE_LOG"
+bash "<skill-dir>/scripts/state.sh" round <N> --issues <count>
 ```
 
-If there are no unblocked ready issues, run **## Findings Flush** first — it may promote parked
-fix issues and send you back here. Only if it prints `FLUSH: none` do you print `NO MORE TASKS`
-and stop.
+Round 1 on first entry; increment before every later iteration. List every `.md` under
+`.scratch/*/issues/open/`, read each, and keep the ones that are ready and unblocked.
 
-### 2. Dispatch issues to crew-coder subagents
+If none are left, run **## Findings Flush** first — it may promote parked fix issues and send you
+back here. Only when it prints `FLUSH: none` do you continue to **## Wrap Up**.
 
-For all unblocked `ready-for-agent` issues:
+### 2. Dispatch
 
-**2a. Create worktrees (before dispatch)**
-
-For each issue, create a git worktree with branch `crew/<feature-slug>/<issue-slug>`:
+**2a. Worktree per issue**
 
 ```bash
-FEATURE_BRANCH=$(git -C "$MAIN_ROOT" rev-parse --abbrev-ref HEAD)
-FEATURE_SLUG=<the value read from sprint-state.json above — never re-derived>
-ISSUE_SLUG=<slug — filename without leading digits and extension>
-BRANCH="crew/$FEATURE_SLUG/$ISSUE_SLUG"
+BRANCH="crew/$FEATURE_SLUG/$SLUG"
 WORKTREE_PATH="$MAIN_ROOT/.scratch/worktrees/$BRANCH"
 mkdir -p "$(dirname "$WORKTREE_PATH")"
 git -C "$MAIN_ROOT" worktree add -b "$BRANCH" "$WORKTREE_PATH" HEAD
 ```
 
-**2b. Apply .worktreeinclude (if present)**
-
-After creating each worktree, symlink entries listed in `$MAIN_ROOT/.worktreeinclude` (skip blank lines and `#` comments). If the file does not exist, skip this step silently:
+**2b. `.worktreeinclude` (if present)** — symlink each listed entry into the worktree, skipping blank and `#` lines:
 
 ```bash
 if [ -f "$MAIN_ROOT/.worktreeinclude" ]; then
     while IFS= read -r entry; do
         [[ -z "$entry" || "$entry" == \#* ]] && continue
-        src="$MAIN_ROOT/$entry"
-        dst="$WORKTREE_PATH/$entry"
-        mkdir -p "$(dirname "$dst")"
-        ln -sf "$src" "$dst"
+        mkdir -p "$(dirname "$WORKTREE_PATH/$entry")"
+        ln -sf "$MAIN_ROOT/$entry" "$WORKTREE_PATH/$entry"
     done < "$MAIN_ROOT/.worktreeinclude"
 fi
 ```
 
-{{FRAGMENT:dispatch}}
-
-If the issue has a `## Progress` section, determine whether the previous round's branch still
-exists before choosing which note to append. Read the branch name recorded for this issue slug in
-`retained_branches` in the sprint state file, then test for the ref:
+**2c. Resume notes.** These go into the worker's prompt below. If the issue has a `## Progress`
+section, ask whether last round's branch survived:
 
 ```bash
-STATE_FILE="$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint-state.json"
-PRIOR_BRANCH=$(jq -r --arg slug "<slug>" '.retained_branches[$slug] // empty' "$STATE_FILE")
-if [ -n "$PRIOR_BRANCH" ] && [ -n "$(git -C "$MAIN_ROOT" branch --list "$PRIOR_BRANCH")" ]; then
-  echo "resume: $PRIOR_BRANCH"
-else
-  echo "no prior branch"
-fi
+bash "<skill-dir>/scripts/state.sh" resume --slug "$SLUG"
 ```
 
-Append if it printed `resume: <branch>` — pass that branch name through in the prompt:
+- `resume: <branch>` — append: *A previous worker made partial progress and committed it to branch `<branch>`. Resume on that existing branch — the code is preserved. Notes in ## Progress are context alongside the existing code, not a substitute for it.*
+- `no prior branch` — append: *A previous worker made partial progress — notes are in ## Progress. Use them as context.*
+- The issue has a `## Blocked` section — also append: *A previous worker was blocked — the explanation is in ## Blocked. Review it before starting to avoid repeating the same failure.*
 
-> A previous worker made partial progress and committed it to branch `<PRIOR_BRANCH>`. Resume on that existing branch — the code is preserved. Notes in ## Progress are context alongside the existing code, not a substitute for it.
+{{FRAGMENT:dispatch}}
 
-Append if it printed `no prior branch` (first attempt after a no-commit partial):
-
-> A previous worker made partial progress — notes are in ## Progress. Use them as context.
-
-Append if the issue has a `## Blocked` section:
-
-> A previous worker was blocked — explanation is in ## Blocked. Review it before starting to avoid repeating the same failure.
-
-Each worker runs in an isolated context window — it reads the issue, runs TDD, verifies checks,
-commits, and reports back in this format:
+**2e. Collect reports.** Each worker runs in its own context window and reports:
 
 ```
 ## Issue: <slug>
 Status: complete | partial | blocked
 
-### Checks
-...
-
-### Acceptance Criteria
-...
-
-### Changes
-...
-
-### Notes
-...
+### Checks / ### Acceptance Criteria / ### Changes / ### Notes
 ```
 
-Once every worker has reported, read its report. For each result, append to trace:
+**Schema pre-filter:** demote a `complete` to `partial` if any reported check is `fail`, or if the test category
+reports `not_run` — a worker that ran no tests has verified nothing. `not_run` for
+lint or typecheck only is a **coverage gap**, not a demotion (many repos legitimately have neither,
+and demoting there would stall every sprint on a false positive) — record it so it cannot read as a
+clean pass:
+
 ```bash
-echo "[$(date -u +%H:%M:%SZ)] [RESULT] branch=<branch> status=<complete|partial|blocked>" >> "$TRACE_LOG"
+bash "<skill-dir>/scripts/state.sh" coverage-gap --slug "$SLUG" --categories "lint,typecheck"
 ```
 
-**Schema pre-filter:** inspect every `complete` result and demote it to `partial` if any reported check has result `fail`, or if `not_run` is reported for the test category — a worker that ran no tests has verified nothing. A `not_run` for **lint or typecheck only** is a **coverage gap**, not a demotion: many projects legitimately have neither command, and demoting on that would stall every sprint on a false positive. This is the same policy `verify-worktree.sh` enforces — it is fatal only on a missing test command — so the two gates cannot disagree. Carry any coverage gap into the sprint summary so it never reads as a clean pass. This is pure report validation; it does not replace independent verification in step 3.
+This is the same policy `verify-worktree.sh` enforces, so the two gates cannot disagree. It is
+report validation only — it does not replace the independent verification in step 3.
 
-Then proceed to step 3.
-
-### 3. Issue housekeeping
+### 3. Housekeeping
 
 **Pipeline order per branch: verify → AC verify → per-branch review → merge → close**
 
-**`Status: complete`** — independently verify checks in the worktree, verify acceptance criteria,
-run per-branch code review, then merge and close the issue:
+Each gate below is mechanical: it writes a receipt naming the exact commit it passed, and the next
+step refuses to run without a current one. Working around a refusal is never correct — re-run the
+gate.
 
-1. **Independent verification (before AC verify, review, and merge):** run project checks in the worker's worktree before teardown:
+**`Status: complete`**
 
-```bash
-bash "<skill-dir>/scripts/verify-worktree.sh" --dir "<working_directory from worker report>"
-echo "[$(date -u +%H:%M:%SZ)] [VERIFY] branch=$BRANCH result=<pass|fail>" >> "$TRACE_LOG"
-```
+1. **Verify** in the worker's worktree, before teardown (typecheck, then lint, then tests — see `references/verification.md`):
 
-Runs three categories in `verification.md` order: typecheck, lint, tests.
+   ```bash
+   bash "<skill-dir>/scripts/verify-worktree.sh" --dir "<working_directory from the worker report>"
+   ```
 
-If verification exits non-zero — a check failed, or no test command could be discovered (nothing was verified) — demote this result to `partial`. Do not review, merge, or close. Record the verification failure in the sprint summary with the branch name. Then remove the worktree and continue to the next issue.
+   Non-zero exit — a check failed, or no test command was discoverable — demotes this result to
+   `partial`: no review, no merge, no close. On exit 0 it writes the **verification receipt**;
+   `merge-branches.sh` refuses any `crew/` branch whose receipt is missing or stale, so a branch
+   that skipped this gate, or gained commits after passing it, cannot merge. A
+   `Verification: coverage gap — not_run: ...` line does not block the merge; record it with
+   `state.sh coverage-gap`.
 
-This gate is mechanical, not advisory: on exit 0 `verify-worktree.sh` writes a verification receipt naming the exact commit it checked, and `merge-branches.sh` refuses any `crew/` branch without a current one. A branch you skipped verification for, or verified and then added commits to, cannot merge — re-run the script rather than working around the refusal.
-
-A `Verification: coverage gap — not_run: ...` line means lint and/or typecheck had no discoverable command. This does not block the merge — many projects legitimately have neither, and failing them would stall every sprint on a false positive. Carry the listed categories into the sprint summary so the gap is visible rather than reading as a clean pass.
-
-```bash
-git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
-```
+   Then remove the worktree: `git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"`
 
 {{FRAGMENT:ac-verify}}
 
    ```bash
    git -C "$MAIN_ROOT" diff $(git -C "$MAIN_ROOT" merge-base "$FEATURE_BRANCH" "$BRANCH").."$BRANCH"
-   echo "[$(date -u +%H:%M:%SZ)] [ACVERIFY] branch=$BRANCH result=<all-met|unmet>" >> "$TRACE_LOG"
+   bash "<skill-dir>/scripts/trace.sh" ACVERIFY "branch=$BRANCH result=<all-met|unmet>"
    ```
 
-   When every criterion is met, and only then, record the receipt that permits the close:
+   On `AC: all-met`, and only then, record the receipt that permits the close:
 
    ```bash
    bash "<skill-dir>/scripts/receipts.sh" write ac --branch "$BRANCH"
    ```
 
-   `close-issue.sh` refuses to close an issue unless a receipt exists for **that issue's own slug**,
-   so this is a gate, not bookkeeping. Never record a receipt for a branch other than the one just
-   checked: closing one issue on another branch's evidence is exactly the failure this prevents.
+   `close-issue.sh` refuses to close an issue without a receipt for **that issue's own slug**, so
+   this is a gate, not bookkeeping. Never write one for a branch other than the one just checked —
+   closing an issue on a sibling's evidence is exactly the failure it prevents.
 
-   If any criterion is unmet: demote this result to `partial`. Do not review, merge, or close.
-   Record the unmet criteria in the sprint summary with the branch name and retain the branch so the
-   next round resumes in place. Then continue to the next issue.
+   `AC: unmet` — demote to `partial`: no review, no merge, no close.
 
 {{FRAGMENT:review-dispatch}}
 
-   Append the reviewer's output block (starting with `## Branch: <branch-name>`) to
-   `.scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md` (use the same timestamp file for
-   the entire round — create it on the first branch, append for subsequent branches). Create the
-   `reviews/` directory if needed.
-
-   If no verified branches exist in this round, print:
-   `Code review: skipped (no verified branches this round)` and skip creating a report file.
+   Append the reviewer's block (starting `## Branch: <branch-name>`) to
+   `$REVIEW_DIR/sprint-review-<TIMESTAMP>.md` — one timestamped file per round, created on the
+   first branch and appended to for the rest. With no verified branches this round, print
+   `Code review: skipped (no verified branches this round)` and create no file.
 
    **If the reviewer produces no report, record the gap — do not review the branch yourself.**
 {{FRAGMENT:review-gap-detect}}
-   Reviewing it inline from your own context is not a substitute and must not be attempted: it
-   writes no report file, so promotion has nothing to read, `remind` counts zero findings, and the
-   sprint ends reporting a branch nobody reviewed as clean. Record it instead:
+   An inline self-review writes no report file, so promotion has nothing to read, `remind` counts
+   zero findings, and the sprint reports a branch nobody reviewed as clean. Record it instead:
 
    ```bash
    bash "<skill-dir>/scripts/promote-findings.sh" mark-not-run \
      --feature-slug "$FEATURE_SLUG" --branch "$BRANCH" --slug "$SLUG" \
-     --report "$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md" \
-     --reason "<what happened — the dispatch failed, timed out, or produced an empty report>"
-   echo "[$(date -u +%H:%M:%SZ)] [REVIEW] branch=$BRANCH result=not_run" >> "$TRACE_LOG"
+     --report "$REVIEW_DIR/sprint-review-<TIMESTAMP>.md" \
+     --reason "<the dispatch failed, timed out, or produced an empty report>"
    ```
 
-   Then skip promotion for this branch — there are no findings to promote — and continue to the
-   merge. Review is advisory, so the branch still merges unreviewed; the sprint only has to say
-   so rather than imply it was checked.
+   Then skip promotion for this branch and continue to the merge: review is advisory, so the branch
+   still merges unreviewed — the sprint only has to say so rather than imply it was checked.
+
+4. **Promote CRITICAL/HIGH findings** (policy: `references/findings-promotion.md`). Findings never
+   block a merge, so they need a route back into the sprint. When this branch's review block holds
+   at least one `[CRITICAL]` or `[HIGH]` finding:
 
    ```bash
-   echo "[$(date -u +%H:%M:%SZ)] [REVIEW] branch=$BRANCH result=done" >> "$TRACE_LOG"
-   ```
-
-   **Then promote CRITICAL/HIGH findings.** Findings are advisory and the branch merges anyway, so
-   CRITICAL/HIGH findings need a route back into the sprint. Read
-   `references/findings-promotion.md` for the policy. If this branch's review block contains at
-   least one `[CRITICAL]` or `[HIGH]` finding:
-
-   ```bash
-   REPORT="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md"
-
-   # Depth bound — a fix issue's own findings are never promoted again.
+   cd "$MAIN_ROOT"
    bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file-path>"
    ```
 
-   If that prints `guard: skip — source-guarded`, leave the findings in the report and move on.
-   Only when it prints `guard: promotable`, write one criteria file with **one `- [ ]` line per
-   CRITICAL/HIGH finding** (restate each as a verifiable criterion including the file:line it
-   cites) and park a single fix issue for the whole branch:
+   `guard: skip — source-guarded` — leave the findings in the report and move on (this is the depth
+   bound: a fix issue's own findings are never promoted again, so there is no Phase 3).
+   `guard: promotable` — write one criteria file with **one `- [ ]` line per CRITICAL/HIGH
+   finding**, each restated as a verifiable criterion including the `file:line` it cites, and park
+   one fix issue for the whole branch:
 
    ```bash
-   CRITERIA_FILE="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews/$SLUG.criteria.md"
-   cat > "$CRITERIA_FILE" <<'CRITERIA'
-   - [ ] <CRITICAL finding 1 restated as a criterion, with the file:line it cites>
-   - [ ] <HIGH finding 1 restated as a criterion, with the file:line it cites>
-   CRITERIA
-
+   CRITERIA_FILE="$REVIEW_DIR/$SLUG.criteria.md"
    bash "<skill-dir>/scripts/promote-findings.sh" defer \
      --feature-slug "$FEATURE_SLUG" --branch "$BRANCH" --slug "$SLUG" \
      --title "Fix review findings: $SLUG" \
-     --report "$REPORT" \
+     --report "$REVIEW_DIR/sprint-review-<TIMESTAMP>.md" \
      --criteria-file "$CRITERIA_FILE"
-
-   echo "[$(date -u +%H:%M:%SZ)] [PROMOTE] branch=$BRANCH severities=CRITICAL,HIGH" >> "$TRACE_LOG"
    ```
 
-   Run this from `$MAIN_ROOT` (the script resolves `.scratch/` relative to the current directory).
-   One fix issue per reviewed branch, never one per finding. The issue is written with
-   `Status: deferred-findings`, which step 1 does not select — so it never competes with in-flight
-   issues and never delays a Phase 1 round. It is picked up only by **## Findings Flush**. Do not
-   promote MEDIUM or LOW findings; they stay in the report for a human via `/crew-address-findings`.
+   One fix issue per reviewed branch, never one per finding — findings from one branch cite one
+   diff, so grouping them avoids sibling merge conflicts. The issue is written
+   `Status: deferred-findings`, which step 1 does not select, so it never delays a round. Never
+   promote MEDIUM or LOW; they stay in the report for a human via `/crew-address-findings`.
 
-4. Merge the completed work onto the feature branch, then remove the worktree. `merge-branches.sh`
-   runs no checks itself — all verification is done above:
+5. **Merge**, then remove the worktree. `merge-branches.sh` runs no checks — verification happened above:
 
-```bash
-git -C "$MAIN_ROOT" checkout "$FEATURE_BRANCH"
-bash "<skill-dir>/scripts/merge-branches.sh" "$FEATURE_BRANCH" "$BRANCH"
-echo "[$(date -u +%H:%M:%SZ)] [MERGE] branch=$BRANCH success=<true|false>" >> "$TRACE_LOG"
-git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
-```
+   ```bash
+   git -C "$MAIN_ROOT" checkout "$FEATURE_BRANCH"
+   bash "<skill-dir>/scripts/merge-branches.sh" "$FEATURE_BRANCH" "$BRANCH"
+   git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
+   ```
 
-Where `FEATURE_BRANCH` is captured before dispatch in step 2a:
+6. **Close — only if the merge reported `success`.** A branch it could not merge (conflict aborted,
+   or receipt missing) exits non-zero; that issue stays open and its branch is retained so the next
+   round resumes it. Closing before the merge would move the file to `done/`, where step 1 never
+   lists it again, orphaning the unmerged branch:
 
-```bash
-FEATURE_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-```
+   ```bash
+   bash "<skill-dir>/scripts/close-issue.sh" "<issue-file-path>"
+   bash "<skill-dir>/scripts/state.sh" complete --slug "$SLUG" --branch "$BRANCH"
+   ```
 
-5. Close the issue — **only if the merge reported `success`**. `merge-branches.sh` exits non-zero
-   for a branch it could not merge (conflict aborted, or receipt missing); such an issue stays open
-   and its branch is retained, so the next round resumes it. Closing before the merge would move
-   the file to `done/`, where step 1 never lists it again, orphaning the unmerged branch:
+   On a failed merge, record it as retained instead:
+   `state.sh retain --slug "$SLUG" --branch "$BRANCH" --reason merge-failed`
 
-```bash
-bash "<skill-dir>/scripts/close-issue.sh" "<issue-file-path>"
-```
-
-**`Status: partial`** — write or replace the `## Progress` section in the issue file with notes on
-what was done and what remains. Notes are context alongside the preserved code on the branch (not a
-substitute for it). If a `## Progress` section already exists, replace it entirely — do not append
-a second one. Leave the issue open for the next round.
-
-The branch is **retained** — do not delete it. Remove only the worktree (the branch ref stays so
-the next round can resume on it):
+**`Status: partial`** (including anything demoted above) — write or replace the issue's `## Progress`
+section with what was done and what remains (replace it entirely; never add a second one), leave the
+issue open, remove only the worktree, and record the retention. `state.sh retain` is what keeps the
+branch ref alive: it feeds `cleanup-worktrees.sh --retain`, and it is where `state.sh resume` reads
+the branch name next round.
 
 ```bash
-git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
-# Do NOT run: git -C "$MAIN_ROOT" branch -D "$BRANCH"
+git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"   # never: git branch -D "$BRANCH"
+bash "<skill-dir>/scripts/state.sh" retain --slug "$SLUG" --branch "$BRANCH" \
+  --reason "<partial | verification-failed | criteria-unmet — <criterion>>"
 ```
 
-Record the retained branch against this issue's slug so the next round's dispatch can find it —
-without this write, the resume check above always reads empty and the worker starts over:
-
-```bash
-STATE_FILE="$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint-state.json"
-jq --arg slug "$SLUG" --arg branch "$BRANCH" \
-   '.retained_branches[$slug] = $branch' "$STATE_FILE" > "$STATE_FILE.tmp" \
-   && mv "$STATE_FILE.tmp" "$STATE_FILE"
-```
-
-When an issue later completes, drop its retention entry so a stale branch is never offered for resume:
-
-```bash
-jq --arg slug "$SLUG" 'del(.retained_branches[$slug])' "$STATE_FILE" > "$STATE_FILE.tmp" \
-   && mv "$STATE_FILE.tmp" "$STATE_FILE"
-```
-
-**`Status: blocked`** — leave the issue file's existing content untouched. Add to the `## Blocked`
-section using the round counter:
-
-- If no `## Blocked` section exists, append one:
-  ```
-  ## Blocked
-  Round <N>: <explanation of what was tried and why it is stuck>
-  ```
-- If a `## Blocked` section already exists, append a new line inside it:
-  ```
-  Round <N>: <explanation of what was tried and why it is stuck>
-  ```
-  Do not create a second `## Blocked` heading.
-
-Remove the worktree (work stays on the branch):
+**`Status: blocked`** — leave the issue body untouched apart from the `## Blocked` section: append
+`Round <N>: <what was tried and why it is stuck>` inside it, creating the heading only if absent
+(never a second one). Then:
 
 ```bash
 git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
+bash "<skill-dir>/scripts/state.sh" blocked --slug "$SLUG" --branch "$BRANCH" --reason "<why>"
 ```
 
 ### 4. Report
 
-Print each worker's report verbatim. Do not reformat, summarize, or add text outside the worker's
-sections.
+Print each worker's report verbatim. Do not reformat, summarise, or add text outside the worker's sections.
 
 ### 5. Repeat
 
-Go back to step 1. Re-list issues — newly unblocked issues may now be ready. Partial and blocked
-issues carry their updated `## Progress` / `## Blocked` sections forward (step 2 handles both).
+Return to step 1 — newly unblocked issues may now be ready, and partial/blocked issues carry their
+`## Progress` / `## Blocked` sections forward. Print the rollup for the round:
 
-After all issues in a round are reported, print a rollup line:
-
-```
-### Sprint: <N complete> / <N partial> / <N blocked> / <N remaining>
-Model: <RESOLVED_MODEL>
-Verification failures: <branch: reason> | none
-Retained branches: <branch: reason> | none
+```bash
+bash "<skill-dir>/scripts/crew-summary.sh" --no-reminder
 ```
 
-**Stall detection**: if **two consecutive rounds** both produce **zero new completions** (every result is `partial` or `blocked`), do not loop again. A single dry round does not stall — retry once first. Instead:
+**Stall detection**: if **two consecutive rounds** produce zero new completions (every result
+`partial` or `blocked`), stop looping and go to **## Wrap Up**. One dry round is not a stall — retry
+once first.
 
-1. Print the rollup.
-2. Run **## Findings Flush** — a sprint that stalled on unrelated issues still merged code that may
-   carry a CRITICAL finding, so the flush runs regardless of why the loop ended. If it promotes,
-   reset the stall counter and return to step 1.
-3. Print `NO MORE TASKS`.
-4. Stop.
+## Wrap Up
 
-**Normal exit** (no more unblocked issues): run **## Findings Flush**, then after printing the
-final rollup and `NO MORE TASKS`, stop. Code review already ran per-branch before each merge in
-step 3.
+Every exit runs this section in order, whether the loop ran out of issues or stalled.
 
-The user can re-trigger the sprint after resolving blockers.
-
-## Findings Flush
-
-Run this before **every** exit — the no-issues exit in step 1 and the stall exit alike. It is the
-Phase 1 → Phase 2 transition described in `references/findings-promotion.md`.
+### Findings Flush
 
 ```bash
 cd "$MAIN_ROOT"
 bash "<skill-dir>/scripts/promote-findings.sh" flush --feature-slug "$FEATURE_SLUG"
-echo "[$(date -u +%H:%M:%SZ)] [FLUSH] promoted=<N|0>" >> "$TRACE_LOG"
 ```
 
-- `FLUSH: promoted=<N>` — parked fix issues are now `ready-for-agent` (**Phase 2**). Reset the
-  stall counter to `0` and **return to step 1**. The fixes run through the identical pipeline —
-  worktree, TDD, `verify-worktree.sh`, AC verification, their own code review, merge. Resetting
-  stall matters: entering Phase 2 at the stall limit would abort it on the first `partial` round
-  instead of granting the one-dry-round retry Phase 1 gets. Do **not** run squash, coverage
-  validation, or worktree cleanup on this pass.
-- `FLUSH: none` — nothing was parked. Proceed to **## Squash Commits** and finish the sprint.
+- `FLUSH: promoted=<N>` — parked fix issues are now `ready-for-agent` (**Phase 2**). Reset the stall
+  counter to 0 and **return to step 1**; the fixes run the identical pipeline, including their own
+  review. Resetting stall matters: entering Phase 2 at the stall limit would abort it on the first
+  `partial` round. Run no squash, coverage validation or cleanup on this pass.
+- `FLUSH: none` — nothing was parked. Continue below and finish the sprint.
 
-This adds at most one extra phase. Fix issues carry a `Source:` line, so the `guard` check in step
-3 refuses to promote their findings; the parked set stays empty and the next flush prints
-`FLUSH: none`. Because flush rewrites `Status:` on disk instead of tracking a phase in memory or in
-`sprint-state.json`, it is idempotent and an interrupted sprint resumes with the fix issues looking
-like ordinary ready-for-agent work.
+A stalled sprint still merged code that may carry a CRITICAL finding, so the flush runs regardless
+of why the loop ended. It flips `Status:` on disk rather than tracking a phase in memory, so it is
+idempotent and an interrupted sprint resumes with the fix issues looking like ordinary work.
 
-## Squash Commits
+### Squash Commits
 
-Run the squash commits script. Track completed issue slugs throughout the sprint by maintaining a list of all slugs marked as done in step 3. Pass `--no-squash` if the user specified it, `--platform {{PLATFORM}}`, and the list of completed slugs:
+Completed slugs are read from `sprint-state.json` (written by `state.sh complete`). Pass
+`--no-squash` through if the user asked for it:
 
 ```bash
-# completed_slugs array should be populated in step 3 when issues are marked done
-bash "<skill-dir>/scripts/squash-commits.sh" --platform {{PLATFORM}} "${completed_slugs[@]}"
+bash "<skill-dir>/scripts/squash-commits.sh" --platform {{PLATFORM}}
 ```
 
-If `--no-squash` flag was specified, pass it to the script:
-
-```bash
-bash "<skill-dir>/scripts/squash-commits.sh" --no-squash --platform {{PLATFORM}} "${completed_slugs[@]}"
-```
-
-The script will:
-
-- Parse the `--no-squash` flag and skip if present
-- Read sprint state file to get base SHA
-- Skip if no completed issues or no commits to squash
-- Generate squashed commit message from completed issue titles
-- Perform soft reset and create single commit
-- Update state file with new HEAD SHA
-
-## On Exit
-
-When the loop exits, append the EXIT trace line:
-```bash
-echo "[$(date -u +%H:%M:%SZ)] [EXIT] merged=<N> partial=<N> blocked=<N>" >> "$TRACE_LOG"
-```
-
-Code review ran per-branch before each merge (step 3). Review reports are at
-`.scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md` if any branches were reviewed.
-If no branches were verified this session, print:
-`Code review: skipped (no verified branches this session)`.
-
-## Coverage Validation (after squash)
-
-Run the coverage validation script. It locates the feature's PRD and prints either a skip message or the PRD path:
+### Coverage Validation
 
 ```bash
 bash "<skill-dir>/scripts/coverage-validation.sh"
 ```
 
-If the output contains `"skipped"`, continue to worktree cleanup.
+Output containing `"skipped"` means no PRD — continue to cleanup. Otherwise the printed path is the
+feature's `PRD.md`:
 
 {{FRAGMENT:coverage-validation}}
 
@@ -560,95 +350,51 @@ Report format:
 ✗ <requirement>: <no evidence found>
 ```
 
-The validation agent output becomes the **Coverage Report** section in the final summary.
+That output becomes the **Coverage Report** section of the summary.
 
-## Worktree Cleanup (on exit)
+### Worktree Cleanup
 
-After squash and coverage validation, tear down this sprint's worktrees and the branch refs for
-**merged** branches. This is one mechanical, idempotent step — do not hand-roll `worktree remove` /
-`branch -D`, and do not skip it because a round ran long:
+One mechanical, idempotent step — never hand-roll `worktree remove` / `branch -D`, and never skip
+it because a round ran long:
 
 ```bash
 bash "<skill-dir>/scripts/cleanup-worktrees.sh" \
   --main-root "$MAIN_ROOT" --feature-slug "$FEATURE_SLUG" \
-  --merged "<merged-branch1>,<merged-branch2>,..." \
-  --retain "<retained-branch1>,<retained-branch2>,..."
+  --merged "$(bash "<skill-dir>/scripts/state.sh" get merged)" \
+  --retain "$(bash "<skill-dir>/scripts/state.sh" get retained)"
 ```
 
-What it does, so you do not need to reason about it:
+It removes each merged branch's worktree before its ref (git refuses to delete a ref a worktree has
+checked out), prunes stale worktree metadata, sweeps `crew/$FEATURE_SLUG/*` and `worktree-agent-*`
+leftovers nobody passed in, and never touches a `--retain` branch. Anything it declines — a dirty
+worktree, a swept branch with commits not in `HEAD` — is reported as `kept`, not as a failure. Run
+it even when nothing merged; re-running is a clean no-op. Report its last line
+(`CLEANUP: removed=N kept=M failed=K`) as-is: a non-zero exit means a ref survived, so never claim
+a clean teardown over it.
 
-- Removes each merged branch's worktree **before** its ref (git refuses to delete a ref that a
-  worktree still has checked out) and then prunes stale worktree metadata.
-- Never touches a `--retain` branch (partial, verification-failed, criteria-unmet) — those refs must
-  survive so the next round's worker can resume on them.
-- Refuses to remove a worktree with uncommitted changes. A *swept* branch whose commits are not in
-  `HEAD` is kept too; branches you pass with `--merged` are exempt from that check, because cleanup
-  runs after squash and a squashed merge leaves no ancestry to test. So pass `--merged` accurately:
-  it is the certified list, and a branch named there will be deleted.
-- Every refusal is reported as `kept`, not as a failure.
-- **Sweeps** leftovers nobody passed in: any `crew/<feature-slug>/*` worktree from an earlier round
-  or a crashed sprint, plus the runtime-managed `worktree-agent-*` worktrees under
-  `.claude/worktrees/` that agent isolation creates. These used to accumulate across sprints because
-  no step named them.
-
-Run it even when nothing merged — the sweep and prune are the point. Re-running is a clean no-op.
-Take the counts from its last line (`CLEANUP: removed=N kept=M failed=K`); a non-zero exit means a
-ref could not be deleted, so report that in the summary rather than claiming a clean teardown.
-
-After cleanup, list retained branches in the sprint summary so the human is aware of them:
-
-```
-## Retained Branches
-- <branch>: retained (<partial — committed WIP | verification-failed — checks did not pass | criteria-unmet — <criterion>>)
-```
-
-Omit the section if no branches were retained.
-
-Also list any findings promoted this sprint (omit the section if none):
-
-```
-## Promoted Findings
-- <source branch>: <N> finding(s) → <fix issue slug> (<merged | partial | blocked>)
-```
-
-## Findings Reminder (last thing printed)
-
-Promotion only covered CRITICAL/HIGH findings on Phase 1 branches. MEDIUM/LOW findings, and any
-finding raised against a Phase 2 fix branch, are still unaddressed and need a human — so end the
-sprint by telling the user, with a real count rather than a blanket nudge:
+### Summary
 
 ```bash
-bash "<skill-dir>/scripts/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG"
+bash "<skill-dir>/scripts/crew-summary.sh"   # add --stalled if the loop stopped on the stall limit
 ```
 
-- `FINDINGS: open=<N> (<breakdown>)` plus one `report: <path>` line per report — print:
+It renders, from `sprint-state.json` and the review reports, and never from your recollection:
 
-  ```
-  ## Next Step
-  <N> review finding(s) still need triage (<breakdown>).
-  Reports: <report paths>
-  Run: /crew-address-findings
-  ```
+```
+Rounds: <N>
+Model:  <resolved model>
+Merged  (<n>): <slugs> | none
+Partial (<n>): <slugs> | none
+Blocked (<n>): <slugs> | none
+## Verification Failures / ## Coverage Gaps / ## Retained Branches / ## Promoted Findings
+```
 
-  Say `still need triage`, never `unfixed` — some will be correctly dismissed on review. If the
-  breakdown includes CRITICAL or HIGH, add: `Includes CRITICAL/HIGH findings raised against fix
-  branches, which are report-only by design — review these first.`
+Then insert the **Coverage Report** (if one was produced) and the review report paths under
+`## Code Review` — or `skipped (no verified branches this session)` if nothing was reviewed.
 
-- `FINDINGS: none` — print `No open review findings.` and nothing else, **unless** a
-  `REVIEW-GAPS` line was also printed. Do not suggest `/crew-address-findings` when there is
-  nothing for it to do.
+`crew-summary.sh` ends with the findings reminder, which is the **last thing printed**: either
+`## Next Step` with a real count of the MEDIUM/LOW and fix-branch findings that promotion did not
+cover, `No open review findings.`, or — never suppressed by either, and never counted as findings —
+`## Unreviewed Branches` for every branch that merged without a completed review.
 
-- `REVIEW-GAPS: branches=<N>` plus one `gap: <branch> — <reason>` line each — print this in
-  addition to whatever the findings line produced, never instead of it:
-
-  ```
-  ## Unreviewed Branches
-  <N> branch(es) merged without a completed code review:
-  <branch> — <reason>
-  Their absence of findings means nothing — nobody looked. Re-run the reviewer on these, or
-  review them by hand.
-  ```
-
-  Never add these to the findings count: they produced no findings by definition. And never let
-  `No open review findings.` stand alone while a gap exists — a branch that merged unreviewed is
-  precisely what this reminder exists to surface.
+Finally print `NO MORE TASKS` and stop. The user can re-trigger the sprint after resolving blockers.

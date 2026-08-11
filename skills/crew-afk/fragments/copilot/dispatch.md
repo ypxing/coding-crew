@@ -1,9 +1,6 @@
-**2c. Dispatch all subagents in a single response (parallel)**
+**2d. Dispatch all subagents in a single response (parallel)**
 
-After creating all worktrees, for each issue append to trace before dispatching:
-```bash
-echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] issue=<slug>" >> "$TRACE_LOG"
-```
+Trace each dispatch: `bash "<skill-dir>/scripts/trace.sh" DISPATCH "issue=$SLUG"`.
 
 Invoke all `crew-coder` subagents via `#runSubagent` in a single response — do not wait for one to return before issuing the others.
 

@@ -165,4 +165,6 @@ else
   rm -f "$STATE_FILE.tmp"
 fi
 
+_TRACE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/trace.sh"
+[ -f "$_TRACE_SCRIPT" ] && bash "$_TRACE_SCRIPT" SQUASH "commits=$COMMIT_COUNT issues=${#COMPLETED_SLUGS[@]}" 2>/dev/null || true
 echo "Squashed $COMMIT_COUNT commits into 1."

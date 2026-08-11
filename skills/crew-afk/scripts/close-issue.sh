@@ -46,7 +46,9 @@ if [ ! -f "$ISSUE_PATH" ]; then
 fi
 
 # Require this issue's own acceptance-criteria receipt before changing anything.
-RECEIPTS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/receipts.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
+_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
 if [ -f "$RECEIPTS_SCRIPT" ]; then
   bash "$RECEIPTS_SCRIPT" check ac --issue "$ISSUE_PATH"
 fi
@@ -67,5 +69,7 @@ mkdir -p "$DONE_DIR"
 
 FILENAME=$(basename "$ISSUE_PATH")
 mv "$ISSUE_PATH" "$DONE_DIR/$FILENAME"
+
+_trace CLOSE "issue=$FILENAME"
 
 echo "Closed: $FILENAME → $DONE_DIR/$FILENAME"

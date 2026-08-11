@@ -156,12 +156,19 @@ frontmatter() {
 
 # ─── Report path / format unchanged ─────────────────────────────────────────
 
-@test "claude SKILL.md still writes review to .scratch reviews path" {
-  grep -qE '\.scratch.*reviews|reviews/sprint-review' "$CLAUDE_SKILL"
+# The path itself is no longer spelled out in prose: session-init.sh exports REVIEW_DIR
+# in sprint.env, so the body names $REVIEW_DIR and the directory is defined in one place.
+@test "claude SKILL.md still writes review to the sprint's reviews path" {
+  grep -qE '\$REVIEW_DIR/sprint-review|\.scratch.*reviews|reviews/sprint-review' "$CLAUDE_SKILL"
 }
 
-@test "copilot SKILL.md still writes review to .scratch reviews path" {
-  grep -qE '\.scratch.*reviews|reviews/sprint-review' "$COPILOT_SKILL"
+@test "copilot SKILL.md still writes review to the sprint's reviews path" {
+  grep -qE '\$REVIEW_DIR/sprint-review|\.scratch.*reviews|reviews/sprint-review' "$COPILOT_SKILL"
+}
+
+@test "REVIEW_DIR resolves to .scratch/<feature-slug>/reviews" {
+  grep -q 'REVIEW_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews"' \
+    "$SCRIPT_DIR/skills/crew-afk/scripts/session-init.sh"
 }
 
 # ─── Read-only reviewer ──────────────────────────────────────────────────────

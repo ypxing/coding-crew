@@ -186,13 +186,18 @@ EOF
   done
 }
 
-@test "all four variants handle REVIEW-GAPS in the end-of-sprint reminder" {
+# Rendering the reminder is no longer prose in four variants — crew-summary.sh does it,
+# so the four bodies only have to call it; its branching is tested in tests/crew-afk-state.bats.
+@test "all four variants delegate the end-of-sprint reminder to crew-summary.sh" {
   for v in claude pi codex copilot; do
-    run grep -q 'REVIEW-GAPS' "$(afk_variant "$v")"
-    [ "$status" -eq 0 ]
-    # 'No open review findings.' must no longer be unconditional.
-    run grep -q 'unless' "$(afk_variant "$v")"
-    [ "$status" -eq 0 ]
+    run grep -q 'crew-summary.sh' "$(afk_variant "$v")"
+    [ "$status" -eq 0 ] || { echo "$v does not call crew-summary.sh" >&2; return 1; }
+    # The reminder must still be described as the last thing printed, and the
+    # unreviewed-branch case must still be named.
+    run grep -qi 'last thing printed' "$(afk_variant "$v")"
+    [ "$status" -eq 0 ] || { echo "$v does not say the reminder prints last" >&2; return 1; }
+    run grep -q 'Unreviewed Branches' "$(afk_variant "$v")"
+    [ "$status" -eq 0 ] || { echo "$v never mentions unreviewed branches" >&2; return 1; }
   done
 }
 

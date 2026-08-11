@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.20.0] - 2026-08-12
+
+### Changed
+
+- **`crew-afk` (1.18.0) — the orchestrator's mechanism moved out of the prompt and into scripts (audit P3).** An orchestrator is a state machine, and the parts of this one that were prose behaved like prose: a sprint re-derived the feature slug with `jq -r .feature_slug "$(ls -1 .scratch/*/sprint-state.json | head -n1)"` — an alphabetical-first glob that picks the wrong feature in any repo with two sprint dirs — sitting directly beneath a comment reading "Never re-derive it"; `[DISPATCH]` was traced twice, once by `dispatch-agent.sh` and once by an instruction to echo the same line; and the summary was a ~430-word print template filled in from lists carried in context since round 1, which is the one place a dropped entry is invisible (a retained branch missing from the summary reads as a clean teardown)
+  - `session-init.sh` now writes **`sprint.env`** (`.scratch/<feature-slug>/sprint.env`, plus a `.scratch/sprint.env` pointer) exporting `MAIN_ROOT`, `FEATURE_SLUG`, `FEATURE_BRANCH`, `SPRINT_DIR`, `STATE_FILE`, `TRACE_LOG`, `DISPATCH_DIR`, `REVIEW_DIR`. Every body sources it at the top of each bash block; the slug is resolved once, where the issues actually live
+  - New **`trace.sh`**: each script traces its own step (`SESSION`, `DISPATCH`, `VERIFY`, `MERGE`, `CLOSE`, `PROMOTE`, `FLUSH`, `CLEANUP`, `SQUASH`, `MODEL`, `ROUND`, `STATE`, `EXIT`), so a step that ran is always traced and a step that was skipped can no longer be traced as if it had run. The duplicate `[DISPATCH]` echo is gone. It resolves the log through `sprint.env` and is a silent no-op with no sprint present — tracing must never fail the caller making progress
+  - New **`state.sh`** (`complete` / `retain` / `blocked` / `coverage-gap` / `model` / `round` / `resume` / `get`) replaces the raw jq one-liners and the "append to `all_merged` / `all_partial` / `all_blocked`" bookkeeping. `get merged` and `get retained` now feed `cleanup-worktrees.sh`, so the certified lists come from disk; `retain` is the one entry point for every branch that must survive, and `complete` clears the retention so a stale branch is never offered for resume
+  - New **`crew-summary.sh`** renders the rollup, `## Verification Failures`, `## Coverage Gaps`, `## Retained Branches`, `## Promoted Findings` and the findings reminder from `sprint-state.json` and the review reports. A review gap is still never suppressed by a clean findings count, and still never counted as a finding — but that rule is now executed once instead of restated in four bodies
+  - Orchestrator bodies: **4,345 → 2,828 words** (Claude) and **4,130 → 2,442 words** shared (pi/codex/copilot render at ~3,240), with the deleted text being narration of script internals, print templates, and re-explanations of decisions a script already enforces
+- Covered by `tests/crew-afk-state.bats` (30 tests): `sprint.env` contents and that it names the sprint the issues live in rather than the alphabetically-first one, `trace.sh` resolution and its no-op path, per-script `MERGE`/`CLOSE`/`EXIT` markers, `state.sh` retain/complete/idempotence/`resume`/`get` disjointness, `crew-summary` rendering including the gap-vs-findings interaction and promoted-findings read-back, that no body re-derives the slug or hand-rolls a script's trace marker, and a 3,000-word budget per body
+  - Six prose assertions in `tests/retain-partial-work.bats`, `tests/crew-afk-review-gaps.bats` and `tests/crew-afk-pre-merge-review.bats` were rewritten to assert the script's behaviour instead of the sentence that described it — the P0 half of the audit, applied where P3 touched. Suite: 455 → 487 tests
+
+
+## [1.19.0] - 2026-08-12
+
+### Changed
+
+- **Unified dispatch skill rendering via fragments** — the `crew-afk` skill variants (pi, codex, copilot) were three ~5,000-word files that were 85–90% identical and drifting. They now render from a shared `dispatch.SKILL.md` body by inlining platform-specific fragments from `fragments/<platform>/<key>.md`. A missing fragment or surviving `{{...}}` placeholder is a hard error — preventing body gaps from shipping to consumers
+  - New `scripts/render-skill.sh <skill> <platform>` — renders bodies by substituting `{{FRAGMENT:<key>}}` and `{{PLATFORM}}` inline. `install.sh` calls it for every skill it installs
+  - Rendered bodies are self-contained and require no build inputs; fragment directories are build inputs and never installed. A fragment tree left by an older install is pruned on re-install
+  - Parity held by `tests/shared-dispatch-body.bats`: tests run against the **rendered** body (not a source variant), asserting identical section structure and pipeline order across platforms, and verifying install renders and ships no build inputs
+- **Platform file support in registry.json** — each skill may declare `platform-files`, a map of paths that are installed only for specific platforms. Other platform-specific files are copied to `platform-files` and pruned on re-install
+- `install.sh` now idempotent across platforms: files from unselected platforms are deleted on re-install, so downgrading (e.g., pi-only) cleans up `.claude/`, `.copilot/`, `.codex/` artifacts
 ## [1.18.0] - 2026-08-12
 
 ### Fixed
@@ -432,3 +456,4 @@ Agent files also use the prefix: `.claude/agents/crew-coder.md`, `.claude/agents
 - `install.sh`: Identifier validation updated for `crew-` style names
 - `README.md`: All examples updated to use new skill and agent names
 - `CLAUDE.md`: Documentation updated to reflect new naming convention
+
