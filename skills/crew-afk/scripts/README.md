@@ -51,6 +51,32 @@ bash scripts/dispatch-codex-agent.sh --agent crew-coder --dir <worktree> \
 
 ---
 
+### `receipts.sh`
+
+**Purpose**: Turn crew-afk's two pipeline gates into facts on disk, so the mechanical steps downstream can refuse to run without them. Before this existed both gates were prose instructions to the orchestrator; a sprint that skipped them merged a branch with failing checks and closed a second issue off the first issue's branch.
+
+**Usage**:
+```bash
+bash scripts/receipts.sh write verify --dir <worktree>      # written by verify-worktree.sh
+bash scripts/receipts.sh write ac     --branch <branch>     # after "AC: all-met"
+bash scripts/receipts.sh check verify --branch <branch>     # enforced by merge-branches.sh
+bash scripts/receipts.sh check ac     --issue <issue-path>  # enforced by close-issue.sh
+bash scripts/receipts.sh clear verify --dir <worktree>
+bash scripts/receipts.sh path  verify --dir <worktree>
+```
+
+**Receipt location**: `<main-root>/.scratch/<feature-slug>/dispatch/<issue-slug>.<verify|ac>.ok`, alongside the worker reports. Contents are the commit SHA that was gated.
+
+**What each gate enforces**:
+- `verify` — `merge-branches.sh` refuses any `crew/<feature>/<issue>` branch without a receipt whose SHA equals the branch tip. Commits added after verification make the receipt stale, so unverified work cannot ride in on an earlier pass. Non-`crew/` branches are not gated.
+- `ac` — `close-issue.sh` refuses to close an issue without a receipt for **that issue's own slug**, derived from the filename exactly as the orchestrator derives branch names. A sibling's receipt does not satisfy it. Existence only: by close time the branch may be merged and deleted, so there is no tip to compare.
+
+**Escape hatch**: `CREW_RECEIPTS=off` disables checking (writes still happen). Intended for tests and for driving these scripts outside a sprint — setting it during a sprint re-opens the exact hole the receipts close.
+
+**Exit code**: 0 when the receipt is written/cleared or the check passes, non-zero on a missing or stale receipt and on bad arguments.
+
+---
+
 ### `session-init.sh`
 
 **Purpose**: Initialize a new afk-run session with feature branch setup and state tracking.

@@ -14,6 +14,11 @@ set -uo pipefail
 # A check category with no discoverable command is reported explicitly as
 # not_run — never silently treated as passing.
 #
+# On exit 0 in a crew worktree this writes a verification receipt (see
+# receipts.sh) naming the commit that passed; merge-branches.sh refuses to merge
+# without one. A failing run clears any earlier receipt, so a branch that once
+# passed cannot merge on stale evidence.
+#
 # Exit code: 0 if all discovered checks pass, non-zero otherwise.
 
 WORKTREE_DIR=""
@@ -328,6 +333,20 @@ if [ "$OVERALL_EXIT" -eq 0 ]; then
   fi
 else
   echo "Verification: fail — one or more checks did not pass"
+fi
+
+# ─── receipt ─────────────────────────────────────────────────────────────────
+
+# Record (or revoke) the merge gate's evidence. Failures here are reported but
+# never change the check outcome: this script's exit code must keep meaning "the
+# checks passed", and a missing receipt already fails closed at merge time.
+RECEIPTS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/receipts.sh"
+if [ -x "$RECEIPTS_SCRIPT" ] || [ -f "$RECEIPTS_SCRIPT" ]; then
+  if [ "$OVERALL_EXIT" -eq 0 ]; then
+    bash "$RECEIPTS_SCRIPT" write verify --dir "$WORKTREE_DIR" || true
+  else
+    bash "$RECEIPTS_SCRIPT" clear verify --dir "$WORKTREE_DIR" || true
+  fi
 fi
 
 exit "$OVERALL_EXIT"

@@ -7,11 +7,16 @@ set -euo pipefail
 #
 # What it does:
 #   1. Validates the issue file exists.
-#   2. Rewrites the `Status:` line to `Status: done`.
-#   3. Moves the file from .../issues/open/ to .../issues/done/.
+#   2. Requires an acceptance-criteria receipt for *this issue's own slug*
+#      (see receipts.sh). Without it the issue is not closed. This is what stops
+#      an issue being closed off a sibling issue's verified branch — observed in
+#      a real sprint, where one dispatch produced two "merged" issues.
+#   3. Rewrites the `Status:` line to `Status: done`.
+#   4. Moves the file from .../issues/open/ to .../issues/done/.
 #
 # What it does NOT do:
 #   - Verify acceptance criteria (that is a separate agent step, run pre-merge, before this).
+#     This only demands the receipt that step leaves behind.
 #   - Any judgment or content analysis.
 
 ISSUE_PATH="${1:-}"
@@ -24,7 +29,9 @@ fi
 if [ ! -f "$ISSUE_PATH" ]; then
   # A worker that closed the issue itself, or a re-run of this step, leaves the file
   # in the sibling done/ directory. That is the desired end state, so report it and
-  # succeed rather than aborting the orchestrator mid-pipeline.
+  # succeed rather than aborting the orchestrator mid-pipeline. No receipt is
+  # demanded here: there is no state left to change, so refusing would only make
+  # re-runs fail.
   _open_dir=$(dirname "$ISSUE_PATH")
   _already="$(dirname "$_open_dir")/done/$(basename "$ISSUE_PATH")"
   if [ -f "$_already" ]; then
@@ -36,6 +43,12 @@ if [ ! -f "$ISSUE_PATH" ]; then
   fi
   echo "ERROR: issue file not found: $ISSUE_PATH" >&2
   exit 1
+fi
+
+# Require this issue's own acceptance-criteria receipt before changing anything.
+RECEIPTS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/receipts.sh"
+if [ -f "$RECEIPTS_SCRIPT" ]; then
+  bash "$RECEIPTS_SCRIPT" check ac --issue "$ISSUE_PATH"
 fi
 
 # Rewrite the Status line. Done via temp file rather than `sed -i` because in-place

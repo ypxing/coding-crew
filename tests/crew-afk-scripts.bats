@@ -4,6 +4,11 @@
 # Following the pattern in tests/squash-commits.bats:
 #   - temp git repo per test
 #   - assert exit codes and repo state
+#
+# These cover merge/close *mechanics* only, so they opt out of the receipt gates
+# (CREW_RECEIPTS=off in setup) rather than staging receipts in every test. The
+# gates themselves are covered in tests/crew-afk-receipts.bats — including that
+# `off` is the only way to bypass them.
 
 MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/merge-branches.sh"
 CLOSE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/close-issue.sh"
@@ -21,6 +26,7 @@ setup() {
   git checkout -q -b "feature/my-feature"
 
   export FEATURE_BRANCH="feature/my-feature"
+  export CREW_RECEIPTS=off
 }
 
 teardown() {

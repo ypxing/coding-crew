@@ -246,6 +246,11 @@ Append to trace for each verification:
 echo "[$(date -u +%H:%M:%SZ)] [VERIFY] branch=<branch> result=<pass|fail>" >> "$TRACE_LOG"
 ```
 
+This gate is mechanical, not advisory: on exit 0 `verify-worktree.sh` writes a verification receipt
+naming the exact commit it checked, and `merge-branches.sh` refuses any `crew/` branch without a
+current one. So a branch you skip verification for, or verify and then add commits to, cannot merge —
+re-run the script rather than trying to work around the refusal.
+
 **Per-branch acceptance-criteria verification (run after checks pass, before review and merge):**
 
 For each verified branch, spawn a regular (non-cheap) Agent to read the issue file and the branch
@@ -277,6 +282,16 @@ Append to trace for each criteria check:
 ```bash
 echo "[$(date -u +%H:%M:%SZ)] [ACVERIFY] branch=<branch> result=<all-met|unmet>" >> "$TRACE_LOG"
 ```
+
+On `AC: all-met`, and only then, record the receipt that permits the close:
+
+```bash
+bash "<skill-dir>/scripts/receipts.sh" write ac --branch "<branch>"
+```
+
+`close-issue.sh` refuses to close an issue unless a receipt exists for **that issue's own slug**, so
+this is a gate, not bookkeeping. Never record a receipt for a branch other than the one just checked:
+closing one issue on another branch's evidence is exactly the failure this prevents.
 
 **Per-branch code review (run after both verification gates pass, before merge):**
 

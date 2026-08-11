@@ -355,6 +355,8 @@ Runs three categories in `verification.md` order: typecheck, lint, tests.
 
 If verification exits non-zero — a check failed, or no test command could be discovered (nothing was verified) — demote this result to `partial`. Do not review, close, or merge. Record the verification failure in the sprint summary with the branch name. Then remove the worktree and continue to the next issue.
 
+This gate is mechanical, not advisory: on exit 0 `verify-worktree.sh` writes a verification receipt naming the exact commit it checked, and `merge-branches.sh` refuses any `crew/` branch without a current one. A branch you skipped verification for, or verified and then added commits to, cannot merge — re-run the script rather than working around the refusal.
+
 A `Verification: coverage gap — not_run: ...` line means lint and/or typecheck had no discoverable command. This does not block the merge — many projects legitimately have neither, and failing them would stall every sprint on a false positive. Carry the listed categories into the sprint summary so the gap is visible rather than reading as a clean pass.
 
 ```bash
@@ -373,6 +375,16 @@ git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
    git -C "$MAIN_ROOT" diff $(git -C "$MAIN_ROOT" merge-base "$FEATURE_BRANCH" "$BRANCH").."$BRANCH"
    echo "[$(date -u +%H:%M:%SZ)] [ACVERIFY] branch=$BRANCH result=<all-met|unmet>" >> "$TRACE_LOG"
    ```
+
+   When every criterion is met, and only then, record the receipt that permits the close:
+
+   ```bash
+   bash "<skill-dir>/scripts/receipts.sh" write ac --branch "$BRANCH"
+   ```
+
+   `close-issue.sh` refuses to close an issue unless a receipt exists for **that issue's own slug**,
+   so this is a gate, not bookkeeping. Never record a receipt for a branch other than the one just
+   checked: closing one issue on another branch's evidence is exactly the failure this prevents.
 
    If any criterion is unmet: demote this result to `partial`. Do not review, close, or merge.
    Record the unmet criteria in the sprint summary with the branch name and retain the branch so the

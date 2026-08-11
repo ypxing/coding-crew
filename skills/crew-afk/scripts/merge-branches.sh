@@ -6,6 +6,10 @@ set -uo pipefail
 # Usage: merge-branches.sh <feature-branch> <branch1> [branch2 ...]
 #
 # For each branch:
+#   - Refuses any crew/<feature>/<issue> branch without a current verification
+#     receipt (see receipts.sh). The check gate was prose-only before, so an
+#     orchestrator that skipped or ignored it could merge failing code; now the
+#     merge itself fails closed. Non-crew branches are not gated.
 #   - If already merged (git log HEAD..<branch> is empty), reports success with no action.
 #   - Otherwise performs a no-fast-forward merge.
 #   - On conflict: aborts cleanly and reports failure; NEVER attempts resolution.
@@ -21,6 +25,8 @@ fi
 FEATURE_BRANCH="$1"
 shift
 BRANCHES=("$@")
+
+RECEIPTS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/receipts.sh"
 
 # Ensure we are on the feature branch
 CURRENT=$(git rev-parse --abbrev-ref HEAD)
@@ -39,6 +45,17 @@ for BRANCH in "${BRANCHES[@]}"; do
     echo "MERGE: $BRANCH failed (no such branch)" >&2
     FAILED=1
     continue
+  fi
+
+  # Gate before touching the working tree. A branch that was never verified (or
+  # was verified at an earlier commit) is skipped, not merged — and skipping it
+  # is a failure, so the sprint cannot report it as merged.
+  if [ -f "$RECEIPTS_SCRIPT" ]; then
+    if ! bash "$RECEIPTS_SCRIPT" check verify --branch "$BRANCH"; then
+      echo "MERGE: $BRANCH failed (unverified — see receipt error above)" >&2
+      FAILED=1
+      continue
+    fi
   fi
 
   # Check if already merged: git log HEAD..<branch> is empty when already merged
