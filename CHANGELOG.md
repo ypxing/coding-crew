@@ -2,7 +2,15 @@
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-08-11
+
 ### Added
+
+- **`crew-afk`** (1.14.0): the verify and acceptance-criteria gates are now mechanical instead of prose — `skills/crew-afk/scripts/receipts.sh` records the gated commit SHA at `.scratch/<feature-slug>/dispatch/<issue-slug>.<verify|ac>.ok`
+  - `verify-worktree.sh` writes the `verify` receipt on exit 0 and clears it on failure; `merge-branches.sh` refuses any `crew/<feature>/<issue>` branch whose receipt is missing or stale (commits landed after verification), while non-`crew/` branches stay ungated
+  - `close-issue.sh` refuses to close an issue without a receipt for **that issue's own slug**, so a sibling branch's evidence can no longer close it — the failure mode observed in one sprint, which merged a branch whose `VERIFY` result was `fail` and then reported `merged=2` after a single dispatch
+  - All four platform variants record the `ac` receipt after `AC: all-met`, covered by a parity test so a variant cannot silently drop it. `CREW_RECEIPTS=off` disables receipt *checking* for tests and out-of-sprint script use
+  - Covered by `tests/crew-afk-receipts.bats`
 
 - **`crew-afk`** (1.15.0): worktree/branch teardown is now a mechanical step — `skills/crew-afk/scripts/cleanup-worktrees.sh` replaces the hand-rolled `git worktree remove` / `git branch -D` / `git worktree prune` snippets in all four platform variants
   - Removes each merged branch's worktree **before** its ref (git refuses to delete a ref a worktree still has checked out), then prunes stale worktree metadata
