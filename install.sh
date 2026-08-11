@@ -527,6 +527,31 @@ install_docs() {
     echo "  $rel_dest"
   done
 
+  # Copy tracker helper scripts. Unlike the docs above these are mechanism, not
+  # user-customisable text, so they are always overwritten — a stale copy would be a
+  # gate that no longer matches the tracker operation that calls it.
+  local doc_scripts
+  doc_scripts=$(jq -r '.docs.scripts // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  local doc_scripts_arr=()
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && doc_scripts_arr+=("$_line"); done <<< "$doc_scripts"
+
+  for ds in "${doc_scripts_arr[@]+"${doc_scripts_arr[@]}"}"; do
+    local ds_src_rel ds_dest_rel
+    ds_src_rel=$(jq -r --arg t "$ds" '.docs.scripts[$t].source // empty' "$SCRIPT_DIR/registry.json")
+    ds_dest_rel=$(jq -r --arg t "$ds" '.docs.scripts[$t].dest // empty' "$SCRIPT_DIR/registry.json")
+    [[ -z "$ds_src_rel" || -z "$ds_dest_rel" ]] && continue
+
+    local ds_src="$SCRIPT_DIR/$ds_src_rel"
+    local ds_dest="$REPO_ROOT/$ds_dest_rel"
+    [[ -f "$ds_src" ]] || { echo "Warning: doc script source not found: $ds_src_rel" >&2; continue; }
+
+    [[ "$docs_header_printed" -eq 0 ]] && { echo "Docs:"; docs_header_printed=1; }
+    mkdir -p "$(dirname "$ds_dest")"
+    cp "$ds_src" "$ds_dest"
+    chmod +x "$ds_dest"
+    echo "  $ds_dest_rel"
+  done
+
   # Copy tracker template files so configure-tracker can present them as options.
   local trackers_src="$SCRIPT_DIR/docs/templates/trackers"
   local trackers_dest="$REPO_ROOT/.coding-crew/docs/templates/trackers"

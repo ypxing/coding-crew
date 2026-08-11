@@ -211,6 +211,19 @@ else
     rm -f "$MANIFEST"
     echo "  removed ${MANIFEST#$REPO_ROOT/}"
   fi
+  # Tracker helper scripts are mechanism, not user text: install.sh always overwrites
+  # them, so uninstall removes them. issue-tracker.md and the templates stay.
+  if [[ -d "$REPO_ROOT/.coding-crew/scripts" ]]; then
+    while IFS= read -r name; do
+      name="${name%$'\r'}"
+      [[ -n "$name" ]] || continue
+      if [[ -f "$REPO_ROOT/$name" ]]; then
+        rm -f "$REPO_ROOT/$name"
+        echo "  removed $name"
+      fi
+    done < <(jq -r '.docs.scripts // {} | .[].dest // empty' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+    rmdir_if_empty "$REPO_ROOT/.coding-crew/scripts" || true
+  fi
   # Drop .coding-crew/ only when nothing is left in it — issue-tracker.md and
   # tracker templates are user-customisable and must survive an uninstall.
   if [[ -d "$REPO_ROOT/.coding-crew" ]]; then

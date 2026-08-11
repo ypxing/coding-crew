@@ -183,18 +183,13 @@ Rules:
 
 ## Issue Ownership
 
-**Do not close the issue.** Never run `mark-done`, never rewrite the `Status:` line, and never
-move the issue file into `issues/done/` — even when every acceptance criterion is met. Closing is
-the orchestrator's job, and it happens only *after* independent check verification, acceptance-criteria
-verification, and code review have all passed on your branch.
+**Do not close the issue.** Never run `mark-done`, never rewrite the `Status:` line, never move the
+issue file into `issues/done/` — even when every criterion is met. Report `complete` and leave the
+file where you found it; the orchestrator closes it after its own verification, criteria and review
+gates pass on your branch.
 
-This matters because those gates can demote your `complete` to `partial`. An issue you already
-moved to `issues/done/` is no longer listed as open, so it is never re-dispatched and your unmerged
-branch is silently orphaned. Report `complete` and leave the file where you found it.
-
-`solve-issue` step 7 says to mark the issue done; that step is for standalone use only. You always
-run under an orchestrator, so skip it. Dispatchers that launch you as a subprocess also set
-`CREW_ORCHESTRATED=1` in your environment; its absence does not license you to close the issue.
+The tracker enforces this: `mark-issue-done.sh` refuses while `.scratch/<feature-slug>/.orchestrated`
+exists (exit 3). A refusal is the expected outcome, not an error to work around or force past.
 
 ## Example Reports
 

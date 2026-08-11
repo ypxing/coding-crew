@@ -154,6 +154,14 @@ cat > "$MAIN_ROOT/.scratch/sprint.env" <<ENV
 . "$SPRINT_ENV"
 ENV
 
+# --- orchestration marker ------------------------------------------------------
+# The one fact that stops a worker closing its own issue. A worker that moves its issue
+# to done/ takes it out of the ready-for-agent list, so a later gate that demotes the
+# result to `partial` has nothing left to re-dispatch and the unmerged branch is
+# orphaned. `.coding-crew/scripts/mark-issue-done.sh` refuses while this file exists;
+# crew-summary.sh removes it when the sprint ends.
+date -u +%Y-%m-%dT%H:%M:%SZ > "$MAIN_ROOT/.scratch/$FEATURE_SLUG/.orchestrated"
+
 if [ -f "$(dirname "$0")/trace.sh" ]; then
   bash "$(dirname "$0")/trace.sh" --log "$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/orchestrator.log" \
     SESSION "feature=$FEATURE_SLUG branch=$CURRENT_BRANCH" || true

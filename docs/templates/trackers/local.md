@@ -29,19 +29,28 @@ Create the directory if it does not exist. Set a `Status:` line near the top of 
 
 ## Operation: mark-done
 
-Before moving, verify all acceptance criteria in the issue file are satisfied:
+Delegate to the tracker's close script — do not hand-run `sed` or `mv`:
 
-1. Check each `- [ ]` criterion against the implemented code.
-2. If all are met, check them off (`- [x]`) and update `Status: done`, then move the file to `issues/done/` (sibling of `issues/open/`):
-   ```bash
-   # Rewrite via temp file — `sed -i` is not portable (GNU takes a bare -i, BSD/macOS
-   # reads the next arg as a backup suffix; `-i''` does not help, the shell strips it).
-   sed "s/^Status:.*/Status: done/" "<issue-path>" > "<issue-path>.tmp" \
-     && mv "<issue-path>.tmp" "<issue-path>"
-   mkdir -p "$(dirname "<issue-path>")/../done"
-   mv "<issue-path>" "$(dirname "<issue-path>")/../done/"
-   ```
-3. If any are unmet, do NOT move the file. Instead, add a `## Unmet criteria` section explaining what's missing and why (descoped, blocked, moved to a new issue), and ask the user how to proceed.
+```bash
+bash "$(git rev-parse --show-toplevel)/.coding-crew/scripts/mark-issue-done.sh" "<issue-path>"
+```
+
+The script does not evaluate criteria for you — it only checks that you already did. Before
+calling it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting Requirements`,
+if present) against the implemented code and check off the ones the code satisfies.
+
+The script then refuses the close in two cases, and both refusals are correct:
+
+| Exit | Meaning                                                                    | What to do                                                                                                                          |
+| ---- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `3`  | An orchestrator owns this close (`.scratch/<slug>/.orchestrated` exists, or `CREW_ORCHESTRATED=1`) | Nothing. Report your status and stop — the orchestrator closes the issue after its own verification, criteria and review gates pass. |
+| `4`  | Criteria are still unchecked                                               | Do not move the file. Add a `## Unmet criteria` section saying what is missing and why (descoped, blocked, split out), then stop.     |
+
+Pass `--force` only to override a stale marker left by a crashed sprint, or a criterion
+deliberately recorded as descoped.
+
+On success the script sets `Status: done` and moves the file to `issues/done/` (sibling of
+`issues/open/`). It is idempotent: an issue already in `done/` exits 0.
 
 ## Operation: status-update
 

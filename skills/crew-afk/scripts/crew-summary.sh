@@ -128,6 +128,12 @@ bash "$SCRIPT_DIR/trace.sh" EXIT \
 
 [ "$REMINDER" -eq 1 ] || exit 0
 
+# The sprint is over, so release the close gate: `mark-issue-done.sh` refuses while
+# .orchestrated exists, and a marker left behind would block a standalone solve-issue run
+# on this feature long after the orchestrator stopped. Only on the final summary —
+# --no-reminder is the per-round rollup, and the sprint is still running then.
+rm -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/.orchestrated"
+
 # --- Findings reminder (last thing printed) -----------------------------------
 # Promotion only covered CRITICAL/HIGH findings on Phase 1 branches. Everything else —
 # MEDIUM/LOW, and any finding raised against a Phase 2 fix branch — still needs a human.

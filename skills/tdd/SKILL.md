@@ -59,6 +59,13 @@ Ask: "What should the public interface look like? Which behaviors are most impor
 
 **You can't test everything.** Confirm with the user exactly which behaviors matter most. Focus testing effort on critical paths and complex logic, not every possible edge case.
 
+**Non-interactive runs.** If there is no human in the loop — `CREW_ORCHESTRATED=1`, a headless/`-p`
+invocation, or an orchestrator named as your caller — the two "confirm with user" boxes and "get
+user approval" cannot be satisfied and must not be waited on. Instead: treat the issue's
+acceptance criteria as the approved plan, derive the interface and the behaviour list from them,
+record that list in your notes, and go straight to §2. Do the remaining boxes as normal. Never ask
+a question nobody will read.
+
 ### 2. Tracer Bullet
 
 Write ONE test that confirms ONE thing about the system:

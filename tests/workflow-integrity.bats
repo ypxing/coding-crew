@@ -225,9 +225,19 @@ EOF
   done
 }
 
-@test "B4: solve-issue skips mark-done when it runs under an orchestrator" {
-  grep -qi 'CREW_ORCHESTRATED\|dispatched by an orchestrator\|orchestrator closes' \
-    "$REPO_ROOT/skills/solve-issue/SKILL.md"
+@test "B4: solve-issue's close is refused by the tracker script, not by prose" {
+  # Was a grep for the sentence that told the worker to skip mark-done. The sentence is
+  # gone; what stands in its place is a script that exits non-zero. Assert that instead.
+  mkdir -p .scratch/f/issues/open
+  printf '# T\n\nStatus: ready-for-agent\n' > .scratch/f/issues/open/01-t.md
+  touch .scratch/f/.orchestrated
+
+  run bash "$REPO_ROOT/scripts/tracker/mark-issue-done.sh" .scratch/f/issues/open/01-t.md
+  [ "$status" -eq 3 ]
+  [ -f .scratch/f/issues/open/01-t.md ]
+
+  # ...and solve-issue must route its close through that operation rather than its own mv.
+  grep -qE 'Execute the .mark-done. operation' "$REPO_ROOT/skills/solve-issue/SKILL.md"
 }
 
 @test "B4: close-issue.sh is idempotent when the issue is already in done/" {

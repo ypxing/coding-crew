@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.21.0] - 2026-08-12
+
+### Changed
+
+- **The worker's close is now mechanically impossible during a sprint (audit P4).** A worker that closes its own issue removes it from the `ready-for-agent` list, so an orchestrator gate that later demotes the result to `partial` has nothing left to re-dispatch and the unmerged branch is silently orphaned. Three `crew-coder` variants argued against this in ~150 words each while `solve-issue` step 7 told the worker to close anyway, with the contradiction resolved only by a prose exception. Prose cannot fail closed
+  - New **`scripts/tracker/mark-issue-done.sh`**, installed to `.coding-crew/scripts/mark-issue-done.sh` — the implementation of the tracker's `mark-done` operation. Exit **3** when an orchestrator owns the close (`.scratch/<feature-slug>/.orchestrated` exists, or `CREW_ORCHESTRATED=1`), exit **4** when a `- [ ]` remains under `## Acceptance criteria` or `## Cross-cutting Requirements`, exit **0** (idempotent) when the issue is already in `done/`. `--force` overrides both refusals, for a marker left by a crashed sprint or a criterion recorded as descoped
+  - `crew-afk`'s `session-init.sh` writes the `.orchestrated` marker; `crew-summary.sh` removes it on the **final** summary only (`--no-reminder` is the per-round rollup, when the sprint is still running), so a marker never outlives its sprint and blocks a standalone run. The orchestrator's own `close-issue.sh` is deliberately unaffected by the marker — it is the orchestrator, and it stays gated by its acceptance-criteria receipt instead
+  - The tracker template's `mark-done` operation now delegates to the script and documents the two refusals as expected outcomes; it no longer ships a hand-rolled `sed`/`mv` that bypasses them
+  - `solve-issue` step 7 lost the orchestrated-run exception (the script enforces it), and `crew-coder`'s **Issue Ownership** shrank from three paragraphs to two sentences that cite the refusal
+- **Non-interactive branches for the two mandatory reads that had no addressee.** `tdd` §1 ("Confirm with user…", "Get user approval on the plan") and `solve-issue`'s unmet-criteria path ("ask the user how to proceed") are read by headless `pi -p` workers with nobody to ask. Both now name the non-interactive case explicitly: `tdd` treats the issue's acceptance criteria as the approved plan and proceeds; `solve-issue` records `## Unmet criteria` and reports `partial` instead of stalling on a question no one will read
+- `registry.json` gained a `docs.scripts` map for tracker mechanism. Unlike `docs.templates` (user-customisable, never overwritten, never uninstalled), these are always overwritten on install and removed on uninstall — a stale copy would be a gate that no longer matches the operation calling it
+- Covered by `tests/worker-close-guard.bats` (24 tests): each refusal and its exit code, that the issue is still listed as open after a refusal, `--force`, the section-scoped criteria check (an unchecked box under `## Notes` does not block), marker write/removal across the sprint lifecycle, `close-issue.sh` still closing with the marker present, install/overwrite/uninstall of the script, and the documents pointing at the mechanism instead of re-arguing it. `tests/workflow-integrity.bats`' B4 prose grep was rewritten to assert the refusal. Suite: 487 → 511 tests
+
 ## [1.20.0] - 2026-08-12
 
 ### Changed

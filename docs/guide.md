@@ -101,9 +101,17 @@ agents/crew-coder/
     },
   },
   "docs": {
-    "<file.md>": {
-      "description": "...",
-      "install": "docs/agents/<file.md>",
+    "templates": {
+      "<key>": {
+        "source": "docs/templates/trackers/local.md",
+        "dest": ".coding-crew/docs/issue-tracker.md", // skipped if it already exists
+      },
+    },
+    "scripts": {
+      "<key>": {
+        "source": "scripts/tracker/mark-issue-done.sh",
+        "dest": ".coding-crew/scripts/mark-issue-done.sh", // always overwritten, chmod +x
+      },
     },
   },
 }
@@ -112,6 +120,10 @@ agents/crew-coder/
 **Rules:**
 
 - Paths must be relative and must not contain `..` or a leading `/` — `install.sh` rejects them.
+- `docs.templates` entries are user-customisable text and are **never** overwritten or uninstalled.
+  `docs.scripts` entries are mechanism (a tracker operation's implementation), so they are always
+  overwritten on install and removed on uninstall — a stale copy would be a gate that no longer
+  matches the operation calling it.
 - Skill/agent names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
 - Skills listed under `agents.<name>.skills` are installed as agent deps. Skills not listed under any agent are only installed when `AGENT=all`.
 

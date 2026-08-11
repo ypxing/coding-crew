@@ -233,31 +233,24 @@ Do not push.
 
 ### 7. Mark done
 
-Before moving, verify all acceptance criteria in the issue file are satisfied:
+Verify criteria first, then delegate the close:
 
-**Validate feature acceptance criteria:**
+1. Check each `- [ ]` criterion in `## Acceptance criteria` against the implemented code, and
+   check off (`- [x]`) the ones the code satisfies.
+2. Do the same for `## Cross-cutting Requirements` if the issue has that section.
+3. Execute the `mark-done` operation from `issue-tracker.md` with the issue path. Do not hardcode
+   `mv` or `sed` — delegate entirely to the tracker operation.
 
-1. Check each `- [ ]` criterion in the `## Acceptance criteria` section against the implemented code.
-2. Mark each satisfied criterion with `[x]`.
+The operation refuses to close the issue if an orchestrator owns the close, or if any criterion is
+still unchecked. Both refusals are expected outcomes, not errors to work around: report the
+outcome, leave the file in `issues/open/`, and stop.
 
-**Validate cross-cutting requirements (if present):**
+### 8. Unmet criteria
 
-3. Check if the issue has a `## Cross-cutting Requirements` section.
-4. If it exists, check each `- [ ]` requirement in that section against the implemented code.
-5. Mark each satisfied requirement with `[x]`.
-6. If any cross-cutting requirements remain unchecked (`- [ ]`), do NOT proceed with completion. Instead:
-   - List which requirements are unmet
-   - Explain why they're unmet (not applicable, descoped, blocked, or still needs work)
-   - Ask the user how to proceed
+If criteria are unmet, add a `## Unmet criteria` section to the issue explaining what is missing
+and why (descoped, blocked, split into a new issue). Then:
 
-**Move to done:**
-
-7. If all acceptance criteria AND all cross-cutting requirements (if present) are met, execute the `mark-done` operation from `issue-tracker.md` with the issue path. Do not hardcode `mv` or `sed` — delegate entirely to the tracker operation.
-
-   **Exception — orchestrated runs.** Skip this step entirely if `CREW_ORCHESTRATED=1` is set in the
-   environment, or if your instructions say an orchestrator closes issues. In a crew-afk sprint the
-   orchestrator closes the issue only after independent verification, acceptance-criteria
-   verification, and code review pass on your branch. Closing it here would hide the issue from the
-   next round if one of those gates later demotes the result, orphaning the unmerged branch. Report
-   the outcome and leave the file in `issues/open/`.
-8. If any criteria are unmet, do NOT move the file. Instead, add a `## Unmet criteria` section explaining what's missing and why (descoped, blocked, moved to a new issue), and ask the user how to proceed.
+- **Interactive run** — ask the user how to proceed.
+- **Non-interactive run** (no human is watching: `CREW_ORCHESTRATED=1`, a headless/`-p` invocation,
+  or your instructions name an orchestrator as your caller) — do not ask. Report status `partial`
+  with the unmet criteria listed, and stop. A question nobody can answer stalls the run.
