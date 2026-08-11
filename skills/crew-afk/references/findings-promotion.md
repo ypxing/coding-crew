@@ -122,4 +122,31 @@ bash "<skill-dir>/scripts/promote-findings.sh" list --feature-slug "$FEATURE_SLU
 # End-of-sprint reminder: findings no promotion covered
 bash "<skill-dir>/scripts/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG"
 # → "FINDINGS: open=<N> (MEDIUM=3, LOW=2)" + one "report: <path>" line each | "FINDINGS: none"
+# → plus "REVIEW-GAPS: branches=<N>" + one "gap: <branch> — <reason>" line, when a review
+#   never completed. Printed in addition to the findings line, never instead of it.
+
+# A review that never ran: record the gap instead of self-reviewing inline
+bash "<skill-dir>/scripts/promote-findings.sh" mark-not-run \
+  --feature-slug "$FEATURE_SLUG" --branch "$BRANCH" --slug "$SLUG" \
+  --report "$REPORT" --reason "reviewer dispatch timed out"
+# → "mark-not-run: not_run recorded — <branch> (<reason>)" | "mark-not-run: already recorded"
 ```
+
+## Reviews that never ran
+
+Promotion reads the review report, so a review that never completed promotes nothing. That is
+acceptable — review is advisory and no branch is blocked by it. What is not acceptable is the
+default failure shape: a dead dispatch writes no `--out` file, nothing is appended to `reviews/`,
+and `remind` globbing an empty directory prints `FINDINGS: none`. The sprint then reports a branch
+nobody reviewed as though it came back clean.
+
+`mark-not-run` closes that hole by writing a stub `## Branch:` block carrying a
+`Review: not_run — <reason>` line. `remind` counts those branches separately from findings and
+always prints them, so an unreviewed branch surfaces as a coverage gap. This is the same `not_run`
+convention `verify-worktree.sh` uses for check commands it cannot discover: an unknown result is
+recorded as unknown, never as a pass.
+
+The orchestrator must not review the branch itself as a fallback. An inline review leaves no
+artifact for promotion, `remind`, or `/crew-address-findings` to read, and it discards the
+reviewer's fresh, read-only context — the whole reason review is a separate agent. Record the gap
+and move on.

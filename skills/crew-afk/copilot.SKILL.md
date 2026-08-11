@@ -367,6 +367,24 @@ git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
    If no verified branches exist in this round, print:
    `Code review: skipped (no verified branches this round)` and skip creating a report file.
 
+   **If the reviewer produces no report, record the gap — do not review the branch yourself.**
+   A subagent that fails, or that returns no `## Branch:` block, means this branch was not
+   reviewed. Reviewing it inline from your own context is not a substitute and must not be
+   attempted: it writes no report file, so promotion has nothing to read, `remind` counts zero
+   findings, and the sprint ends reporting a branch nobody reviewed as clean. Record it instead:
+
+   ```bash
+   bash "<skill-dir>/scripts/promote-findings.sh" mark-not-run \
+     --feature-slug "$FEATURE_SLUG" --branch "$BRANCH" --slug "$SLUG" \
+     --report ".scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md" \
+     --reason "<what happened — subagent failed, returned no findings block, timed out>"
+   echo "[$(date -u +%H:%M:%SZ)] [REVIEW] branch=$BRANCH result=not_run" >> "$TRACE_LOG"
+   ```
+
+   Then skip promotion for this branch — there are no findings to promote — and continue to the
+   merge. Review is advisory, so the branch still merges unreviewed; the sprint only has to say
+   so rather than imply it was checked.
+
    ```bash
    echo "[$(date -u +%H:%M:%SZ)] [REVIEW] branch=$BRANCH result=done" >> "$TRACE_LOG"
    ```
@@ -689,5 +707,21 @@ bash "<skill-dir>/scripts/promote-findings.sh" remind --feature-slug "$FEATURE_S
   breakdown includes CRITICAL or HIGH, add: `Includes CRITICAL/HIGH findings raised against fix
   branches, which are report-only by design — review these first.`
 
-- `FINDINGS: none` — print `No open review findings.` and nothing else. Do not suggest
-  `/crew-address-findings` when there is nothing for it to do.
+- `FINDINGS: none` — print `No open review findings.` and nothing else, **unless** a
+  `REVIEW-GAPS` line was also printed. Do not suggest `/crew-address-findings` when there is
+  nothing for it to do.
+
+- `REVIEW-GAPS: branches=<N>` plus one `gap: <branch> — <reason>` line each — print this in
+  addition to whatever the findings line produced, never instead of it:
+
+  ```
+  ## Unreviewed Branches
+  <N> branch(es) merged without a completed code review:
+  <branch> — <reason>
+  Their absence of findings means nothing — nobody looked. Re-run the reviewer on these, or
+  review them by hand.
+  ```
+
+  Never add these to the findings count: they produced no findings by definition. And never let
+  `No open review findings.` stand alone while a gap exists — a branch that merged unreviewed is
+  precisely what this reminder exists to surface.

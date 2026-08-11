@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.18.0] - 2026-08-12
+
+### Fixed
+
+- **`crew-afk` (1.16.0) — a code review that never ran was reported as a clean review.** Review is advisory by design and never blocks a merge, but the failure shape made "advisory" decay into "reported as clean": a dead reviewer dispatch (timeout, killed process, crashed CLI) writes no `--out` file, so nothing is appended to `.scratch/<slug>/reviews/`, so `remind` globs an empty directory and prints `FINDINGS: none`. The sprint ended telling the user there was nothing to triage, on branches nobody had looked at
+  - Observed in the wild as the orchestrator improvising `Reviewer timed out. I'll perform the review inline` — a fallback that appears in no variant, because none of them specified what to do when a reviewer fails. An inline self-review is strictly worse than none: it writes no report, so `defer` has nothing to read (it hard-dies on a missing `--report`), CRITICAL/HIGH findings never reach Phase 2, and the review exists only in the orchestrator transcript, lost at session end. It also discards the reviewer's fresh read-only context, which is the entire reason review is a separate agent
+  - New `promote-findings.sh mark-not-run` records the gap as a stub `## Branch:` block carrying `Review: not_run — <reason>`, **creating the report if no branch produced one** — that is the load-bearing part, since an absent file is what made the gap invisible. Idempotent per branch, so a dispatch retried and failed twice counts once
+  - `remind` now counts unreviewed branches separately from findings and prints `REVIEW-GAPS: branches=<N>` with a `gap: <branch> — <reason>` line each, *in addition* to the findings line and never folded into its count (a not_run branch produces no findings by definition). `No open review findings.` can no longer stand alone while a gap exists
+  - All four variants now specify the failure path explicitly and forbid the inline self-review, so the model has an instruction to follow instead of a hole to improvise into
+  - Same `not_run` convention `verify-worktree.sh` already uses for undiscoverable check commands: an unknown result is recorded as unknown, never as a pass
+- Covered by `tests/crew-afk-review-gaps.bats` (14 tests), including the exact silent-loss case (zero findings + one unreviewed branch), that the marker is not miscounted as a finding, that promotion subtraction still works alongside a gap, and that all four variants carry the failure path and the `REVIEW-GAPS` handling
+
+### Notes
+
+- Not related to the v1.17.3 dispatcher fix, though it surfaced while investigating the same sprint: verified that bash 4.4 and 5.2 perform the offending whole-string substitution in 0ms even at 100KB, so Linux was never affected by that bug
+- The reviewer's timeout exposure itself is unchanged and still open: reviews run as serial blocking calls while coders are backgrounded in parallel, and review cost scales with diff size and finding count. This release makes a timed-out review *visible*, not less likely
+
 ## [1.17.3] - 2026-08-12
 
 ### Fixed

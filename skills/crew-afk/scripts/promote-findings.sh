@@ -15,6 +15,7 @@ set -euo pipefail
 #   flush   — flip every parked fix issue to ready-for-agent (Phase 1 → Phase 2 transition)
 #   list    — list parked fix issues without changing anything
 #   remind  — count findings still needing human triage, for the end-of-sprint reminder
+#   mark-not-run — record that a branch's review never completed, so the gap is visible
 #
 # The reasoning half (reading the review, deciding which findings are CRITICAL/HIGH,
 # restating each as an acceptance criterion) stays with the orchestrator.
@@ -39,6 +40,8 @@ Usage:
   promote-findings.sh flush --feature-slug <slug>
   promote-findings.sh list  --feature-slug <slug>
   promote-findings.sh remind --feature-slug <slug>
+  promote-findings.sh mark-not-run --feature-slug <slug> --branch <branch> --slug <issue-slug>
+                            --report <review-report> --reason <text>
 USAGE
   exit 1
 }
@@ -225,6 +228,57 @@ cmd_list() {
   [ "$count" -eq 0 ] && echo "DEFERRED: none" || echo "DEFERRED: count=$count"
 }
 
+# --- mark-not-run ------------------------------------------------------------
+# Review is advisory: a failed reviewer never blocks a merge. But "advisory" must not
+# decay into "reported as clean". If the dispatch dies there is no --out file, so nothing
+# is appended to reviews/ — and `remind` globbing an empty directory prints
+# "FINDINGS: none", which reads as an all-clear on a branch nobody looked at.
+#
+# Writing a stub block closes that hole with the same `not_run` convention
+# verify-worktree.sh already uses for undiscoverable check commands: an unknown result is
+# recorded as unknown, never as a pass. Creating the report when absent is the load-bearing
+# part — it is what makes the gap survive into the end-of-sprint reminder.
+cmd_mark_not_run() {
+  local slug="" branch="" issue_slug="" report="" reason=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --feature-slug) slug="${2:-}"; shift 2 ;;
+      --branch) branch="${2:-}"; shift 2 ;;
+      --slug) issue_slug="${2:-}"; shift 2 ;;
+      --report) report="${2:-}"; shift 2 ;;
+      --reason) reason="${2:-}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$slug" ] && [ -n "$branch" ] && [ -n "$issue_slug" ] || usage
+  # A gap with no reason is nearly as unactionable as no gap at all.
+  [ -n "$report" ] && [ -n "$reason" ] || usage
+
+  mkdir -p "$(dirname "$report")"
+
+  # Idempotent: a retried dispatch that fails twice must not double-count the branch.
+  if [ -f "$report" ] && grep -q "^## Branch: $branch (" "$report"; then
+    echo "mark-not-run: already recorded — $branch"
+    return 0
+  fi
+
+  {
+    [ -s "$report" ] && echo ""
+    echo "## Branch: $branch ($issue_slug)"
+    echo ""
+    echo "Review: not_run — $reason"
+    echo ""
+    echo "### Findings"
+    echo ""
+    echo "None recorded. The code review for this branch did not complete, so the branch was"
+    echo "merged unreviewed. This is a coverage gap, not a clean review: no conclusion about"
+    echo "this branch's security, quality, or correctness can be drawn from its absence of"
+    echo "findings. Review it manually, or re-run the reviewer against the merged range."
+  } >> "$report"
+
+  echo "mark-not-run: not_run recorded — $branch ($reason)"
+}
+
 # --- remind ------------------------------------------------------------------
 # Promotion only covers CRITICAL/HIGH on Phase 1 branches. Everything else — MEDIUM/LOW,
 # plus any severity raised against a Phase 2 fix branch (report-only by the depth bound) —
@@ -235,6 +289,10 @@ cmd_list() {
 # Findings are attributed to the `## Branch: <name>` section they appear under, then any
 # (branch, severity) pair listed in `## Promoted Findings` is subtracted. Reports already
 # archived under reviews/done/ are ignored.
+#
+# Branches marked `Review: not_run` are counted separately and always printed. They
+# contribute no findings by definition, so folding them into the findings total would be
+# wrong — but omitting them is the silent all-clear this is here to prevent.
 cmd_remind() {
   local slug=""
   while [ $# -gt 0 ]; do
@@ -290,6 +348,11 @@ cmd_remind() {
         if (index($0, "[" sev "]") > 0 && !((branch "\x1f" sev) in promoted)) open[sev]++
       }
     }
+    pass == 2 && /^Review: not_run/ {
+      reason = $0
+      sub(/^Review: not_run[[:space:]]*(—|-)?[[:space:]]*/, "", reason)
+      notrun[branch] = reason
+    }
     BEGIN { split("CRITICAL HIGH MEDIUM LOW", order, " "); for (i in order) wanted[order[i]] = 1 }
     END {
       total = 0
@@ -302,18 +365,35 @@ cmd_remind() {
         }
       }
       print total "\t" out
+      for (b in notrun) print "GAP\t" b "\t" notrun[b]
     }
   ' "${reports[@]}" "${reports[@]}")
 
-  local total breakdown
-  total=$(printf '%s' "$totals" | cut -f1)
-  breakdown=$(printf '%s' "$totals" | cut -f2)
+  local total breakdown gaps gap_count
+  total=$(printf '%s\n' "$totals" | head -1 | cut -f1)
+  breakdown=$(printf '%s\n' "$totals" | head -1 | cut -f2)
+  gaps=$(printf '%s\n' "$totals" | grep '^GAP' || true)
+  gap_count=$(printf '%s' "$gaps" | grep -c '^GAP' || true)
 
   if [ "${total:-0}" -eq 0 ]; then
     echo "FINDINGS: none"
   else
     echo "FINDINGS: open=$total ($breakdown)"
     printf 'report: %s\n' "${reports[@]}"
+  fi
+
+  # Printed after the findings line and never suppressed by it: a sprint with zero open
+  # findings and an unreviewed branch is exactly the case that must not look clean.
+  if [ "${gap_count:-0}" -gt 0 ]; then
+    echo "REVIEW-GAPS: branches=$gap_count"
+    printf '%s\n' "$gaps" | while IFS=$'\t' read -r _ branch reason; do
+      echo "gap: $branch — $reason"
+    done
+    # The report paths are printed with the findings line above; when there are no
+    # findings, the gap lines are the only reason to name the report, so print them here.
+    if [ "${total:-0}" -eq 0 ]; then
+      printf 'report: %s\n' "${reports[@]}"
+    fi
   fi
 }
 
@@ -327,5 +407,6 @@ case "$COMMAND" in
   flush) cmd_flush "$@" ;;
   list)  cmd_list "$@" ;;
   remind) cmd_remind "$@" ;;
+  mark-not-run) cmd_mark_not_run "$@" ;;
   *) usage ;;
 esac
