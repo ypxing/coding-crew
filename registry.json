@@ -171,7 +171,7 @@
       ]
     },
     "crew-grill": {
-      "version": "1.1.0",
+      "version": "1.2.0",
       "source-dir": "crew-grill",
       "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then produce a PRD and issues.",
       "install": ".claude/skills/crew-grill",
