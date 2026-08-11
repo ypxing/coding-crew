@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-08-11
+
 ### Added
 
 - **`crew-afk`** (1.13.0): CRITICAL/HIGH review findings are now routed back into the same sprint as a second fix phase instead of waiting for a human. Policy lives in `skills/crew-afk/references/findings-promotion.md`; the mechanical half is `scripts/promote-findings.sh` (`guard` / `defer` / `flush` / `list` / `remind`) so all four platform variants behave identically
