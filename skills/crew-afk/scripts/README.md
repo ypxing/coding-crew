@@ -77,6 +77,30 @@ bash scripts/receipts.sh path  verify --dir <worktree>
 
 ---
 
+### `cleanup-worktrees.sh`
+
+**Purpose**: Tear down a sprint's worktrees and the branch refs for merged branches in one mechanical, idempotent step. Cleanup used to be prose repeated in four variants, so an orchestrator that ran out of loop budget never got there — and no variant ever named the runtime-managed worktrees Claude creates for `isolation: worktree` agents, so `.claude/worktrees/agent-*` plus their `worktree-agent-*` refs accumulated across every sprint.
+
+**Usage**:
+```bash
+bash scripts/cleanup-worktrees.sh [--main-root <path>] [--feature-slug <slug>] \
+  [--merged <branch>[,<branch>...]]... [--retain <branch>[,<branch>...]]... [--dry-run] [--force]
+```
+
+**What it does**:
+- Removes each candidate branch's worktree **first**, then deletes the ref — git refuses to delete a ref that a worktree still has checked out — and finishes with `git worktree prune`
+- Sweeps candidates nobody passed in: `crew/<feature-slug>/*` worktrees (when `--feature-slug` is given) and runtime-managed `worktree-agent-*` / `.claude/worktrees/*` worktrees
+- Never touches a `--retain` branch (partial / verification-failed / criteria-unmet); never removes a worktree with uncommitted changes
+- Refuses to delete a *swept* branch whose commits are not already in `HEAD` unless `--force`. Branches passed with `--merged` are exempt: cleanup runs after `squash-commits.sh`, which soft-resets the feature branch, so a genuinely merged branch tip is never an ancestor of `HEAD` by then — requiring ancestry there would keep every merged branch forever
+- Prints one line per branch (`removed` / `kept <reason>` / `skipped`) and a final `CLEANUP: removed=N kept=M failed=K`
+- `--main-root` defaults to the repo's main worktree, resolved via `--git-common-dir`, so it works when invoked from inside a linked worktree
+
+**Exit code**: 0 on success, including "nothing to do" and any safety refusal; 1 on bad arguments, a non-git main root, or a ref that could not be deleted.
+
+**Idempotent**: re-running is a clean no-op, so it is also the way to clear a repo that already leaked worktrees (`--dry-run` first).
+
+---
+
 ### `session-init.sh`
 
 **Purpose**: Initialize a new afk-run session with feature branch setup and state tracking.

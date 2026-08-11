@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`crew-afk`** (1.15.0): worktree/branch teardown is now a mechanical step — `skills/crew-afk/scripts/cleanup-worktrees.sh` replaces the hand-rolled `git worktree remove` / `git branch -D` / `git worktree prune` snippets in all four platform variants
+  - Removes each merged branch's worktree **before** its ref (git refuses to delete a ref a worktree still has checked out), then prunes stale worktree metadata
+  - Fails safe: a `--retain` branch is never touched, a worktree with uncommitted changes is never removed, and a *swept* branch whose commits are not already in `HEAD` is never deleted (override with `--force`) — while branches passed as `--merged` are exempt from the ancestry test, since cleanup runs after squash and a squashed merge leaves no ancestry to check. Every refusal is reported as `kept`, not as a failure, and the run ends with a machine-readable `CLEANUP: removed=N kept=M failed=K` line
+  - **Sweeps** leftovers no variant ever named: `crew/<feature-slug>/*` worktrees stranded by an earlier round or a crashed sprint, plus the runtime-managed `worktree-agent-*` worktrees under `.claude/worktrees/` that Claude's `isolation: worktree` creates. Those accumulated indefinitely because cleanup only ever listed branches the orchestrator remembered
+  - Idempotent by construction, so it is safe to re-run at any time — including out of band, to clear a repo that already leaked worktrees: `bash scripts/cleanup-worktrees.sh --feature-slug <slug> --dry-run`
+  - Covered by `tests/crew-afk-cleanup-worktrees.bats`
+
 ## [1.16.0] - 2026-08-11
 
 ### Added

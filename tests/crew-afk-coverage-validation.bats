@@ -32,7 +32,7 @@ teardown() {
   # Coverage validation is in Wrap Up, between squash and branch cleanup.
   squash_line=$(grep -n "squash-commits.sh\|Squash Commit" "$SKILL_FILE" | head -1 | cut -d: -f1)
   coverage_line=$(grep -n "### Coverage validation" "$SKILL_FILE" | head -1 | cut -d: -f1)
-  cleanup_line=$(grep -n "### Branch cleanup" "$SKILL_FILE" | head -1 | cut -d: -f1)
+  cleanup_line=$(grep -n "### Worktree and branch cleanup" "$SKILL_FILE" | head -1 | cut -d: -f1)
 
   # Verify order: squash -> coverage validation -> branch cleanup
   [ "$squash_line" -lt "$coverage_line" ]
@@ -115,7 +115,7 @@ teardown() {
   # The coverage validation agent must NOT be on a cheap tier
   # Extract the coverage validation section and check it doesn't say haiku
   coverage_start=$(grep -n "### Coverage validation" "$SKILL_FILE" | head -1 | cut -d: -f1)
-  cleanup_start=$(grep -n "### Branch cleanup" "$SKILL_FILE" | head -1 | cut -d: -f1)
+  cleanup_start=$(grep -n "### Worktree and branch cleanup" "$SKILL_FILE" | head -1 | cut -d: -f1)
 
   if [ -z "$coverage_start" ] || [ -z "$cleanup_start" ]; then
     skip "Could not find section boundaries"

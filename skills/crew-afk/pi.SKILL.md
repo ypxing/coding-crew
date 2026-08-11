@@ -675,23 +675,36 @@ The validation agent output becomes the **Coverage Report** section in the final
 
 ## Worktree Cleanup (on exit)
 
-After squash and coverage validation, delete only the branch refs for **merged** branches. Retained
-branches (partial, verification-failed, or criteria-unmet) are left intact — their worktrees were already removed in
-step 3, and the branch refs must survive so the next round's worker can resume on them.
+After squash and coverage validation, tear down this sprint's worktrees and the branch refs for
+**merged** branches. This is one mechanical, idempotent step — do not hand-roll `worktree remove` /
+`branch -D`, and do not skip it because a round ran long:
 
 ```bash
-# Only delete successfully merged branches — retained branches are excluded.
-# A branch ref cannot be deleted while a worktree still has it checked out; on this
-# platform merged worktrees were already removed in step 3, so the refs are free.
-git -C "$MAIN_ROOT" branch -D -- <merged-branch1> <merged-branch2> ... 2>/dev/null || true
-
-# Safe to run unconditionally: prune only clears stale metadata for worktrees whose
-# directory is already gone. It never removes a live, checked-out worktree.
-git -C "$MAIN_ROOT" worktree prune
+bash "<skill-dir>/scripts/cleanup-worktrees.sh" \
+  --main-root "$MAIN_ROOT" --feature-slug "$FEATURE_SLUG" \
+  --merged "<merged-branch1>,<merged-branch2>,..." \
+  --retain "<retained-branch1>,<retained-branch2>,..."
 ```
 
-The `merged` branch list contains only branches that were successfully merged onto the feature
-branch during this sprint. The `2>/dev/null || true` ensures a missing branch doesn't abort cleanup.
+What it does, so you do not need to reason about it:
+
+- Removes each merged branch's worktree **before** its ref (git refuses to delete a ref that a
+  worktree still has checked out) and then prunes stale worktree metadata.
+- Never touches a `--retain` branch (partial, verification-failed, criteria-unmet) — those refs must
+  survive so the next round's worker can resume on them.
+- Refuses to remove a worktree with uncommitted changes. A *swept* branch whose commits are not in
+  `HEAD` is kept too; branches you pass with `--merged` are exempt from that check, because cleanup
+  runs after squash and a squashed merge leaves no ancestry to test. So pass `--merged` accurately:
+  it is the certified list, and a branch named there will be deleted.
+- Every refusal is reported as `kept`, not as a failure.
+- **Sweeps** leftovers nobody passed in: any `crew/<feature-slug>/*` worktree from an earlier round
+  or a crashed sprint, plus the runtime-managed `worktree-agent-*` worktrees under
+  `.claude/worktrees/` that agent isolation creates. These used to accumulate across sprints because
+  no step named them.
+
+Run it even when nothing merged — the sweep and prune are the point. Re-running is a clean no-op.
+Take the counts from its last line (`CLEANUP: removed=N kept=M failed=K`); a non-zero exit means a
+ref could not be deleted, so report that in the summary rather than claiming a clean teardown.
 
 After cleanup, list retained branches in the sprint summary so the human is aware of them:
 

@@ -498,7 +498,7 @@ Run the coverage validation script. It locates the feature's PRD and prints eith
 bash "<skill-dir>/scripts/coverage-validation.sh"
 ```
 
-If the output contains `"skipped"`, continue to branch cleanup.
+If the output contains `"skipped"`, continue to worktree and branch cleanup.
 
 If `PRD.md` exists (output does not contain `"skipped"`), spawn a validation agent to generate a coverage report. Do **not** use a cheap model tier for this step — coverage validation does genuine reasoning (matching PRD requirements against merged code and issue acceptance criteria):
 
@@ -533,33 +533,40 @@ Report format:
 
 The validation agent output becomes the **Coverage Report** section in the final summary (inserted before per-issue details).
 
-### Branch cleanup
+### Worktree and branch cleanup
 
-Delete only the branches that were successfully merged into the feature branch (`all_merged`).
-Branches that are partial or failed verification are **retained** — do not delete them. Their
-branch refs and worktrees stay so the next round's worker can resume in place.
-
-A branch ref cannot be deleted while a worktree still has it checked out — `git branch -D` fails
-with `used by worktree`. Do not assume the runtime removed the worktree on agent return; it may
-still be checked out. So remove each merged branch's worktree first, then delete its ref.
+Tear down this sprint's worktrees and the branch refs for branches that were successfully merged
+into the feature branch (`all_merged`). This is one mechanical, idempotent step — do not hand-roll
+`worktree remove` / `branch -D`, and do not skip it because a round ran long:
 
 ```bash
-# For each merged branch, remove its worktree first — a checked-out branch ref cannot be deleted.
-# Only ever pass merged worktrees here; retained ones must stay checked out.
-git worktree remove --force <merged-worktree-path> 2>/dev/null || true
-
-# Then delete only merged branch refs — retained (partial/verification-failed/criteria-unmet) branches are left intact
-git branch -D -- <merged-branch1> <merged-branch2> ... 2>/dev/null || true
-
-# Safe to run unconditionally: prune only clears stale metadata for worktrees whose
-# directory is already gone. It never removes a live, checked-out worktree.
-git worktree prune
+bash "<skill-dir>/scripts/cleanup-worktrees.sh" \
+  --main-root "$MAIN_ROOT" --feature-slug "$FEATURE_SLUG" \
+  --merged "<merged-branch1>,<merged-branch2>,..." \
+  --retain "<retained-branch1>,<retained-branch2>,..."
 ```
 
-Before removing anything, confirm the merged branch's content really is in `HEAD`
-(`git diff --stat HEAD <branch>`) and that its worktree has no uncommitted changes
-(`git -C <worktree-path> status --short`). Never report a branch as cleaned up when it was
-retained, or vice versa — the summary must match actual repository state.
+What it does, so you do not need to reason about it:
+
+- Removes each merged branch's worktree **before** its ref. A branch ref cannot be deleted while a
+  worktree still has it checked out (`git branch -D` fails with `used by worktree`), and you cannot
+  assume the runtime removed the worktree on agent return. Stale metadata is pruned afterwards.
+- Never touches a `--retain` branch (partial, verification-failed, criteria-unmet) — those refs and
+  worktrees stay so the next round's worker can resume in place.
+- Refuses to remove a worktree with uncommitted changes. A *swept* branch whose commits are not in
+  `HEAD` is kept too; branches you pass with `--merged` are exempt from that check, because cleanup
+  runs after squash and a squashed merge leaves no ancestry to test. So pass `--merged` accurately:
+  it is the certified list, and a branch named there will be deleted.
+- Every refusal is reported as `kept`, not as a failure.
+- **Sweeps** leftovers nobody passed in: any `crew/<feature-slug>/*` worktree from an earlier round
+  or a crashed sprint, plus the runtime-managed `worktree-agent-*` worktrees under
+  `.claude/worktrees/` that `isolation: worktree` creates. These used to accumulate across sprints
+  because no step named them.
+
+Run it even when nothing merged — the sweep and prune are the point. Re-running is a clean no-op.
+Take the counts from its last line (`CLEANUP: removed=N kept=M failed=K`); a non-zero exit means a
+ref could not be deleted. Never report a branch as cleaned up when the script kept it, or vice
+versa — the summary must match actual repository state.
 
 Before printing the summary, collect retained branches (partial + verification-failed + criteria-unmet) and append the EXIT trace line:
 
