@@ -3,7 +3,6 @@ name: crew-afk
 description: >
   Spawns crew-coder agents to implement all ready-for-agent issues in the current repo,
   supervises until all are done, and merges work back. Trigger with /crew-afk.
-  Add "with workflow" to use the Workflow tool instead of inline Agent calls.
   Optional: --model <alias|inherit> to override the coder's default model (sonnet).
 tools:
   - Agent

@@ -173,3 +173,44 @@ Status definitions:
 - **`complete`** — all criteria met, all checks pass, work committed.
 - **`partial`** — meaningful progress was made but not all checks pass or criteria are met. Commit the work to this branch with a `[WIP]` marker in the commit message so the code is preserved. Write notes to `## Progress` in the issue file as context alongside the preserved code (not as a substitute for it). The next round resumes on this branch.
 - **`blocked`** — cannot proceed without human input or environment fix.
+
+## Example Reports
+
+**Example 1: Complete**
+
+```json
+{
+  "status": "complete",
+  "branch": "crew/auth-flow/add-user-logout",
+  "working_directory": "/repo/.claude/worktrees/agent-a1b2c3d4",
+  "checks": [
+    { "command": "npx tsc --noEmit", "result": "pass" },
+    { "command": "npx eslint .", "result": "pass" },
+    { "command": "npm test", "result": "pass" }
+  ],
+  "acceptance_criteria": "- [x] Logout endpoint added to API\n- [x] Session cleared on logout\n- [x] Tests verify behavior",
+  "changes": ["src/api/auth.ts", "test/api/auth.test.ts"],
+  "notes": "none"
+}
+```
+
+**Example 2: Partial** — note what makes this `partial` rather than `complete`: a criterion is
+still `[ ]`, a check does not pass, and the work is committed with a `[WIP]` marker so the branch
+preserves it for the next round. A report with every criterion `[x]` and every check passing is
+`complete`, never `partial`.
+
+```json
+{
+  "status": "partial",
+  "branch": "crew/auth-flow/refactor-validation",
+  "working_directory": "/repo/.claude/worktrees/agent-e5f6a7b8",
+  "checks": [
+    { "command": "npx tsc --noEmit", "result": "pass" },
+    { "command": "<none found>", "result": "not_run" },
+    { "command": "npm test", "result": "fail" }
+  ],
+  "acceptance_criteria": "- [x] Validation logic extracted to src/validation.ts\n- [ ] All existing call sites migrated — src/api/orders.ts still calls the old inline validator\n- [ ] Full suite green — 2 order-validation tests fail against the extracted helper",
+  "changes": ["src/validation.ts", "src/api/users.ts", "test/validation.test.ts"],
+  "notes": "Committed as [WIP] on this branch so the extraction is preserved. Remaining: migrate src/api/orders.ts and reconcile the 2 failing order-validation tests, which assert the old inline error message format."
+}
+```

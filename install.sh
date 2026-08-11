@@ -366,8 +366,20 @@ install_single_skill() {
   # always named SKILL.md, so diffing the shared fallback against a previously
   # installed platform variant reports the entire file as changed on every
   # re-install. Pick the source now and copy it straight to SKILL.md.
-  local skill_md_source="SKILL.md"
-  [[ -f "$SCRIPT_DIR/skills/$source_dir/$PLATFORM.SKILL.md" ]] && skill_md_source="$PLATFORM.SKILL.md"
+  #
+  # A `body` map in registry.json points several platforms at one shared body
+  # (e.g. pi/codex/copilot → dispatch.SKILL.md), whose per-platform differences live
+  # in fragments/<platform>/<key>.md and are inlined at install time by
+  # scripts/render-skill.sh. Without a map entry the old convention still holds:
+  # <platform>.SKILL.md, else the shared SKILL.md.
+  local skill_md_source
+  skill_md_source=$(jq -r --arg s "$skill_name" --arg p "$PLATFORM" '.skills[$s].body[$p] // empty' "$SCRIPT_DIR/registry.json")
+  if [[ -z "$skill_md_source" ]]; then
+    skill_md_source="SKILL.md"
+    [[ -f "$SCRIPT_DIR/skills/$source_dir/$PLATFORM.SKILL.md" ]] && skill_md_source="$PLATFORM.SKILL.md"
+  fi
+  [[ -f "$SCRIPT_DIR/skills/$source_dir/$skill_md_source" ]] || {
+    echo "Error: skill body not found: skills/$source_dir/$skill_md_source ($PLATFORM)" >&2; exit 1; }
 
   # platform-files gates individual source files to a single platform, so e.g. pi's
   # dispatch-agent.sh never lands in a codex install. Build two lists: paths gated to
@@ -389,6 +401,9 @@ install_single_skill() {
   # Copy files with diff output for changed files
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
+    # Fragments are build inputs, not runtime files — they are inlined into the
+    # rendered SKILL.md and must never ship on their own.
+    [[ "$rel_path" == fragments/* ]] && continue
     # Every *.SKILL.md competes for one destination: SKILL.md. Copy only the variant
     # this platform resolved to and skip the rest.
     if [[ "$rel_path" == "SKILL.md" || "$rel_path" == *".SKILL.md" ]]; then
@@ -402,22 +417,34 @@ install_single_skill() {
     local dest_file="$REPO_ROOT/$skill_dest/$rel_path"
     local rel_dest="${dest_file#$REPO_ROOT/}"
     mkdir -p "$(dirname "$dest_file")"
-    
+
+    # The body is rendered (placeholders expanded); every other file copies verbatim.
+    local staged="$src_file" render_tmp=""
+    if [[ "$rel_path" == "SKILL.md" ]]; then
+      render_tmp=$(mktemp)
+      bash "$SCRIPT_DIR/scripts/render-skill.sh" "$skill_name" "$PLATFORM" "$render_tmp" || {
+        rm -f "$render_tmp"; exit 1; }
+      staged="$render_tmp"
+    fi
+
     local status=0
-    check_dest_status "$src_file" "$dest_file" || status=$?
-    cp "$src_file" "$dest_file"
-    
+    check_dest_status "$staged" "$dest_file" || status=$?
+    cp "$staged" "$dest_file"
+    [[ -n "$render_tmp" ]] && rm -f "$render_tmp"
+
     # Print path for new files (status=0)
     if [[ $status -eq 0 ]]; then
       echo "  $rel_dest"
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
-  # Drop platform variants left behind by older installs, which copied every variant
-  # and selected one afterwards.
-  local variant_platform
-  for variant_platform in "${PLATFORMS[@]}"; do
-    rm -f "$REPO_ROOT/$skill_dest/$variant_platform.SKILL.md"
-  done
+  # Drop platform variants and shared bodies left behind by older installs, which
+  # copied every variant and selected one afterwards. Also drop a fragments/ tree from
+  # an install that predates rendering.
+  local stale_body
+  while IFS= read -r stale_body; do
+    [[ -n "$stale_body" ]] && rm -f "$stale_body"
+  done < <(find "$REPO_ROOT/$skill_dest" -maxdepth 1 -name "*.SKILL.md" 2>/dev/null || true)
+  rm -rf "$REPO_ROOT/$skill_dest/fragments"
   # Drop other platforms' gated files left behind by older installs, which copied
   # every file regardless of platform.
   local foreign_file

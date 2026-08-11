@@ -1,5 +1,6 @@
 #!/bin/bash
-# Test script for worktree lifecycle in copilot.SKILL.md
+# Test script for worktree lifecycle in the rendered Copilot orchestrator body
+# (pi/codex/copilot share skills/crew-afk/dispatch.SKILL.md; run from the repo root)
 # Tests: creation, .worktreeinclude symlinking, removal, and prune patterns
 
 set -e
@@ -23,7 +24,7 @@ git commit -q -m "Initial commit"
 git branch -M main
 git checkout -b feature/my-sprint -q
 
-echo "Testing worktree lifecycle for copilot.SKILL.md..."
+echo "Testing worktree lifecycle for the rendered copilot body..."
 echo
 
 # ---------------------------------------------------------------------------
@@ -192,64 +193,66 @@ echo
 # ---------------------------------------------------------------------------
 # Test 8: prompt includes Working directory and hardcoded MAIN_ROOT
 # ---------------------------------------------------------------------------
-echo "Test 8: Verify copilot.SKILL.md prompt shape contains Working directory and MAIN_ROOT fields"
-SKILL_FILE="$REPO_ROOT/skills/crew-afk/copilot.SKILL.md"
+echo "Test 8: Verify rendered copilot body prompt shape contains Working directory and MAIN_ROOT fields"
+# The copilot body is rendered from the shared dispatch body plus its fragments.
+SKILL_FILE="$TEST_DIR/copilot.SKILL.md"
+bash "$REPO_ROOT/scripts/render-skill.sh" crew-afk copilot "$SKILL_FILE"
 if grep -q "Working directory:" "$SKILL_FILE" 2>/dev/null; then
-    pass "copilot.SKILL.md contains 'Working directory:' in prompt"
+    pass "rendered copilot body contains 'Working directory:' in prompt"
 else
-    fail "copilot.SKILL.md missing 'Working directory:' in prompt"
+    fail "rendered copilot body missing 'Working directory:' in prompt"
 fi
 
 if grep -q "MAIN_ROOT=<absolute" "$SKILL_FILE" 2>/dev/null; then
-    pass "copilot.SKILL.md documents that MAIN_ROOT must be hardcoded absolute path"
+    pass "rendered copilot body documents that MAIN_ROOT must be hardcoded absolute path"
 else
-    fail "copilot.SKILL.md missing MAIN_ROOT hardcoded absolute path instruction"
+    fail "rendered copilot body missing MAIN_ROOT hardcoded absolute path instruction"
 fi
 echo
 
 # ---------------------------------------------------------------------------
 # Test 9: prompt shape — no \$() substitution instruction for MAIN_ROOT
 # ---------------------------------------------------------------------------
-echo "Test 9: copilot.SKILL.md explicitly says no \$() substitution for MAIN_ROOT"
+echo "Test 9: rendered copilot body explicitly says no \$() substitution for MAIN_ROOT"
 if grep -q "no.*\\\$().*substitution\|no.*subshell\|\\\$()" "$SKILL_FILE" 2>/dev/null; then
     # We just need the instruction to be present
-    pass "copilot.SKILL.md mentions \$() substitution avoidance for MAIN_ROOT"
+    pass "rendered copilot body mentions \$() substitution avoidance for MAIN_ROOT"
 else
     # Check alternative phrasing
     if grep -q "hardcoded\|hard-code\|hard code" "$SKILL_FILE" 2>/dev/null; then
-        pass "copilot.SKILL.md uses 'hardcoded' wording (equivalent instruction)"
+        pass "rendered copilot body uses 'hardcoded' wording (equivalent instruction)"
     else
-        fail "copilot.SKILL.md missing instruction to avoid \$() for MAIN_ROOT"
+        fail "rendered copilot body missing instruction to avoid \$() for MAIN_ROOT"
     fi
 fi
 echo
 
 # ---------------------------------------------------------------------------
-# Test 10: copilot.SKILL.md has worktree prune on exit
+# Test 10: teardown is delegated to cleanup-worktrees.sh, which prunes metadata
 # ---------------------------------------------------------------------------
-echo "Test 10: copilot.SKILL.md has 'worktree prune' in exit section"
-if grep -q "worktree prune" "$SKILL_FILE" 2>/dev/null; then
-    pass "copilot.SKILL.md contains 'worktree prune'"
+echo "Test 10: rendered copilot body delegates teardown to cleanup-worktrees.sh"
+if grep -q "cleanup-worktrees.sh" "$SKILL_FILE" 2>/dev/null; then
+    pass "rendered copilot body calls cleanup-worktrees.sh (which prunes stale metadata)"
 else
-    fail "copilot.SKILL.md missing 'worktree prune'"
+    fail "rendered copilot body does not call cleanup-worktrees.sh"
 fi
 echo
 
 # ---------------------------------------------------------------------------
-# Test 11: copilot.SKILL.md has worktree remove after merge
+# Test 11: rendered copilot body has worktree remove after merge
 # ---------------------------------------------------------------------------
-echo "Test 11: copilot.SKILL.md has 'worktree remove' after merge"
+echo "Test 11: rendered copilot body has 'worktree remove' after merge"
 if grep -q "worktree remove" "$SKILL_FILE" 2>/dev/null; then
-    pass "copilot.SKILL.md contains 'worktree remove'"
+    pass "rendered copilot body contains 'worktree remove'"
 else
-    fail "copilot.SKILL.md missing 'worktree remove'"
+    fail "rendered copilot body missing 'worktree remove'"
 fi
 echo
 
 # ---------------------------------------------------------------------------
-# Test 12: copilot.SKILL.md dispatches all subagents in single response (not sequential)
+# Test 12: rendered copilot body dispatches all subagents in single response (not sequential)
 # ---------------------------------------------------------------------------
-echo "Test 12: copilot.SKILL.md instructs single-response dispatch (parallel), not sequential"
+echo "Test 12: rendered copilot body instructs single-response dispatch (parallel), not sequential"
 # Must have instruction to dispatch in a single response
 HAS_SINGLE_RESPONSE=0
 HAS_NO_SEQUENTIAL=0
@@ -258,11 +261,11 @@ grep -qi "single response\|dispatch.*all.*once\|all.*dispatch.*once\|parallel.*d
 grep -qi "sequential processing.*one at a time" "$SKILL_FILE" 2>/dev/null || HAS_NO_SEQUENTIAL=1
 
 if [ $HAS_SINGLE_RESPONSE -eq 1 ] && [ $HAS_NO_SEQUENTIAL -eq 1 ]; then
-    pass "copilot.SKILL.md has parallel single-response dispatch without sequential-one-at-a-time constraint"
+    pass "rendered copilot body has parallel single-response dispatch without sequential-one-at-a-time constraint"
 elif [ $HAS_SINGLE_RESPONSE -eq 0 ]; then
-    fail "copilot.SKILL.md missing single-response dispatch instruction"
+    fail "rendered copilot body missing single-response dispatch instruction"
 else
-    fail "copilot.SKILL.md still says 'Sequential processing... one at a time'"
+    fail "rendered copilot body still says 'Sequential processing... one at a time'"
 fi
 echo
 

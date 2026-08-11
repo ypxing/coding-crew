@@ -11,12 +11,15 @@
 #   6. Progress notes are positioned as context alongside code, not a substitute
 #   7. Trace continuity: branch key reused across rounds
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export CLAUDE_AGENT="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
   export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
   export CLAUDE_SKILL="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
-  export COPILOT_SKILL="$SCRIPT_DIR/skills/crew-afk/copilot.SKILL.md"
+  # pi/codex/copilot share one source body; assert on the rendered copilot result.
+  export COPILOT_SKILL="$(afk_variant copilot)"
   export MERGE_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/merge-branches.sh"
 }
 

@@ -13,6 +13,8 @@
 # matching receipt, and close-issue.sh refuses to close an issue without an
 # acceptance-criteria receipt for that issue's own slug.
 
+load helpers/render
+
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 RECEIPTS_SCRIPT="$REPO_ROOT/skills/crew-afk/scripts/receipts.sh"
 MERGE_SCRIPT="$REPO_ROOT/skills/crew-afk/scripts/merge-branches.sh"
@@ -292,8 +294,8 @@ EOF
 # sprint would stall at the last step, which is a worse failure than a clear one.
 
 @test "parity: every crew-afk variant records an ac receipt after all-met" {
-  for variant in SKILL.md pi.SKILL.md copilot.SKILL.md codex.SKILL.md; do
-    run grep -q "receipts.sh\" write ac" "$REPO_ROOT/skills/crew-afk/$variant"
+  for variant in claude pi copilot codex; do
+    run grep -q "receipts.sh\" write ac" "$(afk_variant "$variant")"
     [ "$status" -eq 0 ] || {
       echo "$variant does not record an ac receipt" >&2
       return 1
@@ -302,8 +304,8 @@ EOF
 }
 
 @test "parity: every crew-afk variant states the merge gate is mechanical" {
-  for variant in SKILL.md pi.SKILL.md copilot.SKILL.md codex.SKILL.md; do
-    run grep -q "verification receipt" "$REPO_ROOT/skills/crew-afk/$variant"
+  for variant in claude pi copilot codex; do
+    run grep -q "verification receipt" "$(afk_variant "$variant")"
     [ "$status" -eq 0 ] || {
       echo "$variant does not mention the verification receipt" >&2
       return 1

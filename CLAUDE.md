@@ -67,17 +67,36 @@ Platform files may contain a `{{PROTOCOL}}` placeholder. During `install.sh`, th
 | `pi`      | `.pi/agents/`, `.pi/skills/`           | `.pi/agent/agents/`, `.pi/agent/skills/` |
 | `codex`   | `.codex/agents/`, `.agents/skills/`    | same                                     |
 
-Skill destinations resolve as: `install-<platform>` in `registry.json` if present, otherwise the `install` (Claude) path with `.claude/` swapped for `.<platform>/` — except `codex`, which swaps to `.agents/` because Codex scans `.agents/skills` (repo) and `~/.agents/skills` (user), never `.codex/skills`. See `default_skill_dest()` in `install.sh`/`uninstall.sh`. Platform-specific skill bodies use `<platform>.SKILL.md` (e.g. `pi.SKILL.md`, `codex.SKILL.md`); a plain `SKILL.md` is the shared fallback and unselected variants are deleted after copy. Other platform-specific files (e.g. `scripts/dispatch-agent.sh` for pi, `scripts/dispatch-codex-agent.sh` for codex) are gated with a `platform-files` map in `registry.json`: a path listed under a platform is copied only for that platform, and copies left behind by earlier installs are pruned on re-install.
+Skill destinations resolve as: `install-<platform>` in `registry.json` if present, otherwise the `install` (Claude) path with `.claude/` swapped for `.<platform>/` — except `codex`, which swaps to `.agents/` because Codex scans `.agents/skills` (repo) and `~/.agents/skills` (user), never `.codex/skills`. See `default_skill_dest()` in `install.sh`/`uninstall.sh`. Other platform-specific files (e.g. `scripts/dispatch-agent.sh` for pi, `scripts/dispatch-codex-agent.sh` for codex) are gated with a `platform-files` map in `registry.json`: a path listed under a platform is copied only for that platform, and copies left behind by earlier installs are pruned on re-install.
 
-**pi specifics:** pi has no native subagent tool, so `crew-afk`'s pi variant dispatches each worker as a separate `pi -p` process through `skills/crew-afk/scripts/dispatch-agent.sh`. That script resolves the agent definition (`.pi/agents/<name>.md`, then `~/.pi/agent/agents/<name>.md`), strips its frontmatter into `--append-system-prompt`, maps `tools:` onto `--tools`, applies `model:`/`--model`, and runs the worker with the issue's worktree as cwd. Workers write their structured report to `.scratch/<slug>/dispatch/<slug>.report.md`, which the orchestrator reads after `wait`.
+#### Skill bodies (one body, many platforms)
 
-**codex specifics:** Codex has native subagents, but they share the parent's working root, so `crew-afk`'s codex variant dispatches each worker as a separate `codex exec` process through `skills/crew-afk/scripts/dispatch-codex-agent.sh`. That script resolves `.codex/agents/<name>.toml` (then `~/.codex/agents/<name>.toml`), prepends `developer_instructions` to the prompt (codex exec has no `--append-system-prompt`), maps `model`/`model_reasoning_effort`/`sandbox_mode` onto CLI flags, runs `codex exec --cd <worktree> --add-dir $MAIN_ROOT`, and captures the report via `--output-last-message`. Reports land in the same `.scratch/<slug>/dispatch/<slug>.report.md` path. This path targets the **local `codex` CLI only** — it needs a shell that can background child processes, a local clone for worktrees, and pre-existing auth. Hosted Codex (Codex in ChatGPT, Codex cloud/web) is out of scope: no parent process to `wait` on and no persistent working root.
+The installed file is always `SKILL.md`. Which source becomes it is resolved, in order:
+
+1. `body.<platform>` in `registry.json` — a **shared body** used by several platforms;
+2. `skills/<skill>/<platform>.SKILL.md` — a single-platform variant;
+3. `skills/<skill>/SKILL.md` — the shared fallback.
+
+Every unselected `*.SKILL.md` is deleted from the destination after copy. `crew-afk` uses the first form: `pi`, `codex` and `copilot` all resolve to `skills/crew-afk/dispatch.SKILL.md`, and their differences live in `skills/crew-afk/fragments/<platform>/<key>.md`. `scripts/render-skill.sh <skill> <platform>` renders a body by inlining `{{FRAGMENT:<key>}}` from that platform's fragment dir and substituting `{{PLATFORM}}`; `install.sh` runs it for every `SKILL.md` it installs. A missing fragment or a surviving `{{...}}` is a hard error — a body with a hole in it would ship an instruction gap to the model. `fragments/` is a build input and is never installed (and a `fragments/` tree left by an older install is pruned).
+
+Why: the three dispatch platforms were three ~5,000-word files that were 85–90% identical, and they drifted. Three of the four declared `review → close → merge` and closed the issue *before* merging, so a merge conflict moved the issue to `done/` with the work unmerged. Parity by review does not hold at that size; parity is now structural. Prose assertions in `tests/` therefore run against the **rendered** body via `tests/helpers/render.bash` (`afk_variant <platform>`), not against a source variant, and `tests/shared-dispatch-body.bats` guards the mechanism (fragment completeness, no unused fragments, identical section structure and pipeline order across platforms, install renders and ships no build inputs). The Claude variant stays its own file: it uses the native `Agent` tool and batches of 3, so it is genuinely different, not a copy.
+
+To read what a platform actually receives:
+
+```bash
+bash scripts/render-skill.sh crew-afk codex | less
+```
+
+**pi specifics:** pi has no native subagent tool, so `crew-afk` on pi dispatches each worker as a separate `pi -p` process through `skills/crew-afk/scripts/dispatch-agent.sh`. That script resolves the agent definition (`.pi/agents/<name>.md`, then `~/.pi/agent/agents/<name>.md`), strips its frontmatter into `--append-system-prompt`, maps `tools:` onto `--tools`, applies `model:`/`--model`, and runs the worker with the issue's worktree as cwd. Workers write their structured report to `.scratch/<slug>/dispatch/<slug>.report.md`, which the orchestrator reads after `wait`.
+
+**codex specifics:** Codex has native subagents, but they share the parent's working root, so `crew-afk` on codex dispatches each worker as a separate `codex exec` process through `skills/crew-afk/scripts/dispatch-codex-agent.sh`. That script resolves `.codex/agents/<name>.toml` (then `~/.codex/agents/<name>.toml`), prepends `developer_instructions` to the prompt (codex exec has no `--append-system-prompt`), maps `model`/`model_reasoning_effort`/`sandbox_mode` onto CLI flags, runs `codex exec --cd <worktree> --add-dir $MAIN_ROOT`, and captures the report via `--output-last-message`. Reports land in the same `.scratch/<slug>/dispatch/<slug>.report.md` path. This path targets the **local `codex` CLI only** — it needs a shell that can background child processes, a local clone for worktrees, and pre-existing auth. Hosted Codex (Codex in ChatGPT, Codex cloud/web) is out of scope: no parent process to `wait` on and no persistent working root.
 
 ### Registry
 
 `registry.json` is the source of truth for:
 
 - Install destination paths (per agent, per platform)
+- Which source body each platform's `SKILL.md` is rendered from (`body` map)
 - Dependency graph (`deps` field — see each agent entry for its full dependency list)
 - Which skills to bundle with each agent
 - Which doc templates to copy

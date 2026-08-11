@@ -165,9 +165,6 @@ Note: If the issue has both "## Acceptance criteria" and "## Cross-cutting Requi
 ### Changes
 - <file>
 
-### Skills
-- <skill name invoked — one per line>
-
 ### Notes
 <blockers, decisions, follow-up, or "none">
 ```
@@ -179,9 +176,8 @@ Rules:
 3. `### Checks` — for each check, show the command and final summary line(s) only (e.g. pass/fail counts). Do not list individual test names or passing cases.
 4. `### Acceptance Criteria` — list every criterion from the issue with `[x]` or `[ ]`.
 5. `### Changes` — list every file modified.
-6. `### Skills` — list every skill that was read and invoked (e.g. `solve-issue`, `dep-install`, `tdd`). Never leave this section empty.
-7. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
-8. Do not add any text outside these sections.
+6. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
+7. Do not add any text outside these sections.
 
 ## Issue Ownership
 
@@ -219,40 +215,38 @@ npm test:
 - src/api/auth.ts
 - test/api/auth.test.ts
 
-### Skills
-- solve-issue
-- dep-install
-- tdd
-
 ### Notes
 none
 ```
 
-**Example 2: Partial**
+**Example 2: Partial** — note what makes this `partial` rather than `complete`: a criterion is
+still `[ ]`, a check does not pass, and the work is committed with a `[WIP]` marker so the branch
+preserves it for the next round. A report with every criterion `[x]` and every check passing is
+`complete`, never `partial`.
 
 ```
 ## Issue: 04-refactor-validation
 Status: partial
 
 ### Checks
+npx tsc --noEmit:
+0 errors
 npm test:
-8 tests passed
+7 passed, 2 failed
 
 ### Acceptance Criteria
-- [x] Validation logic extracted to helper
-- [x] All existing tests pass
+- [x] Validation logic extracted to src/validation.ts
+- [ ] All existing call sites migrated — src/api/orders.ts still calls the old inline validator
+- [ ] Full suite green — 2 order-validation tests fail against the extracted helper
 
 ### Changes
 - src/validation.ts
 - src/api/users.ts
 - test/validation.test.ts
 
-### Skills
-- solve-issue
-- dep-install
-- tdd
-
 ### Notes
-Changes staged for manual review before commit
+Committed as [WIP] on this branch so the extraction is preserved. Remaining: migrate
+src/api/orders.ts and reconcile the 2 failing order-validation tests, which assert the old
+inline error message format.
 ```
 '''

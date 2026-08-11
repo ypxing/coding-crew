@@ -9,6 +9,8 @@
 # branch merged completely unreviewed. Review is advisory by design, but "advisory"
 # must not silently degrade into "reported as clean".
 
+load helpers/render
+
 SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/promote-findings.sh"
 SKILL_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk"
 
@@ -168,28 +170,28 @@ EOF
 # --- every variant specifies the failure path -----------------------------------
 
 @test "all four skill variants forbid an inline self-review and name mark-not-run" {
-  for v in SKILL.md pi.SKILL.md codex.SKILL.md copilot.SKILL.md; do
-    run grep -q 'mark-not-run' "$SKILL_DIR/$v"
+  for v in claude pi codex copilot; do
+    run grep -q 'mark-not-run' "$(afk_variant "$v")"
     [ "$status" -eq 0 ]
     # The orchestrator must not substitute its own judgement for the reviewer's.
-    run grep -qi 'do not review the branch yourself' "$SKILL_DIR/$v"
+    run grep -qi 'do not review the branch yourself' "$(afk_variant "$v")"
     [ "$status" -eq 0 ]
   done
 }
 
 @test "all four skill variants state that an unreviewed branch still merges" {
-  for v in SKILL.md pi.SKILL.md codex.SKILL.md copilot.SKILL.md; do
-    run grep -qi 'unreviewed' "$SKILL_DIR/$v"
+  for v in claude pi codex copilot; do
+    run grep -qi 'unreviewed' "$(afk_variant "$v")"
     [ "$status" -eq 0 ]
   done
 }
 
 @test "all four variants handle REVIEW-GAPS in the end-of-sprint reminder" {
-  for v in SKILL.md pi.SKILL.md codex.SKILL.md copilot.SKILL.md; do
-    run grep -q 'REVIEW-GAPS' "$SKILL_DIR/$v"
+  for v in claude pi codex copilot; do
+    run grep -q 'REVIEW-GAPS' "$(afk_variant "$v")"
     [ "$status" -eq 0 ]
     # 'No open review findings.' must no longer be unconditional.
-    run grep -q 'unless' "$SKILL_DIR/$v"
+    run grep -q 'unless' "$(afk_variant "$v")"
     [ "$status" -eq 0 ]
   done
 }

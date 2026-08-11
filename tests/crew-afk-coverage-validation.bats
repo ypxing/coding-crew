@@ -2,9 +2,10 @@
 
 # Tests for crew-afk coverage validation step
 
+load helpers/render
+
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 SKILL_FILE="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
-COPILOT_SKILL_FILE="$SCRIPT_DIR/skills/crew-afk/copilot.SKILL.md"
 COVERAGE_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/coverage-validation.sh"
 
 setup() {
@@ -52,7 +53,7 @@ teardown() {
 
 @test "coverage-validation.sh is invoked via bash in copilot.SKILL.md" {
   # Platform parity: Copilot must also use the script
-  grep -q 'bash.*coverage-validation\.sh' "$COPILOT_SKILL_FILE"
+  grep -q 'bash.*coverage-validation\.sh' "$(afk_variant copilot)"
 }
 
 # --- Skip Behavior Tests ---
@@ -142,5 +143,5 @@ teardown() {
 # --- Copilot Parity Tests ---
 
 @test "copilot.SKILL.md includes Coverage validation section" {
-  grep -q -i 'coverage' "$COPILOT_SKILL_FILE"
+  grep -q -i 'coverage' "$(afk_variant copilot)"
 }

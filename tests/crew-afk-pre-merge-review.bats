@@ -3,10 +3,12 @@
 # Tests for per-branch pre-merge code review positioning in crew-afk skill files
 # Following the pattern in tests/crew-code-reviewer-structure.bats
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export CLAUDE_SKILL="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
-  export COPILOT_SKILL="$SCRIPT_DIR/skills/crew-afk/copilot.SKILL.md"
+  export COPILOT_SKILL="$(afk_variant copilot)"
   export REVIEWER_PROTOCOL="$SCRIPT_DIR/agents/crew-code-reviewer/protocol.md"
   export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
   export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"

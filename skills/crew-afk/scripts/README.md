@@ -177,29 +177,31 @@ Co-authored-by: Claude Code <claude@anthropic.com>
 
 ---
 
-### `claude.workflow.js`
-
-**Purpose**: Workflow script for running afk-run using the Workflow tool (Claude Code only). Renamed to `workflow.js` by `install.sh` during a Claude install.
-
-**Usage**: Invoked via Workflow tool when user specifies "with workflow" in the afk-run invocation.
-
-**Note**: This is a JavaScript workflow script, not a bash script. See the file itself for implementation details.
-
----
-
 ## Integration
 
-These scripts are referenced by:
-- `skills/afk/SKILL.md` (Claude Code version)
-- `skills/afk/copilot.SKILL.md` (GitHub Copilot version)
+These scripts are referenced by the skill body sources:
 
-Both platform versions use the same scripts with platform-specific flags (e.g., `--platform claude` vs `--platform copilot`).
+- `skills/crew-afk/SKILL.md` (Claude Code)
+- `skills/crew-afk/dispatch.SKILL.md` + `skills/crew-afk/fragments/<platform>/` (pi, Codex, GitHub Copilot)
+
+The dispatch platforms share one body; their differences are inlined from
+`fragments/<platform>/<key>.md` at install time by `scripts/render-skill.sh`. Render one to read
+it as the model will:
+
+```bash
+bash scripts/render-skill.sh crew-afk pi
+```
+
+All variants call the same scripts, differing only in platform-specific flags (e.g.
+`--platform claude` vs `--platform pi`) and in how they dispatch workers.
 
 ## Maintenance
 
 When updating these scripts:
-1. Ensure both platform versions remain compatible
-2. Update this README if interfaces change
-3. Test with both `--jira` flag present and absent
-4. Test with both `--no-squash` flag present and absent
-5. Verify platform-specific Co-authored-by trailers
+
+1. Keep all four platform variants compatible — a script interface change must land in every
+   variant that calls it.
+2. Update this README if interfaces change.
+3. Test with both `--jira` flag present and absent.
+4. Test with both `--no-squash` flag present and absent.
+5. Verify platform-specific Co-authored-by trailers.

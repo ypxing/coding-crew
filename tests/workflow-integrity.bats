@@ -4,6 +4,8 @@
 # end-to-end audit in .scratch/workflow-audit.md. Each test here failed before
 # its corresponding fix.
 
+load helpers/render
+
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 BRANCH_SETUP="$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh"
 SESSION_INIT="$REPO_ROOT/skills/crew-afk/scripts/session-init.sh"
@@ -193,10 +195,8 @@ EOF
 # --- B3: not_run policy must match verify-worktree.sh ------------------------
 
 @test "B3: every crew-afk variant demotes only on fail or a missing test command" {
-  for f in "$REPO_ROOT"/skills/crew-afk/SKILL.md \
-           "$REPO_ROOT"/skills/crew-afk/pi.SKILL.md \
-           "$REPO_ROOT"/skills/crew-afk/copilot.SKILL.md \
-           "$REPO_ROOT"/skills/crew-afk/codex.SKILL.md; do
+  for platform in claude pi copilot codex; do
+    f=$(afk_variant "$platform")
     # Must not demote wholesale on any not_run.
     ! grep -q 'has result `not_run` or `fail`, demote' "$f"
     # Must state the test-only fatality and the lint/typecheck carve-out.

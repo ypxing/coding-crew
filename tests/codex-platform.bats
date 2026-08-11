@@ -2,6 +2,8 @@
 
 # codex platform support: install paths, agent TOML shims, skill variants, dispatch script
 
+load helpers/render
+
 setup() {
   export TEMP_DIR=$(mktemp -d)
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -175,7 +177,7 @@ assert len(d['developer_instructions']) > 200
 
 @test "codex crew-afk skill does not reference pi paths or the pi dispatch script" {
   cd "$SCRIPT_DIR"
-  run grep -n '\.pi/\|dispatch-agent\.sh\|pi -p' skills/crew-afk/codex.SKILL.md
+  run grep -n '\.pi/\|dispatch-agent\.sh\|pi -p' "$(afk_variant codex)"
   [ "$status" -ne 0 ]
 }
 
