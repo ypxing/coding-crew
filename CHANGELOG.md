@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.17.3] - 2026-08-12
+
+### Fixed
+
+- **`crew-afk` (1.15.1) — both dispatchers burned 40–140s of CPU per worker before starting work.** `dispatch-agent.sh` (pi) and `dispatch-codex-agent.sh` (codex) validate that an agent definition's instruction body is not blank, and both did it with `[[ -n "${VAR//[[:space:]]/}" ]]`. Pattern substitution over a multi-KB string is O(n²) in bash 3.2 — the system `/bin/bash` on macOS, which is where `#!/usr/bin/env bash` lands by default — so answering a yes/no question rebuilt the whole string one character at a time
+  - Measured on macOS bash 3.2: **40s** for `crew-coder.md` (10KB body), **142s** for `crew-code-reviewer.md` (15KB). Paid on every dispatch, serially and single-threaded, before any model call — so a 4-coder sprint with 4 reviews spent roughly **12 minutes** of pure CPU deciding that non-empty strings were non-empty, while starving the parallel workers it had just spawned
+  - Replaced with `[[ "$VAR" =~ [^[:space:]] ]]`, which short-circuits on the first non-space character: **0.005s vs 47s** on the same 10KB input, identical semantics across `""`, `"   "`, `"\n\t "`, and `"x"`
+  - Linux CI never saw this: bash 4+ does not have the quadratic behaviour, so the bug was invisible to the matrix and only ever hurt macOS users
+- Covered by `tests/dispatch-blank-body-check.bats` (5 tests): the check still rejects a whitespace-only body on both platforms, still accepts a body whose only content sits 4KB in (so a first-N-chars shortcut cannot pass), neither script reintroduces the pattern substitution, and a realistic 10KB body completes well inside a deliberately loose 15s bound. Against the previous code the bound test measures **76s**
+
+### Changed
+
+- Test suite wall time drops from **~330s to ~74s** (`tests/codex-platform.bats` alone: 263.5s → 10.4s). The suite was never bloated — 23 of its 27 files already finished in under a second, and 78% of the total runtime was this one production bug being exercised three times
+
 ## [1.17.2] - 2026-08-11
 
 ### Added

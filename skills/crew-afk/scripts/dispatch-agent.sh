@@ -77,7 +77,9 @@ SYSTEM_PROMPT=$(awk '
   inside && $0 == "---" { inside = 0; body = 1; next }
   body { print }
 ' "$AGENT_FILE")
-[[ -n "${SYSTEM_PROMPT//[[:space:]]/}" ]] || die "agent definition has an empty body: $AGENT_FILE"
+# Regex match, not ${v//[[:space:]]/}: pattern substitution over a multi-KB string is
+# O(n^2) in bash 3.2 (macOS system bash), which cost ~40s of dead CPU per dispatch.
+[[ "$SYSTEM_PROMPT" =~ [^[:space:]] ]] || die "agent definition has an empty body: $AGENT_FILE"
 
 AGENT_TOOLS=$(frontmatter_value tools)
 AGENT_MODEL=$(frontmatter_value model)

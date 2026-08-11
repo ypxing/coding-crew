@@ -86,7 +86,9 @@ toml_multiline() {
 }
 
 INSTRUCTIONS=$(toml_multiline developer_instructions)
-[[ -n "${INSTRUCTIONS//[[:space:]]/}" ]] || die "agent definition has empty developer_instructions: $AGENT_FILE"
+# Regex match, not ${v//[[:space:]]/}: pattern substitution over a multi-KB string is
+# O(n^2) in bash 3.2 (macOS system bash), which cost ~40s of dead CPU per dispatch.
+[[ "$INSTRUCTIONS" =~ [^[:space:]] ]] || die "agent definition has empty developer_instructions: $AGENT_FILE"
 
 AGENT_MODEL=$(toml_scalar model)
 AGENT_EFFORT=$(toml_scalar model_reasoning_effort)
