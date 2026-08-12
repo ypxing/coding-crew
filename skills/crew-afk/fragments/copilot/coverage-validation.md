@@ -1,1 +1,4 @@
-If `PRD.md` exists (output does not contain `"skipped"`), spawn a validation agent to generate a coverage report. Do **not** use a cheap model tier for this step — coverage validation does genuine reasoning (matching PRD requirements against merged code and issue acceptance criteria):
+If `PRD.md` exists (output does not contain `"skipped"`), dispatch
+`task(agent_type="general-purpose", prompt=...)` to generate a coverage report. Do **not** use a cheap
+agent type or model tier: coverage validation does genuine reasoning (matching PRD requirements
+against merged code and issue acceptance criteria):

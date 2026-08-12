@@ -60,7 +60,7 @@ teardown() {
   TARGET_REPO="$TEMP_DIR" ./install.sh all --skill crew-afk
 
   [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.copilot/skills/crew-afk/SKILL.md" ]
+  [ -f "$TEMP_DIR/.github/skills/crew-afk/SKILL.md" ]
   [ -f "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md" ]
   [ -f "$TEMP_DIR/.pi/agents/crew-coder.md" ]
 }

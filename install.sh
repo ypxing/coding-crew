@@ -177,13 +177,36 @@ default_skill_dest() {
 # Registry paths are written project-style; rewrite them when targeting $HOME.
 # Codex needs no adjustment: .agents/skills and .codex/agents are the same relative
 # paths at both project and user level.
+#
+# Copilot is the mirror image of pi: ~/.copilot/agents and ~/.copilot/skills are the
+# user-level locations, but at project scope Copilot scans .github/agents and
+# .github/skills — never .copilot/. Registry paths are written user-style, so rewrite
+# them when targeting a project checkout. Verified against Copilot CLI 1.0.77: an
+# agent under .copilot/agents/ is not a valid `task` agent_type, and a skill under
+# .copilot/skills/ is absent from `copilot skill list`.
 adjust_platform_path() {
   local platform="$1" path="$2"
   if [[ "$platform" == "pi" && "$path" == .pi/* && "$REPO_ROOT" == "$HOME" ]]; then
     printf '.pi/agent/%s' "${path#.pi/}"
+  elif [[ "$platform" == "copilot" && "$path" == .copilot/* && "$REPO_ROOT" != "$HOME" ]]; then
+    printf '.github/%s' "${path#.copilot/}"
   else
     printf '%s' "$path"
   fi
+}
+
+# A project install used to write Copilot resources to .copilot/, which Copilot does not
+# scan at project scope. Remove that dead copy once the same resource lands in .github/,
+# so a repo does not keep an unmaintained SKILL.md or agent file that nothing updates.
+prune_legacy_copilot_path() {
+  local platform="$1" original="$2"
+  [[ "$platform" == "copilot" ]] || return 0
+  [[ "$original" == .copilot/* ]] || return 0
+  [[ "$REPO_ROOT" != "$HOME" ]] || return 0
+  [[ -e "$REPO_ROOT/$original" ]] || return 0
+  rm -rf "$REPO_ROOT/$original"
+  echo "  removed legacy $original (Copilot reads .github/ at project scope)"
+  rmdir "$REPO_ROOT/.copilot/agents" "$REPO_ROOT/.copilot/skills" "$REPO_ROOT/.copilot" 2>/dev/null || true
 }
 
 assert_identifier() {
@@ -345,6 +368,7 @@ install_agent() {
     if [[ -n "$shim_src" && -n "$shim_dest" ]]; then
       assert_safe_path "$shim_dest" "$target_platform install"
       shim_dest=$(adjust_platform_path "$target_platform" "$shim_dest")
+      prune_legacy_copilot_path "$target_platform" "$(jq -r --arg name "$agent_name" --arg p "$target_platform" '.agents[$name].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")"
       expand_shim "$shim_src" "$REPO_ROOT/$shim_dest"
     fi
   done
@@ -413,7 +437,9 @@ install_single_skill() {
     exit 1
   fi
   assert_safe_path "$skill_dest" "skill install"
+  local skill_dest_declared="$skill_dest"
   skill_dest=$(adjust_platform_path "$PLATFORM" "$skill_dest")
+  prune_legacy_copilot_path "$PLATFORM" "$skill_dest_declared"
   
   # Resolve source directory: use source-dir field if present, otherwise use skill name
   local source_dir

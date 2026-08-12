@@ -67,7 +67,7 @@ assert len(d['developer_instructions']) > 200
   TARGET_REPO="$TEMP_DIR" ./install.sh all --skill crew-afk
 
   [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.copilot/skills/crew-afk/SKILL.md" ]
+  [ -f "$TEMP_DIR/.github/skills/crew-afk/SKILL.md" ]
   [ -f "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md" ]
   [ -f "$TEMP_DIR/.agents/skills/crew-afk/SKILL.md" ]
   [ -f "$TEMP_DIR/.codex/agents/crew-coder.toml" ]

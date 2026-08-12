@@ -4,7 +4,7 @@ description: >
   Implements a single ready-for-agent issue using TDD: reads the issue, explores context, installs
   deps, builds with red-green-refactor, verifies all checks pass, commits, and returns a structured
   summary. Invoked as a subagent by crew-afk — one issue per invocation.
-tools: ["read", "edit", "execute", "search"]
+tools: ["bash", "view", "create", "edit", "grep", "glob"]
 skills: ["solve-issue", "dep-install", "tdd"]
 user-invocable: false
 ---

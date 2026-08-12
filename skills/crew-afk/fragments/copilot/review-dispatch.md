@@ -1,7 +1,7 @@
-3. **Per-branch code review (after both verification gates pass, before merge):** invoke `crew-code-reviewer`
-   (`@crew-code-reviewer` in Copilot, or `.github/agents/crew-code-reviewer.agent.md`) to review
-   this branch's diff before it merges. The reviewer has no edit capability and does not block the
-   merge — findings are advisory.
+3. **Per-branch code review (after both verification gates pass, before merge):** dispatch
+   `crew-code-reviewer` the same way — `task(agent_type="crew-code-reviewer", prompt=...)` — to review
+   this branch's diff before it merges. The reviewer cannot edit and does not block the merge:
+   findings are advisory.
 
    Pass to the reviewer:
    ```

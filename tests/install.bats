@@ -130,7 +130,9 @@ teardown() {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-grill
 
-  [ -f "$TEMP_DIR/.copilot/skills/crew-grill/SKILL.md" ]
+  # Copilot scans .github/skills at project scope, never .copilot/skills
+  [ -f "$TEMP_DIR/.github/skills/crew-grill/SKILL.md" ]
+  [ ! -d "$TEMP_DIR/.copilot" ]
 }
 
 @test "crew-brainstorm skill is installed to correct directory (claude)" {
@@ -144,7 +146,7 @@ teardown() {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-brainstorm
 
-  [ -f "$TEMP_DIR/.copilot/skills/crew-brainstorm/SKILL.md" ]
+  [ -f "$TEMP_DIR/.github/skills/crew-brainstorm/SKILL.md" ]
 }
 
 @test "reinstalling modified skill reports the update without a diff body" {
@@ -281,7 +283,7 @@ STUB
   run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
   [ "$status" -eq 0 ]
 
-  for dir in .claude .copilot .pi .codex .agents; do
+  for dir in .claude .copilot .pi .codex .agents .github; do
     if [ -d "$TEMP_DIR/$dir" ]; then
       echo "REPO_ROOT was: $TEMP_DIR"
       echo "--- uninstall output ---"
@@ -523,6 +525,7 @@ PROBE
   # Not one blank line: a `while read` loop must iterate zero times.
   [[ "$output" == *"empty=0"* ]]
   # jq's own failure still reaches the caller (`if ! jq empty` is a real guard).
-  [[ "$output" != *"rc=0"* ]]
+  # Match rc=0 on its own line (with leading newline) to avoid matching okrc=0 as a substring.
+  [[ "$output" != *$'\nrc=0'* ]]
   [[ "$output" == *"okrc=0"* ]]
 }

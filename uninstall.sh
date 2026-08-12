@@ -86,10 +86,14 @@ default_skill_dest() {
 }
 
 # pi keeps user-level resources under ~/.pi/agent/, project-level ones under .pi/
+# Copilot is the mirror image: ~/.copilot/{agents,skills} at user level, but
+# .github/{agents,skills} at project level (Copilot never scans .copilot/ in a repo).
 adjust_platform_path() {
   local platform="$1" path="$2"
   if [[ "$platform" == "pi" && "$path" == .pi/* && "$REPO_ROOT" == "$HOME" ]]; then
     printf '.pi/agent/%s' "${path#.pi/}"
+  elif [[ "$platform" == "copilot" && "$path" == .copilot/* && "$REPO_ROOT" != "$HOME" ]]; then
+    printf '.github/%s' "${path#.copilot/}"
   else
     printf '%s' "$path"
   fi
@@ -119,22 +123,35 @@ prune_empty_dirs() {
   done
 }
 
+# Every path a platform's resource may occupy in this target: the path install.sh writes
+# now, plus any path an earlier version wrote. Copilot project installs used to land in
+# .copilot/, so uninstall sweeps both or the dead copy survives a clean uninstall.
+removal_candidates() {
+  local platform="$1" path="$2" adjusted
+  adjusted=$(adjust_platform_path "$platform" "$path")
+  printf '%s\n' "$adjusted"
+  [[ "$adjusted" != "$path" ]] && printf '%s\n' "$path"
+  return 0
+}
+
 remove_agent() {
   local name="$1"
   local removed=0
-  local platform path full
+  local platform path full candidate
   for platform in "${PLATFORMS[@]}"; do
     path=$(jq -r --arg n "$name" --arg p "$platform" '.agents[$n].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
     path="${path%$'\r'}"
     [[ -z "$path" ]] && continue
-    path=$(adjust_platform_path "$platform" "$path")
-    full="$REPO_ROOT/$path"
-    if [[ -f "$full" ]]; then
-      rm -f "$full"
-      echo "  removed $path"
-      prune_empty_dirs "$path"
-      removed=1
-    fi
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] || continue
+      full="$REPO_ROOT/$candidate"
+      if [[ -f "$full" ]]; then
+        rm -f "$full"
+        echo "  removed $candidate"
+        prune_empty_dirs "$candidate"
+        removed=1
+      fi
+    done < <(removal_candidates "$platform" "$path")
   done
   # Agent assets install once to a platform-neutral path and are always overwritten by
   # install.sh, so uninstall owns them too.
@@ -161,7 +178,7 @@ remove_skill() {
   fi
 
   local removed=0
-  local platform dest full
+  local platform dest full candidate
   for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "claude" ]]; then
       dest="$claude_dest"
@@ -171,14 +188,16 @@ remove_skill() {
       [[ -z "$dest" ]] && dest=$(default_skill_dest "$platform" "$claude_dest")
     fi
     [[ -z "$dest" ]] && continue
-    dest=$(adjust_platform_path "$platform" "$dest")
-    full="$REPO_ROOT/$dest"
-    if [[ -d "$full" ]]; then
-      rm -rf "$full"
-      echo "  removed $dest/"
-      prune_empty_dirs "$dest"
-      removed=1
-    fi
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] || continue
+      full="$REPO_ROOT/$candidate"
+      if [[ -d "$full" ]]; then
+        rm -rf "$full"
+        echo "  removed $candidate/"
+        prune_empty_dirs "$candidate"
+        removed=1
+      fi
+    done < <(removal_candidates "$platform" "$dest")
   done
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 }

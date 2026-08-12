@@ -1,0 +1,12 @@
+{
+  "source": "git@github.com:ypxing/coding-crew.git",
+  "source_sha": "ccafd245f0a846f04af040e7a835e81000defe3b",
+  "installed_at": "2026-08-12T07:51:07Z",
+  "platform": "claude",
+  "agents": {},
+  "skills": {
+    "tdd": {
+      "version": "1.1.0"
+    }
+  }
+}

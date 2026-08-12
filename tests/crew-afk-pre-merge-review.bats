@@ -84,12 +84,14 @@ frontmatter() {
 # ─── Review positioned before merge in Copilot SKILL.md ─────────────────────
 
 @test "copilot SKILL.md invokes crew-code-reviewer before merge step" {
-  # Extract line numbers for review invocation and merge script call
-  REVIEW_LINE=$(grep -n 'crew-code-reviewer\|code.*review\|review.*branch' "$COPILOT_SKILL" | grep -v '#' | head -1 | cut -d: -f1)
-  MERGE_LINE=$(grep -n 'merge-branches.sh\|merge.*branch\|MERGE.*script' "$COPILOT_SKILL" | head -1 | cut -d: -f1)
+  # Anchor on the pipeline steps themselves, not on any line containing the word
+  # "review" or "merge": this test once passed on a `crew-code-reviewer` mention in
+  # the frontmatter description, which says nothing about where the step sits.
+  REVIEW_LINE=$(grep -n 'Per-branch code review' "$COPILOT_SKILL" | head -1 | cut -d: -f1)
+  MERGE_LINE=$(grep -n 'scripts/merge-branches\.sh"' "$COPILOT_SKILL" | head -1 | cut -d: -f1)
 
-  [ -n "$REVIEW_LINE" ] || { echo "No review invocation found in COPILOT_SKILL"; return 1; }
-  [ -n "$MERGE_LINE" ] || { echo "No merge invocation found in COPILOT_SKILL"; return 1; }
+  [ -n "$REVIEW_LINE" ] || { echo "No per-branch review step found in COPILOT_SKILL"; return 1; }
+  [ -n "$MERGE_LINE" ] || { echo "No merge-branches.sh invocation found in COPILOT_SKILL"; return 1; }
 
   # Review must come before merge
   [ "$REVIEW_LINE" -lt "$MERGE_LINE" ]
