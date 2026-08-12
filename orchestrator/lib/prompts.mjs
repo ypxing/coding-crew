@@ -63,7 +63,11 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks }) {
+  const c = checks ?? {};
+  const stated = ["test", "lint", "typecheck"]
+    .map((k) => `${k}=${c[k] ?? "not_run"}`)
+    .join(", ");
   return [
     "Review this branch before it merges.",
     `Branch: ${branch}`,
@@ -75,6 +79,16 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch 
     "---",
     "",
     `Gather the diff: git diff $(git merge-base ${featureBranch} ${branch})..${branch}`,
+    "",
+    // Execution evidence, stated once. You cannot run commands, and a criterion that
+    // ends "…and the tests pass" is unprovable from a diff — so without this every such
+    // criterion reads `unmet` and nothing ever merges. The pipeline ran these checks in
+    // this branch's worktree, after the coder finished and before this review.
+    `Checks already run by the pipeline in this branch's worktree: ${stated}.`,
+    "Treat that as the evidence for any criterion whose only outstanding part is that a",
+    "check passes — do not report a criterion unmet because you could not execute it",
+    "yourself. A check reported `not_run` is not evidence of anything. Everything else is",
+    "still judged from the diff: no file and line, no evidence, `unmet`.",
     "",
     "Return your report starting with `## Branch: <branch-name>`, and directly under it",
     "the acceptance-criteria verdict on its own line:",

@@ -107,6 +107,22 @@ ARGS=(exec --cd "$DIR" --sandbox "$SANDBOX")
 # Workers install dependencies and fetch packages; a sandboxed workspace blocks
 # network by default, which would fail every dep-install step.
 [[ "$SANDBOX" == "workspace-write" ]] && ARGS+=(-c sandbox_workspace_write.network_access=true)
+# A linked worktree's index lives in the *main* repo's git dir
+# (`<main>/.git/worktrees/<name>/index.lock`), and codex's workspace-write sandbox keeps
+# `.git` read-only even when the enclosing directory is passed with --add-dir. Without
+# naming the git dir as an explicit writable root, a worker can edit files but never stage
+# or commit them: observed as `fatal: Unable to create '…/index.lock': Operation not
+# permitted`, which the pipeline correctly reads as `blocked` — every codex sprint stalls.
+if [[ "$SANDBOX" == "workspace-write" ]]; then
+  GIT_COMMON_DIR=$(cd "$DIR" && git rev-parse --git-common-dir 2>/dev/null || true)
+  case "$GIT_COMMON_DIR" in
+    "") ;;
+    /*) ;;
+    *) GIT_COMMON_DIR="$DIR/$GIT_COMMON_DIR" ;;
+  esac
+  [[ -n "$GIT_COMMON_DIR" ]] &&
+    ARGS+=(-c "sandbox_workspace_write.writable_roots=[\"$GIT_COMMON_DIR\"]")
+fi
 # Traces, prompts, and reports live under $MAIN_ROOT/.scratch, outside the worktree.
 [[ "$MAIN_ROOT" != "$DIR" ]] && ARGS+=(--add-dir "$MAIN_ROOT")
 [[ -n "$EFFECTIVE_MODEL" ]] && ARGS+=(--model "$EFFECTIVE_MODEL")

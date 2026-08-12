@@ -136,6 +136,23 @@ export function applySchemaPrefilter(report) {
   return { status, demoted: status !== report.status, reason, coverageGaps: gaps };
 }
 
+/**
+ * verify-worktree.sh's own output, read back as the check evidence the reviewer is given.
+ *
+ * The reviewer cannot run commands, so a criterion phrased "…and the tests pass" is
+ * unprovable from a diff and reads as `unmet` — which stalled every sprint whose issues
+ * were written that way. The pipeline has already run those checks in the branch's
+ * worktree and gated the merge on the result; passing that result on is what makes the
+ * criteria check answerable without weakening it. `not_run` is never evidence.
+ */
+export function parseVerifyChecks(stdout) {
+  const checks = { test: "not_run", lint: "not_run", typecheck: "not_run" };
+  for (const m of (stdout ?? "").matchAll(/^\s*(TEST|LINT|TYPECHECK):\s*(pass|fail|not_run)\b/gim)) {
+    checks[m[1].toLowerCase()] = m[2].toLowerCase();
+  }
+  return checks;
+}
+
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
 /**

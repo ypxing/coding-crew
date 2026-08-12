@@ -1,9 +1,9 @@
 # Shared bats helper: paths to *rendered* skill bodies.
 #
-# crew-afk's pi/codex/copilot bodies are no longer three files on disk — they are one
-# shared body (`dispatch.SKILL.md`) plus per-platform fragments, inlined at install
-# time. Prose assertions therefore have to run against the rendered result, which is
-# what the consuming repo actually receives. Rendering is cached per bats run.
+# crew-afk's remaining prose bodies are not one file per platform — they are one shared
+# body (`dispatch.SKILL.md`) plus per-platform fragments, inlined at install time. Prose
+# assertions therefore have to run against the rendered result, which is what the
+# consuming repo actually receives. Rendering is cached per bats run.
 
 RENDER_HELPER_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -26,17 +26,18 @@ afk_variant() {
 
 # Which platforms still ship a *prose* orchestrator, and which ship a launcher.
 #
-# pi's orchestrator is a program (`orchestrator/`, installed to `.coding-crew/crew-afk/`),
-# so the guarantees these prose assertions describe — pipeline order, the receipt gates,
-# fail-closed review handling, the promotion threshold — are asserted against the code in
-# tests/orchestrator/ instead. Its body is a launcher and asserting prose against it would
-# be asserting the absence of a state machine that moved, not the presence of one.
+# A launcher platform's orchestrator is a program (`orchestrator/`, installed to
+# `.coding-crew/crew-afk/`), so the guarantees these prose assertions describe — pipeline
+# order, the receipt gates, fail-closed review handling, the promotion threshold — are
+# asserted against the code in tests/orchestrator/ instead. Its body is a launcher and
+# asserting prose against it would be asserting the absence of a state machine that moved,
+# not the presence of one.
 #
 # As each remaining platform cuts over, its name moves from one list to the other, here,
 # once — and the assertions it carried are already covered by the node suite.
-AFK_PROSE_VARIANTS=(claude codex copilot)
-AFK_PROSE_DISPATCH_VARIANTS=(codex copilot)
-AFK_LAUNCHER_VARIANTS=(pi)
+AFK_PROSE_VARIANTS=(claude copilot)
+AFK_PROSE_DISPATCH_VARIANTS=(copilot)
+AFK_LAUNCHER_VARIANTS=(pi codex)
 
 # afk_launcher_body <platform> — true when this platform ships the launcher, not prose
 afk_is_launcher() {

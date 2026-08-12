@@ -5,8 +5,10 @@ import {
   applySchemaPrefilter,
   findingsAtOrAbove,
   parseReviewReport,
+  parseVerifyChecks,
   parseWorkerReport,
 } from "../../orchestrator/lib/report.mjs";
+import { reviewPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("a structured sidecar wins over prose", () => {
   const r = parseWorkerReport("## Issue: thing\nStatus: complete\n", {
@@ -138,4 +140,50 @@ test("bracket severities are the fallback when no FINDING lines exist", () => {
   assert.equal(r.findings.length, 1);
   assert.equal(r.findings[0].severity, "CRITICAL");
   assert.equal(r.findings[0].explicit, false);
+});
+
+// ─── the reviewer is told what was already executed ──────────────────────────
+//
+// A real codex sprint stalled on this: the issue's third criterion was "a test covers it
+// and `npm test` passes", verify-worktree.sh had already run the suite green in the
+// worktree, and the read-only reviewer answered `AC: unmet — npm test was not executed in
+// this inspection-only review`. Fail-closed is right; asking for evidence the reviewer is
+// structurally unable to produce is not, and it retained the branch every round forever.
+
+test("verify-worktree output is read back as the reviewer's check evidence", () => {
+  const stdout = [
+    "TYPECHECK: not_run — no command found",
+    "LINT: not_run — no command found",
+    "TEST: running: npm test",
+    "TEST: pass",
+    "Verification: success",
+  ].join("\n");
+  assert.deepEqual(parseVerifyChecks(stdout), { test: "pass", lint: "not_run", typecheck: "not_run" });
+});
+
+test("an unseen or failed check is never reported as evidence", () => {
+  assert.deepEqual(parseVerifyChecks(""), { test: "not_run", lint: "not_run", typecheck: "not_run" });
+  assert.equal(parseVerifyChecks("TEST: fail\n").test, "fail");
+});
+
+test("the review prompt states the checks and forbids unmet-for-lack-of-execution", () => {
+  const p = reviewPrompt({
+    branch: "crew/f/x",
+    slug: "x",
+    issuePath: "/i/01-x.md",
+    criteria: "- [ ] tests pass",
+    featureBranch: "feature/f",
+    checks: { test: "pass", lint: "not_run", typecheck: "not_run" },
+  });
+  assert.match(p, /test=pass, lint=not_run, typecheck=not_run/);
+  assert.match(p, /do not report a criterion unmet because you could not execute it/);
+  // And it does not become a blanket pass: `not_run` stays worthless and the code half
+  // of every criterion is still judged from the diff.
+  assert.match(p, /`not_run` is not evidence of anything/);
+  assert.match(p, /no file and line, no evidence, `unmet`/);
+});
+
+test("the review prompt still names the checks when none were discovered", () => {
+  const p = reviewPrompt({ branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f" });
+  assert.match(p, /test=not_run, lint=not_run, typecheck=not_run/);
 });

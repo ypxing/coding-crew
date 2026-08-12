@@ -16,7 +16,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { applySchemaPrefilter, findingsAtOrAbove, parseReviewReport, parseWorkerReport } from "./report.mjs";
+import {
+  applySchemaPrefilter,
+  findingsAtOrAbove,
+  parseReviewReport,
+  parseVerifyChecks,
+  parseWorkerReport,
+} from "./report.mjs";
 import { branchFor, writeIssueSection } from "./tracker.mjs";
 import { criteriaFile, resumeNote, reviewPrompt, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, removeWorktree } from "./worktree.mjs";
@@ -137,7 +143,7 @@ export async function runHousekeeping(ctx, worker) {
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
 
   // --- gate 2: independent review (findings + acceptance-criteria verdict) ---
-  const review = await runReview(ctx, worker);
+  const review = await runReview(ctx, worker, parseVerifyChecks(verify.stdout));
   outcome.reviewReport = review.reportFile;
   if (!review.completed) {
     effects.bash("promote-findings.sh", [
@@ -195,7 +201,7 @@ export async function runHousekeeping(ctx, worker) {
   return outcome;
 }
 
-async function runReview(ctx, worker) {
+async function runReview(ctx, worker, checks) {
   const { sprint, effects, platform, options } = ctx;
   const { issue, branch } = worker;
   const promptFile = join(sprint.dispatchDir, `${issue.slug}.review-prompt.md`);
@@ -210,6 +216,7 @@ async function runReview(ctx, worker) {
       issuePath: issue.path,
       criteria: issue.criteria,
       featureBranch: sprint.featureBranch,
+      checks,
     }),
   );
 

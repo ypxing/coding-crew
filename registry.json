@@ -68,7 +68,6 @@
         "dest": ".coding-crew/crew-afk"
       },
       "body": {
-        "codex": "dispatch.SKILL.md",
         "copilot": "dispatch.SKILL.md"
       },
       "scripts": [

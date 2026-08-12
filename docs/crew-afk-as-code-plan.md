@@ -1,8 +1,9 @@
 # Plan: crew-afk as code (one orchestrator, one state machine)
 
-Status: **Phases 0–2 landed for pi** — see `docs/crew-afk-orchestrator.md` for what exists and
-`CHANGELOG.md` for the cutover. Phases 3–5 (codex, claude, copilot, scaffolding retirement)
-are still open. Maintainer notes — not installed into consumer repos.
+Status: **Phases 0–2 landed for pi; Phase 3 landed for codex** — see
+`docs/crew-afk-orchestrator.md` for what exists and `CHANGELOG.md` for the cutovers. The rest
+of Phases 3–5 (claude, copilot, scaffolding retirement) is still open. Maintainer notes — not
+installed into consumer repos.
 
 ## 1. The question
 
@@ -179,7 +180,10 @@ Cut the pi body over to the launcher and **delete the pi fragments**. First full
 end-to-end on this repo's own issues.
 
 **Phase 3 — codex, then claude.** Adapters only (`dispatch-codex-agent.sh` already exists). Each
-cutover deletes its prose.
+cutover deletes its prose. ~~codex~~ — done; it also proved that the *sandbox* is part of the
+adapter contract (a codex worker cannot commit in a linked worktree unless the main repo's git dir
+is an explicit writable root) and that the AC gate has to be told which checks the pipeline already
+ran, or a criterion that ends "and the tests pass" is unprovable by a read-only reviewer.
 
 **Phase 4 — copilot.** Now an ordinary adapter (`-p --agent -C --allow-all-tools --silent`), not a
 special case. The `task`-tool fragments and the plan-tier batching prose retire with it; concurrency

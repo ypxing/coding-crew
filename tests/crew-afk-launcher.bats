@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
-# The pi cutover: crew-afk's orchestrator is a program, and pi's SKILL.md is a launcher.
+# The launcher cutovers: crew-afk's orchestrator is a program, and every cut-over
+# platform's SKILL.md is a launcher for it (pi, then codex).
 #
 # What these tests protect is the boundary. A launcher that starts re-describing the
 # pipeline is a second orchestrator, which is exactly the drift the shared-body work was
@@ -8,7 +9,9 @@
 # either dead on arrival or installed weight no agent runs.
 #
 # The behaviour the deleted prose described is asserted against the code in
-# tests/orchestrator/*.test.mjs, not here.
+# tests/orchestrator/*.test.mjs, not here. Every body assertion runs over
+# AFK_LAUNCHER_VARIANTS, so cutting a platform over is one edit in tests/helpers/render.bash
+# rather than a copy of this file.
 
 load helpers/render
 
@@ -19,55 +22,97 @@ setup_file() {
 
 setup() {
   AFK_DIR="$REPO_ROOT/skills/crew-afk"
-  BODY="$AFK_DIR/pi.SKILL.md"
 }
 
-# ─── the launcher ────────────────────────────────────────────────────────────
-
-@test "launcher: pi has its own body and no longer renders the shared prose one" {
-  [ -f "$BODY" ]
-  run jq -r '.skills["crew-afk"].body.pi // "none"' "$REPO_ROOT/registry.json"
-  [ "$output" = "none" ]
+launcher_body() {
+  printf '%s\n' "$AFK_DIR/$1.SKILL.md"
 }
 
-@test "launcher: it launches the program and says it does not orchestrate" {
-  grep -q 'main.mjs" run --platform pi' "$BODY"
-  grep -qi 'you do not orchestrate' "$BODY"
+# ─── the launchers ───────────────────────────────────────────────────────────
+
+@test "launcher: at least one platform is cut over (the list is not silently empty)" {
+  [ "${#AFK_LAUNCHER_VARIANTS[@]}" -ge 1 ]
+}
+
+@test "launcher: each cut-over platform has its own body and no shared-body mapping" {
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    [ -f "$(launcher_body "$p")" ] || { echo "$p has no $p.SKILL.md" >&2; return 1; }
+    run jq -r --arg p "$p" '.skills["crew-afk"].body[$p] // "none"' "$REPO_ROOT/registry.json"
+    [ "$output" = "none" ] || { echo "$p still maps to a shared prose body" >&2; return 1; }
+  done
+}
+
+@test "launcher: it launches the program for its own platform and does not orchestrate" {
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    body="$(launcher_body "$p")"
+    grep -q "main.mjs\" run --platform $p" "$body" || {
+      echo "$p does not launch the orchestrator with --platform $p" >&2; return 1; }
+    grep -qi 'you do not orchestrate' "$body"
+  done
 }
 
 @test "launcher: it stays a launcher — no pipeline, no state, no receipts prose" {
   # Each of these was a step the body used to perform. Naming the pipeline once, as the
   # program's contract, is fine; issuing its commands is not.
-  ! grep -q 'state.sh' "$BODY"
-  ! grep -q 'receipts.sh' "$BODY"
-  ! grep -q 'merge-branches.sh' "$BODY"
-  ! grep -q 'close-issue.sh' "$BODY"
-  ! grep -q 'promote-findings.sh' "$BODY"
-  ! grep -q 'verify-worktree.sh' "$BODY"
-  ! grep -q 'git worktree add' "$BODY"
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    body="$(launcher_body "$p")"
+    for banned in state.sh receipts.sh merge-branches.sh close-issue.sh \
+                  promote-findings.sh verify-worktree.sh 'git worktree add'; do
+      if grep -q "$banned" "$body"; then
+        echo "$p launcher names $banned — it is describing the pipeline again" >&2
+        return 1
+      fi
+    done
+  done
 }
 
 @test "launcher: it is under 500 words (it replaced ~2,400)" {
   local words
-  words=$(wc -w < "$BODY")
-  [ "$words" -lt 500 ] || { echo "pi launcher is $words words" >&2; return 1; }
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    words=$(wc -w < "$(launcher_body "$p")")
+    [ "$words" -lt 500 ] || { echo "$p launcher is $words words" >&2; return 1; }
+  done
 }
 
 @test "launcher: it maps every exit code the program can return" {
-  for code in 0 2 3 1; do
-    grep -q "\`$code\`" "$BODY" || { echo "exit code $code unexplained" >&2; return 1; }
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    for code in 0 2 3 1; do
+      grep -q "\`$code\`" "$(launcher_body "$p")" || {
+        echo "$p leaves exit code $code unexplained" >&2; return 1; }
+    done
   done
 }
 
 @test "launcher: it forbids finishing a failed sprint by hand" {
-  grep -qi 'never finish the sprint by hand' "$BODY"
-  grep -qi 'receipt gates' "$BODY"
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    body="$(launcher_body "$p")"
+    grep -qi 'never finish the sprint by hand' "$body"
+    grep -qi 'receipt gates' "$body"
+  done
 }
 
-@test "launcher: pi's dispatcher script is still shipped (the adapter runs it)" {
-  run jq -r '.skills["crew-afk"]["platform-files"].pi[]' "$REPO_ROOT/registry.json"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"scripts/dispatch-agent.sh"* ]]
+@test "launcher: each subprocess platform still ships the dispatcher its adapter runs" {
+  # pi and codex dispatch through a bash script that lib/dispatch.mjs execs, so an
+  # unshipped dispatcher is a sprint that cannot start a worker.
+  local expected
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    case "$p" in
+      pi) expected="scripts/dispatch-agent.sh" ;;
+      codex) expected="scripts/dispatch-codex-agent.sh" ;;
+      *) continue ;;
+    esac
+    run jq -r --arg p "$p" '.skills["crew-afk"]["platform-files"][$p][]' "$REPO_ROOT/registry.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$expected"* ]] || { echo "$p does not ship $expected" >&2; return 1; }
+  done
+}
+
+@test "launcher: the rendered body is the launcher itself, and its fragments are gone" {
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    diff "$(afk_variant "$p")" "$(launcher_body "$p")"
+    [ ! -d "$AFK_DIR/fragments/$p" ] || {
+      echo "fragments/$p still exists — two orchestrators for $p" >&2; return 1; }
+  done
 }
 
 # ─── the program's install ───────────────────────────────────────────────────

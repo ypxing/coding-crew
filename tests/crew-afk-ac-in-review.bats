@@ -82,6 +82,19 @@ VARIANTS=("${AFK_PROSE_VARIANTS[@]}")
   echo "$section" | grep -qi 'must not merge on an absent check'
 }
 
+@test "the reviewer treats already-run checks as evidence it cannot produce itself" {
+  # Observed in a real codex sprint: the issue's criterion was "a test covers it and
+  # `npm test` passes", verify-worktree.sh had already run the suite green in the worktree,
+  # and the read-only reviewer answered `unmet — npm test was not executed in this
+  # inspection-only review`. The branch was retained every round, forever. Fail-closed is
+  # right; demanding evidence the reviewer is structurally unable to produce is not.
+  grep -qi 'Execution is not your job' "$PROTOCOL"
+  grep -qi 'treat a stated `pass` as the evidence' "$PROTOCOL"
+  # Without leaking into a blanket pass.
+  grep -qi 'not_run`, or not stated at all, is evidence of nothing' "$PROTOCOL"
+  grep -qi 'Never run the checks yourself' "$PROTOCOL"
+}
+
 @test "the reviewer's criteria check is a numbered review step, not just a HIGH class" {
   grep -q 'Check the acceptance criteria' "$PROTOCOL"
   # And the HIGH class no longer asks the same question a second time.
@@ -105,12 +118,19 @@ VARIANTS=("${AFK_PROSE_VARIANTS[@]}")
   done
 }
 
-@test "the file-based platforms grep the verdict out of the review report" {
-  # codex gets the reviewer's output as a file, so reading the verdict is a one-line
-  # shell command, not a judgement call. (pi reads it in code — lib/report.mjs.)
-  for v in codex; do
-    run grep -q "grep -m1 '\^AC:' \"\$DISPATCH_DIR/\$SLUG.review.md\"" "$(afk_variant "$v")"
-    [ "$status" -eq 0 ] || { echo "$v does not read the AC line from the review report" >&2; return 1; }
+@test "the launcher platforms read the verdict in code, not in prose" {
+  # pi and codex get the reviewer's output as a file, and the orchestrator program parses
+  # the AC line out of it (orchestrator/lib/report.mjs, covered by
+  # tests/orchestrator/report.test.mjs). What must hold here is that the launcher does not
+  # re-acquire the job: a body that greps the verdict is a body back in the pipeline.
+  grep -q "AC:" "$REPO_ROOT/orchestrator/lib/report.mjs"
+  for v in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    body="$AFK_DIR/$v.SKILL.md"
+    [ -f "$body" ]
+    if grep -q 'review.md' "$body"; then
+      echo "$v launcher reads the review report itself" >&2
+      return 1
+    fi
   done
 }
 

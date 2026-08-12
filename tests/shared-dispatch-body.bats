@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# P2: pi, codex and copilot share ONE orchestrator body.
+# P2: every platform that still ships a *prose* orchestrator shares ONE body.
 #
 # They used to be three ~5,000-word files that were 85–90% identical, and they
 # drifted: three of the four variants declared `review → close → merge` and ran
@@ -9,8 +9,11 @@
 # that size, so parity is now structural: one `dispatch.SKILL.md` plus a small
 # per-platform fragment set, inlined at install time by scripts/render-skill.sh.
 #
-# These tests guard the mechanism, not the prose. Prose assertions live in the other
-# suites and now run against the rendered body.
+# pi and codex have since cut over to the orchestrator program, so this suite's subject
+# is shrinking towards nothing (see tests/crew-afk-launcher.bats). It still guards the
+# fragment mechanism for what is left, and the single-platform case is guarded explicitly
+# below so nothing here can pass by iterating an empty list. Prose assertions live in the
+# other suites and now run against the rendered body.
 
 load helpers/render
 
@@ -20,6 +23,13 @@ RENDER="$REPO_ROOT/scripts/render-skill.sh"
 DISPATCH_PLATFORMS=("${AFK_PROSE_DISPATCH_VARIANTS[@]}")
 
 # ─── one body, no per-platform copies ────────────────────────────────────────
+
+@test "P2: the prose platform list is not empty (these tests have a subject)" {
+  # Every loop below iterates it. An empty list would turn this whole suite green
+  # while asserting nothing — the failure mode of a cutover that forgot the last step.
+  # When the list finally empties, delete this suite (issue 05) rather than the guard.
+  [ "${#DISPATCH_PLATFORMS[@]}" -ge 1 ]
+}
 
 @test "P2: the deleted per-platform bodies have not come back" {
   for platform in "${DISPATCH_PLATFORMS[@]}"; do
@@ -64,15 +74,21 @@ DISPATCH_PLATFORMS=("${AFK_PROSE_DISPATCH_VARIANTS[@]}")
 }
 
 @test "P2: each rendered body identifies its own platform" {
-  grep -q '^# AFK Issue Sprint — Codex$' "$(afk_variant codex)"
-  grep -q '^# AFK Issue Sprint — Copilot$' "$(afk_variant copilot)"
+  for platform in "${DISPATCH_PLATFORMS[@]}"; do
+    # The heading comes from the intro fragment, so a body that names another
+    # platform means the fragment set was copied rather than written.
+    run grep -qi "^# AFK Issue Sprint — $platform$" "$(afk_variant "$platform")"
+    [ "$status" -eq 0 ] || { echo "$platform body does not name itself" >&2; return 1; }
+  done
 }
 
 @test "P2: {{PLATFORM}} reaches the squash call for each platform" {
-  # pi is absent by design: its orchestrator is a program, which passes --platform pi
-  # to squash-commits.sh itself (orchestrator/lib/loop.mjs).
-  grep -q 'squash-commits.sh" --platform codex' "$(afk_variant codex)"
-  grep -q 'squash-commits.sh" --platform copilot' "$(afk_variant copilot)"
+  # The launcher platforms are absent by design: their orchestrator is a program, which
+  # passes --platform <p> to squash-commits.sh itself (orchestrator/lib/loop.mjs).
+  for platform in "${DISPATCH_PLATFORMS[@]}"; do
+    run grep -q "squash-commits.sh\" --platform $platform" "$(afk_variant "$platform")"
+    [ "$status" -eq 0 ] || { echo "$platform did not get {{PLATFORM}} substituted" >&2; return 1; }
+  done
 }
 
 @test "P2: every fragment the shared body asks for exists for every platform" {
@@ -91,10 +107,10 @@ DISPATCH_PLATFORMS=("${AFK_PROSE_DISPATCH_VARIANTS[@]}")
 @test "P2: a missing fragment fails the render loudly" {
   # A silently-skipped fragment would ship a body with a hole in it, so the
   # renderer must refuse rather than emit the placeholder or an empty line.
-  frag="$AFK_DIR/fragments/codex/intro.md"
+  frag="$AFK_DIR/fragments/${DISPATCH_PLATFORMS[0]}/intro.md"
   cp "$frag" "$BATS_TEST_TMPDIR/intro.md"
   rm "$frag"
-  run bash "$RENDER" crew-afk codex
+  run bash "$RENDER" crew-afk "${DISPATCH_PLATFORMS[0]}"
   cp "$BATS_TEST_TMPDIR/intro.md" "$frag"
   [ "$status" -ne 0 ]
   [[ "$output" == *"fragment 'intro'"* ]]
@@ -119,6 +135,9 @@ DISPATCH_PLATFORMS=("${AFK_PROSE_DISPATCH_VARIANTS[@]}")
   # Everything outside a fragment is literally one source, so the top-level
   # section sequence must match exactly. A divergence means someone moved a step
   # into a fragment, which is how the close-before-merge bug spread.
+  #
+  # With one prose platform left this compares the body to itself, which still catches
+  # an H2 that a *fragment* introduces — the divergence this was written for.
   local first="${DISPATCH_PLATFORMS[0]}" platform other
   first_h2=$(grep '^## ' "$(afk_variant "$first")")
   for platform in "${DISPATCH_PLATFORMS[@]}"; do

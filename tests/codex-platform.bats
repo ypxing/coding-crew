@@ -121,6 +121,53 @@ assert len(d['developer_instructions']) > 200
   [[ "$output" == *"--sandbox workspace-write"* ]]
 }
 
+@test "dispatch-codex-agent.sh makes the worktree's git dir writable in the sandbox" {
+  # A linked worktree's index lives in the main repo's .git dir, which codex's
+  # workspace-write sandbox keeps read-only even when its parent is passed with --add-dir.
+  # Without an explicit writable root, `git add` in a worker fails with
+  # "index.lock: Operation not permitted" — a codex sprint where nothing can ever commit.
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null
+
+  git -C "$TEMP_DIR" init -q -b main
+  git -C "$TEMP_DIR" config user.email t@test
+  git -C "$TEMP_DIR" config user.name T
+  echo x > "$TEMP_DIR/README.md"
+  git -C "$TEMP_DIR" add -A
+  git -C "$TEMP_DIR" commit -qm init
+  git -C "$TEMP_DIR" worktree add -q "$TEMP_DIR/wt" -b work
+
+  mkdir -p "$TEMP_DIR/bin"
+  printf '#!/usr/bin/env bash\necho "ARGS: $*"\ncat >/dev/null\n' > "$TEMP_DIR/bin/codex"
+  chmod +x "$TEMP_DIR/bin/codex"
+  echo "implement issue 01" > "$TEMP_DIR/prompt.md"
+
+  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
+    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
+      --agent crew-coder --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md"
+  [ "$status" -eq 0 ]
+  common_dir=$(cd "$TEMP_DIR/wt" && git rev-parse --git-common-dir)
+  [[ "$output" == *"sandbox_workspace_write.writable_roots=[\"$common_dir\"]"* ]] || {
+    echo "$output" >&2; return 1; }
+}
+
+@test "dispatch-codex-agent.sh adds no writable root for a read-only reviewer" {
+  # The reviewer never commits, so widening its sandbox would buy nothing.
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null
+
+  mkdir -p "$TEMP_DIR/bin"
+  printf '#!/usr/bin/env bash\necho "ARGS: $*"\ncat >/dev/null\n' > "$TEMP_DIR/bin/codex"
+  chmod +x "$TEMP_DIR/bin/codex"
+  echo "review branch" > "$TEMP_DIR/prompt.md"
+
+  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
+    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
+      --agent crew-code-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"writable_roots"* ]]
+}
+
 @test "dispatch-codex-agent.sh honours the reviewer's read-only sandbox" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null

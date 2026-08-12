@@ -117,6 +117,11 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.verify.ok")), true);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.ac.ok")), true);
   assert.match(r.stdout, /NO MORE TASKS/);
+  // The reviewer was handed the verification result, so a criterion that ends "and the
+  // tests pass" is answerable by the read-only reviewer instead of stalling the branch.
+  const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/alpha.review-prompt.md"), "utf8");
+  assert.match(reviewPromptText, /Checks already run by the pipeline/);
+  assert.match(reviewPromptText, /test=pass/);
 });
 
 test("a worker-reported failing check is demoted and never merges", () => {

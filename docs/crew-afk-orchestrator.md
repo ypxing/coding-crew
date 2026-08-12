@@ -73,14 +73,35 @@ bats tests/orchestrator.bats
 
 ## Status
 
-- **Phase 0/1 done**: pure core, four adapters, pipeline, loop, `plan`; 32 node tests.
+- **Phase 0/1 done**: pure core, four adapters, pipeline, loop, `plan`; 44 node tests.
 - **Phase 2 done for pi**: installed to `.coding-crew/crew-afk/` via the skill `assets`
   entry, pi's `SKILL.md` is a 390-word launcher, `fragments/pi/` deleted, prose-parity
   assertions moved onto the code, and a real unattended pi sprint verified end to end
   (worker → verify → review → receipts → merge → close → squash → cleanup → summary).
-- **Next (Phase 3/4)**: codex, then claude, then copilot. Each is an adapter that already
-  exists plus one body swap; the cutover moves that platform's name out of
-  `AFK_PROSE_VARIANTS` in `tests/helpers/render.bash` and deletes its fragments.
+- **Phase 3 done for codex**: `codex.SKILL.md` is a 434-word launcher,
+  `fragments/codex/` deleted, `codex` moved into `AFK_LAUNCHER_VARIANTS`, the fragment
+  assertions replaced by `tests/orchestrator/dispatch.test.mjs`, and a real unattended
+  codex sprint verified end to end. Two real bugs surfaced only by running it, both fixed
+  and both platform-general in consequence:
+  - `dispatch-codex-agent.sh` now names the worktree's **git common dir** as a writable
+    sandbox root (`-c sandbox_workspace_write.writable_roots=[…]`). Codex's
+    `workspace-write` sandbox keeps `.git` read-only even when its parent is passed with
+    `--add-dir`, and a linked worktree's index lives at
+    `<main>/.git/worktrees/<name>/index.lock` — so a worker could edit files but never
+    commit them (`Operation not permitted`), which the pipeline read, correctly, as
+    `blocked`. Every codex sprint stalled at round 1.
+  - The review prompt now **states which checks the pipeline already ran**
+    (`parseVerifyChecks()` reads `verify-worktree.sh`'s own output). A criterion phrased
+    "…and `npm test` passes" has no file and line, so a read-only reviewer answered
+    `AC: unmet — not executed in this inspection-only review` and the branch was retained
+    every round, forever. `not_run` is still evidence of nothing, and the code half of
+    every criterion is still judged from the diff. The same rule is in
+    `agents/crew-code-reviewer/protocol.md`, so a prose platform behaves identically.
+- **Next (Phase 3/4)**: claude, then copilot. Each is an adapter that already exists plus
+  one body swap; the cutover moves that platform's name out of `AFK_PROSE_VARIANTS` in
+  `tests/helpers/render.bash` and deletes its fragments. Both need a decision first (see
+  `.scratch/crew-afk-as-code/issues/open/03-…` and `04-…`): claude's isolation model
+  changes, copilot's dispatch mechanism does.
 - **Deferred**: adding the `FINDING:` line and the `<slug>.report.json` sidecar to the
   agent protocols. The code asks for both in the prompts it builds and falls back
   cleanly, so this is a robustness upgrade rather than a prerequisite.
