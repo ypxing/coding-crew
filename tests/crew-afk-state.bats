@@ -388,8 +388,12 @@ EOF
 @test "P3: the orchestrator bodies are within their word budget" {
   # The audit measured 4,358–5,051 words per variant, of which ~9% was novel judgement.
   # A budget is the only thing that stops mechanism creeping back in as prose.
+  #
+  # Stage B (AC folded into the review) is a structural saving, not a prose one: it removes
+  # an agent spawn and a full-diff read per branch while the words move rather than vanish.
+  # The ratchet still tightens, so nothing reclaims the space that was freed.
   for f in "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
     words=$(wc -w < "$f")
-    [ "$words" -lt 3000 ] || { echo "$f is $words words (budget 3000)" >&2; return 1; }
+    [ "$words" -lt 2850 ] || { echo "$f is $words words (budget 2850)" >&2; return 1; }
   done
 }

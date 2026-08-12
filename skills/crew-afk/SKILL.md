@@ -158,14 +158,14 @@ validation only — it does not replace the independent verification in Step 4.
 If no result is `complete`, increment `stall`; at `stall >= 2` go to **## Wrap Up** and execute every
 step there. Otherwise reset `stall = 0`. One dry round is not a stall — retry once first.
 
-### Step 4 — Verify, check criteria, review, then merge
+### Step 4 — Verify, review, then merge
 
-**Pipeline order per branch: verify → AC verify → per-branch review → merge → close**
+**Pipeline order per branch: verify → review (acceptance criteria + findings) → merge → close**
 
 Each gate is mechanical: it leaves a receipt naming the exact commit it passed, and the next step
 refuses to run without a current one. Working around a refusal is never correct — re-run the gate.
-A branch that fails either verification gate is demoted to `partial`: not reviewed, not merged, not
-closed. Nothing unverified reaches the feature branch.
+A branch that fails either gate is demoted to `partial`: not merged, not closed. Nothing unverified
+reaches the feature branch.
 
 **1. Verify** in the worker's worktree, before teardown (typecheck, then lint, then tests):
 
@@ -179,40 +179,16 @@ is missing or stale, so a branch that skipped this gate, or gained commits after
 merge. A `Verification: coverage gap — not_run: ...` line does not block the merge; record it with
 `state.sh coverage-gap`.
 
-**2. Verify acceptance criteria** — spawn a regular (non-cheap) Agent per verified branch. This is a
-correctness gate; it runs before the merge so a falsely-reported `complete` never lands:
-
-```
-Verify acceptance criteria for a branch that is about to merge. Do not edit any files.
-Branch: <branch>
-Issue file: <issue-file-path>
-Diff: git diff $(git merge-base <feature-branch> <branch>)..<branch>
-
-For each criterion in ## Acceptance criteria (and ## Cross-cutting Requirements if present),
-report `met` or `unmet` with the file and line that satisfies it. Report `unmet` when you cannot
-point at concrete evidence — the worker's own claim is not evidence.
-End with exactly one line: `AC: all-met` or `AC: unmet — <criterion>, <criterion>`.
-```
-
-On `AC: all-met`, and only then, record the receipt that permits the close — it writes the `ACVERIFY`
-trace line itself:
-
-```bash
-bash "<skill-dir>/scripts/receipts.sh" write ac --branch "<branch>"
-```
-
-`close-issue.sh` refuses to close an issue without a receipt for **that issue's own slug**, so this
-is a gate, not bookkeeping. Never write one for a branch other than the one just checked — closing an
-issue on a sibling's evidence is exactly the failure it prevents. `AC: unmet` demotes the result.
-
-**3. Per-branch code review** — dispatch a `crew-code-reviewer` Agent per verified, criteria-met
-branch. Reviews are independent; do not wait for all branches before starting the first. The reviewer
-cannot edit and does not block the merge — findings are advisory.
+**2. Per-branch code review** — dispatch a `crew-code-reviewer` Agent per verified branch. Reviews are
+independent; do not wait for all branches before starting the first. The reviewer cannot edit, reads
+the diff itself, and returns two things: the acceptance-criteria verdict on the `AC:` line under its
+`## Branch:` heading, which gates the merge, and findings below it, which are advisory.
 
 ```
 Review this branch before it merges.
 Branch: <branch>
 Slug: <slug>
+Issue file: <issue-file-path>
 Acceptance criteria:
 <criteria verbatim from the issue>
 
@@ -224,11 +200,28 @@ with the **Write tool** (never a shell heredoc) to `$REVIEW_DIR/sprint-review-<T
 no verified branches this round, print `Code review: skipped (no verified branches this round)` and
 write no report.
 
-**If a reviewer produces no report, record the gap — do not review the branch yourself.** An agent
-that fails, times out, or returns no `## Branch:` block means that branch was not reviewed. An inline
-self-review puts no block in the report, so promotion has nothing to read, `remind` counts zero
-findings, and the sprint reports a branch nobody reviewed as clean. Run this after the report is
-written, once per unreviewed branch — it appends, and creates the report if no branch produced one:
+**3. Acceptance-criteria gate** — read the reviewer's verdict; never re-derive it yourself and never
+pull the diff into this session to second-guess it. On `AC: all-met`, and only then, record the
+receipt that permits the close — it writes the `ACVERIFY` trace line itself:
+
+```bash
+bash "<skill-dir>/scripts/receipts.sh" write ac --branch "<branch>"
+```
+
+`close-issue.sh` refuses to close an issue without a receipt for **that issue's own slug**, so this is
+a gate, not bookkeeping. Never write one for another branch — closing an issue on a sibling's evidence
+is the failure it prevents.
+
+Anything else — `AC: unmet`, a `SKIPPED:` block, or no verdict at all because the Agent failed —
+demotes the result to `partial`: no promotion, no merge, no close. The reviewer carries the criteria
+gate, so a review that did not happen is a criteria check that did not happen: fail closed, retain the
+branch, and the next round resumes it from committed code.
+
+**A review that produced nothing is recorded as a gap — do not review the branch yourself.** An agent
+that failed, timed out, or returned no `## Branch:` block was not a review. An inline self-review puts
+no block in the report, so promotion has nothing to read, `remind` counts zero findings, and a branch
+nobody reviewed reads as clean. Record it instead, once per branch — it appends, and creates the
+report if no branch produced one:
 
 ```bash
 bash "<skill-dir>/scripts/promote-findings.sh" mark-not-run \
@@ -237,8 +230,7 @@ bash "<skill-dir>/scripts/promote-findings.sh" mark-not-run \
   --reason "<agent failed, returned no findings block, timed out>"
 ```
 
-Then skip promotion for that branch and continue to the merge: review is advisory, so the branch
-still merges unreviewed — the sprint only has to say so rather than imply it was checked.
+Then treat the branch as `partial` with reason `review-not-run` and move to the next one.
 
 **4. Promote CRITICAL/HIGH findings** (policy: `references/findings-promotion.md`). Findings never
 block a merge, so they need a route back into the sprint. For each reviewed branch whose block holds
@@ -297,7 +289,7 @@ round.
 
 ```bash
 bash "<skill-dir>/scripts/state.sh" retain --slug "<slug>" --branch "<branch>" \
-  --reason "<partial | verification-failed | criteria-unmet — <criterion> | merge-failed>"
+  --reason "<partial | verification-failed | criteria-unmet — <criterion> | review-not-run | merge-failed>"
 ```
 
 **Blocked** — append `Round <N>: <notes>` inside `## Blocked`, creating the heading only if absent
@@ -442,6 +434,6 @@ Acceptance criteria:
 `crew-summary.sh` ends with the findings reminder, which is the **last thing printed**: either
 `## Next Step` with a real count of the MEDIUM/LOW and fix-branch findings promotion did not cover,
 `No open review findings.`, or — never suppressed by either, and never counted as findings —
-`## Unreviewed Branches` for every branch that merged without a completed review.
+`## Unreviewed Branches` for every branch whose review never completed.
 
 Then print `NO MORE TASKS` and stop. The user can re-trigger the sprint after resolving blockers.

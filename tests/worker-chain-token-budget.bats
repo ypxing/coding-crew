@@ -92,3 +92,40 @@ words_of() {
   # The rule that checkbox stood for still has to be somewhere: it is now one sentence.
   echo "$section" | grep -qi 'do NOT stage or commit'
 }
+
+@test "budget: the per-branch reviewer chain is under 2,150 words" {
+  # Read once per branch, like the worker chain is read once per issue. The reviewer now also
+  # carries the acceptance-criteria verdict, which used to be a separate agent over the same
+  # diff: 2,040 words here plus a second full-diff read became 2,1xx words and one read. Worst
+  # case is the protocol plus the widest reference selection a single repo can trigger
+  # (quality + web-security + one framework block).
+  local protocol="$REPO_ROOT/agents/crew-code-reviewer/protocol.md"
+  local refs="$REPO_ROOT/agents/crew-code-reviewer/assets/references"
+  local total=$(( $(words_of "$protocol") + $(words_of "$refs/quality.md") \
+                  + $(words_of "$refs/web-security.md") + $(words_of "$refs/react.md") ))
+  [ "$total" -lt 2150 ] || { echo "reviewer chain is $total words (budget 2150)" >&2; return 1; }
+}
+
+@test "dependency install is failure-triggered, not a step every issue pays for" {
+  # dep-install was invoked unconditionally: its SKILL plus one reference (800–1,250 words)
+  # and a package-manager run, in worktrees that inherit node_modules via .worktreeinclude
+  # and in repos with no dependency step at all. The trigger it needs already existed as
+  # dep-install's own retry rule — a module-not-found on the first command that runs.
+  section=$(awk '/^### 2\./{f=1;next} /^### /{f=0} f' "$REPO_ROOT/skills/solve-issue/SKILL.md")
+  [ -n "$section" ]
+  echo "$section" | grep -qiE 'do \*\*not\*\* install pre-emptively|only when something is missing'
+  echo "$section" | grep -qiE 'module-not-found|module not found'
+  # The unconditional "STOP. Read and invoke" order is gone …
+  ! echo "$section" | grep -q 'STOP. Read and invoke the `dep-install` skill'
+  # … but a missing skill is still a blocker rather than an improvisation, and docker mode
+  # is still resolved up front, because it decides how every later command runs.
+  echo "$section" | grep -q 'BLOCKED: dep-install skill not installed'
+  echo "$section" | grep -q 'agent.install-mode'
+}
+
+@test "the steps that consume INSTALL_MODE still name where it came from" {
+  # A mode that is only sometimes established is worse than no mode at all if the later
+  # steps do not say what to assume.
+  grep -q 'INSTALL_MODE from Step 2' "$REPO_ROOT/skills/solve-issue/SKILL.md"
+  grep -q 'INSTALL_MODE=host' "$REPO_ROOT/skills/solve-issue/SKILL.md"
+}

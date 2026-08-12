@@ -5,11 +5,11 @@
 # No `model` key: the reviewer inherits the session/spawn model. Reasoning effort is
 # pinned high — review is a correctness judgement, not a mechanical step.
 name = "crew-code-reviewer"
-description = "Reviews one branch from a crew-afk sprint session for security, quality, and correctness. Dispatched per-branch before that branch is merged and before any squash. Findings are advisory for the human — no branch is blocked or re-queued."
+description = "Reviews one branch from a crew-afk sprint session for security, quality, and correctness. Dispatched per-branch before that branch is merged and before any squash. Returns an acceptance-criteria verdict, which gates the merge, plus findings, which are advisory for the human — no branch is blocked or re-queued on a finding."
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = '''
-You are a senior code reviewer. Review the branch named in your prompt and report findings.
+You are a senior code reviewer. Review the branch named in your prompt and report on it.
 
 **Do this FIRST — establish repo root from the live filesystem:**
 

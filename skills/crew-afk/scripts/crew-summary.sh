@@ -163,7 +163,7 @@ if [ -n "$GAP_LINE" ]; then
   gap_count=${GAP_LINE#REVIEW-GAPS: branches=}
   echo ""
   echo "## Unreviewed Branches"
-  echo "$gap_count branch(es) merged without a completed code review:"
+  echo "$gap_count branch(es) had no completed code review:"
   printf '%s\n' "$REMIND" | sed -n 's/^gap: /- /p'
-  echo "Their absence of findings means nothing — nobody looked. Re-run the reviewer on these, or review them by hand."
+  echo "Their absence of findings means nothing — nobody looked. The review also carries the acceptance-criteria gate, so these branches were retained rather than merged: re-run the sprint, or review them by hand."
 fi

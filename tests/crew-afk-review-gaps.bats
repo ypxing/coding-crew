@@ -179,9 +179,19 @@ EOF
   done
 }
 
-@test "all four skill variants state that an unreviewed branch still merges" {
+# Stage B moved the acceptance-criteria check into the review, so a review that never ran
+# is also a criteria check that never ran: the branch is retained, not merged. The gap is
+# still recorded and still surfaced by the reminder — "advisory" must not silently degrade
+# into "reported as clean" — but it no longer rides into the feature branch.
+@test "all four skill variants keep an unreviewed branch out of the merge" {
   for v in claude pi codex copilot; do
-    run grep -qi 'unreviewed' "$(afk_variant "$v")"
+    body="$(afk_variant "$v")"
+    if grep -qi 'still merges unreviewed' "$body"; then
+      echo "$v merges a branch whose review never ran" >&2
+      return 1
+    fi
+    # The gap still has to be visible at the end of the sprint.
+    run grep -q 'Unreviewed Branches' "$body"
     [ "$status" -eq 0 ]
   done
 }

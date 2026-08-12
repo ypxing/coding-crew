@@ -7,6 +7,10 @@ description: >
 
 # Dep Install
 
+You are invoked **on demand** — because a command already failed for a missing dependency, or because
+the project is docker-mode — not as a routine step. Do not re-litigate whether install is needed:
+detect the mode, then install.
+
 Two steps: detect the install mode, then follow the appropriate install guide.
 
 ## Must

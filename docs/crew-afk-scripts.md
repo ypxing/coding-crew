@@ -95,7 +95,7 @@ bash scripts/cleanup-worktrees.sh [--main-root <path>] [--feature-slug <slug>] \
 **What it does**:
 - Removes each candidate branch's worktree **first**, then deletes the ref — git refuses to delete a ref that a worktree still has checked out — and finishes with `git worktree prune`
 - Sweeps candidates nobody passed in: `crew/<feature-slug>/*` worktrees (when `--feature-slug` is given) and runtime-managed `worktree-agent-*` / `.claude/worktrees/*` worktrees
-- Never touches a `--retain` branch (partial / verification-failed / criteria-unmet); never removes a worktree with uncommitted changes
+- Never touches a `--retain` branch (partial / verification-failed / criteria-unmet / review-not-run); never removes a worktree with uncommitted changes
 - Refuses to delete a *swept* branch whose commits are not already in `HEAD` unless `--force`. Branches passed with `--merged` are exempt: cleanup runs after `squash-commits.sh`, which soft-resets the feature branch, so a genuinely merged branch tip is never an ancestor of `HEAD` by then — requiring ancestry there would keep every merged branch forever
 - Prints one line per branch (`removed` / `kept <reason>` / `skipped`) and a final `CLEANUP: removed=N kept=M failed=K`
 - `--main-root` defaults to the repo's main worktree, resolved via `--git-common-dir`, so it works when invoked from inside a linked worktree
@@ -140,7 +140,7 @@ bash scripts/state.sh show
 ```
 
 **Notes**:
-- `retain` is the single entry point for every branch that must survive the sprint (`partial`, `verification-failed`, `criteria-unmet`, `merge-failed`, `blocked`). Its reason string is what the summary prints, and `get retained` is what feeds `cleanup-worktrees.sh --retain`, so a recorded branch cannot be deleted. `complete` clears the retention, so a stale branch is never offered for resume.
+- `retain` is the single entry point for every branch that must survive the sprint (`partial`, `verification-failed`, `criteria-unmet`, `review-not-run`, `merge-failed`, `blocked`). Its reason string is what the summary prints, and `get retained` is what feeds `cleanup-worktrees.sh --retain`, so a recorded branch cannot be deleted. `complete` clears the retention, so a stale branch is never offered for resume.
 - `resume` answers `resume: <branch>` or `no prior branch` — the recorded name plus a ref-existence check, previously a jq call and a `git branch --list` in the prompt.
 - The state file is resolved from `--state-file`, `--feature-slug`, `$STATE_FILE`, or `.scratch/sprint.env` — never by globbing `.scratch/*/sprint-state.json`, which picks the alphabetically-first feature.
 

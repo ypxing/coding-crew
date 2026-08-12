@@ -137,7 +137,7 @@ case "$CMD" in
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@"); reason=$(flag reason "" "$@")
     [ -n "$slug" ] || die "retain requires --slug"
     [ -n "$branch" ] || die "retain requires --branch"
-    [ -n "$reason" ] || die "retain requires --reason (partial | verification-failed | criteria-unmet | merge-failed | blocked)"
+    [ -n "$reason" ] || die "retain requires --reason (partial | verification-failed | criteria-unmet | review-not-run | merge-failed | blocked)"
     edit_state --arg s "$slug" --arg b "$branch" --arg r "$reason" '
       .retained_branches[$s] = $b
       | .retention[$s] = {branch: $b, reason: $r}

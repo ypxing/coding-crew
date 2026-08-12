@@ -128,7 +128,7 @@ report validation only — it does not replace the independent verification in s
 
 ### 3. Housekeeping
 
-**Pipeline order per branch: verify → AC verify → per-branch review → merge → close**
+**Pipeline order per branch: verify → review (acceptance criteria + findings) → merge → close**
 
 Each gate below is mechanical: it writes a receipt naming the exact commit it passed, and the next
 step refuses to run without a current one. Working around a refusal is never correct — re-run the
@@ -152,36 +152,34 @@ gate.
    Then remove the worktree — every gate after this one reads the branch from `$MAIN_ROOT`:
    `git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"`
 
-{{FRAGMENT:ac-verify}}
+{{FRAGMENT:review-dispatch}}
 
-   ```bash
-   git -C "$MAIN_ROOT" diff $(git -C "$MAIN_ROOT" merge-base "$FEATURE_BRANCH" "$BRANCH").."$BRANCH"
-   ```
+   Append the returned block (starting `## Branch: <branch-name>`) to
+   `$REVIEW_DIR/sprint-review-<TIMESTAMP>.md` — one timestamped file per round, created on the first
+   branch and appended to for the rest. With no verified branches this round, print
+   `Code review: skipped (no verified branches this round)` and create no file.
 
-   On `AC: all-met`, and only then, record the receipt that permits the close — it writes the
-   `ACVERIFY` trace line itself:
+3. **Acceptance-criteria gate.** Read the reviewer's verdict; never re-derive it yourself and never
+   pull the diff into this session to second-guess it. On `AC: all-met`, and only then, record the
+   receipt that permits the close — it writes the `ACVERIFY` trace line itself:
 
    ```bash
    bash "<skill-dir>/scripts/receipts.sh" write ac --branch "$BRANCH"
    ```
 
    `close-issue.sh` refuses to close an issue without a receipt for **that issue's own slug**, so
-   this is a gate, not bookkeeping. Never write one for a branch other than the one just checked —
-   closing an issue on a sibling's evidence is exactly the failure it prevents.
+   this is a gate, not bookkeeping. Never write one for another branch — closing an issue on a
+   sibling's evidence is the failure it prevents.
 
-   `AC: unmet` — demote to `partial`: no review, no merge, no close.
+   Anything else — `AC: unmet`, a `SKIPPED:` block, or no verdict at all because the dispatch died —
+   demotes this result to `partial`: no promotion, no merge, no close. The reviewer carries the
+   criteria gate, so a review that did not happen is a criteria check that did not happen: fail
+   closed, retain the branch, and the next round resumes it from committed code.
 
-{{FRAGMENT:review-dispatch}}
-
-   Append the reviewer's block (starting `## Branch: <branch-name>`) to
-   `$REVIEW_DIR/sprint-review-<TIMESTAMP>.md` — one timestamped file per round, created on the
-   first branch and appended to for the rest. With no verified branches this round, print
-   `Code review: skipped (no verified branches this round)` and create no file.
-
-   **If the reviewer produces no report, record the gap — do not review the branch yourself.**
+   **A review that produced nothing is recorded as a gap — do not review the branch yourself.**
 {{FRAGMENT:review-gap-detect}}
    An inline self-review writes no report file, so promotion has nothing to read, `remind` counts
-   zero findings, and the sprint reports a branch nobody reviewed as clean. Record it instead:
+   zero findings, and a branch nobody reviewed reads as clean. Record it instead:
 
    ```bash
    bash "<skill-dir>/scripts/promote-findings.sh" mark-not-run \
@@ -190,8 +188,7 @@ gate.
      --reason "<the dispatch failed, timed out, or produced an empty report>"
    ```
 
-   Then skip promotion for this branch and continue to the merge: review is advisory, so the branch
-   still merges unreviewed — the sprint only has to say so rather than imply it was checked.
+   Then treat the branch as `partial` with reason `review-not-run` and move to the next one.
 
 4. **Promote CRITICAL/HIGH findings** (policy: `references/findings-promotion.md`). Findings never
    block a merge, so they need a route back into the sprint. When this branch's review block holds
@@ -247,7 +244,7 @@ the branch name next round.
 ```bash
 git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"   # never: git branch -D "$BRANCH"
 bash "<skill-dir>/scripts/state.sh" retain --slug "$SLUG" --branch "$BRANCH" \
-  --reason "<partial | verification-failed | criteria-unmet — <criterion>>"
+  --reason "<partial | verification-failed | criteria-unmet — <criterion> | review-not-run>"
 ```
 
 **`Status: blocked`** — leave the issue body untouched apart from the `## Blocked` section: append
@@ -391,6 +388,6 @@ Then insert the **Coverage Report** (if one was produced) and the review report 
 `crew-summary.sh` ends with the findings reminder, which is the **last thing printed**: either
 `## Next Step` with a real count of the MEDIUM/LOW and fix-branch findings that promotion did not
 cover, `No open review findings.`, or — never suppressed by either, and never counted as findings —
-`## Unreviewed Branches` for every branch that merged without a completed review.
+`## Unreviewed Branches` for every branch whose review never completed.
 
 Finally print `NO MORE TASKS` and stop. The user can re-trigger the sprint after resolving blockers.

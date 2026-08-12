@@ -88,9 +88,17 @@ PRD="${PRD_REL:+$MAIN_ROOT/$PRD_REL}"
 
 No PRD is normal — continue normally.
 
-### 2. Install dependencies
+### 2. Dependencies — only when something is missing
 
-STOP. Read and invoke the `dep-install` skill. If the skill is not found, stop and report `BLOCKED: dep-install skill not installed`. Run install **once**; only re-run if you add a new package during implementation.
+Do **not** install pre-emptively: a crew worktree usually inherits `node_modules`/`.venv` through
+`.worktreeinclude`, and many repos have no dependency step at all.
+
+Invoke the `dep-install` skill in exactly two cases — up front if
+`git -C "$PROJECT_ROOT" config --local agent.install-mode` prints `docker` or
+`$MAIN_ROOT/docker-compose.override.yml` exists (the mode decides how every later command runs), and
+later if any command fails for a missing dependency (module-not-found, import error, test runner not
+found). Otherwise `INSTALL_MODE=host`, and you continue straight to Step 3. If the skill is not
+found, stop and report `BLOCKED: dep-install skill not installed`.
 
 ### 3. Explore before coding
 
@@ -110,7 +118,8 @@ Expand the file list if exploration reveals additional files. Do not guess. Conf
 
 ### 4. Implement with TDD
 
-**Use the INSTALL_MODE established in Step 2 for all commands** — test runs, type checks, linting. If INSTALL_MODE=docker, every command runs inside docker, not on the host.
+**Use the INSTALL_MODE from Step 2 for all commands** — test runs, type checks, linting. If it is
+`docker`, every command runs inside docker, not on the host.
 
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
@@ -136,7 +145,8 @@ Do not add documentation for things that are already self-evident from the code.
 
 ### 5. Verify
 
-**Use the same INSTALL_MODE from Step 2** — all check commands run inside docker or on the host, matching whatever was established then.
+**Use the same INSTALL_MODE from Step 2** — every check command runs inside docker or on the host,
+matching what was established then.
 
 STOP. Read `references/verification.md` now. Run every check listed. Do not skip any.
 

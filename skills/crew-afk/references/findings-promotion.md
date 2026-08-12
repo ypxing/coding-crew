@@ -13,7 +13,7 @@ Per-branch review runs before each merge, and its findings are **advisory** — 
 regardless. That leaves CRITICAL findings on already-merged code with no route back into the
 sprint: the report sits in `reviews/` until a human runs `/crew-address-findings`. Promotion
 gives those findings a route, using the machinery that already exists (issue → worktree → TDD →
-verify → AC verify → review → merge) instead of a bespoke fix path.
+verify → review → merge) instead of a bespoke fix path.
 
 ## Two phases
 

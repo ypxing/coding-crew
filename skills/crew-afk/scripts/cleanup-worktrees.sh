@@ -11,7 +11,8 @@ set -uo pipefail
 #   --merged  a branch this sprint merged; safe to delete (repeatable, or comma-separated)
 #             — trusted, because cleanup runs after squash and a squashed merge
 #             leaves no ancestry to check
-#   --retain  a branch that must survive (partial / verification-failed / criteria-unmet)
+#   --retain  a branch that must survive (partial / verification-failed / criteria-unmet /
+#             review-not-run)
 #   --feature-slug  enables the sweep: any leftover sprint worktree for this
 #                   feature is considered, not just the ones passed in
 #   --dry-run report what would happen and change nothing
