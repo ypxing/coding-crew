@@ -391,7 +391,7 @@ EOF
   # Three copies of the same content used to reach the context: the per-round rollup, the
   # verbatim echo of every worker report, and the final summary's per-issue detail. All of it
   # is on disk in sprint-state.json and the review reports, so the summary renders it once.
-  for variant in claude pi codex copilot; do
+  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
     f=$(afk_variant "$variant")
     if grep -q 'crew-summary.sh" --no-reminder' "$f"; then
       echo "$variant still prints a per-round rollup" >&2; return 1

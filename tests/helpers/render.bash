@@ -23,3 +23,26 @@ rendered_skill() {
 afk_variant() {
   rendered_skill crew-afk "$1"
 }
+
+# Which platforms still ship a *prose* orchestrator, and which ship a launcher.
+#
+# pi's orchestrator is a program (`orchestrator/`, installed to `.coding-crew/crew-afk/`),
+# so the guarantees these prose assertions describe — pipeline order, the receipt gates,
+# fail-closed review handling, the promotion threshold — are asserted against the code in
+# tests/orchestrator/ instead. Its body is a launcher and asserting prose against it would
+# be asserting the absence of a state machine that moved, not the presence of one.
+#
+# As each remaining platform cuts over, its name moves from one list to the other, here,
+# once — and the assertions it carried are already covered by the node suite.
+AFK_PROSE_VARIANTS=(claude codex copilot)
+AFK_PROSE_DISPATCH_VARIANTS=(codex copilot)
+AFK_LAUNCHER_VARIANTS=(pi)
+
+# afk_launcher_body <platform> — true when this platform ships the launcher, not prose
+afk_is_launcher() {
+  local want="$1" p
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    [ "$p" = "$want" ] && return 0
+  done
+  return 1
+}

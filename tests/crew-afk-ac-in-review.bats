@@ -22,12 +22,12 @@ load helpers/render
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_DIR="$REPO_ROOT/skills/crew-afk"
 PROTOCOL="$REPO_ROOT/agents/crew-code-reviewer/protocol.md"
-VARIANTS=(claude pi codex copilot)
+VARIANTS=("${AFK_PROSE_VARIANTS[@]}")
 
 # ─── the separate AC pass is gone ────────────────────────────────────────────
 
 @test "no ac-verify fragment survives for any dispatch platform" {
-  for platform in pi codex copilot; do
+  for platform in "${AFK_PROSE_DISPATCH_VARIANTS[@]}"; do
     if [ -f "$AFK_DIR/fragments/$platform/ac-verify.md" ]; then
       echo "fragments/$platform/ac-verify.md is back — the AC pass has forked from the review" >&2
       return 1
@@ -106,9 +106,9 @@ VARIANTS=(claude pi codex copilot)
 }
 
 @test "the file-based platforms grep the verdict out of the review report" {
-  # pi and codex get the reviewer's output as a file, so reading the verdict is a
-  # one-line shell command, not a judgement call.
-  for v in pi codex; do
+  # codex gets the reviewer's output as a file, so reading the verdict is a one-line
+  # shell command, not a judgement call. (pi reads it in code — lib/report.mjs.)
+  for v in codex; do
     run grep -q "grep -m1 '\^AC:' \"\$DISPATCH_DIR/\$SLUG.review.md\"" "$(afk_variant "$v")"
     [ "$status" -eq 0 ] || { echo "$v does not read the AC line from the review report" >&2; return 1; }
   done

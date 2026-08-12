@@ -200,6 +200,18 @@ remove_skill() {
     done < <(removal_candidates "$platform" "$dest")
   done
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
+
+  # Skill assets install once to a platform-neutral path and are always overwritten, so
+  # they are removed here for the same reason agent assets are: a stale orchestrator left
+  # behind is an executable no installed skill body matches any more.
+  local assets_dest
+  assets_dest=$(jq -r --arg s "$name" '.skills[$s].assets.dest // empty' "$SCRIPT_DIR/registry.json")
+  assets_dest="${assets_dest%$'\r'}"
+  if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
+    rm -rf "$REPO_ROOT/$assets_dest"
+    echo "  removed $assets_dest/"
+    prune_empty_dirs "$assets_dest"
+  fi
 }
 
 echo "Target: $REPO_ROOT ($INSTALL_LEVEL-level)"

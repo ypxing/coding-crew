@@ -195,7 +195,7 @@ EOF
 # --- B3: not_run policy must match verify-worktree.sh ------------------------
 
 @test "B3: every crew-afk variant demotes only on fail or a missing test command" {
-  for platform in claude pi copilot codex; do
+  for platform in "${AFK_PROSE_VARIANTS[@]}"; do
     f=$(afk_variant "$platform")
     # Must not demote wholesale on any not_run.
     ! grep -q 'has result `not_run` or `fail`, demote' "$f"

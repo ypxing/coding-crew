@@ -170,7 +170,7 @@ EOF
 # --- every variant specifies the failure path -----------------------------------
 
 @test "all four skill variants forbid an inline self-review and name mark-not-run" {
-  for v in claude pi codex copilot; do
+  for v in "${AFK_PROSE_VARIANTS[@]}"; do
     run grep -q 'mark-not-run' "$(afk_variant "$v")"
     [ "$status" -eq 0 ]
     # The orchestrator must not substitute its own judgement for the reviewer's.
@@ -184,7 +184,7 @@ EOF
 # still recorded and still surfaced by the reminder — "advisory" must not silently degrade
 # into "reported as clean" — but it no longer rides into the feature branch.
 @test "all four skill variants keep an unreviewed branch out of the merge" {
-  for v in claude pi codex copilot; do
+  for v in "${AFK_PROSE_VARIANTS[@]}"; do
     body="$(afk_variant "$v")"
     if grep -qi 'still merges unreviewed' "$body"; then
       echo "$v merges a branch whose review never ran" >&2
@@ -199,7 +199,7 @@ EOF
 # Rendering the reminder is no longer prose in four variants — crew-summary.sh does it,
 # so the four bodies only have to call it; its branching is tested in tests/crew-afk-state.bats.
 @test "all four variants delegate the end-of-sprint reminder to crew-summary.sh" {
-  for v in claude pi codex copilot; do
+  for v in "${AFK_PROSE_VARIANTS[@]}"; do
     run grep -q 'crew-summary.sh' "$(afk_variant "$v")"
     [ "$status" -eq 0 ] || { echo "$v does not call crew-summary.sh" >&2; return 1; }
     # The reminder must still be described as the last thing printed, and the

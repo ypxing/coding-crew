@@ -56,15 +56,18 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "1.20.0",
+      "version": "2.0.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
       "install-copilot": ".copilot/skills/crew-afk",
       "install-pi": ".pi/skills/crew-afk",
       "install-codex": ".agents/skills/crew-afk",
+      "assets": {
+        "source": "orchestrator",
+        "dest": ".coding-crew/crew-afk"
+      },
       "body": {
-        "pi": "dispatch.SKILL.md",
         "codex": "dispatch.SKILL.md",
         "copilot": "dispatch.SKILL.md"
       },

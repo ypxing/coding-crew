@@ -17,7 +17,7 @@ load helpers/render
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_DIR="$REPO_ROOT/skills/crew-afk"
 RENDER="$REPO_ROOT/scripts/render-skill.sh"
-DISPATCH_PLATFORMS=(pi codex copilot)
+DISPATCH_PLATFORMS=("${AFK_PROSE_DISPATCH_VARIANTS[@]}")
 
 # ─── one body, no per-platform copies ────────────────────────────────────────
 
@@ -38,8 +38,10 @@ DISPATCH_PLATFORMS=(pi codex copilot)
     [ -f "$AFK_DIR/$body" ] || { echo "body $body for $platform does not exist" >&2; return 1; }
     bodies+=("$body")
   done
-  [ "${bodies[0]}" = "${bodies[1]}" ]
-  [ "${bodies[1]}" = "${bodies[2]}" ]
+  local first="${bodies[0]}" b
+  for b in "${bodies[@]}"; do
+    [ "$b" = "$first" ] || { echo "body mapping diverged: $b != $first" >&2; return 1; }
+  done
 }
 
 @test "P2: claude keeps its own body (native Agent tool, batches of 3)" {
@@ -62,13 +64,13 @@ DISPATCH_PLATFORMS=(pi codex copilot)
 }
 
 @test "P2: each rendered body identifies its own platform" {
-  grep -q '^# AFK Issue Sprint — pi$' "$(afk_variant pi)"
   grep -q '^# AFK Issue Sprint — Codex$' "$(afk_variant codex)"
   grep -q '^# AFK Issue Sprint — Copilot$' "$(afk_variant copilot)"
 }
 
 @test "P2: {{PLATFORM}} reaches the squash call for each platform" {
-  grep -q 'squash-commits.sh" --platform pi' "$(afk_variant pi)"
+  # pi is absent by design: its orchestrator is a program, which passes --platform pi
+  # to squash-commits.sh itself (orchestrator/lib/loop.mjs).
   grep -q 'squash-commits.sh" --platform codex' "$(afk_variant codex)"
   grep -q 'squash-commits.sh" --platform copilot' "$(afk_variant copilot)"
 }
@@ -89,10 +91,10 @@ DISPATCH_PLATFORMS=(pi codex copilot)
 @test "P2: a missing fragment fails the render loudly" {
   # A silently-skipped fragment would ship a body with a hole in it, so the
   # renderer must refuse rather than emit the placeholder or an empty line.
-  frag="$AFK_DIR/fragments/pi/intro.md"
+  frag="$AFK_DIR/fragments/codex/intro.md"
   cp "$frag" "$BATS_TEST_TMPDIR/intro.md"
   rm "$frag"
-  run bash "$RENDER" crew-afk pi
+  run bash "$RENDER" crew-afk codex
   cp "$BATS_TEST_TMPDIR/intro.md" "$frag"
   [ "$status" -ne 0 ]
   [[ "$output" == *"fragment 'intro'"* ]]
@@ -117,12 +119,13 @@ DISPATCH_PLATFORMS=(pi codex copilot)
   # Everything outside a fragment is literally one source, so the top-level
   # section sequence must match exactly. A divergence means someone moved a step
   # into a fragment, which is how the close-before-merge bug spread.
-  pi_h2=$(grep '^## ' "$(afk_variant pi)")
-  for platform in codex copilot; do
+  local first="${DISPATCH_PLATFORMS[0]}" platform other
+  first_h2=$(grep '^## ' "$(afk_variant "$first")")
+  for platform in "${DISPATCH_PLATFORMS[@]}"; do
     other=$(grep '^## ' "$(afk_variant "$platform")")
-    [ "$pi_h2" = "$other" ] || {
-      echo "section structure differs between pi and $platform" >&2
-      diff <(echo "$pi_h2") <(echo "$other") >&2 || true
+    [ "$first_h2" = "$other" ] || {
+      echo "section structure differs between $first and $platform" >&2
+      diff <(echo "$first_h2") <(echo "$other") >&2 || true
       return 1
     }
   done

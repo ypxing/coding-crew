@@ -343,7 +343,7 @@ EOF
 # sprint would stall at the last step, which is a worse failure than a clear one.
 
 @test "parity: every crew-afk variant records an ac receipt after all-met" {
-  for variant in claude pi copilot codex; do
+  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
     run grep -q "receipts.sh\" write ac" "$(afk_variant "$variant")"
     [ "$status" -eq 0 ] || {
       echo "$variant does not record an ac receipt" >&2
@@ -353,7 +353,7 @@ EOF
 }
 
 @test "parity: every crew-afk variant states the merge gate is mechanical" {
-  for variant in claude pi copilot codex; do
+  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
     run grep -q "verification receipt" "$(afk_variant "$variant")"
     [ "$status" -eq 0 ] || {
       echo "$variant does not mention the verification receipt" >&2

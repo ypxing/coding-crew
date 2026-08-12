@@ -105,7 +105,7 @@ teardown() {
 }
 
 @test "every crew-afk body states that coverage validation is opt-in" {
-  for variant in claude pi codex copilot; do
+  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
     grep -q -- '--coverage' "$(afk_variant "$variant")" || {
       echo "$variant does not mention the --coverage flag" >&2; return 1; }
   done
@@ -199,7 +199,7 @@ teardown() {
   [[ "$output" == *"⚠ N partial"* ]]
   [[ "$output" == *"✗ N missing"* ]]
 
-  for variant in claude pi codex copilot; do
+  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
     if grep -q '✓ N covered' "$(afk_variant "$variant")"; then
       echo "$variant still inlines the validation prompt" >&2; return 1
     fi

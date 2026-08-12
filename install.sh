@@ -250,17 +250,9 @@ install_skills() {
 # shared path outside any platform directory, so four platforms do not get four copies. Like
 # .coding-crew/scripts they are mechanism, not user text, so they are always overwritten: a stale
 # reference would be a checklist that no longer matches the protocol pointing at it.
-install_agent_assets() {
-  local agent_name="$1" agent_source_dir="$2"
-  local src_rel dest_rel
-  src_rel=$(jq -r --arg n "$agent_name" '.agents[$n].install.assets.source // empty' "$SCRIPT_DIR/registry.json")
-  dest_rel=$(jq -r --arg n "$agent_name" '.agents[$n].install.assets.dest // empty' "$SCRIPT_DIR/registry.json")
-  [[ -n "$src_rel" && -n "$dest_rel" ]] || return 0
-  assert_safe_path "$src_rel" "agent assets source"
-  assert_safe_path "$dest_rel" "agent assets dest"
-
-  local src="$SCRIPT_DIR/agents/$agent_source_dir/$src_rel"
-  [[ -d "$src" ]] || { echo "Error: agent assets source not found: agents/$agent_source_dir/$src_rel" >&2; exit 1; }
+install_assets_tree() {
+  local src="$1" dest_rel="$2" label="$3"
+  [[ -d "$src" ]] || { echo "Error: $label assets source not found: $src" >&2; exit 1; }
 
   local asset_file rel_path dest_file status
   while IFS= read -r -d '' asset_file; do
@@ -274,6 +266,35 @@ install_agent_assets() {
     if [[ $status -eq 0 ]]; then echo "  $dest_rel/$rel_path"; fi
   done < <(find "$src" -type f -print0)
 }
+
+install_agent_assets() {
+  local agent_name="$1" agent_source_dir="$2"
+  local src_rel dest_rel
+  src_rel=$(jq -r --arg n "$agent_name" '.agents[$n].install.assets.source // empty' "$SCRIPT_DIR/registry.json")
+  dest_rel=$(jq -r --arg n "$agent_name" '.agents[$n].install.assets.dest // empty' "$SCRIPT_DIR/registry.json")
+  [[ -n "$src_rel" && -n "$dest_rel" ]] || return 0
+  assert_safe_path "$src_rel" "agent assets source"
+  assert_safe_path "$dest_rel" "agent assets dest"
+  install_assets_tree "$SCRIPT_DIR/agents/$agent_source_dir/$src_rel" "$dest_rel" "agent"
+}
+
+# Skill assets follow the same rule, with one difference: the source is repo-root-relative,
+# because an executable a skill only launches (the crew-afk orchestrator) is not skill text and
+# does not belong inside skills/. Installed once per run, not once per platform — four platforms
+# launching one program must launch the same copy of it, or a fixed bug is only fixed on one.
+install_skill_assets() {
+  local skill_name="$1"
+  local src_rel dest_rel
+  src_rel=$(jq -r --arg s "$skill_name" '.skills[$s].assets.source // empty' "$SCRIPT_DIR/registry.json")
+  dest_rel=$(jq -r --arg s "$skill_name" '.skills[$s].assets.dest // empty' "$SCRIPT_DIR/registry.json")
+  [[ -n "$src_rel" && -n "$dest_rel" ]] || return 0
+  if [[ "$INSTALLED" == *"|assets:skill:$skill_name|"* ]]; then return 0; fi
+  INSTALLED="${INSTALLED}|assets:skill:$skill_name|"
+  assert_safe_path "$src_rel" "skill assets source"
+  assert_safe_path "$dest_rel" "skill assets dest"
+  install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
+}
+
 
 install_agent() {
   local agent_name="$1"
@@ -575,6 +596,9 @@ install_single_skill() {
   local skill_version
   skill_version=$(jq -r --arg s "$skill_name" '.skills[$s].version // "unknown"' "$SCRIPT_DIR/registry.json")
   MANIFEST_SKILL_ENTRIES+=("$skill_name $skill_version")
+
+  # Runtime files the skill launches rather than reads (the crew-afk orchestrator).
+  install_skill_assets "$skill_name"
 
   # Resolve skill-level deps declared in registry.json
   local deps

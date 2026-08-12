@@ -125,7 +125,7 @@ teardown() {
 @test "no crew-afk body hard-codes the promotion threshold" {
   # The threshold is printed by guard. A body that restates it is a second source that can
   # disagree with the script the moment the default changes again.
-  for variant in claude pi codex copilot; do
+  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
     f=$(afk_variant "$variant")
     grep -q 'severities' "$f" || { echo "$variant does not read the severities from guard" >&2; return 1; }
     if grep -qi 'Never promote MEDIUM or LOW' "$f"; then

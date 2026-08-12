@@ -16,8 +16,8 @@ CODER_DIR="$REPO_ROOT/agents/crew-coder"
 
 # Platform bodies are rendered (pi/codex/copilot share one source body), so these
 # are platform names resolved through afk_variant, not filenames.
-DISPATCH_VARIANTS=(pi codex copilot)
-ALL_VARIANTS=(claude pi codex copilot)
+DISPATCH_VARIANTS=("${AFK_PROSE_DISPATCH_VARIANTS[@]}")
+ALL_VARIANTS=("${AFK_PROSE_VARIANTS[@]}")
 CODER_VARIANTS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 REPORT_CODERS=(pi.agent.md copilot.agent.md codex.agent.toml)
 
