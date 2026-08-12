@@ -11,8 +11,13 @@ setup() {
 
 # --- Tracker Configuration preamble ---
 
-@test "solve-issue/SKILL.md contains the Tracker Configuration section" {
-  grep -q '^## Tracker Configuration' "$SOLVE_ISSUE"
+@test "solve-issue/SKILL.md points at issue-tracker.md without a section of its own" {
+  # The 6-line `## Tracker Configuration` section became one line under `## Inputs`.
+  # A worker only needs to know where the operations are defined; the lookup "chain"
+  # had exactly one link, and re-stating it as a section cost more than it explained.
+  ! grep -q '^## Tracker Configuration' "$SOLVE_ISSUE"
+  grep -q 'issue-tracker\.md' "$SOLVE_ISSUE"
+  grep -q 'configure-tracker' "$SOLVE_ISSUE"
 }
 
 @test "crew-afk/SKILL.md contains the Tracker Configuration section" {
@@ -58,7 +63,7 @@ setup() {
 # --- Core workflows still intact ---
 
 @test "solve-issue/SKILL.md still contains core step structure" {
-  grep -q '### 0. Feature Branch Setup' "$SOLVE_ISSUE" || grep -q '### 1. Understand the issue' "$SOLVE_ISSUE"
+  grep -q '### 0. Branch guard' "$SOLVE_ISSUE" || grep -q '### 1. Understand the issue' "$SOLVE_ISSUE"
 }
 
 @test "crew-afk/SKILL.md still contains the sprint loop" {

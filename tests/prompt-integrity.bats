@@ -58,33 +58,48 @@ REPORT_CODERS=(pi.agent.md copilot.agent.md codex.agent.toml)
   done
 }
 
-# ─── P1.2 the verification reference documents the real policy ───────────────
+# ─── P1.2 the verification policy is documented where it is enforced ───────────
 #
 # It used to be a stale dev checklist pointing at skills/afk/references/*.sh,
 # a path that has not existed since the skill was renamed, while all four
-# variants told the orchestrator to follow "verification.md order".
+# variants told the orchestrator to follow "verification.md order". The fix was to
+# make the reference describe the real policy; the reference has since been deleted
+# as the third description of one script (verify-worktree.sh states it, and so does
+# each skill body). These assertions therefore moved onto the script and the bodies —
+# the policy still has to be written down, just not three times.
 
-@test "P1.2: crew-afk verification.md does not reference the pre-rename skills/afk path" {
-  ! grep -q 'skills/afk/' "$AFK_DIR/references/verification.md"
+@test "P1.2: no crew-afk variant points at a verification reference the skill no longer ships" {
+  [ ! -f "$AFK_DIR/references/verification.md" ]
+  for variant in "${ALL_VARIANTS[@]}"; do
+    if grep -q 'references/verification\.md' "$(afk_variant "$variant")"; then
+      echo "$variant points at a deleted reference" >&2
+      return 1
+    fi
+  done
 }
 
-@test "P1.2: crew-afk verification.md documents the three categories in run order" {
-  ref="$AFK_DIR/references/verification.md"
-  typecheck=$(grep -n -i 'typecheck' "$ref" | head -n1 | cut -d: -f1)
-  lint=$(grep -n -i '^[0-9]*\.*\s*\**lint' "$ref" | head -n1 | cut -d: -f1)
-  tests=$(grep -n -i 'tests\*\*' "$ref" | head -n1 | cut -d: -f1)
-  [ -n "$typecheck" ] && [ -n "$lint" ] && [ -n "$tests" ]
-  [ "$typecheck" -lt "$lint" ]
-  [ "$lint" -lt "$tests" ]
+@test "P1.2: verify-worktree.sh documents the three categories in run order" {
+  ref="$AFK_DIR/scripts/verify-worktree.sh"
+  grep -q 'typecheck' "$ref"
+  grep -q 'lint' "$ref"
+  grep -q 'test' "$ref"
+  # And every body states the same order, since the orchestrator decides nothing else.
+  for variant in "${ALL_VARIANTS[@]}"; do
+    grep -qi 'typecheck, then lint, then tests' "$(afk_variant "$variant")" || {
+      echo "$variant does not state the check order" >&2; return 1; }
+  done
 }
 
-@test "P1.2: crew-afk verification.md states the not_run policy that verify-worktree enforces" {
-  ref="$AFK_DIR/references/verification.md"
-  grep -q 'not_run' "$ref"
-  grep -q -i 'coverage gap' "$ref"
-  # A missing test command is fatal; a missing lint/typecheck is not. The pre-filter
-  # in the skill body and verify-worktree.sh must not be able to disagree.
-  grep -q -i 'no \*\*test\*\* command' "$ref"
+@test "P1.2: every crew-afk variant states the not_run policy that verify-worktree enforces" {
+  for variant in "${ALL_VARIANTS[@]}"; do
+    body=$(afk_variant "$variant")
+    grep -q 'not_run' "$body" || { echo "$variant: no not_run policy" >&2; return 1; }
+    grep -qi 'coverage gap' "$body" || { echo "$variant: no coverage-gap policy" >&2; return 1; }
+    # A missing test command is fatal; a missing lint/typecheck is not. The pre-filter
+    # in the skill body and verify-worktree.sh must not be able to disagree.
+    grep -qi 'no test command was discoverable' "$body" || {
+      echo "$variant: does not treat a missing test command as a failure" >&2; return 1; }
+  done
 }
 
 # ─── P1.3 no phantom "with workflow" mode ────────────────────────────────────
@@ -99,10 +114,14 @@ REPORT_CODERS=(pi.agent.md copilot.agent.md codex.agent.toml)
   ! grep -rq 'claude\.workflow\.js' "$AFK_DIR"
 }
 
-@test "P1.3: scripts README points at the current skill paths" {
-  readme="$AFK_DIR/scripts/README.md"
+@test "P1.3: the scripts reference points at the current skill paths" {
+  # Relocated out of the installed tree: it documents scripts for a maintainer, and
+  # every installed word is a word some agent may read at runtime.
+  readme="$REPO_ROOT/docs/crew-afk-scripts.md"
+  [ -f "$readme" ]
+  [ ! -f "$AFK_DIR/scripts/README.md" ]
   ! grep -q 'skills/afk/' "$readme"
-  # The dispatch platforms no longer have one file each; the README must name the
+  # The dispatch platforms no longer have one file each; the reference must name the
   # shared body and its fragments, not the deleted per-platform variants.
   grep -q 'skills/crew-afk/dispatch\.SKILL\.md' "$readme"
   grep -q 'fragments/' "$readme"
@@ -130,24 +149,37 @@ REPORT_CODERS=(pi.agent.md copilot.agent.md codex.agent.toml)
   done
 }
 
-# ─── P1.5 the partial example agrees with the partial definition ─────────────
+# ─── P1.5 the worked example agrees with the partial definition ──────────────
 #
 # The old Example 2 was labelled `partial` but showed every criterion [x] and
 # every test passing — which is the definition of `complete`. Few-shot examples
 # outweigh rules, so a contradictory example is worse than none.
+#
+# There used to be two examples. The `complete` one only demonstrated the output
+# format, which the schema immediately above it already specifies; the `partial` one
+# teaches the boundary the schema cannot, so it is the one that survives. Every
+# assertion below still applies to it.
 
-@test "P1.5: every crew-coder variant ships worked example reports" {
+@test "P1.5: every crew-coder variant ships a worked example report" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    run grep -q 'Example 1' "$CODER_DIR/$variant"
-    [ "$status" -eq 0 ] || { echo "$variant has no example report" >&2; return 1; }
-    run grep -q 'Example 2' "$CODER_DIR/$variant"
-    [ "$status" -eq 0 ] || { echo "$variant has no partial example" >&2; return 1; }
+    run grep -q '^## Example Report' "$CODER_DIR/$variant"
+    [ "$status" -eq 0 ] || { echo "$variant has no worked example report" >&2; return 1; }
+  done
+}
+
+@test "P1.5: the surviving example is the partial one" {
+  for variant in "${CODER_VARIANTS[@]}"; do
+    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
+    echo "$section" | grep -qi 'partial' || {
+      echo "$variant: the surviving example is not a partial report" >&2
+      return 1
+    }
   done
 }
 
 @test "P1.5: the partial example shows an unmet criterion" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    section=$(sed -n '/Example 2/,$p' "$CODER_DIR/$variant")
+    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
     echo "$section" | grep -q '\- \[ \]' || {
       echo "$variant: partial example has no unmet '- [ ]' criterion" >&2
       return 1
@@ -157,20 +189,20 @@ REPORT_CODERS=(pi.agent.md copilot.agent.md codex.agent.toml)
 
 @test "P1.5: the partial example shows a check that does not pass" {
   for variant in "${REPORT_CODERS[@]}"; do
-    section=$(sed -n '/Example 2/,$p' "$CODER_DIR/$variant")
+    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
     echo "$section" | grep -q -i 'fail' || {
       echo "$variant: partial example shows no failing check" >&2
       return 1
     }
   done
   # The Claude variant reports checks as JSON objects with a result field.
-  section=$(sed -n '/Example 2/,$p' "$CODER_DIR/claude.agent.md")
+  section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/claude.agent.md")
   echo "$section" | grep -q '"result": "fail"'
 }
 
 @test "P1.5: the partial example commits its work with a WIP marker" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    section=$(sed -n '/Example 2/,$p' "$CODER_DIR/$variant")
+    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
     echo "$section" | grep -q '\[WIP\]' || {
       echo "$variant: partial example does not show the work committed as [WIP]" >&2
       return 1
@@ -180,7 +212,7 @@ REPORT_CODERS=(pi.agent.md copilot.agent.md codex.agent.toml)
 
 @test "P1.5: no partial example claims all criteria met and all checks passing" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    section=$(sed -n '/Example 2/,$p' "$CODER_DIR/$variant")
+    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
     if echo "$section" | grep -q 'All existing tests pass'; then
       echo "$variant: partial example still describes a complete run" >&2
       return 1

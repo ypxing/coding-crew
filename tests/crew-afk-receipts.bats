@@ -112,6 +112,55 @@ EOF
   [ -f "$DISPATCH_DIR/task-a.ac.ok" ]
 }
 
+# ─── the ac receipt traces itself ────────────────────────────────────────────
+#
+# ACVERIFY was the one marker the orchestrator hand-wrote, as a second bash call
+# beside `receipts.sh write ac`. Two calls for one event is one call too many, and a
+# hand-written marker can be emitted for a gate that never ran. Writing the receipt
+# *is* the event, so the script that writes it traces it — the same rule every other
+# pipeline step already follows.
+
+@test "receipts: write ac emits the ACVERIFY trace line itself" {
+  wt=$(_make_worktree "task-a")
+  export TRACE_LOG="$MAIN_ROOT/.scratch/my-feature/trace.log"
+
+  run bash "$RECEIPTS_SCRIPT" write ac --dir "$wt"
+  [ "$status" -eq 0 ]
+  [ -f "$TRACE_LOG" ]
+  grep -q '\[ACVERIFY\]' "$TRACE_LOG"
+  grep -q 'branch=crew/my-feature/task-a' "$TRACE_LOG"
+  grep -q 'result=all-met' "$TRACE_LOG"
+}
+
+@test "receipts: write verify does not trace ACVERIFY (verify-worktree owns VERIFY)" {
+  wt=$(_make_worktree "task-a")
+  export TRACE_LOG="$MAIN_ROOT/.scratch/my-feature/trace.log"
+
+  run bash "$RECEIPTS_SCRIPT" write verify --dir "$wt"
+  [ "$status" -eq 0 ]
+  if [ -f "$TRACE_LOG" ]; then
+    ! grep -q '\[ACVERIFY\]' "$TRACE_LOG"
+  fi
+}
+
+@test "receipts: write ac still succeeds when no trace log can be resolved" {
+  # Tracing is observability: it must never fail the gate that is making progress.
+  wt=$(_make_worktree "task-a")
+  unset TRACE_LOG
+  run env -u TRACE_LOG -u MAIN_ROOT bash "$RECEIPTS_SCRIPT" write ac --dir "$wt"
+  [ "$status" -eq 0 ]
+  [ -f "$DISPATCH_DIR/task-a.ac.ok" ]
+}
+
+@test "parity: no crew-afk variant hand-writes the ACVERIFY trace marker" {
+  for variant in claude pi copilot codex; do
+    if grep -q 'trace.sh" ACVERIFY' "$(afk_variant "$variant")"; then
+      echo "$variant still emits ACVERIFY by hand beside the receipt write" >&2
+      return 1
+    fi
+  done
+}
+
 @test "receipts: write refuses a directory whose branch is not a crew branch" {
   run bash "$RECEIPTS_SCRIPT" write verify --dir "$MAIN_ROOT"
   [ "$status" -ne 0 ]

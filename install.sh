@@ -533,6 +533,19 @@ install_single_skill() {
     [[ -n "$stale_body" ]] && rm -f "$stale_body"
   done < <(find "$REPO_ROOT/$skill_dest" -maxdepth 1 -name "*.SKILL.md" 2>/dev/null || true)
   rm -rf "$REPO_ROOT/$skill_dest/fragments"
+  # Files a skill installed in an earlier version and no longer ships. A stale copy is not
+  # inert: an agent that lists the skill directory reads it, so a retired reference or a
+  # developer README keeps costing tokens and can contradict the current body. Scoped per
+  # skill by name — solve-issue still ships its own references/verification.md.
+  local retired
+  local -a retired_files=()
+  case "$skill_name" in
+    crew-afk) retired_files=("references/verification.md" "scripts/README.md") ;;
+    solve-issue) retired_files=("scripts/feature-branch-setup.sh") ;;
+  esac
+  for retired in "${retired_files[@]+"${retired_files[@]}"}"; do
+    rm -f "$REPO_ROOT/$skill_dest/$retired"
+  done
   # Drop other platforms' gated files left behind by older installs, which copied
   # every file regardless of platform.
   local foreign_file

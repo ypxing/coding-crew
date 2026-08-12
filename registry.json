@@ -35,7 +35,7 @@
       }
     },
     "crew-coder": {
-      "version": "1.9.0",
+      "version": "1.10.0",
       "source-dir": "crew-coder",
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
@@ -56,7 +56,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "1.19.0",
+      "version": "1.20.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -88,12 +88,11 @@
         "tdd",
         "dep-install",
         "solve-issue",
-        "crew-address-findings",
-        "caveman"
+        "crew-address-findings"
       ]
     },
     "tdd": {
-      "version": "1.1.0",
+      "version": "1.2.0",
       "source-dir": "tdd",
       "description": "Test-driven development with red-green-refactor loop, vertical slices.",
       "source": "mattpocock/skills",
@@ -106,12 +105,11 @@
       "install": ".claude/skills/dep-install"
     },
     "solve-issue": {
-      "version": "1.7.0",
+      "version": "1.8.0",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
       "scripts": [
-        "feature-branch-setup.sh",
         "commit-changes.sh"
       ],
       "deps": [

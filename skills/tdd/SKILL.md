@@ -7,37 +7,28 @@ description: Test-driven development with red-green-refactor loop. Use when user
 
 ## Philosophy
 
-**Core principle**: Tests should verify behavior through public interfaces, not implementation details. Code can change entirely; tests shouldn't.
-
-**Good tests** are integration-style: they exercise real code paths through public APIs. They describe _what_ the system does, not _how_ it does it. A good test reads like a specification - "user can checkout with valid cart" tells you exactly what capability exists. These tests survive refactors because they don't care about internal structure.
-
-**Bad tests** are coupled to implementation. They mock internal collaborators, test private methods, or verify through external means (like querying a database directly instead of using the interface). The warning sign: your test breaks when you refactor, but behavior hasn't changed. If you rename an internal function and tests fail, those tests were testing implementation, not behavior.
+**Core principle**: tests verify behaviour through public interfaces, not implementation details.
+Code can change entirely; tests shouldn't. A good test reads like a specification — "user can
+checkout with valid cart" — and survives a refactor because it does not know the internal structure.
+The warning sign of a bad one: it breaks when you rename an internal function, though behaviour did
+not change.
 
 See the `references/` directory alongside this skill file for supporting material: `tests.md` (examples) and `mocking.md` (mocking guidelines). Read them from the same directory you read this skill file from.
 
 ## Anti-Pattern: Horizontal Slices
 
-**DO NOT write all tests first, then all implementation.** This is "horizontal slicing" - treating RED as "write all tests" and GREEN as "write all code."
+**DO NOT write all tests first, then all implementation** — RED as "write all tests", GREEN as "write
+all code". Tests written in bulk test *imagined* behaviour: they verify the shape of things
+(signatures, data structures) rather than what a user can do, and they commit you to a test structure
+before you understand the implementation.
 
-This produces **crap tests**:
-
-- Tests written in bulk test _imagined_ behavior, not _actual_ behavior
-- You end up testing the _shape_ of things (data structures, function signatures) rather than user-facing behavior
-- Tests become insensitive to real changes - they pass when behavior breaks, fail when behavior is fine
-- You outrun your headlights, committing to test structure before understanding the implementation
-
-**Correct approach**: Vertical slices via tracer bullets. One test → one implementation → repeat. Each test responds to what you learned from the previous cycle. Because you just wrote the code, you know exactly what behavior matters and how to verify it.
+**Correct approach**: vertical slices via tracer bullets. One test → one implementation → repeat, so
+each test responds to what the previous cycle taught you.
 
 ```
-WRONG (horizontal):
-  RED:   test1, test2, test3, test4, test5
-  GREEN: impl1, impl2, impl3, impl4, impl5
-
-RIGHT (vertical):
-  RED→GREEN: test1→impl1
-  RED→GREEN: test2→impl2
-  RED→GREEN: test3→impl3
-  ...
+WRONG (horizontal):          RIGHT (vertical):
+  RED:   test1..test5          RED→GREEN: test1→impl1
+  GREEN: impl1..impl5          RED→GREEN: test2→impl2
 ```
 
 ## Workflow
@@ -48,23 +39,16 @@ When exploring the codebase, use the project's domain glossary so that test name
 
 Before writing any code:
 
-- [ ] Confirm with user what interface changes are needed
-- [ ] Confirm with user which behaviors to test (prioritize)
+- [ ] Confirm with user which interface changes are needed and which behaviours to test, in priority order — you can't test everything, so focus on critical paths and complex logic, and get approval on that plan
 - [ ] Identify opportunities for deep modules (see `references/deep-modules.md` alongside this skill file)
 - [ ] Design interfaces for testability (see `references/interface-design.md` alongside this skill file)
 - [ ] List the behaviors to test (not implementation steps)
-- [ ] Get user approval on the plan
 
-Ask: "What should the public interface look like? Which behaviors are most important to test?"
-
-**You can't test everything.** Confirm with the user exactly which behaviors matter most. Focus testing effort on critical paths and complex logic, not every possible edge case.
-
-**Non-interactive runs.** If there is no human in the loop — `CREW_ORCHESTRATED=1`, a headless/`-p`
-invocation, or an orchestrator named as your caller — the two "confirm with user" boxes and "get
-user approval" cannot be satisfied and must not be waited on. Instead: treat the issue's
-acceptance criteria as the approved plan, derive the interface and the behaviour list from them,
-record that list in your notes, and go straight to §2. Do the remaining boxes as normal. Never ask
-a question nobody will read.
+**Non-interactive runs.** With no human in the loop — `CREW_ORCHESTRATED=1`, a headless/`-p`
+invocation, or an orchestrator named as your caller — the confirm-and-approve box cannot be
+satisfied and must not be waited on. Treat the issue's acceptance criteria as the approved plan,
+derive the interface and behaviour list from them, record that list in your notes, and go straight
+to §2. Never ask a question nobody will read.
 
 ### 2. Tracer Bullet
 

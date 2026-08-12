@@ -1,6 +1,11 @@
 # AFK Sprint Scripts
 
-This directory contains reusable shell scripts extracted from the afk-run skill files to improve maintainability and reduce duplication.
+Reference for the scripts in `skills/crew-afk/scripts/`, extracted from the afk-run skill files to
+improve maintainability and reduce duplication.
+
+This file lives in `docs/` and is **not** installed. It documents scripts an orchestrator only ever
+invokes by name from the skill body, so shipping it into a consumer repo added ~2,000 words of
+exploration bait to every install for no runtime benefit.
 
 ## Scripts
 

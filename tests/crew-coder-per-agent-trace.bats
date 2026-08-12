@@ -1,11 +1,24 @@
 #!/usr/bin/env bats
 
 # Tests for crew-coder per-agent trace logging (replaces shared commands.log)
+#
+# The trace is two lines per worker: [START] and [DONE]. It used to be five markers
+# ([START], [PHASE], [CMD], [READ], [WRITE], [DONE]), which cost roughly ten extra
+# shell round trips per worker to produce a log nobody reads mid-run. What the trace
+# has to answer is "did this worker start, and how did it end" — so the negative
+# assertions below are as load-bearing as the positive ones: they stop the retired
+# markers being reinstated as prose.
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
   export CLAUDE_AGENT="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
+  export PI_AGENT="$SCRIPT_DIR/agents/crew-coder/pi.agent.md"
+  export CODEX_AGENT="$SCRIPT_DIR/agents/crew-coder/codex.agent.toml"
+}
+
+all_variants() {
+  echo "$CLAUDE_AGENT" "$COPILOT_AGENT" "$PI_AGENT" "$CODEX_AGENT"
 }
 
 # --- commands.log section removed ---
@@ -48,80 +61,45 @@ setup() {
 
 # --- Trace format: [START] ---
 
-@test "claude.agent.md has [START] trace entry instruction" {
-  grep -q '\[START\]' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md has [START] trace entry instruction" {
-  grep -q '\[START\]' "$COPILOT_AGENT"
-}
-
-# --- Trace format: [PHASE] ---
-
-@test "claude.agent.md has [PHASE] trace entry instruction" {
-  grep -q '\[PHASE\]' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md has [PHASE] trace entry instruction" {
-  grep -q '\[PHASE\]' "$COPILOT_AGENT"
-}
-
-# --- Trace format: [CMD] ---
-
-@test "claude.agent.md has [CMD] trace entry instruction" {
-  grep -q '\[CMD\]' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md has [CMD] trace entry instruction" {
-  grep -q '\[CMD\]' "$COPILOT_AGENT"
-}
-
-# --- Trace format: [READ] ---
-
-@test "claude.agent.md has [READ] trace entry instruction" {
-  grep -q '\[READ\]' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md has [READ] trace entry instruction" {
-  grep -q '\[READ\]' "$COPILOT_AGENT"
-}
-
-# --- Trace format: [WRITE] ---
-
-@test "claude.agent.md has [WRITE] trace entry instruction" {
-  grep -q '\[WRITE\]' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md has [WRITE] trace entry instruction" {
-  grep -q '\[WRITE\]' "$COPILOT_AGENT"
+@test "every crew-coder variant has a [START] trace entry instruction" {
+  for f in $(all_variants); do
+    grep -q '\[START\]' "$f" || { echo "$(basename "$f") has no [START]" >&2; return 1; }
+  done
 }
 
 # --- Trace format: [DONE] ---
 
-@test "claude.agent.md has [DONE] trace entry instruction" {
-  grep -q '\[DONE\]' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md has [DONE] trace entry instruction" {
-  grep -q '\[DONE\]' "$COPILOT_AGENT"
+@test "every crew-coder variant has a [DONE] trace entry instruction" {
+  for f in $(all_variants); do
+    grep -q '\[DONE\]' "$f" || { echo "$(basename "$f") has no [DONE]" >&2; return 1; }
+  done
 }
 
 # --- [DONE] always emitted including on blocked ---
 
-@test "claude.agent.md [DONE] instruction specifies it must always be emitted including on blocked" {
-  grep -A5 '\[DONE\]' "$CLAUDE_AGENT" | grep -qi 'always\|blocked\|even on'
+@test "every crew-coder variant says [DONE] is always emitted, including on blocked" {
+  for f in $(all_variants); do
+    grep -B2 -A2 '\[DONE\]' "$f" | grep -qi 'always\|blocked\|even on' || {
+      echo "$(basename "$f") does not require [DONE] on a blocked run" >&2; return 1; }
+  done
 }
 
-@test "copilot.agent.md [DONE] instruction specifies it must always be emitted including on blocked" {
-  grep -A5 '\[DONE\]' "$COPILOT_AGENT" | grep -qi 'always\|blocked\|even on'
+# --- the retired per-phase markers stay retired ---
+
+@test "no crew-coder variant reinstates the retired [PHASE]/[CMD]/[READ]/[WRITE] markers" {
+  for f in $(all_variants); do
+    for marker in PHASE CMD READ WRITE; do
+      if grep -q "\[$marker\]" "$f"; then
+        echo "$(basename "$f") emits [$marker] again — that is ~10 round trips per worker" >&2
+        return 1
+      fi
+    done
+  done
 }
 
-# --- [READ]/[WRITE] cover tool calls, not just bash ---
-
-@test "claude.agent.md [READ]/[WRITE] instructions cover tool calls" {
-  grep -A5 '\[READ\]\|\[WRITE\]' "$CLAUDE_AGENT" | grep -qi 'tool\|Read tool\|Write tool\|Edit tool'
-}
-
-@test "copilot.agent.md [READ]/[WRITE] instructions cover tool calls" {
-  grep -A5 '\[READ\]\|\[WRITE\]' "$COPILOT_AGENT" | grep -qi 'tool\|read tool\|write tool\|edit tool'
+@test "every crew-coder variant states the trace is two lines, not one per tool call" {
+  for f in $(all_variants); do
+    grep -qi 'not two per tool call\|two lines per worker' "$f" || {
+      echo "$(basename "$f") does not bound the trace to start and end" >&2; return 1; }
+  done
 }

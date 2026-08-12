@@ -56,9 +56,9 @@ feature slug — not from the branch name, and not by globbing `.scratch/*/sprin
 picks the alphabetically-first feature and silently points traces, resume state and the PRD lookup at
 the wrong directory.
 
-Trace lines are written by the scripts that perform each step (`SESSION`, `VERIFY`, `MERGE`, `CLOSE`,
-`PROMOTE`, `FLUSH`, `CLEANUP`, `SQUASH`, `EXIT`). You trace only what you decide yourself, with
-`bash "<skill-dir>/scripts/trace.sh" <MARKER> "<key=value ...>"`.
+Trace lines are written by the scripts that perform each step (`SESSION`, `VERIFY`, `ACVERIFY`,
+`MERGE`, `CLOSE`, `PROMOTE`, `FLUSH`, `CLEANUP`, `SQUASH`, `EXIT`). You never hand-write one; if you
+need to, `bash "<skill-dir>/scripts/trace.sh" <MARKER> "<key=value ...>"`.
 
 ### Model resolution
 
@@ -167,8 +167,7 @@ refuses to run without a current one. Working around a refusal is never correct 
 A branch that fails either verification gate is demoted to `partial`: not reviewed, not merged, not
 closed. Nothing unverified reaches the feature branch.
 
-**1. Verify** in the worker's worktree, before teardown (typecheck, then lint, then tests — see
-`references/verification.md`):
+**1. Verify** in the worker's worktree, before teardown (typecheck, then lint, then tests):
 
 ```bash
 bash "<skill-dir>/scripts/verify-worktree.sh" --dir "<working_directory from worker report>"
@@ -195,10 +194,10 @@ point at concrete evidence — the worker's own claim is not evidence.
 End with exactly one line: `AC: all-met` or `AC: unmet — <criterion>, <criterion>`.
 ```
 
-On `AC: all-met`, and only then, record the receipt that permits the close:
+On `AC: all-met`, and only then, record the receipt that permits the close — it writes the `ACVERIFY`
+trace line itself:
 
 ```bash
-bash "<skill-dir>/scripts/trace.sh" ACVERIFY "branch=<branch> result=all-met"
 bash "<skill-dir>/scripts/receipts.sh" write ac --branch "<branch>"
 ```
 
@@ -285,8 +284,8 @@ Step 4; do not re-verify. Closing before a merge would move the issue to `done/`
 lists it again, orphaning the unmerged branch:
 
 ```bash
-bash "<skill-dir>/scripts/close-issue.sh" "<issue-file-path>"
-bash "<skill-dir>/scripts/state.sh" complete --slug "<slug>" --branch "<branch>"
+bash "<skill-dir>/scripts/close-issue.sh" "<issue-file-path>" &&
+  bash "<skill-dir>/scripts/state.sh" complete --slug "<slug>" --branch "<branch>"
 ```
 
 **Partial** (including anything demoted in Step 4, and any issue whose merge failed) — write or

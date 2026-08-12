@@ -62,6 +62,79 @@ teardown() {
   [ "$output" != "null" ]
 }
 
+# ─── nothing installed that no agent runs ────────────────────────────────────
+#
+# Every installed word is a word some agent may read at runtime, so a developer
+# README and a retired reference are not inert: they are exploration bait in a
+# directory the model lists. These assert the crew-afk install ships neither, and
+# that an older install's copies are swept rather than left to contradict the body.
+
+@test "crew-afk install ships no developer README in the skill tree" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+
+  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md" ]
+  # It still exists for maintainers, outside the installed tree.
+  [ -f "$SCRIPT_DIR/docs/crew-afk-scripts.md" ]
+}
+
+@test "crew-afk install ships no verification reference (verify-worktree.sh is the policy)" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+
+  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/references/verification.md" ]
+  # solve-issue's own verification reference is a different file and still ships.
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue
+  [ -f "$TEMP_DIR/.claude/skills/solve-issue/references/verification.md" ]
+}
+
+@test "install sweeps retired files an earlier version left in the skill tree" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+
+  # Simulate an install from before these were retired.
+  mkdir -p "$TEMP_DIR/.claude/skills/crew-afk/references" \
+           "$TEMP_DIR/.claude/skills/crew-afk/scripts"
+  echo "stale policy" > "$TEMP_DIR/.claude/skills/crew-afk/references/verification.md"
+  echo "stale readme" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md"
+
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+
+  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/references/verification.md" ]
+  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md" ]
+  # The skill itself is intact.
+  [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
+  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/verify-worktree.sh" ]
+}
+
+@test "installing crew-afk does not drag in the unrelated caveman skill" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+
+  # caveman is a communication mode, not part of a sprint. It is still installable
+  # on its own; it is just no longer a dependency of every crew-afk install.
+  [ ! -d "$TEMP_DIR/.claude/skills/caveman" ]
+  run jq -r '.skills["crew-afk"].deps | index("caveman")' "$SCRIPT_DIR/registry.json"
+  [ "$output" = "null" ]
+
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill caveman
+  [ -f "$TEMP_DIR/.claude/skills/caveman/SKILL.md" ]
+}
+
+@test "solve-issue ships no feature-branch-setup.sh: its step 0 is a guard, not a branch creation" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue
+
+  # The script only acts when on the default branch — which the guard above it already
+  # refuses — so the call was dead. crew-afk still uses it, via session-init.sh.
+  [ ! -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/feature-branch-setup.sh" ]
+  [ -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/commit-changes.sh" ]
+  ! grep -q 'feature-branch-setup\.sh' "$TEMP_DIR/.claude/skills/solve-issue/SKILL.md"
+
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/feature-branch-setup.sh" ]
+}
+
 @test "direct install is idempotent (produces identical output on repeat runs)" {
   local temp1="$TEMP_DIR/first"
   local temp2="$TEMP_DIR/second"

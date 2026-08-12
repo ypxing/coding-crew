@@ -47,8 +47,8 @@ picks the alphabetically-first feature and silently points traces, resume state 
 at the wrong directory.
 
 Trace lines are written by the scripts that perform each step (`SESSION`, `DISPATCH`, `VERIFY`,
-`MERGE`, `CLOSE`, `PROMOTE`, `FLUSH`, `CLEANUP`, `SQUASH`, `EXIT`). You only trace what you decide
-yourself, with `bash "<skill-dir>/scripts/trace.sh" <MARKER> "<key=value ...>"`.
+`ACVERIFY`, `MERGE`, `CLOSE`, `PROMOTE`, `FLUSH`, `CLEANUP`, `SQUASH`, `EXIT`). You never hand-write
+one; if you need to, `bash "<skill-dir>/scripts/trace.sh" <MARKER> "<key=value ...>"`.
 
 {{FRAGMENT:model-resolution}}
 
@@ -136,7 +136,7 @@ gate.
 
 **`Status: complete`**
 
-1. **Verify** in the worker's worktree, before teardown (typecheck, then lint, then tests — see `references/verification.md`):
+1. **Verify** in the worker's worktree, before teardown (typecheck, then lint, then tests):
 
    ```bash
    bash "<skill-dir>/scripts/verify-worktree.sh" --dir "<working_directory from the worker report>"
@@ -149,16 +149,17 @@ gate.
    `Verification: coverage gap — not_run: ...` line does not block the merge; record it with
    `state.sh coverage-gap`.
 
-   Then remove the worktree: `git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"`
+   Then remove the worktree — every gate after this one reads the branch from `$MAIN_ROOT`:
+   `git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"`
 
 {{FRAGMENT:ac-verify}}
 
    ```bash
    git -C "$MAIN_ROOT" diff $(git -C "$MAIN_ROOT" merge-base "$FEATURE_BRANCH" "$BRANCH").."$BRANCH"
-   bash "<skill-dir>/scripts/trace.sh" ACVERIFY "branch=$BRANCH result=<all-met|unmet>"
    ```
 
-   On `AC: all-met`, and only then, record the receipt that permits the close:
+   On `AC: all-met`, and only then, record the receipt that permits the close — it writes the
+   `ACVERIFY` trace line itself:
 
    ```bash
    bash "<skill-dir>/scripts/receipts.sh" write ac --branch "$BRANCH"
@@ -221,22 +222,17 @@ gate.
    `Status: deferred-findings`, which step 1 does not select, so it never delays a round. Never
    promote MEDIUM or LOW; they stay in the report for a human via `/crew-address-findings`.
 
-5. **Merge**, then remove the worktree. `merge-branches.sh` runs no checks — verification happened above:
+5. **Merge**, then — **only if the merge reported `success`** — close. `merge-branches.sh` runs no
+   checks (verification happened above) and exits non-zero for a branch it could not merge (conflict
+   aborted, or receipt missing); that issue stays open and its branch is retained so the next round
+   resumes it. Closing before the merge would move the file to `done/`, where step 1 never lists it
+   again, orphaning the unmerged branch — so the close is chained onto the merge's success:
 
    ```bash
    git -C "$MAIN_ROOT" checkout "$FEATURE_BRANCH"
-   bash "<skill-dir>/scripts/merge-branches.sh" "$FEATURE_BRANCH" "$BRANCH"
-   git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
-   ```
-
-6. **Close — only if the merge reported `success`.** A branch it could not merge (conflict aborted,
-   or receipt missing) exits non-zero; that issue stays open and its branch is retained so the next
-   round resumes it. Closing before the merge would move the file to `done/`, where step 1 never
-   lists it again, orphaning the unmerged branch:
-
-   ```bash
-   bash "<skill-dir>/scripts/close-issue.sh" "<issue-file-path>"
-   bash "<skill-dir>/scripts/state.sh" complete --slug "$SLUG" --branch "$BRANCH"
+   bash "<skill-dir>/scripts/merge-branches.sh" "$FEATURE_BRANCH" "$BRANCH" &&
+     bash "<skill-dir>/scripts/close-issue.sh" "<issue-file-path>" &&
+     bash "<skill-dir>/scripts/state.sh" complete --slug "$SLUG" --branch "$BRANCH"
    ```
 
    On a failed merge, record it as retained instead:

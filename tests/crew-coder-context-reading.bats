@@ -1,76 +1,87 @@
 #!/usr/bin/env bats
 
-# Tests for crew-coder context document reading step
+# Tests for the PRD context-document read on the worker path.
+#
+# The read used to live in crew-coder ("## Read Context Documents") *and* in
+# solve-issue §1.5 — two reads of one file, one per worker. It now lives only in
+# solve-issue, which every crew-coder variant invokes, so these assert it there and
+# assert the duplicate is gone from the agent definitions. What must not regress is
+# the *behaviour*: both resolution paths (the issue's Context Documents section and
+# the conventional .scratch/<feature-slug>/PRD.md) and graceful degradation.
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
+  export SOLVE_ISSUE="$SCRIPT_DIR/skills/solve-issue/SKILL.md"
   export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
   export CLAUDE_AGENT="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
+  export PI_AGENT="$SCRIPT_DIR/agents/crew-coder/pi.agent.md"
+  export CODEX_AGENT="$SCRIPT_DIR/agents/crew-coder/codex.agent.toml"
 }
 
-@test "copilot.agent.md has Read Context Documents section" {
-  grep -q "## Read Context Documents" "$COPILOT_AGENT"
+# --- the read lives in solve-issue, once ---
+
+@test "solve-issue has a PRD read step" {
+  grep -q '^### 1.5' "$SOLVE_ISSUE"
+  grep -qi 'PRD' "$SOLVE_ISSUE"
 }
 
-@test "copilot.agent.md extracts feature slug from issue path" {
-  # Should use the sed pattern: echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||'
-  grep -q "sed 's|.*\\\\.scratch/||'" "$COPILOT_AGENT"
+@test "solve-issue resolves the PRD from the issue's Context Documents section" {
+  grep -q '## Context Documents' "$SOLVE_ISSUE"
+  grep -q 'MAIN_ROOT' "$SOLVE_ISSUE"
 }
 
-@test "copilot.agent.md checks for PRD.md at MAIN_ROOT/.scratch/FEATURE_SLUG/PRD.md" {
-  grep -q "MAIN_ROOT.*\.scratch.*FEATURE_SLUG.*PRD\.md\|\.scratch.*FEATURE_SLUG.*PRD\.md.*MAIN_ROOT" "$COPILOT_AGENT"
+@test "solve-issue falls back to MAIN_ROOT/.scratch/FEATURE_SLUG/PRD.md" {
+  # The fallback is what crew-coder used to provide: an issue with no Context
+  # Documents section must still find the feature's PRD.
+  grep -q 'MAIN_ROOT/\.scratch/\$FEATURE_SLUG/PRD\.md' "$SOLVE_ISSUE"
+  grep -q "sed 's|.*\\.scratch/||'" "$SOLVE_ISSUE"
 }
 
-@test "copilot.agent.md does not reference the retired design.md context document" {
-  # design.md was consolidated into PRD.md as the single context document.
-  ! grep -q 'design\.md' "$COPILOT_AGENT"
+@test "solve-issue instructs keeping the PRD in memory for the run" {
+  grep -qi 'keep it in memory\|keep its content in memory' "$SOLVE_ISSUE"
 }
 
-@test "copilot.agent.md instructs reading the PRD for context" {
-  # Assert the behavioral marker, not a literal echo — the echo-only block that
-  # merely announced the read was removed as redundant prescription.
-  grep -qi 'read .*PRD\.md\|PRD\.md.*keep its content in memory' "$COPILOT_AGENT"
+@test "solve-issue degrades gracefully when no PRD exists" {
+  grep -qi 'No PRD is normal\|continue normally' "$SOLVE_ISSUE"
 }
 
-@test "copilot.agent.md degrades gracefully when no PRD exists" {
-  grep -qi 'does not exist.*continue normally\|continue normally' "$COPILOT_AGENT"
+@test "solve-issue does not reference the retired design.md context document" {
+  ! grep -q 'design\.md' "$SOLVE_ISSUE"
 }
 
-@test "copilot.agent.md Read Context Documents section positioned after Environment Setup" {
-  # Extract line numbers for both sections
-  env_line=$(grep -n "## Environment Setup" "$COPILOT_AGENT" | cut -d: -f1)
-  context_line=$(grep -n "## Read Context Documents" "$COPILOT_AGENT" | cut -d: -f1)
-  
-  # Context section should come after Environment Setup
-  [ "$context_line" -gt "$env_line" ]
+# --- and no longer in the agent definitions ---
+
+@test "no crew-coder variant duplicates the PRD read solve-issue performs" {
+  for f in "$COPILOT_AGENT" "$CLAUDE_AGENT" "$PI_AGENT" "$CODEX_AGENT"; do
+    if grep -q '## Read Context Documents' "$f"; then
+      echo "$(basename "$f") still reads the PRD itself — solve-issue already does" >&2
+      return 1
+    fi
+  done
 }
 
-@test "claude.agent.md has Read Context Documents section" {
-  grep -q "## Read Context Documents" "$CLAUDE_AGENT"
+@test "no crew-coder variant references the retired design.md context document" {
+  for f in "$COPILOT_AGENT" "$CLAUDE_AGENT" "$PI_AGENT" "$CODEX_AGENT"; do
+    ! grep -q 'design\.md' "$f"
+  done
 }
 
-@test "claude.agent.md extracts feature slug from issue path" {
-  grep -q "sed 's|.*\\\\.scratch/||'" "$CLAUDE_AGENT"
+@test "every crew-coder variant still derives the feature slug exactly once" {
+  # Needed for the trace path; deriving it twice was the duplication that was cut.
+  for f in "$COPILOT_AGENT" "$CLAUDE_AGENT" "$PI_AGENT" "$CODEX_AGENT"; do
+    count=$(grep -c "FEATURE_SLUG=\$(echo" "$f")
+    [ "$count" -eq 1 ] || { echo "$(basename "$f") derives FEATURE_SLUG $count times" >&2; return 1; }
+  done
 }
 
-@test "claude.agent.md checks for PRD.md at MAIN_ROOT/.scratch/FEATURE_SLUG/PRD.md" {
-  grep -q "MAIN_ROOT.*\.scratch.*FEATURE_SLUG.*PRD\.md\|\.scratch.*FEATURE_SLUG.*PRD\.md.*MAIN_ROOT" "$CLAUDE_AGENT"
+@test "every crew-coder variant points at solve-issue for the PRD read" {
+  for f in "$COPILOT_AGENT" "$CLAUDE_AGENT" "$PI_AGENT" "$CODEX_AGENT"; do
+    grep -qi 'solve-issue.*reads the PRD' "$f" || {
+      echo "$(basename "$f") does not say solve-issue reads the PRD" >&2; return 1; }
+  done
 }
 
-@test "claude.agent.md does not reference the retired design.md context document" {
-  # design.md was consolidated into PRD.md as the single context document.
-  ! grep -q 'design\.md' "$CLAUDE_AGENT"
-}
-
-@test "claude.agent.md instructs reading the PRD for context" {
-  # Assert the behavioral marker, not a literal echo — the echo-only block that
-  # merely announced the read was removed as redundant prescription.
-  grep -qi 'read .*PRD\.md\|PRD\.md.*keep its content in memory' "$CLAUDE_AGENT"
-}
-
-@test "claude.agent.md degrades gracefully when no PRD exists" {
-  grep -qi 'does not exist.*continue normally\|continue normally' "$CLAUDE_AGENT"
-}
+# --- report schema still names both criteria sections ---
 
 @test "copilot.agent.md structured output mentions Acceptance Criteria section" {
   grep -q "### Acceptance Criteria" "$COPILOT_AGENT"

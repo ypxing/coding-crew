@@ -33,6 +33,10 @@ set -uo pipefail
 #   earlier pass. `ac` receipts are only checked for existence — by close time
 #   the branch may already be merged and deleted, so there is no tip to compare.
 #
+#   Writing an `ac` receipt also emits the ACVERIFY trace line, because the receipt
+#   is the only evidence that gate ran. Verify receipts are traced by
+#   verify-worktree.sh, which is the script that runs those checks.
+#
 # Escape hatch
 #   CREW_RECEIPTS=off disables *checking* (writes still happen). For debugging
 #   and for callers driving these scripts outside a sprint. Never set it in a
@@ -181,6 +185,14 @@ case "$ACTION" in
         fi
         [ -n "$sha" ] || { echo "ERROR: cannot record commit for $branch" >&2; exit 1; }
         echo "$sha" > "$file"
+        # An ac receipt is only ever written after an acceptance-criteria check returned
+        # `AC: all-met`, so writing it *is* the event worth tracing. Tracing it here rather
+        # than asking the orchestrator for a second `trace.sh ACVERIFY` call means the
+        # marker cannot be emitted for a gate that never wrote a receipt, and costs no
+        # extra round trip. verify receipts are already traced by verify-worktree.sh.
+        if [ "$KIND" = "ac" ]; then
+          bash "$(dirname "$0")/trace.sh" ACVERIFY "branch=$branch result=all-met" 2>/dev/null || true
+        fi
         echo "RECEIPT: wrote $KIND receipt for $slug ($file)"
         ;;
       clear)

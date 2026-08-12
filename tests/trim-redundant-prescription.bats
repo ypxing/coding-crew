@@ -37,28 +37,30 @@ setup() {
   ! grep -q 'MAIN_ROOT=\$(cd.*\.\.' "$SOLVE_ISSUE"
 }
 
-# --- Pattern 3: Per-call logging replaced by phase-level ---
+# --- Pattern 3: Per-call logging collapsed all the way to [START]/[DONE] ---
+#
+# This started as "log at phase level, not per call". The phase-level markers were
+# themselves ~10 shell round trips per worker for a log nobody reads mid-run, so the
+# trace is now two lines. tests/crew-coder-per-agent-trace.bats owns the detail; these
+# keep the original defect (a log line before every command) from coming back.
 
 @test "claude.agent.md does not instruct logging before every individual Bash command" {
-  # Per-call instruction "before every Bash command" should be removed
   ! grep -q 'before every Bash command\|Log \[CMD\] before every' "$CLAUDE_AGENT"
 }
 
 @test "copilot.agent.md does not instruct logging before every individual shell command" {
-  # Per-call instruction "before every shell command" should be removed
   ! grep -q 'before every shell command\|Log \[CMD\] before every' "$COPILOT_AGENT"
 }
 
-@test "claude.agent.md still mentions [CMD] marker for phase-level command logging" {
-  # Commands are still logged, just at phase level not per-call
-  grep -q '\[CMD\]' "$CLAUDE_AGENT"
+@test "claude.agent.md emits no per-command trace marker at all" {
+  ! grep -q '\[CMD\]' "$CLAUDE_AGENT"
 }
 
-@test "copilot.agent.md still mentions [CMD] marker for phase-level command logging" {
-  grep -q '\[CMD\]' "$COPILOT_AGENT"
+@test "copilot.agent.md emits no per-command trace marker at all" {
+  ! grep -q '\[CMD\]' "$COPILOT_AGENT"
 }
 
-# --- Phase transitions and start/done markers preserved ---
+# --- Start/done markers preserved ---
 
 @test "claude.agent.md still has [START] marker" {
   grep -q '\[START\]' "$CLAUDE_AGENT"
@@ -68,12 +70,12 @@ setup() {
   grep -q '\[START\]' "$COPILOT_AGENT"
 }
 
-@test "claude.agent.md still has [PHASE] logging instruction" {
-  grep -q '\[PHASE\]' "$CLAUDE_AGENT"
+@test "claude.agent.md bounds the trace to the worker's start and end" {
+  grep -qi 'two lines per worker' "$CLAUDE_AGENT"
 }
 
-@test "copilot.agent.md still has [PHASE] logging instruction" {
-  grep -q '\[PHASE\]' "$COPILOT_AGENT"
+@test "copilot.agent.md bounds the trace to the worker's start and end" {
+  grep -qi 'two lines per worker' "$COPILOT_AGENT"
 }
 
 @test "claude.agent.md still has [DONE] marker including for blocked" {

@@ -21,22 +21,16 @@ BLOCKED: <reason>
 
 Do not attempt workarounds. Do not proceed.
 
-## Tracker Configuration
-
-Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
-
-1. `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md` (project-level)
-
-If it does not exist, invoke the `configure-tracker` skill now to set it up, then continue.
-
-All tracker operations in this skill use the operation definitions in that file.
-
 ## Inputs
 
 The caller provides one of:
 
 - A **file path** — read the issue from that path.
 - **Issue content** inline — use it directly.
+
+Tracker operations named below (`fetch`, `mark-done`) are defined in
+`$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md`. If that file is missing, invoke
+the `configure-tracker` skill once to create it.
 
 Two session-wide variables must be set before any step. Use the values already established by the caller (crew-coder sets these at startup). Both are inherited by this skill — do not re-derive them.
 
@@ -45,11 +39,10 @@ Two session-wide variables must be set before any step. Use the values already e
 
 ## Steps
 
-### 0. Feature Branch Setup
+### 0. Branch guard
 
-**Mandatory branch guard (always run first):**
-
-Check the current branch and enforce you are **not** on the default branch:
+You must not be on the default branch. Check, and stop immediately if you are — do not proceed to any
+other step:
 
 ```bash
 CURRENT_BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD)
@@ -62,72 +55,38 @@ if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
 fi
 ```
 
-If blocked, stop immediately. Do not proceed to any other step.
-
-**If issue file path is provided:**
-
-Use the feature branch setup script from the same directory you read this skill file from:
-
-```bash
-bash "<skill-dir>/scripts/feature-branch-setup.sh" "$ISSUE_PATH" "$@"
-```
-
-If no issue file path is provided (inline content), the branch guard above is sufficient — proceed to Step 0.1.
-
-### 0.1. Pre-flight
-
-Run `git -C "$PROJECT_ROOT" status --short`. If there are modified or staged tracked files not owned by this issue, stop and report blocked: `BLOCKED: dirty worktree — stash or commit unrelated changes first`.
+A crew worker is already on `crew/<feature>/<slug>` in its own worktree, so this guard is the whole
+of step 0 — there is no branch to create.
 
 ### 1. Understand the issue
 
-**Finding the issue file:** Execute the `fetch` operation from `issue-tracker.md` using the path the caller provides. Do **not** query GitHub (`gh`) or any remote issue tracker unless the caller explicitly says to.
+Execute the `fetch` operation from `issue-tracker.md` using the path the caller provides. Do **not**
+query GitHub (`gh`) or any remote issue tracker unless the caller explicitly says to. Extract the
+acceptance criteria and the files likely to change (confirmed in Step 3).
 
-Extract from the issue:
+**Blocked-by check:** if `## Blocked by` names a file that is not present in the sibling `done/`
+directory (`$(dirname "$ISSUE_PATH")/../done/<dep-filename>`), stop immediately with
+`BLOCKED: depends on <dep-filename> which is not yet done`. "None", or every listed file present →
+proceed. An orchestrator filters blocked issues before dispatch, so this only fires on a direct
+invocation.
 
-- Acceptance criteria
-- Hypothesized files likely to change (confirmed in Step 3)
-- Blocked-by dependencies
+### 1.5. Read the PRD
 
-**Blocked-by check:** Read the `## Blocked by` section. For each listed dependency:
+The PRD holds the architecture decisions and constraints the issue assumes. Read the first of these
+that exists and keep it in memory for the rest of the run:
 
-1. Resolve the dependency's filename relative to the current issue's directory (e.g. `03-foo.md` → sibling file or `../done/03-foo.md`).
-2. Check if it has been moved to `done/`: `ls "$(dirname "$ISSUE_PATH")/../done/<dep-filename>" 2>/dev/null`.
-3. If the file is **not** in `done/`, stop immediately:
-
-```
-BLOCKED: depends on <dep-filename> which is not yet done
-```
-
-Only continue if every listed dependency is confirmed in `done/`. If the section says "None", proceed.
-
-### 1.5. Validate Issue Context
-
-**Check for Context Documents section:**
-
-Look for a `## Context Documents` section in the issue file. If it exists, extract the PRD path. It is typically formatted as:
-
-```markdown
-## Context Documents
-
-- PRD: `.scratch/<feature-slug>/PRD.md`
-```
-
-**Read context documents:**
+1. the path in the issue's `## Context Documents` section (a `- PRD: <path>` line), resolved against `$MAIN_ROOT`;
+2. `$MAIN_ROOT/.scratch/<feature-slug>/PRD.md`, where `<feature-slug>` is the segment after `.scratch/` in the issue path.
 
 ```bash
-PRD_PATH=$(grep -A 3 "## Context Documents" "$ISSUE_PATH" | grep "PRD:" | sed 's/.*PRD: *`\(.*\)`.*/\1/')
-# Only derive the full path when a PRD path was actually found — otherwise
-# FULL_PRD_PATH would be "$MAIN_ROOT/", a misleading path pointing at the repo root.
-if [ -n "$PRD_PATH" ]; then
-  FULL_PRD_PATH="$MAIN_ROOT/$PRD_PATH"
-else
-  FULL_PRD_PATH=""
-fi
+PRD_REL=$(grep -A3 '## Context Documents' "$ISSUE_PATH" | sed -n 's/.*PRD: *`\(.*\)`.*/\1/p')
+FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
+PRD="${PRD_REL:+$MAIN_ROOT/$PRD_REL}"
+[ -n "$PRD" ] && [ -f "$PRD" ] || PRD="$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
+[ -f "$PRD" ] && echo "$PRD" || echo "no PRD"
 ```
 
-If `$FULL_PRD_PATH` is non-empty, use the View/Read tool to read `PRD.md` at that path if it exists, and keep its content in memory throughout the implementation.
-
-If the PRD does not exist or the Context Documents section is missing, continue normally.
+No PRD is normal — continue normally.
 
 ### 2. Install dependencies
 
@@ -185,18 +144,10 @@ Do not proceed to commit if any check fails or any acceptance criterion from Ste
 
 ### 6. Commit
 
-Before committing, confirm:
+If any check in Step 5 failed, do NOT stage or commit — report status `partial` or `blocked` instead.
 
-- [ ] Tests were written before implementation (TDD red/green loop completed)
-- [ ] `references/verification.md` was read
-- [ ] Every check listed in `references/verification.md` passed (tests, type-check, lint, or equivalent for this stack)
-- [ ] Relevant documentation was updated (Step 4.5) or explicitly determined not needed
-
-If any check failed, do NOT stage or commit. Report status `partial` or `blocked`.
-
-**Check if work is already done:**
-
-If there are no changes to stage (working directory is clean), check if the issue was already implemented and committed. If so, proceed to Step 7 to mark done. If not, report accordingly.
+If the working directory is already clean, the issue may already be implemented and committed:
+check, and if so proceed to Step 7.
 
 **Commit with shared script:**
 
@@ -233,24 +184,18 @@ Do not push.
 
 ### 7. Mark done
 
-Verify criteria first, then delegate the close:
+Check off (`- [x]`) every criterion the code satisfies under `## Acceptance criteria` — and under
+`## Cross-cutting Requirements` if present. Then Execute the `mark-done` operation from
+`issue-tracker.md` with the issue path. Never hand-roll `mv` or `sed`.
 
-1. Check each `- [ ]` criterion in `## Acceptance criteria` against the implemented code, and
-   check off (`- [x]`) the ones the code satisfies.
-2. Do the same for `## Cross-cutting Requirements` if the issue has that section.
-3. Execute the `mark-done` operation from `issue-tracker.md` with the issue path. Do not hardcode
-   `mv` or `sed` — delegate entirely to the tracker operation.
-
-The operation refuses to close the issue if an orchestrator owns the close, or if any criterion is
-still unchecked. Both refusals are expected outcomes, not errors to work around: report the
-outcome, leave the file in `issues/open/`, and stop.
+The operation refuses (exit 3) when an orchestrator owns the close and (exit 4) when a criterion is
+still unchecked. Both are expected outcomes: report the outcome, leave the file in `issues/open/`,
+and stop.
 
 ### 8. Unmet criteria
 
-If criteria are unmet, add a `## Unmet criteria` section to the issue explaining what is missing
-and why (descoped, blocked, split into a new issue). Then:
-
-- **Interactive run** — ask the user how to proceed.
-- **Non-interactive run** (no human is watching: `CREW_ORCHESTRATED=1`, a headless/`-p` invocation,
-  or your instructions name an orchestrator as your caller) — do not ask. Report status `partial`
-  with the unmet criteria listed, and stop. A question nobody can answer stalls the run.
+Add a `## Unmet criteria` section to the issue explaining what is missing and why (descoped, blocked,
+split out). Then, on a **non-interactive run** (`CREW_ORCHESTRATED=1`, a headless/`-p` invocation, or
+your instructions name an orchestrator as your caller) report status `partial` with the unmet criteria
+listed, and stop — a question nobody can answer stalls the run. Only on an interactive run, ask the
+user how to proceed.
