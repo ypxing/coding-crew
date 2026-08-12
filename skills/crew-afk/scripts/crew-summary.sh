@@ -135,9 +135,11 @@ bash "$SCRIPT_DIR/trace.sh" EXIT \
 rm -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/.orchestrated"
 
 # --- Findings reminder (last thing printed) -----------------------------------
-# Promotion only covered CRITICAL/HIGH findings on Phase 1 branches. Everything else —
-# MEDIUM/LOW, and any finding raised against a Phase 2 fix branch — still needs a human.
+# Promotion only covered the sprint's threshold severities (CRITICAL by default) on Phase 1
+# branches. Everything else — HIGH under the default threshold, MEDIUM/LOW always, and any
+# finding raised against a Phase 2 fix branch — still needs a human.
 REMIND=$(cd "$MAIN_ROOT" && bash "$SCRIPT_DIR/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG" 2>/dev/null || true)
+PROMOTE_POLICY=$(bash "$SCRIPT_DIR/promote-findings.sh" policy 2>/dev/null | sed -n 's/^promote: //p')
 
 OPEN_LINE=$(printf '%s\n' "$REMIND" | grep '^FINDINGS: open=' || true)
 REPORTS=$(printf '%s\n' "$REMIND" | sed -n 's/^report: //p' | paste -sd ', ' - 2>/dev/null || true)
@@ -151,9 +153,11 @@ if [ -n "$OPEN_LINE" ]; then
   echo "$total review finding(s) still need triage ($breakdown)."
   echo "Reports: $REPORTS"
   echo "Run: /crew-address-findings"
+  # A reduced promotion threshold is a real coverage reduction, so it is stated where the
+  # consequence shows up: a HIGH the sprint did not fix must be visibly queued, never silent.
   case "$breakdown" in
     *CRITICAL*|*HIGH*)
-      echo "Includes CRITICAL/HIGH findings raised against fix branches, which are report-only by design — review these first." ;;
+      echo "Includes CRITICAL/HIGH findings this sprint did not fix — promotion covered ${PROMOTE_POLICY:-CRITICAL} on Phase 1 branches only, and findings on fix branches are report-only by design. Triage these first (--promote critical-high promotes HIGH too)." ;;
   esac
 elif [ -z "$GAP_LINE" ]; then
   echo "No open review findings."

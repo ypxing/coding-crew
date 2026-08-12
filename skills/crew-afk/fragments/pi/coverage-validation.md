@@ -1,2 +1,2 @@
-Do the coverage validation yourself in this session (there is no dedicated validation agent on pi),
-using this prompt as your checklist. Not on a cheap tier — it is genuine reasoning:
+Run that prompt yourself in this session (there is no dedicated validation agent on pi), and not on
+a cheap tier — it is genuine reasoning.

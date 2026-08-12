@@ -46,6 +46,11 @@ feature slug — not from the branch name, and not by globbing `.scratch/*/sprin
 picks the alphabetically-first feature and silently points traces, resume state and the PRD lookup
 at the wrong directory.
 
+It also records the sprint's two policy flags from the arguments you passed through — `--coverage`
+(coverage validation is opt-in) and `--promote critical-high` (promotion is CRITICAL-only by
+default). The scripts that act on them read them from `sprint.env`, so never carry either flag in
+your head for the length of a sprint.
+
 Trace lines are written by the scripts that perform each step (`SESSION`, `DISPATCH`, `VERIFY`,
 `ACVERIFY`, `MERGE`, `CLOSE`, `PROMOTE`, `FLUSH`, `CLEANUP`, `SQUASH`, `EXIT`). You never hand-write
 one; if you need to, `bash "<skill-dir>/scripts/trace.sh" <MARKER> "<key=value ...>"`.
@@ -130,9 +135,9 @@ report validation only — it does not replace the independent verification in s
 
 **Pipeline order per branch: verify → review (acceptance criteria + findings) → merge → close**
 
-Each gate below is mechanical: it writes a receipt naming the exact commit it passed, and the next
-step refuses to run without a current one. Working around a refusal is never correct — re-run the
-gate.
+Each gate below is mechanical: it writes a **receipt** naming the exact commit it passed, and the
+next step refuses to run without a current one — so a branch that skipped a gate, or gained commits
+after passing it, cannot merge. Working around a refusal is never correct; re-run the gate.
 
 **`Status: complete`**
 
@@ -143,11 +148,9 @@ gate.
    ```
 
    Non-zero exit — a check failed, or no test command was discoverable — demotes this result to
-   `partial`: no review, no merge, no close. On exit 0 it writes the **verification receipt**;
-   `merge-branches.sh` refuses any `crew/` branch whose receipt is missing or stale, so a branch
-   that skipped this gate, or gained commits after passing it, cannot merge. A
-   `Verification: coverage gap — not_run: ...` line does not block the merge; record it with
-   `state.sh coverage-gap`.
+   `partial`: no review, no merge, no close. Exit 0 writes the **verification receipt** the merge
+   needs. A `Verification: coverage gap — not_run: ...` line does not block the merge; record it
+   with `state.sh coverage-gap`.
 
    Then remove the worktree — every gate after this one reads the branch from `$MAIN_ROOT`:
    `git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"`
@@ -190,9 +193,9 @@ gate.
 
    Then treat the branch as `partial` with reason `review-not-run` and move to the next one.
 
-4. **Promote CRITICAL/HIGH findings** (policy: `references/findings-promotion.md`). Findings never
-   block a merge, so they need a route back into the sprint. When this branch's review block holds
-   at least one `[CRITICAL]` or `[HIGH]` finding:
+4. **Promote findings above the promotion threshold** (policy: `references/findings-promotion.md`).
+   Findings never block a merge, so they need a route back into the sprint. When this branch's
+   review block holds at least one `[CRITICAL]` or `[HIGH]` finding:
 
    ```bash
    cd "$MAIN_ROOT"
@@ -201,9 +204,11 @@ gate.
 
    `guard: skip — source-guarded` — leave the findings in the report and move on (this is the depth
    bound: a fix issue's own findings are never promoted again, so there is no Phase 3).
-   `guard: promotable` — write one criteria file with **one `- [ ]` line per CRITICAL/HIGH
-   finding**, each restated as a verifiable criterion including the `file:line` it cites, and park
-   one fix issue for the whole branch:
+   `guard: promotable — severities: <list>` — promote exactly the severities it names (`CRITICAL`
+   by default; `--promote critical-high` adds HIGH) and nothing else: write one criteria file with
+   **one `- [ ]` line per finding at those severities**, each restated as a verifiable criterion
+   including the `file:line` it cites, and park one fix issue for the whole branch. No finding at
+   those severities — nothing to promote; move on.
 
    ```bash
    CRITERIA_FILE="$REVIEW_DIR/$SLUG.criteria.md"
@@ -216,8 +221,9 @@ gate.
 
    One fix issue per reviewed branch, never one per finding — findings from one branch cite one
    diff, so grouping them avoids sibling merge conflicts. The issue is written
-   `Status: deferred-findings`, which step 1 does not select, so it never delays a round. Never
-   promote MEDIUM or LOW; they stay in the report for a human via `/crew-address-findings`.
+   `Status: deferred-findings`, which step 1 does not select, so it never delays a round.
+   Un-promoted findings are not lost: `remind` counts and names them at the end of the sprint for
+   `/crew-address-findings`.
 
 5. **Merge**, then — **only if the merge reported `success`** — close. `merge-branches.sh` runs no
    checks (verification happened above) and exits non-zero for a branch it could not merge (conflict
@@ -256,18 +262,12 @@ git -C "$MAIN_ROOT" worktree remove --force "$WORKTREE_PATH"
 bash "<skill-dir>/scripts/state.sh" blocked --slug "$SLUG" --branch "$BRANCH" --reason "<why>"
 ```
 
-### 4. Report
-
-Print each worker's report verbatim. Do not reformat, summarise, or add text outside the worker's sections.
-
-### 5. Repeat
+### 4. Repeat
 
 Return to step 1 — newly unblocked issues may now be ready, and partial/blocked issues carry their
-`## Progress` / `## Blocked` sections forward. Print the rollup for the round:
-
-```bash
-bash "<skill-dir>/scripts/crew-summary.sh" --no-reminder
-```
+`## Progress` / `## Blocked` sections forward. Report nothing per round: the summary in **## Wrap
+Up** renders every result from disk, so a per-round echo of the same content is the same tokens
+twice.
 
 **Stall detection**: if **two consecutive rounds** produce zero new completions (every result
 `partial` or `blocked`), stop looping and go to **## Wrap Up**. One dry round is not a stall — retry
@@ -290,9 +290,8 @@ bash "<skill-dir>/scripts/promote-findings.sh" flush --feature-slug "$FEATURE_SL
   `partial` round. Run no squash, coverage validation or cleanup on this pass.
 - `FLUSH: none` — nothing was parked. Continue below and finish the sprint.
 
-A stalled sprint still merged code that may carry a CRITICAL finding, so the flush runs regardless
-of why the loop ended. It flips `Status:` on disk rather than tracking a phase in memory, so it is
-idempotent and an interrupted sprint resumes with the fix issues looking like ordinary work.
+The flush runs on every exit, stall included: a sprint that stalled on unrelated issues still merged
+code that may carry a CRITICAL finding.
 
 ### Squash Commits
 
@@ -309,41 +308,13 @@ bash "<skill-dir>/scripts/squash-commits.sh" --platform {{PLATFORM}}
 bash "<skill-dir>/scripts/coverage-validation.sh"
 ```
 
-Output containing `"skipped"` means no PRD — continue to cleanup. Otherwise the printed path is the
-feature's `PRD.md`:
+Output containing `"skipped"` — the sprint was not started with `--coverage` (it is opt-in: every
+issue already passed its own criteria gate before merging), or the feature has no `PRD.md` — means
+continue straight to cleanup. Otherwise it prints the PRD path and the validation prompt to run.
 
 {{FRAGMENT:coverage-validation}}
 
-```
-Extract all requirements from:
-<PRD.md content>
-
-Categories to extract:
-- Key User Stories
-- Technical decisions
-- Cross-cutting concerns (error handling, logging, security, performance, testing, architecture, validation, observability)
-- Interface contracts
-- Multi-issue flows
-
-For each requirement, check:
-1. Completed issues in .scratch/<feature-slug>/issues/done/ — match requirement to issue acceptance criteria
-2. Merged code — heuristic validation (grep for relevant patterns, function names, config changes)
-
-Classify each requirement as:
-✓ covered - found in both issue criteria and code
-⚠ partial - found in issue criteria OR code, but not both
-✗ missing - no evidence in either
-
-Report format:
-✓ N covered / ⚠ N partial / ✗ N missing
-
-### Details
-✓ <requirement>: <brief evidence from issues/code>
-⚠ <requirement>: <what's present and what's missing>
-✗ <requirement>: <no evidence found>
-```
-
-That output becomes the **Coverage Report** section of the summary.
+Its output becomes the **Coverage Report** section of the summary.
 
 ### Worktree Cleanup
 
@@ -359,11 +330,10 @@ bash "<skill-dir>/scripts/cleanup-worktrees.sh" \
 
 It removes each merged branch's worktree before its ref (git refuses to delete a ref a worktree has
 checked out), prunes stale worktree metadata, sweeps `crew/$FEATURE_SLUG/*` and `worktree-agent-*`
-leftovers nobody passed in, and never touches a `--retain` branch. Anything it declines — a dirty
-worktree, a swept branch with commits not in `HEAD` — is reported as `kept`, not as a failure. Run
-it even when nothing merged; re-running is a clean no-op. Report its last line
-(`CLEANUP: removed=N kept=M failed=K`) as-is: a non-zero exit means a ref survived, so never claim
-a clean teardown over it.
+leftovers nobody passed in, and never touches a `--retain` branch. Anything it declines is reported
+as `kept`, not as a failure. Run it even when nothing merged; re-running is a clean no-op. Report
+its last line (`CLEANUP: removed=N kept=M failed=K`) as-is: a non-zero exit means a ref survived, so
+never claim a clean teardown over it.
 
 ### Summary
 
@@ -386,8 +356,9 @@ Then insert the **Coverage Report** (if one was produced) and the review report 
 `## Code Review` — or `skipped (no verified branches this session)` if nothing was reviewed.
 
 `crew-summary.sh` ends with the findings reminder, which is the **last thing printed**: either
-`## Next Step` with a real count of the MEDIUM/LOW and fix-branch findings that promotion did not
-cover, `No open review findings.`, or — never suppressed by either, and never counted as findings —
-`## Unreviewed Branches` for every branch whose review never completed.
+`## Next Step` with a real count of the findings promotion did not cover — including every HIGH,
+unless the sprint ran `--promote critical-high` — `No open review findings.`, or — never suppressed
+by either, and never counted as findings — `## Unreviewed Branches` for every branch whose review
+never completed.
 
 Finally print `NO MORE TASKS` and stop. The user can re-trigger the sprint after resolving blockers.

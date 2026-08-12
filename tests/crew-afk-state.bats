@@ -19,6 +19,8 @@
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_SCRIPTS="$REPO_ROOT/skills/crew-afk/scripts"
 
+load helpers/render
+
 setup() {
   export TEMP_DIR=$(mktemp -d)
   cd "$TEMP_DIR"
@@ -385,6 +387,24 @@ EOF
   done
 }
 
+@test "the sprint reports once, from disk — not per round" {
+  # Three copies of the same content used to reach the context: the per-round rollup, the
+  # verbatim echo of every worker report, and the final summary's per-issue detail. All of it
+  # is on disk in sprint-state.json and the review reports, so the summary renders it once.
+  for variant in claude pi codex copilot; do
+    f=$(afk_variant "$variant")
+    if grep -q 'crew-summary.sh" --no-reminder' "$f"; then
+      echo "$variant still prints a per-round rollup" >&2; return 1
+    fi
+    if grep -qi "print each worker's report verbatim" "$f"; then
+      echo "$variant still echoes every worker report" >&2; return 1
+    fi
+    if grep -q '^### Per-issue' "$f"; then
+      echo "$variant still re-prints per-issue detail in the summary" >&2; return 1
+    fi
+  done
+}
+
 @test "P3: the orchestrator bodies are within their word budget" {
   # The audit measured 4,358–5,051 words per variant, of which ~9% was novel judgement.
   # A budget is the only thing that stops mechanism creeping back in as prose.
@@ -392,8 +412,12 @@ EOF
   # Stage B (AC folded into the review) is a structural saving, not a prose one: it removes
   # an agent spawn and a full-diff read per branch while the words move rather than vanish.
   # The ratchet still tightens, so nothing reclaims the space that was freed.
+  # Stage C (coverage opt-in, CRITICAL-only promotion, one summary instead of three) moves the
+  # coverage prompt into the script and deletes the per-round reporting, so the ratchet tightens
+  # again. It stops here: the prose that remains is either an instruction with no script behind
+  # it or scar tissue from an observed failure, and cutting that buys tokens with correctness.
   for f in "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
     words=$(wc -w < "$f")
-    [ "$words" -lt 2850 ] || { echo "$f is $words words (budget 2850)" >&2; return 1; }
+    [ "$words" -lt 2750 ] || { echo "$f is $words words (budget 2750)" >&2; return 1; }
   done
 }

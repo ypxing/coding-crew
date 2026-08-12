@@ -1,6 +1,6 @@
 # Findings promotion (shared policy)
 
-How crew-afk gets CRITICAL/HIGH code-review findings fixed inside the same sprint, without a
+How crew-afk gets CRITICAL code-review findings fixed inside the same sprint, without a
 human in the loop and without looping forever. This file is the single source of truth for the
 policy; each platform variant of `SKILL.md` only wires it into its own dispatch mechanics.
 
@@ -17,10 +17,10 @@ verify → review → merge) instead of a bespoke fix path.
 
 ## Two phases
 
-**Phase 1 — normal sprint.** Unchanged. When a branch's review raises CRITICAL/HIGH findings,
-write a *parked* fix issue with `Status: deferred-findings`. The loop's `list` operation selects
-on `ready-for-agent`, so parked issues are invisible and Phase 1 drains its original queue at
-its normal pace.
+**Phase 1 — normal sprint.** Unchanged. When a branch's review raises findings at or above the
+promotion threshold, write a *parked* fix issue with `Status: deferred-findings`. The loop's `list`
+operation selects on `ready-for-agent`, so parked issues are invisible and Phase 1 drains its
+original queue at its normal pace.
 
 **Phase 2 — fix round.** When the loop is about to exit, flush the parked issues to
 `ready-for-agent` and re-enter the loop instead of exiting. Fix issues are ordinary issues: they
@@ -34,13 +34,22 @@ queue is empty removes that class of conflict entirely.
 
 ## Rules
 
-**Severity threshold: CRITICAL and HIGH only.** MEDIUM/LOW stay report-only for a human.
-Unattended promotion has no triage step — it cannot dismiss a finding that is technically correct
-but contradicts a documented architecture decision (which `crew-address-findings` Step 1.5
-explicitly requires a human to do). That risk is worth taking for a CRITICAL, where verification
-and the Phase 2 review still catch a bad fix, and is not worth a full worktree + coder + verify +
-review cycle for a style nit. The threshold is a fixed severity string, so promotion needs no
-judgment call — the reviewer already assigned severity.
+**Severity threshold: CRITICAL only, by default.** `--promote critical-high` adds HIGH;
+MEDIUM/LOW are never promoted. Unattended promotion has no triage step — it cannot dismiss a
+finding that is technically correct but contradicts a documented architecture decision (which
+`crew-address-findings` Step 1.5 explicitly requires a human to do). That risk is worth taking
+for a CRITICAL, where verification and the Phase 2 review still catch a bad fix. It is not worth
+a full worktree + coder + verify + review cycle for a style nit — and it is not worth it *by
+default* for a HIGH either: HIGH is the reviewer's judgement class ("architecture drift", "trust
+boundary"), the most false-positive-prone severity, so promoting it unattended spends a whole
+pipeline on findings a human would often dismiss. The threshold is a fixed severity string
+printed by `promote-findings.sh guard`, so promotion needs no judgment call — the reviewer already
+assigned severity, and the orchestrator never has to remember which severities this sprint takes.
+
+Lowering the default is a real coverage reduction, so it is paid for on the way out rather than
+hidden: nothing subtracts an unpromoted severity from `remind`, so every HIGH is counted, named,
+and attributed to its report, and the reminder states the threshold that left it open plus the
+flag that would have promoted it.
 
 **Grouping: one fix issue per reviewed branch**, with one acceptance criterion per finding. All
 findings from one branch cite that branch's diff, so they cluster in the same files — one
@@ -75,9 +84,11 @@ so the parked set is empty and flush is a no-op — no separate guard needed for
 
 After a sprint with promotion, `sprint-review-<TIMESTAMP>.md` distinguishes three groups:
 
-- **Promoted** — CRITICAL/HIGH findings fixed in Phase 2, listed under the `## Promoted Findings`
-  section that `promote-findings.sh defer` appends (`<branch>: CRITICAL, HIGH → <issue path>`).
-- **Open, needs human triage** — MEDIUM/LOW findings from Phase 1 branches.
+- **Promoted** — findings at the threshold severities, fixed in Phase 2, listed under the
+  `## Promoted Findings` section that `promote-findings.sh defer` appends
+  (`<branch>: CRITICAL → <issue path>`).
+- **Open, needs human triage** — everything the threshold did not cover on Phase 1 branches:
+  MEDIUM/LOW always, and HIGH unless the sprint ran `--promote critical-high`.
 - **New, found reviewing the fixes** — findings of any severity raised against Phase 2 branches,
   report-only via the depth bound.
 
@@ -86,8 +97,9 @@ pairs, so a later human run starts with a queue of genuinely open findings.
 
 ## End-of-sprint reminder
 
-Promotion is deliberately partial — MEDIUM/LOW are never promoted, and Phase 2 findings are
-report-only — so a sprint almost always ends with findings a human still has to look at. Every
+Promotion is deliberately partial — MEDIUM/LOW are never promoted, HIGH is not promoted by
+default, and Phase 2 findings are report-only — so a sprint almost always ends with findings a
+human still has to look at. Every
 variant therefore ends by running `promote-findings.sh remind`, which counts the findings **not**
 covered by a `## Promoted Findings` marker (attributing each finding to the `## Branch:` section it
 appears under) and prints either a real count or `FINDINGS: none`.
@@ -100,9 +112,13 @@ dismissed once a human reads them.
 ## Script interface
 
 ```bash
+# Which severities does this sprint promote? (CREW_PROMOTE, set from --promote by session-init.sh)
+bash "<skill-dir>/scripts/promote-findings.sh" policy
+# → "promote: CRITICAL" | "promote: CRITICAL, HIGH"
+
 # Depth bound: is this branch's issue itself a promoted fix issue?
 bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file>"
-# → "guard: promotable" | "guard: skip — source-guarded ..."
+# → "guard: promotable — severities: CRITICAL" | "guard: skip — source-guarded ..."
 
 # Park a fix issue and annotate the report. Criteria file = one "- [ ] <finding>" line per finding.
 bash "<skill-dir>/scripts/promote-findings.sh" defer \
@@ -121,7 +137,7 @@ bash "<skill-dir>/scripts/promote-findings.sh" list --feature-slug "$FEATURE_SLU
 
 # End-of-sprint reminder: findings no promotion covered
 bash "<skill-dir>/scripts/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG"
-# → "FINDINGS: open=<N> (MEDIUM=3, LOW=2)" + one "report: <path>" line each | "FINDINGS: none"
+# → "FINDINGS: open=<N> (HIGH=1, MEDIUM=3, LOW=2)" + one "report: <path>" line each | "FINDINGS: none"
 # → plus "REVIEW-GAPS: branches=<N>" + one "gap: <branch> — <reason>" line, when a review
 #   never completed. Printed in addition to the findings line, never instead of it.
 

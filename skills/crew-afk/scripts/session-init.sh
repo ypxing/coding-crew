@@ -6,12 +6,30 @@ set -euo pipefail
 # Optional: Pass --jira TICKET-123 or --feature-slug <slug> as arguments
 
 # Parse --feature-slug flag (consumed here; remaining args forwarded to feature-branch-setup.sh)
+#
+# --coverage and --promote are the sprint's two policy flags. They are captured here, once,
+# where the user's arguments arrive, and written into sprint.env — so the step that acts on
+# them reads a variable instead of the orchestrator remembering a flag for a whole sprint.
 FEATURE_SLUG_ARG=""
+COVERAGE_OPT=0
+PROMOTE_OPT="critical"
 REMAINING_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --feature-slug)
       FEATURE_SLUG_ARG="${2:?--feature-slug requires a value}"
+      shift 2
+      ;;
+    --coverage)
+      COVERAGE_OPT=1
+      shift
+      ;;
+    --promote)
+      PROMOTE_OPT="${2:?--promote requires critical or critical-high}"
+      case "$PROMOTE_OPT" in
+        critical|critical-high) ;;
+        *) echo "ERROR: --promote must be 'critical' or 'critical-high' (got '$PROMOTE_OPT')" >&2; exit 1 ;;
+      esac
       shift 2
       ;;
     *)
@@ -146,6 +164,8 @@ export TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/orchestrator.log"
 export DISPATCH_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/dispatch"
 export REVIEW_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews"
 export CREW_SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
+export CREW_COVERAGE="$COVERAGE_OPT"
+export CREW_PROMOTE="$PROMOTE_OPT"
 ENV
 
 # Stable entry point: one path the orchestrator can source without knowing the slug.

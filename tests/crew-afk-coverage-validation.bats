@@ -56,13 +56,68 @@ teardown() {
   grep -q 'bash.*coverage-validation\.sh' "$(afk_variant copilot)"
 }
 
+# --- Opt-in Tests ---
+#
+# Coverage validation is a whole extra reasoning pass over the PRD, every closed issue and
+# greps of the merged code, producing advisory output after every issue already passed its
+# own acceptance-criteria gate. It cost 5–15k tokens a sprint for a report nothing acted on,
+# so it now runs only when the sprint asked for it.
+
+@test "coverage-validation.sh is opt-in: no --coverage, no validation" {
+  git checkout -q -b "feature/test-feature"
+  mkdir -p .scratch/test-feature
+  echo "# PRD" > .scratch/test-feature/PRD.md
+
+  run bash "$COVERAGE_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skipped"* ]]
+  [[ "$output" == *"--coverage"* ]]
+  # The prompt must not be printed for a step that is not running.
+  [[ "$output" != *"Extract all requirements"* ]]
+}
+
+@test "coverage-validation.sh honours CREW_COVERAGE from sprint.env" {
+  git checkout -q -b "feature/test-feature"
+  mkdir -p .scratch/test-feature
+  echo "# PRD" > .scratch/test-feature/PRD.md
+
+  CREW_COVERAGE=1 run bash "$COVERAGE_SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+}
+
+@test "session-init records the --coverage flag in sprint.env" {
+  # The flag is captured once, where the user's arguments arrive — not carried in the
+  # orchestrator's head for the length of a sprint.
+  scripts="$TEMP_DIR/scripts"
+  mkdir -p "$scripts"
+  cp "$SCRIPT_DIR/skills/crew-afk/scripts/"*.sh "$scripts/"
+  cp "$SCRIPT_DIR/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$scripts/"
+  mkdir -p .scratch/feat/issues/open
+  echo "Status: ready-for-agent" > .scratch/feat/issues/open/01-a.md
+
+  bash "$scripts/session-init.sh" --feature-slug feat >/dev/null
+  grep -q 'export CREW_COVERAGE="0"' .scratch/feat/sprint.env
+
+  bash "$scripts/session-init.sh" --feature-slug feat --coverage >/dev/null
+  grep -q 'export CREW_COVERAGE="1"' .scratch/feat/sprint.env
+}
+
+@test "every crew-afk body states that coverage validation is opt-in" {
+  for variant in claude pi codex copilot; do
+    grep -q -- '--coverage' "$(afk_variant "$variant")" || {
+      echo "$variant does not mention the --coverage flag" >&2; return 1; }
+  done
+}
+
 # --- Skip Behavior Tests ---
 
 @test "coverage-validation.sh skips when no PRD.md exists" {
   git checkout -q -b "feature/test-feature"
   mkdir -p .scratch/test-feature/issues
 
-  run bash "$COVERAGE_SCRIPT"
+  run bash "$COVERAGE_SCRIPT" --coverage
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"Coverage validation: skipped"* ]]
@@ -72,7 +127,7 @@ teardown() {
   git checkout -q -b "feature/test-feature"
   mkdir -p .scratch/test-feature/issues
 
-  run bash "$COVERAGE_SCRIPT"
+  run bash "$COVERAGE_SCRIPT" --coverage
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"no PRD.md found"* ]]
@@ -83,7 +138,7 @@ teardown() {
   mkdir -p .scratch/test-feature
   echo "# PRD" > .scratch/test-feature/PRD.md
 
-  run bash "$COVERAGE_SCRIPT"
+  run bash "$COVERAGE_SCRIPT" --coverage
 
   [ "$status" -eq 0 ]
   # Must NOT output a skip message
@@ -128,16 +183,31 @@ teardown() {
 }
 
 # --- Documentation Format Tests ---
+#
+# The prompt lives in the script, not in the bodies: it is ~180 words that only matter once
+# per sprint, and only when --coverage was passed. Printing it from the script is what keeps
+# it out of every context window that never runs the step.
 
-@test "SKILL.md specifies coverage report format" {
-  grep -q '✓ N covered' "$SKILL_FILE"
-  grep -q '⚠ N partial' "$SKILL_FILE"
-  grep -q '✗ N missing' "$SKILL_FILE"
+@test "the validation prompt is printed by the script, not carried in the bodies" {
+  git checkout -q -b "feature/test-feature"
+  mkdir -p .scratch/test-feature
+  echo "# PRD" > .scratch/test-feature/PRD.md
+
+  run bash "$COVERAGE_SCRIPT" --coverage
+  [[ "$output" == *"Extract all requirements"* ]]
+  [[ "$output" == *"✓ N covered"* ]]
+  [[ "$output" == *"⚠ N partial"* ]]
+  [[ "$output" == *"✗ N missing"* ]]
+
+  for variant in claude pi codex copilot; do
+    if grep -q '✓ N covered' "$(afk_variant "$variant")"; then
+      echo "$variant still inlines the validation prompt" >&2; return 1
+    fi
+  done
 }
 
-@test "SKILL.md mentions validation agent prompt structure" {
+@test "SKILL.md still says who runs the prompt" {
   grep -qi 'validation agent' "$SKILL_FILE"
-  grep -qi 'extract.*requirements' "$SKILL_FILE"
 }
 
 # --- Copilot Parity Tests ---

@@ -9,6 +9,7 @@
 #   5. flush flips parked issues to ready-for-agent and is idempotent (second run = no-op)
 #   6. flush on a sprint with nothing parked reports FLUSH: none rather than failing
 #   7. remind counts only findings promotion did NOT cover, so the end-of-sprint reminder is honest
+#   8. the promotion threshold is CRITICAL by default and CREW_PROMOTE=critical-high adds HIGH
 
 set -e
 
@@ -59,9 +60,9 @@ printf '# Sprint review\n\n## Branch: crew/01-a\n[CRITICAL] boom\n' > "$REPORT"
 printf -- '- [ ] fix the CRITICAL null deref at src/a.ts:10\n' > crit-a.md
 printf -- '- [ ] fix the CRITICAL race at src/b.ts:42\n' > crit-b.md
 
-echo "Test 1: guard allows promotion for an ordinary issue"
+echo "Test 1: guard allows promotion for an ordinary issue, naming the threshold"
 out=$(bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md)
-check "guard reports promotable" "guard: promotable" "$out"
+check "guard reports promotable at the default threshold" "guard: promotable — severities: CRITICAL" "$out"
 
 echo
 echo "Test 2: defer numbers after the highest issue across open/ and done/"
@@ -81,7 +82,7 @@ echo
 echo "Test 4: defer annotates the review report"
 check_contains "report gains Promoted Findings section" "## Promoted Findings" "$(cat "$REPORT")"
 check_contains "marker keys branch + severities + issue path" \
-      "- crew/01-a: CRITICAL, HIGH → .scratch/feat/issues/open/08-fix-findings-a.md" "$(cat "$REPORT")"
+      "- crew/01-a: CRITICAL → .scratch/feat/issues/open/08-fix-findings-a.md" "$(cat "$REPORT")"
 
 echo
 echo "Test 5: second branch gets its own fix issue, one section header only"
@@ -151,9 +152,11 @@ printf -- '- [ ] fix it\n' > rem-crit.md
 bash "$PROMOTE" defer --feature-slug rem --branch crew/01-a --slug a \
     --title "Fix review findings: a" --report "$REM" --criteria-file rem-crit.md >/dev/null
 out=$(bash "$PROMOTE" remind --feature-slug rem)
-check_contains "promoted CRITICAL/HIGH excluded, MEDIUM/LOW counted" \
-      "FINDINGS: open=3 (MEDIUM=2, LOW=1)" "$out"
+check_contains "promoted CRITICAL excluded; HIGH/MEDIUM/LOW counted for a human" \
+      "FINDINGS: open=4 (HIGH=1, MEDIUM=2, LOW=1)" "$out"
 check_contains "report path listed for the user" "report: $REM" "$out"
+# Subtraction reads the marker written in the report, not the current threshold: the record on
+# disk is what a later /crew-address-findings run trusts.
 
 echo
 echo "Test 12: a Phase 2 fix branch's own findings are counted (report-only, needs a human)"
@@ -163,7 +166,7 @@ cat > .scratch/rem/reviews/sprint-review-2.md <<'EOF'
 EOF
 out=$(bash "$PROMOTE" remind --feature-slug rem)
 check_contains "CRITICAL on a fix branch surfaces in the reminder" \
-      "FINDINGS: open=4 (CRITICAL=1, MEDIUM=2, LOW=1)" "$out"
+      "FINDINGS: open=5 (CRITICAL=1, HIGH=1, MEDIUM=2, LOW=1)" "$out"
 
 echo
 echo "Test 13: remind stays quiet when there is nothing to triage"
@@ -185,10 +188,10 @@ mkdir -p .scratch/bare/reviews
 BARE=.scratch/bare/reviews/sprint-review-1.md
 printf '## Branch: crew/01-y\n[HIGH] boom\n[LOW] nit\n' > "$BARE"
 printf -- '- [ ] fix it\n' > bare-crit.md
-bash "$PROMOTE" defer --feature-slug bare --branch crew/01-y --slug y \
+CREW_PROMOTE=critical-high bash "$PROMOTE" defer --feature-slug bare --branch crew/01-y --slug y \
     --title "Fix review findings: y" --report "$BARE" --criteria-file bare-crit.md >/dev/null
 check_contains "bare header still matches its promotion marker" "FINDINGS: open=1 (LOW=1)" \
-      "$(bash "$PROMOTE" remind --feature-slug bare)"
+      "$(CREW_PROMOTE=critical-high bash "$PROMOTE" remind --feature-slug bare)"
 
 echo
 echo "Results: $PASS passed, $FAIL failed"

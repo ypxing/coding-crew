@@ -10,6 +10,7 @@ set -euo pipefail
 # This script owns only the deterministic parts, so all four platform variants behave
 # identically:
 #
+#   policy  — which severities this sprint promotes (CRITICAL by default)
 #   guard   — may findings from this issue's branch be promoted, or is it already a fix issue?
 #   defer   — write a parked fix issue (Status: deferred-findings) + annotate the review report
 #   flush   — flip every parked fix issue to ready-for-agent (Phase 1 → Phase 2 transition)
@@ -35,9 +36,25 @@ _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/
 DEFERRED_STATUS="deferred-findings"
 READY_STATUS="ready-for-agent"
 
+# --- promotion threshold -----------------------------------------------------
+# Default: CRITICAL only. Each promoted branch costs a full worker + verify + review + merge
+# cycle, and HIGH is the reviewer's judgement class ("architecture drift", "trust boundary") —
+# the most false-positive-prone severity — so promoting it by default spent a whole pipeline on
+# findings a human would often dismiss. HIGH is not dropped: nothing subtracts an unpromoted
+# severity from `remind`, so every HIGH is counted and named for /crew-address-findings.
+# `--promote critical-high` (recorded in sprint.env by session-init.sh as CREW_PROMOTE)
+# restores the old behaviour.
+promote_severities() {
+  case "${CREW_PROMOTE:-critical}" in
+    critical-high) echo "CRITICAL, HIGH" ;;
+    *) echo "CRITICAL" ;;
+  esac
+}
+
 usage() {
   cat >&2 <<'USAGE'
 Usage:
+  promote-findings.sh policy
   promote-findings.sh guard --issue <issue-file>
   promote-findings.sh defer --feature-slug <slug> --branch <branch> --slug <issue-slug>
                             --title <title> --report <review-report> --criteria-file <file>
@@ -106,13 +123,24 @@ cmd_guard() {
   if grep -q '^Source:' "$issue"; then
     echo "guard: skip — source-guarded (this issue was itself promoted from a review)"
   else
-    echo "guard: promotable"
+    # The severity list is printed with the verdict so no caller has to carry the threshold in
+    # prose: promote exactly the severities named here, and nothing else.
+    echo "guard: promotable — severities: $(promote_severities)"
   fi
+}
+
+# --- policy ------------------------------------------------------------------
+# One place any caller can ask what this sprint promotes — used by the end-of-sprint reminder
+# so it can state the threshold that left a HIGH finding open.
+cmd_policy() {
+  [ $# -eq 0 ] || usage
+  echo "promote: $(promote_severities)"
 }
 
 # --- defer -------------------------------------------------------------------
 cmd_defer() {
-  local slug="" branch="" issue_slug="" title="" report="" criteria_file="" severities="CRITICAL, HIGH"
+  local slug="" branch="" issue_slug="" title="" report="" criteria_file="" severities
+  severities="$(promote_severities)"
   while [ $# -gt 0 ]; do
     case "$1" in
       --feature-slug) slug="${2:-}"; shift 2 ;;
@@ -289,9 +317,10 @@ cmd_mark_not_run() {
 }
 
 # --- remind ------------------------------------------------------------------
-# Promotion only covers CRITICAL/HIGH on Phase 1 branches. Everything else — MEDIUM/LOW,
-# plus any severity raised against a Phase 2 fix branch (report-only by the depth bound) —
-# still needs a human. This counts exactly those so the end-of-sprint reminder states a
+# Promotion only covers the threshold severities (CRITICAL by default) on Phase 1 branches.
+# Everything else — HIGH when the threshold is CRITICAL-only, MEDIUM/LOW always, plus any
+# severity raised against a Phase 2 fix branch (report-only by the depth bound) — still needs
+# a human. This counts exactly those so the end-of-sprint reminder states a
 # real number instead of nudging the user toward an empty queue, or worse, staying silent
 # when CRITICAL findings from a fix branch are sitting unread.
 #
@@ -411,6 +440,7 @@ COMMAND="${1:-}"
 shift || true
 
 case "$COMMAND" in
+  policy) cmd_policy "$@" ;;
   guard) cmd_guard "$@" ;;
   defer) cmd_defer "$@" ;;
   flush) cmd_flush "$@" ;;
