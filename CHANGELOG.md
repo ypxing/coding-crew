@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+## [1.23.0] - 2026-08-12
+
+### Changed
+
+- **Windows CI: 27+ minutes down to a sharded ~5.** The suite's cost is process spawning, not computation — one full `install.sh` spawns ~3,300 processes (1,564 of them `jq`), the tests run it ~84 times, and Git Bash emulates `fork()` at ~5-50ms a spawn. Four changes: the `jq()` CR-normalisation wrapper strips `\r` in-shell instead of piping through `tr` (three processes per lookup became one) and is now defined only on a jq that actually emits `\r`, so Linux and macOS call the binary directly; `.github/workflows/ci.yml` shards Windows across four matrix jobs via `scripts/ci-test-shard.sh` (bats' own `--jobs` needs GNU parallel, which the Windows runner lacks); bats-core is cloned at a pinned tag instead of `npm install -g bats`, dropping the Node setup entirely; and Defender excludes the runner temp and workspace trees, which the installs fill with thousands of small files. Sharding is only safe as a partition, so `tests/ci-test-shard.bats` asserts the union of shards is the whole suite, that no file appears twice, and that the matrix declares every index of each shard count it uses — a test file that fell out of every shard would otherwise stop running and CI would still go green. Remaining ~1,500 `jq` calls per install are tracked in `.scratch/ci-windows-speed/issues/open/01-batch-registry-jq-reads.md`
+
+### Fixed
+
+- **Windows installs no longer silently skip items.** jq on Windows (Git Bash) writes stdout in text mode, so every value read back carried a trailing `\r`. `--from-lockfile` looked up the skill name `tdd\r` in `registry.json`, missed, printed `Warning: skill 'tdd' not found in registry v1.17.0 — skipping`, and exited 0 having installed nothing. The `\r` was previously stripped per read loop, so every loop added afterwards (the `crew.lock` and manifest loops) was unguarded again — `install.sh`, `uninstall.sh` and `scripts/render-skill.sh` now normalise jq's output once in a single `jq()` wrapper (defined only when a probe shows jq appending `\r`; `$?` after the assignment is jq's own status, so `if ! jq empty` still works), which no new call site can forget. Guarded by three tests in `tests/install.bats` that stub jq to emit CRLF and assert a plain install, a `--from-lockfile` install, and an uninstall all still land their files
+
 ## [1.22.0] - 2026-08-12
 
 ### Added
