@@ -102,6 +102,13 @@ bats tests/orchestrator.bats
   `tests/helpers/render.bash` and deletes its fragments. Both need a decision first (see
   `.scratch/crew-afk-as-code/issues/open/03-…` and `04-…`): claude's isolation model
   changes, copilot's dispatch mechanism does.
-- **Deferred**: adding the `FINDING:` line and the `<slug>.report.json` sidecar to the
-  agent protocols. The code asks for both in the prompts it builds and falls back
-  cleanly, so this is a robustness upgrade rather than a prerequisite.
+- **Contracts now live in the agent definitions, not only in the prompts**: the launcher
+  platforms' `crew-coder` variants state the `<slug>.report.json` sidecar / fenced-JSON
+  block, and `agents/crew-code-reviewer/protocol.md` states the
+  `FINDING: <SEV> | <file:line> | <criterion>` line. `tests/orchestrator/contract.test.mjs`
+  reads `AFK_LAUNCHER_VARIANTS` and asserts the declared field names are the ones
+  `report.mjs` indexes, round-trips the definition's own JSON template through the parser,
+  and keeps the markdown fallback covered. It therefore fails at claude's cutover until
+  claude's older shape (`checks` as an array of `{command, result}`, read by the prose
+  orchestrator) is migrated — a silent contradiction there would demote clean branches to
+  `partial` for "tests not run".

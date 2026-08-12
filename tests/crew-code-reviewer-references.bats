@@ -122,10 +122,17 @@ stack_for() {
   grep -qiE 'if either script is missing|older install' "$PROTOCOL"
 }
 
-@test "protocol body stays under the 1500-word budget" {
+@test "protocol body stays under the 1560-word budget" {
+  # Raised from 1,500 by the two *machine* contracts the protocol now owns, both of which
+  # replace an inference the caller used to make: the execution-evidence rule (a read-only
+  # reviewer cannot run `npm test`, so a criterion ending "…and the tests pass" was
+  # unanswerable and stalled every such branch) and the `FINDING: <SEV> | <file:line> |
+  # <criterion>` line (promotion into a fix issue now parses one line instead of re-reading
+  # prose). Duplication was cut first — the criteria rule was stated twice, the session-summary
+  # rule three ways — so this is what the contracts cost after that, not on top of it.
   local words
   words=$(wc -w < "$PROTOCOL")
-  [ "$words" -lt 1500 ] || { echo "protocol.md is $words words"; return 1; }
+  [ "$words" -lt 1560 ] || { echo "protocol.md is $words words"; return 1; }
 }
 
 @test "no single reference is larger than the protocol that conditions it" {

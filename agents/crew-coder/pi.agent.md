@@ -120,13 +120,20 @@ Note: If the issue has both "## Acceptance criteria" and "## Cross-cutting Requi
 
 Rules:
 
-1. Start with `## Issue:` followed by the issue slug (filename without extension).
-2. `Status` must be exactly one of: `complete`, `partial`, `blocked`.
-3. `### Checks` — for each check, show the command and final summary line(s) only (e.g. pass/fail counts). Do not list individual test names or passing cases.
-4. `### Acceptance Criteria` — list every criterion from the issue with `[x]` or `[ ]`.
-5. `### Changes` — list every file modified.
-6. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
-7. Do not add any text outside these sections.
+1. `## Issue:` carries the issue slug (filename without extension); `Status` is exactly one of `complete`, `partial`, `blocked`.
+2. `### Checks` — per check, the command and its final summary line(s) only (pass/fail counts), never individual test names.
+3. `### Acceptance Criteria` — every criterion, including `## Cross-cutting Requirements` when the issue has one.
+4. Add no text outside these sections.
+
+### Machine-readable block
+
+End the report with this block, or write the same JSON to `<slug>.report.json` beside it — the orchestrator reads either, and prefers it over the markdown above. It is **parsed**, so the field names are fixed and a report with neither is read as `blocked`, never as a silent `complete`:
+
+```json
+{"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
+```
+
+One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
 
 ## Issue Ownership
 

@@ -144,6 +144,7 @@ One block per branch; attribution is required so a finding traces to the branch 
 AC: all-met
 
 ### Findings
+FINDING: CRITICAL | <path>:<line> | <one verifiable fix criterion>
 [CRITICAL] <title>
 File: <path>:<line>
 Snippet:
@@ -158,9 +159,11 @@ The `AC:` line is required, exactly as shown: `AC: all-met` or `AC: unmet — <c
 The caller greps it to decide whether the branch merges, so it is never omitted, reworded, or moved.
 On `unmet`, still report the findings — the branch returns to a worker with them.
 
-Repeat the finding shape for every finding, in severity order: `[CRITICAL]`, `[HIGH]`, `[MEDIUM]`,
-`[LOW]`, each with its own `File:`, `Snippet:`, `Issue:` and `Fix:`. Downstream tooling parses the
-`[SEVERITY]` prefix and the `## Branch:` heading, so neither is optional.
+Every finding opens with its `FINDING:` line — severity, `file:line`, and **one verifiable fix
+criterion**, written as the acceptance criterion a fix worker would be given, because that is what it
+becomes. Then repeat the shape below it in severity order (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), each
+with its own `File:`, `Snippet:`, `Issue:` and `Fix:`. Tooling parses the `FINDING:` line, the
+`[SEVERITY]` prefix and the `## Branch:` heading, so none of the three is optional.
 
 If no findings: `### Findings\nnone`
 
