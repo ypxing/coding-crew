@@ -32,6 +32,21 @@ OUTFILE="${3:-}"
 
 [[ -f "$REGISTRY" ]] || { echo "Error: registry not found: $REGISTRY" >&2; exit 1; }
 
+# jq on Windows (Git Bash) writes stdout in text mode, so a source-dir read back as
+# "tdd\r" makes `skills/$SOURCE_DIR` a directory that does not exist. Normalise every
+# jq read once, here. Command substitution, not a `| tr` pipeline: render-skill.sh runs
+# once per installed SKILL.md, and on Git Bash every avoided spawn is ~5-50ms. Probed,
+# so a jq that already writes LF is called directly with no wrapper at all.
+if [[ "$(command jq -rn '"probe"' 2>/dev/null)" == *$'\r' ]]; then
+  jq() {
+    local _jq_out _jq_rc
+    _jq_out=$(command jq "$@")
+    _jq_rc=$?
+    [[ -n "$_jq_out" ]] && printf '%s\n' "${_jq_out//$'\r'/}"
+    return "$_jq_rc"
+  }
+fi
+
 SOURCE_DIR=$(jq -r --arg s "$SKILL" '.skills[$s]["source-dir"] // $s' "$REGISTRY")
 SKILL_SRC="$SCRIPT_DIR/skills/$SOURCE_DIR"
 [[ -d "$SKILL_SRC" ]] || { echo "Error: skill source not found: skills/$SOURCE_DIR" >&2; exit 1; }

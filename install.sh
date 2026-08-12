@@ -102,6 +102,36 @@ for cmd in "${_required_cmds[@]}"; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "Error: required command '$cmd' not found" >&2; exit 1; }
 done
 
+# ── jq output normalisation (Windows) ──────────────────────────────────────────
+# jq on Windows (Git Bash) writes stdout in text mode, so every line arrives with a
+# trailing \r that then lives *inside* the value. A lockfile skill name read as
+# 'tdd\r' misses `.skills[$n]` in registry.json and the skill is skipped with
+# "not found in registry" — the install silently does nothing. Individual read loops
+# used to strip it one at a time, which left every loop added later (the crew.lock
+# and manifest loops) broken again. Normalise once, here, so no call site can forget.
+# Defined after the dependency check so `command -v jq` still sees a missing binary.
+#
+# Command substitution, NOT `command jq "$@" | tr -d '\r'`: that pipeline spawned two
+# extra processes per lookup (subshell + tr) on top of jq itself, and one full install
+# makes ~1,500 jq calls. Git Bash has no fork() — it emulates it — so those spawns were
+# the dominant cost of the Windows CI job (27+ min against 2 min elsewhere). Bash
+# strips the CR itself for free, and `$?` after an assignment is jq's own status, so
+# callers that rely on it (`if ! jq empty`) keep working without PIPESTATUS.
+#
+# Probe once and define the wrapper only where it is needed: on a jq that already
+# writes LF, the wrapper itself would cost one extra process per lookup for nothing.
+if [[ "$(command jq -rn '"probe"' 2>/dev/null)" == *$'\r' ]]; then
+  jq() {
+    local _jq_out _jq_rc
+    _jq_out=$(command jq "$@")
+    _jq_rc=$?
+    # No output must stay no output: a bare newline would give every `while read` loop
+    # one blank iteration where jq emitted nothing at all.
+    [[ -n "$_jq_out" ]] && printf '%s\n' "${_jq_out//$'\r'/}"
+    return "$_jq_rc"
+  }
+fi
+
 # ── Input validation ───────────────────────────────────────────────────────────
 if [[ "$UPDATE_MODE" == "false" ]]; then
   if [[ "${1:-}" == "--skill" ]]; then

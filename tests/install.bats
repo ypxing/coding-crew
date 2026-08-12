@@ -355,7 +355,9 @@ LOCK
 @test "--from-lockfile installs the pinned tag without a doubled v and honours platform" {
   cd "$SCRIPT_DIR"
   local pinned
-  pinned=$(jq -r '.skills.tdd.version' registry.json)
+  # tr: a Windows jq appends \r, and a raw CR inside a JSON string would make the
+  # fixture itself the bug under test instead of install.sh's handling of it.
+  pinned=$(jq -r '.skills.tdd.version' registry.json | tr -d '\r')
 
   # file:// registry keeps this off the network; version still exercises the
   # v-prefix path that used to build a "vv1.2.3.tar.gz" URL and 404.
@@ -383,7 +385,7 @@ LOCK
   bindir=$(_stub_curl_latest v9.9.9)
   cd "$SCRIPT_DIR"
   local current
-  current=$(jq -r '.skills.tdd.version' registry.json)
+  current=$(jq -r '.skills.tdd.version' registry.json | tr -d '\r')
 
   cat > "$TEMP_DIR/crew.lock" <<LOCK
 {
@@ -400,4 +402,127 @@ LOCK
   PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh --update
   [ "$status" -eq 0 ]
   [[ "$output" == *"Already at v9.9.9"* ]]
+}
+
+# ── Windows: jq that emits CRLF ────────────────────────────────────────────────
+# Git Bash's jq writes stdout in text mode, so `jq -r '.skills | keys[]'` yields
+# "tdd\r". install.sh used to read that straight into a registry lookup, miss, and
+# print "Warning: skill 'tdd' not found in registry ... skipping" — exit 0, nothing
+# installed. Stub jq the same way so the guard holds on every platform's CI.
+
+_stub_jq_crlf() {  # prints the bin dir holding a CRLF-emitting jq shim
+  local bindir="$TEMP_DIR/bin" real
+  real=$(command -v jq)
+  mkdir -p "$bindir"
+  cat > "$bindir/jq" <<STUB
+#!/usr/bin/env bash
+# awk, not sed: BSD sed does not expand \\r in a replacement.
+"$real" "\$@" | awk '{ printf "%s\r\n", \$0 }'
+exit \${PIPESTATUS[0]}
+STUB
+  chmod +x "$bindir/jq"
+  echo "$bindir"
+}
+
+@test "install survives a jq that emits CRLF (Windows Git Bash)" {
+  cd "$SCRIPT_DIR"
+  local bindir
+  bindir=$(_stub_jq_crlf)
+
+  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh pi --skill tdd
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"not found in registry"* ]]
+  [ -f "$TEMP_DIR/.pi/skills/tdd/SKILL.md" ]
+  # A \r that survived into a path would install to "tdd?" instead
+  run bash -c "ls \"$TEMP_DIR/.pi/skills\" | cat -v"
+  [[ "$output" != *'^M'* ]]
+}
+
+@test "--from-lockfile installs the skill when jq emits CRLF" {
+  cd "$SCRIPT_DIR"
+  local bindir pinned
+  bindir=$(_stub_jq_crlf)
+  pinned=$(jq -r '.skills.tdd.version' registry.json | tr -d '\r')
+
+  cat > "$TEMP_DIR/crew.lock" <<LOCK
+{
+  "registry": "file://$SCRIPT_DIR",
+  "version": "v1.17.0",
+  "platform": "pi",
+  "agents": {},
+  "skills": { "tdd": { "version": "$pinned" } }
+}
+LOCK
+
+  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh --from-lockfile
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"not found in registry"* ]]
+  [[ "$output" != *"version mismatch"* ]]
+  [ -f "$TEMP_DIR/.pi/skills/tdd/SKILL.md" ]
+}
+
+@test "uninstall removes installed files when jq emits CRLF" {
+  cd "$SCRIPT_DIR"
+  local bindir
+  bindir=$(_stub_jq_crlf)
+  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill tdd >/dev/null
+  [ -f "$TEMP_DIR/.pi/skills/tdd/SKILL.md" ]
+
+  PATH="$bindir:$PATH" run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
+  [ "$status" -eq 0 ]
+  [ ! -d "$TEMP_DIR/.pi" ]
+}
+
+# ── Windows: the CR strip must not cost a process per call ─────────────────────
+# The wrapper above used to be `command jq "$@" | tr -d '\r'` — three processes per
+# lookup (subshell, jq, tr) where one will do. install.sh makes ~1,500 jq calls, and
+# Git Bash emulates fork(), so on Windows that pipeline was the single largest cost in
+# CI: 27+ minutes for a suite that takes 2 elsewhere. Guard the cheap form.
+
+_jq_wrapper() {  # extracts the jq() wrapper from a script into a sourceable file
+  local src="$1" out="$2"
+  awk '/^ *jq\(\) \{/,/^ *\}/' "$src" > "$out"
+  [ -s "$out" ]
+}
+
+@test "every jq wrapper strips CR in-shell instead of spawning tr per call" {
+  cd "$SCRIPT_DIR"
+  local f
+  for f in install.sh uninstall.sh scripts/render-skill.sh; do
+    _jq_wrapper "$f" "$TEMP_DIR/wrapper.sh"
+    run cat "$TEMP_DIR/wrapper.sh"
+    [ "$status" -eq 0 ]
+    # A pipeline here is the regression: it re-adds two spawns per lookup.
+    [[ "$output" != *"| tr"* ]]
+    [[ "$output" == *"//\$'\\r'/"* ]]
+    # ...and the wrapper only exists where jq actually appends CR, so a jq that
+    # already writes LF is called directly rather than through an extra subshell.
+    run grep -c "command jq -rn '\"probe\"'" "$f"
+    [ "$output" -eq 1 ]
+  done
+}
+
+@test "the jq wrapper preserves output, exit status and emptiness" {
+  cd "$SCRIPT_DIR"
+  _jq_wrapper install.sh "$TEMP_DIR/wrapper.sh"
+  printf '{"a":["x","y"]}' > "$TEMP_DIR/j.json"
+
+  cat > "$TEMP_DIR/probe.sh" <<PROBE
+source "$TEMP_DIR/wrapper.sh"
+echo "lines=\$(jq -r '.a[]' "$TEMP_DIR/j.json" | wc -l | tr -d ' ')"
+echo "empty=\$(jq -r '.missing // empty' "$TEMP_DIR/j.json" | wc -l | tr -d ' ')"
+jq empty "$TEMP_DIR/nope.json" 2>/dev/null
+echo "rc=\$?"
+jq -r '.a[0]' "$TEMP_DIR/j.json" >/dev/null
+echo "okrc=\$?"
+PROBE
+
+  run bash "$TEMP_DIR/probe.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"lines=2"* ]]
+  # Not one blank line: a `while read` loop must iterate zero times.
+  [[ "$output" == *"empty=0"* ]]
+  # jq's own failure still reaches the caller (`if ! jq empty` is a real guard).
+  [[ "$output" != *"rc=0"* ]]
+  [[ "$output" == *"okrc=0"* ]]
 }
