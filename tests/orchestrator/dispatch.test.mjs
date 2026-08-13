@@ -193,3 +193,143 @@ test("claude passes a model through, and no model means no --model", () => {
     /--model opus/,
   );
 });
+
+// ─── copilot ─────────────────────────────────────────────────────────────────
+//
+// The copilot cutover deleted `fragments/copilot/`, whose prose carried: dispatch with the
+// `task` tool (never `#runSubagent`), the agent locations Copilot scans, `Unknown agent_type`
+// is a reported failure and never a licence to self-implement, plan-tier batching, and
+// "--model is accepted but ignored". Every one of those is an adapter fact now, so they are
+// asserted on the adapter — where a wrong one fails a test instead of a sprint.
+//
+// Probed against Copilot CLI 1.0.79: `--agent <name>` loads `.github/agents/<name>.agent.md`,
+// exits 1 with `No such agent: <name>, available: …` on an unknown name, enforces the
+// definition's `tools:` list even under --allow-all-tools — and resolves that directory
+// relative to its own cwd, with no upward walk.
+
+test("a copilot worker is its own process, in its own worktree, with the main root added", () => {
+  const { root, promptFile } = fixture();
+  const b = buildDispatch("copilot", spec(root, promptFile));
+  assert.equal(b.cmd, "copilot");
+  assert.equal(b.capture, "stdout");
+  // Isolation is the cwd now, not a "Working directory:" line a subagent had to obey while
+  // sharing this session's working root.
+  assert.equal(b.cwd, join(root, "worktree"));
+  const argv = b.args.join(" ");
+  assert.match(argv, /^-p /);
+  assert.match(argv, /--agent crew-coder/);
+  assert.match(argv, new RegExp(`-C ${join(root, "worktree")}`));
+  // The worker reads the issue file and writes <slug>.report.json under the main root.
+  assert.match(argv, new RegExp(`--add-dir ${root}`));
+  assert.match(argv, /--allow-all-tools/, "an unattended sprint cannot answer a permission prompt");
+  assert.match(argv, /--silent/);
+  assert.equal(b.env.CREW_ORCHESTRATED, "1");
+  assert.equal(b.env.MAIN_ROOT, root);
+});
+
+test("copilot is handed the agent name only — the definition is never prepended", () => {
+  // The body prepend duplicated a definition the CLI loads itself, and could not have
+  // rescued an unresolvable name: copilot exits before it reads the prompt.
+  const { root, promptFile } = fixture();
+  mkdirSync(join(root, ".github/agents"), { recursive: true });
+  writeFileSync(join(root, ".github/agents/crew-coder.agent.md"), "---\nname: crew-coder\n---\nBody.\n");
+  const b = buildDispatch("copilot", spec(root, promptFile));
+  assert.equal(b.args[1], "prompt body", "the prompt is passed as-is");
+  assert.doesNotMatch(b.args.join(" "), /Body\./);
+});
+
+test("copilot resolves its agent definition from .github/agents, then ~/.copilot/agents", () => {
+  const { root } = fixture();
+  assert.equal(resolveAgentFile("copilot", root, "crew-coder"), null);
+  mkdirSync(join(root, ".github/agents"), { recursive: true });
+  const file = join(root, ".github/agents/crew-coder.agent.md");
+  writeFileSync(file, "---\nname: crew-coder\n---\n");
+  assert.equal(resolveAgentFile("copilot", root, "crew-coder"), file);
+});
+
+test("a copilot definition invisible from a worktree is a preflight failure naming both fixes", () => {
+  // Copilot resolves --agent from the worker's cwd, so an *untracked* definition in the main
+  // root is installed and unreachable: without this check every worker dies on `No such
+  // agent` after the sprint has already started, and a dead dispatch used to be the moment
+  // the orchestrator started implementing issues itself.
+  const { root } = fixture();
+  mkdirSync(join(root, ".github/agents"), { recursive: true });
+  writeFileSync(join(root, ".github/agents/crew-coder.agent.md"), "---\nname: crew-coder\n---\n");
+  const effects = {
+    exec: () => ({ code: 0, stdout: "/usr/bin/copilot", stderr: "" }),
+    gitRead: () => ({ code: 1, stdout: "", stderr: "" }), // not in HEAD
+  };
+  const problems = preflight(effects, "copilot", root, ["crew-coder"]);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /not visible from a worktree/);
+  assert.match(problems[0], /Commit \.github\/agents\/crew-coder\.agent\.md/);
+  assert.match(problems[0], /TARGET_REPO=\$HOME \.\/install\.sh copilot --skill crew-afk/);
+});
+
+test("a copilot definition tracked in HEAD passes preflight", () => {
+  const { root } = fixture();
+  mkdirSync(join(root, ".github/agents"), { recursive: true });
+  writeFileSync(join(root, ".github/agents/crew-coder.agent.md"), "---\nname: crew-coder\n---\n");
+  const asked = [];
+  const effects = {
+    exec: () => ({ code: 0, stdout: "/usr/bin/copilot", stderr: "" }),
+    gitRead: (args) => {
+      asked.push(args.join(" "));
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  };
+  assert.deepEqual(preflight(effects, "copilot", root, ["crew-coder"]), []);
+  assert.ok(
+    asked.some((a) => a.includes("HEAD:.github/agents/crew-coder.agent.md")),
+    "the check is against HEAD, which is what a worktree checks out",
+  );
+});
+
+test("a missing copilot agent definition is still the ordinary preflight failure", () => {
+  const { root } = fixture();
+  const effects = {
+    exec: () => ({ code: 0, stdout: "/usr/bin/copilot", stderr: "" }),
+    gitRead: () => ({ code: 1, stdout: "", stderr: "" }),
+  };
+  const problems = preflight(effects, "copilot", root, ["crew-coder"]);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /crew-coder agent definition not installed for copilot/);
+  assert.match(problems[0], /\.\/install\.sh copilot --skill crew-afk/);
+});
+
+test("copilot's --model is a real flag now, not accepted-and-ignored", () => {
+  // On the prose body the model was session-selected and `task` took no model argument, so
+  // --model printed a notice and did nothing. A worker is its own process now, so the flag
+  // reaches the CLI — and no model still means no --model.
+  const { root, promptFile } = fixture();
+  assert.doesNotMatch(buildDispatch("copilot", spec(root, promptFile, { model: null })).args.join(" "), /--model/);
+  assert.match(
+    buildDispatch("copilot", spec(root, promptFile, { model: "claude-sonnet-4.5" })).args.join(" "),
+    /--model claude-sonnet-4\.5/,
+  );
+});
+
+test("copilot's concurrency is a number, not a plan-tier batching paragraph", () => {
+  // "Concurrency is capped by the Copilot plan (Free 2 … Enterprise 32)" described the
+  // in-session `task` cap. A worker is its own session now, so the default is conservative
+  // and `--max-parallel` raises it.
+  assert.equal(DEFAULT_PARALLEL.copilot, 2);
+});
+
+test("the copilot reviewer runs from the main checkout, read-only by its definition", () => {
+  const { root, promptFile } = fixture();
+  const b = buildDispatch(
+    "copilot",
+    spec(root, promptFile, {
+      agent: "crew-code-reviewer",
+      cwd: root,
+      outFile: join(root, "dispatch/alpha.review.md"),
+    }),
+  );
+  const argv = b.args.join(" ");
+  assert.match(argv, /--agent crew-code-reviewer/);
+  assert.match(argv, new RegExp(`-C ${root}`));
+  // --allow-all-tools removes the confirmation prompt, not the definition's tools: list —
+  // probed: an agent declaring `tools: ["view"]` has no shell under it.
+  assert.match(argv, /--allow-all-tools/);
+});

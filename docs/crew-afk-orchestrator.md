@@ -96,12 +96,35 @@ bats tests/orchestrator.bats
     `AC: unmet — not executed in this inspection-only review` and the branch was retained
     every round, forever. `not_run` is still evidence of nothing, and the code half of
     every criterion is still judged from the diff. The same rule is in
-    `agents/crew-code-reviewer/protocol.md`, so a prose platform behaves identically.
-- **Next (Phase 4)**: copilot — an adapter that already exists plus one body swap; the
-  cutover moves that platform's name out of `AFK_PROSE_VARIANTS` in
-  `tests/helpers/render.bash` and deletes its fragments. It needs a decision first (see
-  `.scratch/crew-afk-as-code/issues/open/04-…`): its dispatch mechanism changes from the
-  in-session `task` tool to one CLI process per worker.
+    `agents/crew-code-reviewer/protocol.md`, so the reviewer states the same rule wherever
+    the review prompt comes from.
+- **Phase 4 done for copilot**: `copilot.SKILL.md` is a 477-word launcher,
+  `fragments/copilot/` and the now-consumer-less `dispatch.SKILL.md` are **deleted**, so no
+  platform ships a prose orchestrator and `AFK_PROSE_VARIANTS` is empty. Copilot's coder
+  report contract moved to the parser's shape (the sidecar, as the last action), and its
+  fragment assertions moved onto the adapter (nine new cases in `dispatch.test.mjs`).
+  Decisions, each probed against Copilot CLI 1.0.79 rather than assumed:
+  - `copilot -p --agent <name>` resolves `.github/agents/<name>.agent.md`, enforces its
+    `tools:` list even under `--allow-all-tools`, and exits 1 with
+    `No such agent: <name>, available: …`. So the prepended agent body is **gone** — it
+    duplicated a definition the CLI loads itself and could not have rescued a name the CLI
+    refuses. `--agent` takes a name, never a path.
+  - **It resolves that directory from its own working directory and does not walk up** — the
+    one place copilot differs from claude. A worker's cwd is its worktree, so only a
+    definition tracked in `HEAD` (or installed under `~/.copilot/agents/`) is visible;
+    an untracked project install is installed and unreachable. `preflight()` checks exactly
+    that and names both fixes, because the alternative is every worker dying on
+    `No such agent` after the sprint has started — and a dead dispatch is where the prose
+    orchestrator used to start implementing issues itself.
+  - `--allow-all-tools` stays (an unattended sprint cannot answer a permission prompt): it
+    removes the prompt, not the definition's allowlist. `--available-tools` cannot be written
+    in advance for a worker that runs the consuming project's own checks.
+  - `--add-dir <main root>` is explicit: the worker reads the issue file and writes
+    `<slug>.report.json` under `.scratch/` outside its worktree.
+  - `--model` is a **real flag** now rather than accepted-and-ignored, because a worker is its
+    own process rather than an in-session `task`. `--max-parallel` stays at 2: the plan tier
+    (Free 2 … Enterprise 32) capped in-session subagents, and what binds a process pool is the
+    account's request rate, which the CLI does not expose.
 - **Phase 3 also done for claude**: `claude.SKILL.md` is a 449-word launcher, the 2,700-word
   prose body (`skills/crew-afk/SKILL.md`) is **deleted**, `claude` moved into
   `AFK_LAUNCHER_VARIANTS`, and its prose assertions moved onto the code — seven new cases in
@@ -135,6 +158,7 @@ bats tests/orchestrator.bats
   `report.mjs` indexes, round-trips the definition's own JSON template through the parser,
   keeps the markdown fallback covered, and requires the sidecar write to be asked for "as
   your last action". claude's older shape (`checks` as an array of `{command, result}`, read
-  by the prose orchestrator) was migrated at its cutover, which is what that test existed to
-  force: a silent contradiction there demotes clean branches to `partial` for "tests not
-  run".
+  by the prose orchestrator) was migrated at its cutover, and copilot's — which had no
+  machine-readable block at all, never having been a launcher platform — at its own. That is
+  what the test existed to force: a silent contradiction there demotes clean branches to
+  `partial` for "tests not run".

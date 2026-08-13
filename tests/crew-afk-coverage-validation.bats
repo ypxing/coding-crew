@@ -11,7 +11,9 @@ COVERAGE_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/coverage-validation.sh"
 # between squash and cleanup, the `bash …coverage-validation.sh` call, who runs the prompt)
 # lost their subject when claude became a launcher. Their code equivalent is
 # tests/orchestrator/sprint.test.mjs, "coverage validation is opt-in, and runs between the
-# squash and cleanup", which runs the step and asserts the order from the trace log.
+# squash and cleanup", which runs the step and asserts the order from the trace log. The
+# copilot cutover retired the last of them — including "who runs the prompt", which was the
+# `task` tool and is now `dispatchPlain()` in orchestrator/lib/dispatch.mjs.
 
 setup() {
   export TEMP_DIR=$(mktemp -d)
@@ -31,11 +33,6 @@ teardown() {
 
 @test "coverage-validation.sh script exists" {
   [ -f "$COVERAGE_SCRIPT" ]
-}
-
-@test "coverage-validation.sh is invoked via bash in copilot.SKILL.md" {
-  # Platform parity: Copilot must also use the script
-  grep -q 'bash.*coverage-validation\.sh' "$(afk_variant copilot)"
 }
 
 # --- Opt-in Tests ---
@@ -87,7 +84,7 @@ teardown() {
 }
 
 @test "every crew-afk body states that coverage validation is opt-in" {
-  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
+  for variant in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     grep -q -- '--coverage' "$(afk_variant "$variant")" || {
       echo "$variant does not mention the --coverage flag" >&2; return 1; }
   done
@@ -148,22 +145,10 @@ teardown() {
 }
 
 # --- Model Tier Tests ---
-
-@test "Coverage validation does not use haiku model tier" {
-  # The coverage validation agent must NOT be on a cheap tier
-  # Extract the coverage validation section and check it doesn't say haiku
-  local skill_file
-  skill_file=$(afk_variant copilot)
-  coverage_start=$(grep -niE '^### Coverage validation' "$skill_file" | head -1 | cut -d: -f1)
-  cleanup_start=$(grep -niE '^### Worktree' "$skill_file" | head -1 | cut -d: -f1)
-
-  [ -n "$coverage_start" ] || { echo "no coverage validation section in the prose body" >&2; return 1; }
-  [ -n "$cleanup_start" ] || { echo "no cleanup section in the prose body" >&2; return 1; }
-
-  # Extract lines between coverage validation and branch cleanup
-  section=$(sed -n "${coverage_start},${cleanup_start}p" "$skill_file")
-  echo "$section" | grep -q -i "haiku" && { echo "FAIL: haiku found in coverage validation section"; return 1; } || true
-}
+#
+# "Coverage validation does not use haiku" policed a prose instruction to pick an agent
+# tier. The step is `dispatchPlain()` on the sprint's own model now, so there is no tier for
+# a body to get wrong — see tests/orchestrator/sprint.test.mjs.
 
 # --- Documentation Format Tests ---
 #
@@ -182,21 +167,15 @@ teardown() {
   [[ "$output" == *"⚠ N partial"* ]]
   [[ "$output" == *"✗ N missing"* ]]
 
-  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
+  for variant in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     if grep -q '✓ N covered' "$(afk_variant "$variant")"; then
       echo "$variant still inlines the validation prompt" >&2; return 1
     fi
   done
 }
 
-@test "the remaining prose body still says who runs the prompt" {
-  # claude said "spawn a validation agent"; copilot names the tool that does it. Either
-  # way the body must say who runs the prompt the script prints, or nobody does.
-  grep -qiE 'validation agent|task\(agent_type' "$(afk_variant copilot)"
-}
-
 # --- Copilot Parity Tests ---
-
-@test "copilot.SKILL.md includes Coverage validation section" {
-  grep -q -i 'coverage' "$(afk_variant copilot)"
-}
+#
+# "copilot.SKILL.md includes a Coverage validation section" was parity between prose bodies.
+# The launcher forwards `--coverage` to the program (asserted above, for every launcher) and
+# the program owns the step, so there is no section left to have.

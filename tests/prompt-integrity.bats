@@ -121,12 +121,12 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
   [ -f "$readme" ]
   [ ! -f "$AFK_DIR/scripts/README.md" ]
   ! grep -q 'skills/afk/' "$readme"
-  # The dispatch platforms no longer have one file each; the reference must name the
-  # shared body and its fragments, not the deleted per-platform variants.
-  grep -q 'skills/crew-afk/dispatch\.SKILL\.md' "$readme"
-  grep -q 'fragments/' "$readme"
-  ! grep -q 'skills/crew-afk/pi\.SKILL\.md' "$readme"
-  ! grep -q 'skills/crew-afk/codex\.SKILL\.md' "$readme"
+  # Nothing calls these scripts from a body any more — the orchestrator program does. A
+  # reference that still names a skill body as the caller sends a maintainer to the wrong
+  # file for the call order.
+  grep -q 'orchestrator/lib/' "$readme"
+  ! grep -q 'skills/crew-afk/dispatch\.SKILL\.md' "$readme"
+  ! grep -q 'fragments/' "$readme"
 }
 
 # ─── P1.4 the report schema has no unconsumed field ──────────────────────────

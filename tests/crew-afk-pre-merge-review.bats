@@ -7,7 +7,6 @@ load helpers/render
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export COPILOT_SKILL="$(afk_variant copilot)"
   export REVIEWER_PROTOCOL="$SCRIPT_DIR/agents/crew-code-reviewer/protocol.md"
   export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
   export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"
@@ -56,39 +55,14 @@ frontmatter() {
 
 # ─── Review positioned before merge ──────────────────────────────────────────
 #
-# On a launcher platform the position of the review is not prose: it is the pipeline
-# chain in orchestrator/lib/pipeline.mjs, asserted on a real (faked-dispatch) run in
-# tests/orchestrator/sprint.test.mjs — "the gates run in order: verify → AC receipt →
-# merge → close, and squash last" and "the review is written to the sprint's reviews dir,
-# before the squash". The claude-body versions of the four tests below (review before
-# merge, review before squash, no post-squash review, the report path) were deleted with
-# that body; copilot keeps its prose, so it keeps its assertions.
-
-@test "copilot SKILL.md invokes crew-code-reviewer before merge step" {
-  # Anchor on the pipeline steps themselves, not on any line containing the word
-  # "review" or "merge": this test once passed on a `crew-code-reviewer` mention in
-  # the frontmatter description, which says nothing about where the step sits.
-  REVIEW_LINE=$(grep -n 'Per-branch code review' "$COPILOT_SKILL" | head -1 | cut -d: -f1)
-  MERGE_LINE=$(grep -n 'scripts/merge-branches\.sh"' "$COPILOT_SKILL" | head -1 | cut -d: -f1)
-
-  [ -n "$REVIEW_LINE" ] || { echo "No per-branch review step found in COPILOT_SKILL"; return 1; }
-  [ -n "$MERGE_LINE" ] || { echo "No merge-branches.sh invocation found in COPILOT_SKILL"; return 1; }
-
-  # Review must come before merge
-  [ "$REVIEW_LINE" -lt "$MERGE_LINE" ]
-}
-
-@test "copilot SKILL.md invokes review before squash step" {
-  # Extract line numbers for review and squash script call
-  REVIEW_LINE=$(grep -n 'crew-code-reviewer\|per.branch.*review\|dispatch.*review' "$COPILOT_SKILL" | grep -iv 'old\|redundant\|post.merge\|session.*review\|coverage' | head -1 | cut -d: -f1)
-  SQUASH_LINE=$(grep -n 'squash-commits.sh\|squash.*commit' "$COPILOT_SKILL" | head -1 | cut -d: -f1)
-
-  [ -n "$REVIEW_LINE" ] || { echo "No review invocation found in COPILOT_SKILL"; return 1; }
-  [ -n "$SQUASH_LINE" ] || { echo "No squash step found in COPILOT_SKILL"; return 1; }
-
-  # Review must come before squash
-  [ "$REVIEW_LINE" -lt "$SQUASH_LINE" ]
-}
+# Every platform is a launcher now, so the position of the review is not prose anywhere:
+# it is the pipeline chain in orchestrator/lib/pipeline.mjs, asserted on a real
+# (faked-dispatch) run in tests/orchestrator/sprint.test.mjs — "the gates run in order:
+# verify → AC receipt → merge → close, and squash last" and "the review is written to the
+# sprint's reviews dir, before the squash". The body versions of five tests lived here
+# (review before merge, review before squash, no post-squash review, the no-branch skip,
+# the report path) and were deleted with the bodies that carried them. The one that is not
+# a body claim — where session-init.sh puts REVIEW_DIR — stays below.
 
 # ─── Branch attribution in report ────────────────────────────────────────────
 
@@ -97,34 +71,7 @@ frontmatter() {
   grep -q 'Branch:' "$REVIEWER_PROTOCOL"
 }
 
-# ─── Skipped review reporting ────────────────────────────────────────────────
-
-@test "copilot SKILL.md handles no-branch case without failing" {
-  # Must have explicit skip reporting when there are no branches to review
-  grep -qiE 'skip|no.*branch|no.*review|review.*skip' "$COPILOT_SKILL"
-}
-
-# ─── Old post-merge review removed ──────────────────────────────────────────
-
-@test "copilot SKILL.md does not have a redundant post-squash code review step" {
-  # After squash, there should NOT be a separate crew-code-reviewer dispatch
-  SQUASH_LINE=$(grep -n 'squash-commits.sh' "$COPILOT_SKILL" | head -1 | cut -d: -f1)
-  [ -n "$SQUASH_LINE" ] || { echo "No squash step found"; return 1; }
-
-  # Count reviewer references after the squash line
-  POST_SQUASH_REVIEW=$(awk -v start="$SQUASH_LINE" 'NR > start' "$COPILOT_SKILL" | grep -c 'crew-code-reviewer' || true)
-
-  # No reviewer invocation after squash
-  [ "$POST_SQUASH_REVIEW" -eq 0 ]
-}
-
 # ─── Report path / format unchanged ─────────────────────────────────────────
-
-# The path itself is no longer spelled out in prose: session-init.sh exports REVIEW_DIR
-# in sprint.env, so the body names $REVIEW_DIR and the directory is defined in one place.
-@test "copilot SKILL.md still writes review to the sprint's reviews path" {
-  grep -qE '\$REVIEW_DIR/sprint-review|\.scratch.*reviews|reviews/sprint-review' "$COPILOT_SKILL"
-}
 
 @test "REVIEW_DIR resolves to .scratch/<feature-slug>/reviews" {
   grep -q 'REVIEW_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews"' \

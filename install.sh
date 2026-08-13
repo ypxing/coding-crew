@@ -476,10 +476,10 @@ install_single_skill() {
   # installed platform variant reports the entire file as changed on every
   # re-install. Pick the source now and copy it straight to SKILL.md.
   #
-  # A `body` map in registry.json points several platforms at one shared body
-  # (e.g. pi/codex/copilot → dispatch.SKILL.md), whose per-platform differences live
-  # in fragments/<platform>/<key>.md and are inlined at install time by
-  # scripts/render-skill.sh. Without a map entry the old convention still holds:
+  # A `body` map in registry.json can point several platforms at one shared body, whose
+  # per-platform differences live in fragments/<platform>/<key>.md and are inlined at
+  # install time by scripts/render-skill.sh. No skill uses it now that crew-afk's last
+  # prose body is gone. Without a map entry the ordinary convention holds:
   # <platform>.SKILL.md, else the shared SKILL.md.
   local skill_md_source
   skill_md_source=$(jq -r --arg s "$skill_name" --arg p "$PLATFORM" '.skills[$s].body[$p] // empty' "$SCRIPT_DIR/registry.json")

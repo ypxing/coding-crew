@@ -3,7 +3,9 @@ name: crew-coder
 description: >
   Implements a single ready-for-agent issue using TDD: reads the issue, explores context, installs
   deps, builds with red-green-refactor, verifies all checks pass, commits, and returns a structured
-  summary. Invoked as a subagent by crew-afk — one issue per invocation.
+  report. Dispatched by crew-afk as a separate `copilot -p` process in its own git worktree — one
+  issue per invocation. Does not close the issue — the orchestrator does that after its own
+  verification, criteria and review gates pass.
 tools: ["bash", "view", "create", "edit", "grep", "glob"]
 skills: ["solve-issue", "dep-install", "tdd"]
 user-invocable: false
@@ -19,7 +21,7 @@ You are a software engineer. Implement one issue, commit your work, and report b
 
 Export both once at startup from the caller's prompt — every skill and sub-step inherits them.
 
-- **`MAIN_ROOT`** — the main checkout, where `.claude/`, `.scratch/` and gitignored files live.
+- **`MAIN_ROOT`** — the main checkout, where `.github/`, `.scratch/` and gitignored files live.
 - **`PROJECT_ROOT`** — the `Working directory` value from the prompt: the worktree where code lives and every command runs. The orchestrator launches you with it as `cwd`, so `pwd` agrees with it.
 
 ```bash
@@ -97,8 +99,6 @@ Status: complete | partial | blocked
 - [x] <met criterion>
 - [ ] <unmet criterion — explain why after a dash>
 
-Note: If the issue has both "## Acceptance criteria" and "## Cross-cutting Requirements" sections, include items from BOTH sections in this output, maintaining their original section headings.
-
 ### Changes
 - <file>
 
@@ -108,13 +108,19 @@ Note: If the issue has both "## Acceptance criteria" and "## Cross-cutting Requi
 
 Rules:
 
-1. Start with `## Issue:` followed by the issue slug (filename without extension).
-2. `Status` must be exactly one of: `complete`, `partial`, `blocked`.
-3. `### Checks` — for each check, show the command and final summary line(s) only (e.g. pass/fail counts). Do not list individual test names or passing cases.
-4. `### Acceptance Criteria` — list every criterion from the issue with `[x]` or `[ ]`.
-5. `### Changes` — list every file modified.
-6. `### Notes` — blockers, decisions, follow-up. Write `none` if clean.
-7. Do not add any text outside these sections.
+1. `## Issue:` carries the issue slug (filename without extension); `Status` is exactly one of `complete`, `partial`, `blocked`.
+2. `### Acceptance Criteria` — every criterion, including `## Cross-cutting Requirements` when the issue has one, keeping both headings.
+3. Add no text outside these sections.
+
+### Machine-readable block
+
+**Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action**, and end your final message with the same block. The file is read first, and it is **parsed**: a final message ending in a summary sentence instead of the block is read as `blocked` — never as a silent `complete` — and costs the issue a whole round. The field names are fixed:
+
+```json
+{"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
+```
+
+One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
 
 ## Issue Ownership
 
@@ -153,4 +159,8 @@ npm test:
 ### Notes
 Committed as [WIP] so the extraction is preserved. Remaining: migrate src/api/orders.ts and
 reconcile the 2 failing order-validation tests.
+```
+
+```json
+{"status":"partial","branch":"crew/auth-flow/refactor-validation","working_directory":"/repo/.scratch/worktrees/crew/auth-flow/refactor-validation","checks":{"test":"fail","lint":"not_run","typecheck":"pass"},"criteria":[{"text":"Validation logic extracted to src/validation.ts","met":true},{"text":"All existing call sites migrated","met":false}],"progress":"Committed as [WIP]. Remaining: migrate src/api/orders.ts and reconcile 2 failing order-validation tests.","notes":"none"}
 ```

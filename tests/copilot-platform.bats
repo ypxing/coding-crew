@@ -1,16 +1,20 @@
 #!/usr/bin/env bats
 
-# Copilot platform support: install locations Copilot actually scans, and the dispatch
-# mechanism the Copilot CLI actually has.
+# Copilot platform support: the install locations Copilot actually scans.
 #
-# Both were wrong at the same time, which is why a project-level Copilot install looked
-# installed and did nothing: resources landed in .copilot/ (which Copilot never reads at
-# project scope) and the orchestrator body told the model to dispatch with
-# `#runSubagent` (VS Code Copilot Chat syntax that does not exist in the CLI).
-# Verified against Copilot CLI 1.0.77:
-#   - a skill under .copilot/skills/ is absent from `copilot skill list`
-#   - `task(agent_type=...)` on an agent under .copilot/agents/ answers
-#     "Unknown agent_type", while the same file under .github/agents/ resolves
+# They were wrong once, which is why a project-level Copilot install looked installed and
+# did nothing: resources landed in .copilot/ (which Copilot never reads at project scope).
+# Verified against Copilot CLI 1.0.77: a skill under .copilot/skills/ is absent from
+# `copilot skill list`, and an agent under .copilot/agents/ does not resolve, while the same
+# file under .github/agents/ does.
+#
+# The dispatch half of this file is gone with the launcher cutover. It asserted prose in
+# `fragments/copilot/`: dispatch with the `task` tool and never `#runSubagent`, the agent
+# locations Copilot scans, `Unknown agent_type` reported rather than self-implemented, and
+# "--model is accepted but ignored". Dispatch is `copilot -p --agent crew-coder` in a
+# worktree now, so those are adapter facts, asserted in tests/orchestrator/dispatch.test.mjs
+# — including the one only a probe found: Copilot resolves `--agent` from the worker's own
+# cwd, so a definition that is not in HEAD (or user-level) fails preflight before round 1.
 
 load helpers/render
 
@@ -92,47 +96,19 @@ teardown() {
 }
 
 # ─── dispatch mechanism ──────────────────────────────────────────────────────
+#
+# See the header: these six tests moved to tests/orchestrator/dispatch.test.mjs, which
+# exercises the argv and the preflight instead of grepping a body for the promise of them.
+# What stays here is the one dispatch fact that is still the *body's* to carry.
 
-@test "the copilot orchestrator dispatches with the task tool" {
-  body=$(afk_variant copilot)
-  grep -q 'task(agent_type="crew-coder"' "$body"
-  grep -q 'task(agent_type="crew-code-reviewer"' "$body"
-}
-
-@test "the copilot orchestrator never instructs a bare #runSubagent dispatch" {
-  body=$(afk_variant copilot)
-  # The name may appear only where it is being ruled out for the CLI.
-  while IFS= read -r line; do
-    [[ "$line" == *"VS Code"* ]] && continue
-    echo "unqualified #runSubagent instruction: $line" >&2
-    return 1
-  done < <(grep '#runSubagent' "$body" || true)
-}
-
-@test "the copilot orchestrator names the agent locations Copilot scans" {
-  body=$(afk_variant copilot)
-  grep -q '\.github/agents/' "$body"
-  grep -q '~/\.copilot/agents/' "$body"
-  # and says plainly that the old project path is dead
-  grep -q '\.copilot/agents/` copy is never loaded' "$body"
-}
-
-@test "a rejected dispatch is reported, never silently self-implemented" {
-  body=$(afk_variant copilot)
-  grep -q 'Unknown agent_type' "$body"
-  grep -qi 'never implement the issue yourself' "$body"
-}
-
-@test "the copilot skill pre-approves the task tool so a sprint cannot stall on a prompt" {
+@test "the copilot launcher pre-approves the shell, and no longer the task tool" {
   body=$(afk_variant copilot)
   run grep -m1 '^allowed-tools:' "$body"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"task"* ]]
-  [[ "$output" == *"shell"* ]]
+  [[ "$output" == *"shell"* ]] || { echo "an unattended sprint would stall on a permission prompt" >&2; return 1; }
+  # `task` is the in-session subagent tool. A worker is its own process now, so a body that
+  # still pre-approves it is a body that still believes it dispatches.
+  [[ "$output" != *"task"* ]]
+  ! grep -q 'task(agent_type' "$body"
 }
 
-@test "copilot model resolution describes session selection, not a nonexistent parameter" {
-  body=$(afk_variant copilot)
-  grep -q 'session-selected' "$body"
-  ! grep -q 'IDE-selected' "$body"
-}

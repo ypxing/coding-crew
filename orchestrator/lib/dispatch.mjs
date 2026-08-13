@@ -17,8 +17,15 @@
  * the project-level `.claude/agents/<name>.md`, enforces its `tools:` list, and exits 1
  * with `--agent '<name>' not found` rather than silently falling back. So no agent body
  * is re-sent as a system prompt — an append would duplicate the definition Claude has
- * already loaded and, on any conflict, override it. copilot still prepends the body to
- * the prompt, because that CLI has no system-prompt flag at all.
+ * already loaded and, on any conflict, override it.
+ *
+ * Copilot 1.0.79 behaves the same way in `-p` mode — `No such agent: <name>, available: …`
+ * on exit 1, and the definition's `tools:` list binds even under `--allow-all-tools` — with
+ * one difference that matters here: **it resolves `.github/agents/` relative to its own
+ * working directory and does not walk up.** A worker runs with the worktree as cwd, so only
+ * a definition present in that checkout (tracked in `HEAD`) or under `~/.copilot/agents/`
+ * resolves. `preflight()` checks exactly that, because the alternative is every worker
+ * dying on `No such agent` after the sprint has already started.
  *
  * Permissions are explicit per platform: an unattended sprint that stops on a
  * tool-permission prompt is a sprint that never finishes.
@@ -30,7 +37,12 @@ import { homedir } from "node:os";
 
 export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
 
-/** Default parallelism per platform. Copilot's real cap is the user's plan tier. */
+/**
+ * Default parallelism per platform. Copilot's plan tier (Free 2 … Enterprise 32) capped
+ * *in-session* subagents; a worker is its own `copilot -p` session now, so what binds is
+ * the account's request rate — which the CLI does not expose. Hence the conservative
+ * default, raised with `--max-parallel`.
+ */
 export const DEFAULT_PARALLEL = { pi: 3, codex: 3, claude: 3, copilot: 2 };
 
 function agentFileCandidates(platform, mainRoot, agent) {
@@ -148,15 +160,26 @@ export function buildDispatch(platform, spec) {
   }
 
   if (platform === "copilot") {
-    // Copilot has no system-prompt flag, so an unresolvable named agent is covered by
-    // prepending the definition body to the prompt (what codex's dispatcher does).
-    let text = prompt;
-    const agentFile = resolveAgentFile(platform, mainRoot, agent);
-    if (agentFile) {
-      const { body } = splitFrontmatter(readFileSync(agentFile, "utf8"));
-      text = `${body}\n\n---\n\n${prompt}`;
-    }
-    const args = ["-p", text, "--agent", agent, "-C", cwd, "--allow-all-tools", "--no-color", "--silent"];
+    // `--agent <name>` is the contract here too: probed against 1.0.79, the definition's
+    // body governs the run and its `tools:` list binds even under --allow-all-tools, which
+    // removes the confirmation prompt and nothing else. So no body is prepended — it would
+    // duplicate what the CLI loads, and it cannot rescue a name the CLI refuses.
+    //
+    // --add-dir names the main checkout because the worker reads the issue file and writes
+    // its <slug>.report.json under .scratch/ there, outside its worktree cwd.
+    const args = [
+      "-p",
+      prompt,
+      "--agent",
+      agent,
+      "-C",
+      cwd,
+      "--add-dir",
+      mainRoot,
+      "--allow-all-tools",
+      "--no-color",
+      "--silent",
+    ];
     if (model) args.push("--model", model);
     return { cmd: "copilot", args, ...shared, capture: "stdout" };
   }
@@ -227,7 +250,7 @@ export async function dispatchPlain(effects, platform, { prompt, cwd, mainRoot, 
       break;
     case "copilot":
       cmd = "copilot";
-      args = ["-p", prompt, "-C", cwd, "--allow-all-tools", "--no-color", "--silent", ...(model ? ["--model", model] : [])];
+      args = ["-p", prompt, "-C", cwd, "--add-dir", mainRoot, "--allow-all-tools", "--no-color", "--silent", ...(model ? ["--model", model] : [])];
       break;
     default:
       throw new Error(`unknown platform: ${platform}`);
@@ -240,6 +263,27 @@ export async function dispatchPlain(effects, platform, { prompt, cwd, mainRoot, 
   return { code: r.code, timedOut: !!r.timedOut, text: r.stdout ?? "", dryRun: !!r.dryRun };
 }
 
+/**
+ * Copilot resolves `--agent` from the worker's own cwd and does not walk up, so the only
+ * definitions a worker in a worktree can see are the ones that checkout has (i.e. tracked
+ * in `HEAD`) and the user-level ones. A definition sitting untracked in the main root is
+ * installed and invisible — the failure is `No such agent` on every worker, after the
+ * sprint has started.
+ */
+function copilotWorktreeVisible(effects, mainRoot, agent) {
+  const home = homedir();
+  for (const p of [
+    join(home, ".copilot/agents", `${agent}.agent.md`),
+    join(home, ".copilot/agents", `${agent}.md`),
+  ]) {
+    if (existsSync(p)) return true;
+  }
+  for (const rel of [`.github/agents/${agent}.agent.md`, `.github/agents/${agent}.md`]) {
+    if (effects.gitRead(["cat-file", "-e", `HEAD:${rel}`]).code === 0) return true;
+  }
+  return false;
+}
+
 /** Preflight: is this platform's CLI and agent definition actually present? */
 export function preflight(effects, platform, mainRoot, agents) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
@@ -250,6 +294,13 @@ export function preflight(effects, platform, mainRoot, agents) {
   for (const a of agents) {
     if (!resolveAgentFile(platform, mainRoot, a)) {
       problems.push(`${a} agent definition not installed for ${platform} — run: ./install.sh ${platform} --skill crew-afk`);
+      continue;
+    }
+    if (platform === "copilot" && !copilotWorktreeVisible(effects, mainRoot, a)) {
+      problems.push(
+        `${a} agent definition is not visible from a worktree — copilot resolves --agent from the worker's cwd. ` +
+          `Commit .github/agents/${a}.agent.md, or install it user-level: TARGET_REPO=$HOME ./install.sh copilot --skill crew-afk`,
+      );
     }
   }
   return problems;

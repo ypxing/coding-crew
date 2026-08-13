@@ -194,24 +194,14 @@ EOF
 
 # --- B3: not_run policy must match verify-worktree.sh ------------------------
 
-@test "B3: every crew-afk variant demotes only on fail or a missing test command" {
-  for platform in "${AFK_PROSE_VARIANTS[@]}"; do
-    f=$(afk_variant "$platform")
-    # Must not demote wholesale on any not_run.
-    ! grep -q 'has result `not_run` or `fail`, demote' "$f"
-    # Must state the test-only fatality and the lint/typecheck carve-out.
-    grep -q 'the test category' "$f"
-    grep -q 'coverage gap' "$f"
-  done
-}
+# The two body assertions that lived here — "demote only on fail or a missing test command"
+# and "the pre-filter agrees with verify-worktree" — were prose in an orchestrator body, and
+# every platform is a launcher now. The policy is one function, prefilter() in
+# orchestrator/lib/report.mjs, asserted in tests/orchestrator/report.test.mjs; what remains
+# below is the script side of the same contract.
 
-@test "B3: crew-afk pre-filter policy agrees with verify-worktree exit behaviour" {
-  # verify-worktree treats a missing lint/typecheck as a non-fatal gap...
+@test "B3: verify-worktree.sh reports a missing lint/typecheck as a non-fatal gap" {
   grep -q 'not_run' "$VERIFY"
-  # ...so the remaining prose orchestrator must not contradict it. On the launcher
-  # platforms the same policy is one function — prefilter() in orchestrator/lib/report.mjs,
-  # asserted in tests/orchestrator/report.test.mjs.
-  grep -q 'does not block the merge' "$(afk_variant copilot)"
 }
 
 # --- B4: only the orchestrator closes issues in a sprint ---------------------

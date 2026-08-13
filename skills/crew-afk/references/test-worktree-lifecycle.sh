@@ -1,6 +1,6 @@
 #!/bin/bash
-# Test script for worktree lifecycle in the rendered Copilot orchestrator body
-# (pi/codex/copilot share skills/crew-afk/dispatch.SKILL.md; run from the repo root)
+# Test script for the worktree lifecycle the orchestrator drives
+# (orchestrator/lib/worktree.mjs + scripts/cleanup-worktrees.sh; run from the repo root)
 # Tests: creation, .worktreeinclude symlinking, removal, and prune patterns
 
 set -e

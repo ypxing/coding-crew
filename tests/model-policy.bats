@@ -72,23 +72,20 @@ frontmatter() {
   grep -q '\-\-model' "$CREW_AFK_COPILOT"
 }
 
-@test "crew-afk copilot.SKILL.md states --model is ignored on Copilot (model is IDE-selected)" {
-  grep -A5 '\-\-model' "$CREW_AFK_COPILOT" | grep -qi 'ignored\|no-op\|ide\|not supported\|cannot'
+# "--model is ignored on Copilot" was true of the prose body: the model was session-selected
+# and `task` took no model argument. A worker is its own `copilot -p` process now, so the flag
+# reaches the CLI — asserted in tests/orchestrator/dispatch.test.mjs, "copilot's --model is a
+# real flag now, not accepted-and-ignored".
+
+@test "crew-afk copilot.SKILL.md no longer claims --model is ignored" {
+  ! grep -qi 'model.*is ignored\|ignored on Copilot\|IDE-selected\|session-selected' "$CREW_AFK_COPILOT"
 }
 
 # --- Resolved model is logged in the trace and printed in the summary ---
 #
 # Both were prose steps in the claude body ("log the resolved model before the first
-# dispatch", "include it in the summary"). On a launcher platform they are code:
-# orchestrator/main.mjs calls sprint.setModel(), which writes the MODEL trace line, and
+# dispatch", "include it in the summary"). Every platform is a launcher now, so they are
+# code: orchestrator/main.mjs calls sprint.setModel(), which writes the MODEL trace line, and
 # crew-summary.sh renders `Model:` from sprint-state.json. Asserted in
 # tests/orchestrator/sprint.test.mjs — "the summary names the resolved model, rendered
-# from disk".
-
-@test "crew-afk copilot.SKILL.md logs resolved model to trace before first dispatch" {
-  grep -q 'MODEL\|model.*trace\|\[MODEL\]\|resolved model' "$CREW_AFK_COPILOT"
-}
-
-@test "crew-afk copilot.SKILL.md includes model in sprint summary" {
-  grep -A30 'Sprint:\|Code Review\|Worktree Cleanup' "$CREW_AFK_COPILOT" | grep -qi 'model\|MODEL'
-}
+# from disk". The copilot-body versions of those two greps went with the body.

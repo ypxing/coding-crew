@@ -351,80 +351,15 @@ EOF
 
 # ─── the bodies delegate ─────────────────────────────────────────────────────
 #
-# "The bodies" is now the one prose body that is left (copilot's shared source). The
-# launcher platforms delegate by construction — their body launches a program — and the
-# equivalents of these assertions are asserted against that program: the slug is derived
-# once by session-init.sh and read back by orchestrator/lib/sprint.mjs (never re-globbed),
-# and cleanup's branch lists come from `state.sh get` in orchestrator/lib/loop.mjs. See
-# tests/orchestrator/sprint.test.mjs.
-
-@test "no crew-afk body re-derives the feature slug from a sprint-state glob" {
-  # This is the line the sprint.env indirection exists to delete. It sat directly
-  # beneath a comment that said "Never re-derive it".
-  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
-    ! grep -q 'ls -1 .*sprint-state.json' "$f"
-  done
-}
-
-@test "every crew-afk body sources sprint.env instead of deriving paths" {
-  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
-    grep -q 'source "$(git rev-parse --show-toplevel)/.scratch/sprint.env"' "$f"
-  done
-}
-
-@test "no crew-afk body hand-rolls a trace line for a step a script performs" {
-  # Each of these markers is emitted by the script that does the work. A prose echo
-  # for the same marker is a second, unreliable source of the same fact — and for
-  # DISPATCH it was a literal duplicate of what dispatch-agent.sh already logs.
-  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md" \
-           "$REPO_ROOT"/skills/crew-afk/fragments/*/*.md; do
-    for marker in DISPATCH VERIFY MERGE CLOSE PROMOTE FLUSH CLEANUP SQUASH EXIT SESSION; do
-      if grep -q "echo \"\[\$(date[^\"]*\[$marker\]" "$f"; then
-        echo "$f hand-rolls the [$marker] trace line" >&2
-        return 1
-      fi
-    done
-  done
-}
-
-@test "every crew-afk body derives cleanup's branch lists from state.sh" {
-  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
-    grep -q 'state.sh" get merged' "$f"
-    grep -q 'state.sh" get retained' "$f"
-  done
-}
-
-@test "the sprint reports once, from disk — not per round" {
-  # Three copies of the same content used to reach the context: the per-round rollup, the
-  # verbatim echo of every worker report, and the final summary's per-issue detail. All of it
-  # is on disk in sprint-state.json and the review reports, so the summary renders it once.
-  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
-    f=$(afk_variant "$variant")
-    if grep -q 'crew-summary.sh" --no-reminder' "$f"; then
-      echo "$variant still prints a per-round rollup" >&2; return 1
-    fi
-    if grep -qi "print each worker's report verbatim" "$f"; then
-      echo "$variant still echoes every worker report" >&2; return 1
-    fi
-    if grep -q '^### Per-issue' "$f"; then
-      echo "$variant still re-prints per-issue detail in the summary" >&2; return 1
-    fi
-  done
-}
-
-@test "P3: the orchestrator bodies are within their word budget" {
-  # The audit measured 4,358–5,051 words per variant, of which ~9% was novel judgement.
-  # A budget is the only thing that stops mechanism creeping back in as prose.
-  #
-  # Stage B (AC folded into the review) is a structural saving, not a prose one: it removes
-  # an agent spawn and a full-diff read per branch while the words move rather than vanish.
-  # The ratchet still tightens, so nothing reclaims the space that was freed.
-  # Stage C (coverage opt-in, CRITICAL-only promotion, one summary instead of three) moves the
-  # coverage prompt into the script and deletes the per-round reporting, so the ratchet tightens
-  # again. It stops here: the prose that remains is either an instruction with no script behind
-  # it or scar tissue from an observed failure, and cutting that buys tokens with correctness.
-  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
-    words=$(wc -w < "$f")
-    [ "$words" -lt 2750 ] || { echo "$f is $words words (budget 2750)" >&2; return 1; }
-  done
-}
+# There is no prose body left to assert on. Five tests lived here — no sprint-state glob,
+# `source sprint.env`, no hand-rolled trace line, cleanup's branch lists from `state.sh get`,
+# and the 2,750-word budget — and each was a promise a body made about the pipeline. The
+# pipeline is `orchestrator/` now, so those promises are asserted where they are kept:
+#
+#   - the slug is derived once by session-init.sh and read back through sprint.env by
+#     orchestrator/lib/sprint.mjs, never re-globbed  → tests/orchestrator/sprint.test.mjs
+#   - every trace marker is written by the script that performs the step               → ditto
+#   - cleanup's `--merged` / `--retain` lists come from `state.sh get` in
+#     orchestrator/lib/loop.mjs                                                        → ditto
+#   - the sprint reports once, from disk, at the end                                   → ditto
+#   - the word budget is now 500 words per launcher → tests/crew-afk-launcher.bats

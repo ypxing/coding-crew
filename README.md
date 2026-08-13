@@ -177,12 +177,15 @@ per project, `~/.copilot/` when installed user-level — Copilot does not read `
 repo), [pi](https://github.com/badlogic/pi-mono) (`.pi/` per project, `~/.pi/agent/` when installed
 user-level), and OpenAI Codex (skills in `.agents/skills/`, agents in `.codex/agents/*.toml`).
 
-On **pi, Codex and Claude Code**, `/crew-afk` launches a program (`.coding-crew/crew-afk/main.mjs`)
-and each coder runs as its own child process in its own git worktree: `pi -p` via
-`scripts/dispatch-agent.sh`, `codex exec` via `scripts/dispatch-codex-agent.sh`, and
-`claude -p --agent crew-coder` directly. The matching CLI must be on `PATH`. On Copilot, each coder
-is still dispatched in-session with the CLI's `task` tool (`task(agent_type="crew-coder", …)`);
-`#runSubagent` is VS Code Copilot Chat syntax and is not used.
+On **every supported platform**, `/crew-afk` launches a program
+(`.coding-crew/crew-afk/main.mjs`) and each coder runs as its own child process in its own git
+worktree: `pi -p` via `scripts/dispatch-agent.sh`, `codex exec` via
+`scripts/dispatch-codex-agent.sh`, `claude -p --agent crew-coder`, and
+`copilot -p --agent crew-coder` directly. The matching CLI must be on `PATH`.
+
+**Copilot resolves `--agent` from the worker's own directory**, so the coder and reviewer
+definitions must be either committed (`.github/agents/` is a tracked path) or installed
+user-level with `TARGET_REPO=$HOME`. A sprint refuses to start otherwise and says which.
 
 **Codex support means the local Codex CLI only.** The `codex` platform requires a real shell where
 `codex exec` can be spawned as a child process, a local git clone to create worktrees in, and

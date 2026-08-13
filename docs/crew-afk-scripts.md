@@ -11,7 +11,7 @@ exploration bait to every install for no runtime benefit.
 
 ### `dispatch-agent.sh` (pi only)
 
-**Purpose**: Run a crew agent as an isolated `pi -p` subprocess — pi has no built-in subagent tool, so this script is the pi equivalent of Claude's `Agent` tool / Copilot's `#runSubagent`.
+**Purpose**: Run a crew agent as an isolated `pi -p` subprocess — pi has no built-in subagent tool, and the orchestrator wants a child process per worker on every platform anyway, so `orchestrator/lib/dispatch.mjs` execs this script for pi (and `dispatch-codex-agent.sh` for codex; claude and copilot are invoked directly).
 
 **Usage**:
 ```bash
@@ -244,21 +244,17 @@ Co-authored-by: Claude Code <claude@anthropic.com>
 
 ## Integration
 
-These scripts are referenced by the skill body sources:
-
-- `skills/crew-afk/SKILL.md` (Claude Code)
-- `skills/crew-afk/dispatch.SKILL.md` + `skills/crew-afk/fragments/<platform>/` (pi, Codex, GitHub Copilot)
-
-The dispatch platforms share one body; their differences are inlined from
-`fragments/<platform>/<key>.md` at install time by `scripts/render-skill.sh`. Render one to read
-it as the model will:
+These scripts are called by the orchestrator program (`orchestrator/lib/effects.mjs` wraps
+them; `orchestrator/lib/loop.mjs` and `pipeline.mjs` decide when), not by a skill body. Every
+platform's `skills/crew-afk/<platform>.SKILL.md` is a launcher whose only job is to run
+`.coding-crew/crew-afk/main.mjs`. Render one to read it as the model will:
 
 ```bash
 bash scripts/render-skill.sh crew-afk pi
 ```
 
-All variants call the same scripts, differing only in platform-specific flags (e.g.
-`--platform claude` vs `--platform pi`) and in how they dispatch workers.
+The platform reaches the scripts as a flag the program passes (e.g. `--platform claude` vs
+`--platform pi`), so there is one caller and one call order.
 
 ## Maintenance
 

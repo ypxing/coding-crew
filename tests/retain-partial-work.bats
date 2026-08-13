@@ -17,17 +17,16 @@ setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export CLAUDE_AGENT="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
   export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
-  # copilot is the last platform with a prose body; assert on the rendered result.
-  export COPILOT_SKILL="$(afk_variant copilot)"
   export MERGE_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/merge-branches.sh"
 }
 
-# The claude body's versions of these assertions were deleted with that body in the
-# launcher cutover. Each has a code equivalent that runs the behaviour instead of grepping
-# for it, in tests/orchestrator/sprint.test.mjs: retention survives cleanup, the branch is
-# named in the summary with its reason, the next round's worker prompt says "Resume on that
-# existing branch" and that the notes are "not a substitute for it", a demoted branch never
-# merges, and a merged branch loses both its worktree and its ref.
+# Every orchestrator-body version of these assertions was deleted with the body that carried
+# it (claude's, then copilot's). Each has a code equivalent that runs the behaviour instead of
+# grepping for it, in tests/orchestrator/sprint.test.mjs: retention survives cleanup, the
+# branch is named in the summary with its reason, the next round's worker prompt says "Resume
+# on that existing branch" and that the notes are "not a substitute for it", a demoted branch
+# never merges, and a merged branch loses both its worktree and its ref. What stays here is
+# what is still somebody's file: the coder definitions, merge-branches.sh and state.sh.
 
 # ─── No agent forbids committing partial work ────────────────────────────────
 
@@ -38,10 +37,6 @@ setup() {
 
 @test "copilot.agent.md does not forbid committing partial work" {
   ! grep -q 'Do not commit partial work' "$COPILOT_AGENT"
-}
-
-@test "copilot crew-afk SKILL.md does not say re-implement from scratch when partial" {
-  ! grep -q 'code was NOT committed' "$COPILOT_SKILL"
 }
 
 # ─── Worker commits partial work with marker ─────────────────────────────────
@@ -55,36 +50,6 @@ setup() {
   grep -qiE 'WIP|partial.*commit|commit.*partial|incomplete.*marker|marker.*incomplete|commit.*wip' "$COPILOT_AGENT"
 }
 
-# ─── Partial work not merged ─────────────────────────────────────────────────
-
-@test "copilot SKILL.md does not merge partial branches" {
-  grep -qiE 'verified.*branch|complete.*branch|partial.*not.*merge|skip.*partial|demot.*partial' "$COPILOT_SKILL"
-}
-
-# ─── Retained branches excluded from cleanup ─────────────────────────────────
-
-@test "copilot SKILL.md excludes partial/retention branches from branch -D cleanup" {
-  grep -qiE 'retain|retention|partial.*branch|keep.*branch|do not delete|skip.*cleanup|merged.*branches' "$COPILOT_SKILL"
-}
-
-# ─── Retained branches listed in summary ─────────────────────────────────────
-
-@test "copilot SKILL.md summary lists retained branches with reason" {
-  grep -qiE 'retained|Retained' "$COPILOT_SKILL"
-}
-
-# ─── Resume dispatch instruction ─────────────────────────────────────────────
-
-@test "copilot SKILL.md dispatch instructs next worker to resume on existing branch" {
-  grep -qiE 'resume|Resume|existing branch|continue.*branch|branch.*continues' "$COPILOT_SKILL"
-}
-
-# ─── Progress notes positioned as context alongside code ─────────────────────
-
-@test "copilot SKILL.md positions progress notes as context for preserved code, not substitute" {
-  grep -qiE 'context.*code|alongside.*code|code.*context|notes.*context|preserved.*code|code.*preserved' "$COPILOT_SKILL"
-}
-
 # ─── Trace continuity: branch key reused across rounds ───────────────────────
 
 @test "claude.agent.md trace file path keys on branch name (for continuity across rounds)" {
@@ -96,14 +61,6 @@ setup() {
 @test "copilot.agent.md trace file path keys on branch name (for continuity across rounds)" {
   grep -q 'BRANCH\|branch' "$COPILOT_AGENT"
   grep -q 'traces/' "$COPILOT_AGENT"
-}
-
-# ─── Cleanup only for merged/complete branches ───────────────────────────────
-
-@test "copilot SKILL.md cleanup removes only merged worktrees, not retained" {
-  # Partial branches must not be removed — their worktrees may already be gone but branches stay
-  # Must have conditional logic excluding retained branches
-  grep -qiE 'retained|partial.*branch.*keep|keep.*partial|skip.*retained|only.*merged.*delete|merged.*only' "$COPILOT_SKILL"
 }
 
 # ─── Git-state test: retained branches survive cleanup script ─────────────────
@@ -146,31 +103,12 @@ MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scr
   rm -rf "$TEMP_DIR"
 }
 
-# ─── cleanup prose is accurate about worktree state (review finding) ─────────
-
-# ─── resume dispatch specifies how to test for the prior branch ──────────────
-
-# The lookup + ref test is mechanical, so it moved into state.sh resume (behaviour is
-# covered in tests/crew-afk-state.bats). The body only has to ask.
-# ─── retained_branches is both written and read on each platform ─────────────
-# The resume dispatch reads .retained_branches; if nothing ever writes it the
-# lookup silently returns empty and every partial restarts from scratch.
-
-@test "copilot SKILL.md writes retained_branches, not just reads it" {
-  grep -qE 'state\.sh" retain|retained_branches\[\$slug\] = \$branch' "$COPILOT_SKILL"
-}
-
-@test "copilot SKILL.md clears the retention entry when an issue completes" {
-  grep -qE 'state\.sh" complete|del\(.retained_branches' "$COPILOT_SKILL"
-}
-
-@test "copilot SKILL.md gives a concrete branch-existence check for resume dispatch" {
-  grep -qE 'state\.sh" resume|branch --list' "$COPILOT_SKILL"
-}
-
-# The jq that these greps used to assert on now lives in state.sh, where it is executed
-# rather than described. Both halves of the round-trip are asserted here so a body that
-# calls the script cannot pass while the script has stopped writing the entry.
+# ─── retained_branches is both written and read ──────────────────────────────
+#
+# The resume dispatch reads .retained_branches; if nothing ever writes it the lookup
+# silently returns empty and every partial restarts from scratch. Who calls it is
+# orchestrator/lib/pipeline.mjs (asserted in tests/orchestrator/sprint.test.mjs); that the
+# script still does what the call assumes is asserted here.
 @test "state.sh implements the retained_branches write and clear the prose used to spell out" {
   grep -q 'retained_branches\[\$s\] = \$b' "$SCRIPT_DIR/skills/crew-afk/scripts/state.sh"
   grep -q 'del(.\[\$s\])' "$SCRIPT_DIR/skills/crew-afk/scripts/state.sh"

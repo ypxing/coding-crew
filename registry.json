@@ -67,9 +67,6 @@
         "source": "orchestrator",
         "dest": ".coding-crew/crew-afk"
       },
-      "body": {
-        "copilot": "dispatch.SKILL.md"
-      },
       "scripts": [
         "feature-branch-setup.sh",
         "configure-tracker-auto.sh"

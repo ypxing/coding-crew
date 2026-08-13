@@ -1,9 +1,9 @@
 # Plan: crew-afk as code (one orchestrator, one state machine)
 
-Status: **Phases 0–2 landed for pi; Phase 3 landed for codex and claude** — see
-`docs/crew-afk-orchestrator.md` for what exists and `CHANGELOG.md` for the cutovers. Phase 4
-(copilot) and Phase 5 (scaffolding retirement) are still open. Maintainer notes — not
-installed into consumer repos.
+Status: **Phases 0–4 landed — every platform is a launcher.** See
+`docs/crew-afk-orchestrator.md` for what exists and `CHANGELOG.md` for the cutovers. Only
+Phase 5 (scaffolding retirement) is open. Maintainer notes — not installed into consumer
+repos.
 
 ## 1. The question
 
@@ -189,13 +189,19 @@ re-sent agent body is gone, `isolation: worktree` is removed, and the one bug a 
 was platform-general: the structured report has to be a **file the worker writes**, not a block at
 the end of a final message that a `-p` run may end with prose instead.
 
-**Phase 4 — copilot.** Now an ordinary adapter (`-p --agent -C --allow-all-tools --silent`), not a
-special case. The `task`-tool fragments and the plan-tier batching prose retire with it; concurrency
-becomes `--max-parallel`, which the user sets to their plan's cap.
+~~**Phase 4 — copilot.**~~ — done; an ordinary adapter (`-p --agent -C --add-dir --allow-all-tools
+--silent`), not a special case. The `task`-tool fragments and the plan-tier batching prose retired
+with it, `--model` became a real flag, and concurrency is `--max-parallel` (default 2). The bug only
+a probe finds: copilot resolves `--agent` from the worker's **own cwd** and does not walk up, so a
+definition that is not in `HEAD` (or user-level) is invisible from a worktree — `preflight()` refuses
+the sprint and names both fixes, rather than every worker dying on `No such agent` mid-round.
 
-**Phase 5 — retire the scaffolding.** `dispatch.SKILL.md`, `fragments/`, `render-skill.sh` usage for
-crew-afk, prose-parity tests, and the word budgets in `tests/crew-afk-state.bats`. Rewrite the
-crew-afk section of `CLAUDE.md`. Optionally fold `state.sh`/`trace.sh`/`receipts.sh` into JS.
+**Phase 5 — retire the scaffolding.** Phase 4 already took the parts that had no subject left:
+`dispatch.SKILL.md`, `fragments/`, `tests/shared-dispatch-body.bats`, and the prose word budget in
+`tests/crew-afk-state.bats`. What remains is the `AFK_PROSE_VARIANTS` machinery in
+`tests/helpers/render.bash` (now two empty lists), the suites whose loops iterate them, the crew-afk
+sections of `CLAUDE.md`, `configure-tracker-auto.sh` if nothing calls it any more, and the optional
+fold of `state.sh`/`trace.sh`/`receipts.sh` into JS.
 
 ## 8. Sizing
 
