@@ -67,50 +67,30 @@ how this platform resolves it.
 ## When You Are Stuck
 
 If something outside the TDD red phase fails after 2 consecutive attempts: revert speculative
-changes, report `blocked` with the reason in `### Notes`, and return immediately. When `solve-issue`
+changes, report `blocked` with the reason in `notes`, and return immediately. When `solve-issue`
 itself says to stop and output `BLOCKED:`, that is the same outcome — report it and return.
 
 ## Report
 
 `solve-issue` § Outcome defines `complete`, `partial` and `blocked`; what follows is only how to
-transmit the one you reached.
+transmit the one you reached. There is exactly one report shape — the JSON below — not a markdown
+template plus a JSON echo of the same fields: `report.mjs` parses the JSON alone and only falls back
+to scraping prose when no JSON exists anywhere, so a separate markdown report would be generated
+and then thrown away unread on every successful run.
 
-Return **exactly** this format and nothing else:
-
-```
-## Issue: <slug>
-Status: complete | partial | blocked
-
-### Checks
-<command>:
-<command and final summary line(s) only — e.g. pass/fail counts, not individual test names>
-
-### Acceptance Criteria
-- [x] <met criterion>
-- [ ] <unmet criterion — explain why after a dash>
-
-### Changes
-- <file>
-
-### Notes
-<blockers, decisions, follow-up, or "none">
-```
-
-Rules:
-
-1. `## Issue:` carries the issue slug (filename without extension); `Status` is exactly one of `complete`, `partial`, `blocked`.
-2. `### Acceptance Criteria` — every criterion, including `## Cross-cutting Requirements` when the issue has one, keeping both headings.
-3. Add no text outside these sections.
-
-### Machine-readable block
-
-**Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action**, and end your final message with the same block. The file is read first, and it is **parsed**: a final message ending in a summary sentence instead of the block is read as `blocked` — never as a silent `complete` — and costs the issue a whole round. The field names are fixed:
+**Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action**, and end your final message with the same block and nothing else. The file is read first, and it is **parsed**: a final message ending in a summary sentence instead of the block is read as `blocked` — never as a silent `complete` — and costs the issue a whole round. Both copies are required — the file does not depend on how the message ends, and the message does not depend on the file write succeeding. The field names are fixed:
 
 ```json
 {"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
 ```
 
-One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran. `progress` is required for `partial` and is where the remaining work goes — the orchestrator copies it into the issue file, which you never write to.
+Rules:
+
+1. `status` is exactly one of `complete`, `partial`, `blocked`.
+2. `criteria` — one entry per criterion, including any under `## Cross-cutting Requirements` when the issue has one. `text` is the criterion verbatim; `met` is `true` only when it is fully satisfied.
+3. One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
+4. `progress` is required for `partial` and is where the remaining work goes — the orchestrator copies it into the issue file, which you never write to.
+5. Add no text outside the JSON block.
 
 ## Issue Ownership
 
@@ -118,33 +98,11 @@ One `checks` entry per category, always all three: a category with no discoverab
 
 ## Example Report
 
-A `partial`, because a criterion is still `[ ]` and a check does not pass — and the work is
-committed with a `[WIP]` marker so the branch preserves it for the next round. Every criterion `[x]`
-with every check passing would be `complete`, never `partial`.
-
-```
-## Issue: 04-refactor-validation
-Status: partial
-
-### Checks
-npx tsc --noEmit:
-0 errors
-npm test:
-7 passed, 2 failed
-
-### Acceptance Criteria
-- [x] Validation logic extracted to src/validation.ts
-- [ ] All existing call sites migrated — src/api/orders.ts still calls the old inline validator
-
-### Changes
-- src/validation.ts
-- test/validation.test.ts
-
-### Notes
-Committed as [WIP] so the extraction is preserved. Remaining: migrate src/api/orders.ts and
-reconcile the 2 failing order-validation tests.
-```
+A `partial`, because a criterion is still unmet and a check does not pass — and the work is
+committed with a `[WIP]` marker so the branch preserves it for the next round. Every criterion `met`
+with every check passing would be `complete`, never `partial`. This is both the content of
+`<slug>.report.json` and the final message, verbatim:
 
 ```json
-{"status":"partial","branch":"crew/auth-flow/refactor-validation","working_directory":"/repo/.scratch/worktrees/crew/auth-flow/refactor-validation","checks":{"test":"fail","lint":"not_run","typecheck":"pass"},"criteria":[{"text":"Validation logic extracted to src/validation.ts","met":true},{"text":"All existing call sites migrated","met":false}],"progress":"Committed as [WIP]. Remaining: migrate src/api/orders.ts and reconcile 2 failing order-validation tests.","notes":"none"}
+{"status":"partial","branch":"crew/auth-flow/refactor-validation","working_directory":"/repo/.scratch/worktrees/crew/auth-flow/refactor-validation","checks":{"test":"fail","lint":"not_run","typecheck":"pass"},"criteria":[{"text":"Validation logic extracted to src/validation.ts","met":true},{"text":"All existing call sites migrated","met":false}],"progress":"Committed as [WIP]. Remaining: migrate src/api/orders.ts and reconcile the 2 failing order-validation tests.","notes":"none"}
 ```

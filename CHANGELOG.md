@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.28.2]
+
+### Fixed
+
+- `crew-coder`'s report was two shapes: a markdown template (`## Issue:` / `### Notes`) plus a JSON
+  block echoing the same fields. `report.mjs` parses the JSON alone and only falls back to scraping
+  markdown when no JSON exists anywhere, so the markdown report was generated on every run and then
+  thrown away unread. The protocol and example now specify one report shape — the JSON block,
+  written to the sidecar file and repeated verbatim as the final message — with `notes` (was
+  `### Notes`) as one of its fields.
+
 ## [1.28.1]
 
 ### Fixed
