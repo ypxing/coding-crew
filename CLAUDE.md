@@ -12,7 +12,7 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-addr
 
 - `agents/<name>/` — `protocol.md` (or `workflow.js`) is the platform-neutral body; `claude.*`, `copilot.agent.md`, `pi.*`, `codex.agent.toml` are thin per-platform files with a `{{PROTOCOL}}` placeholder inlined at install time. Optional `assets/` = runtime files the agent reads/executes (not prompt text).
 - `skills/<skill>/SKILL.md` (or `<platform>.SKILL.md` per platform) — one skill per directory. `crew-afk`'s skill is a thin launcher; its actual logic is the `orchestrator/` program.
-- `orchestrator/` — the crew-afk state machine (rounds, worktrees, verify → review → merge → close, receipts). One implementation, run by all four platform launchers via `orchestrator/lib/dispatch.mjs`.
+- `orchestrator/` — the crew-afk state machine (rounds, worktrees, deps → dispatch → verify → review → merge → close, receipts). One implementation, run by all four platform launchers via `orchestrator/lib/dispatch.mjs`.
 - `registry.json` — source of truth for install paths per agent/platform, `deps`, `agent-deps`, `install.assets`, and doc templates.
 - `install.sh` / `uninstall.sh` — installer; `PLATFORMS=(claude copilot pi codex)`.
 - `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`) and skill-local runtime scripts (e.g. `skills/crew-afk/scripts/`).
@@ -36,6 +36,42 @@ bats tests/*.bats
 - Keep each platform's `## Platform Notes` block CLI-specific only (tool naming, dispatch flags); the procedure and vocabulary belong in the shared protocol.
 - One writer per issue file: don't add code paths where a worker/agent edits an issue's `Status:`/checkboxes directly — that's `close-issue.sh`'s job, gated by receipts.
 - Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; see `.coding-crew/docs/issue-tracker.md`.
+
+## Layer ownership
+
+The call direction is crew-afk (program) → `crew-coder` (agent) → `solve-issue` (skill) → `tdd` /
+`dep-install`. `crew-coder` is on the **sprint path only** — a human running `/solve-issue` never
+touches it, so anything the direct path also needs belongs below it. Content that fits no row is in
+the wrong file; `tests/layer-ownership.bats` is this table.
+
+| Layer                      | Owns                                                 | Must not contain                          |
+| -------------------------- | ---------------------------------------------------- | ----------------------------------------- |
+| `orchestrator/`            | control flow: rounds, gate order, what runs and when | judgement, and prose asking to be obeyed  |
+| `skills/crew-afk/scripts/` | one effect each, runnable by hand                    | any decision the orchestrator should make |
+| `crew-coder`               | tool/model bindings, env binding, the report wire    | the implementation loop                   |
+| `solve-issue`              | the ordered procedure and the outcome vocabulary     | who its caller is                         |
+| `tdd` / `dep-install`      | one technique each                                   | issue, report or status handling          |
+
+## crew-afk's scripts (`skills/crew-afk/scripts/`)
+
+Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`. Full contracts:
+`docs/crew-afk-scripts.md`.
+
+- `session-init.sh` — derives the feature slug **once** and writes `sprint.env`
+- `ensure-deps.sh` — makes a directory ready to run the project's own checks; delegates every
+  install decision to `dep-install`'s `detect-mode.sh` / `host-install.sh`. It is mechanism rather
+  than a worker skill read because it is the only layer that also covers `verify-worktree.sh`, which
+  is a gate and cannot invoke a skill. Always exits 0
+- `verify-worktree.sh` — the checks, and the verification receipt
+- `receipts.sh` — the two gates as facts on disk
+- `promote-findings.sh` — findings → parked fix issues → Phase 2
+- `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
+- `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
+- `dispatch-agent.sh` (pi), `dispatch-codex-agent.sh` (codex)
+
+Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
+AC receipt → promote → merge → close. Deps sit there because that one position is before both
+consumers of them — the worker and the verify gate. `--no-deps` removes it.
 
 ## Adding a new agent
 

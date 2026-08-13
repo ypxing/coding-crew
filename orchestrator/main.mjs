@@ -17,6 +17,7 @@
  *   --max-parallel <n>                     concurrent workers (platform default)
  *   --worker-timeout <minutes>             default 45 — a hung worker cannot hang the sprint
  *   --max-rounds <n>                       hard cap on rounds
+ *   --no-deps                              skip both ensure-deps.sh call sites
  *   --no-squash                            skip the end-of-sprint squash
  *
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
@@ -47,6 +48,7 @@ function parseArgs(argv) {
     workerTimeoutMs: 45 * 60 * 1000,
     reviewTimeoutMs: 20 * 60 * 1000,
     maxRounds: null,
+    deps: true,
     noSquash: false,
     dryRun: false,
     passthrough: [],
@@ -65,6 +67,7 @@ function parseArgs(argv) {
       case "--worker-timeout": o.workerTimeoutMs = Number(args.shift()) * 60 * 1000; break;
       case "--review-timeout": o.reviewTimeoutMs = Number(args.shift()) * 60 * 1000; break;
       case "--max-rounds": o.maxRounds = Number(args.shift()); break;
+      case "--no-deps": o.deps = false; break;
       case "--no-squash": o.noSquash = true; break;
       case "--dry-run": o.dryRun = true; break;
       case "--jira": o.passthrough.push("--jira", args.shift()); break;
@@ -117,7 +120,7 @@ async function main() {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--coverage] [--promote critical|critical-high]\n" +
-        "  [--max-parallel N] [--worker-timeout MIN] [--max-rounds N] [--no-squash]",
+        "  [--max-parallel N] [--worker-timeout MIN] [--max-rounds N] [--no-deps] [--no-squash]",
     );
     return 0;
   }
@@ -168,7 +171,8 @@ async function main() {
     for (const i of issues) console.log(`  - ${i.slug}  [${i.status}]  ${i.path}`);
     const skipped = selectDispatchable(mainRoot, { status: "deferred-findings" });
     if (skipped.length) console.log(`parked fix issues (${skipped.length}): ${skipped.map((i) => i.slug).join(", ")}`);
-    console.log("\npipeline per branch: verify → review (AC + findings) → merge → close");
+    console.log("\npipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close");
+    console.log(`deps:      ${options.deps ? "ensure-deps.sh, once per sprint and once per worktree" : "disabled (--no-deps)"}`);
     return issues.length ? 0 : 3;
   }
 
@@ -184,6 +188,8 @@ async function main() {
     coverage: options.coverage,
     promote: options.promote,
     passthrough: options.passthrough,
+    deps: options.deps,
+    log: (line) => console.error(line),
   });
   sprint.setModel(options.model ?? "agent default");
 

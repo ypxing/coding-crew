@@ -1,12 +1,33 @@
 {
   "source": "git@github.com:ypxing/coding-crew.git",
-  "source_sha": "ccafd245f0a846f04af040e7a835e81000defe3b",
-  "installed_at": "2026-08-12T07:51:07Z",
-  "platform": "claude",
-  "agents": {},
+  "source_sha": "913235a52f887d699ddd9ec616433d0961261de5",
+  "installed_at": "2026-08-13T03:56:25Z",
+  "platform": "pi",
+  "agents": {
+    "crew-coder": {
+      "version": "1.10.0",
+      "platform": "pi"
+    },
+    "crew-code-reviewer": {
+      "version": "1.7.0",
+      "platform": "pi"
+    }
+  },
   "skills": {
     "tdd": {
-      "version": "1.1.0"
+      "version": "1.2.0"
+    },
+    "crew-afk": {
+      "version": "2.0.0"
+    },
+    "dep-install": {
+      "version": "1.0.0"
+    },
+    "solve-issue": {
+      "version": "1.8.0"
+    },
+    "crew-address-findings": {
+      "version": "1.3.0"
     }
   }
 }
