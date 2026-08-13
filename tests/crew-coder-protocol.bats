@@ -213,6 +213,12 @@ neutral_part_of() {
 @test "every instruction the four bodies carried before the extraction survives" {
   # The union of what pi/claude/copilot/codex each said, sampled at the facts a worker
   # acts on. Asserted against the rendered body, per platform — not reviewed by eye.
+  #
+  # A handful of entries here are the JSON schema's equivalents of markdown headings the
+  # 1.28.2 report-shape fix retired on purpose (`## Issue: <slug>`, `### Acceptance
+  # Criteria`, `### Changes`, `### Notes`, the pipe-joined `Status:` line) — see CHANGELOG
+  # and "the report's worked example" test below. Checking for the old heading text would
+  # pin the very duplication that fix removed.
   for p in "${CODER_VARIANTS[@]}"; do
     local f
     f=$(coder_variant "$p")
@@ -230,17 +236,15 @@ neutral_part_of() {
       'tdd' \
       'BLOCKED: solve-issue skill not installed' \
       '2 consecutive' \
-      '## Issue: <slug>' \
-      'Status: complete | partial | blocked' \
-      '### Acceptance Criteria' \
+      'reading `Status: complete`, `Status: partial`,' \
+      '"criteria":' \
       'Cross-cutting Requirements' \
-      '### Changes' \
-      '### Notes' \
+      '"notes":' \
       'report.json' \
       'not_run' \
       'Do not write to the issue file' \
       '[WIP]' \
-      '04-refactor-validation'; do
+      'refactor-validation'; do
       grep -qF "$phrase" "$f" || {
         echo "$p lost: $phrase" >&2; return 1; }
     done

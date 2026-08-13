@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.28.4]
+
+### Fixed
+
+- **`crew-coder`'s report file and final message were the same stringified JSON, which
+  defeated the point of having two artifacts.** 1.28.2 fixed the two-*shapes* problem
+  (markdown template plus a JSON echo, with the markdown thrown away unread) by making
+  both channels pure JSON — but that traded it for a two-*copies* problem: `<slug>.report.md`
+  (the dispatch's captured final message) and `<slug>.report.json` (the sidecar) ended up
+  byte-for-byte identical, so the `.md` file carried no information the `.json` one didn't.
+  The final message now leads with one line (`Status: complete|partial|blocked`) and a short
+  human-readable summary before the same JSON block, verbatim, last — `report.mjs` still
+  reads the sidecar first and falls back to the fenced block in the message if the sidecar
+  write failed (the reliability property 1.28.2 added), but `<slug>.report.json` holds only
+  the JSON object and `<slug>.report.md` is now an actual report a human can read. Also
+  fixed four tests left asserting the pre-1.28.2 markdown headings (`### Acceptance
+  Criteria`, `- [ ]` checkboxes, `## Issue: <slug>`) that no longer exist under either shape.
+
 ## [1.28.3]
 
 ### Fixed

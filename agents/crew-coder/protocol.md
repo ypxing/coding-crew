@@ -73,16 +73,23 @@ itself says to stop and output `BLOCKED:`, that is the same outcome — report i
 ## Report
 
 `solve-issue` § Outcome defines `complete`, `partial` and `blocked`; what follows is only how to
-transmit the one you reached. There is exactly one report shape — the JSON below — not a markdown
-template plus a JSON echo of the same fields: `report.mjs` parses the JSON alone and only falls back
-to scraping prose when no JSON exists anywhere, so a separate markdown report would be generated
-and then thrown away unread on every successful run.
+transmit the one you reached. `report.mjs` parses one JSON shape — the sidecar file first, then a
+fenced block in your final message — and never scrapes prose, so a markdown report of the same
+fields would only be generated and thrown away unread.
 
-**Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action**, and end your final message with the same block and nothing else. The file is read first, and it is **parsed**: a final message ending in a summary sentence instead of the block is read as `blocked` — never as a silent `complete` — and costs the issue a whole round. Both copies are required — the file does not depend on how the message ends, and the message does not depend on the file write succeeding. The field names are fixed:
+**Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action** —
+`report.mjs` reads it first, and its presence does not depend on how your final message ends. The
+field names are fixed:
 
 ```json
 {"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
 ```
+
+**End your final message with one line reading `Status: complete`, `Status: partial`, or `Status:
+blocked`, a short summary for the human reading the transcript, then the same JSON block, verbatim,
+last.** The summary is never parsed; the JSON block is — it is the fallback if the sidecar write
+fails. A message with no JSON block is read as `blocked`, never a silent `complete`, costing the
+issue a whole round.
 
 Rules:
 
@@ -90,7 +97,7 @@ Rules:
 2. `criteria` — one entry per criterion, including any under `## Cross-cutting Requirements` when the issue has one. `text` is the criterion verbatim; `met` is `true` only when it is fully satisfied.
 3. One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
 4. `progress` is required for `partial` and is where the remaining work goes — the orchestrator copies it into the issue file, which you never write to.
-5. Add no text outside the JSON block.
+5. The sidecar holds the JSON object alone. Your final message holds the `Status:` line, the summary, and the same object — never a second, differently-shaped report.
 
 ## Issue Ownership
 
@@ -100,9 +107,23 @@ Rules:
 
 A `partial`, because a criterion is still unmet and a check does not pass — and the work is
 committed with a `[WIP]` marker so the branch preserves it for the next round. Every criterion `met`
-with every check passing would be `complete`, never `partial`. This is both the content of
-`<slug>.report.json` and the final message, verbatim:
+with every check passing would be `complete`, never `partial`.
+
+`<slug>.report.json` holds the JSON object alone:
 
 ```json
 {"status":"partial","branch":"crew/auth-flow/refactor-validation","working_directory":"/repo/.scratch/worktrees/crew/auth-flow/refactor-validation","checks":{"test":"fail","lint":"not_run","typecheck":"pass"},"criteria":[{"text":"Validation logic extracted to src/validation.ts","met":true},{"text":"All existing call sites migrated","met":false}],"progress":"Committed as [WIP]. Remaining: migrate src/api/orders.ts and reconcile the 2 failing order-validation tests.","notes":"none"}
+```
+
+Your final message repeats the `Status:` line, a summary, and the same object above, verbatim,
+as the last thing you send:
+
+Status: partial
+
+Extracted the validation logic and migrated one of two call sites; src/api/orders.ts still
+imports the old helper, and 2 order-validation tests fail against the new signature. Committed
+as [WIP] so the branch preserves this for the next round.
+
+```json
+{"status":"partial", … the same object as above}
 ```

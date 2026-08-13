@@ -85,8 +85,10 @@ setup() {
 
 # --- report schema still names both criteria sections ---
 
-@test "copilot.agent.md structured output mentions Acceptance Criteria section" {
-  grep -q "### Acceptance Criteria" "$COPILOT_AGENT"
+@test "copilot.agent.md structured output names the criteria field" {
+  # The 1.28.2 report-shape fix replaced the markdown "### Acceptance Criteria" heading
+  # with the JSON schema's "criteria" array — this is that field's equivalent check.
+  grep -q '"criteria"' "$COPILOT_AGENT"
 }
 
 @test "copilot.agent.md mentions both feature criteria and cross-cutting requirements in output" {

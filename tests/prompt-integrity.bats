@@ -124,10 +124,12 @@ AFK_DIR="$REPO_ROOT/skills/crew-afk"
 }
 
 @test "P1.5: the partial example shows an unmet criterion" {
+  # Criteria are a JSON array now (`{"text":...,"met":false}`), not a markdown checklist —
+  # the 1.28.2 report-shape fix retired the `- [ ]` rendering this used to look for.
   for variant in "${CODER_VARIANTS[@]}"; do
     section=$(sed -n '/^## Example Report/,$p' "$(coder_variant "$variant")")
-    echo "$section" | grep -q '\- \[ \]' || {
-      echo "$variant: partial example has no unmet '- [ ]' criterion" >&2
+    echo "$section" | grep -q '"met":false' || {
+      echo "$variant: partial example has no unmet criterion ('\"met\":false')" >&2
       return 1
     }
   done
