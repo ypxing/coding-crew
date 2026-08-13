@@ -194,18 +194,24 @@ Do not push.
 
 ### 7. Mark done
 
-Check off (`- [x]`) every criterion the code satisfies under `## Acceptance criteria` — and under
-`## Cross-cutting Requirements` if present. Then Execute the `mark-done` operation from
-`issue-tracker.md` with the issue path. Never hand-roll `mv` or `sed`.
+Who owns the close is a fact on disk — the same one `mark-done` checks:
 
-The operation refuses (exit 3) when an orchestrator owns the close and (exit 4) when a criterion is
-still unchecked. Both are expected outcomes: report the outcome, leave the file in `issues/open/`,
-and stop.
+```bash
+ORCHESTRATED=$( { [ "${CREW_ORCHESTRATED:-}" = 1 ] || ls "$MAIN_ROOT"/.scratch/*/.orchestrated; } >/dev/null 2>&1 && echo 1 || echo 0 )
+```
+
+**`1` — write nothing to the issue file, in this step or the next:** no tick, no `mark-done`, no
+`Status:` rewrite, no move, no added section. Report every criterion and its state in your structured
+result and stop; the owner ticks the boxes and closes the issue after its own gates pass on your branch.
+
+**`0` — the close is yours.** Check off (`- [x]`) every criterion the code satisfies under
+`## Acceptance criteria` — and under `## Cross-cutting Requirements` if present. Then Execute the `mark-done` operation from `issue-tracker.md` with the issue path. Never hand-roll `mv` or `sed`; a refusal is an expected outcome, not something to force past.
 
 ### 8. Unmet criteria
 
-Add a `## Unmet criteria` section to the issue explaining what is missing and why (descoped, blocked,
-split out). Then, on a **non-interactive run** (`CREW_ORCHESTRATED=1`, a headless/`-p` invocation, or
-your instructions name an orchestrator as your caller) report status `partial` with the unmet criteria
-listed, and stop — a question nobody can answer stalls the run. Only on an interactive run, ask the
-user how to proceed.
+Orchestrated (Step 7): report status `partial` with the unmet criteria, and stop.
+
+Otherwise add a `## Unmet criteria` section explaining what is missing and why (descoped, blocked,
+split out). Then, on a **non-interactive run** (a headless/`-p` invocation; `CREW_ORCHESTRATED` already
+took the branch above), report status `partial` with the unmet criteria listed, and stop — a question
+nobody can answer stalls the run. Only on an interactive run, ask the user how to proceed.

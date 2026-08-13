@@ -77,13 +77,7 @@ Follow the `solve-issue` skill for the full procedure — it reads the PRD, inst
 
 ## Issue Ownership
 
-**Do not close the issue.** Never run `mark-done`, never rewrite the `Status:` line, never move the
-issue file into `issues/done/` — even when every criterion is met. Report `complete` and leave the
-file where you found it; the orchestrator closes it after its own verification, criteria and review
-gates pass on your branch.
-
-The tracker enforces this: `mark-issue-done.sh` refuses while `.scratch/<feature-slug>/.orchestrated`
-exists (exit 3). A refusal is the expected outcome, not an error to work around or force past.
+**Do not write to the issue file** — no `mark-done`, no `Status:` rewrite, no move, no ticking criteria. Report `complete` and leave the file where you found it; the orchestrator closes it and ticks the boxes once its own gates pass (`solve-issue` §7).
 
 ## When You Are Stuck or Blocked
 

@@ -33,9 +33,14 @@ words_of() {
   done
 }
 
-@test "budget: solve-issue is under 1,300 words" {
+@test "budget: solve-issue is under 1,400 words" {
+  # Raised from 1,300 by the one-writer-per-issue-file fix: §7/§8 became a real branch on
+  # "who owns the issue file", so the skill now carries two close paths where it carried
+  # one. That is a new rule, not a re-explained one — the worker used to be told both to
+  # tick its own acceptance criteria and never to touch the issue file, and only the
+  # second half was enforced.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 1300 ] || { echo "solve-issue is $words words (budget 1300)" >&2; return 1; }
+  [ "$words" -lt 1400 ] || { echo "solve-issue is $words words (budget 1400)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {
@@ -43,11 +48,13 @@ words_of() {
   [ "$words" -lt 750 ] || { echo "tdd is $words words (budget 750)" >&2; return 1; }
 }
 
-@test "budget: the whole per-issue worker chain is under 3,500 words" {
+@test "budget: the whole per-issue worker chain is under 3,600 words" {
   # crew-coder + solve-issue + its verification reference + tdd. Read once per issue,
   # so this total is what a sprint multiplies by its issue count. It was 4,158 words
   # before the duplication below was cut; the ceiling leaves room for one genuinely new
-  # rule, not for re-explaining an old one.
+  # rule, not for re-explaining an old one. Raised from 3,500 with the solve-issue
+  # ceiling above, and paid for in part by crew-coder's "Issue Ownership" section, which
+  # stopped restating an enforcement its own gate performs and became one line.
   total=0
   for f in "$REPO_ROOT"/agents/crew-coder/pi.agent.md \
            "$REPO_ROOT"/skills/solve-issue/SKILL.md \
@@ -55,7 +62,7 @@ words_of() {
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 3500 ] || { echo "worker chain is $total words (budget 3500)" >&2; return 1; }
+  [ "$total" -lt 3600 ] || { echo "worker chain is $total words (budget 3600)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────

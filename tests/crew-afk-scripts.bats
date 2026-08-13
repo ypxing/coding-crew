@@ -189,6 +189,89 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+# ─── the check-off belongs to the close, not to the worker ───────────────────
+# A worker that ticks its own criteria satisfies mark-issue-done.sh's exit-4 guard
+# by self-attestation — the exact thing the reviewer-owned AC gate exists to
+# prevent. The tick now happens here, after the receipt gate, as part of the close.
+
+_make_unticked_issue() {
+  local slug="$1"
+  mkdir -p "$TEMP_DIR/.scratch/my-feature/issues/open"
+  cat > "$TEMP_DIR/.scratch/my-feature/issues/open/${slug}.md" <<'EOF'
+Status: ready-for-agent
+
+## What to build
+
+- [ ] not a criterion, must stay unticked
+
+## Acceptance criteria
+
+- [ ] first criterion
+- [x] already ticked
+- [ ] second criterion
+
+## Cross-cutting Requirements
+
+- [ ] docs updated
+
+## Notes
+
+- [ ] someone elses todo
+EOF
+  echo "$TEMP_DIR/.scratch/my-feature/issues/open/${slug}.md"
+}
+
+@test "close-issue: ticks every criterion under Acceptance criteria and Cross-cutting Requirements" {
+  ISSUE_PATH=$(_make_unticked_issue "10-ticking")
+
+  run bash "$CLOSE_SCRIPT" "$ISSUE_PATH"
+  [ "$status" -eq 0 ]
+
+  closed="$TEMP_DIR/.scratch/my-feature/issues/done/10-ticking.md"
+  grep -q -- '- \[x\] first criterion' "$closed"
+  grep -q -- '- \[x\] second criterion' "$closed"
+  grep -q -- '- \[x\] already ticked' "$closed"
+  grep -q -- '- \[x\] docs updated' "$closed"
+}
+
+@test "close-issue: leaves checkboxes outside the two criteria sections alone" {
+  ISSUE_PATH=$(_make_unticked_issue "11-scoped")
+
+  run bash "$CLOSE_SCRIPT" "$ISSUE_PATH"
+  [ "$status" -eq 0 ]
+
+  closed="$TEMP_DIR/.scratch/my-feature/issues/done/11-scoped.md"
+  grep -q -- '- \[ \] not a criterion, must stay unticked' "$closed"
+  grep -q -- '- \[ \] someone elses todo' "$closed"
+}
+
+@test "close-issue: ticks and rewrites Status in one portable pass, no temp file left" {
+  ISSUE_PATH=$(_make_unticked_issue "12-atomic")
+
+  run bash "$CLOSE_SCRIPT" "$ISSUE_PATH"
+  [ "$status" -eq 0 ]
+
+  closed="$TEMP_DIR/.scratch/my-feature/issues/done/12-atomic.md"
+  grep -q '^Status: done' "$closed"
+  grep -q -- '- \[x\] first criterion' "$closed"
+
+  run bash -c "find '$TEMP_DIR/.scratch/my-feature/issues' -type f | sort"
+  [[ "$output" != *".tmp"* ]]
+  [[ "$output" != *".bak"* ]]
+}
+
+@test "close-issue: ticks nothing when the receipt gate refuses the close" {
+  ISSUE_PATH=$(_make_unticked_issue "13-refused")
+
+  # Receipts on, no receipt written: the close must refuse before touching the file.
+  run env -u CREW_RECEIPTS bash "$CLOSE_SCRIPT" "$ISSUE_PATH"
+  [ "$status" -ne 0 ]
+
+  [ -f "$ISSUE_PATH" ]
+  grep -q -- '- \[ \] first criterion' "$ISSUE_PATH"
+  grep -q '^Status: ready-for-agent' "$ISSUE_PATH"
+}
+
 # ─── portability: no non-portable in-place sed (macOS/BSD) ───────────────────
 # GNU sed accepts a bare `-i`; BSD/macOS sed reads the NEXT argument as a backup
 # suffix and then finds no script, so the command fails and set -e aborts.

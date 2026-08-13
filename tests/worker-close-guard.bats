@@ -237,6 +237,84 @@ init_sprint() {
   echo "$section" | grep -qi 'partial'
 }
 
+# ─── one writer per issue file ───────────────────────────────────────
+# The worker was told both to write to the issue file (§7 tick + mark-done, §8 unmet
+# criteria) and never to touch it (crew-coder). Only the close was enforced. Both
+# halves now branch on the same fact mark-issue-done.sh checks, so orchestrated runs
+# have exactly one writer: the orchestrator.
+
+solve_issue_section() {
+  awk -v n="$1" 'index($0, "### " n ".")==1{f=1;next} /^### /{f=0} f' \
+    "$REPO_ROOT/skills/solve-issue/SKILL.md"
+}
+
+@test "solve-issue §7 branches on the same fact mark-issue-done.sh checks" {
+  section=$(solve_issue_section 7)
+  # The capability check, not the caller's name.
+  echo "$section" | grep -q 'CREW_ORCHESTRATED'
+  echo "$section" | grep -q '\.orchestrated'
+}
+
+@test "solve-issue §7 forbids every issue-file write on an orchestrated run" {
+  section=$(solve_issue_section 7)
+  # An orchestrated branch that says what not to write: no tick, no mark-done.
+  echo "$section" | grep -qiE 'write nothing to the issue file|no issue file writes'
+  echo "$section" | grep -qi 'do not tick\|no tick'
+}
+
+@test "solve-issue §7 keeps the direct-invocation close intact" {
+  section=$(solve_issue_section 7)
+  # Unorchestrated: still ticks its own boxes and still routes the close through the
+  # tracker operation rather than a hand-rolled mv.
+  echo "$section" | grep -q -- '- \[x\]'
+  echo "$section" | grep -q 'Cross-cutting Requirements'
+  echo "$section" | grep -qE 'Execute the .mark-done. operation'
+  ! echo "$section" | grep -qE '^ *mv '
+}
+
+@test "solve-issue §8 writes ## Unmet criteria only when nobody else owns the file" {
+  section=$(awk '/^### 8\./{f=1;next} /^## /{if(f)exit} f' \
+    "$REPO_ROOT/skills/solve-issue/SKILL.md")
+  echo "$section" | grep -q '## Unmet criteria'
+  # The write is conditional on the same check §7 uses.
+  echo "$section" | grep -q 'CREW_ORCHESTRATED\|ORCHESTRATED'
+  # ...and the orchestrated path reports instead of writing.
+  echo "$section" | grep -qi 'report'
+}
+
+@test "a pre-ticked issue is still not closable by a worker under an orchestrator" {
+  # The bypass this issue closes: mark-issue-done.sh's exit-4 criteria guard is
+  # satisfied by a worker ticking its own boxes. Exit 3 must fire first and
+  # unconditionally, so self-attestation buys nothing.
+  issue=$(make_issue alpha 05-preticked)   # make_issue writes every box as [x]
+  touch ".scratch/alpha/.orchestrated"
+
+  run bash "$MARK_DONE" "$issue"
+  [ "$status" -eq 3 ]
+  [ -f "$issue" ]
+  [ ! -f ".scratch/alpha/issues/done/05-preticked.md" ]
+}
+
+@test "the orchestrator's close is the writer that ticks the boxes" {
+  init_sprint alpha
+  mkdir -p ".scratch/alpha/issues/open"
+  cat > ".scratch/alpha/issues/open/06-unticked.md" <<'EOF'
+# Sixth
+
+Status: ready-for-agent
+
+## Acceptance criteria
+
+- [ ] a criterion the worker must not tick itself
+EOF
+
+  run env CREW_RECEIPTS=off bash "$(installed_scripts)/close-issue.sh" \
+    ".scratch/alpha/issues/open/06-unticked.md"
+  [ "$status" -eq 0 ]
+  grep -q -- '- \[x\] a criterion the worker must not tick itself' \
+    ".scratch/alpha/issues/done/06-unticked.md"
+}
+
 @test "tdd planning has a non-interactive branch for its approval gates" {
   local f="$REPO_ROOT/skills/tdd/SKILL.md"
   section=$(awk '/^### 1\. Planning/{f=1;next} /^### /{f=0} f' "$f")
@@ -248,18 +326,24 @@ init_sprint() {
   echo "$section" | grep -qi 'acceptance criteria'
 }
 
-@test "every crew-coder variant cites the mechanical refusal, not three paragraphs" {
+@test "every crew-coder variant points at the procedure instead of restating it" {
   for f in "$REPO_ROOT"/agents/crew-coder/claude.agent.md \
            "$REPO_ROOT"/agents/crew-coder/copilot.agent.md \
            "$REPO_ROOT"/agents/crew-coder/pi.agent.md \
            "$REPO_ROOT"/agents/crew-coder/codex.agent.toml; do
     section=$(awk '/^## Issue Ownership/{f=1;next} /^## /{f=0} f' "$f")
-    echo "$section" | grep -q '.orchestrated'
-    echo "$section" | grep -q 'mark-issue-done.sh'
-    # The prose that solve-issue no longer contains must not linger here either.
+    # The agent needs two facts: report `complete`, leave the file. The procedure and
+    # its enforcement live in solve-issue §7 and mark-issue-done.sh respectively.
+    echo "$section" | grep -q 'solve-issue' || {
+      echo "$f: Issue Ownership does not point at solve-issue" >&2; return 1; }
+    echo "$section" | grep -q 'complete'
+    # Retired: three paragraphs of enforcement the gate already performs.
     ! echo "$section" | grep -q 'solve-issue step 7'
-    # Budget: a gate that fails closed does not need re-arguing.
-    [ "$(echo "$section" | wc -w)" -lt 120 ]
+    ! echo "$section" | grep -q 'mark-issue-done.sh'
+    ! echo "$section" | grep -q 'exit 3'
+    # One line — a pointer, not a second copy of the rule.
+    [ "$(echo "$section" | grep -c '[^[:space:]]')" -eq 1 ]
+    [ "$(echo "$section" | wc -w)" -lt 60 ]
   done
 }
 
