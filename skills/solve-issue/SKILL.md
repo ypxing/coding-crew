@@ -101,12 +101,29 @@ No PRD is normal — continue normally.
 Do **not** install pre-emptively: a crew worktree usually inherits `node_modules`/`.venv` through
 `.worktreeinclude`, and many repos have no dependency step at all.
 
-Invoke the `dep-install` skill in exactly two cases — up front if
-`git -C "$PROJECT_ROOT" config --local agent.install-mode` prints `docker` or
-`$MAIN_ROOT/docker-compose.override.yml` exists (the mode decides how every later command runs), and
+Invoke the `dep-install` skill in exactly two cases — up front if the project is in docker mode, and
 later if any command fails for a missing dependency (module-not-found, import error, test runner not
 found). Otherwise `INSTALL_MODE=host`, and you continue straight to Step 3. If the skill is not
 found, stop and report `BLOCKED: dep-install skill not installed`.
+
+Docker mode is: `$MAIN_ROOT/docker-compose.override.yml` exists, or `detect-mode.sh` says so — run
+the real script rather than re-deriving its verdict, since it also reads a Makefile `install`/`deps`
+target for a docker command, not just an explicit `agent.install-mode`:
+
+```bash
+if [ -f "$MAIN_ROOT/docker-compose.override.yml" ]; then
+  echo USE_DOCKER
+else
+  for d in "$PROJECT_ROOT/.coding-crew" "$PROJECT_ROOT"/.*/skills "$PROJECT_ROOT/skills"; do
+    [ -f "$d/dep-install/scripts/detect-mode.sh" ] && DETECT="$d/dep-install/scripts/detect-mode.sh" && break
+  done
+  [ -n "$DETECT" ] && bash "$DETECT" --project-root "$PROJECT_ROOT" || echo USE_HOST
+fi
+```
+
+`USE_DOCKER` → invoke `dep-install` now. `USE_HOST` (including when `detect-mode.sh` cannot be
+found) → `INSTALL_MODE=host`, continue to Step 3, and let the later module-not-found trigger recover
+if that guess was wrong.
 
 ### 3. Explore before coding
 

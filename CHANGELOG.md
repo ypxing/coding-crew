@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.28.1]
+
+### Fixed
+
+- `solve-issue` Step 2's docker-mode check only looked at `agent.install-mode` git config or an
+  existing `docker-compose.override.yml`. `detect-mode.sh` also reads a Makefile `install`/`deps`
+  target for a docker command — a worktree in docker mode by that heuristic alone silently read as
+  host mode and never got its deps in either mode. Step 2 now runs the real script instead of
+  duplicating a narrower guess of its own.
+
 ## [1.28.0]
 
 ### Added

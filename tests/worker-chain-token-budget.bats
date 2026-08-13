@@ -40,7 +40,7 @@ words_of() {
   done
 }
 
-@test "budget: solve-issue is under 1,500 words" {
+@test "budget: solve-issue is under 1,600 words" {
   # Raised from 1,300 by the one-writer-per-issue-file fix: §7/§8 became a real branch on
   # "who owns the issue file", so the skill now carries two close paths where it carried
   # one. That is a new rule, not a re-explained one — the worker used to be told both to
@@ -48,9 +48,14 @@ words_of() {
   # second half was enforced. Raised again to 1,500 when `## Outcome` arrived: the skill
   # uses `complete`/`partial`/`blocked`, so the skill defines them — they were only in
   # crew-coder, which a direct /solve-issue run never reads. The words came *from* there;
-  # the chain ceiling below did not move.
+  # the chain ceiling below did not move. Raised again to 1,600 when §2's docker check
+  # started running the real `detect-mode.sh` instead of re-deriving a narrower guess of
+  # its own: the guess (git config OR override file) silently disagreed with what that
+  # script actually decides — it also reads a Makefile `install`/`deps` target, which the
+  # guess never checked — so a worktree in docker mode by that heuristic alone read as
+  # host mode and never got its deps in either mode. A real new rule, not a re-explained one.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 1500 ] || { echo "solve-issue is $words words (budget 1500)" >&2; return 1; }
+  [ "$words" -lt 1600 ] || { echo "solve-issue is $words words (budget 1600)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {
@@ -58,7 +63,7 @@ words_of() {
   [ "$words" -lt 750 ] || { echo "tdd is $words words (budget 750)" >&2; return 1; }
 }
 
-@test "budget: the whole per-issue worker chain is under 3,700 words" {
+@test "budget: the whole per-issue worker chain is under 3,800 words" {
   # crew-coder + solve-issue + its verification reference + tdd. Read once per issue,
   # so this total is what a sprint multiplies by its issue count. It was 4,158 words
   # before the duplication below was cut; the ceiling leaves room for one genuinely new
@@ -66,14 +71,15 @@ words_of() {
   # ceiling above, and paid for in part by crew-coder's "Issue Ownership" section, which
   # stopped restating an enforcement its own gate performs and became one line; then from
   # 3,600 with the protocol extraction, which unions four bodies into the one every
-  # platform now loads.
+  # platform now loads. Raised from 3,700 with solve-issue's real `detect-mode.sh` call
+  # (see that ceiling's own comment) — the alternative was a duplicated, drifting guess.
   total=$(words_of "$(coder_variant pi)")
   for f in "$REPO_ROOT"/skills/solve-issue/SKILL.md \
            "$REPO_ROOT"/skills/solve-issue/references/verification.md \
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 3700 ] || { echo "worker chain is $total words (budget 3700)" >&2; return 1; }
+  [ "$total" -lt 3800 ] || { echo "worker chain is $total words (budget 3800)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────
