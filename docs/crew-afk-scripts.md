@@ -66,8 +66,14 @@ worktree fresh, and one consumer of the deps is not a model at all: `verify-work
 skill. A resumed or retained worktree therefore reached the merge gate with no deps, scored
 `TEST: fail`, and cost a whole round. Provisioning a gate depends on has to be mechanism.
 
-The judgement-heavy half stays with the skill: docker mode needs a compose override generated, so
-this script defers it. `solve-issue` is unchanged.
+Docker mode is mechanized too, for the one MAIN_ROOT call only: generating the override and
+running the ecosystem's install command inside the container are both deterministic
+(`dep-install`'s `docker-install.sh`, the docker-mode sibling of `host-install.sh`), so this script
+does them once, before any worktree exists — the volume every worktree's install shares is by
+design, so the install itself must run once, not once per worktree. What stays with the skill:
+reading the Makefile for a credential target, picking a different service or entrypoint by hand,
+and deciding whether an install failure is `BLOCKED` — real judgement, so a per-worktree docker call
+never attempts an install itself; it only checks whether the shared one already happened.
 
 **Usage**:
 ```bash
@@ -87,8 +93,11 @@ bash scripts/ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, 
 | `DEPS: present` | the ecosystem's dep dir is already in `--dir` — inherited via `.worktreeinclude`, or left by a prior round |
 | `DEPS: installed <cmd>` | `host-install.sh` ran `<cmd>` (its own `Running: …` line, not a second guess at the package manager) |
 | `DEPS: none` | no manifest, no `dep-install` scripts resolvable, or `host-install.sh` found no install method (exit 2) — not a failure |
-| `DEPS: docker` | `detect-mode.sh` says `USE_DOCKER`; deferred to the worker's own up-front `dep-install` invocation |
-| `DEPS: failed <cmd> (exit N)` | the install failed; the verbatim tail of its output goes to stderr |
+| `DEPS: docker` | `detect-mode.sh` says `USE_DOCKER`, persisted to this worktree's local `agent.install-mode` git config, and deferred to the worker's own up-front `dep-install` invocation — the docker-install path was off, not found, had nothing to do (no compose file/service/ecosystem), or the shared install lock was busy |
+| `DEPS: docker-installed <cmd>` | the one MAIN_ROOT call: `docker-install.sh` ran `<cmd>` inside the container and wrote `$MAIN_ROOT/.scratch/docker-install.done` |
+| `DEPS: docker-present` | a worktree call, and `$MAIN_ROOT/.scratch/docker-install.done` already exists — the shared install already ran, nothing to do here |
+| `DEPS: docker-failed <cmd> (exit N)` | the one MAIN_ROOT call's install failed; the verbatim tail goes to stderr, no marker is written |
+| `DEPS: failed <cmd> (exit N)` | the host install failed; the verbatim tail of its output goes to stderr |
 | `DEPS: skipped` | `CREW_DEPS=off` |
 
 **Order of operations**:
@@ -104,16 +113,31 @@ bash scripts/ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, 
    (`$MAIN_ROOT`, `--dir`'s repo, this script's own repo) `.coding-crew/dep-install/scripts` — the
    platform-neutral copy `install.sh` ships — then the four `.<platform>/skills/dep-install/scripts`
    dirs, then `skills/dep-install/scripts` for development. None found → `DEPS: none`.
-5. `detect-mode.sh --project-root <dir>`; `USE_DOCKER` → `DEPS: docker`.
+5. `detect-mode.sh --project-root <dir>`; `USE_HOST` → step 6. `USE_DOCKER` → write `git -C <dir>
+   config --local agent.install-mode docker` (so a verdict reached only via the Makefile heuristic
+   is not lost), then:
+   - **`--slug` present** (a worktree call): `$MAIN_ROOT/.scratch/docker-install.done` exists →
+     `DEPS: docker-present`; otherwise `DEPS: docker` — a worktree never runs the install itself,
+     because the volume it would write into is shared by every other worktree on purpose.
+   - **`--slug` absent** (the one MAIN_ROOT call `Sprint.init` makes before any worktree exists):
+     `CREW_DOCKER_INSTALL=off` or `docker-install.sh` not resolvable → `DEPS: docker`. Otherwise run
+     `docker-install.sh --project-root <dir> --main-root <MAIN_ROOT> --timeout <timeout>` (its own
+     lock, so a concurrent caller waits rather than corrupts the shared volume). Exit 0 → write the
+     marker, `DEPS: docker-installed <cmd>`. Exit 2 (nothing to do) or 4 (lock busy) → `DEPS: docker`,
+     unchanged from before this existed. Anything else → `DEPS: docker-failed <cmd> (exit N)`.
 6. `host-install.sh --project-root <dir>` under the timeout cap. Exit 0 → `installed`, 2 → `none`,
    anything else → `failed`.
 
 **Marker**: `$SPRINT_DIR/dispatch/<slug>.deps.<ok|skip>`, containing the outcome line. `ok` for
 `present`/`installed`, `skip` for `none`/`failed`. Written only with `--slug` and only inside a
-sprint. **A cache, never the guard** — step 2 is the guard.
+sprint. **A cache, never the guard** — step 2 is the guard. Separately, `docker-installed` writes
+`$MAIN_ROOT/.scratch/docker-install.done` — scoped to `MAIN_ROOT`, not to `$SPRINT_DIR` or the
+feature slug, so it is reused by every feature sprint against this checkout, the same way the
+named docker volume it warms already is.
 
 **Escape hatch**: `CREW_DEPS=off` skips everything, mirroring `CREW_RECEIPTS=off`. The orchestrator's
-`--no-deps` removes both of its call sites instead.
+`--no-deps` removes both of its call sites instead. `CREW_DOCKER_INSTALL=off` rolls back only the
+docker mechanization, independently of `CREW_DEPS`, to the always-deferred `DEPS: docker` behaviour.
 
 **Exit code**: **always 0** for any install outcome — a repo with no dependency step must not stall a
 sprint, and a failed install is diagnosed by the check that follows it, exactly as
@@ -122,6 +146,50 @@ unknown flag, a `--dir` that does not exist): exiting 0 on a typo would report "
 a directory nobody looked at.
 
 **Traces**: one `DEPS` line via `trace.sh`, and a silent no-op outside a sprint.
+
+---
+
+### `docker-install.sh` (`dep-install`'s script, called by `ensure-deps.sh`)
+
+**Purpose**: The docker-mode sibling of `dep-install`'s `host-install.sh` — deterministic install,
+not judgement, so `ensure-deps.sh` can call it mechanically for the one MAIN_ROOT call. It lives
+under `skills/dep-install/scripts/`, not `skills/crew-afk/scripts/`, because `dep-install`'s own
+skill guide can call it too, as the deterministic path for the common case; the guide's manual
+`docker compose run` instructions remain for the entrypoint-override and multi-service cases it
+doesn't cover.
+
+**Usage**:
+```bash
+bash scripts/docker-install.sh --project-root <path> --main-root <path> \
+  [--service <name>] [--timeout <sec, default 600>] [--lock-timeout <sec, default 30>]
+```
+
+**What it does**:
+1. Queries `gen-override.sh --query ecosystem/services/container-src/manifest-dirs` (all
+   read-only detection) rather than re-parsing the compose file and manifests itself.
+2. Picks a service: `--service`, then `git config --local agent.install-service`, then the first
+   service `gen-override.sh` found. No compose service at all → exit 2.
+3. Builds one `sh -c "cd <dir> && <cmd> && cd <dir> && <cmd> …"` for every manifest directory,
+   using the same per-directory signal-file priority `host-install.sh` uses on the host path, so a
+   project installs the same way in both modes.
+4. Takes an `mkdir`-based lock at `$MAIN_ROOT/.scratch/.docker-install.lock` before running
+   anything that writes into the shared named volume — `flock` is not on every host (macOS ships
+   none), `mkdir` is atomic everywhere. Lock not acquired within `--lock-timeout` → exit 4.
+5. Runs `ensure-env.sh --project-root <dir>` (no `--credential-target`; that inference is
+   `dep-install`'s own judgement, not this script's) and `gen-override.sh` to (re)write the
+   override, then `docker compose -f <project-root>/<compose-file> -f <main-root>/docker-compose.override.yml
+   run --rm <service> sh -c "<built command>"` under the timeout cap.
+
+**Exit codes**: `0` success (prints `Running: docker compose run --rm <service> …` on stdout, the
+same convention `host-install.sh` uses for `ensure-deps.sh` to read the command back), `1` argument
+error, `2` nothing to do (no compose file, no service, no supported ecosystem, no manifest
+directory matched an install command), `3` the install command failed inside the container (tail on
+stderr), `4` lock not acquired within `--lock-timeout`.
+
+**What stays out, on purpose**: reading the Makefile for a credential-generation target, recovering
+from a failure by trying a different entrypoint or service, and deciding whether a failure is
+`BLOCKED` — all judgement, so `ensure-deps.sh` treats every non-zero exit as "nothing more this
+mechanism can do," not as something to retry differently.
 
 ---
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.28.0]
+
+### Added
+
+- `ensure-deps.sh` now mechanizes docker-mode installs for the one MAIN_ROOT call a sprint makes
+  before any worktree exists: it runs `dep-install`'s new `docker-install.sh` (the docker-mode
+  sibling of `host-install.sh` — deterministic ecosystem/service/command selection, no judgement)
+  under an `mkdir`-based lock, then writes `$MAIN_ROOT/.scratch/docker-install.done`. A worktree's
+  own `ensure-deps.sh` call only checks that marker (`DEPS: docker-present`) and never installs
+  itself — the named volume it would write into is shared by every worktree of this checkout by
+  design, so the install must run once, not once per worktree. `CREW_DOCKER_INSTALL=off` rolls it
+  back to the previous always-deferred `DEPS: docker` behaviour, independently of `CREW_DEPS`.
+- `gen-override.sh --query <services|ecosystem|container-src|manifest-dirs>` — prints one detected
+  fact and exits, so a caller that needs to *run* an install can reuse this script's own detection
+  instead of re-parsing the compose file and manifests a second time.
+
+### Fixed
+
+- `gen-override.sh`'s `CONTAINER_SRC` detection ran under `set -euo pipefail` with no `|| true` on
+  a pipeline that legitimately returns no match — the documented `/app` fallback for a compose file
+  with no matching bind-mount line was dead code; the script exited early instead of reaching it.
+
 ## [1.27.0]
 
 ### Added

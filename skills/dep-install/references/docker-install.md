@@ -20,6 +20,14 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 ## Steps
 
 > **If you arrived here via the fast-path** (override already exists at `$MAIN_ROOT/docker-compose.override.yml`): skip steps 0–1 and go directly to step 2 (run install).
+>
+> **If `$MAIN_ROOT/.scratch/docker-install.done` exists**: an AFK sprint already warmed the shared
+> volume for this checkout before any worktree existed (`ensure-deps.sh`'s docker path, mechanized
+> because generating the override and running the install command are both deterministic). Skip
+> steps 0–2 entirely and go to step 3 — the volume this worktree's compose file also mounts already
+> has the baseline deps. Still apply the retry rule below if a later command fails with a
+> module-not-found error: this worktree's own branch may have added a dependency the shared install
+> ran before that branch existed.
 
 ### 0. Read Makefile and ensure `.env` exists
 

@@ -23,7 +23,7 @@ setup() {
   git -C "$WORK" config user.email t@test
   git -C "$WORK" config user.name T
   # No sprint unless a test opts in.
-  unset TRACE_LOG SPRINT_DIR MAIN_ROOT CREW_DEPS CREW_DEP_INSTALL_SCRIPTS
+  unset TRACE_LOG SPRINT_DIR MAIN_ROOT CREW_DEPS CREW_DEP_INSTALL_SCRIPTS CREW_DOCKER_INSTALL
 }
 
 teardown() {
@@ -44,6 +44,25 @@ stub_scripts() {
     fi
     printf 'exit %s\n' "$host_exit"
   } > "$d/host-install.sh"
+  chmod +x "$d"/*.sh
+  export CREW_DEP_INSTALL_SCRIPTS="$d"
+}
+
+# stub_docker_scripts <docker-install-exit> [docker-install-stdout] — detect-mode.sh says
+# USE_DOCKER, docker-install.sh is a stub so the docker mechanization tests do not depend
+# on a real docker daemon.
+stub_docker_scripts() {
+  local install_exit="$1" install_out="${2:-}"
+  local d="$TEMP_DIR/stub-docker-scripts"
+  mkdir -p "$d"
+  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
+  {
+    printf '#!/usr/bin/env bash\n'
+    if [ -n "$install_out" ]; then
+      printf "cat <<'STUBEOF'\n%s\nSTUBEOF\n" "$install_out"
+    fi
+    printf 'exit %s\n' "$install_exit"
+  } > "$d/docker-install.sh"
   chmod +x "$d"/*.sh
   export CREW_DEP_INSTALL_SCRIPTS="$d"
 }
@@ -125,6 +144,131 @@ JSON
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker" ]
   [ ! -d "$WORK/node_modules" ]
+}
+
+@test "a docker verdict reached only via the stub is persisted for the worker to read" {
+  # Simulates detect-mode.sh concluding USE_DOCKER via its Makefile heuristic, with no
+  # explicit agent.install-mode ever set and no override file present — the case that
+  # used to leave solve-issue's own up-front check with nothing to read, so it silently
+  # fell back to host mode and the worktree never got deps in either mode.
+  printf '{}\n' > "$WORK/package.json"
+  [ -z "$(git -C "$WORK" config --local agent.install-mode 2>/dev/null)" ]
+  stub_scripts USE_DOCKER 0
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: docker" ]
+  [ "$(git -C "$WORK" config --local agent.install-mode)" = "docker" ]
+}
+
+# ─── docker mechanization: the one MAIN_ROOT call warms the shared volume ─────────────────
+#
+# Named volumes are shared across every worktree of a MAIN_ROOT by design — that is the whole
+# point of caching deps once instead of once per worktree — so the install itself must run
+# exactly once. `--slug` is the signal: absent means "the one MAIN_ROOT call", present means
+# "a worktree, only ever check the shared marker".
+
+@test "the MAIN_ROOT call (no --slug) runs docker-install.sh and writes the marker" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$(deps_line)" == "DEPS: docker-installed"* ]] || { echo "$output" >&2; return 1; }
+  [[ "$(deps_line)" == *"npm ci"* ]]
+  [ -f "$WORK/.scratch/docker-install.done" ]
+}
+
+@test "a worktree call (--slug) after the marker exists is DEPS: docker-present, no install" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  mkdir -p "$WORK/.scratch"
+  echo "npm ci" > "$WORK/.scratch/docker-install.done"
+  stub_docker_scripts 0 "SHOULD NOT RUN"
+
+  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: docker-present" ]
+  [[ "$output" != *"SHOULD NOT RUN"* ]]
+}
+
+@test "a worktree call (--slug) with no marker yet is still DEPS: docker, deferred" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 0 "SHOULD NOT RUN"
+
+  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: docker" ]
+  [[ "$output" != *"SHOULD NOT RUN"* ]]
+  [ ! -f "$WORK/.scratch/docker-install.done" ]
+}
+
+@test "docker-install.sh exit 2 (nothing to do) is DEPS: docker, not a new outcome" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 2 "No compose file found"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: docker" ]
+  [ ! -f "$WORK/.scratch/docker-install.done" ]
+}
+
+@test "docker-install.sh exit 4 (lock busy) defers rather than blocks the round" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 4 "lock busy"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: docker" ]
+}
+
+@test "a failed docker install is advisory: DEPS: docker-failed with the tail, still exit 0" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 3 "Running: docker compose run --rm app sh -c 'npm ci'
+npm ERR! boom"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$(deps_line)" == "DEPS: docker-failed"* ]]
+  [[ "$(deps_line)" == *"exit 3"* ]]
+  [[ "$output" == *"npm ERR! boom"* ]]
+  [ ! -f "$WORK/.scratch/docker-install.done" ]
+}
+
+@test "CREW_DOCKER_INSTALL=off rolls back to the always-deferred docker outcome" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  export CREW_DOCKER_INSTALL=off
+  stub_docker_scripts 0 "SHOULD NOT RUN"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: docker" ]
+  [[ "$output" != *"SHOULD NOT RUN"* ]]
+}
+
+@test "the marker is scoped to MAIN_ROOT, not to a feature slug: reused across sprints" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  mkdir -p "$WORK/.scratch"
+  echo "npm ci" > "$WORK/.scratch/docker-install.done"
+  stub_docker_scripts 0 "SHOULD NOT RUN"
+
+  # Two different feature sprints against the same MAIN_ROOT, distinguished only by SPRINT_DIR.
+  export SPRINT_DIR="$TEMP_DIR/sprint-a"
+  mkdir -p "$SPRINT_DIR/dispatch"
+  run bash "$SCRIPT" --dir "$WORK" --slug widget-a
+  [ "$(deps_line)" = "DEPS: docker-present" ]
+
+  export SPRINT_DIR="$TEMP_DIR/sprint-b"
+  mkdir -p "$SPRINT_DIR/dispatch"
+  run bash "$SCRIPT" --dir "$WORK" --slug widget-b
+  [ "$(deps_line)" = "DEPS: docker-present" ]
 }
 
 @test "a failing install is advisory: DEPS: failed with the tail, still exit 0" {

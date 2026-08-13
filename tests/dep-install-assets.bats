@@ -27,15 +27,17 @@ fresh_target() {
   [ "$output" = ".coding-crew/dep-install/scripts" ]
 }
 
-@test "install ships detect-mode.sh and host-install.sh, both executable" {
+@test "install ships detect-mode.sh, host-install.sh and docker-install.sh, all executable" {
   local target; target=$(fresh_target target-neutral)
   TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" pi --skill dep-install
   [ "$status" -eq 0 ]
 
   [ -f "$target/.coding-crew/dep-install/scripts/detect-mode.sh" ]
   [ -f "$target/.coding-crew/dep-install/scripts/host-install.sh" ]
+  [ -f "$target/.coding-crew/dep-install/scripts/docker-install.sh" ]
   [ -x "$target/.coding-crew/dep-install/scripts/detect-mode.sh" ]
   [ -x "$target/.coding-crew/dep-install/scripts/host-install.sh" ]
+  [ -x "$target/.coding-crew/dep-install/scripts/docker-install.sh" ]
 }
 
 @test "the neutral tree installs once, not once per platform" {

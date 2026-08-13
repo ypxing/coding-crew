@@ -9,6 +9,11 @@
 #   --main-root      Absolute path to the main checkout (where override file is written)
 #   --sandbox        Add proxy env vars + CA bundle. Default: read IS_SANDBOX env var.
 #   --dry-run        Print generated YAML to stdout instead of writing the file.
+#   --query <field>  Print one detected fact and exit, instead of writing the override.
+#                    <field> is one of: services | ecosystem | container-src | manifest-dirs
+#                    Lets a caller that needs to *run* an install (not just generate the
+#                    override) reuse this script's own detection instead of re-parsing the
+#                    compose file and manifests a second time.
 #
 # Exit codes:
 #   0  success
@@ -26,6 +31,7 @@ PROJECT_ROOT=""
 MAIN_ROOT=""
 SANDBOX="${IS_SANDBOX:-0}"
 DRY_RUN=0
+QUERY=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,6 +39,7 @@ while [[ $# -gt 0 ]]; do
     --main-root)    MAIN_ROOT="$2";    shift 2 ;;
     --sandbox)      SANDBOX=1;         shift   ;;
     --dry-run)      DRY_RUN=1;         shift   ;;
+    --query)        QUERY="$2";        shift 2 ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -46,6 +53,14 @@ if [[ -z "$PROJECT_ROOT" || -z "$MAIN_ROOT" ]]; then
   echo "Usage: bash scripts/gen-override.sh --project-root <path> --main-root <path>" >&2
   exit 1
 fi
+
+case "$QUERY" in
+  ""|services|ecosystem|container-src|manifest-dirs) ;;
+  *)
+    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! -d "$PROJECT_ROOT" ]]; then
   echo "Error: --project-root does not exist: $PROJECT_ROOT" >&2
@@ -108,7 +123,7 @@ CONTAINER_SRC=$(grep -E '^\s+-\s+(\.|"\."|\$\{PROJECT_ROOT\}|\$\{APP_ROOT\}):' "
   | head -1 \
   | grep -oE ':(\/[^: ]+)' \
   | head -1 \
-  | sed 's|^:||; s|/$||')
+  | sed 's|^:||; s|/$||') || true
 
 if [[ -z "$CONTAINER_SRC" ]]; then
   CONTAINER_SRC="/app"
@@ -232,6 +247,20 @@ for dir in "${MANIFEST_DIRS[@]}"; do
   VOL_NAMES+=("wt_${PROJ_SLUG}_${ECO_PREFIX}_${suffix}")
   VOL_PATHS+=("$container_path")
 done
+
+# ---------------------------------------------------------------------------
+# --query short-circuit: print one detected fact, skip the override entirely
+# ---------------------------------------------------------------------------
+
+if [[ -n "$QUERY" ]]; then
+  case "$QUERY" in
+    services)      printf '%s\n' "${SERVICES[@]}" ;;
+    ecosystem)     echo "$ECO_NAME" ;;
+    container-src) echo "$CONTAINER_SRC" ;;
+    manifest-dirs) printf '%s\n' "${MANIFEST_DIRS[@]}" ;;
+  esac
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Generate YAML

@@ -220,12 +220,89 @@ if [ -z "$DEP_SCRIPTS" ]; then
   _report "none" skip
 fi
 
-# ─── 4. docker mode is deferred, not handled ─────────────────────────────────
-# Generating a compose override is judgement, so it stays with the dep-install skill and
-# with the worker's existing up-front invocation of it in docker mode.
+# ─── 4. docker mode: warm the shared volume once, then just check it happened ────────────
+# The judgement half (env/credential setup, choosing a service or command by hand, and
+# recovering from an install failure) stays with the dep-install skill — that is still
+# the worker's own up-front invocation, unchanged. What is left has no judgement in it:
+# generating the override and running the ecosystem's own install command inside the
+# container are both deterministic, the same way host-install.sh already is on the host
+# path, so docker-install.sh (dep-install's docker-mode sibling of host-install.sh) can do
+# it here.
+#
+# Docker volumes are shared across every worktree of this MAIN_ROOT *by design* — that is
+# the whole point of caching deps once instead of once per worktree — so the install must
+# run exactly once, not once per worktree. `--slug` is always passed for a worktree call
+# and never for the one MAIN_ROOT call this orchestrator makes before any worktree exists
+# (see sprint.mjs), so its absence is already the signal for "this is the place to do the
+# real work"; a worktree call only ever checks whether that already happened.
+MAIN_ROOT_EFFECTIVE="${MAIN_ROOT:-}"
+if [ -z "$MAIN_ROOT_EFFECTIVE" ]; then
+  MAIN_ROOT_EFFECTIVE="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || echo "$DIR")"
+fi
+DOCKER_MARKER="$MAIN_ROOT_EFFECTIVE/.scratch/docker-install.done"
+
 MODE="$(bash "$DEP_SCRIPTS/detect-mode.sh" --project-root "$DIR" 2>/dev/null || echo USE_HOST)"
 if [ "$MODE" = "USE_DOCKER" ]; then
-  _report "docker"
+  # Persist the verdict into *this* worktree's local git config — the exact key
+  # detect-mode.sh checks first and solve-issue Sec.2 already reads. Without this, a
+  # verdict reached only via detect-mode.sh's Makefile heuristic (no explicit
+  # agent.install-mode set, no override file yet) is never written anywhere: the
+  # worker's own up-front check sees neither signal, silently concludes host mode, and
+  # skips dep-install entirely — the worktree never gets its deps at all, in any mode.
+  # Writing it here turns an inferred verdict into the explicit one every downstream
+  # reader already trusts.
+  git -C "$DIR" config --local agent.install-mode docker 2>/dev/null || true
+
+  if [ -n "$SLUG" ]; then
+    # A worktree call: the shared install already happened or it did not. Either way
+    # there is nothing for a worktree to install into a volume every other worktree
+    # already shares — a branch that adds its own new dependency is exactly the
+    # "trivial impact" case dep-install's own retry rule already covers reactively
+    # (module-not-found → re-run install), so it is left there rather than duplicated.
+    if [ -f "$DOCKER_MARKER" ]; then
+      _report "docker-present" ok
+    fi
+    _report "docker"
+  fi
+
+  # The one MAIN_ROOT call. CREW_DOCKER_INSTALL=off is the rollback lever back to the
+  # old always-deferred behaviour, independent of CREW_DEPS (which also gates host mode).
+  DOCKER_INSTALL_SCRIPT="$DEP_SCRIPTS/docker-install.sh"
+  if [ "${CREW_DOCKER_INSTALL:-on}" = "off" ] || [ ! -f "$DOCKER_INSTALL_SCRIPT" ]; then
+    _report "docker"
+  fi
+
+  DOCKER_OUT="$(mktemp)"
+  trap 'rm -f "$DOCKER_OUT"' EXIT
+  bash "$DOCKER_INSTALL_SCRIPT" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" \
+    --timeout "$TIMEOUT" >"$DOCKER_OUT" 2>&1
+  DOCKER_RC=$?
+  DOCKER_CMD="$(grep -m1 '^Running: ' "$DOCKER_OUT" 2>/dev/null | sed 's/^Running: //')"
+  [ -n "$DOCKER_CMD" ] || DOCKER_CMD="docker-install.sh"
+
+  case "$DOCKER_RC" in
+    0)
+      mkdir -p "$(dirname "$DOCKER_MARKER")" 2>/dev/null || true
+      printf '%s\n' "$DOCKER_CMD" > "$DOCKER_MARKER" 2>/dev/null || true
+      _report "docker-installed $DOCKER_CMD"
+      ;;
+    2)
+      # Nothing this mechanism can do — no compose file, no service, no supported
+      # ecosystem. Same outcome as always: defer entirely to the worker.
+      _report "docker"
+      ;;
+    4)
+      # Another install is already in flight (this script, or a worker's own dep-install
+      # invocation) — do not block this round waiting on it, defer instead.
+      _report "docker"
+      ;;
+    *)
+      echo "--- docker-install.sh output (tail) ---" >&2
+      tail -n 20 "$DOCKER_OUT" >&2
+      echo "--- end ---" >&2
+      _report "docker-failed $DOCKER_CMD (exit $DOCKER_RC)"
+      ;;
+  esac
 fi
 
 # ─── 5. install ──────────────────────────────────────────────────────────────

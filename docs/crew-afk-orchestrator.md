@@ -47,7 +47,10 @@ deliberately. The launcher resolves `main.mjs` over the same two scopes, in the 
 ## The pipeline, as code
 
 `Sprint.init` runs `session-init.sh`, then `ensure-deps.sh --dir $MAIN_ROOT` — once per sprint,
-serially, before any worker or worktree exists, so N parallel installs are not N cold downloads.
+serially, before any worker or worktree exists, so N parallel installs are not N cold downloads. In
+docker mode this call is where the shared install actually runs (`dep-install`'s `docker-install.sh`
+under its own lock, since the named volume it writes into is shared by every worktree by design);
+a worktree's own `ensure-deps.sh` call only ever checks whether that already happened.
 
 `runWorker` (concurrent, bounded by `--max-parallel`) → `runHousekeeping` (sequential,
 because merges touch the main checkout):
