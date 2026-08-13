@@ -180,6 +180,22 @@ JSON
   [ -f "$WORK/.scratch/docker-install.done" ]
 }
 
+@test "the MAIN_ROOT call still runs docker-install.sh when a stale host node_modules is present" {
+  # A host-side node_modules can predate .worktreeinclude excluding it, or come from a
+  # contributor's own local install, in a project that is otherwise docker-mode. The
+  # presence guard must not read that as "nothing to do" and skip warming the docker
+  # volume — that is the only place docker-compose.override.yml gets generated.
+  printf '{}\n' > "$WORK/package.json"
+  mkdir -p "$WORK/node_modules"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$(deps_line)" == "DEPS: docker-installed"* ]] || { echo "$output" >&2; return 1; }
+  [ -f "$WORK/.scratch/docker-install.done" ]
+}
+
 @test "a worktree call (--slug) after the marker exists is DEPS: docker-present, no install" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"

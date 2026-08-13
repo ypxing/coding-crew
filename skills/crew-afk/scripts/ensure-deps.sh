@@ -114,7 +114,77 @@ if [ "${CREW_DEPS:-on}" = "off" ]; then
   _report "skipped"
 fi
 
-# ─── 2. the presence guard ───────────────────────────────────────────────────
+# ─── 2. resolve dep-install's scripts ────────────────────────────────────────
+# No install logic lives here. host-install.sh stays the only place that knows package
+# managers, so this only has to find it — and it must find it without knowing which of the
+# four platform skill directories a consuming repo installed, which is why install.sh also
+# ships one platform-neutral copy at .coding-crew/dep-install/scripts.
+#
+# Resolved ahead of the presence guard (used to be step 3) so the MAIN_ROOT check below
+# can run detect-mode.sh before that guard gets a chance to fire.
+_script_roots() {
+  local root
+  [ -n "${MAIN_ROOT:-}" ] && printf '%s\n' "$MAIN_ROOT"
+  root=$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || true)
+  [ -n "$root" ] && printf '%s\n' "$root"
+  # The repo this script was installed into, whether that is .../.pi/skills/crew-afk/scripts
+  # or this source repo's skills/crew-afk/scripts.
+  printf '%s\n' "$(cd "$SELF_DIR/../../.." && pwd -P)"
+  printf '%s\n' "$(cd "$SELF_DIR/../.." && pwd -P)"
+}
+
+_find_dep_scripts() {
+  if [ -n "${CREW_DEP_INSTALL_SCRIPTS:-}" ]; then
+    if [ -f "$CREW_DEP_INSTALL_SCRIPTS/detect-mode.sh" ]; then
+      printf '%s' "$CREW_DEP_INSTALL_SCRIPTS"
+    fi
+    return 0
+  fi
+  local root candidate
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    for candidate in \
+      "$root/.coding-crew/dep-install/scripts" \
+      "$root/.claude/skills/dep-install/scripts" \
+      "$root/.pi/skills/dep-install/scripts" \
+      "$root/.agents/skills/dep-install/scripts" \
+      "$root/.github/skills/dep-install/scripts" \
+      "$root/skills/dep-install/scripts"; do
+      if [ -f "$candidate/detect-mode.sh" ] && [ -f "$candidate/host-install.sh" ]; then
+        printf '%s' "$candidate"
+        return 0
+      fi
+    done
+  done < <(_script_roots)
+}
+
+DEP_SCRIPTS="$(_find_dep_scripts)"
+if [ -z "$DEP_SCRIPTS" ]; then
+  _report "none" skip
+fi
+
+# ─── 2b. main-root docker check, ahead of the presence guard ─────────────────
+# The one MAIN_ROOT call's job (see step 4) is to warm the shared *docker volume* once —
+# a store completely separate from whatever host-side dep dir might already sit in
+# MAIN_ROOT (predating .worktreeinclude excluding it, or a contributor's own local
+# install). The presence guard below exists to say "nothing to do", which is true on the
+# host path but not here: a host-side node_modules being present says nothing about
+# whether the docker volume — and docker-compose.override.yml — have ever been generated.
+# Without this check, that stale host copy makes the guard return `present` and the
+# MAIN_ROOT call never reaches step 4 at all, so the override is never written and every
+# worktree this sprint is left reporting bare `docker` (deferred) instead of
+# `docker-present`.
+#
+# Worktree calls (--slug set) are unaffected — there, an inherited dep dir via
+# .worktreeinclude genuinely means there is nothing to do, so the guard stays first.
+MAIN_ROOT_MODE=""
+SKIP_PRESENCE_GUARD=0
+if [ -z "$SLUG" ]; then
+  MAIN_ROOT_MODE="$(bash "$DEP_SCRIPTS/detect-mode.sh" --project-root "$DIR" 2>/dev/null || echo USE_HOST)"
+  [ "$MAIN_ROOT_MODE" = "USE_DOCKER" ] && SKIP_PRESENCE_GUARD=1
+fi
+
+# ─── 3. the presence guard ───────────────────────────────────────────────────
 # The real guard, and the reason a resumed sprint and a .worktreeinclude repo cost
 # nothing: if the ecosystem's dep dir is already in $DIR there is nothing to do, and no
 # marker, no round counter and no cache is consulted to establish that.
@@ -122,6 +192,7 @@ fi
 # One row per ecosystem: "<dep dir>:<manifest> <manifest> …". A manifest with no dep dir
 # means an install is worth attempting; no manifest at all means this repo has no
 # dependency step.
+if [ "$SKIP_PRESENCE_GUARD" -eq 0 ]; then
 _ECOSYSTEMS=(
   "node_modules:package-lock.json pnpm-lock.yaml yarn.lock bun.lockb package.json"
   ".venv:uv.lock poetry.lock requirements.txt pyproject.toml Pipfile"
@@ -165,7 +236,7 @@ if [ "$HAS_MANIFEST" -eq 0 ]; then
   _report "none" skip
 fi
 
-# ─── 2b. the marker cache ────────────────────────────────────────────────────
+# ─── 3b. the marker cache ─────────────────────────────────────────────────────
 # `none` and `failed` are the two outcomes that would otherwise be re-probed every round
 # for the same worktree — one of them runs a full install command to learn nothing new.
 # Cache them. The guard above has already run, so a worktree that has since acquired its
@@ -173,52 +244,7 @@ fi
 if [ -n "$MARKER" ] && [ -f "$MARKER.skip" ]; then
   _report "$(cat "$MARKER.skip" 2>/dev/null || echo none)"
 fi
-
-# ─── 3. resolve dep-install's scripts ────────────────────────────────────────
-# No install logic lives here. host-install.sh stays the only place that knows package
-# managers, so this only has to find it — and it must find it without knowing which of the
-# four platform skill directories a consuming repo installed, which is why install.sh also
-# ships one platform-neutral copy at .coding-crew/dep-install/scripts.
-_script_roots() {
-  local root
-  [ -n "${MAIN_ROOT:-}" ] && printf '%s\n' "$MAIN_ROOT"
-  root=$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || true)
-  [ -n "$root" ] && printf '%s\n' "$root"
-  # The repo this script was installed into, whether that is .../.pi/skills/crew-afk/scripts
-  # or this source repo's skills/crew-afk/scripts.
-  printf '%s\n' "$(cd "$SELF_DIR/../../.." && pwd -P)"
-  printf '%s\n' "$(cd "$SELF_DIR/../.." && pwd -P)"
-}
-
-_find_dep_scripts() {
-  if [ -n "${CREW_DEP_INSTALL_SCRIPTS:-}" ]; then
-    if [ -f "$CREW_DEP_INSTALL_SCRIPTS/detect-mode.sh" ]; then
-      printf '%s' "$CREW_DEP_INSTALL_SCRIPTS"
-    fi
-    return 0
-  fi
-  local root candidate
-  while IFS= read -r root; do
-    [ -n "$root" ] || continue
-    for candidate in \
-      "$root/.coding-crew/dep-install/scripts" \
-      "$root/.claude/skills/dep-install/scripts" \
-      "$root/.pi/skills/dep-install/scripts" \
-      "$root/.agents/skills/dep-install/scripts" \
-      "$root/.github/skills/dep-install/scripts" \
-      "$root/skills/dep-install/scripts"; do
-      if [ -f "$candidate/detect-mode.sh" ] && [ -f "$candidate/host-install.sh" ]; then
-        printf '%s' "$candidate"
-        return 0
-      fi
-    done
-  done < <(_script_roots)
-}
-
-DEP_SCRIPTS="$(_find_dep_scripts)"
-if [ -z "$DEP_SCRIPTS" ]; then
-  _report "none" skip
-fi
+fi  # SKIP_PRESENCE_GUARD
 
 # ─── 4. docker mode: warm the shared volume once, then just check it happened ────────────
 # The judgement half (env/credential setup, choosing a service or command by hand, and
@@ -241,7 +267,13 @@ if [ -z "$MAIN_ROOT_EFFECTIVE" ]; then
 fi
 DOCKER_MARKER="$MAIN_ROOT_EFFECTIVE/.scratch/docker-install.done"
 
-MODE="$(bash "$DEP_SCRIPTS/detect-mode.sh" --project-root "$DIR" 2>/dev/null || echo USE_HOST)"
+# Reuse the MAIN_ROOT verdict from step 2b when this is that call, instead of running
+# detect-mode.sh a second time for the same directory.
+if [ -n "$MAIN_ROOT_MODE" ]; then
+  MODE="$MAIN_ROOT_MODE"
+else
+  MODE="$(bash "$DEP_SCRIPTS/detect-mode.sh" --project-root "$DIR" 2>/dev/null || echo USE_HOST)"
+fi
 if [ "$MODE" = "USE_DOCKER" ]; then
   # Persist the verdict into *this* worktree's local git config — the exact key
   # detect-mode.sh checks first and solve-issue Sec.2 already reads. Without this, a

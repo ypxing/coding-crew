@@ -102,18 +102,28 @@ bash scripts/ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, 
 
 **Order of operations**:
 1. `CREW_DEPS=off` → `DEPS: skipped`.
-2. **The presence guard**, and the reason resume and `.worktreeinclude` repos cost nothing: one row
+2. Resolve `dep-install`'s scripts: `$CREW_DEP_INSTALL_SCRIPTS`, then per candidate root
+   (`$MAIN_ROOT`, `--dir`'s repo, this script's own repo) `.coding-crew/dep-install/scripts` — the
+   platform-neutral copy `install.sh` ships — then the four `.<platform>/skills/dep-install/scripts`
+   dirs, then `skills/dep-install/scripts` for development. None found → `DEPS: none`. Moved ahead
+   of the presence guard so step 2b can call `detect-mode.sh` before that guard runs.
+2b. **`--slug` absent only** (the one MAIN_ROOT call): run `detect-mode.sh --project-root <dir>`
+   right away. `USE_DOCKER` → skip the presence guard entirely and go straight to step 4 — a
+   host-side dep dir already sitting in `$MAIN_ROOT` (predating `.worktreeinclude` excluding it, or
+   a contributor's own local install) is a different store from the docker volume step 4 warms, so
+   it must not read as "nothing to do" and skip generating `docker-compose.override.yml` for the
+   whole sprint. A worktree call (`--slug` set) is unaffected — there, an inherited dep dir via
+   `.worktreeinclude` genuinely means there is nothing to do, so the guard runs first for it.
+3. **The presence guard**, and the reason resume and `.worktreeinclude` repos cost nothing: one row
    per ecosystem (`node_modules`, `.venv`, `vendor/bundle`, `vendor`, `target`, `deps`) mapping a dep
    dir to its manifests. A manifest with its dep dir present → `DEPS: present`. No manifest at all,
    no `Makefile` `install`/`deps` target, and none of `go.sum` / `go.mod` / `pom.xml` → `DEPS: none`.
-3. **The marker cache** — only for the two outcomes that would otherwise be re-probed every round
-   (`none`, `failed`), one of which runs a whole install command to learn nothing new. Step 2 has
+   Skipped by step 2b, above.
+3b. **The marker cache** — only for the two outcomes that would otherwise be re-probed every round
+   (`none`, `failed`), one of which runs a whole install command to learn nothing new. Step 3 has
    already run, so a worktree that has since acquired its deps reports `present` regardless.
-4. Resolve `dep-install`'s scripts: `$CREW_DEP_INSTALL_SCRIPTS`, then per candidate root
-   (`$MAIN_ROOT`, `--dir`'s repo, this script's own repo) `.coding-crew/dep-install/scripts` — the
-   platform-neutral copy `install.sh` ships — then the four `.<platform>/skills/dep-install/scripts`
-   dirs, then `skills/dep-install/scripts` for development. None found → `DEPS: none`.
-5. `detect-mode.sh --project-root <dir>`; `USE_HOST` → step 6. `USE_DOCKER` → write `git -C <dir>
+4. `detect-mode.sh --project-root <dir>` (reusing step 2b's verdict when this is that call, instead
+   of running it twice); `USE_HOST` → step 5. `USE_DOCKER` → write `git -C <dir>
    config --local agent.install-mode docker` (so a verdict reached only via the Makefile heuristic
    is not lost), then:
    - **`--slug` present** (a worktree call): `$MAIN_ROOT/.scratch/docker-install.done` exists →
@@ -125,12 +135,13 @@ bash scripts/ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, 
      lock, so a concurrent caller waits rather than corrupts the shared volume). Exit 0 → write the
      marker, `DEPS: docker-installed <cmd>`. Exit 2 (nothing to do) or 4 (lock busy) → `DEPS: docker`,
      unchanged from before this existed. Anything else → `DEPS: docker-failed <cmd> (exit N)`.
-6. `host-install.sh --project-root <dir>` under the timeout cap. Exit 0 → `installed`, 2 → `none`,
+5. `host-install.sh --project-root <dir>` under the timeout cap. Exit 0 → `installed`, 2 → `none`,
    anything else → `failed`.
 
 **Marker**: `$SPRINT_DIR/dispatch/<slug>.deps.<ok|skip>`, containing the outcome line. `ok` for
 `present`/`installed`, `skip` for `none`/`failed`. Written only with `--slug` and only inside a
-sprint. **A cache, never the guard** — step 2 is the guard. Separately, `docker-installed` writes
+sprint. **A cache, never the guard** — step 3 is the guard (step 2b can skip it for the MAIN_ROOT
+call). Separately, `docker-installed` writes
 `$MAIN_ROOT/.scratch/docker-install.done` — scoped to `MAIN_ROOT`, not to `$SPRINT_DIR` or the
 feature slug, so it is reused by every feature sprint against this checkout, the same way the
 named docker volume it warms already is.

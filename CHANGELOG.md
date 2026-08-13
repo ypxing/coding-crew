@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.28.3]
+
+### Fixed
+
+- `ensure-deps.sh`'s presence guard ran before its docker-mode check, for every call
+  including the one MAIN_ROOT call that generates `docker-compose.override.yml`. A repo
+  that already had a host-side `node_modules` at `$MAIN_ROOT` (predating
+  `.worktreeinclude` excluding it, or a contributor's own local install) reported `DEPS:
+  present` and never reached `docker-install.sh` — the override was never written, no
+  worktree ever saw `docker-present`, and every worker was left to run its own
+  `dep-install` from scratch. The MAIN_ROOT call now runs `detect-mode.sh` ahead of the
+  presence guard and skips the guard when it says `USE_DOCKER`; worktree calls are
+  unaffected, since an inherited dep dir via `.worktreeinclude` there genuinely means
+  there is nothing to do.
+
 ## [1.28.2]
 
 ### Fixed
