@@ -67,11 +67,13 @@ how this platform resolves it.
 ## When You Are Stuck
 
 If something outside the TDD red phase fails after 2 consecutive attempts: revert speculative
-changes, set status to `blocked`, put the reason in `### Notes`, and return your report immediately.
-When `solve-issue` itself says to stop and output `BLOCKED:`, that is the same outcome — report
-`blocked` with its reason and return.
+changes, report `blocked` with the reason in `### Notes`, and return immediately. When `solve-issue`
+itself says to stop and output `BLOCKED:`, that is the same outcome — report it and return.
 
 ## Report
+
+`solve-issue` § Outcome defines `complete`, `partial` and `blocked`; what follows is only how to
+transmit the one you reached.
 
 Return **exactly** this format and nothing else:
 
@@ -100,12 +102,6 @@ Rules:
 2. `### Acceptance Criteria` — every criterion, including `## Cross-cutting Requirements` when the issue has one, keeping both headings.
 3. Add no text outside these sections.
 
-Status definitions:
-
-- **`complete`** — all acceptance criteria met, all checks pass, work is committed.
-- **`partial`** — meaningful progress was made but not all checks pass or criteria are met. Commit the work to this branch with a `[WIP]` marker in the commit message so the code is preserved, and put what remains in `progress` — the orchestrator records it in the issue file, you never do. The next round resumes on this branch.
-- **`blocked`** — cannot proceed without human input or an environment fix; use when stuck after 2 consecutive failed attempts, not to avoid `partial`.
-
 ### Machine-readable block
 
 **Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action**, and end your final message with the same block. The file is read first, and it is **parsed**: a final message ending in a summary sentence instead of the block is read as `blocked` — never as a silent `complete` — and costs the issue a whole round. The field names are fixed:
@@ -114,7 +110,7 @@ Status definitions:
 {"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
 ```
 
-One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
+One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran. `progress` is required for `partial` and is where the remaining work goes — the orchestrator copies it into the issue file, which you never write to.
 
 ## Issue Ownership
 

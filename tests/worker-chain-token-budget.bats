@@ -22,32 +22,35 @@ words_of() {
   wc -w < "$1" | tr -d ' '
 }
 
-@test "budget: every crew-coder variant is under 1,350 words" {
+@test "budget: every crew-coder variant is under 1,300 words" {
   # Measured on the *installed* body — protocol.md plus the platform block — because that
   # is what a worker loads. The four source files are a few hundred words each now; the
   # thing that must stay bounded is the assembled result.
   #
-  # Raised from 1,250: the protocol is the *union* of what the four bodies each said, and
-  # two of them (pi, codex) had been missing the worked sidecar JSON the other two shipped.
-  # Maintained words fell 4,624 → ~1,530 in the same change; per-body words rose ~100
-  # because the smallest bodies gained the instructions they were missing.
+  # Raised to 1,350 by the protocol extraction (the protocol is the *union* of what the
+  # four bodies each said, and two of them had been missing the worked sidecar JSON the
+  # other two shipped), then lowered to 1,300 when the outcome vocabulary moved to
+  # solve-issue § Outcome, which owns it: crew-coder keeps only the wire format.
   for p in "${CODER_VARIANTS[@]}"; do
     words=$(words_of "$(coder_variant "$p")")
-    [ "$words" -lt 1350 ] || {
-      echo "$p body is $words words (budget 1350)" >&2
+    [ "$words" -lt 1300 ] || {
+      echo "$p body is $words words (budget 1300)" >&2
       return 1
     }
   done
 }
 
-@test "budget: solve-issue is under 1,400 words" {
+@test "budget: solve-issue is under 1,500 words" {
   # Raised from 1,300 by the one-writer-per-issue-file fix: §7/§8 became a real branch on
   # "who owns the issue file", so the skill now carries two close paths where it carried
   # one. That is a new rule, not a re-explained one — the worker used to be told both to
   # tick its own acceptance criteria and never to touch the issue file, and only the
-  # second half was enforced.
+  # second half was enforced. Raised again to 1,500 when `## Outcome` arrived: the skill
+  # uses `complete`/`partial`/`blocked`, so the skill defines them — they were only in
+  # crew-coder, which a direct /solve-issue run never reads. The words came *from* there;
+  # the chain ceiling below did not move.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 1400 ] || { echo "solve-issue is $words words (budget 1400)" >&2; return 1; }
+  [ "$words" -lt 1500 ] || { echo "solve-issue is $words words (budget 1500)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {

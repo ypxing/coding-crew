@@ -10,9 +10,18 @@ argument-hint: "Path to issue file (e.g. .scratch/auth/issues/01-add-logout.md)"
 
 Implement a single issue. One issue in, committed code out.
 
-## Blocked output format
+## Outcome
 
-When stopping due to a blocker, always output:
+Every run ends as exactly one of these. Report it in whatever form your caller asked for — these are
+the words, not the wire format:
+
+- **`complete`** — every acceptance criterion is met, every check passes, and the work is committed.
+- **`partial`** — meaningful progress, but a check fails or a criterion is unmet. Commit the work with
+  a `[WIP]` marker so the branch preserves it, and say what remains. A later round resumes here.
+- **`blocked`** — cannot proceed without human input or an environment fix. Not a way to avoid
+  reporting `partial`.
+
+When you stop on a blocker, always output:
 
 ```
 BLOCKED: <reason>
@@ -32,10 +41,9 @@ Tracker operations named below (`fetch`, `mark-done`) are defined in
 `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md`. If that file is missing, invoke
 the `configure-tracker` skill once to create it.
 
-Two session-wide variables must be set before any step. Use the values already established by the caller (crew-coder sets these at startup). Both are inherited by this skill — do not re-derive them.
-
-- **`PROJECT_ROOT`** — where code lives and all commands run.
-- **`MAIN_ROOT`** — main checkout; where `.scratch/` and gitignored files live.
+`PROJECT_ROOT` (where code lives and all commands run) and `MAIN_ROOT` (the main checkout, where
+`.scratch/` and gitignored files live) are **inherited from the caller** — use the values already
+established and do not re-derive them.
 
 ## Steps
 
@@ -55,8 +63,8 @@ if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
 fi
 ```
 
-A crew worker is already on `crew/<feature>/<slug>` in its own worktree, so this guard is the whole
-of step 0 — there is no branch to create.
+A caller that dispatches into a prepared worktree has already put you on the right branch, so this
+guard is the whole of step 0 — there is no branch to create.
 
 ### 1. Understand the issue
 
@@ -67,8 +75,8 @@ acceptance criteria and the files likely to change (confirmed in Step 3).
 **Blocked-by check:** if `## Blocked by` names a file that is not present in the sibling `done/`
 directory (`$(dirname "$ISSUE_PATH")/../done/<dep-filename>`), stop immediately with
 `BLOCKED: depends on <dep-filename> which is not yet done`. "None", or every listed file present →
-proceed. An orchestrator filters blocked issues before dispatch, so this only fires on a direct
-invocation.
+proceed. A caller that filters blocked issues before dispatch never reaches this, so it only fires on
+a direct invocation.
 
 ### 1.5. Read the PRD
 

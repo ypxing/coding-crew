@@ -2,7 +2,7 @@
 
 Use this when no `docker-compose.yml`, `docker-compose.yaml`, or `compose.yml` exists at `PROJECT_ROOT`.
 
-`PROJECT_ROOT` and `MAIN_ROOT` are established at session startup by the caller. Each bash tool call runs in a fresh shell — variables do not persist between calls. At the top of every bash call, assign both to their literal values from session startup:
+`PROJECT_ROOT` and `MAIN_ROOT` are **inherited from the caller** — do not re-derive them. Each bash tool call runs in a fresh shell and variables do not persist between calls, so at the top of every bash call assign both to the literal values you were given:
 
 ```bash
 PROJECT_ROOT="/absolute/path/to/worktree"

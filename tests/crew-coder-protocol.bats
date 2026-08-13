@@ -258,13 +258,16 @@ neutral_part_of() {
 
 @test "no variant tells the worker to write ## Progress into the issue file" {
   # claude's `partial` definition said exactly this, contradicting the one-writer rule.
+  # Asserted as the rule, not as a sentence: the remaining work travels in the report's
+  # `progress` field, and the ownership line forbids every issue-file write.
   for p in "${CODER_VARIANTS[@]}"; do
     local f
     f=$(coder_variant "$p")
     ! grep -q '`## Progress` in the issue file' "$f" || {
       echo "$p still writes ## Progress itself" >&2; return 1; }
+    grep -qF '"progress"' "$f"
+    grep -qF 'Do not write to the issue file' "$f"
   done
-  grep -q 'the orchestrator records it in the issue file, you never do' "$PROTOCOL"
 }
 
 # ─── and the duplication does not come back ──────────────────────────────────
