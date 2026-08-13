@@ -51,9 +51,11 @@ test("every launcher platform's coder declares the parser's exact field list", (
     for (const category of CHECK_CATEGORIES) {
       assert.match(text, new RegExp(`"${category}"`), `${platform} coder omits check category "${category}"`);
     }
-    // The sidecar path is half the contract: a worker that cannot end its message with a
-    // fenced block still has somewhere to put the structured result.
+    // The sidecar path is not half the contract but the primary one: a final message that
+    // ends with a summary sentence parses as nothing, which cost a real claude sprint its
+    // first round. The definition must ask for the file, as the last action.
     assert.match(text, /report\.json/, `${platform} coder never names the sidecar`);
+    assert.match(text, /as your last action/, `${platform} coder does not ask for the sidecar write`);
     // And the shape must be the object the parser indexes, not the older array of
     // {command, result} pairs the prose orchestrators read.
     assert.doesNotMatch(

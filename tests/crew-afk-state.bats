@@ -350,17 +350,24 @@ EOF
 }
 
 # ─── the bodies delegate ─────────────────────────────────────────────────────
+#
+# "The bodies" is now the one prose body that is left (copilot's shared source). The
+# launcher platforms delegate by construction — their body launches a program — and the
+# equivalents of these assertions are asserted against that program: the slug is derived
+# once by session-init.sh and read back by orchestrator/lib/sprint.mjs (never re-globbed),
+# and cleanup's branch lists come from `state.sh get` in orchestrator/lib/loop.mjs. See
+# tests/orchestrator/sprint.test.mjs.
 
 @test "no crew-afk body re-derives the feature slug from a sprint-state glob" {
   # This is the line the sprint.env indirection exists to delete. It sat directly
   # beneath a comment that said "Never re-derive it".
-  for f in "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
+  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
     ! grep -q 'ls -1 .*sprint-state.json' "$f"
   done
 }
 
 @test "every crew-afk body sources sprint.env instead of deriving paths" {
-  for f in "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
+  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
     grep -q 'source "$(git rev-parse --show-toplevel)/.scratch/sprint.env"' "$f"
   done
 }
@@ -369,7 +376,7 @@ EOF
   # Each of these markers is emitted by the script that does the work. A prose echo
   # for the same marker is a second, unreliable source of the same fact — and for
   # DISPATCH it was a literal duplicate of what dispatch-agent.sh already logs.
-  for f in "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md" \
+  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md" \
            "$REPO_ROOT"/skills/crew-afk/fragments/*/*.md; do
     for marker in DISPATCH VERIFY MERGE CLOSE PROMOTE FLUSH CLEANUP SQUASH EXIT SESSION; do
       if grep -q "echo \"\[\$(date[^\"]*\[$marker\]" "$f"; then
@@ -381,7 +388,7 @@ EOF
 }
 
 @test "every crew-afk body derives cleanup's branch lists from state.sh" {
-  for f in "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
+  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
     grep -q 'state.sh" get merged' "$f"
     grep -q 'state.sh" get retained' "$f"
   done
@@ -416,7 +423,7 @@ EOF
   # coverage prompt into the script and deletes the per-round reporting, so the ratchet tightens
   # again. It stops here: the prose that remains is either an instruction with no script behind
   # it or scar tissue from an observed failure, and cutting that buys tokens with correctness.
-  for f in "$REPO_ROOT/skills/crew-afk/SKILL.md" "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
+  for f in "$REPO_ROOT/skills/crew-afk/dispatch.SKILL.md"; do
     words=$(wc -w < "$f")
     [ "$words" -lt 2750 ] || { echo "$f is $words words (budget 2750)" >&2; return 1; }
   done

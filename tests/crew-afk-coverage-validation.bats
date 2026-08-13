@@ -5,8 +5,13 @@
 load helpers/render
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-SKILL_FILE="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
 COVERAGE_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/coverage-validation.sh"
+
+# The claude body's structure assertions (a `### Coverage validation` section, its position
+# between squash and cleanup, the `bash …coverage-validation.sh` call, who runs the prompt)
+# lost their subject when claude became a launcher. Their code equivalent is
+# tests/orchestrator/sprint.test.mjs, "coverage validation is opt-in, and runs between the
+# squash and cleanup", which runs the step and asserts the order from the trace log.
 
 setup() {
   export TEMP_DIR=$(mktemp -d)
@@ -22,33 +27,10 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-# --- SKILL.md Structure Tests ---
-
-@test "SKILL.md includes Coverage validation section" {
-  grep -q '### Coverage validation' "$SKILL_FILE"
-}
-
-@test "Coverage validation section appears between squash and Branch cleanup" {
-  # Code review now runs per-branch before merge (Step 4), not in Wrap Up.
-  # Coverage validation is in Wrap Up, between squash and branch cleanup.
-  squash_line=$(grep -n "squash-commits.sh\|Squash Commit" "$SKILL_FILE" | head -1 | cut -d: -f1)
-  coverage_line=$(grep -n "### Coverage validation" "$SKILL_FILE" | head -1 | cut -d: -f1)
-  cleanup_line=$(grep -n "### Worktree and branch cleanup" "$SKILL_FILE" | head -1 | cut -d: -f1)
-
-  # Verify order: squash -> coverage validation -> branch cleanup
-  [ "$squash_line" -lt "$coverage_line" ]
-  [ "$coverage_line" -lt "$cleanup_line" ]
-}
-
 # --- Script Existence Tests ---
 
 @test "coverage-validation.sh script exists" {
   [ -f "$COVERAGE_SCRIPT" ]
-}
-
-@test "coverage-validation.sh is invoked via bash in SKILL.md" {
-  # Per D2: scripts are called as 'bash "<skill-dir>/scripts/<name>.sh"' not executed directly
-  grep -q 'bash.*coverage-validation\.sh' "$SKILL_FILE"
 }
 
 @test "coverage-validation.sh is invoked via bash in copilot.SKILL.md" {
@@ -170,15 +152,16 @@ teardown() {
 @test "Coverage validation does not use haiku model tier" {
   # The coverage validation agent must NOT be on a cheap tier
   # Extract the coverage validation section and check it doesn't say haiku
-  coverage_start=$(grep -n "### Coverage validation" "$SKILL_FILE" | head -1 | cut -d: -f1)
-  cleanup_start=$(grep -n "### Worktree and branch cleanup" "$SKILL_FILE" | head -1 | cut -d: -f1)
+  local skill_file
+  skill_file=$(afk_variant copilot)
+  coverage_start=$(grep -niE '^### Coverage validation' "$skill_file" | head -1 | cut -d: -f1)
+  cleanup_start=$(grep -niE '^### Worktree' "$skill_file" | head -1 | cut -d: -f1)
 
-  if [ -z "$coverage_start" ] || [ -z "$cleanup_start" ]; then
-    skip "Could not find section boundaries"
-  fi
+  [ -n "$coverage_start" ] || { echo "no coverage validation section in the prose body" >&2; return 1; }
+  [ -n "$cleanup_start" ] || { echo "no cleanup section in the prose body" >&2; return 1; }
 
   # Extract lines between coverage validation and branch cleanup
-  section=$(sed -n "${coverage_start},${cleanup_start}p" "$SKILL_FILE")
+  section=$(sed -n "${coverage_start},${cleanup_start}p" "$skill_file")
   echo "$section" | grep -q -i "haiku" && { echo "FAIL: haiku found in coverage validation section"; return 1; } || true
 }
 
@@ -206,8 +189,10 @@ teardown() {
   done
 }
 
-@test "SKILL.md still says who runs the prompt" {
-  grep -qi 'validation agent' "$SKILL_FILE"
+@test "the remaining prose body still says who runs the prompt" {
+  # claude said "spawn a validation agent"; copilot names the tool that does it. Either
+  # way the body must say who runs the prompt the script prints, or nobody does.
+  grep -qiE 'validation agent|task\(agent_type' "$(afk_variant copilot)"
 }
 
 # --- Copilot Parity Tests ---

@@ -14,7 +14,7 @@ setup() {
   export CODER_COPILOT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
   export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
   export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"
-  export CREW_AFK_SKILL="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
+  export CREW_AFK_SKILL="$SCRIPT_DIR/skills/crew-afk/claude.SKILL.md"
   export CREW_AFK_COPILOT="$(afk_variant copilot)"
 }
 
@@ -76,20 +76,17 @@ frontmatter() {
   grep -A5 '\-\-model' "$CREW_AFK_COPILOT" | grep -qi 'ignored\|no-op\|ide\|not supported\|cannot'
 }
 
-# --- Resolved model is logged in orchestrator trace ---
-
-@test "crew-afk SKILL.md logs resolved model to trace before first dispatch" {
-  grep -q 'MODEL\|model.*trace\|\[MODEL\]\|resolved model' "$CREW_AFK_SKILL"
-}
+# --- Resolved model is logged in the trace and printed in the summary ---
+#
+# Both were prose steps in the claude body ("log the resolved model before the first
+# dispatch", "include it in the summary"). On a launcher platform they are code:
+# orchestrator/main.mjs calls sprint.setModel(), which writes the MODEL trace line, and
+# crew-summary.sh renders `Model:` from sprint-state.json. Asserted in
+# tests/orchestrator/sprint.test.mjs — "the summary names the resolved model, rendered
+# from disk".
 
 @test "crew-afk copilot.SKILL.md logs resolved model to trace before first dispatch" {
   grep -q 'MODEL\|model.*trace\|\[MODEL\]\|resolved model' "$CREW_AFK_COPILOT"
-}
-
-# --- Resolved model is printed in sprint summary ---
-
-@test "crew-afk SKILL.md includes model in sprint summary" {
-  grep -A30 '### Summary' "$CREW_AFK_SKILL" | grep -qi 'model\|MODEL'
 }
 
 @test "crew-afk copilot.SKILL.md includes model in sprint summary" {

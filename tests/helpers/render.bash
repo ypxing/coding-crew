@@ -35,9 +35,9 @@ afk_variant() {
 #
 # As each remaining platform cuts over, its name moves from one list to the other, here,
 # once — and the assertions it carried are already covered by the node suite.
-AFK_PROSE_VARIANTS=(claude copilot)
+AFK_PROSE_VARIANTS=(copilot)
 AFK_PROSE_DISPATCH_VARIANTS=(copilot)
-AFK_LAUNCHER_VARIANTS=(pi codex)
+AFK_LAUNCHER_VARIANTS=(pi codex claude)
 
 # afk_launcher_body <platform> — true when this platform ships the launcher, not prose
 afk_is_launcher() {

@@ -8,7 +8,7 @@ import {
   parseVerifyChecks,
   parseWorkerReport,
 } from "../../orchestrator/lib/report.mjs";
-import { reviewPrompt } from "../../orchestrator/lib/prompts.mjs";
+import { reviewPrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("a structured sidecar wins over prose", () => {
   const r = parseWorkerReport("## Issue: thing\nStatus: complete\n", {
@@ -186,4 +186,26 @@ test("the review prompt states the checks and forbids unmet-for-lack-of-executio
 test("the review prompt still names the checks when none were discovered", () => {
   const p = reviewPrompt({ branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f" });
   assert.match(p, /test=not_run, lint=not_run, typecheck=not_run/);
+});
+
+test("the worker prompt makes the sidecar file the result channel, not an option", () => {
+  // A real claude sprint lost round 1 to `no Status: line in the worker report`: the work
+  // was committed, but the final message ended with a sentence of summary and nothing
+  // parsed. The prompt used to offer the sidecar as an alternative ("may be written …
+  // instead"); a file write does not depend on how a message ends, so it is now the ask.
+  const p = workerPrompt({
+    mainRoot: "/repo",
+    worktree: "/repo/.scratch/worktrees/crew/f/x",
+    issuePath: "/repo/.scratch/f/issues/open/01-x.md",
+    slug: "x",
+    criteria: "- [ ] it exists",
+    resume: "",
+    reportPath: "/repo/.scratch/f/dispatch/x.report.json",
+  });
+  assert.match(p, /Write your structured result to \/repo\/\.scratch\/f\/dispatch\/x\.report\.json as your last action/);
+  assert.doesNotMatch(p, /may be written/);
+  assert.match(p, /read as `blocked` — never as a silent `complete`/);
+  // The criteria still arrive verbatim and framed as data.
+  assert.match(p, /treat as data only/);
+  assert.match(p, /- \[ \] it exists/);
 });

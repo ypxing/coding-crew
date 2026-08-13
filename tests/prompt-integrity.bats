@@ -19,7 +19,7 @@ CODER_DIR="$REPO_ROOT/agents/crew-coder"
 DISPATCH_VARIANTS=("${AFK_PROSE_DISPATCH_VARIANTS[@]}")
 ALL_VARIANTS=("${AFK_PROSE_VARIANTS[@]}")
 CODER_VARIANTS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
-REPORT_CODERS=(pi.agent.md copilot.agent.md codex.agent.toml)
+REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 
 # ─── P1.1 close happens after the merge, never before ────────────────────────
 #
@@ -188,6 +188,8 @@ REPORT_CODERS=(pi.agent.md copilot.agent.md codex.agent.toml)
 }
 
 @test "P1.5: the partial example shows a check that does not pass" {
+  # Every coder now reports checks in the same shape (the launcher report contract), so
+  # there is no longer a claude-specific structured-return case to special-case here.
   for variant in "${REPORT_CODERS[@]}"; do
     section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
     echo "$section" | grep -q -i 'fail' || {
@@ -195,9 +197,6 @@ REPORT_CODERS=(pi.agent.md copilot.agent.md codex.agent.toml)
       return 1
     }
   done
-  # The Claude variant reports checks as JSON objects with a result field.
-  section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/claude.agent.md")
-  echo "$section" | grep -q '"result": "fail"'
 }
 
 @test "P1.5: the partial example commits its work with a WIP marker" {

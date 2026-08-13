@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,6 +75,24 @@ function runSprint(root, extra = []) {
       MAIN_ROOT: root,
     },
   });
+}
+
+function traceLog(root) {
+  const f = join(root, ".scratch/demo/traces/orchestrator.log");
+  return existsSync(f) ? readFileSync(f, "utf8") : "";
+}
+
+/** Line index of the first occurrence of a marker in the trace log. */
+function markerAt(log, marker) {
+  const lines = log.split("\n");
+  const i = lines.findIndex((l) => l.includes(`[${marker}]`));
+  assert.notEqual(i, -1, `no [${marker}] line in the trace log:\n${log}`);
+  return i;
+}
+
+function reviewReports(root) {
+  const dir = join(root, ".scratch/demo/reviews");
+  return existsSync(dir) ? readdirSync(dir).filter((f) => f.startsWith("sprint-review-")) : [];
 }
 
 function state(root) {
@@ -235,4 +253,115 @@ test("two dry rounds stall instead of looping forever", () => {
   const s = state(root);
   assert.equal(s.rounds, 2, "one dry round is a retry, two is a stall");
   assert.match(s.retention.alpha.reason, /partial/);
+});
+
+// ─── what the deleted claude prose used to assert about itself ───────────────
+//
+// The claude cutover removed the last hand-written orchestrator body that named the
+// pipeline. Its prose assertions (review before merge, review before squash, no
+// post-squash review, the report path, the skip case, the resume note, retention
+// surviving cleanup, the wrap-up order) are behaviour, so they are asserted here on a
+// real run with every model dispatch faked.
+
+test("the gates run in order: verify → AC receipt → merge → close, and squash last", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const log = traceLog(root);
+  const verify = markerAt(log, "VERIFY");
+  const ac = markerAt(log, "ACVERIFY");
+  const merge = markerAt(log, "MERGE");
+  const close = markerAt(log, "CLOSE");
+  const squash = markerAt(log, "SQUASH");
+  assert.ok(verify < ac, "the AC receipt was written before verification finished");
+  assert.ok(ac < merge, "the branch merged before its acceptance criteria were verified");
+  assert.ok(merge < close, "the issue closed before the merge — a failed merge would orphan it");
+  assert.ok(close < squash, "the squash ran before the pipeline finished");
+});
+
+test("the review is written to the sprint's reviews dir, before the squash", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  runSprint(root);
+  const reports = reviewReports(root);
+  assert.equal(reports.length, 1, `expected one sprint-review file, got ${JSON.stringify(reports)}`);
+  const text = readFileSync(join(root, ".scratch/demo/reviews", reports[0]), "utf8");
+  assert.match(text, /## Branch: /);
+  // The review is the merge's gate, so it cannot be a post-squash pass over merged code.
+  const log = traceLog(root);
+  assert.ok(markerAt(log, "ACVERIFY") < markerAt(log, "SQUASH"));
+});
+
+test("a branch that fails verification is never reviewed, and no report is written", () => {
+  // The old prose said: with no verified branches this round, print "skipped" and write
+  // no report. The code equivalent is that nothing is dispatched and no file appears.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(
+    root,
+    "alpha.worker",
+    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"fail","lint":"pass","typecheck":"pass"},"progress":"red"}', '```'].join("\n"),
+  );
+  runSprint(root);
+  assert.deepEqual(reviewReports(root), []);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.review.md")), false);
+});
+
+test("a retained branch survives cleanup, is named in the summary, and resumes next round", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker", '## Issue: alpha\nStatus: partial\n\n```json\n{"status":"partial","progress":"stuck"}\n```');
+  const r = runSprint(root);
+  assert.equal(r.code, 2);
+  // Cleanup deletes merged branches only; a retained one keeps its committed WIP.
+  const branches = sh("git", ["-C", root, "branch", "--list", "crew/demo/alpha"]).stdout.trim();
+  assert.match(branches, /crew\/demo\/alpha/, "cleanup deleted a retained branch");
+  assert.match(r.stdout, /## Retained Branches/);
+  assert.match(r.stdout, /partial/);
+  // Round 2 was told to resume on that branch rather than start over — and that the
+  // notes are context alongside the preserved code, not a substitute for it.
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/alpha.prompt.md"), "utf8");
+  assert.match(prompt, /Resume on that existing branch/);
+  assert.match(prompt, /crew\/demo\/alpha/);
+  assert.match(prompt, /not a substitute for it/);
+});
+
+test("a merged branch's worktree and ref are both gone after cleanup", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  runSprint(root);
+  assert.equal(existsSync(join(root, ".scratch/worktrees/crew/demo/alpha")), false);
+  assert.equal(sh("git", ["-C", root, "branch", "--list", "crew/demo/alpha"]).stdout.trim(), "");
+});
+
+test("the summary names the resolved model, rendered from disk", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root, ["--model", "sonnet"]);
+  assert.match(r.stdout, /Model:\s+sonnet/);
+  assert.equal(state(root).model, "sonnet");
+  assert.match(traceLog(root), /\[MODEL\]/);
+});
+
+test("coverage validation is opt-in, and runs between the squash and cleanup", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
+
+  // Without the flag it never runs, however much PRD there is to validate.
+  const off = runSprint(root);
+  assert.equal(off.code, 0, `${off.stdout}\n${off.stderr}`);
+  assert.equal(existsSync(join(root, ".scratch/demo/coverage-report.md")), false);
+  assert.doesNotMatch(off.stdout, /## Coverage Report/);
+
+  const root2 = fixtureRepo();
+  addIssue(root2, "01-alpha.md");
+  writeFileSync(join(root2, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
+  const on = runSprint(root2, ["--coverage"]);
+  assert.equal(on.code, 0, `${on.stdout}\n${on.stderr}`);
+  assert.equal(existsSync(join(root2, ".scratch/demo/coverage-report.md")), true);
+  assert.match(on.stdout, /## Coverage Report/);
+  const log = traceLog(root2);
+  assert.ok(markerAt(log, "SQUASH") < markerAt(log, "CLEANUP"), "cleanup must follow the squash");
 });

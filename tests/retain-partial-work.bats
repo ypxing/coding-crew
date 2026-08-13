@@ -17,11 +17,17 @@ setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export CLAUDE_AGENT="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
   export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
-  export CLAUDE_SKILL="$SCRIPT_DIR/skills/crew-afk/SKILL.md"
-  # pi/codex/copilot share one source body; assert on the rendered copilot result.
+  # copilot is the last platform with a prose body; assert on the rendered result.
   export COPILOT_SKILL="$(afk_variant copilot)"
   export MERGE_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/merge-branches.sh"
 }
+
+# The claude body's versions of these assertions were deleted with that body in the
+# launcher cutover. Each has a code equivalent that runs the behaviour instead of grepping
+# for it, in tests/orchestrator/sprint.test.mjs: retention survives cleanup, the branch is
+# named in the summary with its reason, the next round's worker prompt says "Resume on that
+# existing branch" and that the notes are "not a substitute for it", a demoted branch never
+# merges, and a merged branch loses both its worktree and its ref.
 
 # ─── No agent forbids committing partial work ────────────────────────────────
 
@@ -32,11 +38,6 @@ setup() {
 
 @test "copilot.agent.md does not forbid committing partial work" {
   ! grep -q 'Do not commit partial work' "$COPILOT_AGENT"
-}
-
-@test "claude crew-afk SKILL.md does not say re-implement from scratch when partial" {
-  # Old: "Re-implement from scratch using them as context only (code was NOT committed)"
-  ! grep -q 'code was NOT committed' "$CLAUDE_SKILL"
 }
 
 @test "copilot crew-afk SKILL.md does not say re-implement from scratch when partial" {
@@ -56,27 +57,11 @@ setup() {
 
 # ─── Partial work not merged ─────────────────────────────────────────────────
 
-@test "claude SKILL.md does not merge partial branches" {
-  # Partial branches must be excluded from the merge step
-  # The merge step invokes merge-branches.sh only for verified/complete branches
-  MERGE_LINE=$(grep -n 'merge-branches.sh' "$CLAUDE_SKILL" | head -1 | cut -d: -f1)
-  [ -n "$MERGE_LINE" ] || { echo "No merge-branches.sh found"; return 1; }
-
-  # There must be a gate that keeps partial branches out of the merge invocation
-  grep -qiE 'verified.*branch|complete.*branch|partial.*not.*merge|skip.*partial|demot.*partial' "$CLAUDE_SKILL"
-}
-
 @test "copilot SKILL.md does not merge partial branches" {
   grep -qiE 'verified.*branch|complete.*branch|partial.*not.*merge|skip.*partial|demot.*partial' "$COPILOT_SKILL"
 }
 
 # ─── Retained branches excluded from cleanup ─────────────────────────────────
-
-@test "claude SKILL.md excludes partial/retention branches from branch -D cleanup" {
-  # Cleanup must NOT blindly delete all tracked branches
-  # It must only delete merged/complete branches, not partial/verification-failed ones
-  grep -qiE 'retain|retention|partial.*branch|keep.*branch|do not delete|skip.*cleanup|merged.*branches' "$CLAUDE_SKILL"
-}
 
 @test "copilot SKILL.md excludes partial/retention branches from branch -D cleanup" {
   grep -qiE 'retain|retention|partial.*branch|keep.*branch|do not delete|skip.*cleanup|merged.*branches' "$COPILOT_SKILL"
@@ -84,32 +69,17 @@ setup() {
 
 # ─── Retained branches listed in summary ─────────────────────────────────────
 
-@test "claude SKILL.md summary lists retained branches with reason" {
-  # Summary section must mention retained branches
-  grep -qiE 'retained|Retained' "$CLAUDE_SKILL"
-}
-
 @test "copilot SKILL.md summary lists retained branches with reason" {
   grep -qiE 'retained|Retained' "$COPILOT_SKILL"
 }
 
 # ─── Resume dispatch instruction ─────────────────────────────────────────────
 
-@test "claude SKILL.md dispatch instructs next worker to resume on existing branch" {
-  # Must mention resuming or continuing on the existing branch
-  grep -qiE 'resume|Resume|existing branch|continue.*branch|branch.*continues' "$CLAUDE_SKILL"
-}
-
 @test "copilot SKILL.md dispatch instructs next worker to resume on existing branch" {
   grep -qiE 'resume|Resume|existing branch|continue.*branch|branch.*continues' "$COPILOT_SKILL"
 }
 
 # ─── Progress notes positioned as context alongside code ─────────────────────
-
-@test "claude SKILL.md positions progress notes as context for preserved code, not substitute" {
-  # Must not say notes are all that's preserved — code is also preserved
-  grep -qiE 'context.*code|alongside.*code|code.*context|notes.*context|preserved.*code|code.*preserved' "$CLAUDE_SKILL"
-}
 
 @test "copilot SKILL.md positions progress notes as context for preserved code, not substitute" {
   grep -qiE 'context.*code|alongside.*code|code.*context|notes.*context|preserved.*code|code.*preserved' "$COPILOT_SKILL"
@@ -129,12 +99,6 @@ setup() {
 }
 
 # ─── Cleanup only for merged/complete branches ───────────────────────────────
-
-@test "claude SKILL.md cleanup deletes only merged branches, not retained" {
-  # The cleanup section must not include partial branches in the delete list
-  # Must reference all_merged or equivalent to scope the delete
-  grep -qiE 'all_merged|merged.*branch.*delete|delete.*merged|cleanup.*merged' "$CLAUDE_SKILL"
-}
 
 @test "copilot SKILL.md cleanup removes only merged worktrees, not retained" {
   # Partial branches must not be removed — their worktrees may already be gone but branches stay
@@ -184,51 +148,16 @@ MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scr
 
 # ─── cleanup prose is accurate about worktree state (review finding) ─────────
 
-@test "claude SKILL.md does not claim the runtime has already torn down worktrees" {
-  # Proven false in practice: git branch -D failed with "used by worktree" for
-  # every branch in a real sprint, because the worktrees were still checked out.
-  ! grep -qi 'already been torn down by the runtime' "$CLAUDE_SKILL"
-}
-
-@test "claude SKILL.md cleanup removes merged worktrees before deleting their branch refs" {
-  # A branch ref cannot be deleted while a worktree has it checked out, so the
-  # cleanup must remove the merged worktree first.
-  grep -q 'worktree remove' "$CLAUDE_SKILL"
-}
-
-@test "claude SKILL.md states worktree prune does not remove live worktrees" {
-  # Verified: `git worktree prune` only clears stale metadata, so it is safe to
-  # run while retained worktrees are still checked out.
-  grep -qiE 'prune.*(stale|metadata)|(stale|metadata).*prune' "$CLAUDE_SKILL"
-}
-
 # ─── resume dispatch specifies how to test for the prior branch ──────────────
 
 # The lookup + ref test is mechanical, so it moved into state.sh resume (behaviour is
 # covered in tests/crew-afk-state.bats). The body only has to ask.
-@test "claude SKILL.md gives a concrete branch-existence check for resume dispatch" {
-  grep -qE 'state\.sh" resume|git branch --list' "$CLAUDE_SKILL"
-}
-
-@test "claude SKILL.md records the branch name needed to resume across rounds" {
-  # The prior round's branch name must be persisted somewhere the next round reads.
-  grep -qiE 'retained_branches|sprint-state|previous round.*branch name|branch name.*previous round' "$CLAUDE_SKILL"
-}
-
 # ─── retained_branches is both written and read on each platform ─────────────
 # The resume dispatch reads .retained_branches; if nothing ever writes it the
 # lookup silently returns empty and every partial restarts from scratch.
 
-@test "claude SKILL.md writes retained_branches, not just reads it" {
-  grep -qE 'state\.sh" retain|retained_branches\[\$slug\] = \$branch' "$CLAUDE_SKILL"
-}
-
 @test "copilot SKILL.md writes retained_branches, not just reads it" {
   grep -qE 'state\.sh" retain|retained_branches\[\$slug\] = \$branch' "$COPILOT_SKILL"
-}
-
-@test "claude SKILL.md clears the retention entry when an issue completes" {
-  grep -qE 'state\.sh" complete|del\(.retained_branches' "$CLAUDE_SKILL"
 }
 
 @test "copilot SKILL.md clears the retention entry when an issue completes" {

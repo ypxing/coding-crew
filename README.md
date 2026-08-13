@@ -175,14 +175,14 @@ Installs to `$HOME` (user-level, works in any project). Common flags:
 **Supported agents:** Claude Code (`.claude/`), GitHub Copilot (`.github/agents/` + `.github/skills/`
 per project, `~/.copilot/` when installed user-level — Copilot does not read `.copilot/` inside a
 repo), [pi](https://github.com/badlogic/pi-mono) (`.pi/` per project, `~/.pi/agent/` when installed
-user-level), and OpenAI Codex (skills in `.agents/skills/`, agents in `.codex/agents/*.toml`). pi has
-no built-in subagent tool, so `/crew-afk` dispatches each coder as its own `pi -p` process via
-`scripts/dispatch-agent.sh` — same isolation, one process per issue. The `pi` CLI must be on `PATH`.
-On Copilot, each coder is dispatched in-session with the CLI's `task` tool
-(`task(agent_type="crew-coder", …)`); `#runSubagent` is VS Code Copilot Chat syntax and is not used.
-On Codex, each coder runs as its own `codex exec` process via `scripts/dispatch-codex-agent.sh` (a
-native subagent would share the parent's working root, which breaks per-issue worktree isolation);
-the `codex` CLI must be on `PATH`.
+user-level), and OpenAI Codex (skills in `.agents/skills/`, agents in `.codex/agents/*.toml`).
+
+On **pi, Codex and Claude Code**, `/crew-afk` launches a program (`.coding-crew/crew-afk/main.mjs`)
+and each coder runs as its own child process in its own git worktree: `pi -p` via
+`scripts/dispatch-agent.sh`, `codex exec` via `scripts/dispatch-codex-agent.sh`, and
+`claude -p --agent crew-coder` directly. The matching CLI must be on `PATH`. On Copilot, each coder
+is still dispatched in-session with the CLI's `task` tool (`task(agent_type="crew-coder", …)`);
+`#runSubagent` is VS Code Copilot Chat syntax and is not used.
 
 **Codex support means the local Codex CLI only.** The `codex` platform requires a real shell where
 `codex exec` can be spawned as a child process, a local git clone to create worktrees in, and

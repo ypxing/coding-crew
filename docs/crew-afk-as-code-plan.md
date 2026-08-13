@@ -1,8 +1,8 @@
 # Plan: crew-afk as code (one orchestrator, one state machine)
 
-Status: **Phases 0–2 landed for pi; Phase 3 landed for codex** — see
-`docs/crew-afk-orchestrator.md` for what exists and `CHANGELOG.md` for the cutovers. The rest
-of Phases 3–5 (claude, copilot, scaffolding retirement) is still open. Maintainer notes — not
+Status: **Phases 0–2 landed for pi; Phase 3 landed for codex and claude** — see
+`docs/crew-afk-orchestrator.md` for what exists and `CHANGELOG.md` for the cutovers. Phase 4
+(copilot) and Phase 5 (scaffolding retirement) are still open. Maintainer notes — not
 installed into consumer repos.
 
 ## 1. The question
@@ -156,7 +156,7 @@ Worth listing, because they justify the work beyond tidiness:
 | **Node becomes a consumer requirement** (repo is currently bash + `jq` only) | Node ≥20, zero dependencies, single-file-ish ESM; launcher preflights `node -v` with a clear error. Alternatives if rejected: Bun/Deno single binary, or a `crew-afk.sh` driver in bash (cheapest on requirements, worst on testability). |
 | **Loss of LLM adaptability** on unforeseen states (weird git state, odd verification output) | Fail closed by default, plus `--on-anomaly escalate`: the CLI dispatches a one-shot triage agent with the anomaly and the state file instead of guessing or dying. |
 | **Copilot/Claude headless per-agent dispatch** | **Resolved — both support it** (see §3a). Copilot's in-session `task` tool is no longer the only mechanism. |
-| **Claude loses runtime `isolation: worktree`** | The CLI creates worktrees itself for every platform — that is uniformity, not loss, and it retires the `.claude/worktrees/agent-*` leftovers cleanup has to sweep. |
+| **Claude loses runtime `isolation: worktree`** | **Resolved — removed at the claude cutover.** The CLI creates worktrees itself for every platform, which is uniformity, not loss, and it retires the `.claude/worktrees/agent-*` leftovers cleanup has to sweep. |
 | **Two orchestrators = drift** — the exact failure this repo fights | Strangler, never parallel maintenance: each platform's prose body is **deleted** in the commit that cuts it over. |
 | **~10 test files assert prose** (`crew-afk-state`, `shared-dispatch-body`, word budgets, fragment completeness) | Their subject disappears; they are replaced by `node:test` unit tests + golden `crew-afk plan` transcripts. Every behavioural assertion inside them is migrated first, then the prose assertion is deleted (same discipline as `crew-code-reviewer-references.bats`). |
 | **`install.sh` has no `assets` support for skills** (agents only) | Small extension: reuse the `install.assets` mechanism for skill entries. |
@@ -184,6 +184,10 @@ cutover deletes its prose. ~~codex~~ — done; it also proved that the *sandbox*
 adapter contract (a codex worker cannot commit in a linked worktree unless the main repo's git dir
 is an explicit writable root) and that the AC gate has to be told which checks the pipeline already
 ran, or a criterion that ends "and the tests pass" is unprovable by a read-only reviewer.
+~~claude~~ — done; `--agent <name>` resolves the project-level definition and fails loudly, so the
+re-sent agent body is gone, `isolation: worktree` is removed, and the one bug a real sprint found
+was platform-general: the structured report has to be a **file the worker writes**, not a block at
+the end of a final message that a `-p` run may end with prose instead.
 
 **Phase 4 — copilot.** Now an ordinary adapter (`-p --agent -C --allow-all-tools --silent`), not a
 special case. The `task`-tool fragments and the plan-tier batching prose retire with it; concurrency

@@ -73,7 +73,7 @@ bats tests/orchestrator.bats
 
 ## Status
 
-- **Phase 0/1 done**: pure core, four adapters, pipeline, loop, `plan`; 44 node tests.
+- **Phase 0/1 done**: pure core, four adapters, pipeline, loop, `plan`; 62 node tests.
 - **Phase 2 done for pi**: installed to `.coding-crew/crew-afk/` via the skill `assets`
   entry, pi's `SKILL.md` is a 390-word launcher, `fragments/pi/` deleted, prose-parity
   assertions moved onto the code, and a real unattended pi sprint verified end to end
@@ -97,18 +97,44 @@ bats tests/orchestrator.bats
     every round, forever. `not_run` is still evidence of nothing, and the code half of
     every criterion is still judged from the diff. The same rule is in
     `agents/crew-code-reviewer/protocol.md`, so a prose platform behaves identically.
-- **Next (Phase 3/4)**: claude, then copilot. Each is an adapter that already exists plus
-  one body swap; the cutover moves that platform's name out of `AFK_PROSE_VARIANTS` in
-  `tests/helpers/render.bash` and deletes its fragments. Both need a decision first (see
-  `.scratch/crew-afk-as-code/issues/open/03-…` and `04-…`): claude's isolation model
-  changes, copilot's dispatch mechanism does.
+- **Next (Phase 4)**: copilot — an adapter that already exists plus one body swap; the
+  cutover moves that platform's name out of `AFK_PROSE_VARIANTS` in
+  `tests/helpers/render.bash` and deletes its fragments. It needs a decision first (see
+  `.scratch/crew-afk-as-code/issues/open/04-…`): its dispatch mechanism changes from the
+  in-session `task` tool to one CLI process per worker.
+- **Phase 3 also done for claude**: `claude.SKILL.md` is a 449-word launcher, the 2,700-word
+  prose body (`skills/crew-afk/SKILL.md`) is **deleted**, `claude` moved into
+  `AFK_LAUNCHER_VARIANTS`, and its prose assertions moved onto the code — seven new cases in
+  `tests/orchestrator/sprint.test.mjs` (gate order from the trace log, the review report path
+  and the no-verified-branch skip, retention surviving cleanup + the resume prompt, a merged
+  branch losing both worktree and ref, the model in the summary, coverage opt-in and its
+  position in the wrap-up) and six in `dispatch.test.mjs`. Decisions, with the probes behind
+  them, are recorded in the issue:
+  - `claude -p --agent <name>` **does** resolve the project-level `.claude/agents/`
+    definition, enforces its `tools:` list, and exits 1 on an unknown name. So the
+    belt-and-braces `--append-system-prompt <body>` is **gone**: it re-sent the coder's whole
+    definition inside every worker's system prompt and overrode the loaded one on conflict.
+  - `--permission-mode bypassPermissions` stays (an unattended sprint cannot stop on a
+    permission prompt), because it removes the prompt, not the allowlist — the definition's
+    `tools:` list still binds, so the reviewer is still read-only.
+  - `isolation: worktree` is removed from `agents/crew-coder/claude.agent.md`. `worktree.mjs`
+    creates the worktree for every platform now; the key would have described a mechanism no
+    sprint runs, and would nest a second runtime worktree inside the orchestrator's.
+  - **The bug only a real sprint could find, and it is platform-general**: round 1 was lost to
+    `no Status: line in the worker report`. The work was committed, but `claude -p` prints only
+    the final message and that message ended with a sentence of summary, so nothing parsed and
+    the issue was `blocked` for a round. The sidecar was offered as an *alternative* ("may be
+    written … instead"); it is now the ask — `prompts.mjs` and every launcher coder require
+    writing `<slug>.report.json` **as the last action**, because a file write does not depend
+    on how a message ends. A re-run finished in one round.
 - **Contracts now live in the agent definitions, not only in the prompts**: the launcher
   platforms' `crew-coder` variants state the `<slug>.report.json` sidecar / fenced-JSON
   block, and `agents/crew-code-reviewer/protocol.md` states the
   `FINDING: <SEV> | <file:line> | <criterion>` line. `tests/orchestrator/contract.test.mjs`
   reads `AFK_LAUNCHER_VARIANTS` and asserts the declared field names are the ones
   `report.mjs` indexes, round-trips the definition's own JSON template through the parser,
-  and keeps the markdown fallback covered. It therefore fails at claude's cutover until
-  claude's older shape (`checks` as an array of `{command, result}`, read by the prose
-  orchestrator) is migrated — a silent contradiction there would demote clean branches to
-  `partial` for "tests not run".
+  keeps the markdown fallback covered, and requires the sidecar write to be asked for "as
+  your last action". claude's older shape (`checks` as an array of `{command, result}`, read
+  by the prose orchestrator) was migrated at its cutover, which is what that test existed to
+  force: a silent contradiction there demotes clean branches to `partial` for "tests not
+  run".

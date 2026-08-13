@@ -121,13 +121,12 @@ Note: If the issue has both "## Acceptance criteria" and "## Cross-cutting Requi
 Rules:
 
 1. `## Issue:` carries the issue slug (filename without extension); `Status` is exactly one of `complete`, `partial`, `blocked`.
-2. `### Checks` — per check, the command and its final summary line(s) only (pass/fail counts), never individual test names.
-3. `### Acceptance Criteria` — every criterion, including `## Cross-cutting Requirements` when the issue has one.
-4. Add no text outside these sections.
+2. `### Acceptance Criteria` — every criterion, including `## Cross-cutting Requirements` when the issue has one.
+3. Add no text outside these sections.
 
 ### Machine-readable block
 
-End the report with this block, or write the same JSON to `<slug>.report.json` beside it — the orchestrator reads either, and prefers it over the markdown above. It is **parsed**, so the field names are fixed and a report with neither is read as `blocked`, never as a silent `complete`:
+**Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action**, and end your final message with the same block. The file is read first, and it is **parsed**: a final message ending in a summary sentence instead of the block is read as `blocked` — never as a silent `complete` — and costs the issue a whole round. The field names are fixed:
 
 ```json
 {"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}

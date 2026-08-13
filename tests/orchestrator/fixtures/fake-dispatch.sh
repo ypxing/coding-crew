@@ -6,6 +6,8 @@
 #   <slug>.review         the review report to emit (default: AC: all-met, no findings)
 #   <slug>.nocommit       do not create a commit in the worktree
 #   <slug>.exit           exit with this code instead of 0
+#
+# `--agent coverage-validation` stands in for the agent-less wrap-up dispatch.
 set -uo pipefail
 
 AGENT=""; DIR=""; PROMPT_FILE=""; OUT=""
@@ -27,6 +29,11 @@ mkdir -p "$(dirname "$OUT")"
 if [ -f "$FAKE_DIR/$SLUG.exit" ]; then
   : > "$OUT"
   exit "$(cat "$FAKE_DIR/$SLUG.exit")"
+fi
+
+if [ "$AGENT" = "coverage-validation" ]; then
+  printf '## Coverage Report\n\n✓ 1 covered · ⚠ 0 partial · ✗ 0 missing\n' > "$OUT"
+  exit 0
 fi
 
 if [ "$AGENT" = "crew-code-reviewer" ]; then

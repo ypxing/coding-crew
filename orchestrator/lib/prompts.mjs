@@ -21,8 +21,8 @@ export function workerPrompt({ mainRoot, worktree, issuePath, slug, criteria, re
   if (resume) lines.push("", resume);
   lines.push(
     "",
-    "When you are done, end your final message with a machine-readable block so the",
-    "orchestrator does not have to infer your result:",
+    `Write your structured result to ${reportPath} as your last action — that file is what`,
+    "the orchestrator reads, so it does not have to infer your result from prose:",
     "",
     "```json",
     JSON.stringify(
@@ -40,7 +40,11 @@ export function workerPrompt({ mainRoot, worktree, issuePath, slug, criteria, re
     ),
     "```",
     "",
-    `The same block may be written to ${reportPath} instead; either is read.`,
+    // Observed on a real claude sprint: the final message ended with a sentence of
+    // summary, nothing parsed, and the issue lost a whole round to `blocked` even though
+    // the work was committed. A file write does not depend on how a message ends.
+    "End your final message with the same block too. If neither the file nor the block",
+    "exists, your result is read as `blocked` — never as a silent `complete`.",
   );
   return `${lines.join("\n")}\n`;
 }

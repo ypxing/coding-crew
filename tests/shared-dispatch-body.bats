@@ -54,16 +54,20 @@ DISPATCH_PLATFORMS=("${AFK_PROSE_DISPATCH_VARIANTS[@]}")
   done
 }
 
-@test "P2: claude keeps its own body (native Agent tool, batches of 3)" {
-  run jq -r '.skills["crew-afk"].body.claude // "none"' "$REPO_ROOT/registry.json"
-  [ "$output" = "none" ]
-  grep -q 'AFK Issue Sprint — Claude Code' "$AFK_DIR/SKILL.md"
+@test "P2: no launcher platform is mapped to the shared prose body" {
+  # A cut-over platform must resolve to its own <platform>.SKILL.md launcher. A body
+  # mapping left behind would ship the prose orchestrator to a platform whose pipeline
+  # now lives in code — two orchestrators, which is the drift this suite exists for.
+  for platform in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    run jq -r --arg p "$platform" '.skills["crew-afk"].body[$p] // "none"' "$REPO_ROOT/registry.json"
+    [ "$output" = "none" ] || { echo "$platform still maps to $output" >&2; return 1; }
+  done
 }
 
 # ─── rendering ───────────────────────────────────────────────────────────────
 
 @test "P2: every platform renders, with no placeholder left behind" {
-  for platform in claude "${DISPATCH_PLATFORMS[@]}"; do
+  for platform in "${DISPATCH_PLATFORMS[@]}"; do
     rendered=$(afk_variant "$platform")
     [ -s "$rendered" ] || { echo "$platform rendered empty" >&2; return 1; }
     if grep -n '{{' "$rendered"; then

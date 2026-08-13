@@ -208,8 +208,10 @@ EOF
 @test "B3: crew-afk pre-filter policy agrees with verify-worktree exit behaviour" {
   # verify-worktree treats a missing lint/typecheck as a non-fatal gap...
   grep -q 'not_run' "$VERIFY"
-  # ...so the orchestrator prose must not contradict it.
-  grep -q 'does not block the merge' "$REPO_ROOT/skills/crew-afk/SKILL.md"
+  # ...so the remaining prose orchestrator must not contradict it. On the launcher
+  # platforms the same policy is one function — prefilter() in orchestrator/lib/report.mjs,
+  # asserted in tests/orchestrator/report.test.mjs.
+  grep -q 'does not block the merge' "$(afk_variant copilot)"
 }
 
 # --- B4: only the orchestrator closes issues in a sprint ---------------------
