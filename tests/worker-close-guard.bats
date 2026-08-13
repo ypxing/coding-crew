@@ -13,6 +13,8 @@
 # These assert the refusal, not the sentence. The prose tests below only require the
 # documents to point at the mechanism instead of re-arguing it.
 
+load helpers/render
+
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 MARK_DONE="$REPO_ROOT/scripts/tracker/mark-issue-done.sh"
 AFK_SCRIPTS="$REPO_ROOT/skills/crew-afk/scripts"
@@ -327,10 +329,9 @@ EOF
 }
 
 @test "every crew-coder variant points at the procedure instead of restating it" {
-  for f in "$REPO_ROOT"/agents/crew-coder/claude.agent.md \
-           "$REPO_ROOT"/agents/crew-coder/copilot.agent.md \
-           "$REPO_ROOT"/agents/crew-coder/pi.agent.md \
-           "$REPO_ROOT"/agents/crew-coder/codex.agent.toml; do
+  for p in "${CODER_VARIANTS[@]}"; do
+    local f
+    f=$(coder_variant "$p")
     section=$(awk '/^## Issue Ownership/{f=1;next} /^## /{f=0} f' "$f")
     # The agent needs two facts: report `complete`, leave the file. The procedure and
     # its enforcement live in solve-issue §7 and mark-issue-done.sh respectively.

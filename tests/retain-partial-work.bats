@@ -15,8 +15,8 @@ load helpers/render
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export CLAUDE_AGENT="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
-  export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
+  export CLAUDE_AGENT="$(coder_variant claude)"
+  export COPILOT_AGENT="$(coder_variant copilot)"
   export MERGE_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/merge-branches.sh"
 }
 

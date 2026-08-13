@@ -9,13 +9,15 @@
 # the *behaviour*: both resolution paths (the issue's Context Documents section and
 # the conventional .scratch/<feature-slug>/PRD.md) and graceful degradation.
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export SOLVE_ISSUE="$SCRIPT_DIR/skills/solve-issue/SKILL.md"
-  export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
-  export CLAUDE_AGENT="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
-  export PI_AGENT="$SCRIPT_DIR/agents/crew-coder/pi.agent.md"
-  export CODEX_AGENT="$SCRIPT_DIR/agents/crew-coder/codex.agent.toml"
+  export COPILOT_AGENT="$(coder_variant copilot)"
+  export CLAUDE_AGENT="$(coder_variant claude)"
+  export PI_AGENT="$(coder_variant pi)"
+  export CODEX_AGENT="$(coder_variant codex)"
 }
 
 # --- the read lives in solve-issue, once ---

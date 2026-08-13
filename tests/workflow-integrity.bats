@@ -207,10 +207,9 @@ EOF
 # --- B4: only the orchestrator closes issues in a sprint ---------------------
 
 @test "B4: every crew-coder variant is told not to close the issue itself" {
-  for f in "$REPO_ROOT"/agents/crew-coder/claude.agent.md \
-           "$REPO_ROOT"/agents/crew-coder/copilot.agent.md \
-           "$REPO_ROOT"/agents/crew-coder/pi.agent.md \
-           "$REPO_ROOT"/agents/crew-coder/codex.agent.toml; do
+  for p in "${CODER_VARIANTS[@]}"; do
+    local f
+    f=$(coder_variant "$p")
     grep -q 'do not' <(tr 'A-Z' 'a-z' < "$f")
     grep -qi 'mark-done\|mark it done\|move the issue' "$f"
     grep -qi 'orchestrator' "$f"

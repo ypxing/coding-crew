@@ -2,9 +2,11 @@
 
 # Tests for copilot crew-coder environment setup section
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
+  export COPILOT_AGENT="$(coder_variant copilot)"
 }
 
 @test "copilot.agent.md reads MAIN_ROOT from prompt" {

@@ -7,10 +7,12 @@
 #   - No enumerated tool allowlist and no hardcoded mcp__-prefixed server name in any agent file
 #   - CodeGraph CLI fallback prose is present in claude.agent.md
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export CLAUDE_AGENT="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
-  export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
+  export CLAUDE_AGENT="$(coder_variant claude)"
+  export COPILOT_AGENT="$(coder_variant copilot)"
   export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
   export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"
 }

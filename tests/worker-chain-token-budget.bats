@@ -14,20 +14,27 @@
 # When a budget is genuinely too tight, raise it in the same commit that earns it and
 # say why.
 
+load helpers/render
+
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 
 words_of() {
   wc -w < "$1" | tr -d ' '
 }
 
-@test "budget: every crew-coder variant is under 1,250 words" {
-  for f in "$REPO_ROOT"/agents/crew-coder/claude.agent.md \
-           "$REPO_ROOT"/agents/crew-coder/pi.agent.md \
-           "$REPO_ROOT"/agents/crew-coder/copilot.agent.md \
-           "$REPO_ROOT"/agents/crew-coder/codex.agent.toml; do
-    words=$(words_of "$f")
-    [ "$words" -lt 1250 ] || {
-      echo "$(basename "$f") is $words words (budget 1250)" >&2
+@test "budget: every crew-coder variant is under 1,350 words" {
+  # Measured on the *installed* body — protocol.md plus the platform block — because that
+  # is what a worker loads. The four source files are a few hundred words each now; the
+  # thing that must stay bounded is the assembled result.
+  #
+  # Raised from 1,250: the protocol is the *union* of what the four bodies each said, and
+  # two of them (pi, codex) had been missing the worked sidecar JSON the other two shipped.
+  # Maintained words fell 4,624 → ~1,530 in the same change; per-body words rose ~100
+  # because the smallest bodies gained the instructions they were missing.
+  for p in "${CODER_VARIANTS[@]}"; do
+    words=$(words_of "$(coder_variant "$p")")
+    [ "$words" -lt 1350 ] || {
+      echo "$p body is $words words (budget 1350)" >&2
       return 1
     }
   done
@@ -48,21 +55,22 @@ words_of() {
   [ "$words" -lt 750 ] || { echo "tdd is $words words (budget 750)" >&2; return 1; }
 }
 
-@test "budget: the whole per-issue worker chain is under 3,600 words" {
+@test "budget: the whole per-issue worker chain is under 3,700 words" {
   # crew-coder + solve-issue + its verification reference + tdd. Read once per issue,
   # so this total is what a sprint multiplies by its issue count. It was 4,158 words
   # before the duplication below was cut; the ceiling leaves room for one genuinely new
   # rule, not for re-explaining an old one. Raised from 3,500 with the solve-issue
   # ceiling above, and paid for in part by crew-coder's "Issue Ownership" section, which
-  # stopped restating an enforcement its own gate performs and became one line.
-  total=0
-  for f in "$REPO_ROOT"/agents/crew-coder/pi.agent.md \
-           "$REPO_ROOT"/skills/solve-issue/SKILL.md \
+  # stopped restating an enforcement its own gate performs and became one line; then from
+  # 3,600 with the protocol extraction, which unions four bodies into the one every
+  # platform now loads.
+  total=$(words_of "$(coder_variant pi)")
+  for f in "$REPO_ROOT"/skills/solve-issue/SKILL.md \
            "$REPO_ROOT"/skills/solve-issue/references/verification.md \
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 3600 ] || { echo "worker chain is $total words (budget 3600)" >&2; return 1; }
+  [ "$total" -lt 3700 ] || { echo "worker chain is $total words (budget 3700)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────

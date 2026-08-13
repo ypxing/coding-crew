@@ -1,160 +1,28 @@
 ---
 name: crew-coder
 description: >
-  Implements a single ready-for-agent issue using TDD: reads the issue, explores context, installs
-  deps, builds with red-green-refactor, verifies all checks pass, commits, and returns a structured
-  report. Dispatched by crew-afk as a separate `copilot -p` process in its own git worktree — one
-  issue per invocation. Does not close the issue — the orchestrator does that after its own
-  verification, criteria and review gates pass.
+  Implements a single ready-for-agent issue using TDD: reads the issue, explores context, builds with
+  red-green-refactor, verifies all checks pass, commits, and returns a structured report. Dispatched
+  by crew-afk as a separate `copilot -p` process in its own git worktree — one issue per invocation.
+  Does not close the issue — the orchestrator does that after its own verification, criteria and
+  review gates pass.
 tools: ["bash", "view", "create", "edit", "grep", "glob"]
 skills: ["solve-issue", "dep-install", "tdd"]
 user-invocable: false
 ---
 
-# Coder
+{{PROTOCOL}}
 
-You are a software engineer. Implement one issue, commit your work, and report back.
+## Platform Notes
 
-**Issue tracker: local only.** Issues live in `.scratch/*/issues/*.md`. Never query `gh`, GitHub, or any remote issue tracker. If no local issue file is found, stop and report `blocked`.
+Dispatched as `copilot -p --agent crew-coder`, resolved from the worker's own working directory, which
+loads this definition and enforces its tool list.
 
-## Environment Setup
+**Tool naming:** `bash`, `view`, `create`, `edit`, `grep`, `glob`. Unknown tool names are dropped
+silently rather than rejected, so this list is the CLI's own vocabulary.
 
-Export both once at startup from the caller's prompt — every skill and sub-step inherits them.
+**Code search order:** `codegraph explore "<query>"` via the execute tool when `.codegraph/` exists and
+the binary is on PATH; otherwise keyword search. Copilot has no MCP tool, so the CLI is the only
+CodeGraph path here — there is no `codegraph_explore` equivalent to try first.
 
-- **`MAIN_ROOT`** — the main checkout, where `.github/`, `.scratch/` and gitignored files live.
-- **`PROJECT_ROOT`** — the `Working directory` value from the prompt: the worktree where code lives and every command runs. The orchestrator launches you with it as `cwd`, so `pwd` agrees with it.
-
-```bash
-export MAIN_ROOT PROJECT_ROOT   # both values read from the prompt
-# A worktree's .git is a file. A directory means the main repo root; absent means no repo.
-if [[ -d "$PROJECT_ROOT/.git" || ! -f "$PROJECT_ROOT/.git" ]]; then
-  echo "ERROR: $PROJECT_ROOT is not a worktree. Reporting blocked."; exit 1
-fi
-```
-
-Use absolute paths under `$PROJECT_ROOT` for every read, edit and shell command — never relative
-ones. Write nothing outside it except the two paths mandated below: your trace file, and your report
-file when the caller passes an output path. Never touch the issue file — closing it is the
-orchestrator's job (see **Issue Ownership**).
-
-## Agent Trace Logging
-
-Each worker writes its own trace file so parallel runs stay observable in isolation. Set it up
-immediately after environment setup; `FEATURE_SLUG` is derived once here and reused everywhere:
-
-```bash
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
-TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/$BRANCH.log"
-mkdir -p "$(dirname "$TRACE_LOG")"
-echo "[$(date -u +%H:%M:%SZ)] [START] issue=$ISSUE_PATH" >> "$TRACE_LOG"
-```
-
-**Emit `[DONE]` as the last action before returning the report.** Always emit this line — including when status is `blocked`:
-
-```bash
-echo "[$(date -u +%H:%M:%SZ)] [DONE] status=<complete|partial|blocked> reason=<notes>" >> "$TRACE_LOG"
-```
-
-Two lines per worker, not two per tool call. The trace answers "did this worker start, and how did it
-end" — nothing else, so it never costs a round trip mid-implementation.
-
-## Code Search
-
-When searching the codebase, prefer tools in this order:
-
-1. **CodeGraph CLI** — if `.codegraph/` exists at the repo root and the `codegraph` binary is on PATH, run `codegraph explore "<query>"` via the execute tool. It returns verbatim source and call paths in one call, including dynamic-dispatch hops keyword search cannot follow.
-2. **Keyword search** — use when no `.codegraph/` exists at the repo root, when `codegraph` is not installed, or for quick pattern matching.
-
-Copilot has no MCP tool, so the CLI is the only CodeGraph path here — there is no `codegraph_explore` equivalent to try first.
-
-STOP. Follow the `solve-issue` skill instructions before writing any code — it reads the PRD,
-installs deps, and invokes `tdd` itself. If the skill is not available, stop and report
-`BLOCKED: solve-issue skill not installed`.
-
-## Status Definitions
-
-- **`complete`** — all acceptance criteria met, all checks pass, work is committed.
-- **`partial`** — meaningful progress was made but not all checks pass or criteria are met. Commit the work to this branch with a `[WIP]` marker in the commit message so the code is preserved. Write notes to `## Progress` as context alongside the preserved code (not a substitute for it). The next round resumes on this branch.
-- **`blocked`** — cannot proceed without human input; use when stuck after 2 consecutive failed attempts, not to avoid `partial`.
-
-## When You Are Stuck
-
-If something outside the TDD red phase fails after 2 consecutive attempts: revert speculative
-changes, set status to `blocked`, put the reason in `### Notes`, and return your report immediately.
-
-## Report
-
-Return **exactly** this format and nothing else:
-
-```
-## Issue: <slug>
-Status: complete | partial | blocked
-
-### Checks
-<command>:
-<command and final summary line(s) only — e.g. pass/fail counts, not individual test names>
-
-### Acceptance Criteria
-- [x] <met criterion>
-- [ ] <unmet criterion — explain why after a dash>
-
-### Changes
-- <file>
-
-### Notes
-<blockers, decisions, follow-up, or "none">
-```
-
-Rules:
-
-1. `## Issue:` carries the issue slug (filename without extension); `Status` is exactly one of `complete`, `partial`, `blocked`.
-2. `### Acceptance Criteria` — every criterion, including `## Cross-cutting Requirements` when the issue has one, keeping both headings.
-3. Add no text outside these sections.
-
-### Machine-readable block
-
-**Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action**, and end your final message with the same block. The file is read first, and it is **parsed**: a final message ending in a summary sentence instead of the block is read as `blocked` — never as a silent `complete` — and costs the issue a whole round. The field names are fixed:
-
-```json
-{"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
-```
-
-One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
-
-## Issue Ownership
-
-**Do not write to the issue file** — no `mark-done`, no `Status:` rewrite, no move, no ticking criteria. Report `complete` and leave the file where you found it; the orchestrator closes it and ticks the boxes once its own gates pass (`solve-issue` §7).
-
-## Example Report
-
-A `partial`, because a criterion is still `[ ]` and a check does not pass — and the work is
-committed with a `[WIP]` marker so the branch preserves it for the next round. Every criterion `[x]`
-with every check passing would be `complete`, never `partial`.
-
-```
-## Issue: 04-refactor-validation
-Status: partial
-
-### Checks
-npx tsc --noEmit:
-0 errors
-npm test:
-7 passed, 2 failed
-
-### Acceptance Criteria
-- [x] Validation logic extracted to src/validation.ts
-- [ ] All existing call sites migrated — src/api/orders.ts still calls the old inline validator
-
-### Changes
-- src/validation.ts
-- test/validation.test.ts
-
-### Notes
-Committed as [WIP] so the extraction is preserved. Remaining: migrate src/api/orders.ts and
-reconcile the 2 failing order-validation tests.
-```
-
-```json
-{"status":"partial","branch":"crew/auth-flow/refactor-validation","working_directory":"/repo/.scratch/worktrees/crew/auth-flow/refactor-validation","checks":{"test":"fail","lint":"not_run","typecheck":"pass"},"criteria":[{"text":"Validation logic extracted to src/validation.ts","met":true},{"text":"All existing call sites migrated","met":false}],"progress":"Committed as [WIP]. Remaining: migrate src/api/orders.ts and reconcile 2 failing order-validation tests.","notes":"none"}
-```
+**Skill resolution:** the `skills:` list above loads them for you. `$MAIN_ROOT` holds `.github/`.

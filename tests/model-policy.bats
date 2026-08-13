@@ -10,8 +10,8 @@ load helpers/render
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export CODER_CLAUDE="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
-  export CODER_COPILOT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
+  export CODER_CLAUDE="$(coder_variant claude)"
+  export CODER_COPILOT="$(coder_variant copilot)"
   export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
   export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"
   export CREW_AFK_SKILL="$SCRIPT_DIR/skills/crew-afk/claude.SKILL.md"

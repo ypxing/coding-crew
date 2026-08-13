@@ -12,10 +12,9 @@ load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_DIR="$REPO_ROOT/skills/crew-afk"
-CODER_DIR="$REPO_ROOT/agents/crew-coder"
-
-CODER_VARIANTS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
-REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
+# The coder bodies are read through helpers/render.bash: a body is protocol.md plus a
+# platform block, assembled at install time, so the file a worker is given is the
+# installed one. CODER_VARIANTS comes from that helper — one list, not a second copy.
 
 # ─── P1.1 close happens after the merge, never before ────────────────────────
 #
@@ -80,7 +79,7 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 
 @test "P1.4: no crew-coder variant demands a Skills report section" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    if grep -q '^### Skills' "$CODER_DIR/$variant"; then
+    if grep -q '^### Skills' "$(coder_variant "$variant")"; then
       echo "$variant still requires '### Skills', which no orchestrator reads" >&2
       return 1
     fi
@@ -109,14 +108,14 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 
 @test "P1.5: every crew-coder variant ships a worked example report" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    run grep -q '^## Example Report' "$CODER_DIR/$variant"
+    run grep -q '^## Example Report' "$(coder_variant "$variant")"
     [ "$status" -eq 0 ] || { echo "$variant has no worked example report" >&2; return 1; }
   done
 }
 
 @test "P1.5: the surviving example is the partial one" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
+    section=$(sed -n '/^## Example Report/,$p' "$(coder_variant "$variant")")
     echo "$section" | grep -qi 'partial' || {
       echo "$variant: the surviving example is not a partial report" >&2
       return 1
@@ -126,7 +125,7 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 
 @test "P1.5: the partial example shows an unmet criterion" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
+    section=$(sed -n '/^## Example Report/,$p' "$(coder_variant "$variant")")
     echo "$section" | grep -q '\- \[ \]' || {
       echo "$variant: partial example has no unmet '- [ ]' criterion" >&2
       return 1
@@ -137,8 +136,8 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 @test "P1.5: the partial example shows a check that does not pass" {
   # Every coder now reports checks in the same shape (the launcher report contract), so
   # there is no longer a claude-specific structured-return case to special-case here.
-  for variant in "${REPORT_CODERS[@]}"; do
-    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
+  for variant in "${CODER_VARIANTS[@]}"; do
+    section=$(sed -n '/^## Example Report/,$p' "$(coder_variant "$variant")")
     echo "$section" | grep -q -i 'fail' || {
       echo "$variant: partial example shows no failing check" >&2
       return 1
@@ -148,7 +147,7 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 
 @test "P1.5: the partial example commits its work with a WIP marker" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
+    section=$(sed -n '/^## Example Report/,$p' "$(coder_variant "$variant")")
     echo "$section" | grep -q '\[WIP\]' || {
       echo "$variant: partial example does not show the work committed as [WIP]" >&2
       return 1
@@ -158,7 +157,7 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 
 @test "P1.5: no partial example claims all criteria met and all checks passing" {
   for variant in "${CODER_VARIANTS[@]}"; do
-    section=$(sed -n '/^## Example Report/,$p' "$CODER_DIR/$variant")
+    section=$(sed -n '/^## Example Report/,$p' "$(coder_variant "$variant")")
     if echo "$section" | grep -q 'All existing tests pass'; then
       echo "$variant: partial example still describes a complete run" >&2
       return 1

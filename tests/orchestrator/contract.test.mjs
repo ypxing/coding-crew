@@ -39,7 +39,13 @@ function launcherPlatforms() {
 
 function coderDefinition(platform) {
   const file = platform === "codex" ? "codex.agent.toml" : `${platform}.agent.md`;
-  return readFileSync(join(REPO, "agents/crew-coder", file), "utf8");
+  const body = readFileSync(join(REPO, "agents/crew-coder", file), "utf8");
+  // crew-coder is one protocol with four platform bindings: install.sh substitutes
+  // {{PROTOCOL}} with agents/crew-coder/protocol.md, so the field list a worker is
+  // actually given exists only after that substitution.
+  if (!body.includes("{{PROTOCOL}}")) return body;
+  const protocol = readFileSync(join(REPO, "agents/crew-coder/protocol.md"), "utf8");
+  return body.replace("{{PROTOCOL}}", protocol);
 }
 
 test("every launcher platform's coder declares the parser's exact field list", () => {

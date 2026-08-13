@@ -9,12 +9,14 @@
 # assertions below are as load-bearing as the positive ones: they stop the retired
 # markers being reinstated as prose.
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export COPILOT_AGENT="$SCRIPT_DIR/agents/crew-coder/copilot.agent.md"
-  export CLAUDE_AGENT="$SCRIPT_DIR/agents/crew-coder/claude.agent.md"
-  export PI_AGENT="$SCRIPT_DIR/agents/crew-coder/pi.agent.md"
-  export CODEX_AGENT="$SCRIPT_DIR/agents/crew-coder/codex.agent.toml"
+  export COPILOT_AGENT="$(coder_variant copilot)"
+  export CLAUDE_AGENT="$(coder_variant claude)"
+  export PI_AGENT="$(coder_variant pi)"
+  export CODEX_AGENT="$(coder_variant codex)"
 }
 
 all_variants() {
