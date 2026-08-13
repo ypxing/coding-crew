@@ -37,7 +37,13 @@ setup_file() {
   run node orchestrator/main.mjs plan --platform pi
   # 0 = issues found, 3 = nothing to do; both are read-only successes.
   [ "$status" -eq 0 ] || [ "$status" -eq 3 ]
-  [[ "$output" == *"pipeline per branch: verify → review (AC + findings) → merge → close"* ]]
+  [[ "$output" == *"pipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close"* ]]
+  # Provisioning is part of the pipeline plan, and its off switch is visible in it.
+  [[ "$output" == *"deps:"* ]]
+
+  run node orchestrator/main.mjs plan --platform pi --no-deps
+  [ "$status" -eq 0 ] || [ "$status" -eq 3 ]
+  [[ "$output" == *"disabled (--no-deps)"* ]]
 }
 
 @test "orchestrator: every platform builds a headless per-agent dispatch" {

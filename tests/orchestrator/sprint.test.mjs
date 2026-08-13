@@ -444,3 +444,246 @@ test("a review that never ran is named in the summary, not just counted in the s
   assert.match(r.stdout, /crew\/demo\/alpha/);
   assert.equal(state(root).retention.alpha.reason, "review-not-run");
 });
+
+// ─── eager dependency provisioning ───────────────────────────────────────────
+//
+// dep-install is failure-triggered, which is right for a human's direct solve-issue run.
+// A sprint is the opposite case: every worktree is fresh, and one consumer of the deps is
+// verify-worktree.sh — a gate, which cannot invoke a skill and has no recovery path when
+// `npm test` dies on a missing module. So provisioning is mechanism, at two call sites,
+// and what these tests pin is the *position* of those two calls in the recorded command
+// order. A DEPS: outcome never changes a round's status.
+
+/** The effects log — one line per subprocess, in order. CREW_VERBOSE puts it on stderr. */
+function commandLines(root, extra = []) {
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...extra], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_VERBOSE: "1",
+    },
+  });
+  return { r, lines: r.stderr.split("\n").filter((l) => /^(RUN|SPAWN|DRY) /.test(l)) };
+}
+
+const SPRINT_LEVEL_DEPS = /ensure-deps\.sh --dir \S+$/;
+const worktreeDepsFor = (slug) => new RegExp(`ensure-deps\\.sh --dir \\S+ --slug ${slug}$`);
+
+test("deps are provisioned once per sprint and once per dispatched issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+
+  // Once per sprint, against the main root: N parallel worktree installs must not be N
+  // cold downloads, so the cache is warmed serially before any worker exists.
+  assert.equal(lines.filter((l) => SPRINT_LEVEL_DEPS.test(l)).length, 1);
+  // Once per dispatched issue, against that issue's worktree.
+  assert.equal(lines.filter((l) => worktreeDepsFor("alpha").test(l)).length, 1);
+  assert.equal(lines.filter((l) => worktreeDepsFor("beta").test(l)).length, 1);
+});
+
+test("the sprint-level call precedes every worker, and the worktree call precedes both its dispatch and its verify", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+
+  const at = (re) => {
+    const i = lines.findIndex((l) => re.test(l));
+    assert.notEqual(i, -1, `no command matching ${re} in:\n${lines.join("\n")}`);
+    return i;
+  };
+  const sprintDeps = at(SPRINT_LEVEL_DEPS);
+  const worktreeDeps = at(worktreeDepsFor("alpha"));
+  const worktreeAdd = at(/git .*worktree add/);
+  const dispatch = at(/^SPAWN .*--agent crew-coder/);
+  const verify = at(/verify-worktree\.sh --dir/);
+
+  assert.ok(sprintDeps < worktreeAdd, "the sprint-level warm-up ran after a worktree existed");
+  assert.ok(worktreeAdd < worktreeDeps, "the worktree was provisioned before it existed");
+  assert.ok(worktreeDeps < dispatch, "the worker was dispatched into an unprovisioned worktree");
+  assert.ok(
+    worktreeDeps < verify,
+    "verify-worktree.sh ran before deps — the gate has no recovery path of its own",
+  );
+});
+
+test("the worktree call comes after .worktreeinclude is applied, so an inherited dep dir costs nothing", () => {
+  // The presence guard is what makes a .worktreeinclude repo free, and it can only see a
+  // linked node_modules if the include has already run.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, ".worktreeinclude"), "node_modules\n");
+  writeFileSync(join(root, "package.json"), '{ "name": "fixture", "private": true }\n');
+  mkdirSync(join(root, "node_modules"), { recursive: true });
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "add package.json"]);
+
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const include = lines.findIndex((l) => /worktreeinclude|rsync|cp -R/.test(l));
+  const deps = lines.findIndex((l) => worktreeDepsFor("alpha").test(l));
+  if (include !== -1) assert.ok(include < deps, "deps were provisioned before the include ran");
+  assert.match(traceLog(root), /\[DEPS\].*present/);
+});
+
+test("--no-deps removes both invocations and nothing else", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const withDeps = commandLines(root);
+  assert.equal(withDeps.r.code, 0, withDeps.r.stderr);
+
+  const root2 = fixtureRepo();
+  addIssue(root2, "01-alpha.md");
+  const without = commandLines(root2, ["--no-deps"]);
+  assert.equal(without.r.code, 0, `${without.r.stdout}\n${without.r.stderr}`);
+
+  assert.equal(without.lines.filter((l) => /ensure-deps\.sh/.test(l)).length, 0);
+  // Nothing else changes: the same sequence of scripts, minus the two deps calls.
+  const names = (lines) =>
+    lines
+      .map((l) => (/([\w-]+\.sh)/.exec(l) ?? [])[1] ?? (/--agent (\S+)/.exec(l) ?? [])[1] ?? "git")
+      .filter((n) => n !== "ensure-deps.sh");
+  assert.deepEqual(names(without.lines), names(withDeps.lines));
+});
+
+test("a DEPS: failed outcome does not demote the issue or change the round summary", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // A manifest with no dep dir, plus a dep-install stub whose host install always fails.
+  writeFileSync(join(root, "package.json"), '{ "name": "fixture", "private": true }\n');
+  const stub = join(root, "stub-scripts");
+  mkdirSync(stub, { recursive: true });
+  writeFileSync(join(stub, "detect-mode.sh"), "#!/usr/bin/env bash\necho USE_HOST\n");
+  writeFileSync(join(stub, "host-install.sh"), "#!/usr/bin/env bash\necho 'npm ERR! boom' >&2\nexit 3\n");
+  sh("chmod", ["+x", join(stub, "detect-mode.sh"), join(stub, "host-install.sh")]);
+  sh("git", ["-C", root, "add", "package.json"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "add package.json"]);
+
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_DEP_INSTALL_SCRIPTS: stub,
+    },
+  });
+  assert.equal(r.code, 0, `a failed install must not stall the sprint:\n${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[DEPS\].*failed/);
+  const s = state(root);
+  assert.deepEqual(s.completed_slugs, ["alpha"]);
+  assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
+  assert.equal(s.retention?.alpha, undefined, "a DEPS: failure demoted the issue by itself");
+});
+
+test("the orchestrator prints one line per deps call — the DEPS: line itself", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, r.stderr);
+  const printed = r.stderr.split("\n").filter((l) => l.startsWith("DEPS:"));
+  assert.equal(printed.length, 2, `expected one line per call, got:\n${printed.join("\n")}`);
+});
+
+test("--no-deps and the help text are declared together, so the flag is discoverable", () => {
+  const help = sh("node", [MAIN, "--help"], { cwd: REPO });
+  assert.equal(help.code, 0, help.stderr);
+  assert.match(help.stdout, /--no-deps/);
+  const source = readFileSync(MAIN, "utf8");
+  assert.match(source, /^ \*\s+--no-deps\s/m, "the header comment's option list omits --no-deps");
+});
+
+test("a dry run records both call sites without running either", () => {
+  // Recorded, not run: --dry-run is the zero-token way to inspect the command sequence, so
+  // the two positions have to be visible there too, not only on a live sprint.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // A dry run cannot create the sprint it inspects — session-init.sh is itself an effect.
+  sh("bash", [join(SCRIPTS, "session-init.sh"), "--feature-slug", "demo"], {
+    cwd: root,
+    env: { ...process.env, MAIN_ROOT: root, CREW_SCRIPTS: SCRIPTS },
+  });
+
+  const r = sh("node", [MAIN, "run", "--dry-run", "--max-rounds", "1", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_VERBOSE: "1",
+    },
+  });
+  const dry = r.stderr.split("\n").filter((l) => l.startsWith("DRY "));
+  assert.equal(dry.filter((l) => SPRINT_LEVEL_DEPS.test(l)).length, 1, r.stderr);
+  assert.equal(dry.filter((l) => worktreeDepsFor("alpha").test(l)).length, 1, r.stderr);
+  // Recorded only: no install ran, so no marker and no dep dir appeared anywhere.
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.deps.ok")), false);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.deps.skip")), false);
+});
+
+test("a worktree that starts with no node_modules is verified and merged, with no worker recovery", () => {
+  // The failure this whole feature exists for, reproduced: verify-worktree.sh runs the
+  // project's own check in the worktree, the check needs the dep dir, and the gate has no
+  // way to install it. Before eager provisioning this round ended `verification-failed`
+  // with the branch retained and nothing merged, however healthy the worker's report was.
+  //
+  // The fixture's dependency step is its own `make install`, which is the first thing
+  // host-install.sh looks for — so this exercises the real detect-mode → host-install path
+  // with no network and no package registry in the loop.
+  const files = {
+    Makefile: [
+      "install:",
+      "\t@mkdir -p node_modules && touch node_modules/.stamp",
+      // The check *is* the assertion: it can only pass if something installed deps first.
+      "test:",
+      "\t@test -f node_modules/.stamp && echo ok",
+      "lint:",
+      "\t@echo ok",
+      "typecheck:",
+      "\t@echo ok",
+      "",
+    ].join("\n"),
+    "package.json": '{ "name": "fixture", "version": "1.0.0", "private": true }\n',
+    ".gitignore": ".scratch/\nnode_modules/\n",
+  };
+  const seed = (root) => {
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(root, name), body);
+    sh("git", ["-C", root, "add", "-A"]);
+    sh("git", ["-C", root, "commit", "-q", "-m", "add a dependency step"]);
+  };
+
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  seed(root);
+  assert.equal(existsSync(join(root, "node_modules")), false, "the fixture must start bare");
+
+  const r = commandLines(root);
+  assert.equal(r.r.code, 0, `${r.r.stdout}\n${r.r.stderr}`);
+  const s = state(root);
+  assert.deepEqual(s.completed_slugs, ["alpha"], "the branch did not merge — see the DEPS: line");
+  assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
+  // Provisioned by the pipeline, not recovered from by the worker.
+  assert.match(traceLog(root), /\[DEPS\].*installed.*make install/);
+  assert.match(traceLog(root), /\[VERIFY\].*result=pass/);
+
+  // And with --no-deps the same repo fails at the gate, which is what makes the above a
+  // result of the two call sites rather than of anything else in the fixture.
+  const root2 = fixtureRepo();
+  addIssue(root2, "01-alpha.md");
+  seed(root2);
+  const off = commandLines(root2, ["--no-deps"]);
+  assert.equal(off.r.code, 2, "without deps the round should stall, not merge");
+  assert.deepEqual(state(root2).merged_branches ?? [], []);
+  assert.equal(state(root2).retention.alpha.reason, "verification-failed");
+});

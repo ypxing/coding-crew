@@ -10,6 +10,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { depsLine } from "./report.mjs";
+
 const ENV_KEYS = [
   "MAIN_ROOT",
   "FEATURE_SLUG",
@@ -53,7 +55,7 @@ export class Sprint {
     this.env = env;
   }
 
-  static init(effects, { featureSlug, coverage, promote, passthrough = [] }) {
+  static init(effects, { featureSlug, coverage, promote, passthrough = [], deps = true, log = () => {} }) {
     const args = [];
     if (featureSlug) args.push("--feature-slug", featureSlug);
     if (coverage) args.push("--coverage");
@@ -65,7 +67,21 @@ export class Sprint {
     }
     const env = readSprintEnv(effects.mainRoot);
     if (!env) throw new Error("session-init.sh did not produce a readable .scratch/sprint.env");
-    return new Sprint(effects, env);
+    const sprint = new Sprint(effects, env);
+
+    // Deps, once, serially, against the main root — before any worker or worktree exists.
+    // N parallel workers provisioning N fresh worktrees would otherwise be N cold
+    // downloads of the same packages; this warms whatever cache the package manager keeps
+    // so the per-worktree installs are local copies. Advisory: the outcome is logged and
+    // never acted on, because the gate that can act on it is verify-worktree.sh.
+    if (deps) {
+      const d = effects.bash("ensure-deps.sh", ["--dir", effects.mainRoot], {
+        env: sprint.childEnv(),
+      });
+      const line = depsLine(d.stdout);
+      if (line) log(line);
+    }
+    return sprint;
   }
 
   /** Attach to an already-initialised sprint (resume, status, dry-run planning). */

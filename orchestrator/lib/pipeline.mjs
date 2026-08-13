@@ -1,7 +1,8 @@
 /**
  * pipeline.mjs — the per-branch gate chain, in one place, in one order:
  *
- *     dispatch → prefilter → verify → review → AC receipt → promote → merge → close
+ *     worktree → include → deps → dispatch → prefilter → verify → review → AC receipt
+ *     → promote → merge → close
  *
  * This is the part that was prose, and the part that failed in real sprints: a branch
  * merged with a failing VERIFY, an issue closed off a sibling's branch, a review
@@ -18,6 +19,7 @@ import { join } from "node:path";
 
 import {
   applySchemaPrefilter,
+  depsLine,
   findingsAtOrAbove,
   parseReviewReport,
   parseVerifyChecks,
@@ -41,6 +43,22 @@ export async function runWorker(ctx, issue) {
     base: "HEAD",
   });
   applyWorktreeInclude(effects.mainRoot, worktree);
+
+  // Deps, here, because this position is the whole point: after the include (so an
+  // inherited node_modules is seen by the presence guard and costs nothing) and before
+  // *both* consumers of them. The worker is the obvious one; verify-worktree.sh is the one
+  // no worker skill can cover — it runs the project's own tests in this worktree, has no
+  // dep recovery path, and being a gate it cannot invoke dep-install.
+  //
+  // The DEPS: line is logged and nothing more. A failed install is not a demotion: the
+  // verify gate already fails closed on the consequence, and stalling a whole round on
+  // whatever host-install.sh mishandled would be worse than letting the gate say so.
+  if (options.deps !== false) {
+    const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug], {
+      env: sprint.childEnv(),
+    });
+    ctx.log(depsLine(deps.stdout));
+  }
 
   const promptFile = join(dispatchDir, `${issue.slug}.prompt.md`);
   const outFile = join(dispatchDir, `${issue.slug}.report.md`);

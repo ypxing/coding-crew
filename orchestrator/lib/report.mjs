@@ -153,6 +153,19 @@ export function parseVerifyChecks(stdout) {
   return checks;
 }
 
+/**
+ * ensure-deps.sh's single `DEPS:` line, or "" when there is none (a dry run records the
+ * command and produces no output).
+ *
+ * Read and logged, never branched on: an install failure is diagnosed by the verify gate
+ * that follows it, so a DEPS: outcome must not be able to demote an issue or change a
+ * round's status. Extracting the line is all the orchestrator does with it.
+ */
+export function depsLine(stdout) {
+  const m = /^DEPS:.*$/m.exec(stdout ?? "");
+  return m ? m[0].trim() : "";
+}
+
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
 /**
