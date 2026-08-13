@@ -6,4 +6,5 @@
 .claude/skills/
 .scratch/
 .claude/worktrees/
-.coding-crew.manifest.json
+.coding-crew*
+.pi/
