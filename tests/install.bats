@@ -97,14 +97,28 @@ teardown() {
            "$TEMP_DIR/.claude/skills/crew-afk/scripts"
   echo "stale policy" > "$TEMP_DIR/.claude/skills/crew-afk/references/verification.md"
   echo "stale readme" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md"
+  echo "stale tracker setup" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh"
 
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
 
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/references/verification.md" ]
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md" ]
+  # Tracker configuration was a step in the prose orchestrator; the program does its own
+  # issue discovery (orchestrator/lib/tracker.mjs), so crew-afk shipped a script no agent
+  # ran. The configure-tracker skill still owns it.
+  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh" ]
   # The skill itself is intact.
   [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
   [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/verify-worktree.sh" ]
+}
+
+@test "crew-afk no longer ships the tracker-configuration script, configure-tracker still does" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh" ]
+  # Its one real caller is the configure-tracker skill.
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill configure-tracker
+  [ -f "$TEMP_DIR/.claude/skills/configure-tracker/scripts/configure-tracker-auto.sh" ]
 }
 
 @test "installing crew-afk does not drag in the unrelated caveman skill" {

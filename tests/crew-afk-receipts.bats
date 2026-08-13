@@ -152,13 +152,17 @@ EOF
   [ -f "$DISPATCH_DIR/task-a.ac.ok" ]
 }
 
-@test "parity: no crew-afk variant hand-writes the ACVERIFY trace marker" {
-  for variant in claude pi copilot codex; do
-    if grep -q 'trace.sh" ACVERIFY' "$(afk_variant "$variant")"; then
-      echo "$variant still emits ACVERIFY by hand beside the receipt write" >&2
+@test "parity: nothing outside receipts.sh writes the ACVERIFY trace marker" {
+  # Writing the receipt *is* the event, so the script traces it. A second writer — a body,
+  # or the orchestrator beside its own receipt call — is a marker that can be emitted for a
+  # gate that never wrote a receipt.
+  for f in "$REPO_ROOT"/skills/crew-afk/*.SKILL.md "$REPO_ROOT"/orchestrator/lib/*.mjs; do
+    if grep -q 'ACVERIFY' "$f"; then
+      echo "$(basename "$f") emits ACVERIFY by hand beside the receipt write" >&2
       return 1
     fi
   done
+  grep -q 'ACVERIFY' "$RECEIPTS_SCRIPT"
 }
 
 @test "receipts: write refuses a directory whose branch is not a crew branch" {
@@ -336,28 +340,20 @@ EOF
   grep -q "Status: done" "$done_dir/01-task-a.md"
 }
 
-# ─── variant parity ──────────────────────────────────────────────────────────
+# ─── one writer, for every platform ──────────────────────────────────────────
 #
-# The gates only hold if every platform variant records the ac receipt. A variant
-# that omits it would not fail silently — close-issue.sh would refuse — but the
-# sprint would stall at the last step, which is a worse failure than a clear one.
+# The gates only hold if the receipts are actually written. That used to be a promise each
+# platform body made ("record an ac receipt after all-met", "the merge gate is mechanical")
+# and four promises are four things to drift; it is one call site now, in the pipeline every
+# platform runs, and the end-to-end assertion that it happens is
+# tests/orchestrator/sprint.test.mjs ("the gates run in order: verify → AC receipt → merge →
+# close") plus the ac.ok / verify.ok existence checks in the clean-merge and criteria-unmet
+# cases.
 
-@test "parity: every crew-afk variant records an ac receipt after all-met" {
-  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
-    run grep -q "receipts.sh\" write ac" "$(afk_variant "$variant")"
-    [ "$status" -eq 0 ] || {
-      echo "$variant does not record an ac receipt" >&2
-      return 1
-    }
-  done
-}
-
-@test "parity: every crew-afk variant states the merge gate is mechanical" {
-  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
-    run grep -q "verification receipt" "$(afk_variant "$variant")"
-    [ "$status" -eq 0 ] || {
-      echo "$variant does not mention the verification receipt" >&2
-      return 1
-    }
-  done
+@test "parity: the pipeline writes both receipts, from one place, for every platform" {
+  pipeline="$REPO_ROOT/orchestrator/lib/pipeline.mjs"
+  grep -q 'receipts.sh' "$pipeline"
+  grep -q '"write", "ac"' "$pipeline"
+  # And the verify receipt stays with the script that ran the checks.
+  grep -q 'write verify' "$REPO_ROOT/skills/crew-afk/scripts/verify-worktree.sh"
 }

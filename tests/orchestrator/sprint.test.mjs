@@ -365,3 +365,82 @@ test("coverage validation is opt-in, and runs between the squash and cleanup", (
   const log = traceLog(root2);
   assert.ok(markerAt(log, "SQUASH") < markerAt(log, "CLEANUP"), "cleanup must follow the squash");
 });
+
+// ─── what the last prose bodies used to assert about themselves ──────────────
+//
+// The copilot cutover emptied AFK_PROSE_VARIANTS, so the bats suites that looped over it
+// stopped having a subject. Three of those assertions had no direct code equivalent, only
+// an adjacent one, and are written here before they are deleted there: the promotion
+// threshold has one source, the sprint reports once and last, and a review gap is named in
+// the summary rather than merely counted in the state file.
+
+test("the promotion threshold has one source: --promote reaches findingsAtOrAbove", () => {
+  const reviewWithHigh = [
+    "## Branch: crew/demo/alpha",
+    "AC: all-met",
+    "FINDING: HIGH | src/alpha.txt:1 | Move the trust boundary check before the write",
+  ].join("\n");
+
+  // Default: CRITICAL only. A HIGH is reported, never promoted — so the sprint ends after
+  // the one issue, with the finding left open and attributed.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewWithHigh);
+  const off = runSprint(root);
+  assert.equal(off.code, 0, `${off.stdout}\n${off.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"], "no fix issue at the default threshold");
+  assert.equal(existsSync(join(root, ".scratch/demo/reviews/alpha.criteria.md")), false);
+  // An unpromoted severity is never subtracted from the reminder.
+  assert.match(off.stdout, /## Next Step/);
+  assert.match(off.stdout, /--promote critical-high/);
+
+  // With the flag, the same finding becomes a Phase 2 fix issue. The threshold is read
+  // from sprint.env (CREW_PROMOTE), not restated anywhere.
+  const root2 = fixtureRepo();
+  addIssue(root2, "01-alpha.md");
+  fake(root2, "alpha.review", reviewWithHigh);
+  const on = runSprint(root2, ["--promote", "critical-high"]);
+  assert.equal(on.code, 0, `${on.stdout}\n${on.stderr}`);
+  assert.equal(state(root2).completed_slugs.length, 2, "the HIGH should have run as its own fix issue");
+  const criteria = readFileSync(join(root2, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
+  assert.match(criteria, /\[HIGH\] Move the trust boundary check before the write/);
+  assert.match(readFileSync(join(root2, ".scratch/demo/sprint.env"), "utf8"), /CREW_PROMOTE="critical-high"/);
+});
+
+test("the sprint reports once, from disk, and the summary is the last thing printed", () => {
+  // Three copies of the same content used to reach one context window: a per-round rollup
+  // (`crew-summary.sh --no-reminder`), a verbatim echo of every worker report, and the
+  // summary's per-issue detail. The wrap-up renders it once, and the findings reminder is
+  // part of that single render — so it prints exactly once, last.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+
+  const rollups = r.stdout.match(/^Rounds: /gm) ?? [];
+  assert.equal(rollups.length, 1, "the rollup is rendered once, not once per round");
+  const reminders = r.stdout.match(/No open review findings\.|^## Next Step/gm) ?? [];
+  assert.equal(reminders.length, 1, "the findings reminder prints exactly once");
+
+  const tail = r.stdout.trim().split("\n");
+  assert.equal(tail.at(-1), "NO MORE TASKS");
+  // The pipeline's own narration goes to stderr; stdout is the one render, so the summary
+  // is the whole of it.
+  assert.equal(tail[0], "Rounds: 1", `stdout starts with something other than the summary:\n${r.stdout}`);
+  assert.doesNotMatch(r.stdout, /^(RECEIPT|MERGE|Closed|Verifying)/m, "pipeline output leaked into the report");
+  assert.doesNotMatch(r.stdout, /^## Issue: /m, "a worker report was echoed verbatim");
+  assert.doesNotMatch(r.stdout, /^### Per-issue/m, "per-issue detail is a third copy of the state file");
+});
+
+test("a review that never ran is named in the summary, not just counted in the state", () => {
+  // "advisory" must not degrade into "reported as clean": the gap is recorded with
+  // promote-findings.sh mark-not-run and surfaced under its own heading.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", "");
+  const r = runSprint(root);
+  assert.match(r.stdout, /## Unreviewed Branches/);
+  assert.match(r.stdout, /crew\/demo\/alpha/);
+  assert.equal(state(root).retention.alpha.reason, "review-not-run");
+});

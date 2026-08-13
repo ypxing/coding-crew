@@ -14,49 +14,18 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_DIR="$REPO_ROOT/skills/crew-afk"
 CODER_DIR="$REPO_ROOT/agents/crew-coder"
 
-# Platform bodies are rendered (pi/codex/copilot share one source body), so these
-# are platform names resolved through afk_variant, not filenames.
-DISPATCH_VARIANTS=("${AFK_PROSE_DISPATCH_VARIANTS[@]}")
-ALL_VARIANTS=("${AFK_PROSE_VARIANTS[@]}")
 CODER_VARIANTS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 
 # ─── P1.1 close happens after the merge, never before ────────────────────────
 #
-# Closing first moves the issue to done/, which step 1 never lists again — so a
-# merge that then aborts on conflict orphans the branch and silently loses the
-# work. The Claude variant always merged first; the other three did not.
-
-@test "P1.1: every crew-afk variant declares a pipeline that merges before closing" {
-  for variant in "${ALL_VARIANTS[@]}"; do
-    run grep -q 'Pipeline order per branch:.*merge' "$(afk_variant "$variant")"
-    [ "$status" -eq 0 ] || { echo "$variant: no pipeline order line" >&2; return 1; }
-    if grep -q 'Pipeline order per branch:.*close → merge' "$(afk_variant "$variant")"; then
-      echo "$variant declares close before merge — a failed merge would orphan the branch" >&2
-      return 1
-    fi
-  done
-}
-
-@test "P1.1: dispatch variants invoke merge-branches.sh before close-issue.sh" {
-  for variant in "${DISPATCH_VARIANTS[@]}"; do
-    merge_line=$(grep -n 'scripts/merge-branches\.sh' "$(afk_variant "$variant")" | head -n1 | cut -d: -f1)
-    close_line=$(grep -n 'scripts/close-issue\.sh' "$(afk_variant "$variant")" | tail -n1 | cut -d: -f1)
-    [ -n "$merge_line" ] || { echo "$variant: no merge-branches.sh call" >&2; return 1; }
-    [ -n "$close_line" ] || { echo "$variant: no close-issue.sh call" >&2; return 1; }
-    [ "$merge_line" -lt "$close_line" ] || {
-      echo "$variant: close-issue.sh (line $close_line) runs before merge-branches.sh (line $merge_line)" >&2
-      return 1
-    }
-  done
-}
-
-@test "P1.1: dispatch variants make the close conditional on merge success" {
-  for variant in "${DISPATCH_VARIANTS[@]}"; do
-    run grep -qi 'only if the merge reported' "$(afk_variant "$variant")"
-    [ "$status" -eq 0 ] || { echo "$variant: close is not gated on merge success" >&2; return 1; }
-  done
-}
+# Closing first moves the issue to done/, which issue selection never lists again — so a
+# merge that then aborts on conflict orphans the branch and silently loses the work. Three
+# of the four prose variants declared `review → close → merge`, which is the bug this
+# section was written for; the order is one function body now
+# (orchestrator/lib/pipeline.mjs: merge, then close only on the merge's success), asserted
+# on a real faked-dispatch sprint in tests/orchestrator/sprint.test.mjs — "the gates run in
+# order: verify → AC receipt → merge → close, and squash last".
 
 # ─── P1.2 the verification policy is documented where it is enforced ───────────
 #
@@ -68,14 +37,8 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 # each skill body). These assertions therefore moved onto the script and the bodies —
 # the policy still has to be written down, just not three times.
 
-@test "P1.2: no crew-afk variant points at a verification reference the skill no longer ships" {
+@test "P1.2: crew-afk ships no verification reference for a body to point at" {
   [ ! -f "$AFK_DIR/references/verification.md" ]
-  for variant in "${ALL_VARIANTS[@]}"; do
-    if grep -q 'references/verification\.md' "$(afk_variant "$variant")"; then
-      echo "$variant points at a deleted reference" >&2
-      return 1
-    fi
-  done
 }
 
 @test "P1.2: verify-worktree.sh documents the three categories in run order" {
@@ -83,34 +46,18 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
   grep -q 'typecheck' "$ref"
   grep -q 'lint' "$ref"
   grep -q 'test' "$ref"
-  # And every body states the same order, since the orchestrator decides nothing else.
-  for variant in "${ALL_VARIANTS[@]}"; do
-    grep -qi 'typecheck, then lint, then tests' "$(afk_variant "$variant")" || {
-      echo "$variant does not state the check order" >&2; return 1; }
-  done
 }
 
-@test "P1.2: every crew-afk variant states the not_run policy that verify-worktree enforces" {
-  for variant in "${ALL_VARIANTS[@]}"; do
-    body=$(afk_variant "$variant")
-    grep -q 'not_run' "$body" || { echo "$variant: no not_run policy" >&2; return 1; }
-    grep -qi 'coverage gap' "$body" || { echo "$variant: no coverage-gap policy" >&2; return 1; }
-    # A missing test command is fatal; a missing lint/typecheck is not. The pre-filter
-    # in the skill body and verify-worktree.sh must not be able to disagree.
-    grep -qi 'no test command was discoverable' "$body" || {
-      echo "$variant: does not treat a missing test command as a failure" >&2; return 1; }
-  done
-}
+# The bodies' half of P1.2 — "state the check order", "state the not_run policy", "a missing
+# test command is fatal" — described a decision the orchestrator no longer makes in prose:
+# prefilter() in orchestrator/lib/report.mjs is the policy, and it cannot disagree with
+# verify-worktree.sh because tests/orchestrator/report.test.mjs asserts both halves
+# (demotion on fail and on tests-not-run, lint/typecheck not_run as a recorded gap).
 
 # ─── P1.3 no phantom "with workflow" mode ────────────────────────────────────
 
 @test "P1.3: crew-afk does not advertise a workflow mode with no implementation" {
-  for variant in "${ALL_VARIANTS[@]}"; do
-    if grep -q 'with workflow' "$(afk_variant "$variant")"; then
-      echo "$variant advertises \"with workflow\"" >&2
-      return 1
-    fi
-  done
+  ! grep -rq 'with workflow' "$AFK_DIR"
   ! grep -rq 'claude\.workflow\.js' "$AFK_DIR"
 }
 
@@ -141,7 +88,7 @@ REPORT_CODERS=(claude.agent.md pi.agent.md copilot.agent.md codex.agent.toml)
 }
 
 @test "P1.4: no crew-afk variant reads a Skills report section" {
-  for variant in "${ALL_VARIANTS[@]}"; do
+  for variant in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     if grep -q '### Skills' "$(afk_variant "$variant")"; then
       echo "$variant consumes '### Skills' — re-add it to the coder schema" >&2
       return 1

@@ -377,22 +377,45 @@ cmd_remind() {
       n = split(sevs, parts, /, */)
       for (i = 1; i <= n; i++) {
         gsub(/^ +| +$/, "", parts[i])
-        promoted[b "\x1f" parts[i]] = 1
+        promoted[b, parts[i]] = 1
       }
       next
     }
-    pass == 2 {
-      for (sev in wanted) {
-        if (index($0, "[" sev "]") > 0 && !((branch "\x1f" sev) in promoted)) open[sev]++
-      }
+    # A finding is counted once, whichever form it arrives in. The reviewer emits both a
+    # machine-readable `FINDING: <SEV> | file:line | criterion` line and a `[SEV]` prose
+    # block per finding, but promotion parses only the first — so counting only the second
+    # would let a report that carries just the machine line end a sprint as "no open
+    # findings" while `findingsAtOrAbove()` was happily promoting from it. Per branch and
+    # severity the count is the larger of the two, which is exact when both forms are
+    # present (they are 1:1) and correct when only one is.
+    pass == 2 && /^FINDING:[[:space:]]*(CRITICAL|HIGH|MEDIUM|LOW)/ {
+      sev = $0
+      sub(/^FINDING:[[:space:]]*/, "", sev)
+      sub(/[^A-Z].*$/, "", sev)
+      machine[branch, sev]++
+      next
     }
     pass == 2 && /^Review: not_run/ {
       reason = $0
       sub(/^Review: not_run[[:space:]]*(—|-)?[[:space:]]*/, "", reason)
       notrun[branch] = reason
+      next
+    }
+    pass == 2 {
+      for (sev in wanted) {
+        if (index($0, "[" sev "]") > 0) prose[branch, sev]++
+      }
     }
     BEGIN { split("CRITICAL HIGH MEDIUM LOW", order, " "); for (i in order) wanted[order[i]] = 1 }
     END {
+      for (key in machine) seen[key] = 1
+      for (key in prose) seen[key] = 1
+      for (key in seen) {
+        if (key in promoted) continue
+        split(key, kp, SUBSEP)
+        sev = kp[2]
+        open[sev] += (machine[key] > prose[key] ? machine[key] : prose[key])
+      }
       total = 0
       out = ""
       for (i = 1; i <= 4; i++) {

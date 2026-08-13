@@ -167,49 +167,17 @@ EOF
   [[ "$output" == *"REVIEW-GAPS: branches=1"* ]]
 }
 
-# --- every variant specifies the failure path -----------------------------------
-
-@test "all four skill variants forbid an inline self-review and name mark-not-run" {
-  for v in "${AFK_PROSE_VARIANTS[@]}"; do
-    run grep -q 'mark-not-run' "$(afk_variant "$v")"
-    [ "$status" -eq 0 ]
-    # The orchestrator must not substitute its own judgement for the reviewer's.
-    run grep -qi 'do not review the branch yourself' "$(afk_variant "$v")"
-    [ "$status" -eq 0 ]
-  done
-}
-
-# Stage B moved the acceptance-criteria check into the review, so a review that never ran
-# is also a criteria check that never ran: the branch is retained, not merged. The gap is
-# still recorded and still surfaced by the reminder — "advisory" must not silently degrade
-# into "reported as clean" — but it no longer rides into the feature branch.
-@test "all four skill variants keep an unreviewed branch out of the merge" {
-  for v in "${AFK_PROSE_VARIANTS[@]}"; do
-    body="$(afk_variant "$v")"
-    if grep -qi 'still merges unreviewed' "$body"; then
-      echo "$v merges a branch whose review never ran" >&2
-      return 1
-    fi
-    # The gap still has to be visible at the end of the sprint.
-    run grep -q 'Unreviewed Branches' "$body"
-    [ "$status" -eq 0 ]
-  done
-}
-
-# Rendering the reminder is no longer prose in four variants — crew-summary.sh does it,
-# so the four bodies only have to call it; its branching is tested in tests/crew-afk-state.bats.
-@test "all four variants delegate the end-of-sprint reminder to crew-summary.sh" {
-  for v in "${AFK_PROSE_VARIANTS[@]}"; do
-    run grep -q 'crew-summary.sh' "$(afk_variant "$v")"
-    [ "$status" -eq 0 ] || { echo "$v does not call crew-summary.sh" >&2; return 1; }
-    # The reminder must still be described as the last thing printed, and the
-    # unreviewed-branch case must still be named.
-    run grep -qi 'last thing printed' "$(afk_variant "$v")"
-    [ "$status" -eq 0 ] || { echo "$v does not say the reminder prints last" >&2; return 1; }
-    run grep -q 'Unreviewed Branches' "$(afk_variant "$v")"
-    [ "$status" -eq 0 ] || { echo "$v never mentions unreviewed branches" >&2; return 1; }
-  done
-}
+# --- the failure path is code, not a promise in four bodies ----------------------
+#
+# Three tests lived here: no variant reviews the branch itself, no variant merges a branch
+# whose review never ran, and every variant delegates the end-of-sprint reminder to
+# crew-summary.sh (printed last, naming unreviewed branches). All three were prose
+# assertions about bodies that are launchers now. The behaviour is asserted on a real
+# faked-dispatch sprint in tests/orchestrator/sprint.test.mjs: "a review that produced
+# nothing is a gap, not a clean pass", "a review that never ran is named in the summary,
+# not just counted in the state" (which asserts the `## Unreviewed Branches` heading
+# reaches the output), and "the sprint reports once, from disk, and the summary is the last
+# thing printed".
 
 @test "remind's documented tokens all actually appear in the script" {
   # Guards against the prose and the script drifting apart.

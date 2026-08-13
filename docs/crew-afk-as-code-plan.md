@@ -1,9 +1,8 @@
 # Plan: crew-afk as code (one orchestrator, one state machine)
 
-Status: **Phases 0–4 landed — every platform is a launcher.** See
-`docs/crew-afk-orchestrator.md` for what exists and `CHANGELOG.md` for the cutovers. Only
-Phase 5 (scaffolding retirement) is open. Maintainer notes — not installed into consumer
-repos.
+Status: **Done — Phases 0–5 landed.** Every platform is a launcher over one program; the
+shared-body scaffolding is retired. See `docs/crew-afk-orchestrator.md` for what exists and
+`CHANGELOG.md` for the cutovers. Maintainer notes — not installed into consumer repos.
 
 ## 1. The question
 
@@ -196,12 +195,13 @@ a probe finds: copilot resolves `--agent` from the worker's **own cwd** and does
 definition that is not in `HEAD` (or user-level) is invisible from a worktree — `preflight()` refuses
 the sprint and names both fixes, rather than every worker dying on `No such agent` mid-round.
 
-**Phase 5 — retire the scaffolding.** Phase 4 already took the parts that had no subject left:
-`dispatch.SKILL.md`, `fragments/`, `tests/shared-dispatch-body.bats`, and the prose word budget in
-`tests/crew-afk-state.bats`. What remains is the `AFK_PROSE_VARIANTS` machinery in
-`tests/helpers/render.bash` (now two empty lists), the suites whose loops iterate them, the crew-afk
-sections of `CLAUDE.md`, `configure-tracker-auto.sh` if nothing calls it any more, and the optional
-fold of `state.sh`/`trace.sh`/`receipts.sh` into JS.
+~~**Phase 5 — retire the scaffolding.**~~ — done. Phase 4 took the parts with no subject left
+(`dispatch.SKILL.md`, `fragments/`, `tests/shared-dispatch-body.bats`, the prose word budget);
+Phase 5 took the `AFK_PROSE_VARIANTS` machinery, the emptied loops across seven suites, the
+`configure-tracker-auto.sh` copy no launcher ran, and the `CLAUDE.md` rewrite (one adapter table).
+Three pruned assertions had no code equivalent, so they were written first — and one of them found
+a real gap in `remind`'s finding count. `state.sh`/`trace.sh`/`receipts.sh` stay in bash: they are
+effects with one caller each and the only way to inspect a stalled sprint from a shell.
 
 ## 8. Sizing
 

@@ -162,3 +162,18 @@ bats tests/orchestrator.bats
   machine-readable block at all, never having been a launcher platform — at its own. That is
   what the test existed to force: a silent contradiction there demotes clean branches to
   `partial` for "tests not run".
+
+## Why `state.sh`, `trace.sh` and `receipts.sh` stay in bash
+
+Folding them into JS was considered at the end of the migration (Phase 5) and rejected. They
+are pure `jq` bookkeeping, so the fold would be cheap — and that is the whole argument for it.
+Against it: a stalled or crashed sprint is inspected and repaired from a shell, and these three
+are how. `state.sh get retained`, `receipts.sh` (its `.ok` files are plain text naming a commit)
+and the `TRACE_LOG` are what a human reads to answer "what did this sprint actually do, and what
+is safe to re-run" — without starting a Node process, and without the orchestrator being alive.
+`cleanup-worktrees.sh` is out-of-band for the same reason.
+
+The boundary that matters is already held: **JS owns control flow, bash owns effects.** These
+scripts are effects (write a receipt, append a trace line, mutate `sprint-state.json`) with one
+caller each. Moving them inside would trade an inspectable seam for no behaviour change, and the
+failures this migration was built to fix were all control flow, none of them here.

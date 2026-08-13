@@ -94,6 +94,34 @@ teardown() {
   [[ "$output" == *"report: $REPORT"* ]]
 }
 
+@test "a finding that arrives only as a FINDING: line is still counted" {
+  # Promotion parses the machine line; the reminder used to count only the `[SEV]` prose
+  # block. A report carrying just the machine line therefore ended a sprint as "no open
+  # findings" while findingsAtOrAbove() was promoting from the very same lines.
+  cat > "$REPORT" <<'EOF'
+## Branch: crew/feat/a (a)
+
+### Findings
+FINDING: CRITICAL | src/x.ts:12 | Validate input before use
+FINDING: HIGH | src/y.ts:40 | Move the trust boundary check
+EOF
+  run bash "$PROMOTE" remind --feature-slug feat
+  [[ "$output" == *"FINDINGS: open=2 (CRITICAL=1, HIGH=1)"* ]]
+}
+
+@test "a finding in both forms is counted once, not twice" {
+  cat > "$REPORT" <<'EOF'
+## Branch: crew/feat/a (a)
+
+### Findings
+FINDING: HIGH | src/y.ts:40 | Move the trust boundary check
+[HIGH] trust boundary crossed
+File: src/y.ts:40
+EOF
+  run bash "$PROMOTE" remind --feature-slug feat
+  [[ "$output" == *"FINDINGS: open=1 (HIGH=1)"* ]]
+}
+
 @test "with --promote critical-high the HIGH is subtracted again" {
   CREW_PROMOTE=critical-high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
@@ -120,16 +148,19 @@ teardown() {
   [[ "$output" == *"--promote critical-high"* ]]
 }
 
-# ─── the bodies ──────────────────────────────────────────────────────────────
+# ─── one source for the threshold ────────────────────────────────────────────
 
-@test "no crew-afk body hard-codes the promotion threshold" {
-  # The threshold is printed by guard. A body that restates it is a second source that can
-  # disagree with the script the moment the default changes again.
-  for variant in "${AFK_PROSE_VARIANTS[@]}"; do
-    f=$(afk_variant "$variant")
-    grep -q 'severities' "$f" || { echo "$variant does not read the severities from guard" >&2; return 1; }
-    if grep -qi 'Never promote MEDIUM or LOW' "$f"; then
-      echo "$variant still states the threshold itself" >&2; return 1
+@test "nothing outside this script and sprint.env states the promotion threshold" {
+  # The threshold is printed by guard and read from CREW_PROMOTE. A second statement of it
+  # — in a launcher, or hard-coded in the pipeline — is a source that can disagree with the
+  # script the moment the default changes again. The wiring end to end (default promotes
+  # CRITICAL only, `--promote critical-high` promotes a HIGH into a Phase 2 fix issue) is
+  # asserted in tests/orchestrator/sprint.test.mjs.
+  for f in "$REPO_ROOT"/skills/crew-afk/*.SKILL.md; do
+    if grep -qiE 'Never promote MEDIUM or LOW|severities: CRITICAL' "$f"; then
+      echo "$(basename "$f") states the threshold itself" >&2; return 1
     fi
   done
+  grep -q 'CREW_PROMOTE' "$REPO_ROOT/orchestrator/lib/sprint.mjs"
+  ! grep -qE '"CRITICAL"\s*,\s*"HIGH"' "$REPO_ROOT/orchestrator/lib/pipeline.mjs"
 }

@@ -68,8 +68,7 @@
         "dest": ".coding-crew/crew-afk"
       },
       "scripts": [
-        "feature-branch-setup.sh",
-        "configure-tracker-auto.sh"
+        "feature-branch-setup.sh"
       ],
       "platform-files": {
         "pi": [

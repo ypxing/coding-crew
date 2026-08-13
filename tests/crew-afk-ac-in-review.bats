@@ -22,49 +22,18 @@ load helpers/render
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_DIR="$REPO_ROOT/skills/crew-afk"
 PROTOCOL="$REPO_ROOT/agents/crew-code-reviewer/protocol.md"
-VARIANTS=("${AFK_PROSE_VARIANTS[@]}")
 
 # ─── the separate AC pass is gone ────────────────────────────────────────────
-
-@test "no ac-verify fragment survives for any dispatch platform" {
-  for platform in "${AFK_PROSE_DISPATCH_VARIANTS[@]}"; do
-    if [ -f "$AFK_DIR/fragments/$platform/ac-verify.md" ]; then
-      echo "fragments/$platform/ac-verify.md is back — the AC pass has forked from the review" >&2
-      return 1
-    fi
-  done
-}
-
-@test "no variant dispatches a second agent to verify acceptance criteria" {
-  for v in "${VARIANTS[@]}"; do
-    body="$(afk_variant "$v")"
-    ! grep -qi 'Verify acceptance criteria for a branch' "$body"
-    ! grep -qi 'there is no dedicated verifier agent' "$body"
-    ! grep -qi 'Verify acceptance criteria (after checks pass' "$body"
-  done
-}
-
-@test "no variant pulls the branch diff into the orchestrator's own context" {
-  # The diff is the single largest input in the pipeline and the reviewer already reads
-  # it. On pi and codex the orchestrator's context is not discarded between rounds, so a
-  # diff read here is paid for by every later round too.
-  for v in "${VARIANTS[@]}"; do
-    body="$(afk_variant "$v")"
-    if grep -E '^\s*(git( -C "\$MAIN_ROOT")? diff|Diff: git diff)' "$body" | grep -qv 'Gather the diff'; then
-      echo "$v reads a branch diff in the orchestrator session" >&2
-      grep -nE '^\s*(git( -C "\$MAIN_ROOT")? diff|Diff: git diff)' "$body" >&2
-      return 1
-    fi
-  done
-}
-
-@test "every variant states the folded pipeline order" {
-  for v in "${VARIANTS[@]}"; do
-    run grep -q 'Pipeline order per branch: verify → review (acceptance criteria + findings) → merge → close' \
-      "$(afk_variant "$v")"
-    [ "$status" -eq 0 ] || { echo "$v does not state the folded pipeline order" >&2; return 1; }
-  done
-}
+#
+# Four body assertions lived here — no `ac-verify` fragment, no second agent dispatched to
+# verify criteria, no branch diff pulled into the orchestrator's own context, and the folded
+# `verify → review (acceptance criteria + findings) → merge → close` order stated verbatim.
+# They policed bodies that are launchers now. The fold is structural in
+# orchestrator/lib/pipeline.mjs (one `runReview()` call, whose parsed verdict is the gate)
+# and asserted end to end in tests/orchestrator/sprint.test.mjs: the gate order from the
+# trace log, an `AC: unmet` verdict retaining the branch and writing no receipt, and an
+# empty review report reading as a gap rather than a pass. `tests/crew-afk-launcher.bats`
+# keeps a launcher from naming the pipeline again.
 
 # ─── the reviewer carries the verdict ────────────────────────────────────────
 
@@ -106,17 +75,7 @@ VARIANTS=("${AFK_PROSE_VARIANTS[@]}")
   grep -qiE 'nothing is blocked or re-queued|no branch is blocked' "$PROTOCOL"
 }
 
-# ─── every variant reads the verdict rather than deriving one ─────────────────
-
-@test "every variant writes the ac receipt only on the reviewer's all-met verdict" {
-  for v in "${VARIANTS[@]}"; do
-    body="$(afk_variant "$v")"
-    grep -q 'AC: all-met' "$body" || { echo "$v never names the all-met verdict" >&2; return 1; }
-    grep -q 'receipts.sh" write ac' "$body" || { echo "$v never writes the ac receipt" >&2; return 1; }
-    grep -qiE 'never re-derive it yourself' "$body" || {
-      echo "$v does not forbid re-deriving the verdict" >&2; return 1; }
-  done
-}
+# ─── the verdict is read, never re-derived ───────────────────────────────────
 
 @test "the launcher platforms read the verdict in code, not in prose" {
   # pi and codex get the reviewer's output as a file, and the orchestrator program parses
@@ -131,38 +90,6 @@ VARIANTS=("${AFK_PROSE_VARIANTS[@]}")
       echo "$v launcher reads the review report itself" >&2
       return 1
     fi
-  done
-}
-
-@test "every variant fails closed when no verdict comes back" {
-  for v in "${VARIANTS[@]}"; do
-    body="$(afk_variant "$v")"
-    # Joined, because these rules are prose and wrap across lines.
-    flat=$(tr -s '[:space:]' ' ' < "$body")
-    [[ "$flat" == *"no verdict at all"* ]] || {
-      echo "$v does not name the missing-verdict case" >&2; return 1; }
-    [[ "$flat" == *"fail closed"* ]] || { echo "$v does not fail closed" >&2; return 1; }
-    # And the failure path is the same demotion every other gate uses.
-    grep -q 'review-not-run' "$body" || {
-      echo "$v has no retention reason for a review that never ran" >&2; return 1; }
-  done
-}
-
-@test "no variant merges a branch whose review never completed" {
-  for v in "${VARIANTS[@]}"; do
-    body="$(afk_variant "$v")"
-    if grep -qi 'still merges unreviewed' "$body"; then
-      echo "$v still merges a branch whose review never ran, but the review now carries the AC gate" >&2
-      return 1
-    fi
-  done
-}
-
-@test "the review gap is still recorded, not repaired by the orchestrator" {
-  for v in "${VARIANTS[@]}"; do
-    body="$(afk_variant "$v")"
-    grep -q 'mark-not-run' "$body"
-    grep -qi 'do not review the branch yourself' "$body"
   done
 }
 

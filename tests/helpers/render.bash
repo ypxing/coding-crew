@@ -1,7 +1,7 @@
 # Shared bats helper: paths to *rendered* skill bodies.
 #
-# Rendering is what the consuming repo actually receives, so body assertions run against
-# the rendered result rather than the source file: `render-skill.sh` inlines any
+# Rendering is what a consuming repo actually receives, so body assertions run against the
+# rendered result rather than the source file: `render-skill.sh` inlines any
 # `{{FRAGMENT:...}}` and substitutes `{{PLATFORM}}`. crew-afk's bodies are launchers with
 # nothing left to vary, but other skills still render, and a launcher must be asserted
 # through the same path that installs it. Rendering is cached per bats run.
@@ -20,33 +20,19 @@ rendered_skill() {
   printf '%s\n' "$out"
 }
 
-# afk_variant <platform> — shorthand for the crew-afk orchestrator body
+# afk_variant <platform> — shorthand for the crew-afk launcher body
 afk_variant() {
   rendered_skill crew-afk "$1"
 }
 
-# Which platforms still ship a *prose* orchestrator, and which ship a launcher.
+# Every platform's crew-afk body is a launcher for the orchestrator program
+# (`orchestrator/`, installed to `.coding-crew/crew-afk/`), so the guarantees the prose
+# bodies used to promise — pipeline order, the receipt gates, fail-closed review handling,
+# the promotion threshold — are asserted against that program in tests/orchestrator/
+# instead. There is no prose list any more: `AFK_PROSE_VARIANTS` and its dispatch twin were
+# deleted with the last prose body, along with the suite that policed the shared-body
+# mechanism.
 #
-# A launcher platform's orchestrator is a program (`orchestrator/`, installed to
-# `.coding-crew/crew-afk/`), so the guarantees the prose assertions described — pipeline
-# order, the receipt gates, fail-closed review handling, the promotion threshold — are
-# asserted against the code in tests/orchestrator/ instead. Its body is a launcher and
-# asserting prose against it would be asserting the absence of a state machine that moved,
-# not the presence of one.
-#
-# Every platform is cut over now, so the prose lists are empty and the suites that looped
-# over them are gone (tests/shared-dispatch-body.bats retired with its subject). They stay
-# declared, and empty, because `tests/crew-afk-launcher.bats` asserts the launcher list is
-# non-empty and several suites still ask `afk_is_launcher`.
-AFK_PROSE_VARIANTS=()
-AFK_PROSE_DISPATCH_VARIANTS=()
+# This list is the single place that says which platforms exist as launchers, read by
+# tests/crew-afk-launcher.bats and tests/orchestrator/contract.test.mjs.
 AFK_LAUNCHER_VARIANTS=(pi codex claude copilot)
-
-# afk_launcher_body <platform> — true when this platform ships the launcher, not prose
-afk_is_launcher() {
-  local want="$1" p
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    [ "$p" = "$want" ] && return 0
-  done
-  return 1
-}
