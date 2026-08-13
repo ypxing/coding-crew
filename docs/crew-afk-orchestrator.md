@@ -31,6 +31,7 @@ orchestrator/
 node orchestrator/main.mjs plan   --platform pi          # read-only, zero tokens
 node orchestrator/main.mjs doctor --platform claude      # CLI + agent definitions present?
 node orchestrator/main.mjs run    --platform pi --model sonnet --coverage
+node orchestrator/main.mjs run    --platform pi --no-deps   # skip both ensure-deps.sh calls
 node orchestrator/main.mjs status                        # sprint.env + sprint-state.json
 ```
 
@@ -41,9 +42,19 @@ installed skill dirs, then from this repo's `skills/crew-afk/scripts/`.
 
 ## The pipeline, as code
 
+`Sprint.init` runs `session-init.sh`, then `ensure-deps.sh --dir $MAIN_ROOT` — once per sprint,
+serially, before any worker or worktree exists, so N parallel installs are not N cold downloads.
+
 `runWorker` (concurrent, bounded by `--max-parallel`) → `runHousekeeping` (sequential,
 because merges touch the main checkout):
 
+0. **worktree, include, deps** — `ensureWorktree()`, `applyWorktreeInclude()`, then
+   `ensure-deps.sh --dir <worktree> --slug <slug>`. That position is the whole point: after the
+   include, so an inherited `node_modules` is seen by the presence guard and costs nothing, and
+   before **both** consumers of the deps — the worker, and `verify-worktree.sh` at step 2, which
+   runs the project's own tests and has no dep recovery path of its own because a gate cannot
+   invoke a skill. Advisory: the `DEPS:` line is logged and never branched on, so a failed install
+   cannot demote an issue by itself — the verify gate already fails closed on the consequence.
 1. **schema pre-filter** — `fail` or `test: not_run` demotes `complete`; lint/typecheck
    `not_run` is a recorded coverage gap. Same policy as `verify-worktree.sh`.
 2. **verify** — `verify-worktree.sh`, which writes the verification receipt.
@@ -54,6 +65,10 @@ because merges touch the main checkout):
 
 Anything else demotes to `partial`/`blocked`, retains the branch, and rewrites
 `## Progress` / appends to `## Blocked`. Nothing merges on an absent check.
+
+`--no-deps` removes both `ensure-deps.sh` call sites and nothing else — the same escape hatch, for
+the same reason, as `CREW_RECEIPTS=off`. Both calls go through `effects.bash()`, so `--dry-run`
+records them in order rather than running them.
 
 ## Testing without spending tokens
 

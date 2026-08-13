@@ -288,3 +288,60 @@ line two"
   [ "$status" -eq 0 ]
   [ -f "$target/.pi/skills/crew-afk/scripts/ensure-deps.sh" ]
 }
+
+# ─── documented where the pipeline is documented ─────────────────────────────
+#
+# The decision is only half-made until the reason survives it: the failure-triggered
+# CHANGELOG entry reads as the whole policy, and after this feature it is one half of a
+# pair — eager where a gate cannot retry, lazy where a human can.
+
+@test "CLAUDE.md lists the script with its one-clause rationale and the pipeline order" {
+  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/CLAUDE.md"
+  grep -q 'ensure-deps.sh' "$f"
+  # Why mechanism and not a worker skill read: it is the only layer covering the gate.
+  grep -q 'verify-worktree.sh' "$f"
+  grep -qi 'cannot invoke a skill' "$f"
+  # And the order it sits in.
+  grep -qi 'deps' "$f"
+  grep -q 'worktreeinclude' "$f"
+}
+
+@test "docs/crew-afk-orchestrator.md shows both call sites and --no-deps" {
+  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/crew-afk-orchestrator.md"
+  grep -q 'ensure-deps.sh --dir \$MAIN_ROOT' "$f"
+  grep -q 'ensure-deps.sh --dir <worktree> --slug <slug>' "$f"
+  grep -q -- '--no-deps' "$f"
+}
+
+@test "docs/crew-afk-scripts.md documents every flag and every DEPS: line" {
+  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/crew-afk-scripts.md"
+  local item
+  for item in -- --dir --slug --timeout CREW_DEPS 'never the guard'; do
+    grep -q -- "$item" "$f" || { echo "docs/crew-afk-scripts.md omits $item" >&2; return 1; }
+  done
+  for line in present installed none docker failed skipped; do
+    grep -q "DEPS: $line" "$f" || {
+      echo "docs/crew-afk-scripts.md omits DEPS: $line" >&2; return 1; }
+  done
+  grep -qi 'always exit 0' "$f"
+  # trace.sh's marker list is the other place a new marker has to appear.
+  grep -q '`DEPS` (ensure-deps)' "$f"
+}
+
+@test "CHANGELOG pairs the eager entry with the existing failure-triggered one" {
+  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/CHANGELOG.md"
+  grep -q 'failure-triggered rather than unconditional' "$f"
+  grep -qi 'eager where a gate cannot retry, lazy where a human can' "$f"
+}
+
+@test "no launcher SKILL.md mentions the script, and every launcher is still under 500 words" {
+  local repo="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
+  local p body words
+  for p in pi codex claude copilot; do
+    body="$repo/skills/crew-afk/$p.SKILL.md"
+    ! grep -q 'ensure-deps' "$body" || {
+      echo "$p launcher names ensure-deps.sh" >&2; return 1; }
+    words=$(wc -w < "$body")
+    [ "$words" -lt 500 ] || { echo "$p launcher is $words words" >&2; return 1; }
+  done
+}

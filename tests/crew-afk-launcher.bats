@@ -57,7 +57,7 @@ launcher_body() {
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     body="$(launcher_body "$p")"
     for banned in state.sh receipts.sh merge-branches.sh close-issue.sh \
-                  promote-findings.sh verify-worktree.sh 'git worktree add'; do
+                  promote-findings.sh verify-worktree.sh ensure-deps.sh 'git worktree add'; do
       if grep -q "$banned" "$body"; then
         echo "$p launcher names $banned — it is describing the pipeline again" >&2
         return 1

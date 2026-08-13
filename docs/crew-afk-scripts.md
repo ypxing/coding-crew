@@ -56,6 +56,75 @@ bash scripts/dispatch-codex-agent.sh --agent crew-coder --dir <worktree> \
 
 ---
 
+### `ensure-deps.sh`
+
+**Purpose**: Make a directory ready to run the project's own checks, mechanically, with no
+package-manager knowledge of its own. `dep-install` is failure-triggered, which is right for a
+human's direct `solve-issue` run; a sprint is the opposite case. The orchestrator creates every
+worktree fresh, and one consumer of the deps is not a model at all: `verify-worktree.sh` runs
+`npm test` / `pytest` in the worktree, has no dep recovery path, and being a gate it cannot invoke a
+skill. A resumed or retained worktree therefore reached the merge gate with no deps, scored
+`TEST: fail`, and cost a whole round. Provisioning a gate depends on has to be mechanism.
+
+The judgement-heavy half stays with the skill: docker mode needs a compose override generated, so
+this script defers it. `solve-issue` is unchanged.
+
+**Usage**:
+```bash
+bash scripts/ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, default 600>]
+```
+
+- `--dir` (required) — the directory to provision: `$MAIN_ROOT` once per sprint, then each worktree.
+- `--slug` — the issue slug, which enables the marker cache below. Omit it outside a sprint.
+- `--timeout` — cap on the install, so a hung package manager cannot hang the sprint behind it.
+  Applied with `timeout`/`gtimeout` when the host has one; hosts without it (macOS) run uncapped,
+  because the cap is a safety net rather than the contract.
+
+**Output**: exactly one `DEPS:` line, and **always exit 0**.
+
+| Line | Meaning |
+| --- | --- |
+| `DEPS: present` | the ecosystem's dep dir is already in `--dir` — inherited via `.worktreeinclude`, or left by a prior round |
+| `DEPS: installed <cmd>` | `host-install.sh` ran `<cmd>` (its own `Running: …` line, not a second guess at the package manager) |
+| `DEPS: none` | no manifest, no `dep-install` scripts resolvable, or `host-install.sh` found no install method (exit 2) — not a failure |
+| `DEPS: docker` | `detect-mode.sh` says `USE_DOCKER`; deferred to the worker's own up-front `dep-install` invocation |
+| `DEPS: failed <cmd> (exit N)` | the install failed; the verbatim tail of its output goes to stderr |
+| `DEPS: skipped` | `CREW_DEPS=off` |
+
+**Order of operations**:
+1. `CREW_DEPS=off` → `DEPS: skipped`.
+2. **The presence guard**, and the reason resume and `.worktreeinclude` repos cost nothing: one row
+   per ecosystem (`node_modules`, `.venv`, `vendor/bundle`, `vendor`, `target`, `deps`) mapping a dep
+   dir to its manifests. A manifest with its dep dir present → `DEPS: present`. No manifest at all,
+   no `Makefile` `install`/`deps` target, and none of `go.sum` / `go.mod` / `pom.xml` → `DEPS: none`.
+3. **The marker cache** — only for the two outcomes that would otherwise be re-probed every round
+   (`none`, `failed`), one of which runs a whole install command to learn nothing new. Step 2 has
+   already run, so a worktree that has since acquired its deps reports `present` regardless.
+4. Resolve `dep-install`'s scripts: `$CREW_DEP_INSTALL_SCRIPTS`, then per candidate root
+   (`$MAIN_ROOT`, `--dir`'s repo, this script's own repo) `.coding-crew/dep-install/scripts` — the
+   platform-neutral copy `install.sh` ships — then the four `.<platform>/skills/dep-install/scripts`
+   dirs, then `skills/dep-install/scripts` for development. None found → `DEPS: none`.
+5. `detect-mode.sh --project-root <dir>`; `USE_DOCKER` → `DEPS: docker`.
+6. `host-install.sh --project-root <dir>` under the timeout cap. Exit 0 → `installed`, 2 → `none`,
+   anything else → `failed`.
+
+**Marker**: `$SPRINT_DIR/dispatch/<slug>.deps.<ok|skip>`, containing the outcome line. `ok` for
+`present`/`installed`, `skip` for `none`/`failed`. Written only with `--slug` and only inside a
+sprint. **A cache, never the guard** — step 2 is the guard.
+
+**Escape hatch**: `CREW_DEPS=off` skips everything, mirroring `CREW_RECEIPTS=off`. The orchestrator's
+`--no-deps` removes both of its call sites instead.
+
+**Exit code**: **always 0** for any install outcome — a repo with no dependency step must not stall a
+sprint, and a failed install is diagnosed by the check that follows it, exactly as
+`dependency-audit.sh` treats a missing audit tool. Non-zero only for a usage error (no `--dir`, an
+unknown flag, a `--dir` that does not exist): exiting 0 on a typo would report "deps are fine" about
+a directory nobody looked at.
+
+**Traces**: one `DEPS` line via `trace.sh`, and a silent no-op outside a sprint.
+
+---
+
 ### `receipts.sh`
 
 **Purpose**: Turn crew-afk's two pipeline gates into facts on disk, so the mechanical steps downstream can refuse to run without them. Before this existed both gates were prose instructions to the orchestrator; a sprint that skipped them merged a branch with failing checks and closed a second issue off the first issue's branch.
@@ -117,7 +186,7 @@ bash scripts/trace.sh [--log <file>] <MARKER> "<key=value ...>"
 
 **Log resolution**: `--log`, then `$TRACE_LOG`, then `$MAIN_ROOT/.scratch/sprint.env`. With none of those it exits 0 without writing — tracing must never fail the caller that is making progress.
 
-**Markers written by scripts**: `SESSION` (session-init), `DISPATCH` (dispatch-agent / dispatch-codex-agent), `VERIFY` (verify-worktree), `MERGE` (merge-branches), `CLOSE` (close-issue), `PROMOTE` / `FLUSH` / `REVIEW result=not_run` (promote-findings), `CLEANUP` (cleanup-worktrees), `SQUASH` (squash-commits), `MODEL` / `ROUND` / `STATE` (state.sh), `EXIT` (crew-summary). The orchestrator writes only what it decides itself: `ACVERIFY`, and `DISPATCH` on Copilot.
+**Markers written by scripts**: `SESSION` (session-init), `DEPS` (ensure-deps), `DISPATCH` (dispatch-agent / dispatch-codex-agent), `VERIFY` (verify-worktree), `MERGE` (merge-branches), `CLOSE` (close-issue), `PROMOTE` / `FLUSH` / `REVIEW result=not_run` (promote-findings), `CLEANUP` (cleanup-worktrees), `SQUASH` (squash-commits), `MODEL` / `ROUND` / `STATE` (state.sh), `EXIT` (crew-summary). The orchestrator writes only what it decides itself: `ACVERIFY`, and `DISPATCH` on Copilot.
 
 ---
 
