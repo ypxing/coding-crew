@@ -17,7 +17,9 @@ The sprint is a program, not a prompt. You launch it, stream its output, and rep
 it printed. **You do not orchestrate, implement, review, merge or close anything yourself.**
 
 ```bash
-node "$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs" run --platform claude "$@"
+CREW_AFK="$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs"
+[ -f "$CREW_AFK" ] || CREW_AFK="$HOME/.coding-crew/crew-afk/main.mjs"
+node "$CREW_AFK" run --platform claude "$@"
 ```
 
 Pass the user's arguments straight through: `--model <alias|inherit>`, `--coverage`,
@@ -46,10 +48,11 @@ sprint.
 ## Failure handling
 
 - `node: command not found` → tell the user the orchestrator needs Node ≥ 20, and stop.
-- `cannot find crew-afk's scripts/ dir` → the skill is half-installed; re-run
-  `./install.sh claude --skill crew-afk`.
+- `cannot find crew-afk's scripts/ dir` → crew-afk is installed in neither this repo nor
+  `$HOME`. Install it user-level, which then works in every repo:
+  `TARGET_REPO=$HOME ./install.sh claude --skill crew-afk`.
 - Missing `crew-coder` / `crew-code-reviewer` definitions → the same re-install fixes it;
-  `node .coding-crew/crew-afk/main.mjs doctor --platform claude` names what is absent.
+  `node "$CREW_AFK" doctor --platform claude` names what is absent.
 - Any other non-zero exit → print its output and stop. Never finish the sprint by hand:
   a merge or close performed outside the pipeline skips the receipt gates that keep an
   unverified branch out of the feature branch.

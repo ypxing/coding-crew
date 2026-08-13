@@ -1,7 +1,7 @@
 {
   "source": "git@github.com:ypxing/coding-crew.git",
-  "source_sha": "913235a52f887d699ddd9ec616433d0961261de5",
-  "installed_at": "2026-08-13T03:56:25Z",
+  "source_sha": "d1a48f516e9b565da930698b16043ef938602e3d",
+  "installed_at": "2026-08-13T06:41:45Z",
   "platform": "pi",
   "agents": {
     "crew-coder": {
@@ -21,7 +21,7 @@
       "version": "2.0.0"
     },
     "dep-install": {
-      "version": "1.0.0"
+      "version": "1.1.0"
     },
     "solve-issue": {
       "version": "1.8.0"

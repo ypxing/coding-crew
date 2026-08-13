@@ -38,7 +38,11 @@ node orchestrator/main.mjs status                        # sprint.env + sprint-s
 Exit codes: `0` clean, `2` stalled, `3` nothing to do, `1` setup error.
 
 `CREW_SCRIPTS` points at the bash mechanism layer; otherwise it is resolved from the
-installed skill dirs, then from this repo's `skills/crew-afk/scripts/`.
+skill dirs of the repo being worked on, then from the same dirs under `$HOME` (a user-level
+install is documented to work in any project, so it has to be a candidate — omitting it is
+what made a user-level install look like a half-install), then from this repo's
+`skills/crew-afk/scripts/`. The repo comes first: a project install is a copy a repo pins
+deliberately. The launcher resolves `main.mjs` over the same two scopes, in the same order.
 
 ## The pipeline, as code
 

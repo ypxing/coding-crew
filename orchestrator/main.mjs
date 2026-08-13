@@ -24,6 +24,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -96,20 +97,38 @@ function gitRoot() {
   return r.stdout.trim();
 }
 
+// Where each platform's installer puts a skill, relative to a scope root. Project scope and
+// user scope differ per platform (pi nests under .pi/agent/, Copilot reads .github/ in a repo
+// but ~/.copilot/ at user level), so both lists are spelled out rather than derived.
+const PROJECT_SKILL_DIRS = [
+  ".pi/skills/crew-afk/scripts",
+  ".claude/skills/crew-afk/scripts",
+  ".agents/skills/crew-afk/scripts",
+  ".github/skills/crew-afk/scripts",
+];
+const USER_SKILL_DIRS = [
+  ".pi/agent/skills/crew-afk/scripts",
+  ".claude/skills/crew-afk/scripts",
+  ".agents/skills/crew-afk/scripts",
+  ".copilot/skills/crew-afk/scripts",
+];
+
 function resolveScriptsDir(mainRoot) {
-  // Installed layout first, then this repo's source tree (development).
+  // Project install first — a repo that pins its own copy means it. Then the user-level
+  // install, which is the documented default (`TARGET_REPO=$HOME`, "works in any project"):
+  // without it a sprint could only run in a repo that had installed crew-afk itself, and
+  // reported that as the skill being half-installed. Then this repo's source tree (dev).
   const candidates = [
     process.env.CREW_SCRIPTS,
-    join(mainRoot, ".coding-crew/crew-afk/scripts"),
-    join(mainRoot, ".pi/skills/crew-afk/scripts"),
-    join(mainRoot, ".claude/skills/crew-afk/scripts"),
-    join(mainRoot, ".agents/skills/crew-afk/scripts"),
-    join(mainRoot, ".github/skills/crew-afk/scripts"),
+    ...PROJECT_SKILL_DIRS.map((d) => join(mainRoot, d)),
+    ...USER_SKILL_DIRS.map((d) => join(homedir(), d)),
     join(HERE, "../skills/crew-afk/scripts"),
   ].filter(Boolean);
   for (const c of candidates) if (existsSync(join(c, "state.sh"))) return resolve(c);
   console.error(
-    "crew-afk: cannot find crew-afk's scripts/ dir. Set CREW_SCRIPTS or install the skill.",
+    "crew-afk: cannot find crew-afk's scripts/ dir. Install crew-afk in this repo" +
+      " (./install.sh <platform> --skill crew-afk) or user-level (TARGET_REPO=$HOME), or set" +
+      " CREW_SCRIPTS to its scripts/ dir.",
   );
   process.exit(1);
 }

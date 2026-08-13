@@ -45,7 +45,11 @@ launcher_body() {
 @test "launcher: it launches the program for its own platform and does not orchestrate" {
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     body="$(launcher_body "$p")"
-    grep -q "main.mjs\" run --platform $p" "$body" || {
+    # The path is resolved into a variable (repo copy, else the user-level install), so what
+    # is asserted is that it runs *that* program for its own platform, not a literal path.
+    grep -q 'coding-crew/crew-afk/main.mjs' "$body" || {
+      echo "$p does not resolve the orchestrator's main.mjs" >&2; return 1; }
+    grep -q "node \"\$CREW_AFK\" run --platform $p" "$body" || {
       echo "$p does not launch the orchestrator with --platform $p" >&2; return 1; }
     grep -qi 'you do not orchestrate' "$body"
   done

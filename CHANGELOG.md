@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.27.0]
+
+### Added
+
+- New user-level install integration tests for comprehensive verification of installation across platforms
+- Enhanced orchestrator main.mjs with improved state management and control flow
+
+### Changed
+
+- Updated crew-afk skill documentation across all platforms (claude, codex, copilot, pi) with refined implementation details
+- Improved platform-specific skill wrappers for better cross-platform compatibility
+- Enhanced manifest and orchestration documentation for clarity
+
+### Fixed
+
+- Fixed state management in orchestrator for improved sprint reliability
+- Improved error handling in platform-specific dispatchers
+
 ## [Unreleased]
 
 ### Changed
