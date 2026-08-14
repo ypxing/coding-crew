@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.28.5]
+
+### Fixed
+
+- **`verify-worktree.sh` ran every check on the host, even for a docker-mode project, so a
+  worktree's `node_modules` never existed where the gate looked for it.** `dep-install`'s
+  `gen-override.sh` mounts a *named volume* over the ecosystem's dependency directory at a
+  container-side subpath, not a host bind-mount — that is by design, the same volume warmed
+  once and shared by every worktree of a `MAIN_ROOT` (see 1.28.1's eager `ensure-deps.sh`).
+  Content installed there lives only inside that volume, never on the host filesystem, in
+  the worktree or in `MAIN_ROOT` either. `docker-install.md` already tells a worker "every
+  subsequent docker compose command must pass both `-f` flags — including test, lint and
+  type-check runs", but a worker's own compliance never reached the one consumer that is
+  not a model: `verify-worktree.sh` is a gate and cannot read a skill, so it kept running
+  `make test` / `npm test` directly on the host, failing every check that touched the
+  dependency directory regardless of whether the docker-mode install had succeeded.
+
+  `verify-worktree.sh` now detects docker mode the same way `ensure-deps.sh` leaves it to
+  find — `git config --local agent.install-mode docker`, plus the worktree's own compose
+  file and `$MAIN_ROOT/docker-compose.override.yml` already having been written — and, only
+  when every signal resolves, routes each discovered check through
+  `docker compose -f <worktree>/docker-compose.yml -f $MAIN_ROOT/docker-compose.override.yml
+  run --rm <service> sh -c "cd <container-src> && <check>"`, reusing `gen-override.sh
+  --query services/container-src` (read-only) for the service and path the same way
+  `docker-install.sh` already does. A command generated against the host worktree path
+  (`make -C "$dir" test`, belt-and-braces per `_discover_test_command`) is rewritten with
+  that path substituted for `.`, since the container's cwd is already the project's
+  container-side source root and the host path does not exist inside it at all. Any missing
+  signal — no `agent.install-mode`, no override file yet, no compose file, no resolvable
+  `dep-install` scripts — falls back silently to the existing host path: **a gate must never
+  stall a sprint because docker introspection failed.** `CREW_VERIFY_DOCKER=off` is the
+  rollback lever, independent of `CREW_DEPS`, back to the always-host behaviour this gate
+  had before. 8 new tests in `tests/verify-worktree-docker.bats`, `docker` stubbed
+  throughout so these pin argument construction and the fallback safety net, not a real
+  daemon.
+- `_discover_test_command`'s Python branch matched "any `.py` file exists" at the worktree
+  root or under `tests/`, so an unrelated build/deploy script (`deploy.py`, `fabfile.py`, …)
+  made an otherwise-Python-free project attempt `pytest` and fail it, instead of honestly
+  reporting `TEST: not_run`. Now matches only conventionally-named test files:
+  `test_*.py` / `*_test.py` at the root or under `tests/`.
+
 ## [1.28.4]
 
 ### Fixed

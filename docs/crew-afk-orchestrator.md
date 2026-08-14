@@ -64,7 +64,14 @@ because merges touch the main checkout):
    cannot demote an issue by itself — the verify gate already fails closed on the consequence.
 1. **schema pre-filter** — `fail` or `test: not_run` demotes `complete`; lint/typecheck
    `not_run` is a recorded coverage gap. Same policy as `verify-worktree.sh`.
-2. **verify** — `verify-worktree.sh`, which writes the verification receipt.
+2. **verify** — `verify-worktree.sh`, which writes the verification receipt. Also docker-aware:
+   when `agent.install-mode` is `docker` and the worktree's compose file plus
+   `$MAIN_ROOT/docker-compose.override.yml` are both present, it routes every discovered check
+   through `docker compose run` (both `-f` flags, the same volume the eager install above
+   warmed) instead of the host directly — the named volume `gen-override.sh` mounts over the
+   dependency directory never touches the host filesystem at all, in the worktree or in
+   `MAIN_ROOT`. Any missing signal falls back to the host path silently; `CREW_VERIFY_DOCKER=off`
+   rolls it back unconditionally.
 3. **review** — `crew-code-reviewer`, which returns the `AC:` verdict *and* findings.
 4. **AC receipt** — written only on `AC: all-met`, only for this issue's own slug.
 5. **promote** — `promote-findings.sh guard` then `defer`, threshold from `sprint.env`.

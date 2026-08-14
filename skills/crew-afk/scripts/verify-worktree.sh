@@ -54,6 +54,122 @@ if [ ! -d "$WORKTREE_DIR" ]; then
   exit 1
 fi
 
+# Resolve to the physical path once: a symlinked tmp dir (macOS's /var -> /private/var)
+# would otherwise make the compose-file path built here disagree, string-wise, with the
+# one _main_root_of resolves via `pwd -P` for MAIN_ROOT below — same file, different
+# strings, and the docker-mode presence checks below would never line up.
+WORKTREE_DIR="$(cd "$WORKTREE_DIR" && pwd -P)"
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ─── docker-mode verification ─────────────────────────────────────────────────
+#
+# dep-install's own docker-install.md tells a worker "every subsequent docker compose
+# command must pass both -f flags — including test, lint and type-check runs", because
+# gen-override.sh mounts a *named volume* over the ecosystem's dependency directory
+# (node_modules, .venv, …) at a container-side subpath — not a host bind-mount. Content
+# written there by `yarn install` (via ensure-deps.sh's docker path) never exists on the
+# host filesystem at all, in the worktree or in MAIN_ROOT. A worker gets that instruction
+# from the skill; this gate cannot read a skill, so until now it ran every discovered
+# command directly on the host — looking at a worktree whose node_modules never existed
+# outside the container, and failing every check that needed it.
+#
+# Every signal below must resolve or this silently falls back to the existing host path —
+# a gate must never stall a whole sprint because docker introspection failed.
+
+# _main_root_of <dir> — the main worktree's root from any linked worktree. Mirrors
+# receipts.sh's helper: --git-common-dir points at the *shared* .git directory (the main
+# worktree's), not the per-worktree one, which is what makes this work from inside one.
+_main_root_of() {
+  local dir="$1" common
+  common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$common" in
+    /*) : ;;
+    *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;
+  esac
+  dirname "$common"
+}
+
+# _vw_find_dep_scripts <main-root> — the same candidate order ensure-deps.sh uses, so a
+# repo's dep-install scripts are found the same way regardless of which script asks.
+_vw_find_dep_scripts() {
+  local main_root="$1"
+  if [ -n "${CREW_DEP_INSTALL_SCRIPTS:-}" ]; then
+    [ -f "$CREW_DEP_INSTALL_SCRIPTS/gen-override.sh" ] && printf '%s' "$CREW_DEP_INSTALL_SCRIPTS"
+    return 0
+  fi
+  local root candidate
+  for root in "$main_root" "$(cd "$SELF_DIR/../../.." && pwd -P)" "$(cd "$SELF_DIR/../.." && pwd -P)"; do
+    [ -n "$root" ] || continue
+    for candidate in \
+      "$root/.coding-crew/dep-install/scripts" \
+      "$root/.claude/skills/dep-install/scripts" \
+      "$root/.pi/skills/dep-install/scripts" \
+      "$root/.agents/skills/dep-install/scripts" \
+      "$root/.github/skills/dep-install/scripts" \
+      "$root/skills/dep-install/scripts"; do
+      if [ -f "$candidate/gen-override.sh" ]; then
+        printf '%s' "$candidate"
+        return 0
+      fi
+    done
+  done
+}
+
+DOCKER_MODE=0
+DOCKER_SERVICE=""
+DOCKER_CONTAINER_SRC=""
+DOCKER_COMPOSE_FILE=""
+DOCKER_OVERRIDE_FILE=""
+
+# _detect_docker_mode — populates the DOCKER_* globals when this worktree's checks must
+# run through `docker compose run` instead of directly on the host.
+_detect_docker_mode() {
+  local mode
+  mode=$(git -C "$WORKTREE_DIR" config --local agent.install-mode 2>/dev/null || true)
+  [ "$mode" = "docker" ] || return 1
+
+  local main_root="${MAIN_ROOT:-}"
+  [ -n "$main_root" ] || main_root=$(_main_root_of "$WORKTREE_DIR")
+  [ -n "$main_root" ] || return 1
+
+  local override_file="$main_root/docker-compose.override.yml"
+  [ -f "$override_file" ] || return 1
+
+  local compose_file="" name
+  for name in docker-compose.yml docker-compose.yaml compose.yml; do
+    if [ -f "$WORKTREE_DIR/$name" ]; then compose_file="$WORKTREE_DIR/$name"; break; fi
+  done
+  [ -n "$compose_file" ] || return 1
+
+  local scripts_dir
+  scripts_dir="$(_vw_find_dep_scripts "$main_root")"
+  [ -n "$scripts_dir" ] || return 1
+
+  local service
+  service=$(git -C "$WORKTREE_DIR" config --local agent.install-service 2>/dev/null || true)
+  if [ -z "$service" ]; then
+    service=$(bash "$scripts_dir/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "$main_root" --query services 2>/dev/null | head -1)
+  fi
+  [ -n "$service" ] || return 1
+
+  local container_src
+  container_src=$(bash "$scripts_dir/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "$main_root" --query container-src 2>/dev/null)
+  [ -n "$container_src" ] || return 1
+
+  DOCKER_MODE=1
+  DOCKER_SERVICE="$service"
+  DOCKER_CONTAINER_SRC="$container_src"
+  DOCKER_COMPOSE_FILE="$compose_file"
+  DOCKER_OVERRIDE_FILE="$override_file"
+}
+
+# CREW_VERIFY_DOCKER=off is the rollback lever, independent of CREW_DEPS, back to the
+# always-host behaviour this gate had before docker mode was mechanized here.
+if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ]; then
+  _detect_docker_mode || true
+fi
+
 # ─── check discovery ─────────────────────────────────────────────────────────
 
 # _discover_from_claude_md <category> <worktree-dir>
@@ -276,6 +392,9 @@ _discover_typecheck_command() {
 OVERALL_EXIT=0
 
 echo "Verifying worktree: $WORKTREE_DIR"
+if [ "$DOCKER_MODE" -eq 1 ]; then
+  echo "  via: docker compose run --rm $DOCKER_SERVICE (container-src: $DOCKER_CONTAINER_SRC)"
+fi
 echo ""
 
 NOT_RUN=()
@@ -299,6 +418,24 @@ _run_category() {
     NOT_RUN+=("$label")
     if [ "$required" = "yes" ]; then
       echo "$label: not_run is fatal — nothing was verified"
+      OVERALL_EXIT=1
+    fi
+    return
+  fi
+
+  if [ "$DOCKER_MODE" -eq 1 ]; then
+    # The command was generated against the host worktree path (belt-and-braces for
+    # make -C / bats / cargo --manifest-path; see _discover_test_command). That path
+    # does not exist inside the container at all — substitute it for "." since the
+    # container's cwd is already set to the project's container-side source root below.
+    local container_cmd="${cmd//$WORKTREE_DIR/.}"
+    local full_cmd="cd \"$DOCKER_CONTAINER_SRC\" && $container_cmd"
+    echo "$label: running (docker: $DOCKER_SERVICE): $cmd"
+    if docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_OVERRIDE_FILE" run --rm "$DOCKER_SERVICE" \
+      sh -c "$full_cmd" 2>&1; then
+      echo "$label: pass"
+    else
+      echo "$label: fail"
       OVERALL_EXIT=1
     fi
     return
@@ -344,8 +481,8 @@ fi
 # Record (or revoke) the merge gate's evidence. Failures here are reported but
 # never change the check outcome: this script's exit code must keep meaning "the
 # checks passed", and a missing receipt already fails closed at merge time.
-RECEIPTS_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/receipts.sh"
-TRACE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/trace.sh"
+RECEIPTS_SCRIPT="$SELF_DIR/receipts.sh"
+TRACE_SCRIPT="$SELF_DIR/trace.sh"
 if [ -f "$RECEIPTS_SCRIPT" ]; then
   if [ "$OVERALL_EXIT" -eq 0 ]; then
     bash "$RECEIPTS_SCRIPT" write verify --dir "$WORKTREE_DIR" || true
