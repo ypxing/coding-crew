@@ -157,8 +157,12 @@ _discover_test_command() {
     return
   fi
 
-  # Python: pytest
-  if ls "$dir"/*.py >/dev/null 2>&1 || ls "$dir"/tests/*.py >/dev/null 2>&1; then
+  # Python: pytest. Match conventionally-named test files only (test_*.py /
+  # *_test.py at the root or under tests/), not "any .py file exists" — a
+  # stray build/deploy script would otherwise make an unrelated project
+  # attempt (and fail) pytest instead of honestly reporting not_run.
+  if ls "$dir"/test_*.py >/dev/null 2>&1 || ls "$dir"/*_test.py >/dev/null 2>&1 \
+    || ls "$dir"/tests/test_*.py >/dev/null 2>&1 || ls "$dir"/tests/*_test.py >/dev/null 2>&1; then
     echo "pytest \"$dir\""
     return
   fi

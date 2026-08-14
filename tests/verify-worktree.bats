@@ -281,3 +281,24 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"TEST: not_run"* ]]
 }
+
+# ─── python discovery false positive ────────────────────────────────────────
+# A stray, unrelated .py file (a deploy/build helper) must not make the gate
+# attempt pytest on a project that has no actual Python test suite — that
+# reports a real "fail" for a repo where nothing should have run at all.
+
+@test "verify-worktree: an unrelated root-level .py script does not trigger pytest" {
+  echo "print('hello')" > "$TEMP_DIR/deploy.py"
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [[ "$output" != *"pytest"* ]]
+  [[ "$output" == *"TEST: not_run"* ]]
+}
+
+@test "verify-worktree: conventionally-named test files still trigger pytest" {
+  mkdir -p "$TEMP_DIR/tests"
+  echo "def test_ok(): assert True" > "$TEMP_DIR/tests/test_sample.py"
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [[ "$output" == *"pytest"* ]]
+}
