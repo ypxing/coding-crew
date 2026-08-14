@@ -17,6 +17,8 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 - Always pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command.
 - **Never write `docker-compose.override.yml` manually** — always generate it via `gen-override.sh`. Hand-writing the file skips proxy env vars and produces generic volume names that collide across worktrees.
 
+**Platform mismatch (`requested image's platform ... does not match the detected host platform`)**: `gen-override.sh` emits a `platform:` key per service matching the *host's* architecture by default — the override's later `-f` wins the compose merge, so this overrides whatever the project's own compose file or image pins, without editing that file. Set `CREW_DOCKER_PLATFORM=off` before generating the override if the image is genuinely single-arch and the host has emulation deliberately set up for it; `amd64`/`arm64`/`linux/...` force a specific platform regardless of host.
+
 ## Steps
 
 > **If you arrived here via the fast-path** (override already exists at `$MAIN_ROOT/docker-compose.override.yml`): skip steps 0–1 and go directly to step 2 (run install).

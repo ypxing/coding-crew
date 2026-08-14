@@ -10,10 +10,24 @@
 #   --sandbox        Add proxy env vars + CA bundle. Default: read IS_SANDBOX env var.
 #   --dry-run        Print generated YAML to stdout instead of writing the file.
 #   --query <field>  Print one detected fact and exit, instead of writing the override.
-#                    <field> is one of: services | ecosystem | container-src | manifest-dirs
+#                    <field> is one of: services | ecosystem | container-src | manifest-dirs | platform
 #                    Lets a caller that needs to *run* an install (not just generate the
 #                    override) reuse this script's own detection instead of re-parsing the
 #                    compose file and manifests a second time.
+#
+# Platform: the project's own compose file (or the image it builds/pulls) may pin
+# `platform: linux/amd64`. On an arm64 host that forces every `docker compose run` — install
+# and every later verify check alike — under qemu emulation, which is where "requested
+# image's platform does not match the detected host platform" warnings and the slow/flaky
+# runs behind them come from. Default: read CREW_DOCKER_PLATFORM env var (default "host"),
+# and emit a `platform:` key per service in the generated override so the override's later
+# `-f` wins the compose merge and the project's own pin is never reached.
+#   CREW_DOCKER_PLATFORM=host        (default) match the detected host architecture
+#   CREW_DOCKER_PLATFORM=amd64|arm64 force that architecture regardless of host
+#   CREW_DOCKER_PLATFORM=linux/...   passed through verbatim (e.g. linux/arm64/v8)
+#   CREW_DOCKER_PLATFORM=off         emit no platform key — the project's own pin wins,
+#                                    for images that genuinely are single-arch and a host
+#                                    that has emulation deliberately set up for them
 #
 # Exit codes:
 #   0  success
@@ -30,6 +44,7 @@ set -euo pipefail
 PROJECT_ROOT=""
 MAIN_ROOT=""
 SANDBOX="${IS_SANDBOX:-0}"
+DOCKER_PLATFORM="${CREW_DOCKER_PLATFORM:-host}"
 DRY_RUN=0
 QUERY=""
 
@@ -55,9 +70,9 @@ if [[ -z "$PROJECT_ROOT" || -z "$MAIN_ROOT" ]]; then
 fi
 
 case "$QUERY" in
-  ""|services|ecosystem|container-src|manifest-dirs) ;;
+  ""|services|ecosystem|container-src|manifest-dirs|platform) ;;
   *)
-    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs" >&2
+    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform" >&2
     exit 1
     ;;
 esac
@@ -188,6 +203,34 @@ detect_ecosystem() {
 
 detect_ecosystem
 
+# ---------------------------------------------------------------------------
+# Resolve the platform key (see CREW_DOCKER_PLATFORM in the header comment)
+# ---------------------------------------------------------------------------
+
+# _host_platform — best-effort `uname -m` -> compose platform string. Unrecognized
+# output means "skip the override" (empty), never a guess: emitting the wrong
+# platform is worse than leaving the project's own pin in place.
+_host_platform() {
+  case "$(uname -m 2>/dev/null)" in
+    x86_64|amd64)  echo "linux/amd64" ;;
+    arm64|aarch64) echo "linux/arm64" ;;
+    *)             echo "" ;;
+  esac
+}
+
+RESOLVED_PLATFORM=""
+case "$DOCKER_PLATFORM" in
+  off) ;;
+  host) RESOLVED_PLATFORM="$(_host_platform)" ;;
+  amd64) RESOLVED_PLATFORM="linux/amd64" ;;
+  arm64) RESOLVED_PLATFORM="linux/arm64" ;;
+  linux/*) RESOLVED_PLATFORM="$DOCKER_PLATFORM" ;;
+  *)
+    echo "Error: CREW_DOCKER_PLATFORM must be host, amd64, arm64, off, or linux/... (got: $DOCKER_PLATFORM)" >&2
+    exit 1
+    ;;
+esac
+
 # Worktrees may be sparse or freshly branched — fall back to MAIN_ROOT for detection and manifest scan.
 if [[ -z "$ECO_NAME" ]] && [[ "$PROJECT_ROOT" != "$MAIN_ROOT" ]]; then
   PROJECT_ROOT="$MAIN_ROOT"
@@ -258,6 +301,7 @@ if [[ -n "$QUERY" ]]; then
     ecosystem)     echo "$ECO_NAME" ;;
     container-src) echo "$CONTAINER_SRC" ;;
     manifest-dirs) printf '%s\n' "${MANIFEST_DIRS[@]}" ;;
+    platform)      echo "$RESOLVED_PLATFORM" ;;
   esac
   exit 0
 fi
@@ -270,6 +314,9 @@ generate_yaml() {
   echo "services:"
   for svc in "${SERVICES[@]}"; do
     echo "  ${svc}:"
+    if [[ -n "$RESOLVED_PLATFORM" ]]; then
+      echo "    platform: ${RESOLVED_PLATFORM}"
+    fi
     if [[ ${#ECO_PROXY_VARS[@]} -gt 0 ]]; then
       echo "    environment:"
       for var in "${ECO_PROXY_VARS[@]}"; do
@@ -302,4 +349,5 @@ else
   echo "  ecosystem: $ECO_NAME"
   echo "  services:  $(IFS=', '; echo "${SERVICES[*]}")"
   echo "  sandbox:   $([[ "$SANDBOX" == "1" ]] && echo true || echo false)"
+  echo "  platform:  ${RESOLVED_PLATFORM:-unset, project pin unchanged}"
 fi

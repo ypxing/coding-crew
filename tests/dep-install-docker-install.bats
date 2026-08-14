@@ -86,6 +86,65 @@ YML
   [ "$output" = "/app" ]
 }
 
+# ─── gen-override.sh: CREW_DOCKER_PLATFORM ───────────────────────────────────
+#
+# The project's own docker-compose.yml (fixture below) pins `platform: linux/amd64`.
+# These tests pin that the *override* — not the project's pin — decides what lands in
+# the generated YAML, since verify-worktree.sh and docker-install.sh always pass the
+# override with a later -f, so its platform key wins the compose merge.
+
+@test "gen-override.sh emits a platform key matching the detected host architecture by default" {
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --query platform
+  [ "$status" -eq 0 ]
+  [[ "$output" == "linux/amd64" || "$output" == "linux/arm64" ]]
+  local detected="$output"
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  [[ "$output" == *"platform: $detected"* ]]
+}
+
+@test "CREW_DOCKER_PLATFORM=arm64 forces linux/arm64 regardless of host" {
+  CREW_DOCKER_PLATFORM=arm64 run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"platform: linux/arm64"* ]]
+}
+
+@test "CREW_DOCKER_PLATFORM=amd64 forces linux/amd64 regardless of host" {
+  CREW_DOCKER_PLATFORM=amd64 run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"platform: linux/amd64"* ]]
+}
+
+@test "CREW_DOCKER_PLATFORM=linux/arm64/v8 is passed through verbatim" {
+  CREW_DOCKER_PLATFORM=linux/arm64/v8 run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"platform: linux/arm64/v8"* ]]
+}
+
+@test "CREW_DOCKER_PLATFORM=off emits no platform key, leaving the project's own pin unchanged" {
+  CREW_DOCKER_PLATFORM=off run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"platform:"* ]]
+}
+
+@test "CREW_DOCKER_PLATFORM=off makes --query platform print nothing" {
+  CREW_DOCKER_PLATFORM=off run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --query platform
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "an unknown CREW_DOCKER_PLATFORM value is a usage error, not a silent fallback" {
+  CREW_DOCKER_PLATFORM=bogus run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CREW_DOCKER_PLATFORM"* ]]
+}
+
+@test "docker-install.sh's written override carries the resolved platform key" {
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  grep -q "platform: linux/" "$MAIN/docker-compose.override.yml"
+}
+
 # ─── docker-install.sh: detection and argument construction ─────────────────
 
 @test "installs via docker compose run with both -f flags and the ecosystem's own command" {

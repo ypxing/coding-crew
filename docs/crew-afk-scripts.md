@@ -191,6 +191,13 @@ bash scripts/docker-install.sh --project-root <path> --main-root <path> \
    override, then `docker compose -f <project-root>/<compose-file> -f <main-root>/docker-compose.override.yml
    run --rm <service> sh -c "<built command>"` under the timeout cap.
 
+**Platform**: `gen-override.sh` also queries/emits `platform` — the override carries a `platform:`
+key matching the host architecture (`CREW_DOCKER_PLATFORM`, default `host`; see `gen-override.sh`'s
+own header comment), so an amd64-pinned project compose file or image never reaches an arm64 host
+as a mismatch warning (or the qemu-emulation flakiness behind it): the override's later `-f` always
+wins that key in the compose merge. `CREW_DOCKER_PLATFORM=off` restores the project's own pin
+unchanged, for images that are genuinely single-arch with emulation already set up on purpose.
+
 **Exit codes**: `0` success (prints `Running: docker compose run --rm <service> …` on stdout, the
 same convention `host-install.sh` uses for `ensure-deps.sh` to read the command back), `1` argument
 error, `2` nothing to do (no compose file, no service, no supported ecosystem, no manifest

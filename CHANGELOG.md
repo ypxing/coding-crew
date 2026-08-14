@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.28.6]
+
+### Added
+
+- **`gen-override.sh` now pins the docker-mode override's `platform:` key to the host architecture
+  by default**, so a project's own compose file or image pinning `platform: linux/amd64` no longer
+  surfaces as "requested image's platform ... does not match the detected host platform" on an
+  arm64 host — or the qemu-emulation flakiness behind that warning, which was reaching
+  `verify-worktree.sh` as a real `TEST: fail` rather than a cosmetic line. The override's `-f`
+  always comes after the project's own compose file in every `docker compose` invocation
+  (`docker-install.sh`, `verify-worktree.sh`'s docker-mode checks), so its `platform:` key wins the
+  compose merge without editing the project's file. `CREW_DOCKER_PLATFORM` controls it: `host`
+  (default, matches `uname -m`), `amd64`/`arm64`/`linux/...` to force a platform regardless of
+  host, or `off` to emit no key at all and leave the project's own pin in charge — for images that
+  are genuinely single-arch and a host that already has emulation deliberately set up for them. New
+  `--query platform` field on `gen-override.sh` for introspection. 8 new tests in
+  `tests/dep-install-docker-install.bats`.
+
 ## [1.28.5]
 
 ### Fixed
