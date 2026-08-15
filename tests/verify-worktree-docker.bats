@@ -12,8 +12,9 @@
 # the container, and failing every check that needed it.
 #
 # `docker` is stubbed on PATH throughout: these tests pin the command construction (both
-# -f flags, the service, the path substitution) and the fallback-to-host safety net, not
-# real docker behaviour.
+# -f flags, the service), the fallback-to-host safety net, and the docker-in-docker guard
+# (a Makefile recipe that already manages docker itself runs on the host, unwrapped) —
+# not real docker behaviour.
 
 VERIFY_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/verify-worktree.sh"
 
@@ -94,11 +95,11 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -eq 0 ]
-  # The log now shows the command that actually runs inside the container (container-src
-  # cwd, host path substituted for ".") — not the host-path command it was derived from,
-  # which previously read as if the host path had leaked into the container.
-  [[ "$output" == *'TEST: running (docker: app): cd "/opt/app" && make -C "." test'* ]]
-  [[ "$output" != *"TEST: running (docker: app): make -C \"$REAL_DIR\""* ]]
+  # Discovery returns a bare command ("make test", no embedded -C path — see step 1 of
+  # verify-worktree.sh's comments); the docker branch's only job is the container-src cd.
+  # The log shows the command that actually runs inside the container.
+  [[ "$output" == *'TEST: running (docker: app): cd "/opt/app" && make test'* ]]
+  [[ "$output" != *"TEST: running (docker: app): make -C"* ]]
   [[ "$output" == *"TEST: pass"* ]]
 
   [ -f "$DOCKER_LOG" ]
@@ -113,10 +114,54 @@ EOF
   [ "${args[7]}" = "app" ]
   [ "${args[8]}" = "sh" ]
   [ "${args[9]}" = "-c" ]
-  # the host worktree path was substituted for "." — it does not exist in the container
+  # bare command — no host worktree path anywhere to have leaked into the container
   [[ "${args[10]}" != *"$REAL_DIR"* ]]
   [[ "${args[10]}" == *'cd "/opt/app"'* ]]
-  [[ "${args[10]}" == *'make -C "." test'* ]]
+  [[ "${args[10]}" == *'make test'* ]]
+}
+
+@test "docker mode: a Makefile target whose recipe already invokes docker runs on the host, not nested" {
+  _docker_ready
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+test:
+	docker compose run --rm app pytest
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"TEST: running on host"* ]]
+  [[ "$output" == *"recipe already manages docker itself"* ]]
+  [[ "$output" == *"TEST: pass"* ]]
+  # the stub *did* run — make's own recipe called it — but with the recipe's own bare
+  # args, never wrapped in an outer `-f ... -f ... run --rm app sh -c "..."`.
+  [ -f "$DOCKER_LOG" ]
+  mapfile -t args < "$DOCKER_LOG"
+  [ "${args[0]}" = "compose" ]
+  [ "${args[1]}" = "run" ]
+  [ "${args[2]}" = "--rm" ]
+  [ "${args[3]}" = "app" ]
+  [ "${args[4]}" = "pytest" ]
+}
+
+@test "docker mode: a Makefile target whose recipe invokes docker through a variable also runs on the host" {
+  _docker_ready
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+RUN_IN_DOCKER = docker compose run --rm app
+test:
+	$(RUN_IN_DOCKER) pytest
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"TEST: running on host"* ]]
+  [[ "$output" == *"recipe already manages docker itself"* ]]
+  [ -f "$DOCKER_LOG" ]
+  mapfile -t args < "$DOCKER_LOG"
+  [ "${args[0]}" = "compose" ]
+  [ "${args[1]}" = "run" ]
+  [ "${args[2]}" = "--rm" ]
+  [ "${args[3]}" = "app" ]
+  [ "${args[4]}" = "pytest" ]
 }
 
 @test "docker mode: a failing check inside the container is TEST: fail, exit non-zero, no receipt" {
@@ -169,7 +214,7 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"TEST: running: make -C"* ]]
+  [[ "$output" == *"TEST: running: make test"* ]]
   [ ! -f "$DOCKER_LOG" ]
 }
 
@@ -192,7 +237,7 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"TEST: running: make -C"* ]]
+  [[ "$output" == *"TEST: running: make test"* ]]
   [ ! -f "$DOCKER_LOG" ]
 }
 
@@ -206,7 +251,7 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"TEST: running: make -C"* ]]
+  [[ "$output" == *"TEST: running: make test"* ]]
   [ ! -f "$DOCKER_LOG" ]
 }
 
@@ -220,7 +265,7 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"TEST: running: make -C"* ]]
+  [[ "$output" == *"TEST: running: make test"* ]]
   [ ! -f "$DOCKER_LOG" ]
 }
 

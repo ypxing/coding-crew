@@ -242,3 +242,20 @@ YML
 @test "the script is shipped executable" {
   [ -x "$SCRIPT" ]
 }
+
+# ─── docker-in-docker guard (prose, step 2 of docker-install.md) ─────────────
+# docker-install.sh itself never derives an install command from a Makefile target — its
+# per-directory install table only ever reads a fixed lockfile→package-manager map, so it
+# cannot recurse into a nested docker call. The one place this repo *does* suggest running
+# a Makefile `install`/`deps` target inside `docker compose run` is docker-install.md's step
+# 2, read and followed by a model rather than executed by a script — so the guard against
+# nesting docker inside docker lives there as prose, pinned here the same way
+# worker-close-guard.bats pins solve-issue's prose sections.
+
+@test "docker-install.md's step 2 dry-runs a Makefile install/deps target before wrapping it in docker compose" {
+  local doc="$SCRIPTS_DIR/../references/docker-install.md"
+  [ -f "$doc" ]
+  grep -q 'make -n install' "$doc"
+  grep -qiE "docker compose\`, \`docker run\`, or \`docker exec\`" "$doc"
+  grep -qi 'on the host, unwrapped' "$doc"
+}

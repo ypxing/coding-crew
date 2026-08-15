@@ -79,16 +79,31 @@ The override file is written to `$MAIN_ROOT/docker-compose.override.yml` and is 
 
 Named volumes start empty — always run install inside the container.
 
-Check whether the Makefile has a public `install` or `deps` target whose recipe explicitly runs the package manager in every subdirectory that has a named volume (not just the root). If yes, use it:
+**a. Is there a Makefile `install`/`deps` target?** Check whether the Makefile has a public `install` or `deps` target whose recipe explicitly runs the package manager in every subdirectory that has a named volume (not just the root).
 
-```bash
-docker compose \
-  -f "$PROJECT_ROOT/docker-compose.yml" \
-  -f "$MAIN_ROOT/docker-compose.override.yml" \
-  run --rm <service> make install
-```
+- **No** — skip to step b (run the package manager directly).
+- **Yes** — dry-run it first, to make sure wrapping it in `docker compose run` would not nest docker inside docker:
 
-Otherwise, run the package manager directly for each directory with a named volume. Pass all `cd && install` commands in a single `sh -c` to avoid re-starting the container per directory:
+  ```bash
+  make -n install   # or: make -n deps
+  ```
+
+  - If that output already contains `docker compose`, `docker run`, or `docker exec` (directly, or via a variable — `make -n` expands those too), the recipe manages its own container. Run it **on the host, unwrapped** — do not put `docker compose run` around it — then skip the rest of this step:
+
+    ```bash
+    make install
+    ```
+
+  - Otherwise (no docker indirection in the recipe), run it inside the container and skip step b:
+
+    ```bash
+    docker compose \
+      -f "$PROJECT_ROOT/docker-compose.yml" \
+      -f "$MAIN_ROOT/docker-compose.override.yml" \
+      run --rm <service> make install
+    ```
+
+**b. Run the package manager directly** for each directory with a named volume. Pass all `cd && install` commands in a single `sh -c` to avoid re-starting the container per directory:
 
 ```bash
 docker compose \

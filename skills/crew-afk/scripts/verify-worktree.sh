@@ -230,14 +230,29 @@ _has_makefile_target() {
   grep -qE "^${target}[[:space:]]*:" "$makefile"
 }
 
+# _make_recipe_uses_docker <worktree-dir> <target>
+# Returns 0 if `make -n <target>`'s fully-expanded recipe already invokes docker
+# (directly, or through a variable — `make -n` expands those too), non-zero otherwise.
+# Used only in docker mode, to avoid nesting an outer `docker compose run` around a
+# recipe that manages its own docker call — docker-in-docker.
+_make_recipe_uses_docker() {
+  local dir="$1"
+  local target="$2"
+
+  (cd "$dir" && make -n "$target" 2>/dev/null) | grep -qE 'docker (compose|run|exec)'
+}
+
 # _discover_test_command <worktree-dir>
 # Returns the test command or empty string if none found.
 #
-# Every command returned here is executed under `cd "$WORKTREE_DIR"` (see the
-# run section below), so a command needs no path argument to be correct. Where
-# one is embedded anyway (make -C, bats, cargo --manifest-path) it is
-# belt-and-braces; where it is absent (go test ./...) the cd is what makes it
-# right. Do not run a returned command outside that subshell.
+# Every command returned here is bare — no embedded absolute path (no `make -C
+# "$dir"`, no `--manifest-path "$dir/..."`, no `--prefix "$dir"`). It relies solely
+# on the `cd "$WORKTREE_DIR" && ...` (host) / `cd "$DOCKER_CONTAINER_SRC" && ...`
+# (docker) wrappers in the run section below to be correct, matching every other
+# script in this repo's cd-then-bare-command convention (host-install.sh). An
+# embedded host path would additionally be wrong verbatim inside the container,
+# where that path does not exist. Do not run a returned command outside those
+# wrappers.
 _discover_test_command() {
   local dir="$1"
 
@@ -251,7 +266,7 @@ _discover_test_command() {
 
   # 2. Makefile test target
   if _has_makefile_target "test" "$dir"; then
-    echo "make -C \"$dir\" test"
+    echo "make test"
     return
   fi
 
@@ -259,17 +274,17 @@ _discover_test_command() {
   # bats: point bats at the directory the .bats files are actually in — a repo
   # with root-level .bats files and no tests/ dir must not be handed tests/.
   if ls "$dir"/tests/*.bats >/dev/null 2>&1; then
-    echo "bats \"$dir\"/tests/"
+    echo "bats tests/"
     return
   fi
   if ls "$dir"/*.bats >/dev/null 2>&1; then
-    echo "bats \"$dir\""
+    echo "bats ."
     return
   fi
 
   # npm/pnpm/yarn: package.json with test script
   if [ -f "$dir/package.json" ] && grep -q '"test"' "$dir/package.json" 2>/dev/null; then
-    echo "npm test --prefix \"$dir\""
+    echo "npm test"
     return
   fi
 
@@ -279,7 +294,7 @@ _discover_test_command() {
   # attempt (and fail) pytest instead of honestly reporting not_run.
   if ls "$dir"/test_*.py >/dev/null 2>&1 || ls "$dir"/*_test.py >/dev/null 2>&1 \
     || ls "$dir"/tests/test_*.py >/dev/null 2>&1 || ls "$dir"/tests/*_test.py >/dev/null 2>&1; then
-    echo "pytest \"$dir\""
+    echo "pytest"
     return
   fi
 
@@ -291,7 +306,7 @@ _discover_test_command() {
 
   # Rust: cargo test
   if [ -f "$dir/Cargo.toml" ]; then
-    echo "cargo test --manifest-path \"$dir/Cargo.toml\""
+    echo "cargo test"
     return
   fi
 
@@ -321,14 +336,14 @@ _discover_lint_command() {
   local target
   for target in lint check; do
     if _has_makefile_target "$target" "$dir"; then
-      echo "make -C \"$dir\" $target"
+      echo "make $target"
       return
     fi
   done
 
   # npm/pnpm/yarn: package.json with a lint script
   if [ -f "$dir/package.json" ] && grep -q '"lint"' "$dir/package.json" 2>/dev/null; then
-    echo "npm run lint --prefix \"$dir\""
+    echo "npm run lint"
     return
   fi
 
@@ -340,7 +355,7 @@ _discover_lint_command() {
 
   # Rust: clippy
   if [ -f "$dir/Cargo.toml" ]; then
-    echo "cargo clippy --manifest-path \"$dir/Cargo.toml\""
+    echo "cargo clippy"
     return
   fi
 
@@ -367,14 +382,14 @@ _discover_typecheck_command() {
   local target
   for target in typecheck types; do
     if _has_makefile_target "$target" "$dir"; then
-      echo "make -C \"$dir\" $target"
+      echo "make $target"
       return
     fi
   done
 
   # TypeScript
   if [ -f "$dir/tsconfig.json" ]; then
-    echo "npx tsc --noEmit -p \"$dir/tsconfig.json\""
+    echo "npx tsc --noEmit"
     return
   fi
 
@@ -424,15 +439,28 @@ _run_category() {
   fi
 
   if [ "$DOCKER_MODE" -eq 1 ]; then
-    # The command was generated against the host worktree path (belt-and-braces for
-    # make -C / bats / cargo --manifest-path; see _discover_test_command). That path
-    # does not exist inside the container at all — substitute it for "." since the
-    # container's cwd is already set to the project's container-side source root below.
-    local container_cmd="${cmd//$WORKTREE_DIR/.}"
-    local full_cmd="cd \"$DOCKER_CONTAINER_SRC\" && $container_cmd"
-    # Log the command that actually runs (full_cmd, inside the container), not the
-    # host-path cmd it was derived from — printing $cmd here previously read as if
-    # the host path had leaked into the container, when only the log line was wrong.
+    # Docker-in-docker guard: if the discovered command is a bare Makefile target
+    # ("make <target>" — the only shape _discover_*_command ever returns for one, now
+    # that step 1 dropped the embedded -C path) and that target's own recipe already
+    # runs docker itself — directly, or indirectly through a variable `make -n` fully
+    # expands — wrapping it in an outer `docker compose run` would nest docker inside
+    # docker. Run it on the host instead, where the recipe's own docker calls resolve.
+    local make_target=""
+    case "$cmd" in
+      "make "*) make_target="${cmd#make }" ;;
+    esac
+    if [ -n "$make_target" ] && _make_recipe_uses_docker "$WORKTREE_DIR" "$make_target"; then
+      echo "$label: running on host (docker: $DOCKER_SERVICE skipped — 'make $make_target' recipe already manages docker itself): $cmd"
+      if (cd "$WORKTREE_DIR" && eval "$cmd") 2>&1; then
+        echo "$label: pass"
+      else
+        echo "$label: fail"
+        OVERALL_EXIT=1
+      fi
+      return
+    fi
+
+    local full_cmd="cd \"$DOCKER_CONTAINER_SRC\" && $cmd"
     echo "$label: running (docker: $DOCKER_SERVICE): $full_cmd"
     if docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_OVERRIDE_FILE" run --rm "$DOCKER_SERVICE" \
       sh -c "$full_cmd" 2>&1; then
