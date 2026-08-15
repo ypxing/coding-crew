@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.28.8]
+
+### Fixed
+
+- **`gen-override.sh`'s generated override never set compose's top-level `name:` key**, so every
+  `docker compose` invocation that lists it last in `-f` (per `docker-install.md`,
+  `verify-worktree.sh`, `docker-install.sh`) fell back to resolving the project name from the
+  basename of the *first* `-f` file's directory — the worktree's own compose file — instead of
+  the main checkout. That siloed the intended-to-be-shared named volumes per worktree (e.g.
+  `component-with-mock_wt_myproj_nm_root` instead of one shared `wt_myproj_nm_root`), even though
+  the volume name prefix itself was already keyed off `MAIN_ROOT`. The override now emits
+  `name: <project-name>` derived from `MAIN_ROOT`, sanitized to compose's stricter project-name
+  rules (lowercase, must start with a letter or digit). A new `--query project-name` field
+  exposes the same derivation for callers that need to detect it without re-parsing.
+
 ## [1.28.7]
 
 ### Fixed

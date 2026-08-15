@@ -10,10 +10,20 @@
 #   --sandbox        Add proxy env vars + CA bundle. Default: read IS_SANDBOX env var.
 #   --dry-run        Print generated YAML to stdout instead of writing the file.
 #   --query <field>  Print one detected fact and exit, instead of writing the override.
-#                    <field> is one of: services | ecosystem | container-src | manifest-dirs | platform
+#                    <field> is one of: services | ecosystem | container-src | manifest-dirs | platform | project-name
 #                    Lets a caller that needs to *run* an install (not just generate the
 #                    override) reuse this script's own detection instead of re-parsing the
 #                    compose file and manifests a second time.
+#
+# Project name: every `docker compose` invocation in this repo passes this generated
+# override as its *last* `-f` (see docker-install.md, verify-worktree.sh, docker-install.sh),
+# and compose resolves the project name from the last `-f` file's top-level `name:` key when
+# neither `-p` nor COMPOSE_PROJECT_NAME is set. Without that key, compose falls back to the
+# basename of the *first* `-f` file's directory — the worktree's own compose file — so the
+# same volume name (wt_<slug>_...) still ends up siloed per worktree, e.g.
+# "component-with-mock_wt_myproj_nm_root" instead of a single shared "wt_myproj_nm_root".
+# Emitting `name:` here, keyed off MAIN_ROOT (not the worktree), is what actually makes the
+# named volumes shared across every worktree — the volume name prefix alone does not.
 #
 # Platform: the project's own compose file (or the image it builds/pulls) may pin
 # `platform: linux/amd64`. On an arm64 host that forces every `docker compose run` — install
@@ -70,9 +80,9 @@ if [[ -z "$PROJECT_ROOT" || -z "$MAIN_ROOT" ]]; then
 fi
 
 case "$QUERY" in
-  ""|services|ecosystem|container-src|manifest-dirs|platform) ;;
+  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name) ;;
   *)
-    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform" >&2
+    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name" >&2
     exit 1
     ;;
 esac
@@ -249,6 +259,15 @@ fi
 
 PROJ_SLUG=$(basename "$MAIN_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')
 
+# PROJECT_NAME — the compose top-level `name:` value (see the "Project name" header comment
+# above). Compose project names allow only lowercase letters, digits, dashes and underscores,
+# and must start with a lowercase letter or digit — stricter than PROJ_SLUG's own volume-name
+# rules, so this is derived separately rather than reusing PROJ_SLUG as-is.
+PROJECT_NAME=$(echo "$PROJ_SLUG" | tr 'A-Z' 'a-z')
+if [[ ! "$PROJECT_NAME" =~ ^[a-z0-9] ]]; then
+  PROJECT_NAME="proj_${PROJECT_NAME}"
+fi
+
 MANIFEST_DIRS=()
 if [[ "$ECO_NAME" == "python" ]]; then
   mapfile -t MANIFEST_DIRS < <(
@@ -302,6 +321,7 @@ if [[ -n "$QUERY" ]]; then
     container-src) echo "$CONTAINER_SRC" ;;
     manifest-dirs) printf '%s\n' "${MANIFEST_DIRS[@]}" ;;
     platform)      echo "$RESOLVED_PLATFORM" ;;
+    project-name)  echo "$PROJECT_NAME" ;;
   esac
   exit 0
 fi
@@ -311,6 +331,7 @@ fi
 # ---------------------------------------------------------------------------
 
 generate_yaml() {
+  echo "name: ${PROJECT_NAME}"
   echo "services:"
   for svc in "${SERVICES[@]}"; do
     echo "  ${svc}:"
@@ -346,6 +367,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 else
   generate_yaml > "$MAIN_ROOT/docker-compose.override.yml"
   echo "Written: $MAIN_ROOT/docker-compose.override.yml"
+  echo "  project:   $PROJECT_NAME (pins the compose project name so volumes are shared across worktrees)"
   echo "  ecosystem: $ECO_NAME"
   echo "  services:  $(IFS=', '; echo "${SERVICES[*]}")"
   echo "  sandbox:   $([[ "$SANDBOX" == "1" ]] && echo true || echo false)"
