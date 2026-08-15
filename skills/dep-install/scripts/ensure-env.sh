@@ -33,6 +33,13 @@ fi
 log=""
 
 # --- Step 0b: ensure .env exists ---
+# `-f` reports false for a *dangling* symlink too, not just an absent path — e.g. a stale
+# `.worktreeinclude` link whose target no longer resolves. Clear it first, or `cp` refuses
+# to write through it ("not writing through dangling symlink") and `touch` would silently
+# resurrect whatever the broken link used to point at instead of creating `.env` itself.
+if [[ -L "$PROJECT_ROOT/.env" && ! -e "$PROJECT_ROOT/.env" ]]; then
+  rm -f "$PROJECT_ROOT/.env"
+fi
 if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
   if [[ -f "$PROJECT_ROOT/.env.example" ]]; then
     cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"

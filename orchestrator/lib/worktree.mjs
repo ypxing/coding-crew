@@ -6,7 +6,7 @@
  * or on a Copilot worker obeying a "Working directory:" line in its prompt.
  */
 
-import { existsSync, mkdirSync, readFileSync, symlinkSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export function worktreePath(mainRoot, branch) {
@@ -35,6 +35,17 @@ export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD" }) {
 /**
  * Symlink each `.worktreeinclude` entry into the worktree (node_modules, .venv, …).
  * Blank lines and `#` comments are skipped. A missing source is skipped, not fatal.
+ *
+ * `existsSync` follows symlinks, so it reports `false` for a *dangling* one — the same
+ * value it reports for "nothing here yet". A dangling link that already points at the
+ * current `mainRoot/<entry>` self-heals for free once that path becomes real (same target,
+ * no relink needed). But a `dest` left as a broken symlink pointing anywhere else — a
+ * worktree reused after `.worktreeinclude` changed, or a link this function did not create —
+ * used to hit `EEXIST` from `symlinkSync` and get swallowed as "a pre-existing entry is not
+ * a failure", so it never healed: the worker's own `cp .env.template .env` kept failing with
+ * "not writing through dangling symlink". `lstatSync` (no follow) tells the three states
+ * apart: nothing at `dest` (link it), a live entry (leave it — reuse matters for resume), or
+ * a broken symlink (clear it and relink to the current source).
  */
 export function applyWorktreeInclude(mainRoot, worktree) {
   const manifest = join(mainRoot, ".worktreeinclude");
@@ -45,13 +56,29 @@ export function applyWorktreeInclude(mainRoot, worktree) {
     if (!entry || entry.startsWith("#")) continue;
     const src = join(mainRoot, entry);
     const dest = join(worktree, entry);
-    if (!existsSync(src) || existsSync(dest)) continue;
+    if (!existsSync(src)) continue;
+
+    let destStat = null;
+    try {
+      destStat = lstatSync(dest);
+    } catch {
+      /* nothing at dest — the common case, fall through to link it */
+    }
+    if (destStat) {
+      if (!destStat.isSymbolicLink() || existsSync(dest)) continue; // live entry — leave it
+      try {
+        rmSync(dest);
+      } catch {
+        continue; // could not clear the stale link — try again next round
+      }
+    }
+
     mkdirSync(dirname(dest), { recursive: true });
     try {
       symlinkSync(src, dest);
       linked.push(entry);
     } catch {
-      /* a pre-existing entry is not a failure */
+      /* another process linked it between our check and this call — not a failure */
     }
   }
   return linked;
