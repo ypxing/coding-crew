@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.28.7]
+
+### Fixed
+
+- **`verify-worktree.sh`'s docker-mode log line echoed the pre-substitution, host-path command
+  while actually running the container-cwd, path-substituted one** — reading as if a host path had
+  leaked into the container, when only the log line was wrong.
+- **A dangling `.worktreeinclude` symlink was never healed.** `existsSync` follows symlinks, so it
+  reports `false` for a dangling symlink — the same value it reports for "nothing here yet". That
+  made `applyWorktreeInclude`'s `symlinkSync` hit `EEXIST` on a stale link (a worktree reused after
+  `.worktreeinclude` changed, or a link pointing somewhere other than the current source) and
+  swallow it as "a pre-existing entry is not a failure", so it never healed — workers then failed on
+  their own `cp .env.template .env` with "not writing through dangling symlink". `lstatSync` (no
+  follow) now distinguishes nothing-at-dest (link it), a live entry (leave it, resume matters), and
+  a broken symlink (clear it and relink to the current source). `dep-install`'s `ensure-env.sh` had
+  the same failure mode one layer down (`-f` also reports `false` for a dangling symlink) and gets
+  the same fix.
+- **`verify-worktree.sh`'s discovered commands carried embedded host paths (`-C`,
+  `--manifest-path`, `--prefix`/`-p`), which only made sense on the host.** All three
+  `_discover_*_command` functions now return a bare command (`make test`, `bats .`, `cargo test`,
+  `npm test`, `npx tsc --noEmit`), relying solely on the existing `cd "$WORKTREE_DIR" && ...`
+  (host) / `cd "$DOCKER_CONTAINER_SRC" && ...` (docker) wrappers — matching `host-install.sh`'s
+  cd-then-bare-command convention already used everywhere else in this repo. As part of the same
+  fix, a bare `make <target>` discovered in docker mode is now dry-run first (`make -n <target>`)
+  and checked for a `docker compose`/`run`/`exec` call, directly or via a variable `make -n` fully
+  expands; a recipe that already manages its own docker call now runs on the host, unwrapped,
+  instead of being nested inside an outer `docker compose run` — avoiding docker-in-docker.
+  `docker-install.md`'s agent-facing `make install`/`deps` shortcut prose gets the same dry-run
+  guard.
+
 ## [1.28.6]
 
 ### Added
