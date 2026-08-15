@@ -430,7 +430,10 @@ _run_category() {
     # container's cwd is already set to the project's container-side source root below.
     local container_cmd="${cmd//$WORKTREE_DIR/.}"
     local full_cmd="cd \"$DOCKER_CONTAINER_SRC\" && $container_cmd"
-    echo "$label: running (docker: $DOCKER_SERVICE): $cmd"
+    # Log the command that actually runs (full_cmd, inside the container), not the
+    # host-path cmd it was derived from — printing $cmd here previously read as if
+    # the host path had leaked into the container, when only the log line was wrong.
+    echo "$label: running (docker: $DOCKER_SERVICE): $full_cmd"
     if docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_OVERRIDE_FILE" run --rm "$DOCKER_SERVICE" \
       sh -c "$full_cmd" 2>&1; then
       echo "$label: pass"

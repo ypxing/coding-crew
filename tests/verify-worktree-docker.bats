@@ -94,7 +94,11 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"TEST: running (docker: app): make -C \"$REAL_DIR\" test"* ]]
+  # The log now shows the command that actually runs inside the container (container-src
+  # cwd, host path substituted for ".") — not the host-path command it was derived from,
+  # which previously read as if the host path had leaked into the container.
+  [[ "$output" == *'TEST: running (docker: app): cd "/opt/app" && make -C "." test'* ]]
+  [[ "$output" != *"TEST: running (docker: app): make -C \"$REAL_DIR\""* ]]
   [[ "$output" == *"TEST: pass"* ]]
 
   [ -f "$DOCKER_LOG" ]
