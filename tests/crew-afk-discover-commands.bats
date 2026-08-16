@@ -54,7 +54,19 @@ Run: \`whatever test command\`" > CLAUDE.md
   [ "$status" -eq 0 ]
   [[ "$output" != *"skipped"* ]]
   [[ "$output" == *"command discovery prompt"* ]]
-  [[ "$output" == *"whatever test command"* ]]
+  # The prompt lists the path, not the file's own content — the model reads it itself.
+  [[ "$output" == *"CLAUDE.md"* ]]
+  [[ "$output" != *"whatever test command"* ]]
+}
+
+@test "tells the model to read the files itself instead of pasting their content" {
+  echo "## Tests
+Run: \`whatever test command\`" > CLAUDE.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *"Read these files yourself"* ]]
+  [[ "$output" == *"Stop reading as soon as"* ]]
 }
 
 @test "prompt requests the local-dev-loop JSON shape for test/lint/typecheck" {
@@ -84,7 +96,7 @@ Run: \`whatever test command\`" > CLAUDE.md
   [[ "$output" == *"don't use"* ]] || [[ "$output" == *"broken"* ]]
 }
 
-@test "includes every source file that exists, not just the first one found" {
+@test "lists every source file that exists, not just the first one found, in priority order" {
   echo "claude notes" > CLAUDE.md
   cat > Makefile <<'EOF'
 test:
@@ -94,12 +106,17 @@ EOF
 
   run bash "$DISCOVER_SCRIPT"
 
-  [[ "$output" == *"claude notes"* ]]
-  [[ "$output" == *"test:"* ]]
-  [[ "$output" == *'"jest"'* ]]
+  claude_line=$(grep -n "CLAUDE.md" <<< "$output" | head -1 | cut -d: -f1)
+  makefile_line=$(grep -n "Makefile" <<< "$output" | head -1 | cut -d: -f1)
+  package_line=$(grep -n "package.json" <<< "$output" | head -1 | cut -d: -f1)
+  [[ "$output" == *"CLAUDE.md"* ]]
+  [[ "$output" == *"Makefile"* ]]
+  [[ "$output" == *"package.json"* ]]
+  [ "$claude_line" -lt "$makefile_line" ]
+  [ "$makefile_line" -lt "$package_line" ]
 }
 
-@test "a symlinked AGENTS.md pointing at CLAUDE.md is quoted once, not twice" {
+@test "a symlinked AGENTS.md pointing at CLAUDE.md is listed once, not twice" {
   echo "run tests with: npm test" > CLAUDE.md
   ln -s CLAUDE.md AGENTS.md
 
@@ -107,7 +124,7 @@ EOF
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"1 source file(s) found"* ]]
-  occurrences=$(grep -c "run tests with" <<< "$output")
+  occurrences=$(grep -c "CLAUDE.md" <<< "$output")
   [ "$occurrences" -eq 1 ]
 }
 

@@ -18,6 +18,17 @@ set -euo pipefail
 # model itself, and it never writes a result anywhere; a sibling script owns turning the
 # model's response into .scratch/commands.json.
 #
+# The prompt lists candidate *paths*, not their contents. dispatchPlain() hands the model the
+# same read/bash/edit/write toolset an interactive session gets (see dispatch.mjs), so the
+# model can open each file itself instead of having every candidate — a 950-line CLAUDE.md
+# included — pasted whole into a single CLI argv string. Content-in-prompt used to be how
+# this was built; it spent tokens on files the model often never needed (a Makefile no one
+# asked about, once CLAUDE.md alone answered all three categories), and had no ceiling as a
+# repo's own docs grew. Paths are listed in the same fixed priority order as CANDIDATE_FILES
+# below (docs before build files before manifests), and the model is told to stop reading
+# once it has an answer for all three categories, so a repo that documents everything in
+# CLAUDE.md never pays to have its Makefile and package.json read too.
+#
 # Skips (mechanically, no model call, no tokens) when either:
 #   1. none of the known source files exist — verify-worktree.sh's own ecosystem-convention
 #      fallback already covers this case for free, so there is nothing to ask a model
@@ -40,7 +51,9 @@ CACHE_FILE="$MAIN_ROOT/.scratch/commands.json"
 
 # Fixed, deterministic order — keeps the hash (and the prompt's file order) stable across
 # runs regardless of filesystem iteration order. Not tied to any one repo's stack: covers the
-# doc conventions (CLAUDE.md/AGENTS.md/Makefile) plus one manifest per common ecosystem.
+# doc conventions (CLAUDE.md/AGENTS.md/Makefile) plus one manifest per common ecosystem. This
+# is also the priority order handed to the model: docs first (most likely to state the
+# command in prose), build files next, manifests last (often just a script name to infer).
 CANDIDATE_FILES=(
   "$MAIN_ROOT/CLAUDE.md"
   "$MAIN_ROOT/AGENTS.md"
@@ -112,12 +125,27 @@ echo
 
 cat <<'PROMPT'
 --- command discovery prompt (do not run this on a cheap model tier — it is genuine reasoning) ---
-You are looking at one repository's own documentation and build files. Identify the command a
-developer runs **locally**, during normal iteration, for each of these three categories only:
+You are working in this repository's own working directory and have normal file-read access
+to it. Identify the command a developer runs **locally**, during normal iteration, for each
+of these three categories only:
 
 - test
 - lint
 - typecheck (a static/type-checking pass — not the test suite)
+
+Read these files yourself, in the order listed below — that order is priority order, most
+authoritative first (project docs, then build files, then package manifests):
+PROMPT
+
+for f in "${FOUND_FILES[@]}"; do
+  printf '  - %s\n' "${f#"$MAIN_ROOT"/}"
+done
+
+cat <<'PROMPT'
+
+Stop reading as soon as you have a confident answer — including a confident "no local command
+exists" — for all three categories; you do not need to open every file above if an earlier one
+already answers all three.
 
 Rules:
 - Only local dev-loop commands. Ignore build, deploy, publish, and infra-provisioning steps
@@ -131,14 +159,5 @@ Rules:
 
 Respond with **only** this JSON shape, no other prose:
 {"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
-
---- source files ---
+--- end command discovery prompt ---
 PROMPT
-
-for f in "${FOUND_FILES[@]}"; do
-  printf '\n### %s\n\n' "${f#"$MAIN_ROOT"/}"
-  cat "$f"
-done
-
-echo
-echo "--- end command discovery prompt ---"

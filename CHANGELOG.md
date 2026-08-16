@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.29.5]
+
+### Changed
+
+- **Command discovery's prompt no longer pastes the full content of CLAUDE.md/AGENTS.md/
+  Makefile/manifest files into claude/pi/codex/copilot's `-p` argv.** It now lists the found
+  files' *paths*, in the same priority order it always hashed them in (docs, then build
+  files, then manifests), and tells the model to read them itself and stop once it has an
+  answer for all three categories — `dispatchPlain()` already hands every caller the same
+  read/bash/edit/write toolset an interactive session gets (see 1.29.4), so the model no
+  longer needs the content pre-quoted for it. Saves tokens on repos with a large CLAUDE.md
+  and files the model doesn't end up needing, and removes any dependence on how much file
+  content a single CLI argument can hold.
+
 ## [1.29.4]
 
 ### Fixed
