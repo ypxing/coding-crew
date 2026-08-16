@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.29.3]
+
+### Fixed
+
+- **`discoverCommands()` tested `/skipped/i` against discover-commands.sh's entire stdout —
+  the whole prompt, including every candidate file quoted in full — instead of just its own
+  one-line skip message.** A real `CLAUDE.md`/`AGENTS.md` containing the word "skipped"
+  anywhere in its prose (e.g. "...because I skipped this; don't repeat the mistake.", a
+  perfectly ordinary sentence in a repo's own docs) made that regex match, so the whole step
+  silently returned before ever calling the model: no dispatch, no
+  `.scratch/commands-response.md`, no `.scratch/commands.json`, and — because the
+  short-circuit fires before any of the branches that log — no line in the trace log to
+  explain why, reproduced end-to-end against a real repo hitting exactly this. The same shape
+  existed in coverage validation's own skip check in `loop.mjs`, reachable through a feature
+  slug containing "skipped" (coverage-validation.sh's stdout embeds `$FEATURE_SLUG` on every
+  line). Both now test only the first line of the script's stdout, which is the only line
+  either script's skip paths ever print.
+- **`dispatchPlain()`'s command-discovery call handed the model a live read/bash/edit/write
+  toolset with no restriction**, even though its prompt already quotes every candidate file in
+  full and needs zero tool calls to answer. `dispatchPlain()` now takes a `noTools` option;
+  command discovery passes `true` (pi: `--no-tools --no-context-files`, claude: `--tools ""`).
+  Coverage validation's own `dispatchPlain()` call, which does need to grep merged code, is
+  unaffected — `noTools` defaults to `false`.
+- **`commands.mjs` never checked `discover-commands.sh`'s own exit code**, only the model
+  dispatch's — a crash mid-script (an unreadable candidate file, for example) fell through into
+  dispatching whatever partial stdout survived as if it were a real prompt, silently. It now
+  logs and bails on a non-zero exit instead.
+- **A `CLAUDE.md` symlinked to `AGENTS.md` (or any two candidate files with identical content)
+  was quoted twice in the discovery prompt**, doubling that portion of the prompt's token cost
+  for no new information. `discover-commands.sh` and `write-commands-cache.sh` now dedupe
+  candidate files by content hash before building the prompt/source hash, in the same fixed
+  order as before.
+
 ## [1.29.2]
 
 ### Fixed

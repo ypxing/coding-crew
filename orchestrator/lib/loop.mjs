@@ -107,7 +107,15 @@ async function wrapUp(ctx, { stalled }) {
     mutating: false,
   });
   let coverageReport = null;
-  if (!/skipped/i.test(coverage.stdout)) {
+  // Only coverage-validation.sh's own *first line* ever says "skipped" — its skip paths echo
+  // that single line and exit immediately, before the PRD is ever quoted. Testing the whole
+  // of coverage.stdout (as this used to do) matches "skipped" anywhere inside the PRD's own
+  // requirements prose — a PRD describing what should or shouldn't be skipped is exactly the
+  // kind of text this step exists to read — and would silently skip a real validation with
+  // nothing logged to say why. See commands.mjs's discoverCommands() for the same fix on
+  // command discovery's identical shape.
+  const coverageFirstLine = coverage.stdout.split("\n", 1)[0] ?? "";
+  if (!/^Coverage validation: skipped/.test(coverageFirstLine)) {
     const outFile = join(sprint.env.SPRINT_DIR, "coverage-report.md");
     const r = await dispatchPlain(effects, ctx.platform, {
       prompt: coverage.stdout,

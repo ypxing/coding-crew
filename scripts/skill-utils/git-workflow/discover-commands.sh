@@ -53,9 +53,30 @@ CANDIDATE_FILES=(
   "$MAIN_ROOT/composer.json"
 )
 
+# _content_hash <file> — one file's own content, independent of its path. Used only to spot
+# duplicates (a CLAUDE.md that is a symlink to AGENTS.md, or two files that happen to hold
+# identical content) before either file is added to the prompt: real repos symlink one to the
+# other for editor convenience, and quoting the same text twice would cost tokens for zero
+# extra information without changing what the model can answer.
+_content_hash() {
+  cat "$1" | if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | awk '{print $1}'
+}
+
 FOUND_FILES=()
+SEEN_HASHES=()
 for f in "${CANDIDATE_FILES[@]}"; do
-  [ -f "$f" ] && FOUND_FILES+=("$f")
+  [ -f "$f" ] || continue
+  h=$(_content_hash "$f")
+  dup=0
+  if [ "${#SEEN_HASHES[@]}" -gt 0 ]; then
+    for seen in "${SEEN_HASHES[@]}"; do
+      if [ "$seen" = "$h" ]; then dup=1; break; fi
+    done
+  fi
+  if [ "$dup" -eq 0 ]; then
+    FOUND_FILES+=("$f")
+    SEEN_HASHES+=("$h")
+  fi
 done
 
 if [ "${#FOUND_FILES[@]}" -eq 0 ]; then

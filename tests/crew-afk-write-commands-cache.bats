@@ -61,6 +61,18 @@ teardown() {
   [[ "$output" == *"cache is fresh"* ]]
 }
 
+@test "a symlinked AGENTS.md still hashes consistently between the two scripts" {
+  echo "run tests with: npm test" > CLAUDE.md
+  ln -s CLAUDE.md AGENTS.md
+  echo '{"test": "npm test", "lint": null, "typecheck": null}' > response.txt
+
+  bash "$WRITE_SCRIPT" --response-file response.txt
+
+  run bash "$DISCOVER_SCRIPT"
+  [[ "$output" == *"skipped"* ]]
+  [[ "$output" == *"cache is fresh"* ]]
+}
+
 # --- null handling ---
 
 @test "writes null (not the literal string) for a category the model found no command for" {

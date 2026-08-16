@@ -17,7 +17,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildDispatch, preflight, resolveAgentFile, splitFrontmatter, DEFAULT_PARALLEL } from "../../orchestrator/lib/dispatch.mjs";
+import { buildDispatch, dispatchPlain, preflight, resolveAgentFile, splitFrontmatter, DEFAULT_PARALLEL } from "../../orchestrator/lib/dispatch.mjs";
+import { Effects } from "../../orchestrator/lib/effects.mjs";
 
 const SCRIPTS = "skills/crew-afk/scripts";
 
@@ -332,4 +333,51 @@ test("the copilot reviewer runs from the main checkout, read-only by its definit
   // --allow-all-tools removes the confirmation prompt, not the definition's tools: list —
   // probed: an agent declaring `tools: ["view"]` has no shell under it.
   assert.match(argv, /--allow-all-tools/);
+});
+
+// ─── dispatchPlain: agent-less dispatch, noTools ──────────────────────────────
+//
+// Command discovery's prompt is fully self-contained (every candidate file's content is
+// already quoted in it), so its dispatchPlain call passes noTools: true and must never hand
+// the model a live read/bash/edit/write toolset — see commands.mjs. Coverage validation's
+// own dispatchPlain call needs those tools (it greps merged code), so noTools must default
+// to false and leave that caller's argv untouched.
+
+async function recordedArgv(platform, over = {}) {
+  const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: "/tmp/does-not-run", dryRun: true });
+  await dispatchPlain(effects, platform, {
+    prompt: "the whole prompt",
+    cwd: "/tmp/does-not-run",
+    mainRoot: "/tmp/does-not-run",
+    outFile: null,
+    ...over,
+  });
+  return effects.recorded.at(-1).argv;
+}
+
+test("pi noTools adds --no-tools and --no-context-files", async () => {
+  const argv = await recordedArgv("pi", { noTools: true });
+  assert.deepEqual(argv, ["pi", "-p", "--no-tools", "--no-context-files", "the whole prompt"]);
+});
+
+test("pi without noTools (coverage validation's shape) is unchanged", async () => {
+  const argv = await recordedArgv("pi", {});
+  assert.deepEqual(argv, ["pi", "-p", "the whole prompt"]);
+});
+
+test("claude noTools passes --tools with an empty value, disabling all tools", async () => {
+  const argv = await recordedArgv("claude", { noTools: true, mainRoot: "/tmp/does-not-run" });
+  const i = argv.indexOf("--tools");
+  assert.ok(i !== -1, argv.join(" "));
+  assert.equal(argv[i + 1], "");
+});
+
+test("claude without noTools never gets a --tools flag", async () => {
+  const argv = await recordedArgv("claude", {});
+  assert.equal(argv.includes("--tools"), false);
+});
+
+test("noTools still lets --model through, in the same order as before", async () => {
+  const argv = await recordedArgv("pi", { noTools: true, model: "gemini-flash" });
+  assert.deepEqual(argv, ["pi", "-p", "--no-tools", "--no-context-files", "--model", "gemini-flash", "the whole prompt"]);
 });

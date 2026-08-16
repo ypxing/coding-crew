@@ -99,9 +99,30 @@ CANDIDATE_FILES=(
   "$MAIN_ROOT/composer.json"
 )
 
+# Same dedup-by-content as discover-commands.sh (kept in sync by hand, not by sourcing, for
+# the same reason as the candidate list and hashing algorithm below): a symlinked or
+# duplicated CLAUDE.md/AGENTS.md must drop out of the hash input on both sides, or the two
+# scripts would compute different hashes for the same repo state and the cache would never
+# read as fresh.
+_content_hash() {
+  cat "$1" | if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | awk '{print $1}'
+}
+
 FOUND_FILES=()
+SEEN_HASHES=()
 for f in "${CANDIDATE_FILES[@]}"; do
-  [ -f "$f" ] && FOUND_FILES+=("$f")
+  [ -f "$f" ] || continue
+  h=$(_content_hash "$f")
+  dup=0
+  if [ "${#SEEN_HASHES[@]}" -gt 0 ]; then
+    for seen in "${SEEN_HASHES[@]}"; do
+      if [ "$seen" = "$h" ]; then dup=1; break; fi
+    done
+  fi
+  if [ "$dup" -eq 0 ]; then
+    FOUND_FILES+=("$f")
+    SEEN_HASHES+=("$h")
+  fi
 done
 
 _source_hash() {

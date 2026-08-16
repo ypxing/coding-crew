@@ -99,6 +99,28 @@ EOF
   [[ "$output" == *'"jest"'* ]]
 }
 
+@test "a symlinked AGENTS.md pointing at CLAUDE.md is quoted once, not twice" {
+  echo "run tests with: npm test" > CLAUDE.md
+  ln -s CLAUDE.md AGENTS.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"1 source file(s) found"* ]]
+  occurrences=$(grep -c "run tests with" <<< "$output")
+  [ "$occurrences" -eq 1 ]
+}
+
+@test "two independently-authored files with identical content are still deduped" {
+  printf 'test: npm test\n' > CLAUDE.md
+  printf 'test: npm test\n' > AGENTS.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"1 source file(s) found"* ]]
+}
+
 # --- Skip: cache already fresh ---
 
 @test "skips when .scratch/commands.json already caches a matching source hash" {

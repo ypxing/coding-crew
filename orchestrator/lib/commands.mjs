@@ -24,7 +24,25 @@ export async function discoverCommands(effects, { platform, model, timeoutMs, lo
   const d = effects.bash("discover-commands.sh", [], { mutating: false });
   if (d.stdout.trim()) log(d.stdout.trim());
 
-  if (/skipped/i.test(d.stdout) || effects.dryRun) return;
+  // A non-zero exit here (a candidate file vanishing mid-read, an unreadable manifest, …)
+  // must not fall through to dispatching stderr's leftovers or a half-built prompt as if it
+  // were discover-commands.sh's real output — that is how this step used to fail silently:
+  // no cache, no error anyone could see short of re-running by hand.
+  if (d.code !== 0) {
+    log(`Command discovery: discover-commands.sh failed (exit ${d.code}) — ${(d.stderr || d.stdout).trim() || "no output"}`);
+    return;
+  }
+
+  // Only discover-commands.sh's own *first line* ever says "skipped" — its skip paths echo
+  // that single line and exit immediately, before printing a prompt. Testing the regex
+  // against the whole of d.stdout (as this used to do) matches the word "skipped" anywhere
+  // in the prompt it goes on to build, including inside a quoted CLAUDE.md/AGENTS.md's own
+  // prose ("...because I skipped this; don't repeat the mistake." is a real line seen in the
+  // wild) — silently discarding a fully-built prompt and never calling the model, with
+  // nothing logged to explain why, because the short-circuit fires before any of the
+  // branches below that do log.
+  const firstLine = d.stdout.split("\n", 1)[0] ?? "";
+  if (/^Command discovery: skipped/.test(firstLine) || effects.dryRun) return;
 
   const outFile = join(effects.mainRoot, ".scratch", "commands-response.md");
   let r;
@@ -36,6 +54,13 @@ export async function discoverCommands(effects, { platform, model, timeoutMs, lo
       model,
       outFile,
       timeoutMs,
+      // The whole answer is already quoted in the prompt — this pass never needs to read,
+      // search, or write anything itself. Left unset (as coverage validation's own
+      // dispatchPlain call needs), the model has the same read/bash/edit/write access as an
+      // interactive session and can wander off into tool calls instead of just answering,
+      // which starves write-commands-cache.sh's regex of the JSON it expects and leaves no
+      // cache behind with nothing but a wall of tool-call chatter in the trace to explain why.
+      noTools: true,
       // Distinguishes this agent-less dispatch from coverage validation's under the
       // CREW_FAKE_DISPATCH test seam — see fake-dispatch.sh's "commands-discovery" branch.
       fakeAgent: "commands-discovery",
@@ -46,7 +71,11 @@ export async function discoverCommands(effects, { platform, model, timeoutMs, lo
   }
 
   if (r.code !== 0 || r.timedOut) {
-    log("Command discovery: model dispatch did not complete — falling back to per-check discovery.");
+    const detail = (r.stderr || r.text || "").trim();
+    log(
+      `Command discovery: model dispatch did not complete (${r.timedOut ? "timed out" : `exit ${r.code}`}) — falling back to per-check discovery.` +
+        (detail ? ` Last output: ${detail.slice(-500)}` : ""),
+    );
     return;
   }
 

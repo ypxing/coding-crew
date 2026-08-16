@@ -10,7 +10,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -386,6 +386,43 @@ test("coverage validation is opt-in, and runs between the squash and cleanup", (
   assert.ok(markerAt(log, "SQUASH") < markerAt(log, "CLEANUP"), "cleanup must follow the squash");
 });
 
+test("a feature slug containing 'skipped' does not silently cancel coverage validation", () => {
+  // Regression: loop.mjs used to test /skipped/i against coverage-validation.sh's *entire*
+  // stdout, not just its one-line skip message. That stdout embeds $PRD_PATH (which embeds
+  // $FEATURE_SLUG) on every non-skip line ("PRD found at .scratch/<slug>/PRD.md", "Extract
+  // all requirements from ...", "Completed issues in .scratch/<slug>/issues/done/"), so a
+  // feature slug that happens to contain the substring "skipped" — a perfectly ordinary name
+  // for a feature about skip logic — made that regex match and cancelled a validation the
+  // user explicitly asked for with --coverage. The same bug as command discovery's, just
+  // triggered through the slug instead of a quoted file's content.
+  const root = mkdtempSync(join(tmpdir(), "crew-sprint-"));
+  const git = (...args) => sh("git", ["-C", root, ...args]);
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@test");
+  git("config", "user.name", "T");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo ok\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  writeFileSync(join(root, ".gitignore"), ".scratch/\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+  git("checkout", "-q", "-b", "feature/skipped-flow");
+  mkdirSync(join(root, ".scratch/skipped-flow/issues/open"), { recursive: true });
+  mkdirSync(join(root, ".scratch/fake"), { recursive: true });
+  writeFileSync(
+    join(root, ".scratch/skipped-flow/issues/open/01-alpha.md"),
+    "# alpha\n\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] alpha exists\n",
+  );
+  writeFileSync(join(root, ".scratch/skipped-flow/PRD.md"), "# PRD\n\n- The widget exists\n");
+
+  const r = runSprint(root, ["--coverage", "--feature-slug", "skipped-flow"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(
+    existsSync(join(root, ".scratch/skipped-flow/coverage-report.md")),
+    true,
+    "a feature slug containing 'skipped' must not cancel a requested coverage validation",
+  );
+  assert.match(r.stdout, /## Coverage Report/);
+});
+
 // ─── what the last prose bodies used to assert about themselves ──────────────
 //
 // The copilot cutover emptied AFK_PROSE_VARIANTS, so the bats suites that looped over it
@@ -730,6 +767,27 @@ test("command discovery writes .scratch/commands.json from the repo's own Makefi
   assert.ok(cache.sourceHash);
 });
 
+test("a CLAUDE.md that happens to contain the word 'skipped' does not silently cancel discovery", () => {
+  // Regression: commands.mjs used to test /skipped/i against discover-commands.sh's *entire*
+  // stdout, which is the whole prompt plus every quoted candidate file's content, not just
+  // discover-commands.sh's own one-line skip message. A real AGENTS.md/CLAUDE.md quoted in
+  // full (one real repo's own docs said "...because I skipped this; don't repeat the mistake.")
+  // made that regex match, so the step silently returned before ever calling the model —
+  // no dispatch, no commands-response.md, no commands.json, and no log line to explain why,
+  // because the short-circuit fires before any of the branches that do log.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(
+    join(root, "CLAUDE.md"),
+    "Typecheck: `make tsc`. PR #149 shipped a bug because I skipped this; don't repeat it.\n",
+  );
+
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(existsSync(join(root, ".scratch/commands.json")), true, "the word 'skipped' inside a quoted file must not cancel discovery");
+  assert.doesNotMatch(r.stderr, /Command discovery: skipped/);
+});
+
 test("command discovery's own log lines survive in the trace log, not just the live terminal", () => {
   // Runs once, unattended, before any worktree exists -- a bad model response or a dispatch
   // failure here was previously visible only in whatever captured the live process's stderr.
@@ -779,4 +837,23 @@ test("--no-commands skips command discovery entirely", () => {
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(existsSync(join(root, ".scratch/commands.json")), false);
   assert.doesNotMatch(r.stderr, /Command discovery/);
+});
+
+test("discover-commands.sh failing outright is surfaced and does not send a broken prompt onward", () => {
+  // Regression: commands.mjs used to check only the model dispatch's exit code, not
+  // discover-commands.sh's own — a crash there (e.g. a candidate file going unreadable
+  // mid-run) fell through into dispatching whatever partial/garbage stdout survived, as if
+  // it were a real prompt, with no error left anywhere to diagnose it from. CLAUDE.md is
+  // untracked and lives only in the main checkout, so making it unreadable cannot also
+  // break the worktree's own git status (unlike doing the same to the tracked Makefile).
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, "CLAUDE.md"), "test: npm test\n");
+  chmodSync(join(root, "CLAUDE.md"), 0o000);
+
+  const r = runSprint(root);
+  chmodSync(join(root, "CLAUDE.md"), 0o644); // restore before any cleanup touches it
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`); // advisory: never fails the sprint
+  assert.equal(existsSync(join(root, ".scratch/commands.json")), false);
+  assert.match(r.stderr, /Command discovery: discover-commands\.sh failed/);
 });
