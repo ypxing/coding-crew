@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.29.1]
+
+### Fixed
+
+- **v1.29.0's new `discover-commands.sh`/`write-commands-cache.sh` scripts never reached an
+  already-installed repo via `install.sh --update` (crew.lock or legacy-manifest path), because
+  neither `crew-afk` nor `solve-issue` had its `registry.json` version bumped alongside the new
+  `scripts[]` entries.** Both update paths gate reinstallation purely on that version string
+  changing (`run_update_from_lockfile`/`run_update` in `install.sh`), so an unchanged version
+  reads as "nothing to do" and silently keeps the old file set forever — no error, no log line,
+  just a repo that runs `crew-afk` and never gets `.scratch/commands.json`. `crew-afk` bumps
+  2.1.0 → 2.2.0 and `solve-issue` bumps 1.8.1 → 1.9.0 so `--update` actually ships them. A new
+  `tests/registry-version-bump.bats` diffs `registry.json` against the nearest released tag and
+  fails when an entry's own fields changed without its version also changing, so this class of
+  bug can't ship silently again.
+
 ## [1.29.0]
 
 ### Added
