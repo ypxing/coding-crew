@@ -54,13 +54,6 @@ export async function discoverCommands(effects, { platform, model, timeoutMs, lo
       model,
       outFile,
       timeoutMs,
-      // The whole answer is already quoted in the prompt — this pass never needs to read,
-      // search, or write anything itself. Left unset (as coverage validation's own
-      // dispatchPlain call needs), the model has the same read/bash/edit/write access as an
-      // interactive session and can wander off into tool calls instead of just answering,
-      // which starves write-commands-cache.sh's regex of the JSON it expects and leaves no
-      // cache behind with nothing but a wall of tool-call chatter in the trace to explain why.
-      noTools: true,
       // Distinguishes this agent-less dispatch from coverage validation's under the
       // CREW_FAKE_DISPATCH test seam — see fake-dispatch.sh's "commands-discovery" branch.
       fakeAgent: "commands-discovery",

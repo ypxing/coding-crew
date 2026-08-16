@@ -217,18 +217,19 @@ export async function dispatch(effects, platform, spec, { timeoutMs } = {}) {
  * one-time command discovery (see commands.mjs) — so the prompt only exists in a context
  * window when the step that built it actually runs.
  *
- * noTools: true strips tool access (pi's --no-tools/--no-context-files, claude's --tools "")
- * for callers whose prompt is fully self-contained and never needs a tool call to answer —
- * command discovery, not coverage validation, which greps merged code and reads issue files
- * and so must keep its tools. Left false (the default), behaviour is unchanged from before
- * this option existed. codex and copilot have no equally unambiguous "no tools at all" flag
- * short of sandbox/approval changes that would also affect coverage validation's own use of
- * this same function, so noTools is a no-op for them today.
+ * Deliberately does not strip tool access: a `noTools` option restricting command
+ * discovery's dispatch once existed here (pi's `--no-tools --no-context-files`, claude's
+ * `--tools ""`), but claude's `--tools` flag is variadic — with no `--model` between it and
+ * the prompt (the default, unless a sprint passes `--model`), `--tools ""` swallowed the
+ * prompt itself as part of its own argument list, so claude saw no prompt at all and exited
+ * 1 with "Input must be provided either through stdin or as a prompt argument", surfaced as
+ * "Command discovery: model dispatch did not complete (exit 1)". Every caller of this
+ * function gets the same read/bash/edit/write toolset an interactive session would.
  */
 export async function dispatchPlain(
   effects,
   platform,
-  { prompt, cwd, mainRoot, model, outFile, timeoutMs, noTools = false, fakeAgent = "coverage-validation" },
+  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "coverage-validation" },
 ) {
   const env = { MAIN_ROOT: mainRoot, CREW_ORCHESTRATED: "1" };
 
@@ -253,12 +254,7 @@ export async function dispatchPlain(
   switch (platform) {
     case "pi":
       cmd = "pi";
-      args = [
-        "-p",
-        ...(noTools ? ["--no-tools", "--no-context-files"] : []),
-        ...(model ? ["--model", model] : []),
-        prompt,
-      ];
+      args = ["-p", ...(model ? ["--model", model] : []), prompt];
       break;
     case "codex":
       cmd = "codex";
@@ -272,7 +268,6 @@ export async function dispatchPlain(
         "bypassPermissions",
         "--add-dir",
         mainRoot,
-        ...(noTools ? ["--tools", ""] : []),
         ...(model ? ["--model", model] : []),
         prompt,
       ];

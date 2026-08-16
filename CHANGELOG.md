@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.29.4]
+
+### Fixed
+
+- **Command discovery's agent-less dispatch stripped tool access with a `noTools` option
+  (pi: `--no-tools --no-context-files`, claude: `--tools ""`), added in 1.29.3 — and claude's
+  `--tools` flag is variadic.** Without a `--model` override (the default, unless a sprint
+  passes `--model`), `--tools ""` sat directly in front of the prompt on claude's argv, so
+  claude's own arg parser swallowed the prompt into `--tools`'s value list instead of
+  treating it as the `-p` positional argument. claude then saw no prompt at all and exited 1
+  with "Input must be provided either through stdin or as a prompt argument", surfaced by
+  `commands.mjs` as "Command discovery: model dispatch did not complete (exit 1)" and
+  silently falling back to per-check discovery on every claude sprint. `noTools` is reverted
+  outright: `dispatchPlain()` now always hands the model the same read/bash/edit/write
+  toolset an interactive session would, exactly as it did before 1.29.3, and exactly as
+  coverage validation's own `dispatchPlain()` call already relied on.
+
 ## [1.29.3]
 
 ### Fixed
