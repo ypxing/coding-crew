@@ -68,7 +68,9 @@
         "dest": ".coding-crew/crew-afk"
       },
       "scripts": [
-        "feature-branch-setup.sh"
+        "feature-branch-setup.sh",
+        "discover-commands.sh",
+        "write-commands-cache.sh"
       ],
       "platform-files": {
         "pi": [
@@ -112,7 +114,8 @@
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
       "scripts": [
-        "commit-changes.sh"
+        "commit-changes.sh",
+        "write-commands-cache.sh"
       ],
       "deps": [
         "dep-install",

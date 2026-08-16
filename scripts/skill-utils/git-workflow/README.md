@@ -145,6 +145,41 @@ bash scripts/commit-changes.sh \
 
 ---
 
+### `discover-commands.sh`
+
+**Purpose**: Mechanically decide whether a one-time command-discovery model call is needed, and if so, build its prompt. See `docs/crew-afk-orchestrator.md` and `orchestrator/lib/commands.mjs` for the full design (why this exists: CLAUDE.md/Makefile discovery by regex breaks on real-world tables and prose; a model reads the same files instead, once per repo, cached).
+
+**Usage**:
+```bash
+bash scripts/discover-commands.sh [--refresh]
+```
+
+**Behavior**: Prints either a skip message (nothing to read, or `.scratch/commands.json`'s cached `sourceHash` already matches) or the full discovery prompt, ready to hand to a model as-is.
+
+**Used by**:
+- `crew-afk` (`orchestrator/lib/commands.mjs`, once per sprint via `dispatchPlain`)
+
+Not used by `solve-issue`: its own agent turn already *is* the model, so there is no separate
+dispatch to build a prompt for — solve-issue's Step 5 inlines the equivalent cache-freshness
+check directly and reads `.scratch/commands.json` itself when it is usable.
+
+---
+
+### `write-commands-cache.sh`
+
+**Purpose**: Turn a model's discovery response into `.scratch/commands.json`, stamped with its own independently-computed source hash (never trusts a hash the caller supplies).
+
+**Usage**:
+```bash
+bash scripts/write-commands-cache.sh --response-file <path>
+```
+
+**Behavior**: Extracts `test`/`lint`/`typecheck` from the response (tolerant of surrounding prose or a markdown code fence). A response with none of the three fields recognisable fails without touching any existing cache.
+
+**Used by**: the same two callers as `discover-commands.sh`, immediately after the model call it requested.
+
+---
+
 ## Benefits
 
 - **Consistency**: Same git workflow logic across all skills

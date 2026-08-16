@@ -173,7 +173,27 @@ Do not add documentation for things that are already self-evident from the code.
 **Use the same INSTALL_MODE from Step 2** — every check command runs inside docker or on the host,
 matching what was established then.
 
-STOP. Read `references/verification.md` now. Run every check listed. Do not skip any.
+**Cache fast path** — command discovery is a property of the repo, not of this issue:
+
+```bash
+CACHE="$MAIN_ROOT/.scratch/commands.json"
+if [ -f "$CACHE" ] && grep -q '"sourceHash"' "$CACHE"; then echo USE_CACHE; else echo DISCOVER; fi
+```
+
+`USE_CACHE` → read `test`/`lint`/`typecheck` straight from `$CACHE`. An empty/`null` value is
+that discovery's own answer of "no local command" — report `NOT RUN: no command found`, do not
+re-check CLAUDE.md/Makefile instead. Skip straight to running the three, in order.
+
+`DISCOVER` → STOP. Read `references/verification.md` now and discover every check as it
+describes. Run every check listed. Do not skip any. Then, pass or fail, persist what you found
+(from the same directory you read this skill file from):
+
+```bash
+cat > /tmp/discovered-commands.json <<'JSON'
+{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
+JSON
+bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/discovered-commands.json
+```
 
 Do not proceed to commit if any check fails or any acceptance criterion from Step 1 is unmet.
 

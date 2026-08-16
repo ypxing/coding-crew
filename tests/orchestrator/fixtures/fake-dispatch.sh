@@ -8,6 +8,10 @@
 #   <slug>.exit           exit with this code instead of 0
 #
 # `--agent coverage-validation` stands in for the agent-less wrap-up dispatch.
+# `--agent commands-discovery` stands in for the agent-less one-time command-discovery
+# dispatch (see orchestrator/lib/commands.mjs) — answers with commands matching the
+# Makefile fixtureRepo() always writes (test/lint/typecheck targets), so a real
+# write-commands-cache.sh run on the fake answer succeeds the same way a real model's would.
 set -uo pipefail
 
 AGENT=""; DIR=""; PROMPT_FILE=""; OUT=""
@@ -33,6 +37,11 @@ fi
 
 if [ "$AGENT" = "coverage-validation" ]; then
   printf '## Coverage Report\n\n✓ 1 covered · ⚠ 0 partial · ✗ 0 missing\n' > "$OUT"
+  exit 0
+fi
+
+if [ "$AGENT" = "commands-discovery" ]; then
+  printf '{"test": "make test", "lint": "make lint", "typecheck": "make typecheck"}' > "$OUT"
   exit 0
 fi
 

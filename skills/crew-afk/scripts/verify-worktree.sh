@@ -5,11 +5,17 @@ set -uo pipefail
 #
 # Usage: verify-worktree.sh --dir <worktree-path>
 #
-# Discovers check commands using the same verification reference chain as
-# skills/solve-issue/references/verification.md:
+# Discovers check commands using this reference chain:
+#   0. .scratch/commands.json at MAIN_ROOT (see discover-commands.sh / write-commands-cache.sh)
+#      — a model's one-time reading of CLAUDE.md/AGENTS.md/Makefile/manifest, done once per
+#      sprint before any worktree exists, not re-derived by this gate. A category the cache
+#      resolves to `null` is trusted as-is (no local command exists) and is not retried
+#      against steps 1-3 below — the whole point of the cache is that a model already looked.
 #   1. CLAUDE.md at the worktree root (explicit Run: commands under Tests section)
 #   2. Makefile targets (test, lint, typecheck)
 #   3. Ecosystem conventions (bats, npm test, pytest, cargo test, go test, etc.)
+# Steps 1-3 only ever run when there is no usable cache at all (absent, or unparseable) —
+# the fallback every repo already had before the cache existed.
 #
 # A check category with no discoverable command is reported explicitly as
 # not_run — never silently treated as passing.
@@ -170,6 +176,42 @@ if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ]; then
   _detect_docker_mode || true
 fi
 
+# ─── commands cache ────────────────────────────────────────────────────────────
+#
+# .scratch/commands.json (see discover-commands.sh / write-commands-cache.sh) is written
+# once per sprint at MAIN_ROOT, before any worktree exists — read here so a worktree's
+# checks use the same commands the sprint already discovered, instead of re-guessing per
+# worktree with the heuristic chain below. Reuses _main_root_of, already defined above for
+# the same MAIN_ROOT-from-a-worktree problem the docker detection has.
+_CACHE_MAIN_ROOT="${MAIN_ROOT:-}"
+if [ -z "$_CACHE_MAIN_ROOT" ]; then
+  _CACHE_MAIN_ROOT=$(_main_root_of "$WORKTREE_DIR")
+fi
+COMMANDS_CACHE=""
+[ -n "$_CACHE_MAIN_ROOT" ] && COMMANDS_CACHE="$_CACHE_MAIN_ROOT/.scratch/commands.json"
+
+# _load_cached_command <category>
+# Prints the cached command for <category> and returns 0 when a usable cache exists —
+# including printing nothing for an explicit `null`, the discovery step's own considered
+# answer that no local command exists for that category, which must not be second-guessed
+# by the heuristic chain below. Returns 1 (nothing printed) only when there is no usable
+# cache at all: absent, or missing the sourceHash sentinel only write-commands-cache.sh
+# writes — the only case that falls through to steps 1-3.
+_load_cached_command() {
+  local category="$1"
+  [ -n "$COMMANDS_CACHE" ] && [ -f "$COMMANDS_CACHE" ] || return 1
+  grep -q '"sourceHash"' "$COMMANDS_CACHE" 2>/dev/null || return 1
+
+  local raw
+  raw=$(grep -o "\"$category\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$COMMANDS_CACHE" 2>/dev/null | head -1 | sed -E "s/\"$category\"[[:space:]]*:[[:space:]]*//")
+  case "$raw" in
+    "") return 1 ;;
+    null) echo ""; return 0 ;;
+    \"*\") raw="${raw#\"}"; raw="${raw%\"}"; echo "$raw"; return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # ─── check discovery ─────────────────────────────────────────────────────────
 
 # _discover_from_claude_md <category> <worktree-dir>
@@ -256,6 +298,13 @@ _make_recipe_uses_docker() {
 _discover_test_command() {
   local dir="$1"
 
+  # 0. .scratch/commands.json, if usable — authoritative, including an explicit null.
+  local cached
+  if cached=$(_load_cached_command test); then
+    echo "$cached"
+    return
+  fi
+
   # 1. CLAUDE.md explicit command under Tests section
   local cmd
   cmd=$(_discover_from_claude_md "test" "$dir")
@@ -325,6 +374,13 @@ _discover_test_command() {
 _discover_lint_command() {
   local dir="$1"
 
+  # 0. .scratch/commands.json, if usable — authoritative, including an explicit null.
+  local cached
+  if cached=$(_load_cached_command lint); then
+    echo "$cached"
+    return
+  fi
+
   local cmd
   cmd=$(_discover_from_claude_md "lint" "$dir")
   if [ -n "$cmd" ]; then
@@ -366,6 +422,13 @@ _discover_lint_command() {
 # Returns the type check command or empty string if none found.
 _discover_typecheck_command() {
   local dir="$1"
+
+  # 0. .scratch/commands.json, if usable — authoritative, including an explicit null.
+  local cached
+  if cached=$(_load_cached_command typecheck); then
+    echo "$cached"
+    return
+  fi
 
   local cmd
   cmd=$(_discover_from_claude_md "typecheck" "$dir")

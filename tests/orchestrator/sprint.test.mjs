@@ -7,10 +7,10 @@
  * rounds stall instead of looping forever.
  */
 
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,7 +18,27 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "../..");
 const MAIN = join(REPO, "orchestrator/main.mjs");
-const SCRIPTS = join(REPO, "skills/crew-afk/scripts");
+
+// Mirrors what install.sh actually produces for a real crew-afk install: its own
+// skills/crew-afk/scripts/ merged with the shared scripts its registry.json entry declares
+// (feature-branch-setup.sh, discover-commands.sh, write-commands-cache.sh), whose canonical
+// source is scripts/skill-utils/git-workflow/, not skills/crew-afk/scripts/ — see that
+// directory's README. Computed once here rather than duplicating those files by hand, which
+// is exactly the drift the skill-utils mechanism exists to avoid.
+//
+// Nested three levels under REPO (.scratch/<random>/scripts), the same depth as the real
+// skills/crew-afk/scripts/ — ensure-deps.sh's own _script_roots() walks up exactly that many
+// parents to find a sibling dep-install install, so a flat os.tmpdir() location (any other
+// depth) makes it search the wrong ancestry and report DEPS: none for every fixture.
+mkdirSync(join(REPO, ".scratch"), { recursive: true });
+const SCRIPTS_BASE = mkdtempSync(join(REPO, ".scratch", "test-scripts-"));
+const SCRIPTS = join(SCRIPTS_BASE, "scripts");
+mkdirSync(SCRIPTS);
+cpSync(join(REPO, "skills/crew-afk/scripts"), SCRIPTS, { recursive: true });
+for (const f of ["feature-branch-setup.sh", "discover-commands.sh", "write-commands-cache.sh"]) {
+  cpSync(join(REPO, "scripts/skill-utils/git-workflow", f), join(SCRIPTS, f));
+}
+after(() => rmSync(SCRIPTS_BASE, { recursive: true, force: true }));
 const FAKE = join(HERE, "fixtures/fake-dispatch.sh");
 
 function sh(cmd, args, opts = {}) {
@@ -686,4 +706,64 @@ test("a worktree that starts with no node_modules is verified and merged, with n
   assert.equal(off.r.code, 2, "without deps the round should stall, not merge");
   assert.deepEqual(state(root2).merged_branches ?? [], []);
   assert.equal(state(root2).retention.alpha.reason, "verification-failed");
+});
+
+// ─── one-time command discovery ───────────────────────────────────────────────
+//
+// discover-commands.sh / write-commands-cache.sh mechanically build the prompt and persist
+// the answer; the model call itself is faked here (fake-dispatch.sh's "commands-discovery"
+// branch), exactly the seam coverage validation already uses for the same reason.
+
+test("command discovery writes .scratch/commands.json from the repo's own Makefile", () => {
+  const root = fixtureRepo(); // fixtureRepo() always seeds a Makefile with test/lint/typecheck
+  addIssue(root, "01-alpha.md");
+
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+
+  const cacheFile = join(root, ".scratch/commands.json");
+  assert.equal(existsSync(cacheFile), true);
+  const cache = JSON.parse(readFileSync(cacheFile, "utf8"));
+  assert.equal(cache.test, "make test");
+  assert.equal(cache.lint, "make lint");
+  assert.equal(cache.typecheck, "make typecheck");
+  assert.ok(cache.sourceHash);
+});
+
+test("command discovery is skipped, at zero cost, when there is nothing to read", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // discover-commands.sh reads the working directory, not git history — removing the
+  // Makefile here does not affect the worktree verify-worktree.sh checks out from HEAD,
+  // so this isolates the discovery step from the rest of the pipeline.
+  unlinkSync(join(root, "Makefile"));
+
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(existsSync(join(root, ".scratch/commands.json")), false);
+  assert.match(r.stderr, /Command discovery: skipped/);
+});
+
+test("a second sprint reuses the cached commands instead of discovering again", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const first = runSprint(root);
+  assert.equal(first.code, 0, `${first.stdout}\n${first.stderr}`);
+  const cacheAfterFirst = readFileSync(join(root, ".scratch/commands.json"), "utf8");
+
+  addIssue(root, "02-beta.md");
+  const second = runSprint(root);
+  assert.equal(second.code, 0, `${second.stdout}\n${second.stderr}`);
+  assert.match(second.stderr, /cache is fresh/);
+  assert.equal(readFileSync(join(root, ".scratch/commands.json"), "utf8"), cacheAfterFirst);
+});
+
+test("--no-commands skips command discovery entirely", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+
+  const r = runSprint(root, ["--no-commands"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(existsSync(join(root, ".scratch/commands.json")), false);
+  assert.doesNotMatch(r.stderr, /Command discovery/);
 });

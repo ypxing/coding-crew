@@ -7,8 +7,12 @@ rationale: `docs/crew-afk-as-code-plan.md`.
 
 The crew-afk sprint loop as a program instead of as a prompt. JS owns **control flow**,
 the existing bash scripts in `skills/crew-afk/scripts/` keep the **effects**, and the
-model is used at exactly four points: the coder, the reviewer, the opt-in coverage
-validation, and nothing else.
+model is used at exactly five points: the coder, the reviewer, the opt-in coverage
+validation, one-time command discovery, and nothing else. Command discovery differs from
+the other four in one way: it is cached (`.scratch/commands.json`, hashed against
+CLAUDE.md/AGENTS.md/Makefile/manifest content), so it costs a model call only on the first
+sprint for a repo, or after those files change — every other sprint reuses the cache for
+free. See `orchestrator/lib/commands.mjs`.
 
 ```
 orchestrator/

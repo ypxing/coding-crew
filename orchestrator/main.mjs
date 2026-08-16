@@ -18,6 +18,8 @@
  *   --worker-timeout <minutes>             default 45 — a hung worker cannot hang the sprint
  *   --max-rounds <n>                       hard cap on rounds
  *   --no-deps                              skip both ensure-deps.sh call sites
+ *   --no-commands                          skip one-time command discovery (verify-worktree.sh
+ *                                           falls back to its own CLAUDE.md/Makefile heuristics)
  *   --no-squash                            skip the end-of-sprint squash
  *
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
@@ -31,6 +33,7 @@ import { spawnSync } from "node:child_process";
 
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
+import { discoverCommands } from "./lib/commands.mjs";
 import { DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { selectDispatchable } from "./lib/tracker.mjs";
@@ -50,6 +53,7 @@ function parseArgs(argv) {
     reviewTimeoutMs: 20 * 60 * 1000,
     maxRounds: null,
     deps: true,
+    commands: true,
     noSquash: false,
     dryRun: false,
     passthrough: [],
@@ -69,6 +73,7 @@ function parseArgs(argv) {
       case "--review-timeout": o.reviewTimeoutMs = Number(args.shift()) * 60 * 1000; break;
       case "--max-rounds": o.maxRounds = Number(args.shift()); break;
       case "--no-deps": o.deps = false; break;
+      case "--no-commands": o.commands = false; break;
       case "--no-squash": o.noSquash = true; break;
       case "--dry-run": o.dryRun = true; break;
       case "--jira": o.passthrough.push("--jira", args.shift()); break;
@@ -139,7 +144,7 @@ async function main() {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--coverage] [--promote critical|critical-high]\n" +
-        "  [--max-parallel N] [--worker-timeout MIN] [--max-rounds N] [--no-deps] [--no-squash]",
+        "  [--max-parallel N] [--worker-timeout MIN] [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]",
     );
     return 0;
   }
@@ -192,6 +197,7 @@ async function main() {
     if (skipped.length) console.log(`parked fix issues (${skipped.length}): ${skipped.map((i) => i.slug).join(", ")}`);
     console.log("\npipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close");
     console.log(`deps:      ${options.deps ? "ensure-deps.sh, once per sprint and once per worktree" : "disabled (--no-deps)"}`);
+    console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint (cached at .scratch/commands.json)" : "disabled (--no-commands)"}`);
     return issues.length ? 0 : 3;
   }
 
@@ -211,6 +217,15 @@ async function main() {
     log: (line) => console.error(line),
   });
   sprint.setModel(options.model ?? "agent default");
+
+  if (options.commands) {
+    await discoverCommands(effects, {
+      platform: options.platform,
+      model: options.model,
+      timeoutMs: options.reviewTimeoutMs,
+      log: (line) => console.error(line),
+    });
+  }
 
   const ctx = {
     sprint,

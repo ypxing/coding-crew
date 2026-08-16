@@ -149,6 +149,27 @@ teardown() {
   [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/feature-branch-setup.sh" ]
 }
 
+@test "solve-issue and crew-afk both get write-commands-cache.sh; only crew-afk gets discover-commands.sh" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+
+  # solve-issue's own agent turn already *is* the model, so it never dispatches a
+  # separate prompt-building call — only the shared write side is needed.
+  [ -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/write-commands-cache.sh" ]
+  [ ! -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/discover-commands.sh" ]
+
+  # crew-afk dispatches an agent-less model call (orchestrator/lib/commands.mjs) and
+  # needs both halves.
+  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/write-commands-cache.sh" ]
+  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/discover-commands.sh" ]
+
+  # Canonical source is scripts/skill-utils/git-workflow/ for both, not duplicated by
+  # hand in either skill's own source-dir.
+  [ ! -f "$SCRIPT_DIR/skills/solve-issue/scripts/write-commands-cache.sh" ]
+  [ ! -f "$SCRIPT_DIR/skills/crew-afk/scripts/discover-commands.sh" ]
+}
+
 @test "direct install is idempotent (produces identical output on repeat runs)" {
   local temp1="$TEMP_DIR/first"
   local temp2="$TEMP_DIR/second"

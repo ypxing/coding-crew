@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.29.0]
+
+### Added
+
+- **Command discovery (test/lint/typecheck) is now a one-time, cached model call instead of a
+  regex re-derived per worktree.** `orchestrator/lib/commands.mjs` adds a fifth model-dispatch
+  point — alongside the coder, reviewer and opt-in coverage validation — that runs once per
+  sprint, before any worktree exists: `discover-commands.sh` decides whether a call is needed
+  (skipping, at zero tokens, when none of CLAUDE.md/AGENTS.md/Makefile/manifest files exist, or
+  when an existing `.scratch/commands.json`'s `sourceHash` already matches their current
+  content), an agent-less `dispatchPlain()` reads whichever of those files a repo actually has
+  and answers with the three commands, and `write-commands-cache.sh` persists the answer —
+  recomputing the hash itself rather than trusting the caller. `verify-worktree.sh` now reads
+  that cache first for each category (trusting an explicit `null` as "no local command", not
+  re-guessing it), falling back to its pre-existing CLAUDE.md/Makefile/ecosystem-convention
+  chain only when the cache is absent or unrecognised. `solve-issue`'s Step 5 gets the same
+  cache-first fast path, and writes the cache itself after a manual discovery when there was
+  none. A model reading real-world prose/tables/bullet lists replaces the fragile per-check
+  regex that broke on documentation a regex has no reliable way to parse (e.g. a table cell
+  noting "don't use this shortcut, it's broken"). New `crew-afk` flag: `--no-commands`.
+
 ## [1.28.8]
 
 ### Fixed

@@ -213,20 +213,27 @@ export async function dispatch(effects, platform, spec, { timeoutMs } = {}) {
 
 /**
  * An agent-less dispatch: one reasoning pass with no agent definition. Used for the
- * opt-in coverage validation, whose prompt is printed by coverage-validation.sh — so
- * the prompt only exists in a context window when the step actually runs.
+ * opt-in coverage validation, whose prompt is printed by coverage-validation.sh, and for
+ * one-time command discovery (see commands.mjs) — so the prompt only exists in a context
+ * window when the step that built it actually runs.
  */
-export async function dispatchPlain(effects, platform, { prompt, cwd, mainRoot, model, outFile, timeoutMs }) {
+export async function dispatchPlain(
+  effects,
+  platform,
+  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "coverage-validation" },
+) {
   const env = { MAIN_ROOT: mainRoot, CREW_ORCHESTRATED: "1" };
 
   // The same test/CI seam buildDispatch has: an agent-less dispatch is still a model
-  // call, so the wrap-up that makes it (coverage validation) must be exercisable for
-  // zero tokens or it is the one step no test ever runs.
+  // call, so any step that makes one must be exercisable for zero tokens or it is the one
+  // step no test ever runs. fakeAgent tells fake-dispatch.sh which canned response to play
+  // — coverage validation and command discovery are both agent-less, but need different
+  // answers.
   if (process.env.CREW_FAKE_DISPATCH) {
     const out = outFile ?? join(cwd, "plain-dispatch.out");
     const r = await effects.spawnWithTimeout(
       "bash",
-      [process.env.CREW_FAKE_DISPATCH, "--agent", "coverage-validation", "--dir", cwd, "--out", out],
+      [process.env.CREW_FAKE_DISPATCH, "--agent", fakeAgent, "--dir", cwd, "--out", out],
       { cwd: mainRoot, env, timeoutMs },
     );
     const text = existsSync(out) ? readFileSync(out, "utf8") : "";

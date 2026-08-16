@@ -302,3 +302,98 @@ EOF
   run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [[ "$output" == *"pytest"* ]]
 }
+
+# ─── .scratch/commands.json cache ────────────────────────────────────────────
+#
+# Written once per sprint by discover-commands.sh / write-commands-cache.sh (see
+# orchestrator/lib/commands.mjs). Trusted as-is when present and parseable — including an
+# explicit null — so this gate never re-guesses a category a model already looked at.
+
+@test "verify-worktree: uses the cached command from .scratch/commands.json over CLAUDE.md/Makefile" {
+  mkdir -p "$TEMP_DIR/.scratch"
+  cat > "$TEMP_DIR/.scratch/commands.json" <<'EOF2'
+{"sourceHash": "abc", "test": "echo cached-test-ran", "lint": null, "typecheck": null}
+EOF2
+  # A Makefile that would answer differently if the cache were not consulted first.
+  cat > "$TEMP_DIR/Makefile" <<'EOF2'
+test:
+	@exit 1
+EOF2
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+
+  [[ "$output" == *"cached-test-ran"* ]]
+  [[ "$output" != *"make test"* ]]
+}
+
+@test "verify-worktree: a cached explicit null is not_run, and is not retried against the Makefile" {
+  mkdir -p "$TEMP_DIR/.scratch"
+  cat > "$TEMP_DIR/.scratch/commands.json" <<'EOF2'
+{"sourceHash": "abc", "test": "true", "lint": null, "typecheck": null}
+EOF2
+  # A Makefile lint target exists, but the cache's null must win — the model already
+  # decided there is no local lint command (e.g. it was a CI-only/broken shortcut).
+  cat > "$TEMP_DIR/Makefile" <<'EOF2'
+test:
+	@true
+lint:
+	@exit 1
+EOF2
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+
+  [[ "$output" == *"LINT: not_run"* ]]
+  [[ "$output" != *"make lint"* ]]
+  [ "$status" -eq 0 ]
+}
+
+@test "verify-worktree: falls back to the heuristic chain when there is no cache at all" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF2'
+test:
+	@echo heuristic-test-ran
+EOF2
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+
+  [[ "$output" == *"heuristic-test-ran"* ]]
+}
+
+@test "verify-worktree: falls back to the heuristic chain when the cache file is not our schema" {
+  mkdir -p "$TEMP_DIR/.scratch"
+  echo '{"unrelated": true}' > "$TEMP_DIR/.scratch/commands.json"
+  cat > "$TEMP_DIR/Makefile" <<'EOF2'
+test:
+	@echo heuristic-test-ran
+EOF2
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+
+  [[ "$output" == *"heuristic-test-ran"* ]]
+}
+
+@test "verify-worktree: a failing cached command still fails the gate" {
+  mkdir -p "$TEMP_DIR/.scratch"
+  cat > "$TEMP_DIR/.scratch/commands.json" <<'EOF2'
+{"sourceHash": "abc", "test": "exit 1", "lint": null, "typecheck": null}
+EOF2
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"TEST: fail"* ]]
+}
+
+@test "verify-worktree: finds the cache from a real linked worktree, not just when --dir is the main root" {
+  mkdir -p "$TEMP_DIR/.scratch"
+  cat > "$TEMP_DIR/.scratch/commands.json" <<'EOF2'
+{"sourceHash": "abc", "test": "echo cached-from-linked-worktree", "lint": null, "typecheck": null}
+EOF2
+  git -C "$TEMP_DIR" branch feature-x
+  git -C "$TEMP_DIR" worktree add -q "$TEMP_DIR-wt" feature-x
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR-wt"
+
+  [[ "$output" == *"cached-from-linked-worktree"* ]]
+
+  git -C "$TEMP_DIR" worktree remove -f "$TEMP_DIR-wt" 2>/dev/null || rm -rf "$TEMP_DIR-wt"
+}
