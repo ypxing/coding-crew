@@ -367,9 +367,30 @@ test("claude dispatchPlain never gets a --tools flag", async () => {
   assert.equal(argv.includes("--tools"), false);
 });
 
-test("claude dispatchPlain with a model still gets the prompt as its own positional argument", async () => {
+test("claude dispatchPlain with a model still gets the prompt as its own argument, not swallowed by --model", async () => {
   const argv = await recordedArgv("claude", { mainRoot: "/tmp/does-not-run", model: "opus" });
-  assert.deepEqual(argv.slice(-1), ["the whole prompt"]);
+  assert.equal(argv.includes("the whole prompt"), true);
+  assert.deepEqual(argv.slice(-2), ["--model", "opus"]);
+});
+
+test("claude dispatchPlain with no model still gets the prompt as its own argument, not swallowed by --add-dir", async () => {
+  // Regression: --add-dir is variadic (`<directories...>`). With no --model in between
+  // (the default), a prompt placed after --add-dir's value used to be consumed as a
+  // second directory instead of claude's -p positional argument, so claude saw no
+  // prompt at all and exited 1 with "Input must be provided either through stdin or as
+  // a prompt argument" — surfaced as "Command discovery: model dispatch did not complete
+  // (exit 1)". The prompt must sit right after -p, before --add-dir, so no flag's arity
+  // can ever swallow it.
+  const argv = await recordedArgv("claude", { mainRoot: "/tmp/does-not-run", model: null });
+  assert.deepEqual(argv, [
+    "claude",
+    "-p",
+    "the whole prompt",
+    "--permission-mode",
+    "bypassPermissions",
+    "--add-dir",
+    "/tmp/does-not-run",
+  ]);
 });
 
 test("model still comes through, in the same order as before", async () => {

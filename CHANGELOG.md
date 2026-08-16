@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.6]
+
+### Fixed
+
+- **`dispatchPlain()`'s claude case placed the prompt right after `--add-dir mainRoot`, with
+  no `--model` in between whenever a sprint ran without `--model` (the default).** `--add-dir`
+  is variadic (`<directories...>`), so claude's own CLI parser consumed the prompt as a
+  second directory instead of treating it as `-p`'s positional argument. claude then saw no
+  prompt at all and exited 1 with "Input must be provided either through stdin or as a
+  prompt argument", surfaced by `commands.mjs` as "Command discovery: model dispatch did not
+  complete (exit 1)" — the same symptom as 1.29.4's `--tools ""` bug, with a different flag
+  as the culprit. The prompt now sits immediately after `-p`, before `--permission-mode` and
+  `--add-dir`, matching copilot's already-safe argv order, so no later flag's arity can ever
+  swallow it again.
+
 ## [1.29.5]
 
 ### Changed

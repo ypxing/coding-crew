@@ -262,14 +262,21 @@ export async function dispatchPlain(
       break;
     case "claude":
       cmd = "claude";
+      // Prompt must not be the argv token right after --add-dir's value: --add-dir is
+      // variadic (`<directories...>`) and, with no --model in between (the default,
+      // unless a sprint passes --model), claude's own parser would consume the prompt as
+      // a second directory instead of the -p positional argument — claude then sees no
+      // prompt at all and exits 1 with "Input must be provided either through stdin or as
+      // a prompt argument". Placed immediately after -p instead, exactly like copilot's
+      // argv below, so no later flag's arity can ever swallow it.
       args = [
         "-p",
+        prompt,
         "--permission-mode",
         "bypassPermissions",
         "--add-dir",
         mainRoot,
         ...(model ? ["--model", model] : []),
-        prompt,
       ];
       break;
     case "copilot":
