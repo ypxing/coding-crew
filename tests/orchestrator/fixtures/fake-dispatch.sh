@@ -12,6 +12,8 @@
 # dispatch (see orchestrator/lib/commands.mjs) — answers with commands matching the
 # Makefile fixtureRepo() always writes (test/lint/typecheck targets), so a real
 # write-commands-cache.sh run on the fake answer succeeds the same way a real model's would.
+# A test that needs a different answer (e.g. a discovered "install" override) can drop a
+# custom response at $CREW_FAKE_DIR/commands.response — read verbatim instead of the default.
 set -uo pipefail
 
 AGENT=""; DIR=""; PROMPT_FILE=""; OUT=""
@@ -41,7 +43,11 @@ if [ "$AGENT" = "coverage-validation" ]; then
 fi
 
 if [ "$AGENT" = "commands-discovery" ]; then
-  printf '{"test": "make test", "lint": "make lint", "typecheck": "make typecheck"}' > "$OUT"
+  if [ -f "$FAKE_DIR/commands.response" ]; then
+    cat "$FAKE_DIR/commands.response" > "$OUT"
+  else
+    printf '{"test": "make test", "lint": "make lint", "typecheck": "make typecheck"}' > "$OUT"
+  fi
   exit 0
 fi
 

@@ -48,6 +48,37 @@ teardown() {
   grep -q '"typecheck": *"tsc --noEmit"' "$CACHE_FILE"
 }
 
+@test "writes a fourth install command from a response that documents one" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit", "install": "make bootstrap"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"install": *"make bootstrap"' "$CACHE_FILE"
+}
+
+@test "writes null for install when the response omits it, same as the other three" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"install": *null' "$CACHE_FILE"
+}
+
+@test "a response with only install recognisable still succeeds" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"install": "make bootstrap"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"install": *"make bootstrap"' "$CACHE_FILE"
+  grep -q '"test": *null' "$CACHE_FILE"
+}
+
 @test "stamps the cache with the same source hash discover-commands.sh computes" {
   echo "claude notes" > CLAUDE.md
   echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit"}' > response.txt

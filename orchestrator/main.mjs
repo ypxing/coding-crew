@@ -196,8 +196,8 @@ async function main() {
     const skipped = selectDispatchable(mainRoot, { status: "deferred-findings" });
     if (skipped.length) console.log(`parked fix issues (${skipped.length}): ${skipped.map((i) => i.slug).join(", ")}`);
     console.log("\npipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close");
-    console.log(`deps:      ${options.deps ? "ensure-deps.sh, once per sprint and once per worktree" : "disabled (--no-deps)"}`);
-    console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint (cached at .scratch/commands.json)" : "disabled (--no-commands)"}`);
+    console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint, before deps (cached at .scratch/commands.json)" : "disabled (--no-commands)"}`);
+    console.log(`deps:      ${options.deps ? "ensure-deps.sh, once per sprint and once per worktree, using a discovered install command when one was cached" : "disabled (--no-deps)"}`);
     return issues.length ? 0 : 3;
   }
 
@@ -213,7 +213,10 @@ async function main() {
     coverage: options.coverage,
     promote: options.promote,
     passthrough: options.passthrough,
-    deps: options.deps,
+    // Deps are not installed as part of init here — commands finding runs first, below, so
+    // its own cached "install" override (when it finds one) is already on disk before the
+    // sprint's first ensure-deps.sh call reads it.
+    deps: false,
     log: (line) => console.error(line),
   });
   sprint.setModel(options.model ?? "agent default");
@@ -233,6 +236,11 @@ async function main() {
       },
     });
   }
+
+  // Deps, once per sprint against $MAIN_ROOT, after commands finding — not before: a
+  // documented install command discover-commands.sh finds is only usable by ensure-deps.sh
+  // if the cache it lands in already exists by the time this runs.
+  if (options.deps) sprint.installDeps((line) => console.error(line));
 
   const ctx = {
     sprint,

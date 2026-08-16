@@ -69,19 +69,33 @@ export class Sprint {
     if (!env) throw new Error("session-init.sh did not produce a readable .scratch/sprint.env");
     const sprint = new Sprint(effects, env);
 
-    // Deps, once, serially, against the main root — before any worker or worktree exists.
-    // N parallel workers provisioning N fresh worktrees would otherwise be N cold
-    // downloads of the same packages; this warms whatever cache the package manager keeps
-    // so the per-worktree installs are local copies. Advisory: the outcome is logged and
-    // never acted on, because the gate that can act on it is verify-worktree.sh.
-    if (deps) {
-      const d = effects.bash("ensure-deps.sh", ["--dir", effects.mainRoot], {
-        env: sprint.childEnv(),
-      });
-      const line = depsLine(d.stdout);
-      if (line) log(line);
-    }
+    // Deps are provisioned by installDeps() below, not here — a caller that also wants
+    // one-time command discovery (commands.mjs) must run that first, so a documented
+    // install override it caches at .scratch/commands.json is already on disk the first
+    // time ensure-deps.sh runs: commands finding before deps installing, so the finding
+    // can be used rather than raced. main.mjs is that caller; init() itself no longer
+    // installs so that ordering is possible.
+    if (deps) sprint.installDeps(log);
     return sprint;
+  }
+
+  /**
+   * Deps, once, serially, against `effects.mainRoot` — before any worker or worktree
+   * exists. N parallel workers provisioning N fresh worktrees would otherwise be N cold
+   * downloads of the same packages; this warms whatever cache the package manager keeps
+   * so the per-worktree installs are local copies. Advisory: the outcome is logged and
+   * never acted on, because the gate that can act on it is verify-worktree.sh.
+   *
+   * Call this after one-time command discovery (see commands.mjs), not before: discovery
+   * may cache a documented install override at `.scratch/commands.json`, and
+   * `ensure-deps.sh` only reads that cache, it never waits for one to appear.
+   */
+  installDeps(log = () => {}) {
+    const d = this.effects.bash("ensure-deps.sh", ["--dir", this.effects.mainRoot], {
+      env: this.childEnv(),
+    });
+    const line = depsLine(d.stdout);
+    if (line) log(line);
   }
 
   /** Attach to an already-initialised sprint (resume, status, dry-run planning). */

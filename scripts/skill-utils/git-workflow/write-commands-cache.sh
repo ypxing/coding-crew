@@ -19,9 +19,13 @@ set -uo pipefail
 # fence — no fence-stripping needed, since the regex just looks for the substring anywhere in
 # the response text.
 #
-# A response with none of the three fields recognisable is treated as a failed discovery, not
+# A response with none of the four fields recognisable is treated as a failed discovery, not
 # as "everything is null": it exits non-zero and never touches any existing cache file, so a
 # bad model response cannot destroy a prior good cache.
+#
+# install is the fourth field, consumed by ensure-deps.sh in place of its own mechanical
+# Makefile-target/lockfile heuristic when present — see discover-commands.sh's header comment
+# for why that script never reads CLAUDE.md itself.
 #
 # Usage: bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file <path>
 
@@ -70,9 +74,10 @@ _extract_field() {
 TEST_VALUE=$(_extract_field test || true)
 LINT_VALUE=$(_extract_field lint || true)
 TYPECHECK_VALUE=$(_extract_field typecheck || true)
+INSTALL_VALUE=$(_extract_field install || true)
 
-if [ -z "$TEST_VALUE" ] && [ -z "$LINT_VALUE" ] && [ -z "$TYPECHECK_VALUE" ]; then
-  echo "ERROR: could not find test, lint, or typecheck in the response — leaving any existing cache untouched" >&2
+if [ -z "$TEST_VALUE" ] && [ -z "$LINT_VALUE" ] && [ -z "$TYPECHECK_VALUE" ] && [ -z "$INSTALL_VALUE" ]; then
+  echo "ERROR: could not find test, lint, typecheck, or install in the response — leaving any existing cache untouched" >&2
   echo "--- response was ---" >&2
   printf '%s\n' "$RESPONSE_TEXT" >&2
   exit 1
@@ -81,6 +86,7 @@ fi
 [ -z "$TEST_VALUE" ] && TEST_VALUE="null"
 [ -z "$LINT_VALUE" ] && LINT_VALUE="null"
 [ -z "$TYPECHECK_VALUE" ] && TYPECHECK_VALUE="null"
+[ -z "$INSTALL_VALUE" ] && INSTALL_VALUE="null"
 
 MAIN_ROOT=$(git rev-parse --show-toplevel)
 CACHE_FILE="$MAIN_ROOT/.scratch/commands.json"
@@ -143,7 +149,7 @@ mkdir -p "$MAIN_ROOT/.scratch"
 # cache) must never observe a half-written file.
 TMP_FILE=$(mktemp "$MAIN_ROOT/.scratch/commands.json.XXXXXX")
 cat > "$TMP_FILE" <<JSON
-{"sourceHash": "$SOURCE_HASH", "test": $TEST_VALUE, "lint": $LINT_VALUE, "typecheck": $TYPECHECK_VALUE}
+{"sourceHash": "$SOURCE_HASH", "test": $TEST_VALUE, "lint": $LINT_VALUE, "typecheck": $TYPECHECK_VALUE, "install": $INSTALL_VALUE}
 JSON
 mv "$TMP_FILE" "$CACHE_FILE"
 
@@ -151,3 +157,4 @@ echo "Command cache written: .scratch/commands.json"
 echo "  test: $TEST_VALUE"
 echo "  lint: $LINT_VALUE"
 echo "  typecheck: $TYPECHECK_VALUE"
+echo "  install: $INSTALL_VALUE"

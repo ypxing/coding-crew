@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Command discovery — mechanical gate for crew-afk (prompt-builder half)
 #
-# Finds the *local dev-loop* command for test/lint/typecheck once per sprint, before any
+# Finds the *local dev-loop* command for test/lint/typecheck/install once per sprint, before any
 # worktree exists, by asking a model to read whatever of CLAUDE.md/AGENTS.md/Makefile/manifest
 # files this repo actually has — the same reference chain solve-issue's verification.md names,
 # but read by a model instead of pattern-matched by this script. Real repos document these
@@ -23,11 +23,17 @@ set -euo pipefail
 # model can open each file itself instead of having every candidate — a 950-line CLAUDE.md
 # included — pasted whole into a single CLI argv string. Content-in-prompt used to be how
 # this was built; it spent tokens on files the model often never needed (a Makefile no one
-# asked about, once CLAUDE.md alone answered all three categories), and had no ceiling as a
+# asked about, once CLAUDE.md alone answered all four categories), and had no ceiling as a
 # repo's own docs grew. Paths are listed in the same fixed priority order as CANDIDATE_FILES
 # below (docs before build files before manifests), and the model is told to stop reading
-# once it has an answer for all three categories, so a repo that documents everything in
+# once it has an answer for all four categories, so a repo that documents everything in
 # CLAUDE.md never pays to have its Makefile and package.json read too.
+#
+# install is the fourth category, added so ensure-deps.sh (which deliberately never reads
+# CLAUDE.md itself — see its own header comment) can use a documented override instead of its
+# mechanical Makefile-target/lockfile heuristic. It is optional: a null install here is not a
+# failure, it means ensure-deps.sh's existing convention-based detection already covers this
+# repo and there is nothing to override.
 #
 # Skips (mechanically, no model call, no tokens) when either:
 #   1. none of the known source files exist — verify-worktree.sh's own ecosystem-convention
@@ -127,11 +133,16 @@ cat <<'PROMPT'
 --- command discovery prompt (do not run this on a cheap model tier — it is genuine reasoning) ---
 You are working in this repository's own working directory and have normal file-read access
 to it. Identify the command a developer runs **locally**, during normal iteration, for each
-of these three categories only:
+of these four categories only:
 
 - test
 - lint
 - typecheck (a static/type-checking pass — not the test suite)
+- install (installing project dependencies before running the other three — not building,
+  compiling, migrating, or seeding data). Only report one if the source explicitly documents
+  it; a repo with no stated install command already falls back to its own lockfile/manifest
+  convention (npm ci, bundle install, …) elsewhere, so guessing one here would only override
+  that convention with a worse guess.
 
 Read these files yourself, in the order listed below — that order is priority order, most
 authoritative first (project docs, then build files, then package manifests):
@@ -144,13 +155,13 @@ done
 cat <<'PROMPT'
 
 Stop reading as soon as you have a confident answer — including a confident "no local command
-exists" — for all three categories; you do not need to open every file above if an earlier one
-already answers all three.
+exists" — for all four categories; you do not need to open every file above if an earlier one
+already answers all four.
 
 Rules:
 - Only local dev-loop commands. Ignore build, deploy, publish, and infra-provisioning steps
   (Docker image builds, CDK/Terraform/CloudFormation, docs bundling/rendering, release/publish
-  workflows) even if they appear in the same file as a test/lint/typecheck command.
+  workflows) even if they appear in the same file as a test/lint/typecheck/install command.
 - Ignore anything the source explicitly marks as CI-only, manual-only, or "not gated by CI",
   unless no other candidate exists for that category.
 - Where the source recommends against a shortcut (calls it broken, misleading, or says
@@ -158,6 +169,6 @@ Rules:
 - If a category has no discoverable local command, use null for it — do not guess one.
 
 Respond with **only** this JSON shape, no other prose:
-{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
+{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>"}
 --- end command discovery prompt ---
 PROMPT

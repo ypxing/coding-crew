@@ -12,7 +12,11 @@ validation, one-time command discovery, and nothing else. Command discovery diff
 the other four in one way: it is cached (`.scratch/commands.json`, hashed against
 CLAUDE.md/AGENTS.md/Makefile/manifest content), so it costs a model call only on the first
 sprint for a repo, or after those files change — every other sprint reuses the cache for
-free. See `orchestrator/lib/commands.mjs`.
+free. It answers four fields, not three: `test`/`lint`/`typecheck` for `verify-worktree.sh`
+and `solve-issue`, plus `install` for `ensure-deps.sh` — a documented override the mechanical
+Makefile-target/lockfile heuristic `host-install.sh` runs would otherwise never see, since
+that heuristic deliberately never reads CLAUDE.md/AGENTS.md itself. See
+`orchestrator/lib/commands.mjs`.
 
 ```
 orchestrator/
@@ -50,11 +54,16 @@ deliberately. The launcher resolves `main.mjs` over the same two scopes, in the 
 
 ## The pipeline, as code
 
-`Sprint.init` runs `session-init.sh`, then `ensure-deps.sh --dir $MAIN_ROOT` — once per sprint,
-serially, before any worker or worktree exists, so N parallel installs are not N cold downloads. In
-docker mode this call is where the shared install actually runs (`dep-install`'s `docker-install.sh`
-under its own lock, since the named volume it writes into is shared by every worktree by design);
-a worktree's own `ensure-deps.sh` call only ever checks whether that already happened.
+`Sprint.init` runs `session-init.sh` only — not `ensure-deps.sh`. `main.mjs` runs one-time command
+discovery (below) first, then calls `sprint.installDeps()`, which runs `ensure-deps.sh --dir $MAIN_ROOT`
+— once per sprint, serially, before any worker or worktree exists, so N parallel installs are not N
+cold downloads. That order matters: `ensure-deps.sh` can use a documented install command discovery
+cached at `.scratch/commands.json` (see "Command discovery" above) instead of its own mechanical
+Makefile-target/lockfile guess, and it can only do that if the cache is already on disk by the time
+this call runs — commands finding before deps installing, so the finding can be used. In docker mode
+this call is where the shared install actually runs (`dep-install`'s `docker-install.sh` under its
+own lock, since the named volume it writes into is shared by every worktree by design); a
+worktree's own `ensure-deps.sh` call only ever checks whether that already happened.
 
 `runWorker` (concurrent, bounded by `--max-parallel`) → `runHousekeeping` (sequential,
 because merges touch the main checkout):
@@ -94,7 +103,9 @@ records them in order rather than running them.
 `tests/orchestrator/fixtures/fake-dispatch.sh` reads per-slug files out of `$CREW_FAKE_DIR`
 (`<slug>.worker`, `<slug>.review`, `<slug>.exit`, `<slug>.nocommit`) so a test can drive
 any path: clean merge, failing check, unmet criteria, empty review, dead dispatch,
-CRITICAL promotion into Phase 2, stall.
+CRITICAL promotion into Phase 2, stall. A non-slugged `commands.response` file overrides the
+default `test`/`lint`/`typecheck` (Makefile) answer command discovery's fake dispatch gives —
+the way a test exercises a discovered `install` override without a real model call.
 
 `tests/orchestrator.bats` runs the whole node suite through bats, so CI shards it with
 everything else.

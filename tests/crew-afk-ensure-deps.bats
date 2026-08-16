@@ -136,6 +136,99 @@ JSON
   [[ "$(deps_line)" == *"npm ci"* ]]
 }
 
+# ─── the discovered install override (.scratch/commands.json's "install" field) ────────────
+#
+# discover-commands.sh / write-commands-cache.sh run once per sprint, before this script's own
+# MAIN_ROOT call, and may cache a documented install command this script would otherwise never
+# see (it deliberately never reads CLAUDE.md itself). When that cache names one, it wins over
+# the mechanical Makefile-target/lockfile guess below.
+
+@test "a documented install command in .scratch/commands.json is used instead of host-install.sh" {
+  printf '{}\n' > "$WORK/package.json"
+  mkdir -p "$WORK/.scratch"
+  printf '{"sourceHash": "x", "install": "echo custom-install-ran > marker.txt"}' > "$WORK/.scratch/commands.json"
+  stub_scripts USE_HOST 0 "SHOULD NOT RUN"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$(deps_line)" == "DEPS: installed"* ]] || { echo "$output" >&2; return 1; }
+  [[ "$(deps_line)" == *"echo custom-install-ran"* ]]
+  [[ "$output" != *"SHOULD NOT RUN"* ]]
+  [ -f "$WORK/marker.txt" ]
+}
+
+@test "the discovered install command runs from --dir, not from MAIN_ROOT" {
+  local other="$TEMP_DIR/other-root"
+  mkdir -p "$other/.scratch"
+  printf '{"sourceHash": "x", "install": "pwd > here.txt"}' > "$other/.scratch/commands.json"
+  export MAIN_ROOT="$other"
+  printf '{}\n' > "$WORK/package.json"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$(deps_line)" == "DEPS: installed"* ]]
+  [ -f "$WORK/here.txt" ]
+  [ "$(cat "$WORK/here.txt")" = "$(cd "$WORK" && pwd -P)" ]
+}
+
+@test "a null install in commands.json falls back to host-install.sh unchanged" {
+  printf '{}\n' > "$WORK/package.json"
+  mkdir -p "$WORK/.scratch"
+  printf '{"sourceHash": "x", "test": "make test", "install": null}' > "$WORK/.scratch/commands.json"
+  stub_scripts USE_HOST 0 "Running: npm ci"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: installed npm ci" ]
+}
+
+@test "no commands.json at all falls back to host-install.sh unchanged" {
+  printf '{}\n' > "$WORK/package.json"
+  stub_scripts USE_HOST 0 "Running: npm ci"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: installed npm ci" ]
+}
+
+@test "a documented install override runs even with no manifest the presence guard recognises" {
+  # No package.json, no lockfile, no Makefile install/deps target — the presence guard's own
+  # heuristic would otherwise call this DEPS: none before step 5 is ever reached.
+  mkdir -p "$WORK/.scratch"
+  printf '{"sourceHash": "x", "install": "echo custom-install-ran > marker.txt"}' > "$WORK/.scratch/commands.json"
+  stub_scripts USE_HOST 0 "SHOULD NOT RUN"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$(deps_line)" == "DEPS: installed"* ]] || { echo "$output" >&2; return 1; }
+  [ -f "$WORK/marker.txt" ]
+}
+
+@test "a documented install override does not prevent the presence guard from short-circuiting an already-present dep dir" {
+  printf '{}\n' > "$WORK/package.json"
+  mkdir -p "$WORK/node_modules" "$WORK/.scratch"
+  printf '{"sourceHash": "x", "install": "echo SHOULD NOT RUN"}' > "$WORK/.scratch/commands.json"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: present" ]
+  [[ "$output" != *"SHOULD NOT RUN"* ]]
+}
+
+@test "a failing discovered install command is reported failed, with its own tail, and never re-guessed via host-install.sh" {
+  printf '{}\n' > "$WORK/package.json"
+  mkdir -p "$WORK/.scratch"
+  printf '{"sourceHash": "x", "install": "echo custom install boom >&2; exit 5"}' > "$WORK/.scratch/commands.json"
+  stub_scripts USE_HOST 0 "SHOULD NOT RUN"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$(deps_line)" == "DEPS: failed"* ]]
+  [[ "$(deps_line)" == *"exit 5"* ]]
+  [[ "$output" == *"custom install boom"* ]]
+  [[ "$output" != *"SHOULD NOT RUN"* ]]
+}
+
 @test "docker mode is deferred to the worker: DEPS: docker, exit 0, no install" {
   printf '{}\n' > "$WORK/package.json"
   git -C "$WORK" config --local agent.install-mode docker

@@ -25,8 +25,11 @@ set -uo pipefail
 #
 #   There is no judgement on the host path, so there is nothing here for a model to decide:
 #   this script owns no package-manager knowledge of its own and delegates every install
-#   decision to dep-install's own detect-mode.sh / host-install.sh. Docker mode *is*
-#   judgement (an override has to be generated), so it is deferred, not handled.
+#   decision to dep-install's own detect-mode.sh / host-install.sh, or — when one is cached —
+#   to command discovery's own "install" answer (see step 5, `_cached_install_command`), which
+#   is the one place a documented CLAUDE.md/AGENTS.md/Makefile override reaches this script
+#   without it ever reading those files itself. Docker mode *is* judgement (an override has to
+#   be generated), so it is deferred, not handled.
 #
 # Never exits non-zero
 #   A repo with no dependency step must not stall a sprint, and a failed install must not
@@ -113,6 +116,30 @@ _report() {
 if [ "${CREW_DEPS:-on}" = "off" ]; then
   _report "skipped"
 fi
+
+# ─── 1b. the discovered install override ──────────────────────────────
+# $MAIN_ROOT_EFFECTIVE/.scratch/commands.json's "install" field — cached once per sprint by
+# discover-commands.sh / write-commands-cache.sh, before this script's own MAIN_ROOT call, from
+# a documented CLAUDE.md/AGENTS.md/Makefile override this script would otherwise never see: it
+# deliberately never reads those files itself (see the top-of-file comment). Resolved this early
+# — ahead of the presence guard at step 3 — because an explicit override also stands in for that
+# guard's manifest check: a source that documents its own install command has a dependency step
+# whether or not this script recognises the ecosystem's usual manifest file.
+#
+# A missing cache, a missing file, or a cached `null` all mean the same thing here: nothing to
+# override, fall through to the mechanical detection below unchanged.
+MAIN_ROOT_EFFECTIVE="${MAIN_ROOT:-}"
+if [ -z "$MAIN_ROOT_EFFECTIVE" ]; then
+  MAIN_ROOT_EFFECTIVE="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || echo "$DIR")"
+fi
+_cached_install_command() {
+  local cache="$MAIN_ROOT_EFFECTIVE/.scratch/commands.json"
+  [ -f "$cache" ] || return 0
+  grep -o '"install"[[:space:]]*:[[:space:]]*"[^"]*"' "$cache" 2>/dev/null \
+    | head -1 \
+    | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/'
+}
+CACHED_INSTALL="$(_cached_install_command)"
 
 # ─── 2. resolve dep-install's scripts ────────────────────────────────────────
 # No install logic lives here. host-install.sh stays the only place that knows package
@@ -232,6 +259,13 @@ if [ "$HAS_MANIFEST" -eq 0 ]; then
   done
 fi
 
+# An explicit, documented install override (step 1b) means there is a dependency step even
+# when no ecosystem's usual manifest file is present — a custom bootstrap script has no
+# lockfile for this heuristic to find, which is exactly the case the override exists for.
+if [ "$HAS_MANIFEST" -eq 0 ] && [ -n "$CACHED_INSTALL" ]; then
+  HAS_MANIFEST=1
+fi
+
 if [ "$HAS_MANIFEST" -eq 0 ]; then
   _report "none" skip
 fi
@@ -260,11 +294,8 @@ fi  # SKIP_PRESENCE_GUARD
 # run exactly once, not once per worktree. `--slug` is always passed for a worktree call
 # and never for the one MAIN_ROOT call this orchestrator makes before any worktree exists
 # (see sprint.mjs), so its absence is already the signal for "this is the place to do the
-# real work"; a worktree call only ever checks whether that already happened.
-MAIN_ROOT_EFFECTIVE="${MAIN_ROOT:-}"
-if [ -z "$MAIN_ROOT_EFFECTIVE" ]; then
-  MAIN_ROOT_EFFECTIVE="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || echo "$DIR")"
-fi
+# real work"; a worktree call only ever checks whether that already happened. Already
+# resolved once, at step 1b.
 DOCKER_MARKER="$MAIN_ROOT_EFFECTIVE/.scratch/docker-install.done"
 
 # Reuse the MAIN_ROOT verdict from step 2b when this is that call, instead of running
@@ -346,8 +377,35 @@ for _t in timeout gtimeout; do
   command -v "$_t" >/dev/null 2>&1 && { TIMEOUT_BIN="$_t"; break; }
 done
 
+# $CACHED_INSTALL was already resolved at step 1b, from the same command-discovery cache the
+# presence guard's manifest override (step 3) already consulted.
 OUT_FILE="$(mktemp)"
 trap 'rm -f "$OUT_FILE"' EXIT
+
+if [ -n "$CACHED_INSTALL" ]; then
+  # Run in $DIR, not $MAIN_ROOT_EFFECTIVE — this call installs into whichever directory
+  # was passed as --dir (a worktree, or the main root itself), the same target
+  # host-install.sh would have used.
+  if [ -n "$TIMEOUT_BIN" ]; then
+    "$TIMEOUT_BIN" "$TIMEOUT" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
+      >"$OUT_FILE" 2>&1
+  else
+    bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" >"$OUT_FILE" 2>&1
+  fi
+  RC=$?
+  CMD="$CACHED_INSTALL"
+
+  if [ "$RC" -eq 0 ]; then
+    _report "installed $CMD" ok
+  fi
+  # A discovered command that fails is a real failure, not host-install.sh's "no install
+  # method found" (exit 2) — that signal only means something to the fallback path below,
+  # so any non-zero exit here is reported as failed rather than reinterpreted as `none`.
+  echo "--- discovered install command output (tail) ---" >&2
+  tail -n 20 "$OUT_FILE" >&2
+  echo "--- end ---" >&2
+  _report "failed $CMD (exit $RC)" skip
+fi
 
 if [ -n "$TIMEOUT_BIN" ]; then
   "$TIMEOUT_BIN" "$TIMEOUT" bash "$DEP_SCRIPTS/host-install.sh" --project-root "$DIR" \

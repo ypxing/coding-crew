@@ -571,6 +571,45 @@ test("the sprint-level call precedes every worker, and the worktree call precede
   );
 });
 
+test("command discovery precedes the sprint-level deps call, so a discovered install override is on disk before ensure-deps.sh's first read", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+
+  const at = (re) => {
+    const i = lines.findIndex((l) => re.test(l));
+    assert.notEqual(i, -1, `no command matching ${re} in:\n${lines.join("\n")}`);
+    return i;
+  };
+  const discovery = at(/discover-commands\.sh$/);
+  const cacheWrite = at(/write-commands-cache\.sh --response-file/);
+  const sprintDeps = at(SPRINT_LEVEL_DEPS);
+
+  assert.ok(discovery < sprintDeps, "the sprint-level deps call ran before commands were discovered");
+  assert.ok(cacheWrite < sprintDeps, "the sprint-level deps call ran before the discovery cache was written");
+});
+
+test("a discovered install override is used by the sprint-level deps call, not host-install.sh's own guess", () => {
+  // fixtureRepo()'s Makefile has no install/deps target and there is no package.json, so
+  // without the discovered override this repo's own dependency step would be DEPS: none.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(
+    root,
+    "commands.response",
+    '{"test": "make test", "lint": "make lint", "typecheck": "make typecheck", "install": "touch .scratch/install-ran.marker"}',
+  );
+
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+
+  const cache = JSON.parse(readFileSync(join(root, ".scratch/commands.json"), "utf8"));
+  assert.equal(cache.install, "touch .scratch/install-ran.marker");
+  assert.equal(existsSync(join(root, ".scratch/install-ran.marker")), true, "the discovered install command never ran against MAIN_ROOT");
+  assert.match(traceLog(root), /\[DEPS\].*installed.*touch \.scratch\/install-ran\.marker/);
+});
+
 test("the worktree call comes after .worktreeinclude is applied, so an inherited dep dir costs nothing", () => {
   // The presence guard is what makes a .worktreeinclude repo free, and it can only see a
   // linked node_modules if the include has already run.

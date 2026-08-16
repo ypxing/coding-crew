@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.29.7]
+
+### Added
+
+- **Command discovery now also finds an `install` command, and `ensure-deps.sh` uses it before
+  falling back to its own mechanical guess.** `discover-commands.sh` / `write-commands-cache.sh`
+  answer a fourth field alongside `test`/`lint`/`typecheck`: `install`, reported only when
+  CLAUDE.md/AGENTS.md/Makefile explicitly documents one (never guessed, same rule as the other
+  three). `ensure-deps.sh` deliberately never reads those files itself — see its own header
+  comment — so this is the one place a documented override reaches it. Consuming it required an
+  ordering change: `Sprint.init` no longer calls `ensure-deps.sh` itself; `main.mjs` now runs
+  one-time command discovery first and only then calls the new `sprint.installDeps()`, so a
+  discovered override is already on disk at `.scratch/commands.json` by the time the sprint-level
+  `ensure-deps.sh --dir $MAIN_ROOT` call reads it — commands finding before deps installing, so
+  the finding can be used rather than raced. `ensure-deps.sh`'s presence guard (step 3) also treats
+  a non-null override as its own evidence of a dependency step, so a custom bootstrap script with
+  no lockfile for the guard's manifest heuristic to find is no longer misreported `DEPS: none`. A
+  discovered command that fails is reported `DEPS: failed <cmd> (exit N)`, never silently
+  reinterpreted as `host-install.sh`'s own `none`/`failed` signals. New tests:
+  `tests/crew-afk-discover-commands.bats`, `tests/crew-afk-write-commands-cache.bats`,
+  `tests/crew-afk-ensure-deps.bats` (the override, its interaction with the presence guard, and
+  the failure path), and `tests/orchestrator/sprint.test.mjs` (discovery-before-deps ordering, and
+  an end-to-end run using a discovered override instead of `host-install.sh`).
+
 ## [1.29.6]
 
 ### Fixed

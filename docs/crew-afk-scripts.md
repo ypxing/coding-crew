@@ -75,6 +75,14 @@ reading the Makefile for a credential target, picking a different service or ent
 and deciding whether an install failure is `BLOCKED` — real judgement, so a per-worktree docker call
 never attempts an install itself; it only checks whether the shared one already happened.
 
+On the host path, this script's own mechanical detection (a Makefile `install`/`deps` target, then
+signal-file/lockfile convention) can be overridden by a documented install command: if one-time
+command discovery (`discover-commands.sh` / `write-commands-cache.sh`, see below) already cached an
+`install` field at `$MAIN_ROOT/.scratch/commands.json`, that command runs instead — the one place a
+CLAUDE.md/AGENTS.md/Makefile override reaches this script without it ever reading those files
+itself. This only works if command discovery ran first; the orchestrator's `main.mjs` runs it before
+the sprint-level `ensure-deps.sh` call for exactly that reason.
+
 **Usage**:
 ```bash
 bash scripts/ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, default 600>]
@@ -91,17 +99,21 @@ bash scripts/ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, 
 | Line | Meaning |
 | --- | --- |
 | `DEPS: present` | the ecosystem's dep dir is already in `--dir` — inherited via `.worktreeinclude`, or left by a prior round |
-| `DEPS: installed <cmd>` | `host-install.sh` ran `<cmd>` (its own `Running: …` line, not a second guess at the package manager) |
-| `DEPS: none` | no manifest, no `dep-install` scripts resolvable, or `host-install.sh` found no install method (exit 2) — not a failure |
+| `DEPS: installed <cmd>` | either the discovered `install` override from `.scratch/commands.json` ran `<cmd>`, or (when there is none) `host-install.sh` ran it — same line shape either way, since `<cmd>` is always the exact command that ran |
+| `DEPS: none` | no manifest, no discovered install override, no `dep-install` scripts resolvable, or `host-install.sh` found no install method (exit 2) — not a failure |
 | `DEPS: docker` | `detect-mode.sh` says `USE_DOCKER`, persisted to this worktree's local `agent.install-mode` git config, and deferred to the worker's own up-front `dep-install` invocation — the docker-install path was off, not found, had nothing to do (no compose file/service/ecosystem), or the shared install lock was busy |
 | `DEPS: docker-installed <cmd>` | the one MAIN_ROOT call: `docker-install.sh` ran `<cmd>` inside the container and wrote `$MAIN_ROOT/.scratch/docker-install.done` |
 | `DEPS: docker-present` | a worktree call, and `$MAIN_ROOT/.scratch/docker-install.done` already exists — the shared install already ran, nothing to do here |
 | `DEPS: docker-failed <cmd> (exit N)` | the one MAIN_ROOT call's install failed; the verbatim tail goes to stderr, no marker is written |
-| `DEPS: failed <cmd> (exit N)` | the host install failed; the verbatim tail of its output goes to stderr |
+| `DEPS: failed <cmd> (exit N)` | either the discovered install override or the host install failed; the verbatim tail of its output goes to stderr |
 | `DEPS: skipped` | `CREW_DEPS=off` |
 
 **Order of operations**:
 1. `CREW_DEPS=off` → `DEPS: skipped`.
+1b. Resolve `$MAIN_ROOT_EFFECTIVE` (the `MAIN_ROOT` env var, else `git -C <dir> rev-parse
+   --show-toplevel`, else `<dir>`) and read `$MAIN_ROOT_EFFECTIVE/.scratch/commands.json`'s
+   `"install"` field, if the file exists — `CACHED_INSTALL`, consumed by steps 3 and 5. A missing
+   cache, a missing file, or a cached `null` all mean the same thing: nothing to override.
 2. Resolve `dep-install`'s scripts: `$CREW_DEP_INSTALL_SCRIPTS`, then per candidate root
    (`$MAIN_ROOT`, `--dir`'s repo, this script's own repo) `.coding-crew/dep-install/scripts` — the
    platform-neutral copy `install.sh` ships — then the four `.<platform>/skills/dep-install/scripts`
@@ -117,8 +129,11 @@ bash scripts/ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, 
 3. **The presence guard**, and the reason resume and `.worktreeinclude` repos cost nothing: one row
    per ecosystem (`node_modules`, `.venv`, `vendor/bundle`, `vendor`, `target`, `deps`) mapping a dep
    dir to its manifests. A manifest with its dep dir present → `DEPS: present`. No manifest at all,
-   no `Makefile` `install`/`deps` target, and none of `go.sum` / `go.mod` / `pom.xml` → `DEPS: none`.
-   Skipped by step 2b, above.
+   no `Makefile` `install`/`deps` target, none of `go.sum` / `go.mod` / `pom.xml`, and no
+   `CACHED_INSTALL` from step 1b → `DEPS: none`. A non-empty `CACHED_INSTALL` counts as a
+   dependency step on its own — a custom bootstrap script documented in CLAUDE.md/AGENTS.md has no
+   lockfile for this heuristic to find, which is exactly the case the override exists for. Skipped
+   by step 2b, above.
 3b. **The marker cache** — only for the two outcomes that would otherwise be re-probed every round
    (`none`, `failed`), one of which runs a whole install command to learn nothing new. Step 3 has
    already run, so a worktree that has since acquired its deps reports `present` regardless.
@@ -129,14 +144,18 @@ bash scripts/ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, 
    - **`--slug` present** (a worktree call): `$MAIN_ROOT/.scratch/docker-install.done` exists →
      `DEPS: docker-present`; otherwise `DEPS: docker` — a worktree never runs the install itself,
      because the volume it would write into is shared by every other worktree on purpose.
-   - **`--slug` absent** (the one MAIN_ROOT call `Sprint.init` makes before any worktree exists):
+   - **`--slug` absent** (the one MAIN_ROOT call `main.mjs` makes, via `sprint.installDeps()`,
+     after one-time command discovery and before any worktree exists):
      `CREW_DOCKER_INSTALL=off` or `docker-install.sh` not resolvable → `DEPS: docker`. Otherwise run
      `docker-install.sh --project-root <dir> --main-root <MAIN_ROOT> --timeout <timeout>` (its own
      lock, so a concurrent caller waits rather than corrupts the shared volume). Exit 0 → write the
      marker, `DEPS: docker-installed <cmd>`. Exit 2 (nothing to do) or 4 (lock busy) → `DEPS: docker`,
      unchanged from before this existed. Anything else → `DEPS: docker-failed <cmd> (exit N)`.
-5. `host-install.sh --project-root <dir>` under the timeout cap. Exit 0 → `installed`, 2 → `none`,
-   anything else → `failed`.
+5. `CACHED_INSTALL` from step 1b, if any, runs in `<dir>` under the timeout cap in place of step
+   5's own guess: exit 0 → `installed <cmd>`, anything else → `failed <cmd> (exit N)` — a
+   documented command that fails is a real failure, never reinterpreted as `none`. No
+   `CACHED_INSTALL` → `host-install.sh --project-root <dir>` under the same cap. Exit 0 →
+   `installed`, 2 → `none`, anything else → `failed`.
 
 **Marker**: `$SPRINT_DIR/dispatch/<slug>.deps.<ok|skip>`, containing the outcome line. `ok` for
 `present`/`installed`, `skip` for `none`/`failed`. Written only with `--slug` and only inside a
