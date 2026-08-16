@@ -223,7 +223,14 @@ async function main() {
       platform: options.platform,
       model: options.model,
       timeoutMs: options.reviewTimeoutMs,
-      log: (line) => console.error(line),
+      // Persisted, not just printed: this step runs once, unattended, before any
+      // worktree exists, and its own dispatch failure (bad model output, timeout) was
+      // otherwise visible only in a live terminal — gone the moment it scrolled past,
+      // with no artifact left afterwards to diagnose it from.
+      log: (line) => {
+        console.error(line);
+        if (sprint.traceLog) appendLine(sprint.traceLog, line);
+      },
     });
   }
 

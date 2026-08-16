@@ -730,6 +730,19 @@ test("command discovery writes .scratch/commands.json from the repo's own Makefi
   assert.ok(cache.sourceHash);
 });
 
+test("command discovery's own log lines survive in the trace log, not just the live terminal", () => {
+  // Runs once, unattended, before any worktree exists -- a bad model response or a dispatch
+  // failure here was previously visible only in whatever captured the live process's stderr.
+  // No artifact was left to diagnose it from afterwards, unlike every other pipeline step.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /Command discovery:/);
+  assert.match(traceLog(root), /Command discovery:/);
+});
+
 test("command discovery is skipped, at zero cost, when there is nothing to read", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

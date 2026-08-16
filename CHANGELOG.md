@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.29.2]
+
+### Fixed
+
+- **Command discovery's own progress/failure lines ("Command discovery: ...") were only ever
+  printed live to stderr, never persisted anywhere** — unlike every other pre-loop and
+  per-round step, whose lines also land in the sprint's `.scratch/<slug>/traces/orchestrator.log`
+  via `ctx.log`. Since this step runs once, unattended, before any worktree exists, a bad model
+  response, a dispatch timeout, or a `write-commands-cache.sh` parse failure left no artifact at
+  all once the live terminal output was gone — exactly the situation reported after a fresh
+  v1.29.0 install produced no `.scratch/commands.json` with no way to tell why after the fact.
+  `orchestrator/main.mjs` now appends the same lines to `sprint.traceLog`, so a failed discovery
+  is diagnosable from the trace log alone on the next run.
+- **`tests/registry-version-bump.bats` only diffed `registry.json`'s own fields, not the actual
+  files an entry ships.** It would have caught v1.29.1's `scripts[]` additions, but not this
+  release's own `orchestrator/main.mjs` edit — crew-afk's version had to bump *again* (2.2.0 →
+  2.2.1) to cover it. The test now also diffs each entry's `source-dir` tree, `assets.source`
+  tree, and resolved `scripts[]`/`platform-files[]` paths against the nearest released tag.
+
 ## [1.29.1]
 
 ### Fixed
