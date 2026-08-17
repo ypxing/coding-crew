@@ -225,13 +225,26 @@ export async function dispatch(effects, platform, spec, { timeoutMs } = {}) {
  * 1 with "Input must be provided either through stdin or as a prompt argument", surfaced as
  * "Command discovery: model dispatch did not complete (exit 1)". Every caller of this
  * function gets the same read/bash/edit/write toolset an interactive session would.
+ *
+ * claude's auto-memory *is* disabled here (CLAUDE_CODE_DISABLE_AUTO_MEMORY=1), unlike its
+ * tool access above: every dispatchPlain call is a one-shot, stateless reasoning pass —
+ * command discovery re-derives its answer from a source hash every run, coverage validation
+ * likewise takes the current diff as input — so there is nothing for either to usefully
+ * remember between runs. Worse, auto-memory's project directory is shared across every
+ * worktree in the repo, and this dispatch gets full write-tool access before any worktree
+ * exists; a "learned" note written here would leak into every future interactive session
+ * and worker's context with no reviewer ever having signed off on it.
  */
 export async function dispatchPlain(
   effects,
   platform,
   { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "coverage-validation" },
 ) {
-  const env = { MAIN_ROOT: mainRoot, CREW_ORCHESTRATED: "1" };
+  const env = {
+    MAIN_ROOT: mainRoot,
+    CREW_ORCHESTRATED: "1",
+    ...(platform === "claude" ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } : {}),
+  };
 
   // The same test/CI seam buildDispatch has: an agent-less dispatch is still a model
   // call, so any step that makes one must be exercisable for zero tokens or it is the one

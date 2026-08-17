@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.9]
+
+### Fixed
+
+- **`dispatchPlain()`'s claude case could leak a "learned" note across every worktree and
+  future interactive session.** Every `dispatchPlain` call — command discovery, coverage
+  validation — is a one-shot, stateless reasoning pass that re-derives its answer from a
+  source hash or the current diff, so nothing benefits from persisting across runs; worse,
+  claude's auto-memory project directory is shared across every worktree in the repo, and
+  this dispatch gets full write-tool access before any worktree exists. `dispatchPlain` now
+  sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` for the claude platform only — pi, codex, and
+  copilot are unaffected. `Effects.spawnWithTimeout()` also records each call's `env` (dry-run
+  and live), the seam the new tests in `tests/orchestrator/dispatch.test.mjs` use to assert the
+  flag is present for claude and absent for every other platform.
+
 ## [1.29.8]
 
 ### Fixed

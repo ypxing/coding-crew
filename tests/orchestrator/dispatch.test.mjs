@@ -397,3 +397,32 @@ test("model still comes through, in the same order as before", async () => {
   const argv = await recordedArgv("pi", { model: "gemini-flash" });
   assert.deepEqual(argv, ["pi", "-p", "--model", "gemini-flash", "the whole prompt"]);
 });
+
+// dispatchPlain is always a one-shot, stateless reasoning pass — command discovery
+// re-derives its answer from a source hash every run, coverage validation from the current
+// diff — so nothing here benefits from persisting across runs, and auto-memory's project
+// directory is shared across every worktree, while this dispatch gets full write-tool
+// access before any worktree exists.
+test("claude dispatchPlain disables auto-memory", async () => {
+  const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: "/tmp/does-not-run", dryRun: true });
+  await dispatchPlain(effects, "claude", {
+    prompt: "the whole prompt",
+    cwd: "/tmp/does-not-run",
+    mainRoot: "/tmp/does-not-run",
+    outFile: null,
+  });
+  assert.equal(effects.recorded.at(-1).env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
+});
+
+test("pi and codex dispatchPlain get no auto-memory env var — the flag is claude-specific", async () => {
+  for (const platform of ["pi", "codex", "copilot"]) {
+    const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: "/tmp/does-not-run", dryRun: true });
+    await dispatchPlain(effects, platform, {
+      prompt: "the whole prompt",
+      cwd: "/tmp/does-not-run",
+      mainRoot: "/tmp/does-not-run",
+      outFile: null,
+    });
+    assert.equal("CLAUDE_CODE_DISABLE_AUTO_MEMORY" in effects.recorded.at(-1).env, false);
+  }
+});

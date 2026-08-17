@@ -85,11 +85,11 @@ export class Effects {
   spawnWithTimeout(cmd, args, { cwd, env = {}, timeoutMs, onLine } = {}) {
     const argv = [cmd, ...args];
     if (this.dryRun) {
-      this.recorded.push({ argv, cwd });
+      this.recorded.push({ argv, cwd, env });
       this.log(`DRY  ${argv.map(quote).join(" ")}`);
       return Promise.resolve({ code: 0, stdout: "", stderr: "", dryRun: true });
     }
-    this.recorded.push({ argv, cwd });
+    this.recorded.push({ argv, cwd, env });
     this.log(`SPAWN ${argv.map(quote).join(" ")}`);
     return new Promise((resolve) => {
       const child = spawn(cmd, args, {
