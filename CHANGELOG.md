@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.29.10]
+
+### Fixed
+
+- **A `claude -p` dispatch launched from inside a Claude Code session (command discovery,
+  coverage validation, or a worker itself) inherited that parent session's own
+  `CLAUDE_CODE_SESSION_ID`/`CLAUDE_CODE_CHILD_SESSION` env vars and attached to its hook
+  chain instead of starting a session of its own.** A global `UserPromptSubmit` hook firing
+  on the child's prompt could rewrite or swallow it before the agent ever saw it — command
+  discovery's own probe hit exactly this, coming back with claude's default "your message
+  came through empty" greeting instead of an answer, so the sprint fell back to per-check
+  discovery with no error anyone could see. `buildDispatch` (every worker/reviewer dispatch)
+  and `dispatchPlain` (command discovery, coverage validation) now explicitly set both vars
+  to `""` in the child's environment for the claude platform, severing the inherited session
+  identity so the child always starts its own.
+
 ## [1.29.9]
 
 ### Fixed

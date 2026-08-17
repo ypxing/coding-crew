@@ -156,7 +156,19 @@ export function buildDispatch(platform, spec) {
     ];
     if (model) args.push("--model", model);
     args.push(prompt);
-    return { cmd: "claude", args, ...shared, capture: "stdout" };
+    // Dispatched from inside a Claude Code session, this child would otherwise inherit
+    // CLAUDE_CODE_SESSION_ID/CLAUDE_CODE_CHILD_SESSION from the parent process's own
+    // environment and attach to the parent session's hook chain (e.g. a global
+    // UserPromptSubmit hook), which can mutate or swallow the prompt before the agent
+    // ever sees it. Clearing both severs that inheritance so the child always starts a
+    // session of its own.
+    return {
+      cmd: "claude",
+      args,
+      ...shared,
+      env: { ...shared.env, CLAUDE_CODE_SESSION_ID: "", CLAUDE_CODE_CHILD_SESSION: "" },
+      capture: "stdout",
+    };
   }
 
   if (platform === "copilot") {
@@ -243,7 +255,16 @@ export async function dispatchPlain(
   const env = {
     MAIN_ROOT: mainRoot,
     CREW_ORCHESTRATED: "1",
-    ...(platform === "claude" ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } : {}),
+    ...(platform === "claude"
+      ? {
+          CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+          // See buildDispatch's claude branch: without these cleared, a claude -p run
+          // launched from inside a Claude Code session inherits the parent's session
+          // id and attaches to its hook chain instead of starting its own session.
+          CLAUDE_CODE_SESSION_ID: "",
+          CLAUDE_CODE_CHILD_SESSION: "",
+        }
+      : {}),
   };
 
   // The same test/CI seam buildDispatch has: an agent-less dispatch is still a model

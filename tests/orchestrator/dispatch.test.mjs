@@ -195,6 +195,29 @@ test("claude passes a model through, and no model means no --model", () => {
   );
 });
 
+// A claude worker dispatched from inside a Claude Code session (crew-afk itself running
+// under claude, or a nested pi/codex sprint invoked from one) otherwise inherits the
+// parent's own CLAUDE_CODE_SESSION_ID/CLAUDE_CODE_CHILD_SESSION and attaches to its hook
+// chain — a global UserPromptSubmit hook firing on the child's prompt can rewrite or swallow
+// it before the agent ever sees it. Command discovery's dispatchPlain probe hit exactly this
+// (see the matching test below); buildDispatch clears the same two vars for every claude
+// dispatch, not just the agent-less ones.
+test("a claude worker's session id is cleared, not inherited from the orchestrator's own", () => {
+  const { root, promptFile } = fixture();
+  const b = buildDispatch("claude", spec(root, promptFile));
+  assert.equal(b.env.CLAUDE_CODE_SESSION_ID, "");
+  assert.equal(b.env.CLAUDE_CODE_CHILD_SESSION, "");
+});
+
+test("pi and codex dispatches carry no claude-only session env vars", () => {
+  const { root, promptFile } = fixture();
+  for (const platform of ["pi", "codex"]) {
+    const b = buildDispatch(platform, spec(root, promptFile));
+    assert.equal("CLAUDE_CODE_SESSION_ID" in b.env, false);
+    assert.equal("CLAUDE_CODE_CHILD_SESSION" in b.env, false);
+  }
+});
+
 // ─── copilot ─────────────────────────────────────────────────────────────────
 //
 // The copilot cutover deleted `fragments/copilot/`, whose prose carried: dispatch with the
@@ -412,6 +435,23 @@ test("claude dispatchPlain disables auto-memory", async () => {
     outFile: null,
   });
   assert.equal(effects.recorded.at(-1).env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
+});
+
+// Command discovery's own probe hit this for real: dispatched from inside a Claude Code
+// session, the child inherited the parent's CLAUDE_CODE_SESSION_ID/CLAUDE_CODE_CHILD_SESSION,
+// attached to its hook chain, and a global UserPromptSubmit hook rewrote the prompt into
+// something claude answered with its default "your message came through empty" greeting
+// instead of the discovery question — no cache, no error, just a silent fallback.
+test("claude dispatchPlain clears the parent session's id so the child starts its own", async () => {
+  const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: "/tmp/does-not-run", dryRun: true });
+  await dispatchPlain(effects, "claude", {
+    prompt: "the whole prompt",
+    cwd: "/tmp/does-not-run",
+    mainRoot: "/tmp/does-not-run",
+    outFile: null,
+  });
+  assert.equal(effects.recorded.at(-1).env.CLAUDE_CODE_SESSION_ID, "");
+  assert.equal(effects.recorded.at(-1).env.CLAUDE_CODE_CHILD_SESSION, "");
 });
 
 test("pi and codex dispatchPlain get no auto-memory env var — the flag is claude-specific", async () => {
