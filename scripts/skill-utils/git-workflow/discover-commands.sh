@@ -52,7 +52,29 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-MAIN_ROOT=$(git rev-parse --show-toplevel)
+# MAIN_ROOT resolution — must land on the *shared* main checkout even if this ever runs from
+# inside a linked worktree (normally it does not: commands.mjs always invokes it with
+# cwd=mainRoot, before any worktree exists — this is defensive symmetry with
+# write-commands-cache.sh, which solve-issue's own DISCOVER fallback can invoke from a
+# worker's worktree cwd). Prefer the $MAIN_ROOT env var the orchestrator/dispatcher exports,
+# then _main_root_of's --git-common-dir trick (mirrors verify-worktree.sh's own helper of the
+# same name), which resolves the main worktree's root from any linked worktree without an env
+# var. `git rev-parse --show-toplevel` alone returns the *current* worktree's own root, which
+# is wrong from inside a linked worktree.
+_main_root_of() {
+  local dir="$1" common
+  common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$common" in
+    /*) : ;;
+    *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;
+  esac
+  dirname "$common"
+}
+
+MAIN_ROOT="${MAIN_ROOT:-}"
+if [ -z "$MAIN_ROOT" ]; then
+  MAIN_ROOT=$(_main_root_of "$(pwd)") || MAIN_ROOT=$(git rev-parse --show-toplevel)
+fi
 CACHE_FILE="$MAIN_ROOT/.scratch/commands.json"
 
 # Fixed, deterministic order — keeps the hash (and the prompt's file order) stable across

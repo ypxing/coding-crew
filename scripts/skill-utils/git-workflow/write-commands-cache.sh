@@ -88,7 +88,31 @@ fi
 [ -z "$TYPECHECK_VALUE" ] && TYPECHECK_VALUE="null"
 [ -z "$INSTALL_VALUE" ] && INSTALL_VALUE="null"
 
-MAIN_ROOT=$(git rev-parse --show-toplevel)
+# MAIN_ROOT resolution — must land on the *shared* main checkout even when this script runs
+# from inside a crew-afk worktree (solve-issue's own DISCOVER fallback, Step 5, can invoke
+# this from a worker's worktree cwd when the sprint-level cache never got written): prefer
+# the $MAIN_ROOT env var the orchestrator/dispatcher already exports (dispatch.mjs,
+# dispatch-agent.sh), then fall back to _main_root_of's --git-common-dir trick (mirrors
+# verify-worktree.sh's own helper of the same name), which resolves the main worktree's root
+# from any linked worktree without needing an env var at all. `git rev-parse --show-toplevel`
+# alone — the prior behaviour — returns the *current* worktree's own root, which is wrong
+# from inside a linked worktree: the cache would be written where no later reader (this
+# script's own USE_CACHE fast path, verify-worktree.sh, another issue's solve-issue) ever
+# looks, and would vanish with the worktree besides.
+_main_root_of() {
+  local dir="$1" common
+  common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$common" in
+    /*) : ;;
+    *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;
+  esac
+  dirname "$common"
+}
+
+MAIN_ROOT="${MAIN_ROOT:-}"
+if [ -z "$MAIN_ROOT" ]; then
+  MAIN_ROOT=$(_main_root_of "$(pwd)") || MAIN_ROOT=$(git rev-parse --show-toplevel)
+fi
 CACHE_FILE="$MAIN_ROOT/.scratch/commands.json"
 
 # Same fixed, deterministic file list and hashing algorithm as discover-commands.sh — kept in

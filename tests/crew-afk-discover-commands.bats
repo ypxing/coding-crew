@@ -230,6 +230,35 @@ EOF
   [ "$first" = "$second" ]
 }
 
+# --- MAIN_ROOT resolution from inside a worktree ---
+
+@test "uses the main checkout's cache/candidates, not a linked worktree's own, when \$MAIN_ROOT is exported" {
+  echo "claude notes" > CLAUDE.md
+  git branch feat
+  git worktree add "$TEMP_DIR/wt" feat -q
+
+  cd wt
+  MAIN_ROOT="$TEMP_DIR" run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == *"1 source file(s) found"* ]]
+}
+
+@test "resolves MAIN_ROOT to the main checkout when run from inside a linked worktree with no \$MAIN_ROOT set" {
+  echo "claude notes" > CLAUDE.md
+  git branch feat
+  git worktree add "$TEMP_DIR/wt" feat -q
+
+  cd wt
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == *"1 source file(s) found"* ]]
+  [ ! -d ".scratch" ]
+}
+
 # --- No Dead Stub ---
 
 @test "discover-commands.sh does not contain 'not yet implemented'" {

@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.29.8]
+
+### Fixed
+
+- **`discover-commands.sh` and `write-commands-cache.sh` resolved `MAIN_ROOT` via
+  `git rev-parse --show-toplevel`, which returns the *current* worktree's own root, not the
+  shared main checkout, when run from inside one.** `discover-commands.sh` is only ever
+  invoked by `commands.mjs` with `cwd=mainRoot` before any worktree exists, so this never
+  surfaced there, but `write-commands-cache.sh` is also solve-issue's own script (shared via
+  `registry.json`'s `scripts` field): its Step 5 DISCOVER fallback — taken whenever the
+  sprint-level cache is missing or stale, e.g. `--no-commands`, a dispatch timeout, or an
+  unparseable model response — runs from inside the dispatched worker's worktree. A fallback
+  write from there landed in that worktree's own throwaway `.scratch/commands.json`, invisible
+  to every later reader (`verify-worktree.sh`, another issue's `solve-issue`, a later
+  `discover-commands.sh` run) and gone once the worktree was removed — so the one discovery a
+  sprint is supposed to do once got silently repeated by every worker that hit the fallback,
+  with no cache ever shared. Both scripts now resolve `MAIN_ROOT` the same way
+  `verify-worktree.sh` already does: the inherited `$MAIN_ROOT` env var first (what
+  `dispatch.mjs`/`dispatch-agent.sh` already export into every worker), then a new
+  `_main_root_of` helper (mirroring `verify-worktree.sh`'s own, via `git rev-parse
+  --git-common-dir`) that finds the main worktree's root from any linked worktree with no env
+  var at all, and only then the old `--show-toplevel` guess. New tests in
+  `tests/crew-afk-write-commands-cache.bats` and `tests/crew-afk-discover-commands.bats` cover
+  resolution from inside a real linked worktree, with and without `$MAIN_ROOT` set.
+
 ## [1.29.7]
 
 ### Added

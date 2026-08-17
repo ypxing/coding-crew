@@ -185,6 +185,36 @@ EOF
   [ -f "$CACHE_FILE" ]
 }
 
+# --- MAIN_ROOT resolution from inside a worktree ---
+
+@test "writes to the main checkout's .scratch, not a linked worktree's own, when \$MAIN_ROOT is exported" {
+  echo "claude notes" > CLAUDE.md
+  git branch feat
+  git worktree add "$TEMP_DIR/wt" feat -q
+
+  echo '{"test": "npm test", "lint": null, "typecheck": null}' > response.txt
+  cd wt
+  MAIN_ROOT="$TEMP_DIR" run bash "$WRITE_SCRIPT" --response-file "$TEMP_DIR/response.txt"
+
+  [ "$status" -eq 0 ]
+  [ -f "$TEMP_DIR/.scratch/commands.json" ]
+  [ ! -d ".scratch" ]
+}
+
+@test "writes to the main checkout's .scratch when run from inside a linked worktree with no \$MAIN_ROOT set" {
+  echo "claude notes" > CLAUDE.md
+  git branch feat
+  git worktree add "$TEMP_DIR/wt" feat -q
+
+  echo '{"test": "npm test", "lint": null, "typecheck": null}' > response.txt
+  cd wt
+  run bash "$WRITE_SCRIPT" --response-file "$TEMP_DIR/response.txt"
+
+  [ "$status" -eq 0 ]
+  [ -f "$TEMP_DIR/.scratch/commands.json" ]
+  [ ! -d ".scratch" ]
+}
+
 # --- No Dead Stub ---
 
 @test "write-commands-cache.sh does not contain 'not yet implemented'" {
