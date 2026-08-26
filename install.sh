@@ -217,6 +217,56 @@ assert_identifier() {
   fi
 }
 
+# ── registry.json read cache ────────────────────────────────────────────────────
+# `install_single_skill` recurses once per platform when PLATFORM=all (four calls for
+# one skill), and most of what it reads from registry.json per skill — source-dir,
+# version, scripts, deps, agent-deps, assets.source/dest, the claude `install` path —
+# does not vary by platform at all. Read unconditionally, that was 4 jq spawns (one per
+# platform recursion) for a value that is the same all four times; a full default
+# install spawns ~2,400 jq processes, and this is where most of them went. Memoized here
+# by skill (+ platform, for the few fields that are genuinely platform-scoped: an
+# `install-<platform>` override, `body[<platform>]`, and `platform-files[<platform>]`),
+# so a value already read for this skill this run is a bash lookup, not a jq spawn.
+# Git Bash has no real fork(), so a spawn avoided here is disproportionately cheap there.
+declare -A _SKILL_META_SCALAR
+declare -A _SKILL_META_LIST
+
+# _skill_scalar/_skill_list set a global result variable rather than printing for a
+# caller to capture with `$(...)`/`<(...)`: both fork a subshell, and a subshell's
+# writes to the cache arrays above vanish the moment it exits, so every call would be a
+# cache miss and the memoization below would do nothing. A plain function call forks
+# nothing, so this is the only way the value gets back to the caller without losing the
+# cache write with it.
+#
+# _skill_scalar <skill> <cache-suffix> <jq-filter> [<extra-arg-name> <extra-arg-value>]...
+# `$s` is always bound to <skill>; pass additional --arg pairs (e.g. a platform) after
+# the filter — they are folded into the cache key too, so a per-platform field caches
+# per platform rather than colliding across platforms. Sets $_SKILL_SCALAR.
+_SKILL_SCALAR=""
+_skill_scalar() {
+  local skill="$1" suffix="$2" filter="$3"; shift 3
+  local key="$skill::$suffix" jq_args=(--arg s "$skill")
+  while [[ $# -gt 0 ]]; do jq_args+=(--arg "$1" "$2"); key="$key::$2"; shift 2; done
+  if [[ -z "${_SKILL_META_SCALAR[$key]+x}" ]]; then
+    _SKILL_META_SCALAR[$key]=$(jq -r "${jq_args[@]}" "$filter" "$SCRIPT_DIR/registry.json")
+  fi
+  _SKILL_SCALAR="${_SKILL_META_SCALAR[$key]}"
+}
+
+# _skill_list — same, for a filter whose result is a 0+ line list (`.foo // [] | .[]`).
+# Sets $_SKILL_LIST; a caller feeds it to a `while read` loop with `<<< "$_SKILL_LIST"`,
+# never with `<(...)` — see above.
+_SKILL_LIST=""
+_skill_list() {
+  local skill="$1" suffix="$2" filter="$3"; shift 3
+  local key="$skill::$suffix" jq_args=(--arg s "$skill")
+  while [[ $# -gt 0 ]]; do jq_args+=(--arg "$1" "$2"); key="$key::$2"; shift 2; done
+  if [[ -z "${_SKILL_META_LIST[$key]+x}" ]]; then
+    _SKILL_META_LIST[$key]=$(jq -r "${jq_args[@]}" "$filter" "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  fi
+  _SKILL_LIST="${_SKILL_META_LIST[$key]}"
+}
+
 # Helper: report whether an incoming file is new, identical, or changed
 # Args: $1=incoming_content_file $2=dest_path
 # Returns: 0=new, 1=identical, 2=changed
@@ -285,8 +335,10 @@ install_agent_assets() {
 install_skill_assets() {
   local skill_name="$1"
   local src_rel dest_rel
-  src_rel=$(jq -r --arg s "$skill_name" '.skills[$s].assets.source // empty' "$SCRIPT_DIR/registry.json")
-  dest_rel=$(jq -r --arg s "$skill_name" '.skills[$s].assets.dest // empty' "$SCRIPT_DIR/registry.json")
+  _skill_scalar "$skill_name" assets_source '.skills[$s].assets.source // empty'
+  src_rel="$_SKILL_SCALAR"
+  _skill_scalar "$skill_name" assets_dest '.skills[$s].assets.dest // empty'
+  dest_rel="$_SKILL_SCALAR"
   [[ -n "$src_rel" && -n "$dest_rel" ]] || return 0
   if [[ "$INSTALLED" == *"|assets:skill:$skill_name|"* ]]; then return 0; fi
   INSTALLED="${INSTALLED}|assets:skill:$skill_name|"
@@ -388,8 +440,9 @@ install_agent() {
     shim_src=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "$target_platform.*" | head -1)
     if [[ -n "$shim_src" && -n "$shim_dest" ]]; then
       assert_safe_path "$shim_dest" "$target_platform install"
+      local shim_dest_raw="$shim_dest"
       shim_dest=$(adjust_platform_path "$target_platform" "$shim_dest")
-      prune_legacy_copilot_path "$target_platform" "$(jq -r --arg name "$agent_name" --arg p "$target_platform" '.agents[$name].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")"
+      prune_legacy_copilot_path "$target_platform" "$shim_dest_raw"
       expand_shim "$shim_src" "$REPO_ROOT/$shim_dest"
     fi
   done
@@ -443,14 +496,17 @@ install_single_skill() {
   if [[ "$PLATFORM" != "claude" ]]; then
     # Non-Claude platforms may declare install-<platform>; otherwise the Claude path
     # is reused with .claude/ swapped for .<platform>/.
-    skill_dest=$(jq -r --arg s "$skill_name" --arg p "install-$PLATFORM" '.skills[$s][$p] // empty' "$SCRIPT_DIR/registry.json")
+    _skill_scalar "$skill_name" install-override '.skills[$s][$p] // empty' p "install-$PLATFORM"
+    skill_dest="$_SKILL_SCALAR"
     if [[ -z "$skill_dest" ]]; then
       local claude_dest
-      claude_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
+      _skill_scalar "$skill_name" install '.skills[$s].install // empty'
+      claude_dest="$_SKILL_SCALAR"
       [[ -n "$claude_dest" ]] && skill_dest=$(default_skill_dest "$PLATFORM" "$claude_dest")
     fi
   else
-    skill_dest=$(jq -r --arg s "$skill_name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
+    _skill_scalar "$skill_name" install '.skills[$s].install // empty'
+    skill_dest="$_SKILL_SCALAR"
   fi
   if [[ -z "$skill_dest" ]]; then
     echo "Error: skill '$skill_name' not found in registry.json"
@@ -464,7 +520,8 @@ install_single_skill() {
   
   # Resolve source directory: use source-dir field if present, otherwise use skill name
   local source_dir
-  source_dir=$(jq -r --arg s "$skill_name" '.skills[$s]["source-dir"] // $s' "$SCRIPT_DIR/registry.json")
+  _skill_scalar "$skill_name" source_dir '.skills[$s]["source-dir"] // $s'
+  source_dir="$_SKILL_SCALAR"
   
   [[ -d "$SCRIPT_DIR/skills/$source_dir" ]] || { echo "Error: skill source not found: skills/$source_dir" >&2; exit 1; }
   # Remove a stale symlink before mkdir -p; mkdir would succeed but cp into it would fail
@@ -482,7 +539,8 @@ install_single_skill() {
   # prose body is gone. Without a map entry the ordinary convention holds:
   # <platform>.SKILL.md, else the shared SKILL.md.
   local skill_md_source
-  skill_md_source=$(jq -r --arg s "$skill_name" --arg p "$PLATFORM" '.skills[$s].body[$p] // empty' "$SCRIPT_DIR/registry.json")
+  _skill_scalar "$skill_name" body '.skills[$s].body[$p] // empty' p "$PLATFORM"
+  skill_md_source="$_SKILL_SCALAR"
   if [[ -z "$skill_md_source" ]]; then
     skill_md_source="SKILL.md"
     [[ -f "$SCRIPT_DIR/skills/$source_dir/$PLATFORM.SKILL.md" ]] && skill_md_source="$PLATFORM.SKILL.md"
@@ -499,12 +557,13 @@ install_single_skill() {
   local gate_platform gate_path
   for gate_platform in "${PLATFORMS[@]}"; do
     [[ "$gate_platform" == "$PLATFORM" ]] && continue
+    _skill_list "$skill_name" platform-files '.skills[$s]["platform-files"][$p] // [] | .[]' p "$gate_platform"
     while IFS= read -r gate_path; do
       gate_path="${gate_path%$'\r'}"
       [[ -n "$gate_path" ]] || continue
       foreign_files+=("$gate_path")
       foreign_index="${foreign_index}${gate_path}|"
-    done < <(jq -r --arg s "$skill_name" --arg p "$gate_platform" '.skills[$s]["platform-files"][$p] // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+    done <<< "$_SKILL_LIST"
   done
 
   # Copy files with diff output for changed files
@@ -576,7 +635,8 @@ install_single_skill() {
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
   local scripts
-  scripts=$(jq -r --arg s "$skill_name" '.skills[$s].scripts // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  _skill_list "$skill_name" scripts '.skills[$s].scripts // [] | .[]'
+  scripts="$_SKILL_LIST"
   local scripts_arr=()
   while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && scripts_arr+=("$_line"); done <<< "$scripts"
   if [[ "${#scripts_arr[@]}" -gt 0 ]]; then
@@ -594,7 +654,8 @@ install_single_skill() {
   fi
 
   local skill_version
-  skill_version=$(jq -r --arg s "$skill_name" '.skills[$s].version // "unknown"' "$SCRIPT_DIR/registry.json")
+  _skill_scalar "$skill_name" version '.skills[$s].version // "unknown"'
+  skill_version="$_SKILL_SCALAR"
   MANIFEST_SKILL_ENTRIES+=("$skill_name $skill_version")
 
   # Runtime files the skill launches rather than reads (the crew-afk orchestrator).
@@ -602,7 +663,8 @@ install_single_skill() {
 
   # Resolve skill-level deps declared in registry.json
   local deps
-  deps=$(jq -r --arg s "$skill_name" '.skills[$s].deps // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  _skill_list "$skill_name" deps '.skills[$s].deps // [] | .[]'
+  deps="$_SKILL_LIST"
   local deps_arr=()
   while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && deps_arr+=("$_line"); done <<< "$deps"
   for dep in "${deps_arr[@]+"${deps_arr[@]}"}"; do
@@ -611,7 +673,8 @@ install_single_skill() {
 
   # Resolve agent-deps — agents this skill requires at runtime
   local agent_deps
-  agent_deps=$(jq -r --arg s "$skill_name" '.skills[$s]["agent-deps"] // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  _skill_list "$skill_name" agent-deps '.skills[$s]["agent-deps"] // [] | .[]'
+  agent_deps="$_SKILL_LIST"
   local agent_deps_arr=()
   while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && agent_deps_arr+=("$_line"); done <<< "$agent_deps"
   for dep in "${agent_deps_arr[@]+"${agent_deps_arr[@]}"}"; do

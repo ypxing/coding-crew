@@ -4,14 +4,44 @@
 # rendered result rather than the source file: `render-skill.sh` inlines any
 # `{{FRAGMENT:...}}` and substitutes `{{PLATFORM}}`. crew-afk's bodies are launchers with
 # nothing left to vary, but other skills still render, and a launcher must be asserted
-# through the same path that installs it. Rendering is cached per bats run.
+# through the same path that installs it.
+#
+# Caching: keyed by a content hash of everything that can change a rendered result
+# (agents/, skills/, scripts/, registry.json, install.sh), stored under a fixed path
+# outside any single bats run's own tmpdir. `install.sh` alone spawns ~84 `jq` calls, and
+# on Git Bash (no real fork()) that dwarfs everything else the suite does — so a cache
+# keyed to *bats' own tmpdir* (as this used to be) paid that cost again on every separate
+# `bats` invocation, which is most of them in a local edit/run/edit loop. A content hash is
+# a few file reads, not a process per source file: `find | sort | xargs sha256sum` batches
+# every file into one or two spawns. A hash miss (something actually changed) still pays
+# the real cost once; a hit — the common case when re-running tests without touching the
+# rendered inputs — costs nothing. CI is unaffected: every job starts from a fresh clone,
+# so it is a hash miss exactly as often as before. Stale generations are left under
+# /tmp rather than pruned here, to avoid a concurrent bats run racing a delete against a
+# reader; ordinary OS tmp cleanup (or a manual `rm -rf`) reclaims them.
 
 RENDER_HELPER_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+_render_cache_key() {
+  local root="$RENDER_HELPER_REPO_ROOT" hasher
+  if command -v sha256sum >/dev/null 2>&1; then hasher=(sha256sum); else hasher=(shasum -a 256); fi
+  { find "$root/agents" "$root/skills" "$root/scripts" -type f 2>/dev/null
+    printf '%s\n' "$root/registry.json" "$root/install.sh"
+  } | LC_ALL=C sort | xargs "${hasher[@]}" | "${hasher[@]}" | awk '{print $1}'
+}
+
+# _render_cache_root — prints (and creates) the cache dir for the current source state
+_render_cache_root() {
+  local base="${CODING_CREW_RENDER_CACHE:-${TMPDIR:-/tmp}/coding-crew-render-cache}"
+  local key
+  key=$(_render_cache_key) || return 1
+  printf '%s\n' "$base/$key"
+}
 
 # rendered_skill <skill> <platform> — prints the path to the rendered SKILL.md
 rendered_skill() {
   local skill="$1" platform="$2"
-  local cache="${BATS_SUITE_TMPDIR:-${BATS_FILE_TMPDIR:-${TMPDIR:-/tmp}}}/rendered-skills"
+  local cache="$(_render_cache_root)/rendered-skills"
   local out="$cache/$skill.$platform.SKILL.md"
   if [ ! -f "$out" ]; then
     mkdir -p "$cache"
@@ -37,7 +67,7 @@ afk_variant() {
 
 # installed_agents_root — prints a dir containing one full install of every platform
 installed_agents_root() {
-  local cache="${BATS_SUITE_TMPDIR:-${BATS_FILE_TMPDIR:-${TMPDIR:-/tmp}}}/installed-agents"
+  local cache="$(_render_cache_root)/installed-agents"
   if [ ! -d "$cache/.claude/agents" ]; then
     mkdir -p "$cache"
     git -C "$cache" init -q 2>/dev/null || true
