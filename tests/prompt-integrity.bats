@@ -60,21 +60,6 @@ AFK_DIR="$REPO_ROOT/skills/crew-afk"
   ! grep -rq 'claude\.workflow\.js' "$AFK_DIR"
 }
 
-@test "P1.3: the scripts reference points at the current skill paths" {
-  # Relocated out of the installed tree: it documents scripts for a maintainer, and
-  # every installed word is a word some agent may read at runtime.
-  readme="$REPO_ROOT/docs/crew-afk-scripts.md"
-  [ -f "$readme" ]
-  [ ! -f "$AFK_DIR/scripts/README.md" ]
-  ! grep -q 'skills/afk/' "$readme"
-  # Nothing calls these scripts from a body any more — the orchestrator program does. A
-  # reference that still names a skill body as the caller sends a maintainer to the wrong
-  # file for the call order.
-  grep -q 'orchestrator/lib/' "$readme"
-  ! grep -q 'skills/crew-afk/dispatch\.SKILL\.md' "$readme"
-  ! grep -q 'fragments/' "$readme"
-}
-
 # ─── P1.4 the report schema has no unconsumed field ──────────────────────────
 
 @test "P1.4: no crew-coder variant demands a Skills report section" {

@@ -74,8 +74,6 @@ teardown() {
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
 
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md" ]
-  # It still exists for maintainers, outside the installed tree.
-  [ -f "$SCRIPT_DIR/docs/crew-afk-scripts.md" ]
 }
 
 @test "crew-afk install ships no verification reference (verify-worktree.sh is the policy)" {

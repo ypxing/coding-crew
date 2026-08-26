@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.29.13]
+
+### Added
+
+- **`scripts/cut-release.sh` mechanizes this repo's own release step.** `commit, tag, push,
+  release` had no tooling behind it: doing it meant re-deriving the next semver number from git
+  tags, eyeballing `registry.json` for entries needing a version bump (exactly what
+  `tests/registry-version-bump.bats` already checks), hand-crafting the tag, and remembering to
+  push both branch and tag. The script reads the version to release from `CHANGELOG.md`'s own top
+  heading (one source of truth, not two that can disagree), verifies it is greater than the
+  nearest previous release tag, runs the existing registry-version-bump check, then tags HEAD and
+  pushes branch + tag. `--dry-run` runs every check without tagging or pushing. Maintainer-only:
+  not referenced by `registry.json`, ships to no consumer.
+
+### Removed
+
+- **Four stale maintainer-only docs (`docs/CHANGELOG-archive.md`, `docs/crew-afk-scripts.md`,
+  `docs/crew-afk-orchestrator.md`, `docs/crew-afk-as-code-plan.md`) are gone.** They were design
+  history nobody needed to re-read; every remaining reference to them (`CHANGELOG.md`,
+  `CLAUDE.md`, `scripts/skill-utils/git-workflow/README.md`, and three bats tests in
+  `tests/install.bats`, `tests/prompt-integrity.bats`, and `tests/crew-afk-ensure-deps.bats` that
+  asserted their content) was updated or removed alongside them, so nothing points at a file that
+  no longer exists.
+
 ## [1.29.12]
 
 ### Changed
@@ -462,4 +486,4 @@ registry.json: solve-issue 1.9.3 -> 1.9.4, dep-install 1.3.1 -> 1.3.2, crew-code
 
 ---
 
-Older entries (v1.0.0–v1.27.0): see [`docs/CHANGELOG-archive.md`](docs/CHANGELOG-archive.md).
+Older entries (v1.0.0–v1.27.0) have been removed; see git history for that range if needed.

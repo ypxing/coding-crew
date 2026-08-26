@@ -147,7 +147,7 @@ bash scripts/commit-changes.sh \
 
 ### `discover-commands.sh`
 
-**Purpose**: Mechanically decide whether a one-time command-discovery model call is needed, and if so, build its prompt. See `docs/crew-afk-orchestrator.md` and `orchestrator/lib/commands.mjs` for the full design (why this exists: CLAUDE.md/Makefile discovery by regex breaks on real-world tables and prose; a model reads the same files instead, once per repo, cached).
+**Purpose**: Mechanically decide whether a one-time command-discovery model call is needed, and if so, build its prompt. See `orchestrator/lib/commands.mjs` for the full design (why this exists: CLAUDE.md/Makefile discovery by regex breaks on real-world tables and prose; a model reads the same files instead, once per repo, cached).
 
 **Usage**:
 ```bash

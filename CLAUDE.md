@@ -17,7 +17,7 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-addr
 - `install.sh` / `uninstall.sh` — installer; `PLATFORMS=(claude copilot pi codex)`.
 - `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`), skill-local runtime scripts (e.g. `skills/crew-afk/scripts/`), and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`).
 - `tests/` — bats tests, run against **rendered/installed** output via `tests/helpers/render.bash`, not source variants.
-- `docs/` — design rationale and deep dives (`crew-afk-orchestrator.md`, `crew-afk-scripts.md`, etc.). Read these when you need the "why," not this file.
+- `docs/` — the dev team guide (`guide.md`) and issue-tracker templates.
 
 ## Working in this repo
 
@@ -57,8 +57,7 @@ the wrong file; `tests/layer-ownership.bats` is this table.
 
 ## crew-afk's scripts (`skills/crew-afk/scripts/`)
 
-Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`. Full contracts:
-`docs/crew-afk-scripts.md`.
+Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
 
 - `session-init.sh` — derives the feature slug **once** and writes `sprint.env`
 - `ensure-deps.sh` — makes a directory ready to run the project's own checks; delegates every

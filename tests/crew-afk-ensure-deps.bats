@@ -559,36 +559,6 @@ line two"
   grep -q 'worktreeinclude' "$f"
 }
 
-@test "docs/crew-afk-orchestrator.md shows both call sites and --no-deps" {
-  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/crew-afk-orchestrator.md"
-  grep -q 'ensure-deps.sh --dir \$MAIN_ROOT' "$f"
-  grep -q 'ensure-deps.sh --dir <worktree> --slug <slug>' "$f"
-  grep -q -- '--no-deps' "$f"
-}
-
-@test "docs/crew-afk-scripts.md documents every flag and every DEPS: line" {
-  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/crew-afk-scripts.md"
-  local item
-  for item in -- --dir --slug --timeout CREW_DEPS 'never the guard'; do
-    grep -q -- "$item" "$f" || { echo "docs/crew-afk-scripts.md omits $item" >&2; return 1; }
-  done
-  for line in present installed none docker failed skipped; do
-    grep -q "DEPS: $line" "$f" || {
-      echo "docs/crew-afk-scripts.md omits DEPS: $line" >&2; return 1; }
-  done
-  grep -qi 'always exit 0' "$f"
-  # trace.sh's marker list is the other place a new marker has to appear.
-  grep -q '`DEPS` (ensure-deps)' "$f"
-}
-
-@test "CHANGELOG pairs the eager entry with the existing failure-triggered one" {
-  # Moved to the archive when CHANGELOG.md was trimmed (v1.27.0 and earlier) — still the same
-  # policy record, just not in the file that grows with every release.
-  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/CHANGELOG-archive.md"
-  grep -q 'failure-triggered rather than unconditional' "$f"
-  grep -qi 'eager where a gate cannot retry, lazy where a human can' "$f"
-}
-
 @test "no launcher SKILL.md mentions the script, and every launcher is still under 500 words" {
   local repo="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   local p body words
