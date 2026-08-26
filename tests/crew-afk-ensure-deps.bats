@@ -582,7 +582,9 @@ line two"
 }
 
 @test "CHANGELOG pairs the eager entry with the existing failure-triggered one" {
-  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/CHANGELOG.md"
+  # Moved to the archive when CHANGELOG.md was trimmed (v1.27.0 and earlier) — still the same
+  # policy record, just not in the file that grows with every release.
+  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/CHANGELOG-archive.md"
   grep -q 'failure-triggered rather than unconditional' "$f"
   grep -qi 'eager where a gate cannot retry, lazy where a human can' "$f"
 }
