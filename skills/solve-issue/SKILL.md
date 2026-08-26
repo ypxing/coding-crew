@@ -129,7 +129,7 @@ if that guess was wrong.
 
 **Codebase orientation — do this first:**
 
-1. Read `CLAUDE.md` (at `$PROJECT_ROOT/CLAUDE.md`) if it exists — it may describe architecture, conventions, and key entry points.
+1. Read `CLAUDE.md` (or `AGENTS.md` if that's what this repo uses) at `$PROJECT_ROOT` if it exists and is not already part of your context — it may describe architecture, conventions, and key entry points.
 2. Grep for similar patterns to what you're about to implement — find existing utilities, helpers, or conventions you should follow or reuse.
 3. Identify callers of the files you plan to change — understand how they're used before modifying them.
 

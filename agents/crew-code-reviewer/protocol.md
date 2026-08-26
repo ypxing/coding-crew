@@ -27,7 +27,8 @@ Read **every** file named by a `REFERENCE:` line: those checklists apply to this
 part of this protocol, not optional background. If either script is missing (an older install), read
 every file in `$CR/references/` instead; with neither, review on the Step 3 classes alone.
 
-Also read, when present, `CLAUDE.md` and `.scratch/<feature-slug>/PRD.md` (`<feature-slug>` from the
+Also read, when present and not already in your context, `CLAUDE.md` (or `AGENTS.md`), and always
+`.scratch/<feature-slug>/PRD.md` (`<feature-slug>` from the
 current branch: `git rev-parse --abbrev-ref HEAD | sed 's|^feature/||' | sed -E 's/^[A-Z]+-[0-9]+-//'`).
 Conventions define what counts as a violation: a fix contradicting a decision recorded in either is
 downgraded or dropped.

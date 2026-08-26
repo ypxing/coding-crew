@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.29.12]
+
+### Changed
+
+- **`install.sh` memoizes registry.json reads per skill instead of re-invoking `jq` once per
+  platform.** `install_single_skill` recurses once per platform when `PLATFORM=all` (four calls
+  for one skill), and most of what it reads per skill — `source-dir`, `version`, `scripts`,
+  `deps`, `agent-deps`, `assets.source`/`dest`, the claude `install` path — does not vary by
+  platform at all, so a full default install spawned ~2,400 `jq` processes reading the same
+  values four times over. New `_skill_scalar`/`_skill_list` cache each lookup by skill (plus
+  platform, for the fields that are genuinely platform-scoped: an `install-<platform>` override,
+  `body[<platform>]`, `platform-files[<platform>]`), so a value already read for a skill this run
+  is a bash lookup, not a spawn. Git Bash has no real `fork()`, so this is disproportionately
+  cheap there.
+- **`tests/helpers/render.bash`'s render cache is now keyed by a content hash of every input that
+  can change a rendered result** (`agents/`, `skills/`, `scripts/`, `registry.json`,
+  `install.sh`), stored under a fixed path outside any single bats run's own tmpdir — not by that
+  run's own tmpdir, as before. The old cache paid `install.sh`'s `jq`-heavy cost again on every
+  separate `bats` invocation, which is most of a local edit/run/edit loop, even when nothing
+  rendered had actually changed. A hash hit now costs nothing; a hash miss (something changed)
+  still pays the real cost once. CI is unaffected — every job starts from a fresh clone, so it is
+  a hash miss exactly as often as before.
+
+### Fixed
+
+- **`solve-issue`, `crew-code-reviewer`, and `dep-install`'s host-install path named only
+  `CLAUDE.md`, and read it unconditionally even when a caller already had it in context.** A
+  project documenting its conventions or install command in `AGENTS.md` instead (Codex and other
+  AGENTS.md-only harnesses) was silently missed, even though `verify-worktree.sh`'s own command
+  discovery already treats `CLAUDE.md` and `AGENTS.md` as equivalent, falling back to the latter.
+  Separately, every caller — including one whose platform already auto-loads `CLAUDE.md` at
+  session start — re-read a file already in front of it. All three now check `CLAUDE.md` or
+  `AGENTS.md`, and skip the reread when the content is already part of the caller's context.
+
+registry.json: solve-issue 1.9.3 -> 1.9.4, dep-install 1.3.1 -> 1.3.2, crew-code-reviewer 1.7.0 ->
+1.7.1.
+
 ## [1.29.11]
 
 ### Fixed

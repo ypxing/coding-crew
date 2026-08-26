@@ -15,13 +15,13 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 
 Check in order — use the first match, stop as soon as one is found.
 
-### 1. CLAUDE.md
+### 1. CLAUDE.md / AGENTS.md
 
-Read `$PROJECT_ROOT/CLAUDE.md` if it exists. If it specifies an install command, use that.
+Read `$PROJECT_ROOT/CLAUDE.md` (or `AGENTS.md`) if it exists. If it specifies an install command, use that.
 
 ### 2. Script (Makefile target + signal file fallback)
 
-If CLAUDE.md did not specify an install command, run the detection script. It checks for a Makefile `install`/`deps` target first, then falls back to signal file detection.
+If neither specified an install command, run the detection script. It checks for a Makefile `install`/`deps` target first, then falls back to signal file detection.
 
 Run `scripts/host-install.sh` from the same directory you read this skill file from:
 
