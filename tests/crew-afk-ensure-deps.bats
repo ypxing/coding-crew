@@ -349,6 +349,23 @@ npm ERR! boom"
   [ ! -f "$WORK/.scratch/docker-install.done" ]
 }
 
+@test "a failed docker install persists the full output to .scratch/docker-install.log, and the line names it" {
+  # Only the DEPS: line survives into the orchestrator's own log (Sprint.installDeps /
+  # runWorker log the line, never the stderr this script prints alongside it) — so the
+  # detail behind "docker-failed" has to live on disk, at a path the line itself names.
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 3 "Running: docker compose run --rm app sh -c 'npm ci'
+npm ERR! boom"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  local log="$WORK/.scratch/docker-install.log"
+  [ -f "$log" ]
+  grep -q 'npm ERR! boom' "$log"
+  [[ "$(deps_line)" == *"$log"* ]] || { echo "$output" >&2; return 1; }
+}
+
 @test "CREW_DOCKER_INSTALL=off rolls back to the always-deferred docker outcome" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
@@ -389,6 +406,46 @@ npm ERR! boom"
   [[ "$(deps_line)" == "DEPS: failed"* ]]
   [[ "$(deps_line)" == *"exit 3"* ]]
   [[ "$output" == *"npm ERR! boom"* ]]
+}
+
+@test "a failed host install persists the full output next to the --slug marker, and the line names it" {
+  printf '{}\n' > "$WORK/package.json"
+  export SPRINT_DIR="$TEMP_DIR/sprint"
+  mkdir -p "$SPRINT_DIR/dispatch"
+  stub_scripts USE_HOST 3 "npm ERR! boom"
+
+  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  [ "$status" -eq 0 ]
+  local log="$SPRINT_DIR/dispatch/widget.deps.log"
+  [ -f "$log" ]
+  grep -q 'npm ERR! boom' "$log"
+  [[ "$(deps_line)" == *"$log"* ]] || { echo "$output" >&2; return 1; }
+}
+
+@test "a failed host install with no sprint persists the full output under --dir's own .scratch" {
+  printf '{}\n' > "$WORK/package.json"
+  stub_scripts USE_HOST 3 "npm ERR! boom"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  local log="$WORK/.scratch/deps-install.log"
+  [ -f "$log" ]
+  grep -q 'npm ERR! boom' "$log"
+  [[ "$(deps_line)" == *"$log"* ]] || { echo "$output" >&2; return 1; }
+}
+
+@test "a failing discovered install command also persists its full output, named in the line" {
+  printf '{}\n' > "$WORK/package.json"
+  mkdir -p "$WORK/.scratch"
+  printf '{"sourceHash": "x", "install": "echo custom install boom >&2; exit 5"}' > "$WORK/.scratch/commands.json"
+  stub_scripts USE_HOST 0 "SHOULD NOT RUN"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  local log="$WORK/.scratch/deps-install.log"
+  [ -f "$log" ]
+  grep -q 'custom install boom' "$log"
+  [[ "$(deps_line)" == *"$log"* ]] || { echo "$output" >&2; return 1; }
 }
 
 @test "host-install exit 2 (no install method) is DEPS: none" {

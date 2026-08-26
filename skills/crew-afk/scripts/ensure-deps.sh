@@ -110,6 +110,32 @@ _report() {
   exit 0
 }
 
+# _debug_log_path — where a failed command's full output is persisted.
+#
+# Only the one DEPS: line above survives into whatever the caller does with this
+# script's output (the orchestrator's own log, the trace log): stderr — the tail printed
+# next to each failure below — is captured by the caller and thrown away (see
+# Sprint.installDeps / runWorker in orchestrator/lib). Without a file on disk, "docker-failed"
+# or "failed npm ci (exit 1)" is all that is ever left to debug from. Reusing the per-issue
+# marker path when one exists keeps the log beside the .ok/.skip marker it explains;
+# otherwise it falls back to the target directory's own .scratch, so a standalone run
+# (no sprint, no --slug) still leaves something on disk to point at.
+_debug_log_path() {
+  if [ -n "$MARKER" ]; then
+    printf '%s' "$MARKER.log"
+  else
+    printf '%s' "$DIR/.scratch/deps-install.log"
+  fi
+}
+
+# _persist_log <dest> <source-file> — best-effort copy, mkdir -p first. Never fails the
+# caller: a log that could not be written is no worse than the tail already on stderr.
+_persist_log() {
+  local dest="$1" src="$2"
+  mkdir -p "$(dirname "$dest")" 2>/dev/null || return 0
+  cp "$src" "$dest" 2>/dev/null || true
+}
+
 # ─── 1. escape hatch ─────────────────────────────────────────────────────────
 # Mirrors CREW_RECEIPTS=off: an operator debugging the pipeline can take one
 # mechanism out of it without editing the orchestrator.
@@ -360,10 +386,12 @@ if [ "$MODE" = "USE_DOCKER" ]; then
       _report "docker"
       ;;
     *)
+      DOCKER_LOG="$MAIN_ROOT_EFFECTIVE/.scratch/docker-install.log"
+      _persist_log "$DOCKER_LOG" "$DOCKER_OUT"
       echo "--- docker-install.sh output (tail) ---" >&2
       tail -n 20 "$DOCKER_OUT" >&2
-      echo "--- end ---" >&2
-      _report "docker-failed $DOCKER_CMD (exit $DOCKER_RC)"
+      echo "--- end; full output saved to $DOCKER_LOG ---" >&2
+      _report "docker-failed $DOCKER_CMD (exit $DOCKER_RC) (see $DOCKER_LOG)"
       ;;
   esac
 fi
@@ -401,10 +429,12 @@ if [ -n "$CACHED_INSTALL" ]; then
   # A discovered command that fails is a real failure, not host-install.sh's "no install
   # method found" (exit 2) — that signal only means something to the fallback path below,
   # so any non-zero exit here is reported as failed rather than reinterpreted as `none`.
+  DEPS_LOG="$(_debug_log_path)"
+  _persist_log "$DEPS_LOG" "$OUT_FILE"
   echo "--- discovered install command output (tail) ---" >&2
   tail -n 20 "$OUT_FILE" >&2
-  echo "--- end ---" >&2
-  _report "failed $CMD (exit $RC)" skip
+  echo "--- end; full output saved to $DEPS_LOG ---" >&2
+  _report "failed $CMD (exit $RC) (see $DEPS_LOG)" skip
 fi
 
 if [ -n "$TIMEOUT_BIN" ]; then
@@ -426,9 +456,11 @@ case "$RC" in
   *)
     # The verbatim tail, so whoever reads the round's log sees the package manager's own
     # words and not a paraphrase of them.
+    DEPS_LOG="$(_debug_log_path)"
+    _persist_log "$DEPS_LOG" "$OUT_FILE"
     echo "--- host-install.sh output (tail) ---" >&2
     tail -n 20 "$OUT_FILE" >&2
-    echo "--- end ---" >&2
-    _report "failed $CMD (exit $RC)" skip
+    echo "--- end; full output saved to $DEPS_LOG ---" >&2
+    _report "failed $CMD (exit $RC) (see $DEPS_LOG)" skip
     ;;
 esac

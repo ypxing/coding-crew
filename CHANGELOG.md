@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.14]
+
+### Added
+
+- **`ensure-deps.sh` persists a failed install command's full output to disk instead of
+  discarding it.** A `docker-failed`/`failed <cmd> (exit N)` outcome only ever carried its
+  package manager's own tail on stderr, which the orchestrator (`Sprint.installDeps` /
+  `runWorker` in `orchestrator/lib`) never captures — only the one `DEPS:` line does, so the
+  actual error was unrecoverable once the round's log was all that was left to read. Every
+  failure branch (docker install, a discovered install override, host-install.sh) now also
+  copies its full output to a file — beside the `--slug` marker when one exists
+  (`<marker>.deps.log`), the shared `.scratch/docker-install.log` for the one docker
+  main-root install, or `<dir>/.scratch/deps-install.log` otherwise — and names that path in
+  the `DEPS:` line itself, so it survives into whatever log already captures that line.
+
 ## [1.29.13]
 
 ### Added
