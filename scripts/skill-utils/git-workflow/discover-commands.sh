@@ -178,9 +178,15 @@ cat <<'PROMPT'
 
 Stop reading as soon as you have a confident answer — including a confident "no local command
 exists" — for all four categories; you do not need to open every file above if an earlier one
-already answers all four.
+already answers all four. The one exception is install — see the Makefile rule below before
+you treat silence on install as a confident null.
 
 Rules:
+- install is the category prose docs are least likely to mention — it is far more often only an
+  explicit target in a Makefile than a sentence in the docs listed above. Before answering install as null,
+  open any Makefile in the list above (even if the docs already answered the other three) and
+  check it for an install/deps/bootstrap-shaped target. Only conclude null once you have looked
+  at any Makefile in the list — not merely because the docs said nothing about installation.
 - Only local dev-loop commands. Ignore build, deploy, publish, and infra-provisioning steps
   (Docker image builds, CDK/Terraform/CloudFormation, docs bundling/rendering, release/publish
   workflows) even if they appear in the same file as a test/lint/typecheck/install command.

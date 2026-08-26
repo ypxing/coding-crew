@@ -33,6 +33,17 @@ fi
 
 cd "$PROJECT_ROOT"
 
+# --- 0. .env (mechanical, mirrors docker-install.sh's own ensure-env.sh call) ---
+# Unconditional and best-effort, regardless of whether an install method is found below:
+# verify-worktree.sh runs test/lint/typecheck either way, and those can need a .env that
+# was never this script's job to create until now. ensure-env.sh itself never reads .env*
+# content — it only creates the file (from .env.example, or empty) if one is missing.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENSURE_ENV="$SELF_DIR/ensure-env.sh"
+if [[ -f "$ENSURE_ENV" ]]; then
+  bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
+fi
+
 # --- 1. Makefile target (install or deps, no docker) ---
 if [[ -f Makefile ]]; then
   for target in install deps; do

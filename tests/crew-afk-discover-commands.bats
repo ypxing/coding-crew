@@ -89,6 +89,19 @@ Run: \`whatever test command\`" > CLAUDE.md
   [[ "$output" == *"guessing one here would only override"* ]]
 }
 
+@test "prompt requires checking any Makefile before answering install as null" {
+  cat > Makefile <<'EOF'
+install:
+	npm ci
+EOF
+  echo "some project notes, no mention of install anywhere" > CLAUDE.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *"Before answering install as null"* ]]
+  [[ "$output" == *"Makefile"* ]]
+}
+
 @test "prompt instructs to ignore build/deploy/CI-pipeline steps" {
   echo "some project notes" > AGENTS.md
 

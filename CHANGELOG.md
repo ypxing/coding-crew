@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.29.11]
+
+### Fixed
+
+- **`discover-commands.sh`'s prompt let the model call `install` a confident `null` purely
+  from CLAUDE.md/AGENTS.md silence, before ever reading a Makefile that could have answered
+  it.** `install` is the category prose docs are least likely to mention — it is far more
+  often only an explicit target in a Makefile, which sits later in the prompt's priority
+  order — but the "stop reading once you have a confident answer for all four categories,
+  including a confident no-command" instruction let the model settle on `install: null` as
+  soon as `test`/`lint`/`typecheck` were answered from docs, without ever opening the
+  Makefile. `ensure-deps.sh`'s own fallback independently re-checks the Makefile for targets
+  literally named `install`/`deps`, so a standard target was caught twice regardless; a
+  target named anything else (`bootstrap`, `setup`, …) was not, and `install` silently ended
+  up `null` with nothing left to catch it. The prompt now carves out an explicit exception:
+  before answering `install` as `null`, open any Makefile in the candidate list and check it
+  for an install-shaped target, even if the other three categories already have confident
+  answers from docs.
+- **The host install path had no `.env` handling at all, while the docker path already did.**
+  `dep-install`'s `ensure-env.sh` (mechanical `cp .env.example .env`, or an empty touch, no
+  content ever read) was wired only into `docker-install.sh`'s own steps 0b/0c —
+  `host-install.sh`, the path every non-docker repo takes, never called it, so a host-mode
+  project needing a `.env` before its tests/lint/typecheck could run got nothing from either
+  script. `host-install.sh` now calls `ensure-env.sh` itself, unconditionally and
+  best-effort, before attempting a Makefile target or a lockfile-based install — including
+  when no install method is found at all, since the checks that run after this script don't
+  care whether an install ran.
+
 ## [1.29.10]
 
 ### Fixed
