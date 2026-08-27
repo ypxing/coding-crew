@@ -492,7 +492,7 @@ NOT_RUN=()
 # the capped portion, since it is printed by this script, not the command.
 # CREW_VERIFY_OUTPUT_LINES overrides the default, per the same escape-hatch convention
 # as CREW_DEPS/CREW_VERIFY_DOCKER.
-VERIFY_OUTPUT_LINES="${CREW_VERIFY_OUTPUT_LINES:-200}"
+VERIFY_OUTPUT_LINES="${CREW_VERIFY_OUTPUT_LINES:-50}"
 
 # _verify_log_path <label> — where a category's full, uncapped output is persisted (one
 # file per category, so a re-run does not clobber a sibling category's log mid-read).

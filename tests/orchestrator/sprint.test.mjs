@@ -124,6 +124,52 @@ function fake(root, name, content = "") {
   writeFileSync(join(root, ".scratch/fake", name), content);
 }
 
+// ─── private script copies, for tests that must make one specific script fail once ──
+//
+// The global SCRIPTS dir above is shared by every test in this file, so patching a
+// script in place would leak into every other test that runs after it. These tests
+// need merge-branches.sh / close-issue.sh to fail exactly once and then behave exactly
+// as the real script does — the retry itself (already-merged short-circuit, receipt
+// re-checks) is that script's own job, not the pipeline's, so the real script still
+// has to run on the second call. A private copy of SCRIPTS, patched only there, keeps
+// that fault contained to the one test that injected it.
+const PRIVATE_SCRIPT_DIRS = [];
+after(() => PRIVATE_SCRIPT_DIRS.forEach((d) => rmSync(d, { recursive: true, force: true })));
+
+function privateScripts() {
+  const base = mkdtempSync(join(REPO, ".scratch", "test-scripts-"));
+  PRIVATE_SCRIPT_DIRS.push(base);
+  const dir = join(base, "scripts");
+  cpSync(SCRIPTS, dir, { recursive: true });
+  return dir;
+}
+
+/**
+ * Replaces <scriptName> inside <scriptsDir> with a shim that fails once — the first
+ * time it is invoked, it writes <marker> and exits 1 with <message> on stderr, without
+ * touching anything else the real script would have touched. Every call after that
+ * delegates to the untouched original, copied alongside it under the same directory so
+ * its own sibling-script lookups (receipts.sh, trace.sh, ...) still resolve.
+ */
+function failFirstCall(scriptsDir, scriptName, marker, message) {
+  const real = join(scriptsDir, `_real-${scriptName}`);
+  cpSync(join(scriptsDir, scriptName), real);
+  const lines = [
+    "#!/usr/bin/env bash",
+    "set -uo pipefail",
+    `MARKER=${JSON.stringify(marker)}`,
+    'if [ ! -f "$MARKER" ]; then',
+    '  mkdir -p "$(dirname "$MARKER")"',
+    '  touch "$MARKER"',
+    `  echo ${JSON.stringify(message)} >&2`,
+    "  exit 1",
+    "fi",
+    `exec bash ${JSON.stringify(real)} "$@"`,
+    "",
+  ];
+  writeFileSync(join(scriptsDir, scriptName), lines.join("\n"));
+}
+
 test("plan lists dispatchable issues and changes nothing", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -221,6 +267,87 @@ test("a review-not-run retry skips the coder dispatch and succeeds on the second
   // The coder ran exactly once — round 2 retried only the review, not the worker.
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
   assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=review-not-run/);
+});
+
+test("a merge-failed retry skips the worker, verify, and review, and succeeds on a retried merge", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const scripts = privateScripts();
+  const marker = join(root, ".scratch/merge-fail.marker");
+  failFirstCall(scripts, "merge-branches.sh", marker, "MERGE: forced failure for test");
+
+  const round1 = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(round1.r.code, 0, `${round1.r.stdout}\n${round1.r.stderr}`);
+  let s = state(root);
+  assert.equal(s.retention?.alpha?.reason, "merge-failed");
+  assert.deepEqual(s.merged_branches ?? [], []);
+  assert.deepEqual(s.completed_slugs ?? [], []);
+  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
+  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 1);
+  assert.equal(round1.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1);
+  assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true);
+  // Same mechanism finishPartial already uses for every other partial reason: the
+  // Progress section is what makes hasProgress (and sprint.resumeBranch()) true.
+  assert.match(
+    readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8"),
+    /## Progress/,
+  );
+
+  const round2 = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(round2.r.code, 0, `${round2.r.stdout}\n${round2.r.stderr}`);
+  s = state(root);
+  assert.deepEqual(s.completed_slugs, ["alpha"]);
+  assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
+  assert.equal(s.retention?.alpha, undefined);
+  assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
+  // No worker, verify, or review ran in round 2 — only the merge (and then close) retried.
+  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 0);
+  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 0);
+  assert.equal(round2.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
+  assert.equal(round2.lines.filter((l) => /merge-branches\.sh /.test(l)).length, 1);
+  assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=merge-failed/);
+});
+
+test("a close-refused retry skips the worker, verify, and review, no-ops the already-merged retry, and succeeds on a retried close", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const scripts = privateScripts();
+  const marker = join(root, ".scratch/close-fail.marker");
+  failFirstCall(scripts, "close-issue.sh", marker, "ERROR: forced close failure for test");
+
+  const round1 = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(round1.r.code, 0, `${round1.r.stdout}\n${round1.r.stderr}`);
+  let s = state(root);
+  assert.match(s.retention?.alpha?.reason ?? "", /^close-refused/);
+  // retain() (unlike complete()) never adds to merged_branches, and actively strips the
+  // branch back out of it — merged_branches tracks *closed* issues, not git-level merge
+  // success — so the merge having actually succeeded shows up in the trace log instead.
+  assert.deepEqual(s.merged_branches ?? [], []);
+  assert.deepEqual(s.completed_slugs ?? [], []);
+  assert.match(traceLog(root), /\[MERGE\] branch=crew\/demo\/alpha success=true/);
+  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
+  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 1);
+  assert.equal(round1.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1);
+  assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true, "close was refused, so the issue stays open");
+  assert.match(
+    readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8"),
+    /## Progress/,
+  );
+
+  const round2 = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(round2.r.code, 0, `${round2.r.stdout}\n${round2.r.stderr}`);
+  s = state(root);
+  assert.deepEqual(s.completed_slugs, ["alpha"]);
+  assert.equal(s.retention?.alpha, undefined);
+  assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
+  // No worker, verify, or review ran in round 2. The merge ran again too — merge-
+  // branches.sh's own already-merged short-circuit is what makes that safe, not new
+  // pipeline logic — and reported success with no action before close retried.
+  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 0);
+  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 0);
+  assert.equal(round2.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
+  assert.match(round2.r.stderr, /already-merged/);
+  assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=close-refused/);
 });
 
 test("a criteria-unmet retry still redispatches the full worker, not just review", () => {
@@ -565,12 +692,12 @@ test("a review that never ran is named in the summary, not just counted in the s
 // order. A DEPS: outcome never changes a round's status.
 
 /** The effects log — one line per subprocess, in order. CREW_VERBOSE puts it on stderr. */
-function commandLines(root, extra = []) {
+function commandLines(root, extra = [], { scripts = SCRIPTS } = {}) {
   const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...extra], {
     cwd: root,
     env: {
       ...process.env,
-      CREW_SCRIPTS: SCRIPTS,
+      CREW_SCRIPTS: scripts,
       CREW_FAKE_DISPATCH: FAKE,
       CREW_FAKE_DIR: join(root, ".scratch/fake"),
       MAIN_ROOT: root,

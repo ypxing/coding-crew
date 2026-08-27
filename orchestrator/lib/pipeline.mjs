@@ -38,6 +38,44 @@ export async function runWorker(ctx, issue) {
   mkdirSync(dispatchDir, { recursive: true });
 
   const priorBranch = issue.hasProgress ? sprint.resumeBranch(issue.slug) : null;
+  const retentionReason = priorBranch != null ? sprint.retentionReason(issue.slug) : null;
+
+  // merge-failed and close-refused are a stronger guarantee than review-not-run: verify
+  // already passed, review already returned `AC: all-met`, and the AC receipt is already
+  // on disk — only the merge (or, for close-refused, the already-merged no-op plus the
+  // close) step itself needs another attempt. This resume target skips not just the
+  // coder dispatch but the worktree it would run in, verify-worktree.sh, and the reviewer
+  // dispatch too, re-entering runHousekeeping directly at the merge step with the branch
+  // already on disk. That is safe only because merge-branches.sh and close-issue.sh
+  // themselves re-check the SHA-bound verify receipt and the AC receipt every time they
+  // run, rather than trusting a prior round's pass — this resume target relies on that
+  // re-check, it does not replace it.
+  if (
+    priorBranch != null &&
+    (retentionReason === "merge-failed" || retentionReason?.startsWith("close-refused"))
+  ) {
+    ctx.log(
+      `[SKIP-TO-MERGE] slug=${issue.slug} reason=${retentionReason} branch=${branch} — retrying merge/close only, no coder dispatch, no verify, no review`,
+    );
+    return {
+      issue,
+      branch,
+      worktree: null,
+      dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
+      report: {
+        parsedFrom: "skipped-worker",
+        status: "complete",
+        checks: { test: "pass", lint: "pass", typecheck: "pass" },
+        branch,
+        workingDirectory: null,
+        progress: `Round ${ctx.round}: merge/close retry — coder dispatch, verify, and review all skipped`,
+        notes: "merge/close retry: the prior round's only failure was the merge or close step itself",
+        criteria: [],
+        raw: "",
+      },
+      resumeAtMerge: true,
+    };
+  }
 
   // A branch retained purely because its *review* dispatch failed to produce a usable
   // report (timeout, crash, transient dispatch failure — see `[DISPATCH-FAIL]` tracing in
@@ -48,7 +86,7 @@ export async function runWorker(ctx, issue) {
   // reason skips the coder — re-entering the pipeline at the verify gate below with the
   // already-retained branch, instead of paying for a brand new ~45m worker dispatch to
   // reach a functionally identical outcome.
-  const skipWorker = priorBranch != null && sprint.retentionReason(issue.slug) === "review-not-run";
+  const skipWorker = priorBranch != null && retentionReason === "review-not-run";
 
   const { path: worktree } = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
@@ -152,6 +190,14 @@ export async function runHousekeeping(ctx, worker) {
   const { issue, branch } = worker;
   const outcome = { slug: issue.slug, branch, status: null, reason: null, coverageGaps: [], findings: [], reviewReport: null };
 
+  // merge-failed / close-refused resume: verify, review, and the AC receipt already
+  // happened in the round that produced this retention reason. Nothing here re-derives
+  // any of that — it goes straight to the merge/close step, which re-checks both
+  // receipts itself.
+  if (worker.resumeAtMerge) {
+    return mergeAndClose(ctx, worker, outcome);
+  }
+
   // --- dispatch health -------------------------------------------------------
   if (worker.dispatch.timedOut) {
     return finishBlocked(ctx, worker, outcome, `worker timed out after ${Math.round(options.workerTimeoutMs / 60000)}m`);
@@ -228,26 +274,32 @@ export async function runHousekeeping(ctx, worker) {
   // --- findings promotion (advisory findings routed back into the sprint) ----
   await promote(ctx, worker, review, outcome);
 
-  // --- merge, then close only on the merge's success ------------------------
+  return mergeAndClose(ctx, worker, outcome);
+}
+
+/**
+ * Merge, then close only on the merge's success. Shared by the normal end-of-pipeline
+ * path and the merge-failed/close-refused resume, which re-enters here directly — both
+ * rely on merge-branches.sh's already-merged short-circuit and receipts.sh's own SHA-
+ * bound checks to make a retry safe, not on anything re-derived above this function.
+ */
+function mergeAndClose(ctx, worker, outcome) {
+  const { sprint, effects } = ctx;
+  const { issue, branch } = worker;
+
   effects.git(["checkout", sprint.featureBranch]);
   const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {
     env: sprint.childEnv(),
   });
   ctx.log(merge.stdout.trim());
   if (merge.code !== 0) {
-    outcome.status = "partial";
-    outcome.reason = "merge-failed";
-    sprint.retain(issue.slug, branch, "merge-failed");
-    return outcome;
+    return finishPartial(ctx, worker, outcome, "merge-failed");
   }
 
   const close = effects.bash("close-issue.sh", [issue.path], { env: sprint.childEnv() });
   ctx.log(close.stdout.trim());
   if (close.code !== 0) {
-    outcome.status = "partial";
-    outcome.reason = `close-refused — ${close.stderr.trim() || close.stdout.trim()}`;
-    sprint.retain(issue.slug, branch, "close-refused");
-    return outcome;
+    return finishPartial(ctx, worker, outcome, `close-refused — ${close.stderr.trim() || close.stdout.trim()}`);
   }
 
   sprint.complete(issue.slug, branch);
