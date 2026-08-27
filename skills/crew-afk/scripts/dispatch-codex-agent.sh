@@ -58,7 +58,31 @@ done
 [[ -n "$DIR" ]] || die "--dir is required"
 [[ -n "$PROMPT_FILE" ]] || die "--prompt-file is required"
 [[ -d "$DIR" ]] || die "working directory does not exist: $DIR"
-[[ -f "$PROMPT_FILE" ]] || die "prompt file does not exist: $PROMPT_FILE"
+# Read the prompt now, immediately next to the existence check, not many lines later at
+# COMBINED-build time (agent-file parsing, sandbox/model resolution, --add-dir wiring all
+# used to sit in between). That gap let the file disappear before its contents were ever
+# actually read — silently: the `cat` that filled COMBINED had no `|| die` of its own, so
+# a missing prompt file did not fail the dispatch at all, it just ran codex with the task
+# section blank. See dispatch-agent.sh's identical fix for the pi platform.
+#
+# A [[ -f ]] test and a `cat` are still two separate syscalls in two separate processes,
+# not one atomic read — on a slow/virtualized/shared-mount filesystem (bind mounts, VM
+# shared folders, network filesystems) a file a sibling process just wrote can briefly
+# 404 for a freshly spawned `cat` even microseconds after `[[ -f ]]` found it. A short,
+# bounded retry (5 attempts, 40ms apart — a fifth of a second, worst case) absorbs that
+# class of transient miss without masking a prompt file that genuinely never existed,
+# which still fails just as hard, only slightly later.
+PROMPT_TEXT=""
+PROMPT_READ_OK=0
+for _prompt_attempt in 1 2 3 4 5; do
+  if [[ -f "$PROMPT_FILE" ]] && PROMPT_TEXT=$(cat "$PROMPT_FILE" 2>/dev/null); then
+    PROMPT_READ_OK=1
+    break
+  fi
+  sleep 0.04
+done
+[[ "$PROMPT_READ_OK" -eq 1 ]] || die "failed to read prompt file: $PROMPT_FILE"
+[[ -n "$PROMPT_TEXT" ]] || die "prompt file is empty: $PROMPT_FILE"
 
 MAIN_ROOT="${MAIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
@@ -151,7 +175,7 @@ trap 'rm -f "$COMBINED"' EXIT
 {
   printf '%s\n' "$INSTRUCTIONS"
   printf '\n---\n\n# Task\n\n'
-  cat "$PROMPT_FILE"
+  printf '%s\n' "$PROMPT_TEXT"
 } > "$COMBINED"
 
 if [[ -n "$LOG" ]]; then

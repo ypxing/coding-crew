@@ -58,8 +58,23 @@ done
 # exiting 0 having done nothing, which then read as an empty report rather than a dispatch
 # failure. Reading into a variable right next to the existence check closes that window,
 # and a failed or empty read now aborts the dispatch instead of silently degrading it.
-[[ -f "$PROMPT_FILE" ]] || die "prompt file does not exist: $PROMPT_FILE"
-PROMPT_TEXT=$(cat "$PROMPT_FILE") || die "failed to read prompt file: $PROMPT_FILE"
+# A [[ -f ]] test and a `cat` are still two separate syscalls in two separate processes,
+# not one atomic read — on a slow/virtualized/shared-mount filesystem (bind mounts, VM
+# shared folders, network filesystems) a file a sibling process just wrote can briefly
+# 404 for a freshly spawned `cat` even microseconds after `[[ -f ]]` found it. A short,
+# bounded retry (5 attempts, 40ms apart — a fifth of a second, worst case) absorbs that
+# class of transient miss without masking a prompt file that genuinely never existed,
+# which still fails just as hard, only slightly later.
+PROMPT_TEXT=""
+PROMPT_READ_OK=0
+for _prompt_attempt in 1 2 3 4 5; do
+  if [[ -f "$PROMPT_FILE" ]] && PROMPT_TEXT=$(cat "$PROMPT_FILE" 2>/dev/null); then
+    PROMPT_READ_OK=1
+    break
+  fi
+  sleep 0.04
+done
+[[ "$PROMPT_READ_OK" -eq 1 ]] || die "failed to read prompt file: $PROMPT_FILE"
 [[ -n "$PROMPT_TEXT" ]] || die "prompt file is empty: $PROMPT_FILE"
 command -v pi >/dev/null 2>&1 || die "pi CLI not found on PATH"
 command -v jq >/dev/null 2>&1 || die "jq not found on PATH (required to read pi's --mode json event stream)"
