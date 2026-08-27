@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.21]
+
+### Changed
+
+- **crew-afk's dispatch skill now tells the user where to look during a long sprint.** All four
+  platform variants (`claude.SKILL.md`, `codex.SKILL.md`, `copilot.SKILL.md`, `pi.SKILL.md`) gained
+  a step pointing at `.scratch/<feature-slug>/traces/orchestrator.log`, which the orchestrator
+  already writes live — previously undiscoverable unless you knew to look for it, so a quiet
+  stdout stream during a long-running dispatch looked indistinguishable from a stuck one.
+
 ## [1.29.20]
 
 ### Added
