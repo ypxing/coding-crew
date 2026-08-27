@@ -276,6 +276,17 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [[ "$output" == *"crew/calc/b: retained (verification-failed — tests did not pass)"* ]]
 }
 
+@test "crew-summary tells a human how to resolve a merge-failed retention by hand" {
+  init_sprint calc
+  state retain --slug b --branch crew/calc/b --reason "merge-failed" >/dev/null
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"## Merge Conflicts (need a human)"* ]]
+  [[ "$output" == *"git checkout feature/calc && git merge --no-ff <branch>"* ]]
+  [[ "$output" == *"- crew/calc/b"* ]]
+}
+
 @test "crew-summary omits empty sections and reports a clean sprint as clean" {
   init_sprint calc
   state complete --slug a --branch crew/calc/a >/dev/null

@@ -43,6 +43,16 @@ state() { bash "$SCRIPT_DIR/state.sh" "$@" ${FEATURE_SLUG:+--feature-slug "$FEAT
 SF=$(state get state-file) || { echo "crew-summary: no sprint state found" >&2; exit 1; }
 [ -n "$FEATURE_SLUG" ] || FEATURE_SLUG=$(state get feature-slug)
 
+# FEATURE_BRANCH (used by the merge-conflict hint below) only came along above when the
+# global pointer was sourced, which an explicit --feature-slug skips on purpose — it may
+# name a different sprint than whatever the pointer currently points at. Read it straight
+# from that sprint's own env file instead of re-deriving it from git, which would guess
+# wrong the moment the caller is not currently on that sprint's feature branch.
+if [ -z "${FEATURE_BRANCH:-}" ] && [ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint.env" ]; then
+  # shellcheck disable=SC1091
+  . "$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint.env" 2>/dev/null || true
+fi
+
 count_csv() {
   [ -n "$1" ] || { echo 0; return; }
   printf '%s' "$1" | tr ',' '\n' | grep -c . || true
@@ -85,6 +95,23 @@ if [ -n "$RETAINED" ]; then
   echo ""
   echo "## Retained Branches"
   printf '%s\n' "$RETAINED"
+fi
+
+# --- Merge conflicts (never auto-resolved — see merge-branches.sh) -----------
+# A `merge-failed` retention is the one reason above that isn't the branch's content
+# needing more work: verify passed, review returned all-met, the AC receipt is on disk,
+# and only `git merge --no-ff` itself hit a conflict. merge-branches.sh aborts cleanly
+# and never attempts resolution, by design — so unlike every other retained reason,
+# re-running crew-afk alone cannot fix this one. Spell out the one manual step that does.
+MERGE_CONFLICTS=$(jq -r '(.retention // {}) | to_entries[] | select(.value.reason | startswith("merge-failed")) | .value.branch' "$SF" 2>/dev/null || true)
+if [ -n "$MERGE_CONFLICTS" ]; then
+  echo ""
+  echo "## Merge Conflicts (need a human)"
+  echo "crew-afk never resolves merge conflicts automatically. To unblock each branch below:"
+  echo "  1. git checkout ${FEATURE_BRANCH:-<feature-branch>} && git merge --no-ff <branch>"
+  echo "  2. Resolve the conflicts by hand, then: git add -A && git commit"
+  echo "  3. Re-run crew-afk — merge-branches.sh sees the branch as already merged and closes the issue normally."
+  printf '%s\n' "$MERGE_CONFLICTS" | sed 's/^/- /'
 fi
 
 # --- Promoted Findings --------------------------------------------------------

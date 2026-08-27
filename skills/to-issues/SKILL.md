@@ -48,6 +48,8 @@ If you have not already explored the codebase, do so to understand the current s
 
 While exploring, look for **prefactoring opportunities** — changes that would make the feature implementation significantly easier. "Make the change easy, then make the easy change." Prefactoring issues must be sliced and sequenced first so downstream feature issues can build on a clean foundation.
 
+Also note any **shared surfaces**: a schema/table, a shared type, or an existing function/module that more than one slice would need to modify. This is a narrower thing than "touches the same file" — two slices adding independent, non-overlapping code to the same file is the normal shape of vertical slicing and merges cleanly; a shared surface is where two slices would plausibly change the *same specific behavior*. Carry any you find into the quiz step below; don't turn them into blocking edges yourself — whether a shared surface needs sequencing or is safe to leave parallel is a judgment call for the quiz, not something to guess silently here.
+
 ### 4. Draft vertical slices
 
 Break the plan into **tracer bullet** issues. Each issue is a thin vertical slice that cuts through ALL integration layers end-to-end, NOT a horizontal slice of one layer.
@@ -79,12 +81,15 @@ Present the proposed breakdown as a numbered list. For each slice, show:
 - **Blocked by**: which other slices (if any) must complete first
 - **What it delivers**: the end-to-end behaviour this slice makes work, from the user's perspective
 
+If step 3 turned up any shared surfaces, list them separately — one line per surface, naming the slices that touch it — and ask about each one explicitly: is the overlap additive (safe to leave parallel), or does it need a `Blocked by` edge (or a merge)? Don't add the edge yourself; this is exactly the call a file-overlap heuristic gets wrong, because it can't tell "two slices editing the same file in unrelated ways" from "two slices that will conflict."
+
 Ask the user:
 
 - Does the granularity feel right? (too coarse / too fine)
 - Are the blocking edges correct — does each issue only depend on issues that genuinely gate it?
 - Should any slices be merged or split further?
 - Are the correct slices marked as HITL and AFK?
+- For any shared surface listed above: sequence it, merge the slices, or leave it parallel?
 
 Iterate until the user approves the breakdown.
 

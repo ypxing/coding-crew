@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`to-issues` now surfaces shared surfaces during the quiz step, instead of leaving overlap
+  entirely to chance.** While exploring the codebase, note any schema/type/function more than
+  one drafted slice would need to modify — a narrower thing than "touches the same file", which
+  is the normal (and safe) shape of vertical slicing. Each shared surface found is listed
+  explicitly in the quiz, asking the user to sequence it, merge the slices, or leave it parallel.
+  This is a deliberate judgment call at breakdown time, not an automatic file-overlap dependency
+  rule — a blanket rule would serialize additive, non-conflicting work and defeat crew-afk's
+  parallel dispatch for a problem (real content conflicts) that vertical slicing is supposed to
+  make rare in the first place.
+- **crew-summary now tells a human how to resolve a merge conflict, not just that one exists.**
+  A `merge-failed` retention (verify passed, review returned all-met, only `git merge --no-ff`
+  itself conflicted) is the one retained-branch reason crew-afk cannot retry its way out of —
+  `merge-branches.sh` aborts cleanly and never attempts resolution, by design. The end-of-sprint
+  summary previously only listed the branch under "## Retained Branches" with no next step. It
+  now adds a "## Merge Conflicts (need a human)" section with the three manual steps (merge by
+  hand, resolve, re-run crew-afk) so the stalled sprint's fix is discoverable without reading
+  `merge-branches.sh`'s source.
+
 ## [1.29.19]
 
 ### Fixed

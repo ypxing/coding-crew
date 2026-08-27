@@ -444,6 +444,7 @@ Edit these files after install — they override the defaults on the next run:
 | Code review says "skipped (no commits)"           | No commits this session                          | Normal — nothing to review                                                          |
 | `dep-install` picks wrong mode                    | Makefile detection read parent project           | Run `git config --local agent.install-mode host` (or `docker`) in your project root |
 | `address-pr-comments` fails with opaque error     | `gh` CLI missing or not authenticated            | Run `gh auth login` first                                                           |
+| Sprint stalls with a branch retained `merge-failed` | Two verified branches touch overlapping code; crew-afk never auto-resolves merge conflicts | `git checkout <feature-branch> && git merge --no-ff <branch>`, resolve by hand, commit, then re-run `/crew-afk` — it sees the branch as already merged and closes the issue |
 
 ---
 
