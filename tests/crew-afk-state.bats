@@ -217,6 +217,24 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ "$output" = "no prior branch" ]
 }
 
+@test "state.sh retention reports the recorded reason, distinguishing a review-only retry from other retentions" {
+  init_sprint calc
+  state retain --slug first --branch crew/calc/first --reason review-not-run >/dev/null
+
+  run state retention --slug first
+  [ "$output" = "reason: review-not-run" ]
+
+  state retain --slug second --branch crew/calc/second --reason verification-failed >/dev/null
+  run state retention --slug second
+  [ "$output" = "reason: verification-failed" ]
+}
+
+@test "state.sh retention says no retention record for a slug that was never retained" {
+  init_sprint calc
+  run state retention --slug never-ran
+  [ "$output" = "no retention record" ]
+}
+
 @test "state.sh refuses to guess which sprint it is bookkeeping for" {
   mkdir -p .scratch/aaa/issues/open .scratch/zzz/issues/open
   echo '{"feature_slug":"aaa"}' > .scratch/aaa/sprint-state.json

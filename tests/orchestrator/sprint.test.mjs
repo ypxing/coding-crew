@@ -204,6 +204,59 @@ test("a review that produced nothing is a gap, not a clean pass", () => {
   assert.match(r.stdout, /Unreviewed Branches|review/i);
 });
 
+test("a review-not-run retry skips the coder dispatch and succeeds on the second review", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // The review fails to produce a usable report on its first attempt (empty report, the
+  // same shape a timeout or a dispatch crash leaves behind), then succeeds on the retry
+  // — the worker itself never runs a second time.
+  fake(root, "alpha.review-once", "");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const s = state(root);
+  assert.deepEqual(s.completed_slugs, ["alpha"]);
+  assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
+  assert.equal(s.retention?.alpha, undefined, "the issue should have completed, not stayed retained");
+  assert.ok(s.rounds >= 2, `expected at least 2 rounds, got ${s.rounds}`);
+  // The coder ran exactly once — round 2 retried only the review, not the worker.
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
+  assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=review-not-run/);
+});
+
+test("a criteria-unmet retry still redispatches the full worker, not just review", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", "## Branch: crew/demo/alpha\nAC: unmet — no test covers the criterion\n");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, "unmet criteria never resolve on their own, so the sprint stalls");
+  const s = state(root);
+  assert.match(s.retention.alpha.reason, /criteria-unmet/);
+  assert.equal(
+    lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length,
+    2,
+    "the coder must run again — a criteria-unmet retention means the branch's content needs work, not just another review",
+  );
+});
+
+test("a verification-failed retry still redispatches the full worker, not just review", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Override the Makefile so the real check the pipeline runs fails, regardless of what
+  // the worker's own report claims (the default fake worker reports every check as pass).
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2);
+  const s = state(root);
+  assert.equal(s.retention.alpha.reason, "verification-failed");
+  assert.equal(
+    lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length,
+    2,
+    "the coder must run again — a verification-failed branch needs its content fixed, not just a review retry",
+  );
+});
+
 test("an unparseable worker report is blocked, never complete", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

@@ -380,6 +380,22 @@ export async function dispatch(effects, platform, spec, { timeoutMs } = {}) {
     writeFileSync(spec.outFile, r.stdout ?? "");
   }
   const text = existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
+
+  // The dispatch scripts (dispatch-agent.sh/dispatch-codex-agent.sh) trace their own
+  // [DISPATCH]/[DISPATCH-END] lines from *inside* the script — so a failure before the
+  // script gets that far (an early `die()` guard, or the child process never starting at
+  // all: ENOENT, a killed process, fork/resource exhaustion) leaves zero trace anywhere,
+  // and the one place the reason lived — this child's stderr — was read into `r.stderr`
+  // and then never looked at again by any caller. Log it here, once, so a repeat isn't a
+  // mystery a second time. Never throws and never blocks a dispatch on its own account.
+  if (spec.logFile && !r.dryRun && (r.code !== 0 || r.timedOut || !text.trim())) {
+    const stderrSnippet = (r.stderr ?? "").trim().slice(0, 500).replace(/\s+/g, " ");
+    appendLine(
+      spec.logFile,
+      `[DISPATCH-FAIL] agent=${spec.agent} code=${r.code} timedOut=${!!r.timedOut} outEmpty=${!text.trim()} stderr=${JSON.stringify(stderrSnippet || "(none)")}`,
+    );
+  }
+
   return {
     code: r.code,
     timedOut: !!r.timedOut,

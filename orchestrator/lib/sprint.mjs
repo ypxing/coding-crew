@@ -195,6 +195,22 @@ export class Sprint {
     return m ? m[1] : null;
   }
 
+  /**
+   * The reason the prior round retained this slug's branch (`verification-failed`,
+   * `criteria-unmet`, `review-not-run`, `merge-failed`, `close-refused`, ...), or `null`
+   * when nothing was retained for it. What tells `runWorker` whether the branch's content
+   * needs another worker pass or only another review attempt.
+   */
+  retentionReason(slug) {
+    const r = this.effects.exec(
+      "bash",
+      [this.effects.script("state.sh"), "retention", "--slug", slug],
+      { env: this.childEnv(), mutating: false },
+    );
+    const m = /^reason:\s*(.+)$/m.exec(r.stdout || "");
+    return m ? m[1].trim() : null;
+  }
+
   trace(marker, text = "") {
     return this.effects.bash("trace.sh", [marker, text], { env: this.childEnv() });
   }

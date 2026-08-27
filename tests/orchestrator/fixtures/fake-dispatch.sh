@@ -4,6 +4,11 @@
 # Behaviour is driven by files in $CREW_FAKE_DIR:
 #   <slug>.worker         the worker report to emit (default: a clean `complete`)
 #   <slug>.review         the review report to emit (default: AC: all-met, no findings)
+#   <slug>.review-once    the review report is empty (review-not-run) on the *first* call
+#                         for this slug, then AC: all-met on every call after — simulates a
+#                         review dispatch that failed transiently and succeeds on retry.
+#                         Mutually exclusive with <slug>.review; a per-slug call counter is
+#                         kept at <slug>.review-once.calls next to it.
 #   <slug>.nocommit       do not create a commit in the worktree
 #   <slug>.exit           exit with this code instead of 0
 #
@@ -52,6 +57,19 @@ if [ "$AGENT" = "commands-discovery" ]; then
 fi
 
 if [ "$AGENT" = "crew-code-reviewer" ]; then
+  if [ -f "$FAKE_DIR/$SLUG.review-once" ]; then
+    COUNT_FILE="$FAKE_DIR/$SLUG.review-once.calls"
+    COUNT=0
+    [ -f "$COUNT_FILE" ] && COUNT=$(cat "$COUNT_FILE")
+    COUNT=$((COUNT + 1))
+    echo "$COUNT" > "$COUNT_FILE"
+    if [ "$COUNT" -eq 1 ]; then
+      : > "$OUT" # empty report — the pipeline reads this as review-not-run
+    else
+      printf '## Branch: crew/x/%s\nAC: all-met\n\nNo findings.\n' "$SLUG" > "$OUT"
+    fi
+    exit 0
+  fi
   if [ -f "$FAKE_DIR/$SLUG.review" ]; then
     cat "$FAKE_DIR/$SLUG.review" > "$OUT"
   else

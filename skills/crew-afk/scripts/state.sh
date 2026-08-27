@@ -18,6 +18,7 @@ set -euo pipefail
 #   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>]
 #   state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
 #   state.sh resume --slug <slug>
+#   state.sh retention --slug <slug>
 #   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|state-file>
 #   state.sh show
 #
@@ -180,6 +181,22 @@ case "$CMD" in
       echo "resume: $prior"
     else
       echo "no prior branch"
+    fi
+    ;;
+
+  retention)
+    # A retained branch's *reason* is what tells the orchestrator whether the branch's
+    # content needs another worker pass or only another review attempt — resume answers
+    # "is there a branch", this answers "why was it retained". Read from `.retention`,
+    # never inferred from `.retained_branches` alone: a blocked issue is retained too, but
+    # with a "blocked — ..." reason that must never be mistaken for a review-only retry.
+    slug=$(flag slug "" "$@")
+    [ -n "$slug" ] || die "retention requires --slug"
+    reason=$(jq -r --arg s "$slug" '.retention[$s].reason // empty' "$SF")
+    if [ -n "$reason" ]; then
+      echo "reason: $reason"
+    else
+      echo "no retention record"
     fi
     ;;
 

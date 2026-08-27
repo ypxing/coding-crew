@@ -37,6 +37,19 @@ export async function runWorker(ctx, issue) {
   const dispatchDir = sprint.dispatchDir;
   mkdirSync(dispatchDir, { recursive: true });
 
+  const priorBranch = issue.hasProgress ? sprint.resumeBranch(issue.slug) : null;
+
+  // A branch retained purely because its *review* dispatch failed to produce a usable
+  // report (timeout, crash, transient dispatch failure — see `[DISPATCH-FAIL]` tracing in
+  // dispatch.mjs) already has a worker that completed and a verify that passed in the
+  // prior round: nothing about the branch's content needs to change, only the review needs
+  // another attempt. Every other retention reason (verification-failed, criteria-unmet,
+  // merge-failed, close-refused) means the branch itself needs more work, so only this one
+  // reason skips the coder — re-entering the pipeline at the verify gate below with the
+  // already-retained branch, instead of paying for a brand new ~45m worker dispatch to
+  // reach a functionally identical outcome.
+  const skipWorker = priorBranch != null && sprint.retentionReason(issue.slug) === "review-not-run";
+
   const { path: worktree } = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
     branch,
@@ -48,7 +61,9 @@ export async function runWorker(ctx, issue) {
   // inherited node_modules is seen by the presence guard and costs nothing) and before
   // *both* consumers of them. The worker is the obvious one; verify-worktree.sh is the one
   // no worker skill can cover — it runs the project's own tests in this worktree, has no
-  // dep recovery path, and being a gate it cannot invoke dep-install.
+  // dep recovery path, and being a gate it cannot invoke dep-install. That second consumer
+  // still needs this even on the skipped-worker path: the worktree removed at the end of
+  // the prior (partial) round is recreated bare here, with no node_modules of its own yet.
   //
   // The DEPS: line is logged and nothing more. A failed install is not a demotion: the
   // verify gate already fails closed on the consequence, and stalling a whole round on
@@ -60,10 +75,31 @@ export async function runWorker(ctx, issue) {
     ctx.log(depsLine(deps.stdout));
   }
 
+  if (skipWorker) {
+    ctx.log(`[SKIP-WORKER] slug=${issue.slug} reason=review-not-run branch=${branch} — retrying review only, no coder dispatch`);
+    return {
+      issue,
+      branch,
+      worktree,
+      dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
+      report: {
+        parsedFrom: "skipped-worker",
+        status: "complete",
+        checks: { test: "pass", lint: "pass", typecheck: "pass" },
+        branch,
+        workingDirectory: worktree,
+        progress: `Round ${ctx.round}: review-only retry — coder dispatch skipped, branch content unchanged`,
+        notes: "review-only retry: the prior round's only failure was the review dispatch itself",
+        criteria: [],
+        raw: "",
+      },
+      skippedWorker: true,
+    };
+  }
+
   const promptFile = join(dispatchDir, `${issue.slug}.prompt.md`);
   const outFile = join(dispatchDir, `${issue.slug}.report.md`);
   const sidecarFile = join(dispatchDir, `${issue.slug}.report.json`);
-  const priorBranch = issue.hasProgress ? sprint.resumeBranch(issue.slug) : null;
 
   writeFileSync(
     promptFile,
@@ -258,12 +294,21 @@ async function runReview(ctx, worker, checks) {
 
   const parsed = parseReviewReport(result.text);
   if (result.timedOut || (result.code !== 0 && !parsed.ok) || !parsed.ok) {
+    // parsed.detail is a generic string for an empty report ("empty review report") and
+    // says nothing about *why* the dispatch produced nothing. result.stderr is the one
+    // place that reason actually lives (a `die()` guard in dispatch-agent.sh, a spawn-level
+    // error, ...) — surface a snippet of it here so a human reading the review report's
+    // `not_run` stub does not have to reproduce the dispatch by hand to find out why.
+    const stderrHint = (result.stderr ?? "").trim().slice(0, 300).replace(/\s+/g, " ");
+    const noDetail = !parsed.detail || parsed.detail === "empty review report";
     return {
       completed: false,
       reportFile,
       reason: result.timedOut
         ? "review dispatch timed out"
-        : parsed.detail || `review dispatch exited ${result.code} with no usable report`,
+        : noDetail
+          ? `review dispatch exited ${result.code} with no usable report${stderrHint ? ` — ${stderrHint}` : ""}`
+          : parsed.detail,
       parsed,
     };
   }
