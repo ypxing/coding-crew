@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.29.16]
+
+### Added
+
+- **crew-afk's worker/reviewer dispatch is visible while it runs, on all four platforms.**
+  Every dispatch used to be a black box: pi's `-p` and codex's `codex exec` print nothing
+  until the whole turn is done, and claude/copilot's plain `-p` text output was only ever
+  buffered into `--out` at the end — so a sprint's trace log went from `[DISPATCH]` straight
+  to `[DISPATCH-END]` with nothing in between, however many tool calls or however long a
+  worker actually ran. All four now go through that platform's own event-stream mode
+  instead — pi's `--mode json`, codex's `--json`, claude's `--output-format stream-json
+  --verbose`, copilot's `--output-format json` — and a recognised tool call becomes a
+  `[TOOL]`/`[TOOL-ERROR]` line in the sprint's trace log *as it happens*, so `tail -f` on
+  that log shows what a worker is doing while it is doing it. pi/codex trace this from bash
+  (`dispatch-agent.sh`/`dispatch-codex-agent.sh`'s own `trace_event`, both verified against a
+  real run of the actual CLI); claude/copilot trace it from `dispatch.mjs`
+  (`formatJsonTraceLine`), since neither has a bash dispatcher to do it from. The full raw
+  event stream is kept next to each report as `<out>.events.jsonl` for anyone who needs more
+  than the one-line trace; only the final assistant text — the one thing `report.mjs` and
+  `parseReviewReport` actually parse — goes into the report file itself
+  (`extractFinalText`/each dispatcher's own extraction), so the pipeline's report-parsing
+  contract is unchanged. codex needed no such extraction: `--output-last-message` already
+  writes the final message regardless of `--json`.
+
 ## [1.29.15]
 
 ### Added

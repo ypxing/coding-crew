@@ -18,6 +18,17 @@
 #
 # Exit code is codex's exit code. The agent's final message goes to --out (via
 # `codex exec -o`) and to stdout.
+#
+# Visibility: the run goes through `codex exec --json`, which streams thread/turn/item
+# events (item.started/item.completed, covering command_execution, file_change,
+# mcp_tool_call, …) as NDJSON as they happen, instead of staying silent until the whole
+# turn is done. trace_event reads that stream one line at a time and appends a
+# `[TOOL]`/`[TOOL-ERROR]` line to --log as each item starts or a command exits non-zero,
+# so `tail -f` on the sprint's trace log shows what a worker is doing *while* it runs.
+# --output-last-message is untouched by --json — codex still writes the final message
+# to --out itself — so no text extraction is needed here the way pi's dispatcher needs
+# one; only the tracing is new. The full event stream is kept next to --out, as
+# `<out>.events.jsonl`, for post-hoc debugging.
 set -uo pipefail
 
 AGENT=""
@@ -61,6 +72,7 @@ done
 [[ -n "$AGENT_FILE" ]] || die "agent definition not found for '$AGENT' (looked in .codex/agents and ~/.codex/agents)"
 
 command -v codex >/dev/null 2>&1 || die "codex CLI not found on PATH (crew-afk requires the local Codex CLI; hosted Codex in ChatGPT / Codex cloud is not supported)"
+command -v jq >/dev/null 2>&1 || die "jq not found on PATH (required to read codex's --json event stream)"
 
 # Scalar TOML value:  key = "value"
 toml_scalar() {
@@ -103,7 +115,7 @@ elif [[ -z "$MODEL" ]]; then
   EFFECTIVE_MODEL="$AGENT_MODEL"
 fi
 
-ARGS=(exec --cd "$DIR" --sandbox "$SANDBOX")
+ARGS=(exec --cd "$DIR" --sandbox "$SANDBOX" --json)
 # Workers install dependencies and fetch packages; a sandboxed workspace blocks
 # network by default, which would fail every dep-install step.
 [[ "$SANDBOX" == "workspace-write" ]] && ARGS+=(-c sandbox_workspace_write.network_access=true)
@@ -147,10 +159,65 @@ if [[ -n "$LOG" ]]; then
   echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] agent=$AGENT dir=$DIR model=${EFFECTIVE_MODEL:-inherit} sandbox=$SANDBOX" >> "$LOG"
 fi
 
+# Every raw event line, kept for anyone who needs more than the one-line trace below.
+EVENTS_FILE=""
+if [[ -n "$OUT" ]]; then
+  EVENTS_FILE="$OUT.events.jsonl"
+  mkdir -p "$(dirname "$EVENTS_FILE")"
+  : > "$EVENTS_FILE"
+fi
+
+# agent_message/reasoning items are the narrative text — already in the final report —
+# so only the item types that are actual tool calls get a line here. A line this does
+# not recognise (a bad JSON line from a non-JSON tool stub, a future item type) is
+# silently skipped: trace output is observability, it must never be why a dispatch fails.
+trace_event() {
+  local line="$1" type
+  type=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || return 0
+  case "$type" in
+    item.started)
+      local itemtype msg
+      itemtype=$(printf '%s' "$line" | jq -r '.item.type // "?"' 2>/dev/null)
+      case "$itemtype" in
+        agent_message|reasoning) return 0 ;;
+      esac
+      msg="[TOOL] agent=$AGENT item=$itemtype"
+      [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
+      echo "$msg" >&2
+      ;;
+    item.completed)
+      local itemtype exitcode msg
+      itemtype=$(printf '%s' "$line" | jq -r '.item.type // "?"' 2>/dev/null)
+      exitcode=$(printf '%s' "$line" | jq -r '.item.exit_code // empty' 2>/dev/null)
+      [[ -n "$exitcode" && "$exitcode" != "0" ]] || return 0
+      msg="[TOOL-ERROR] agent=$AGENT item=$itemtype exit=$exitcode"
+      [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
+      echo "$msg" >&2
+      ;;
+    turn.failed|error)
+      local msg="[TOOL-ERROR] agent=$AGENT $type"
+      [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
+      echo "$msg" >&2
+      ;;
+  esac
+}
+
+# Reads codex's NDJSON stream one line at a time, so trace_event's [TOOL] lines land in
+# --log while the worker is still running. Forwards every line back to its own stdout
+# unchanged, so a human running this by hand still sees the raw stream live.
+stream_events() {
+  local line
+  while IFS= read -r line; do
+    [[ -n "$EVENTS_FILE" ]] && printf '%s\n' "$line" >> "$EVENTS_FILE"
+    trace_event "$line"
+    printf '%s\n' "$line"
+  done
+}
+
 # MAIN_ROOT is exported so the agent's own environment setup can read it. The agent
 # runs with the worktree as its working root, which its PROJECT_ROOT check expects.
-MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 codex "${ARGS[@]}" - < "$COMBINED" 2>>"${LOG:-/dev/null}"
-status=$?
+MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 codex "${ARGS[@]}" - < "$COMBINED" 2>>"${LOG:-/dev/null}" | stream_events
+status=${PIPESTATUS[0]}
 
 if [[ -n "$LOG" ]]; then
   echo "[$(date -u +%H:%M:%SZ)] [DISPATCH-END] agent=$AGENT exit=$status" >> "$LOG"

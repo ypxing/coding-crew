@@ -4,14 +4,27 @@
  * A dispatch is: run <agent> with <prompt> in <cwd>, capture its final message to
  * <outFile>, with a hard timeout. Every platform can do this headlessly:
  *
- *   pi       pi -p --append-system-prompt …           (via dispatch-agent.sh)
- *   codex    codex exec --cd … -o …                   (via dispatch-codex-agent.sh)
- *   claude   claude -p --agent <name> --add-dir …
- *   copilot  copilot -p --agent <name> -C … --silent
+ *   pi       pi -p --mode json --append-system-prompt …   (via dispatch-agent.sh)
+ *   codex    codex exec --cd … --json -o …                (via dispatch-codex-agent.sh)
+ *   claude   claude -p --agent <name> --add-dir … --output-format stream-json --verbose
+ *   copilot  copilot -p --agent <name> -C … --output-format json
  *
  * pi and codex keep their existing bash dispatchers, which already resolve the agent
  * definition and map its frontmatter onto CLI flags. claude and copilot resolve their
  * own agent by name (`--agent`).
+ *
+ * All four now run through a live event stream rather than a plain -p/text mode that
+ * prints nothing until the whole turn is done: pi's --mode json, codex's --json, claude's
+ * stream-json, and copilot's json output-format each emit one JSON object per event
+ * (tool calls, in particular) as it happens. dispatch() and the two bash dispatchers read
+ * that stream one line at a time and turn a recognised tool call into a `[TOOL]`/
+ * `[TOOL-ERROR]` line in the sprint's trace log *while the worker is still running* — the
+ * visibility a `tail -f` on that log did not have when a dispatch was a subprocess whose
+ * only signal was silence, then its buffered final answer. The full raw stream is kept
+ * next to outFile as `<outFile>.events.jsonl` for anyone who needs more than that one
+ * line; only the final assistant text — the one thing report.mjs actually parses — goes
+ * into outFile itself. See formatJsonTraceLine/extractFinalText below for claude/copilot,
+ * and each bash dispatcher's own trace_event for pi/codex.
  *
  * For claude that name is the whole contract, verified against 2.1.221: `--agent` loads
  * the project-level `.claude/agents/<name>.md`, enforces its `tools:` list, and exits 1
@@ -34,6 +47,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { appendLine } from "./effects.mjs";
 
 export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
 
@@ -145,6 +159,16 @@ export function buildDispatch(platform, spec) {
     // `tools:` still applies, so the reviewer stays read-only and the coder still cannot
     // spawn agents. A narrower --allowedTools cannot be written in advance — a worker runs
     // the consuming project's own checks.
+    //
+    // --output-format stream-json --verbose (required together, or claude refuses to start:
+    // "--output-format=stream-json requires --verbose") replaces plain -p text output. Text
+    // mode prints nothing until the whole turn is done; stream-json emits one JSON object per
+    // turn as it happens — an assistant message per turn (its `content` carries `tool_use`
+    // blocks when the agent calls a tool), a user message carrying that tool's `tool_result`,
+    // and a final `result` line with the agent's last answer in `.result`. dispatch() reads
+    // that stream for the same visibility pi's --mode json and codex's --json give: a
+    // `[TOOL]`/`[TOOL-ERROR]` line in --log as each tool call starts/fails, instead of
+    // silence until the child exits or times out.
     const args = [
       "-p",
       "--permission-mode",
@@ -153,6 +177,9 @@ export function buildDispatch(platform, spec) {
       mainRoot,
       "--agent",
       agent,
+      "--output-format",
+      "stream-json",
+      "--verbose",
     ];
     if (model) args.push("--model", model);
     args.push(prompt);
@@ -168,6 +195,7 @@ export function buildDispatch(platform, spec) {
       ...shared,
       env: { ...shared.env, CLAUDE_CODE_SESSION_ID: "", CLAUDE_CODE_CHILD_SESSION: "" },
       capture: "stdout",
+      jsonEvents: "claude",
     };
   }
 
@@ -179,6 +207,14 @@ export function buildDispatch(platform, spec) {
     //
     // --add-dir names the main checkout because the worker reads the issue file and writes
     // its <slug>.report.json under .scratch/ there, outside its worktree cwd.
+    //
+    // --output-format json (JSONL, one object per line — copilot-sdk's generated
+    // session-events.d.ts is the schema) replaces --silent's plain text: a
+    // `tool.execution_start` event per tool call (with `data.toolName`/`data.arguments`),
+    // `tool.execution_complete` on success/failure, and `assistant.message` events whose
+    // `data.content` is that turn's full text — the last one is the agent's final answer.
+    // --silent only suppressed a stats footer in text mode and does nothing for json output;
+    // dropped here for clarity, not because of a conflict.
     const args = [
       "-p",
       prompt,
@@ -190,13 +226,103 @@ export function buildDispatch(platform, spec) {
       mainRoot,
       "--allow-all-tools",
       "--no-color",
-      "--silent",
+      "--output-format",
+      "json",
     ];
     if (model) args.push("--model", model);
-    return { cmd: "copilot", args, ...shared, capture: "stdout" };
+    return { cmd: "copilot", args, ...shared, capture: "stdout", jsonEvents: "copilot" };
   }
 
   throw new Error(`unknown platform: ${platform}`);
+}
+
+function capJson(value) {
+  try {
+    return JSON.stringify(value ?? {}).slice(0, 200);
+  } catch {
+    return "{}";
+  }
+}
+
+/**
+ * One [TOOL]/[TOOL-ERROR] line per recognised event, or null for everything else
+ * (message text deltas, session bookkeeping, a line that failed to parse) — the same
+ * "observability must never fail the dispatch" rule dispatch-agent.sh's and
+ * dispatch-codex-agent.sh's trace_event follow. Claude's shape is the standard Anthropic
+ * Messages content-block schema (`assistant.message.content[]` carries `tool_use`/
+ * `tool_result` blocks); copilot's is copilot-sdk's own generated session-events.d.ts
+ * (`tool.execution_start`/`tool.execution_complete`).
+ */
+export function formatJsonTraceLine(platform, agent, line) {
+  let evt;
+  try {
+    evt = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (platform === "claude") {
+    if (evt.type === "assistant") {
+      for (const block of evt.message?.content ?? []) {
+        if (block.type === "tool_use") {
+          return `[TOOL] agent=${agent} tool=${block.name} args=${capJson(block.input)}`;
+        }
+      }
+    }
+    if (evt.type === "user") {
+      for (const block of evt.message?.content ?? []) {
+        if (block.type === "tool_result" && block.is_error) {
+          return `[TOOL-ERROR] agent=${agent} tool_use_id=${block.tool_use_id ?? "?"}`;
+        }
+      }
+    }
+    return null;
+  }
+  if (platform === "copilot") {
+    if (evt.type === "tool.execution_start") {
+      return `[TOOL] agent=${agent} tool=${evt.data?.toolName ?? "?"} args=${capJson(evt.data?.arguments)}`;
+    }
+    if (evt.type === "tool.execution_complete" && evt.data?.success === false) {
+      return `[TOOL-ERROR] agent=${agent} toolCallId=${evt.data?.toolCallId ?? "?"} error=${capJson(evt.data?.error?.message)}`;
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * The worker's final message, pulled back out of the raw event lines — report.mjs reads
+ * outFile as that text, not the NDJSON envelope, the same contract pi's and codex's
+ * dispatchers keep. Claude's terminal `result` line carries the final answer directly in
+ * `.result`; copilot has no equivalent terminal event, so the last `assistant.message` —
+ * the one after any tool calls — stands in for it, the same message copilot's own text
+ * mode would have printed. Either extraction failing (a truncated stream, an unrecognised
+ * shape) returns "": an empty report is already a handled state (report.mjs's "empty"
+ * parsedFrom), and is safer than leaking raw JSONL into what the pipeline parses as text.
+ */
+export function extractFinalText(platform, lines) {
+  if (platform === "claude") {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const evt = JSON.parse(lines[i]);
+        if (evt.type === "result") return evt.result ?? "";
+      } catch {
+        /* skip an unparseable line */
+      }
+    }
+    return "";
+  }
+  if (platform === "copilot") {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const evt = JSON.parse(lines[i]);
+        if (evt.type === "assistant.message") return evt.data?.content ?? "";
+      } catch {
+        /* skip an unparseable line */
+      }
+    }
+    return "";
+  }
+  return "";
 }
 
 /**
@@ -207,12 +333,52 @@ export function buildDispatch(platform, spec) {
 export async function dispatch(effects, platform, spec, { timeoutMs } = {}) {
   const built = buildDispatch(platform, spec);
   mkdirSync(dirname(spec.outFile), { recursive: true });
+
+  // claude's stream-json and copilot's json visibility: read the child's NDJSON one line
+  // at a time as it arrives, the same way dispatch-agent.sh/dispatch-codex-agent.sh do for
+  // pi/codex. A recognised tool call becomes a `[TOOL]`/`[TOOL-ERROR]` line in spec.logFile
+  // *while the worker is still running*; every raw line is also kept, for post-hoc
+  // debugging, next to outFile as `<outFile>.events.jsonl`. onLine is only wired when
+  // jsonEvents is set, so this is a no-op for the CREW_FAKE_DISPATCH seam (which returns
+  // before jsonEvents is ever assigned) and for any platform with no event stream.
+  //
+  // effects.spawnWithTimeout's onLine is misnamed: it hands back raw stdout chunks, not
+  // lines — a long JSON line can arrive split across two chunks. lineBuffer holds the
+  // trailing partial line between calls; only complete lines (newline-terminated) are
+  // processed as they arrive, and any remainder left after the child closes is flushed
+  // once, below, the same as a final chunk with an implicit trailing newline.
+  const lines = [];
+  let lineBuffer = "";
+  const consumeLine = (line) => {
+    if (!line.trim()) return;
+    lines.push(line);
+    const trace = formatJsonTraceLine(built.jsonEvents, spec.agent, line);
+    if (trace && spec.logFile) appendLine(spec.logFile, trace);
+  };
+  const onLine = built.jsonEvents
+    ? (chunk) => {
+        lineBuffer += String(chunk);
+        const parts = lineBuffer.split("\n");
+        lineBuffer = parts.pop();
+        for (const line of parts) consumeLine(line);
+      }
+    : undefined;
+
   const r = await effects.spawnWithTimeout(built.cmd, built.args, {
     cwd: built.cwd,
     env: built.env,
     timeoutMs,
+    onLine,
   });
-  if (built.capture === "stdout" && !r.dryRun) writeFileSync(spec.outFile, r.stdout ?? "");
+  if (built.jsonEvents) consumeLine(lineBuffer);
+
+  if (built.jsonEvents && !r.dryRun) {
+    writeFileSync(`${spec.outFile}.events.jsonl`, lines.length ? `${lines.join("\n")}\n` : "");
+    // report.mjs reads outFile as the worker's final message text, not the event stream.
+    writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines));
+  } else if (built.capture === "stdout" && !r.dryRun) {
+    writeFileSync(spec.outFile, r.stdout ?? "");
+  }
   const text = existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
   return {
     code: r.code,

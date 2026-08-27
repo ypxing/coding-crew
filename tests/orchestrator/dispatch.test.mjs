@@ -13,11 +13,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildDispatch, dispatchPlain, preflight, resolveAgentFile, splitFrontmatter, DEFAULT_PARALLEL } from "../../orchestrator/lib/dispatch.mjs";
+import { buildDispatch, dispatch, dispatchPlain, extractFinalText, formatJsonTraceLine, preflight, resolveAgentFile, splitFrontmatter, DEFAULT_PARALLEL } from "../../orchestrator/lib/dispatch.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
 const SCRIPTS = "skills/crew-afk/scripts";
@@ -146,6 +146,12 @@ test("a claude worker is its own process, in its own worktree, under bypassPermi
   assert.match(argv, /--agent crew-coder/);
   assert.match(argv, /--permission-mode bypassPermissions/);
   assert.match(argv, new RegExp(`--add-dir ${root}`), "the main checkout holds .scratch/ and the issue files");
+  // --output-format stream-json --verbose replaces plain text output: JSONL tool-call
+  // events for live tracing (see dispatch()/formatJsonTraceLine), with the terminal
+  // `result` line's `.result` as the report (see extractFinalText).
+  assert.match(argv, /--output-format stream-json/);
+  assert.match(argv, /--verbose/);
+  assert.equal(b.jsonEvents, "claude");
   assert.equal(b.args.at(-1), "prompt body", "the prompt is the positional argument");
   assert.equal(b.env.CREW_ORCHESTRATED, "1");
 });
@@ -246,7 +252,11 @@ test("a copilot worker is its own process, in its own worktree, with the main ro
   // The worker reads the issue file and writes <slug>.report.json under the main root.
   assert.match(argv, new RegExp(`--add-dir ${root}`));
   assert.match(argv, /--allow-all-tools/, "an unattended sprint cannot answer a permission prompt");
-  assert.match(argv, /--silent/);
+  // --output-format json replaces --silent: JSONL tool-call events for live tracing
+  // (see dispatch()/formatJsonTraceLine), with the final assistant.message as the report.
+  assert.match(argv, /--output-format json/);
+  assert.doesNotMatch(argv, /--silent/);
+  assert.equal(b.jsonEvents, "copilot");
   assert.equal(b.env.CREW_ORCHESTRATED, "1");
   assert.equal(b.env.MAIN_ROOT, root);
 });
@@ -465,4 +475,133 @@ test("pi and codex dispatchPlain get no auto-memory env var — the flag is clau
     });
     assert.equal("CLAUDE_CODE_DISABLE_AUTO_MEMORY" in effects.recorded.at(-1).env, false);
   }
+});
+
+// ─── json-stream visibility (claude, copilot) ────────────────────────────────
+//
+// pi and codex keep their own bash-side trace_event (dispatch-agent.sh,
+// dispatch-codex-agent.sh); claude and copilot have no bash dispatcher, so the same
+// "live [TOOL]/[TOOL-ERROR] line while the worker is still running" behaviour lives
+// here, driven by formatJsonTraceLine/extractFinalText and dispatch()'s onLine wiring.
+
+test("formatJsonTraceLine reads claude's tool_use content block", () => {
+  const line = JSON.stringify({
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "echo hi" } }] },
+  });
+  assert.equal(
+    formatJsonTraceLine("claude", "crew-coder", line),
+    '[TOOL] agent=crew-coder tool=Bash args={"command":"echo hi"}',
+  );
+});
+
+test("formatJsonTraceLine reads claude's failed tool_result", () => {
+  const line = JSON.stringify({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: "t1", is_error: true }] },
+  });
+  assert.equal(formatJsonTraceLine("claude", "crew-coder", line), "[TOOL-ERROR] agent=crew-coder tool_use_id=t1");
+});
+
+test("formatJsonTraceLine ignores claude's non-tool events and unparseable lines", () => {
+  assert.equal(formatJsonTraceLine("claude", "crew-coder", JSON.stringify({ type: "result", result: "done" })), null);
+  assert.equal(formatJsonTraceLine("claude", "crew-coder", "not json"), null);
+});
+
+test("formatJsonTraceLine reads copilot's tool.execution_start/complete (copilot-sdk session-events schema)", () => {
+  const start = JSON.stringify({
+    type: "tool.execution_start",
+    data: { toolName: "bash", arguments: { command: "ls" } },
+  });
+  assert.equal(
+    formatJsonTraceLine("copilot", "crew-coder", start),
+    '[TOOL] agent=crew-coder tool=bash args={"command":"ls"}',
+  );
+  const failed = JSON.stringify({
+    type: "tool.execution_complete",
+    data: { success: false, toolCallId: "c1", error: { message: "nope" } },
+  });
+  assert.equal(
+    formatJsonTraceLine("copilot", "crew-coder", failed),
+    '[TOOL-ERROR] agent=crew-coder toolCallId=c1 error="nope"',
+  );
+  const ok = JSON.stringify({ type: "tool.execution_complete", data: { success: true } });
+  assert.equal(formatJsonTraceLine("copilot", "crew-coder", ok), null);
+});
+
+test("extractFinalText reads claude's terminal result line, not the last assistant message", () => {
+  const lines = [
+    JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "intermediate" }] } }),
+    JSON.stringify({ type: "result", result: "final answer" }),
+  ];
+  assert.equal(extractFinalText("claude", lines), "final answer");
+  assert.equal(extractFinalText("claude", []), "");
+});
+
+test("extractFinalText reads copilot's last assistant.message (no terminal result event)", () => {
+  const lines = [
+    JSON.stringify({ type: "assistant.message", data: { content: "first turn" } }),
+    JSON.stringify({ type: "tool.execution_start", data: {} }),
+    JSON.stringify({ type: "assistant.message", data: { content: "final turn" } }),
+  ];
+  assert.equal(extractFinalText("copilot", lines), "final turn");
+  assert.equal(extractFinalText("copilot", ["not json"]), "");
+});
+
+test("dispatch() writes only the final text to outFile, buffers a JSON line split across chunks, and traces the tool call live", async () => {
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+
+  const stream =
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "echo hi" } }] },
+    }) +
+    "\n" +
+    JSON.stringify({ type: "result", result: "polo" }) +
+    "\n";
+  // An arbitrary mid-line split — proves the buffering in dispatch(), not just a
+  // lucky one-chunk-per-line stream.
+  const splitAt = 40;
+
+  const fakeEffects = {
+    spawnWithTimeout: async (cmd, args, { onLine }) => {
+      onLine(stream.slice(0, splitAt));
+      onLine(stream.slice(splitAt));
+      return { code: 0, stdout: "", stderr: "", timedOut: false, dryRun: false };
+    },
+  };
+
+  const result = await dispatch(
+    fakeEffects,
+    "claude",
+    { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root, logFile, scriptsDir: SCRIPTS },
+    {},
+  );
+
+  assert.equal(result.text, "polo", "outFile holds only the final assistant text, not the raw stream");
+  assert.ok(existsSync(`${outFile}.events.jsonl`), "the raw stream is kept for post-hoc debugging");
+  assert.equal(readFileSync(`${outFile}.events.jsonl`, "utf8").trim().split("\n").length, 2);
+  assert.match(readFileSync(logFile, "utf8"), /\[TOOL\] agent=crew-coder tool=Bash/);
+});
+
+test("dispatch() does not wire onLine or write an events sidecar for pi/codex — their own bash dispatcher traces", async () => {
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  let sawOnLine;
+  const fakeEffects = {
+    spawnWithTimeout: async (cmd, args, opts) => {
+      sawOnLine = opts.onLine;
+      return { code: 0, stdout: "", stderr: "", timedOut: false, dryRun: false };
+    },
+  };
+  await dispatch(
+    fakeEffects,
+    "pi",
+    { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root, logFile: join(root, "trace.log"), scriptsDir: SCRIPTS },
+    {},
+  );
+  assert.equal(sawOnLine, undefined);
+  assert.equal(existsSync(`${outFile}.events.jsonl`), false);
 });
