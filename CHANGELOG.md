@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.29.19]
+
+### Fixed
+
+- **dispatch-agent.sh prompt read race in review pass.** Fixed issue where prompt file could disappear between existence check and read, causing silent dispatch failures.
+
 ## [1.29.17]
 
 ### Fixed
