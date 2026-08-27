@@ -401,6 +401,15 @@ cmd_remind() {
       notrun[branch] = reason
       next
     }
+    # A retry that completes clears an earlier round not_run stub for the same branch.
+    # Report files are named with a creation timestamp and globbed in that order, so a
+    # genuine AC verdict (only the mark-not-run stub omits one) seen for a branch after
+    # its not_run entry means the branch *was* reviewed on a later attempt — the earlier
+    # stub is stale and must not still flag the branch as unreviewed.
+    pass == 2 && /^AC:[[:space:]]*(all-met|unmet)/ {
+      if (branch in notrun) delete notrun[branch]
+      next
+    }
     pass == 2 {
       for (sev in wanted) {
         if (index($0, "[" sev "]") > 0) prose[branch, sev]++

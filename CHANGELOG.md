@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.29.17]
+
+### Fixed
+
+- **crew-afk's review pass could silently run on nothing, and the gap it left behind never
+  cleared.** `dispatch-agent.sh` checked `[[ -f "$PROMPT_FILE" ]]` at the top and only read
+  the file's contents at the very bottom, `pi ... "$(cat "$PROMPT_FILE")"`, after resolving
+  the agent definition, validating its tool allowlist, and creating log/event directories —
+  a real gap between "the file exists" and "the file is actually read". On a real sprint the
+  prompt file was gone by the time that `cat` ran: `cat` failed, the command substitution
+  silently produced an empty string, and `pi` was dispatched with essentially no prompt,
+  exiting 0 having done nothing. `parseReviewReport` read that as an empty review report and
+  `promote-findings.sh mark-not-run` correctly recorded the branch as unreviewed and retained
+  it for another round — but the retry's own successful review landed in a *different*,
+  later-timestamped report file, and nothing ever retracted the stale `not_run` stub in the
+  first file. The end-of-sprint summary's `## Unreviewed Branches` section read that stub
+  forever after, flagging a branch as never reviewed even though a complete, all-met review
+  for it existed on disk. Fixed on both ends: `dispatch-agent.sh` now reads the prompt into a
+  variable immediately next to the existence check, and a failed or empty read is a hard
+  dispatch failure instead of a silently degraded one; `promote-findings.sh remind` now
+  clears a branch's `not_run` gap once a later report shows a genuine `AC:` verdict for that
+  same branch, so a retried review that actually ran is not reported as one that never did.
+
 ## [1.29.16]
 
 ### Added

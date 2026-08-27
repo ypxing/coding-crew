@@ -131,6 +131,30 @@ EOF
   [[ "$output" == *"REVIEW-GAPS: branches=3"* ]]
 }
 
+@test "remind clears a stale not_run gap once a later round actually reviewed the branch" {
+  # The retry case: round 1's dispatch died before producing a report, so mark-not-run
+  # stubbed the branch into round 1's own report file. Round 2 retried the same branch and
+  # the reviewer completed, but its verdict landed in a different, later-timestamped
+  # report file -- the two never touch. remind must read the branch's last-known outcome
+  # across both files, not just the (now stale) round-1 stub.
+  bash "$SCRIPT" mark-not-run --feature-slug "$SLUG" --branch "crew/my-feature/alpha" \
+    --slug alpha --report "$REPORT" --reason "reviewer dispatch timed out" >/dev/null
+
+  LATER_REPORT=".scratch/$SLUG/reviews/sprint-review-20260813.md"
+  cat > "$LATER_REPORT" <<'EOF'
+## Branch: crew/my-feature/alpha
+AC: all-met
+
+FINDING: LOW | a.py:1 | naming nit
+EOF
+
+  run bash "$SCRIPT" remind --feature-slug "$SLUG"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"REVIEW-GAPS"* ]]
+  [[ "$output" == *"FINDINGS: open=1"* ]]
+  [[ "$output" == *"LOW=1"* ]]
+}
+
 @test "remind is unchanged when every branch was reviewed" {
   cat > "$REPORT" <<'EOF'
 ## Branch: crew/my-feature/alpha (alpha)

@@ -49,7 +49,18 @@ done
 [[ -n "$DIR" ]] || die "--dir is required"
 [[ -n "$PROMPT_FILE" ]] || die "--prompt-file is required"
 [[ -d "$DIR" ]] || die "working directory does not exist: $DIR"
+# Read the prompt now, not at invocation time. This used to be a plain [[ -f ]] preflight
+# followed, many lines and several subprocesses later (agent-file parsing, tool-list
+# validation, mkdir), by `pi ... "$(cat "$PROMPT_FILE")"` at the bottom of the script. That
+# gap between "the file exists" and "the file is actually read" is a TOCTOU window: on a
+# real sprint the file was gone by the time cat ran, cat failed, the command substitution
+# silently produced an empty string, and pi was dispatched with essentially no prompt —
+# exiting 0 having done nothing, which then read as an empty report rather than a dispatch
+# failure. Reading into a variable right next to the existence check closes that window,
+# and a failed or empty read now aborts the dispatch instead of silently degrading it.
 [[ -f "$PROMPT_FILE" ]] || die "prompt file does not exist: $PROMPT_FILE"
+PROMPT_TEXT=$(cat "$PROMPT_FILE") || die "failed to read prompt file: $PROMPT_FILE"
+[[ -n "$PROMPT_TEXT" ]] || die "prompt file is empty: $PROMPT_FILE"
 command -v pi >/dev/null 2>&1 || die "pi CLI not found on PATH"
 command -v jq >/dev/null 2>&1 || die "jq not found on PATH (required to read pi's --mode json event stream)"
 
@@ -184,7 +195,7 @@ stream_events() {
 
 # MAIN_ROOT is exported so the agent's own environment setup can read it. The agent
 # runs with the worktree as cwd, which is what its PROJECT_ROOT check expects.
-(cd "$DIR" && MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 pi "${ARGS[@]}" "$(cat "$PROMPT_FILE")") 2>>"${LOG:-/dev/null}" | stream_events
+(cd "$DIR" && MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 pi "${ARGS[@]}" "$PROMPT_TEXT") 2>>"${LOG:-/dev/null}" | stream_events
 status=${PIPESTATUS[0]}
 
 # report.mjs reads --out as the worker's final message text, not the event stream — pull
