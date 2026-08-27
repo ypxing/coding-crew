@@ -226,6 +226,77 @@ EOF
   [[ "$output" == *"TYPECHECK: not_run"* ]]
 }
 
+# ─── output capping ──────────────────────────────────────────────────────────
+# A check command's own output can be far larger than anything a caller wants to see
+# unconditionally streamed to stdout. A passing check's output over the cap is fully
+# suppressed (nobody reads it); a failing check's is tailed. Either way, the full
+# output is persisted to disk.
+
+@test "verify-worktree: small command output passes through uncapped" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+test:
+	@echo small-output-line
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"small-output-line"* ]]
+  [[ "$output" != *"omitted"* ]]
+}
+
+@test "verify-worktree: large output from a passing check is fully suppressed, not just tailed" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+test:
+	@seq 1 500
+EOF
+
+  CREW_VERIFY_OUTPUT_LINES=50 run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  # Nothing from the 500-line body leaks through — not even the tail: a passing check
+  # is not why anyone reads this output, so the whole body is dropped, not capped.
+  [[ "$output" != *$'\n1\n'* ]]
+  [[ "$output" != *$'\n500\n'* ]]
+  [[ "$output" == *"500 lines omitted"* ]]
+  [[ "$output" == *".scratch/verify-test.log"* ]]
+  [[ "$output" == *"TEST: pass"* ]]
+  [ -f "$TEMP_DIR/.scratch/verify-test.log" ]
+  [ "$(wc -l < "$TEMP_DIR/.scratch/verify-test.log")" -eq 500 ]
+}
+
+@test "verify-worktree: large output from a failing check is tailed, and the full log is persisted" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+test:
+	@seq 1 500; exit 1
+EOF
+
+  CREW_VERIFY_OUTPUT_LINES=50 run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -ne 0 ]
+  # An early line, well outside the last-50-line tail, must not appear in the capped output.
+  [[ "$output" != *$'\n1\n'* ]]
+  # The tail — the last lines closest to pass/fail, where the actual error usually is —
+  # must still be present.
+  [[ "$output" == *$'\n500'* ]]
+  [[ "$output" == *"omitted"* ]]
+  [[ "$output" == *".scratch/verify-test.log"* ]]
+  [[ "$output" == *"TEST: fail"* ]]
+  [ -f "$TEMP_DIR/.scratch/verify-test.log" ]
+  [ "$(wc -l < "$TEMP_DIR/.scratch/verify-test.log")" -ge 500 ]
+}
+
+@test "verify-worktree: CREW_VERIFY_OUTPUT_LINES raises the cap" {
+  cat > "$TEMP_DIR/Makefile" <<'EOF'
+test:
+	@seq 1 10
+EOF
+
+  CREW_VERIFY_OUTPUT_LINES=5 run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [[ "$output" == *"omitted"* ]]
+
+  CREW_VERIFY_OUTPUT_LINES=20 run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [[ "$output" != *"omitted"* ]]
+  [[ "$output" == *"10"* ]]
+}
+
 # ─── schema pre-filter ───────────────────────────────────────────────────────
 
 @test "verify-worktree: accepts --dir flag" {

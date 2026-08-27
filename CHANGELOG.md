@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.15]
+
+### Added
+
+- **`verify-worktree.sh` caps a check command's own output instead of streaming it
+  through unbounded.** TEST/LINT/TYPECHECK commands (`make testUnit`, a full `npm test`
+  run, …) can print far more than anyone reading a sprint's trace log wants, and every
+  caller paid for that in full: a human's own terminal, and the orchestrator
+  (`ctx.log(verify.stdout.trim())` in `pipeline.mjs`, which also feeds `console.error`
+  and the trace log). Output over `CREW_VERIFY_OUTPUT_LINES` (default 200) lines from a
+  *failing* check is now capped to its tail; from a *passing* one it is dropped
+  entirely — a check that passed is not why anyone rereads a sprint's log, however
+  verbose its own suite is, and showing it anyway would mean the trace log keeps
+  growing with every issue's test-suite size even when nothing ever fails. Either way
+  the full output is persisted to `.scratch/verify-<category>.log` in the worktree and
+  that path is named in the output — the same tail-plus-persisted-log convention
+  `ensure-deps.sh` already uses for a failed install's output. Applies to the host path
+  and both docker-mode paths (`docker compose run`, and the docker-in-docker host
+  fallback).
+
 ## [1.29.14]
 
 ### Added

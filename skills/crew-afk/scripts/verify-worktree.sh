@@ -477,6 +477,83 @@ echo ""
 
 NOT_RUN=()
 
+# ─── output capping ──────────────────────────────────────────────────────────
+# A check command's own stdout/stderr is arbitrary and can be very large — a full test
+# suite's own verbose output, most of all. Streamed straight through, every caller of
+# this script pays for that in full: a human's own terminal, and the orchestrator's own
+# trace log (`ctx.log(verify.stdout.trim())` in pipeline.mjs, which also feeds
+# console.error) both get an unbounded copy. Bounding it here — the one place the
+# command actually runs — bounds it for every caller at once, the same way
+# ensure-deps.sh already bounds an install command's output instead of leaving every
+# caller to guess a cap of its own.
+#
+# The tail (not the head) is kept: a failing suite's own error is almost always at the
+# end, and pass/fail — the one thing every caller actually gates on — is never inside
+# the capped portion, since it is printed by this script, not the command.
+# CREW_VERIFY_OUTPUT_LINES overrides the default, per the same escape-hatch convention
+# as CREW_DEPS/CREW_VERIFY_DOCKER.
+VERIFY_OUTPUT_LINES="${CREW_VERIFY_OUTPUT_LINES:-200}"
+
+# _verify_log_path <label> — where a category's full, uncapped output is persisted (one
+# file per category, so a re-run does not clobber a sibling category's log mid-read).
+_verify_log_path() {
+  printf '%s/.scratch/verify-%s.log' "$WORKTREE_DIR" "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+}
+
+# _run_capped <label> <out-file> <rc> — prints <out-file>, capped to VERIFY_OUTPUT_LINES
+# lines. Under the cap, this is a plain `cat` and nothing else changes — pass or fail.
+# Over the cap:
+#   - a failing check (rc != 0) keeps a tail: that is almost always where the actual
+#     error is, and it is the one case a caller is actually going to read this for.
+#   - a passing check (rc == 0) prints nothing of the body at all. A check that passed
+#     is not why anyone opens this log, however verbose its own suite is — showing a
+#     tail of it anyway would mean a sprint's cumulative trace log still grows with
+#     every issue's test-suite size even when nothing ever fails. The full output is
+#     still persisted to disk either way, one `cat` away.
+_run_capped() {
+  local label="$1" out_file="$2" rc="$3"
+  local total
+  total=$(wc -l < "$out_file" 2>/dev/null | tr -d ' ')
+  total="${total:-0}"
+  if [ "$total" -le "$VERIFY_OUTPUT_LINES" ]; then
+    cat "$out_file"
+    return
+  fi
+  local log
+  log="$(_verify_log_path "$label")"
+  mkdir -p "$(dirname "$log")" 2>/dev/null || true
+  cp "$out_file" "$log" 2>/dev/null || true
+  if [ "$rc" -eq 0 ]; then
+    echo "... ($total lines omitted — check passed; full output: $log)"
+    return
+  fi
+  echo "... ($((total - VERIFY_OUTPUT_LINES)) earlier lines omitted; full output: $log)"
+  tail -n "$VERIFY_OUTPUT_LINES" "$out_file"
+}
+
+# _exec_and_report <label> -- <argv...>
+# Runs <argv...> (already fully assembled by the caller — a host `bash -c` wrapper, or
+# a docker compose invocation), captures its combined stdout/stderr to a temp file,
+# prints it through _run_capped, then reports pass/fail and sets OVERALL_EXIT on
+# failure. The one place a check command's exit code and its output both originate,
+# so every call site gets the same capping and the same pass/fail report for free.
+_exec_and_report() {
+  local label="$1"
+  shift
+  local out_file
+  out_file="$(mktemp)"
+  "$@" >"$out_file" 2>&1
+  local rc=$?
+  _run_capped "$label" "$out_file" "$rc"
+  rm -f "$out_file"
+  if [ "$rc" -eq 0 ]; then
+    echo "$label: pass"
+  else
+    echo "$label: fail"
+    OVERALL_EXIT=1
+  fi
+}
+
 # _run_category <LABEL> <command> <required>
 # Runs one check category. An empty command is reported as not_run and collected
 # for the summary — never silently treated as passing.
@@ -514,35 +591,20 @@ _run_category() {
     esac
     if [ -n "$make_target" ] && _make_recipe_uses_docker "$WORKTREE_DIR" "$make_target"; then
       echo "$label: running on host (docker: $DOCKER_SERVICE skipped — 'make $make_target' recipe already manages docker itself): $cmd"
-      if (cd "$WORKTREE_DIR" && eval "$cmd") 2>&1; then
-        echo "$label: pass"
-      else
-        echo "$label: fail"
-        OVERALL_EXIT=1
-      fi
+      _exec_and_report "$label" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
       return
     fi
 
     local full_cmd="cd \"$DOCKER_CONTAINER_SRC\" && $cmd"
     echo "$label: running (docker: $DOCKER_SERVICE): $full_cmd"
-    if docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_OVERRIDE_FILE" run --rm "$DOCKER_SERVICE" \
-      sh -c "$full_cmd" 2>&1; then
-      echo "$label: pass"
-    else
-      echo "$label: fail"
-      OVERALL_EXIT=1
-    fi
+    _exec_and_report "$label" docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_OVERRIDE_FILE" run --rm "$DOCKER_SERVICE" \
+      sh -c "$full_cmd"
     return
   fi
 
   echo "$label: running: $cmd"
   # Run in the worktree directory so relative paths resolve correctly
-  if (cd "$WORKTREE_DIR" && eval "$cmd") 2>&1; then
-    echo "$label: pass"
-  else
-    echo "$label: fail"
-    OVERALL_EXIT=1
-  fi
+  _exec_and_report "$label" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
 }
 
 # Order follows verification.md: type check, then lint, then tests.
