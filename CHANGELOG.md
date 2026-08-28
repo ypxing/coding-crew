@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.27]
+
+### Fixed
+
+- **Command discovery now treats `install` and `env` symmetrically: both require Makefile
+  inspection before concluding `null`.** Previously, only `install` had a mandatory Makefile
+  check documented in the prompt; `env` could be answered `null` based on doc silence alone.
+  Both categories are equally likely to live as Makefile targets (`make install`,
+  `make env`) rather than in prose, so both now require the same rule: you MUST open any
+  Makefile in the list before answering `null` for either category. This overrides the "stop
+  once confident" instruction to prevent the model from skipping the Makefile check just
+  because the docs already answered test/lint/typecheck.
+
 ## [1.29.26]
 
 ### Added

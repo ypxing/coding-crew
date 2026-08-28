@@ -189,15 +189,22 @@ cat <<'PROMPT'
 
 Stop reading as soon as you have a confident answer — including a confident "no local command
 exists" — for all five categories; you do not need to open every file above if an earlier one
-already answers all five. The one exception is install — see the Makefile rule below before
-you treat silence on install as a confident null.
+already answers all five. The two exceptions are install and env: you MUST open any Makefile
+in the list above before concluding either is null — see the rule below. This overrides the
+"stop once confident" instruction; do not skip it just because the docs already answered the
+other three, and do not treat a confident-sounding silence in the docs as answering install or
+env on its own.
 
 Rules:
-- install is the category prose docs are least likely to mention — it is far more often only an
-  explicit target in a Makefile than a sentence in the docs listed above. Before answering install as null,
-  open any Makefile in the list above (even if the docs already answered the other three) and
-  check it for an install/deps/bootstrap-shaped target. Only conclude null once you have looked
-  at any Makefile in the list — not merely because the docs said nothing about installation.
+- install and env are the categories prose docs are least likely to mention — each is far more
+  often only an explicit target in a Makefile (install/deps/bootstrap, or env/setup) than a
+  sentence in the docs listed above. If a Makefile appears in the list above, you MUST open it
+  and check it for a matching target before answering null for install or null for env — this
+  is a required step, not a suggestion, even if the docs already answered test/lint/typecheck
+  confidently. You may only answer null for install, or null for env, once you have either (a)
+  opened every Makefile in the list and found no matching target, or (b) confirmed no Makefile
+  appears in the list above at all. Silence in the docs alone never justifies null for these
+  two categories.
 - Only local dev-loop commands. Ignore build, deploy, publish, and infra-provisioning steps
   (Docker image builds, CDK/Terraform/CloudFormation, docs bundling/rendering, release/publish
   workflows) even if they appear in the same file as a test/lint/typecheck/install command.

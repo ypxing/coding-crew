@@ -98,8 +98,21 @@ EOF
 
   run bash "$DISCOVER_SCRIPT"
 
-  [[ "$output" == *"Before answering install as null"* ]]
+  [[ "$output" == *"you MUST open any Makefile"* ]]
   [[ "$output" == *"Makefile"* ]]
+}
+
+@test "prompt requires checking any Makefile before answering env as null, same as install" {
+  cat > Makefile <<'EOF'
+env:
+	cp .env.example .env
+EOF
+  echo "some project notes, no mention of env anywhere" > CLAUDE.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *"install and env are the categories"* ]]
+  [[ "$output" == *"null for install, or null for env"* ]]
 }
 
 @test "prompt also requests an env-bootstrap command, only when the source documents one" {
