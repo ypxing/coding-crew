@@ -124,7 +124,7 @@ words_of() {
   echo "$section" | grep -qi 'do NOT stage or commit'
 }
 
-@test "budget: the per-branch reviewer chain is under 2,210 words" {
+@test "budget: the per-branch reviewer chain is under 2,320 words" {
   # Read once per branch, like the worker chain is read once per issue. The reviewer now also
   # carries the acceptance-criteria verdict, which used to be a separate agent over the same
   # diff: 2,040 words here plus a second full-diff read became 2,1xx words and one read. Worst
@@ -132,14 +132,22 @@ words_of() {
   # (quality + web-security + one framework block).
   #
   # 2,150 → 2,210 with the protocol's two machine contracts (execution evidence for the AC
-  # verdict, and the `FINDING:` line that makes promotion parse one line instead of prose) —
+  # verdict, and the `FINDING:` line that makes promotion parse one line instead of prose).
+  #
+  # 2,210 → 2,320: the reviewer had no test-quality class at all, so a passing suite of hollow
+  # assertions read as clean. Added an "Incorrect logic" HIGH class (AI-generated bugs with no
+  # prior behaviour to regress from, so they didn't fit "Behavioural regression"), a
+  # negative-criteria evidence rule (an absence criterion had no citable line and no guidance),
+  # a lockfile/generated-file exclusion before the diff-size top-10 cut (those files were
+  # crowding out the files with actual logic), and a hollow-tests bullet in quality.md's
+  # Code Quality list plus its own false-positive guard (a mock is not itself a finding) —
   # see the same justification on the protocol's own budget in
   # tests/crew-code-reviewer-references.bats.
   local protocol="$REPO_ROOT/agents/crew-code-reviewer/protocol.md"
   local refs="$REPO_ROOT/agents/crew-code-reviewer/assets/references"
   local total=$(( $(words_of "$protocol") + $(words_of "$refs/quality.md") \
                   + $(words_of "$refs/web-security.md") + $(words_of "$refs/react.md") ))
-  [ "$total" -lt 2210 ] || { echo "reviewer chain is $total words (budget 2210)" >&2; return 1; }
+  [ "$total" -lt 2320 ] || { echo "reviewer chain is $total words (budget 2320)" >&2; return 1; }
 }
 
 @test "dependency install is failure-triggered, not a step every issue pays for" {

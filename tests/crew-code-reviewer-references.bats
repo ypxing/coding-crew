@@ -122,7 +122,7 @@ stack_for() {
   grep -qiE 'if either script is missing|older install' "$PROTOCOL"
 }
 
-@test "protocol body stays under the 1560-word budget" {
+@test "protocol body stays under the 1660-word budget" {
   # Raised from 1,500 by the two *machine* contracts the protocol now owns, both of which
   # replace an inference the caller used to make: the execution-evidence rule (a read-only
   # reviewer cannot run `npm test`, so a criterion ending "…and the tests pass" was
@@ -130,9 +130,15 @@ stack_for() {
   # <criterion>` line (promotion into a fix issue now parses one line instead of re-reading
   # prose). Duplication was cut first — the criteria rule was stated twice, the session-summary
   # rule three ways — so this is what the contracts cost after that, not on top of it.
+  #
+  # 1,560 → 1,660: an "Incorrect logic" HIGH class for AI-generated bugs with no prior
+  # behaviour to regress from, a negative-criteria evidence rule (an absence criterion had no
+  # citable line and no guidance, so it either got rubber-stamped or stuck at `unmet` forever),
+  # and a lockfile/generated-file exclusion before the diff-size top-10 cut (those files were
+  # crowding the review budget out of the files that actually carry logic).
   local words
   words=$(wc -w < "$PROTOCOL")
-  [ "$words" -lt 1560 ] || { echo "protocol.md is $words words"; return 1; }
+  [ "$words" -lt 1660 ] || { echo "protocol.md is $words words"; return 1; }
 }
 
 @test "no single reference is larger than the protocol that conditions it" {

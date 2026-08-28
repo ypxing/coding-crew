@@ -59,6 +59,70 @@ count_csv() {
 }
 or_none() { [ -n "$1" ] && printf '%s' "$(printf '%s' "$1" | sed 's/,/, /g')" || printf 'none'; }
 
+REVIEW_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews"
+
+# --- Code review summary -------------------------------------------------------
+# One place that answers "did anything actually get reviewed, and what did it find" —
+# every other review-shaped section below (Promoted Findings, Next Step, Unreviewed
+# Branches) is detail off of this same disk state, not a second source of truth. A
+# branch reviewed more than once (retried after criteria-unmet or review-not-run) is
+# folded to its latest verdict here: the report files are globbed in creation order, so
+# a later `## Branch:` block for the same name overwrites an earlier one.
+code_review_summary() {
+  local dir="$1"
+  local files=()
+  if [ -d "$dir" ]; then
+    for f in "$dir"/*.md; do [ -f "$f" ] && files+=("$f"); done
+  fi
+  if [ "${#files[@]}" -eq 0 ]; then
+    echo "No branches were reviewed this sprint."
+    return
+  fi
+  awk '
+    function reset_branch(b) {
+      verdict[b] = ""
+      crit[b] = 0; high[b] = 0; med[b] = 0; low[b] = 0
+    }
+    /^## Branch:/ {
+      branch = $0
+      sub(/^## Branch: */, "", branch)
+      # The reviewer emits a bare "## Branch: <name>"; the not_run stub adds
+      # "(<slug>)". Strip it so both forms key the same branch.
+      sub(/[[:space:]]*\([^)]*\)[[:space:]]*$/, "", branch)
+      if (!(branch in seen)) { order[++n] = branch; seen[branch] = 1 }
+      reset_branch(branch)
+      next
+    }
+    branch == "" { next }
+    /^AC:[[:space:]]*all-met/     { verdict[branch] = "all-met"; next }
+    /^AC:[[:space:]]*unmet/       { verdict[branch] = "unmet"; next }
+    /^Review:[[:space:]]*not_run/ { verdict[branch] = "not-reviewed"; next }
+    /^FINDING:[[:space:]]*CRITICAL/ { crit[branch]++; next }
+    /^FINDING:[[:space:]]*HIGH/     { high[branch]++; next }
+    /^FINDING:[[:space:]]*MEDIUM/   { med[branch]++; next }
+    /^FINDING:[[:space:]]*LOW/      { low[branch]++; next }
+    END {
+      if (n == 0) { print "No branches were reviewed this sprint."; exit }
+      met = 0; unmet = 0; notrun = 0
+      tcrit = 0; thigh = 0; tmed = 0; tlow = 0
+      for (i = 1; i <= n; i++) {
+        b = order[i]
+        if (verdict[b] == "all-met") met++
+        else if (verdict[b] == "unmet") unmet++
+        else if (verdict[b] == "not-reviewed") notrun++
+        tcrit += crit[b]; thigh += high[b]; tmed += med[b]; tlow += low[b]
+      }
+      printf "Branches reviewed: %d (all-met: %d, unmet: %d, not-reviewed: %d)\n", n, met, unmet, notrun
+      printf "Findings: %d total (CRITICAL: %d, HIGH: %d, MEDIUM: %d, LOW: %d)\n", tcrit+thigh+tmed+tlow, tcrit, thigh, tmed, tlow
+      for (i = 1; i <= n; i++) {
+        b = order[i]
+        v = (verdict[b] == "" ? "unknown" : verdict[b])
+        printf "- %s: %s (C:%d H:%d M:%d L:%d)\n", b, v, crit[b], high[b], med[b], low[b]
+      }
+    }
+  ' "${files[@]}"
+}
+
 MERGED_SLUGS=$(state get completed)
 PARTIAL_SLUGS=$(state get partial)
 BLOCKED_SLUGS=$(state get blocked)
@@ -69,6 +133,10 @@ echo "Merged  ($(count_csv "$MERGED_SLUGS")): $(or_none "$MERGED_SLUGS")"
 echo "Partial ($(count_csv "$PARTIAL_SLUGS")): $(or_none "$PARTIAL_SLUGS")"
 echo "Blocked ($(count_csv "$BLOCKED_SLUGS")): $(or_none "$BLOCKED_SLUGS")"
 [ "$STALLED" -eq 1 ] && echo "STALLED: resolve blockers and re-run (/crew-afk)"
+
+echo ""
+echo "## Code Review"
+code_review_summary "$REVIEW_DIR"
 
 # --- Verification Failures ----------------------------------------------------
 VERIFY_FAILS=$(jq -r '(.retention // {}) | to_entries[]
@@ -119,7 +187,6 @@ fi
 #   - <branch>: <severities> → <issue path>
 # The finding count is the number of acceptance criteria in the fix issue (one per
 # promoted finding), and its state is where the issue file now lives.
-REVIEW_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews"
 PROMOTED=""
 if [ -d "$REVIEW_DIR" ]; then
   while IFS= read -r line; do

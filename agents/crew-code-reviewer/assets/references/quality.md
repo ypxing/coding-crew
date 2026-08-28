@@ -12,6 +12,8 @@ Gate and the Common False Positives list in the protocol before it becomes a fin
 - **Mutation patterns** — prefer immutable operations (spread, map, filter)
 - **console.log statements** — remove debug logging before merge
 - **Missing tests** — new code paths without test coverage
+- **Hollow tests** — an assertion that would pass even if the implementation were a no-op, or
+  that only checks a mock was *called* rather than the resulting value or side effect
 - **Dead code** — commented-out code, unused imports, unreachable branches
 
 ## Performance (MEDIUM)

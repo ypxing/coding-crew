@@ -35,15 +35,20 @@ downgraded or dropped.
 
 ### Step 2 — Per-branch review
 
-1. **Size the diff first** — `git diff --stat <merge-base>..<branch> | tail -1`. Over 2000 lines
-   changed: note the size and review only the top 10 files by line count
-   (`git diff <merge-base>..<branch> -- <selected-files>`) — an unbounded diff buys shallow coverage
-   of everything instead of deep coverage of what matters. Empty diff: note and skip.
+1. **Size the diff first** — `git diff --stat <merge-base>..<branch> | tail -1`. Drop
+   lockfiles/generated/vendored files from consideration first — they inflate the count without
+   carrying logic. Over 2000 lines changed: note the size and review only the top 10 remaining
+   files by line count (`git diff <merge-base>..<branch> -- <selected-files>`) — an unbounded diff
+   buys shallow coverage of everything instead of deep coverage of what matters. Empty diff: note
+   and skip.
 2. **Check the acceptance criteria** — for every criterion in `## Acceptance criteria` (and
    `## Cross-cutting Requirements`, if present), cite the file and line satisfying it. No concrete
    evidence → `unmet`; a worker's own `[x]` is a claim, not evidence. This is the `AC:` line of the
    branch block and the gate keeping a falsely-reported `complete` off the feature branch: when
    unsure, `unmet`.
+
+   A criterion phrased as an absence ("must not leak X") has no line that proves a negative —
+   name the mechanism that prevents it, or `unmet`.
 
    **Execution is not your job.** A criterion ending "…and the tests pass" has no line to cite, so
    reading it `unmet` would strand the branch forever. When the dispatch states checks it already ran
@@ -72,8 +77,10 @@ Stack-agnostic, flag whenever the **diff** introduces them:
 
 1. **Behavioural regression** — does the change break behaviour that already worked? (Unmet criteria
    belong in the `AC:` line.)
-2. **Trust boundary assumptions** — does it trust input it should not?
-3. **Architecture drift** — hidden coupling, or a deviation from the codebase's established
+2. **Incorrect logic** — off-by-one, inverted conditions, wrong edge cases in code with no prior
+   behaviour to regress from, so it won't surface under (1).
+3. **Trust boundary assumptions** — does it trust input it should not?
+4. **Architecture drift** — hidden coupling, or a deviation from the codebase's established
    patterns with no justification.
 
 Thresholds for size/nesting/error-handling/test-coverage live in `quality.md`; framework-specific
@@ -133,6 +140,8 @@ edge cases with no trigger are the primary failure mode of LLM reviewers.
   hardcoded expectations.
 - **Security theater**: `Math.random()` in non-cryptographic contexts (animation, jitter,
   sampling); `eval`/`Function` in a plugin system that is explicitly a code-loading surface.
+- **"Uses a mock"** is not a finding by itself — flag only when the assertion never reaches the
+  outcome the acceptance criterion depends on.
 
 Ask: "Would a senior engineer here actually change this in review?" If no, skip.
 

@@ -15,7 +15,7 @@
   },
   "agents": {
     "crew-code-reviewer": {
-      "version": "1.7.1",
+      "version": "1.7.2",
       "source-dir": "crew-code-reviewer",
       "description": "Reviews one branch per dispatch, before that branch merges and before any squash; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
