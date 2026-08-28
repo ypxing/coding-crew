@@ -102,6 +102,16 @@ EOF
   [[ "$output" == *"Makefile"* ]]
 }
 
+@test "prompt also requests an env-bootstrap command, only when the source documents one" {
+  echo "some project notes" > AGENTS.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *'"env"'* ]]
+  [[ "$output" == *"env (the command"* ]]
+  [[ "$output" == *"guessing one here would only override"* ]]
+}
+
 @test "prompt instructs to ignore build/deploy/CI-pipeline steps" {
   echo "some project notes" > AGENTS.md
 

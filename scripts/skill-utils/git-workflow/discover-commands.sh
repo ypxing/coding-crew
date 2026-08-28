@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Command discovery — mechanical gate for crew-afk (prompt-builder half)
 #
-# Finds the *local dev-loop* command for test/lint/typecheck/install once per sprint, before any
-# worktree exists, by asking a model to read whatever of CLAUDE.md/AGENTS.md/Makefile/manifest
+# Finds the *local dev-loop* command for test/lint/typecheck/install/env once per sprint, before
+# any worktree exists, by asking a model to read whatever of CLAUDE.md/AGENTS.md/Makefile/manifest
 # files this repo actually has — the same reference chain solve-issue's verification.md names,
 # but read by a model instead of pattern-matched by this script. Real repos document these
 # commands in prose, tables, and bullet lists a regex has no reliable way to parse (a table
@@ -34,6 +34,11 @@ set -euo pipefail
 # mechanical Makefile-target/lockfile heuristic. It is optional: a null install here is not a
 # failure, it means ensure-deps.sh's existing convention-based detection already covers this
 # repo and there is nothing to override.
+#
+# env is the fifth category, added so ensure-env.sh (same reason — it never reads CLAUDE.md
+# itself either) can use a documented .env-bootstrap override instead of its mechanical
+# .env.example-or-empty convention. Also optional, for the same reason: a null env means that
+# convention already covers this repo.
 #
 # Skips (mechanically, no model call, no tokens) when either:
 #   1. none of the known source files exist — verify-worktree.sh's own ecosystem-convention
@@ -155,7 +160,7 @@ cat <<'PROMPT'
 --- command discovery prompt (do not run this on a cheap model tier — it is genuine reasoning) ---
 You are working in this repository's own working directory and have normal file-read access
 to it. Identify the command a developer runs **locally**, during normal iteration, for each
-of these four categories only:
+of these five categories only:
 
 - test
 - lint
@@ -165,6 +170,12 @@ of these four categories only:
   it; a repo with no stated install command already falls back to its own lockfile/manifest
   convention (npm ci, bundle install, …) elsewhere, so guessing one here would only override
   that convention with a worse guess.
+- env (the command that creates or bootstraps a working local `.env` file — e.g. `cp
+  .env.example .env`, `make env`, a documented setup script — not setting one variable inline,
+  not CI/deploy secrets). Only report one if the source explicitly documents it; a repo with
+  no stated env command already falls back to copying `.env.example` (or creating an empty
+  file) elsewhere, so guessing one here would only override that convention with a worse
+  guess.
 
 Read these files yourself, in the order listed below — that order is priority order, most
 authoritative first (project docs, then build files, then package manifests):
@@ -177,8 +188,8 @@ done
 cat <<'PROMPT'
 
 Stop reading as soon as you have a confident answer — including a confident "no local command
-exists" — for all four categories; you do not need to open every file above if an earlier one
-already answers all four. The one exception is install — see the Makefile rule below before
+exists" — for all five categories; you do not need to open every file above if an earlier one
+already answers all five. The one exception is install — see the Makefile rule below before
 you treat silence on install as a confident null.
 
 Rules:
@@ -197,6 +208,6 @@ Rules:
 - If a category has no discoverable local command, use null for it — do not guess one.
 
 Respond with **only** this JSON shape, no other prose:
-{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>"}
+{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>", "env": "<command or null>"}
 --- end command discovery prompt ---
 PROMPT

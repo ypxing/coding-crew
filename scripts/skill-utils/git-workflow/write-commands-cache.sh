@@ -27,6 +27,9 @@ set -uo pipefail
 # Makefile-target/lockfile heuristic when present — see discover-commands.sh's header comment
 # for why that script never reads CLAUDE.md itself.
 #
+# env is the fifth field, consumed the same way by ensure-env.sh in place of its own mechanical
+# .env.example-or-empty convention.
+#
 # Usage: bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file <path>
 
 RESPONSE_FILE=""
@@ -75,9 +78,10 @@ TEST_VALUE=$(_extract_field test || true)
 LINT_VALUE=$(_extract_field lint || true)
 TYPECHECK_VALUE=$(_extract_field typecheck || true)
 INSTALL_VALUE=$(_extract_field install || true)
+ENV_VALUE=$(_extract_field env || true)
 
-if [ -z "$TEST_VALUE" ] && [ -z "$LINT_VALUE" ] && [ -z "$TYPECHECK_VALUE" ] && [ -z "$INSTALL_VALUE" ]; then
-  echo "ERROR: could not find test, lint, typecheck, or install in the response — leaving any existing cache untouched" >&2
+if [ -z "$TEST_VALUE" ] && [ -z "$LINT_VALUE" ] && [ -z "$TYPECHECK_VALUE" ] && [ -z "$INSTALL_VALUE" ] && [ -z "$ENV_VALUE" ]; then
+  echo "ERROR: could not find test, lint, typecheck, install, or env in the response — leaving any existing cache untouched" >&2
   echo "--- response was ---" >&2
   printf '%s\n' "$RESPONSE_TEXT" >&2
   exit 1
@@ -87,6 +91,7 @@ fi
 [ -z "$LINT_VALUE" ] && LINT_VALUE="null"
 [ -z "$TYPECHECK_VALUE" ] && TYPECHECK_VALUE="null"
 [ -z "$INSTALL_VALUE" ] && INSTALL_VALUE="null"
+[ -z "$ENV_VALUE" ] && ENV_VALUE="null"
 
 # MAIN_ROOT resolution — must land on the *shared* main checkout even when this script runs
 # from inside a crew-afk worktree (solve-issue's own DISCOVER fallback, Step 5, can invoke
@@ -173,7 +178,7 @@ mkdir -p "$MAIN_ROOT/.scratch"
 # cache) must never observe a half-written file.
 TMP_FILE=$(mktemp "$MAIN_ROOT/.scratch/commands.json.XXXXXX")
 cat > "$TMP_FILE" <<JSON
-{"sourceHash": "$SOURCE_HASH", "test": $TEST_VALUE, "lint": $LINT_VALUE, "typecheck": $TYPECHECK_VALUE, "install": $INSTALL_VALUE}
+{"sourceHash": "$SOURCE_HASH", "test": $TEST_VALUE, "lint": $LINT_VALUE, "typecheck": $TYPECHECK_VALUE, "install": $INSTALL_VALUE, "env": $ENV_VALUE}
 JSON
 mv "$TMP_FILE" "$CACHE_FILE"
 
@@ -182,3 +187,4 @@ echo "  test: $TEST_VALUE"
 echo "  lint: $LINT_VALUE"
 echo "  typecheck: $TYPECHECK_VALUE"
 echo "  install: $INSTALL_VALUE"
+echo "  env: $ENV_VALUE"

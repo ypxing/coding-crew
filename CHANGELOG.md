@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.26]
+
+### Added
+
+- **Command discovery now also finds a documented `.env`-bootstrap command, and `ensure-env.sh`
+  uses it before falling back to its own mechanical `.env.example`-or-empty convention** — the
+  same pattern `install` already follows for `ensure-deps.sh`. `discover-commands.sh` /
+  `write-commands-cache.sh` now ask for and cache a fifth field, `env`, in
+  `.scratch/commands.json`, sourced from the same CLAUDE.md/AGENTS.md/Makefile read
+  `ensure-env.sh` deliberately never does itself. A missing cache, a cached `null`, or a
+  discovered command that fails or never actually leaves a `.env` behind all fall through to
+  the existing mechanical convention unchanged — `ensure-env.sh` still never blocks.
+
 ## [1.29.25]
 
 ### Fixed

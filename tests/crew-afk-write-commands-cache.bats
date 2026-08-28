@@ -58,6 +58,16 @@ teardown() {
   grep -q '"install": *"make bootstrap"' "$CACHE_FILE"
 }
 
+@test "writes a fifth env command from a response that documents one" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit", "install": "make bootstrap", "env": "make env"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"env": *"make env"' "$CACHE_FILE"
+}
+
 @test "writes null for install when the response omits it, same as the other three" {
   echo "claude notes" > CLAUDE.md
   echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit"}' > response.txt
@@ -68,6 +78,16 @@ teardown() {
   grep -q '"install": *null' "$CACHE_FILE"
 }
 
+@test "writes null for env when the response omits it, same as the other four" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"env": *null' "$CACHE_FILE"
+}
+
 @test "a response with only install recognisable still succeeds" {
   echo "claude notes" > CLAUDE.md
   echo '{"install": "make bootstrap"}' > response.txt
@@ -76,6 +96,17 @@ teardown() {
 
   [ "$status" -eq 0 ]
   grep -q '"install": *"make bootstrap"' "$CACHE_FILE"
+  grep -q '"test": *null' "$CACHE_FILE"
+}
+
+@test "a response with only env recognisable still succeeds" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"env": "make env"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"env": *"make env"' "$CACHE_FILE"
   grep -q '"test": *null' "$CACHE_FILE"
 }
 

@@ -155,6 +155,104 @@ teardown() {
 # fail later with "untracked working tree files would be overwritten by merge" the moment
 # MAIN_ROOT's own real .env differs in kind from what the branch wants to materialise there.
 
+# ─── the discovered env override (.scratch/commands.json's "env" field) ────────────────────
+#
+# discover-commands.sh / write-commands-cache.sh run once per sprint and may cache a
+# documented .env-bootstrap command this script would otherwise never see (it deliberately
+# never reads CLAUDE.md itself). When that cache names one, it wins over the mechanical
+# .env.example-or-empty convention below — mirroring ensure-deps.sh's own "install" override.
+
+@test "a documented env command in .scratch/commands.json is used instead of the .env.example convention" {
+  mkdir -p "$PROJECT/.scratch"
+  printf '{"sourceHash": "x", "env": "echo CUSTOM=1 > .env"}' > "$PROJECT/.scratch/commands.json"
+  echo "FOO=bar" > "$PROJECT/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.env" ]
+  [ "$(cat "$PROJECT/.env")" = "CUSTOM=1" ]
+  [[ "$output" == *"discovered"* ]]
+}
+
+@test "a null env in commands.json falls back to the .env.example convention unchanged" {
+  mkdir -p "$PROJECT/.scratch"
+  printf '{"sourceHash": "x", "env": null}' > "$PROJECT/.scratch/commands.json"
+  echo "FOO=bar" > "$PROJECT/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.env" ]
+  diff "$PROJECT/.env.example" "$PROJECT/.env"
+}
+
+@test "no commands.json at all falls back to the .env.example convention unchanged" {
+  echo "FOO=bar" > "$PROJECT/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  diff "$PROJECT/.env.example" "$PROJECT/.env"
+}
+
+@test "a failing discovered env command still leaves a real .env behind via the mechanical fallback" {
+  mkdir -p "$PROJECT/.scratch"
+  printf '{"sourceHash": "x", "env": "echo custom env boom >&2; exit 5"}' > "$PROJECT/.scratch/commands.json"
+  echo "FOO=bar" > "$PROJECT/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.env" ]
+  diff "$PROJECT/.env.example" "$PROJECT/.env"
+}
+
+@test "a discovered env command that exits 0 but never creates .env falls back to the mechanical convention" {
+  mkdir -p "$PROJECT/.scratch"
+  printf '{"sourceHash": "x", "env": "true"}' > "$PROJECT/.scratch/commands.json"
+  echo "FOO=bar" > "$PROJECT/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.env" ]
+  diff "$PROJECT/.env.example" "$PROJECT/.env"
+}
+
+@test "an existing real .env still wins over a discovered env command" {
+  mkdir -p "$PROJECT/.scratch"
+  printf '{"sourceHash": "x", "env": "echo SHOULD_NOT_RUN=1 > .env"}' > "$PROJECT/.scratch/commands.json"
+  echo "REAL=1" > "$PROJECT/.env"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already exists"* ]]
+  [ "$(cat "$PROJECT/.env")" = "REAL=1" ]
+}
+
+@test "--main-root: the discovered env command is read from MAIN_ROOT's cache and runs there, not PROJECT_ROOT's" {
+  MAIN=$(mktemp -d)
+  mkdir -p "$MAIN/.scratch"
+  printf '{"sourceHash": "x", "env": "echo CUSTOM=1 > .env"}' > "$MAIN/.scratch/commands.json"
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -f "$MAIN/.env" ]
+  [ ! -L "$MAIN/.env" ]
+  [ "$(cat "$MAIN/.env")" = "CUSTOM=1" ]
+  [ -L "$PROJECT/.env" ]
+  rm -rf "$MAIN"
+}
+
+@test "--main-root: a PROJECT_ROOT-only cached env command is ignored — the override lives with MAIN_ROOT's discovery" {
+  MAIN=$(mktemp -d)
+  mkdir -p "$PROJECT/.scratch"
+  printf '{"sourceHash": "x", "env": "echo SHOULD_NOT_RUN=1 > .env"}' > "$PROJECT/.scratch/commands.json"
+  echo "FOO=bar" > "$MAIN/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -f "$MAIN/.env" ]
+  diff "$MAIN/.env.example" "$MAIN/.env"
+  rm -rf "$MAIN"
+}
+
 @test "a freshly generated .env is added to .git/info/exclude, not the project's own .gitignore" {
   git -C "$PROJECT" init -q
   echo "FOO=bar" > "$PROJECT/.env.example"

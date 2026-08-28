@@ -12,6 +12,16 @@
 # generation happens exactly once, at MAIN_ROOT, then PROJECT_ROOT is linked to it -- so no two
 # worktrees of the same MAIN_ROOT ever generate their own, divergent copies.
 #
+# Discovered override: before falling back to the mechanical .env.example-or-empty convention,
+# generation consults MAIN_ROOT/.scratch/commands.json's "env" field (or PROJECT_ROOT's own,
+# when --main-root is not given -- see _cached_env_command) -- a documented .env-bootstrap
+# command discover-commands.sh / write-commands-cache.sh may have cached once per sprint,
+# alongside test/lint/typecheck/install, from a CLAUDE.md/AGENTS.md/Makefile this script
+# deliberately never reads itself. A missing cache, a null field, or a cached command that
+# runs but never actually leaves a .env behind (or fails outright) all fall through to the
+# mechanical convention unchanged -- this step never blocks, so a broken override must not
+# leave a worktree with no .env at all.
+#
 # Exit codes:
 #   0  completed (always, this step never blocks)
 #   1  argument error
@@ -55,6 +65,38 @@ _generate_env_at() {
     touch "$dir/.env"
     printf 'Created empty .env'
   fi
+}
+
+# _cached_env_command <cache-root> -- the discovered "env" field from
+# <cache-root>/.scratch/commands.json, written once per sprint by discover-commands.sh /
+# write-commands-cache.sh alongside test/lint/typecheck/install (see that pair's own header
+# comments). A documented override for a repo whose local .env bootstrap is not the
+# .env.example convention _generate_env_at assumes -- e.g. a `make env` target, or a setup
+# script named in CLAUDE.md/AGENTS.md. A missing cache, missing file, or a cached `null` all
+# mean "nothing to override" -- the caller falls through to the mechanical convention below
+# unchanged, the same way ensure-deps.sh's own _cached_install_command does for install.
+_cached_env_command() {
+  local cache="$1/.scratch/commands.json"
+  [[ -f "$cache" ]] || return 0
+  grep -o '"env"[[:space:]]*:[[:space:]]*"[^"]*"' "$cache" 2>/dev/null \
+    | head -1 \
+    | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/'
+}
+
+# _ensure_env_at <dir> <cache-root> -- tries the discovered env override (if any) first;
+# falls back to the mechanical convention when there is none, or when running the override
+# did not actually leave a .env file behind in <dir> (a broken or failing override must never
+# leave this step with no .env at all -- see this script's "never blocks" contract above).
+_ensure_env_at() {
+  local dir="$1" cache_root="$2" cached
+  cached="$(_cached_env_command "$cache_root")"
+  if [[ -n "$cached" ]]; then
+    if ( cd "$dir" && eval "$cached" ) >/dev/null 2>&1 && [[ -f "$dir/.env" ]]; then
+      printf 'Created .env via discovered command: %s' "$cached"
+      return 0
+    fi
+  fi
+  _generate_env_at "$dir"
 }
 
 # _git_exclude_env <dir> -- makes sure a .env this script just created or linked can never be
@@ -101,7 +143,7 @@ if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
       rm -f "$MAIN_ROOT/.env"
     fi
     if [[ ! -f "$MAIN_ROOT/.env" ]]; then
-      gen_log="$(_generate_env_at "$MAIN_ROOT")"
+      gen_log="$(_ensure_env_at "$MAIN_ROOT" "$MAIN_ROOT")"
       log="$gen_log at MAIN_ROOT; linked .env"
       _git_exclude_env "$MAIN_ROOT"
     else
@@ -110,7 +152,7 @@ if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
     ln -s "$MAIN_ROOT/.env" "$PROJECT_ROOT/.env"
     _git_exclude_env "$PROJECT_ROOT"
   else
-    log="$(_generate_env_at "$PROJECT_ROOT")"
+    log="$(_ensure_env_at "$PROJECT_ROOT" "${MAIN_ROOT:-$PROJECT_ROOT}")"
     _git_exclude_env "$PROJECT_ROOT"
   fi
 else
