@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.28]
+
+### Changed
+
+- **The discovered dev-loop commands cache moves from the gitignored, per-sprint-ephemeral
+  `.scratch/commands.json` to a committed, human-editable `.coding-crew/dev-commands.json`.**
+  Every fresh clone or new sprint used to re-pay the discovery model call, and nobody could
+  correct a wrong answer without it being silently overwritten. `discover-commands.sh` now
+  bootstraps once: it skips (no model call) whenever `.coding-crew/dev-commands.json` already
+  exists, and only re-runs on an explicit `--refresh` (or `CREW_COMMANDS_REFRESH=1`) — there is
+  no more staleness re-check against CLAUDE.md/AGENTS.md/Makefile content. `write-commands-cache.sh`
+  drops the now-pointless `sourceHash` field; the written schema is exactly
+  `test`/`lint`/`typecheck`/`install`/`env`. `ensure-env.sh`, `ensure-deps.sh`, and
+  `verify-worktree.sh` all read the override from the new path, and `verify-worktree.sh`'s
+  cache-usability check no longer looks for `sourceHash` (it now checks for a real field like
+  `"test"`). `solve-issue`'s own cache fast path follows the same rename. Because the file is
+  committed but nothing auto-commits it, `crew-summary.sh` and `solve-issue`'s final report step
+  both print a one-line reminder when `.coding-crew/dev-commands.json` has uncommitted changes at
+  `MAIN_ROOT`; `crew-summary.sh`'s existing `--no-reminder` flag now suppresses this reminder too.
+
 ## [1.29.27]
 
 ### Fixed

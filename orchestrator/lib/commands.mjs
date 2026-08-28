@@ -5,8 +5,8 @@
  * the same shape coverage-validation.sh's step already uses: a bash script decides whether a
  * model call is needed and builds the prompt (discover-commands.sh), an agent-less
  * dispatchPlain() call answers it, and a second bash script (write-commands-cache.sh) turns
- * the answer into .scratch/commands.json. verify-worktree.sh and solve-issue then read that
- * cache instead of guessing from CLAUDE.md/Makefile with a fragile regex.
+ * the answer into .coding-crew/dev-commands.json. verify-worktree.sh and solve-issue then
+ * read that cache instead of guessing from CLAUDE.md/Makefile with a fragile regex.
  *
  * Advisory, like ensure-deps.sh: any failure here is logged and never thrown — a missing or
  * stale cache just means the checks fall back to the pre-existing heuristic chain, exactly the

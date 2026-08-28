@@ -4,8 +4,8 @@
 #
 # This script never calls a model. It only decides whether a model call is needed (mirroring
 # coverage-validation.sh's skip/not-skip stdout contract) and, when it is, assembles the
-# discovery prompt. Writing the model's response into .scratch/commands.json is a separate
-# script (write-commands-cache.sh, not yet built).
+# discovery prompt. Writing the model's response into .coding-crew/dev-commands.json is a
+# separate script (write-commands-cache.sh).
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 # Canonical source is scripts/skill-utils/git-workflow/ (shared by crew-afk and solve-issue
@@ -184,34 +184,37 @@ EOF
   [[ "$output" == *"1 source file(s) found"* ]]
 }
 
-# --- Skip: cache already fresh ---
+# --- Skip: cache already exists (bootstrap-once, no staleness re-check) ---
 
-@test "skips when .scratch/commands.json already caches a matching source hash" {
+@test "skips when .coding-crew/dev-commands.json already exists, regardless of source content" {
   echo "claude notes" > CLAUDE.md
-
-  # Match the script's own MAIN_ROOT: `git rev-parse --show-toplevel` resolves symlinks
-  # (macOS's /var -> /private/var), which $TEMP_DIR itself does not.
-  ROOT=$(git rev-parse --show-toplevel)
-  HASH=$(
-    { printf '%s\n' "=== $ROOT/CLAUDE.md ==="; cat CLAUDE.md; } \
-      | { command -v sha256sum >/dev/null 2>&1 && sha256sum || shasum -a 256; } \
-      | awk '{print $1}'
-  )
-  mkdir -p .scratch
-  printf '{"sourceHash": "%s", "test": null, "lint": null, "typecheck": null}' "$HASH" > .scratch/commands.json
+  mkdir -p .coding-crew
+  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null}' > .coding-crew/dev-commands.json
 
   run bash "$DISCOVER_SCRIPT"
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"skipped"* ]]
-  [[ "$output" == *"cache is fresh"* ]]
+  [[ "$output" == *"already cached"* ]]
   [[ "$output" != *"command discovery prompt"* ]]
 }
 
-@test "re-runs discovery when the cached hash does not match current source content" {
+@test "does not re-run just because a source doc changed, once the cache file exists" {
+  echo "claude notes v1" > CLAUDE.md
+  mkdir -p .coding-crew
+  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null}' > .coding-crew/dev-commands.json
+
+  echo "claude notes v2 — totally different content now" > CLAUDE.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skipped"* ]]
+  [[ "$output" != *"command discovery prompt"* ]]
+}
+
+@test "runs discovery (bootstrap) when no cache file exists yet, even with candidate sources present" {
   echo "claude notes" > CLAUDE.md
-  mkdir -p .scratch
-  echo '{"sourceHash": "stale-hash-does-not-match", "test": "old-command"}' > .scratch/commands.json
 
   run bash "$DISCOVER_SCRIPT"
 
@@ -220,15 +223,10 @@ EOF
   [[ "$output" == *"command discovery prompt"* ]]
 }
 
-@test "--refresh forces re-discovery even when the cache is fresh" {
+@test "--refresh forces re-discovery even when the cache file already exists" {
   echo "claude notes" > CLAUDE.md
-  HASH=$(
-    { printf '%s\n' "=== $TEMP_DIR/CLAUDE.md ==="; cat CLAUDE.md; } \
-      | { command -v sha256sum >/dev/null 2>&1 && sha256sum || shasum -a 256; } \
-      | awk '{print $1}'
-  )
-  mkdir -p .scratch
-  printf '{"sourceHash": "%s"}' "$HASH" > .scratch/commands.json
+  mkdir -p .coding-crew
+  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null}' > .coding-crew/dev-commands.json
 
   run bash "$DISCOVER_SCRIPT" --refresh
 
@@ -237,20 +235,29 @@ EOF
   [[ "$output" == *"command discovery prompt"* ]]
 }
 
-@test "CREW_COMMANDS_REFRESH=1 has the same effect as --refresh" {
+@test "CREW_COMMANDS_REFRESH=1 has the same effect as --refresh, forcing a rebuild over an existing cache" {
   echo "claude notes" > CLAUDE.md
-  HASH=$(
-    { printf '%s\n' "=== $TEMP_DIR/CLAUDE.md ==="; cat CLAUDE.md; } \
-      | { command -v sha256sum >/dev/null 2>&1 && sha256sum || shasum -a 256; } \
-      | awk '{print $1}'
-  )
-  mkdir -p .scratch
-  printf '{"sourceHash": "%s"}' "$HASH" > .scratch/commands.json
+  mkdir -p .coding-crew
+  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null}' > .coding-crew/dev-commands.json
 
   CREW_COMMANDS_REFRESH=1 run bash "$DISCOVER_SCRIPT"
 
   [ "$status" -eq 0 ]
   [[ "$output" != *"skipped"* ]]
+  [[ "$output" == *"command discovery prompt"* ]]
+}
+
+@test "a stale .scratch/commands.json (old cache path) never makes this script skip" {
+  echo "claude notes" > CLAUDE.md
+  mkdir -p .scratch
+  echo '{"sourceHash": "whatever", "test": "stale-old-path-command"}' > .scratch/commands.json
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  # Only .coding-crew/dev-commands.json is consulted — the old path is dead.
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == *"command discovery prompt"* ]]
 }
 
 # --- Determinism ---
@@ -292,7 +299,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" != *"skipped"* ]]
   [[ "$output" == *"1 source file(s) found"* ]]
-  [ ! -d ".scratch" ]
+  [ ! -d ".coding-crew" ]
 }
 
 # --- No Dead Stub ---

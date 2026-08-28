@@ -144,10 +144,11 @@ if [ "${CREW_DEPS:-on}" = "off" ]; then
 fi
 
 # ─── 1b. the discovered install override ──────────────────────────────
-# $MAIN_ROOT_EFFECTIVE/.scratch/commands.json's "install" field — cached once per sprint by
-# discover-commands.sh / write-commands-cache.sh, before this script's own MAIN_ROOT call, from
-# a documented CLAUDE.md/AGENTS.md/Makefile override this script would otherwise never see: it
-# deliberately never reads those files itself (see the top-of-file comment). Resolved this early
+# $MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json's "install" field — cached once
+# (bootstrap) by discover-commands.sh / write-commands-cache.sh, before this script's own
+# MAIN_ROOT call, from a documented CLAUDE.md/AGENTS.md/Makefile override this script would
+# otherwise never see: it deliberately never reads those files itself (see the top-of-file
+# comment). Resolved this early
 # — ahead of the presence guard at step 3 — because an explicit override also stands in for that
 # guard's manifest check: a source that documents its own install command has a dependency step
 # whether or not this script recognises the ecosystem's usual manifest file.
@@ -159,7 +160,7 @@ if [ -z "$MAIN_ROOT_EFFECTIVE" ]; then
   MAIN_ROOT_EFFECTIVE="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || echo "$DIR")"
 fi
 _cached_install_command() {
-  local cache="$MAIN_ROOT_EFFECTIVE/.scratch/commands.json"
+  local cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"
   [ -f "$cache" ] || return 0
   grep -o '"install"[[:space:]]*:[[:space:]]*"[^"]*"' "$cache" 2>/dev/null \
     | head -1 \
