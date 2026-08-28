@@ -158,7 +158,7 @@ done
 
 # ─── 3. env + override, then install ─────────────────────────────────────────
 if [[ -f "$ENSURE_ENV" ]]; then
-  bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
+  bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" >/dev/null 2>&1 || true
 fi
 bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" >/dev/null
 

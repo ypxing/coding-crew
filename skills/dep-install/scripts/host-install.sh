@@ -3,7 +3,7 @@
 # Checks (in order): Makefile install/deps target, then signal file fallback.
 # CLAUDE.md is intentionally excluded — the LLM reads that for context.
 #
-# Usage: host-install.sh --project-root <path>
+# Usage: host-install.sh --project-root <path> [--main-root <path>]
 # Exit codes:
 #   0  install ran successfully
 #   1  argument error
@@ -13,10 +13,12 @@
 set -euo pipefail
 
 PROJECT_ROOT=""
+MAIN_ROOT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
+    --main-root)    MAIN_ROOT="$2";    shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -41,7 +43,11 @@ cd "$PROJECT_ROOT"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENSURE_ENV="$SELF_DIR/ensure-env.sh"
 if [[ -f "$ENSURE_ENV" ]]; then
-  bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
+  if [[ -n "$MAIN_ROOT" ]]; then
+    bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" >/dev/null 2>&1 || true
+  else
+    bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" >/dev/null 2>&1 || true
+  fi
 fi
 
 # --- 1. Makefile target (install or deps, no docker) ---

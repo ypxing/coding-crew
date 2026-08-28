@@ -230,6 +230,17 @@ YML
   [ ! -d "$MAIN/.scratch/.docker-install.lock" ]
 }
 
+# ─── .env: forwards --main-root to ensure-env.sh ──────────────────────────────────────────
+
+@test "honors an existing MAIN_ROOT .env instead of generating a new one in PROJECT_ROOT" {
+  echo "SECRET=real" > "$MAIN/.env"
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -L "$WORK/.env" ]
+  [ "$(cat "$WORK/.env")" = "SECRET=real" ]
+}
+
 # ─── usage ────────────────────────────────────────────────────────────────────
 
 @test "--project-root and --main-root are required" {

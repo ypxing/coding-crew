@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.29.25]
+
+### Fixed
+
+- **A worktree's `.env` no longer diverges from a real one already at `MAIN_ROOT`.**
+  `ensure-env.sh` only ever checked `PROJECT_ROOT/.env`, so a worktree with no
+  `.worktreeinclude` entry for `.env` (or one created before `MAIN_ROOT/.env` existed) would
+  mint its own, independent copy from `.env.example`/empty instead of the real one. It now
+  accepts `--main-root`: when `MAIN_ROOT/.env` already exists, `PROJECT_ROOT/.env` is linked
+  to it instead of regenerated; when neither exists, generation happens exactly once, at
+  `MAIN_ROOT`, before linking every worktree to it. `host-install.sh` and `docker-install.sh`
+  now forward `--main-root` through to it, and `ensure-deps.sh` forwards its own
+  `MAIN_ROOT_EFFECTIVE` to `host-install.sh`.
+- **A `.env` this script creates or links can no longer be committed by a worker's own
+  `git add -A`.** Without a project's own `.gitignore` entry for `.env`, a worktree's `.env`
+  (now sometimes a symlink into `MAIN_ROOT`) got staged and merged like any other file — and
+  a symlink merging into a real file at `MAIN_ROOT` fails with "untracked working tree files
+  would be overwritten by merge". `ensure-env.sh` now adds `.env` to the shared
+  `.git/info/exclude` (never the project's own tracked `.gitignore`) whenever it creates or
+  links one.
+
 ## [1.29.24]
 
 ### Fixed

@@ -54,3 +54,21 @@ MK
   [ "$status" -eq 0 ]
   [ "$(cat "$PROJECT/.env")" = "REAL=1" ]
 }
+
+@test "--main-root: an existing MAIN_ROOT .env is linked into the worktree instead of regenerated" {
+  MAIN=$(mktemp -d)
+  echo "SECRET=real" > "$MAIN/.env"
+  echo "FOO=bar" > "$PROJECT/.env.example"
+  cat > "$PROJECT/Makefile" <<'MK'
+install:
+	touch installed.marker
+MK
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+
+  [ "$status" -eq 0 ]
+  [ -L "$PROJECT/.env" ]
+  [ "$(cat "$PROJECT/.env")" = "SECRET=real" ]
+  [ -f "$PROJECT/installed.marker" ]
+  rm -rf "$MAIN"
+}

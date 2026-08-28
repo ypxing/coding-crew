@@ -118,6 +118,11 @@ deps_line() {
 
 @test "a fresh worktree with a package-lock.json and no node_modules is DEPS: installed" {
   command -v npm >/dev/null 2>&1 || skip "npm not installed"
+  # Pinned to this source tree's own dep-install scripts, not whatever a contributor's local
+  # .coding-crew self-install happens to have on disk (_find_dep_scripts prefers that over
+  # skills/dep-install/scripts when neither is stubbed) — otherwise this test's outcome
+  # depends on which release .coding-crew was last installed from, not on this source.
+  export CREW_DEP_INSTALL_SCRIPTS="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
   cat > "$WORK/package.json" <<'JSON'
 { "name": "fixture", "version": "1.0.0", "private": true }
 JSON
@@ -134,6 +139,28 @@ JSON
   [ "$status" -eq 0 ]
   [[ "$(deps_line)" == "DEPS: installed"* ]] || { echo "$output" >&2; return 1; }
   [[ "$(deps_line)" == *"npm ci"* ]]
+}
+
+@test "host-install.sh is invoked with --main-root, so it can honor an existing MAIN_ROOT .env" {
+  printf '{}\n' > "$WORK/package.json"
+  local d="$TEMP_DIR/stub-argcheck"
+  mkdir -p "$d"
+  printf '#!/usr/bin/env bash\necho USE_HOST\n' > "$d/detect-mode.sh"
+  cat > "$d/host-install.sh" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$TEMP_DIR/host-install-args.txt"
+exit 2
+STUBEOF
+  chmod +x "$d"/*.sh
+  export CREW_DEP_INSTALL_SCRIPTS="$d"
+  local other="$TEMP_DIR/other-root"
+  mkdir -p "$other"
+  export MAIN_ROOT="$other"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  grep -qx -- "--main-root" "$TEMP_DIR/host-install-args.txt"
+  grep -qx -- "$other" "$TEMP_DIR/host-install-args.txt"
 }
 
 # ─── the discovered install override (.scratch/commands.json's "install" field) ────────────

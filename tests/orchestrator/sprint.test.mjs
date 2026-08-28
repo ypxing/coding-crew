@@ -692,7 +692,7 @@ test("a review that never ran is named in the summary, not just counted in the s
 // order. A DEPS: outcome never changes a round's status.
 
 /** The effects log — one line per subprocess, in order. CREW_VERBOSE puts it on stderr. */
-function commandLines(root, extra = [], { scripts = SCRIPTS } = {}) {
+function commandLines(root, extra = [], { scripts = SCRIPTS, env = {} } = {}) {
   const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...extra], {
     cwd: root,
     env: {
@@ -702,6 +702,7 @@ function commandLines(root, extra = [], { scripts = SCRIPTS } = {}) {
       CREW_FAKE_DIR: join(root, ".scratch/fake"),
       MAIN_ROOT: root,
       CREW_VERBOSE: "1",
+      ...env,
     },
   });
   return { r, lines: r.stderr.split("\n").filter((l) => /^(RUN|SPAWN|DRY) /.test(l)) };
@@ -944,7 +945,12 @@ test("a worktree that starts with no node_modules is verified and merged, with n
   seed(root);
   assert.equal(existsSync(join(root, "node_modules")), false, "the fixture must start bare");
 
-  const r = commandLines(root);
+  // Pinned to this source tree's own dep-install scripts, not whatever a contributor's local
+  // .coding-crew self-install happens to have on disk (_find_dep_scripts prefers that over
+  // skills/dep-install/scripts when neither is stubbed) — otherwise this test's outcome
+  // depends on which release .coding-crew was last installed from, not on this source.
+  const depScripts = { env: { CREW_DEP_INSTALL_SCRIPTS: join(REPO, "skills/dep-install/scripts") } };
+  const r = commandLines(root, [], depScripts);
   assert.equal(r.r.code, 0, `${r.r.stdout}\n${r.r.stderr}`);
   const s = state(root);
   assert.deepEqual(s.completed_slugs, ["alpha"], "the branch did not merge — see the DEPS: line");
@@ -958,7 +964,7 @@ test("a worktree that starts with no node_modules is verified and merged, with n
   const root2 = fixtureRepo();
   addIssue(root2, "01-alpha.md");
   seed(root2);
-  const off = commandLines(root2, ["--no-deps"]);
+  const off = commandLines(root2, ["--no-deps"], depScripts);
   assert.equal(off.r.code, 2, "without deps the round should stall, not merge");
   assert.deepEqual(state(root2).merged_branches ?? [], []);
   assert.equal(state(root2).retention.alpha.reason, "verification-failed");

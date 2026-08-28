@@ -67,3 +67,127 @@ teardown() {
   [ -L "$PROJECT/.env" ]
   [ "$(cat "$PROJECT/.env")" = "REAL=1" ]
 }
+
+# ─── --main-root: honor an existing MAIN_ROOT .env instead of generating a new one ─────────
+#
+# PROJECT_ROOT is a worktree; MAIN_ROOT is the shared checkout. A real .env already at
+# MAIN_ROOT must win over PROJECT_ROOT's own .env.example — regenerating independently per
+# worktree would silently diverge from whatever secrets are already in the real .env.
+
+@test "--main-root: an existing MAIN_ROOT .env is linked into PROJECT_ROOT, not regenerated" {
+  MAIN=$(mktemp -d)
+  echo "SECRET=real" > "$MAIN/.env"
+  echo "FOO=bar" > "$PROJECT/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MAIN_ROOT"* || "$output" == *"Linked"* ]]
+  [ -L "$PROJECT/.env" ]
+  [ "$(cat "$PROJECT/.env")" = "SECRET=real" ]
+  [ "$(cat "$MAIN/.env")" = "SECRET=real" ]
+  rm -rf "$MAIN"
+}
+
+@test "--main-root: neither exists yet — generated once at MAIN_ROOT, then linked into PROJECT_ROOT" {
+  MAIN=$(mktemp -d)
+  echo "FOO=bar" > "$MAIN/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -f "$MAIN/.env" ]
+  [ ! -L "$MAIN/.env" ]
+  diff "$MAIN/.env.example" "$MAIN/.env"
+  [ -L "$PROJECT/.env" ]
+  [ "$(cat "$PROJECT/.env")" = "$(cat "$MAIN/.env")" ]
+  rm -rf "$MAIN"
+}
+
+@test "--main-root: neither exists and MAIN_ROOT has no .env.example — empty .env generated at MAIN_ROOT and linked" {
+  MAIN=$(mktemp -d)
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -f "$MAIN/.env" ]
+  [ ! -L "$MAIN/.env" ]
+  [ -L "$PROJECT/.env" ]
+  rm -rf "$MAIN"
+}
+
+@test "--main-root equal to --project-root behaves exactly like not passing it" {
+  echo "FOO=bar" > "$PROJECT/.env.example"
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.env" ]
+  [ ! -L "$PROJECT/.env" ]
+  diff "$PROJECT/.env.example" "$PROJECT/.env"
+}
+
+@test "--main-root: an existing real PROJECT_ROOT .env still wins over everything, MAIN_ROOT included" {
+  MAIN=$(mktemp -d)
+  echo "SECRET=real" > "$MAIN/.env"
+  echo "REAL=1" > "$PROJECT/.env"
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already exists"* ]]
+  [ "$(cat "$PROJECT/.env")" = "REAL=1" ]
+  rm -rf "$MAIN"
+}
+
+@test "--main-root: a dangling MAIN_ROOT .env symlink is cleared before generating a real one" {
+  MAIN=$(mktemp -d)
+  ln -s "$MAIN/nonexistent-target" "$MAIN/.env"
+  echo "FOO=bar" > "$MAIN/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -f "$MAIN/.env" ]
+  [ ! -L "$MAIN/.env" ]
+  diff "$MAIN/.env.example" "$MAIN/.env"
+  [ -L "$PROJECT/.env" ]
+  rm -rf "$MAIN"
+}
+
+# ─── .env is always excluded from the git repo it lands in ─────────────────────────────
+#
+# A worker's own `git add -A` must never pick up a .env this script created or linked — a
+# symlink into MAIN_ROOT committed into a branch is exactly what makes `merge-branches.sh`
+# fail later with "untracked working tree files would be overwritten by merge" the moment
+# MAIN_ROOT's own real .env differs in kind from what the branch wants to materialise there.
+
+@test "a freshly generated .env is added to .git/info/exclude, not the project's own .gitignore" {
+  git -C "$PROJECT" init -q
+  echo "FOO=bar" > "$PROJECT/.env.example"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  grep -qx '.env' "$PROJECT/.git/info/exclude"
+  [ ! -f "$PROJECT/.gitignore" ]
+}
+
+@test "an existing real .env is left alone: no exclude entry added for a run that changed nothing" {
+  git -C "$PROJECT" init -q
+  echo "REAL=1" > "$PROJECT/.env"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  if [ -f "$PROJECT/.git/info/exclude" ]; then
+    ! grep -qx '.env' "$PROJECT/.git/info/exclude"
+  fi
+}
+
+@test "--main-root: linking a MAIN_ROOT .env into a worktree excludes .env in the shared git dir" {
+  MAIN=$(mktemp -d)
+  git -C "$MAIN" init -q
+  git -C "$MAIN" config user.email t@test
+  git -C "$MAIN" config user.name T
+  git -C "$MAIN" commit -q --allow-empty -m init
+  echo "SECRET=real" > "$MAIN/.env"
+  rmdir "$PROJECT"
+  git -C "$MAIN" worktree add -q --detach "$PROJECT"
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  grep -qx '.env' "$MAIN/.git/info/exclude"
+  rm -rf "$MAIN"
+}

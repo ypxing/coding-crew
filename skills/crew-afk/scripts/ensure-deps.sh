@@ -439,9 +439,10 @@ fi
 
 if [ -n "$TIMEOUT_BIN" ]; then
   "$TIMEOUT_BIN" "$TIMEOUT" bash "$DEP_SCRIPTS/host-install.sh" --project-root "$DIR" \
-    >"$OUT_FILE" 2>&1
+    --main-root "$MAIN_ROOT_EFFECTIVE" >"$OUT_FILE" 2>&1
 else
-  bash "$DEP_SCRIPTS/host-install.sh" --project-root "$DIR" >"$OUT_FILE" 2>&1
+  bash "$DEP_SCRIPTS/host-install.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" \
+    >"$OUT_FILE" 2>&1
 fi
 RC=$?
 
