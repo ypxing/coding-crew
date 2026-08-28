@@ -228,6 +228,20 @@ bash "$SCRIPT_DIR/trace.sh" EXIT \
 # --no-reminder is the per-round rollup, and the sprint is still running then.
 rm -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/.orchestrated"
 
+# --- dev-commands.json reminder -----------------------------------------------
+# .coding-crew/dev-commands.json is committed and human-editable, but nothing here
+# auto-commits it (see PRD: no auto-commit to any branch, ever) — a sprint's bootstrap
+# write (discover-commands.sh / write-commands-cache.sh, before any worktree existed) is
+# otherwise easy to lose to a stray `git clean` before the next sprint notices it. Stateless
+# — re-run `git status` every time, no "already warned" flag file. Omitted when clean or
+# absent, following this file's own "sections with nothing to report are omitted" style.
+DEV_COMMANDS_STATUS=$(git -C "$MAIN_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null || true)
+if [ -n "$DEV_COMMANDS_STATUS" ]; then
+  echo ""
+  echo "## Dev Commands Cache"
+  echo "Reminder: .coding-crew/dev-commands.json has uncommitted changes at MAIN_ROOT — review and commit it."
+fi
+
 # --- Findings reminder (last thing printed) -----------------------------------
 # Promotion only covered the sprint's threshold severities (CRITICAL by default) on Phase 1
 # branches. Everything else — HIGH under the default threshold, MEDIUM/LOW always, and any

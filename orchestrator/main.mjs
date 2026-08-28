@@ -267,7 +267,7 @@ async function main() {
     const skipped = selectDispatchable(mainRoot, { status: "deferred-findings" });
     if (skipped.length) console.log(`parked fix issues (${skipped.length}): ${skipped.map((i) => i.slug).join(", ")}`);
     console.log("\npipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close");
-    console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint, before deps (cached at .scratch/commands.json)" : "disabled (--no-commands)"}`);
+    console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint (bootstrap-only), before deps (cached at .coding-crew/dev-commands.json)" : "disabled (--no-commands)"}`);
     console.log(`deps:      ${options.deps ? "ensure-deps.sh, once per sprint and once per worktree, using a discovered install command when one was cached" : "disabled (--no-deps)"}`);
     return issues.length ? 0 : 3;
   }

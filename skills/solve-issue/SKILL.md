@@ -176,8 +176,8 @@ matching what was established then.
 **Cache fast path** — command discovery is a property of the repo, not of this issue:
 
 ```bash
-CACHE="$MAIN_ROOT/.scratch/commands.json"
-if [ -f "$CACHE" ] && grep -q '"sourceHash"' "$CACHE"; then echo USE_CACHE; else echo DISCOVER; fi
+CACHE="$MAIN_ROOT/.coding-crew/dev-commands.json"
+if [ -f "$CACHE" ] && grep -q '"test"' "$CACHE"; then echo USE_CACHE; else echo DISCOVER; fi
 ```
 
 `USE_CACHE` → read `test`/`lint`/`typecheck` straight from `$CACHE`. An empty/`null` value is
@@ -236,6 +236,22 @@ fi
 Example: `[01-auth-logout] Add user logout endpoint`
 
 Do not push.
+
+### 6.5. Reminder: dev-commands.json
+
+`.coding-crew/dev-commands.json` is committed and human-editable, but nothing here auto-commits
+it — Step 5's `DISCOVER` fallback can be the first thing to ever create it in a repo where no
+sprint has run yet, and a bootstrap write left uncommitted is easy to lose to a stray
+`git clean` before anything notices it. Stateless — re-check `git status` every run, no
+"already warned" flag file:
+
+```bash
+if [ -n "$(git -C "$MAIN_ROOT" status --porcelain -- .coding-crew/dev-commands.json 2>/dev/null)" ]; then
+  echo "Reminder: .coding-crew/dev-commands.json has uncommitted changes at MAIN_ROOT — review and commit it."
+fi
+```
+
+Clean or absent → print nothing.
 
 ### 7. Mark done
 
