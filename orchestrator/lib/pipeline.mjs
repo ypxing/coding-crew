@@ -88,11 +88,41 @@ export async function runWorker(ctx, issue) {
   // reach a functionally identical outcome.
   const skipWorker = priorBranch != null && retentionReason === "review-not-run";
 
-  const { path: worktree } = ensureWorktree(effects, {
+  // expectReuse: true only when the issue itself has a recorded reason to already have
+  // a branch (progress from an earlier round). A branch ref that exists despite this
+  // being a fresh dispatch is not a resume — it's leftover from an abandoned attempt
+  // (branches are never deleted except by cleanup-worktrees.sh's own ancestry-checked
+  // sweep), and silently reusing it can carry a base that predates work this sprint has
+  // since merged, surfacing only much later as an unexplained merge conflict.
+  const wt = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
     branch,
     base: "HEAD",
+    expectReuse: issue.hasProgress,
   });
+
+  if (wt.stale) {
+    ctx.log(`[STALE-BRANCH] slug=${issue.slug} branch=${branch} — ${wt.reason}`);
+    return {
+      issue,
+      branch,
+      worktree: null,
+      dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
+      report: {
+        parsedFrom: "stale-branch",
+        status: "blocked",
+        checks: { test: "not_run", lint: "not_run", typecheck: "not_run" },
+        branch,
+        workingDirectory: null,
+        progress: null,
+        notes: wt.reason,
+        criteria: [],
+        raw: "",
+      },
+    };
+  }
+
+  const { path: worktree } = wt;
   applyWorktreeInclude(effects.mainRoot, worktree);
 
   // Deps, here, because this position is the whole point: after the include (so an

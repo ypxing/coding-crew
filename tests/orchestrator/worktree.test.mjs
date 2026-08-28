@@ -3,11 +3,27 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
-import { applyWorktreeInclude } from "../../orchestrator/lib/worktree.mjs";
+import { applyWorktreeInclude, ensureWorktree } from "../../orchestrator/lib/worktree.mjs";
+import { Effects } from "../../orchestrator/lib/effects.mjs";
 
 function tmpRoot() {
   return mkdtempSync(join(tmpdir(), "worktreeinclude-"));
+}
+
+/** A real git repo with one commit on its default branch, plus a real (non-dry-run) Effects. */
+function gitRoot() {
+  const mainRoot = tmpRoot();
+  const git = (...args) => execFileSync("git", ["-C", mainRoot, ...args], { encoding: "utf8" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "test@example.com");
+  git("config", "user.name", "Test");
+  writeFileSync(join(mainRoot, "README.md"), "seed\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "seed");
+  const effects = new Effects({ scriptsDir: mainRoot, mainRoot, dryRun: false });
+  return { mainRoot, git, effects };
 }
 
 test("links a .worktreeinclude entry that has no counterpart in the worktree yet", () => {
@@ -113,4 +129,94 @@ test("a dangling symlink with no source to heal it yet is left in place", () => 
   assert.deepEqual(linked, []);
   assert.ok(lstatSync(join(worktree, ".env")).isSymbolicLink());
   assert.ok(!existsSync(join(worktree, ".env")));
+});
+
+// --- ensureWorktree: stale-branch detection ---------------------------------
+//
+// Reuse (an existing branch ref, `git worktree add path branch` with no base) is
+// correct for a genuine resume — a retained branch already holds committed WIP.
+// It is not correct for a fresh dispatch (no recorded progress for this issue) that
+// happens to collide with a leftover branch from an earlier, abandoned run: that
+// branch's base can predate work the current sprint has since merged, and reusing
+// it silently produces a merge conflict at the very end of the pipeline instead of
+// a clear signal at the start of it.
+
+test("ensureWorktree creates a fresh worktree when no branch exists yet", () => {
+  const { mainRoot, effects } = gitRoot();
+
+  const result = ensureWorktree(effects, { mainRoot, branch: "crew/feat/a", base: "HEAD" });
+
+  assert.equal(result.created, true);
+  assert.equal(result.reusedBranch, false);
+  assert.equal(result.stale, undefined);
+  assert.ok(existsSync(result.path));
+});
+
+test("ensureWorktree reuses an existing branch without a staleness check when expectReuse is true", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/a";
+  // Create the branch off an old commit, then advance main past it — a real resume
+  // (hasProgress: true) must still reuse this branch even though HEAD has moved on.
+  git("branch", branch);
+  writeFileSync(join(mainRoot, "other.txt"), "advance\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "advance main past the branch");
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "HEAD", expectReuse: true });
+
+  assert.equal(result.stale, undefined);
+  assert.equal(result.reusedBranch, true);
+  assert.ok(existsSync(result.path));
+});
+
+test("ensureWorktree reuses an existing branch without a staleness check when it already contains base", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/a";
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "work.txt"), "wip\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "wip on the branch");
+  git("checkout", "-q", "main");
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "HEAD", expectReuse: false });
+
+  assert.equal(result.stale, undefined);
+  assert.equal(result.reusedBranch, true);
+  assert.ok(existsSync(result.path));
+});
+
+test("ensureWorktree flags a stale branch instead of silently reusing it on a fresh dispatch", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/live-api-integration";
+  // The branch exists from an earlier, abandoned attempt, based on an old commit —
+  // then main advances (e.g. a dependency's branch merges) without the leftover
+  // branch ever being rebased or deleted.
+  git("branch", branch);
+  writeFileSync(join(mainRoot, "component.txt"), "merged dependency work\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "component-with-mock merges into the feature branch");
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "HEAD", expectReuse: false });
+
+  assert.equal(result.stale, true);
+  assert.equal(result.path, null);
+  assert.match(result.reason, /already exists/);
+  assert.match(result.reason, /no recorded progress/);
+  // No worktree was ever created for the stale branch.
+  const listed = execFileSync("git", ["-C", mainRoot, "worktree", "list", "--porcelain"], { encoding: "utf8" });
+  assert.ok(!listed.includes(branch));
+});
+
+test("ensureWorktree defaults expectReuse to true — existing callers keep silent-reuse behavior", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/a";
+  git("branch", branch);
+  writeFileSync(join(mainRoot, "other.txt"), "advance\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "advance main past the branch");
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "HEAD" });
+
+  assert.equal(result.stale, undefined);
+  assert.ok(existsSync(result.path));
 });

@@ -16,14 +16,41 @@ export function worktreePath(mainRoot, branch) {
 /**
  * Create (or reuse) the worktree for a branch.
  * Reuse matters for resume: a retained branch already holds committed WIP.
+ *
+ * `expectReuse` names whether the *caller* already has a reason to believe this
+ * branch should exist (the issue has recorded progress from an earlier round).
+ * Reuse is otherwise silent and un-rebased: a branch left behind by an earlier,
+ * abandoned attempt (branches are never deleted except by cleanup-worktrees.sh's
+ * own ancestry-checked sweep) can sit in the repo with a base that predates work
+ * this sprint has since merged. Reusing it as-is on what the caller thinks is a
+ * *fresh* dispatch would silently carry that stale base all the way to the merge
+ * step, where it surfaces 45 minutes later as an unexplained conflict. Detected
+ * here instead: `base` not being an ancestor of the existing branch, on a dispatch
+ * nobody expected to resume, is reported back as `stale` rather than reused.
  */
-export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD" }) {
+export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expectReuse = true }) {
   const path = worktreePath(mainRoot, branch);
   const listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   if (listed.includes(`worktree ${path}\n`) && existsSync(path)) return { path, created: false };
 
-  mkdirSync(dirname(path), { recursive: true });
   const exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
+
+  if (exists && !expectReuse) {
+    const isAncestor = effects.gitRead(["merge-base", "--is-ancestor", base, branch]).code === 0;
+    if (!isAncestor) {
+      return {
+        path: null,
+        created: false,
+        stale: true,
+        reason:
+          `branch '${branch}' already exists but this issue has no recorded progress, and ` +
+          `'${base}' is not an ancestor of it — likely stale from an earlier run; delete ` +
+          `the branch or reconcile it by hand before retrying`,
+      };
+    }
+  }
+
+  mkdirSync(dirname(path), { recursive: true });
   const args = exists
     ? ["worktree", "add", path, branch]
     : ["worktree", "add", "-b", branch, path, base];

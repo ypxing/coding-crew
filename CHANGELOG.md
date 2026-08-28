@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.29.22]
+
+### Fixed
+
+- **crew-afk no longer silently reuses a stale worktree branch on a fresh issue dispatch.**
+  `ensureWorktree` decided reuse purely from whether a git ref named `crew/<feature>/<slug>`
+  already existed, independent of whether the issue itself had any recorded progress. Branch
+  refs are never deleted except by `cleanup-worktrees.sh`'s own ancestry-checked sweep, so a
+  leftover branch from an earlier, abandoned attempt (a crashed run, a premature dispatch)
+  could sit in the repo with a base that predates work the current sprint has since merged.
+  Dispatching that issue again reused the stale branch as-is — no rebase, no warning — and the
+  mismatch only surfaced ~45 minutes later as an unexplained `merge-failed` conflict at the very
+  end of the pipeline, indistinguishable from a genuine same-round sibling conflict. `runWorker`
+  now tells `ensureWorktree` whether this dispatch actually expects a resume (the issue has a
+  `## Progress` section); when it doesn't and the existing branch's base is not an ancestor of
+  it, the issue is reported `blocked` immediately, with a reason naming the stale branch, instead
+  of paying for a worker + review cycle that was always going to conflict at merge.
+
 ## [1.29.21]
 
 ### Changed
