@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.29.23]
+
+### Changed
+
+- Updated crew-code-reviewer references and protocol
+- Updated registry version information
+- Enhanced crew-afk summary script
+- Improved test coverage for crew-code-reviewer and worker chain token budget
+
 ## [1.29.22]
 
 ### Fixed
