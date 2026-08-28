@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.24]
+
+### Fixed
+
+- **crew-afk no longer forwards an unrecognised CLI argument two hops down into a
+  `--jira`-only script.** A bare word that was neither a known flag nor a `.scratch/`
+  path (e.g. a typo'd feature slug, or free-form prose) used to be silently pushed into
+  `passthrough` and die inside `feature-branch-setup.sh` with a confusing "Unknown
+  argument" — three layers from where the mistake was made. `orchestrator/main.mjs` now
+  rejects it immediately, lists the accepted forms, and suggests the closest existing
+  `.scratch/<feature-slug>` directory by edit distance when one is close enough to be a
+  likely typo.
+- **All four `crew-afk` platform skills (`claude.SKILL.md`, `codex.SKILL.md`,
+  `copilot.SKILL.md`, `pi.SKILL.md`) now resolve a sprint target before running anything**
+  when the user's arguments aren't already recognisable CLI syntax. Instead of forwarding
+  free-form phrasing straight into the orchestrator and predicting the failure it was
+  about to cause, the skill looks up real `.scratch/*` feature directories, resolves the
+  user's words against them, and only proceeds on an unambiguous match — asking instead of
+  guessing when zero or multiple candidates fit.
+
 ## [1.29.23]
 
 ### Changed

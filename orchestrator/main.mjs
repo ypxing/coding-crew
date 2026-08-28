@@ -25,7 +25,7 @@
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,7 @@ function parseArgs(argv) {
     noSquash: false,
     dryRun: false,
     passthrough: [],
+    unknown: [],
   };
   const args = [...argv];
   if (args[0] && !args[0].startsWith("-")) o.command = args.shift();
@@ -83,7 +84,13 @@ function parseArgs(argv) {
           // A path argument names the sprint: derive the slug from it, exactly once.
           o.featureSlug ??= a.replace(/^\.scratch\//, "").split("/")[0] || null;
         } else {
-          o.passthrough.push(a);
+          // Anything else is not a recognised flag or a .scratch/ path. Collect it rather
+          // than forward it — session-init.sh and feature-branch-setup.sh two hops down
+          // only know --jira, so a stray word used to die there with a confusing
+          // "Unknown argument" from a script the user never invoked. Fail here instead,
+          // where we can name the accepted forms and, once mainRoot is known, suggest the
+          // closest existing .scratch/<feature-slug> dir for a likely typo.
+          o.unknown.push(a);
         }
     }
   }
@@ -91,6 +98,66 @@ function parseArgs(argv) {
   o.model = o.model === "inherit" ? null : o.model;
   o.parallel ??= DEFAULT_PARALLEL[o.platform] ?? 2;
   return o;
+}
+
+// Plain Levenshtein edit distance — no dependency, and small enough to stay honest.
+function editDistance(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => {
+    const row = new Array(b.length + 1);
+    row[0] = i;
+    return row;
+  });
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+/** Every existing .scratch/<feature-slug> directory name, for a typo suggestion. */
+function existingFeatureSlugs(mainRoot) {
+  const scratch = join(mainRoot, ".scratch");
+  if (!existsSync(scratch)) return [];
+  return readdirSync(scratch, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
+}
+
+/**
+ * A bare word that isn't a recognised flag or a .scratch/ path used to be forwarded
+ * unexamined to session-init.sh, then to feature-branch-setup.sh, which only knows
+ * --jira and dies with "Unknown argument" — two hops from where the mistake was made,
+ * in a script whose job has nothing to do with crew-afk's own CLI. Report it here
+ * instead, where the accepted forms are known and a likely typo can be named.
+ */
+function reportUnknownArgs(unknown, mainRoot) {
+  const slugs = existingFeatureSlugs(mainRoot);
+  const lines = [
+    `crew-afk: unrecognized argument${unknown.length > 1 ? "s" : ""}: ${unknown.join(" ")}`,
+    "",
+    "Accepted forms: --feature-slug <slug>, --jira TICKET-123, a .scratch/<feature-slug>/... path,",
+    "or one of the flags in `crew-afk help`.",
+  ];
+  for (const a of unknown) {
+    if (a.startsWith("-") || a.includes("/") || a.includes(" ")) continue;
+    let best = null;
+    let bestDist = Infinity;
+    for (const slug of slugs) {
+      const d = editDistance(a, slug);
+      if (d < bestDist) {
+        bestDist = d;
+        best = slug;
+      }
+    }
+    if (best && bestDist > 0 && bestDist <= Math.max(2, Math.ceil(best.length * 0.3))) {
+      lines.push(`Did you mean --feature-slug ${best}? (found .scratch/${best}/)`);
+    }
+  }
+  console.error(lines.join("\n"));
 }
 
 function gitRoot() {
@@ -154,6 +221,10 @@ async function main() {
   }
 
   const mainRoot = gitRoot();
+  if (options.unknown.length) {
+    reportUnknownArgs(options.unknown, mainRoot);
+    return 1;
+  }
   const scriptsDir = resolveScriptsDir(mainRoot);
   const logLines = [];
   const effects = new Effects({

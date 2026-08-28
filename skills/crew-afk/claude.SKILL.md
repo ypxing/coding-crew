@@ -22,10 +22,39 @@ CREW_AFK="$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs"
 node "$CREW_AFK" run --platform claude "$@"
 ```
 
-Pass the user's arguments straight through: `--model <alias|inherit>`, `--coverage`,
-`--promote critical-high`, `--max-parallel N`, `--worker-timeout <minutes>`,
-`--max-rounds N`, `--no-squash`, `--jira TICKET-123`, or a `.scratch/<feature-slug>/…`
-path. Unrecognised arguments are forwarded to session setup, so never rewrite them.
+Pass the user's arguments straight through **when they already look like CLI syntax**:
+`--model <alias|inherit>`, `--coverage`, `--promote critical-high`, `--max-parallel N`,
+`--worker-timeout <minutes>`, `--max-rounds N`, `--no-squash`, `--jira TICKET-123`, or a
+`.scratch/<feature-slug>/…` path — never rewrite those. Anything else (a bare word, a
+likely typo, or a free-form phrase) is resolved first, below — never forwarded raw.
+
+## Resolving the sprint target
+
+If the trailing arguments are not already recognisable CLI syntax, do not run the command
+yet. Look up what actually exists first:
+
+```bash
+ls -d .scratch/*/ 2>/dev/null
+grep -rl "Status: ready-for-agent" .scratch/*/issues/open/*.md 2>/dev/null
+```
+
+Match the user's words against those real directory names — exact match, then
+fuzzy/substring (a likely typo), then by issue title or content if the input is prose —
+and branch on confidence:
+
+- **Exactly one clear match** — resolve to `--feature-slug <slug>`, say what you inferred
+  (`Found .scratch/<slug>/ with N open issues — running the sprint there`) so the user can
+  correct you before anything launches, then run with that flag.
+- **No match** — do not run. Say no such feature exists yet and point at `crew-grill`,
+  `crew-brainstorm`, or `to-issues` to create one.
+- **More than one plausible match** — do not run. List the candidates and ask which one.
+
+Never create a new `.scratch/<slug>` directory as part of this resolution, and never guess
+when the match is uncertain: a wrong resolution here dispatches, merges, and closes real
+work against the wrong feature, which costs far more than one clarifying question. The
+orchestrator's own argument parser also rejects anything unrecognised (with the same kind
+of suggestion) as a second line of defense — but that is a safety net, not a substitute
+for resolving intent before running.
 
 It owns the whole loop: session init, issue selection, a worktree and a `crew-coder`
 process per ready issue, then per branch `verify → review (acceptance criteria +
@@ -39,7 +68,8 @@ sprint.
 
 ## Your part
 
-1. Run the command above, with `--dry-run` first **only** if the user asked what it would do.
+1. Resolve the sprint target first if the arguments aren't already CLI syntax (above),
+   then run the command, with `--dry-run` first **only** if the user asked what it would do.
 2. Tell the user progress is also written live to `.scratch/<feature-slug>/traces/orchestrator.log`,
    so they can check it for detail if they step away or the stream looks quiet.
 3. Stream stdout as it arrives. The summary it prints is the report — do not rewrite,

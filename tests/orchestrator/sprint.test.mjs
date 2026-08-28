@@ -1076,3 +1076,50 @@ test("discover-commands.sh failing outright is surfaced and does not send a brok
   assert.equal(existsSync(join(root, ".scratch/commands.json")), false);
   assert.match(r.stderr, /Command discovery: discover-commands\.sh failed/);
 });
+
+// Regression: a bare word that is neither a recognised flag nor a .scratch/ path used to
+// be forwarded unexamined through Sprint.init into session-init.sh, then into
+// feature-branch-setup.sh (--jira only), which died with a confusing "Unknown argument"
+// two hops from where the mistake was made. It must now be rejected here, immediately,
+// before any script even runs.
+test("an unrecognized bare argument fails fast with the accepted forms, not two hops down", () => {
+  const root = fixtureRepo();
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "qa-slo-emmission"], {
+    cwd: root,
+    env: { ...process.env, MAIN_ROOT: root },
+  });
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /unrecognized argument: qa-slo-emmission/);
+  assert.match(r.stderr, /Accepted forms: --feature-slug/);
+  assert.doesNotMatch(r.stderr, /session-init\.sh/);
+  assert.doesNotMatch(r.stderr, /Unknown argument/); // feature-branch-setup.sh's own message
+});
+
+test("an unrecognized argument close to an existing .scratch/<feature-slug> dir is suggested", () => {
+  const root = fixtureRepo(); // fixtureRepo() already creates .scratch/demo/
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "deno"], {
+    cwd: root,
+    env: { ...process.env, MAIN_ROOT: root },
+  });
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /Did you mean --feature-slug demo\?/);
+});
+
+test("free-form prose fails on the first unrecognized word, still with a helpful message", () => {
+  const root = fixtureRepo();
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "on", "issues", "under", "qa-slo-emmission"], {
+    cwd: root,
+    env: { ...process.env, MAIN_ROOT: root },
+  });
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /unrecognized arguments: on issues under qa-slo-emmission/);
+});
+
+test("a legitimate --jira value is not treated as an unrecognized argument", () => {
+  const root = fixtureRepo();
+  const r = sh("node", [MAIN, "plan", "--platform", "pi", "--jira", "ABC-123"], {
+    cwd: root,
+    env: { ...process.env, MAIN_ROOT: root },
+  });
+  assert.doesNotMatch(r.stderr, /unrecognized argument/);
+});
