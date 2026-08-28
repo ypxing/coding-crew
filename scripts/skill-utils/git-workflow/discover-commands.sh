@@ -16,7 +16,7 @@ set -euo pipefail
 # not-skipped stdout contract loop.mjs already knows how to read (the whole of stdout becomes
 # the prompt, informational preamble included, exactly as it does there). It never calls a
 # model itself, and it never writes a result anywhere; a sibling script owns turning the
-# model's response into .scratch/commands.json.
+# model's response into .coding-crew/dev-commands.json.
 #
 # The prompt lists candidate *paths*, not their contents. dispatchPlain() hands the model the
 # same read/bash/edit/write toolset an interactive session gets (see dispatch.mjs), so the
@@ -43,8 +43,9 @@ set -euo pipefail
 # Skips (mechanically, no model call, no tokens) when either:
 #   1. none of the known source files exist — verify-worktree.sh's own ecosystem-convention
 #      fallback already covers this case for free, so there is nothing to ask a model
-#   2. an existing .scratch/commands.json's sourceHash already matches the current content of
-#      those files — nothing has changed since the last discovery
+#   2. the committed .coding-crew/dev-commands.json already exists — bootstrap-once, not a
+#      recurring staleness check: the file is committed and human-editable, so it is trusted
+#      as-is, indefinitely, until a human clears it or explicitly asks for --refresh
 #
 # Invocation: bash "<skill-dir>/scripts/discover-commands.sh" [--refresh]
 # Env: CREW_COMMANDS_REFRESH=1 has the same effect as --refresh.
@@ -80,7 +81,7 @@ MAIN_ROOT="${MAIN_ROOT:-}"
 if [ -z "$MAIN_ROOT" ]; then
   MAIN_ROOT=$(_main_root_of "$(pwd)") || MAIN_ROOT=$(git rev-parse --show-toplevel)
 fi
-CACHE_FILE="$MAIN_ROOT/.scratch/commands.json"
+CACHE_FILE="$MAIN_ROOT/.coding-crew/dev-commands.json"
 
 # Fixed, deterministic order — keeps the hash (and the prompt's file order) stable across
 # runs regardless of filesystem iteration order. Not tied to any one repo's stack: covers the
@@ -130,27 +131,11 @@ if [ "${#FOUND_FILES[@]}" -eq 0 ]; then
   exit 0
 fi
 
-# _source_hash <file...> — one deterministic hash over the exact files a discovery run would
-# read, so a later run can tell "nothing changed" from "something did" without re-asking a
-# model. Portable across the two common sha256 tool names (GNU coreutils vs. macOS/BSD).
-_source_hash() {
-  {
-    local f
-    for f in "$@"; do
-      printf '%s\n' "=== $f ==="
-      cat "$f"
-    done
-  } | if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | awk '{print $1}'
-}
-
-SOURCE_HASH=$(_source_hash "${FOUND_FILES[@]}")
-
+# Bootstrap-once, not a recurring staleness re-check: once the committed cache file exists,
+# it is trusted as-is until a human clears it or explicitly passes --refresh.
 if [ "$REFRESH" != "1" ] && [ -f "$CACHE_FILE" ]; then
-  CACHED_HASH=$(grep -o '"sourceHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$CACHE_FILE" | sed -E 's/.*"([a-f0-9]+)"$/\1/' || true)
-  if [ -n "$CACHED_HASH" ] && [ "$CACHED_HASH" = "$SOURCE_HASH" ]; then
-    echo "Command discovery: skipped (cache is fresh at .scratch/commands.json)"
-    exit 0
-  fi
+  echo "Command discovery: skipped (already cached at .coding-crew/dev-commands.json)"
+  exit 0
 fi
 
 echo "Command discovery: ${#FOUND_FILES[@]} source file(s) found — building discovery prompt"

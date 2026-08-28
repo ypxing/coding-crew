@@ -154,20 +154,20 @@ bash scripts/commit-changes.sh \
 bash scripts/discover-commands.sh [--refresh]
 ```
 
-**Behavior**: Prints either a skip message (nothing to read, or `.scratch/commands.json`'s cached `sourceHash` already matches) or the full discovery prompt, ready to hand to a model as-is. The prompt asks for five fields, not three: `test`/`lint`/`typecheck`, plus `install` — a documented install command, reported only when the source explicitly states one, so `ensure-deps.sh` can use it in place of its own mechanical Makefile-target/lockfile guess — and `env` — a documented `.env`-bootstrap command, reported the same way, so `ensure-env.sh` can use it in place of its own mechanical `.env.example`-or-empty convention.
+**Behavior**: Prints either a skip message (nothing to read, or `.coding-crew/dev-commands.json` already exists) or the full discovery prompt, ready to hand to a model as-is. Bootstrap-only: once the cache file exists it is trusted as-is, indefinitely, until a human clears it or passes `--refresh` (or `CREW_COMMANDS_REFRESH=1`) — there is no staleness re-check against source-doc content. The prompt asks for five fields, not three: `test`/`lint`/`typecheck`, plus `install` — a documented install command, reported only when the source explicitly states one, so `ensure-deps.sh` can use it in place of its own mechanical Makefile-target/lockfile guess — and `env` — a documented `.env`-bootstrap command, reported the same way, so `ensure-env.sh` can use it in place of its own mechanical `.env.example`-or-empty convention.
 
 **Used by**:
 - `crew-afk` (`orchestrator/lib/commands.mjs`, once per sprint via `dispatchPlain`, run **before** `ensure-deps.sh`'s own sprint-level call so a discovered `install` override is already cached by the time that call reads it)
 
 Not used by `solve-issue`: its own agent turn already *is* the model, so there is no separate
-dispatch to build a prompt for — solve-issue's Step 5 inlines the equivalent cache-freshness
-check directly and reads `.scratch/commands.json` itself when it is usable.
+dispatch to build a prompt for — solve-issue's Step 5 inlines the equivalent bootstrap check
+directly and reads `.coding-crew/dev-commands.json` itself when it is usable.
 
 ---
 
 ### `write-commands-cache.sh`
 
-**Purpose**: Turn a model's discovery response into `.scratch/commands.json`, stamped with its own independently-computed source hash (never trusts a hash the caller supplies).
+**Purpose**: Turn a model's discovery response into `.coding-crew/dev-commands.json` — a committed, human-editable file, so there is no staleness stamp to compute; once it exists, `discover-commands.sh` trusts it as-is.
 
 **Usage**:
 ```bash

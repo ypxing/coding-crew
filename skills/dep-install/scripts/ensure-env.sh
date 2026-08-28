@@ -13,7 +13,7 @@
 # worktrees of the same MAIN_ROOT ever generate their own, divergent copies.
 #
 # Discovered override: before falling back to the mechanical .env.example-or-empty convention,
-# generation consults MAIN_ROOT/.scratch/commands.json's "env" field (or PROJECT_ROOT's own,
+# generation consults MAIN_ROOT/.coding-crew/dev-commands.json's "env" field (or PROJECT_ROOT's own,
 # when --main-root is not given -- see _cached_env_command) -- a documented .env-bootstrap
 # command discover-commands.sh / write-commands-cache.sh may have cached once per sprint,
 # alongside test/lint/typecheck/install, from a CLAUDE.md/AGENTS.md/Makefile this script
@@ -68,7 +68,7 @@ _generate_env_at() {
 }
 
 # _cached_env_command <cache-root> -- the discovered "env" field from
-# <cache-root>/.scratch/commands.json, written once per sprint by discover-commands.sh /
+# <cache-root>/.coding-crew/dev-commands.json, written once (bootstrap) by discover-commands.sh /
 # write-commands-cache.sh alongside test/lint/typecheck/install (see that pair's own header
 # comments). A documented override for a repo whose local .env bootstrap is not the
 # .env.example convention _generate_env_at assumes -- e.g. a `make env` target, or a setup
@@ -76,7 +76,7 @@ _generate_env_at() {
 # mean "nothing to override" -- the caller falls through to the mechanical convention below
 # unchanged, the same way ensure-deps.sh's own _cached_install_command does for install.
 _cached_env_command() {
-  local cache="$1/.scratch/commands.json"
+  local cache="$1/.coding-crew/dev-commands.json"
   [[ -f "$cache" ]] || return 0
   grep -o '"env"[[:space:]]*:[[:space:]]*"[^"]*"' "$cache" 2>/dev/null \
     | head -1 \

@@ -785,7 +785,7 @@ test("a discovered install override is used by the sprint-level deps call, not h
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
 
-  const cache = JSON.parse(readFileSync(join(root, ".scratch/commands.json"), "utf8"));
+  const cache = JSON.parse(readFileSync(join(root, ".coding-crew/dev-commands.json"), "utf8"));
   assert.equal(cache.install, "touch .scratch/install-ran.marker");
   assert.equal(existsSync(join(root, ".scratch/install-ran.marker")), true, "the discovered install command never ran against MAIN_ROOT");
   assert.match(traceLog(root), /\[DEPS\].*installed.*touch \.scratch\/install-ran\.marker/);
@@ -976,20 +976,21 @@ test("a worktree that starts with no node_modules is verified and merged, with n
 // the answer; the model call itself is faked here (fake-dispatch.sh's "commands-discovery"
 // branch), exactly the seam coverage validation already uses for the same reason.
 
-test("command discovery writes .scratch/commands.json from the repo's own Makefile", () => {
+test("command discovery writes .coding-crew/dev-commands.json from the repo's own Makefile", () => {
   const root = fixtureRepo(); // fixtureRepo() always seeds a Makefile with test/lint/typecheck
   addIssue(root, "01-alpha.md");
 
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
 
-  const cacheFile = join(root, ".scratch/commands.json");
+  const cacheFile = join(root, ".coding-crew/dev-commands.json");
   assert.equal(existsSync(cacheFile), true);
   const cache = JSON.parse(readFileSync(cacheFile, "utf8"));
   assert.equal(cache.test, "make test");
   assert.equal(cache.lint, "make lint");
   assert.equal(cache.typecheck, "make typecheck");
-  assert.ok(cache.sourceHash);
+  assert.equal(cache.sourceHash, undefined, "the committed cache has no sourceHash field");
+  assert.deepEqual(Object.keys(cache).sort(), ["env", "install", "lint", "test", "typecheck"]);
 });
 
 test("a CLAUDE.md that happens to contain the word 'skipped' does not silently cancel discovery", () => {
@@ -1009,7 +1010,7 @@ test("a CLAUDE.md that happens to contain the word 'skipped' does not silently c
 
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(existsSync(join(root, ".scratch/commands.json")), true, "the word 'skipped' inside a quoted file must not cancel discovery");
+  assert.equal(existsSync(join(root, ".coding-crew/dev-commands.json")), true, "the word 'skipped' inside a quoted file must not cancel discovery");
   assert.doesNotMatch(r.stderr, /Command discovery: skipped/);
 });
 
@@ -1036,22 +1037,61 @@ test("command discovery is skipped, at zero cost, when there is nothing to read"
 
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(existsSync(join(root, ".scratch/commands.json")), false);
+  assert.equal(existsSync(join(root, ".coding-crew/dev-commands.json")), false);
   assert.match(r.stderr, /Command discovery: skipped/);
 });
 
-test("a second sprint reuses the cached commands instead of discovering again", () => {
+test("a second sprint reuses the cached commands instead of discovering again (bootstrap-once, no staleness re-check)", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   const first = runSprint(root);
   assert.equal(first.code, 0, `${first.stdout}\n${first.stderr}`);
-  const cacheAfterFirst = readFileSync(join(root, ".scratch/commands.json"), "utf8");
+  const cacheAfterFirst = readFileSync(join(root, ".coding-crew/dev-commands.json"), "utf8");
+
+  // Even a source-doc change between sprints must not trigger re-discovery: once the
+  // committed cache exists, only --refresh forces a rebuild.
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo totally-different-now\n");
 
   addIssue(root, "02-beta.md");
   const second = runSprint(root);
   assert.equal(second.code, 0, `${second.stdout}\n${second.stderr}`);
-  assert.match(second.stderr, /cache is fresh/);
-  assert.equal(readFileSync(join(root, ".scratch/commands.json"), "utf8"), cacheAfterFirst);
+  assert.match(second.stderr, /already cached/);
+  assert.equal(readFileSync(join(root, ".coding-crew/dev-commands.json"), "utf8"), cacheAfterFirst);
+});
+
+test("CREW_COMMANDS_REFRESH=1 forces rediscovery and overwrites an existing cache", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const first = runSprint(root);
+  assert.equal(first.code, 0, `${first.stdout}\n${first.stderr}`);
+  const cacheAfterFirst = readFileSync(join(root, ".coding-crew/dev-commands.json"), "utf8");
+
+  writeFileSync(join(root, "Makefile"), "totally-different-now:\n\t@echo ok\nlint2:\n\t@echo ok\ntc2:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "new makefile targets"]);
+  fake(
+    root,
+    "commands.response",
+    '{"test": "make totally-different-now", "lint": "make lint2", "typecheck": "make tc2"}',
+  );
+
+  addIssue(root, "02-beta.md");
+  const second = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_COMMANDS_REFRESH: "1",
+    },
+  });
+  assert.equal(second.code, 0, `${second.stdout}\n${second.stderr}`);
+  assert.doesNotMatch(second.stderr, /already cached/);
+  const cacheAfterSecond = readFileSync(join(root, ".coding-crew/dev-commands.json"), "utf8");
+  assert.notEqual(cacheAfterSecond, cacheAfterFirst);
+  assert.match(cacheAfterSecond, /make totally-different-now/);
 });
 
 test("--no-commands skips command discovery entirely", () => {
@@ -1060,7 +1100,7 @@ test("--no-commands skips command discovery entirely", () => {
 
   const r = runSprint(root, ["--no-commands"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(existsSync(join(root, ".scratch/commands.json")), false);
+  assert.equal(existsSync(join(root, ".coding-crew/dev-commands.json")), false);
   assert.doesNotMatch(r.stderr, /Command discovery/);
 });
 
@@ -1079,7 +1119,7 @@ test("discover-commands.sh failing outright is surfaced and does not send a brok
   const r = runSprint(root);
   chmodSync(join(root, "CLAUDE.md"), 0o644); // restore before any cleanup touches it
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`); // advisory: never fails the sprint
-  assert.equal(existsSync(join(root, ".scratch/commands.json")), false);
+  assert.equal(existsSync(join(root, ".coding-crew/dev-commands.json")), false);
   assert.match(r.stderr, /Command discovery: discover-commands\.sh failed/);
 });
 

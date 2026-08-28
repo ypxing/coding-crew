@@ -155,16 +155,16 @@ teardown() {
 # fail later with "untracked working tree files would be overwritten by merge" the moment
 # MAIN_ROOT's own real .env differs in kind from what the branch wants to materialise there.
 
-# ─── the discovered env override (.scratch/commands.json's "env" field) ────────────────────
+# ─── the discovered env override (.coding-crew/dev-commands.json's "env" field) ────────────
 #
-# discover-commands.sh / write-commands-cache.sh run once per sprint and may cache a
+# discover-commands.sh / write-commands-cache.sh run once (bootstrap) and may cache a
 # documented .env-bootstrap command this script would otherwise never see (it deliberately
 # never reads CLAUDE.md itself). When that cache names one, it wins over the mechanical
 # .env.example-or-empty convention below — mirroring ensure-deps.sh's own "install" override.
 
-@test "a documented env command in .scratch/commands.json is used instead of the .env.example convention" {
-  mkdir -p "$PROJECT/.scratch"
-  printf '{"sourceHash": "x", "env": "echo CUSTOM=1 > .env"}' > "$PROJECT/.scratch/commands.json"
+@test "a documented env command in .coding-crew/dev-commands.json is used instead of the .env.example convention" {
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '{"env": "echo CUSTOM=1 > .env"}' > "$PROJECT/.coding-crew/dev-commands.json"
   echo "FOO=bar" > "$PROJECT/.env.example"
 
   run bash "$SCRIPT" --project-root "$PROJECT"
@@ -174,9 +174,9 @@ teardown() {
   [[ "$output" == *"discovered"* ]]
 }
 
-@test "a null env in commands.json falls back to the .env.example convention unchanged" {
-  mkdir -p "$PROJECT/.scratch"
-  printf '{"sourceHash": "x", "env": null}' > "$PROJECT/.scratch/commands.json"
+@test "a null env in dev-commands.json falls back to the .env.example convention unchanged" {
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '{"env": null}' > "$PROJECT/.coding-crew/dev-commands.json"
   echo "FOO=bar" > "$PROJECT/.env.example"
 
   run bash "$SCRIPT" --project-root "$PROJECT"
@@ -185,7 +185,7 @@ teardown() {
   diff "$PROJECT/.env.example" "$PROJECT/.env"
 }
 
-@test "no commands.json at all falls back to the .env.example convention unchanged" {
+@test "no dev-commands.json at all falls back to the .env.example convention unchanged" {
   echo "FOO=bar" > "$PROJECT/.env.example"
 
   run bash "$SCRIPT" --project-root "$PROJECT"
@@ -194,8 +194,8 @@ teardown() {
 }
 
 @test "a failing discovered env command still leaves a real .env behind via the mechanical fallback" {
-  mkdir -p "$PROJECT/.scratch"
-  printf '{"sourceHash": "x", "env": "echo custom env boom >&2; exit 5"}' > "$PROJECT/.scratch/commands.json"
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '{"env": "echo custom env boom >&2; exit 5"}' > "$PROJECT/.coding-crew/dev-commands.json"
   echo "FOO=bar" > "$PROJECT/.env.example"
 
   run bash "$SCRIPT" --project-root "$PROJECT"
@@ -205,8 +205,8 @@ teardown() {
 }
 
 @test "a discovered env command that exits 0 but never creates .env falls back to the mechanical convention" {
-  mkdir -p "$PROJECT/.scratch"
-  printf '{"sourceHash": "x", "env": "true"}' > "$PROJECT/.scratch/commands.json"
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '{"env": "true"}' > "$PROJECT/.coding-crew/dev-commands.json"
   echo "FOO=bar" > "$PROJECT/.env.example"
 
   run bash "$SCRIPT" --project-root "$PROJECT"
@@ -216,8 +216,8 @@ teardown() {
 }
 
 @test "an existing real .env still wins over a discovered env command" {
-  mkdir -p "$PROJECT/.scratch"
-  printf '{"sourceHash": "x", "env": "echo SHOULD_NOT_RUN=1 > .env"}' > "$PROJECT/.scratch/commands.json"
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '{"env": "echo SHOULD_NOT_RUN=1 > .env"}' > "$PROJECT/.coding-crew/dev-commands.json"
   echo "REAL=1" > "$PROJECT/.env"
 
   run bash "$SCRIPT" --project-root "$PROJECT"
@@ -228,8 +228,8 @@ teardown() {
 
 @test "--main-root: the discovered env command is read from MAIN_ROOT's cache and runs there, not PROJECT_ROOT's" {
   MAIN=$(mktemp -d)
-  mkdir -p "$MAIN/.scratch"
-  printf '{"sourceHash": "x", "env": "echo CUSTOM=1 > .env"}' > "$MAIN/.scratch/commands.json"
+  mkdir -p "$MAIN/.coding-crew"
+  printf '{"env": "echo CUSTOM=1 > .env"}' > "$MAIN/.coding-crew/dev-commands.json"
 
   run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
   [ "$status" -eq 0 ]
@@ -242,8 +242,8 @@ teardown() {
 
 @test "--main-root: a PROJECT_ROOT-only cached env command is ignored — the override lives with MAIN_ROOT's discovery" {
   MAIN=$(mktemp -d)
-  mkdir -p "$PROJECT/.scratch"
-  printf '{"sourceHash": "x", "env": "echo SHOULD_NOT_RUN=1 > .env"}' > "$PROJECT/.scratch/commands.json"
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '{"env": "echo SHOULD_NOT_RUN=1 > .env"}' > "$PROJECT/.coding-crew/dev-commands.json"
   echo "FOO=bar" > "$MAIN/.env.example"
 
   run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"

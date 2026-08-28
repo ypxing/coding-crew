@@ -71,7 +71,7 @@ export class Sprint {
 
     // Deps are provisioned by installDeps() below, not here — a caller that also wants
     // one-time command discovery (commands.mjs) must run that first, so a documented
-    // install override it caches at .scratch/commands.json is already on disk the first
+    // install override it caches at .coding-crew/dev-commands.json is already on disk the first
     // time ensure-deps.sh runs: commands finding before deps installing, so the finding
     // can be used rather than raced. main.mjs is that caller; init() itself no longer
     // installs so that ordering is possible.
@@ -87,7 +87,7 @@ export class Sprint {
    * never acted on, because the gate that can act on it is verify-worktree.sh.
    *
    * Call this after one-time command discovery (see commands.mjs), not before: discovery
-   * may cache a documented install override at `.scratch/commands.json`, and
+   * may cache a documented install override at `.coding-crew/dev-commands.json`, and
    * `ensure-deps.sh` only reads that cache, it never waits for one to appear.
    */
   installDeps(log = () => {}) {

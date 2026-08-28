@@ -40,7 +40,7 @@ words_of() {
   done
 }
 
-@test "budget: solve-issue is under 1,700 words" {
+@test "budget: solve-issue is under 1,850 words" {
   # Raised from 1,300 by the one-writer-per-issue-file fix: §7/§8 became a real branch on
   # "who owns the issue file", so the skill now carries two close paths where it carried
   # one. That is a new rule, not a re-explained one — the worker used to be told both to
@@ -54,13 +54,16 @@ words_of() {
   # script actually decides — it also reads a Makefile `install`/`deps` target, which the
   # guess never checked — so a worktree in docker mode by that heuristic alone read as
   # host mode and never got its deps in either mode. A real new rule, not a re-explained one.
-  # Raised again to 1,700 when §5 gained a cache fast path: `.scratch/commands.json`
-  # (written once per repo by crew-afk's own one-time discovery, or by a prior solve-issue
-  # run) is read and trusted before re-deriving check commands from CLAUDE.md/Makefile —
-  # and, on a cache miss, §5 now persists what it discovers for the next run. A real new
-  # branch (skip vs. discover-then-persist), not a restatement of the existing chain.
+  # Raised again to 1,700 when §5 gained a cache fast path: `.coding-crew/dev-commands.json`
+  # (written once, bootstrap-only, by crew-afk's own one-time discovery, or by a prior
+  # solve-issue run) is read and trusted before re-deriving check commands from
+  # CLAUDE.md/Makefile — and, on a cache miss, §5 now persists what it discovers for the
+  # next run. A real new branch (skip vs. discover-then-persist), not a restatement of the
+  # existing chain. Raised again to 1,850 when §6 gained a new §6.5: the dev-commands.json
+  # cache is committed but nothing here auto-commits it, so a bootstrap write needs its own
+  # reminder step — a real new step, not a rephrasing of §6's existing commit instructions.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 1700 ] || { echo "solve-issue is $words words (budget 1700)" >&2; return 1; }
+  [ "$words" -lt 1850 ] || { echo "solve-issue is $words words (budget 1850)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {
@@ -68,7 +71,7 @@ words_of() {
   [ "$words" -lt 750 ] || { echo "tdd is $words words (budget 750)" >&2; return 1; }
 }
 
-@test "budget: the whole per-issue worker chain is under 4,000 words" {
+@test "budget: the whole per-issue worker chain is under 4,100 words" {
   # crew-coder + solve-issue + its verification reference + tdd. Read once per issue,
   # so this total is what a sprint multiplies by its issue count. It was 4,158 words
   # before the duplication below was cut; the ceiling leaves room for one genuinely new
@@ -79,14 +82,16 @@ words_of() {
   # platform now loads. Raised from 3,700 with solve-issue's real `detect-mode.sh` call
   # (see that ceiling's own comment) — the alternative was a duplicated, drifting guess.
   # Raised from 3,800 with solve-issue's §5 cache fast path (see that ceiling's own
-  # comment) — the same real new rule, not restated here.
+  # comment) — the same real new rule, not restated here. Raised from 4,000 with
+  # solve-issue's §6.5 dev-commands.json reminder (see that ceiling's own comment) —
+  # again a real new step, not restated here.
   total=$(words_of "$(coder_variant pi)")
   for f in "$REPO_ROOT"/skills/solve-issue/SKILL.md \
            "$REPO_ROOT"/skills/solve-issue/references/verification.md \
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 4000 ] || { echo "worker chain is $total words (budget 4000)" >&2; return 1; }
+  [ "$total" -lt 4100 ] || { echo "worker chain is $total words (budget 4100)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────
