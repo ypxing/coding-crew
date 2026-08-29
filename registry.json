@@ -34,6 +34,22 @@
         }
       }
     },
+    "crew-triage": {
+      "version": "1.0.0",
+      "source-dir": "crew-triage",
+      "description": "Classifies a crew-afk branch's verification failure as fixable by more code on that branch, or as an environment/infrastructure problem no code change can fix. Dispatched only after verify-worktree.sh has already failed, and only before a coder would otherwise be redispatched for another full attempt. Independent of the coder that wrote the branch \u2014 the same reason review is a separate dispatch, not a self-grade.",
+      "deps": [],
+      "skills": [],
+      "docs": [],
+      "install": {
+        "shims": {
+          "claude": ".claude/agents/crew-triage.md",
+          "copilot": ".copilot/agents/crew-triage.agent.md",
+          "pi": ".pi/agents/crew-triage.md",
+          "codex": ".codex/agents/crew-triage.toml"
+        }
+      }
+    },
     "crew-coder": {
       "version": "1.10.0",
       "source-dir": "crew-coder",
@@ -56,7 +72,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.2.22",
+      "version": "2.2.23",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -82,7 +98,8 @@
       },
       "agent-deps": [
         "crew-coder",
-        "crew-code-reviewer"
+        "crew-code-reviewer",
+        "crew-triage"
       ],
       "deps": [
         "tdd",

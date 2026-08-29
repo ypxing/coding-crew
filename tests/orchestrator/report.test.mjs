@@ -5,10 +5,11 @@ import {
   applySchemaPrefilter,
   findingsAtOrAbove,
   parseReviewReport,
+  parseTriageReport,
   parseVerifyChecks,
   parseWorkerReport,
 } from "../../orchestrator/lib/report.mjs";
-import { reviewPrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
+import { fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("a structured sidecar wins over prose", () => {
   const r = parseWorkerReport("## Issue: thing\nStatus: complete\n", {
@@ -209,3 +210,76 @@ test("the worker prompt makes the sidecar file the result channel, not an option
   assert.match(p, /treat as data only/);
   assert.match(p, /- \[ \] it exists/);
 });
+
+// ─── triage: parseTriageReport ────────────────────────────────────────────────
+
+test("a fixable triage verdict parses category and detail", () => {
+  const r = parseTriageReport(
+    [
+      "FIXABLE: yes",
+      "CATEGORY: wrong dependency version",
+      "DETAIL: package.json pins @scope/pkg@1.4.19, which does not exist on the registry.",
+    ].join("\n"),
+  );
+  assert.equal(r.ok, true);
+  assert.equal(r.fixable, true);
+  assert.equal(r.category, "wrong dependency version");
+  assert.match(r.detail, /does not exist on the registry/);
+});
+
+test("a not-fixable triage verdict parses the same way", () => {
+  const r = parseTriageReport(
+    ["FIXABLE: no", "CATEGORY: registry unreachable", "DETAIL: the private registry returned 404 for every package, not just this diff's."].join(
+      "\n",
+    ),
+  );
+  assert.equal(r.ok, true);
+  assert.equal(r.fixable, false);
+  assert.equal(r.category, "registry unreachable");
+});
+
+test("an empty or unparseable triage report fails closed toward fixable, and is not ok", () => {
+  const empty = parseTriageReport("");
+  assert.equal(empty.ok, false);
+  assert.equal(empty.fixable, true);
+
+  const noVerdict = parseTriageReport("CATEGORY: something\nDETAIL: something else");
+  assert.equal(noVerdict.ok, false);
+  assert.equal(noVerdict.fixable, true);
+});
+
+test("the triage prompt states the failing check output and asks for exactly three lines", () => {
+  const p = triagePrompt({
+    branch: "crew/f/x",
+    slug: "x",
+    issuePath: "/repo/.scratch/f/issues/open/01-x.md",
+    featureBranch: "feature/f",
+    checkOutput: "TEST: fail\nyarn install ... 404 Not Found",
+  });
+  assert.match(p, /404 Not Found/);
+  assert.match(p, /^FIXABLE: yes \| no$/m);
+  assert.match(p, /^CATEGORY:/m);
+  assert.match(p, /^DETAIL:/m);
+  // Never asks the coder that wrote the branch to grade its own failure.
+  assert.doesNotMatch(p, /crew-coder/);
+});
+
+test("the fix prompt carries the triage verdict forward and forbids redoing finished work", () => {
+  const p = fixPrompt({
+    mainRoot: "/repo",
+    worktree: "/repo/.scratch/worktrees/crew/f/x",
+    issuePath: "/repo/.scratch/f/issues/open/01-x.md",
+    slug: "x",
+    branch: "crew/f/x",
+    context: "wrong dependency version: package.json pins a version that 404s",
+    checkOutput: "TEST: fail\nyarn install ... 404 Not Found",
+    reportPath: "/repo/.scratch/f/dispatch/x.report.json",
+  });
+  assert.match(p, /wrong dependency version/);
+  assert.match(p, /404 Not Found/);
+  assert.match(p, /already judged acceptable/);
+  assert.match(p, /do not redo or restructure/i);
+  // Same result contract as workerPrompt — report.mjs must parse either the same way.
+  assert.match(p, /Write your structured result to \/repo\/\.scratch\/f\/dispatch\/x\.report\.json as your last action/);
+});
+

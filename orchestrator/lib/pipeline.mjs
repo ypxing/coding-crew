@@ -22,13 +22,32 @@ import {
   depsLine,
   findingsAtOrAbove,
   parseReviewReport,
+  parseTriageReport,
   parseVerifyChecks,
   parseWorkerReport,
 } from "./report.mjs";
 import { branchFor, writeIssueSection } from "./tracker.mjs";
-import { criteriaFile, resumeNote, reviewPrompt, workerPrompt } from "./prompts.mjs";
+import { criteriaFile, fixPrompt, resumeNote, reviewPrompt, triagePrompt, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, removeWorktree } from "./worktree.mjs";
 import { dispatch } from "./dispatch.mjs";
+
+// Retention-reason tags for a verify-worktree.sh failure, once triage (see runTriage
+// below) has classified it. Read back by runWorker (to route the *next* round) and by
+// runHousekeeping (to recognise a second consecutive not-fixable verdict without asking
+// triage again). Centralised here, not restated at each comparison, so the tag and its
+// separator cannot drift between the writer and the two readers.
+const FIXABLE_TAG = "verification-failed:fixable";
+const NOT_FIXABLE_TAG = "verification-failed:not-fixable";
+const REASON_SEP = " — ";
+
+function taggedReason(tag, summary) {
+  return `${tag}${REASON_SEP}${summary}`;
+}
+
+/** The free text after a tag this module itself wrote — never applied to a reason whose tag is unknown. */
+function stripReasonTag(reason, tag) {
+  return reason.startsWith(tag + REASON_SEP) ? reason.slice(tag.length + REASON_SEP.length) : reason;
+}
 
 /** Phase 1 of an issue: worktree + worker dispatch. Runs concurrently across issues. */
 export async function runWorker(ctx, issue) {
@@ -86,7 +105,22 @@ export async function runWorker(ctx, issue) {
   // reason skips the coder — re-entering the pipeline at the verify gate below with the
   // already-retained branch, instead of paying for a brand new ~45m worker dispatch to
   // reach a functionally identical outcome.
-  const skipWorker = priorBranch != null && retentionReason === "review-not-run";
+  //
+  // A not-fixable triage verdict (see runTriage in runHousekeeping) earns the same skip,
+  // for a different reason: triage already said no code on this branch can fix it, so
+  // dispatching the coder again would only relearn that. What this round *does* attempt is
+  // the one thing a not-fixable verdict cannot rule out by itself — a transient failure
+  // (a registry blip, a flaky network) that a plain, coder-free deps + verify re-run might
+  // simply not hit a second time. If it fails again the same way, runHousekeeping below
+  // recognises the repeat (via this worker's own `priorReason`) and escalates to blocked
+  // without asking triage again.
+  const notFixableRetry = priorBranch != null && retentionReason?.startsWith(NOT_FIXABLE_TAG);
+  const skipWorker = (priorBranch != null && retentionReason === "review-not-run") || notFixableRetry;
+
+  // A fixable triage verdict routes to a narrower prompt (fixPrompt, below) instead of the
+  // generic workerPrompt + resumeNote — the coder still runs, just told exactly what
+  // failed and why, instead of re-reading the whole issue as if starting over.
+  const fixableRetry = priorBranch != null && retentionReason?.startsWith(FIXABLE_TAG);
 
   // expectReuse: true only when the issue itself has a recorded reason to already have
   // a branch (progress from an earlier round). A branch ref that exists despite this
@@ -144,7 +178,11 @@ export async function runWorker(ctx, issue) {
   }
 
   if (skipWorker) {
-    ctx.log(`[SKIP-WORKER] slug=${issue.slug} reason=review-not-run branch=${branch} — retrying review only, no coder dispatch`);
+    const label = notFixableRetry ? "not-fixable-recheck" : "review-not-run";
+    const what = notFixableRetry
+      ? "rechecking deps + verify only, no triage and no coder dispatch, in case the failure was transient"
+      : "retrying review only, no coder dispatch";
+    ctx.log(`[SKIP-WORKER] slug=${issue.slug} reason=${label} branch=${branch} — ${what}`);
     return {
       issue,
       branch,
@@ -156,12 +194,17 @@ export async function runWorker(ctx, issue) {
         checks: { test: "pass", lint: "pass", typecheck: "pass" },
         branch,
         workingDirectory: worktree,
-        progress: `Round ${ctx.round}: review-only retry — coder dispatch skipped, branch content unchanged`,
-        notes: "review-only retry: the prior round's only failure was the review dispatch itself",
+        progress: notFixableRetry
+          ? `Round ${ctx.round}: not-fixable recheck — coder and triage both skipped; only deps + verify re-run`
+          : `Round ${ctx.round}: review-only retry — coder dispatch skipped, branch content unchanged`,
+        notes: notFixableRetry
+          ? "not-fixable recheck: a prior triage pass judged this verification failure not fixable by recoding; re-checking once, cheaply, in case it was transient"
+          : "review-only retry: the prior round's only failure was the review dispatch itself",
         criteria: [],
         raw: "",
       },
       skippedWorker: true,
+      priorReason: retentionReason,
     };
   }
 
@@ -171,15 +214,25 @@ export async function runWorker(ctx, issue) {
 
   writeFileSync(
     promptFile,
-    workerPrompt({
-      mainRoot: effects.mainRoot,
-      worktree,
-      issuePath: issue.path,
-      slug: issue.slug,
-      criteria: issue.criteria,
-      resume: resumeNote({ priorBranch, hasProgress: issue.hasProgress, hasBlocked: issue.hasBlocked }),
-      reportPath: sidecarFile,
-    }),
+    fixableRetry
+      ? fixPrompt({
+          mainRoot: effects.mainRoot,
+          worktree,
+          issuePath: issue.path,
+          slug: issue.slug,
+          branch,
+          context: stripReasonTag(retentionReason, FIXABLE_TAG),
+          reportPath: sidecarFile,
+        })
+      : workerPrompt({
+          mainRoot: effects.mainRoot,
+          worktree,
+          issuePath: issue.path,
+          slug: issue.slug,
+          criteria: issue.criteria,
+          resume: resumeNote({ priorBranch, hasProgress: issue.hasProgress, hasBlocked: issue.hasBlocked }),
+          reportPath: sidecarFile,
+        }),
   );
 
   const result = await dispatch(
@@ -208,7 +261,7 @@ export async function runWorker(ctx, issue) {
   }
 
   const report = parseWorkerReport(result.text, sidecar);
-  return { issue, branch, worktree, dispatch: result, report };
+  return { issue, branch, worktree, dispatch: result, report, priorReason: retentionReason };
 }
 
 /**
@@ -257,7 +310,7 @@ export async function runHousekeeping(ctx, worker) {
   });
   ctx.log(verify.stdout.trim());
   if (verify.code !== 0) {
-    return finishPartial(ctx, worker, outcome, "verification-failed");
+    return await handleVerificationFailure(ctx, worker, outcome, verify);
   }
   if (/coverage gap/i.test(verify.stdout)) {
     const cats = [...verify.stdout.matchAll(/not_run:\s*([\w, ]+)/gi)]
@@ -335,6 +388,89 @@ function mergeAndClose(ctx, worker, outcome) {
   sprint.complete(issue.slug, branch);
   outcome.status = "complete";
   return outcome;
+}
+
+/**
+ * Verify-worktree.sh already failed — decide what that failure means before demoting.
+ *
+ * Two consecutive not-fixable verdicts for the same slug (recognised via `worker.priorReason`,
+ * set by runWorker) skip straight to blocked: the round in between already re-ran deps +
+ * verify with no coder and no triage involved, purely to rule out a transient failure, so a
+ * second identical result is not "ask the model again" territory — it is the answer. Every
+ * other case dispatches `runTriage`, an agent independent of the coder that wrote the branch
+ * (the same reason review is independent of the coder, not a self-grade), and tags the
+ * retention reason with its verdict so the *next* round's runWorker can route on it without
+ * re-deriving anything.
+ */
+async function handleVerificationFailure(ctx, worker, outcome, verify) {
+  const priorReason = worker.priorReason ?? null;
+  if (priorReason && priorReason.startsWith(NOT_FIXABLE_TAG)) {
+    const carried = stripReasonTag(priorReason, NOT_FIXABLE_TAG);
+    return finishBlocked(
+      ctx,
+      worker,
+      outcome,
+      `environment — verification still fails the same way after a clean, coder-free retry: ${carried}`,
+    );
+  }
+
+  const triage = await runTriage(ctx, worker, verify.stdout);
+  if (!triage.completed) {
+    // Triage itself is unusable (dispatch failure, timeout, unparseable answer) — fall back
+    // to the plain reason rather than let a helper's own failure stall the branch. The next
+    // round still gets a full coder redispatch, same as before this existed.
+    return finishPartial(ctx, worker, outcome, "verification-failed");
+  }
+
+  const summary = `${triage.parsed.category || "unspecified"}: ${triage.parsed.detail || "no detail given"}`;
+  const tag = triage.parsed.fixable ? FIXABLE_TAG : NOT_FIXABLE_TAG;
+  return finishPartial(ctx, worker, outcome, taggedReason(tag, summary));
+}
+
+/**
+ * Dispatched to `crew-triage`, never to `crew-coder` — the coder that wrote the branch has
+ * every incentive to call its own failure "environmental" rather than do more work, the same
+ * self-grading risk that keeps review off the coder too. cwd is mainRoot, not the worktree:
+ * the branch ref and the captured check output are all triage needs, matching runReview.
+ */
+async function runTriage(ctx, worker, verifyStdout) {
+  const { sprint, effects, platform, options } = ctx;
+  const { issue, branch } = worker;
+  const promptFile = join(sprint.dispatchDir, `${issue.slug}.triage-prompt.md`);
+  const outFile = join(sprint.dispatchDir, `${issue.slug}.triage.md`);
+
+  writeFileSync(
+    promptFile,
+    triagePrompt({
+      branch,
+      slug: issue.slug,
+      issuePath: issue.path,
+      featureBranch: sprint.featureBranch,
+      checkOutput: verifyStdout,
+    }),
+  );
+
+  const result = await dispatch(
+    effects,
+    platform,
+    {
+      agent: "crew-triage",
+      cwd: effects.mainRoot,
+      promptFile,
+      outFile,
+      // Same convention as the reviewer: triage judges the coder's work, so it is held to
+      // the same model, never a cheaper one the sprint did not choose.
+      model: options.model,
+      mainRoot: effects.mainRoot,
+      logFile: sprint.traceLog,
+      scriptsDir: effects.scriptsDir,
+    },
+    { timeoutMs: options.reviewTimeoutMs },
+  );
+
+  const parsed = parseTriageReport(result.text);
+  const completed = !(result.timedOut || (result.code !== 0 && !parsed.ok) || !parsed.ok);
+  return { completed, parsed };
 }
 
 async function runReview(ctx, worker, checks) {

@@ -1,6 +1,26 @@
 # Changelog
 
-## [1.29.28]
+## [1.29.29]
+
+### Changed
+
+- **A crew-afk branch that fails verification is now triaged before it is redispatched, instead
+  of always getting a full coder re-implementation.** A new independent agent, `crew-triage`
+  (never the coder that wrote the branch — the same reason review isn't a self-grade), reads the
+  captured failing check output and the branch's own diff and answers one question: is this
+  fixable by more code on this branch, or an environment/infrastructure problem (registry,
+  network, Docker, credentials, ...) that no recoding touches? A `fixable` verdict routes the next
+  round to a new, narrow `fixPrompt` ("the code is otherwise acceptable, make the smallest change
+  that fixes exactly this") instead of the generic "resume the whole issue" prompt. A
+  `not fixable` verdict skips the coder *and* triage entirely for one cheap, coder-free deps +
+  verify retry (catches a transient blip for free); if the identical failure recurs, the issue is
+  marked blocked and tagged `environment` so `crew-summary.sh` lists it under a new
+  `## Environment Blockers (need a human)` section, distinct from an ordinary code-review
+  blocker. `orchestrator/lib/report.mjs` gains `parseTriageReport`; `orchestrator/lib/prompts.mjs`
+  gains `triagePrompt`/`fixPrompt`; `orchestrator/lib/pipeline.mjs` gains `runTriage`/
+  `handleVerificationFailure` and two new retention-reason tags
+  (`verification-failed:fixable`/`verification-failed:not-fixable`). `crew-triage` is a new agent
+  in `registry.json`, installed automatically as a `crew-afk` dependency on every platform.
 
 ### Changed
 

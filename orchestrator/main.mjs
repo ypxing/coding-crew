@@ -238,7 +238,7 @@ async function main() {
   });
 
   if (options.command === "doctor") {
-    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer"]);
+    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"]);
     console.log(problems.length ? problems.map((p) => `PROBLEM: ${p}`).join("\n") : `OK: ${options.platform} can dispatch.`);
     return problems.length ? 1 : 0;
   }
@@ -256,7 +256,7 @@ async function main() {
   // --- plan: read-only, zero tokens ----------------------------------------
   if (options.command === "plan") {
     const issues = selectDispatchable(mainRoot);
-    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer"]);
+    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"]);
     console.log(`platform:  ${options.platform}`);
     console.log(`model:     ${options.model ?? "platform default"}`);
     console.log(`parallel:  ${options.parallel}`);
@@ -273,7 +273,7 @@ async function main() {
   }
 
   // --- run -----------------------------------------------------------------
-  const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer"]);
+  const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"]);
   if (problems.length) {
     console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));
     return 1;

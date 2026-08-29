@@ -216,3 +216,37 @@ export function findingsAtOrAbove(findings, threshold /* "critical" | "critical-
   const allowed = threshold === "critical-high" ? ["CRITICAL", "HIGH"] : ["CRITICAL"];
   return findings.filter((f) => allowed.includes(f.severity));
 }
+
+/**
+ * Triage report. Dispatched only after verify-worktree.sh already failed, to answer one
+ * question independently of the coder that wrote the branch (the same reason review is
+ * independent of the coder, not a self-grade): is this failure fixable by writing more
+ * code on this branch, or is it an environment/infrastructure problem no amount of
+ * recoding touches? Fails closed toward `fixable` — an unparseable or missing verdict
+ * must not silently strand an issue that a normal retry could still fix.
+ */
+export function parseTriageReport(text) {
+  const raw = text ?? "";
+  if (!raw.trim()) {
+    return { ok: false, fixable: true, category: "", detail: "empty triage report", raw };
+  }
+  const fixable = /^\s*FIXABLE:\s*(yes|no)\b/im.exec(raw);
+  const category = /^\s*CATEGORY:\s*(.+)$/im.exec(raw);
+  const detail = /^\s*DETAIL:\s*([\s\S]*)$/im.exec(raw);
+  if (!fixable) {
+    return {
+      ok: false,
+      fixable: true,
+      category: category ? category[1].trim() : "",
+      detail: detail ? detail[1].trim() : "no FIXABLE: line",
+      raw,
+    };
+  }
+  return {
+    ok: true,
+    fixable: fixable[1].toLowerCase() === "yes",
+    category: category ? category[1].trim() : "unspecified",
+    detail: detail ? detail[1].trim() : "",
+    raw,
+  };
+}

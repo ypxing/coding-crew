@@ -18,11 +18,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CHECK_CATEGORIES, parseWorkerReport, parseReviewReport } from "../../orchestrator/lib/report.mjs";
+import { CHECK_CATEGORIES, parseWorkerReport, parseReviewReport, parseTriageReport } from "../../orchestrator/lib/report.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "../..");
@@ -117,4 +117,34 @@ test("the reviewer protocol states the FINDING line the parser promotes from", (
   assert.deepEqual(parsed.findings, [
     { severity: "CRITICAL", location: "src/db.ts:7", criterion: "Parameterise the query", explicit: true },
   ]);
+});
+
+test("the triage protocol states the three-line verdict the parser reads, and never trusts the coder's own diagnosis", () => {
+  const protocol = readFileSync(join(REPO, "agents/crew-triage/protocol.md"), "utf8");
+  assert.match(protocol, /^FIXABLE: yes \| no$/m);
+  assert.match(protocol, /^CATEGORY:/m);
+  assert.match(protocol, /^DETAIL:/m);
+  // Independence from the coder is the whole point of a separate agent — state it, not
+  // just imply it, the same way the reviewer protocol states "no branch is blocked or
+  // re-queued on a finding" rather than leaving that to be inferred.
+  assert.match(protocol, /independent of the coder/i);
+
+  // And the shape the protocol shows is the shape the parser reads.
+  const parsed = parseTriageReport(
+    ["FIXABLE: yes", "CATEGORY: wrong dependency version", "DETAIL: pinned a version that 404s"].join("\n"),
+  );
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.fixable, true);
+  assert.equal(parsed.category, "wrong dependency version");
+});
+
+test("every launcher platform installs a crew-triage agent definition distinct from the coder and reviewer", () => {
+  for (const platform of launcherPlatforms()) {
+    const file = platform === "codex" ? "codex.agent.toml" : `${platform}.agent.md`;
+    const p = join(REPO, "agents/crew-triage", file);
+    assert.ok(existsSync(p), `agents/crew-triage/${file} is missing`);
+    const body = readFileSync(p, "utf8");
+    assert.match(body, /\{\{PROTOCOL\}\}/, `${platform} crew-triage shim never inlines the protocol`);
+    assert.match(body, /crew-triage/);
+  }
 });

@@ -182,6 +182,27 @@ if [ -n "$MERGE_CONFLICTS" ]; then
   printf '%s\n' "$MERGE_CONFLICTS" | sed 's/^/- /'
 fi
 
+# --- Environment blockers (triage said not-fixable, twice — see handleVerificationFailure
+# in orchestrator/lib/pipeline.mjs) -------------------------------------------
+# A `blocked — environment — ...` reason is the other case, alongside merge-failed, that
+# isn't the branch's own content needing more work: crew-triage judged the verification
+# failure unfixable by recoding, a plain coder-free retry hit the identical failure again,
+# and no further sprint round will change that outcome — carved out of the generic Retained
+# Branches / Blocked list above so a human scanning the summary sees "go fix the
+# registry/network/credentials" at a glance, not "go read what the coder got stuck on".
+ENV_BLOCKED=$(jq -r '(.retention // {}) | to_entries[]
+  | select(.value.reason | test("^blocked — environment"))
+  | "- \(.key) (\(.value.branch)): \(.value.reason)"' "$SF" 2>/dev/null || true)
+if [ -n "$ENV_BLOCKED" ]; then
+  echo ""
+  echo "## Environment Blockers (need a human)"
+  echo "crew-triage classified each of these as not fixable by recoding, and a plain,"
+  echo "coder-free retry (deps + verify only) hit the identical failure again — a registry,"
+  echo "network, credential, or infrastructure problem, not something in the diff. Resolve the"
+  echo "environment, then re-run crew-afk: these issues are attempted normally on the next run."
+  printf '%s\n' "$ENV_BLOCKED"
+fi
+
 # --- Promoted Findings --------------------------------------------------------
 # Read back the markers promote-findings.sh defer appended to each review report:
 #   - <branch>: <severities> → <issue path>
