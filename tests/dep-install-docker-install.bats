@@ -73,6 +73,63 @@ stub_docker() {
   [ "$status" -ne 0 ]
 }
 
+# ─── gen-override.sh: worktree symlink ───────────────────────────────────────
+#
+# Every mechanical caller still passes the override's absolute MAIN_ROOT path via an
+# explicit second `-f` (see the docker-install.sh tests below) — these tests pin the added
+# safety net: a symlink at PROJECT_ROOT so compose's own same-directory override convention
+# also picks it up if something ever invokes `docker compose run` with no `-f` at all.
+
+@test "a worktree PROJECT_ROOT gets a symlink to the MAIN_ROOT override" {
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -L "$WORK/docker-compose.override.yml" ]
+  [ "$(readlink "$WORK/docker-compose.override.yml")" = "$MAIN/docker-compose.override.yml" ]
+  diff "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
+}
+
+@test "--dry-run prints YAML but writes and links nothing" {
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  [ "$status" -eq 0 ]
+  [ ! -e "$MAIN/docker-compose.override.yml" ]
+  [ ! -e "$WORK/docker-compose.override.yml" ]
+}
+
+@test "the MAIN_ROOT-only call (PROJECT_ROOT == MAIN_ROOT) does not self-link" {
+  cp "$WORK/docker-compose.yml" "$WORK/package.json" "$WORK/package-lock.json" "$MAIN/"
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$MAIN" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -f "$MAIN/docker-compose.override.yml" ]
+  [ ! -L "$MAIN/docker-compose.override.yml" ]
+}
+
+@test "a stale symlink pointing at a different MAIN_ROOT is cleared and relinked, not left dangling" {
+  local other_main; other_main=$(mktemp -d)
+  ln -s "$other_main/docker-compose.override.yml" "$WORK/docker-compose.override.yml"
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -L "$WORK/docker-compose.override.yml" ]
+  [ "$(readlink "$WORK/docker-compose.override.yml")" = "$MAIN/docker-compose.override.yml" ]
+  rm -rf "$other_main"
+}
+
+@test "a project's own committed docker-compose.override.yml at PROJECT_ROOT is left untouched" {
+  echo "services: {}" > "$WORK/docker-compose.override.yml"
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ ! -L "$WORK/docker-compose.override.yml" ]
+  [ "$(cat "$WORK/docker-compose.override.yml")" = "services: {}" ]
+}
+
+@test "re-running gen-override.sh against the same worktree is idempotent" {
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -L "$WORK/docker-compose.override.yml" ]
+  [ "$(readlink "$WORK/docker-compose.override.yml")" = "$MAIN/docker-compose.override.yml" ]
+}
+
 @test "gen-override.sh falls back to /app when no bind-mount volume line matches" {
   cat > "$WORK/docker-compose.yml" <<'YML'
 services:
@@ -154,6 +211,7 @@ YML
   [[ "$output" == "Running: docker compose run --rm app sh -c"* ]]
   [[ "$output" == *"npm ci"* ]]
   [ -f "$MAIN/docker-compose.override.yml" ]
+  [ -L "$WORK/docker-compose.override.yml" ]
 }
 
 @test "--service overrides the first-service default" {

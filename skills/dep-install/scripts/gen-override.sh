@@ -25,6 +25,14 @@
 # Emitting `name:` here, keyed off MAIN_ROOT (not the worktree), is what actually makes the
 # named volumes shared across every worktree — the volume name prefix alone does not.
 #
+# Worktree symlink: when PROJECT_ROOT differs from MAIN_ROOT, the file written at MAIN_ROOT
+# is also symlinked to PROJECT_ROOT/docker-compose.override.yml. Every mechanical caller
+# still passes the file's absolute MAIN_ROOT path via an explicit second `-f` regardless of
+# this symlink — that stays the correct, cwd-independent way to invoke it. The symlink exists
+# only so a bare `docker compose run` typed with no `-f` at all still picks the override up
+# via compose's own same-directory discovery convention, instead of silently running without
+# it.
+#
 # Platform: the project's own compose file (or the image it builds/pulls) may pin
 # `platform: linux/amd64`. On an arm64 host that forces every `docker compose run` — install
 # and every later verify check alike — under qemu emulation, which is where "requested
@@ -372,4 +380,34 @@ else
   echo "  services:  $(IFS=', '; echo "${SERVICES[*]}")"
   echo "  sandbox:   $([[ "$SANDBOX" == "1" ]] && echo true || echo false)"
   echo "  platform:  ${RESOLVED_PLATFORM:-unset, project pin unchanged}"
+
+  # A worktree (PROJECT_ROOT distinct from MAIN_ROOT) also gets its own symlink to this
+  # single generated file. Every mechanical caller (docker-install.sh, verify-worktree.sh)
+  # and docker-install.md's own instructions already pass this file's absolute MAIN_ROOT
+  # path via an explicit second `-f` on every command, which is correct regardless of cwd
+  # and stays that way — this symlink does not replace it. It is a safety net for the one
+  # case that contract can't cover: a bare `docker compose run` a worker types without any
+  # `-f` at all silently drops the override (proxy vars, platform pin, named volumes)
+  # instead of failing loudly. Compose's own same-directory `docker-compose.override.yml`
+  # discovery convention only fires when the file actually sits next to `docker-compose.yml`
+  # in PROJECT_ROOT, so it needs a real (or symlinked) presence there, not just resolvability
+  # via some other path. `-ef` compares resolved identity, not string equality, so the one
+  # MAIN_ROOT-only call (PROJECT_ROOT == MAIN_ROOT, before any worktree exists) is a no-op
+  # here rather than linking the file to itself. Mirrors ensure-env.sh's own `.env` link,
+  # including its dangling-symlink hazard: `-e` follows symlinks and reports false for a
+  # stale one too (e.g. a worktree reused after this script last ran against a different
+  # MAIN_ROOT), so that case is cleared and relinked rather than left broken. A live
+  # entry — a real file, or a symlink that still resolves — is left alone: a project that
+  # commits its own docker-compose.override.yml at PROJECT_ROOT keeps it untouched, the same
+  # "leave a live entry" rule applyWorktreeInclude uses for `.worktreeinclude`.
+  if [[ ! "$PROJECT_ROOT" -ef "$MAIN_ROOT" ]]; then
+    override_link="$PROJECT_ROOT/docker-compose.override.yml"
+    if [[ -L "$override_link" && ! -e "$override_link" ]]; then
+      rm -f "$override_link"
+    fi
+    if [[ ! -e "$override_link" ]]; then
+      ln -s "$MAIN_ROOT/docker-compose.override.yml" "$override_link"
+      echo "Linked: $override_link -> $MAIN_ROOT/docker-compose.override.yml"
+    fi
+  fi
 fi

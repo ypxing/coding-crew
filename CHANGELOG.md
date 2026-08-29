@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.29.32]
+
+### Added
+
+- **`gen-override.sh` now also symlinks `docker-compose.override.yml` into `PROJECT_ROOT`
+  when it differs from `MAIN_ROOT`.** Every mechanical caller (`docker-install.sh`,
+  `verify-worktree.sh`) and `docker-install.md`'s own instructions already pass the file's
+  absolute `MAIN_ROOT` path via an explicit second `-f` on every `docker compose` command —
+  that stays the correct, cwd-independent way to invoke it and is unchanged. The symlink is a
+  safety net for the one case that contract can't cover: a worker's ad hoc `docker compose
+  run` typed with no `-f` at all used to silently drop the override (proxy vars, platform
+  pin, named volumes) instead of failing loudly, since compose's own same-directory
+  `docker-compose.override.yml` discovery convention only fires when the file is actually
+  present next to `docker-compose.yml` in the worktree. Mirrors `ensure-env.sh`'s existing
+  `.env` link, including its dangling-symlink handling (a stale link left over from a
+  worktree reused against a different `MAIN_ROOT` is cleared and relinked, not left broken)
+  and its "leave a live entry alone" rule (a project's own committed override file at
+  `PROJECT_ROOT` is never overwritten). `-ef` skips the one `MAIN_ROOT`-only call (before any
+  worktree exists) so it never links the file to itself.
+
+registry.json: dep-install 1.3.6 -> 1.3.7.
+
 ## [1.29.31]
 
 ### Fixed
