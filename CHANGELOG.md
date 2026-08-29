@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.29.30]
+
+### Fixed
+
+- **`env` now gets the same script-side Makefile safety net `install` already had, closing a
+  gap that let a discovered `env` (and, less often, `install`) come back `null` even after
+  discover-commands.sh's prompt was twice strengthened (v1.29.11, v1.29.27) to require opening
+  any Makefile before answering either as `null`.** That instruction is a strong nudge to the
+  model, not a guarantee it is followed on every run — reported in the wild as an orchestrator
+  log showing both fields `null` for a repo whose Makefile plainly had `deps`/`.env` targets,
+  while pasting the identical prompt into an interactive session answered correctly. `install`
+  already had a script-side backstop independent of the model: `host-install.sh` mechanically
+  scans any Makefile for an `install`/`deps` target before falling back to lockfile
+  conventions. `env` had no equivalent — `ensure-env.sh`'s only fallback was the mechanical
+  `.env.example`-or-empty convention, so a repo whose real bootstrap lived only in a Makefile
+  target (`env`, `.env`, `dotenv`, `setup-env`) got an empty or wrong `.env` with nothing left
+  to catch it. `ensure-env.sh` gains `_makefile_env_command`, tried between the discovered
+  override and the mechanical convention, mirroring `host-install.sh`'s own scan including its
+  docker-recipe skip.
+
+registry.json: dep-install 1.3.5 -> 1.3.6.
+
 ## [1.29.29]
 
 ### Changed

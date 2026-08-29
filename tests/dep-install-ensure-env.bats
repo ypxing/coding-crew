@@ -193,6 +193,87 @@ teardown() {
   diff "$PROJECT/.env.example" "$PROJECT/.env"
 }
 
+# ─── the Makefile env-target scan, tried between the discovered override and the mechanical
+# convention — the same safety net host-install.sh's own install/deps target scan already
+# gives `install`, now given to `env` too: the discovery model is told it MUST check any
+# Makefile before answering null, but that is a nudge, not a guarantee.
+
+@test "a null env in dev-commands.json falls back to a Makefile env target before .env.example" {
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '{"env": null}' > "$PROJECT/.coding-crew/dev-commands.json"
+  echo "FOO=bar" > "$PROJECT/.env.example"
+  cat > "$PROJECT/Makefile" <<'MK'
+env:
+	echo MAKE_ENV=1 > .env
+MK
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.env" ]
+  [ "$(cat "$PROJECT/.env")" = "MAKE_ENV=1" ]
+  [[ "$output" == *"Makefile target"* ]]
+}
+
+@test "no dev-commands.json at all still falls back to a Makefile env target before .env.example" {
+  echo "FOO=bar" > "$PROJECT/.env.example"
+  cat > "$PROJECT/Makefile" <<'MK'
+env:
+	echo MAKE_ENV=1 > .env
+MK
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$PROJECT/.env")" = "MAKE_ENV=1" ]
+}
+
+@test "a Makefile .env file-target is recognised the same as a phony env target" {
+  cat > "$PROJECT/Makefile" <<'MK'
+.env:
+	echo MAKE_DOTENV=1 > .env
+MK
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$PROJECT/.env")" = "MAKE_DOTENV=1" ]
+}
+
+@test "a Makefile env target invoking docker is skipped, falling through to .env.example" {
+  echo "FOO=bar" > "$PROJECT/.env.example"
+  cat > "$PROJECT/Makefile" <<'MK'
+env:
+	docker compose run --rm app make env
+MK
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  diff "$PROJECT/.env.example" "$PROJECT/.env"
+}
+
+@test "a discovered env override still wins over a Makefile env target" {
+  mkdir -p "$PROJECT/.coding-crew"
+  printf '{"env": "echo CUSTOM=1 > .env"}' > "$PROJECT/.coding-crew/dev-commands.json"
+  cat > "$PROJECT/Makefile" <<'MK'
+env:
+	echo MAKE_ENV=1 > .env
+MK
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$PROJECT/.env")" = "CUSTOM=1" ]
+}
+
+@test "a Makefile with no env-shaped target falls through to .env.example unchanged" {
+  echo "FOO=bar" > "$PROJECT/.env.example"
+  cat > "$PROJECT/Makefile" <<'MK'
+build:
+	echo building
+MK
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  diff "$PROJECT/.env.example" "$PROJECT/.env"
+}
+
 @test "a failing discovered env command still leaves a real .env behind via the mechanical fallback" {
   mkdir -p "$PROJECT/.coding-crew"
   printf '{"env": "echo custom env boom >&2; exit 5"}' > "$PROJECT/.coding-crew/dev-commands.json"
@@ -289,3 +370,4 @@ teardown() {
   grep -qx '.env' "$MAIN/.git/info/exclude"
   rm -rf "$MAIN"
 }
+

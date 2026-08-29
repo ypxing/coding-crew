@@ -17,7 +17,14 @@
 # when --main-root is not given -- see _cached_env_command) -- a documented .env-bootstrap
 # command discover-commands.sh / write-commands-cache.sh may have cached once per sprint,
 # alongside test/lint/typecheck/install, from a CLAUDE.md/AGENTS.md/Makefile this script
-# deliberately never reads itself. A missing cache, a null field, or a cached command that
+# deliberately never reads itself. When that field came back null (or nothing was ever
+# cached), a second, mechanical tier runs before the cp/touch convention: a direct scan of
+# any Makefile for an env/.env/dotenv/setup-env target (see _makefile_env_command) -- the
+# same safety net host-install.sh's own install/deps target scan already gives `install`,
+# for exactly the same reason: the discovery model is told it MUST check a Makefile before
+# answering null for either category, but that instruction is a nudge, not a guarantee, and
+# until now only `install` had a script-side check independent of the model following it.
+# A missing cache, a null field, or a cached command that
 # runs but never actually leaves a .env behind (or fails outright) all fall through to the
 # mechanical convention unchanged -- this step never blocks, so a broken override must not
 # leave a worktree with no .env at all.
@@ -83,16 +90,54 @@ _cached_env_command() {
     | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/'
 }
 
-# _ensure_env_at <dir> <cache-root> -- tries the discovered env override (if any) first;
-# falls back to the mechanical convention when there is none, or when running the override
-# did not actually leave a .env file behind in <dir> (a broken or failing override must never
-# leave this step with no .env at all -- see this script's "never blocks" contract above).
+# _makefile_env_command <dir> -- a Makefile target that looks like this repo's own
+# .env-bootstrap convention (env, .env, dotenv, setup-env), tried when command discovery's
+# own "env" field came back null (or was never cached at all). The same mechanical
+# convention host-install.sh's own install/deps target scan already applies for install -- a
+# category discover-commands.sh's prompt now treats symmetrically with env (both MUST be
+# checked against any Makefile before answering null), but until now only install had a
+# script-side safety net independent of the model actually following that instruction. A
+# genuine-reasoning prompt is a strong nudge, not a guarantee: without this, a repo whose
+# real bootstrap is a Makefile target the model missed silently got an empty or
+# .env.example-derived .env instead, with nothing to catch it the way install's own
+# host-install.sh scan already does for a missed install/deps target.
+#
+# Recipes that invoke docker are skipped, mirroring host-install.sh's own scan: a
+# container-side env step is not something this host-side function can run standalone.
+_makefile_env_command() {
+  local dir="$1" target recipe
+  [[ -f "$dir/Makefile" ]] || return 0
+  for target in env .env dotenv setup-env; do
+    if ( cd "$dir" && make -n "$target" ) >/dev/null 2>&1; then
+      recipe=$(cd "$dir" && make -n "$target" 2>/dev/null || true)
+      if printf '%s' "$recipe" | grep -qE 'docker (compose|run|exec)'; then
+        continue
+      fi
+      printf 'make %s' "$target"
+      return 0
+    fi
+  done
+  return 0
+}
+
+# _ensure_env_at <dir> <cache-root> -- tries the discovered env override (if any) first, then
+# a Makefile env-target guess (see _makefile_env_command above); falls back to the mechanical
+# convention when neither exists, or when running either did not actually leave a .env file
+# behind in <dir> (a broken or failing override/guess must never leave this step with no
+# .env at all -- see this script's "never blocks" contract above).
 _ensure_env_at() {
-  local dir="$1" cache_root="$2" cached
+  local dir="$1" cache_root="$2" cached guessed
   cached="$(_cached_env_command "$cache_root")"
   if [[ -n "$cached" ]]; then
     if ( cd "$dir" && eval "$cached" ) >/dev/null 2>&1 && [[ -f "$dir/.env" ]]; then
       printf 'Created .env via discovered command: %s' "$cached"
+      return 0
+    fi
+  fi
+  guessed="$(_makefile_env_command "$dir")"
+  if [[ -n "$guessed" ]]; then
+    if ( cd "$dir" && eval "$guessed" ) >/dev/null 2>&1 && [[ -f "$dir/.env" ]]; then
+      printf 'Created .env via Makefile target: %s' "$guessed"
       return 0
     fi
   fi
