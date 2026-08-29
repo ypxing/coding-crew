@@ -46,6 +46,40 @@ setup_file() {
   [[ "$output" == *"disabled (--no-deps)"* ]]
 }
 
+@test "orchestrator: plan (and run) refuse to guess between two feature dirs with ready issues" {
+  # Regression: a bare invocation with no --feature-slug used to let session-init.sh's
+  # own "find | head -n 1" fallback silently pick one of several feature dirs, which is
+  # exactly the shape of the cross-feature dispatch bug selectDispatchable()'s scoping
+  # fix (tracker.mjs) exists to prevent. main.mjs must refuse instead of guessing, before
+  # session-init.sh (or anything else) ever runs.
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  local dir
+  dir="$(mktemp -d)"
+  cd "$dir"
+  git init -q
+  printf '.scratch/\n' > .gitignore
+  git add .gitignore
+  git commit -q -m init
+  mkdir -p .scratch/feat-a/issues/open .scratch/feat-b/issues/open
+  printf '# A\n\nStatus: ready-for-agent\n' > .scratch/feat-a/issues/open/01-a.md
+  printf '# B\n\nStatus: ready-for-agent\n' > .scratch/feat-b/issues/open/01-b.md
+
+  run node "$REPO_ROOT/orchestrator/main.mjs" plan --platform pi
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"refusing to guess"* ]]
+  [[ "$output" == *"--feature-slug feat-a"* ]]
+  [[ "$output" == *"--feature-slug feat-b"* ]]
+
+  # An explicit slug still resolves normally and is never treated as ambiguous.
+  run node "$REPO_ROOT/orchestrator/main.mjs" plan --platform pi --feature-slug feat-a
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"dispatchable now (1):"* ]]
+  [[ "$output" == *"- a  "* ]]
+
+  cd /
+  rm -rf "$dir"
+}
+
 @test "orchestrator: every platform builds a headless per-agent dispatch" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$REPO_ROOT"

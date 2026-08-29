@@ -32,32 +32,44 @@ if [ "$NO_SQUASH" = true ]; then
   exit 0
 fi
 
-# Resolve the feature slug. The state file written by session-init.sh is the single
-# source of truth (`.feature_slug`); the branch name is only a fallback for state
-# files written by an older version, because a branch may be named anything.
+# Resolve the feature slug. Explicit env wins, then the state-file glob below, matching
+# state.sh's own rule ("explicit flags win, then the environment exported by sprint.env,
+# never a glob"): loop.mjs's wrapUp() hands this script FEATURE_SLUG and STATE_FILE via
+# sprint.childEnv() on every real sprint run, already correctly resolved by session-init.sh.
+# Re-deriving them here anyway — by matching the current branch against every
+# .scratch/*/sprint-state.json — used to run unconditionally even when the caller had
+# already told it exactly which sprint it was: a coincidental branch-name collision across
+# two features' state files (or simply a different glob order) could point a real sprint's
+# squash at the wrong feature's state. Only a standalone invocation with neither var set
+# (this script run by hand, or by a bats test with no sprint.env in the environment) falls
+# through to that branch-matching lookup, same as before.
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 BRANCH_DERIVED="${CURRENT_BRANCH#feature/}"
 BRANCH_DERIVED=$(echo "$BRANCH_DERIVED" | sed -E 's/^[A-Z]+-[0-9]+-//')
 
-STATE_FILE=""
-FEATURE_SLUG=""
-for candidate in .scratch/*/sprint-state.json; do
-  [ -f "$candidate" ] || continue
-  candidate_slug=$(jq -r '.feature_slug // empty' "$candidate")
-  candidate_dir=$(basename "$(dirname "$candidate")")
-  [ -n "$candidate_slug" ] || candidate_slug="$candidate_dir"
-  # Prefer the state file that knows about the branch we are on.
-  if [ "$(jq -r --arg b "$CURRENT_BRANCH" '.branches[$b] // empty' "$candidate")" != "" ]; then
-    STATE_FILE="$candidate"
-    FEATURE_SLUG="$candidate_slug"
-    break
-  fi
-done
+if [ -n "${FEATURE_SLUG:-}" ] && [ -n "${STATE_FILE:-}" ] && [ -f "$STATE_FILE" ]; then
+  : # inherited from the environment — authoritative, never re-derived
+else
+  STATE_FILE=""
+  FEATURE_SLUG=""
+  for candidate in .scratch/*/sprint-state.json; do
+    [ -f "$candidate" ] || continue
+    candidate_slug=$(jq -r '.feature_slug // empty' "$candidate")
+    candidate_dir=$(basename "$(dirname "$candidate")")
+    [ -n "$candidate_slug" ] || candidate_slug="$candidate_dir"
+    # Prefer the state file that knows about the branch we are on.
+    if [ "$(jq -r --arg b "$CURRENT_BRANCH" '.branches[$b] // empty' "$candidate")" != "" ]; then
+      STATE_FILE="$candidate"
+      FEATURE_SLUG="$candidate_slug"
+      break
+    fi
+  done
 
-if [ -z "$STATE_FILE" ]; then
-  FEATURE_SLUG="$BRANCH_DERIVED"
-  STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
+  if [ -z "$STATE_FILE" ]; then
+    FEATURE_SLUG="$BRANCH_DERIVED"
+    STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
+  fi
 fi
 
 if [ ! -f "$STATE_FILE" ]; then
@@ -89,7 +101,7 @@ fi
 ISSUE_BULLETS=""
 ISSUE_TITLES=()
 for slug in "${COMPLETED_SLUGS[@]}"; do
-  ISSUE_FILE=$(find .scratch/*/issues/done -name "*${slug}.md" -type f 2>/dev/null | head -n 1)
+  ISSUE_FILE=$(find ".scratch/$FEATURE_SLUG/issues/done" -name "*${slug}.md" -type f 2>/dev/null | head -n 1)
   if [ -n "$ISSUE_FILE" ]; then
     # `grep -v` exits 1 when it filters everything out, which under `set -euo pipefail`
     # would kill the script before the fallback below could run. Guard the pipeline so

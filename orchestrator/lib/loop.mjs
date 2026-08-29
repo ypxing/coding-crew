@@ -30,7 +30,10 @@ export async function runSprint(ctx) {
   const history = [];
 
   while (true) {
-    const issues = selectDispatchable(effects.mainRoot);
+    // Scoped to this sprint's own feature — see selectDispatchable()'s docstring. An
+    // unscoped scan here would dispatch a ready-for-agent issue from an unrelated
+    // .scratch/<other-feature>/ onto this sprint's feature branch.
+    const issues = selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug });
 
     if (!issues.length) {
       if (flush(ctx) > 0) {

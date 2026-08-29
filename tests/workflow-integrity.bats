@@ -123,6 +123,49 @@ _installed_scripts() {
   [[ "$output" == *"Squashed"* ]]
 }
 
+@test "squash-commits prefers inherited FEATURE_SLUG/STATE_FILE over the branch-matching glob" {
+  # Regression: loop.mjs's wrapUp() hands squash-commits.sh FEATURE_SLUG and STATE_FILE via
+  # sprint.childEnv() — already resolved by session-init.sh for the running sprint. The
+  # script used to ignore both and re-derive by matching the current branch against every
+  # .scratch/*/sprint-state.json, unconditionally. Two feature dirs that happen to record
+  # the *same* branch name (a coincidence, or session-init.sh re-run under a different slug
+  # on the same branch) used to let glob order decide which one "wins" even when the caller
+  # already knew the right answer. The inherited env must win outright.
+  printf '.scratch/\n' > .gitignore
+  git add .gitignore && git commit -q -m gitignore
+
+  mkdir -p .scratch/feat-a/issues/done .scratch/feat-b/issues/done
+  printf 'Status: done\n\n## What to build\n\nWrong feature (alphabetically first)\n' > .scratch/feat-a/issues/done/01-shared-slug.md
+  printf 'Status: done\n\n## What to build\n\nRight feature per FEATURE_SLUG env\n' > .scratch/feat-b/issues/done/01-shared-slug.md
+
+  BASE_SHA=$(git rev-parse HEAD)
+  # Both features' state files record the exact same branch name — the one signal the
+  # unscoped fallback used to key off.
+  jq -n --arg sha "$BASE_SHA" --arg slug feat-a \
+    '{feature_slug: $slug, branches: {"feature/shared": {base_sha: $sha}}}' \
+    > .scratch/feat-a/sprint-state.json
+  jq -n --arg sha "$BASE_SHA" --arg slug feat-b \
+    '{feature_slug: $slug, branches: {"feature/shared": {base_sha: $sha}}}' \
+    > .scratch/feat-b/sprint-state.json
+
+  git checkout -q -b feature/shared
+  echo x > work.txt && git add work.txt && git commit -q -m "work"
+  echo y >> work.txt && git commit -q -am "more work"
+
+  export FEATURE_SLUG=feat-b
+  export STATE_FILE="$PWD/.scratch/feat-b/sprint-state.json"
+  run bash "$SQUASH" --platform pi shared-slug
+  unset FEATURE_SLUG STATE_FILE
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Squashed"* ]]
+  # The commit message's issue title must come from feat-b's done/ file (the one the
+  # environment named), never feat-a's — which the old unscoped glob would pick first
+  # purely because "feat-a" sorts before "feat-b".
+  run git log -1 --format=%B
+  [[ "$output" == *"Right feature per FEATURE_SLUG env"* ]]
+  [[ "$output" != *"Wrong feature"* ]]
+}
+
 # --- B5: missing "## What to build" must fall back, not abort -----------------
 
 @test "B5: squash-commits succeeds when the issue has no 'What to build' section" {

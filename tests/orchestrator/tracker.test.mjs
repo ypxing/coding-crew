@@ -114,6 +114,32 @@ test("listOpenIssueFiles spans feature dirs and is sorted", () => {
   assert.deepEqual(files, ["alpha", "zeta"]);
 });
 
+test("listOpenIssueFiles scopes to one feature dir when given a featureSlug", () => {
+  const root = repo();
+  issue(root, "zeta", "01-z.md", "# Z\n\nStatus: ready-for-agent\n");
+  issue(root, "alpha", "01-a.md", "# A\n\nStatus: ready-for-agent\n");
+  const files = listOpenIssueFiles(root, { featureSlug: "alpha" });
+  assert.equal(files.length, 1);
+  assert.match(files[0], /alpha\/issues\/open\/01-a\.md$/);
+});
+
+test("listOpenIssueFiles returns nothing for a featureSlug with no issues/open dir", () => {
+  const root = repo();
+  issue(root, "zeta", "01-z.md", "# Z\n\nStatus: ready-for-agent\n");
+  assert.deepEqual(listOpenIssueFiles(root, { featureSlug: "missing" }), []);
+});
+
+test("selectDispatchable with featureSlug never dispatches another feature's ready issue", () => {
+  // Regression: a sprint scoped to one feature must not pick up a ready-for-agent issue
+  // that merely happens to live in a different .scratch/<feature>/ dir — that issue would
+  // be dispatched, merged, and closed against the wrong feature branch.
+  const root = repo();
+  issue(root, "qa-slo-emission-test", "01-qa-slo-emission-test.md", "# QA SLO\n\nStatus: ready-for-agent\n");
+  issue(root, "xkcd-comic", "01-component-with-mock.md", "# Component with mock\n\nStatus: ready-for-agent\n");
+  const picked = selectDispatchable(root, { featureSlug: "qa-slo-emission-test" }).map((i) => i.slug);
+  assert.deepEqual(picked, ["qa-slo-emission-test"]);
+});
+
 test("sectionBody stops at the next same-level heading but keeps subheadings", () => {
   const text = "# T\n\n## Progress\n\nline one\n\n### Detail\n\nkept\n\n## Notes\n\nother\n";
   assert.equal(sectionBody(text, "Progress"), "line one\n\n### Detail\n\nkept");

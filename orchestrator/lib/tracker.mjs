@@ -27,10 +27,29 @@ export function branchFor(featureSlug, slug) {
   return `crew/${featureSlug}/${slug}`;
 }
 
-/** Every open issue file, sorted, across every feature dir under .scratch/. */
-export function listOpenIssueFiles(mainRoot) {
+/**
+ * Every open issue file, sorted. Across every feature dir under .scratch/ by default,
+ * or under a single `.scratch/<featureSlug>/` when one is given.
+ *
+ * A sprint is scoped to exactly one feature — one FEATURE_SLUG, one feature branch, one
+ * `sprint.env` (see session-init.sh, sprint.mjs) — so a live sprint's dispatch loop must
+ * always pass its own `sprint.featureSlug` here. Without it, a `ready-for-agent` issue
+ * that merely happens to sit in a *different* `.scratch/<other-feature>/issues/open/`
+ * gets dispatched, merged onto, and closed against the running sprint's feature branch —
+ * real work landing on the wrong feature. The unscoped, all-features scan stays the
+ * default only for callers with no sprint yet to scope to (e.g. a first `plan` survey).
+ */
+export function listOpenIssueFiles(mainRoot, { featureSlug = null } = {}) {
   const scratch = join(mainRoot, ".scratch");
   if (!existsSync(scratch)) return [];
+  if (featureSlug) {
+    const openDir = join(scratch, featureSlug, "issues", "open");
+    if (!existsSync(openDir)) return [];
+    return readdirSync(openDir)
+      .filter((f) => f.endsWith(".md"))
+      .sort()
+      .map((f) => join(openDir, f));
+  }
   const out = [];
   for (const feature of readdirSync(scratch, { withFileTypes: true })) {
     if (!feature.isDirectory()) continue;
@@ -145,9 +164,14 @@ export function blockers(issue, done = doneFiles(issue.path)) {
   return issue.blockedBy.filter((f) => !done.has(f));
 }
 
-/** Ready and unblocked, in filename order. Everything else is skipped. */
-export function selectDispatchable(mainRoot, { status = READY_STATUS } = {}) {
-  const issues = listOpenIssueFiles(mainRoot).map((p) => parseIssue(p));
+/**
+ * Ready and unblocked, in filename order. Everything else is skipped.
+ *
+ * `featureSlug` is forwarded to `listOpenIssueFiles` unchanged — see its docstring for
+ * why a running sprint must always pass its own slug here.
+ */
+export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug = null } = {}) {
+  const issues = listOpenIssueFiles(mainRoot, { featureSlug }).map((p) => parseIssue(p));
   const ready = issues.filter((i) => i.status === status);
   return ready
     .map((i) => ({ ...i, blockers: blockers(i) }))

@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.29.31]
+
+### Fixed
+
+- **A running crew-afk sprint could dispatch, merge, and close a `ready-for-agent` issue that
+  actually belonged to a *different* feature's `.scratch/<other-feature>/issues/open/` dir onto
+  its own feature branch.** `selectDispatchable()`/`listOpenIssueFiles()` scanned every feature
+  dir under `.scratch/` unconditionally; a live sprint's dispatch loop (`loop.mjs`) now passes
+  its own `sprint.featureSlug` so the scan is confined to that one feature. The same
+  cross-feature ambiguity existed one step earlier: a bare `crew-afk run` (or `plan`) with no
+  `--feature-slug` relied on `session-init.sh`'s own `find | head -n 1` fallback to silently pick
+  one of several feature dirs with a ready issue. `orchestrator/main.mjs` now resolves the
+  feature slug itself before `session-init.sh` (or anything else) touches disk, and refuses with
+  a `--feature-slug <slug>` menu instead of guessing whenever more than one feature dir has a
+  ready issue; `plan` uses the same resolution so its preview always matches what a following
+  `run` would do. `tracker.mjs` gains an optional `featureSlug` on both functions; `main.mjs`
+  gains `resolveFeatureSlug`/`readyFeatureCandidates`.
+- **`squash-commits.sh` could squash a completed issue's commit message using a *different*
+  feature's `done/` file, and could pick the wrong feature's `sprint-state.json` outright when
+  two features coincidentally recorded the same branch name.** The script re-derived
+  `FEATURE_SLUG`/`STATE_FILE` unconditionally by matching the current branch against every
+  `.scratch/*/sprint-state.json`, even though `loop.mjs`'s `wrapUp()` already hands it both,
+  correctly resolved by `session-init.sh`, via `sprint.childEnv()` on every real sprint run. It
+  now prefers an inherited, non-empty `FEATURE_SLUG`/`STATE_FILE` outright and only falls back to
+  the branch-matching glob for a standalone invocation with neither set. The completed-issue
+  lookup that builds the squash commit's title was similarly unscoped, globbing
+  `.scratch/*/issues/done` for the completed slug; it now looks only under
+  `.scratch/$FEATURE_SLUG/issues/done`.
+
+registry.json: crew-afk 2.2.23 -> 2.2.24.
+
 ## [1.29.30]
 
 ### Fixed

@@ -128,6 +128,52 @@ function existingFeatureSlugs(mainRoot) {
 }
 
 /**
+ * Every feature slug that currently has at least one ready-for-agent, unblocked issue,
+ * mapped to that issue's own slugs — read with an unscoped selectDispatchable() (no
+ * sprint exists yet at this point, so there is nothing to scope to).
+ *
+ * This is what resolveFeatureSlug() below uses to answer "which feature would a bare
+ * `crew-afk run` mean" without ever guessing: session-init.sh's own fallback for no
+ * `--feature-slug` (first issue found by `find`, unordered across sibling feature dirs)
+ * is fine for the common single-feature repo, but silently arbitrary the moment a second
+ * feature dir also has a ready issue — exactly the shape of the cross-feature dispatch
+ * this file's selectDispatchable() scoping fix exists to prevent. Resolving it here,
+ * once, before session-init.sh ever runs, means every platform launcher gets the same
+ * refusal instead of each depending on its own skill-level disambiguation prompt.
+ */
+function readyFeatureCandidates(mainRoot) {
+  const byFeature = new Map();
+  for (const i of selectDispatchable(mainRoot)) {
+    const m = /\.scratch[\\/]([^\\/]+)[\\/]/.exec(i.path);
+    if (!m) continue;
+    const feature = m[1];
+    if (!byFeature.has(feature)) byFeature.set(feature, []);
+    byFeature.get(feature).push(i.slug);
+  }
+  return byFeature;
+}
+
+/**
+ * Resolve the one feature slug a bare invocation (no --feature-slug, no .scratch/<slug>/
+ * path) would mean, or explain why it can't. Returns `{ slug }` (slug may be null when
+ * nothing is ready yet — session-init.sh's own "No issues found" error still covers that),
+ * or `{ error }` when more than one feature dir has a ready issue.
+ */
+function resolveFeatureSlug(mainRoot, explicitSlug) {
+  if (explicitSlug) return { slug: explicitSlug };
+  const candidates = readyFeatureCandidates(mainRoot);
+  if (candidates.size <= 1) return { slug: candidates.size === 1 ? [...candidates.keys()][0] : null };
+  const lines = [
+    `crew-afk: ${candidates.size} feature dirs have ready-for-agent issues — refusing to guess which one this run means.`,
+    ...[...candidates].map(
+      ([slug, slugs]) => `  --feature-slug ${slug}  (${slugs.length} issue(s): ${slugs.join(", ")})`,
+    ),
+    "Pass --feature-slug <slug> or a .scratch/<slug>/... path to pick one.",
+  ];
+  return { error: lines.join("\n") };
+}
+
+/**
  * A bare word that isn't a recognised flag or a .scratch/ path used to be forwarded
  * unexamined to session-init.sh, then to feature-branch-setup.sh, which only knows
  * --jira and dies with "Unknown argument" — two hops from where the mistake was made,
@@ -255,7 +301,15 @@ async function main() {
 
   // --- plan: read-only, zero tokens ----------------------------------------
   if (options.command === "plan") {
-    const issues = selectDispatchable(mainRoot);
+    // Resolved the same way `run` resolves it (below) — refuses instead of guessing when
+    // more than one feature dir has a ready issue and no --feature-slug was given, so
+    // plan's preview always matches what a following `run` would actually do.
+    const resolved = resolveFeatureSlug(mainRoot, options.featureSlug);
+    if (resolved.error) {
+      console.error(resolved.error);
+      return 1;
+    }
+    const issues = selectDispatchable(mainRoot, { featureSlug: resolved.slug });
     const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"]);
     console.log(`platform:  ${options.platform}`);
     console.log(`model:     ${options.model ?? "platform default"}`);
@@ -264,7 +318,7 @@ async function main() {
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);
     console.log(`dispatchable now (${issues.length}):`);
     for (const i of issues) console.log(`  - ${i.slug}  [${i.status}]  ${i.path}`);
-    const skipped = selectDispatchable(mainRoot, { status: "deferred-findings" });
+    const skipped = selectDispatchable(mainRoot, { status: "deferred-findings", featureSlug: resolved.slug });
     if (skipped.length) console.log(`parked fix issues (${skipped.length}): ${skipped.map((i) => i.slug).join(", ")}`);
     console.log("\npipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close");
     console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint (bootstrap-only), before deps (cached at .coding-crew/dev-commands.json)" : "disabled (--no-commands)"}`);
@@ -279,8 +333,18 @@ async function main() {
     return 1;
   }
 
+  // Resolved once, here, before session-init.sh (or anything else) touches disk — see
+  // resolveFeatureSlug()'s docstring. Passing the resolved slug down means session-init.sh's
+  // own no-argument fallback (`find | head -n 1`) is only ever reached for the single-feature
+  // repo it was built for; a second feature dir with a ready issue is refused here instead.
+  const resolved = resolveFeatureSlug(mainRoot, options.featureSlug);
+  if (resolved.error) {
+    console.error(resolved.error);
+    return 1;
+  }
+
   const sprint = Sprint.init(effects, {
-    featureSlug: options.featureSlug,
+    featureSlug: resolved.slug,
     coverage: options.coverage,
     promote: options.promote,
     passthrough: options.passthrough,
