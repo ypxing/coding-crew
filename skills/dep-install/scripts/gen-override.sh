@@ -14,6 +14,12 @@
 #                    Lets a caller that needs to *run* an install (not just generate the
 #                    override) reuse this script's own detection instead of re-parsing the
 #                    compose file and manifests a second time.
+#   --link-only      Skip detection and generation entirely; just (re)point
+#                    PROJECT_ROOT/docker-compose.override.yml at the override MAIN_ROOT
+#                    already has. For a caller that knows the shared file was already
+#                    generated elsewhere (ensure-deps.sh's docker-present fast path) and
+#                    only needs *this* worktree linked to it. Errors (exit 2) if MAIN_ROOT
+#                    has no override file yet — there is nothing to link to.
 #
 # Project name: every `docker compose` invocation in this repo passes this generated
 # override as its *last* `-f` (see docker-install.md, verify-worktree.sh, docker-install.sh),
@@ -65,6 +71,7 @@ SANDBOX="${IS_SANDBOX:-0}"
 DOCKER_PLATFORM="${CREW_DOCKER_PLATFORM:-host}"
 DRY_RUN=0
 QUERY=""
+LINK_ONLY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -73,6 +80,7 @@ while [[ $# -gt 0 ]]; do
     --sandbox)      SANDBOX=1;         shift   ;;
     --dry-run)      DRY_RUN=1;         shift   ;;
     --query)        QUERY="$2";        shift 2 ;;
+    --link-only)    LINK_ONLY=1;       shift   ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -103,6 +111,31 @@ fi
 if [[ ! -d "$MAIN_ROOT" ]]; then
   echo "Error: --main-root does not exist: $MAIN_ROOT" >&2
   exit 1
+fi
+
+# _link_override — (re)point PROJECT_ROOT/docker-compose.override.yml at MAIN_ROOT's
+# generated file. Shared by --link-only and the normal generation path below, both of which
+# need the exact same "leave a live entry alone, clear a dangling one" rule (see the
+# "Worktree symlink" header comment) rather than two copies of it drifting apart.
+_link_override() {
+  [[ "$PROJECT_ROOT" -ef "$MAIN_ROOT" ]] && return 0
+  local override_link="$PROJECT_ROOT/docker-compose.override.yml"
+  if [[ -L "$override_link" && ! -e "$override_link" ]]; then
+    rm -f "$override_link"
+  fi
+  if [[ ! -e "$override_link" ]]; then
+    ln -s "$MAIN_ROOT/docker-compose.override.yml" "$override_link"
+    echo "Linked: $override_link -> $MAIN_ROOT/docker-compose.override.yml"
+  fi
+}
+
+if [[ "$LINK_ONLY" -eq 1 ]]; then
+  if [[ ! -f "$MAIN_ROOT/docker-compose.override.yml" ]]; then
+    echo "Error: $MAIN_ROOT/docker-compose.override.yml does not exist yet — nothing to link" >&2
+    exit 2
+  fi
+  _link_override
+  exit 0
 fi
 
 # ---------------------------------------------------------------------------
@@ -400,14 +433,5 @@ else
   # entry — a real file, or a symlink that still resolves — is left alone: a project that
   # commits its own docker-compose.override.yml at PROJECT_ROOT keeps it untouched, the same
   # "leave a live entry" rule applyWorktreeInclude uses for `.worktreeinclude`.
-  if [[ ! "$PROJECT_ROOT" -ef "$MAIN_ROOT" ]]; then
-    override_link="$PROJECT_ROOT/docker-compose.override.yml"
-    if [[ -L "$override_link" && ! -e "$override_link" ]]; then
-      rm -f "$override_link"
-    fi
-    if [[ ! -e "$override_link" ]]; then
-      ln -s "$MAIN_ROOT/docker-compose.override.yml" "$override_link"
-      echo "Linked: $override_link -> $MAIN_ROOT/docker-compose.override.yml"
-    fi
-  fi
+  _link_override
 fi

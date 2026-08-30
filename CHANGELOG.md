@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.29.40]
+
+### Fixed
+
+- **A worker's own up-front `detect-mode.sh` check could disagree with `ensure-deps.sh`'s
+  `DEPS: docker` verdict for the same worktree, silently falling back to a host-mode
+  install with no deps in either mode.** `ensure-deps.sh` persisted its docker verdict only
+  via `git config --local agent.install-mode` — a key shared by every worktree of one
+  checkout (not per-worktree, despite being written from inside one), written once per
+  issue by a step that now runs concurrently across issues (`mapPool`). A lock race between
+  two issues' `ensure-deps.sh` calls could silently drop the write (`2>/dev/null || true`),
+  and a worker resolving a different install of `dep-install` than `ensure-deps.sh` used (a
+  different platform's skill copy, a stale global one) had no shared signal to fall back on
+  either. `detect-mode.sh` now also checks a plain cache file,
+  `$MAIN_ROOT/.scratch/install-mode`, written once by `ensure-deps.sh`'s single MAIN_ROOT
+  call (before any worktree exists, so there is nothing to race), ahead of its own Makefile
+  heuristic — a fixed, well-known path any copy of `detect-mode.sh` can agree on regardless
+  of which one answers.
+- **A worktree that reached `DEPS: docker-present` (the fast path, MAIN_ROOT's shared docker
+  volume already warmed) never got its own `docker-compose.override.yml` symlink.**
+  `docker-install.md` tells a worker on this fast path to skip straight to "run install",
+  which skips the only step (`gen-override.sh`) that creates it; `ensure-deps.sh`'s own fast
+  path never called it either. Mechanical gates (`verify-worktree.sh`, `docker-install.sh`)
+  always pass `-f $MAIN_ROOT/docker-compose.override.yml` explicitly and never needed the
+  symlink, but a bare `docker compose run` a worker or human types by hand silently lost the
+  override (proxy vars, platform pin, and the shared named volume) in that worktree.
+  `gen-override.sh` gains `--link-only`, which just (re)points the worktree's own
+  `docker-compose.override.yml` at MAIN_ROOT's without regenerating it; `ensure-deps.sh`
+  calls it on the `docker-present` fast path.
+
+registry.json: crew-afk 2.2.29 -> 2.2.30, dep-install 1.3.10 -> 1.3.11.
+
 ## [1.29.39]
 
 ### Changed

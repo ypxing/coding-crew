@@ -345,6 +345,23 @@ if [ "$MODE" = "USE_DOCKER" ]; then
   # reader already trusts.
   git -C "$DIR" config --local agent.install-mode docker 2>/dev/null || true
 
+  # Also cache it as a plain file, written once here (the MAIN_ROOT call, before any
+  # worktree exists — nothing to race with) and read by detect-mode.sh ahead of its own
+  # Makefile heuristic. The git-config write above can still silently lose a lock race
+  # against a sibling issue's own ensure-deps.sh call once worktrees start running
+  # concurrently, and it only helps a reader that shares this checkout's git config in the
+  # first place — a worker's independent up-front check may resolve a completely different
+  # install of dep-install (a different platform's skill copy, a stale global one) and
+  # re-derive its own answer from scratch. A file at a fixed, well-known path is something
+  # any copy of detect-mode.sh can agree on regardless of which one is running.
+  if [ -z "$SLUG" ]; then
+    mkdir -p "$MAIN_ROOT_EFFECTIVE/.scratch" 2>/dev/null || true
+    _mode_cache_tmp="$(mktemp "$MAIN_ROOT_EFFECTIVE/.scratch/install-mode.XXXXXX" 2>/dev/null)" && {
+      printf 'docker\n' > "$_mode_cache_tmp"
+      mv "$_mode_cache_tmp" "$MAIN_ROOT_EFFECTIVE/.scratch/install-mode" 2>/dev/null || rm -f "$_mode_cache_tmp"
+    }
+  fi
+
   if [ -n "$SLUG" ]; then
     # A worktree call: the shared install already happened or it did not. Either way
     # there is nothing for a worktree to install into a volume every other worktree
@@ -352,6 +369,15 @@ if [ "$MODE" = "USE_DOCKER" ]; then
     # "trivial impact" case dep-install's own retry rule already covers reactively
     # (module-not-found → re-run install), so it is left there rather than duplicated.
     if [ -f "$DOCKER_MARKER" ]; then
+      # docker-install.md tells a worker that lands on this fast path to skip straight to
+      # "run install" — it never calls gen-override.sh for this worktree, which is the one
+      # place the worktree's own docker-compose.override.yml symlink gets created. Every
+      # mechanical caller (verify-worktree.sh, docker-install.sh) always passes
+      # $MAIN_ROOT/docker-compose.override.yml explicitly via -f and never needed that
+      # symlink, but a bare `docker compose run` a worker or human types by hand does — so
+      # create it here instead of leaving every fast-path worktree without one.
+      [ -f "$DEP_SCRIPTS/gen-override.sh" ] &&
+        bash "$DEP_SCRIPTS/gen-override.sh" --link-only --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" >/dev/null 2>&1 || true
       _report "docker-present" ok
     fi
     _report "docker"

@@ -67,6 +67,26 @@ stub_docker_scripts() {
   export CREW_DEP_INSTALL_SCRIPTS="$d"
 }
 
+# stub_docker_scripts_with_real_gen_override <docker-install-exit> [stdout] — same as
+# stub_docker_scripts, but gen-override.sh is the real script rather than absent, so the
+# fast-path symlink call in ensure-deps.sh has something real to exercise.
+stub_docker_scripts_with_real_gen_override() {
+  local install_exit="$1" install_out="${2:-}"
+  local d="$TEMP_DIR/stub-docker-scripts-real-override"
+  mkdir -p "$d"
+  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
+  {
+    printf '#!/usr/bin/env bash\n'
+    if [ -n "$install_out" ]; then
+      printf "cat <<'STUBEOF'\n%s\nSTUBEOF\n" "$install_out"
+    fi
+    printf 'exit %s\n' "$install_exit"
+  } > "$d/docker-install.sh"
+  cp "$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/gen-override.sh" "$d/gen-override.sh"
+  chmod +x "$d"/*.sh
+  export CREW_DEP_INSTALL_SCRIPTS="$d"
+}
+
 # deps_line — the single DEPS: line the script is allowed to print
 deps_line() {
   printf '%s\n' "$output" | grep '^DEPS:' || true
@@ -300,6 +320,29 @@ STUBEOF
   [ -f "$WORK/.scratch/docker-install.done" ]
 }
 
+@test "the MAIN_ROOT call caches its docker verdict to a file a worker's own detect-mode.sh can read" {
+  # This is the mechanism that survives a worker resolving a completely different install
+  # of dep-install than the one this script found: unlike the per-call git-config write,
+  # it is written exactly once (here) with nothing to race, and is a plain file any copy of
+  # detect-mode.sh can check regardless of where it lives.
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WORK/.scratch/install-mode")" = "docker" ]
+
+  # A fresh detect-mode.sh call, unrelated to the stub above, with no git config set at
+  # all — it must still say USE_DOCKER purely from the cache file.
+  [ -z "$(git -C "$WORK" config --local agent.install-mode 2>/dev/null)" ] || \
+    git -C "$WORK" config --local --unset agent.install-mode
+  run bash "$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/detect-mode.sh" \
+    --project-root "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$output" = "USE_DOCKER" ]
+}
+
 @test "the MAIN_ROOT call still runs docker-install.sh when a stale host node_modules is present" {
   # A host-side node_modules can predate .worktreeinclude excluding it, or come from a
   # contributor's own local install, in a project that is otherwise docker-mode. The
@@ -327,6 +370,27 @@ STUBEOF
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker-present" ]
   [[ "$output" != *"SHOULD NOT RUN"* ]]
+}
+
+@test "a worktree call (--slug) on the docker-present fast path also symlinks the worktree's own override" {
+  # docker-install.md tells a worker on this fast path to skip gen-override.sh entirely, so
+  # nothing else creates this symlink for a fresh worktree — see gen-override.sh's --link-only.
+  printf '{}\n' > "$WORK/package.json"
+  printf 'name: proj\n' > "$WORK/docker-compose.override.yml"
+  export MAIN_ROOT="$WORK"
+  mkdir -p "$WORK/.scratch"
+  echo "npm ci" > "$WORK/.scratch/docker-install.done"
+  stub_docker_scripts_with_real_gen_override 0 "SHOULD NOT RUN"
+
+  WT="$TEMP_DIR/wt"
+  mkdir -p "$WT"
+  printf '{}\n' > "$WT/package.json"
+
+  run bash "$SCRIPT" --dir "$WT" --slug widget
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: docker-present" ]
+  [ -L "$WT/docker-compose.override.yml" ]
+  [ "$(readlink "$WT/docker-compose.override.yml")" = "$WORK/docker-compose.override.yml" ]
 }
 
 @test "a worktree call (--slug) with no marker yet is still DEPS: docker, deferred" {
