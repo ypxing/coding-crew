@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.29.33]
+
+### Added
+
+- **crew-afk sprints now print a `[STEP]` marker to the live stream before every gate**
+  (`worktree`, `deps`, `dispatch-coder`, `verify`, `dispatch-review`, `dispatch-triage`,
+  `merge`, `close`), tagged `slug=<slug> round=<n>` — Tier 0 of the sprint-visibility plan
+  (`.scratch/crew-afk-visibility/plan.md`, PR 1). Until now the three slow dispatches (coder
+  up to 45m, review/triage up to 20m each) were totally silent in the live stream a user is
+  actually watching; only the trace file saw anything. The existing gate-outcome lines
+  (`DEPS:`, the verify/merge/close scripts' own stdout, the findings-promotion guard/defer
+  lines) are now tagged `slug=`/`round=` too, so concurrent issues' output stays
+  attributable when interleaved. No dispatch-mechanism change, no new dependency, no change
+  to `report.mjs` parsing, receipts, or gate order — see the plan file for the full
+  investigation and the tiers not shipped yet (throttled dispatch heartbeats, trace-file
+  formatting, skill wording, per-dispatch cost/usage).
+
+registry.json: crew-afk 2.2.24 -> 2.2.25.
+
 ## [1.29.32]
 
 ### Added

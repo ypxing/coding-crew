@@ -382,6 +382,13 @@ test("a verification-failed retry still redispatches the full worker, not just r
     2,
     "the coder must run again — a verification-failed branch needs its content fixed, not just a review retry",
   );
+  // A failed verify routes to triage (not the coder) to classify the failure — that
+  // dispatch needs the same live-stream visibility as the coder/review dispatches.
+  const steps = r.stderr.split("\n").filter((l) => l.startsWith("[STEP]") && l.includes("slug=alpha"));
+  assert.ok(
+    steps.some((l) => /^\[STEP\] slug=alpha round=1 step=dispatch-triage$/.test(l)),
+    `expected a round-1 dispatch-triage step marker, got:\n${steps.join("\n")}`,
+  );
 });
 
 test("an unparseable worker report is blocked, never complete", () => {
@@ -862,13 +869,35 @@ test("a DEPS: failed outcome does not demote the issue or change the round summa
   assert.equal(s.retention?.alpha, undefined, "a DEPS: failure demoted the issue by itself");
 });
 
-test("the orchestrator prints one line per deps call — the DEPS: line itself", () => {
+test("the orchestrator prints one line per deps call — the DEPS: line itself, slug/round-tagged", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   const { r } = commandLines(root);
   assert.equal(r.code, 0, r.stderr);
-  const printed = r.stderr.split("\n").filter((l) => l.startsWith("DEPS:"));
+  const printed = r.stderr.split("\n").filter((l) => /\bDEPS:/.test(l));
   assert.equal(printed.length, 2, `expected one line per call, got:\n${printed.join("\n")}`);
+  // The per-issue call (not the sprint-level bootstrap one) is slug/round-tagged, so it can
+  // be attributed to the right issue and round when interleaved with other issues' output.
+  assert.ok(
+    printed.some((l) => /^slug=alpha round=1 DEPS:/.test(l)),
+    `expected a slug/round-tagged DEPS: line, got:\n${printed.join("\n")}`,
+  );
+});
+
+test("the orchestrator prints a [STEP] marker before each gate, slug/round-tagged", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const steps = r.stderr.split("\n").filter((l) => l.startsWith("[STEP]") && l.includes("slug=alpha"));
+  // Every gate this clean issue passes through, in the order pipeline.mjs runs them,
+  // with no dispatch-triage marker since verify never fails on this path.
+  assert.deepEqual(
+    steps.map((l) => /step=([\w-]+)/.exec(l)?.[1]),
+    ["worktree", "deps", "dispatch-coder", "verify", "dispatch-review", "merge", "close"],
+    steps.join("\n"),
+  );
+  for (const l of steps) assert.match(l, /^\[STEP\] slug=alpha round=1 step=[\w-]+$/, l);
 });
 
 test("--no-deps and the help text are declared together, so the flag is discoverable", () => {

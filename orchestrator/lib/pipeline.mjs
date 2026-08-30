@@ -128,6 +128,7 @@ export async function runWorker(ctx, issue) {
   // (branches are never deleted except by cleanup-worktrees.sh's own ancestry-checked
   // sweep), and silently reusing it can carry a base that predates work this sprint has
   // since merged, surfacing only much later as an unexplained merge conflict.
+  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=worktree`);
   const wt = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
     branch,
@@ -171,10 +172,11 @@ export async function runWorker(ctx, issue) {
   // verify gate already fails closed on the consequence, and stalling a whole round on
   // whatever host-install.sh mishandled would be worse than letting the gate say so.
   if (options.deps !== false) {
+    ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=deps`);
     const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug], {
       env: sprint.childEnv(),
     });
-    ctx.log(depsLine(deps.stdout));
+    ctx.log(`slug=${issue.slug} round=${ctx.round} ${depsLine(deps.stdout)}`);
   }
 
   if (skipWorker) {
@@ -235,6 +237,7 @@ export async function runWorker(ctx, issue) {
         }),
   );
 
+  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-coder`);
   const result = await dispatch(
     effects,
     platform,
@@ -305,10 +308,11 @@ export async function runHousekeeping(ctx, worker) {
   }
 
   // --- gate 1: independent verification in the worktree ----------------------
+  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=verify`);
   const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree], {
     env: sprint.childEnv(),
   });
-  ctx.log(verify.stdout.trim());
+  ctx.log(`slug=${issue.slug} round=${ctx.round} ${verify.stdout.trim()}`);
   if (verify.code !== 0) {
     return await handleVerificationFailure(ctx, worker, outcome, verify);
   }
@@ -371,16 +375,18 @@ function mergeAndClose(ctx, worker, outcome) {
   const { issue, branch } = worker;
 
   effects.git(["checkout", sprint.featureBranch]);
+  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=merge`);
   const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {
     env: sprint.childEnv(),
   });
-  ctx.log(merge.stdout.trim());
+  ctx.log(`slug=${issue.slug} round=${ctx.round} ${merge.stdout.trim()}`);
   if (merge.code !== 0) {
     return finishPartial(ctx, worker, outcome, "merge-failed");
   }
 
+  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=close`);
   const close = effects.bash("close-issue.sh", [issue.path], { env: sprint.childEnv() });
-  ctx.log(close.stdout.trim());
+  ctx.log(`slug=${issue.slug} round=${ctx.round} ${close.stdout.trim()}`);
   if (close.code !== 0) {
     return finishPartial(ctx, worker, outcome, `close-refused — ${close.stderr.trim() || close.stdout.trim()}`);
   }
@@ -450,6 +456,7 @@ async function runTriage(ctx, worker, verifyStdout) {
     }),
   );
 
+  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-triage`);
   const result = await dispatch(
     effects,
     platform,
@@ -492,6 +499,7 @@ async function runReview(ctx, worker, checks) {
     }),
   );
 
+  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-review`);
   const result = await dispatch(
     effects,
     platform,
@@ -545,7 +553,7 @@ async function promote(ctx, worker, review, outcome) {
     env: sprint.childEnv(),
   });
   const guardText = guard.stdout.trim();
-  ctx.log(guardText);
+  ctx.log(`slug=${issue.slug} round=${ctx.round} ${guardText}`);
   if (!/promotable/.test(guardText)) return; // source-guarded: the depth bound
 
   const threshold = /critical-high/i.test(guardText) ? "critical-high" : sprint.promoteThreshold;
@@ -565,7 +573,7 @@ async function promote(ctx, worker, review, outcome) {
     "--report", review.reportFile,
     "--criteria-file", criteriaPath,
   ], { env: sprint.childEnv() });
-  ctx.log(defer.stdout.trim());
+  ctx.log(`slug=${issue.slug} round=${ctx.round} ${defer.stdout.trim()}`);
   outcome.promoted = promotable.length;
 }
 
