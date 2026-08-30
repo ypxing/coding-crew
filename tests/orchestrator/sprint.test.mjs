@@ -226,6 +226,32 @@ test("a worker-reported failing check is demoted and never merges", () => {
   assert.match(readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8"), /## Progress/);
 });
 
+test("a worker-reported partial carries its own unmet criteria into the Progress section", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(
+    root,
+    "alpha.worker",
+    [
+      '## Issue: alpha',
+      'Status: partial',
+      '',
+      '```json',
+      '{"status":"partial","checks":{"test":"pass","lint":"pass","typecheck":"pass"},"criteria":[{"text":"docs updated","met":false},{"text":"resolver implemented","met":true}],"progress":"Remaining work: docs"}',
+      '```',
+    ].join("\n"),
+  );
+  const r = runSprint(root);
+  const s = state(root);
+  assert.equal(r.code, 2, "a sprint that completes nothing twice is a stall");
+  assert.equal(s.retention.alpha.reason, "partial");
+  const issueText = readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8");
+  // The next round's resume must not depend on the coder's own prose having named every
+  // gap — the structured criteria array from its report is carried forward verbatim.
+  assert.match(issueText, /Unmet criteria \(from the worker's own report\):\n- docs updated/);
+  assert.doesNotMatch(issueText, /- resolver implemented/);
+});
+
 test("an unmet acceptance-criteria verdict retains the branch and closes nothing", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

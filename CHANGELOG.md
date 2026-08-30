@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.41]
+
+### Fixed
+
+- **A demoted worker's unmet acceptance criteria weren't guaranteed to survive into the next
+  round's resume.** `finishPartial` wrote the issue's `## Progress` section from the worker's
+  free-text `progress`/`notes` field alone; if the coder's own summary didn't happen to name
+  every gap it had already identified in its report's structured `criteria` array, the next
+  round's worker had no way to know about it short of re-discovering it itself. `finishPartial`
+  now also appends any of the worker's own `criteria` entries reported as unmet, verbatim, to
+  the Progress note — carrying forward the structured signal instead of depending on the prose
+  restating it. (Not applicable to a partial retained by the independent review's own
+  criteria-unmet verdict — there the worker believed everything was met, so its own array is
+  empty and the review's detail already rides in the demotion reason.)
+
 ## [1.29.40]
 
 ### Fixed

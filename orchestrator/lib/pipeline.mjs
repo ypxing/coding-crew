@@ -593,8 +593,22 @@ function finishPartial(ctx, worker, outcome, reason) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
   const progress = worker.report.progress || worker.report.notes || `Round ${ctx.round}: ${reason}`;
+  // The worker's own criteria array, when it reports any as unmet, is a structured signal
+  // the prose progress/notes text does not reliably restate — carry it forward verbatim so
+  // the next round's resume doesn't depend on the coder's summary having named every gap.
+  // Only meaningful straight from the worker's own report: by the criteria-unmet-from-review
+  // path (see runHousekeeping), the worker already believed everything was met, so this array
+  // is empty there and adds nothing — the review's own detail already rides in `reason` below.
+  const unmet = (worker.report.criteria || []).filter((c) => c && c.met === false && c.text);
+  const unmetBlock = unmet.length
+    ? `\n\nUnmet criteria (from the worker's own report):\n${unmet.map((c) => `- ${c.text}`).join("\n")}`
+    : "";
   if (!effects.dryRun && existsSync(issue.path)) {
-    writeIssueSection(issue.path, "Progress", `Round ${ctx.round}: ${progress}\n\nDemotion reason: ${reason}`);
+    writeIssueSection(
+      issue.path,
+      "Progress",
+      `Round ${ctx.round}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
+    );
   }
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
   sprint.retain(issue.slug, branch, reason);
