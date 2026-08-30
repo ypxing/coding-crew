@@ -126,7 +126,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.9.6",
+      "version": "1.9.7",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
@@ -185,7 +185,7 @@
       "install": ".claude/skills/to-issues"
     },
     "to-prd": {
-      "version": "1.2.1",
+      "version": "1.2.2",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",

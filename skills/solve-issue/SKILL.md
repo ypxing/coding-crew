@@ -141,6 +141,12 @@ if that guess was wrong.
 
 Expand the file list if exploration reveals additional files. Do not guess. Confirm the current state before writing anything.
 
+**Batch these calls.** Each exploration tool call re-bills your entire accumulated context, so five
+small calls cost far more in aggregate than one or two larger ones covering the same ground. Combine
+multiple grep patterns into a single call (`grep -rn -E 'patternA|patternB'` instead of two separate
+greps), and read several files in one turn where your tool allows it, rather than one call per
+bullet above.
+
 ### 4. Implement with TDD
 
 **Use the INSTALL_MODE from Step 2 for all commands** — test runs, type checks, linting. If it is

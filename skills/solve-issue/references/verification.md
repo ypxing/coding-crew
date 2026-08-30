@@ -18,6 +18,23 @@ A `CLAUDE.md` that defines the test command does not prevent you from looking up
 2. **Lint** — run second. Check Makefile for an `eslint`, `lint`, or `check` target; fall back to `npx eslint .` / `golangci-lint run` / etc.
 3. **Tests** — run last. Unit tests covering changed code, plus integration tests if relevant.
 
+**Run all three in one shell call, not three separate tool calls.** Each Bash call re-bills your
+entire accumulated context, so three sequential invocations cost roughly 3x one composite call for
+the same work. Chain them so a failing check doesn't hide the ones after it — capture each exit
+code instead of stopping at the first failure:
+
+```bash
+{ TYPECHECK_OUT=$(<typecheck-command> 2>&1); TYPECHECK_RC=$?; }
+{ LINT_OUT=$(<lint-command> 2>&1); LINT_RC=$?; }
+{ TEST_OUT=$(<test-command> 2>&1); TEST_RC=$?; }
+echo "typecheck rc=$TYPECHECK_RC"; echo "$TYPECHECK_OUT"
+echo "lint rc=$LINT_RC"; echo "$LINT_OUT"
+echo "test rc=$TEST_RC"; echo "$TEST_OUT"
+```
+
+Skip a category in this composite call only when its command was not found — do not invent one to
+fill the slot.
+
 If you cannot find a command for a check category, note it as `NOT RUN: no command found` — but this must be explicit in your output. Silently skipping is not allowed.
 
 ## Docker projects

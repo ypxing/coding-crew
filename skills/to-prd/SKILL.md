@@ -67,6 +67,9 @@ Architectural and technical decisions made during design. May include:
 - Schema changes and API contracts
 - Key technical tradeoffs and their rationale
 - Relevant file paths and existing signatures that implementing agents should know about
+- Existing utilities, helpers, or conventions in this codebase that implementation should reuse
+  rather than reinvent — the exploration this skill already does once, so each issue's implementer
+  does not have to re-grep for it
 
 Include file paths and short code snippets where they make the intent unambiguous — this PRD is
 consumed immediately by agents, not read months later. Keep snippets trimmed to decision-rich

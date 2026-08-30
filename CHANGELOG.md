@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.29.39]
+
+### Changed
+
+- **`solve-issue` and `to-prd` now guard against redundant context re-billing** — `solve-issue`'s exploration step tells the agent to batch grep patterns and file reads into fewer, larger tool calls rather than one call per item (each call re-bills the whole accumulated context), and its verification reference runs typecheck/lint/tests as one composite shell invocation that captures every exit code instead of three sequential calls. `to-prd` now also asks the PRD's technical-decisions section to name existing utilities/conventions issue implementers should reuse, so each issue's coder doesn't have to re-grep for context the PRD skill already gathered.
+
+registry.json: solve-issue 1.9.6 -> 1.9.7, to-prd 1.2.1 -> 1.2.2.
+
 ## [1.29.38]
 
 ### Changed
