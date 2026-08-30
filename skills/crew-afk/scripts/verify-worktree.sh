@@ -127,6 +127,7 @@ DOCKER_SERVICE=""
 DOCKER_CONTAINER_SRC=""
 DOCKER_COMPOSE_FILE=""
 DOCKER_OVERRIDE_FILE=""
+DEP_SCRIPTS_DIR=""
 
 # _detect_docker_mode — populates the DOCKER_* globals when this worktree's checks must
 # run through `docker compose run` instead of directly on the host.
@@ -168,6 +169,7 @@ _detect_docker_mode() {
   DOCKER_CONTAINER_SRC="$container_src"
   DOCKER_COMPOSE_FILE="$compose_file"
   DOCKER_OVERRIDE_FILE="$override_file"
+  DEP_SCRIPTS_DIR="$scripts_dir"
 }
 
 # CREW_VERIFY_DOCKER=off is the rollback lever, independent of CREW_DEPS, back to the
@@ -271,18 +273,6 @@ _has_makefile_target() {
   fi
 
   grep -qE "^${target}[[:space:]]*:" "$makefile"
-}
-
-# _make_recipe_uses_docker <worktree-dir> <target>
-# Returns 0 if `make -n <target>`'s fully-expanded recipe already invokes docker
-# (directly, or through a variable — `make -n` expands those too), non-zero otherwise.
-# Used only in docker mode, to avoid nesting an outer `docker compose run` around a
-# recipe that manages its own docker call — docker-in-docker.
-_make_recipe_uses_docker() {
-  local dir="$1"
-  local target="$2"
-
-  (cd "$dir" && make -n "$target" 2>/dev/null) | grep -qE 'docker (compose|run|exec)'
 }
 
 # _discover_test_command <worktree-dir>
@@ -580,18 +570,15 @@ _run_category() {
   fi
 
   if [ "$DOCKER_MODE" -eq 1 ]; then
-    # Docker-in-docker guard: if the discovered command is a bare Makefile target
-    # ("make <target>" — the only shape _discover_*_command ever returns for one, now
-    # that step 1 dropped the embedded -C path) and that target's own recipe already
-    # runs docker itself — directly, or indirectly through a variable `make -n` fully
-    # expands — wrapping it in an outer `docker compose run` would nest docker inside
-    # docker. Run it on the host instead, where the recipe's own docker calls resolve.
-    local make_target=""
-    case "$cmd" in
-      "make "*) make_target="${cmd#make }" ;;
-    esac
-    if [ -n "$make_target" ] && _make_recipe_uses_docker "$WORKTREE_DIR" "$make_target"; then
-      echo "$label: running on host (docker: $DOCKER_SERVICE skipped — 'make $make_target' recipe already manages docker itself): $cmd"
+    # Docker-in-docker guard: if the discovered command already invokes docker itself
+    # — directly, or indirectly through a bare Makefile target ("make <target>" — the
+    # only shape _discover_*_command ever returns for one) whose recipe does, including
+    # through a variable `make -n` fully expands — wrapping it in an outer
+    # `docker compose run` would nest docker inside docker. Run it on the host instead,
+    # where the recipe's own docker calls resolve. Shared with docker-install.sh's
+    # --install-cmd guard via detect-docker-nesting.sh, so the two heuristics can't drift.
+    if [ -n "$DEP_SCRIPTS_DIR" ] && bash "$DEP_SCRIPTS_DIR/detect-docker-nesting.sh" --dir "$WORKTREE_DIR" --cmd "$cmd"; then
+      echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd"
       _exec_and_report "$label" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
       return
     fi

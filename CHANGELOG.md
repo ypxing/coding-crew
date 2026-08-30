@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.29.38]
+
+### Changed
+
+- **Refactored docker-in-docker nesting detection into a shared utility** — extracted the heuristic that prevents nesting docker-in-docker from `verify-worktree.sh` into a new `detect-docker-nesting.sh` script so both `verify-worktree.sh` (discovered test/lint/typecheck commands) and `docker-install.sh` (--install-cmd override) can share the same logic and stay in sync.
+
+registry.json: crew-afk 2.2.28 -> 2.2.29, dep-install 1.3.9 -> 1.3.10.
+
 ## [1.29.37]
 
 ### Fixed
