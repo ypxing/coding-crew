@@ -341,6 +341,50 @@ STUBEOF
   [ ! -f "$WORK/.scratch/docker-install.done" ]
 }
 
+@test "a discovered install override is forwarded to docker-install.sh via --install-cmd" {
+  printf '{}\n' > "$WORK/package.json"
+  mkdir -p "$WORK/.coding-crew"
+  printf '{"install": "make deps"}' > "$WORK/.coding-crew/dev-commands.json"
+  export MAIN_ROOT="$WORK"
+  local d="$TEMP_DIR/stub-docker-argcheck"
+  mkdir -p "$d"
+  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
+  cat > "$d/docker-install.sh" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-args.txt"
+echo "Running: docker compose run --rm app sh -c 'make deps'"
+exit 0
+STUBEOF
+  chmod +x "$d"/*.sh
+  export CREW_DEP_INSTALL_SCRIPTS="$d"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  grep -qx -- "--install-cmd" "$TEMP_DIR/docker-install-args.txt"
+  grep -qx -- "make deps" "$TEMP_DIR/docker-install-args.txt"
+  [[ "$(deps_line)" == "DEPS: docker-installed"* ]]
+}
+
+@test "no discovered install override omits --install-cmd from the docker-install.sh call" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  local d="$TEMP_DIR/stub-docker-argcheck-none"
+  mkdir -p "$d"
+  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
+  cat > "$d/docker-install.sh" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-args-none.txt"
+echo "Running: docker compose run --rm app sh -c 'npm ci'"
+exit 0
+STUBEOF
+  chmod +x "$d"/*.sh
+  export CREW_DEP_INSTALL_SCRIPTS="$d"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  ! grep -qx -- "--install-cmd" "$TEMP_DIR/docker-install-args-none.txt"
+}
+
 @test "docker-install.sh exit 2 (nothing to do) is DEPS: docker, not a new outcome" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"

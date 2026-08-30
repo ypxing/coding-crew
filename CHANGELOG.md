@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.29.36]
+
+### Fixed
+
+- **Improved error handling and reliability in `ensure-deps.sh` and `docker-install.sh`** with enhanced test coverage for edge cases and dependency installation scenarios.
+
 ## [1.29.35]
 
 ### Changed

@@ -244,6 +244,22 @@ YML
   [[ "$output" == *"--rm worker"* ]]
 }
 
+@test "--install-cmd overrides the per-manifest lockfile table" {
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"make deps"* ]]
+  [[ "$output" != *"npm ci"* ]]
+}
+
+@test "--install-cmd runs even when no lockfile the per-manifest table recognises is present" {
+  rm -f "$WORK/package-lock.json"
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"make deps"* ]]
+}
+
 @test "no compose file is exit 2, not a failure" {
   rm -f "$WORK/docker-compose.yml"
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"

@@ -16,7 +16,13 @@
 #
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> --main-root <path> \
-#     [--service <name>] [--timeout <sec, default 600>] [--lock-timeout <sec, default 30>]
+#     [--service <name>] [--install-cmd <cmd>] [--timeout <sec, default 600>] \
+#     [--lock-timeout <sec, default 30>]
+#
+# --install-cmd is a documented project override (e.g. dev-commands.json's discovered
+# "install" field, forwarded by ensure-deps.sh) — it takes priority over the per-manifest
+# lockfile table below, the same way host-install.sh's own Makefile check already takes
+# priority over its signal-file fallback on the host path.
 #
 # Exit codes:
 #   0  install ran successfully ("Running: docker compose run --rm <service> ..." on stdout)
@@ -34,6 +40,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT=""
 MAIN_ROOT=""
 SERVICE=""
+INSTALL_CMD_OVERRIDE=""
 TIMEOUT=600
 LOCK_TIMEOUT=30
 
@@ -42,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --project-root)  PROJECT_ROOT="$2"; shift 2 ;;
     --main-root)     MAIN_ROOT="$2";    shift 2 ;;
     --service)       SERVICE="$2";      shift 2 ;;
+    --install-cmd)   INSTALL_CMD_OVERRIDE="$2"; shift 2 ;;
     --timeout)       TIMEOUT="$2";      shift 2 ;;
     --lock-timeout)  LOCK_TIMEOUT="$2"; shift 2 ;;
     --help)
@@ -93,50 +101,58 @@ if [[ -z "$SERVICE" ]]; then
 fi
 
 CONTAINER_SRC="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query container-src 2>/dev/null)"
-mapfile -t MANIFEST_DIRS < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query manifest-dirs 2>/dev/null)
-if [[ ${#MANIFEST_DIRS[@]} -eq 0 ]]; then
-  echo "No manifest directories detected at $PROJECT_ROOT" >&2
-  exit 2
-fi
 
-# _install_cmd_for_dir <dir> — the same per-directory signal-file priority
-# host-install.sh's own table uses, so a project installs the same way in both modes.
-_install_cmd_for_dir() {
-  local d="$1"
-  if   [[ -f "$d/uv.lock"           ]]; then echo "uv sync --frozen"
-  elif [[ -f "$d/bun.lockb"         ]]; then echo "bun install --frozen-lockfile"
-  elif [[ -f "$d/pnpm-lock.yaml"    ]]; then echo "pnpm install --frozen-lockfile"
-  elif [[ -f "$d/package-lock.json" ]]; then echo "npm ci"
-  elif [[ -f "$d/yarn.lock"         ]]; then echo "yarn install --frozen-lockfile"
-  elif [[ -f "$d/poetry.lock"       ]]; then echo "poetry install --no-root"
-  elif [[ -f "$d/requirements.txt"  ]]; then echo "pip install -r requirements.txt --quiet"
-  elif [[ -f "$d/pyproject.toml"    ]]; then echo "pip install --quiet ."
-  elif [[ -f "$d/Gemfile.lock"      ]]; then echo "bundle install"
-  elif [[ -f "$d/Cargo.toml"        ]]; then echo "cargo fetch"
-  elif [[ -f "$d/composer.json"     ]]; then echo "composer install --no-interaction"
-  elif [[ -f "$d/go.sum" || -f "$d/go.mod" ]]; then echo "go mod download"
+if [[ -n "$INSTALL_CMD_OVERRIDE" ]]; then
+  # The documented override runs once, at the container-side project root — it is a
+  # project's own answer to "how do I install", not a per-manifest-dir heuristic, so the
+  # lockfile table and its manifest-dirs requirement below are skipped entirely.
+  CONTAINER_CMD="cd $CONTAINER_SRC && $INSTALL_CMD_OVERRIDE"
+else
+  mapfile -t MANIFEST_DIRS < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query manifest-dirs 2>/dev/null)
+  if [[ ${#MANIFEST_DIRS[@]} -eq 0 ]]; then
+    echo "No manifest directories detected at $PROJECT_ROOT" >&2
+    exit 2
   fi
-}
 
-STEPS=()
-for dir in "${MANIFEST_DIRS[@]}"; do
-  cmd="$(_install_cmd_for_dir "$dir")"
-  [[ -n "$cmd" ]] || continue
-  rel="${dir#"$PROJECT_ROOT"}"
-  rel="${rel#/}"
-  if [[ -z "$rel" ]]; then
-    STEPS+=("cd $CONTAINER_SRC && $cmd")
-  else
-    STEPS+=("cd $CONTAINER_SRC/$rel && $cmd")
+  # _install_cmd_for_dir <dir> — the same per-directory signal-file priority
+  # host-install.sh's own table uses, so a project installs the same way in both modes.
+  _install_cmd_for_dir() {
+    local d="$1"
+    if   [[ -f "$d/uv.lock"           ]]; then echo "uv sync --frozen"
+    elif [[ -f "$d/bun.lockb"         ]]; then echo "bun install --frozen-lockfile"
+    elif [[ -f "$d/pnpm-lock.yaml"    ]]; then echo "pnpm install --frozen-lockfile"
+    elif [[ -f "$d/package-lock.json" ]]; then echo "npm ci"
+    elif [[ -f "$d/yarn.lock"         ]]; then echo "yarn install --frozen-lockfile"
+    elif [[ -f "$d/poetry.lock"       ]]; then echo "poetry install --no-root"
+    elif [[ -f "$d/requirements.txt"  ]]; then echo "pip install -r requirements.txt --quiet"
+    elif [[ -f "$d/pyproject.toml"    ]]; then echo "pip install --quiet ."
+    elif [[ -f "$d/Gemfile.lock"      ]]; then echo "bundle install"
+    elif [[ -f "$d/Cargo.toml"        ]]; then echo "cargo fetch"
+    elif [[ -f "$d/composer.json"     ]]; then echo "composer install --no-interaction"
+    elif [[ -f "$d/go.sum" || -f "$d/go.mod" ]]; then echo "go mod download"
+    fi
+  }
+
+  STEPS=()
+  for dir in "${MANIFEST_DIRS[@]}"; do
+    cmd="$(_install_cmd_for_dir "$dir")"
+    [[ -n "$cmd" ]] || continue
+    rel="${dir#"$PROJECT_ROOT"}"
+    rel="${rel#/}"
+    if [[ -z "$rel" ]]; then
+      STEPS+=("cd $CONTAINER_SRC && $cmd")
+    else
+      STEPS+=("cd $CONTAINER_SRC/$rel && $cmd")
+    fi
+  done
+
+  if [[ ${#STEPS[@]} -eq 0 ]]; then
+    echo "No install command matched any manifest directory at $PROJECT_ROOT" >&2
+    exit 2
   fi
-done
 
-if [[ ${#STEPS[@]} -eq 0 ]]; then
-  echo "No install command matched any manifest directory at $PROJECT_ROOT" >&2
-  exit 2
+  CONTAINER_CMD="$(IFS=' && '; echo "${STEPS[*]}")"
 fi
-
-CONTAINER_CMD="$(IFS=' && '; echo "${STEPS[*]}")"
 
 # ─── 2. the lock ──────────────────────────────────────────────────────────────
 # Named volumes are shared across every worktree of this MAIN_ROOT by design (that is the

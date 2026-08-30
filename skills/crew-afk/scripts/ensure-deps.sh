@@ -26,10 +26,12 @@ set -uo pipefail
 #   There is no judgement on the host path, so there is nothing here for a model to decide:
 #   this script owns no package-manager knowledge of its own and delegates every install
 #   decision to dep-install's own detect-mode.sh / host-install.sh, or — when one is cached —
-#   to command discovery's own "install" answer (see step 5, `_cached_install_command`), which
-#   is the one place a documented CLAUDE.md/AGENTS.md/Makefile override reaches this script
-#   without it ever reading those files itself. Docker mode *is* judgement (an override has to
-#   be generated), so it is deferred, not handled.
+#   to command discovery's own "install" answer (see step 1b, `_cached_install_command`),
+#   which is the one place a documented CLAUDE.md/AGENTS.md/Makefile override reaches this
+#   script without it ever reading those files itself. Generating the docker override
+#   (compose file, volumes) is still judgement docker-install.sh owns; forwarding the cached
+#   override as `--install-cmd` is not — it is the same mechanical hand-off step 5 does on
+#   the host path.
 #
 # Never exits non-zero
 #   A repo with no dependency step must not stall a sprint, and a failed install must not
@@ -364,8 +366,12 @@ if [ "$MODE" = "USE_DOCKER" ]; then
 
   DOCKER_OUT="$(mktemp)"
   trap 'rm -f "$DOCKER_OUT"' EXIT
-  bash "$DOCKER_INSTALL_SCRIPT" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" \
-    --timeout "$TIMEOUT" >"$DOCKER_OUT" 2>&1
+  DOCKER_ARGS=(--project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" --timeout "$TIMEOUT")
+  # Forward the same discovered override step 5 would otherwise use on the host path —
+  # without this, docker-install.sh falls back to its own lockfile table and silently runs
+  # a different command than the one a CLAUDE.md/AGENTS.md/Makefile documents.
+  [ -n "$CACHED_INSTALL" ] && DOCKER_ARGS+=(--install-cmd "$CACHED_INSTALL")
+  bash "$DOCKER_INSTALL_SCRIPT" "${DOCKER_ARGS[@]}" >"$DOCKER_OUT" 2>&1
   DOCKER_RC=$?
   DOCKER_CMD="$(grep -m1 '^Running: ' "$DOCKER_OUT" 2>/dev/null | sed 's/^Running: //')"
   [ -n "$DOCKER_CMD" ] || DOCKER_CMD="docker-install.sh"
