@@ -66,12 +66,16 @@ not, say so and stop — do not implement issues yourself.
 ## Your part
 
 1. Resolve the sprint target first if the arguments aren't already CLI syntax (above),
-   then run the command, with `--dry-run` first **only** if the user asked what it would do.
-2. Stream stdout as it arrives — it now carries a `[STEP]` line at every gate transition
-   (worktree, deps, dispatch, verify, review, merge, close) plus a throttled heartbeat
-   during each coder/review/triage dispatch, not just silence until a round finishes. The
-   summary it prints at the end is the report — do not rewrite, summarise, or re-derive it
-   from the state file.
+   then launch the command **in the background** — a single coder dispatch can run up to
+   45 minutes, well past any tool's synchronous timeout — with `--dry-run` first **only**
+   if the user asked what it would do.
+2. Poll the backgrounded run on a short interval and relay each new line as it arrives.
+   Its `[STEP]` lines and throttled heartbeat go to **stderr**, not stdout — read stderr,
+   not just stdout, or the sprint will look silent. A `[STEP]` line marks every gate
+   transition (worktree, deps, dispatch, verify, review, merge, close); the heartbeat
+   covers the gaps during each coder/review/triage dispatch — so the user sees progress
+   instead of silence until a round finishes. The summary printed at the end is the
+   report — do not rewrite, summarise, or re-derive it from the state file.
 3. Mention `.scratch/<feature-slug>/traces/orchestrator.log` only if asked, or if the user
    steps away and wants more than the live stream showed — every tool call is there,
    timestamped and unthrottled.
