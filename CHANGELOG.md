@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.35]
+
+### Changed
+
+- **All skill description files across platforms (`claude.SKILL.md`, `codex.SKILL.md`,
+  `copilot.SKILL.md`, `pi.SKILL.md`) now consistently document the live stream behavior** — unified
+  wording that describes step markers and throttled heartbeats as the primary signal, and directs
+  users to the trace file only when they need deeper detail. Aligns with Tier 0 PRs 1–4 of the
+  sprint-visibility plan.
+
 ## [1.29.34]
 
 ### Added
