@@ -69,27 +69,32 @@ teardown() {
   grep -q '"env": *"make env"' "$CACHE_FILE"
 }
 
-@test "writes null for install when the response omits it, same as the other three" {
+@test "omits install from the cache when neither this response nor any prior write ever answered it" {
+  # A key present with null means "a model already checked and confirmed none" — a key this
+  # response never mentions, with no earlier cache to carry forward, was never asked at all.
+  # Those are different facts; writing null for the latter would lie about the former.
   echo "claude notes" > CLAUDE.md
   echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit"}' > response.txt
 
   run bash "$WRITE_SCRIPT" --response-file response.txt
 
   [ "$status" -eq 0 ]
-  grep -q '"install": *null' "$CACHE_FILE"
+  run grep -q '"install"' "$CACHE_FILE"
+  [ "$status" -ne 0 ]
 }
 
-@test "writes null for env when the response omits it, same as the other four" {
+@test "omits env from the cache when neither this response nor any prior write ever answered it" {
   echo "claude notes" > CLAUDE.md
   echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit"}' > response.txt
 
   run bash "$WRITE_SCRIPT" --response-file response.txt
 
   [ "$status" -eq 0 ]
-  grep -q '"env": *null' "$CACHE_FILE"
+  run grep -q '"env"' "$CACHE_FILE"
+  [ "$status" -ne 0 ]
 }
 
-@test "a response with only install recognisable still succeeds" {
+@test "a response with only install recognisable writes only install, leaving the rest unasked" {
   echo "claude notes" > CLAUDE.md
   echo '{"install": "make bootstrap"}' > response.txt
 
@@ -97,10 +102,11 @@ teardown() {
 
   [ "$status" -eq 0 ]
   grep -q '"install": *"make bootstrap"' "$CACHE_FILE"
-  grep -q '"test": *null' "$CACHE_FILE"
+  run grep -q '"test"' "$CACHE_FILE"
+  [ "$status" -ne 0 ]
 }
 
-@test "a response with only env recognisable still succeeds" {
+@test "a response with only env recognisable writes only env, leaving the rest unasked" {
   echo "claude notes" > CLAUDE.md
   echo '{"env": "make env"}' > response.txt
 
@@ -108,21 +114,88 @@ teardown() {
 
   [ "$status" -eq 0 ]
   grep -q '"env": *"make env"' "$CACHE_FILE"
-  grep -q '"test": *null' "$CACHE_FILE"
+  run grep -q '"test"' "$CACHE_FILE"
+  [ "$status" -ne 0 ]
 }
 
-# --- Schema: exactly the five fields, no sourceHash ---
+# --- credential_target: the sixth field ---
 
-@test "the written cache has exactly the five fields, and no sourceHash key" {
+@test "writes a sixth credential_target from a response that documents one" {
   echo "claude notes" > CLAUDE.md
-  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit", "install": "make bootstrap", "env": "make env"}' > response.txt
+  echo '{"test": "npm test", "credential_target": ".npmrc"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"credential_target": *"\.npmrc"' "$CACHE_FILE"
+}
+
+@test "a response with only credential_target recognisable writes only credential_target" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"credential_target": null}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"credential_target": *null' "$CACHE_FILE"
+  run grep -q '"test"' "$CACHE_FILE"
+  [ "$status" -ne 0 ]
+}
+
+# --- merge: a field a response is silent on carries forward, not defaulted ---
+
+@test "a later partial write preserves an install already resolved by an earlier write" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"install": "make bootstrap"}' > response.txt
+  bash "$WRITE_SCRIPT" --response-file response.txt
+
+  echo '{"test": "npm test", "lint": null, "typecheck": null}' > response2.txt
+  run bash "$WRITE_SCRIPT" --response-file response2.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"install": *"make bootstrap"' "$CACHE_FILE"
+  grep -q '"test": *"npm test"' "$CACHE_FILE"
+}
+
+@test "a later partial write preserves a confirmed-null credential_target from an earlier write" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"credential_target": null}' > response.txt
+  bash "$WRITE_SCRIPT" --response-file response.txt
+
+  echo '{"test": "npm test"}' > response2.txt
+  run bash "$WRITE_SCRIPT" --response-file response2.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"credential_target": *null' "$CACHE_FILE"
+  grep -q '"test": *"npm test"' "$CACHE_FILE"
+}
+
+@test "a response that re-answers a field overwrites the earlier cached value for it" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"install": "make bootstrap"}' > response.txt
+  bash "$WRITE_SCRIPT" --response-file response.txt
+
+  echo '{"install": "npm ci"}' > response2.txt
+  run bash "$WRITE_SCRIPT" --response-file response2.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"install": *"npm ci"' "$CACHE_FILE"
+  run grep -q 'make bootstrap' "$CACHE_FILE"
+  [ "$status" -ne 0 ]
+}
+
+# --- Schema: all six fields when a response answers all six, no sourceHash ---
+
+@test "the written cache has all six fields when a response answers all six, and no sourceHash key" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit", "install": "make bootstrap", "env": "make env", "credential_target": null}' > response.txt
 
   run bash "$WRITE_SCRIPT" --response-file response.txt
 
   [ "$status" -eq 0 ]
   run grep -q "sourceHash" "$CACHE_FILE"
   [ "$status" -ne 0 ]
-  for field in test lint typecheck install env; do
+  for field in test lint typecheck install env credential_target; do
     grep -q "\"$field\"" "$CACHE_FILE"
   done
 }

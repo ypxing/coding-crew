@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.29.42]
+
+### Added
+
+- **`dev-commands.json` gains a sixth cached field, `credential_target`: the Makefile target
+  (if any) whose recipe generates package-manager credential config files (`.npmrc`, `pip.conf`,
+  `.cargo/credentials.toml`, …) from a template or env vars.** Until now every dep-install
+  session that needed this answer re-scanned the project's Makefile by hand
+  (`docker-install.md`'s own step 0), every time, because there was nowhere to cache a model's
+  conclusion the way `install`/`env` already were. `discover-commands.sh`'s sprint-level prompt
+  now asks about it as a sixth category alongside test/lint/typecheck/install/env, and
+  `docker-install.md`/`host-install.md` both check the cache first and persist their own
+  from-scratch conclusion back to it when they have to look themselves.
+  - `write-commands-cache.sh` now merges rather than overwrites: a response is only authoritative
+    for the fields it actually names, so a caller that only ever investigates a subset (e.g.
+    solve-issue's own DISCOVER fallback, which only ever determines test/lint/typecheck) no
+    longer clobbers a previously-cached `install`/`env`/`credential_target` value back to `null`.
+    A field neither this response nor any earlier write ever named is omitted from the file
+    entirely, distinct from a cached `null` ("a model already looked and found nothing").
+  - `ensure-deps.sh` forwards a cached `credential_target` to `docker-install.sh`'s new
+    `--credential-target` flag, which passes it straight through to `ensure-env.sh`.
+  - No change to the `install`/`env` cache semantics beyond the merge fix above, and no change
+    to gate order, receipts, or dispatch mechanics.
+
+registry.json: crew-afk 2.2.31 -> 2.2.32, dep-install 1.3.11 -> 1.3.12, solve-issue 1.9.7 ->
+1.9.8 (solve-issue's own files are unchanged; its DISCOVER fallback now benefits from
+write-commands-cache.sh's merge fix without any wording change of its own).
+
 ## [1.29.41]
 
 ### Fixed

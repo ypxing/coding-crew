@@ -1056,7 +1056,10 @@ test("command discovery writes .coding-crew/dev-commands.json from the repo's ow
   assert.equal(cache.lint, "make lint");
   assert.equal(cache.typecheck, "make typecheck");
   assert.equal(cache.sourceHash, undefined, "the committed cache has no sourceHash field");
-  assert.deepEqual(Object.keys(cache).sort(), ["env", "install", "lint", "test", "typecheck"]);
+  assert.deepEqual(
+    Object.keys(cache).sort(),
+    ["credential_target", "env", "install", "lint", "test", "typecheck"],
+  );
 });
 
 test("a CLAUDE.md that happens to contain the word 'skipped' does not silently cancel discovery", () => {

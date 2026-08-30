@@ -112,7 +112,31 @@ EOF
   run bash "$DISCOVER_SCRIPT"
 
   [[ "$output" == *"install and env are the categories"* ]]
-  [[ "$output" == *"null for install, or null for env"* ]]
+  [[ "$output" == *"null for install, null"* ]]
+  [[ "$output" == *"for env, or null for credential_target"* ]]
+}
+
+@test "prompt requires checking any Makefile before answering credential_target as null too" {
+  cat > Makefile <<'EOF'
+.npmrc:
+	envsubst < .npmrc.tpl > .npmrc
+EOF
+  echo "some project notes, no mention of credentials anywhere" > CLAUDE.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *"credential_target"* ]]
+  [[ "$output" == *"you MUST"* ]]
+}
+
+@test "prompt also requests a credential-target Makefile lookup, only when the source documents one" {
+  echo "some project notes" > AGENTS.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *'"credential_target"'* ]]
+  [[ "$output" == *"credential_target (the build target"* ]]
+  [[ "$output" == *"guessing here would only override"* ]]
 }
 
 @test "prompt also requests an env-bootstrap command, only when the source documents one" {

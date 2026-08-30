@@ -25,15 +25,19 @@ Two steps: detect the install mode, then follow the appropriate install guide.
 - Never read, log, print, or inspect the contents of any credential or config files: `.env*`, `.npmrc*`, `.yarnrc*`, `.pip.conf`, `pip.ini`, `.cargo/credentials.toml`, `.bundle/config`, or any file whose name suggests it holds secrets or tokens.
 - Never modify lock files: `package-lock.json`, `yarn.lock`, `bun.lockb`, `pnpm-lock.yaml`, `uv.lock`, `poetry.lock`, `go.sum`, `Cargo.lock`, `Gemfile.lock`, `composer.lock`, or equivalent for any ecosystem.
 
-## Step 0 — Fast-path: check for existing override
+## Step 0 — Fast-path: honor a cached verdict
+
+`$MAIN_ROOT/.scratch/install-mode` is this sprint's own cached verdict, written once by
+`ensure-deps.sh`'s single MAIN_ROOT call. If it exists it is authoritative — do not re-run
+detection against it, here or in any other worktree's own dep-install invocation.
 
 ```bash
-[ -f "$MAIN_ROOT/docker-compose.override.yml" ] && echo "USE_DOCKER_FAST" || echo "RUN_DETECTION"
+cat "$MAIN_ROOT/.scratch/install-mode" 2>/dev/null || echo "RUN_DETECTION"
 ```
 
-If this prints `USE_DOCKER_FAST`: set `INSTALL_MODE=docker`, skip Steps 1 and the override-writing sub-steps in the docker guide, and go directly to install. The override and volume definitions are already in place from a prior run.
-
-If this prints `RUN_DETECTION`: continue to Step 1.
+- Prints `docker`: set `INSTALL_MODE=docker`, skip Step 1 entirely. If `$MAIN_ROOT/docker-compose.override.yml` also already exists, skip the override-writing sub-steps in the docker guide too and go directly to install — the override and volume definitions are already in place from a prior run. If it does **not** exist yet, still skip Step 1, but run the docker guide's override-writing sub-step once before installing.
+- Prints `host`: set `INSTALL_MODE=host`, skip Step 1 entirely, and go directly to `references/host-install.md`.
+- Prints `RUN_DETECTION` (no cache file — this sprint's MAIN_ROOT call hasn't run yet, or this isn't a sprint at all): continue to Step 1.
 
 ## Step 1 — Run the detection script
 

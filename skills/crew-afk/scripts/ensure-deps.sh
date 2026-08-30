@@ -170,6 +170,22 @@ _cached_install_command() {
 }
 CACHED_INSTALL="$(_cached_install_command)"
 
+# _cached_credential_target — the same cache's "credential_target" field: the Makefile target
+# (if any) whose recipe generates package-manager credential config files. Forwarded to
+# docker-install.sh's own --credential-target flag (step 4, docker mode only — the host path
+# has no credential-file generation step of its own to override). A missing cache, missing
+# field, or cached `null` all mean "no override", the same as install: this script never
+# scans Makefile comments for it itself, docker-install.sh keeps calling ensure-env.sh with no
+# --credential-target, and ensure-env.sh's own template-expansion fallback still applies.
+_cached_credential_target() {
+  local cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"
+  [ -f "$cache" ] || return 0
+  grep -o '"credential_target"[[:space:]]*:[[:space:]]*"[^"]*"' "$cache" 2>/dev/null \
+    | head -1 \
+    | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/'
+}
+CACHED_CREDENTIAL_TARGET="$(_cached_credential_target)"
+
 # ─── 2. resolve dep-install's scripts ────────────────────────────────────────
 # No install logic lives here. host-install.sh stays the only place that knows package
 # managers, so this only has to find it — and it must find it without knowing which of the
@@ -360,6 +376,17 @@ if [ "$MODE" = "USE_DOCKER" ]; then
       printf 'docker\n' > "$_mode_cache_tmp"
       mv "$_mode_cache_tmp" "$MAIN_ROOT_EFFECTIVE/.scratch/install-mode" 2>/dev/null || rm -f "$_mode_cache_tmp"
     }
+
+    # Generate the override as soon as the cache says docker, independent of whatever
+    # docker-install.sh decides below — it can exit 2 for reasons that have nothing to do
+    # with whether an override CAN be generated (no lockfile it recognises in a manifest
+    # dir, an --install-cmd override that itself invokes docker), which would otherwise
+    # leave the cache and Step 0's fast path (dep-install/SKILL.md) disagreeing about
+    # whether docker-compose.override.yml exists. A real compose-file/ecosystem failure
+    # (no compose file, no supported ecosystem) fails this the same way it would fail
+    # docker-install.sh's own attempt, so this is not a second guess — just an earlier one.
+    [ -f "$DEP_SCRIPTS/gen-override.sh" ] &&
+      bash "$DEP_SCRIPTS/gen-override.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" >/dev/null 2>&1 || true
   fi
 
   if [ -n "$SLUG" ]; then
@@ -397,6 +424,11 @@ if [ "$MODE" = "USE_DOCKER" ]; then
   # without this, docker-install.sh falls back to its own lockfile table and silently runs
   # a different command than the one a CLAUDE.md/AGENTS.md/Makefile documents.
   [ -n "$CACHED_INSTALL" ] && DOCKER_ARGS+=(--install-cmd "$CACHED_INSTALL")
+  # Forward the same discovered credential-target override step 0 would otherwise leave to
+  # docker-install.md's own Makefile-comment scan — without this, a repo whose docker install
+  # needs a generated .npmrc/pip.conf/etc. silently gets ensure-env.sh's template-only
+  # fallback instead of the credential-generating target a prior discovery already found.
+  [ -n "$CACHED_CREDENTIAL_TARGET" ] && DOCKER_ARGS+=(--credential-target "$CACHED_CREDENTIAL_TARGET")
   bash "$DOCKER_INSTALL_SCRIPT" "${DOCKER_ARGS[@]}" >"$DOCKER_OUT" 2>&1
   DOCKER_RC=$?
   DOCKER_CMD="$(grep -m1 '^Running: ' "$DOCKER_OUT" 2>/dev/null | sed 's/^Running: //')"

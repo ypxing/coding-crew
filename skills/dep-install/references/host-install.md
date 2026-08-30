@@ -15,9 +15,42 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 
 Check in order — use the first match, stop as soon as one is found.
 
+### 0. Check the command cache first
+
+`$MAIN_ROOT/.coding-crew/dev-commands.json`'s `"install"` field may already hold this repo's
+answer — written once by a sprint's own `discover-commands.sh`/`write-commands-cache.sh`, or by
+a prior dep-install session's own Step 1 below. Read it before touching `CLAUDE.md`/`AGENTS.md`:
+
+```bash
+CACHE="$MAIN_ROOT/.coding-crew/dev-commands.json"
+RAW=""
+[ -f "$CACHE" ] && RAW=$(grep -o '"install"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
+```
+
+- `$RAW` holds a quoted command — that command is the answer. Use it directly; skip Steps 1–2.
+- `$RAW` is the bare word `null` — a model already checked this repo's docs/Makefile and
+  confirmed no documented install command exists. Trust it: skip straight to Step 2 (the
+  mechanical script), and do not re-read `CLAUDE.md`/`AGENTS.md` yourself — that would just
+  redo a check someone already made.
+- `$RAW` is empty (no cache file, or the `"install"` key is missing from it entirely) — nobody
+  has asked this question for this repo yet. Continue to Step 1.
+
 ### 1. CLAUDE.md / AGENTS.md
 
-Read `$PROJECT_ROOT/CLAUDE.md` (or `AGENTS.md`) if it exists. If it specifies an install command, use that.
+Read `$PROJECT_ROOT/CLAUDE.md` (or `AGENTS.md`) if it exists. If it specifies an install command,
+use that. Either way — a command found, or a confident "no install command is documented" —
+persist the answer so no future session has to ask again:
+
+```bash
+cat > /tmp/install-discovery.json <<'JSON'
+{"install": "<the command you found, or null if you checked and found none>"}
+JSON
+bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/install-discovery.json
+```
+
+Only write `null` if you actually looked and found nothing — `null` means "no documented
+override", which is a real answer even when Step 2's own convention-based detection goes on to
+find (or not find) an install command by other means.
 
 ### 2. Script (Makefile target + signal file fallback)
 

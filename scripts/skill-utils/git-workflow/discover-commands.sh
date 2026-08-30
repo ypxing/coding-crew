@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Command discovery — mechanical gate for crew-afk (prompt-builder half)
 #
-# Finds the *local dev-loop* command for test/lint/typecheck/install/env once per sprint, before
+# Finds the *local dev-loop* command for test/lint/typecheck/install/env/credential_target once
+# per sprint, before
 # any worktree exists, by asking a model to read whatever of CLAUDE.md/AGENTS.md/Makefile/manifest
 # files this repo actually has — the same reference chain solve-issue's verification.md names,
 # but read by a model instead of pattern-matched by this script. Real repos document these
@@ -23,10 +24,10 @@ set -euo pipefail
 # model can open each file itself instead of having every candidate — a 950-line CLAUDE.md
 # included — pasted whole into a single CLI argv string. Content-in-prompt used to be how
 # this was built; it spent tokens on files the model often never needed (a Makefile no one
-# asked about, once CLAUDE.md alone answered all four categories), and had no ceiling as a
+# asked about, once CLAUDE.md alone answered all six categories), and had no ceiling as a
 # repo's own docs grew. Paths are listed in the same fixed priority order as CANDIDATE_FILES
 # below (docs before build files before manifests), and the model is told to stop reading
-# once it has an answer for all four categories, so a repo that documents everything in
+# once it has an answer for all six categories, so a repo that documents everything in
 # CLAUDE.md never pays to have its Makefile and package.json read too.
 #
 # install is the fourth category, added so ensure-deps.sh (which deliberately never reads
@@ -39,6 +40,14 @@ set -euo pipefail
 # itself either) can use a documented .env-bootstrap override instead of its mechanical
 # .env.example-or-empty convention. Also optional, for the same reason: a null env means that
 # convention already covers this repo.
+#
+# credential_target is the sixth category: the Makefile target (if any) whose recipe generates
+# package-manager credential config files (.npmrc, pip.conf, .cargo/credentials.toml, …) from a
+# template or env vars — not the .env bootstrap itself (that's env, above). Consumed by
+# ensure-deps.sh, which forwards a cached value to docker-install.sh's --credential-target flag
+# instead of dep-install's docker-install.md scanning Makefile comments for it on every run.
+# Also optional: a null here means no such target exists, so ensure-env.sh's own template-only
+# fallback (envsubst on any *.tpl files) already covers this repo.
 #
 # Skips (mechanically, no model call, no tokens) when either:
 #   1. none of the known source files exist — verify-worktree.sh's own ecosystem-convention
@@ -145,7 +154,7 @@ cat <<'PROMPT'
 --- command discovery prompt (do not run this on a cheap model tier — it is genuine reasoning) ---
 You are working in this repository's own working directory and have normal file-read access
 to it. Identify the command a developer runs **locally**, during normal iteration, for each
-of these five categories only:
+of these six categories only:
 
 - test
 - lint
@@ -161,6 +170,12 @@ of these five categories only:
   no stated env command already falls back to copying `.env.example` (or creating an empty
   file) elsewhere, so guessing one here would only override that convention with a worse
   guess.
+- credential_target (the build target — if any — whose recipe generates package-manager
+  credential config files such as `.npmrc`, `pip.conf`, or `.cargo/credentials.toml` from a
+  template or env vars — not the `.env` bootstrap itself, that's env above). Only report one
+  if such a target explicitly exists; a repo with none already falls back to expanding any
+  `*.tpl` files with no generated counterpart elsewhere, so guessing here would only override
+  that convention with a worse guess.
 
 Read these files yourself, in the order listed below — that order is priority order, most
 authoritative first (project docs, then build files, then package manifests):
@@ -173,23 +188,25 @@ done
 cat <<'PROMPT'
 
 Stop reading as soon as you have a confident answer — including a confident "no local command
-exists" — for all five categories; you do not need to open every file above if an earlier one
-already answers all five. The two exceptions are install and env: you MUST open any Makefile
-in the list above before concluding either is null — see the rule below. This overrides the
-"stop once confident" instruction; do not skip it just because the docs already answered the
-other three, and do not treat a confident-sounding silence in the docs as answering install or
-env on its own.
+exists" — for all six categories; you do not need to open every file above if an earlier one
+already answers all six. The three exceptions are install, env, and credential_target:
+you MUST open any Makefile in the list above before concluding any of the three is null —
+see the rule below. This overrides the "stop once confident" instruction; do not skip it just
+because the docs already answered the other three, and do not treat a confident-sounding
+silence in the docs as answering install, env, or credential_target on its own.
 
 Rules:
 - install and env are the categories prose docs are least likely to mention — each is far more
   often only an explicit target in a Makefile (install/deps/bootstrap, or env/setup) than a
-  sentence in the docs listed above. If a Makefile appears in the list above, you MUST open it
-  and check it for a matching target before answering null for install or null for env — this
-  is a required step, not a suggestion, even if the docs already answered test/lint/typecheck
-  confidently. You may only answer null for install, or null for env, once you have either (a)
-  opened every Makefile in the list and found no matching target, or (b) confirmed no Makefile
-  appears in the list above at all. Silence in the docs alone never justifies null for these
-  two categories.
+  sentence in the docs listed above. credential_target is stricter still: it is *only* ever a
+  Makefile target, never something prose docs state. If a Makefile appears in the list above,
+  you MUST open it and check it for a matching target before answering null for install, null
+  for env, or null for credential_target — this is a required step, not a suggestion, even if
+  the docs already answered test/lint/typecheck confidently. You may only answer null for
+  install, null for env, or null for credential_target once you have either (a) opened every
+  Makefile in the list and found no matching target, or (b) confirmed no Makefile appears in
+  the list above at all. Silence in the docs alone never justifies null for these three
+  categories.
 - Only local dev-loop commands. Ignore build, deploy, publish, and infra-provisioning steps
   (Docker image builds, CDK/Terraform/CloudFormation, docs bundling/rendering, release/publish
   workflows) even if they appear in the same file as a test/lint/typecheck/install command.
@@ -200,6 +217,6 @@ Rules:
 - If a category has no discoverable local command, use null for it — do not guess one.
 
 Respond with **only** this JSON shape, no other prose:
-{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>", "env": "<command or null>"}
+{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>", "env": "<command or null>", "credential_target": "<make target name or null>"}
 --- end command discovery prompt ---
 PROMPT

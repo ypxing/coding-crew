@@ -332,6 +332,30 @@ MAKE
   [ "$(cat "$WORK/.env")" = "SECRET=real" ]
 }
 
+# ─── --credential-target: forwarded to ensure-env.sh, unexamined ──────────────────────────
+#
+# The mechanical mirror of dep-install's docker-install.md step 0, where a model scans the
+# Makefile by hand. ensure-deps.sh forwards a dev-commands.json-cached value here the same way
+# it forwards --install-cmd, so this needs no model call once a value is cached.
+
+@test "--credential-target is forwarded to ensure-env.sh, generating credential config via the named target" {
+  cat > "$WORK/Makefile" <<'MK'
+.npmrc:
+	echo "TOKEN=x" > .npmrc
+MK
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --credential-target .npmrc
+  [ "$status" -eq 0 ]
+  [ -f "$WORK/.npmrc" ]
+}
+
+@test "no --credential-target leaves ensure-env.sh to its own template-only fallback" {
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/.npmrc" ]
+}
+
 # ─── usage ────────────────────────────────────────────────────────────────────
 
 @test "--project-root and --main-root are required" {

@@ -320,6 +320,22 @@ STUBEOF
   [ -f "$WORK/.scratch/docker-install.done" ]
 }
 
+@test "the MAIN_ROOT call generates the override even when docker-install.sh exits 2 for unrelated reasons" {
+  # docker-install.sh can exit 2 for reasons that have nothing to do with whether an
+  # override CAN be generated (no lockfile it recognises in a manifest dir, an --install-cmd
+  # override that itself invokes docker) — in that case the cache still says docker, so the
+  # override must not be left missing for dep-install/SKILL.md's Step 0 fast path to find.
+  printf '{}\n' > "$WORK/package.json"
+  printf 'services:\n  app:\n    build: .\n' > "$WORK/docker-compose.yml"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts_with_real_gen_override 2
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: docker" ]
+  [ -f "$WORK/docker-compose.override.yml" ]
+}
+
 @test "the MAIN_ROOT call caches its docker verdict to a file a worker's own detect-mode.sh can read" {
   # This is the mechanism that survives a worker resolving a completely different install
   # of dep-install than the one this script found: unlike the per-call git-config write,
@@ -447,6 +463,71 @@ STUBEOF
   run bash "$SCRIPT" --dir "$WORK"
   [ "$status" -eq 0 ]
   ! grep -qx -- "--install-cmd" "$TEMP_DIR/docker-install-args-none.txt"
+}
+
+@test "a discovered credential_target override is forwarded to docker-install.sh via --credential-target" {
+  printf '{}\n' > "$WORK/package.json"
+  mkdir -p "$WORK/.coding-crew"
+  printf '{"credential_target": ".npmrc"}' > "$WORK/.coding-crew/dev-commands.json"
+  export MAIN_ROOT="$WORK"
+  local d="$TEMP_DIR/stub-docker-credcheck"
+  mkdir -p "$d"
+  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
+  cat > "$d/docker-install.sh" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-cred-args.txt"
+echo "Running: docker compose run --rm app sh -c 'npm ci'"
+exit 0
+STUBEOF
+  chmod +x "$d"/*.sh
+  export CREW_DEP_INSTALL_SCRIPTS="$d"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  grep -qx -- "--credential-target" "$TEMP_DIR/docker-install-cred-args.txt"
+  grep -qx -- ".npmrc" "$TEMP_DIR/docker-install-cred-args.txt"
+}
+
+@test "no discovered credential_target omits --credential-target from the docker-install.sh call" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  local d="$TEMP_DIR/stub-docker-credcheck-none"
+  mkdir -p "$d"
+  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
+  cat > "$d/docker-install.sh" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-cred-args-none.txt"
+echo "Running: docker compose run --rm app sh -c 'npm ci'"
+exit 0
+STUBEOF
+  chmod +x "$d"/*.sh
+  export CREW_DEP_INSTALL_SCRIPTS="$d"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  ! grep -qx -- "--credential-target" "$TEMP_DIR/docker-install-cred-args-none.txt"
+}
+
+@test "a null credential_target in dev-commands.json omits --credential-target, same as absent" {
+  printf '{}\n' > "$WORK/package.json"
+  mkdir -p "$WORK/.coding-crew"
+  printf '{"credential_target": null}' > "$WORK/.coding-crew/dev-commands.json"
+  export MAIN_ROOT="$WORK"
+  local d="$TEMP_DIR/stub-docker-credcheck-null"
+  mkdir -p "$d"
+  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
+  cat > "$d/docker-install.sh" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-cred-args-null.txt"
+echo "Running: docker compose run --rm app sh -c 'npm ci'"
+exit 0
+STUBEOF
+  chmod +x "$d"/*.sh
+  export CREW_DEP_INSTALL_SCRIPTS="$d"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  ! grep -qx -- "--credential-target" "$TEMP_DIR/docker-install-cred-args-null.txt"
 }
 
 @test "docker-install.sh exit 2 (nothing to do) is DEPS: docker, not a new outcome" {

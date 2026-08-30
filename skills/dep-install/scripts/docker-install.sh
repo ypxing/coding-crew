@@ -16,13 +16,19 @@
 #
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> --main-root <path> \
-#     [--service <name>] [--install-cmd <cmd>] [--timeout <sec, default 600>] \
-#     [--lock-timeout <sec, default 30>]
+#     [--service <name>] [--install-cmd <cmd>] [--credential-target <make-target>] \
+#     [--timeout <sec, default 600>] [--lock-timeout <sec, default 30>]
 #
 # --install-cmd is a documented project override (e.g. dev-commands.json's discovered
 # "install" field, forwarded by ensure-deps.sh) — it takes priority over the per-manifest
 # lockfile table below, the same way host-install.sh's own Makefile check already takes
 # priority over its signal-file fallback on the host path.
+#
+# --credential-target is the same kind of forwarded override for dev-commands.json's
+# "credential_target" field — passed straight through to ensure-env.sh, unexamined, the same
+# way dep-install's own docker-install.md tells a model to pass whatever it found scanning the
+# Makefile by hand. Omitted (the default) when no cache entry exists: ensure-env.sh's own
+# template-expansion fallback still applies.
 #
 # Exit codes:
 #   0  install ran successfully ("Running: docker compose run --rm <service> ..." on stdout)
@@ -43,6 +49,7 @@ PROJECT_ROOT=""
 MAIN_ROOT=""
 SERVICE=""
 INSTALL_CMD_OVERRIDE=""
+CREDENTIAL_TARGET=""
 TIMEOUT=600
 LOCK_TIMEOUT=30
 
@@ -52,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --main-root)     MAIN_ROOT="$2";    shift 2 ;;
     --service)       SERVICE="$2";      shift 2 ;;
     --install-cmd)   INSTALL_CMD_OVERRIDE="$2"; shift 2 ;;
+    --credential-target) CREDENTIAL_TARGET="$2"; shift 2 ;;
     --timeout)       TIMEOUT="$2";      shift 2 ;;
     --lock-timeout)  LOCK_TIMEOUT="$2"; shift 2 ;;
     --help)
@@ -180,7 +188,9 @@ done
 
 # ─── 3. env + override, then install ─────────────────────────────────────────
 if [[ -f "$ENSURE_ENV" ]]; then
-  bash "$ENSURE_ENV" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" >/dev/null 2>&1 || true
+  ENV_ARGS=(--project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT")
+  [[ -n "$CREDENTIAL_TARGET" ]] && ENV_ARGS+=(--credential-target "$CREDENTIAL_TARGET")
+  bash "$ENSURE_ENV" "${ENV_ARGS[@]}" >/dev/null 2>&1 || true
 fi
 bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" >/dev/null
 

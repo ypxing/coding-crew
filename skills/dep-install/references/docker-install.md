@@ -31,29 +31,60 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 > module-not-found error: this worktree's own branch may have added a dependency the shared install
 > ran before that branch existed.
 
-### 0. Read Makefile and ensure `.env` exists
+### 0. Check the cache, then ensure `.env` exists
 
-**a. Read the Makefile** (`$PROJECT_ROOT/Makefile`), if present. Scan for:
+**a. Check the cache first.** `$MAIN_ROOT/.coding-crew/dev-commands.json`'s `"credential_target"`
+field may already hold this repo's answer — written once by a sprint's own
+`discover-commands.sh`/`write-commands-cache.sh`, or by a prior dep-install session's own step
+b below:
 
-- Targets that reference `.env` (e.g. `cp .env.example .env`, `$(MAKE) .env`)
-- Environment variable names used in recipes (e.g. `$(NPM_TOKEN)`, `export FOO`)
-- Any comments describing required secrets or setup
-- Targets that generate package-manager credential config files (e.g. `.npmrc`, `.yarnrc.yml`, `pip.conf`, `.cargo/credentials.toml`) via `envsubst`, `echo`, or template files (`.npmrc.tpl`, `pip.conf.tpl`, etc.)
+```bash
+CACHE="$MAIN_ROOT/.coding-crew/dev-commands.json"
+RAW=""
+[ -f "$CACHE" ] && RAW=$(grep -o '"credential_target"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
+```
 
-This step is always done — the Makefile reveals how the project works and what env vars are expected.
+- `$RAW` holds a quoted target name — that is the credential target. Skip straight to step c.
+- `$RAW` is the bare word `null` — a model already scanned this repo's Makefile and confirmed
+  no credential-generating target exists. Trust it: skip straight to step c with no
+  `--credential-target`, and do not re-scan the Makefile yourself.
+- `$RAW` is empty (no cache file, or the key is missing entirely) — nobody has asked this
+  question for this repo yet. Continue to step b.
 
-**b-c. Run the env setup script**, passing `--credential-target` only if step a identified a Makefile target for credential config files:
+**b. Read the Makefile** (`$PROJECT_ROOT/Makefile`), if present. Scan for:
+
+- Targets that generate package-manager credential config files (e.g. `.npmrc`, `.yarnrc.yml`,
+  `pip.conf`, `.cargo/credentials.toml`) via `envsubst`, `echo`, or template files
+  (`.npmrc.tpl`, `pip.conf.tpl`, etc.)
+- Comments describing required secrets, so you recognise a target's *purpose* even when its
+  name alone does not say so
+
+Persist whatever you conclude — a target name, or a confident "none" — so no future dep-install
+session has to scan this Makefile again:
+
+```bash
+cat > /tmp/credential-target-discovery.json <<'JSON'
+{"credential_target": "<the target name you found, or null if you checked and found none>"}
+JSON
+bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/credential-target-discovery.json
+```
+
+**c. Run the env setup script**, passing `--credential-target` with whichever target (from the
+cache in step a, or your own scan in step b) you resolved, if any:
 
 Run `scripts/ensure-env.sh` from the same directory you read this skill file from:
 
 ```bash
-# Without a credential target:
-bash "<skill-dir>/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT"
-# Or, if step a found a credential Makefile target (e.g. ".npmrc"):
-bash "<skill-dir>/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT" --credential-target ".npmrc"
+# No credential target resolved:
+bash "<skill-dir>/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT"
+# A credential target resolved (from the cache, or step b):
+bash "<skill-dir>/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --credential-target ".npmrc"
 ```
 
-The script prints a one-line log of what it did. It always exits 0 — this step never blocks.
+The script itself already checks `dev-commands.json`'s own `"env"` field for a documented
+`.env`-bootstrap command before falling back to its `.env.example`-or-empty convention — that
+lookup needs no model involvement, so this step does not repeat it. It prints a one-line log of
+what it did and always exits 0 — this step never blocks.
 
 **Never read the contents of `.env*` or any credential config file** — not to log, not to inspect, not to verify.
 
@@ -78,6 +109,24 @@ The override file is written to `$MAIN_ROOT/docker-compose.override.yml` and is 
 ### 2. Run install once
 
 Named volumes start empty — always run install inside the container.
+
+**Check the cache first**, the same way step 0a checked `credential_target`:
+`$MAIN_ROOT/.coding-crew/dev-commands.json`'s `"install"` field may already hold this repo's
+documented install command.
+
+```bash
+RAW=""
+[ -f "$CACHE" ] && RAW=$(grep -o '"install"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
+```
+
+- A quoted command found — that is the target/command step a would otherwise have you guess at.
+  Still dry-run it per step a's own rule below (a documented command can itself invoke docker),
+  but skip hunting for which Makefile target it is.
+- `null` — a model already confirmed no documented install override exists. Continue with steps
+  a/b's own per-manifest-file detection unchanged; do not re-derive this from the Makefile
+  yourself first.
+- Empty (no cache file, or the key is missing) — continue with steps a/b unchanged, then persist
+  whatever you conclude the same way step 0b does, using `{"install": "<command or null>"}`.
 
 **a. Is there a Makefile `install`/`deps` target?** Check whether the Makefile has a public `install` or `deps` target whose recipe explicitly runs the package manager in every subdirectory that has a named volume (not just the root).
 
