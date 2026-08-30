@@ -27,7 +27,9 @@
 # Exit codes:
 #   0  install ran successfully ("Running: docker compose run --rm <service> ..." on stdout)
 #   1  argument or filesystem error
-#   2  nothing to do here: no compose file, no service, or no supported ecosystem
+#   2  nothing to do here: no compose file, no service, no supported ecosystem, or
+#      --install-cmd already invokes docker itself (nesting it would just run the same
+#      docker-less-inside-docker failure)
 #   3  install command failed inside the container
 #   4  could not acquire the install lock within --lock-timeout — another install (this
 #      script or a worker's own dep-install invocation) is already in flight; the caller
@@ -102,7 +104,28 @@ fi
 
 CONTAINER_SRC="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query container-src 2>/dev/null)"
 
+# _override_uses_docker <cmd> — true if <cmd> is (or runs, via a `make <target>` recipe)
+# something that itself shells out to docker. Mirrors host-install.sh's own
+# `make -n <target> | grep docker` guard: an install command that already manages
+# containers must run on the host, not get wrapped in a second one — that second layer
+# has no docker CLI of its own, which is exactly the failure this exists to catch before
+# it reaches `docker compose run`.
+_override_uses_docker() {
+  local cmd="$1" target recipe
+  if printf '%s' "$cmd" | grep -qE 'docker (compose|run|exec)'; then
+    return 0
+  fi
+  target="$(printf '%s' "$cmd" | grep -oE 'make[[:space:]]+[A-Za-z0-9_.:-]+' | head -1 | awk '{print $2}')"
+  [[ -n "$target" && -f "$PROJECT_ROOT/Makefile" ]] || return 1
+  recipe="$(cd "$PROJECT_ROOT" && make -n "$target" 2>/dev/null || true)"
+  printf '%s' "$recipe" | grep -qE 'docker (compose|run|exec)'
+}
+
 if [[ -n "$INSTALL_CMD_OVERRIDE" ]]; then
+  if _override_uses_docker "$INSTALL_CMD_OVERRIDE"; then
+    echo "Install command '$INSTALL_CMD_OVERRIDE' already invokes docker — running it inside another container would nest docker-in-docker with no docker CLI there. Install on the host instead." >&2
+    exit 2
+  fi
   # The documented override runs once, at the container-side project root — it is a
   # project's own answer to "how do I install", not a per-manifest-dir heuristic, so the
   # lockfile table and its manifest-dirs requirement below are skipped entirely.

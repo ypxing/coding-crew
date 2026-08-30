@@ -260,6 +260,23 @@ YML
   [[ "$output" == *"make deps"* ]]
 }
 
+@test "--install-cmd that itself names docker compose/run/exec is rejected, not nested" {
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" \
+    --install-cmd "docker compose run --rm other-service make deps"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"already invokes docker"* ]]
+}
+
+@test "--install-cmd running a make target whose own recipe shells out to docker is rejected, not nested" {
+  cat > "$WORK/Makefile" <<'MAKE'
+deps:
+	docker compose run --rm node npm ci
+MAKE
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"already invokes docker"* ]]
+}
+
 @test "no compose file is exit 2, not a failure" {
   rm -f "$WORK/docker-compose.yml"
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
@@ -329,13 +346,15 @@ YML
 }
 
 # ─── docker-in-docker guard (prose, step 2 of docker-install.md) ─────────────
-# docker-install.sh itself never derives an install command from a Makefile target — its
-# per-directory install table only ever reads a fixed lockfile→package-manager map, so it
-# cannot recurse into a nested docker call. The one place this repo *does* suggest running
-# a Makefile `install`/`deps` target inside `docker compose run` is docker-install.md's step
-# 2, read and followed by a model rather than executed by a script — so the guard against
-# nesting docker inside docker lives there as prose, pinned here the same way
-# worker-close-guard.bats pins solve-issue's prose sections.
+# docker-install.sh's own per-directory install table only ever reads a fixed
+# lockfile→package-manager map, so that path cannot recurse into a nested docker call.
+# Its --install-cmd override can (a project's documented "install" command may itself be
+# `make deps`, and that recipe may shell out to docker) — that case is guarded in the
+# script itself (_override_uses_docker, exit 2), pinned above. The one place this repo
+# *also* suggests running a Makefile `install`/`deps` target inside `docker compose run`
+# from scratch is docker-install.md's step 2, read and followed by a model rather than
+# executed by a script — so that half of the guard lives there as prose, pinned here the
+# same way worker-close-guard.bats pins solve-issue's prose sections.
 
 @test "docker-install.md's step 2 dry-runs a Makefile install/deps target before wrapping it in docker compose" {
   local doc="$SCRIPTS_DIR/../references/docker-install.md"
