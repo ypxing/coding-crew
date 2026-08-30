@@ -70,10 +70,14 @@ sprint.
 
 1. Resolve the sprint target first if the arguments aren't already CLI syntax (above),
    then run the command, with `--dry-run` first **only** if the user asked what it would do.
-2. Tell the user progress is also written live to `.scratch/<feature-slug>/traces/orchestrator.log`,
-   so they can check it for detail if they step away or the stream looks quiet.
-3. Stream stdout as it arrives. The summary it prints is the report — do not rewrite,
-   summarise, or re-derive it from the state file.
+2. Stream stdout as it arrives — it now carries a `[STEP]` line at every gate transition
+   (worktree, deps, dispatch, verify, review, merge, close) plus a throttled heartbeat
+   during each coder/review/triage dispatch, not just silence until a round finishes. The
+   summary it prints at the end is the report — do not rewrite, summarise, or re-derive it
+   from the state file.
+3. Mention `.scratch/<feature-slug>/traces/orchestrator.log` only if asked, or if the user
+   steps away and wants more than the live stream showed — every tool call is there,
+   timestamped and unthrottled.
 4. Report the exit code's meaning and stop: `0` finished, `2` stalled (blockers need a
    human), `3` no ready issues, `1` setup problem — print its stderr verbatim and stop.
 

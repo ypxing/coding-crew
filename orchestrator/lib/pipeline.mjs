@@ -250,8 +250,12 @@ export async function runWorker(ctx, issue) {
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       scriptsDir: effects.scriptsDir,
+      slug: issue.slug,
     },
-    { timeoutMs: options.workerTimeoutMs },
+    {
+      timeoutMs: options.workerTimeoutMs,
+      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${ctx.round} ${line}`),
+    },
   );
 
   let sidecar = null;
@@ -471,8 +475,12 @@ async function runTriage(ctx, worker, verifyStdout) {
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       scriptsDir: effects.scriptsDir,
+      slug: issue.slug,
     },
-    { timeoutMs: options.reviewTimeoutMs },
+    {
+      timeoutMs: options.reviewTimeoutMs,
+      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${ctx.round} ${line}`),
+    },
   );
 
   const parsed = parseTriageReport(result.text);
@@ -514,8 +522,12 @@ async function runReview(ctx, worker, checks) {
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       scriptsDir: effects.scriptsDir,
+      slug: issue.slug,
     },
-    { timeoutMs: options.reviewTimeoutMs },
+    {
+      timeoutMs: options.reviewTimeoutMs,
+      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${ctx.round} ${line}`),
+    },
   );
 
   const parsed = parseReviewReport(result.text);

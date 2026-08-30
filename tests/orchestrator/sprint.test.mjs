@@ -900,6 +900,17 @@ test("the orchestrator prints a [STEP] marker before each gate, slug/round-tagge
   for (const l of steps) assert.match(l, /^\[STEP\] slug=alpha round=1 step=[\w-]+$/, l);
 });
 
+test("PR 2: a throttled [TOOL] heartbeat from the bash dispatcher reaches the live stream via onTrace, slug/round-tagged", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.heartbeat", "");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const heartbeats = r.stderr.split("\n").filter((l) => l.includes("fake-heartbeat"));
+  assert.ok(heartbeats.length >= 1, `expected a heartbeat line reaching stderr:\n${r.stderr}`);
+  for (const l of heartbeats) assert.match(l, /^slug=alpha round=1 \[TOOL\] agent=\S+ tool=fake-heartbeat/, l);
+});
+
 test("--no-deps and the help text are declared together, so the flag is discoverable", () => {
   const help = sh("node", [MAIN, "--help"], { cwd: REPO });
   assert.equal(help.code, 0, help.stderr);

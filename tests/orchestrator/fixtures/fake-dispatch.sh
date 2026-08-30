@@ -37,6 +37,14 @@ SLUG=$(basename "$OUT" | sed -E 's/\.(report|review)\.md$//')
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
 mkdir -p "$(dirname "$OUT")"
 
+# Stands in for the real bash dispatchers' own throttled [TOOL] line on stdout (see
+# dispatch-agent.sh/dispatch-codex-agent.sh's maybe_heartbeat), so PR 2's dispatch.mjs ->
+# onTrace plumbing is exercisable for zero tokens.
+if [ -f "$FAKE_DIR/$SLUG.heartbeat" ]; then
+  echo "[TOOL] agent=$AGENT tool=fake-heartbeat-1 \$ echo one"
+  echo "[TOOL] agent=$AGENT tool=fake-heartbeat-2 \$ echo two"
+fi
+
 if [ -f "$FAKE_DIR/$SLUG.exit" ]; then
   : > "$OUT"
   exit "$(cat "$FAKE_DIR/$SLUG.exit")"

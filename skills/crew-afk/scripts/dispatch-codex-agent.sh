@@ -37,6 +37,7 @@ PROMPT_FILE=""
 LOG=""
 MODEL=""
 OUT=""
+SLUG=""
 SANDBOX="${CREW_CODEX_SANDBOX:-workspace-write}"
 
 die() { echo "dispatch-codex-agent: $*" >&2; exit 2; }
@@ -49,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --log) LOG="${2:-}"; shift 2 ;;
     --model) MODEL="${2:-}"; shift 2 ;;
     --out) OUT="${2:-}"; shift 2 ;;
+    --slug) SLUG="${2:-}"; shift 2 ;;
     --sandbox) SANDBOX="${2:-}"; shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
@@ -191,6 +193,53 @@ if [[ -n "$OUT" ]]; then
   : > "$EVENTS_FILE"
 fi
 
+# A capped preview that never silently swallows a truncation — see dispatch-agent.sh's
+# identical helper for why a bare cut is worse than no cut at all.
+safe_preview() {
+  local text="$1" max="${2:-200}" len
+  len=${#text}
+  if (( len <= max )); then
+    printf '%s' "$text"
+  else
+    printf '%s…(+%d chars)' "${text:0:max}" "$((len - max))"
+  fi
+}
+
+# A one-line stand-in for an item's payload — `$ <command>` for a shell call, a bare path
+# for a file edit — mirroring dispatch-agent.sh's summarize_tool_args for the same tool
+# families. Field names for command_execution/file_change are best-effort (not re-verified
+# against a live `codex exec --json` run this session — see the plan's PR 5 caveat about
+# codex's event shapes generally); jq's `// empty` means a wrong guess degrades to the
+# `safe_preview` fallback below instead of breaking the trace.
+summarize_item() {
+  local itemtype="$1" line="$2" command path
+  case "$itemtype" in
+    command_execution)
+      command=$(printf '%s' "$line" | jq -r '.item.command // empty' 2>/dev/null)
+      [[ -n "$command" ]] && printf '$ %s' "$command"
+      ;;
+    file_change)
+      path=$(printf '%s' "$line" | jq -r '.item.path // .item.file // empty' 2>/dev/null)
+      [[ -n "$path" ]] && printf '%s' "$path"
+      ;;
+  esac
+}
+
+# Same throttle as dispatch-agent.sh's maybe_heartbeat: every 5th traced item or every 30s,
+# whichever comes first, printed to this script's own stdout — the one thing dispatch.mjs
+# reads live. $LOG keeps every line, unthrottled.
+HEARTBEAT_COUNT=0
+HEARTBEAT_LAST_EPOCH=$(date +%s)
+maybe_heartbeat() {
+  local msg="$1" now
+  HEARTBEAT_COUNT=$((HEARTBEAT_COUNT + 1))
+  now=$(date +%s)
+  if (( HEARTBEAT_COUNT % 5 == 0 || now - HEARTBEAT_LAST_EPOCH >= 30 )); then
+    HEARTBEAT_LAST_EPOCH=$now
+    printf '%s\n' "$msg"
+  fi
+}
+
 # agent_message/reasoning items are the narrative text — already in the final report —
 # so only the item types that are actual tool calls get a line here. A line this does
 # not recognise (a bad JSON line from a non-JSON tool stub, a future item type) is
@@ -200,28 +249,36 @@ trace_event() {
   type=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || return 0
   case "$type" in
     item.started)
-      local itemtype msg
+      local itemtype detail itemjson msg
       itemtype=$(printf '%s' "$line" | jq -r '.item.type // "?"' 2>/dev/null)
       case "$itemtype" in
         agent_message|reasoning) return 0 ;;
       esac
-      msg="[TOOL] agent=$AGENT item=$itemtype"
+      detail=$(summarize_item "$itemtype" "$line")
+      if [[ -z "$detail" ]]; then
+        itemjson=$(printf '%s' "$line" | jq -c '.item // {}' 2>/dev/null)
+        detail="args=$(safe_preview "$itemjson")"
+      fi
+      msg="[TOOL] agent=$AGENT${SLUG:+ slug=$SLUG} item=$itemtype $detail"
       [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
       echo "$msg" >&2
+      maybe_heartbeat "$msg"
       ;;
     item.completed)
       local itemtype exitcode msg
       itemtype=$(printf '%s' "$line" | jq -r '.item.type // "?"' 2>/dev/null)
       exitcode=$(printf '%s' "$line" | jq -r '.item.exit_code // empty' 2>/dev/null)
       [[ -n "$exitcode" && "$exitcode" != "0" ]] || return 0
-      msg="[TOOL-ERROR] agent=$AGENT item=$itemtype exit=$exitcode"
+      msg="[TOOL-ERROR] agent=$AGENT${SLUG:+ slug=$SLUG} item=$itemtype exit=$exitcode"
       [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
       echo "$msg" >&2
+      maybe_heartbeat "$msg"
       ;;
     turn.failed|error)
-      local msg="[TOOL-ERROR] agent=$AGENT $type"
+      local msg="[TOOL-ERROR] agent=$AGENT${SLUG:+ slug=$SLUG} $type"
       [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
       echo "$msg" >&2
+      maybe_heartbeat "$msg"
       ;;
   esac
 }

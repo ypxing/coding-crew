@@ -30,6 +30,7 @@ PROMPT_FILE=""
 LOG=""
 MODEL=""
 OUT=""
+SLUG=""
 
 die() { echo "dispatch-agent: $*" >&2; exit 2; }
 
@@ -41,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     --log) LOG="${2:-}"; shift 2 ;;
     --model) MODEL="${2:-}"; shift 2 ;;
     --out) OUT="${2:-}"; shift 2 ;;
+    --slug) SLUG="${2:-}"; shift 2 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -165,6 +167,58 @@ if [[ -n "$OUT" ]]; then
   : > "$EVENTS_FILE"
 fi
 
+# A capped preview that never silently swallows a truncation: a bare cut reads as if the
+# value just happened to be short, so a human (or a future grep) can't tell "that's
+# everything" from "that's cut off". Appending the byte count that got cut makes the two
+# distinguishable without needing to go find the original.
+safe_preview() {
+  local text="$1" max="${2:-200}" len
+  len=${#text}
+  if (( len <= max )); then
+    printf '%s' "$text"
+  else
+    printf '%s…(+%d chars)' "${text:0:max}" "$((len - max))"
+  fi
+}
+
+# A one-line, human-readable stand-in for a tool call's raw args — `$ <command>` for a
+# shell call, a bare path for a read/write/edit — mirroring the style pi's own bundled
+# subagent extension uses for the same purpose (examples/extensions/subagent/index.ts's
+# formatToolCall). Prints nothing (caller falls back to a JSON preview) for any tool shape
+# this doesn't recognise, rather than guessing at a field that isn't there.
+summarize_tool_args() {
+  local tool="$1" args="$2" command path
+  case "$tool" in
+    bash)
+      command=$(printf '%s' "$args" | jq -r '.command // empty' 2>/dev/null)
+      [[ -n "$command" ]] && printf '$ %s' "$command"
+      ;;
+    read|write|edit)
+      path=$(printf '%s' "$args" | jq -r '.path // .file_path // empty' 2>/dev/null)
+      [[ -n "$path" ]] && printf '%s' "$path"
+      ;;
+  esac
+}
+
+# Throttle for the one line of live-stream visibility this script's own stdout carries:
+# not every tool call (unbounded over a 45-minute dispatch — gates × issues × rounds must
+# stay the bound, never tool calls × issues × rounds, see
+# .scratch/crew-afk-visibility/plan.md), but a heartbeat every 5th one or every 30s,
+# whichever comes first. Full [TOOL]/[TOOL-ERROR] detail keeps going to $LOG only,
+# unchanged — this only ever prints a throttled *copy* of the same line to stdout, where
+# dispatch.mjs's onTrace is listening.
+HEARTBEAT_COUNT=0
+HEARTBEAT_LAST_EPOCH=$(date +%s)
+maybe_heartbeat() {
+  local msg="$1" now
+  HEARTBEAT_COUNT=$((HEARTBEAT_COUNT + 1))
+  now=$(date +%s)
+  if (( HEARTBEAT_COUNT % 5 == 0 || now - HEARTBEAT_LAST_EPOCH >= 30 )); then
+    HEARTBEAT_LAST_EPOCH=$now
+    printf '%s\n' "$msg"
+  fi
+}
+
 # One line per tool call, as it starts or fails — not per message delta, for the same
 # reason crew-coder's own [START]/[DONE] trace is two lines and not one per tool call:
 # a log line here costs a jq invocation, and a worker can make dozens of tool calls.
@@ -176,21 +230,25 @@ trace_event() {
   type=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || return 0
   case "$type" in
     tool_execution_start)
-      local tool args msg
+      local tool args detail msg
       tool=$(printf '%s' "$line" | jq -r '.toolName // "?"' 2>/dev/null)
-      args=$(printf '%s' "$line" | jq -c '.args // {}' 2>/dev/null | cut -c1-200)
-      msg="[TOOL] agent=$AGENT tool=$tool args=$args"
+      args=$(printf '%s' "$line" | jq -c '.args // {}' 2>/dev/null)
+      detail=$(summarize_tool_args "$tool" "$args")
+      [[ -n "$detail" ]] || detail="args=$(safe_preview "$args")"
+      msg="[TOOL] agent=$AGENT${SLUG:+ slug=$SLUG} tool=$tool $detail"
       [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
       echo "$msg" >&2
+      maybe_heartbeat "$msg"
       ;;
     tool_execution_end)
       local is_error tool msg
       is_error=$(printf '%s' "$line" | jq -r '.isError // false' 2>/dev/null)
       [[ "$is_error" == "true" ]] || return 0
       tool=$(printf '%s' "$line" | jq -r '.toolName // "?"' 2>/dev/null)
-      msg="[TOOL-ERROR] agent=$AGENT tool=$tool"
+      msg="[TOOL-ERROR] agent=$AGENT${SLUG:+ slug=$SLUG} tool=$tool"
       [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
       echo "$msg" >&2
+      maybe_heartbeat "$msg"
       ;;
   esac
 }

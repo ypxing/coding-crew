@@ -489,9 +489,23 @@ test("formatJsonTraceLine reads claude's tool_use content block", () => {
     type: "assistant",
     message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "echo hi" } }] },
   });
+  assert.equal(formatJsonTraceLine("claude", "crew-coder", line), "[TOOL] agent=crew-coder tool=Bash $ echo hi");
+});
+
+test("formatJsonTraceLine summarises a read/write/edit call by its path, and falls back to a JSON preview for anything else", () => {
+  const readLine = JSON.stringify({
+    type: "assistant",
+    message: { content: [{ type: "tool_use", name: "Read", input: { file_path: "/a/b.js" } }] },
+  });
+  assert.equal(formatJsonTraceLine("claude", "crew-coder", readLine), "[TOOL] agent=crew-coder tool=Read /a/b.js");
+
+  const mcpLine = JSON.stringify({
+    type: "assistant",
+    message: { content: [{ type: "tool_use", name: "mcp__thing", input: { query: "x" } }] },
+  });
   assert.equal(
-    formatJsonTraceLine("claude", "crew-coder", line),
-    '[TOOL] agent=crew-coder tool=Bash args={"command":"echo hi"}',
+    formatJsonTraceLine("claude", "crew-coder", mcpLine),
+    '[TOOL] agent=crew-coder tool=mcp__thing args={"query":"x"}',
   );
 });
 
@@ -513,10 +527,7 @@ test("formatJsonTraceLine reads copilot's tool.execution_start/complete (copilot
     type: "tool.execution_start",
     data: { toolName: "bash", arguments: { command: "ls" } },
   });
-  assert.equal(
-    formatJsonTraceLine("copilot", "crew-coder", start),
-    '[TOOL] agent=crew-coder tool=bash args={"command":"ls"}',
-  );
+  assert.equal(formatJsonTraceLine("copilot", "crew-coder", start), "[TOOL] agent=crew-coder tool=bash $ ls");
   const failed = JSON.stringify({
     type: "tool.execution_complete",
     data: { success: false, toolCallId: "c1", error: { message: "nope" } },
@@ -583,25 +594,90 @@ test("dispatch() writes only the final text to outFile, buffers a JSON line spli
   assert.equal(result.text, "polo", "outFile holds only the final assistant text, not the raw stream");
   assert.ok(existsSync(`${outFile}.events.jsonl`), "the raw stream is kept for post-hoc debugging");
   assert.equal(readFileSync(`${outFile}.events.jsonl`, "utf8").trim().split("\n").length, 2);
-  assert.match(readFileSync(logFile, "utf8"), /\[TOOL\] agent=crew-coder tool=Bash/);
+  const logged = readFileSync(logFile, "utf8");
+  assert.match(logged, /\[TOOL\] agent=crew-coder tool=Bash/);
+  // PR 3: every trace line in the file carries a timestamp, unconditionally.
+  assert.match(logged, /^\[\d{2}:\d{2}:\d{2}Z\] /m);
 });
 
-test("dispatch() does not wire onLine or write an events sidecar for pi/codex — their own bash dispatcher traces", async () => {
+test("dispatch() tags every file-logged trace line with slug when the caller passes one", async () => {
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const stream = JSON.stringify({ type: "result", result: "done" }) + "\n";
+  const fakeEffects = {
+    spawnWithTimeout: async (cmd, args, { onLine }) => {
+      onLine(
+        JSON.stringify({
+          type: "assistant",
+          message: { content: [{ type: "tool_use", name: "Bash", input: { command: "echo hi" } }] },
+        }) + "\n",
+      );
+      onLine(stream);
+      return { code: 0, stdout: "", stderr: "", timedOut: false, dryRun: false };
+    },
+  };
+  await dispatch(
+    fakeEffects,
+    "claude",
+    { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root, logFile, scriptsDir: SCRIPTS, slug: "alpha" },
+    {},
+  );
+  assert.match(readFileSync(logFile, "utf8"), /^\[\d{2}:\d{2}:\d{2}Z\] slug=alpha \[TOOL\] agent=crew-coder tool=Bash/m);
+});
+
+test("dispatch() throttles claude/copilot trace lines before calling onTrace, but writes every one to logFile", async () => {
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const toolUse = (n) =>
+    JSON.stringify({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", name: "Bash", input: { command: `echo ${n}` } }] },
+    }) + "\n";
+  const fakeEffects = {
+    spawnWithTimeout: async (cmd, args, { onLine }) => {
+      for (let i = 1; i <= 7; i++) onLine(toolUse(i));
+      onLine(JSON.stringify({ type: "result", result: "done" }) + "\n");
+      return { code: 0, stdout: "", stderr: "", timedOut: false, dryRun: false };
+    },
+  };
+  const traced = [];
+  await dispatch(
+    fakeEffects,
+    "claude",
+    { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root, logFile, scriptsDir: SCRIPTS },
+    { onTrace: (line) => traced.push(line) },
+  );
+  assert.equal(traced.length, 1, "only the 5th of 7 tool calls should cross the heartbeat throttle");
+  assert.match(traced[0], /tool=Bash \$ echo 5/);
+  assert.equal(
+    readFileSync(logFile, "utf8").trim().split("\n").filter((l) => l.includes("[TOOL]")).length,
+    7,
+    "the file gets every tool call, unthrottled",
+  );
+});
+
+test("dispatch() wires onLine for pi/codex too, but only forwards their own already-throttled [TOOL] line to onTrace — not the raw event stream", async () => {
   const { root, promptFile } = fixture();
   const outFile = join(root, "dispatch", "alpha.report.md");
   let sawOnLine;
   const fakeEffects = {
     spawnWithTimeout: async (cmd, args, opts) => {
       sawOnLine = opts.onLine;
+      opts.onLine('{"type":"tool_execution_start","toolName":"bash"}\n');
+      opts.onLine("[TOOL] agent=crew-coder tool=bash $ ls\n");
       return { code: 0, stdout: "", stderr: "", timedOut: false, dryRun: false };
     },
   };
+  const traced = [];
   await dispatch(
     fakeEffects,
     "pi",
     { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root, logFile: join(root, "trace.log"), scriptsDir: SCRIPTS },
-    {},
+    { onTrace: (line) => traced.push(line) },
   );
-  assert.equal(sawOnLine, undefined);
-  assert.equal(existsSync(`${outFile}.events.jsonl`), false);
+  assert.equal(typeof sawOnLine, "function", "onLine is wired unconditionally now, not just for claude/copilot");
+  assert.equal(existsSync(`${outFile}.events.jsonl`), false, "pi/codex still write their own report file, not dispatch.mjs");
+  assert.deepEqual(traced, ["[TOOL] agent=crew-coder tool=bash $ ls\n".trimEnd()]);
 });

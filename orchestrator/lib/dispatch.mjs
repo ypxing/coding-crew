@@ -110,7 +110,7 @@ export function splitFrontmatter(text) {
  * @returns {{cmd: string, args: string[], cwd: string, env: object, capture: "stdout"|"file"}}
  */
 export function buildDispatch(platform, spec) {
-  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir } = spec;
+  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug } = spec;
   const shared = { cwd, env: { MAIN_ROOT: mainRoot, CREW_ORCHESTRATED: "1" } };
 
   // A test/CI seam: one script stands in for every model dispatch, so the whole state
@@ -147,6 +147,7 @@ export function buildDispatch(platform, spec) {
     ];
     if (logFile) args.push("--log", logFile);
     if (model) args.push("--model", model);
+    if (slug) args.push("--slug", slug);
     // The bash dispatchers cd into --dir themselves; run them from the main root so
     // their own git lookups resolve the main checkout.
     return { cmd: "bash", args, ...shared, cwd: mainRoot, capture: "file" };
@@ -236,12 +237,39 @@ export function buildDispatch(platform, spec) {
   throw new Error(`unknown platform: ${platform}`);
 }
 
-function capJson(value) {
+/**
+ * A JSON preview that never silently swallows a truncation: a bare `.slice(0, max)` reads
+ * as if the value just happened to be short, so a human (or a future grep) has no way to
+ * tell "this is everything" from "this is cut off". Appending the byte count that got cut
+ * makes the two cases distinguishable without needing to go find the original.
+ */
+function safePreview(value, max = 200) {
+  let text;
   try {
-    return JSON.stringify(value ?? {}).slice(0, 200);
+    text = JSON.stringify(value ?? {});
   } catch {
-    return "{}";
+    text = "{}";
   }
+  return text.length > max ? `${text.slice(0, max)}…(+${text.length - max} chars)` : text;
+}
+
+/**
+ * A one-line, human-readable stand-in for a tool call's raw args — `$ <command>` for a
+ * shell call, a bare path for a read/write/edit — mirroring the style pi's own bundled
+ * subagent extension uses for the same purpose (`examples/extensions/subagent/index.ts`'s
+ * formatToolCall). Only the two argument shapes every platform's file/shell tools actually
+ * use are recognised; anything else (an MCP call, a web fetch, a tool this doesn't know
+ * about) falls through to a capped JSON preview rather than guessing.
+ */
+function summarizeArgs(args) {
+  if (!args || typeof args !== "object") return null;
+  if (typeof args.command === "string") return `$ ${args.command}`;
+  const path = args.file_path ?? args.path;
+  return typeof path === "string" ? path : null;
+}
+
+function formatArgs(args) {
+  return summarizeArgs(args) ?? `args=${safePreview(args)}`;
 }
 
 /**
@@ -251,7 +279,9 @@ function capJson(value) {
  * dispatch-codex-agent.sh's trace_event follow. Claude's shape is the standard Anthropic
  * Messages content-block schema (`assistant.message.content[]` carries `tool_use`/
  * `tool_result` blocks); copilot's is copilot-sdk's own generated session-events.d.ts
- * (`tool.execution_start`/`tool.execution_complete`).
+ * (`tool.execution_start`/`tool.execution_complete`). The returned line carries no
+ * timestamp or slug — dispatch() adds both when it lands the line in spec.logFile, the one
+ * place that knows which dispatch this stream belongs to.
  */
 export function formatJsonTraceLine(platform, agent, line) {
   let evt;
@@ -264,7 +294,7 @@ export function formatJsonTraceLine(platform, agent, line) {
     if (evt.type === "assistant") {
       for (const block of evt.message?.content ?? []) {
         if (block.type === "tool_use") {
-          return `[TOOL] agent=${agent} tool=${block.name} args=${capJson(block.input)}`;
+          return `[TOOL] agent=${agent} tool=${block.name} ${formatArgs(block.input)}`;
         }
       }
     }
@@ -279,15 +309,35 @@ export function formatJsonTraceLine(platform, agent, line) {
   }
   if (platform === "copilot") {
     if (evt.type === "tool.execution_start") {
-      return `[TOOL] agent=${agent} tool=${evt.data?.toolName ?? "?"} args=${capJson(evt.data?.arguments)}`;
+      return `[TOOL] agent=${agent} tool=${evt.data?.toolName ?? "?"} ${formatArgs(evt.data?.arguments)}`;
     }
     if (evt.type === "tool.execution_complete" && evt.data?.success === false) {
-      return `[TOOL-ERROR] agent=${agent} toolCallId=${evt.data?.toolCallId ?? "?"} error=${capJson(evt.data?.error?.message)}`;
+      return `[TOOL-ERROR] agent=${agent} toolCallId=${evt.data?.toolCallId ?? "?"} error=${safePreview(evt.data?.error?.message)}`;
     }
     return null;
   }
   return null;
 }
+
+/** [HH:MM:SSZ], matching the two bash dispatchers' `date -u +%H:%M:%SZ` exactly. */
+function traceTimestamp() {
+  return `${new Date().toISOString().slice(11, 19)}Z`;
+}
+
+/**
+ * Throttle for the one live signal a long dispatch sends to the parent session: not every
+ * tool call (unbounded over a 45-minute worker — gates × issues × rounds must stay the
+ * bound, never tool calls × issues × rounds, see .scratch/crew-afk-visibility/plan.md),
+ * but a heartbeat every Nth one or every INTERVAL_MS, whichever comes first. pi's and
+ * codex's own bash dispatchers apply the identical rule before ever writing to their own
+ * stdout (see dispatch-agent.sh/dispatch-codex-agent.sh's maybe_heartbeat) — this is
+ * claude/copilot's equivalent, applied here since their tracing is already JS-side.
+ */
+const HEARTBEAT_EVERY_N = 5;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+/** pi's/codex's own already-throttled [TOOL]/[TOOL-ERROR] line, forwarded on their stdout. */
+const BASH_HEARTBEAT = /^\[(?:TOOL|TOOL-ERROR)\] /;
 
 /**
  * The worker's final message, pulled back out of the raw event lines — report.mjs reads
@@ -330,7 +380,7 @@ export function extractFinalText(platform, lines) {
  * child produced nothing), because "no report" is a state the pipeline must be able
  * to read rather than infer.
  */
-export async function dispatch(effects, platform, spec, { timeoutMs } = {}) {
+export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } = {}) {
   const built = buildDispatch(platform, spec);
   mkdirSync(dirname(spec.outFile), { recursive: true });
 
@@ -338,9 +388,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs } = {}) {
   // at a time as it arrives, the same way dispatch-agent.sh/dispatch-codex-agent.sh do for
   // pi/codex. A recognised tool call becomes a `[TOOL]`/`[TOOL-ERROR]` line in spec.logFile
   // *while the worker is still running*; every raw line is also kept, for post-hoc
-  // debugging, next to outFile as `<outFile>.events.jsonl`. onLine is only wired when
-  // jsonEvents is set, so this is a no-op for the CREW_FAKE_DISPATCH seam (which returns
-  // before jsonEvents is ever assigned) and for any platform with no event stream.
+  // debugging, next to outFile as `<outFile>.events.jsonl`.
   //
   // effects.spawnWithTimeout's onLine is misnamed: it hands back raw stdout chunks, not
   // lines — a long JSON line can arrive split across two chunks. lineBuffer holds the
@@ -349,20 +397,48 @@ export async function dispatch(effects, platform, spec, { timeoutMs } = {}) {
   // once, below, the same as a final chunk with an implicit trailing newline.
   const lines = [];
   let lineBuffer = "";
+  let heartbeatCount = 0;
+  // Seeded to "now", not 0: an elapsed-time check against the epoch is always >=
+  // INTERVAL_MS on the very first call, which would fire a heartbeat on tool call #1
+  // regardless of the count throttle.
+  let lastHeartbeatAt = Date.now();
+  const maybeHeartbeat = (trace) => {
+    if (!onTrace) return;
+    heartbeatCount += 1;
+    const now = Date.now();
+    if (heartbeatCount % HEARTBEAT_EVERY_N !== 0 && now - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS) return;
+    lastHeartbeatAt = now;
+    onTrace(trace);
+  };
   const consumeLine = (line) => {
     if (!line.trim()) return;
-    lines.push(line);
-    const trace = formatJsonTraceLine(built.jsonEvents, spec.agent, line);
-    if (trace && spec.logFile) appendLine(spec.logFile, trace);
-  };
-  const onLine = built.jsonEvents
-    ? (chunk) => {
-        lineBuffer += String(chunk);
-        const parts = lineBuffer.split("\n");
-        lineBuffer = parts.pop();
-        for (const line of parts) consumeLine(line);
+    if (built.jsonEvents) {
+      lines.push(line);
+      const trace = formatJsonTraceLine(built.jsonEvents, spec.agent, line);
+      if (trace) {
+        if (spec.logFile) {
+          const slugTag = spec.slug ? ` slug=${spec.slug}` : "";
+          appendLine(spec.logFile, `[${traceTimestamp()}]${slugTag} ${trace}`);
+        }
+        maybeHeartbeat(trace);
       }
-    : undefined;
+      return;
+    }
+    // pi/codex (and the CREW_FAKE_DISPATCH test seam): the bash dispatcher already writes
+    // full [TOOL]/[TOOL-ERROR] detail to spec.logFile itself, tagged and timestamped —
+    // the only thing on its stdout meant for the live stream is its own already-throttled
+    // copy of that same line (see dispatch-agent.sh/dispatch-codex-agent.sh's
+    // maybe_heartbeat). Everything else on that stdout (the raw NDJSON stream, forwarded
+    // there for a human running the script by hand) is not a heartbeat and is dropped
+    // rather than mirrored.
+    if (onTrace && BASH_HEARTBEAT.test(line)) onTrace(line);
+  };
+  const onLine = (chunk) => {
+    lineBuffer += String(chunk);
+    const parts = lineBuffer.split("\n");
+    lineBuffer = parts.pop();
+    for (const line of parts) consumeLine(line);
+  };
 
   const r = await effects.spawnWithTimeout(built.cmd, built.args, {
     cwd: built.cwd,
@@ -370,7 +446,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs } = {}) {
     timeoutMs,
     onLine,
   });
-  if (built.jsonEvents) consumeLine(lineBuffer);
+  consumeLine(lineBuffer);
 
   if (built.jsonEvents && !r.dryRun) {
     writeFileSync(`${spec.outFile}.events.jsonl`, lines.length ? `${lines.join("\n")}\n` : "");

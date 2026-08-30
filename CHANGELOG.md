@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.29.34]
+
+### Added
+
+- **crew-afk sprints now stream a throttled live heartbeat during coder/review/triage
+  dispatch, and every trace-file line is formatted consistently** — PRs 2–4 of the
+  sprint-visibility plan (`.scratch/crew-afk-visibility/plan.md`), building on PR 1's
+  `[STEP]` markers.
+  - PR 2: pi and codex previously had no live signal at all during a dispatch (only
+    claude/copilot did — pi's/codex's own bash dispatchers only ever wrote to the trace
+    file). `dispatch-agent.sh`/`dispatch-codex-agent.sh` now also print a throttled copy of
+    their `[TOOL]`/`[TOOL-ERROR]` line to stdout (every 5th call or 30s, whichever comes
+    first); `dispatch.mjs` wires this live for every platform via a new `onTrace` callback,
+    which `pipeline.mjs` routes into `ctx.log`, slug/round-tagged. Full per-tool-call detail
+    keeps going to the trace file only, unthrottled. Verified end to end on a 3-issue,
+    `--max-parallel 3` sprint: total live-stream output stayed at ~4.9KB/132 lines,
+    comfortably under pi's 50KB/2000-line tool-result cap.
+  - PR 3: every `[TOOL]`/`[TOOL-ERROR]` trace-file line now carries a `[HH:MM:SSZ]`
+    timestamp and `slug=` tag consistently (previously missing on the claude/copilot path).
+    Raw JSON `args=` dumps are replaced with a one-line summary (`$ <command>` for a shell
+    call, a bare path for read/write/edit), falling back to a capped JSON preview only for
+    an unrecognized tool shape. Any remaining truncation now cuts on a safe boundary and
+    appends `…(+N chars)` instead of a bare mid-string cut.
+  - PR 4: all four `skills/crew-afk/*.SKILL.md` now describe the live stream — step markers
+    plus heartbeats — as the primary signal, demoting
+    `.scratch/<feature-slug>/traces/orchestrator.log` to "check it only if you want more
+    than the stream showed."
+  - No dispatch-mechanism change, no new dependency, no change to `report.mjs` parsing,
+    receipts, or gate order.
+
+registry.json: crew-afk 2.2.25 -> 2.2.26.
+
 ## [1.29.33]
 
 ### Added
