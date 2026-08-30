@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.29.37]
+
+### Fixed
+
+- **docker-install.sh now catches docker-in-docker nesting via --install-cmd** — when the override command names docker directly or runs a Makefile target that shells out to docker, it exits with code 2 (nothing to do) instead of nesting into another layer where docker CLI would be absent.
+
 ## [1.29.36]
 
 ### Fixed
