@@ -45,12 +45,14 @@ set -uo pipefail
 # env is the fifth field, consumed the same way by ensure-env.sh in place of its own mechanical
 # .env.example-or-empty convention.
 #
-# credential_target is the sixth field: the Makefile target (if any) whose recipe generates
-# package-manager credential config files (.npmrc, pip.conf, .cargo/credentials.toml, …) from a
-# template or env vars. Determining it the first time still needs a model reading Makefile
-# comments/prose — that judgment does not reduce to a regex — but nothing requires re-asking on
-# every docker-install run once it has been cached: ensure-deps.sh forwards a cached value to
-# docker-install.sh's own --credential-target flag, which passes it straight to ensure-env.sh.
+# credential_target is the sixth field: the full command (if any) that runs the Makefile target
+# whose recipe generates package-manager credential config files (.npmrc, pip.conf,
+# .cargo/credentials.toml, …) from a template or env vars — same shape as install/env (a
+# runnable command, not a bare target name), so ensure-env.sh can eval it directly. Determining
+# it the first time still needs a model reading Makefile comments/prose — that judgment does not
+# reduce to a regex — but nothing requires re-asking on every docker-install run once it has been
+# cached: ensure-deps.sh forwards a cached value to docker-install.sh's own --credential-target
+# flag, which passes it straight to ensure-env.sh.
 #
 # Usage: bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file <path>
 

@@ -41,9 +41,12 @@ set -euo pipefail
 # .env.example-or-empty convention. Also optional, for the same reason: a null env means that
 # convention already covers this repo.
 #
-# credential_target is the sixth category: the Makefile target (if any) whose recipe generates
-# package-manager credential config files (.npmrc, pip.conf, .cargo/credentials.toml, …) from a
-# template or env vars — not the .env bootstrap itself (that's env, above). Consumed by
+# credential_target is the sixth category: the command (if any) that runs the Makefile target
+# whose recipe generates package-manager credential config files (.npmrc, pip.conf,
+# .cargo/credentials.toml, …) from a template or env vars — not the .env bootstrap itself
+# (that's env, above). Like install/env, this is a full runnable command (e.g. "make _registry"),
+# not a bare target name — ensure-env.sh eval's it directly, the same way it evals a cached env
+# command, instead of reconstructing a `make` invocation itself from a name alone. Consumed by
 # ensure-deps.sh, which forwards a cached value to docker-install.sh's --credential-target flag
 # instead of dep-install's docker-install.md scanning Makefile comments for it on every run.
 # Also optional: a null here means no such target exists, so ensure-env.sh's own template-only
@@ -172,10 +175,11 @@ of these six categories only:
   guess.
 - credential_target (the build target — if any — whose recipe generates package-manager
   credential config files such as `.npmrc`, `pip.conf`, or `.cargo/credentials.toml` from a
-  template or env vars — not the `.env` bootstrap itself, that's env above). Only report one
-  if such a target explicitly exists; a repo with none already falls back to expanding any
-  `*.tpl` files with no generated counterpart elsewhere, so guessing here would only override
-  that convention with a worse guess.
+  template or env vars — not the `.env` bootstrap itself, that's env above). Report the full
+  command that runs it (e.g. `make _registry`), not just the bare target name — same shape as
+  install and env above. Only report one if such a target explicitly exists; a repo with none
+  already falls back to expanding any `*.tpl` files with no generated counterpart elsewhere, so
+  guessing here would only override that convention with a worse guess.
 
 Read these files yourself, in the order listed below — that order is priority order, most
 authoritative first (project docs, then build files, then package manifests):
@@ -217,6 +221,6 @@ Rules:
 - If a category has no discoverable local command, use null for it — do not guess one.
 
 Respond with **only** this JSON shape, no other prose:
-{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>", "env": "<command or null>", "credential_target": "<make target name or null>"}
+{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>", "env": "<command or null>", "credential_target": "<command or null, e.g. \"make _registry\">"}
 --- end command discovery prompt ---
 PROMPT

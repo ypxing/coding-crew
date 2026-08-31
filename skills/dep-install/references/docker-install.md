@@ -44,7 +44,7 @@ RAW=""
 [ -f "$CACHE" ] && RAW=$(grep -o '"credential_target"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
 ```
 
-- `$RAW` holds a quoted target name — that is the credential target. Skip straight to step c.
+- `$RAW` holds a quoted command — that is the credential target. Skip straight to step c.
 - `$RAW` is the bare word `null` — a model already scanned this repo's Makefile and confirmed
   no credential-generating target exists. Trust it: skip straight to step c with no
   `--credential-target`, and do not re-scan the Makefile yourself.
@@ -59,17 +59,18 @@ RAW=""
 - Comments describing required secrets, so you recognise a target's *purpose* even when its
   name alone does not say so
 
-Persist whatever you conclude — a target name, or a confident "none" — so no future dep-install
-session has to scan this Makefile again:
+Persist whatever you conclude — the full command to run it (e.g. `make _registry`, not just the
+bare target name — same shape as `install`/`env`), or a confident "none" — so no future
+dep-install session has to scan this Makefile again:
 
 ```bash
 cat > /tmp/credential-target-discovery.json <<'JSON'
-{"credential_target": "<the target name you found, or null if you checked and found none>"}
+{"credential_target": "<the command you found, e.g. \"make _registry\", or null if you checked and found none>"}
 JSON
 bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/credential-target-discovery.json
 ```
 
-**c. Run the env setup script**, passing `--credential-target` with whichever target (from the
+**c. Run the env setup script**, passing `--credential-target` with whichever command (from the
 cache in step a, or your own scan in step b) you resolved, if any:
 
 Run `scripts/ensure-env.sh` from the same directory you read this skill file from:
@@ -78,8 +79,13 @@ Run `scripts/ensure-env.sh` from the same directory you read this skill file fro
 # No credential target resolved:
 bash "<skill-dir>/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT"
 # A credential target resolved (from the cache, or step b):
-bash "<skill-dir>/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --credential-target ".npmrc"
+bash "<skill-dir>/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --credential-target "make _registry"
 ```
+
+Pass the command through unwrapped, exactly as discovered — do not put `docker compose run`
+around it yourself either way. The script itself dry-runs it against `detect-docker-nesting.sh`
+before evaling it: if the recipe already invokes docker, the script skips it (falling back to
+template expansion) rather than risk nesting docker-in-docker.
 
 The script itself already checks `dev-commands.json`'s own `"env"` field for a documented
 `.env`-bootstrap command before falling back to its `.env.example`-or-empty convention — that

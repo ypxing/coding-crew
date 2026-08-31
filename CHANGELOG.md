@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.29.43]
+
+### Changed
+
+- **`credential_target` now caches a full command (e.g. `"make _registry"`), not a bare
+  Makefile target name — the same shape `install`/`env` already use.** A human hand-editing
+  `.coding-crew/dev-commands.json` had no way to tell, from the file alone, that this one field
+  (of six) held a bare name while the other five held runnable commands; the mismatch also meant
+  a target name alone couldn't express "run this via something other than a plain `make`
+  invocation." `discover-commands.sh`'s prompt and `docker-install.md`'s manual fallback both now
+  ask for the command, and `ensure-env.sh` `eval`s it directly instead of reconstructing
+  `make -C <dir> <target>` itself.
+  - `ensure-env.sh` now runs a discovered `credential_target` command through
+    `detect-docker-nesting.sh` first — the same guard `docker-install.sh`'s `--install-cmd` and
+    `verify-worktree.sh`'s discovered test/lint/typecheck commands already use — so a
+    credential-generating recipe that already invokes docker itself is skipped (falling back to
+    the mechanical `.tpl`-expansion convention) rather than risking a nested `docker compose run`
+    with no docker CLI to nest into.
+  - A failing or nesting-unsafe `credential_target` command now falls through to the `.tpl`
+    fallback instead of aborting the script — fixing a latent gap where `set -e` made this step's
+    documented "never blocks" contract untrue for this one field.
+
 ## [1.29.42]
 
 ### Added

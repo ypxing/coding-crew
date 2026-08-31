@@ -170,13 +170,14 @@ _cached_install_command() {
 }
 CACHED_INSTALL="$(_cached_install_command)"
 
-# _cached_credential_target — the same cache's "credential_target" field: the Makefile target
-# (if any) whose recipe generates package-manager credential config files. Forwarded to
-# docker-install.sh's own --credential-target flag (step 4, docker mode only — the host path
-# has no credential-file generation step of its own to override). A missing cache, missing
-# field, or cached `null` all mean "no override", the same as install: this script never
-# scans Makefile comments for it itself, docker-install.sh keeps calling ensure-env.sh with no
-# --credential-target, and ensure-env.sh's own template-expansion fallback still applies.
+# _cached_credential_target — the same cache's "credential_target" field: the full command (if
+# any) that runs the Makefile target whose recipe generates package-manager credential config
+# files. Forwarded to docker-install.sh's own --credential-target flag (step 4, docker mode
+# only — the host path has no credential-file generation step of its own to override). A
+# missing cache, missing field, or cached `null` all mean "no override", the same as install:
+# this script never scans Makefile comments for it itself, docker-install.sh keeps calling
+# ensure-env.sh with no --credential-target, and ensure-env.sh's own template-expansion
+# fallback still applies.
 _cached_credential_target() {
   local cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"
   [ -f "$cache" ] || return 0

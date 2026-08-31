@@ -338,13 +338,13 @@ MAKE
 # Makefile by hand. ensure-deps.sh forwards a dev-commands.json-cached value here the same way
 # it forwards --install-cmd, so this needs no model call once a value is cached.
 
-@test "--credential-target is forwarded to ensure-env.sh, generating credential config via the named target" {
+@test "--credential-target is forwarded to ensure-env.sh, generating credential config via the discovered command" {
   cat > "$WORK/Makefile" <<'MK'
 .npmrc:
 	echo "TOKEN=x" > .npmrc
 MK
   stub_docker 0
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --credential-target .npmrc
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --credential-target "make .npmrc"
   [ "$status" -eq 0 ]
   [ -f "$WORK/.npmrc" ]
 }

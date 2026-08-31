@@ -16,7 +16,7 @@
 #
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> --main-root <path> \
-#     [--service <name>] [--install-cmd <cmd>] [--credential-target <make-target>] \
+#     [--service <name>] [--install-cmd <cmd>] [--credential-target <command>] \
 #     [--timeout <sec, default 600>] [--lock-timeout <sec, default 30>]
 #
 # --install-cmd is a documented project override (e.g. dev-commands.json's discovered
@@ -25,10 +25,11 @@
 # priority over its signal-file fallback on the host path.
 #
 # --credential-target is the same kind of forwarded override for dev-commands.json's
-# "credential_target" field — passed straight through to ensure-env.sh, unexamined, the same
-# way dep-install's own docker-install.md tells a model to pass whatever it found scanning the
-# Makefile by hand. Omitted (the default) when no cache entry exists: ensure-env.sh's own
-# template-expansion fallback still applies.
+# "credential_target" field — a full command (e.g. "make _registry"), passed straight through
+# to ensure-env.sh, unexamined (ensure-env.sh is the one that runs it through
+# detect-docker-nesting.sh before eval'ing it), the same way dep-install's own docker-install.md
+# tells a model to pass whatever it found scanning the Makefile by hand. Omitted (the default)
+# when no cache entry exists: ensure-env.sh's own template-expansion fallback still applies.
 #
 # Exit codes:
 #   0  install ran successfully ("Running: docker compose run --rm <service> ..." on stdout)

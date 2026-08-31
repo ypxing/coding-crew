@@ -2,7 +2,7 @@
 # Ensure .env exists and generate credential config files (steps 0b-c of docker-install).
 # Never reads the contents of .env* or credential files.
 #
-# Usage: ensure-env.sh --project-root <path> [--main-root <path>] [--credential-target <make-target>]
+# Usage: ensure-env.sh --project-root <path> [--main-root <path>] [--credential-target <command>]
 #
 # --main-root names the shared checkout a worktree's PROJECT_ROOT was branched from. When
 # given and it resolves to a different directory than PROJECT_ROOT: a real .env already at
@@ -34,6 +34,8 @@
 #   1  argument error
 
 set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PROJECT_ROOT=""
 MAIN_ROOT=""
@@ -205,10 +207,29 @@ else
 fi
 
 # --- Step 0c: generate credential config files ---
+# CREDENTIAL_TARGET is a full command (e.g. "make _registry"), the same shape as the discovered
+# env command above, evaled directly rather than reconstructed from a bare target name. Guarded
+# with detect-docker-nesting.sh -- the same check docker-install.sh already applies to a
+# discovered install command, and verify-worktree.sh to discovered test/lint/typecheck commands
+# -- so a credential-generating recipe that already invokes docker itself is never blindly run
+# from here: if this step's own execution context ever moves inside a container (it does not
+# today; callers only invoke this on the host, before any `docker compose run`), evaling such a
+# command unguarded would nest docker-in-docker with no docker CLI to nest into. A skip or a
+# failure both fall through to the mechanical .tpl-expansion fallback below, never leaving this
+# step with no credential file and never failing the script -- see the "never blocks" contract.
+ran_credential_target=0
 if [[ -n "$CREDENTIAL_TARGET" ]]; then
-  make -C "$PROJECT_ROOT" "$CREDENTIAL_TARGET"
-  log="$log; ran make $CREDENTIAL_TARGET"
-else
+  if bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$CREDENTIAL_TARGET"; then
+    log="$log; discovered credential_target '$CREDENTIAL_TARGET' already invokes docker -- skipping to avoid nesting docker-in-docker"
+  elif ( cd "$PROJECT_ROOT" && eval "$CREDENTIAL_TARGET" ) >/dev/null 2>&1; then
+    log="$log; ran discovered credential_target: $CREDENTIAL_TARGET"
+    ran_credential_target=1
+  else
+    log="$log; discovered credential_target '$CREDENTIAL_TARGET' failed, falling back to template expansion"
+  fi
+fi
+
+if [[ "$ran_credential_target" -eq 0 ]]; then
   # Fallback: expand any .tpl files that have no generated counterpart yet
   tpl_expanded=""
   while IFS= read -r tpl; do

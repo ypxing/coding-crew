@@ -355,6 +355,45 @@ MK
   fi
 }
 
+# ─── --credential-target: a full command (e.g. "make _registry"), evaled directly, guarded
+# against docker-in-docker nesting the same way docker-install.sh's own --install-cmd is ─────
+
+@test "--credential-target runs the discovered command and generates the credential file" {
+  cat > "$PROJECT/Makefile" <<'MK'
+.npmrc:
+	echo "TOKEN=x" > .npmrc
+MK
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --credential-target "make .npmrc"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.npmrc" ]
+  [[ "$output" == *"ran discovered credential_target"* ]]
+}
+
+@test "a --credential-target command that already invokes docker is skipped, never eval'd" {
+  run bash "$SCRIPT" --project-root "$PROJECT" --credential-target "docker compose run --rm app make _registry"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already invokes docker"* ]]
+  [ ! -f "$PROJECT/.npmrc" ]
+}
+
+@test "a --credential-target bare 'make <target>' whose recipe invokes docker is also skipped" {
+  cat > "$PROJECT/Makefile" <<'MK'
+_registry:
+	docker compose run --rm app ./gen-creds.sh
+MK
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --credential-target "make _registry"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already invokes docker"* ]]
+}
+
+@test "a failing --credential-target command is reported, not fatal" {
+  run bash "$SCRIPT" --project-root "$PROJECT" --credential-target "exit 5"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"failed, falling back to template expansion"* ]]
+}
+
 @test "--main-root: linking a MAIN_ROOT .env into a worktree excludes .env in the shared git dir" {
   MAIN=$(mktemp -d)
   git -C "$MAIN" init -q
