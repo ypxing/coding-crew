@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.29.45]
+
+### Fixed
+
+- **A `crew-code-reviewer` `AC: unmet` verdict sent the coder back through the full
+  `workerPrompt` + resume-note restart** — the same re-read-the-whole-issue-from-scratch path
+  used for a brand-new issue, even though the reviewer had just judged the branch's code
+  acceptable overall and flagged only a specific unmet criterion. `runHousekeeping` now tags
+  that verdict with a new `criteria-unmet` reason (alongside the existing
+  `verification-failed:fixable`/`:not-fixable` tags), and `runWorker` routes it to `fixPrompt`
+  instead — the same narrower retry a fixable verify failure already gets. `fixPrompt` gains a
+  `kind` parameter (`"verify"` | `"review"`) so the prompt correctly attributes the fix to the
+  reviewer's verdict rather than a triage pass.
+  - registry.json: crew-afk 2.2.34 -> 2.2.35 (`orchestrator/lib/pipeline.mjs`,
+    `orchestrator/lib/prompts.mjs`).
+
 ## [1.29.44]
 
 ### Fixed

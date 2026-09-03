@@ -58,14 +58,28 @@ function resultBlock(worktree, reportPath) {
 }
 
 /**
- * A retry after verify-worktree.sh failed and triage (see triagePrompt below) judged it
- * fixable. Deliberately not workerPrompt + resumeNote: that framing re-reads the whole
- * issue as if starting over, which is what turned a wrong dependency version or one
- * failing assertion into a full ~45-minute re-implementation. Here the code is already
- * accepted — the only job is to make the stated failure go away with the smallest change
- * that does it.
+ * A retry after a targeted, independent judgment already said the branch's code stands
+ * and only one specific thing needs fixing — either verify-worktree.sh failed and triage
+ * (see triagePrompt below) judged it fixable, or crew-code-reviewer returned `AC: unmet`
+ * on a specific criterion. Deliberately not workerPrompt + resumeNote: that framing
+ * re-reads the whole issue as if starting over, which is what turned a wrong dependency
+ * version or one failing assertion into a full ~45-minute re-implementation. Here the code
+ * is already accepted — the only job is to make the stated problem go away with the
+ * smallest change that does it.
  */
-export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context, checkOutput, reportPath }) {
+export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify" }) {
+  const isReview = kind === "review";
+  const judged = isReview
+    ? "This branch's code was already reviewed and accepted overall — it only failed on one or\n" +
+      "more acceptance criteria. Do not re-read the issue as if starting over, and do not redo\n" +
+      "or restructure work that already passed. Make the smallest change that satisfies the\n" +
+      "unmet criterion below."
+    : "This branch's code was already judged acceptable — it only failed verification. Do not\n" +
+      "re-read the issue as if starting over, and do not redo or restructure work that already\n" +
+      "passed. Make the smallest change that makes the failing check(s) below pass.";
+  const sourced = isReview
+    ? `The reviewer's verdict on this branch: ${context || "(no detail given)"}`
+    : `A prior, independent triage pass classified this failure as fixable: ${context || "(no detail given)"}`;
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
     `Working directory: ${worktree}`,
@@ -73,11 +87,9 @@ export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context
     `Issue title: ${slug}`,
     `Branch: ${branch}`,
     "",
-    "This branch's code was already judged acceptable — it only failed verification. Do not",
-    "re-read the issue as if starting over, and do not redo or restructure work that already",
-    "passed. Make the smallest change that makes the failing check(s) below pass.",
+    judged,
     "",
-    `A prior, independent triage pass classified this failure as fixable: ${context || "(no detail given)"}`,
+    sourced,
   ];
   if (checkOutput && checkOutput.trim()) {
     lines.push(

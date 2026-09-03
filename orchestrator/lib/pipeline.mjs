@@ -38,6 +38,11 @@ import { dispatch } from "./dispatch.mjs";
 // separator cannot drift between the writer and the two readers.
 const FIXABLE_TAG = "verification-failed:fixable";
 const NOT_FIXABLE_TAG = "verification-failed:not-fixable";
+// Written by runHousekeeping on an `AC: unmet` verdict, read back by runWorker the same
+// way FIXABLE_TAG is: routes the retry to fixPrompt instead of a full workerPrompt restart.
+// No triage step here — the reviewer's own detail is already the concrete, actionable
+// thing a fix needs, unlike a verify failure's raw check output.
+const CRITERIA_UNMET_TAG = "criteria-unmet";
 const REASON_SEP = " — ";
 
 function taggedReason(tag, summary) {
@@ -117,10 +122,12 @@ export async function runWorker(ctx, issue) {
   const notFixableRetry = priorBranch != null && retentionReason?.startsWith(NOT_FIXABLE_TAG);
   const skipWorker = (priorBranch != null && retentionReason === "review-not-run") || notFixableRetry;
 
-  // A fixable triage verdict routes to a narrower prompt (fixPrompt, below) instead of the
-  // generic workerPrompt + resumeNote — the coder still runs, just told exactly what
-  // failed and why, instead of re-reading the whole issue as if starting over.
+  // A fixable triage verdict, or a reviewer's `AC: unmet` verdict, routes to a narrower
+  // prompt (fixPrompt, below) instead of the generic workerPrompt + resumeNote — the coder
+  // still runs, just told exactly what failed and why, instead of re-reading the whole
+  // issue as if starting over.
   const fixableRetry = priorBranch != null && retentionReason?.startsWith(FIXABLE_TAG);
+  const criteriaUnmetRetry = priorBranch != null && retentionReason?.startsWith(CRITERIA_UNMET_TAG);
 
   // expectReuse: true only when the issue itself has a recorded reason to already have
   // a branch (progress from an earlier round). A branch ref that exists despite this
@@ -216,14 +223,17 @@ export async function runWorker(ctx, issue) {
 
   writeFileSync(
     promptFile,
-    fixableRetry
+    fixableRetry || criteriaUnmetRetry
       ? fixPrompt({
           mainRoot: effects.mainRoot,
           worktree,
           issuePath: issue.path,
           slug: issue.slug,
           branch,
-          context: stripReasonTag(retentionReason, FIXABLE_TAG),
+          context: criteriaUnmetRetry
+            ? stripReasonTag(retentionReason, CRITERIA_UNMET_TAG)
+            : stripReasonTag(retentionReason, FIXABLE_TAG),
+          kind: criteriaUnmetRetry ? "review" : "verify",
           reportPath: sidecarFile,
         })
       : workerPrompt({
@@ -350,7 +360,7 @@ export async function runHousekeeping(ctx, worker) {
   outcome.findings = review.parsed.findings;
 
   if (review.parsed.verdict !== "all-met") {
-    return finishPartial(ctx, worker, outcome, `criteria-unmet — ${review.parsed.detail || "see review"}`);
+    return finishPartial(ctx, worker, outcome, taggedReason(CRITERIA_UNMET_TAG, review.parsed.detail || "see review"));
   }
 
   // The receipt close-issue.sh demands, written only on an all-met verdict, and only
