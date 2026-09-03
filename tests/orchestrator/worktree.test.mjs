@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { applyWorktreeInclude, ensureWorktree } from "../../orchestrator/lib/worktree.mjs";
+import { applyWorktreeInclude, ensureWorktree, ensureWorktreeInclude } from "../../orchestrator/lib/worktree.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
 function tmpRoot() {
@@ -129,6 +129,49 @@ test("a dangling symlink with no source to heal it yet is left in place", () => 
   assert.deepEqual(linked, []);
   assert.ok(lstatSync(join(worktree, ".env")).isSymbolicLink());
   assert.ok(!existsSync(join(worktree, ".env")));
+});
+
+// --- ensureWorktreeInclude: docker-compose.override.yml before any worktree exists ----
+
+test("ensureWorktreeInclude creates .worktreeinclude when it does not exist yet", () => {
+  const mainRoot = tmpRoot();
+
+  const changed = ensureWorktreeInclude(mainRoot);
+
+  assert.equal(changed, true);
+  assert.equal(readFileSync(join(mainRoot, ".worktreeinclude"), "utf8"), "docker-compose.override.yml\n");
+});
+
+test("ensureWorktreeInclude appends the entry to an existing manifest that lacks it", () => {
+  const mainRoot = tmpRoot();
+  writeFileSync(join(mainRoot, ".worktreeinclude"), ".env\nnode_modules\n");
+
+  const changed = ensureWorktreeInclude(mainRoot);
+
+  assert.equal(changed, true);
+  assert.equal(
+    readFileSync(join(mainRoot, ".worktreeinclude"), "utf8"),
+    ".env\nnode_modules\ndocker-compose.override.yml\n",
+  );
+});
+
+test("ensureWorktreeInclude appends onto a manifest missing its trailing newline", () => {
+  const mainRoot = tmpRoot();
+  writeFileSync(join(mainRoot, ".worktreeinclude"), ".env");
+
+  ensureWorktreeInclude(mainRoot);
+
+  assert.equal(readFileSync(join(mainRoot, ".worktreeinclude"), "utf8"), ".env\ndocker-compose.override.yml\n");
+});
+
+test("ensureWorktreeInclude is a no-op when the entry is already present", () => {
+  const mainRoot = tmpRoot();
+  writeFileSync(join(mainRoot, ".worktreeinclude"), "docker-compose.override.yml\n.env\n");
+
+  const changed = ensureWorktreeInclude(mainRoot);
+
+  assert.equal(changed, false);
+  assert.equal(readFileSync(join(mainRoot, ".worktreeinclude"), "utf8"), "docker-compose.override.yml\n.env\n");
 });
 
 // --- ensureWorktree: stale-branch detection ---------------------------------

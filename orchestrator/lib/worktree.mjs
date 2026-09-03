@@ -6,11 +6,34 @@
  * or on a Copilot worker obeying a "Working directory:" line in its prompt.
  */
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export function worktreePath(mainRoot, branch) {
   return join(mainRoot, ".scratch", "worktrees", branch);
+}
+
+const DOCKER_OVERRIDE_ENTRY = "docker-compose.override.yml";
+
+/**
+ * Make sure `.worktreeinclude` at mainRoot lists docker-compose.override.yml, before any
+ * worktree exists. Without this, a docker-mode project's override only reaches a worktree
+ * via gen-override.sh's own docker-present fast path inside ensure-deps.sh — which requires
+ * DOCKER_MARKER to already be on disk, a race the first round's concurrently-created
+ * worktrees can lose. Listing the entry here means every worktree's own applyWorktreeInclude()
+ * symlinks it in deterministically at creation time instead.
+ *
+ * Safe to call unconditionally, even when the project has no docker-compose.override.yml at
+ * all: applyWorktreeInclude() already skips any entry whose source is missing from mainRoot.
+ */
+export function ensureWorktreeInclude(mainRoot) {
+  const manifest = join(mainRoot, ".worktreeinclude");
+  const existing = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";
+  const hasEntry = existing.split("\n").some((raw) => raw.trim() === DOCKER_OVERRIDE_ENTRY);
+  if (hasEntry) return false;
+  const sep = existing && !existing.endsWith("\n") ? "\n" : "";
+  writeFileSync(manifest, `${existing}${sep}${DOCKER_OVERRIDE_ENTRY}\n`);
+  return true;
 }
 
 /**

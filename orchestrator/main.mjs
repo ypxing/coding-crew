@@ -37,6 +37,7 @@ import { discoverCommands } from "./lib/commands.mjs";
 import { DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { selectDispatchable } from "./lib/tracker.mjs";
+import { ensureWorktreeInclude } from "./lib/worktree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -332,6 +333,11 @@ async function main() {
     console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));
     return 1;
   }
+
+  // Before any worktree exists: make sure docker-compose.override.yml is in
+  // .worktreeinclude, so every worktree this sprint creates gets it symlinked in at
+  // creation time (see ensureWorktreeInclude()'s docstring).
+  ensureWorktreeInclude(mainRoot);
 
   // Resolved once, here, before session-init.sh (or anything else) touches disk — see
   // resolveFeatureSlug()'s docstring. Passing the resolved slug down means session-init.sh's

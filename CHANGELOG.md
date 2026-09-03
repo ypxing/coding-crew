@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.29.44]
+
+### Fixed
+
+- **A docker-mode project's `docker-compose.override.yml` could miss a first-round worktree
+  entirely.** The only path that carried it into a worktree was `gen-override.sh`'s
+  docker-present fast path inside `ensure-deps.sh`, which requires `DOCKER_MARKER` already on
+  disk — a race the first round's concurrently-created worktrees could lose, leaving that
+  worktree without the override and no later step to add it. `orchestrator/lib/worktree.mjs`
+  gains `ensureWorktreeInclude()`, called once from `main.mjs` before any worktree exists for the
+  sprint, which adds `docker-compose.override.yml` to the repo's `.worktreeinclude` manifest if
+  it isn't already listed. Every worktree's own `applyWorktreeInclude()` then symlinks it in
+  deterministically at creation time instead of depending on that race. A no-op when the entry is
+  already present, and safe to call even when the project has no
+  `docker-compose.override.yml` at all — `applyWorktreeInclude()` already skips entries whose
+  source is missing.
+  - registry.json: crew-afk 2.2.33 -> 2.2.34 (`orchestrator/lib/worktree.mjs`,
+    `orchestrator/main.mjs`).
+
+### Docs
+
+- Reworked README.md: install instructions and a 3-step quickstart now lead the page, the plan/
+  build/review walkthrough is condensed, and the platform-specific caveats (Copilot's `--agent`
+  resolution, pi/Codex local-CLI-only support) are consolidated instead of repeated across
+  sections. No behavior change.
+
 ## [1.29.43]
 
 ### Changed

@@ -2,6 +2,26 @@
 
 AI agents that take your ideas from planning to code.
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
+```
+
+Installs for Claude Code, GitHub Copilot, [pi](https://github.com/badlogic/pi-mono), and OpenAI
+Codex into `$HOME` (works in any project). Requires `bash` 4.0+, `jq`, `git`, `curl`, `tar`
+(Windows: WSL2). See [Install options](#install-options) below for per-platform/per-project setup,
+version pinning, and updates.
+
+## Quickstart
+
+1. **`/crew-grill`** — turn an idea into a PRD + issues (use `/crew-brainstorm` instead if the idea
+   is still forming)
+2. **`/crew-afk`** — unattended sprint: implements every issue in parallel, verifies, reviews, merges
+3. **`/crew-address-findings`** — triage and fix whatever the review flagged
+
+That's the whole loop. Details on each step below.
+
 ---
 
 ## The flow
@@ -48,35 +68,18 @@ AI agents that take your ideas from planning to code.
 
 ## 1. Plan and design
 
-Two entry points — **pick one, not both.** They differ only in how they interrogate you; both end at the same PRD + issues.
+Two entry points — **pick one, not both.** They differ only in how they interrogate you; both end
+at the same PRD + issues.
 
-**Concrete plan** — use `/crew-grill`:
+- **`/crew-grill`** — adversarial interrogation: challenges every assumption, resolves every
+  dependency, then produces a PRD and issues. Best when you have a plan and want it stress-tested
+  before a line of code is written.
+- **`/crew-brainstorm`** — collaborative dialogue: asks questions one at a time, proposes 2–3
+  approaches with trade-offs, builds a design doc, then hands off to PRD and issues. Best when the
+  idea is still forming.
 
-```
-/crew-grill
-```
-
-Adversarial interrogation: challenges every assumption, resolves every dependency, then produces a PRD and issues. Best when you have a plan and want it stress-tested before a line of code is written.
-
-**Exploratory idea** — use `/crew-brainstorm`:
-
-```
-/crew-brainstorm
-```
-
-Collaborative dialogue: asks questions one at a time, proposes 2–3 approaches with trade-offs, builds a design doc, then hands off to PRD and issues. Best when the idea is still forming.
-
-Add `with docs` to also update `CONTEXT.md` and record ADRs (crew-grill only):
-
-```
-/crew-grill with docs
-```
-
-Both produce a PRD as the single source of truth — implementation agents read it to understand architecture decisions, integration constraints, and requirements.
-
-Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
-
----
+Add `with docs` to `/crew-grill` to also update `CONTEXT.md` and record ADRs. Run `/to-prd` or
+`/to-issues` standalone to jump into a single phase.
 
 ## 2. Build, verify, review
 
@@ -84,39 +87,24 @@ Run `/to-prd` or `/to-issues` standalone to jump into any individual phase.
 /crew-afk
 ```
 
-**AFK = Away From Keyboard.** Start it and leave — the sprint runs autonomously end to end: it picks up every `ready-for-agent` issue, spawns crew-coder agents in parallel, verifies, reviews, merges, and loops until nothing is left. No prompts, no approvals, no babysitting. Come back to merged code and a review report.
+**AFK = Away From Keyboard.** It picks up every `ready-for-agent` issue, spawns crew-coder agents in
+parallel worktrees, verifies, reviews, merges, and loops until nothing is left. Come back to merged
+code and a review report.
 
-Before any branch merges, the orchestrator independently runs the project's checks in the worker's worktree (`verify-worktree.sh`) — a branch that fails verification is treated as partial and never merged. Then a code reviewer reviews each verified branch's diff before the merge, with findings written to `.scratch/<feature>/reviews/`. Review is advisory and never blocks a merge.
+Before any branch merges: the project's own checks run in that worker's worktree, and a failing
+branch is never merged. A code reviewer then reviews the diff — findings land in
+`.scratch/<feature>/reviews/` and are advisory, never blocking.
 
-**Partial work is committed and retained.** When a worker cannot finish (partial status or failed verification), it commits its work-in-progress with a `[WIP]` marker to its own branch. That branch is not merged and not deleted — it survives wrap-up so the next round's worker resumes on it instead of starting from scratch. Retained branches are listed in the sprint summary with their reason.
+**Partial work is retained, not lost.** A worker that can't finish commits its work-in-progress with
+a `[WIP]` marker on its own branch instead of merging; the next round resumes from there.
 
-**Model selection**
+Two knobs worth knowing about:
 
-By default, coders run on `sonnet`. Pass `--model` to use a different tier:
-
-```
-/crew-afk --model opus      # use a higher tier for this sprint
-/crew-afk --model haiku     # use a lighter tier
-/crew-afk --model inherit   # omit model param, inherit from session
-```
-
-The reviewer always inherits the session model — it is deliberately not pinned.
-
-On Copilot, `--model` is accepted but has no effect: the IDE selects the model, and an explicit notice is printed when the flag is used.
-
-The resolved model is written to the orchestrator trace log and included in the sprint summary.
-
-**Gitignored files in worktrees (`.worktreeinclude`)**
-
-Each agent runs in an isolated git worktree. Gitignored files like `.env` or `node_modules/` aren't present by default. To make them available, create a `.worktreeinclude` at your repo root:
-
-```
-# .worktreeinclude
-.env
-.env.local
-```
-
----
+- **Model tier** — `/crew-afk --model opus|sonnet|haiku|inherit` (default `sonnet`). The reviewer
+  always inherits the session model. Copilot ignores this flag (the IDE picks the model).
+- **Gitignored files in worktrees** — each coder runs in an isolated worktree, so `.env` and similar
+  files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
+  them over.
 
 ## 3. Address the review findings
 
@@ -138,7 +126,8 @@ Opens the review report, triages findings, implements fixes with TDD.
 | 2. build + verify + review | `/crew-afk`              | Away From Keyboard — autonomous parallel sprint over all ready issues |
 | 3. address findings        | `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD            |
 
-> **Step 1 alternative:** if the idea is still forming, use `/crew-brainstorm` instead of `/crew-grill` — collaborative dialogue that proposes 2–3 approaches and builds a spec. Pick one or the other, never both: they end at the same PRD + issues.
+> **Step 1 alternative:** if the idea is still forming, use `/crew-brainstorm` instead of
+> `/crew-grill` — pick one or the other, never both.
 
 **Also available**
 
@@ -150,13 +139,7 @@ Opens the review report, triages findings, implements fixes with TDD.
 
 ---
 
-## Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
-```
-
-Installs to `$HOME` (user-level, works in any project). Common flags:
+## Install options
 
 | Flag                     | Effect                                                                                    |
 | ------------------------ | ----------------------------------------------------------------------------------------- |
@@ -170,30 +153,21 @@ Installs to `$HOME` (user-level, works in any project). Common flags:
 | `--from-lockfile [path]` | Install the versions pinned in `crew.lock` (defaults to `./crew.lock`)                    |
 | `--update`               | Check for and apply updates (uses `crew.lock` if present, otherwise the install manifest) |
 
-**Requirements:** `bash` 4.0+, `jq`, `git`, `curl`, `tar`. Windows: WSL2 required.
+**Where things land:** Claude Code → `.claude/`; Copilot → `.github/agents/` + `.github/skills/`
+per project, `~/.copilot/` when installed user-level (Copilot does not read `.copilot/` inside a
+repo); pi → `.pi/` per project, `~/.pi/agent/` when installed user-level; Codex → skills in
+`.agents/skills/`, agents in `.codex/agents/*.toml`.
 
-**Supported agents:** Claude Code (`.claude/`), GitHub Copilot (`.github/agents/` + `.github/skills/`
-per project, `~/.copilot/` when installed user-level — Copilot does not read `.copilot/` inside a
-repo), [pi](https://github.com/badlogic/pi-mono) (`.pi/` per project, `~/.pi/agent/` when installed
-user-level), and OpenAI Codex (skills in `.agents/skills/`, agents in `.codex/agents/*.toml`).
+On every platform, `/crew-afk` runs each coder as its own child process in its own git worktree —
+the matching CLI (`pi`, `codex`, `claude`, or `copilot`) must be on `PATH`. Two platform-specific
+requirements:
 
-On **every supported platform**, `/crew-afk` launches a program
-(`.coding-crew/crew-afk/main.mjs`) and each coder runs as its own child process in its own git
-worktree: `pi -p` via `scripts/dispatch-agent.sh`, `codex exec` via
-`scripts/dispatch-codex-agent.sh`, `claude -p --agent crew-coder`, and
-`copilot -p --agent crew-coder` directly. The matching CLI must be on `PATH`.
-
-**Copilot resolves `--agent` from the worker's own directory**, so the coder and reviewer
-definitions must be either committed (`.github/agents/` is a tracked path) or installed
-user-level with `TARGET_REPO=$HOME`. A sprint refuses to start otherwise and says which.
-
-**Codex support means the local Codex CLI only.** The `codex` platform requires a real shell where
-`codex exec` can be spawned as a child process, a local git clone to create worktrees in, and
-already-completed auth (there is no interactive login inside a dispatch). The hosted Codex surfaces
-— Codex in ChatGPT and the Codex cloud/web agent — are not supported: the orchestrator cannot launch
-and `wait` on background worker processes there, and there is no persistent working root for
-per-issue worktrees or the `.scratch/<slug>/dispatch/*.report.md` files it reads back.
-Same applies to `pi`: local CLI only.
+- **Copilot** resolves `--agent` from the worker's own directory, so agent definitions must be
+  either committed (`.github/agents/` is tracked) or installed user-level with `TARGET_REPO=$HOME`.
+  A sprint refuses to start otherwise and says which.
+- **pi and Codex support the local CLI only** — a sprint spawns background child processes against
+  a local git clone, which the hosted Codex surfaces (Codex in ChatGPT, the Codex cloud/web agent)
+  cannot support.
 
 To uninstall:
 
@@ -201,17 +175,13 @@ To uninstall:
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
 ```
 
----
+### Team distribution
 
-## Team distribution
-
-Pinning to a version writes a `crew.lock` automatically — commit it to your dotfiles or team config repo:
+Pinning to a version writes a `crew.lock` automatically — commit it to your dotfiles or team config
+repo:
 
 ```bash
 ./install.sh --version v1.2.0
-# newest published release, resolved to a concrete tag before pinning:
-./install.sh --version latest
-# or, without a local clone:
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --project --version v1.2.0
 ```
 
@@ -219,11 +189,7 @@ Team members install from it (defaults to `./crew.lock`; pass a path for a diffe
 
 ```bash
 ./install.sh --from-lockfile
-```
-
-Or without a local clone:
-
-```bash
+# or, without a local clone:
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --from-lockfile
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --update
 ```
@@ -232,13 +198,17 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.s
 
 ## Guides
 
-- [Consumer guide](docs/guide.md#part-2-using-this-repo-in-your-project) — full setup, issue lifecycle, troubleshooting
-- [Contributor guide](docs/guide.md#part-1-contributing-to-this-repo) — adding agents/skills, registry schema, security rules
+- [Consumer guide](docs/guide.md#part-2-using-this-repo-in-your-project) — full setup, issue
+  lifecycle, troubleshooting
+- [Contributor guide](docs/guide.md#part-1-contributing-to-this-repo) — adding agents/skills,
+  registry schema, security rules
 
 ---
 
 ## Acknowledgements
 
-Several skills are borrowed from [Matt Pocock's skills collection](https://github.com/mattpocock/skills) (MIT License, Copyright © 2026 Matt Pocock). See [LICENSE](LICENSE) for the full notice. Thanks Matt.
+Several skills are borrowed from [Matt Pocock's skills collection](https://github.com/mattpocock/skills)
+(MIT License, Copyright © 2026 Matt Pocock). See [LICENSE](LICENSE) for the full notice. Thanks Matt.
 
-The `/crew-grill` design pipeline incorporates ideas from [obra/superpowers](https://github.com/obra/superpowers). Thanks Jesse.
+The `/crew-grill` design pipeline incorporates ideas from
+[obra/superpowers](https://github.com/obra/superpowers). Thanks Jesse.
