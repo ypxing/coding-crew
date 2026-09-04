@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.29.48]
+
+### Fixed
+
+- **Host installs never wrote the `.coding-crew/dev-commands.json` `"mode"` cache** the previous
+  release added for docker — only the docker branch of `ensure-deps.sh` called
+  `_merge_mode_cache`, so a host project still paid `detect-mode.sh`'s full Makefile `make -n`
+  dry-run loop on every worktree/issue. `ensure-deps.sh`'s `MAIN_ROOT` call now also caches
+  `host` mode when resolution lands there.
+- **`detect-mode.sh` aborted under `set -euo pipefail`** reading a `dev-commands.json` that has
+  no `"mode"` field yet (e.g. one written before this cache existed): `grep` finds nothing,
+  exits non-zero, and pipefail took the whole pipeline down with it. The `sed` stage now ends
+  with `|| true` so a cache miss falls through to the existing detection order instead of
+  crashing.
+  - registry.json: crew-afk 2.2.37 -> 2.2.38 (`skills/crew-afk/scripts/ensure-deps.sh`),
+    dep-install 1.3.14 -> 1.3.15 (`skills/dep-install/scripts/detect-mode.sh`).
+
 ## [1.29.47]
 
 ### Fixed

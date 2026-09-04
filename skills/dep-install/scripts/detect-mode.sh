@@ -58,7 +58,7 @@ if [ -z "$_mode" ]; then
   if [ -n "$_main_root" ] && [ -f "$_main_root/.coding-crew/dev-commands.json" ]; then
     _cached_mode="$(grep -o '"mode"[[:space:]]*:[[:space:]]*"[^"]*"' \
         "$_main_root/.coding-crew/dev-commands.json" 2>/dev/null \
-      | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/')"
+      | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true)"
     case "$_cached_mode" in
       docker) _mode="docker" ;;
       host) _mode="host" ;;

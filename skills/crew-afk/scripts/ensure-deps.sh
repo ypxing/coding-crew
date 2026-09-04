@@ -486,6 +486,12 @@ if [ "$MODE" = "USE_DOCKER" ]; then
       _report "docker-failed $DOCKER_CMD (exit $DOCKER_RC) (see $DOCKER_LOG)"
       ;;
   esac
+elif [ -z "$SLUG" ]; then
+  # Host gets the same "trusted indefinitely" cache install/env/credential_target and the
+  # docker branch above already get — without this, every worktree/issue this sprint re-runs
+  # detect-mode.sh's Makefile dry-run loop (up to 9 targets) to reach the same host answer
+  # already settled at this MAIN_ROOT call.
+  _merge_mode_cache host
 fi
 
 # ─── 5. install ──────────────────────────────────────────────────────────────
