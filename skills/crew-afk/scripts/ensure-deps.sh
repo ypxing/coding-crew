@@ -187,6 +187,35 @@ _cached_credential_target() {
 }
 CACHED_CREDENTIAL_TARGET="$(_cached_credential_target)"
 
+# _merge_mode_cache <docker|host> — writes detect-mode.sh's verdict into the same committed
+# cache, alongside install/env/credential_target, so it is trusted indefinitely instead of
+# re-derived every sprint. Mirrors write-commands-cache.sh's own field-preserving technique
+# (grep out each known field's raw token, rebuild the JSON body, atomic mktemp+mv) rather than
+# calling that script directly: it has no path reachable from here — unlike dep-install's
+# scripts, it gets no platform-neutral install copy, only one buried in each of crew-afk's and
+# solve-issue's own per-platform skill directories.
+_merge_mode_cache() {
+  local mode_val="$1" cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json" old=""
+  # Mirrors write-commands-cache.sh's FIELDS (test lint typecheck install env credential_target)
+  # plus mode — keep this list in sync if a field is ever added/removed there.
+  local fields=(test lint typecheck install env credential_target)
+  [ -f "$cache" ] && old="$(cat "$cache" 2>/dev/null || true)"
+  local body="" f v
+  for f in "${fields[@]}"; do
+    v="$(printf '%s' "$old" | grep -o "\"$f\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" \
+      | head -1 | sed -E "s/\"$f\"[[:space:]]*:[[:space:]]*//")"
+    [ -n "$v" ] || continue
+    [ -n "$body" ] && body="$body, "
+    body="$body\"$f\": $v"
+  done
+  [ -n "$body" ] && body="$body, "
+  mkdir -p "$MAIN_ROOT_EFFECTIVE/.coding-crew" 2>/dev/null || return 0
+  local tmp
+  tmp="$(mktemp "$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json.XXXXXX" 2>/dev/null)" || return 0
+  printf '{%s"mode": "%s"}\n' "$body" "$mode_val" > "$tmp"
+  mv "$tmp" "$cache" 2>/dev/null || rm -f "$tmp"
+}
+
 # ─── 2. resolve dep-install's scripts ────────────────────────────────────────
 # No install logic lives here. host-install.sh stays the only place that knows package
 # managers, so this only has to find it — and it must find it without knowing which of the
@@ -362,21 +391,18 @@ if [ "$MODE" = "USE_DOCKER" ]; then
   # reader already trusts.
   git -C "$DIR" config --local agent.install-mode docker 2>/dev/null || true
 
-  # Also cache it as a plain file, written once here (the MAIN_ROOT call, before any
-  # worktree exists — nothing to race with) and read by detect-mode.sh ahead of its own
-  # Makefile heuristic. The git-config write above can still silently lose a lock race
-  # against a sibling issue's own ensure-deps.sh call once worktrees start running
-  # concurrently, and it only helps a reader that shares this checkout's git config in the
-  # first place — a worker's independent up-front check may resolve a completely different
-  # install of dep-install (a different platform's skill copy, a stale global one) and
-  # re-derive its own answer from scratch. A file at a fixed, well-known path is something
-  # any copy of detect-mode.sh can agree on regardless of which one is running.
+  # Also merge it into .coding-crew/dev-commands.json's "mode" field, written once here (the
+  # MAIN_ROOT call, before any worktree exists — nothing to race with) and read by
+  # detect-mode.sh ahead of its own Makefile heuristic. The git-config write above can still
+  # silently lose a lock race against a sibling issue's own ensure-deps.sh call once
+  # worktrees start running concurrently, and it only helps a reader that shares this
+  # checkout's git config in the first place — a worker's independent up-front check may
+  # resolve a completely different install of dep-install (a different platform's skill copy,
+  # a stale global one) and re-derive its own answer from scratch. A committed cache at a
+  # fixed, well-known path is something any copy of detect-mode.sh can agree on regardless of
+  # which one is running — and, unlike a .scratch file, it survives to the next sprint too.
   if [ -z "$SLUG" ]; then
-    mkdir -p "$MAIN_ROOT_EFFECTIVE/.scratch" 2>/dev/null || true
-    _mode_cache_tmp="$(mktemp "$MAIN_ROOT_EFFECTIVE/.scratch/install-mode.XXXXXX" 2>/dev/null)" && {
-      printf 'docker\n' > "$_mode_cache_tmp"
-      mv "$_mode_cache_tmp" "$MAIN_ROOT_EFFECTIVE/.scratch/install-mode" 2>/dev/null || rm -f "$_mode_cache_tmp"
-    }
+    _merge_mode_cache docker
 
     # Generate the override as soon as the cache says docker, independent of whatever
     # docker-install.sh decides below — it can exit 2 for reasons that have nothing to do

@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.29.47]
+
+### Fixed
+
+- **The docker/host mode verdict was cached to `.scratch/install-mode`**, a per-sprint scratch
+  file that a fresh sprint (or a worker resolving a different install of `dep-install` outside
+  `.scratch`) never saw, forcing re-detection every time. `ensure-deps.sh` now merges the verdict
+  into the committed `.coding-crew/dev-commands.json`'s `"mode"` field instead — trusted
+  indefinitely, the same as its `install`/`env`/`credential_target` fields — via a new
+  `_merge_mode_cache` helper that preserves the other fields already in that file rather than
+  clobbering them. `detect-mode.sh` and `dep-install`'s `SKILL.md` read the same field.
+- **`detect-mode.sh`'s Makefile heuristic was a static `awk` text scan** for `docker compose`/
+  `docker run`/`docker exec` inside a hand-picked set of candidate targets, so any indirection
+  through a Make variable or `ifeq` branch it didn't special-case resolved to the wrong mode.
+  It now dry-runs each candidate target with `make -n` and greps the expanded recipe instead —
+  the same pattern `host-install.sh` and `ensure-env.sh`'s `_makefile_env_command` already use —
+  so Make itself resolves the indirection.
+  - registry.json: crew-afk 2.2.36 -> 2.2.37 (`skills/crew-afk/scripts/ensure-deps.sh`),
+    dep-install 1.3.13 -> 1.3.14 (`skills/dep-install/SKILL.md`,
+    `skills/dep-install/scripts/detect-mode.sh`).
+
 ## [1.29.46]
 
 ### Added

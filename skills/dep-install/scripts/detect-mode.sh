@@ -10,8 +10,12 @@
 #
 # Detection order:
 #   1. git config --local agent.install-mode (docker|host) — an explicit, documented override
-#   2. $MAIN_ROOT/.scratch/install-mode — this sprint's own cached verdict (see below)
-#   3. Makefile install/deps/setup/depend target invokes docker compose/run/exec → docker; present but no match → host
+#   2. $MAIN_ROOT/.coding-crew/dev-commands.json's "mode" field — this project's own committed
+#      cache (see below), trusted indefinitely like install/env
+#   3. Makefile install/deps/setup/... target: `make -n <target>` dry-run, expanded recipe
+#      invokes docker compose/run/exec → docker; Makefile present but no match → host. The
+#      dry-run (not a static text scan) is what lets this resolve indirection through Make's
+#      own variables/ifeq — the same pattern host-install.sh and ensure-env.sh already use.
 
 set -euo pipefail
 
@@ -30,15 +34,15 @@ done
 
 _mode=$(git -C "$PROJECT_ROOT" config --local agent.install-mode 2>/dev/null || true)
 
-# The cache file is this sprint's own answer, written once by ensure-deps.sh's MAIN_ROOT
-# call (before any worktree exists, so there is nothing to race with) and read by every
-# later call — this script's own worktree calls and a worker's independent up-front
-# invocation alike. That second reader is why this matters: it may resolve a completely
-# different install of dep-install than the one ensure-deps.sh used (a different platform's
-# skill copy, a stale global one), and without a shared answer on disk it would silently
-# re-derive its own — from git config (usually still empty at this point) or the Makefile
-# heuristic below, which is a plain reimplementation the worker's copy might get wrong or
-# lack entirely. A cache hit skips both.
+# The cache is this project's own committed answer — .coding-crew/dev-commands.json's "mode"
+# field, written once by ensure-deps.sh's MAIN_ROOT call and trusted indefinitely, the same as
+# its install/env fields, rather than re-derived every sprint. It is also what every later
+# reader agrees on regardless of which install of dep-install it is running — this script's
+# own worktree calls and a worker's independent up-front invocation alike: without a shared
+# answer on disk, a worker resolving a completely different copy of dep-install (a different
+# platform's skill copy, a stale global one) would silently re-derive its own — from git
+# config (usually still empty at this point) or the Makefile heuristic below, which is a plain
+# reimplementation that copy might get wrong or lack entirely. A cache hit skips both.
 if [ -z "$_mode" ]; then
   _main_root_of() {
     local dir="$1" common
@@ -51,8 +55,11 @@ if [ -z "$_mode" ]; then
   }
   _main_root="${MAIN_ROOT:-}"
   [ -n "$_main_root" ] || _main_root=$(_main_root_of "$PROJECT_ROOT") || _main_root=""
-  if [ -n "$_main_root" ] && [ -f "$_main_root/.scratch/install-mode" ]; then
-    case "$(cat "$_main_root/.scratch/install-mode" 2>/dev/null || true)" in
+  if [ -n "$_main_root" ] && [ -f "$_main_root/.coding-crew/dev-commands.json" ]; then
+    _cached_mode="$(grep -o '"mode"[[:space:]]*:[[:space:]]*"[^"]*"' \
+        "$_main_root/.coding-crew/dev-commands.json" 2>/dev/null \
+      | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/')"
+    case "$_cached_mode" in
       docker) _mode="docker" ;;
       host) _mode="host" ;;
     esac
@@ -68,25 +75,16 @@ if [ -z "$_mode" ]; then
 fi
 
 if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
-  _uses_docker=$(awk '
-    /^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*[:?+]?=/ {
-      if (tolower($0) ~ /docker[ -]compose|docker run|docker exec/) {
-        split($0, a, /[[:space:]]*[:?+]?=/)
-        gsub(/[[:space:]]/, "", a[1])
-        docker_vars[a[1]] = 1
-      }
-    }
-    /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*:[^=]/ {
-      in_target = ($0 ~ /^(install|deps|setup|depend|bootstrap|prepare|up|build|dev)[[:space:]]*:/)
-    }
-    in_target && /^\t/ {
-      if (tolower($0) ~ /docker[ -]compose|docker run|docker exec/) { print "yes"; exit }
-      for (v in docker_vars) {
-        if ($0 ~ "\\$\\(" v "\\)") { print "yes"; exit }
-      }
-    }
-  ' "$PROJECT_ROOT/Makefile")
-  [ "$_uses_docker" = "yes" ] && _mode="docker" || _mode="host"
+  _mode="host"
+  for _target in install deps setup depend bootstrap prepare up build dev; do
+    if ( cd "$PROJECT_ROOT" && make -n "$_target" ) >/dev/null 2>&1; then
+      _recipe="$(cd "$PROJECT_ROOT" && make -n "$_target" 2>/dev/null || true)"
+      if printf '%s' "$_recipe" | grep -qE 'docker (compose|run|exec)'; then
+        _mode="docker"
+        break
+      fi
+    fi
+  done
 fi
 
 [ "$_mode" = "docker" ] && echo "USE_DOCKER" || echo "USE_HOST"

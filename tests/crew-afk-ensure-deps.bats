@@ -336,18 +336,19 @@ STUBEOF
   [ -f "$WORK/docker-compose.override.yml" ]
 }
 
-@test "the MAIN_ROOT call caches its docker verdict to a file a worker's own detect-mode.sh can read" {
+@test "the MAIN_ROOT call caches its docker verdict to dev-commands.json a worker's own detect-mode.sh can read" {
   # This is the mechanism that survives a worker resolving a completely different install
   # of dep-install than the one this script found: unlike the per-call git-config write,
-  # it is written exactly once (here) with nothing to race, and is a plain file any copy of
-  # detect-mode.sh can check regardless of where it lives.
+  # it is written exactly once (here) with nothing to race, and is a committed cache any copy
+  # of detect-mode.sh can check regardless of where it lives — and unlike a .scratch file, it
+  # survives to the next sprint too.
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
   stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
 
   run bash "$SCRIPT" --dir "$WORK"
   [ "$status" -eq 0 ]
-  [ "$(cat "$WORK/.scratch/install-mode")" = "docker" ]
+  [[ "$(cat "$WORK/.coding-crew/dev-commands.json")" == *'"mode": "docker"'* ]]
 
   # A fresh detect-mode.sh call, unrelated to the stub above, with no git config set at
   # all — it must still say USE_DOCKER purely from the cache file.
@@ -357,6 +358,21 @@ STUBEOF
     --project-root "$WORK"
   [ "$status" -eq 0 ]
   [ "$output" = "USE_DOCKER" ]
+}
+
+@test "the mode cache merge preserves sibling dev-commands.json fields instead of clobbering them" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  mkdir -p "$WORK/.coding-crew"
+  printf '{"test": "npm test", "lint": null}\n' > "$WORK/.coding-crew/dev-commands.json"
+  stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  cache="$(cat "$WORK/.coding-crew/dev-commands.json")"
+  [[ "$cache" == *'"test": "npm test"'* ]]
+  [[ "$cache" == *'"lint": null'* ]]
+  [[ "$cache" == *'"mode": "docker"'* ]]
 }
 
 @test "the MAIN_ROOT call still runs docker-install.sh when a stale host node_modules is present" {

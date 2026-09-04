@@ -27,12 +27,15 @@ Two steps: detect the install mode, then follow the appropriate install guide.
 
 ## Step 0 — Fast-path: honor a cached verdict
 
-`$MAIN_ROOT/.scratch/install-mode` is this sprint's own cached verdict, written once by
-`ensure-deps.sh`'s single MAIN_ROOT call. If it exists it is authoritative — do not re-run
-detection against it, here or in any other worktree's own dep-install invocation.
+`$MAIN_ROOT/.coding-crew/dev-commands.json`'s `"mode"` field is this project's own cached
+verdict, written once by `ensure-deps.sh`'s single MAIN_ROOT call and trusted indefinitely — the
+same as its `install`/`env` fields — until a human clears it. If it exists it is authoritative —
+do not re-run detection against it, here or in any other worktree's own dep-install invocation.
 
 ```bash
-cat "$MAIN_ROOT/.scratch/install-mode" 2>/dev/null || echo "RUN_DETECTION"
+mode=$(grep -o '"mode"[[:space:]]*:[[:space:]]*"[^"]*"' "$MAIN_ROOT/.coding-crew/dev-commands.json" 2>/dev/null \
+  | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/')
+echo "${mode:-RUN_DETECTION}"
 ```
 
 - Prints `docker`: set `INSTALL_MODE=docker`, skip Step 1 entirely. If `$MAIN_ROOT/docker-compose.override.yml` also already exists, skip the override-writing sub-steps in the docker guide too and go directly to install — the override and volume definitions are already in place from a prior run. If it does **not** exist yet, still skip Step 1, but run the docker guide's override-writing sub-step once before installing.
