@@ -72,7 +72,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.2.35",
+      "version": "2.2.36",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -178,7 +178,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.4.0",
+      "version": "1.4.1",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",

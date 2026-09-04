@@ -218,6 +218,20 @@ Exact signatures, types, or contracts this issue produces for any downstream iss
 
 </issue-template>
 
+### 7. Write the machine-readable dependency map
+
+After publishing all issues, write `.scratch/<feature-slug>/issues/issues-deps.json` — a flat map from each issue's filename to the filenames of its blockers, e.g.:
+
+```json
+{
+  "01-first.md": [],
+  "02-second.md": ["01-first.md"],
+  "03-third.md": ["01-first.md", "02-second.md"]
+}
+```
+
+Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. This file, not the prose, is what the orchestrator uses to decide whether an issue is ready to dispatch; the `## Blocked by` section stays in each issue purely for a human reading that file. Include every issue you just published, even ones with no blockers (`[]`), so the map is authoritative for the whole feature rather than partial.
+
 Do NOT close or modify any parent issue.
 
 **Security**: Only read from and write to paths under `.scratch/` within the current repo. Never fetch from external URLs, remote APIs, or paths outside the repository root.

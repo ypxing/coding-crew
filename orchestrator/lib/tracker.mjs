@@ -130,16 +130,59 @@ export function appendToSection(text, heading, line) {
   return spliceSection(text, heading, body);
 }
 
+/**
+ * Resolve a `## Blocked by` section's entries to sibling issue filenames.
+ * Accepts literal `NN-slug.md` filenames as well as `Issue NN` references —
+ * the latter is how the dependency often actually gets written, and the
+ * leading number is the only stable link back to the real file.
+ */
+export function resolveBlockedBy(section, path) {
+  const explicit = [...section.matchAll(/([0-9A-Za-z][\w.-]*\.md)/g)].map((m) => m[1]);
+  const numbers = [...section.matchAll(/\bissue[\s-]*#?0*([0-9]+)\b/gi)].map((m) => m[1]);
+  if (numbers.length === 0) return [...new Set(explicit)];
+  const dir = dirname(path);
+  const siblingDir = join(dirname(dir), basename(dir) === "open" ? "done" : "open");
+  const files = [dir, siblingDir].flatMap((d) => (existsSync(d) ? readdirSync(d) : []));
+  const resolved = numbers
+    .map((n) => files.find((f) => new RegExp(`^0*${n}[-_.]`).test(f)))
+    .filter(Boolean);
+  return [...new Set([...explicit, ...resolved])];
+}
+
+/** Path to the machine-readable dependency map, a sibling of open/ and done/. */
+export function issueDepsPath(issuePath) {
+  return join(dirname(dirname(issuePath)), "issues-deps.json");
+}
+
+/**
+ * `issues-deps.json`, if `to-issues` wrote one: `{ "02-second.md": ["01-first.md"] }`.
+ * The exact source of truth `## Blocked by` prose can't guarantee, since prose has more
+ * shapes than any parser enumerates. Returns null when absent or unparseable, so callers
+ * fall back to the markdown heuristic.
+ */
+export function readIssueDeps(issuePath) {
+  const path = issueDepsPath(issuePath);
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 export function parseIssue(path, text = readFileSync(path, "utf8")) {
   const statusMatch = /^\s*(?:[-*]\s*)?(?:\*\*)?Status(?:\*\*)?:\s*(?:`)?([a-z-]+)/im.exec(text);
   const titleMatch = /^#\s+(.*)$/m.exec(text);
   const blockedBySection = sectionBody(text, "Blocked by") ?? "";
-  const blockedBy = [...blockedBySection.matchAll(/([0-9A-Za-z][\w.-]*\.md)/g)].map((m) => m[1]);
+  const deps = readIssueDeps(path);
+  const file = basename(path);
+  const jsonBlockedBy = deps && Object.prototype.hasOwnProperty.call(deps, file) ? deps[file] : undefined;
+  const blockedBy = jsonBlockedBy ?? resolveBlockedBy(blockedBySection, path);
   const criteria =
     sectionBody(text, "Acceptance criteria") ?? sectionBody(text, "Acceptance Criteria") ?? "";
   return {
     path,
-    file: basename(path),
+    file,
     slug: issueSlug(path),
     title: titleMatch ? titleMatch[1].trim() : issueSlug(path),
     status: statusMatch ? statusMatch[1] : "",

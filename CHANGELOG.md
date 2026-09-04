@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.46]
+
+### Added
+
+- **`selectDispatchable`'s `## Blocked by` parsing only recognized literal `NN-slug.md`
+  filenames**, but issues are commonly cross-referenced as `Issue NN` prose, and any dependency
+  written that way was silently invisible to the dispatch gate. `to-issues` now also writes
+  `.scratch/<feature-slug>/issues/issues-deps.json` — a flat filename -> blocker-filenames map
+  sourced from the same blocking edges the user already confirmed — and `parseIssue` prefers that
+  file over the markdown heuristic when it has an entry for the issue. `resolveBlockedBy` is the
+  fallback: it still resolves `Issue NN` references to a sibling filename in `open/` or `done/`
+  for issues with no JSON entry.
+  - registry.json: crew-afk 2.2.35 -> 2.2.36 (`orchestrator/lib/tracker.mjs`), to-issues 1.4.0 ->
+    1.4.1 (`skills/to-issues/SKILL.md`).
+
 ## [1.29.45]
 
 ### Fixed

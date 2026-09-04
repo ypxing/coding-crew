@@ -27,6 +27,8 @@ Create a new issue or PRD file under `.scratch/`:
 
 Create the directory if it does not exist. Set a `Status:` line near the top of the file.
 
+When issues come from `to-issues`, it also writes `.scratch/<feature-slug>/issues/issues-deps.json` — a flat filename → blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what the orchestrator reads to decide whether an issue is ready to dispatch.
+
 ## Operation: mark-done
 
 Delegate to the tracker's close script — do not hand-run `sed` or `mv`:
@@ -86,6 +88,7 @@ Each feature slug maps to a directory under `.scratch/`:
 .scratch/<feature-slug>/
 ├── PRD.md                    ← optional product requirements doc
 └── issues/
+    ├── issues-deps.json      ← optional; filename → blocker-filenames map (written by to-issues)
     ├── open/                 ← active issues
     │   ├── 01-<slug>.md      ← implementation issues, numbered from 01
     │   └── 02-<slug>.md

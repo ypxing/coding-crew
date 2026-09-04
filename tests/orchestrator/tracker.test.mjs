@@ -11,6 +11,8 @@ import {
   issueSlug,
   listOpenIssueFiles,
   parseIssue,
+  readIssueDeps,
+  resolveBlockedBy,
   sectionBody,
   selectDispatchable,
   spliceSection,
@@ -26,6 +28,12 @@ function issue(root, feature, name, body, { dir = "open" } = {}) {
   const p = join(d, name);
   writeFileSync(p, body);
   return p;
+}
+
+function issuesDeps(root, feature, map) {
+  const d = join(root, ".scratch", feature, "issues");
+  mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, "issues-deps.json"), JSON.stringify(map));
 }
 
 test("issueSlug strips leading digits and extension like receipts.sh", () => {
@@ -76,6 +84,101 @@ test("parseIssue detects a Source: line (the promotion depth bound)", () => {
   const root = repo();
   const p = issue(root, "feat", "09-fix.md", "# Fix\n\nStatus: deferred-findings\nSource: crew/feat/thing review\n");
   assert.equal(parseIssue(p).sourceGuarded, true);
+});
+
+test("parseIssue resolves 'Issue NN' style blocked-by references to sibling filenames", () => {
+  const root = repo();
+  issue(root, "feat", "03-cutover-get-product-specification.md", "# GET spec\n\nStatus: ready-for-agent\n");
+  issue(root, "feat", "04-cutover-list-product-offerings.md", "# List offerings\n\nStatus: ready-for-agent\n");
+  const p = issue(
+    root,
+    "feat",
+    "02-second.md",
+    [
+      "# Second thing",
+      "",
+      "Status: ready-for-agent",
+      "",
+      "## Blocked by",
+      "",
+      "- Issue 03 (Contract: cutover get-product-specification)",
+      "- Issue 04 (Contract: cutover list-product-offerings)",
+      "",
+    ].join("\n"),
+  );
+  const i = parseIssue(p);
+  assert.deepEqual(i.blockedBy, [
+    "03-cutover-get-product-specification.md",
+    "04-cutover-list-product-offerings.md",
+  ]);
+});
+
+test("resolveBlockedBy finds a referenced issue whether it lives in open/ or done/", () => {
+  const root = repo();
+  issue(root, "feat", "01-first.md", "# F\n\nStatus: done\n", { dir: "done" });
+  const p = issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n");
+  assert.deepEqual(resolveBlockedBy("- Issue 1: first thing", p), ["01-first.md"]);
+});
+
+test("selectDispatchable respects a numeric 'Issue NN' blocked-by reference", () => {
+  const root = repo();
+  issue(root, "feat", "01-first.md", "# F\n\nStatus: ready-for-agent\n");
+  issue(
+    root,
+    "feat",
+    "02-second.md",
+    "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- Issue 01 (some contract)\n",
+  );
+  const picked = selectDispatchable(root).map((i) => i.slug);
+  assert.deepEqual(picked, ["first"]);
+});
+
+test("parseIssue prefers issues-deps.json over the Blocked by prose when both are present", () => {
+  const root = repo();
+  issuesDeps(root, "feat", { "02-second.md": ["01-first.md"] });
+  const p = issue(
+    root,
+    "feat",
+    "02-second.md",
+    "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- some unresolvable prose\n",
+  );
+  assert.deepEqual(parseIssue(p).blockedBy, ["01-first.md"]);
+});
+
+test("parseIssue treats an empty issues-deps.json array as explicitly unblocked", () => {
+  const root = repo();
+  issuesDeps(root, "feat", { "02-second.md": [] });
+  const p = issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- Issue 01\n");
+  assert.deepEqual(parseIssue(p).blockedBy, []);
+});
+
+test("parseIssue falls back to the markdown heuristic when issues-deps.json has no entry for this issue", () => {
+  const root = repo();
+  issuesDeps(root, "feat", { "03-third.md": ["01-first.md"] });
+  const p = issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 01-first.md\n");
+  assert.deepEqual(parseIssue(p).blockedBy, ["01-first.md"]);
+});
+
+test("readIssueDeps returns null when issues-deps.json is absent or unparseable", () => {
+  const root = repo();
+  const p = issue(root, "feat", "02-second.md", "# S\n\nStatus: ready-for-agent\n");
+  assert.equal(readIssueDeps(p), null);
+  writeFileSync(join(root, ".scratch", "feat", "issues", "issues-deps.json"), "not json");
+  assert.equal(readIssueDeps(p), null);
+});
+
+test("selectDispatchable gates on issues-deps.json even when the prose is unresolvable", () => {
+  const root = repo();
+  issuesDeps(root, "feat", { "02-second.md": ["01-first.md"] });
+  issue(root, "feat", "01-first.md", "# F\n\nStatus: ready-for-agent\n");
+  issue(
+    root,
+    "feat",
+    "02-second.md",
+    "# S\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- see the schema work\n",
+  );
+  const picked = selectDispatchable(root).map((i) => i.slug);
+  assert.deepEqual(picked, ["first"]);
 });
 
 test("blockers only counts issues absent from done/", () => {
