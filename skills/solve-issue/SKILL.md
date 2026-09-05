@@ -98,17 +98,23 @@ No PRD is normal — continue normally.
 
 ### 2. Dependencies — only when something is missing
 
-Do **not** install pre-emptively: a crew worktree usually inherits `node_modules`/`.venv` through
-`.worktreeinclude`, and many repos have no dependency step at all.
+STOP. Run the docker-mode check below now, before any other exploration — including checking
+whether `node_modules`/`.venv` is already present, whether a package manager is on `PATH`, or
+anything else that looks like "is a dependency missing?" That question is `dep-install`'s to
+answer, not yours: substituting your own probing for the check below is the mistake this step
+exists to prevent, even when it feels like the cautious thing to do.
 
-Invoke the `dep-install` skill in exactly two cases — up front if the project is in docker mode, and
-later if any command fails for a missing dependency (module-not-found, import error, test runner not
-found). Otherwise `INSTALL_MODE=host`, and you continue straight to Step 3. If the skill is not
-found, stop and report `BLOCKED: dep-install skill not installed`.
+Do **not** install pre-emptively otherwise: a crew worktree usually inherits `node_modules`/`.venv`
+through `.worktreeinclude`, and many repos have no dependency step at all. Invoke the `dep-install`
+skill in exactly two cases — up front if the project is in docker mode (never optional, never
+deferred to "if a command fails" — docker mode has no host-side fallback), and later if any command
+fails for a missing dependency (module-not-found, import error, test runner not found). Otherwise
+`INSTALL_MODE=host`, and you continue straight to Step 3. If the skill is not found, stop and
+report `BLOCKED: dep-install skill not installed`.
 
 Docker mode is: `$MAIN_ROOT/docker-compose.override.yml` exists, or `detect-mode.sh` says so — run
 the real script rather than re-deriving its verdict, since it also reads a Makefile `install`/`deps`
-target for a docker command, not just an explicit `agent.install-mode`:
+target for a docker command, not just an explicit `agent.install-mode`. Run this now:
 
 ```bash
 if [ -f "$MAIN_ROOT/docker-compose.override.yml" ]; then

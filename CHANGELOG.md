@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.53]
+
+### Fixed
+
+- **solve-issue's dependency step let a worker's own probing (checking for `node_modules`/`.venv`,
+  a package manager on `PATH`, etc.) substitute for the docker-mode check**, so a docker-mode
+  project could skip straight to Step 3 without ever installing deps. The skill now tells the
+  worker to run the docker-mode check first, before any other exploration, and makes explicit that
+  docker mode's `dep-install` invocation is never optional or deferred to "if a command fails" —
+  docker mode has no host-side fallback.
+  - registry.json: solve-issue 1.9.9 -> 1.9.10 (`skills/solve-issue/SKILL.md`).
+
 ## [1.29.52]
 
 ### Fixed
