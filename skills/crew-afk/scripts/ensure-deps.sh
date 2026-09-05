@@ -132,10 +132,14 @@ _debug_log_path() {
 
 # _persist_log <dest> <source-file> — best-effort copy, mkdir -p first. Never fails the
 # caller: a log that could not be written is no worse than the tail already on stderr.
+#
+# Stamped with the run's UTC time: this file is overwritten by the next failure at the same
+# path, not appended to, so a reader who opens it later has no other way to tell a fresh
+# failure from one left over from a previous round.
 _persist_log() {
   local dest="$1" src="$2"
   mkdir -p "$(dirname "$dest")" 2>/dev/null || return 0
-  cp "$src" "$dest" 2>/dev/null || true
+  { printf '--- %s ---\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"; cat "$src"; } > "$dest" 2>/dev/null || true
 }
 
 # ─── 1. escape hatch ─────────────────────────────────────────────────────────

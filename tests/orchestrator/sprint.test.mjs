@@ -412,7 +412,7 @@ test("a verification-failed retry still redispatches the full worker, not just r
   // dispatch needs the same live-stream visibility as the coder/review dispatches.
   const steps = r.stderr.split("\n").filter((l) => l.startsWith("[STEP]") && l.includes("slug=alpha"));
   assert.ok(
-    steps.some((l) => /^\[STEP\] slug=alpha round=1 step=dispatch-triage$/.test(l)),
+    steps.some((l) => /^\[STEP\] slug=alpha round=1 step=dispatch-triage model=.+$/.test(l)),
     `expected a round-1 dispatch-triage step marker, got:\n${steps.join("\n")}`,
   );
 });
@@ -575,6 +575,26 @@ test("the summary names the resolved model, rendered from disk", () => {
   assert.match(r.stdout, /Model:\s+sonnet/);
   assert.equal(state(root).model, "sonnet");
   assert.match(traceLog(root), /\[MODEL\]/);
+});
+
+test(".coding-crew/afk-models.json lets the reviewer diverge from the coder's model", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/afk-models.json"),
+    JSON.stringify({ coder: "sonnet", reviewer: "opus" }),
+  );
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.ok(
+    lines.some((l) => /^SPAWN .*--agent crew-coder/.test(l) && / --model sonnet/.test(l)),
+    `expected the coder dispatched with --model sonnet, got:\n${lines.join("\n")}`,
+  );
+  assert.ok(
+    lines.some((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l) && / --model opus/.test(l)),
+    `expected the reviewer dispatched with --model opus, got:\n${lines.join("\n")}`,
+  );
 });
 
 test("coverage validation is opt-in, and runs between the squash and cleanup", () => {
@@ -923,7 +943,7 @@ test("the orchestrator prints a [STEP] marker before each gate, slug/round-tagge
     ["worktree", "deps", "dispatch-coder", "verify", "dispatch-review", "merge", "close"],
     steps.join("\n"),
   );
-  for (const l of steps) assert.match(l, /^\[STEP\] slug=alpha round=1 step=[\w-]+$/, l);
+  for (const l of steps) assert.match(l, /^\[STEP\] slug=alpha round=1 step=[\w-]+( model=\S+)?$/, l);
 });
 
 test("PR 2: a throttled [TOOL] heartbeat from the bash dispatcher reaches the live stream via onTrace, slug/round-tagged", () => {

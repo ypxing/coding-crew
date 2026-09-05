@@ -10,7 +10,8 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
- *   --model <alias|inherit>                worker + reviewer model
+ *   --model <alias|inherit>                coder model; reviewer/triage match it unless
+ *                                           .coding-crew/afk-models.json names them explicitly
  *   --feature-slug <slug>                  or derived from the first issue's dir
  *   --coverage                             opt into the PRD coverage report
  *   --promote <critical|critical-high>      findings promotion threshold
@@ -36,6 +37,7 @@ import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
 import { DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
+import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktreeInclude } from "./lib/worktree.mjs";
 
@@ -117,6 +119,15 @@ function editDistance(a, b) {
     }
   }
   return dp[a.length][b.length];
+}
+
+// " (reviewer: X, triage: Y)" — only when .coding-crew/afk-models.json made one of them
+// diverge from the coder's model; the common case (all three identical) prints nothing extra.
+function modelBreakdownSuffix(options) {
+  const parts = [];
+  if (options.reviewerModel !== options.model) parts.push(`reviewer: ${options.reviewerModel ?? "inherit"}`);
+  if (options.triageModel !== options.model) parts.push(`triage: ${options.triageModel ?? "inherit"}`);
+  return parts.length ? ` (${parts.join(", ")})` : "";
 }
 
 /** Every existing .scratch/<feature-slug> directory name, for a typo suggestion. */
@@ -258,7 +269,9 @@ async function main() {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--coverage] [--promote critical|critical-high]\n" +
-        "  [--max-parallel N] [--worker-timeout MIN] [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]",
+        "  [--max-parallel N] [--worker-timeout MIN] [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]\n" +
+        "  --model sets the coder's model; reviewer/triage match it unless\n" +
+        "  .coding-crew/afk-models.json names {coder, reviewer, triage} explicitly.",
     );
     return 0;
   }
@@ -272,6 +285,19 @@ async function main() {
     reportUnknownArgs(options.unknown, mainRoot);
     return 1;
   }
+
+  // .coding-crew/afk-models.json is optional — absent or unreadable, this is a no-op and
+  // reviewer/triage keep defaulting to the coder's own --model value, exactly as before.
+  const resolvedModels = resolveModelTiers({
+    fileConfig: loadModelConfig(mainRoot),
+    cliModel: options.model,
+    platform: options.platform,
+  });
+  options.model = resolvedModels.coder;
+  options.reviewerModel = resolvedModels.reviewer;
+  options.triageModel = resolvedModels.triage;
+  for (const w of resolvedModels.warnings) console.error(`crew-afk: WARNING: ${w}`);
+
   const scriptsDir = resolveScriptsDir(mainRoot);
   const logLines = [];
   const effects = new Effects({
@@ -313,7 +339,7 @@ async function main() {
     const issues = selectDispatchable(mainRoot, { featureSlug: resolved.slug });
     const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"]);
     console.log(`platform:  ${options.platform}`);
-    console.log(`model:     ${options.model ?? "platform default"}`);
+    console.log(`model:     ${options.model ?? "platform default"}${modelBreakdownSuffix(options)}`);
     console.log(`parallel:  ${options.parallel}`);
     console.log(`scripts:   ${scriptsDir}`);
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);

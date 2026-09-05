@@ -281,7 +281,9 @@ export async function runWorker(ctx, issue) {
         }),
   );
 
-  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-coder`);
+  ctx.log(
+    `[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-coder model=${options.model ?? "inherit"}`,
+  );
   const result = await dispatch(
     effects,
     platform,
@@ -504,7 +506,9 @@ async function runTriage(ctx, worker, verifyStdout) {
     }),
   );
 
-  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-triage`);
+  ctx.log(
+    `[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-triage model=${options.triageModel ?? "inherit"}`,
+  );
   const result = await dispatch(
     effects,
     platform,
@@ -513,9 +517,10 @@ async function runTriage(ctx, worker, verifyStdout) {
       cwd: effects.mainRoot,
       promptFile,
       outFile,
-      // Same convention as the reviewer: triage judges the coder's work, so it is held to
-      // the same model, never a cheaper one the sprint did not choose.
-      model: options.model,
+      // Same convention as the reviewer: triage judges the coder's work, so it defaults to
+      // the coder's own model — never a cheaper one the sprint did not choose — unless
+      // .coding-crew/afk-models.json explicitly names a different (typically stronger) one.
+      model: options.triageModel,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       scriptsDir: effects.scriptsDir,
@@ -551,7 +556,9 @@ async function runReview(ctx, worker, checks) {
     }),
   );
 
-  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-review`);
+  ctx.log(
+    `[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-review model=${options.reviewerModel ?? "inherit"}`,
+  );
   const result = await dispatch(
     effects,
     platform,
@@ -560,9 +567,10 @@ async function runReview(ctx, worker, checks) {
       cwd: effects.mainRoot,
       promptFile,
       outFile,
-      // The reviewer takes the coder's model: reviewing on a different one silently
-      // changes the standard the branch is held to.
-      model: options.model,
+      // The reviewer defaults to the coder's model: reviewing on a weaker one silently
+      // changes the standard the branch is held to. .coding-crew/afk-models.json can name
+      // a different (typically stronger) one explicitly.
+      model: options.reviewerModel,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       scriptsDir: effects.scriptsDir,

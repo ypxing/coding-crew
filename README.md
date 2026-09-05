@@ -101,7 +101,9 @@ a `[WIP]` marker on its own branch instead of merging; the next round resumes fr
 Two knobs worth knowing about:
 
 - **Model tier** — `/crew-afk --model opus|sonnet|haiku|inherit` (default `sonnet`). The reviewer
-  always inherits the session model. Copilot ignores this flag (the IDE picks the model).
+  and triage judge always run on the same tier as the coder — never a cheaper one — so the review
+  standard doesn't silently drop. Applies on every platform, including Copilot — each worker is
+  its own `copilot -p` process now, so the flag reaches the CLI.
 - **Gitignored files in worktrees** — each coder runs in an isolated worktree, so `.env` and similar
   files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
   them over.

@@ -156,7 +156,7 @@ ARGS+=(--append-system-prompt "$SYSTEM_PROMPT")
 
 if [[ -n "$LOG" ]]; then
   mkdir -p "$(dirname "$LOG")"
-  echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] agent=$AGENT dir=$DIR model=${EFFECTIVE_MODEL:-inherit}" >> "$LOG"
+  echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] agent=$AGENT${SLUG:+ slug=$SLUG} dir=$DIR model=${EFFECTIVE_MODEL:-inherit}" >> "$LOG"
 fi
 
 # Every raw event line, kept for anyone who needs more than the one-line trace below.

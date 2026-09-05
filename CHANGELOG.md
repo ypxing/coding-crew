@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.29.58]
+
+### Added
+
+- **`crew-afk` can now hold the reviewer and triage judge to a different model tier than the
+  coder, explicitly** — previously `--model` applied identically to all three, with no way to
+  say "review stricter than the coder wrote it." An optional `.coding-crew/afk-models.json`
+  (`{coder, reviewer, triage}`, all keys optional) fills this in: an omitted `reviewer`/`triage`
+  still defaults to the coder's own resolved model (the existing guarantee — a role can never
+  end up weaker by accident, only by an explicit, on-record choice), and `--model` on the CLI
+  still overrides the file's `coder` for that run. No numeric ranking across arbitrary model
+  strings (most of this repo's own platforms pass an opaque string through to their own CLI, so
+  a universal rank table would be a lie); the one case this repo does know a real order for —
+  Claude Code's own `opus`/`sonnet`/`haiku` aliases — gets an advisory (non-blocking) warning
+  when a role explicitly diverges to a weaker one.
+- **Dispatch logs now name the model and issue actually used.** The orchestrator's own trace log
+  (`orchestrator.log`) gains `model=<value>` on every `dispatch-coder`/`dispatch-review`/
+  `dispatch-triage` step marker — previously only the `pi`/`codex` platforms' own dispatch-script
+  logs recorded a model at all, and none of the four platforms' logs named which issue a
+  `[DISPATCH]` line belonged to. `dispatch-agent.sh`/`dispatch-codex-agent.sh`'s `[DISPATCH]`
+  line now also carries `slug=<issue>`, matching the convention their own `[TOOL]`/`[TOOL-ERROR]`
+  lines already used.
+  - registry.json: crew-afk 2.2.44 -> 2.2.45 (`orchestrator/lib/pipeline.mjs`,
+    `orchestrator/lib/model-config.mjs`, `skills/crew-afk/scripts/dispatch-agent.sh`,
+    `skills/crew-afk/scripts/dispatch-codex-agent.sh`).
+
 ## [1.29.57]
 
 ### Fixed
