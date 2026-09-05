@@ -6,9 +6,38 @@
  * instructions, so a criterion that reads like a command cannot redirect a worker.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+/**
+ * `install_mode`/`docker_service` are ensure-deps.sh's own verdict, already cached at
+ * `.coding-crew/dev-commands.json` before any worktree or worker exists (Sprint.installDeps
+ * runs at MAIN_ROOT, ahead of the per-issue dispatch loop). Handing the mode over as a fact —
+ * the same way MAIN_ROOT itself is handed over rather than derived — removes the docker-mode
+ * check a worker could otherwise skip: solve-issue's Step 2 guard is prose, and a worker has
+ * been observed substituting its own node_modules/PATH probing for it despite the guard
+ * saying not to. No cache yet (a direct, non-orchestrated /solve-issue run) means this
+ * returns nothing and the worker's own detection step is still the source of truth.
+ */
+function installModeLines(mainRoot) {
+  const cacheFile = join(mainRoot, ".coding-crew", "dev-commands.json");
+  if (!existsSync(cacheFile)) return [];
+  let cache;
+  try {
+    cache = JSON.parse(readFileSync(cacheFile, "utf8"));
+  } catch {
+    return [];
+  }
+  if (!cache.install_mode) return [];
+  const lines = [`INSTALL_MODE=${cache.install_mode}`];
+  if (cache.install_mode === "docker" && cache.docker_service) lines.push(`DOCKER_SERVICE=${cache.docker_service}`);
+  return lines;
+}
+
 export function workerPrompt({ mainRoot, worktree, issuePath, slug, criteria, resume, reportPath }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
+    ...installModeLines(mainRoot),
     `Working directory: ${worktree}`,
     `Issue path: ${issuePath}`,
     `Issue title: ${slug}`,
@@ -82,6 +111,7 @@ export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context
     : `A prior, independent triage pass classified this failure as fixable: ${context || "(no detail given)"}`;
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
+    ...installModeLines(mainRoot),
     `Working directory: ${worktree}`,
     `Issue path: ${issuePath}`,
     `Issue title: ${slug}`,

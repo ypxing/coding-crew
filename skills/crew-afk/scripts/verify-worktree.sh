@@ -128,6 +128,11 @@ DOCKER_CONTAINER_SRC=""
 DOCKER_COMPOSE_FILE=""
 DOCKER_OVERRIDE_FILE=""
 DEP_SCRIPTS_DIR=""
+# -e flags for this worktree's own GIT_DIR/GIT_COMMON_DIR/hooksPath redirect — resolved
+# fresh per invocation via gen-override.sh's --query git-env, never baked into the shared
+# override file (see gen-override.sh's "Git metadata mount" header comment for why: that
+# file is shared across every worktree, but GIT_DIR is worktree-specific).
+DOCKER_GIT_ENV_ARGS=()
 
 # _detect_docker_mode — populates the DOCKER_* globals when this worktree's checks must
 # run through `docker compose run` instead of directly on the host.
@@ -167,6 +172,11 @@ _detect_docker_mode() {
   local container_src
   container_src=$(bash "$scripts_dir/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "$main_root" --query container-src 2>/dev/null)
   [ -n "$container_src" ] || return 1
+
+  DOCKER_GIT_ENV_ARGS=()
+  while IFS= read -r _git_env_line; do
+    [ -n "$_git_env_line" ] && DOCKER_GIT_ENV_ARGS+=(-e "$_git_env_line")
+  done < <(bash "$scripts_dir/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "$main_root" --query git-env 2>/dev/null || true)
 
   DOCKER_MODE=1
   DOCKER_SERVICE="$service"
@@ -589,7 +599,7 @@ _run_category() {
 
     local full_cmd="cd \"$DOCKER_CONTAINER_SRC\" && $cmd"
     echo "$label: running (docker: $DOCKER_SERVICE): $full_cmd"
-    _exec_and_report "$label" docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_OVERRIDE_FILE" run --rm "$DOCKER_SERVICE" \
+    _exec_and_report "$label" docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_OVERRIDE_FILE" run --rm "${DOCKER_GIT_ENV_ARGS[@]}" "$DOCKER_SERVICE" \
       sh -c "$full_cmd"
     return
   fi

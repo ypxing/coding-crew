@@ -16,6 +16,16 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 - Never use `docker-compose` (v1 hyphenated binary) — always use `docker compose` (v2 plugin).
 - Always pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command.
 - **Never write `docker-compose.override.yml` manually** — always generate it via `gen-override.sh`. Hand-writing the file skips proxy env vars and produces generic volume names that collide across worktrees.
+- **If `PROJECT_ROOT` is a linked worktree, always add this worktree's own git-mount `-e` flags too** — on every `docker compose run`, including install and every test/lint/type-check run. They are never baked into `docker-compose.override.yml` (that file is shared across every worktree; this worktree's `GIT_DIR` is not — see `gen-override.sh`'s own header comment), so each call resolves them fresh:
+
+  ```bash
+  GIT_ENV_ARGS=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && GIT_ENV_ARGS+=(-e "$line")
+  done < <(bash "<skill-dir>/scripts/gen-override.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query git-env)
+  ```
+
+  Empty for a plain (non-worktree) checkout, so `"${GIT_ENV_ARGS[@]}"` always expands safely — include it on every `docker compose run` below regardless of whether you already know `PROJECT_ROOT` is a worktree. Each bash tool call is a fresh shell (see the note above), so resolve `GIT_ENV_ARGS` in the *same* call as the `docker compose run` it applies to, not a separate one.
 
 **Platform mismatch (`requested image's platform ... does not match the detected host platform`)**: `gen-override.sh` emits a `platform:` key per service matching the *host's* architecture by default — the override's later `-f` wins the compose merge, so this overrides whatever the project's own compose file or image pins, without editing that file. Set `CREW_DOCKER_PLATFORM=off` before generating the override if the image is genuinely single-arch and the host has emulation deliberately set up for it; `amd64`/`arm64`/`linux/...` force a specific platform regardless of host.
 
@@ -30,6 +40,10 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 > has the baseline deps. Still apply the retry rule below if a later command fails with a
 > module-not-found error: this worktree's own branch may have added a dependency the shared install
 > ran before that branch existed.
+>
+> Either fast-path still means resolving and passing `GIT_ENV_ARGS` (see Never above) on every
+> `docker compose run` you do reach — that rule is never one of the steps being skipped, since it
+> is per-invocation, not part of generating or warming the shared file.
 
 ### 0. Check the cache, then ensure `.env` exists
 
@@ -160,7 +174,7 @@ RAW=""
     docker compose \
       -f "$PROJECT_ROOT/docker-compose.yml" \
       -f "$MAIN_ROOT/docker-compose.override.yml" \
-      run --rm <service> make install
+      run --rm "${GIT_ENV_ARGS[@]}" <service> make install
     ```
 
 **b. Run the package manager directly** for each directory with a named volume. Pass all `cd && install` commands in a single `sh -c` to avoid re-starting the container per directory:
@@ -169,19 +183,19 @@ RAW=""
 docker compose \
   -f "$PROJECT_ROOT/docker-compose.yml" \
   -f "$MAIN_ROOT/docker-compose.override.yml" \
-  run --rm <service> sh -c "
+  run --rm "${GIT_ENV_ARGS[@]}" <service> sh -c "
     cd /opt/app && <install-command> &&
     cd /opt/app/events && <install-command>
   "
 ```
 
-Pass both `-f` flags on every `docker compose` command.
+Pass both `-f` flags, and `"${GIT_ENV_ARGS[@]}"` (resolved fresh in the same call — see Never above), on every `docker compose` command.
 
-### 3. All subsequent `docker compose` commands must pass both `-f` flags
+### 3. All subsequent `docker compose` commands must pass both `-f` flags and this worktree's git-env args
 
 **Complete steps 0–2 in order before running any `docker compose` command. Do not skip ahead.**
 
-Pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command — including test, lint, and type-check runs. Never omit the `-f override` flag.
+Pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command — including test, lint, and type-check runs. Never omit the `-f override` flag. Resolve and pass `"${GIT_ENV_ARGS[@]}"` (see Never above) on every one of these too, in the same bash call — a lint/test run that shells out to git (coverage tooling, a `--changed` flag, a release plugin reading the commit SHA) hits the same unmountable-host-path failure an install-time postinstall hook does.
 
 ## Install failures
 
@@ -191,9 +205,9 @@ If install fails because the container's entrypoint ignores the command, check t
 docker compose \
   -f "$PROJECT_ROOT/docker-compose.yml" \
   -f "$MAIN_ROOT/docker-compose.override.yml" \
-  run --rm --entrypoint sh <service> -c "<install-command>"
+  run --rm "${GIT_ENV_ARGS[@]}" --entrypoint sh <service> -c "<install-command>"
 ```
 
 If install fails due to missing auth tokens, network errors, or Docker not running — stop immediately and report blocked with the verbatim error. Do not attempt workarounds.
 
-If install fails with `fatal: not a git repository: .../worktrees/<name>` from a postinstall hook (lefthook, husky, simple-git-hooks, etc.), that is a linked worktree's `.git` file pointing at an absolute host path the container can't see. `gen-override.sh` already mounts `MAIN_ROOT`'s `.git` read-only and sets `GIT_DIR`/`GIT_COMMON_DIR` for exactly this, plus redirects `core.hooksPath` to a writable scratch dir and overlays a writable volume at `/git-common/info` (lefthook writes a config checksum there, which has no config-based override the way `core.hooksPath` covers hooks) since the mount is read-only — if the failure persists, the project's tooling is likely resolving git some other way (e.g. `GIT_WORK_TREE`, a submodule) that these vars don't cover. Report blocked with the verbatim error rather than hand-editing the override.
+If install fails with `fatal: not a git repository: .../worktrees/<name>` from a postinstall hook (lefthook, husky, simple-git-hooks, etc.), that is a linked worktree's `.git` file pointing at an absolute host path the container can't see. `gen-override.sh` already mounts `MAIN_ROOT`'s `.git` read-only in the shared override (`/git-common`, plus a writable `info/` overlay for lefthook's own config-checksum write there); the failure almost always means `GIT_ENV_ARGS` (see Never above) was resolved but not actually passed on *this* `docker compose run` — double-check the `-e` flags are on the exact command that failed, in the same bash call that resolved them. If they were passed and the failure persists, the project's tooling is likely resolving git some other way (e.g. `GIT_WORK_TREE`, a submodule) that `GIT_DIR`/`GIT_COMMON_DIR`/`core.hooksPath` don't cover. Report blocked with the verbatim error rather than hand-editing the override.

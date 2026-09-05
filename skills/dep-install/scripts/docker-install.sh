@@ -216,10 +216,19 @@ if [[ -z "$COMPOSE_FILE" ]]; then
   exit 2
 fi
 
+# A linked worktree's own GIT_DIR is never baked into the shared override (see
+# gen-override.sh's "Git metadata mount" header comment) — resolved fresh here, per
+# invocation, and passed as -e flags instead so a lefthook/husky postinstall hook run by
+# $CONTAINER_CMD can still resolve git without touching the shared file.
+GIT_ENV_ARGS=()
+while IFS= read -r _line; do
+  [[ -n "$_line" ]] && GIT_ENV_ARGS+=(-e "$_line")
+done < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query git-env 2>/dev/null || true)
+
 RUN_CMD=(docker compose
   -f "$COMPOSE_FILE"
   -f "$MAIN_ROOT/docker-compose.override.yml"
-  run --rm "$SERVICE" sh -c "$CONTAINER_CMD")
+  run --rm "${GIT_ENV_ARGS[@]}" "$SERVICE" sh -c "$CONTAINER_CMD")
 
 OUT_FILE="$(mktemp)"
 trap 'rmdir "$LOCK_DIR" 2>/dev/null || true; rm -f "$OUT_FILE"' EXIT

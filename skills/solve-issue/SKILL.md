@@ -98,9 +98,16 @@ No PRD is normal — continue normally.
 
 ### 2. Dependencies — only when something is missing
 
-STOP. Run the docker-mode check below now, before any other exploration — including checking
-whether `node_modules`/`.venv` is already present, whether a package manager is on `PATH`, or
-anything else that looks like "is a dependency missing?" That question is `dep-install`'s to
+**If the caller's prompt already states `INSTALL_MODE=`** (an orchestrated dispatch resolves this
+once, sprint-wide, before any worktree exists — see `dep-install`'s own Step 0 fast path), trust it
+outright and skip straight to the paragraph below it: do not re-run the docker-mode check, and do
+not substitute your own `node_modules`/`.venv`/`PATH` probing for it either. A stated
+`INSTALL_MODE=docker` still means invoke `dep-install` now, unconditionally — receiving the mode as
+a fact does not make the install step optional.
+
+Otherwise: STOP. Run the docker-mode check below now, before any other exploration — including
+checking whether `node_modules`/`.venv` is already present, whether a package manager is on `PATH`,
+or anything else that looks like "is a dependency missing?" That question is `dep-install`'s to
 answer, not yours: substituting your own probing for the check below is the mistake this step
 exists to prevent, even when it feels like the cautious thing to do.
 

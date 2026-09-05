@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.29.55]
+
+### Fixed
+
+- **The git-common mount added in 1.29.50/1.29.51 never actually applied in the `crew-afk`
+  sprint path**: it only fired when `gen-override.sh` was invoked with `--project-root` set to
+  a linked worktree, but the pipeline's real generation call is always `--project-root=$MAIN_ROOT`
+  (`ensure-deps.sh`'s one sprint-wide call, before any worktree exists) — every worktree only ever
+  symlinks to that file, so the mount's env vars were never computed for any of them. A worktree's
+  own `docker compose run` (a mid-sprint install after a new dependency, or any test/lint/typecheck
+  command shelling out to git) could still hit `fatal: not a git repository` from a linked
+  worktree's unmountable `.git` file — the exact failure the mount was written to close.
+  `gen-override.sh`'s `GIT_DIR` is inherently per-worktree, but the override file it would have to
+  live in is shared across every worktree by design, so baking it into that file was never going
+  to work under concurrent worktrees anyway (two worktrees' own generation calls would clobber
+  each other's `GIT_DIR`). Split the fix in two instead: the mount itself (read-only `MAIN_ROOT/.git`
+  bind + writable `info/` overlay) is identical for every worktree and now always baked into the
+  shared file, generated from `MAIN_ROOT` alone; the worktree-specific env vars
+  (`GIT_DIR`/`GIT_COMMON_DIR`/the `core.hooksPath` redirect) are resolved fresh per invocation via
+  a new `gen-override.sh --query git-env` and passed as `docker compose run -e` flags — cheap,
+  stateless, and safe under concurrency since nothing is written to disk. Wired into
+  `docker-install.sh`, `verify-worktree.sh`, and `docker-install.md`'s worker-facing instructions.
+  - registry.json: dep-install 1.3.19 -> 1.3.20 (`skills/dep-install/scripts/gen-override.sh`,
+    `skills/dep-install/scripts/docker-install.sh`, `skills/dep-install/references/docker-install.md`),
+    crew-afk 2.2.41 -> 2.2.42 (`skills/crew-afk/scripts/verify-worktree.sh`).
+
+## [1.29.54]
+
+### Fixed
+
+- **1.29.53 made the docker-mode dependency check unskippable in prose, but a worker was still
+  observed substituting its own `node_modules`/`PATH` probing for it** — a STOP instruction can't
+  force a tool call. `ensure-deps.sh` already resolves `install_mode`/`docker_service` into
+  `.coding-crew/dev-commands.json` before any worktree or worker exists, so the orchestrator now
+  hands that verdict to the coder directly as `INSTALL_MODE=`/`DOCKER_SERVICE=` in its dispatch
+  prompt, the same way `MAIN_ROOT` is already handed over rather than derived. `solve-issue` trusts
+  a stated `INSTALL_MODE` outright and skips its own detection script, but still invokes
+  `dep-install` unconditionally when it says `docker` — receiving the mode as a fact doesn't make
+  install optional. A direct, non-orchestrated `/solve-issue` run (no cache yet) is unaffected: the
+  worker's own detection step remains the fallback.
+  - registry.json: crew-afk 2.2.40 -> 2.2.41 (`orchestrator/lib/prompts.mjs`), solve-issue 1.9.10 ->
+    1.9.11 (`skills/solve-issue/SKILL.md`).
+
 ## [1.29.53]
 
 ### Fixed

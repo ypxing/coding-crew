@@ -10,10 +10,13 @@
 #   --sandbox        Add proxy env vars + CA bundle. Default: read IS_SANDBOX env var.
 #   --dry-run        Print generated YAML to stdout instead of writing the file.
 #   --query <field>  Print one detected fact and exit, instead of writing the override.
-#                    <field> is one of: services | ecosystem | container-src | manifest-dirs | platform | project-name
+#                    <field> is one of: services | ecosystem | container-src | manifest-dirs |
+#                    platform | project-name | git-env
 #                    Lets a caller that needs to *run* an install (not just generate the
 #                    override) reuse this script's own detection instead of re-parsing the
-#                    compose file and manifests a second time.
+#                    compose file and manifests a second time. `git-env` is resolved from
+#                    --project-root, every other field from the shared file's own MAIN_ROOT
+#                    content — see "Git metadata mount" below for why that one is different.
 #   --link-only      Skip detection and generation entirely; just (re)point
 #                    PROJECT_ROOT/docker-compose.override.yml at the override MAIN_ROOT
 #                    already has. For a caller that knows the shared file was already
@@ -60,22 +63,41 @@
 # hook (lefthook/husky/simple-git-hooks running `git rev-parse --git-path hooks`) — fails with
 # `fatal: not a git repository: <path>`, which then fails the whole install step it was
 # incidental to. Fixed by mounting MAIN_ROOT's real `.git` dir read-only at a fixed container
-# path (`/git-common`) and pointing `GIT_DIR`/`GIT_COMMON_DIR` at it explicitly, so git never
-# needs to resolve the unmountable absolute host path at all. Applies only when PROJECT_ROOT's
-# gitdir actually sits under commondir/worktrees/<name> — a plain (non-worktree) checkout's
-# `.git` is already a real, writable directory reachable through the project's normal bind
-# mount, so mounting anything there would only take away write access that already worked.
-# Hooks live in commondir, which the mount above makes read-only, so a hook installer's write
-# there is redirected to a scratch `core.hooksPath` (`/tmp/git-hooks-container`) via
-# `GIT_CONFIG_*` env vars — git's own env-config always outranks file-based config, and no
+# path (`/git-common`), so git never needs to resolve the unmountable absolute host path at all.
+#
+# Split in two, deliberately, because this override file is generated once and *shared* across
+# every worktree of MAIN_ROOT (see "Worktree symlink" above) while the mount target a specific
+# container needs — `GIT_DIR=/git-common/worktrees/<name>` — is different for every worktree.
+# Baking one worktree's `GIT_DIR` into the shared file would be wrong for every other worktree
+# reading the same file, and racy besides: concurrent worktrees regenerating it would clobber
+# each other's value.
+#   - The mount itself (read-only `MAIN_ROOT/.git` bind + writable `info/` overlay, below) is
+#     the same for every worktree, since it only ever depends on MAIN_ROOT — safe to bake into
+#     the shared file unconditionally.
+#   - The env vars that point a specific container at a specific worktree's subdirectory under
+#     that mount are never written to the file. A caller resolves them fresh, per invocation,
+#     via `--query git-env` (see below) and passes them as `docker compose run -e KEY=VALUE`
+#     flags — cheap, stateless, and safe under concurrency since nothing is written to disk.
+#
+# `--query git-env`: prints, one `KEY=VALUE` per line, the env vars a caller should pass on its
+# own `docker compose run` for *this* `--project-root` — empty output when `--project-root` is
+# not a linked worktree (a plain checkout's `.git` is already a real, writable directory reachable
+# through the project's normal bind mount; pointing GIT_DIR there would only take away write
+# access that already worked), or when `CREW_GIT_MOUNT=off`:
+#   GIT_COMMON_DIR=/git-common
+#   GIT_DIR=/git-common/worktrees/<name>
+#   GIT_CONFIG_COUNT=1
+#   GIT_CONFIG_KEY_0=core.hooksPath
+#   GIT_CONFIG_VALUE_0=/tmp/git-hooks-container
+# The last three redirect `core.hooksPath` to a writable scratch dir: hooks live in commondir,
+# which the mount above makes read-only, so a hook installer's write there would otherwise fail
+# with "read-only file system". Git's own env-config always outranks file-based config, and no
 # hooks actually need to *run* inside the container, only install without erroring. lefthook
 # specifically also writes a config-checksum file under commondir's `info/` (no config override
-# exists for that path the way `core.hooksPath` covers hooks), so a second, writable named
-# volume is mounted at `/git-common/info` on top of the read-only mount — Docker resolves the
-# more specific bind target on top of the broader one, so only that one subdirectory becomes
-# writable while objects/refs/hooks stay read-only underneath it.
-#   CREW_GIT_MOUNT=on   (default) mount + redirect hooksPath when PROJECT_ROOT is a linked worktree
-#   CREW_GIT_MOUNT=off  never mount, regardless of whether PROJECT_ROOT is a linked worktree
+# exists for that path the way `core.hooksPath` covers hooks) — that one write is covered by the
+# writable `info/` overlay baked into the shared file instead, not by an env var.
+#   CREW_GIT_MOUNT=on   (default) mount in the shared file; --query git-env resolves per-worktree
+#   CREW_GIT_MOUNT=off  never mount, and --query git-env always prints nothing
 #
 # Exit codes:
 #   0  success
@@ -121,9 +143,9 @@ if [[ -z "$PROJECT_ROOT" || -z "$MAIN_ROOT" ]]; then
 fi
 
 case "$QUERY" in
-  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name) ;;
+  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name|git-env) ;;
   *)
-    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name" >&2
+    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name, git-env" >&2
     exit 1
     ;;
 esac
@@ -168,6 +190,28 @@ if [[ "$LINK_ONLY" -eq 1 ]]; then
     exit 2
   fi
   _link_override
+  exit 0
+fi
+
+# --query git-env — resolved from PROJECT_ROOT specifically (never MAIN_ROOT), independent of
+# the shared file's own generation/cache state below. See the "Git metadata mount" header
+# comment for why this is never written to the shared file itself.
+if [[ "$QUERY" == "git-env" ]]; then
+  if [[ "$GIT_MOUNT" == "on" ]]; then
+    _common="$(git -C "$MAIN_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [[ -n "$_common" && -d "$_common" ]]; then
+      _gitdir="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+      case "$_gitdir" in
+        "$_common"/worktrees/*)
+          echo "GIT_COMMON_DIR=/git-common"
+          echo "GIT_DIR=/git-common/${_gitdir#"$_common"/}"
+          echo "GIT_CONFIG_COUNT=1"
+          echo "GIT_CONFIG_KEY_0=core.hooksPath"
+          echo "GIT_CONFIG_VALUE_0=/tmp/git-hooks-container"
+          ;;
+      esac
+    fi
+  fi
   exit 0
 fi
 
@@ -316,26 +360,16 @@ case "$DOCKER_PLATFORM" in
 esac
 
 # ---------------------------------------------------------------------------
-# Resolve the git metadata mount (see CREW_GIT_MOUNT in the header comment)
+# Resolve the git-common mount for the shared file (see CREW_GIT_MOUNT in the header
+# comment) — MAIN_ROOT-only, deliberately never PROJECT_ROOT: this is baked into the one
+# file every worktree shares, so its content must be the same regardless of which
+# worktree's own gen-override.sh call happens to (re)generate it.
 # ---------------------------------------------------------------------------
 
 GIT_COMMON_DIR_ABS=""
-GIT_DIR_CONTAINER=""
 if [[ "$GIT_MOUNT" == "on" ]]; then
-  GIT_COMMON_DIR_ABS_CANDIDATE="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-  if [[ -n "$GIT_COMMON_DIR_ABS_CANDIDATE" && -d "$GIT_COMMON_DIR_ABS_CANDIDATE" ]]; then
-    GIT_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
-    # Only a *linked* worktree's gitdir sits under commondir/worktrees/<name> — that's the
-    # only case whose .git file points at a host path the container can't reach. A plain
-    # checkout's .git is a real directory already reachable (writable) through the project's
-    # normal bind mount, so mounting anything here would only take that write access away.
-    case "$GIT_DIR_ABS" in
-      "$GIT_COMMON_DIR_ABS_CANDIDATE"/worktrees/*)
-        GIT_COMMON_DIR_ABS="$GIT_COMMON_DIR_ABS_CANDIDATE"
-        GIT_DIR_CONTAINER="/git-common/${GIT_DIR_ABS#"$GIT_COMMON_DIR_ABS_CANDIDATE"/}"
-        ;;
-    esac
-  fi
+  GIT_COMMON_DIR_ABS="$(git -C "$MAIN_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  [[ -n "$GIT_COMMON_DIR_ABS" && -d "$GIT_COMMON_DIR_ABS" ]] || GIT_COMMON_DIR_ABS=""
 fi
 
 # Worktrees may be sparse or freshly branched — fall back to MAIN_ROOT for detection and manifest scan.
@@ -435,23 +469,11 @@ generate_yaml() {
     if [[ -n "$RESOLVED_PLATFORM" ]]; then
       echo "    platform: ${RESOLVED_PLATFORM}"
     fi
-    if [[ ${#ECO_PROXY_VARS[@]} -gt 0 || -n "$GIT_COMMON_DIR_ABS" ]]; then
+    if [[ ${#ECO_PROXY_VARS[@]} -gt 0 ]]; then
       echo "    environment:"
       for var in "${ECO_PROXY_VARS[@]}"; do
         echo "      - ${var}"
       done
-      if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
-        echo "      - GIT_COMMON_DIR=/git-common"
-        echo "      - GIT_DIR=${GIT_DIR_CONTAINER}"
-        # Hooks live in commondir (shared across worktrees), which the mount below is
-        # read-only — a postinstall hook installer (lefthook/husky/simple-git-hooks) writing
-        # there would fail with "read-only file system". Git's env-config vars take priority
-        # over any file-based core.hooksPath, so this redirects that one write to a scratch
-        # dir without touching the read-only mount or the rest of git's config resolution.
-        echo "      - GIT_CONFIG_COUNT=1"
-        echo "      - GIT_CONFIG_KEY_0=core.hooksPath"
-        echo "      - GIT_CONFIG_VALUE_0=/tmp/git-hooks-container"
-      fi
     fi
     echo "    volumes:"
     for i in "${!VOL_NAMES[@]}"; do
@@ -489,11 +511,11 @@ else
   echo "  sandbox:   $([[ "$SANDBOX" == "1" ]] && echo true || echo false)"
   echo "  platform:  ${RESOLVED_PLATFORM:-unset, project pin unchanged}"
   if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
-    echo "  git:       mounted read-only at /git-common (GIT_DIR=${GIT_DIR_CONTAINER}, hooksPath redirected to /tmp/git-hooks-container, info/ writable via wt_${PROJ_SLUG}_git_info)"
+    echo "  git:       MAIN_ROOT's .git mounted read-only at /git-common (info/ writable via wt_${PROJ_SLUG}_git_info) — a caller in a linked worktree still needs its own 'gen-override.sh --query git-env' for the per-worktree GIT_DIR/hooksPath env vars"
   elif [[ "$GIT_MOUNT" == "off" ]]; then
     echo "  git:       not mounted (CREW_GIT_MOUNT=off)"
   else
-    echo "  git:       not mounted (project root is not a linked worktree)"
+    echo "  git:       not mounted (no git checkout detected at MAIN_ROOT)"
   fi
 
   # A worktree (PROJECT_ROOT distinct from MAIN_ROOT) also gets its own symlink to this
