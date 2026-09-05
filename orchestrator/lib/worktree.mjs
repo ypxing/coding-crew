@@ -13,26 +13,29 @@ export function worktreePath(mainRoot, branch) {
   return join(mainRoot, ".scratch", "worktrees", branch);
 }
 
-const DOCKER_OVERRIDE_ENTRY = "docker-compose.override.yml";
+const AUTO_INCLUDE_ENTRIES = ["docker-compose.override.yml", ".env"];
 
 /**
- * Make sure `.worktreeinclude` at mainRoot lists docker-compose.override.yml, before any
- * worktree exists. Without this, a docker-mode project's override only reaches a worktree
- * via gen-override.sh's own docker-present fast path inside ensure-deps.sh — which requires
- * DOCKER_MARKER to already be on disk, a race the first round's concurrently-created
- * worktrees can lose. Listing the entry here means every worktree's own applyWorktreeInclude()
- * symlinks it in deterministically at creation time instead.
+ * Make sure `.worktreeinclude` at mainRoot lists docker-compose.override.yml and .env, before
+ * any worktree exists. Without this, each only reaches a worktree via its own script's fast
+ * path — docker-compose.override.yml via gen-override.sh's docker-present check inside
+ * ensure-deps.sh (which requires DOCKER_MARKER to already be on disk, a race the first round's
+ * concurrently-created worktrees can lose), .env via dep-install's ensure-env.sh (which
+ * requires a worker to have actually reached that step first). Listing both entries here means
+ * every worktree's own applyWorktreeInclude() symlinks them in deterministically at creation
+ * time instead, before any of that has had a chance to run.
  *
- * Safe to call unconditionally, even when the project has no docker-compose.override.yml at
- * all: applyWorktreeInclude() already skips any entry whose source is missing from mainRoot.
+ * Safe to call unconditionally, even when the project has neither file yet:
+ * applyWorktreeInclude() already skips any entry whose source is missing from mainRoot.
  */
 export function ensureWorktreeInclude(mainRoot) {
   const manifest = join(mainRoot, ".worktreeinclude");
-  const existing = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";
-  const hasEntry = existing.split("\n").some((raw) => raw.trim() === DOCKER_OVERRIDE_ENTRY);
-  if (hasEntry) return false;
+  let existing = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";
+  const lines = existing.split("\n").map((raw) => raw.trim());
+  const missing = AUTO_INCLUDE_ENTRIES.filter((entry) => !lines.includes(entry));
+  if (!missing.length) return false;
   const sep = existing && !existing.endsWith("\n") ? "\n" : "";
-  writeFileSync(manifest, `${existing}${sep}${DOCKER_OVERRIDE_ENTRY}\n`);
+  writeFileSync(manifest, `${existing}${sep}${missing.join("\n")}\n`);
   return true;
 }
 

@@ -334,8 +334,8 @@ async function main() {
     return 1;
   }
 
-  // Before any worktree exists: make sure docker-compose.override.yml is in
-  // .worktreeinclude, so every worktree this sprint creates gets it symlinked in at
+  // Before any worktree exists: make sure docker-compose.override.yml and .env are in
+  // .worktreeinclude, so every worktree this sprint creates gets them symlinked in at
   // creation time (see ensureWorktreeInclude()'s docstring).
   ensureWorktreeInclude(mainRoot);
 

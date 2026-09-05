@@ -68,7 +68,12 @@
 # Hooks live in commondir, which the mount above makes read-only, so a hook installer's write
 # there is redirected to a scratch `core.hooksPath` (`/tmp/git-hooks-container`) via
 # `GIT_CONFIG_*` env vars — git's own env-config always outranks file-based config, and no
-# hooks actually need to *run* inside the container, only install without erroring.
+# hooks actually need to *run* inside the container, only install without erroring. lefthook
+# specifically also writes a config-checksum file under commondir's `info/` (no config override
+# exists for that path the way `core.hooksPath` covers hooks), so a second, writable named
+# volume is mounted at `/git-common/info` on top of the read-only mount — Docker resolves the
+# more specific bind target on top of the broader one, so only that one subdirectory becomes
+# writable while objects/refs/hooks stay read-only underneath it.
 #   CREW_GIT_MOUNT=on   (default) mount + redirect hooksPath when PROJECT_ROOT is a linked worktree
 #   CREW_GIT_MOUNT=off  never mount, regardless of whether PROJECT_ROOT is a linked worktree
 #
@@ -454,6 +459,7 @@ generate_yaml() {
     done
     if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
       echo "      - ${GIT_COMMON_DIR_ABS}:/git-common:ro"
+      echo "      - wt_${PROJ_SLUG}_git_info:/git-common/info"
     fi
     if [[ "$SANDBOX" == "1" ]]; then
       echo "      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro"
@@ -463,6 +469,9 @@ generate_yaml() {
   for vol in "${VOL_NAMES[@]}"; do
     echo "  ${vol}:"
   done
+  if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
+    echo "  wt_${PROJ_SLUG}_git_info:"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -480,7 +489,7 @@ else
   echo "  sandbox:   $([[ "$SANDBOX" == "1" ]] && echo true || echo false)"
   echo "  platform:  ${RESOLVED_PLATFORM:-unset, project pin unchanged}"
   if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
-    echo "  git:       mounted read-only at /git-common (GIT_DIR=${GIT_DIR_CONTAINER}, hooksPath redirected to /tmp/git-hooks-container)"
+    echo "  git:       mounted read-only at /git-common (GIT_DIR=${GIT_DIR_CONTAINER}, hooksPath redirected to /tmp/git-hooks-container, info/ writable via wt_${PROJ_SLUG}_git_info)"
   elif [[ "$GIT_MOUNT" == "off" ]]; then
     echo "  git:       not mounted (CREW_GIT_MOUNT=off)"
   else

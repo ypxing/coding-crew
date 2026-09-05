@@ -64,6 +64,27 @@ teardown() {
   [[ "$output" == *"GIT_CONFIG_COUNT=1"* ]]
   [[ "$output" == *"GIT_CONFIG_KEY_0=core.hooksPath"* ]]
   [[ "$output" == *"GIT_CONFIG_VALUE_0=/tmp/git-hooks-container"* ]]
+  [[ "$output" =~ wt_[A-Za-z0-9_]+_git_info:/git-common/info ]]
+}
+
+@test "a real worktree declares the git-info overlay volume at top level too, not just as a service mount" {
+  MAIN=$(mktemp -d)
+  git -C "$MAIN" init -q -b main
+  git -C "$MAIN" config user.email t@test
+  git -C "$MAIN" config user.name T
+  fixture_compose "$MAIN"
+  git -C "$MAIN" add -A
+  git -C "$MAIN" commit -q -m init
+
+  WORK="${MAIN}-wt"
+  git -C "$MAIN" worktree add -q -b feature "$WORK" HEAD
+
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --dry-run
+  [ "$status" -eq 0 ]
+  volume_name=$(echo "$output" | grep -oE 'wt_[A-Za-z0-9_]+_git_info' | head -1)
+  [ -n "$volume_name" ]
+  # declared once as a service mount and once under top-level volumes:
+  [ "$(echo "$output" | grep -c "$volume_name")" -eq 2 ]
 }
 
 @test "PROJECT_ROOT equal to MAIN_ROOT (no worktree) mounts nothing — .git is already writable via the project bind mount" {
