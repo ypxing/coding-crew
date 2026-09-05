@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.52]
+
+### Fixed
+
+- **lefthook's config-checksum write under commondir's `info/` had no config-based override the
+  way `core.hooksPath` covers hooks**, so it still hit the read-only `/git-common` mount from
+  1.29.50/1.29.51 and failed install inside a real linked worktree. `gen-override.sh` now overlays
+  a second, writable named volume at `/git-common/info` on top of the read-only mount — Docker
+  resolves the more specific bind target on top of the broader one, so only that subdirectory
+  becomes writable while objects/refs/hooks stay read-only underneath it.
+  - registry.json: dep-install 1.3.18 -> 1.3.19 (`skills/dep-install/scripts/gen-override.sh`,
+    `skills/dep-install/references/docker-install.md`).
+- **`.env` reached a worktree only via `dep-install`'s `ensure-env.sh`, which requires a worker to
+  have actually reached that step first** — a worktree created before then (or a worker that never
+  gets there) never gets it. `ensureWorktreeInclude()` now lists `.env` in `.worktreeinclude`
+  alongside `docker-compose.override.yml`, so every worktree's own `applyWorktreeInclude()`
+  symlinks it in deterministically at creation time instead, same as the override entry already
+  gets.
+  - registry.json: crew-afk 2.2.39 -> 2.2.40 (`orchestrator/lib/worktree.mjs`, `orchestrator/main.mjs`).
+
 ## [1.29.51]
 
 ### Fixed
