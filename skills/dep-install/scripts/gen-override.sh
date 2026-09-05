@@ -53,6 +53,22 @@
 #                                    for images that genuinely are single-arch and a host
 #                                    that has emulation deliberately set up for them
 #
+# Git metadata mount: a worktree's `.git` is a file (`gitdir: /abs/host/path/...`) pointing
+# at MAIN_ROOT's `.git/worktrees/<name>`, which in turn needs MAIN_ROOT's `.git` (objects,
+# refs, hooks) via its own `commondir` pointer. A container never has that absolute host path,
+# so any git command run inside one — most commonly a package manager's postinstall hook
+# (lefthook/husky/simple-git-hooks running `git rev-parse --git-path hooks`) — fails with
+# `fatal: not a git repository: <path>`, which then fails the whole install step it was
+# incidental to. Fixed by mounting MAIN_ROOT's real `.git` dir read-only at a fixed container
+# path (`/git-common`) and pointing `GIT_DIR`/`GIT_COMMON_DIR` at it explicitly, so git never
+# needs to resolve the unmountable absolute host path at all. Resolved once here (not per
+# ecosystem — the failure mode isn't node-specific: python's setuptools_scm, ruby's
+# overcommit, etc. shell out to git too) via `git -C PROJECT_ROOT rev-parse --git-dir
+# --git-common-dir`, which fails soft (no mount emitted) when PROJECT_ROOT isn't a real git
+# checkout at all.
+#   CREW_GIT_MOUNT=on   (default) mount + set GIT_DIR/GIT_COMMON_DIR when git resolves
+#   CREW_GIT_MOUNT=off  never mount, regardless of whether PROJECT_ROOT is a git checkout
+#
 # Exit codes:
 #   0  success
 #   1  argument or filesystem error
@@ -69,6 +85,7 @@ PROJECT_ROOT=""
 MAIN_ROOT=""
 SANDBOX="${IS_SANDBOX:-0}"
 DOCKER_PLATFORM="${CREW_DOCKER_PLATFORM:-host}"
+GIT_MOUNT="${CREW_GIT_MOUNT:-on}"
 DRY_RUN=0
 QUERY=""
 LINK_ONLY=0
@@ -99,6 +116,14 @@ case "$QUERY" in
   ""|services|ecosystem|container-src|manifest-dirs|platform|project-name) ;;
   *)
     echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name" >&2
+    exit 1
+    ;;
+esac
+
+case "$GIT_MOUNT" in
+  on|off) ;;
+  *)
+    echo "Error: CREW_GIT_MOUNT must be on or off (got: $GIT_MOUNT)" >&2
     exit 1
     ;;
 esac
@@ -282,6 +307,25 @@ case "$DOCKER_PLATFORM" in
     ;;
 esac
 
+# ---------------------------------------------------------------------------
+# Resolve the git metadata mount (see CREW_GIT_MOUNT in the header comment)
+# ---------------------------------------------------------------------------
+
+GIT_COMMON_DIR_ABS=""
+GIT_DIR_CONTAINER=""
+if [[ "$GIT_MOUNT" == "on" ]]; then
+  GIT_COMMON_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [[ -n "$GIT_COMMON_DIR_ABS" && -d "$GIT_COMMON_DIR_ABS" ]]; then
+    GIT_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+    case "$GIT_DIR_ABS" in
+      "$GIT_COMMON_DIR_ABS"/*) GIT_DIR_CONTAINER="/git-common/${GIT_DIR_ABS#"$GIT_COMMON_DIR_ABS"/}" ;;
+      *)                       GIT_DIR_CONTAINER="/git-common" ;;
+    esac
+  else
+    GIT_COMMON_DIR_ABS=""
+  fi
+fi
+
 # Worktrees may be sparse or freshly branched — fall back to MAIN_ROOT for detection and manifest scan.
 if [[ -z "$ECO_NAME" ]] && [[ "$PROJECT_ROOT" != "$MAIN_ROOT" ]]; then
   PROJECT_ROOT="$MAIN_ROOT"
@@ -379,16 +423,23 @@ generate_yaml() {
     if [[ -n "$RESOLVED_PLATFORM" ]]; then
       echo "    platform: ${RESOLVED_PLATFORM}"
     fi
-    if [[ ${#ECO_PROXY_VARS[@]} -gt 0 ]]; then
+    if [[ ${#ECO_PROXY_VARS[@]} -gt 0 || -n "$GIT_COMMON_DIR_ABS" ]]; then
       echo "    environment:"
       for var in "${ECO_PROXY_VARS[@]}"; do
         echo "      - ${var}"
       done
+      if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
+        echo "      - GIT_COMMON_DIR=/git-common"
+        echo "      - GIT_DIR=${GIT_DIR_CONTAINER}"
+      fi
     fi
     echo "    volumes:"
     for i in "${!VOL_NAMES[@]}"; do
       echo "      - ${VOL_NAMES[$i]}:${VOL_PATHS[$i]}"
     done
+    if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
+      echo "      - ${GIT_COMMON_DIR_ABS}:/git-common:ro"
+    fi
     if [[ "$SANDBOX" == "1" ]]; then
       echo "      - /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro"
     fi
@@ -413,6 +464,13 @@ else
   echo "  services:  $(IFS=', '; echo "${SERVICES[*]}")"
   echo "  sandbox:   $([[ "$SANDBOX" == "1" ]] && echo true || echo false)"
   echo "  platform:  ${RESOLVED_PLATFORM:-unset, project pin unchanged}"
+  if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
+    echo "  git:       mounted read-only at /git-common (GIT_DIR=${GIT_DIR_CONTAINER})"
+  elif [[ "$GIT_MOUNT" == "off" ]]; then
+    echo "  git:       not mounted (CREW_GIT_MOUNT=off)"
+  else
+    echo "  git:       not mounted (no git checkout detected at project root)"
+  fi
 
   # A worktree (PROJECT_ROOT distinct from MAIN_ROOT) also gets its own symlink to this
   # single generated file. Every mechanical caller (docker-install.sh, verify-worktree.sh)

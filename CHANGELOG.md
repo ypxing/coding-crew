@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.50]
+
+### Added
+
+- **A worktree's git metadata is an absolute host path a docker container can never see**, so any
+  git command run inside one — most commonly a package manager's postinstall hook
+  (lefthook/husky/simple-git-hooks) — failed with `fatal: not a git repository`, taking the whole
+  install step down with it. `gen-override.sh` now mounts `MAIN_ROOT`'s real `.git` dir read-only
+  at a fixed container path (`/git-common`) and sets `GIT_DIR`/`GIT_COMMON_DIR` to it, so git never
+  needs to resolve the unmountable path at all. Controlled by `CREW_GIT_MOUNT` (`on` by default,
+  `off` to disable); resolved once per project regardless of ecosystem, and fails soft (no mount)
+  when the project root isn't a real git checkout.
+  - registry.json: dep-install 1.3.16 -> 1.3.17 (`skills/dep-install/scripts/gen-override.sh`,
+    `skills/dep-install/references/docker-install.md`).
+
 ## [1.29.49]
 
 ### Fixed
