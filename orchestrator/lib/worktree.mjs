@@ -57,7 +57,7 @@ export function ensureWorktreeInclude(mainRoot) {
 export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expectReuse = true }) {
   const path = worktreePath(mainRoot, branch);
   const listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
-  if (listed.includes(`worktree ${path}\n`) && existsSync(path)) return { path, created: false };
+  if (listed.includes(`worktree ${path}\n`) && existsSync(path)) return { path, created: false, reusedBranch: true };
 
   const exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
 
@@ -135,6 +135,42 @@ export function applyWorktreeInclude(mainRoot, worktree) {
     }
   }
   return linked;
+}
+
+/**
+ * Forward-merge the feature branch into a reused issue branch, inside its own worktree,
+ * before the coder starts. A reused branch (`ensureWorktree`'s `reusedBranch: true`) was
+ * forked from the feature branch as it stood at some earlier round or an earlier
+ * `crew-afk` invocation — every sibling issue merged into the feature branch since, or
+ * any commit landed on it by hand, is invisible to this branch until it merges that
+ * history back in. Left undone, the coder works from a stale base and the gap only
+ * surfaces ~45 minutes later as an unexplained conflict at the merge gate.
+ *
+ * Never attempted for a brand-new branch (`reusedBranch: false` — nothing to merge yet,
+ * it forked from the current tip). On conflict: aborts cleanly and reports it, exactly
+ * like merge-branches.sh's own "never attempts resolution" rule — reconciling by hand
+ * is the caller's job, not this function's.
+ */
+export function mergeFeatureBranch(effects, { worktree, branch, featureBranch }) {
+  if (!featureBranch || featureBranch === branch) return { merged: false };
+  const pending = effects.gitRead(["log", `${branch}..${featureBranch}`, "--oneline"], { cwd: worktree }).stdout.trim();
+  if (!pending) return { merged: false };
+
+  const r = effects.git(
+    ["merge", "--no-ff", featureBranch, "-m", `Merge '${featureBranch}' into '${branch}'`],
+    { cwd: worktree },
+  );
+  if (r.code !== 0) {
+    effects.git(["merge", "--abort"], { cwd: worktree });
+    return {
+      merged: false,
+      conflict: true,
+      reason:
+        `feature branch '${featureBranch}' has commits since '${branch}' was created, and merging them in ` +
+        `conflicted — aborted cleanly; reconcile '${branch}' with '${featureBranch}' by hand before retrying`,
+    };
+  }
+  return { merged: true };
 }
 
 /** Remove only the worktree. Never `git branch -D` — retention decides refs. */

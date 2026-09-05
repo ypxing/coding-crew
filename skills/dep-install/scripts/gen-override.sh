@@ -76,7 +76,7 @@
 #     the shared file unconditionally.
 #   - The env vars that point a specific container at a specific worktree's subdirectory under
 #     that mount are never *valued* in the file — only their names, as bare `environment:`
-#     passthrough entries (the same convention as the proxy vars below them), so nothing
+#     passthrough entries (the same convention as the env-passthrough vars below them), so nothing
 #     worktree-specific is baked into the one file every worktree shares. A caller resolves the
 #     actual values fresh, per invocation, via `--query git-env` (see below) and either passes
 #     them as `docker compose run -e KEY=VALUE` flags on a compose call it makes directly, or
@@ -297,7 +297,7 @@ ECO_VENDOR=""
 ECO_PREFIX=""
 ECO_DEPTH=5
 ECO_EXCLUDE=""
-ECO_PROXY_VARS=()
+ECO_ENV_PASSTHROUGH=()
 
 detect_ecosystem() {
   if find "$PROJECT_ROOT" -maxdepth 5 -name 'package.json' \
@@ -305,42 +305,45 @@ detect_ecosystem() {
       -not -path "$PROJECT_ROOT/*/\.*/*" -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="node"; ECO_VENDOR="node_modules"; ECO_PREFIX="nm"
     ECO_DEPTH=5; ECO_EXCLUDE="node_modules"
-    ECO_PROXY_VARS=("HTTPS_PROXY" "NODE_EXTRA_CA_CERTS" 'YARN_HTTPS_PROXY=${HTTPS_PROXY}')
+    # NPM_TOKEN: bare name only, never a value — see "the env vars ... are never *valued*
+    # in the file" above. Lets a project's .npmrc reference ${NPM_TOKEN} for private-registry
+    # auth during `npm install`, resolved from whatever process invokes `docker compose run`.
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "NODE_EXTRA_CA_CERTS" 'YARN_HTTPS_PROXY=${HTTPS_PROXY}' "NPM_TOKEN")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 \( -name 'pyproject.toml' -o -name 'requirements.txt' \) \
       -not -path '*/.venv/*' -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="python"; ECO_VENDOR=".venv"; ECO_PREFIX="venv"
     ECO_DEPTH=3; ECO_EXCLUDE=".venv"
-    ECO_PROXY_VARS=("HTTPS_PROXY" "REQUESTS_CA_BUNDLE")
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "REQUESTS_CA_BUNDLE")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 -name 'Gemfile' \
       -not -path '*/vendor/*' -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="ruby"; ECO_VENDOR="vendor/bundle"; ECO_PREFIX="bundle"
     ECO_DEPTH=3; ECO_EXCLUDE="vendor"
-    ECO_PROXY_VARS=("HTTPS_PROXY" "SSL_CERT_FILE")
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "SSL_CERT_FILE")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 -name 'Cargo.toml' \
       -not -path '*/target/*' -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="rust"; ECO_VENDOR="target"; ECO_PREFIX="target"
     ECO_DEPTH=3; ECO_EXCLUDE="target"
-    ECO_PROXY_VARS=("HTTPS_PROXY" "SSL_CERT_FILE")
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "SSL_CERT_FILE")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 -name 'composer.json' \
       -not -path '*/vendor/*' -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="php"; ECO_VENDOR="vendor"; ECO_PREFIX="vendor"
     ECO_DEPTH=3; ECO_EXCLUDE="vendor"
-    ECO_PROXY_VARS=("HTTPS_PROXY" "SSL_CERT_FILE")
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "SSL_CERT_FILE")
     return
   fi
   if find "$PROJECT_ROOT" -maxdepth 3 -name 'go.mod' \
       -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="go"; ECO_VENDOR="vendor"; ECO_PREFIX="vendor"
     ECO_DEPTH=3; ECO_EXCLUDE="vendor"
-    ECO_PROXY_VARS=("HTTPS_PROXY" "SSL_CERT_FILE")
+    ECO_ENV_PASSTHROUGH=("HTTPS_PROXY" "SSL_CERT_FILE")
     return
   fi
 }
@@ -485,9 +488,9 @@ generate_yaml() {
     if [[ -n "$RESOLVED_PLATFORM" ]]; then
       echo "    platform: ${RESOLVED_PLATFORM}"
     fi
-    if [[ ${#ECO_PROXY_VARS[@]} -gt 0 || -n "$GIT_COMMON_DIR_ABS" ]]; then
+    if [[ ${#ECO_ENV_PASSTHROUGH[@]} -gt 0 || -n "$GIT_COMMON_DIR_ABS" ]]; then
       echo "    environment:"
-      for var in "${ECO_PROXY_VARS[@]}"; do
+      for var in "${ECO_ENV_PASSTHROUGH[@]}"; do
         echo "      - ${var}"
       done
       if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
@@ -552,7 +555,7 @@ else
   # path via an explicit second `-f` on every command, which is correct regardless of cwd
   # and stays that way — this symlink does not replace it. It is a safety net for the one
   # case that contract can't cover: a bare `docker compose run` a worker types without any
-  # `-f` at all silently drops the override (proxy vars, platform pin, named volumes)
+  # `-f` at all silently drops the override (env-passthrough vars, platform pin, named volumes)
   # instead of failing loudly. Compose's own same-directory `docker-compose.override.yml`
   # discovery convention only fires when the file actually sits next to `docker-compose.yml`
   # in PROJECT_ROOT, so it needs a real (or symlinked) presence there, not just resolvability

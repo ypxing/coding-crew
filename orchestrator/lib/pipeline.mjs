@@ -28,7 +28,7 @@ import {
 } from "./report.mjs";
 import { branchFor, writeIssueSection } from "./tracker.mjs";
 import { criteriaFile, fixPrompt, resumeNote, reviewPrompt, triagePrompt, workerPrompt } from "./prompts.mjs";
-import { applyWorktreeInclude, ensureWorktree, removeWorktree } from "./worktree.mjs";
+import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
 import { dispatch } from "./dispatch.mjs";
 
 // Retention-reason tags for a verify-worktree.sh failure, once triage (see runTriage
@@ -165,6 +165,40 @@ export async function runWorker(ctx, issue) {
   }
 
   const { path: worktree } = wt;
+
+  // A reused branch (this round's resume, or a worktree left over from an earlier
+  // `crew-afk` invocation) may have been forked from the feature branch before other
+  // issues merged into it — sync that history in now, before the coder ever sees the
+  // branch, instead of letting the gap surface as a conflict at the merge gate later.
+  if (wt.reusedBranch) {
+    ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=sync-feature-branch`);
+    const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch });
+    if (sync.conflict) {
+      ctx.log(`[SYNC-CONFLICT] slug=${issue.slug} branch=${branch} — ${sync.reason}`);
+      // worktree (not null): the checkout was actually created above and merge --abort
+      // already left it clean — finishBlocked's own removeWorktree() call needs the real
+      // path to clean it up. Only the branch ref (and whatever WIP it holds) is retained.
+      return {
+        issue,
+        branch,
+        worktree,
+        dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
+        report: {
+          parsedFrom: "sync-conflict",
+          status: "blocked",
+          checks: { test: "not_run", lint: "not_run", typecheck: "not_run" },
+          branch,
+          workingDirectory: worktree,
+          progress: null,
+          notes: sync.reason,
+          criteria: [],
+          raw: "",
+        },
+      };
+    }
+    if (sync.merged) ctx.log(`slug=${issue.slug} round=${ctx.round} SYNC: merged ${sprint.featureBranch} into ${branch}`);
+  }
+
   applyWorktreeInclude(effects.mainRoot, worktree);
 
   // Deps, here, because this position is the whole point: after the include (so an

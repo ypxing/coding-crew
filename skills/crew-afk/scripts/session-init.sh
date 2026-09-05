@@ -39,20 +39,57 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Resume a prior sprint onto the exact feature branch it started on, before anything
+# else runs. Without this, re-running crew-afk from wherever the shell happens to be
+# sitting (an issue's own branch left over from a prior round, a detached HEAD, a
+# colleague's branch) gets silently adopted as the new "feature branch" the moment it
+# isn't the repo's default branch — the FEATURE_SLUG_ARG branch's own default-branch
+# heuristic below reads "not on default" as "already on the right one". A slug that
+# already has a `.scratch/<slug>/sprint.env` from an earlier session instead pins to
+# the FEATURE_BRANCH that file recorded, checking out that branch if the shell isn't
+# there yet — deliberately never trusting the current HEAD once a session exists.
+# Returns 0 (handled — resumed or already there) or 1 (no prior session; caller keeps
+# its own create/switch logic).
+resume_feature_branch() {
+  local slug="$1"
+  local prior_env=".scratch/$slug/sprint.env"
+  [ -f "$prior_env" ] || return 1
+  local prior_branch
+  prior_branch=$(grep -m1 '^export FEATURE_BRANCH=' "$prior_env" | sed -E 's/^export FEATURE_BRANCH="?([^"]*)"?$/\1/')
+  [ -n "$prior_branch" ] || return 1
+  local now
+  now=$(git rev-parse --abbrev-ref HEAD)
+  if [ "$now" = "$prior_branch" ]; then
+    return 0
+  fi
+  if ! git rev-parse --verify "$prior_branch" >/dev/null 2>&1; then
+    echo "ERROR: sprint '$slug' was started on branch '$prior_branch', but that branch no longer exists." >&2
+    echo "Checkout or recreate it before re-running, or pass a different --feature-slug." >&2
+    exit 1
+  fi
+  echo "Resuming sprint '$slug': switching to its feature branch '$prior_branch' (was on '$now')"
+  git checkout "$prior_branch"
+  return 0
+}
+
 if [ -n "$FEATURE_SLUG_ARG" ]; then
   # Use the provided slug directly — bypass first-issue detection
-  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
-  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
+  if resume_feature_branch "$FEATURE_SLUG_ARG"; then
+    :
+  else
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
+    [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
 
-  if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-    SUGGESTED_BRANCH="feature/$FEATURE_SLUG_ARG"
-    if git rev-parse --verify "$SUGGESTED_BRANCH" >/dev/null 2>&1; then
-      echo "Switching to existing branch: $SUGGESTED_BRANCH"
-      git checkout "$SUGGESTED_BRANCH"
-    else
-      echo "Creating new feature branch: $SUGGESTED_BRANCH"
-      git checkout -b "$SUGGESTED_BRANCH"
+    if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
+      SUGGESTED_BRANCH="feature/$FEATURE_SLUG_ARG"
+      if git rev-parse --verify "$SUGGESTED_BRANCH" >/dev/null 2>&1; then
+        echo "Switching to existing branch: $SUGGESTED_BRANCH"
+        git checkout "$SUGGESTED_BRANCH"
+      else
+        echo "Creating new feature branch: $SUGGESTED_BRANCH"
+        git checkout -b "$SUGGESTED_BRANCH"
+      fi
     fi
   fi
 else
@@ -70,9 +107,16 @@ else
   # holds no issues.
   DERIVED_FROM_PATH=$(printf '%s' "$FIRST_ISSUE" | sed 's|^\./||' | sed 's|^\.scratch/||' | sed 's|/.*||')
 
-  # Use shared feature branch setup script (handles branch creation/switching with JIRA support)
-  # feature-branch-setup.sh is copied into this skill's scripts/ directory during install.sh
-  bash "$(dirname "$0")/feature-branch-setup.sh" "$FIRST_ISSUE" "${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"}"
+  # Same resume guard as the FEATURE_SLUG_ARG branch above: a slug with a recorded
+  # session pins to its own feature branch instead of letting feature-branch-setup.sh's
+  # default-branch heuristic adopt whatever branch the shell happens to be on.
+  if resume_feature_branch "$DERIVED_FROM_PATH"; then
+    :
+  else
+    # Use shared feature branch setup script (handles branch creation/switching with JIRA support)
+    # feature-branch-setup.sh is copied into this skill's scripts/ directory during install.sh
+    bash "$(dirname "$0")/feature-branch-setup.sh" "$FIRST_ISSUE" "${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"}"
+  fi
 fi
 
 # Get current branch after setup

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { applyWorktreeInclude, ensureWorktree, ensureWorktreeInclude } from "../../orchestrator/lib/worktree.mjs";
+import { applyWorktreeInclude, ensureWorktree, ensureWorktreeInclude, mergeFeatureBranch } from "../../orchestrator/lib/worktree.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
 function tmpRoot() {
@@ -281,4 +281,102 @@ test("ensureWorktree defaults expectReuse to true — existing callers keep sile
 
   assert.equal(result.stale, undefined);
   assert.ok(existsSync(result.path));
+});
+
+// --- mergeFeatureBranch: forward-sync a reused issue branch --------------------------
+//
+// A reused branch forked from the feature branch at some earlier point. Every commit
+// landed on the feature branch since (a sibling issue's merge, a manual commit) is
+// invisible to it until this runs — otherwise the coder works from a stale base and the
+// gap only surfaces as a conflict at the merge gate, ~45 minutes later.
+
+test("mergeFeatureBranch merges new feature-branch commits into the reused issue branch", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const featureBranch = "feature/x";
+  git("checkout", "-q", "-b", featureBranch);
+  const branch = "crew/x/a";
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "issue-work.txt"), "wip\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "issue wip");
+
+  // A sibling issue merges into the feature branch after this one's branch forked.
+  git("checkout", "-q", featureBranch);
+  writeFileSync(join(mainRoot, "sibling.txt"), "sibling work\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "sibling issue merges into feature branch");
+
+  const worktree = join(mainRoot, "wt-a");
+  git("worktree", "add", worktree, branch);
+
+  const result = mergeFeatureBranch(effects, { worktree, branch, featureBranch });
+
+  assert.equal(result.merged, true);
+  assert.equal(result.conflict, undefined);
+  assert.ok(existsSync(join(worktree, "sibling.txt")), "the feature branch's new file is now visible on the issue branch");
+  assert.ok(existsSync(join(worktree, "issue-work.txt")), "the issue branch's own prior work survives the merge");
+});
+
+test("mergeFeatureBranch is a no-op when the feature branch has nothing new", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const featureBranch = "feature/x";
+  git("checkout", "-q", "-b", featureBranch);
+  const branch = "crew/x/a";
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "issue-work.txt"), "wip\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "issue wip");
+  git("checkout", "-q", featureBranch);
+
+  const worktree = join(mainRoot, "wt-a");
+  git("worktree", "add", worktree, branch);
+  const before = execFileSync("git", ["-C", worktree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+
+  const result = mergeFeatureBranch(effects, { worktree, branch, featureBranch });
+
+  assert.equal(result.merged, false);
+  assert.equal(result.conflict, undefined);
+  const after = execFileSync("git", ["-C", worktree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  assert.equal(after, before, "no merge commit was created");
+});
+
+test("mergeFeatureBranch aborts cleanly and reports a conflict instead of resolving it", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const featureBranch = "feature/x";
+  git("checkout", "-q", "-b", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "base\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "shared file on the feature branch");
+
+  const branch = "crew/x/a";
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "shared.txt"), "issue-side edit\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "issue edits the shared file");
+
+  git("checkout", "-q", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "feature-side edit\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "feature branch edits the same line");
+
+  const worktree = join(mainRoot, "wt-a");
+  git("worktree", "add", worktree, branch);
+
+  const result = mergeFeatureBranch(effects, { worktree, branch, featureBranch });
+
+  assert.equal(result.merged, false);
+  assert.equal(result.conflict, true);
+  assert.match(result.reason, /conflicted/);
+  const status = execFileSync("git", ["-C", worktree, "status", "--porcelain=v1"], { encoding: "utf8" });
+  assert.equal(status.trim(), "", "the merge was aborted — the worktree is left clean");
+});
+
+test("mergeFeatureBranch is a no-op when the branch is itself the feature branch", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const featureBranch = "feature/x";
+  git("checkout", "-q", "-b", featureBranch);
+
+  const result = mergeFeatureBranch(effects, { worktree: mainRoot, branch: featureBranch, featureBranch });
+
+  assert.deepEqual(result, { merged: false });
 });

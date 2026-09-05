@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.29.57]
+
+### Fixed
+
+- **Resuming a `crew-afk` sprint from wherever the shell happened to be sitting could silently
+  adopt the wrong branch as the feature branch**: `session-init.sh`'s default-branch heuristic
+  only checked whether the current branch equaled the repo's default branch, so re-running with a
+  slug that already had a `.scratch/<slug>/sprint.env` from an earlier session — while sitting on
+  an issue branch left over from a prior round, a detached HEAD, or a colleague's branch — read
+  "not on default" as "already on the right one" and never switched to the recorded
+  `FEATURE_BRANCH`. Fixed by pinning to the session's recorded feature branch first, checking it
+  out if the shell isn't already there, before either branch-setup path runs.
+- **A reused issue branch (this round's resume, or a worktree left over from an earlier
+  `crew-afk` invocation) could fork from the feature branch before other issues merged into it**,
+  leaving the coder to work from a stale base and the gap to surface as an unexplained conflict at
+  the merge gate ~45 minutes later. `ensureWorktree` now flags a reused branch, and `runWorker`
+  forward-merges the feature branch into it inside its own worktree before the coder starts; a
+  merge conflict aborts cleanly and reports the issue as blocked instead of masking it.
+  - registry.json: crew-afk 2.2.43 -> 2.2.44 (`orchestrator/lib/pipeline.mjs`,
+    `orchestrator/lib/worktree.mjs`, `skills/crew-afk/scripts/session-init.sh`).
+- **`gen-override.sh`'s per-ecosystem passthrough vars were named and commented as if they only
+  ever carried proxy settings**, which obscured that the same bare-name convention also covers
+  non-proxy secrets — Node's `NPM_TOKEN` for private-registry auth during `npm install` was
+  missing from the list entirely. Renamed `ECO_PROXY_VARS` to `ECO_ENV_PASSTHROUGH` and added
+  `NPM_TOKEN` to the Node ecosystem's list.
+  - registry.json: dep-install 1.3.21 -> 1.3.22 (`skills/dep-install/scripts/gen-override.sh`).
+
 ## [1.29.56]
 
 ### Fixed
