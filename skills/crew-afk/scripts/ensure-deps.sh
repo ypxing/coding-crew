@@ -187,19 +187,26 @@ _cached_credential_target() {
 }
 CACHED_CREDENTIAL_TARGET="$(_cached_credential_target)"
 
-# _merge_mode_cache <docker|host> — writes detect-mode.sh's verdict into the same committed
-# cache, alongside install/env/credential_target, so it is trusted indefinitely instead of
+# _merge_mode_cache <docker|host> [service] — writes detect-mode.sh's verdict (and, in docker
+# mode, detect-service.sh's own verdict on which compose service to use) into the same committed
+# cache, alongside install/env/credential_target, so both are trusted indefinitely instead of
 # re-derived every sprint. Mirrors write-commands-cache.sh's own field-preserving technique
 # (grep out each known field's raw token, rebuild the JSON body, atomic mktemp+mv) rather than
 # calling that script directly: it has no path reachable from here — unlike dep-install's
 # scripts, it gets no platform-neutral install copy, only one buried in each of crew-afk's and
 # solve-issue's own per-platform skill directories.
 _merge_mode_cache() {
-  local mode_val="$1" cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json" old=""
+  local mode_val="$1" service_val="${2:-}" cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json" old=""
   # Mirrors write-commands-cache.sh's FIELDS (test lint typecheck install env credential_target)
-  # plus mode — keep this list in sync if a field is ever added/removed there.
+  # plus install_mode/docker_service — keep this list in sync if a field is ever added/removed there.
   local fields=(test lint typecheck install env credential_target)
   [ -f "$cache" ] && old="$(cat "$cache" 2>/dev/null || true)"
+  # An empty detection this call (e.g. no Makefile, or no recipe named a real service) must not
+  # erase a service a prior call already found — fall back to whatever is already cached.
+  if [ -z "$service_val" ]; then
+    service_val="$(printf '%s' "$old" | grep -o '"docker_service"[[:space:]]*:[[:space:]]*"[^"]*"' \
+      | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true)"
+  fi
   local body="" f v
   for f in "${fields[@]}"; do
     v="$(printf '%s' "$old" | grep -o "\"$f\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" \
@@ -209,10 +216,11 @@ _merge_mode_cache() {
     body="$body\"$f\": $v"
   done
   [ -n "$body" ] && body="$body, "
+  [ -n "$service_val" ] && body="$body\"docker_service\": \"$service_val\", "
   mkdir -p "$MAIN_ROOT_EFFECTIVE/.coding-crew" 2>/dev/null || return 0
   local tmp
   tmp="$(mktemp "$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json.XXXXXX" 2>/dev/null)" || return 0
-  printf '{%s"mode": "%s"}\n' "$body" "$mode_val" > "$tmp"
+  printf '{%s"install_mode": "%s"}\n' "$body" "$mode_val" > "$tmp"
   mv "$tmp" "$cache" 2>/dev/null || rm -f "$tmp"
 }
 
@@ -391,8 +399,8 @@ if [ "$MODE" = "USE_DOCKER" ]; then
   # reader already trusts.
   git -C "$DIR" config --local agent.install-mode docker 2>/dev/null || true
 
-  # Also merge it into .coding-crew/dev-commands.json's "mode" field, written once here (the
-  # MAIN_ROOT call, before any worktree exists — nothing to race with) and read by
+  # Also merge it into .coding-crew/dev-commands.json's "install_mode" field, written once here
+  # (the MAIN_ROOT call, before any worktree exists — nothing to race with) and read by
   # detect-mode.sh ahead of its own Makefile heuristic. The git-config write above can still
   # silently lose a lock race against a sibling issue's own ensure-deps.sh call once
   # worktrees start running concurrently, and it only helps a reader that shares this
@@ -402,7 +410,15 @@ if [ "$MODE" = "USE_DOCKER" ]; then
   # fixed, well-known path is something any copy of detect-mode.sh can agree on regardless of
   # which one is running — and, unlike a .scratch file, it survives to the next sprint too.
   if [ -z "$SLUG" ]; then
-    _merge_mode_cache docker
+    # Same Makefile a docker verdict was inferred from may itself name which compose service
+    # its recipes use (`docker compose run --rm node ...`) — a stronger signal than
+    # gen-override.sh's own file-order guess among several declared services. Best-effort:
+    # an empty result here just leaves docker_service unset, and every reader already falls
+    # back to gen-override.sh's default exactly as before this existed.
+    DETECTED_SERVICE=""
+    [ -f "$DEP_SCRIPTS/detect-service.sh" ] &&
+      DETECTED_SERVICE="$(bash "$DEP_SCRIPTS/detect-service.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" 2>/dev/null || true)"
+    _merge_mode_cache docker "$DETECTED_SERVICE"
 
     # Generate the override as soon as the cache says docker, independent of whatever
     # docker-install.sh decides below — it can exit 2 for reasons that have nothing to do

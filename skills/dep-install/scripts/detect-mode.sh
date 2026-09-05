@@ -10,7 +10,7 @@
 #
 # Detection order:
 #   1. git config --local agent.install-mode (docker|host) — an explicit, documented override
-#   2. $MAIN_ROOT/.coding-crew/dev-commands.json's "mode" field — this project's own committed
+#   2. $MAIN_ROOT/.coding-crew/dev-commands.json's "install_mode" field — this project's own committed
 #      cache (see below), trusted indefinitely like install/env
 #   3. Makefile install/deps/setup/... target: `make -n <target>` dry-run, expanded recipe
 #      invokes docker compose/run/exec → docker; Makefile present but no match → host. The
@@ -34,8 +34,8 @@ done
 
 _mode=$(git -C "$PROJECT_ROOT" config --local agent.install-mode 2>/dev/null || true)
 
-# The cache is this project's own committed answer — .coding-crew/dev-commands.json's "mode"
-# field, written once by ensure-deps.sh's MAIN_ROOT call and trusted indefinitely, the same as
+# The cache is this project's own committed answer — .coding-crew/dev-commands.json's
+# "install_mode" field, written once by ensure-deps.sh's MAIN_ROOT call and trusted indefinitely, the same as
 # its install/env fields, rather than re-derived every sprint. It is also what every later
 # reader agrees on regardless of which install of dep-install it is running — this script's
 # own worktree calls and a worker's independent up-front invocation alike: without a shared
@@ -56,7 +56,7 @@ if [ -z "$_mode" ]; then
   _main_root="${MAIN_ROOT:-}"
   [ -n "$_main_root" ] || _main_root=$(_main_root_of "$PROJECT_ROOT") || _main_root=""
   if [ -n "$_main_root" ] && [ -f "$_main_root/.coding-crew/dev-commands.json" ]; then
-    _cached_mode="$(grep -o '"mode"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    _cached_mode="$(grep -o '"install_mode"[[:space:]]*:[[:space:]]*"[^"]*"' \
         "$_main_root/.coding-crew/dev-commands.json" 2>/dev/null \
       | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true)"
     case "$_cached_mode" in

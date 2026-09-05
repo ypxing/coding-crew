@@ -97,7 +97,7 @@ MK
 
 @test "a cached host verdict in dev-commands.json wins even when the Makefile would say docker" {
   mkdir -p "$WORK/.coding-crew"
-  printf '{"mode": "host"}\n' > "$WORK/.coding-crew/dev-commands.json"
+  printf '{"install_mode": "host"}\n' > "$WORK/.coding-crew/dev-commands.json"
   cat > "$WORK/Makefile" <<'MK'
 deps:
 	docker compose run --rm node make _deps

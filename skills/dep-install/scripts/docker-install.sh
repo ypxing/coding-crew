@@ -103,6 +103,10 @@ fi
 if [[ -z "$SERVICE" ]]; then
   SERVICE="$(git -C "$PROJECT_ROOT" config --local agent.install-service 2>/dev/null || true)"
 fi
+if [[ -z "$SERVICE" ]] && [[ -f "$MAIN_ROOT/.coding-crew/dev-commands.json" ]]; then
+  SERVICE="$(grep -o '"docker_service"[[:space:]]*:[[:space:]]*"[^"]*"' "$MAIN_ROOT/.coding-crew/dev-commands.json" 2>/dev/null \
+    | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true)"
+fi
 if [[ -z "$SERVICE" ]]; then
   SERVICE="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query services 2>/dev/null | head -1)"
 fi

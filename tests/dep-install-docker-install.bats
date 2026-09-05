@@ -244,6 +244,40 @@ YML
   [[ "$output" == *"--rm worker"* ]]
 }
 
+@test "dev-commands.json docker_service wins over the first-service default when no git config is set" {
+  cat > "$WORK/docker-compose.yml" <<'YML'
+services:
+  app:
+    volumes: [".:/opt/app"]
+  worker:
+    volumes: [".:/opt/app"]
+YML
+  mkdir -p "$MAIN/.coding-crew"
+  printf '{"docker_service": "worker"}\n' > "$MAIN/.coding-crew/dev-commands.json"
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--rm worker"* ]]
+}
+
+@test "agent.install-service git config wins over a cached docker_service" {
+  cat > "$WORK/docker-compose.yml" <<'YML'
+services:
+  app:
+    volumes: [".:/opt/app"]
+  worker:
+    volumes: [".:/opt/app"]
+YML
+  mkdir -p "$MAIN/.coding-crew"
+  printf '{"docker_service": "worker"}\n' > "$MAIN/.coding-crew/dev-commands.json"
+  git -C "$WORK" init -q
+  git -C "$WORK" config --local agent.install-service app
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--rm app"* ]]
+}
+
 @test "--install-cmd overrides the per-manifest lockfile table" {
   stub_docker 0
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"

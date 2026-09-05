@@ -348,7 +348,7 @@ STUBEOF
 
   run bash "$SCRIPT" --dir "$WORK"
   [ "$status" -eq 0 ]
-  [[ "$(cat "$WORK/.coding-crew/dev-commands.json")" == *'"mode": "docker"'* ]]
+  [[ "$(cat "$WORK/.coding-crew/dev-commands.json")" == *'"install_mode": "docker"'* ]]
 
   # A fresh detect-mode.sh call, unrelated to the stub above, with no git config set at
   # all — it must still say USE_DOCKER purely from the cache file.
@@ -372,7 +372,7 @@ STUBEOF
   cache="$(cat "$WORK/.coding-crew/dev-commands.json")"
   [[ "$cache" == *'"test": "npm test"'* ]]
   [[ "$cache" == *'"lint": null'* ]]
-  [[ "$cache" == *'"mode": "docker"'* ]]
+  [[ "$cache" == *'"install_mode": "docker"'* ]]
 }
 
 @test "the MAIN_ROOT call still runs docker-install.sh when a stale host node_modules is present" {

@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.29.49]
+
+### Fixed
+
+- **A multi-service `docker-compose.yml` could route every check through the wrong service**:
+  `verify-worktree.sh`/`docker-install.sh` fell back to whichever service `gen-override.sh`
+  happened to list first, with no awareness of which service actually has the project's
+  toolchain (e.g. a `node` service alongside an unrelated `compass` service with no `pnpm`) —
+  every typecheck/lint/test call silently ran against the wrong container. A new
+  `detect-service.sh` best-effort probes a project's own Makefile recipes (`docker compose run
+  --rm node ...`) for the service a human already told it to use, and `ensure-deps.sh` caches
+  the result as `dev-commands.json`'s new `"docker_service"` field — read by both scripts ahead
+  of the file-order fallback, alongside the existing `agent.install-service` git-config override.
+  A miss leaves the field unset and every reader falls back to today's behavior unchanged.
+- **Renamed `dev-commands.json`'s `"mode"` field to `"install_mode"`** for clarity now that it
+  has a `"docker_service"` sibling — a bare `"mode"` read ambiguously next to `"install"`
+  (the install command). `detect-mode.sh` and `ensure-deps.sh`'s `_merge_mode_cache` both read
+  and write the new name; an old cache with only `"mode"` simply misses once and re-derives.
+  - registry.json: crew-afk 2.2.38 -> 2.2.39 (`skills/crew-afk/scripts/ensure-deps.sh`,
+    `skills/crew-afk/scripts/verify-worktree.sh`), dep-install 1.3.15 -> 1.3.16
+    (`skills/dep-install/scripts/detect-mode.sh`, `skills/dep-install/scripts/docker-install.sh`,
+    new `skills/dep-install/scripts/detect-service.sh`).
+
 ## [1.29.48]
 
 ### Fixed

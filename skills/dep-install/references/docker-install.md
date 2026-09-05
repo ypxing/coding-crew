@@ -110,6 +110,11 @@ bash "<skill-dir>/scripts/gen-override.sh" \
 
 The script prints what it wrote, which ecosystem it detected, and which services it found. If it exits non-zero, stop and report `BLOCKED` with the error message.
 
+If more than one service was found, use `dev-commands.json`'s `"docker_service"` field (Step 0 of
+`SKILL.md`) as `<service>` below rather than picking one — it is not necessarily the first
+service listed, and an unrelated service (a db, a sidecar with a different toolchain) will not
+have the package manager the install/verify commands below need.
+
 The override file is written to `$MAIN_ROOT/docker-compose.override.yml` and is shared across all worktrees — do not write it to `PROJECT_ROOT`.
 
 ### 2. Run install once

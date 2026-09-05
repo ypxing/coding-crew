@@ -204,6 +204,33 @@ EOF
   [ "${args[7]}" = "worker" ]
 }
 
+@test "docker mode: cached docker_service wins over the first detected service when no git config is set" {
+  cat > "$TEMP_DIR/docker-compose.yml" <<'YML'
+services:
+  app:
+    volumes: [".:/opt/app"]
+  worker:
+    volumes: [".:/opt/app"]
+YML
+  cat > "$TEMP_DIR/package.json" <<'JSON'
+{"name":"fixture"}
+JSON
+  echo '{}' > "$TEMP_DIR/package-lock.json"
+  git -C "$TEMP_DIR" config --local agent.install-mode docker
+  echo "services: {}" > "$TEMP_DIR/docker-compose.override.yml"
+  mkdir -p "$TEMP_DIR/.coding-crew"
+  printf '{"docker_service": "worker"}\n' > "$TEMP_DIR/.coding-crew/dev-commands.json"
+  cat > "$TEMP_DIR/Makefile" <<EOF
+test:
+	@true
+EOF
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  mapfile -t args < "$DOCKER_LOG"
+  [ "${args[7]}" = "worker" ]
+}
+
 # ─── fallback to host: every gap in the docker signal must be silent ────────
 
 @test "host mode by default: docker is never invoked when agent.install-mode is unset" {

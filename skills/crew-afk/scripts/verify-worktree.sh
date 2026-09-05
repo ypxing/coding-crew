@@ -155,6 +155,10 @@ _detect_docker_mode() {
 
   local service
   service=$(git -C "$WORKTREE_DIR" config --local agent.install-service 2>/dev/null || true)
+  if [ -z "$service" ] && [ -f "$main_root/.coding-crew/dev-commands.json" ]; then
+    service=$(grep -o '"docker_service"[[:space:]]*:[[:space:]]*"[^"]*"' "$main_root/.coding-crew/dev-commands.json" 2>/dev/null \
+      | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true)
+  fi
   if [ -z "$service" ]; then
     service=$(bash "$scripts_dir/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "$main_root" --query services 2>/dev/null | head -1)
   fi
