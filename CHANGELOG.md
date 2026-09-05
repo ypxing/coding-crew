@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.29.56]
+
+### Fixed
+
+- **The git-common mount's per-worktree `GIT_DIR`/`GIT_COMMON_DIR`/`hooksPath` redirect never
+  reached a project's own nested `docker compose run`**: `gen-override.sh --query git-env` only
+  ever gets consumed as `-e KEY=VALUE` flags on a `docker compose run` our own scripts invoke
+  directly (`docker-install.sh`, `verify-worktree.sh`'s non-nested path). When a project's own
+  Makefile/script recipe shells out to `docker compose run` itself — exactly the case
+  `detect-docker-nesting.sh` exists to detect, so we run it on the host instead of nesting it —
+  there is no compose invocation of ours to attach `-e` flags to. The shared override's
+  `/git-common` mount still reached that nested container for free (compose auto-discovers
+  `docker-compose.override.yml`), but the env vars did not, so git inside it fell back to the
+  worktree's unmountable absolute host `gitdir:` pointer and any git command (most commonly a
+  package manager's postinstall hook running `lefthook install`) failed with
+  `fatal: not a git repository`. Fixed in two parts: `gen-override.sh` now also emits
+  `GIT_COMMON_DIR`/`GIT_DIR`/`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0` as bare
+  `environment:` passthrough entries in the shared file (same convention as the proxy vars —
+  names only, no worktree-specific value ever written to the shared file); `verify-worktree.sh`'s
+  docker-nesting branch and `ensure-deps.sh`'s cached-install host exec now `export` the same
+  `--query git-env` output into their own process env before running the host command, so its
+  inner `docker compose run` picks the values up from there instead of from a `-e` flag.
+  - registry.json: dep-install 1.3.20 -> 1.3.21 (`skills/dep-install/scripts/gen-override.sh`),
+    crew-afk 2.2.42 -> 2.2.43 (`skills/crew-afk/scripts/verify-worktree.sh`,
+    `skills/crew-afk/scripts/ensure-deps.sh`).
+
 ## [1.29.55]
 
 ### Fixed

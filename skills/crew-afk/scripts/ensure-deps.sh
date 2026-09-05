@@ -525,14 +525,28 @@ OUT_FILE="$(mktemp)"
 trap 'rm -f "$OUT_FILE"' EXIT
 
 if [ -n "$CACHED_INSTALL" ]; then
+  # $CACHED_INSTALL is a documented override (step 1b) — it can itself be a Makefile
+  # target whose recipe invokes `docker compose run` (this is host mode overall, so
+  # nothing here nests it inside another container, but the recipe's own nested call
+  # still needs $DIR's GIT_DIR/GIT_COMMON_DIR/hooksPath redirect). Exported, not `-e`,
+  # since there is no `docker compose run` of ours here to attach flags to — the shared
+  # override's bare passthrough entries pick these up from process env instead. See
+  # gen-override.sh's "Nested docker calls" header comment.
+  GIT_ENV_LINES=()
+  if [ -n "$DEP_SCRIPTS" ] && [ -f "$DEP_SCRIPTS/gen-override.sh" ]; then
+    while IFS= read -r _git_env_line; do
+      [ -n "$_git_env_line" ] && GIT_ENV_LINES+=("$_git_env_line")
+    done < <(bash "$DEP_SCRIPTS/gen-override.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" --query git-env 2>/dev/null || true)
+  fi
+
   # Run in $DIR, not $MAIN_ROOT_EFFECTIVE — this call installs into whichever directory
   # was passed as --dir (a worktree, or the main root itself), the same target
   # host-install.sh would have used.
   if [ -n "$TIMEOUT_BIN" ]; then
-    "$TIMEOUT_BIN" "$TIMEOUT" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
+    "$TIMEOUT_BIN" "$TIMEOUT" env "${GIT_ENV_LINES[@]}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
       >"$OUT_FILE" 2>&1
   else
-    bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" >"$OUT_FILE" 2>&1
+    env "${GIT_ENV_LINES[@]}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" >"$OUT_FILE" 2>&1
   fi
   RC=$?
   CMD="$CACHED_INSTALL"

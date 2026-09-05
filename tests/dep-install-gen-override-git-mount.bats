@@ -11,11 +11,15 @@
 #     gen-override.sh call happens to (re)generate that shared file — the mount itself is
 #     identical for every worktree, since it only ever depends on MAIN_ROOT.
 #   - the env vars that point a *specific* worktree's container at its own subdirectory under
-#     that mount (GIT_DIR, plus the hooksPath redirect) are never written to the shared file —
-#     a caller resolves them per invocation via `--query git-env` and passes them as
-#     `docker compose run -e KEY=VALUE` flags instead. Baking one worktree's GIT_DIR into the
-#     file every worktree shares would be wrong for every other worktree reading it, and racy
-#     under concurrent worktrees regenerating it.
+#     that mount (GIT_DIR, plus the hooksPath redirect) never have their *values* written to
+#     the shared file — a caller resolves them per invocation via `--query git-env` and passes
+#     them as `docker compose run -e KEY=VALUE` flags instead. Baking one worktree's GIT_DIR
+#     value into the file every worktree shares would be wrong for every other worktree reading
+#     it, and racy under concurrent worktrees regenerating it. The shared file does carry the
+#     var *names* as bare `environment:` passthrough entries (no value, same convention as the
+#     proxy vars) so a project's own nested `docker compose run` — one our own scripts don't
+#     invoke directly, so there is no `-e` flag to attach them to — still picks the values up
+#     from whatever process env its caller exported them into first.
 # A plain (non-worktree) checkout's `.git` is already a real, writable directory reachable
 # through the project's normal bind mount, so none of this applies there.
 
@@ -64,10 +68,12 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"$MAIN/.git:/git-common:ro"* ]]
   [[ "$output" =~ wt_[A-Za-z0-9_]+_git_info:/git-common/info ]]
-  # never written to the shared file — these are per-invocation, via --query git-env
-  [[ "$output" != *"GIT_COMMON_DIR"* ]]
-  [[ "$output" != *"GIT_DIR"* ]]
-  [[ "$output" != *"GIT_CONFIG"* ]]
+  # bare passthrough names are expected (see header comment); no worktree-specific
+  # value is ever written to the shared file
+  [[ "$output" == *"- GIT_COMMON_DIR"* ]]
+  [[ "$output" == *"- GIT_DIR"* ]]
+  [[ "$output" != *"GIT_DIR=/git-common"* ]]
+  [[ "$output" != *"GIT_CONFIG_KEY_0=core.hooksPath"* ]]
 }
 
 @test "the shared override's mount content is identical whether generated from MAIN_ROOT or from a worktree" {

@@ -128,11 +128,18 @@ DOCKER_CONTAINER_SRC=""
 DOCKER_COMPOSE_FILE=""
 DOCKER_OVERRIDE_FILE=""
 DEP_SCRIPTS_DIR=""
-# -e flags for this worktree's own GIT_DIR/GIT_COMMON_DIR/hooksPath redirect — resolved
-# fresh per invocation via gen-override.sh's --query git-env, never baked into the shared
-# override file (see gen-override.sh's "Git metadata mount" header comment for why: that
-# file is shared across every worktree, but GIT_DIR is worktree-specific).
+# This worktree's own GIT_DIR/GIT_COMMON_DIR/hooksPath redirect — resolved fresh per
+# invocation via gen-override.sh's --query git-env, never baked into the shared override
+# file (see gen-override.sh's "Git metadata mount" header comment for why: that file is
+# shared across every worktree, but GIT_DIR is worktree-specific). Kept in two forms:
+# DOCKER_GIT_ENV_ARGS as `-e KEY=VALUE` flags for a `docker compose run` this script calls
+# directly, and DOCKER_GIT_ENV_LINES as bare `KEY=VALUE` for `env` to export ahead of a
+# docker-nesting command this script instead runs on the host (see gen-override.sh's
+# "Nested docker calls" header comment) — that command's own inner `docker compose run`
+# only picks the values up via the shared override's bare passthrough entries if they are
+# already in its caller's process env, which no `-e` flag reaches.
 DOCKER_GIT_ENV_ARGS=()
+DOCKER_GIT_ENV_LINES=()
 
 # _detect_docker_mode — populates the DOCKER_* globals when this worktree's checks must
 # run through `docker compose run` instead of directly on the host.
@@ -174,8 +181,12 @@ _detect_docker_mode() {
   [ -n "$container_src" ] || return 1
 
   DOCKER_GIT_ENV_ARGS=()
+  DOCKER_GIT_ENV_LINES=()
   while IFS= read -r _git_env_line; do
-    [ -n "$_git_env_line" ] && DOCKER_GIT_ENV_ARGS+=(-e "$_git_env_line")
+    if [ -n "$_git_env_line" ]; then
+      DOCKER_GIT_ENV_ARGS+=(-e "$_git_env_line")
+      DOCKER_GIT_ENV_LINES+=("$_git_env_line")
+    fi
   done < <(bash "$scripts_dir/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "$main_root" --query git-env 2>/dev/null || true)
 
   DOCKER_MODE=1
@@ -593,7 +604,11 @@ _run_category() {
     # --install-cmd guard via detect-docker-nesting.sh, so the two heuristics can't drift.
     if [ -n "$DEP_SCRIPTS_DIR" ] && bash "$DEP_SCRIPTS_DIR/detect-docker-nesting.sh" --dir "$WORKTREE_DIR" --cmd "$cmd"; then
       echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd"
-      _exec_and_report "$label" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
+      # Exported (not `-e`, there is no outer `docker compose run` of ours here) so the
+      # recipe's own nested `docker compose run` still picks up GIT_DIR/GIT_COMMON_DIR/
+      # hooksPath via the shared override's bare passthrough entries — see gen-override.sh's
+      # "Nested docker calls" header comment.
+      _exec_and_report "$label" env "${DOCKER_GIT_ENV_LINES[@]}" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
       return
     fi
 

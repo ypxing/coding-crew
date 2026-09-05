@@ -75,15 +75,19 @@
 #     the same for every worktree, since it only ever depends on MAIN_ROOT — safe to bake into
 #     the shared file unconditionally.
 #   - The env vars that point a specific container at a specific worktree's subdirectory under
-#     that mount are never written to the file. A caller resolves them fresh, per invocation,
-#     via `--query git-env` (see below) and passes them as `docker compose run -e KEY=VALUE`
-#     flags — cheap, stateless, and safe under concurrency since nothing is written to disk.
+#     that mount are never *valued* in the file — only their names, as bare `environment:`
+#     passthrough entries (the same convention as the proxy vars below them), so nothing
+#     worktree-specific is baked into the one file every worktree shares. A caller resolves the
+#     actual values fresh, per invocation, via `--query git-env` (see below) and either passes
+#     them as `docker compose run -e KEY=VALUE` flags on a compose call it makes directly, or
+#     `export`s them into its own process env first when it can't — see "Nested docker calls"
+#     below. Cheap, stateless, and safe under concurrency since nothing is written to disk.
 #
-# `--query git-env`: prints, one `KEY=VALUE` per line, the env vars a caller should pass on its
-# own `docker compose run` for *this* `--project-root` — empty output when `--project-root` is
-# not a linked worktree (a plain checkout's `.git` is already a real, writable directory reachable
-# through the project's normal bind mount; pointing GIT_DIR there would only take away write
-# access that already worked), or when `CREW_GIT_MOUNT=off`:
+# `--query git-env`: prints, one `KEY=VALUE` per line, the env vars a caller should pass (or
+# export) for *this* `--project-root` — empty output when `--project-root` is not a linked
+# worktree (a plain checkout's `.git` is already a real, writable directory reachable through the
+# project's normal bind mount; pointing GIT_DIR there would only take away write access that
+# already worked), or when `CREW_GIT_MOUNT=off`:
 #   GIT_COMMON_DIR=/git-common
 #   GIT_DIR=/git-common/worktrees/<name>
 #   GIT_CONFIG_COUNT=1
@@ -98,6 +102,18 @@
 # writable `info/` overlay baked into the shared file instead, not by an env var.
 #   CREW_GIT_MOUNT=on   (default) mount in the shared file; --query git-env resolves per-worktree
 #   CREW_GIT_MOUNT=off  never mount, and --query git-env always prints nothing
+#
+# Nested docker calls: a project's own Makefile/script recipe can invoke `docker compose run`
+# itself (detect-docker-nesting.sh exists to spot this). A caller that finds one of those runs it
+# directly on the host — nesting it inside another `docker compose run` would need a docker CLI
+# that container doesn't have — so there is no compose invocation of the caller's own to attach
+# `-e` flags to. The mount above still reaches that nested container for free, since compose
+# auto-discovers `docker-compose.override.yml` sitting next to the project's own compose file
+# (see "Worktree symlink"), but the *values* would not without the bare passthrough entries
+# emitted below: compose reads a bare `environment: - GIT_DIR` entry from whatever process
+# actually invokes `docker compose`, so a caller that `export`s the same `--query git-env` output
+# into its own shell before running the nested command is enough for the values to reach the
+# inner container too, with no `-e` flag involved at all.
 #
 # Exit codes:
 #   0  success
@@ -469,11 +485,23 @@ generate_yaml() {
     if [[ -n "$RESOLVED_PLATFORM" ]]; then
       echo "    platform: ${RESOLVED_PLATFORM}"
     fi
-    if [[ ${#ECO_PROXY_VARS[@]} -gt 0 ]]; then
+    if [[ ${#ECO_PROXY_VARS[@]} -gt 0 || -n "$GIT_COMMON_DIR_ABS" ]]; then
       echo "    environment:"
       for var in "${ECO_PROXY_VARS[@]}"; do
         echo "      - ${var}"
       done
+      if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
+        # Bare passthrough — no value here on purpose (see "Nested docker calls" above):
+        # compose reads these from whatever process actually invokes `docker compose run`,
+        # never from this file, so the same names work whether that invocation is one of
+        # this repo's own (which also still passes them as explicit `-e KEY=VALUE`) or a
+        # project's own nested one (which only gets them if its caller exported them first).
+        echo "      - GIT_COMMON_DIR"
+        echo "      - GIT_DIR"
+        echo "      - GIT_CONFIG_COUNT"
+        echo "      - GIT_CONFIG_KEY_0"
+        echo "      - GIT_CONFIG_VALUE_0"
+      fi
     fi
     echo "    volumes:"
     for i in "${!VOL_NAMES[@]}"; do
