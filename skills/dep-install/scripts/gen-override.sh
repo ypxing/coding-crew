@@ -53,21 +53,24 @@
 #                                    for images that genuinely are single-arch and a host
 #                                    that has emulation deliberately set up for them
 #
-# Git metadata mount: a worktree's `.git` is a file (`gitdir: /abs/host/path/...`) pointing
-# at MAIN_ROOT's `.git/worktrees/<name>`, which in turn needs MAIN_ROOT's `.git` (objects,
-# refs, hooks) via its own `commondir` pointer. A container never has that absolute host path,
-# so any git command run inside one — most commonly a package manager's postinstall hook
-# (lefthook/husky/simple-git-hooks running `git rev-parse --git-path hooks`) — fails with
+# Git metadata mount: a *linked* worktree's `.git` is a file (`gitdir: /abs/host/path/...`)
+# pointing at MAIN_ROOT's `.git/worktrees/<name>`, which in turn needs MAIN_ROOT's `.git`
+# (objects, refs, hooks) via its own `commondir` pointer. A container never has that absolute
+# host path, so any git command run inside one — most commonly a package manager's postinstall
+# hook (lefthook/husky/simple-git-hooks running `git rev-parse --git-path hooks`) — fails with
 # `fatal: not a git repository: <path>`, which then fails the whole install step it was
 # incidental to. Fixed by mounting MAIN_ROOT's real `.git` dir read-only at a fixed container
 # path (`/git-common`) and pointing `GIT_DIR`/`GIT_COMMON_DIR` at it explicitly, so git never
-# needs to resolve the unmountable absolute host path at all. Resolved once here (not per
-# ecosystem — the failure mode isn't node-specific: python's setuptools_scm, ruby's
-# overcommit, etc. shell out to git too) via `git -C PROJECT_ROOT rev-parse --git-dir
-# --git-common-dir`, which fails soft (no mount emitted) when PROJECT_ROOT isn't a real git
-# checkout at all.
-#   CREW_GIT_MOUNT=on   (default) mount + set GIT_DIR/GIT_COMMON_DIR when git resolves
-#   CREW_GIT_MOUNT=off  never mount, regardless of whether PROJECT_ROOT is a git checkout
+# needs to resolve the unmountable absolute host path at all. Applies only when PROJECT_ROOT's
+# gitdir actually sits under commondir/worktrees/<name> — a plain (non-worktree) checkout's
+# `.git` is already a real, writable directory reachable through the project's normal bind
+# mount, so mounting anything there would only take away write access that already worked.
+# Hooks live in commondir, which the mount above makes read-only, so a hook installer's write
+# there is redirected to a scratch `core.hooksPath` (`/tmp/git-hooks-container`) via
+# `GIT_CONFIG_*` env vars — git's own env-config always outranks file-based config, and no
+# hooks actually need to *run* inside the container, only install without erroring.
+#   CREW_GIT_MOUNT=on   (default) mount + redirect hooksPath when PROJECT_ROOT is a linked worktree
+#   CREW_GIT_MOUNT=off  never mount, regardless of whether PROJECT_ROOT is a linked worktree
 #
 # Exit codes:
 #   0  success
@@ -314,15 +317,19 @@ esac
 GIT_COMMON_DIR_ABS=""
 GIT_DIR_CONTAINER=""
 if [[ "$GIT_MOUNT" == "on" ]]; then
-  GIT_COMMON_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-  if [[ -n "$GIT_COMMON_DIR_ABS" && -d "$GIT_COMMON_DIR_ABS" ]]; then
+  GIT_COMMON_DIR_ABS_CANDIDATE="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [[ -n "$GIT_COMMON_DIR_ABS_CANDIDATE" && -d "$GIT_COMMON_DIR_ABS_CANDIDATE" ]]; then
     GIT_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+    # Only a *linked* worktree's gitdir sits under commondir/worktrees/<name> — that's the
+    # only case whose .git file points at a host path the container can't reach. A plain
+    # checkout's .git is a real directory already reachable (writable) through the project's
+    # normal bind mount, so mounting anything here would only take that write access away.
     case "$GIT_DIR_ABS" in
-      "$GIT_COMMON_DIR_ABS"/*) GIT_DIR_CONTAINER="/git-common/${GIT_DIR_ABS#"$GIT_COMMON_DIR_ABS"/}" ;;
-      *)                       GIT_DIR_CONTAINER="/git-common" ;;
+      "$GIT_COMMON_DIR_ABS_CANDIDATE"/worktrees/*)
+        GIT_COMMON_DIR_ABS="$GIT_COMMON_DIR_ABS_CANDIDATE"
+        GIT_DIR_CONTAINER="/git-common/${GIT_DIR_ABS#"$GIT_COMMON_DIR_ABS_CANDIDATE"/}"
+        ;;
     esac
-  else
-    GIT_COMMON_DIR_ABS=""
   fi
 fi
 
@@ -431,6 +438,14 @@ generate_yaml() {
       if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
         echo "      - GIT_COMMON_DIR=/git-common"
         echo "      - GIT_DIR=${GIT_DIR_CONTAINER}"
+        # Hooks live in commondir (shared across worktrees), which the mount below is
+        # read-only — a postinstall hook installer (lefthook/husky/simple-git-hooks) writing
+        # there would fail with "read-only file system". Git's env-config vars take priority
+        # over any file-based core.hooksPath, so this redirects that one write to a scratch
+        # dir without touching the read-only mount or the rest of git's config resolution.
+        echo "      - GIT_CONFIG_COUNT=1"
+        echo "      - GIT_CONFIG_KEY_0=core.hooksPath"
+        echo "      - GIT_CONFIG_VALUE_0=/tmp/git-hooks-container"
       fi
     fi
     echo "    volumes:"
@@ -465,11 +480,11 @@ else
   echo "  sandbox:   $([[ "$SANDBOX" == "1" ]] && echo true || echo false)"
   echo "  platform:  ${RESOLVED_PLATFORM:-unset, project pin unchanged}"
   if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
-    echo "  git:       mounted read-only at /git-common (GIT_DIR=${GIT_DIR_CONTAINER})"
+    echo "  git:       mounted read-only at /git-common (GIT_DIR=${GIT_DIR_CONTAINER}, hooksPath redirected to /tmp/git-hooks-container)"
   elif [[ "$GIT_MOUNT" == "off" ]]; then
     echo "  git:       not mounted (CREW_GIT_MOUNT=off)"
   else
-    echo "  git:       not mounted (no git checkout detected at project root)"
+    echo "  git:       not mounted (project root is not a linked worktree)"
   fi
 
   # A worktree (PROJECT_ROOT distinct from MAIN_ROOT) also gets its own symlink to this

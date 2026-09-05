@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.29.51]
+
+### Fixed
+
+- **1.29.50's git metadata mount broke installs it had never touched before**: it fired for
+  *any* git checkout, not just linked worktrees, so a plain (non-worktree) checkout's already-
+  writable `.git` (reachable through the project's normal bind mount) got redirected to the new
+  read-only `/git-common` mount instead — breaking `lefthook install`/`husky`/etc. with
+  `read-only file system` where nothing was broken before. Also, since git hooks always live in
+  the shared commondir (never per-worktree), even a genuine linked worktree hit the same
+  read-only failure on hook install. `gen-override.sh` now only mounts/overrides
+  `GIT_DIR`/`GIT_COMMON_DIR` when `PROJECT_ROOT`'s gitdir actually sits under
+  `commondir/worktrees/<name>` (a real linked worktree), and redirects `core.hooksPath` to a
+  writable scratch dir (`/tmp/git-hooks-container`) via `GIT_CONFIG_*` env vars so a hook
+  installer's write never touches the read-only mount at all.
+  - registry.json: dep-install 1.3.17 -> 1.3.18 (`skills/dep-install/scripts/gen-override.sh`,
+    `skills/dep-install/references/docker-install.md`).
+
 ## [1.29.50]
 
 ### Added

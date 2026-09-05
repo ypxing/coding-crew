@@ -2,12 +2,15 @@
 
 # gen-override.sh: the git metadata mount (CREW_GIT_MOUNT).
 #
-# A worktree's `.git` is a file pointing at an absolute host path inside MAIN_ROOT's real
-# `.git` dir. A container never has that path, so any git command run inside one — most
+# A *linked* worktree's `.git` is a file pointing at an absolute host path inside MAIN_ROOT's
+# real `.git` dir. A container never has that path, so any git command run inside one — most
 # commonly a package manager's postinstall hook (lefthook/husky/simple-git-hooks) — fails
 # with `fatal: not a git repository`. gen-override.sh fixes this by mounting MAIN_ROOT's
 # `.git` read-only at a fixed container path and pointing GIT_DIR/GIT_COMMON_DIR at it, so
-# git never needs to resolve the unmountable host path at all.
+# git never needs to resolve the unmountable host path at all — and since that mount is
+# read-only, redirects core.hooksPath to a writable scratch dir so a hook installer's write
+# doesn't hit it. A plain (non-worktree) checkout's `.git` is already a real, writable
+# directory reachable through the project's normal bind mount, so none of this applies there.
 
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
 SCRIPT="$SCRIPTS_DIR/gen-override.sh"
@@ -41,7 +44,7 @@ teardown() {
   return 0
 }
 
-@test "a real worktree gets GIT_COMMON_DIR/GIT_DIR env vars and a read-only bind mount of MAIN_ROOT's .git" {
+@test "a real worktree gets GIT_COMMON_DIR/GIT_DIR/hooksPath env vars and a read-only bind mount of MAIN_ROOT's .git" {
   MAIN=$(mktemp -d)
   git -C "$MAIN" init -q -b main
   git -C "$MAIN" config user.email t@test
@@ -58,9 +61,12 @@ teardown() {
   [[ "$output" == *"GIT_COMMON_DIR=/git-common"* ]]
   [[ "$output" == *"GIT_DIR=/git-common/worktrees/$(basename "$WORK")"* ]]
   [[ "$output" == *"$MAIN/.git:/git-common:ro"* ]]
+  [[ "$output" == *"GIT_CONFIG_COUNT=1"* ]]
+  [[ "$output" == *"GIT_CONFIG_KEY_0=core.hooksPath"* ]]
+  [[ "$output" == *"GIT_CONFIG_VALUE_0=/tmp/git-hooks-container"* ]]
 }
 
-@test "PROJECT_ROOT equal to MAIN_ROOT (no worktree) mounts .git with GIT_DIR pointing at the mount root" {
+@test "PROJECT_ROOT equal to MAIN_ROOT (no worktree) mounts nothing — .git is already writable via the project bind mount" {
   MAIN=$(mktemp -d)
   git -C "$MAIN" init -q -b main
   git -C "$MAIN" config user.email t@test
@@ -71,10 +77,10 @@ teardown() {
 
   run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"GIT_COMMON_DIR=/git-common"* ]]
-  [[ "$output" == *"GIT_DIR=/git-common"* ]]
-  [[ "$output" != *"GIT_DIR=/git-common/"* ]]
-  [[ "$output" == *"$MAIN/.git:/git-common:ro"* ]]
+  [[ "$output" != *"GIT_COMMON_DIR"* ]]
+  [[ "$output" != *"GIT_DIR"* ]]
+  [[ "$output" != *"GIT_CONFIG"* ]]
+  [[ "$output" != *"/git-common"* ]]
 }
 
 @test "CREW_GIT_MOUNT=off skips the mount and env vars even for a real worktree" {
@@ -93,6 +99,7 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" != *"GIT_COMMON_DIR"* ]]
   [[ "$output" != *"GIT_DIR"* ]]
+  [[ "$output" != *"GIT_CONFIG"* ]]
   [[ "$output" != *"/git-common"* ]]
 }
 
@@ -118,7 +125,7 @@ teardown() {
   [[ "$output" != *"/git-common"* ]]
 }
 
-@test "the written override's summary reports the git mount status" {
+@test "the written override's summary reports the git mount status for a real worktree" {
   MAIN=$(mktemp -d)
   git -C "$MAIN" init -q -b main
   git -C "$MAIN" config user.email t@test
@@ -133,4 +140,18 @@ teardown() {
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
   [[ "$output" == *"git:       mounted read-only at /git-common"* ]]
+}
+
+@test "the written override's summary reports no mount for a plain (non-worktree) checkout" {
+  MAIN=$(mktemp -d)
+  git -C "$MAIN" init -q -b main
+  git -C "$MAIN" config user.email t@test
+  git -C "$MAIN" config user.name T
+  fixture_compose "$MAIN"
+  git -C "$MAIN" add -A
+  git -C "$MAIN" commit -q -m init
+
+  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"git:       not mounted (project root is not a linked worktree)"* ]]
 }
