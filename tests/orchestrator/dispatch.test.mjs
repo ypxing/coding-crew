@@ -830,6 +830,10 @@ test("dispatchViaHerdr: workspace create, start, prompt, read, close — the hap
     "--",
     "--permission-mode",
     "bypassPermissions",
+    "--add-dir",
+    root,
+    "--agent",
+    "crew-coder",
   ]);
   assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w1"], "the dispatch's own workspace is always closed");
   const promptCall = effects._calls.find((c) => c[1] === "agent" && c[2] === "prompt");
@@ -873,6 +877,10 @@ test("dispatchViaHerdr sanitises an issue slug for herdr's agent name but keeps 
     "--",
     "--permission-mode",
     "bypassPermissions",
+    "--add-dir",
+    root,
+    "--agent",
+    "crew-coder",
   ]);
 });
 

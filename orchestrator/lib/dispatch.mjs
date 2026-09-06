@@ -540,6 +540,18 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
   // --wait` still returned as if the turn finished (herdr's idle-detection treats a pane
   // sitting at that dialog as idle too), leaving an empty reply that reads as a crash
   // rather than a stuck permission gate.
+  //
+  // --agent <spec.agent>, same as buildDispatch's claude -p branch: this is the whole
+  // contract (see the file header) that loads .claude/agents/<agent>.md and binds its
+  // tools: allowlist. Without it a herdr-driven session is plain unscoped Claude Code, not
+  // crew-coder/crew-triage/crew-code-reviewer, and the prompt file (task content only, no
+  // protocol body — see the header comment) has nothing to tell it otherwise.
+  //
+  // --add-dir mainRoot, same as buildDispatch's claude -p branch: the coder's cwd is its
+  // own worktree, but its prompt tells it to write a structured sidecar report under
+  // mainRoot's .scratch/ (see pipeline.mjs's reportPath) — outside that cwd. --add-dir is
+  // the directory allowlist bypassPermissions does not touch (that flag only removes the
+  // tool-confirmation prompt), so without it that write is out of scope.
   const startArgs = [
     "agent",
     "start",
@@ -551,6 +563,10 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
     "--",
     "--permission-mode",
     "bypassPermissions",
+    "--add-dir",
+    spec.mainRoot,
+    "--agent",
+    spec.agent,
   ];
   if (spec.model) startArgs.push("--model", spec.model);
   const start = herdrExec(effects, startArgs, bound);

@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.29.62]
+
+### Fixed
+
+- **`dispatchViaHerdr` now passes `--agent <spec.agent>` and `--add-dir <mainRoot>` to
+  `herdr agent start`.** Without `--agent`, a herdr-driven session was plain unscoped Claude
+  Code, not crew-coder/crew-triage/crew-code-reviewer — the prompt file herdr reads is task
+  content only, with no protocol body, and `--agent` is what tells the session to load
+  `.claude/agents/<agent>.md` and bind its tools: allowlist. Without `--add-dir`, a coder's
+  structured sidecar report (written under `mainRoot`'s `.scratch/`, outside the worktree cwd
+  the session actually runs in) fell outside herdr's directory allowlist — `bypassPermissions`
+  only removes the tool-confirmation prompt, it does not widen scope.
+- **crew-afk's triage and review dispatches now honor `--herdr`.** `runTriage` and `runReview`
+  in `pipeline.mjs` were not forwarding `options.herdr` down to `dispatch()`, so with `--herdr`
+  set only the coder actually ran through herdr while triage and review silently fell back to
+  the headless `claude -p` path.
+
 ## [1.29.61]
 
 ### Fixed

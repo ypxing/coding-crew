@@ -526,6 +526,7 @@ async function runTriage(ctx, worker, verifyStdout) {
       logFile: sprint.traceLog,
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
+      herdr: options.herdr,
     },
     {
       timeoutMs: options.reviewTimeoutMs,
@@ -576,6 +577,7 @@ async function runReview(ctx, worker, checks) {
       logFile: sprint.traceLog,
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
+      herdr: options.herdr,
     },
     {
       timeoutMs: options.reviewTimeoutMs,
