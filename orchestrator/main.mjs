@@ -373,7 +373,9 @@ async function main() {
   }
 
   // --- run -----------------------------------------------------------------
-  const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"]);
+  const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
+    herdr: options.herdr,
+  });
   if (problems.length) {
     console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));
     return 1;

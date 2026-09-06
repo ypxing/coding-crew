@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.65]
+
+### Fixed
+
+- **`crew-afk run` with `CREW_HERDR_ENABLED=1` now actually checks herdr's CLI/server at
+  startup, like `doctor`/`plan` already did.** The `run` command's own preflight call was
+  missing the `{ herdr: options.herdr }` option those two pass, so a sprint would silently
+  skip that check and only discover herdr's CLI or server was unavailable mid-round, on the
+  first dispatch's own failure, instead of failing fast with one clear message.
+
 ## [1.29.64]
 
 ### Added
