@@ -376,11 +376,188 @@ export function extractFinalText(platform, lines) {
 }
 
 /**
+ * herdr (https://herdr.dev) drives coding agents as long-lived interactive REPLs inside
+ * panes it manages — idle/working/blocked/done/unknown, not a one-shot batch run — so this
+ * is a second dispatch path, not a flag on buildDispatch's claude branch. Verified live
+ * against herdr 0.8.2: `agent start` never creates a pane, only occupies one that already
+ * exists — dispatchViaHerdr gets one via `workspace create --cwd <the issue's worktree>`,
+ * one workspace per dispatch, closed when it's done. A fresh worktree trips claude's
+ * one-time workspace-trust dialog in interactive mode (unlike `-p`, which always skips it)
+ * — but that trust is keyed off the repository, not the literal cwd, so it fires once per
+ * repo, on whichever dispatch happens to hit it first, not once per worktree; the
+ * detect-and-answer block in dispatchViaHerdr handles that single occurrence. `agent read`
+ * returns *rendered* terminal text, not the clean `.result` field stream-json gives
+ * extractFinalText.
+ * Claude-only for now; pi/codex/copilot keep their existing bash dispatchers untouched.
+ */
+const HERDR_TRUST_DIALOG_TEXT = "is this a project you created or one you trust";
+
+function herdrExec(effects, args, timeoutMs) {
+  return effects.exec("herdr", args, { mutating: true, timeoutMs });
+}
+
+/**
+ * herdr's own contract (`herdr --skill`): "CLI server errors are JSON on stderr with exit
+ * status 1." Success responses are JSON on stdout. Tried in that order so a failed call's
+ * `.error.code` (e.g. `agent_not_ready`) is actually reachable — the first live end-to-end
+ * run against a real herdr server hit exactly this: `agent start`'s error landed on stderr
+ * and a stdout-only parse silently swallowed the agent_not_ready code, so the trust-dialog
+ * recovery branch below was never reached.
+ */
+function herdrJson(result) {
+  for (const text of [result?.stdout, result?.stderr]) {
+    if (!text) continue;
+    try {
+      return JSON.parse(text);
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return null;
+}
+
+/**
+ * Pull the assistant's reply out of `agent read`'s rendered pane text. There is no
+ * structured field here (unlike extractFinalText's clean `.result`), so this is a
+ * text-window heuristic verified against one real prompt/response round-trip: the reply
+ * sits between the echoed `❯ <prompt>` line and the trailing `✻ Worked for …` status line
+ * claude prints once a turn settles. Exported so it can be exercised directly against
+ * fixtures without a live herdr — this is the one part of the herdr path that a docs read
+ * can't make reliable, only real transcripts can.
+ */
+export function extractHerdrReply(rendered, promptText) {
+  const lines = (rendered || "").split("\n");
+  const promptFirstLine = (promptText || "").split("\n", 1)[0].trim();
+  const echoIndex = lines.findLastIndex((l) => {
+    const t = l.trim();
+    return t.startsWith("❯") && t.slice(1).trim() === promptFirstLine;
+  });
+  if (echoIndex === -1) return "";
+  const rest = lines.slice(echoIndex + 1);
+  const endIndex = rest.findIndex((l) => /^\s*✻\s/.test(l) || /^─{5,}/.test(l.trim()));
+  const body = endIndex === -1 ? rest : rest.slice(0, endIndex);
+  return body
+    .map((l) => l.replace(/^\s*[●○]\s?/, ""))
+    .filter((l) => l.trim().length > 0)
+    .join("\n")
+    .trim();
+}
+
+/**
+ * The herdr equivalent of dispatch(): same {code, timedOut, dryRun, stderr, text} contract,
+ * same [DISPATCH-FAIL] logging, same always-leaves-a-report-file behaviour — pipeline.mjs
+ * and report.mjs need no changes to call this instead. See the doc comment above for why
+ * this is a separate function rather than a buildDispatch branch.
+ */
+export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
+  mkdirSync(dirname(spec.outFile), { recursive: true });
+  if (effects.dryRun) return { code: 0, timedOut: false, dryRun: true, stderr: "", text: "" };
+
+  const bound = timeoutMs || 45 * 60 * 1000;
+  const name = spec.slug || spec.agent;
+  let workspaceId = null;
+
+  const finish = (code, stderr, text, timedOut = false) => {
+    if (workspaceId) herdrExec(effects, ["workspace", "close", workspaceId]);
+    writeFileSync(spec.outFile, text ?? "");
+    if (spec.logFile && (code !== 0 || !((text ?? "").trim()))) {
+      appendLine(
+        spec.logFile,
+        `[DISPATCH-FAIL] agent=${spec.agent} herdr=1 code=${code} timedOut=${!!timedOut} ${(stderr || "").trim().slice(0, 400)}`,
+      );
+    }
+    return { code, timedOut: !!timedOut, dryRun: false, stderr: stderr ?? "", text: text ?? "" };
+  };
+
+  // One workspace per dispatch, closed in finish() — no cross-dispatch state on `effects`.
+  // An earlier version cached one shared workspace across a whole sprint (reused via
+  // `pane split`) to avoid workspace churn in herdr's UI; removed as not worth the added
+  // state for that modest a benefit.
+  const create = herdrExec(effects, [
+    "workspace",
+    "create",
+    "--cwd",
+    spec.cwd,
+    "--label",
+    name,
+    "--env",
+    "CLAUDE_CODE_SESSION_ID=",
+    "--env",
+    "CLAUDE_CODE_CHILD_SESSION=",
+    "--env",
+    `MAIN_ROOT=${spec.mainRoot}`,
+    "--env",
+    "CREW_ORCHESTRATED=1",
+    "--no-focus",
+  ]);
+  const created = herdrJson(create)?.result;
+  const paneId = created?.root_pane?.pane_id;
+  if (create.code !== 0 || !paneId) {
+    return finish(1, `herdr workspace create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
+  }
+  workspaceId = created?.workspace?.workspace_id;
+
+  // Claude's workspace-trust dialog is keyed off the repository, not the literal cwd
+  // (confirmed live: trusting mainRoot once, then starting claude in a git worktree of that
+  // same repo, skipped the dialog entirely). So this only actually answers it on whichever
+  // dispatch happens to hit an untrusted repo first — every dispatch after that, in this
+  // sprint or a later one, starts ready immediately and skips straight past this block.
+  // Never a blind keypress: an unrecognised blocked reason is a real failure (see herdr's
+  // own --skill guidance), and `down enter` is only sent when the read-back text matches
+  // the known dialog string.
+  const startArgs = ["agent", "start", name, "--kind", "claude", "--pane", paneId];
+  if (spec.model) startArgs.push("--", "--model", spec.model);
+  const start = herdrExec(effects, startArgs, bound);
+  if (start.code !== 0) {
+    if (herdrJson(start)?.error?.code !== "agent_not_ready") {
+      return finish(1, `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`, "");
+    }
+    // Unlike every other herdr subcommand used here, `agent read`/`pane read` print raw
+    // rendered text on stdout, never a JSON envelope — confirmed live, and the reason
+    // herdrJson() must not be used on this call.
+    const blockedText = herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "40"]).stdout || "";
+    if (!blockedText.toLowerCase().includes(HERDR_TRUST_DIALOG_TEXT)) {
+      return finish(1, `herdr agent start blocked on an unrecognised dialog: ${blockedText.trim().slice(0, 300)}`, "");
+    }
+    herdrExec(effects, ["agent", "send-keys", name, "down", "enter"]);
+    const deadline = Date.now() + Math.min(bound, 30_000);
+    let ready = false;
+    while (Date.now() < deadline) {
+      const get = herdrExec(effects, ["agent", "get", name]);
+      if (get.code !== 0) break;
+      if (herdrJson(get)?.result?.agent?.interactive_ready) {
+        ready = true;
+        break;
+      }
+      // A live run against a real server hammered it with a spawnSync call every tick
+      // here before this existed — hundreds of polls in the ~2s claude actually took to
+      // settle after `send-keys`. 300ms keeps the poll responsive without doing that again.
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    if (!ready) return finish(1, "herdr agent never became ready after answering the workspace-trust dialog", "");
+  }
+
+  const prompt = readFileSync(spec.promptFile, "utf8");
+  const promptResult = herdrExec(effects, ["agent", "prompt", name, prompt, "--wait", "--timeout", String(bound)], bound);
+  const rendered = herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"]).stdout || "";
+  const text = extractHerdrReply(rendered, prompt);
+
+  if (promptResult.code !== 0) {
+    const timedOut = herdrJson(promptResult)?.error?.code === "agent_prompt_stalled";
+    return finish(1, `herdr agent prompt failed: ${(promptResult.stderr || promptResult.stdout || "").trim()}`, text, timedOut);
+  }
+  return finish(0, "", text);
+}
+
+/**
  * Run one dispatch to completion. Always leaves a report file on disk (empty when the
  * child produced nothing), because "no report" is a state the pipeline must be able
  * to read rather than infer.
  */
 export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } = {}) {
+  if (spec.herdr && platform === "claude" && !process.env.CREW_FAKE_DISPATCH) {
+    return await dispatchViaHerdr(effects, spec, { timeoutMs });
+  }
   const built = buildDispatch(platform, spec);
   mkdirSync(dirname(spec.outFile), { recursive: true });
 
@@ -608,7 +785,7 @@ function copilotWorktreeVisible(effects, mainRoot, agent) {
 }
 
 /** Preflight: is this platform's CLI and agent definition actually present? */
-export function preflight(effects, platform, mainRoot, agents) {
+export function preflight(effects, platform, mainRoot, agents, { herdr = false } = {}) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
   const cli = { pi: "pi", codex: "codex", claude: "claude", copilot: "copilot" }[platform];
   const which = effects.exec("sh", ["-c", `command -v ${cli}`], { mutating: false });
@@ -626,5 +803,22 @@ export function preflight(effects, platform, mainRoot, agents) {
       );
     }
   }
+  if (herdr) problems.push(...preflightHerdr(effects));
   return problems;
+}
+
+/**
+ * HERDR_ENABLED=1 only makes sense for the claude platform today (see dispatchViaHerdr's
+ * doc comment), but this check runs regardless of --platform: it fails the sprint at
+ * startup with one clear message, rather than every claude dispatch discovering mid-round
+ * that herdr's CLI or server isn't there.
+ */
+function preflightHerdr(effects) {
+  const which = effects.exec("sh", ["-c", "command -v herdr"], { mutating: false });
+  if (which.code !== 0) return ["HERDR_ENABLED=1 but the herdr CLI was not found on PATH"];
+  const status = effects.exec("herdr", ["status"], { mutating: false });
+  if (status.code !== 0 || !/status:\s*running/.test(status.stdout || "")) {
+    return ["HERDR_ENABLED=1 but the herdr server is not running — start it with: herdr server"];
+  }
+  return [];
 }

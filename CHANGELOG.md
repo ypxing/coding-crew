@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.29.59]
+
+### Added
+
+- **`crew-afk` can dispatch `claude`-platform coders through [herdr](https://herdr.dev) instead
+  of headless `-p`**, so a human can watch a dispatch live in a pane. Opt in with
+  `HERDR_ENABLED=1`; it's a separate dispatch path (`dispatchViaHerdr`) that drives herdr's
+  `workspace create` / `agent start` / `agent prompt` / `agent read` CLI rather than a flag on
+  the existing headless dispatcher, since herdr's agents are long-lived interactive REPLs
+  (idle/working/blocked/done/unknown), not one-shot batch runs. One workspace per dispatch,
+  closed when it finishes. Handles the one-time workspace-trust dialog a fresh worktree can
+  trip in interactive mode (`-p` always skips it; a pane doesn't) by detecting the known dialog
+  text and answering it, treating any other blocked reason as a real failure. `doctor`/`run`
+  preflight now also checks `herdr` is on `PATH` and its server is running when
+  `HERDR_ENABLED=1`. `pi`/`codex`/`copilot` dispatch is unchanged.
+  - registry.json: crew-afk 2.2.45 -> 2.2.46 (`orchestrator/lib/dispatch.mjs`,
+    `orchestrator/lib/effects.mjs`, `orchestrator/lib/pipeline.mjs`, `orchestrator/main.mjs`).
+
 ## [1.29.58]
 
 ### Added

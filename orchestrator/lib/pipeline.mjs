@@ -297,6 +297,7 @@ export async function runWorker(ctx, issue) {
       logFile: sprint.traceLog,
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
+      herdr: options.herdr,
     },
     {
       timeoutMs: options.workerTimeoutMs,

@@ -42,7 +42,7 @@ export class Effects {
     return this.exec("bash", [this.script(name), ...args], opts);
   }
 
-  exec(cmd, args, { cwd = this.mainRoot, env = {}, input, mutating = true } = {}) {
+  exec(cmd, args, { cwd = this.mainRoot, env = {}, input, mutating = true, timeoutMs } = {}) {
     const argv = [cmd, ...args];
     if (this.dryRun && mutating) {
       this.recorded.push({ argv, cwd });
@@ -56,6 +56,7 @@ export class Effects {
       encoding: "utf8",
       env: { ...process.env, ...this.env, ...env },
       maxBuffer: 64 * 1024 * 1024,
+      ...(timeoutMs ? { timeout: timeoutMs } : {}),
     });
     const code = r.status === null ? 124 : r.status;
     this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}`);

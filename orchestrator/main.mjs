@@ -10,6 +10,10 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
+ *   $HERDR_ENABLED=1                       run claude dispatches through herdr.dev instead of
+ *                                           headless, so a human can watch them live in a
+ *                                           pane; requires `herdr server` already running.
+ *                                           claude platform only
  *   --model <alias|inherit>                coder model; reviewer/triage match it unless
  *                                           .coding-crew/afk-models.json names them explicitly
  *   --feature-slug <slug>                  or derived from the first issue's dir
@@ -47,6 +51,7 @@ function parseArgs(argv) {
   const o = {
     command: "run",
     platform: process.env.CREW_PLATFORM || "pi",
+    herdr: process.env.HERDR_ENABLED === "1",
     model: null,
     featureSlug: null,
     coverage: false,
@@ -311,7 +316,9 @@ async function main() {
   });
 
   if (options.command === "doctor") {
-    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"]);
+    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
+      herdr: options.herdr,
+    });
     console.log(problems.length ? problems.map((p) => `PROBLEM: ${p}`).join("\n") : `OK: ${options.platform} can dispatch.`);
     return problems.length ? 1 : 0;
   }
@@ -337,7 +344,9 @@ async function main() {
       return 1;
     }
     const issues = selectDispatchable(mainRoot, { featureSlug: resolved.slug });
-    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"]);
+    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
+      herdr: options.herdr,
+    });
     console.log(`platform:  ${options.platform}`);
     console.log(`model:     ${options.model ?? "platform default"}${modelBreakdownSuffix(options)}`);
     console.log(`parallel:  ${options.parallel}`);
