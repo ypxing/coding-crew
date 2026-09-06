@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.29.64]
+
+### Added
+
+- **The shared herdr workspace a crew-afk sprint's coder/reviewer/triage dispatches all run
+  in is now labeled with the sprint's own feature slug, not a hardcoded `"crew-afk"`** —
+  running several sprints at once now shows up as several distinctly-named workspaces in
+  herdr's UI instead of an indistinguishable pile of `crew-afk` windows.
+- **That shared workspace now also opens a standing log tab, `<feature-slug>-log`, tailing
+  the sprint's own trace log** — the same file every `[DISPATCH-FAIL]` line and orchestrator
+  narration already lands in — so a human watching herdr sees the sprint's own round-by-round
+  progress in one place instead of only whatever one worker's pane happens to be doing.
+  Best-effort: a failure to open it is swallowed rather than failing the dispatch that
+  happened to create the workspace, since nothing downstream reads this tab back.
+
+### Fixed
+
+- **Herdr pane names for crew-afk's coder/reviewer/triage dispatches are now unique and
+  human-readable.** All three roles for one issue previously shared the same herdr agent name
+  (the sanitised issue slug alone), so a reviewer or triage dispatch reused the coder's pane
+  instead of getting its own — and two long issue slugs that truncated to the same 32-char
+  prefix (herdr's cap) could collide too. `herdrDispatchName` now appends a role tag
+  (`-coder`/`-review`/`-triage`) and, only when truncation would otherwise risk a collision, a
+  short hash — keeping the common case fully readable (`implement-user-auth-coder`) while still
+  guaranteeing uniqueness. It also prefixes the issue's own tracker number (`i42-...`) when
+  known, so panes for the same feature sort and scan the same way the issue files themselves do.
+- **Dispatch prompt/report filenames under `.scratch/<feature>/dispatch/` are now prefixed
+  with the issue's own tracker number too** (`01-implement-user-auth.prompt.md`, not
+  `implement-user-auth.prompt.md`), the same convention herdr pane names just adopted above —
+  so the files sort and scan the same way the issue tracker's own `NN-<slug>.md` files do.
+- **All of one crew-afk run's herdr-driven coder/reviewer/triage dispatches now share one
+  herdr workspace instead of each opening (and closing) its own.** A human watching herdr
+  during a sprint previously saw a new window flash open and closed for every single
+  dispatch; now one steady workspace gains and loses a tab per dispatch, and is closed once,
+  at the end of the whole run. `dispatchViaHerdr` gets its tab via `tab create --workspace
+  <shared-id>` instead of `workspace create`, and closes only that tab when it's done; the
+  shared workspace itself is created lazily by whichever dispatch runs first
+  (`ensureHerdrWorkspace`) and closed by the new `closeHerdrWorkspace`, called once from
+  main.mjs after the sprint loop finishes (in a `finally`, so a thrown error doesn't leave it
+  dangling).
+
 ## [1.29.63]
 
 ### Fixed

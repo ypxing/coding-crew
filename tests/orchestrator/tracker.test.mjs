@@ -8,6 +8,7 @@ import {
   appendToSection,
   blockers,
   branchFor,
+  issueNumber,
   issueSlug,
   listOpenIssueFiles,
   parseIssue,
@@ -43,6 +44,12 @@ test("issueSlug strips leading digits and extension like receipts.sh", () => {
   assert.equal(branchFor("feat", issueSlug("07-thing.md")), "crew/feat/thing");
 });
 
+test("issueNumber reads the filename's leading digits, or null when there are none", () => {
+  assert.equal(issueNumber("/x/01-add-widget.md"), "01");
+  assert.equal(issueNumber("/x/12_add_widget.md"), "12");
+  assert.equal(issueNumber("/x/add-widget.md"), null);
+});
+
 test("parseIssue reads status, criteria, blockers and section presence", () => {
   const root = repo();
   const p = issue(
@@ -72,6 +79,7 @@ test("parseIssue reads status, criteria, blockers and section presence", () => {
   const i = parseIssue(p);
   assert.equal(i.status, "ready-for-agent");
   assert.equal(i.slug, "second");
+  assert.equal(i.number, "02");
   assert.equal(i.title, "Second thing");
   assert.deepEqual(i.blockedBy, ["01-first.md"]);
   assert.match(i.criteria, /does the thing/);

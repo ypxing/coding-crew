@@ -203,7 +203,7 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.match(r.stdout, /NO MORE TASKS/);
   // The reviewer was handed the verification result, so a criterion that ends "and the
   // tests pass" is answerable by the read-only reviewer instead of stalling the branch.
-  const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/alpha.review-prompt.md"), "utf8");
+  const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.review-prompt.md"), "utf8");
   assert.match(reviewPromptText, /Checks already run by the pipeline/);
   assert.match(reviewPromptText, /test=pass/);
 });
@@ -538,7 +538,7 @@ test("a branch that fails verification is never reviewed, and no report is writt
   );
   runSprint(root);
   assert.deepEqual(reviewReports(root), []);
-  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.review.md")), false);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha.review.md")), false);
 });
 
 test("a retained branch survives cleanup, is named in the summary, and resumes next round", () => {
@@ -554,7 +554,7 @@ test("a retained branch survives cleanup, is named in the summary, and resumes n
   assert.match(r.stdout, /partial/);
   // Round 2 was told to resume on that branch rather than start over — and that the
   // notes are context alongside the preserved code, not a substitute for it.
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/alpha.prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
   assert.match(prompt, /Resume on that existing branch/);
   assert.match(prompt, /crew\/demo\/alpha/);
   assert.match(prompt, /not a substitute for it/);

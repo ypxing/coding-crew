@@ -49,6 +49,13 @@ function taggedReason(tag, summary) {
   return `${tag}${REASON_SEP}${summary}`;
 }
 
+/** Dispatch filename stem — the issue's own `NN-<slug>` (see tracker.mjs's issueNumber), so
+ * prompt/report files sort and scan the same way the issue tracker's own files do. Falls
+ * back to the bare slug when the issue file carries no leading number. */
+function dispatchStem(issue) {
+  return issue.number ? `${issue.number}-${issue.slug}` : issue.slug;
+}
+
 /** The free text after a tag this module itself wrote — never applied to a reason whose tag is unknown. */
 function stripReasonTag(reason, tag) {
   return reason.startsWith(tag + REASON_SEP) ? reason.slice(tag.length + REASON_SEP.length) : reason;
@@ -251,9 +258,9 @@ export async function runWorker(ctx, issue) {
     };
   }
 
-  const promptFile = join(dispatchDir, `${issue.slug}.prompt.md`);
-  const outFile = join(dispatchDir, `${issue.slug}.report.md`);
-  const sidecarFile = join(dispatchDir, `${issue.slug}.report.json`);
+  const promptFile = join(dispatchDir, `${dispatchStem(issue)}.prompt.md`);
+  const outFile = join(dispatchDir, `${dispatchStem(issue)}.report.md`);
+  const sidecarFile = join(dispatchDir, `${dispatchStem(issue)}.report.json`);
 
   writeFileSync(
     promptFile,
@@ -295,8 +302,10 @@ export async function runWorker(ctx, issue) {
       model: options.model,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
+      featureSlug: sprint.featureSlug,
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
+      issueNumber: issue.number,
       herdr: options.herdr,
     },
     {
@@ -493,8 +502,8 @@ async function handleVerificationFailure(ctx, worker, outcome, verify) {
 async function runTriage(ctx, worker, verifyStdout) {
   const { sprint, effects, platform, options } = ctx;
   const { issue, branch } = worker;
-  const promptFile = join(sprint.dispatchDir, `${issue.slug}.triage-prompt.md`);
-  const outFile = join(sprint.dispatchDir, `${issue.slug}.triage.md`);
+  const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage-prompt.md`);
+  const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.md`);
 
   writeFileSync(
     promptFile,
@@ -524,8 +533,10 @@ async function runTriage(ctx, worker, verifyStdout) {
       model: options.triageModel,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
+      featureSlug: sprint.featureSlug,
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
+      issueNumber: issue.number,
       herdr: options.herdr,
     },
     {
@@ -542,8 +553,8 @@ async function runTriage(ctx, worker, verifyStdout) {
 async function runReview(ctx, worker, checks) {
   const { sprint, effects, platform, options } = ctx;
   const { issue, branch } = worker;
-  const promptFile = join(sprint.dispatchDir, `${issue.slug}.review-prompt.md`);
-  const outFile = join(sprint.dispatchDir, `${issue.slug}.review.md`);
+  const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review-prompt.md`);
+  const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.md`);
   const reportFile = ctx.roundReviewFile();
 
   writeFileSync(
@@ -575,8 +586,10 @@ async function runReview(ctx, worker, checks) {
       model: options.reviewerModel,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
+      featureSlug: sprint.featureSlug,
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
+      issueNumber: issue.number,
       herdr: options.herdr,
     },
     {

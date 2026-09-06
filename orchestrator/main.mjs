@@ -13,14 +13,17 @@
  *   $CREW_HERDR_ENABLED=1                   run claude dispatches through herdr.dev instead of
  *                                           headless, so a human can watch them live in a
  *                                           pane; requires `herdr server` already running.
- *                                           claude platform only
+ *                                           Every dispatch this run shares one herdr
+ *                                           workspace (one tab per dispatch), closed once at
+ *                                           the end of the run. claude platform only
  *   $CREW_HERDR_KEEP_PANE=1                 with CREW_HERDR_ENABLED=1: leave a failed dispatch's
- *                                           pane/workspace open instead of closing it, so
- *                                           `herdr agent read <name>` can show what the pane
- *                                           actually rendered. Named agent = the sanitised
- *                                           issue slug (see herdrAgentName). Debug only — a
- *                                           kept pane holds its name, so a retry fails with
- *                                           agent_name_taken.
+ *                                           tab open instead of closing it, so `herdr agent
+ *                                           read <name>` can show what the pane actually
+ *                                           rendered. Named agent = the issue number,
+ *                                           sanitised slug and a role tag, one per coder/review/
+ *                                           triage dispatch (see herdrDispatchName). Debug
+ *                                           only — a kept pane holds its name, so a retry
+ *                                           fails with agent_name_taken.
  *   --model <alias|inherit>                coder model; reviewer/triage match it unless
  *                                           .coding-crew/afk-models.json names them explicitly
  *   --feature-slug <slug>                  or derived from the first issue's dir
@@ -46,7 +49,7 @@ import { spawnSync } from "node:child_process";
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
+import { closeHerdrWorkspace, DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { selectDispatchable } from "./lib/tracker.mjs";
@@ -440,7 +443,15 @@ async function main() {
     out: (text) => console.log(text),
   };
 
-  const { stalled } = await runSprint(ctx);
+  let stalled;
+  try {
+    ({ stalled } = await runSprint(ctx));
+  } finally {
+    // A no-op unless a herdr dispatch actually created the sprint's one shared workspace
+    // (see dispatchViaHerdr/ensureHerdrWorkspace) — closed here, once, regardless of how
+    // the run ended, so a thrown error above doesn't leave it dangling in herdr's UI.
+    await closeHerdrWorkspace(effects);
+  }
   return stalled ? 2 : 0;
 }
 

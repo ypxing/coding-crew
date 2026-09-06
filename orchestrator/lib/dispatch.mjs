@@ -47,6 +47,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
 import { appendLine } from "./effects.mjs";
 
 export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
@@ -125,6 +126,7 @@ export function buildDispatch(platform, spec) {
         "--prompt-file", promptFile,
         "--out", outFile,
         ...(model ? ["--model", model] : []),
+        ...(slug ? ["--slug", slug] : []),
       ],
       ...shared,
       cwd: mainRoot,
@@ -380,14 +382,18 @@ export function extractFinalText(platform, lines) {
  * panes it manages — idle/working/blocked/done/unknown, not a one-shot batch run — so this
  * is a second dispatch path, not a flag on buildDispatch's claude branch. Verified live
  * against herdr 0.8.2: `agent start` never creates a pane, only occupies one that already
- * exists — dispatchViaHerdr gets one via `workspace create --cwd <the issue's worktree>`,
- * one workspace per dispatch, closed when it's done. A fresh worktree trips claude's
- * one-time workspace-trust dialog in interactive mode (unlike `-p`, which always skips it)
- * — but that trust is keyed off the repository, not the literal cwd, so it fires once per
- * repo, on whichever dispatch happens to hit it first, not once per worktree; the
- * detect-and-answer block in dispatchViaHerdr handles that single occurrence. `agent read`
- * returns *rendered* terminal text, not the clean `.result` field stream-json gives
- * extractFinalText.
+ * exists — dispatchViaHerdr gets one via `tab create --workspace <the sprint's one shared
+ * workspace> --cwd <the issue's worktree>`, one tab per dispatch, closed when it's done. Every
+ * coder/reviewer/triage dispatch for the whole crew-afk run shares that one workspace
+ * (created lazily by the first dispatch, see ensureHerdrWorkspace) instead of each opening
+ * its own — a human watching herdr sees one steady window gaining and losing tabs as work
+ * starts and finishes, not a new window flashing open and closed per dispatch. A fresh
+ * worktree trips claude's one-time workspace-trust dialog in interactive mode (unlike `-p`,
+ * which always skips it) — but that trust is keyed off the repository, not the literal cwd,
+ * so it fires once per repo, on whichever dispatch happens to hit it first, not once per
+ * worktree; the detect-and-answer block in dispatchViaHerdr handles that single occurrence.
+ * `agent read` returns *rendered* terminal text, not the clean `.result` field stream-json
+ * gives extractFinalText.
  * Claude-only for now; pi/codex/copilot keep their existing bash dispatchers untouched.
  */
 const HERDR_TRUST_DIALOG_TEXT = "is this a project you created or one you trust";
@@ -418,6 +424,64 @@ export function herdrAgentName(raw) {
   const startsValid = /^[a-z]/.test(lowered) ? lowered : `a-${lowered.replace(/^-+/, "")}`;
   const trimmed = startsValid.slice(0, 32).replace(/-+$/, "");
   return trimmed || "a";
+}
+
+/**
+ * Coder, reviewer and triage dispatches for one issue all pass the same spec.slug — without
+ * a role tag here, herdrAgentName(spec.slug) alone collapses all three onto the identical
+ * pane name, so a reviewer or triage dispatch would reuse the coder's herdr pane (and, were
+ * two of them ever dispatched concurrently for the same issue, race for it) instead of each
+ * getting its own claude instance. Each role gets a short, fixed tag so the three are never
+ * the same name for the same issue.
+ */
+const HERDR_ROLE_TAGS = {
+  "crew-coder": "coder",
+  "crew-code-reviewer": "review",
+  "crew-triage": "triage",
+};
+
+function herdrRoleTag(agent) {
+  return HERDR_ROLE_TAGS[agent] ?? (herdrAgentName(agent).slice(0, 8) || "agent");
+}
+
+/**
+ * herdrAgentName truncates a label to 32 chars with nothing to disambiguate what got cut —
+ * two different issues (two different coders dispatched concurrently by mapPool, or two
+ * different reviewers/triages) whose slugs happen to share the same truncated prefix would
+ * otherwise land on the identical herdr name and race for the same pane. A 6-hex-char hash
+ * of the *untruncated* raw label, appended after truncation, makes that collision astronomically
+ * unlikely without needing every dispatch to see every other slug in the round.
+ */
+function herdrUniqueSuffix(raw) {
+  return createHash("sha1").update(raw || "").digest("hex").slice(0, 6);
+}
+
+/**
+ * herdrAgentName(label) with a role tag appended, so a human scanning `herdr agent list`
+ * can tell coder/review/triage apart at a glance — e.g. `implement-user-auth-coder`. Most
+ * issue slugs fit alongside their tag well within herdr's 32-char cap, so the common case
+ * stays fully readable with no decoration beyond the tag. Only when the label is long enough
+ * that fitting it in would truncate two different labels down to the same prefix (or the same
+ * label's own truncation would drop the disambiguating tail) does a 6-hex-char hash of the
+ * *untruncated* label get appended — trading readability for collision-safety only when
+ * truncation actually makes it necessary.
+ *
+ * issueNumber, when given (the issue file's own `NN-` prefix — see tracker.mjs's
+ * issueNumber()), is prepended so panes for the same feature sort and scan by issue, the same
+ * way the issue tracker's own files do — e.g. `i42-implement-user-auth-coder`. Led with `i`
+ * because herdr's name regex requires a leading letter, so a bare digit can't start the name.
+ */
+export function herdrDispatchName(label, agent, issueNumber) {
+  const tag = herdrRoleTag(agent);
+  const prefix = issueNumber ? `i${issueNumber}-` : "";
+  const full = herdrAgentName(label);
+  const budgetNoHash = Math.max(1, 32 - prefix.length - tag.length - 1);
+  if (full.length <= budgetNoHash) return `${prefix}${full}-${tag}`;
+
+  const suffix = herdrUniqueSuffix(label);
+  const budget = Math.max(1, 32 - prefix.length - tag.length - suffix.length - 2);
+  const base = full.slice(0, budget).replace(/-+$/, "") || "a";
+  return `${prefix}${base}-${tag}-${suffix}`;
 }
 
 /**
@@ -468,6 +532,92 @@ export function extractHerdrReply(rendered, promptText) {
 }
 
 /**
+ * A human watching herdr across several concurrent crew-afk runs sees one workspace per
+ * run — the feature slug is what tells those apart at a glance; the hardcoded "crew-afk"
+ * every run used to share told them apart not at all. Falls back to "crew-afk" for callers
+ * that never resolved one (dry-run planning, tests), so the label is always non-empty.
+ */
+function herdrWorkspaceLabel(featureSlug) {
+  return featureSlug || "crew-afk";
+}
+
+/**
+ * A second tab in the shared workspace, alongside the workspace itself, that just tails the
+ * sprint's own trace log — the same file every dispatch's [DISPATCH-FAIL] line already lands
+ * in (see dispatch()'s onTrace/logFile handling). Without it, watching a sprint live means
+ * either tailing that file from a separate terminal or reading a dispatch's own pane, which
+ * only ever shows that one worker's turn, not the orchestrator's round-by-round narration.
+ * Best-effort: a broken log tab is cosmetic, not a reason to fail every dispatch this run —
+ * unlike the dispatch's own tab, nothing downstream reads this one back.
+ */
+async function ensureHerdrLogTab(effects, workspaceId, label, logFile) {
+  try {
+    const create = await herdrExec(effects, [
+      "tab",
+      "create",
+      "--workspace",
+      workspaceId,
+      "--cwd",
+      effects.mainRoot,
+      "--label",
+      `${label}-log`,
+      "--no-focus",
+    ]);
+    const paneId = herdrJson(create)?.result?.root_pane?.pane_id;
+    if (create.code !== 0 || !paneId) return;
+    await herdrExec(effects, ["pane", "run", paneId, "tail", "-f", logFile]);
+  } catch {
+    /* the sprint's own dispatch tabs are what matters; a broken log tab is cosmetic */
+  }
+}
+
+/**
+ * The one herdr workspace for a whole crew-afk run, created by whichever dispatch gets here
+ * first and reused by every dispatch after it — see the file-header comment for why. Cached
+ * as a promise, not a plain field: mapPool dispatches concurrently, and the promise is
+ * assigned synchronously (before this function's first `await`), so a second call that
+ * arrives before the first `workspace create` resolves still sees the cached promise instead
+ * of racing its own `workspace create`. A rejection is cached too — every dispatch this run
+ * then fails fast with the same error rather than each retrying the same broken call.
+ *
+ * `featureSlug`/`logFile` are only consulted by whichever call actually creates the
+ * workspace — every dispatch this run passes the same sprint's values, so which one wins
+ * the race makes no difference.
+ */
+function ensureHerdrWorkspace(effects, { featureSlug, logFile } = {}) {
+  if (!effects._herdrWorkspace) {
+    effects._herdrWorkspace = (async () => {
+      const label = herdrWorkspaceLabel(featureSlug);
+      const create = await herdrExec(effects, ["workspace", "create", "--cwd", effects.mainRoot, "--label", label, "--no-focus"]);
+      const workspaceId = herdrJson(create)?.result?.workspace?.workspace_id;
+      if (create.code !== 0 || !workspaceId) {
+        throw new Error(`herdr workspace create failed: ${(create.stderr || create.stdout || "").trim()}`);
+      }
+      if (logFile) await ensureHerdrLogTab(effects, workspaceId, label, logFile);
+      return workspaceId;
+    })();
+  }
+  return effects._herdrWorkspace;
+}
+
+/**
+ * Closes the shared workspace ensureHerdrWorkspace created, once, at the end of the whole
+ * crew-afk run (see main.mjs). A no-op when no herdr dispatch ever ran this run — nothing to
+ * close — and swallows a failed close rather than throwing, since by this point the run's
+ * own exit code is already decided and a stray workspace is a herdr-UI nuisance, not a
+ * reason to report the run itself as failed.
+ */
+export async function closeHerdrWorkspace(effects) {
+  if (!effects._herdrWorkspace) return;
+  try {
+    const workspaceId = await effects._herdrWorkspace;
+    await herdrExec(effects, ["workspace", "close", workspaceId]);
+  } catch {
+    /* already reported at the dispatch that first hit it, or nothing was ever created */
+  }
+}
+
+/**
  * The herdr equivalent of dispatch(): same {code, timedOut, dryRun, stderr, text} contract,
  * same [DISPATCH-FAIL] logging, same always-leaves-a-report-file behaviour — pipeline.mjs
  * and report.mjs need no changes to call this instead. See the doc comment above for why
@@ -479,22 +629,21 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
 
   const bound = timeoutMs || 45 * 60 * 1000;
   const label = spec.slug || spec.agent;
-  const name = herdrAgentName(label);
-  let workspaceId = null;
+  const name = herdrDispatchName(label, spec.agent, spec.issueNumber);
+  let tabId = null;
   let paneId = null;
 
-  // CREW_HERDR_KEEP_PANE=1 leaves a failed pane/workspace open instead of closing it here,
-  // so `herdr agent read <name>` (or the herdr UI) can show what the pane actually
-  // rendered — otherwise the transcript is gone the instant a DISPATCH-FAIL is logged,
-  // which is exactly when you'd want to see it. Debug-only: every dispatch after the first
-  // failure in a sprint still holds that pane, so a retry under the same name then fails
-  // with agent_name_taken.
+  // CREW_HERDR_KEEP_PANE=1 leaves a failed dispatch's tab open instead of closing it here, so
+  // `herdr agent read <name>` (or the herdr UI) can show what the pane actually rendered —
+  // otherwise the transcript is gone the instant a DISPATCH-FAIL is logged, which is exactly
+  // when you'd want to see it. Debug-only: every dispatch after the first failure in a sprint
+  // still holds that pane, so a retry under the same name then fails with agent_name_taken.
   const keepPaneOnFail = !!process.env.CREW_HERDR_KEEP_PANE;
 
   const finish = async (code, stderr, text, timedOut = false) => {
     const failed = code !== 0 || !((text ?? "").trim());
-    if (workspaceId && !(failed && keepPaneOnFail)) {
-      await herdrExec(effects, ["workspace", "close", workspaceId]);
+    if (tabId && !(failed && keepPaneOnFail)) {
+      await herdrExec(effects, ["tab", "close", tabId]);
     }
     writeFileSync(spec.outFile, text ?? "");
     if (spec.logFile && failed) {
@@ -507,13 +656,21 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
     return { code, timedOut: !!timedOut, dryRun: false, stderr: stderr ?? "", text: text ?? "" };
   };
 
-  // One workspace per dispatch, closed in finish() — no cross-dispatch state on `effects`.
-  // An earlier version cached one shared workspace across a whole sprint (reused via
-  // `pane split`) to avoid workspace churn in herdr's UI; removed as not worth the added
-  // state for that modest a benefit.
+  let workspaceId;
+  try {
+    workspaceId = await ensureHerdrWorkspace(effects, { featureSlug: spec.featureSlug, logFile: spec.logFile });
+  } catch (err) {
+    return await finish(1, err.message, "");
+  }
+
+  // One tab per dispatch, in the sprint's one shared workspace, closed in finish() — the
+  // workspace itself outlives every individual dispatch and is closed once, at the end of
+  // the whole run (see closeHerdrWorkspace, called from main.mjs).
   const create = await herdrExec(effects, [
-    "workspace",
+    "tab",
     "create",
+    "--workspace",
+    workspaceId,
     "--cwd",
     spec.cwd,
     "--label",
@@ -531,9 +688,9 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
   const created = herdrJson(create)?.result;
   paneId = created?.root_pane?.pane_id;
   if (create.code !== 0 || !paneId) {
-    return await finish(1, `herdr workspace create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
+    return await finish(1, `herdr tab create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
   }
-  workspaceId = created?.workspace?.workspace_id;
+  tabId = created?.tab?.tab_id;
 
   // Claude's workspace-trust dialog is keyed off the repository, not the literal cwd
   // (confirmed live: trusting mainRoot once, then starting claude in a git worktree of that

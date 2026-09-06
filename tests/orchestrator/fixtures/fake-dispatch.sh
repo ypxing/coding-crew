@@ -21,19 +21,23 @@
 # custom response at $CREW_FAKE_DIR/commands.response — read verbatim instead of the default.
 set -uo pipefail
 
-AGENT=""; DIR=""; PROMPT_FILE=""; OUT=""
+AGENT=""; DIR=""; PROMPT_FILE=""; OUT=""; SLUG_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --agent) AGENT="$2"; shift 2 ;;
     --dir) DIR="$2"; shift 2 ;;
     --prompt-file) PROMPT_FILE="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
+    --slug) SLUG_ARG="$2"; shift 2 ;;
     --model) shift 2 ;;
     *) shift ;;
   esac
 done
 
-SLUG=$(basename "$OUT" | sed -E 's/\.(report|review)\.md$//')
+# --slug is the real dispatch's own slug (see dispatch.mjs's --slug forwarding), independent
+# of --out's filename convention. Only a call with no --slug at all (coverage-validation,
+# commands-discovery — both exit before SLUG is used) falls back to deriving it from --out.
+SLUG="${SLUG_ARG:-$(basename "$OUT" | sed -E 's/\.(report|review)\.md$//')}"
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
 mkdir -p "$(dirname "$OUT")"
 
