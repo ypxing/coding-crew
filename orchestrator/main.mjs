@@ -10,12 +10,21 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
- *   $CREW_HERDR_ENABLED=1                   run claude dispatches through herdr.dev instead of
+ *   $CREW_HERDR_ENABLED=1                   run dispatches through herdr.dev instead of
  *                                           headless, so a human can watch them live in a
  *                                           pane; requires `herdr server` already running.
  *                                           Every dispatch this run shares one herdr
- *                                           workspace (one tab per dispatch), closed once at
- *                                           the end of the run. claude platform only
+ *                                           workspace (one tab per dispatch). If crew-afk
+ *                                           itself is running inside a herdr-managed pane,
+ *                                           that pane's own workspace ($HERDR_WORKSPACE_ID)
+ *                                           is reused instead of opening a new one, and is
+ *                                           left open at the end rather than closed; only a
+ *                                           workspace this run created itself is closed once
+ *                                           the run ends (see dispatch.mjs's
+ *                                           ensureHerdrWorkspace doc comment). All four
+ *                                           platforms; codex's reply-extraction is
+ *                                           unverified live (see dispatch.mjs's
+ *                                           dispatchViaHerdr doc comment)
  *   $CREW_HERDR_KEEP_PANE=1                 with CREW_HERDR_ENABLED=1: leave a failed dispatch's
  *                                           tab open instead of closing it, so `herdr agent
  *                                           read <name>` can show what the pane actually

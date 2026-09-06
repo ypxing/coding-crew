@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.29.66]
+
+### Added
+
+- **`CREW_HERDR_ENABLED=1` now works for `pi`/`codex`/`copilot`, not just `claude`.**
+  `dispatchViaHerdr`'s gate on `platform === "claude"` is gone — herdr's own `--kind` already
+  supports all four (`herdr agent start --help`), and its idle/working/blocked/done detection
+  is generic per kind, so only the per-platform interactive argv, trust-dialog text, and
+  reply-extraction markers were claude-specific. pi and copilot were verified live against
+  herdr 0.8.2 (pi launches with `--approve`, which skips its trust prompt outright rather
+  than needing one answered; copilot's own "Confirm folder trust" dialog is a new
+  `HERDR_DIALOGS` entry). codex could not be verified live (no credentials in the environment
+  this was built in to get past its sign-in screen) — its argv is built from documented flags
+  only, and its reply-extraction falls back to pi's glyph-less heuristic; an unrecognised
+  first-run dialog still fails loud rather than guessing a keystroke, same as an unmatched
+  dialog on any other platform.
+
+- **`CREW_HERDR_ENABLED=1` reuses the workspace crew-afk itself is running in, if there is
+  one, instead of always opening a new one.** herdr injects `HERDR_WORKSPACE_ID` into any
+  pane it manages — so when a human starts crew-afk from inside a herdr-managed session,
+  `ensureHerdrWorkspace` now adds the sprint's dispatch tabs straight into that same
+  workspace rather than popping open a second, unrelated one. A workspace crew-afk didn't
+  create is never closed at the end of the run either — only one this run created itself is.
+
 ## [1.29.65]
 
 ### Fixed
