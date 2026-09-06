@@ -702,13 +702,16 @@ test("dispatch() wires onLine for pi/codex too, but only forwards their own alre
 // These fixtures are the actual JSON shapes/transcript text captured from a real
 // workspace-create → pane-split → agent-start → agent-prompt → agent-read round-trip.
 
+// herdrExec now runs through spawnWithTimeout (async spawn), not exec (blocking spawnSync)
+// — see herdrExec's doc comment in dispatch.mjs for why a blocking call silently serialised
+// every herdr-enabled sprint regardless of --max-parallel.
 function fakeHerdrEffects(responses, { mainRoot = "/root", dryRun = false } = {}) {
   const calls = [];
   return {
     mainRoot,
     dryRun,
     _calls: calls,
-    exec: (cmd, args) => {
+    spawnWithTimeout: async (cmd, args) => {
       calls.push([cmd, ...args]);
       const next = responses.shift();
       if (!next) throw new Error(`no more canned herdr responses — call was: ${cmd} ${args.join(" ")}`);

@@ -392,8 +392,19 @@ export function extractFinalText(platform, lines) {
  */
 const HERDR_TRUST_DIALOG_TEXT = "is this a project you created or one you trust";
 
-function herdrExec(effects, args, timeoutMs) {
-  return effects.exec("herdr", args, { mutating: true, timeoutMs });
+/**
+ * effects.exec runs spawnSync — it blocks Node's single event loop for the child's whole
+ * lifetime. Fine for the short bash scripts effects.exec is otherwise used for, but herdr's
+ * own calls are not short: `agent prompt --wait` blocks until the pane goes idle/done, up to
+ * the full worker timeout (45 min by default). mapPool (loop.mjs) dispatches issues
+ * concurrently by interleaving promises on that same single event loop — a blocked loop
+ * blocks every other "concurrent" dispatch too, so a spawnSync herdrExec silently serialised
+ * every herdr-enabled sprint no matter how high --max-parallel was set. spawnWithTimeout
+ * uses async spawn instead, which yields the loop back between I/O events and lets the pool
+ * actually run herdr dispatches side by side.
+ */
+async function herdrExec(effects, args, timeoutMs) {
+  return effects.spawnWithTimeout("herdr", args, { cwd: effects.mainRoot, timeoutMs });
 }
 
 /**
@@ -480,10 +491,10 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
   // with agent_name_taken.
   const keepPaneOnFail = !!process.env.CREW_HERDR_KEEP_PANE;
 
-  const finish = (code, stderr, text, timedOut = false) => {
+  const finish = async (code, stderr, text, timedOut = false) => {
     const failed = code !== 0 || !((text ?? "").trim());
     if (workspaceId && !(failed && keepPaneOnFail)) {
-      herdrExec(effects, ["workspace", "close", workspaceId]);
+      await herdrExec(effects, ["workspace", "close", workspaceId]);
     }
     writeFileSync(spec.outFile, text ?? "");
     if (spec.logFile && failed) {
@@ -500,7 +511,7 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
   // An earlier version cached one shared workspace across a whole sprint (reused via
   // `pane split`) to avoid workspace churn in herdr's UI; removed as not worth the added
   // state for that modest a benefit.
-  const create = herdrExec(effects, [
+  const create = await herdrExec(effects, [
     "workspace",
     "create",
     "--cwd",
@@ -520,7 +531,7 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
   const created = herdrJson(create)?.result;
   paneId = created?.root_pane?.pane_id;
   if (create.code !== 0 || !paneId) {
-    return finish(1, `herdr workspace create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
+    return await finish(1, `herdr workspace create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
   }
   workspaceId = created?.workspace?.workspace_id;
 
@@ -569,23 +580,23 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
     spec.agent,
   ];
   if (spec.model) startArgs.push("--model", spec.model);
-  const start = herdrExec(effects, startArgs, bound);
+  const start = await herdrExec(effects, startArgs, bound);
   if (start.code !== 0) {
     if (herdrJson(start)?.error?.code !== "agent_not_ready") {
-      return finish(1, `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`, "");
+      return await finish(1, `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`, "");
     }
     // Unlike every other herdr subcommand used here, `agent read`/`pane read` print raw
     // rendered text on stdout, never a JSON envelope — confirmed live, and the reason
     // herdrJson() must not be used on this call.
-    const blockedText = herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "40"]).stdout || "";
+    const blockedText = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "40"])).stdout || "";
     if (!blockedText.toLowerCase().includes(HERDR_TRUST_DIALOG_TEXT)) {
-      return finish(1, `herdr agent start blocked on an unrecognised dialog: ${blockedText.trim().slice(0, 300)}`, "");
+      return await finish(1, `herdr agent start blocked on an unrecognised dialog: ${blockedText.trim().slice(0, 300)}`, "");
     }
-    herdrExec(effects, ["agent", "send-keys", name, "down", "enter"]);
+    await herdrExec(effects, ["agent", "send-keys", name, "down", "enter"]);
     const deadline = Date.now() + Math.min(bound, 30_000);
     let ready = false;
     while (Date.now() < deadline) {
-      const get = herdrExec(effects, ["agent", "get", name]);
+      const get = await herdrExec(effects, ["agent", "get", name]);
       if (get.code !== 0) break;
       if (herdrJson(get)?.result?.agent?.interactive_ready) {
         ready = true;
@@ -596,7 +607,7 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
       // settle after `send-keys`. 300ms keeps the poll responsive without doing that again.
       await new Promise((r) => setTimeout(r, 300));
     }
-    if (!ready) return finish(1, "herdr agent never became ready after answering the workspace-trust dialog", "");
+    if (!ready) return await finish(1, "herdr agent never became ready after answering the workspace-trust dialog", "");
   }
 
   // --until idle --until done, not the default (idle/done/blocked/unknown all match): herdr's
@@ -606,12 +617,12 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
   // empty reply, indistinguishable from a worker that produced nothing. Excluding "blocked"
   // means such a pane now runs out the clock on --timeout instead, a real, loggable failure.
   const prompt = readFileSync(spec.promptFile, "utf8");
-  const promptResult = herdrExec(
+  const promptResult = await herdrExec(
     effects,
     ["agent", "prompt", name, prompt, "--wait", "--until", "idle", "--until", "done", "--timeout", String(bound)],
     bound,
   );
-  const rendered = herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"]).stdout || "";
+  const rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
   const text = extractHerdrReply(rendered, prompt);
 
   if (promptResult.code !== 0) {
@@ -623,11 +634,11 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
     // the rendered pane directly into the failure message instead of just the CLI's own
     // stderr, which never contains the dialog text itself.
     if (errorCode === "agent_blocked") {
-      return finish(1, `herdr agent prompt rejected — agent already blocked: ${rendered.trim().slice(-400)}`, text, timedOut);
+      return await finish(1, `herdr agent prompt rejected — agent already blocked: ${rendered.trim().slice(-400)}`, text, timedOut);
     }
-    return finish(1, `herdr agent prompt failed: ${(promptResult.stderr || promptResult.stdout || "").trim()}`, text, timedOut);
+    return await finish(1, `herdr agent prompt failed: ${(promptResult.stderr || promptResult.stdout || "").trim()}`, text, timedOut);
   }
-  return finish(0, "", text);
+  return await finish(0, "", text);
 }
 
 /**

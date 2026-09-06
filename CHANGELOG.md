@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.29.63]
+
+### Fixed
+
+- **`dispatchViaHerdr` no longer serialises a herdr-enabled sprint's parallel dispatches.**
+  Its herdr CLI calls ran through `effects.exec` (`spawnSync`), which blocks Node's single
+  event loop for the whole child's lifetime — including `agent prompt --wait`, which blocks
+  until the pane goes idle/done, up to the full worker timeout. `mapPool` (loop.mjs)
+  dispatches issues concurrently by interleaving promises on that same event loop, so one
+  dispatch's blocking herdr call froze every other "concurrent" dispatch too: `--max-parallel`
+  had no effect and coders ran one issue at a time regardless of its value. `herdrExec` now
+  runs through `effects.spawnWithTimeout` (async `spawn`), the same non-blocking primitive the
+  headless `claude -p` path already uses for its own long-running dispatch.
+
 ## [1.29.62]
 
 ### Fixed
