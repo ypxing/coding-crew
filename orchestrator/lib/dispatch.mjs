@@ -397,6 +397,19 @@ function herdrExec(effects, args, timeoutMs) {
 }
 
 /**
+ * herdr's `agent start` rejects any name that isn't `^[a-z][a-z0-9_-]{0,31}$` — issue slugs
+ * are usually already that shape, but come from a markdown filename (issueSlug()), so nothing
+ * stops one running long or carrying an uppercase letter. Sanitising here, once, at the herdr
+ * boundary keeps issueSlug() itself free of a constraint that's herdr's, not the tracker's.
+ */
+export function herdrAgentName(raw) {
+  const lowered = (raw || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+  const startsValid = /^[a-z]/.test(lowered) ? lowered : `a-${lowered.replace(/^-+/, "")}`;
+  const trimmed = startsValid.slice(0, 32).replace(/-+$/, "");
+  return trimmed || "a";
+}
+
+/**
  * herdr's own contract (`herdr --skill`): "CLI server errors are JSON on stderr with exit
  * status 1." Success responses are JSON on stdout. Tried in that order so a failed call's
  * `.error.code` (e.g. `agent_not_ready`) is actually reachable — the first live end-to-end
@@ -454,7 +467,8 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
   if (effects.dryRun) return { code: 0, timedOut: false, dryRun: true, stderr: "", text: "" };
 
   const bound = timeoutMs || 45 * 60 * 1000;
-  const name = spec.slug || spec.agent;
+  const label = spec.slug || spec.agent;
+  const name = herdrAgentName(label);
   let workspaceId = null;
 
   const finish = (code, stderr, text, timedOut = false) => {
@@ -479,7 +493,7 @@ export async function dispatchViaHerdr(effects, spec, { timeoutMs } = {}) {
     "--cwd",
     spec.cwd,
     "--label",
-    name,
+    label,
     "--env",
     "CLAUDE_CODE_SESSION_ID=",
     "--env",

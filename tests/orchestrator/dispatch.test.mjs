@@ -24,6 +24,7 @@ import {
   dispatchViaHerdr,
   extractFinalText,
   extractHerdrReply,
+  herdrAgentName,
   formatJsonTraceLine,
   preflight,
   resolveAgentFile,
@@ -731,6 +732,17 @@ const RENDERED_REPLY = [
   "",
 ].join("\n");
 
+test("herdrAgentName sanitises issue slugs into herdr's ^[a-z][a-z0-9_-]{0,31}$ contract", () => {
+  assert.equal(herdrAgentName("Implement-User-Auth"), "implement-user-auth");
+  assert.equal(herdrAgentName("123-numeric-lead").length <= 32, true);
+  assert.match(herdrAgentName("123-numeric-lead"), /^[a-z][a-z0-9_-]{0,31}$/);
+  assert.match(
+    herdrAgentName("implement-a-very-long-descriptive-issue-slug-that-exceeds-the-limit"),
+    /^[a-z][a-z0-9_-]{0,31}$/,
+  );
+  assert.match(herdrAgentName(""), /^[a-z][a-z0-9_-]{0,31}$/);
+});
+
 test("extractHerdrReply pulls the reply from between the echoed prompt and the trailing status line", () => {
   assert.equal(extractHerdrReply(RENDERED_REPLY, "Reply with exactly: herdr spike ok"), "herdr spike ok");
 });
@@ -808,6 +820,28 @@ test("dispatchViaHerdr: workspace create, start, prompt, read, close — the hap
   assert.ok(effects._calls[0].includes(spec(root, promptFile).cwd), "the dispatch's own worktree, not mainRoot");
   assert.deepEqual(effects._calls[1], ["herdr", "agent", "start", "alpha", "--kind", "claude", "--pane", "w1:p1"]);
   assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w1"], "the dispatch's own workspace is always closed");
+});
+
+test("dispatchViaHerdr sanitises an issue slug for herdr's agent name but keeps it readable as the workspace label", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { root_pane: { pane_id: "w1:p1" }, workspace: { workspace_id: "w1" } } }), // workspace create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read (raw text, not JSON)
+      json({ result: { type: "ok" } }), // workspace close
+    ],
+    { mainRoot: root },
+  );
+
+  await dispatchViaHerdr(effects, spec(root, promptFile, { outFile, slug: "Implement-User-Auth" }), { timeoutMs: 60_000 });
+
+  const labelIndex = effects._calls[0].indexOf("--label");
+  assert.equal(effects._calls[0][labelIndex + 1], "Implement-User-Auth", "label stays human-readable");
+  assert.deepEqual(effects._calls[1], ["herdr", "agent", "start", "implement-user-auth", "--kind", "claude", "--pane", "w1:p1"]);
 });
 
 // Claude's workspace-trust dialog is keyed off the repository, not the literal cwd

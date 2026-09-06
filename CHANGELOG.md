@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.60]
+
+### Fixed
+
+- **`dispatchViaHerdr` no longer hands herdr's `agent start` a name it can reject.** herdr
+  constrains agent names to `^[a-z][a-z0-9_-]{0,31}$`, but the value passed in was an issue
+  slug straight from `issueSlug()` — which comes from a markdown filename, so nothing stopped
+  one running long or carrying an uppercase letter. New `herdrAgentName()` sanitises just that
+  value at the herdr boundary (lowercases, strips invalid characters, forces a leading letter,
+  caps at 32); the workspace's `--label` keeps the original, human-readable slug so a pane
+  watcher still sees the real issue name.
+  - registry.json: crew-afk 2.2.46 -> 2.2.47 (`orchestrator/lib/dispatch.mjs`).
+
 ## [1.29.59]
 
 ### Added
