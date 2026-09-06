@@ -760,7 +760,7 @@ test("preflightHerdr (via preflight's herdr option) fails when the herdr CLI is 
     },
   };
   const problems = preflight(effects, "claude", root, [], { herdr: true });
-  assert.deepEqual(problems, ["HERDR_ENABLED=1 but the herdr CLI was not found on PATH"]);
+  assert.deepEqual(problems, ["CREW_HERDR_ENABLED=1 but the herdr CLI was not found on PATH"]);
 });
 
 test("preflightHerdr fails when herdr's server is not running", () => {
@@ -773,7 +773,7 @@ test("preflightHerdr fails when herdr's server is not running", () => {
     },
   };
   const problems = preflight(effects, "claude", root, [], { herdr: true });
-  assert.deepEqual(problems, ["HERDR_ENABLED=1 but the herdr server is not running — start it with: herdr server"]);
+  assert.deepEqual(problems, ["CREW_HERDR_ENABLED=1 but the herdr server is not running — start it with: herdr server"]);
 });
 
 test("preflightHerdr passes when herdr is on PATH and its server is running", () => {
@@ -818,8 +818,28 @@ test("dispatchViaHerdr: workspace create, start, prompt, read, close — the hap
   assert.equal(readFileSync(outFile, "utf8"), "herdr spike ok");
   assert.deepEqual(effects._calls[0].slice(0, 3), ["herdr", "workspace", "create"]);
   assert.ok(effects._calls[0].includes(spec(root, promptFile).cwd), "the dispatch's own worktree, not mainRoot");
-  assert.deepEqual(effects._calls[1], ["herdr", "agent", "start", "alpha", "--kind", "claude", "--pane", "w1:p1"]);
+  assert.deepEqual(effects._calls[1], [
+    "herdr",
+    "agent",
+    "start",
+    "alpha",
+    "--kind",
+    "claude",
+    "--pane",
+    "w1:p1",
+    "--",
+    "--permission-mode",
+    "bypassPermissions",
+  ]);
   assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w1"], "the dispatch's own workspace is always closed");
+  const promptCall = effects._calls.find((c) => c[1] === "agent" && c[2] === "prompt");
+  assert.ok(
+    promptCall.includes("--until") &&
+      promptCall.filter((a) => a === "--until").length === 2 &&
+      promptCall[promptCall.indexOf("--until") + 1] === "idle" &&
+      promptCall[promptCall.lastIndexOf("--until") + 1] === "done",
+    "waits only for idle or done, not the default idle/done/blocked/unknown — a pane stuck on an unhandled dialog must time out, not read back as a mundane empty reply",
+  );
 });
 
 test("dispatchViaHerdr sanitises an issue slug for herdr's agent name but keeps it readable as the workspace label", async () => {
@@ -841,7 +861,19 @@ test("dispatchViaHerdr sanitises an issue slug for herdr's agent name but keeps 
 
   const labelIndex = effects._calls[0].indexOf("--label");
   assert.equal(effects._calls[0][labelIndex + 1], "Implement-User-Auth", "label stays human-readable");
-  assert.deepEqual(effects._calls[1], ["herdr", "agent", "start", "implement-user-auth", "--kind", "claude", "--pane", "w1:p1"]);
+  assert.deepEqual(effects._calls[1], [
+    "herdr",
+    "agent",
+    "start",
+    "implement-user-auth",
+    "--kind",
+    "claude",
+    "--pane",
+    "w1:p1",
+    "--",
+    "--permission-mode",
+    "bypassPermissions",
+  ]);
 });
 
 // Claude's workspace-trust dialog is keyed off the repository, not the literal cwd
@@ -892,6 +924,51 @@ test("dispatchViaHerdr fails (does not blindly send keys) on a blocked state it 
   assert.match(result.stderr, /unrecognised dialog/);
   assert.match(readFileSync(logFile, "utf8"), /\[DISPATCH-FAIL\] agent=crew-coder herdr=1/);
   assert.doesNotMatch(effects._calls.map((c) => c.join(" ")).join("\n"), /send-keys/, "never answers a dialog it can't identify");
+});
+
+test("dispatchViaHerdr surfaces the rendered pane when the agent is already blocked, instead of a mysterious empty success", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { root_pane: { pane_id: "w1:p1" }, workspace: { workspace_id: "w1" } } }), // workspace create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      err(1, "agent alpha is blocked and rejected the prompt", "agent_blocked"), // agent prompt --wait
+      { code: 0, stdout: "Allow this MCP server to run? [y/n]", stderr: "" }, // agent read (final)
+      json({ result: { type: "ok" } }), // workspace close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /already blocked/);
+  assert.match(result.stderr, /Allow this MCP server to run/, "the actual blocked screen, not just the CLI's own error JSON");
+  assert.match(readFileSync(logFile, "utf8"), /\[DISPATCH-FAIL\] agent=crew-coder herdr=1/);
+});
+
+test("dispatchViaHerdr treats a herdr `timeout` error the same as `agent_prompt_stalled` — both mean the worker never settled", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { root_pane: { pane_id: "w1:p1" }, workspace: { workspace_id: "w1" } } }), // workspace create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      err(1, "timed out waiting for idle or done", "timeout"), // agent prompt --wait
+      { code: 0, stdout: "some unrelated pane text", stderr: "" }, // agent read (final)
+      json({ result: { type: "ok" } }), // workspace close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 1);
+  assert.equal(result.timedOut, true);
 });
 
 test("dispatch() routes to dispatchViaHerdr only for claude with spec.herdr set, never for other platforms", () => {

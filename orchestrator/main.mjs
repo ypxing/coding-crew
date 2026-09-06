@@ -10,10 +10,17 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
- *   $HERDR_ENABLED=1                       run claude dispatches through herdr.dev instead of
+ *   $CREW_HERDR_ENABLED=1                   run claude dispatches through herdr.dev instead of
  *                                           headless, so a human can watch them live in a
  *                                           pane; requires `herdr server` already running.
  *                                           claude platform only
+ *   $CREW_HERDR_KEEP_PANE=1                 with CREW_HERDR_ENABLED=1: leave a failed dispatch's
+ *                                           pane/workspace open instead of closing it, so
+ *                                           `herdr agent read <name>` can show what the pane
+ *                                           actually rendered. Named agent = the sanitised
+ *                                           issue slug (see herdrAgentName). Debug only — a
+ *                                           kept pane holds its name, so a retry fails with
+ *                                           agent_name_taken.
  *   --model <alias|inherit>                coder model; reviewer/triage match it unless
  *                                           .coding-crew/afk-models.json names them explicitly
  *   --feature-slug <slug>                  or derived from the first issue's dir
@@ -51,7 +58,7 @@ function parseArgs(argv) {
   const o = {
     command: "run",
     platform: process.env.CREW_PLATFORM || "pi",
-    herdr: process.env.HERDR_ENABLED === "1",
+    herdr: process.env.CREW_HERDR_ENABLED === "1",
     model: null,
     featureSlug: null,
     coverage: false,

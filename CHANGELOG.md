@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.29.61]
+
+### Fixed
+
+- **`dispatchViaHerdr`'s `agent start` no longer stalls an unattended worker on an
+  interactive permission prompt.** herdr starts claude as a plain interactive session with no
+  auto-accept, unlike the headless `claude -p` path (which already passes `--permission-mode
+  bypassPermissions`) — so a worker's first tool call would block on a yes/no/auto-mode
+  dialog nobody is watching to answer, while `agent prompt --wait` still returned as if the
+  turn had finished (herdr's idle-detection treats that dialog as idle too), producing a
+  silent `DISPATCH-FAIL` with no error text that reads as a crash rather than a stuck
+  permission gate. `agent start` now passes the same `--permission-mode bypassPermissions`.
+  Also fixed a `paneId` scoping bug that shadowed the outer variable with a block-local
+  `const`, silently keeping the debug flag below's pane-id logging as `pane=?`.
+- **`dispatchViaHerdr`'s `agent prompt --wait` now passes `--until idle --until done`**
+  instead of matching herdr's default idle/done/blocked/unknown — herdr's own docs recommend
+  this pairing for automation, "to differentiate between truly finished work and intermediate
+  idle states." Without it, a pane stuck on any blocking dialog this file doesn't already
+  know to answer (the bypassPermissions fix above closes only the one instance that was
+  actually seen live) would settle the wait and read back as an empty reply indistinguishable
+  from a worker that legitimately produced nothing. A `blocked` pane now runs out the clock on
+  `--timeout` instead, a real, loggable failure. Also added explicit handling for herdr's
+  `agent_blocked` error code (submission rejected outright because the pane was already
+  blocked) that puts the actual rendered pane text in the failure message, rather than just
+  the CLI's own error JSON, which never contains the dialog text itself.
+
+### Added
+
+- **`CREW_HERDR_KEEP_PANE=1`** — with `CREW_HERDR_ENABLED=1`, leaves a failed dispatch's
+  pane/workspace open instead of closing it, so `herdr agent read <name>` (or the herdr UI)
+  can show what the pane actually rendered instead of the transcript vanishing the instant
+  the failure is logged. Debug only: a kept pane holds its agent name, so a same-named retry
+  fails with `agent_name_taken`.
+
+### Changed
+
+- **`HERDR_ENABLED` renamed to `CREW_HERDR_ENABLED`**, matching the `CREW_`-prefixed naming
+  of every other crew-afk env var (`CREW_PLATFORM`, `CREW_FAKE_DISPATCH`,
+  `CREW_HERDR_KEEP_PANE`).
+  - registry.json: crew-afk 2.2.47 -> 2.2.48 (`orchestrator/lib/dispatch.mjs`,
+    `orchestrator/main.mjs`).
+
 ## [1.29.60]
 
 ### Fixed
