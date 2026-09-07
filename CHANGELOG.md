@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.29.67]
+
+### Fixed
+
+- **Renamed `CREW_HERDR_ENABLED` to `HERDR_ENV`.** Same `=1` gate on herdr dispatch, just a
+  clearer name — `CREW_HERDR_ENABLED` read as crew-afk-specific when herdr dispatch is a
+  platform-agnostic mode any of the four launchers can turn on.
+
 ## [1.29.66]
 
 ### Added

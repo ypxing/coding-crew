@@ -852,7 +852,7 @@ test("preflightHerdr (via preflight's herdr option) fails when the herdr CLI is 
     },
   };
   const problems = preflight(effects, "claude", root, [], { herdr: true });
-  assert.deepEqual(problems, ["CREW_HERDR_ENABLED=1 but the herdr CLI was not found on PATH"]);
+  assert.deepEqual(problems, ["HERDR_ENV=1 but the herdr CLI was not found on PATH"]);
 });
 
 test("preflightHerdr fails when herdr's server is not running", () => {
@@ -865,7 +865,7 @@ test("preflightHerdr fails when herdr's server is not running", () => {
     },
   };
   const problems = preflight(effects, "claude", root, [], { herdr: true });
-  assert.deepEqual(problems, ["CREW_HERDR_ENABLED=1 but the herdr server is not running — start it with: herdr server"]);
+  assert.deepEqual(problems, ["HERDR_ENV=1 but the herdr server is not running — start it with: herdr server"]);
 });
 
 test("preflightHerdr passes when herdr is on PATH and its server is running", () => {

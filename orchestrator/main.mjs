@@ -10,7 +10,7 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
- *   $CREW_HERDR_ENABLED=1                   run dispatches through herdr.dev instead of
+ *   $HERDR_ENV=1                            run dispatches through herdr.dev instead of
  *                                           headless, so a human can watch them live in a
  *                                           pane; requires `herdr server` already running.
  *                                           Every dispatch this run shares one herdr
@@ -25,7 +25,7 @@
  *                                           platforms; codex's reply-extraction is
  *                                           unverified live (see dispatch.mjs's
  *                                           dispatchViaHerdr doc comment)
- *   $CREW_HERDR_KEEP_PANE=1                 with CREW_HERDR_ENABLED=1: leave a failed dispatch's
+ *   $CREW_HERDR_KEEP_PANE=1                 with HERDR_ENV=1: leave a failed dispatch's
  *                                           tab open instead of closing it, so `herdr agent
  *                                           read <name>` can show what the pane actually
  *                                           rendered. Named agent = the issue number,
@@ -70,7 +70,7 @@ function parseArgs(argv) {
   const o = {
     command: "run",
     platform: process.env.CREW_PLATFORM || "pi",
-    herdr: process.env.CREW_HERDR_ENABLED === "1",
+    herdr: process.env.HERDR_ENV === "1",
     model: null,
     featureSlug: null,
     coverage: false,

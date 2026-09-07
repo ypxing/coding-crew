@@ -1186,17 +1186,17 @@ export function preflight(effects, platform, mainRoot, agents, { herdr = false }
 }
 
 /**
- * CREW_HERDR_ENABLED=1 applies to whichever --platform the sprint runs (see
+ * HERDR_ENV=1 applies to whichever --platform the sprint runs (see
  * dispatchViaHerdr's doc comment — herdr's own --kind already covers all four), so this
  * check fails the sprint at startup with one clear message, rather than every dispatch
  * discovering mid-round that herdr's CLI or server isn't there.
  */
 function preflightHerdr(effects) {
   const which = effects.exec("sh", ["-c", "command -v herdr"], { mutating: false });
-  if (which.code !== 0) return ["CREW_HERDR_ENABLED=1 but the herdr CLI was not found on PATH"];
+  if (which.code !== 0) return ["HERDR_ENV=1 but the herdr CLI was not found on PATH"];
   const status = effects.exec("herdr", ["status"], { mutating: false });
   if (status.code !== 0 || !/status:\s*running/.test(status.stdout || "")) {
-    return ["CREW_HERDR_ENABLED=1 but the herdr server is not running — start it with: herdr server"];
+    return ["HERDR_ENV=1 but the herdr server is not running — start it with: herdr server"];
   }
   return [];
 }
