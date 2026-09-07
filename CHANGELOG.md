@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.68]
+
+### Added
+
+- **`CREW_HERDR_ENABLED=1` (now `HERDR_ENV=1`) renames the triggering pane's own tab to the
+  sprint's feature slug when reusing that pane's workspace.** The reused pane's tab still
+  showed whatever it was called before crew-afk started running in it (often the literal
+  "crew-afk" the human typed to launch it) — herdr injects that pane's tab as `HERDR_TAB_ID`
+  alongside `HERDR_WORKSPACE_ID`, so `ensureHerdrWorkspace` now uses that one chance to
+  relabel it the same way a freshly created workspace already is. Skipped when no feature
+  slug resolved, and best-effort like the log tab: a failed rename is cosmetic, not a reason
+  to fail the run.
+
 ## [1.29.67]
 
 ### Fixed

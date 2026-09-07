@@ -1417,6 +1417,74 @@ test("dispatchViaHerdr reuses the triggering pane's own workspace via HERDR_WORK
   assert.deepEqual(effects._calls[0], ["herdr", "tab", "create", "--workspace", "w1", "--cwd", root, "--label", "crew-afk-log", "--no-focus"]);
 });
 
+function withHerdrTabId(id, fn) {
+  const prior = process.env.HERDR_TAB_ID;
+  process.env.HERDR_TAB_ID = id;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (prior === undefined) delete process.env.HERDR_TAB_ID;
+      else process.env.HERDR_TAB_ID = prior;
+    });
+}
+
+// The reused pane's own tab still shows whatever it was called before crew-afk started running
+// in it — herdr also injects that pane's own tab as HERDR_TAB_ID, so this is the one chance to
+// relabel it to the sprint's feature slug, the same way a freshly created workspace already is.
+test("dispatchViaHerdr renames the triggering pane's own tab to the feature slug when reusing HERDR_WORKSPACE_ID", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { type: "ok" } }), // tab rename
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { agent: { agent_status: "idle" } } }),
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
+      json({ result: { type: "ok" } }), // dispatch tab close
+    ],
+    { mainRoot: root },
+  );
+
+  await withHerdrWorkspaceId("w1", () =>
+    withHerdrTabId("w1:t1", () =>
+      dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", featureSlug: "implement-user-auth" }), {
+        timeoutMs: 60_000,
+      }),
+    ),
+  );
+
+  assert.deepEqual(effects._calls[0], ["herdr", "tab", "rename", "w1:t1", "implement-user-auth"]);
+});
+
+test("dispatchViaHerdr never renames the triggering pane's own tab when no feature slug resolved — nothing meaningful to relabel it to", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { agent: { agent_status: "idle" } } }),
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
+      json({ result: { type: "ok" } }),
+    ],
+    { mainRoot: root },
+  );
+
+  await withHerdrWorkspaceId("w1", () =>
+    withHerdrTabId("w1:t1", () => dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 })),
+  );
+
+  assert.ok(
+    !effects._calls.some((c) => c[1] === "tab" && c[2] === "rename"),
+    "no feature slug resolved, so the pane's own tab is left exactly as the human named it",
+  );
+});
+
 test("closeHerdrWorkspace never closes a workspace reused via HERDR_WORKSPACE_ID — that would close the pane crew-afk was launched from", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");

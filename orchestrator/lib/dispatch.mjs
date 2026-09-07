@@ -608,6 +608,26 @@ async function ensureHerdrLogTab(effects, workspaceId, label, logFile) {
 }
 
 /**
+ * The triggering pane's own tab still shows whatever it was called before crew-afk started
+ * running in it (often the literal "crew-afk" the human typed to launch it) — herdr injects
+ * that pane's tab as `HERDR_TAB_ID` alongside `HERDR_WORKSPACE_ID`, so this is the one chance
+ * to relabel it to the sprint's feature slug the same way a freshly created workspace already
+ * is (see herdrWorkspaceLabel). Skipped when no feature slug resolved: relabelling someone's
+ * own tab to the "crew-afk" fallback would just clobber a title they chose with no gain. Best
+ * effort like ensureHerdrLogTab — a failed rename is cosmetic, not a reason to fail the run.
+ */
+async function renameHerdrTriggeringTab(effects, featureSlug) {
+  if (!featureSlug) return;
+  const tabId = process.env.HERDR_TAB_ID;
+  if (!tabId) return;
+  try {
+    await herdrExec(effects, ["tab", "rename", tabId, featureSlug]);
+  } catch {
+    /* cosmetic — the sprint's own dispatch tabs are what matters */
+  }
+}
+
+/**
  * The one herdr workspace for a whole crew-afk run, created by whichever dispatch gets here
  * first and reused by every dispatch after it — see the file-header comment for why. Cached
  * as a promise, not a plain field: mapPool dispatches concurrently, and the promise is
@@ -636,6 +656,7 @@ function ensureHerdrWorkspace(effects, { featureSlug, logFile } = {}) {
       const triggeringWorkspaceId = process.env.HERDR_WORKSPACE_ID;
       if (triggeringWorkspaceId) {
         effects._herdrWorkspaceReused = true;
+        await renameHerdrTriggeringTab(effects, featureSlug);
         if (logFile) await ensureHerdrLogTab(effects, triggeringWorkspaceId, herdrWorkspaceLabel(featureSlug), logFile);
         return triggeringWorkspaceId;
       }
