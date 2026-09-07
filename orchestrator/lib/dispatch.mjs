@@ -810,8 +810,17 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   const bound = timeoutMs || 45 * 60 * 1000;
   const label = spec.slug || spec.agent;
   const name = herdrDispatchName(label, spec.agent, spec.issueNumber);
-  let tabId = null;
-  let paneId = null;
+  // spec.herdrReuse ({tabId, paneId}) names a pane a prior dispatch under this same
+  // deterministic name left open (see spec.herdrPersistPane below) — set only by a caller
+  // that tracked those ids itself (pipeline.mjs's herdr-reuse bookkeeping), never derived
+  // here. Reusing it skips workspace/tab-create/agent-start entirely and goes straight to
+  // `agent prompt`, so the coder's own session (files already read, decisions already made)
+  // carries into the retry instead of starting cold. Never verified live against a real
+  // herdr server — reusedPromptFailed below falls back to a fresh dispatch rather than
+  // trusting that unverified path to fail loud.
+  let tabId = spec.herdrReuse?.tabId ?? null;
+  let paneId = spec.herdrReuse?.paneId ?? null;
+  const reusingPane = !!spec.herdrReuse;
 
   // CREW_HERDR_KEEP_PANE=1 leaves a failed dispatch's tab open instead of closing it here, so
   // `herdr agent read <name>` (or the herdr UI) can show what the pane actually rendered —
@@ -819,10 +828,17 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   // when you'd want to see it. Debug-only: every dispatch after the first failure in a sprint
   // still holds that pane, so a retry under the same name then fails with agent_name_taken.
   const keepPaneOnFail = !!process.env.CREW_HERDR_KEEP_PANE;
+  // spec.herdrPersistPane (set only for a herdr coder dispatch — see pipeline.mjs) defers
+  // closing a *successful* dispatch's tab to the caller: verify-worktree.sh runs after this
+  // returns, so at this point nobody yet knows whether the pane will be worth reusing.
+  // herdrTabId/herdrPaneId ride on the return value either way so the caller can close it
+  // itself once it does know.
+  const persistPane = !!spec.herdrPersistPane;
 
   const finish = async (code, stderr, text, timedOut = false) => {
     const failed = code !== 0 || !((text ?? "").trim());
-    if (tabId && !(failed && keepPaneOnFail)) {
+    const keepOpen = failed ? keepPaneOnFail : persistPane;
+    if (tabId && !keepOpen) {
       await herdrExec(effects, ["tab", "close", tabId]);
     }
     writeFileSync(spec.outFile, text ?? "");
@@ -833,15 +849,16 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
         `[DISPATCH-FAIL] agent=${spec.agent} herdr=1 code=${code} timedOut=${!!timedOut}${kept} ${(stderr || "").trim().slice(0, 400)}`,
       );
     }
-    return { code, timedOut: !!timedOut, dryRun: false, stderr: stderr ?? "", text: text ?? "" };
+    return {
+      code,
+      timedOut: !!timedOut,
+      dryRun: false,
+      stderr: stderr ?? "",
+      text: text ?? "",
+      herdrTabId: tabId && keepOpen ? tabId : null,
+      herdrPaneId: paneId && keepOpen ? paneId : null,
+    };
   };
-
-  let workspaceId;
-  try {
-    workspaceId = await ensureHerdrWorkspace(effects, { featureSlug: spec.featureSlug, logFile: spec.logFile });
-  } catch (err) {
-    return await finish(1, err.message, "");
-  }
 
   let invocation;
   try {
@@ -850,72 +867,82 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     return await finish(1, err.message, "");
   }
 
-  // One tab per dispatch, in the sprint's one shared workspace, closed in finish() — the
-  // workspace itself outlives every individual dispatch and is closed once, at the end of
-  // the whole run (see closeHerdrWorkspace, called from main.mjs). CLAUDE_CODE_SESSION_ID/
-  // CLAUDE_CODE_CHILD_SESSION clearing is claude-only (see buildDispatch's claude branch for
-  // why): pi/codex/copilot have no equivalent parent-session inheritance documented here.
-  const create = await herdrExec(effects, [
-    "tab",
-    "create",
-    "--workspace",
-    workspaceId,
-    "--cwd",
-    spec.cwd,
-    "--label",
-    label,
-    ...(platform === "claude" ? ["--env", "CLAUDE_CODE_SESSION_ID=", "--env", "CLAUDE_CODE_CHILD_SESSION="] : []),
-    "--env",
-    `MAIN_ROOT=${spec.mainRoot}`,
-    "--env",
-    "CREW_ORCHESTRATED=1",
-    "--no-focus",
-  ]);
-  const created = herdrJson(create)?.result;
-  paneId = created?.root_pane?.pane_id;
-  if (create.code !== 0 || !paneId) {
-    return await finish(1, `herdr tab create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
-  }
-  tabId = created?.tab?.tab_id;
+  if (!reusingPane) {
+    let workspaceId;
+    try {
+      workspaceId = await ensureHerdrWorkspace(effects, { featureSlug: spec.featureSlug, logFile: spec.logFile });
+    } catch (err) {
+      return await finish(1, err.message, "");
+    }
 
-  // A one-time trust/consent dialog some platforms' interactive mode shows on a fresh repo,
-  // keyed off the repository, not the literal cwd (confirmed live for claude: trusting
-  // mainRoot once, then starting claude in a git worktree of that same repo, skipped the
-  // dialog entirely). So this only actually answers it on whichever dispatch happens to hit
-  // an untrusted repo first — every dispatch after that, in this sprint or a later one,
-  // starts ready immediately and skips straight past this block. Never a blind keypress: an
-  // unrecognised blocked reason is a real failure (see herdr's own --skill guidance), and a
-  // platform with no HERDR_DIALOGS entry (pi never needs one — see buildHerdrInvocation's
-  // --approve; codex has none verified yet) fails the same way an unmatched dialog text does.
-  const start = await herdrExec(effects, ["agent", "start", name, "--kind", platform, "--pane", paneId, "--", ...invocation.args], bound);
-  if (start.code !== 0) {
-    if (herdrJson(start)?.error?.code !== "agent_not_ready") {
-      return await finish(1, `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`, "");
+    // One tab per dispatch, in the sprint's one shared workspace, closed in finish() (unless
+    // persistPane keeps it for a caller-tracked retry) — the workspace itself outlives every
+    // individual dispatch and is closed once, at the end of the whole run (see
+    // closeHerdrWorkspace, called from main.mjs). CLAUDE_CODE_SESSION_ID/
+    // CLAUDE_CODE_CHILD_SESSION clearing is claude-only (see buildDispatch's claude branch for
+    // why): pi/codex/copilot have no equivalent parent-session inheritance documented here.
+    const create = await herdrExec(effects, [
+      "tab",
+      "create",
+      "--workspace",
+      workspaceId,
+      "--cwd",
+      spec.cwd,
+      "--label",
+      label,
+      ...(platform === "claude" ? ["--env", "CLAUDE_CODE_SESSION_ID=", "--env", "CLAUDE_CODE_CHILD_SESSION="] : []),
+      "--env",
+      `MAIN_ROOT=${spec.mainRoot}`,
+      "--env",
+      "CREW_ORCHESTRATED=1",
+      "--no-focus",
+    ]);
+    const created = herdrJson(create)?.result;
+    paneId = created?.root_pane?.pane_id;
+    if (create.code !== 0 || !paneId) {
+      return await finish(1, `herdr tab create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
     }
-    // Unlike every other herdr subcommand used here, `agent read`/`pane read` print raw
-    // rendered text on stdout, never a JSON envelope — confirmed live, and the reason
-    // herdrJson() must not be used on this call.
-    const blockedText = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "40"])).stdout || "";
-    const dialog = HERDR_DIALOGS[platform];
-    if (!dialog || !blockedText.toLowerCase().includes(dialog.match)) {
-      return await finish(1, `herdr agent start blocked on an unrecognised dialog: ${blockedText.trim().slice(0, 300)}`, "");
-    }
-    await herdrExec(effects, ["agent", "send-keys", name, ...dialog.keys]);
-    const deadline = Date.now() + Math.min(bound, 30_000);
-    let ready = false;
-    while (Date.now() < deadline) {
-      const get = await herdrExec(effects, ["agent", "get", name]);
-      if (get.code !== 0) break;
-      if (herdrJson(get)?.result?.agent?.interactive_ready) {
-        ready = true;
-        break;
+    tabId = created?.tab?.tab_id;
+
+    // A one-time trust/consent dialog some platforms' interactive mode shows on a fresh repo,
+    // keyed off the repository, not the literal cwd (confirmed live for claude: trusting
+    // mainRoot once, then starting claude in a git worktree of that same repo, skipped the
+    // dialog entirely). So this only actually answers it on whichever dispatch happens to hit
+    // an untrusted repo first — every dispatch after that, in this sprint or a later one,
+    // starts ready immediately and skips straight past this block. Never a blind keypress: an
+    // unrecognised blocked reason is a real failure (see herdr's own --skill guidance), and a
+    // platform with no HERDR_DIALOGS entry (pi never needs one — see buildHerdrInvocation's
+    // --approve; codex has none verified yet) fails the same way an unmatched dialog text does.
+    const start = await herdrExec(effects, ["agent", "start", name, "--kind", platform, "--pane", paneId, "--", ...invocation.args], bound);
+    if (start.code !== 0) {
+      if (herdrJson(start)?.error?.code !== "agent_not_ready") {
+        return await finish(1, `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`, "");
       }
-      // A live run against a real server hammered it with a spawnSync call every tick
-      // here before this existed — hundreds of polls in the ~2s claude actually took to
-      // settle after `send-keys`. 300ms keeps the poll responsive without doing that again.
-      await new Promise((r) => setTimeout(r, 300));
+      // Unlike every other herdr subcommand used here, `agent read`/`pane read` print raw
+      // rendered text on stdout, never a JSON envelope — confirmed live, and the reason
+      // herdrJson() must not be used on this call.
+      const blockedText = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "40"])).stdout || "";
+      const dialog = HERDR_DIALOGS[platform];
+      if (!dialog || !blockedText.toLowerCase().includes(dialog.match)) {
+        return await finish(1, `herdr agent start blocked on an unrecognised dialog: ${blockedText.trim().slice(0, 300)}`, "");
+      }
+      await herdrExec(effects, ["agent", "send-keys", name, ...dialog.keys]);
+      const deadline = Date.now() + Math.min(bound, 30_000);
+      let ready = false;
+      while (Date.now() < deadline) {
+        const get = await herdrExec(effects, ["agent", "get", name]);
+        if (get.code !== 0) break;
+        if (herdrJson(get)?.result?.agent?.interactive_ready) {
+          ready = true;
+          break;
+        }
+        // A live run against a real server hammered it with a spawnSync call every tick
+        // here before this existed — hundreds of polls in the ~2s claude actually took to
+        // settle after `send-keys`. 300ms keeps the poll responsive without doing that again.
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      if (!ready) return await finish(1, "herdr agent never became ready after answering the trust dialog", "");
     }
-    if (!ready) return await finish(1, "herdr agent never became ready after answering the trust dialog", "");
   }
 
   // --until idle --until done, not the default (idle/done/blocked/unknown all match): herdr's
@@ -929,6 +956,17 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     ["agent", "prompt", name, invocation.prompt, "--wait", "--until", "idle", "--until", "done", "--timeout", String(bound)],
     bound,
   );
+
+  // The reused pane may no longer exist (herdr restarted, a human closed it by hand) — this
+  // is the only place that finds out, since reusingPane skipped every earlier check that
+  // would otherwise have caught it. Retried exactly once, as a normal fresh dispatch, rather
+  // than failing the whole round over an optimisation that didn't pan out.
+  if (reusingPane && promptResult.code !== 0 && herdrJson(promptResult)?.error?.code === "agent_not_found") {
+    tabId = null;
+    paneId = null;
+    return await dispatchViaHerdr(effects, platform, { ...spec, herdrReuse: null }, { timeoutMs });
+  }
+
   const rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
   const text = extractHerdrReply(rendered, invocation.prompt, platform);
 
@@ -946,6 +984,22 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     return await finish(1, `herdr agent prompt failed: ${(promptResult.stderr || promptResult.stdout || "").trim()}`, text, timedOut);
   }
   return await finish(0, "", text);
+}
+
+/**
+ * Explicit close for a pane a caller kept open via spec.herdrPersistPane (see
+ * dispatchViaHerdr's finish()) — the herdr-reuse bookkeeping in pipeline.mjs calls this once
+ * it knows the pane will not be reused again (verify passed, or the one retry is spent).
+ * A no-op when tabId is falsy, so a caller that never persisted a pane can call this
+ * unconditionally without checking first.
+ */
+export async function closeHerdrPane(effects, tabId) {
+  if (!tabId) return;
+  try {
+    await herdrExec(effects, ["tab", "close", tabId]);
+  } catch {
+    /* the pane is a herdr-UI nuisance at worst, not a reason to fail the caller */
+  }
 }
 
 /**

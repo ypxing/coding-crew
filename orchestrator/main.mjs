@@ -58,11 +58,11 @@ import { spawnSync } from "node:child_process";
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { closeHerdrWorkspace, DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
+import { closeHerdrPane, closeHerdrWorkspace, DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { selectDispatchable } from "./lib/tracker.mjs";
-import { ensureWorktreeInclude } from "./lib/worktree.mjs";
+import { ensureWorktreeInclude, removeWorktree } from "./lib/worktree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -458,6 +458,15 @@ async function main() {
   try {
     ({ stalled } = await runSprint(ctx));
   } finally {
+    // A slug whose one-shot herdr-reuse pane/worktree (see handleVerificationFailure in
+    // pipeline.mjs) never got consumed by a next round — max-rounds hit, an unhandled error,
+    // or every other issue resolving before this one's retry ran — would otherwise leave that
+    // worktree on disk, and, unless the whole workspace is closed just below, that pane open.
+    // Swept here, once, regardless of how the run ended.
+    for (const { tabId, worktree } of sprint.pendingHerdrReuses()) {
+      await closeHerdrPane(effects, tabId);
+      removeWorktree(effects, { mainRoot: effects.mainRoot, path: worktree });
+    }
     // A no-op unless a herdr dispatch actually created the sprint's one shared workspace
     // (see dispatchViaHerdr/ensureHerdrWorkspace) — closed here, once, regardless of how
     // the run ended, so a thrown error above doesn't leave it dangling in herdr's UI.

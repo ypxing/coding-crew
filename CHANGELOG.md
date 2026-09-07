@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.69]
+
+### Added
+
+- **A herdr coder dispatch that fails verification now retries in the same pane instead of a
+  fresh one, once per issue.** Every dispatch's tab used to close the moment its result came
+  back, win or lose, so a fixable-verdict retry always started a brand-new agent process —
+  the previous attempt's context (files already read, decisions already made) was thrown
+  away every round. `dispatchViaHerdr` now leaves a successful call's pane open via
+  `spec.herdrPersistPane` (returned as `herdrTabId`/`herdrPaneId`) and, given
+  `spec.herdrReuse`, skips workspace/tab-create/agent-start entirely and reissues `agent
+  prompt` straight into that pane. `handleVerificationFailure` queues the pane for exactly
+  one reuse via `Sprint`'s new `markHerdrReusePending`/`consumeHerdrReusePending`/
+  `herdrReuseState`, and `finishPartial` keeps that issue's worktree alongside it so the
+  retry's dispatch has somewhere to land. If the reused pane is gone by the time the retry
+  runs (herdr restarted, a human closed it), `dispatchViaHerdr` falls back to one fresh
+  dispatch rather than failing the round. A queued reuse nobody ever consumed (max-rounds,
+  an unhandled error) is swept at the end of the run by main.mjs's new
+  `sprint.pendingHerdrReuses()` loop, closing the pane and removing the worktree.
+
 ## [1.29.68]
 
 ### Added

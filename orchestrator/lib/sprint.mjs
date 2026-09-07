@@ -53,6 +53,11 @@ export class Sprint {
   constructor(effects, env) {
     this.effects = effects;
     this.env = env;
+    // slug -> {state: "pending"|"used", tabId, paneId} — herdr pane-reuse bookkeeping.
+    // In-memory only, never persisted to sprint-state.json: it bounds a herdr coder's pane
+    // reuse to exactly one retry per issue for *this* process's run. A crashed/resumed
+    // sprint just loses the optimisation (falls back to a fresh pane), never correctness.
+    this._herdrReuse = new Map();
   }
 
   static init(effects, { featureSlug, coverage, promote, passthrough = [], deps = true, log = () => {} }) {
@@ -213,5 +218,44 @@ export class Sprint {
 
   trace(marker, text = "") {
     return this.effects.bash("trace.sh", [marker, text], { env: this.childEnv() });
+  }
+
+  /** "none" (never offered or already spent) | "pending" (one reuse queued for next round). */
+  herdrReuseState(slug) {
+    return this._herdrReuse.get(slug)?.state ?? "none";
+  }
+
+  /**
+   * Queue this slug's just-kept-open pane and worktree for exactly one reuse, next round.
+   * worktree rides along only so a queued-but-never-consumed entry can still be cleaned up
+   * (see pendingHerdrReuses) — consumeHerdrReusePending itself never hands worktree back,
+   * since the caller that spends the reuse already has its own worktree path.
+   */
+  markHerdrReusePending(slug, { tabId, paneId, worktree }) {
+    this._herdrReuse.set(slug, { state: "pending", tabId, paneId, worktree });
+  }
+
+  /**
+   * Reads and spends the one queued reuse in the same call — a slug can only ever get this
+   * back non-null once. Returns null when nothing was queued (options.herdr was off when
+   * the failure happened, the retry already consumed it, or this is a fresh dispatch).
+   */
+  consumeHerdrReusePending(slug) {
+    const entry = this._herdrReuse.get(slug);
+    if (!entry || entry.state !== "pending") return null;
+    this._herdrReuse.set(slug, { state: "used" });
+    return { tabId: entry.tabId, paneId: entry.paneId };
+  }
+
+  /**
+   * Every slug whose queued reuse was never consumed — the sprint stopped (max-rounds, an
+   * unhandled error, every other issue resolving first) before a next round redispatched it.
+   * main.mjs's end-of-run sweep reads this once to close each pane and remove each worktree
+   * that would otherwise sit there with nothing left to reuse them.
+   */
+  pendingHerdrReuses() {
+    return [...this._herdrReuse.entries()]
+      .filter(([, entry]) => entry.state === "pending")
+      .map(([slug, entry]) => ({ slug, tabId: entry.tabId, paneId: entry.paneId, worktree: entry.worktree }));
   }
 }

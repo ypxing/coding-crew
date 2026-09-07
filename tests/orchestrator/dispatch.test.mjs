@@ -20,6 +20,7 @@ import { join } from "node:path";
 import {
   buildDispatch,
   buildHerdrInvocation,
+  closeHerdrPane,
   closeHerdrWorkspace,
   dispatch,
   dispatchPlain,
@@ -1594,6 +1595,141 @@ test("dispatchViaHerdr never reuses one coder's pane for another coder — two d
     1,
     "two different issues' coders still share the same herdr workspace",
   );
+});
+
+// ─── herdr pane persistence + reuse (one retry, see pipeline.mjs's herdr-reuse) ────────
+
+test("dispatchViaHerdr leaves a successful dispatch's tab open when spec.herdrPersistPane is set, returning its ids instead of closing it", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { agent: { agent_status: "idle" } } }),
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
+      // No "tab close" response: persistPane must skip it entirely on success.
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(
+    effects,
+    "claude",
+    spec(root, promptFile, { slug: "alpha", herdrPersistPane: true }),
+    { timeoutMs: 60_000 },
+  );
+
+  assert.equal(result.code, 0);
+  assert.equal(result.herdrTabId, "w1:t1");
+  assert.equal(result.herdrPaneId, "w1:p1");
+  assert.ok(
+    !effects._calls.some((c) => c[1] === "tab" && c[2] === "close"),
+    "a persisted pane's tab is never closed by the dispatch that produced it",
+  );
+});
+
+test("dispatchViaHerdr still closes the tab despite spec.herdrPersistPane when the dispatch itself failed", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      err(1, "boom", "agent_prompt_stalled"),
+      { code: 0, stdout: "", stderr: "" }, // agent read after the failed prompt
+      json({ result: { type: "ok" } }), // tab close — persistPane only defers closing on success
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(
+    effects,
+    "claude",
+    spec(root, promptFile, { slug: "alpha", herdrPersistPane: true }),
+    { timeoutMs: 60_000 },
+  );
+
+  assert.equal(result.code, 1);
+  assert.equal(result.herdrTabId, null, "a failed dispatch never hands back ids to keep open");
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
+});
+
+test("closeHerdrPane closes the given tab, and is a no-op when tabId is falsy", async () => {
+  const effects = fakeHerdrEffects([json({ result: { type: "ok" } })], { mainRoot: "/root" });
+  await closeHerdrPane(effects, null);
+  assert.equal(effects._calls.length, 0, "no herdr call at all when there is nothing to close");
+  await closeHerdrPane(effects, "w1:t1");
+  assert.deepEqual(effects._calls[0], ["herdr", "tab", "close", "w1:t1"]);
+});
+
+test("dispatchViaHerdr reuses an existing pane via spec.herdrReuse — skips workspace/tab create and agent start, goes straight to agent prompt", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read
+      json({ result: { type: "ok" } }), // tab close, using the reused (carried-forward) tabId
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(
+    effects,
+    "claude",
+    spec(root, promptFile, { slug: "alpha", herdrReuse: { tabId: "w1:t1", paneId: "w1:p1" } }),
+    { timeoutMs: 60_000 },
+  );
+
+  assert.equal(result.code, 0);
+  assert.equal(result.text, "herdr spike ok");
+  assert.ok(
+    !effects._calls.some((c) => c[1] === "workspace" && c[2] === "create"),
+    "a reuse never needs its own workspace — the one from the prior dispatch is already there",
+  );
+  assert.ok(!effects._calls.some((c) => c[1] === "tab" && c[2] === "create"), "a reuse skips tab create entirely");
+  assert.ok(!effects._calls.some((c) => c[1] === "agent" && c[2] === "start"), "a reuse skips agent start — the agent is already running");
+  assert.deepEqual(effects._calls[0], ["herdr", "agent", "prompt", "alpha-coder", "Reply with exactly: herdr spike ok", "--wait", "--until", "idle", "--until", "done", "--timeout", "60000"]);
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"], "closes using the reused tab id, not a freshly created one");
+});
+
+test("dispatchViaHerdr falls back to a fresh dispatch when the reused pane's agent is gone", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const effects = fakeHerdrEffects(
+    [
+      err(1, "no such agent", "agent_not_found"), // agent prompt --wait, against the stale reuse target
+      // Falls through to a normal fresh dispatch:
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { agent: { agent_status: "idle" } } }),
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
+      json({ result: { type: "ok" } }),
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(
+    effects,
+    "claude",
+    spec(root, promptFile, { slug: "alpha", herdrReuse: { tabId: "w1:t1", paneId: "w1:p1" } }),
+    { timeoutMs: 60_000 },
+  );
+
+  assert.equal(result.code, 0);
+  assert.equal(result.text, "herdr spike ok");
+  assert.ok(
+    effects._calls.some((c) => c[1] === "tab" && c[2] === "create"),
+    "the stale reuse target falls back to creating a brand-new tab",
+  );
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t2"], "closes the freshly created tab, not the stale one");
 });
 
 // ─── herdr, per platform ─────────────────────────────────────────────────────

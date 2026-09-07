@@ -29,7 +29,7 @@ import {
 import { branchFor, writeIssueSection } from "./tracker.mjs";
 import { criteriaFile, fixPrompt, resumeNote, reviewPrompt, triagePrompt, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
-import { dispatch } from "./dispatch.mjs";
+import { closeHerdrPane, dispatch } from "./dispatch.mjs";
 
 // Retention-reason tags for a verify-worktree.sh failure, once triage (see runTriage
 // below) has classified it. Read back by runWorker (to route the *next* round) and by
@@ -291,6 +291,12 @@ export async function runWorker(ctx, issue) {
   ctx.log(
     `[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-coder model=${options.model ?? "inherit"}`,
   );
+  // herdrReuse is non-null only when handleVerificationFailure queued this exact slug's
+  // pane last round (see sprint.consumeHerdrReusePending) — spending it here, once, is what
+  // bounds reuse to a single retry. herdrPersistPane applies to every coder dispatch, not
+  // just a retry: verify-worktree.sh runs after this returns, so even a first attempt might
+  // turn out to be the one worth keeping open (see handleVerificationFailure below).
+  const herdrReuse = options.herdr ? sprint.consumeHerdrReusePending(issue.slug) : null;
   const result = await dispatch(
     effects,
     platform,
@@ -307,6 +313,8 @@ export async function runWorker(ctx, issue) {
       slug: issue.slug,
       issueNumber: issue.number,
       herdr: options.herdr,
+      herdrPersistPane: options.herdr,
+      herdrReuse,
     },
     {
       timeoutMs: options.workerTimeoutMs,
@@ -386,8 +394,11 @@ export async function runHousekeeping(ctx, worker) {
     }
   }
 
-  // Every gate after this reads the branch from the main checkout.
+  // Every gate after this reads the branch from the main checkout. Any herdr pane the
+  // coder dispatch kept open (see herdrPersistPane in runWorker) is done being useful too —
+  // verify just passed, so there is nothing left for a reuse to save on.
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
+  await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
 
   // --- gate 2: independent review (findings + acceptance-criteria verdict) ---
   const review = await runReview(ctx, worker, parseVerifyChecks(verify.stdout));
@@ -469,6 +480,7 @@ function mergeAndClose(ctx, worker, outcome) {
  * re-deriving anything.
  */
 async function handleVerificationFailure(ctx, worker, outcome, verify) {
+  const { sprint, options } = ctx;
   const priorReason = worker.priorReason ?? null;
   if (priorReason && priorReason.startsWith(NOT_FIXABLE_TAG)) {
     const carried = stripReasonTag(priorReason, NOT_FIXABLE_TAG);
@@ -489,8 +501,25 @@ async function handleVerificationFailure(ctx, worker, outcome, verify) {
   }
 
   const summary = `${triage.parsed.category || "unspecified"}: ${triage.parsed.detail || "no detail given"}`;
-  const tag = triage.parsed.fixable ? FIXABLE_TAG : NOT_FIXABLE_TAG;
-  return finishPartial(ctx, worker, outcome, taggedReason(tag, summary));
+  const fixable = triage.parsed.fixable;
+  const tag = fixable ? FIXABLE_TAG : NOT_FIXABLE_TAG;
+
+  // herdr pane reuse, bounded to one retry per issue (see sprint.consumeHerdrReusePending):
+  // only worth queuing when the coder is actually getting redispatched next round (a fixable
+  // verdict — a not-fixable retry skips the coder entirely, see runWorker's notFixableRetry),
+  // this dispatch actually left a pane open (herdrPersistPane, options.herdr), and this slug
+  // hasn't already spent its one reuse.
+  const herdrEligible =
+    fixable && options.herdr && !!worker.dispatch.herdrTabId && sprint.herdrReuseState(worker.issue.slug) === "none";
+  if (herdrEligible) {
+    sprint.markHerdrReusePending(worker.issue.slug, {
+      tabId: worker.dispatch.herdrTabId,
+      paneId: worker.dispatch.herdrPaneId,
+      worktree: worker.worktree,
+    });
+  }
+
+  return finishPartial(ctx, worker, outcome, taggedReason(tag, summary), { keepWorktree: herdrEligible });
 }
 
 /**
@@ -657,7 +686,7 @@ async function promote(ctx, worker, review, outcome) {
   outcome.promoted = promotable.length;
 }
 
-function finishPartial(ctx, worker, outcome, reason) {
+async function finishPartial(ctx, worker, outcome, reason, { keepWorktree = false } = {}) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
   const progress = worker.report.progress || worker.report.notes || `Round ${ctx.round}: ${reason}`;
@@ -678,20 +707,29 @@ function finishPartial(ctx, worker, outcome, reason) {
       `Round ${ctx.round}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
     );
   }
-  removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
+  // keepWorktree (set only by handleVerificationFailure's herdr-reuse path) leaves both the
+  // worktree and its herdr pane exactly as they are, for next round's redispatch to pick up
+  // — every other partial reason has no reuse concept, so it removes/closes as before.
+  if (keepWorktree) {
+    ctx.log(`[HERDR-REUSE] slug=${issue.slug} round=${ctx.round} — keeping worktree and pane open for one retry`);
+  } else {
+    removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
+    await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
+  }
   sprint.retain(issue.slug, branch, reason);
   outcome.status = "partial";
   outcome.reason = reason;
   return outcome;
 }
 
-function finishBlocked(ctx, worker, outcome, reason) {
+async function finishBlocked(ctx, worker, outcome, reason) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
   if (!effects.dryRun && existsSync(issue.path)) {
     writeIssueSection(issue.path, "Blocked", `Round ${ctx.round}: ${reason}`, { append: true });
   }
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
+  await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
   sprint.blocked(issue.slug, branch, reason);
   outcome.status = "blocked";
   outcome.reason = reason;
