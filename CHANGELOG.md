@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.29.72]
+
+### Changed
+
+- **crew-afk's invoking session polls on a wide interval in herdr mode instead of a short one.**
+  With the per-line relay already skipped when `HERDR_ENV=1` ([1.29.71]), polling every few
+  seconds was still producing a visible tool-call block per check for no payoff — the session
+  only needs to notice an exit code or a blocker, not track live progress the herdr pane already
+  shows. `skills/crew-afk/*.SKILL.md`'s "Your part" now tells it to poll minutes apart, not on
+  the short interval used for the non-herdr relay.
+
 ## [1.29.71]
 
 ### Changed
