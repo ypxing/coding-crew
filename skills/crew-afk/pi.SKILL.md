@@ -70,7 +70,10 @@ loops until no issues remain or two rounds complete nothing.
    not just stdout, or the sprint will look silent. A `[STEP]` line marks every gate
    transition (worktree, deps, dispatch, verify, review, merge, close); the heartbeat
    covers the gaps during each coder/review/triage dispatch — so the user sees progress
-   instead of silence until a round finishes. The summary printed at the end is the
+   instead of silence until a round finishes. **If `HERDR_ENV=1`, skip this relay
+   entirely** — each dispatch is already visible live in its own herdr pane, so poll
+   silently and only speak up when the run exits or hits something that needs the user's
+   decision (e.g. a stale-branch blocker). The summary printed at the end is the
    report — do not rewrite, summarise, or re-derive it from the state file.
 3. Mention `.scratch/<feature-slug>/traces/orchestrator.log` only if asked, or if the user
    steps away and wants more than the live stream showed — every tool call is there,

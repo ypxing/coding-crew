@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.71]
+
+### Changed
+
+- **crew-afk's invoking session no longer narrates every `[STEP]`/heartbeat line into chat
+  when `HERDR_ENV=1`.** Each dispatch is already visible live in its own herdr pane, so the
+  per-line poll-and-relay instruction in `skills/crew-afk/*.SKILL.md`'s "Your part" is now
+  skipped in herdr mode — the session polls silently and only speaks up when the run exits
+  or hits something needing the user's decision (e.g. a stale-branch blocker).
+
 ## [1.29.70]
 
 ### Added
