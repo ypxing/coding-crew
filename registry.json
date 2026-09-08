@@ -72,7 +72,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.2.56",
+      "version": "2.2.57",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -192,7 +192,7 @@
       "install": ".claude/skills/to-prd"
     },
     "crew-brainstorm": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "source-dir": "crew-brainstorm",
       "description": "Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to PRD and issues.",
       "install": ".claude/skills/crew-brainstorm",
@@ -205,7 +205,7 @@
       ]
     },
     "crew-grill": {
-      "version": "1.2.0",
+      "version": "1.2.1",
       "source-dir": "crew-grill",
       "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then produce a PRD and issues.",
       "install": ".claude/skills/crew-grill",

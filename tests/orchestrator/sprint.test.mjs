@@ -930,6 +930,91 @@ test("the orchestrator prints one line per deps call — the DEPS: line itself, 
   );
 });
 
+const worktreeCodegraphFor = (slug) => new RegExp(`ensure-codegraph\\.sh --dir \\S+ --slug ${slug}$`);
+
+test("ensure-codegraph.sh runs once per dispatched worktree, after deps and before dispatch", () => {
+  // Dry-run only — the script's own outcomes (skipped/unavailable/present/initialized) are
+  // pinned in tests/crew-afk-ensure-codegraph.bats; what this orchestrator test owns is the
+  // call's position, the same split sprint.test.mjs already draws for deps.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+
+  const at = (re) => {
+    const i = lines.findIndex((l) => re.test(l));
+    assert.notEqual(i, -1, `no command matching ${re} in:\n${lines.join("\n")}`);
+    return i;
+  };
+  const worktreeDeps = at(worktreeDepsFor("alpha"));
+  const worktreeCodegraph = at(worktreeCodegraphFor("alpha"));
+  const dispatch = at(/^SPAWN .*--agent crew-coder/);
+
+  assert.equal(lines.filter((l) => worktreeCodegraphFor("alpha").test(l)).length, 1);
+  assert.ok(worktreeDeps < worktreeCodegraph, "codegraph ran before deps");
+  assert.ok(worktreeCodegraph < dispatch, "the worker was dispatched before its index existed");
+});
+
+// stub_codegraph <dir> <init-exit> — a fake `codegraph` CLI on PATH, so these tests do not
+// depend on the real tool being installed.
+function stub_codegraph(dir, initExit) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "codegraph"),
+    `#!/usr/bin/env bash\nif [ "$1" = "init" ]; then mkdir -p .codegraph; exit ${initExit}; fi\nexit 0\n`,
+  );
+  sh("chmod", ["+x", join(dir, "codegraph")]);
+}
+
+test("CREW_CODEGRAPH=on with codegraph on PATH reaches CODEGRAPH: initialized, and the sprint still completes", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const stubBin = join(root, "stub-bin");
+  stub_codegraph(stubBin, 0);
+
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_CODEGRAPH: "on",
+      PATH: `${stubBin}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[CODEGRAPH\].*initialized/);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+});
+
+test("a CODEGRAPH: failed outcome does not demote the issue or change the round summary", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const stubBin = join(root, "stub-bin");
+  stub_codegraph(stubBin, 1);
+
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_CODEGRAPH: "on",
+      PATH: `${stubBin}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `a failed index build must not stall the sprint:\n${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[CODEGRAPH\].*failed/);
+  const s = state(root);
+  assert.deepEqual(s.completed_slugs, ["alpha"]);
+  assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
+  assert.equal(s.retention?.alpha, undefined, "a CODEGRAPH: failure demoted the issue by itself");
+});
+
 test("the orchestrator prints a [STEP] marker before each gate, slug/round-tagged", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -940,7 +1025,7 @@ test("the orchestrator prints a [STEP] marker before each gate, slug/round-tagge
   // with no dispatch-triage marker since verify never fails on this path.
   assert.deepEqual(
     steps.map((l) => /step=([\w-]+)/.exec(l)?.[1]),
-    ["worktree", "deps", "dispatch-coder", "verify", "dispatch-review", "merge", "close"],
+    ["worktree", "deps", "codegraph", "dispatch-coder", "verify", "dispatch-review", "merge", "close"],
     steps.join("\n"),
   );
   for (const l of steps) assert.match(l, /^\[STEP\] slug=alpha round=1 step=[\w-]+( model=\S+)?$/, l);

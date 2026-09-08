@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { applyWorktreeInclude, ensureWorktree, ensureWorktreeInclude, mergeFeatureBranch } from "../../orchestrator/lib/worktree.mjs";
+import {
+  applyWorktreeInclude,
+  ensureWorktree,
+  ensureWorktreeInclude,
+  mergeFeatureBranch,
+  worktreePath,
+} from "../../orchestrator/lib/worktree.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
 function tmpRoot() {
@@ -129,6 +135,38 @@ test("a dangling symlink with no source to heal it yet is left in place", () => 
   assert.deepEqual(linked, []);
   assert.ok(lstatSync(join(worktree, ".env")).isSymbolicLink());
   assert.ok(!existsSync(join(worktree, ".env")));
+});
+
+// --- worktreePath: base directory override via CREW_WORKTREE_ROOT -----------
+
+function withEnv(name, value, fn) {
+  const prior = process.env[name];
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+  try {
+    return fn();
+  } finally {
+    if (prior === undefined) delete process.env[name];
+    else process.env[name] = prior;
+  }
+}
+
+test("worktreePath defaults to .scratch/worktrees/<branch> under mainRoot", () => {
+  withEnv("CREW_WORKTREE_ROOT", undefined, () => {
+    assert.equal(worktreePath("/repo", "crew/feat/a"), join("/repo", ".scratch", "worktrees", "crew/feat/a"));
+  });
+});
+
+test("worktreePath honors an absolute CREW_WORKTREE_ROOT override", () => {
+  withEnv("CREW_WORKTREE_ROOT", "/var/crew-worktrees", () => {
+    assert.equal(worktreePath("/repo", "crew/feat/a"), join("/var/crew-worktrees", "crew/feat/a"));
+  });
+});
+
+test("worktreePath resolves a relative CREW_WORKTREE_ROOT override against mainRoot", () => {
+  withEnv("CREW_WORKTREE_ROOT", "../scratch-wt", () => {
+    assert.equal(worktreePath("/repo", "crew/feat/a"), join("/repo", "../scratch-wt", "crew/feat/a"));
+  });
 });
 
 // --- ensureWorktreeInclude: docker-compose.override.yml and .env before any worktree exists ----

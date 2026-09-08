@@ -35,7 +35,17 @@ FEATURE_SLUG="my-sprint"
 ISSUE_SLUG="add-auth"
 BRANCH="crew/$FEATURE_SLUG/$ISSUE_SLUG"
 MAIN_ROOT="$TEST_DIR"
-WORKTREE_PATH="$MAIN_ROOT/.scratch/worktrees/$BRANCH"
+# Mirrors worktreeRoot() in orchestrator/lib/worktree.mjs: CREW_WORKTREE_ROOT overrides
+# the base directory (absolute, or relative to MAIN_ROOT); default is .scratch/worktrees.
+if [ -n "$CREW_WORKTREE_ROOT" ]; then
+    case "$CREW_WORKTREE_ROOT" in
+        /*) WORKTREE_BASE="$CREW_WORKTREE_ROOT" ;;
+        *) WORKTREE_BASE="$MAIN_ROOT/$CREW_WORKTREE_ROOT" ;;
+    esac
+else
+    WORKTREE_BASE="$MAIN_ROOT/.scratch/worktrees"
+fi
+WORKTREE_PATH="$WORKTREE_BASE/$BRANCH"
 
 mkdir -p "$(dirname "$WORKTREE_PATH")"
 git -C "$MAIN_ROOT" worktree add -b "$BRANCH" "$WORKTREE_PATH" HEAD -q
@@ -56,10 +66,10 @@ fi
 echo
 
 # ---------------------------------------------------------------------------
-# Test 2: Worktree path matches .scratch/worktrees/crew/<feature>/<issue>
+# Test 2: Worktree path matches <worktree-base>/crew/<feature>/<issue>
 # ---------------------------------------------------------------------------
-echo "Test 2: Worktree path follows .scratch/worktrees/crew/<feature-slug>/<issue-slug>/"
-EXPECTED_PATH_PATTERN="$MAIN_ROOT/.scratch/worktrees/crew/$FEATURE_SLUG/$ISSUE_SLUG"
+echo "Test 2: Worktree path follows <worktree-base>/crew/<feature-slug>/<issue-slug>/"
+EXPECTED_PATH_PATTERN="$WORKTREE_BASE/crew/$FEATURE_SLUG/$ISSUE_SLUG"
 if [ "$WORKTREE_PATH" = "$EXPECTED_PATH_PATTERN" ]; then
     pass "Worktree path matches expected pattern"
 else
@@ -87,7 +97,7 @@ shared/config.yml
 EOF
 
 # Simulate what the orchestrator does: symlink each listed entry
-WORKTREE_PATH2="$MAIN_ROOT/.scratch/worktrees/crew/$FEATURE_SLUG/second-issue"
+WORKTREE_PATH2="$WORKTREE_BASE/crew/$FEATURE_SLUG/second-issue"
 mkdir -p "$(dirname "$WORKTREE_PATH2")"
 git -C "$MAIN_ROOT" worktree add -b "crew/$FEATURE_SLUG/second-issue" "$WORKTREE_PATH2" HEAD -q
 
@@ -127,7 +137,7 @@ echo
 # Test 4: .worktreeinclude absent → symlink step skipped gracefully
 # ---------------------------------------------------------------------------
 echo "Test 4: Missing .worktreeinclude is skipped gracefully (no error)"
-WORKTREE_PATH3="$MAIN_ROOT/.scratch/worktrees/crew/$FEATURE_SLUG/third-issue"
+WORKTREE_PATH3="$WORKTREE_BASE/crew/$FEATURE_SLUG/third-issue"
 mkdir -p "$(dirname "$WORKTREE_PATH3")"
 git -C "$MAIN_ROOT" worktree add -b "crew/$FEATURE_SLUG/third-issue" "$WORKTREE_PATH3" HEAD -q
 

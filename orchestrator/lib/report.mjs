@@ -166,6 +166,16 @@ export function depsLine(stdout) {
   return m ? m[0].trim() : "";
 }
 
+/**
+ * ensure-codegraph.sh's single `CODEGRAPH:` line, or "" when there is none. Same rule as
+ * depsLine: logged, never branched on — an index build is optional and its outcome must
+ * not be able to demote an issue or change a round's status.
+ */
+export function codegraphLine(stdout) {
+  const m = /^CODEGRAPH:.*$/m.exec(stdout ?? "");
+  return m ? m[0].trim() : "";
+}
+
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
 /**

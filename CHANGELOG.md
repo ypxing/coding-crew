@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.29.70]
+
+### Added
+
+- **crew-afk gives every issue worktree its own [codegraph](https://github.com/colbymchenry/codegraph)
+  index, and crew-grill/crew-brainstorm prefer codegraph's MCP tools over grep/glob when one is
+  available.** codegraph's own index resolution walks up from cwd to the *nearest* `.codegraph/`
+  directory, so a worktree with no local index of its own silently borrows the main checkout's —
+  wrong the moment a worker edits a file that index has never seen (codegraph's PR #312
+  documents exactly this). New `ensure-codegraph.sh`, called from `pipeline.mjs` right after
+  `applyWorktreeInclude` and before dispatch, runs `codegraph init -i` inside each worktree so
+  nearest-wins resolution finds a correct, worktree-local index instead — no need to relocate
+  `.scratch/worktrees` outside the project root. Off by default (`CREW_CODEGRAPH=on` to enable):
+  unlike `CREW_DEPS`, the indexing cost is paid in full every round regardless of what came
+  before, for a benefit this orchestrator has not yet measured. Never fails a sprint — a missing
+  CLI, a disabled flag, or a failed build all report `CODEGRAPH: <outcome>` and exit 0, the same
+  contract `ensure-deps.sh` already keeps for dependency installs.
+
+- **`CREW_WORKTREE_ROOT` overrides where crew-afk creates its per-issue worktrees.** Previously
+  hardcoded to `.scratch/worktrees` inside `worktreePath()`, the only place in the orchestrator
+  that computes the path — every other consumer (`pipeline.mjs`, `removeWorktree`,
+  `applyWorktreeInclude`, `mergeFeatureBranch`, and the bash mechanism scripts) already treated
+  it as an opaque value or rediscovered it via `git worktree list`. `worktreeRoot()` now reads
+  `CREW_WORKTREE_ROOT` (absolute, or resolved relative to `mainRoot`), falling back to the old
+  default — useful for repos that want worktrees off the main checkout's disk/volume.
+
 ## [1.29.69]
 
 ### Added

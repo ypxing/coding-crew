@@ -7,10 +7,21 @@
  */
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
+
+/**
+ * Base directory worktrees are created under, overridable via `CREW_WORKTREE_ROOT`
+ * (absolute, or relative to `mainRoot`) for repos that need worktrees off the main
+ * checkout's disk/volume. Defaults to today's `.scratch/worktrees`.
+ */
+export function worktreeRoot(mainRoot) {
+  const override = process.env.CREW_WORKTREE_ROOT;
+  if (!override) return join(mainRoot, ".scratch", "worktrees");
+  return isAbsolute(override) ? override : join(mainRoot, override);
+}
 
 export function worktreePath(mainRoot, branch) {
-  return join(mainRoot, ".scratch", "worktrees", branch);
+  return join(worktreeRoot(mainRoot), branch);
 }
 
 const AUTO_INCLUDE_ENTRIES = ["docker-compose.override.yml", ".env"];

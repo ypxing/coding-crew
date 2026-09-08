@@ -30,7 +30,17 @@ git checkout -b "feature/$FEATURE_SLUG" -q
 
 MAIN_ROOT="$TEST_DIR"
 BRANCH="crew/$FEATURE_SLUG/$ISSUE_SLUG"
-WORKTREE_PATH="$MAIN_ROOT/.scratch/worktrees/$BRANCH"
+# Mirrors worktreeRoot() in orchestrator/lib/worktree.mjs: CREW_WORKTREE_ROOT overrides
+# the base directory (absolute, or relative to MAIN_ROOT); default is .scratch/worktrees.
+if [ -n "$CREW_WORKTREE_ROOT" ]; then
+    case "$CREW_WORKTREE_ROOT" in
+        /*) WORKTREE_BASE="$CREW_WORKTREE_ROOT" ;;
+        *) WORKTREE_BASE="$MAIN_ROOT/$CREW_WORKTREE_ROOT" ;;
+    esac
+else
+    WORKTREE_BASE="$MAIN_ROOT/.scratch/worktrees"
+fi
+WORKTREE_PATH="$WORKTREE_BASE/$BRANCH"
 
 echo "Testing crew-afk worktree lifecycle..."
 echo
@@ -87,7 +97,7 @@ echo
 # Assertion 3: .worktreeinclude is skipped gracefully when absent
 # ---------------------------------------------------------------------------
 echo "Assertion 3: .worktreeinclude absent — symlink step skipped gracefully"
-WORKTREE2_PATH="$MAIN_ROOT/.scratch/worktrees/crew/$FEATURE_SLUG/second-issue"
+WORKTREE2_PATH="$WORKTREE_BASE/crew/$FEATURE_SLUG/second-issue"
 mkdir -p "$(dirname "$WORKTREE2_PATH")"
 git -C "$MAIN_ROOT" worktree add -b "crew/$FEATURE_SLUG/second-issue" "$WORKTREE2_PATH" HEAD -q 2>/dev/null
 
@@ -128,9 +138,9 @@ echo
 echo "Assertion 5: .scratch/worktrees/ empty or absent after git worktree prune"
 git -C "$MAIN_ROOT" worktree prune 2>/dev/null
 # Remove empty parent directories left over after worktree removal
-find "$MAIN_ROOT/.scratch/worktrees" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+find "$WORKTREE_BASE" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 
-WORKTREE_DIR="$MAIN_ROOT/.scratch/worktrees"
+WORKTREE_DIR="$WORKTREE_BASE"
 if [ ! -d "$WORKTREE_DIR" ] || [ -z "$(ls -A "$WORKTREE_DIR" 2>/dev/null)" ]; then
     pass ".scratch/worktrees/ is empty or absent after prune"
 else
@@ -146,7 +156,7 @@ echo
 echo "Assertion 6: Branch crew/<feature-slug>/<issue-slug> created then removed"
 
 # Create a fresh worktree (and branch) to verify the pattern
-WORKTREE3_PATH="$MAIN_ROOT/.scratch/worktrees/crew/$FEATURE_SLUG/third-issue"
+WORKTREE3_PATH="$WORKTREE_BASE/crew/$FEATURE_SLUG/third-issue"
 BRANCH3="crew/$FEATURE_SLUG/third-issue"
 mkdir -p "$(dirname "$WORKTREE3_PATH")"
 git -C "$MAIN_ROOT" worktree add -b "$BRANCH3" "$WORKTREE3_PATH" HEAD -q 2>/dev/null

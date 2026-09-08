@@ -107,6 +107,10 @@ Two knobs worth knowing about:
 - **Gitignored files in worktrees** — each coder runs in an isolated worktree, so `.env` and similar
   files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
   them over.
+- **Worktree location** — worktrees live under `.scratch/worktrees/` by default. Set
+  `CREW_WORKTREE_ROOT` (absolute, or relative to the repo root) to put them elsewhere — e.g. off the
+  main checkout's disk/volume. Whatever you set won't be covered by the default `.scratch/` gitignore
+  entry, so add it to `.gitignore` yourself if it lands inside the repo.
 
 ## 3. Address the review findings
 
