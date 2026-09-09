@@ -431,6 +431,11 @@ async function herdrExec(effects, args, timeoutMs) {
   return effects.spawnWithTimeout("herdr", args, { cwd: effects.mainRoot, timeoutMs });
 }
 
+// How long to wait before re-reading a pane whose `agent prompt --wait` already reported
+// idle/done but whose rendered screen came back with no extractable reply — see the retry
+// in dispatchViaHerdr, below.
+const HERDR_READ_RETRY_DELAY_MS = 250;
+
 /**
  * herdr's `agent start` rejects any name that isn't `^[a-z][a-z0-9_-]{0,31}$` — issue slugs
  * are usually already that shape, but come from a markdown filename (issueSlug()), so nothing
@@ -846,7 +851,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
       const kept = failed && keepPaneOnFail ? ` kept-pane=${name} pane=${paneId ?? "?"}` : "";
       appendLine(
         spec.logFile,
-        `[DISPATCH-FAIL] agent=${spec.agent} herdr=1 code=${code} timedOut=${!!timedOut}${kept} ${(stderr || "").trim().slice(0, 400)}`,
+        `[DISPATCH-FAIL] agent=${spec.agent} herdr=1 code=${code} timedOut=${!!timedOut} outEmpty=${!((text ?? "").trim())}${kept} ${(stderr || "").trim().slice(0, 400)}`,
       );
     }
     return {
@@ -967,8 +972,18 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     return await dispatchViaHerdr(effects, platform, { ...spec, herdrReuse: null }, { timeoutMs });
   }
 
-  const rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
-  const text = extractHerdrReply(rendered, invocation.prompt, platform);
+  let rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
+  let text = extractHerdrReply(rendered, invocation.prompt, platform);
+
+  // herdr's own idle/done detector already said this pane settled successfully — an empty
+  // extractHerdrReply() here means the *second*, separate `agent read` call caught the pane's
+  // rendering before it caught up (buffered terminal flush lag), not that the dispatch failed.
+  // One retry after a short delay before trusting the empty read over herdr's success signal.
+  if (promptResult.code === 0 && !text.trim()) {
+    await new Promise((r) => setTimeout(r, HERDR_READ_RETRY_DELAY_MS));
+    rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
+    text = extractHerdrReply(rendered, invocation.prompt, platform);
+  }
 
   if (promptResult.code !== 0) {
     const errorCode = herdrJson(promptResult)?.error?.code;

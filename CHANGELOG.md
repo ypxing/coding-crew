@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.73]
+
+### Fixed
+
+- **crew-afk's herdr dispatch no longer logs a spurious `DISPATCH-FAIL` when herdr's own
+  idle/done wait already reported success but the immediate pane read caught nothing.** The
+  second, separate `agent read` call could catch the pane's terminal buffer before it flushed,
+  reading back empty and getting treated as a failed dispatch (`code=0 timedOut=false`) even
+  though the coder agent had actually finished. `dispatchViaHerdr` now retries that read once
+  after a short delay before trusting an empty extraction over herdr's own success signal, and
+  `DISPATCH-FAIL` log lines now carry `outEmpty=<bool>` so a failure that persists past the
+  retry is distinguishable from every other failure mode.
+
 ## [1.29.72]
 
 ### Changed

@@ -1096,6 +1096,62 @@ test("dispatchViaHerdr: workspace create, tab create, start, prompt, read, tab c
   );
 });
 
+test("dispatchViaHerdr retries the pane read once when herdr's own idle/done signal says success but the first read caught nothing", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
+      { code: 0, stdout: "some unrelated pane text, rendering hadn't caught up yet", stderr: "" }, // agent read (stale/empty)
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read (retry — now settled)
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 0, "herdr's own success signal is trusted once the retry recovers real text");
+  assert.equal(result.text, "herdr spike ok");
+  assert.equal(readFileSync(outFile, "utf8"), "herdr spike ok");
+  const readCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "read" && c[3] === "alpha-coder");
+  assert.equal(readCalls.length, 2, "read the pane again instead of declaring failure on the first empty extraction");
+});
+
+test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL when the retry never recovers any text", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
+      { code: 0, stdout: "some unrelated pane text", stderr: "" }, // agent read (empty extraction)
+      { code: 0, stdout: "still unrelated pane text", stderr: "" }, // agent read (retry — still empty)
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 0, "herdr's own exit code is untouched by an empty reply — the caller must read outEmpty to tell why it failed");
+  assert.equal(result.text, "");
+  assert.match(
+    readFileSync(logFile, "utf8"),
+    /\[DISPATCH-FAIL\] agent=crew-coder herdr=1 code=0 timedOut=false outEmpty=true/,
+  );
+});
+
 test("dispatchViaHerdr sanitises an issue slug for herdr's agent name but keeps it readable as the tab label", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
