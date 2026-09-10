@@ -348,8 +348,13 @@ export async function runWorker(ctx, issue) {
 }
 
 /**
- * Phase 2 of an issue: everything after the worker. Sequential by design — merges and
- * closes touch the main checkout, and two of them at once is a race.
+ * Phase 2 of an issue: everything after the worker. Runs concurrently across issues, in
+ * the same pool as the worker dispatch (see runSprint in loop.mjs) — merges and closes
+ * touch the main checkout, but every such step shells out via effects.bash/git's
+ * spawnSync, which blocks this single-threaded process until it returns, so two issues'
+ * merge-and-close can never actually interleave. Only which issue's merge lands first
+ * becomes completion-order rather than issue-list-order; merge-branches.sh already
+ * tolerates any order (it merges by branch, independent of the others).
  */
 export async function runHousekeeping(ctx, worker) {
   const { sprint, effects, options } = ctx;

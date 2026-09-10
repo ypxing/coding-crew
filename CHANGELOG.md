@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.29.75]
+
+### Fixed
+
+- **crew-afk now dispatches a branch's review the moment its own coder and verify finish,
+  instead of waiting for every coder in the round to land first.** `runSprint` used to run a
+  round in two strict phases — dispatch every coder in the round concurrently, then only once
+  *all* of them returned, walk housekeeping (verify → review → merge → close) one issue at a
+  time. A coder that finished early sat idle while its siblings kept working. Worker dispatch
+  and housekeeping are now one pipeline per issue, run under the same pool, so each issue's
+  review starts as soon as that issue itself is ready — safe without a lock because every step
+  that touches the main checkout shells out via a blocking `spawnSync`, which cannot interleave
+  with another issue's JS in this single-threaded process.
+
 ## [1.29.74]
 
 ### Fixed

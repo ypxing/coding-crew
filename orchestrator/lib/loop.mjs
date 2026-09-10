@@ -48,13 +48,21 @@ export async function runSprint(ctx) {
     sprint.setRound(round, issues.length);
     ctx.log(`\n=== Round ${round}: ${issues.length} issue(s) — ${issues.map((i) => i.slug).join(", ")}`);
 
-    const workers = await mapPool(issues, options.parallel, (issue) => runWorker(ctx, issue));
-
-    // Housekeeping is sequential: merges and closes touch the main checkout.
-    const outcomes = [];
-    for (const w of workers) {
-      outcomes.push(await runHousekeeping(ctx, w));
-    }
+    // Worker dispatch and housekeeping (verify → review → merge → close) run as one
+    // pipeline per issue, all under the same pool — so issue A's review is dispatched the
+    // moment issue A's coder and verify finish, instead of waiting for every coder in the
+    // round to land first. This is safe to run concurrently across issues without a lock:
+    // every step that touches the main checkout (verify-worktree.sh, merge-branches.sh,
+    // close-issue.sh, git checkout) goes through effects.bash/git, which shells out with
+    // spawnSync — a blocking call that cannot interleave with another issue's JS in this
+    // single-threaded process, so two of them can never actually run at the same instant.
+    // Only the two truly async legs (the coder/reviewer dispatch itself) overlap, which is
+    // the whole point. mapPool still returns results in issue order regardless of which
+    // finished first, so `outcomes` below stays deterministic.
+    const outcomes = await mapPool(issues, options.parallel, async (issue) => {
+      const worker = await runWorker(ctx, issue);
+      return runHousekeeping(ctx, worker);
+    });
     history.push({ round, outcomes });
 
     const completed = outcomes.filter((o) => o.status === "complete").length;
