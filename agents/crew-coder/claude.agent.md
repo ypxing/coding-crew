@@ -6,7 +6,6 @@ description: >
   by crew-afk as a separate `claude -p` process in its own git worktree — one issue per invocation.
   Does not close the issue — the orchestrator does that after its own verification, criteria and
   review gates pass.
-model: sonnet
 disallowedTools:
   - Agent
 skills:

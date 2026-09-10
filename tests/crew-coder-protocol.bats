@@ -154,11 +154,11 @@ neutral_part_of() {
   grep -q '^user-invocable: false$' "$f"
 }
 
-@test "claude keeps its model pin, its withheld Agent tool, and its skills list" {
+@test "claude keeps no model pin, its withheld Agent tool, and its skills list" {
   local f
   f=$(coder_variant claude)
   grep -q '^name: crew-coder$' "$f"
-  grep -q '^model: sonnet$' "$f"
+  ! grep -q '^model:' "$f"
   grep -q '^disallowedTools:$' "$f"
   grep -q '^  - Agent$' "$f"
   grep -q '^skills:$' "$f"

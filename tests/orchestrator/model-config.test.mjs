@@ -32,19 +32,52 @@ test("loadModelConfig parses a well-formed file", () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("resolveModelTiers: no file, no --model — every role is null (today's behavior)", () => {
+test("resolveModelTiers: no file, no --model, claude platform — coder defaults to sonnet, every role matches it", () => {
   const r = resolveModelTiers({ fileConfig: {}, cliModel: null, platform: "claude" });
-  assert.deepEqual(r, { coder: null, reviewer: null, triage: null, warnings: [] });
+  assert.deepEqual(r, {
+    coder: "sonnet",
+    reviewer: "sonnet",
+    triage: "sonnet",
+    commandsDiscovery: "sonnet",
+    coverageValidation: "sonnet",
+    warnings: [],
+  });
 });
 
-test("resolveModelTiers: no file, --model given — all three roles match it, unchanged", () => {
+test("resolveModelTiers: no file, no --model, non-claude platform — every role is null (no known default)", () => {
+  const r = resolveModelTiers({ fileConfig: {}, cliModel: null, platform: "codex" });
+  assert.deepEqual(r, {
+    coder: null,
+    reviewer: null,
+    triage: null,
+    commandsDiscovery: null,
+    coverageValidation: null,
+    warnings: [],
+  });
+});
+
+test("resolveModelTiers: no file, --model given — all roles match it, unchanged", () => {
   const r = resolveModelTiers({ fileConfig: {}, cliModel: "opus", platform: "claude" });
-  assert.deepEqual(r, { coder: "opus", reviewer: "opus", triage: "opus", warnings: [] });
+  assert.deepEqual(r, {
+    coder: "opus",
+    reviewer: "opus",
+    triage: "opus",
+    commandsDiscovery: "opus",
+    coverageValidation: "opus",
+    warnings: [],
+  });
 });
 
-test("resolveModelTiers: file sets only coder — reviewer/triage default to it by omission", () => {
+test("resolveModelTiers: file sets only coder — reviewer/triage/commandsDiscovery/coverageValidation default to it by omission", () => {
   const r = resolveModelTiers({ fileConfig: { coder: "opus" }, cliModel: null, platform: "claude" });
-  assert.deepEqual(r, { coder: "opus", reviewer: "opus", triage: "opus", warnings: [] });
+  assert.deepEqual(r, {
+    coder: "opus",
+    reviewer: "opus",
+    triage: "opus",
+    commandsDiscovery: "opus",
+    coverageValidation: "opus",
+    warnings: [],
+  });
 });
 
 test("resolveModelTiers: file explicitly diverges reviewer — that value is kept, no warning if stronger", () => {
@@ -53,7 +86,35 @@ test("resolveModelTiers: file explicitly diverges reviewer — that value is kep
     cliModel: null,
     platform: "claude",
   });
-  assert.deepEqual(r, { coder: "sonnet", reviewer: "opus", triage: "sonnet", warnings: [] });
+  assert.deepEqual(r, {
+    coder: "sonnet",
+    reviewer: "opus",
+    triage: "sonnet",
+    commandsDiscovery: "sonnet",
+    coverageValidation: "sonnet",
+    warnings: [],
+  });
+});
+
+test("resolveModelTiers: file explicitly diverges commandsDiscovery — that value is kept", () => {
+  const r = resolveModelTiers({
+    fileConfig: { coder: "sonnet", commandsDiscovery: "haiku" },
+    cliModel: null,
+    platform: "claude",
+  });
+  assert.equal(r.commandsDiscovery, "haiku");
+  assert.equal(r.coder, "sonnet");
+});
+
+test("resolveModelTiers: file explicitly diverges coverageValidation — that value is kept, warns if weaker", () => {
+  const r = resolveModelTiers({
+    fileConfig: { coder: "opus", coverageValidation: "haiku" },
+    cliModel: null,
+    platform: "claude",
+  });
+  assert.equal(r.coverageValidation, "haiku");
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /coverageValidation model "haiku" is a weaker tier than coder model "opus"/);
 });
 
 test("resolveModelTiers: --model overrides the file's coder; the file's explicit reviewer is kept", () => {
@@ -88,11 +149,26 @@ test("resolveModelTiers: the same weaker-tier divergence on a non-claude platfor
   assert.deepEqual(r.warnings, [], "codex/pi/copilot model strings are opaque — no ranking is known");
 });
 
-test("resolveModelTiers: 'inherit' (mapped to null upstream) is unranked, never warns", () => {
+test("resolveModelTiers: an explicit null coder (file's 'inherit') still resolves to the claude default, so a weaker reviewer now warns", () => {
+  // Previously coder stayed unresolved (null) here, which hid this exact divergence from
+  // the warning check — the blind spot CLAUDE_DEFAULT_CODER_MODEL exists to close: a
+  // default living only in claude.agent.md's frontmatter was invisible to this comparison.
   const r = resolveModelTiers({
     fileConfig: { coder: null, reviewer: "haiku" },
     cliModel: null,
     platform: "claude",
   });
+  assert.equal(r.coder, "sonnet");
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /reviewer model "haiku" is a weaker tier than coder model "sonnet"/);
+});
+
+test("resolveModelTiers: an explicit null coder on a non-claude platform stays unresolved (no known default)", () => {
+  const r = resolveModelTiers({
+    fileConfig: { coder: null, reviewer: "haiku" },
+    cliModel: null,
+    platform: "codex",
+  });
+  assert.equal(r.coder, null);
   assert.deepEqual(r.warnings, []);
 });

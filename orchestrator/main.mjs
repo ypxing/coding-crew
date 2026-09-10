@@ -33,7 +33,8 @@
  *                                           triage dispatch (see herdrDispatchName). Debug
  *                                           only — a kept pane holds its name, so a retry
  *                                           fails with agent_name_taken.
- *   --model <alias|inherit>                coder model; reviewer/triage match it unless
+ *   --model <alias|inherit>                coder model; reviewer/triage/commandsDiscovery/
+ *                                           coverageValidation match it unless
  *                                           .coding-crew/afk-models.json names them explicitly
  *   --feature-slug <slug>                  or derived from the first issue's dir
  *   --coverage                             opt into the PRD coverage report
@@ -294,8 +295,9 @@ async function main() {
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--coverage] [--promote critical|critical-high]\n" +
         "  [--max-parallel N] [--worker-timeout MIN] [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]\n" +
-        "  --model sets the coder's model; reviewer/triage match it unless\n" +
-        "  .coding-crew/afk-models.json names {coder, reviewer, triage} explicitly.",
+        "  --model sets the coder's model; reviewer/triage/commandsDiscovery/coverageValidation\n" +
+        "  match it unless .coding-crew/afk-models.json names\n" +
+        "  {coder, reviewer, triage, commandsDiscovery, coverageValidation} explicitly.",
     );
     return 0;
   }
@@ -320,6 +322,8 @@ async function main() {
   options.model = resolvedModels.coder;
   options.reviewerModel = resolvedModels.reviewer;
   options.triageModel = resolvedModels.triage;
+  options.commandsDiscoveryModel = resolvedModels.commandsDiscovery;
+  options.coverageValidationModel = resolvedModels.coverageValidation;
   for (const w of resolvedModels.warnings) console.error(`crew-afk: WARNING: ${w}`);
 
   const scriptsDir = resolveScriptsDir(mainRoot);
@@ -421,7 +425,7 @@ async function main() {
   if (options.commands) {
     await discoverCommands(effects, {
       platform: options.platform,
-      model: options.model,
+      model: options.commandsDiscoveryModel,
       timeoutMs: options.reviewTimeoutMs,
       // Persisted, not just printed: this step runs once, unattended, before any
       // worktree exists, and its own dispatch failure (bad model output, timeout) was

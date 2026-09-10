@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.76]
+
+### Changed
+
+- **crew-afk's `--model`/`afk-models.json` now covers two more roles — `commandsDiscovery` and
+  `coverageValidation` — and resolves crew-coder's claude-platform default centrally instead of
+  leaving it in the agent file's frontmatter.** Command discovery and the coverage-validation
+  pass were still hardcoded to `options.model`/the coder's model, so an `afk-models.json`
+  entry naming them explicitly had no effect. `crew-coder/claude.agent.md` no longer pins
+  `model: sonnet` itself; `model-config.mjs` now resolves that same default
+  (`CLAUDE_DEFAULT_CODER_MODEL`) on the claude platform, so an unconfigured sprint's
+  reviewer/triage/commandsDiscovery/coverageValidation still match the coder, and the
+  "never weaker than coder" warning check — previously blind to a default living only in
+  frontmatter — now actually sees it.
+
 ## [1.29.75]
 
 ### Fixed

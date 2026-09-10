@@ -1,9 +1,11 @@
 #!/usr/bin/env bats
 
-# Tests for explicit, overridable model policy (D1)
+# Tests for explicit, overridable model policy (D1, revised)
 # Asserts that:
-# - coder declares sonnet as its default model in Claude frontmatter
-# - reviewer declares no model (inherits session model)
+# - coder, reviewer and triage all declare no model in Claude frontmatter — each inherits
+#   the session model unless crew-afk's own model-config.mjs resolves and passes one
+#   explicitly (its claude-platform coder default lives in CLAUDE_DEFAULT_CODER_MODEL, not
+#   here, so it stays visible to the reviewer/triage "never weaker than coder" check)
 # - no model: key survives in files that do not honor one (skills frontmatter)
 
 load helpers/render
@@ -23,11 +25,13 @@ frontmatter() {
   awk 'BEGIN{f=0} /^---/{f++; next} f==1{print}' "$1"
 }
 
-# --- Coder declares sonnet as default model ---
+# --- Coder declares no model (crew-afk resolves and passes it explicitly instead) ---
 
-@test "crew-coder claude.agent.md declares model: sonnet in frontmatter" {
-  # Must have model: sonnet in the YAML frontmatter
-  frontmatter "$CODER_CLAUDE" | grep -q '^model: sonnet$'
+@test "crew-coder claude.agent.md does not declare a model (crew-afk resolves it centrally)" {
+  # A default living only in frontmatter would be invisible to model-config.mjs's
+  # reviewer/triage "never weaker than coder" check — see CLAUDE_DEFAULT_CODER_MODEL.
+  run bash -c "$(declare -f frontmatter); frontmatter '$CODER_CLAUDE' | grep -q '^model:'"
+  [ "$status" -ne 0 ]
 }
 
 @test "crew-coder copilot.agent.md does not declare a model (Copilot has no model control)" {

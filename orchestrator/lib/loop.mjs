@@ -132,7 +132,7 @@ async function wrapUp(ctx, { stalled }) {
       prompt: coverage.stdout,
       cwd: effects.mainRoot,
       mainRoot: effects.mainRoot,
-      model: options.model,
+      model: options.coverageValidationModel,
       outFile,
       timeoutMs: options.reviewTimeoutMs,
     });
