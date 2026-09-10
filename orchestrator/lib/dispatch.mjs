@@ -433,8 +433,17 @@ async function herdrExec(effects, args, timeoutMs) {
 
 // How long to wait before re-reading a pane whose `agent prompt --wait` already reported
 // idle/done but whose rendered screen came back with no extractable reply — see the retry
-// in dispatchViaHerdr, below.
+// loop in dispatchViaHerdr, below. Backs off linearly (250ms, 500ms, 750ms, 1000ms) across
+// HERDR_READ_MAX_ATTEMPTS total reads — herdr exposes no signal for "the render buffer has
+// caught up", so this only covers flush lag, not a genuinely empty or unparsable reply.
 const HERDR_READ_RETRY_DELAY_MS = 250;
+const HERDR_READ_MAX_ATTEMPTS = 5;
+
+// Bounds the one `pane wait-output` pre-check below — generous relative to typical TUI
+// flush latency, small relative to the dispatch's own timeout. A pane that never renders the
+// anchor (blocked, or a platform whose rendering doesn't match herdrReplyReadyPattern) just
+// falls through to the fixed-delay backoff loop instead of waiting here.
+const HERDR_WAIT_OUTPUT_TIMEOUT_MS = 10_000;
 
 /**
  * herdr's `agent start` rejects any name that isn't `^[a-z][a-z0-9_-]{0,31}$` — issue slugs
@@ -570,6 +579,35 @@ export function extractHerdrReply(rendered, promptText, platform = "claude") {
     .filter((l) => l.trim().length > 0)
     .join("\n")
     .trim();
+}
+
+function escapeHerdrRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Same trailing status markers extractHerdrReply's isEnd() looks for, expressed as a Rust
+ * regex fragment for `herdr pane wait-output` — a separate, parallel definition rather than
+ * a shared one, so this doesn't reshape isEnd()'s already-verified-against-real-transcripts
+ * matching. Update both if a platform's rendering ever changes.
+ */
+function herdrEndMarkerPattern(platform) {
+  const rule = "─{5,}";
+  if (platform === "claude") return `(${rule}|✻\\s)`;
+  if (platform === "copilot") return `(${rule}|AIC used)`;
+  return rule; // pi, and codex's unverified fallback
+}
+
+/**
+ * Anchors on this dispatch's own echoed prompt, not just any trailing status marker, so
+ * `pane wait-output` can't lock onto a stale echo+marker pair a prior turn left in the same
+ * pane — see the reusingPane guard at its one call site, in dispatchViaHerdr.
+ */
+function herdrReplyReadyPattern(promptText, platform) {
+  const promptFirstLine = (promptText || "").split("\n", 1)[0].trim();
+  const escaped = escapeHerdrRegex(promptFirstLine);
+  const echo = platform === "pi" || platform === "codex" ? escaped : `❯\\s*${escaped}`;
+  return `${echo}[\\s\\S]*?${herdrEndMarkerPattern(platform)}`;
 }
 
 /**
@@ -974,13 +1012,41 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
 
   let rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
   let text = extractHerdrReply(rendered, invocation.prompt, platform);
+  let attempt = 1;
 
   // herdr's own idle/done detector already said this pane settled successfully — an empty
-  // extractHerdrReply() here means the *second*, separate `agent read` call caught the pane's
-  // rendering before it caught up (buffered terminal flush lag), not that the dispatch failed.
-  // One retry after a short delay before trusting the empty read over herdr's success signal.
-  if (promptResult.code === 0 && !text.trim()) {
-    await new Promise((r) => setTimeout(r, HERDR_READ_RETRY_DELAY_MS));
+  // extractHerdrReply() here means a later `agent read` call caught the pane's rendering
+  // before it caught up (buffered terminal flush lag), not that the dispatch failed. Rather
+  // than guess with a fixed delay, actively wait for this dispatch's own echoed prompt and
+  // its trailing status marker to actually appear in the exact snapshot `agent read` uses
+  // next — once matched, the full reply is provably present, not just probably. Skipped on a
+  // reused pane: its buffer already carries a prior turn's echo+marker (see
+  // herdrReplyReadyPattern's doc comment).
+  if (promptResult.code === 0 && !text.trim() && !reusingPane) {
+    await herdrExec(effects, [
+      "pane",
+      "wait-output",
+      paneId,
+      "--regex",
+      herdrReplyReadyPattern(invocation.prompt, platform),
+      "--source",
+      "recent-unwrapped",
+      "--lines",
+      "400",
+      "--timeout",
+      String(HERDR_WAIT_OUTPUT_TIMEOUT_MS),
+    ]);
+    attempt++;
+    rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
+    text = extractHerdrReply(rendered, invocation.prompt, platform);
+  }
+
+  // Fallback for whatever the wait-output step above didn't cover — a reused pane, or an
+  // echo/marker pattern that doesn't match this platform's actual rendering. Same fixed-delay
+  // backoff as before, just resuming from whichever attempt the step above already spent.
+  while (promptResult.code === 0 && !text.trim() && attempt < HERDR_READ_MAX_ATTEMPTS) {
+    attempt++;
+    await new Promise((r) => setTimeout(r, HERDR_READ_RETRY_DELAY_MS * (attempt - 1)));
     rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
     text = extractHerdrReply(rendered, invocation.prompt, platform);
   }

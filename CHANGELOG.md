@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.29.74]
+
+### Fixed
+
+- **crew-afk's herdr dispatch now actively waits for a pane's own echoed prompt and trailing
+  status marker before re-reading it, instead of guessing with one fixed-delay retry.** The
+  previous single retry (added in [1.29.73]) still relied on a blind delay, so a slower flush
+  could still exhaust it and log a spurious `DISPATCH-FAIL`. `dispatchViaHerdr` now issues one
+  `herdr pane wait-output` pre-check anchored on this dispatch's own echoed prompt and its
+  trailing status marker — once matched, the reply is provably present rather than probably —
+  then falls back to a linearly-backing-off read loop (up to `HERDR_READ_MAX_ATTEMPTS`) for
+  whatever the pre-check doesn't cover, such as a reused pane whose buffer already carries a
+  prior turn's echo+marker pair.
+
 ## [1.29.73]
 
 ### Fixed

@@ -1096,7 +1096,7 @@ test("dispatchViaHerdr: workspace create, tab create, start, prompt, read, tab c
   );
 });
 
-test("dispatchViaHerdr retries the pane read once when herdr's own idle/done signal says success but the first read caught nothing", async () => {
+test("dispatchViaHerdr retries the pane read when herdr's own idle/done signal says success but an earlier read caught nothing", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
   const outFile = join(root, "dispatch", "alpha.report.md");
@@ -1108,7 +1108,8 @@ test("dispatchViaHerdr retries the pane read once when herdr's own idle/done sig
       json({ result: { agent: { interactive_ready: true } } }), // agent start
       json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
       { code: 0, stdout: "some unrelated pane text, rendering hadn't caught up yet", stderr: "" }, // agent read (stale/empty)
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read (retry — now settled)
+      { code: 0, stdout: "", stderr: "" }, // pane wait-output (finds the anchor)
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read (after wait-output — now settled)
       json({ result: { type: "ok" } }), // tab close
     ],
     { mainRoot: root },
@@ -1116,14 +1117,19 @@ test("dispatchViaHerdr retries the pane read once when herdr's own idle/done sig
 
   const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
 
-  assert.equal(result.code, 0, "herdr's own success signal is trusted once the retry recovers real text");
+  assert.equal(result.code, 0, "herdr's own success signal is trusted once a retry recovers real text");
   assert.equal(result.text, "herdr spike ok");
   assert.equal(readFileSync(outFile, "utf8"), "herdr spike ok");
   const readCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "read" && c[3] === "alpha-coder");
-  assert.equal(readCalls.length, 2, "read the pane again instead of declaring failure on the first empty extraction");
+  assert.equal(readCalls.length, 2, "stop retrying as soon as a read recovers text, instead of always spending all attempts");
+  const waitOutputCall = effects._calls.find((c) => c[1] === "pane" && c[2] === "wait-output");
+  assert.ok(waitOutputCall, "waits for this dispatch's own echo+marker before blindly re-reading");
+  assert.equal(waitOutputCall[3], "w1:p1", "targets the dispatch's own pane, not the agent name");
+  const regexArg = waitOutputCall[waitOutputCall.indexOf("--regex") + 1];
+  assert.ok(regexArg.includes("herdr spike ok"), "the regex anchors on this dispatch's own echoed prompt");
 });
 
-test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL when the retry never recovers any text", async () => {
+test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL only after all retries stay empty", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
   const outFile = join(root, "dispatch", "alpha.report.md");
@@ -1135,8 +1141,12 @@ test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL when the retr
       json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
       json({ result: { agent: { interactive_ready: true } } }), // agent start
       json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      { code: 0, stdout: "some unrelated pane text", stderr: "" }, // agent read (empty extraction)
-      { code: 0, stdout: "still unrelated pane text", stderr: "" }, // agent read (retry — still empty)
+      { code: 0, stdout: "still unrelated pane text 1", stderr: "" }, // agent read (empty extraction)
+      { code: 1, stdout: "", stderr: "" }, // pane wait-output (times out — anchor never appears)
+      { code: 0, stdout: "still unrelated pane text 2", stderr: "" }, // agent read (after wait-output — still empty)
+      { code: 0, stdout: "still unrelated pane text 3", stderr: "" }, // agent read (retry — still empty)
+      { code: 0, stdout: "still unrelated pane text 4", stderr: "" }, // agent read (retry — still empty)
+      { code: 0, stdout: "still unrelated pane text 5", stderr: "" }, // agent read (retry — still empty, last attempt)
       json({ result: { type: "ok" } }), // tab close
     ],
     { mainRoot: root },
@@ -1146,6 +1156,8 @@ test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL when the retr
 
   assert.equal(result.code, 0, "herdr's own exit code is untouched by an empty reply — the caller must read outEmpty to tell why it failed");
   assert.equal(result.text, "");
+  const readCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "read" && c[3] === "alpha-coder");
+  assert.equal(readCalls.length, 5, "gives up only after HERDR_READ_MAX_ATTEMPTS reads, not just one retry");
   assert.match(
     readFileSync(logFile, "utf8"),
     /\[DISPATCH-FAIL\] agent=crew-coder herdr=1 code=0 timedOut=false outEmpty=true/,
@@ -1752,6 +1764,34 @@ test("dispatchViaHerdr reuses an existing pane via spec.herdrReuse — skips wor
   assert.ok(!effects._calls.some((c) => c[1] === "agent" && c[2] === "start"), "a reuse skips agent start — the agent is already running");
   assert.deepEqual(effects._calls[0], ["herdr", "agent", "prompt", "alpha-coder", "Reply with exactly: herdr spike ok", "--wait", "--until", "idle", "--until", "done", "--timeout", "60000"]);
   assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"], "closes using the reused tab id, not a freshly created one");
+});
+
+test("dispatchViaHerdr skips the pane wait-output pre-check on a reused pane, even on an empty first read", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
+      { code: 0, stdout: "leftover text from a prior turn in this same pane", stderr: "" }, // agent read (empty extraction)
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read (fixed-delay retry — now settled)
+      json({ result: { type: "ok" } }), // tab close, using the reused (carried-forward) tabId
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(
+    effects,
+    "claude",
+    spec(root, promptFile, { slug: "alpha", herdrReuse: { tabId: "w1:t1", paneId: "w1:p1" } }),
+    { timeoutMs: 60_000 },
+  );
+
+  assert.equal(result.code, 0);
+  assert.equal(result.text, "herdr spike ok");
+  assert.ok(
+    !effects._calls.some((c) => c[1] === "pane" && c[2] === "wait-output"),
+    "a reused pane's buffer already carries a prior turn's echo+marker — wait-output's leftmost regex match could lock onto that stale pair instead of this turn's, so it's skipped in favour of the fixed-delay backoff",
+  );
 });
 
 test("dispatchViaHerdr falls back to a fresh dispatch when the reused pane's agent is gone", async () => {
