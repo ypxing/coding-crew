@@ -889,7 +889,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
       const kept = failed && keepPaneOnFail ? ` kept-pane=${name} pane=${paneId ?? "?"}` : "";
       appendLine(
         spec.logFile,
-        `[DISPATCH-FAIL] agent=${spec.agent} herdr=1 code=${code} timedOut=${!!timedOut} outEmpty=${!((text ?? "").trim())}${kept} ${(stderr || "").trim().slice(0, 400)}`,
+        `[DISPATCH-FAIL] agent=${spec.agent} herdr=1 code=${code} timedOut=${!!timedOut} outEmpty=${!((text ?? "").trim())}${kept} slug=${spec.slug ?? "?"} ${(stderr || "").trim().slice(0, 400)}`,
       );
     }
     return {
@@ -1064,6 +1064,16 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     }
     return await finish(1, `herdr agent prompt failed: ${(promptResult.stderr || promptResult.stdout || "").trim()}`, text, timedOut);
   }
+  // Every retry above (the anchored wait-output check, then the fixed-delay backoff) is
+  // built on one assumption: the reply is there, just not rendered yet. If text is still
+  // empty here, that assumption already failed once — worth knowing whether the pane was
+  // genuinely blank (real flush lag outlasting every retry) or had content extractHerdrReply
+  // just couldn't match (an echo/marker pattern out of sync with this platform's actual
+  // rendering — a different bug, and one this snippet is the only way to ever notice).
+  if (!text.trim()) {
+    const tail = rendered.trim().slice(-400);
+    return await finish(0, `herdr pane read empty after every retry — tail: ${tail || "(pane rendered nothing)"}`, text);
+  }
   return await finish(0, "", text);
 }
 
@@ -1179,7 +1189,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     const stderrSnippet = (r.stderr ?? "").trim().slice(0, 500).replace(/\s+/g, " ");
     appendLine(
       spec.logFile,
-      `[DISPATCH-FAIL] agent=${spec.agent} code=${r.code} timedOut=${!!r.timedOut} outEmpty=${!text.trim()} stderr=${JSON.stringify(stderrSnippet || "(none)")}`,
+      `[DISPATCH-FAIL] agent=${spec.agent} slug=${spec.slug ?? "?"} code=${r.code} timedOut=${!!r.timedOut} outEmpty=${!text.trim()} stderr=${JSON.stringify(stderrSnippet || "(none)")}`,
     );
   }
 

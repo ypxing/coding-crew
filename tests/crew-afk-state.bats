@@ -338,6 +338,25 @@ EOF
   [[ "$output" != *"No open review findings."* ]]
 }
 
+@test "crew-summary drops a stale not_run gap for a branch that actually merged" {
+  # Merging requires an all-met review (see runHousekeeping in orchestrator/lib/pipeline.mjs)
+  # — a gap left over from an earlier failed attempt on the same branch (this run's own
+  # retry, or a stale report from a resumed sprint's dead prior process) must not survive
+  # into the summary and contradict the Merged line by claiming the branch was "retained
+  # rather than merged".
+  init_sprint calc
+  state complete --slug a --branch crew/calc/a >/dev/null
+  mkdir -p .scratch/calc/reviews
+  bash "$(installed_scripts)/promote-findings.sh" mark-not-run --feature-slug calc \
+    --branch crew/calc/a --slug a --report .scratch/calc/reviews/sprint-review-1.md \
+    --reason "reviewer dispatch timed out" >/dev/null
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *"Merged  (1): a"* ]]
+  [[ "$output" != *"## Unreviewed Branches"* ]]
+  [[ "$output" != *"retained rather than merged"* ]]
+}
+
 @test "crew-summary lists promoted findings with their fix issue and state" {
   init_sprint calc
   mkdir -p .scratch/calc/reviews

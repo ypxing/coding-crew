@@ -293,10 +293,38 @@ elif [ -z "$GAP_LINE" ]; then
 fi
 
 if [ -n "$GAP_LINE" ]; then
-  gap_count=${GAP_LINE#REVIEW-GAPS: branches=}
-  echo ""
-  echo "## Unreviewed Branches"
-  echo "$gap_count branch(es) had no completed code review:"
-  printf '%s\n' "$REMIND" | sed -n 's/^gap: /- /p'
-  echo "Their absence of findings means nothing — nobody looked. The review also carries the acceptance-criteria gate, so these branches were retained rather than merged: re-run the sprint, or review them by hand."
+  # A branch this sprint actually merged is proof its review completed with an all-met
+  # verdict — the merge gate cannot be passed otherwise (runHousekeeping in
+  # orchestrator/lib/pipeline.mjs only merges after that). A `gap:` entry for a merged
+  # branch is therefore always stale — a not_run stub left by an earlier failed attempt
+  # (this run's own retry, or a leftover report from a previous process on a resumed
+  # sprint) that a later successful review didn't get matched against and clear — and
+  # must not contradict the Merged line above it by telling the user it was "retained
+  # rather than merged".
+  GAP_ENTRIES=""
+  gap_count=0
+  while IFS= read -r gline; do
+    [ -n "$gline" ] || continue
+    branch=${gline#gap: }; branch=${branch%% — *}
+    merged=0
+    if [ -n "$MERGED_SLUGS" ]; then
+      IFS=',' read -ra slugs <<< "$MERGED_SLUGS"
+      for s in "${slugs[@]}"; do
+        [ "${branch##*/}" = "$s" ] && { merged=1; break; }
+      done
+    fi
+    if [ "$merged" -eq 0 ]; then
+      GAP_ENTRIES="${GAP_ENTRIES}- ${gline#gap: }
+"
+      gap_count=$((gap_count + 1))
+    fi
+  done < <(printf '%s\n' "$REMIND" | grep '^gap: ')
+
+  if [ "$gap_count" -gt 0 ]; then
+    echo ""
+    echo "## Unreviewed Branches"
+    echo "$gap_count branch(es) had no completed code review:"
+    printf '%s' "$GAP_ENTRIES"
+    echo "Their absence of findings means nothing — nobody looked. The review also carries the acceptance-criteria gate, so these branches were retained rather than merged: re-run the sprint, or review them by hand."
+  fi
 fi

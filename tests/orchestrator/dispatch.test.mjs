@@ -1162,6 +1162,11 @@ test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL only after al
     readFileSync(logFile, "utf8"),
     /\[DISPATCH-FAIL\] agent=crew-coder herdr=1 code=0 timedOut=false outEmpty=true/,
   );
+  assert.match(
+    readFileSync(logFile, "utf8"),
+    /still unrelated pane text 5/,
+    "the last read's pane content lands in the log — an empty reply that never says why is unactionable",
+  );
 });
 
 test("dispatchViaHerdr sanitises an issue slug for herdr's agent name but keeps it readable as the tab label", async () => {

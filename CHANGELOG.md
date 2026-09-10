@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.29.77]
+
+### Fixed
+
+- **A merged branch could still be listed under `## Unreviewed Branches` in crew-afk's final
+  summary, contradicting the `Merged` line right above it.** Merging requires an all-met
+  review, but a `not_run` stub left by an earlier failed dispatch on the same branch (a retry
+  within the same run, or a leftover report from a prior process on a resumed sprint) was
+  never cleared from the display once that retry went on to succeed. `crew-summary.sh` now
+  cross-checks each gap entry against the sprint's own completed-branch list and drops any
+  that already merged, instead of telling the user it was "retained rather than merged" when
+  it wasn't.
+- **A herdr dispatch whose pane read came back empty after every retry logged `DISPATCH-FAIL`
+  with no way to tell why.** `dispatchViaHerdr` discarded the pane's actual rendered content on
+  that path, so there was no way to distinguish a genuinely empty pane (real flush lag
+  outlasting every retry) from one that had content `extractHerdrReply` just couldn't match
+  (an echo/marker pattern out of sync with the platform's actual rendering). The last read's
+  pane tail now lands in the `DISPATCH-FAIL` line and in the reviewer's `not_run` reason.
+- **`DISPATCH-FAIL` log lines didn't say which issue they were for**, so two dispatches
+  overlapping in the same round (crew-afk dispatches a branch's review as soon as its own
+  coder and verify finish, not after the whole round) could not be told apart in the trace
+  log. Both `DISPATCH-FAIL` lines (herdr and plain) now carry `slug=`.
+
 ## [1.29.76]
 
 ### Changed
