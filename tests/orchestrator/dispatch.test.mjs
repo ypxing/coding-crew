@@ -1166,6 +1166,48 @@ test("dispatchViaHerdr waits out a live agent_not_idle instead of treating it as
   assert.equal(readCalls.length, 2, "one read that hits agent_not_idle, one after the pane actually settles");
 });
 
+// A different shape of the same --wait "does not track turns" gap: no read here ever errors
+// with agent_not_idle, they all succeed with code 0 — but every one only catches the pane's
+// live status footer (tool-call counters, a running timer) because the coder is still
+// genuinely mid-turn long past wait-output's timeout and the fixed backoff's few seconds.
+// Without checking agent_status directly, this looks identical to a pane that rendered
+// nothing at all.
+test("dispatchViaHerdr checks agent_status directly before giving up on a busy pane that never errors on read", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait — matched a stale idle blip
+      { code: 0, stdout: "status footer 1", stderr: "" }, // agent read (empty extraction)
+      { code: 1, stdout: "", stderr: "" }, // pane wait-output (times out — anchor never appears)
+      { code: 0, stdout: "status footer 2", stderr: "" }, // agent read (retry — still just the footer)
+      { code: 0, stdout: "status footer 3", stderr: "" }, // agent read (retry — still just the footer)
+      { code: 0, stdout: "status footer 4", stderr: "" }, // agent read (retry — still just the footer)
+      { code: 0, stdout: "status footer 5", stderr: "" }, // agent read (retry — last fixed-backoff attempt)
+      json({ result: { agent: { agent_status: "working" } } }), // agent get — genuinely still busy, not a race
+      json({ result: { agent: { agent_status: "idle" } } }), // agent get (waitForHerdrIdle) — settled
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read — now readable
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 0);
+  assert.equal(result.text, "herdr spike ok", "recovers the real reply instead of reporting an empty one");
+  assert.equal(readFileSync(outFile, "utf8"), "herdr spike ok");
+  const getCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "get" && c[3] === "alpha-coder");
+  assert.equal(getCalls.length, 2, "checks agent_status directly instead of trusting the exhausted fixed backoff");
+  const readCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "read" && c[3] === "alpha-coder");
+  assert.equal(readCalls.length, 6, "five reads that never error, plus one after the pane actually settles");
+});
+
 test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL only after all retries stay empty", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
@@ -1184,6 +1226,7 @@ test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL only after al
       { code: 0, stdout: "still unrelated pane text 3", stderr: "" }, // agent read (retry — still empty)
       { code: 0, stdout: "still unrelated pane text 4", stderr: "" }, // agent read (retry — still empty)
       { code: 0, stdout: "still unrelated pane text 5", stderr: "" }, // agent read (retry — still empty, last attempt)
+      json({ result: { agent: { agent_status: "idle" } } }), // agent get — genuinely idle, not a race
       json({ result: { type: "ok" } }), // tab close
     ],
     { mainRoot: root },

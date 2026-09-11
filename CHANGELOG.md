@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.29.80]
+
+### Fixed
+
+- **A herdr dispatch could still report an empty reply even after v1.29.79's `agent_not_idle`
+  fix, when the pane was busy in a way that never made `agent read` itself error.** The same
+  `--wait` "does not track turns" gap could leave a read succeeding with code 0 while only
+  catching the pane's live status footer (tool-call counters, a running timer) — indistinguishable
+  from a genuinely blank reply, and the fixed-delay backoff that follows only covers a few
+  seconds of flush lag, not minutes of real work. `dispatchViaHerdr` now checks `agent_status`
+  directly once that backoff is exhausted: if the pane is still actively busy, it polls until
+  idle/done (bounded by the dispatch's own deadline) and reads again, instead of giving up while
+  the coder is still working.
+
 ## [1.29.79]
 
 ### Fixed

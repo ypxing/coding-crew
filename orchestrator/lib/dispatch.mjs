@@ -1107,6 +1107,26 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     text = extractHerdrReply(rendered, invocation.prompt, platform);
   }
 
+  // Every retry above assumed the reply was already there, just not rendered yet — the same
+  // assumption herdrReadSettled makes when a *read* comes back agent_not_idle. But a read can
+  // also come back with no error at all and still catch nothing but the pane's live status
+  // footer: --wait's own "does not track turns" gap means the coder can still be minutes into
+  // active tool calls when it settled early, long past wait-output's 10s timeout and this
+  // fixed backoff's few seconds. Ask `agent get` directly rather than assume: a busy status
+  // means text is absent because the turn is still running, not because it produced nothing,
+  // so wait it out (bounded by this dispatch's own deadline) and read again — repeating for as
+  // long as the pane keeps reporting busy, so a genuinely long-running turn is never cut off
+  // early. Once status itself reports idle/done with text still empty, that's a real empty
+  // reply, not a race, and the loop below stops.
+  while (promptResult.code === 0 && !text.trim() && Date.now() < dispatchDeadline) {
+    const get = await herdrExec(effects, ["agent", "get", name]);
+    const status = herdrJson(get)?.result?.agent?.agent_status;
+    if (get.code !== 0 || status === "idle" || status === "done") break;
+    await waitForHerdrIdle(effects, name, dispatchDeadline);
+    rendered = await herdrReadSettled(effects, name, dispatchDeadline);
+    text = extractHerdrReply(rendered, invocation.prompt, platform);
+  }
+
   if (promptResult.code !== 0) {
     const errorCode = herdrJson(promptResult)?.error?.code;
     const timedOut = errorCode === "agent_prompt_stalled" || errorCode === "timeout";
