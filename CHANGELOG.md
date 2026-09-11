@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.29.78]
+
+### Fixed
+
+- **`.coding-crew/afk-models.json` was read on every platform, but its values (bare aliases
+  like `sonnet`/`haiku`/`opus`, or full Claude model IDs) are Claude Code CLI vocabulary —
+  codex/pi/copilot each have their own `--model` string space, so a codex/pi/copilot sprint
+  passing the file's value through risked that platform's own CLI failing on an unrecognized
+  `--model`.** `resolveModelTiers` now treats the file as absent outside the claude platform
+  and warns once instead; a `--model` CLI override still applies on any platform.
+
 ## [1.29.77]
 
 ### Fixed

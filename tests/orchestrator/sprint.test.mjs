@@ -577,7 +577,27 @@ test("the summary names the resolved model, rendered from disk", () => {
   assert.match(traceLog(root), /\[MODEL\]/);
 });
 
-test(".coding-crew/afk-models.json lets the reviewer diverge from the coder's model", () => {
+test(".coding-crew/afk-models.json lets the reviewer diverge from the coder's model, on the claude platform", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/afk-models.json"),
+    JSON.stringify({ coder: "sonnet", reviewer: "opus" }),
+  );
+  const { r, lines } = commandLines(root, [], { platform: "claude" });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.ok(
+    lines.some((l) => /^SPAWN .*--agent crew-coder/.test(l) && / --model sonnet/.test(l)),
+    `expected the coder dispatched with --model sonnet, got:\n${lines.join("\n")}`,
+  );
+  assert.ok(
+    lines.some((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l) && / --model opus/.test(l)),
+    `expected the reviewer dispatched with --model opus, got:\n${lines.join("\n")}`,
+  );
+});
+
+test(".coding-crew/afk-models.json is ignored on a non-claude platform, with a warning, and no --model is passed", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   mkdirSync(join(root, ".coding-crew"), { recursive: true });
@@ -587,13 +607,10 @@ test(".coding-crew/afk-models.json lets the reviewer diverge from the coder's mo
   );
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /WARNING: .*afk-models\.json is ignored on the pi platform/);
   assert.ok(
-    lines.some((l) => /^SPAWN .*--agent crew-coder/.test(l) && / --model sonnet/.test(l)),
-    `expected the coder dispatched with --model sonnet, got:\n${lines.join("\n")}`,
-  );
-  assert.ok(
-    lines.some((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l) && / --model opus/.test(l)),
-    `expected the reviewer dispatched with --model opus, got:\n${lines.join("\n")}`,
+    lines.some((l) => /^SPAWN .*--agent crew-coder/.test(l) && !/ --model /.test(l)),
+    `expected the coder dispatched with no --model, got:\n${lines.join("\n")}`,
   );
 });
 
@@ -745,8 +762,8 @@ test("a review that never ran is named in the summary, not just counted in the s
 // order. A DEPS: outcome never changes a round's status.
 
 /** The effects log — one line per subprocess, in order. CREW_VERBOSE puts it on stderr. */
-function commandLines(root, extra = [], { scripts = SCRIPTS, env = {} } = {}) {
-  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...extra], {
+function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi" } = {}) {
+  const r = sh("node", [MAIN, "run", "--platform", platform, "--feature-slug", "demo", ...extra], {
     cwd: root,
     env: {
       ...process.env,

@@ -1,10 +1,17 @@
 /**
- * .coding-crew/afk-models.json — an optional per-role model override for a sprint.
- * Roles: coder, reviewer, triage, commandsDiscovery, coverageValidation.
+ * .coding-crew/afk-models.json — an optional per-role model override for a sprint, honored
+ * only on the claude platform. Roles: coder, reviewer, triage, commandsDiscovery,
+ * coverageValidation.
  *
- * Deliberately no numeric capability ranking across arbitrary model strings: --model's
- * vocabulary is opaque past this file (Claude Code's own aliases on the claude platform,
- * whatever string each other platform's own CLI accepts otherwise — see dispatch.mjs). The
+ * claude-only because its values (bare aliases like "sonnet", or full Claude model IDs) are
+ * Claude Code CLI vocabulary — codex/pi/copilot each have their own --model string space
+ * (see dispatch.mjs), and there is no reliable way to detect from here whether a given
+ * string would resolve on another platform's CLI. Rather than pass it through and let that
+ * CLI fail on an unrecognized value, resolveModelTiers treats the file as absent outside the
+ * claude platform and warns once instead.
+ *
+ * Deliberately no numeric capability ranking across arbitrary model strings otherwise:
+ * --model's vocabulary past the claude-only case above is opaque to this file. The
  * only guarantee this module gives is by construction, not by comparison: an omitted
  * reviewer/triage/commandsDiscovery/coverageValidation inherits the coder's own resolved
  * value, so a role can never end up weaker than the coder by accident. A role only diverges
@@ -39,6 +46,20 @@ export function loadModelConfig(mainRoot) {
 }
 
 export function resolveModelTiers({ fileConfig, cliModel, platform }) {
+  const warnings = [];
+
+  // afk-models.json's aliases (sonnet/haiku/opus) and any other value in it are Claude
+  // Code CLI vocabulary — they don't travel to another platform's own CLI. Rather than pass
+  // them through and let that CLI fail on an unrecognized --model, treat the file as absent
+  // outside the claude platform and say so, once, up front.
+  if (platform !== "claude" && Object.keys(fileConfig).length > 0) {
+    warnings.push(
+      `.coding-crew/afk-models.json is ignored on the ${platform} platform — its model ` +
+        "values are Claude Code-specific and are not honored by another platform's CLI.",
+    );
+    fileConfig = {};
+  }
+
   const coderDefault = platform === "claude" ? CLAUDE_DEFAULT_CODER_MODEL : null;
   const coder = cliModel ?? fileConfig.coder ?? coderDefault;
   const reviewer = fileConfig.reviewer ?? coder;
@@ -46,7 +67,6 @@ export function resolveModelTiers({ fileConfig, cliModel, platform }) {
   const commandsDiscovery = fileConfig.commandsDiscovery ?? coder;
   const coverageValidation = fileConfig.coverageValidation ?? coder;
 
-  const warnings = [];
   if (platform === "claude") {
     for (const [role, value] of [
       ["reviewer", reviewer],

@@ -139,14 +139,27 @@ test("resolveModelTiers: an explicit weaker reviewer on the claude platform warn
   assert.match(r.warnings[0], /reviewer model "haiku" is a weaker tier than coder model "opus"/);
 });
 
-test("resolveModelTiers: the same weaker-tier divergence on a non-claude platform is silently unranked", () => {
+test("resolveModelTiers: a non-empty file on a non-claude platform is ignored, with a warning", () => {
   const r = resolveModelTiers({
     fileConfig: { coder: "opus", triage: "haiku" },
     cliModel: null,
     platform: "codex",
   });
-  assert.equal(r.triage, "haiku");
-  assert.deepEqual(r.warnings, [], "codex/pi/copilot model strings are opaque — no ranking is known");
+  assert.equal(r.triage, null, "the file's values are not honored outside the claude platform");
+  assert.equal(r.coder, null);
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /afk-models\.json is ignored on the codex platform/);
+});
+
+test("resolveModelTiers: a --model override still applies on a non-claude platform even though the file is ignored", () => {
+  const r = resolveModelTiers({
+    fileConfig: { coder: "opus", triage: "haiku" },
+    cliModel: "some-codex-model",
+    platform: "codex",
+  });
+  assert.equal(r.coder, "some-codex-model");
+  assert.equal(r.triage, "some-codex-model");
+  assert.equal(r.warnings.length, 1, "the file is still ignored (and still warned about) even when --model wins");
 });
 
 test("resolveModelTiers: an explicit null coder (file's 'inherit') still resolves to the claude default, so a weaker reviewer now warns", () => {
@@ -163,12 +176,13 @@ test("resolveModelTiers: an explicit null coder (file's 'inherit') still resolve
   assert.match(r.warnings[0], /reviewer model "haiku" is a weaker tier than coder model "sonnet"/);
 });
 
-test("resolveModelTiers: an explicit null coder on a non-claude platform stays unresolved (no known default)", () => {
+test("resolveModelTiers: an explicit null coder on a non-claude platform stays unresolved (file ignored anyway)", () => {
   const r = resolveModelTiers({
     fileConfig: { coder: null, reviewer: "haiku" },
     cliModel: null,
     platform: "codex",
   });
   assert.equal(r.coder, null);
-  assert.deepEqual(r.warnings, []);
+  assert.equal(r.reviewer, null);
+  assert.equal(r.warnings.length, 1);
 });
