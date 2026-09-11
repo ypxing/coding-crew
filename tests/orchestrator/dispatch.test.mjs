@@ -1129,6 +1129,43 @@ test("dispatchViaHerdr retries the pane read when herdr's own idle/done signal s
   assert.ok(regexArg.includes("herdr spike ok"), "the regex anchors on this dispatch's own echoed prompt");
 });
 
+// herdr's own doc for `agent prompt --wait`: "It does not track turns: if the agent is
+// already working, that active turn's completion may match." A pane still finishing an
+// earlier turn can make --wait settle before this dispatch's own reply exists — the
+// following `agent read --source recent-unwrapped` then rejects with agent_not_idle (that
+// source needs the pane idle to scroll its alt-screen buffer), putting a JSON error on
+// stdout instead of rendered text. Without recognising that error code, this reads back
+// exactly like a genuinely blank pane.
+test("dispatchViaHerdr waits out a live agent_not_idle instead of treating it as an empty reply", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait — matched a stale idle blip
+      { code: 1, stdout: JSON.stringify({ error: { code: "agent_not_idle", message: "alpha-coder is working" } }), stderr: "" }, // agent read — pane still mid-turn
+      json({ result: { agent: { agent_status: "idle" } } }), // agent get — settled by the time we poll
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read — now readable
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 0);
+  assert.equal(result.text, "herdr spike ok", "recovers the real reply instead of reporting an empty one");
+  assert.equal(readFileSync(outFile, "utf8"), "herdr spike ok");
+  const getCall = effects._calls.find((c) => c[1] === "agent" && c[2] === "get" && c[3] === "alpha-coder");
+  assert.ok(getCall, "polls agent_status directly instead of guessing with the flush-lag backoff");
+  const readCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "read" && c[3] === "alpha-coder");
+  assert.equal(readCalls.length, 2, "one read that hits agent_not_idle, one after the pane actually settles");
+});
+
 test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL only after all retries stay empty", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");

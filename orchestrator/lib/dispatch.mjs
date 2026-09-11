@@ -537,6 +537,61 @@ function herdrJson(result) {
 }
 
 /**
+ * `agent prompt --wait`'s own contract admits it "does not track turns": if the pane was
+ * already working when this dispatch's prompt landed, --wait can settle on that *earlier*
+ * turn's idle/done transition instead of this one's. The `agent read --source
+ * recent-unwrapped` that follows then rejects with agent_not_idle — recent-unwrapped needs
+ * the pane idle to scroll its alt-screen buffer — putting a JSON error envelope on stdout
+ * instead of rendered text (the one case where `agent read` doesn't return raw pane text; see
+ * herdrJson's doc comment). extractHerdrReply finds no echoed prompt in that JSON and returns
+ * "", indistinguishable from a pane that genuinely rendered nothing. Naming the one error code
+ * that means "still working, not blank" lets the retry loop below wait out the actual
+ * remaining work instead of burning the short flush-lag backoff meant for a different failure
+ * mode and reporting a false empty reply.
+ */
+function herdrReadNotIdle(readResult) {
+  return herdrJson(readResult)?.error?.code === "agent_not_idle";
+}
+
+// Polling interval while waiting out a live agent_not_idle — coarser than the flush-lag
+// backoff (HERDR_READ_RETRY_DELAY_MS) since this is waiting on actual agent work, not a
+// terminal render catching up.
+const HERDR_NOT_IDLE_POLL_MS = 2_000;
+
+/**
+ * Polls `agent get` until agent_status settles to idle/done, or deadline passes. Used only
+ * after a read has already come back agent_not_idle — this is what should have happened
+ * instead of the mismatched --wait/read pair racing each other (see herdrReadNotIdle).
+ */
+async function waitForHerdrIdle(effects, name, deadline) {
+  while (Date.now() < deadline) {
+    const get = await herdrExec(effects, ["agent", "get", name]);
+    if (get.code !== 0) return false;
+    const status = herdrJson(get)?.result?.agent?.agent_status;
+    if (status === "idle" || status === "done") return true;
+    await new Promise((r) => setTimeout(r, HERDR_NOT_IDLE_POLL_MS));
+  }
+  return false;
+}
+
+/**
+ * Every `agent read` call in the retry loop below goes through here rather than calling
+ * herdrExec directly, so the agent_not_idle recovery only has to be written once. On that
+ * error code, waits for the pane to actually settle (bounded by this dispatch's own
+ * deadline, not another fixed retry budget) and reads again — the second read's stdout is
+ * returned as-is even if it's still an error envelope (deadline exceeded), since that's a
+ * real failure the caller's existing empty-reply handling already reports correctly.
+ */
+async function herdrReadSettled(effects, name, deadline) {
+  let result = await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"]);
+  if (herdrReadNotIdle(result)) {
+    await waitForHerdrIdle(effects, name, deadline);
+    result = await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"]);
+  }
+  return result.stdout || "";
+}
+
+/**
  * Pull the assistant's reply out of `agent read`'s rendered pane text. There is no
  * structured field here (unlike extractFinalText's clean `.result`), so this is a
  * text-window heuristic — the reply sits between the echoed prompt and some trailing
@@ -851,6 +906,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   if (effects.dryRun) return { code: 0, timedOut: false, dryRun: true, stderr: "", text: "" };
 
   const bound = timeoutMs || 45 * 60 * 1000;
+  const dispatchDeadline = Date.now() + bound;
   const label = spec.slug || spec.agent;
   const name = herdrDispatchName(label, spec.agent, spec.issueNumber);
   // spec.herdrReuse ({tabId, paneId}) names a pane a prior dispatch under this same
@@ -1010,7 +1066,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     return await dispatchViaHerdr(effects, platform, { ...spec, herdrReuse: null }, { timeoutMs });
   }
 
-  let rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
+  let rendered = await herdrReadSettled(effects, name, dispatchDeadline);
   let text = extractHerdrReply(rendered, invocation.prompt, platform);
   let attempt = 1;
 
@@ -1037,7 +1093,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
       String(HERDR_WAIT_OUTPUT_TIMEOUT_MS),
     ]);
     attempt++;
-    rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
+    rendered = await herdrReadSettled(effects, name, dispatchDeadline);
     text = extractHerdrReply(rendered, invocation.prompt, platform);
   }
 
@@ -1047,7 +1103,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   while (promptResult.code === 0 && !text.trim() && attempt < HERDR_READ_MAX_ATTEMPTS) {
     attempt++;
     await new Promise((r) => setTimeout(r, HERDR_READ_RETRY_DELAY_MS * (attempt - 1)));
-    rendered = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"])).stdout || "";
+    rendered = await herdrReadSettled(effects, name, dispatchDeadline);
     text = extractHerdrReply(rendered, invocation.prompt, platform);
   }
 

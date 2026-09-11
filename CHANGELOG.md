@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.79]
+
+### Fixed
+
+- **A herdr dispatch could report an empty reply even though the coder was still actively
+  working.** `agent prompt --wait`'s own contract admits it "does not track turns": if the pane
+  was already mid-turn when this dispatch's prompt landed, `--wait` could settle on that
+  *earlier* turn's idle/done transition instead of this one's. The `agent read --source
+  recent-unwrapped` that followed then rejected with `agent_not_idle` (that source needs the
+  pane idle to scroll its alt-screen buffer), putting a JSON error envelope on stdout instead of
+  rendered text — indistinguishable from a pane that genuinely rendered nothing. `dispatchViaHerdr`
+  now recognizes `agent_not_idle` specifically, polls `agent get` until the pane's own
+  `agent_status` settles to idle/done (bounded by the dispatch's own deadline), and re-reads,
+  instead of burning the short flush-lag backoff meant for a different failure mode.
+
 ## [1.29.78]
 
 ### Fixed
