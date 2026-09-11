@@ -14,7 +14,7 @@
  * absent check.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -273,6 +273,12 @@ export async function runWorker(ctx, issue) {
   const promptFile = join(dispatchDir, `${dispatchStem(issue)}.prompt.md`);
   const outFile = join(dispatchDir, `${dispatchStem(issue)}.report.md`);
   const sidecarFile = join(dispatchDir, `${dispatchStem(issue)}.report.json`);
+
+  // A prior round's (or a prior resumed sprint's) sidecar at this same fixed path must not
+  // be mistaken for this round's verdict if the coder's turn dies before writing one — see
+  // waitForSidecarReport in dispatch.mjs, which reads existsSync as "found" the instant the
+  // herdr wait settles.
+  rmSync(sidecarFile, { force: true });
 
   writeFileSync(
     promptFile,
@@ -566,6 +572,10 @@ async function runTriage(ctx, worker, verifyStdout) {
   const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.md`);
   const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.report.json`);
 
+  // See runWorker's matching rmSync: this path is fixed per issue, so a stale sidecar from
+  // a prior triage dispatch must not be read back as this round's verdict.
+  rmSync(sidecarFile, { force: true });
+
   writeFileSync(
     promptFile,
     triagePrompt({
@@ -629,6 +639,10 @@ async function runReview(ctx, worker, checks) {
   const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.md`);
   const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.report.json`);
   const reportFile = ctx.roundReviewFile();
+
+  // See runWorker's matching rmSync: this path is fixed per issue, so a stale sidecar from
+  // a prior review dispatch must not be read back as this round's verdict.
+  rmSync(sidecarFile, { force: true });
 
   writeFileSync(
     promptFile,

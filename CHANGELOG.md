@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.86]
+
+### Fixed
+
+- **`runWorker`/`runReview`/`runTriage` now delete each dispatch's `.report.json` sidecar
+  before writing that round's prompt, instead of leaving a prior round's (or a prior resumed
+  sprint's) sidecar sitting at the same fixed path.** `waitForSidecarReport` in `dispatch.mjs`
+  treats `existsSync` as "found" the instant the herdr wait settles, so a stale sidecar from an
+  earlier dispatch to the same slug was read back as this round's verdict whenever the coder's,
+  reviewer's, or triage agent's turn died before writing a fresh one — a false verdict rather
+  than the intended pane-scrape fallback.
+
 ## [1.29.85]
 
 ### Changed
