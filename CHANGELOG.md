@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.29.82]
+
+### Added
+
+- **Under `HERDR_ENV=1`, crew-afk now pushes the sprint's outcome into the triggering pane
+  (`$HERDR_PANE_ID`) once the run finishes, stalls, or errors,** instead of leaving that pane to
+  poll on a long interval for the same information — see `notifyTriggeringPane`'s doc comment.
+
+### Fixed
+
+- **That nudge only fired once a sprint had actually been initialized, so a preflight or
+  feature-slug resolution failure — the fastest way a run can end — left the triggering pane
+  with nothing to stop polling for.** `main()`'s run is now wrapped in a single `try`/`finally`
+  from before preflight onward, so every exit path, including one that never got as far as
+  creating a `Sprint`, still reaches the notify call.
+
 ## [1.29.81]
 
 ### Fixed

@@ -390,94 +390,111 @@ async function main() {
   }
 
   // --- run -----------------------------------------------------------------
-  const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
-    herdr: options.herdr,
-  });
-  if (problems.length) {
-    console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));
-    return 1;
-  }
+  // Wrapped from here, not just around runSprint: a preflight or feature-slug failure below
+  // exits just as early (still `return 1`, same as before) but now also reaches the
+  // notifyTriggeringPane call in `finally` — under HERDR_ENV=1 that's the one nudge the
+  // triggering pane gets, so a setup failure has to reach it too, not just a completed or
+  // stalled sprint. `sprint`/`resolved` are declared here, outside the try, so `finally` can
+  // still see whichever of them got as far as being assigned.
+  let sprint;
+  let resolved;
+  let stalled;
+  let exitCode = 0;
+  let runError;
+  try {
+    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
+      herdr: options.herdr,
+    });
+    if (problems.length) {
+      console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));
+      exitCode = 1;
+      return exitCode;
+    }
 
-  // Before any worktree exists: make sure docker-compose.override.yml and .env are in
-  // .worktreeinclude, so every worktree this sprint creates gets them symlinked in at
-  // creation time (see ensureWorktreeInclude()'s docstring).
-  ensureWorktreeInclude(mainRoot);
+    // Before any worktree exists: make sure docker-compose.override.yml and .env are in
+    // .worktreeinclude, so every worktree this sprint creates gets them symlinked in at
+    // creation time (see ensureWorktreeInclude()'s docstring).
+    ensureWorktreeInclude(mainRoot);
 
-  // Resolved once, here, before session-init.sh (or anything else) touches disk — see
-  // resolveFeatureSlug()'s docstring. Passing the resolved slug down means session-init.sh's
-  // own no-argument fallback (`find | head -n 1`) is only ever reached for the single-feature
-  // repo it was built for; a second feature dir with a ready issue is refused here instead.
-  const resolved = resolveFeatureSlug(mainRoot, options.featureSlug);
-  if (resolved.error) {
-    console.error(resolved.error);
-    return 1;
-  }
+    // Resolved once, here, before session-init.sh (or anything else) touches disk — see
+    // resolveFeatureSlug()'s docstring. Passing the resolved slug down means session-init.sh's
+    // own no-argument fallback (`find | head -n 1`) is only ever reached for the single-feature
+    // repo it was built for; a second feature dir with a ready issue is refused here instead.
+    resolved = resolveFeatureSlug(mainRoot, options.featureSlug);
+    if (resolved.error) {
+      console.error(resolved.error);
+      exitCode = 1;
+      return exitCode;
+    }
 
-  const sprint = Sprint.init(effects, {
-    featureSlug: resolved.slug,
-    coverage: options.coverage,
-    promote: options.promote,
-    passthrough: options.passthrough,
-    // Deps are not installed as part of init here — commands finding runs first, below, so
-    // its own cached "install" override (when it finds one) is already on disk before the
-    // sprint's first ensure-deps.sh call reads it.
-    deps: false,
-    log: (line) => console.error(line),
-  });
-  sprint.setModel(options.model ?? "agent default");
+    sprint = Sprint.init(effects, {
+      featureSlug: resolved.slug,
+      coverage: options.coverage,
+      promote: options.promote,
+      passthrough: options.passthrough,
+      // Deps are not installed as part of init here — commands finding runs first, below, so
+      // its own cached "install" override (when it finds one) is already on disk before the
+      // sprint's first ensure-deps.sh call reads it.
+      deps: false,
+      log: (line) => console.error(line),
+    });
+    sprint.setModel(options.model ?? "agent default");
 
-  if (options.commands) {
-    await discoverCommands(effects, {
+    if (options.commands) {
+      await discoverCommands(effects, {
+        platform: options.platform,
+        model: options.commandsDiscoveryModel,
+        timeoutMs: options.reviewTimeoutMs,
+        // Persisted, not just printed: this step runs once, unattended, before any
+        // worktree exists, and its own dispatch failure (bad model output, timeout) was
+        // otherwise visible only in a live terminal — gone the moment it scrolled past,
+        // with no artifact left afterwards to diagnose it from.
+        log: (line) => {
+          console.error(line);
+          if (sprint.traceLog) appendLine(sprint.traceLog, line);
+        },
+      });
+    }
+
+    // Deps, once per sprint against $MAIN_ROOT, after commands finding — not before: a
+    // documented install command discover-commands.sh finds is only usable by ensure-deps.sh
+    // if the cache it lands in already exists by the time this runs.
+    if (options.deps) sprint.installDeps((line) => console.error(line));
+
+    const ctx = {
+      sprint,
+      effects,
+      options,
       platform: options.platform,
-      model: options.commandsDiscoveryModel,
-      timeoutMs: options.reviewTimeoutMs,
-      // Persisted, not just printed: this step runs once, unattended, before any
-      // worktree exists, and its own dispatch failure (bad model output, timeout) was
-      // otherwise visible only in a live terminal — gone the moment it scrolled past,
-      // with no artifact left afterwards to diagnose it from.
+      round: 0,
+      roundReviewFile: makeRoundReviewFile(sprint),
       log: (line) => {
+        if (!line) return;
         console.error(line);
         if (sprint.traceLog) appendLine(sprint.traceLog, line);
       },
-    });
-  }
+      out: (text) => console.log(text),
+    };
 
-  // Deps, once per sprint against $MAIN_ROOT, after commands finding — not before: a
-  // documented install command discover-commands.sh finds is only usable by ensure-deps.sh
-  // if the cache it lands in already exists by the time this runs.
-  if (options.deps) sprint.installDeps((line) => console.error(line));
-
-  const ctx = {
-    sprint,
-    effects,
-    options,
-    platform: options.platform,
-    round: 0,
-    roundReviewFile: makeRoundReviewFile(sprint),
-    log: (line) => {
-      if (!line) return;
-      console.error(line);
-      if (sprint.traceLog) appendLine(sprint.traceLog, line);
-    },
-    out: (text) => console.log(text),
-  };
-
-  let stalled;
-  let runError;
-  try {
     ({ stalled } = await runSprint(ctx));
+    exitCode = stalled ? 2 : 0;
+    return exitCode;
   } catch (err) {
     runError = err;
+    exitCode = 1;
     throw err;
   } finally {
     // A slug whose one-shot herdr-reuse pane/worktree (see handleVerificationFailure in
     // pipeline.mjs) never got consumed by a next round — max-rounds hit, an unhandled error,
     // or every other issue resolving before this one's retry ran — would otherwise leave that
     // worktree on disk, and, unless the whole workspace is closed just below, that pane open.
-    // Swept here, once, regardless of how the run ended.
-    for (const { tabId, worktree } of sprint.pendingHerdrReuses()) {
-      await closeHerdrPane(effects, tabId);
-      removeWorktree(effects, { mainRoot: effects.mainRoot, path: worktree });
+    // Swept here, once, regardless of how the run ended. A no-op when the run never got as
+    // far as initialising a sprint (preflight/resolveFeatureSlug failed first).
+    if (sprint) {
+      for (const { tabId, worktree } of sprint.pendingHerdrReuses()) {
+        await closeHerdrPane(effects, tabId);
+        removeWorktree(effects, { mainRoot: effects.mainRoot, path: worktree });
+      }
     }
     // A no-op unless a herdr dispatch actually created the sprint's one shared workspace
     // (see dispatchViaHerdr/ensureHerdrWorkspace) — closed here, once, regardless of how
@@ -485,13 +502,15 @@ async function main() {
     await closeHerdrWorkspace(effects);
     // Only under HERDR_ENV=1 — see notifyTriggeringPane's doc comment for why this is the
     // one case where the caller (the same pane crew-afk was launched from) can stop polling
-    // and just wait for this nudge instead.
+    // and just wait for this nudge instead. Covers every way the run above can end, including
+    // a preflight/feature-slug failure that returned before a sprint ever existed — those
+    // still need the nudge, since nothing else will tell a non-polling caller the run is over.
     if (options.herdr) {
-      const outcome = runError ? "errored" : stalled ? "stalled — blockers need a human" : "finished";
-      await notifyTriggeringPane(effects, `crew-afk (${resolved.slug}): sprint ${outcome}. Check this pane's scrollback for the summary.`);
+      const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : stalled ? "stalled — blockers need a human" : "finished";
+      const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
+      await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);
     }
   }
-  return stalled ? 2 : 0;
 }
 
 main().then(
