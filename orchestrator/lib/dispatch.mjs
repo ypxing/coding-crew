@@ -559,19 +559,22 @@ function herdrReadNotIdle(readResult) {
 const HERDR_NOT_IDLE_POLL_MS = 2_000;
 
 /**
- * Polls `agent get` until agent_status settles to idle/done, or deadline passes. Used only
- * after a read has already come back agent_not_idle — this is what should have happened
- * instead of the mismatched --wait/read pair racing each other (see herdrReadNotIdle).
+ * Polls `agent get` until agent_status settles to idle, done, or blocked, or the deadline
+ * passes. blocked is a stopping condition too, not something to wait out: unlike idle/done
+ * it doesn't arrive from work finishing, so a pane that lands there stays there until a
+ * human (or a keystroke this file already knows to send — see the trust-dialog handling
+ * above) answers it. Polling past that would just spend the rest of the deadline for no
+ * reason. Returns the settled status string, or null if the deadline passed first.
  */
 async function waitForHerdrIdle(effects, name, deadline) {
   while (Date.now() < deadline) {
     const get = await herdrExec(effects, ["agent", "get", name]);
-    if (get.code !== 0) return false;
+    if (get.code !== 0) return null;
     const status = herdrJson(get)?.result?.agent?.agent_status;
-    if (status === "idle" || status === "done") return true;
+    if (status === "idle" || status === "done" || status === "blocked") return status;
     await new Promise((r) => setTimeout(r, HERDR_NOT_IDLE_POLL_MS));
   }
-  return false;
+  return null;
 }
 
 /**
@@ -1117,12 +1120,29 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   // so wait it out (bounded by this dispatch's own deadline) and read again — repeating for as
   // long as the pane keeps reporting busy, so a genuinely long-running turn is never cut off
   // early. Once status itself reports idle/done with text still empty, that's a real empty
-  // reply, not a race, and the loop below stops.
+  // reply, not a race, and the loop below stops. A status of blocked fails immediately
+  // instead of polling: a dialog appearing sometime after --wait's stale match already
+  // settled the prompt call needs an answer, not more waiting, and nothing here would make
+  // it resolve on its own before the deadline — see waitForHerdrIdle's doc comment.
+  // lastKnownStatus rides into the outEmpty message below purely for diagnosis: it says
+  // whether the pane was genuinely idle/done (a real empty reply) or this loop simply ran
+  // out of deadline while still busy, without guessing from the rendered tail alone.
+  let lastKnownStatus = null;
   while (promptResult.code === 0 && !text.trim() && Date.now() < dispatchDeadline) {
     const get = await herdrExec(effects, ["agent", "get", name]);
     const status = herdrJson(get)?.result?.agent?.agent_status;
+    lastKnownStatus = status ?? lastKnownStatus;
     if (get.code !== 0 || status === "idle" || status === "done") break;
-    await waitForHerdrIdle(effects, name, dispatchDeadline);
+    if (status === "blocked") {
+      rendered = await herdrReadSettled(effects, name, dispatchDeadline);
+      return await finish(1, `herdr pane blocked mid-turn: ${rendered.trim().slice(-400)}`, "");
+    }
+    const settled = await waitForHerdrIdle(effects, name, dispatchDeadline);
+    lastKnownStatus = settled ?? lastKnownStatus;
+    if (settled === "blocked") {
+      rendered = await herdrReadSettled(effects, name, dispatchDeadline);
+      return await finish(1, `herdr pane blocked mid-turn: ${rendered.trim().slice(-400)}`, "");
+    }
     rendered = await herdrReadSettled(effects, name, dispatchDeadline);
     text = extractHerdrReply(rendered, invocation.prompt, platform);
   }
@@ -1148,7 +1168,8 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   // rendering — a different bug, and one this snippet is the only way to ever notice).
   if (!text.trim()) {
     const tail = rendered.trim().slice(-400);
-    return await finish(0, `herdr pane read empty after every retry — tail: ${tail || "(pane rendered nothing)"}`, text);
+    const statusNote = lastKnownStatus ? ` last agent_status=${lastKnownStatus}` : "";
+    return await finish(0, `herdr pane read empty after every retry${statusNote} — tail: ${tail || "(pane rendered nothing)"}`, text);
   }
   return await finish(0, "", text);
 }

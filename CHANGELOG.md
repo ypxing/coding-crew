@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.81]
+
+### Fixed
+
+- **A dialog appearing mid-turn on a herdr pane (after `--wait` settled on a stale idle/done
+  match) polled uselessly until the dispatch's whole deadline expired before reporting an
+  unexplained empty reply.** Unlike idle/done, a `blocked` `agent_status` never resolves on its
+  own — it stays blocked until a dialog is answered — so `dispatchViaHerdr` now fails immediately
+  on that status (from both the direct check and from inside `waitForHerdrIdle`'s own polling)
+  with the pane's actual dialog text, the same way it already does for a dialog that's there
+  before the prompt is even sent.
+- **A `DISPATCH-FAIL outEmpty=true` log line gave no way to tell a genuinely empty reply from
+  one that simply ran out of deadline while the pane was still busy.** The line now includes the
+  last-seen `agent_status` alongside the rendered tail.
+
 ## [1.29.80]
 
 ### Fixed

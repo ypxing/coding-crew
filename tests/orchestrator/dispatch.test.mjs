@@ -1247,6 +1247,97 @@ test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL only after al
     /still unrelated pane text 5/,
     "the last read's pane content lands in the log — an empty reply that never says why is unactionable",
   );
+  assert.match(
+    readFileSync(logFile, "utf8"),
+    /last agent_status=idle/,
+    "the last-seen agent_status lands in the log too, so a real empty reply is distinguishable from one that ran out of deadline while still busy",
+  );
+});
+
+// A dialog appearing mid-turn, discovered only once the fixed backoff above is exhausted and
+// this loop starts polling agent_status directly. Unlike idle/done, blocked never resolves on
+// its own — herdr's docs describe no auto-dismiss — so polling it the same way as a genuinely
+// busy pane would just spend the whole dispatch deadline before reporting the same unhelpful
+// empty reply the agent_blocked branch further down already avoids for a dialog that was
+// there before the prompt was even sent.
+test("dispatchViaHerdr fails fast on a pane that goes blocked mid-turn instead of polling out the deadline", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait — stale match
+      { code: 0, stdout: "status footer 1", stderr: "" }, // agent read (empty extraction)
+      { code: 1, stdout: "", stderr: "" }, // pane wait-output (times out — anchor never appears)
+      { code: 0, stdout: "status footer 2", stderr: "" }, // agent read (retry)
+      { code: 0, stdout: "status footer 3", stderr: "" }, // agent read (retry)
+      { code: 0, stdout: "status footer 4", stderr: "" }, // agent read (retry)
+      { code: 0, stdout: "status footer 5", stderr: "" }, // agent read (last fixed-backoff attempt)
+      json({ result: { agent: { agent_status: "blocked" } } }), // agent get — a dialog appeared mid-turn
+      { code: 0, stdout: "Allow this MCP server to run? [y/n]", stderr: "" }, // agent read (captures the dialog text)
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 1, "a mid-turn dialog is a real failure, not an ambiguous empty reply");
+  assert.equal(result.text, "");
+  const getCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "get" && c[3] === "alpha-coder");
+  assert.equal(getCalls.length, 1, "fails on the first blocked status seen, instead of polling for it to resolve on its own");
+  assert.match(
+    readFileSync(logFile, "utf8"),
+    /herdr pane blocked mid-turn: Allow this MCP server to run\? \[y\/n\]/,
+    "names the dialog instead of reporting an unexplained empty reply",
+  );
+});
+
+// The same blocked status can also surface mid-poll, inside waitForHerdrIdle's own loop
+// (the pane was merely busy at the first check, then a dialog appeared before it went
+// idle/done) — this exercises that second call site rather than the immediate check above.
+test("dispatchViaHerdr fails fast on a pane that turns blocked while waitForHerdrIdle is already polling it", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait — stale match
+      { code: 0, stdout: "status footer 1", stderr: "" }, // agent read (empty extraction)
+      { code: 1, stdout: "", stderr: "" }, // pane wait-output (times out — anchor never appears)
+      { code: 0, stdout: "status footer 2", stderr: "" }, // agent read (retry)
+      { code: 0, stdout: "status footer 3", stderr: "" }, // agent read (retry)
+      { code: 0, stdout: "status footer 4", stderr: "" }, // agent read (retry)
+      { code: 0, stdout: "status footer 5", stderr: "" }, // agent read (last fixed-backoff attempt)
+      json({ result: { agent: { agent_status: "working" } } }), // agent get — genuinely busy, not blocked yet
+      json({ result: { agent: { agent_status: "blocked" } } }), // agent get (waitForHerdrIdle) — a dialog appeared
+      { code: 0, stdout: "Allow this MCP server to run? [y/n]", stderr: "" }, // agent read (captures the dialog text)
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 1, "a mid-turn dialog is a real failure, not an ambiguous empty reply");
+  assert.equal(result.text, "");
+  const getCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "get" && c[3] === "alpha-coder");
+  assert.equal(getCalls.length, 2, "one busy check, one inside waitForHerdrIdle that discovers blocked");
+  assert.match(
+    readFileSync(logFile, "utf8"),
+    /herdr pane blocked mid-turn: Allow this MCP server to run\? \[y\/n\]/,
+    "names the dialog instead of polling out the deadline for a status that will never settle on its own",
+  );
 });
 
 test("dispatchViaHerdr sanitises an issue slug for herdr's agent name but keeps it readable as the tab label", async () => {
