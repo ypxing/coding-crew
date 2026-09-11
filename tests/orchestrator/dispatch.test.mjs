@@ -30,6 +30,7 @@ import {
   herdrAgentName,
   herdrDispatchName,
   formatJsonTraceLine,
+  notifyTriggeringPane,
   preflight,
   resolveAgentFile,
   splitFrontmatter,
@@ -1753,6 +1754,42 @@ test("closeHerdrWorkspace never closes a workspace reused via HERDR_WORKSPACE_ID
     !effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"),
     "the reused workspace is left open — it belongs to whoever is still using that pane",
   );
+});
+
+function withHerdrPaneId(id, fn) {
+  const prior = process.env.HERDR_PANE_ID;
+  process.env.HERDR_PANE_ID = id;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (prior === undefined) delete process.env.HERDR_PANE_ID;
+      else process.env.HERDR_PANE_ID = prior;
+    });
+}
+
+test("notifyTriggeringPane is a no-op when not running inside herdr — no HERDR_PANE_ID", async () => {
+  const effects = fakeHerdrEffects([], { mainRoot: "/root" });
+  await notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished.");
+  assert.deepEqual(effects._calls, [], "nothing to notify — the run wasn't launched inside a herdr pane");
+});
+
+test("notifyTriggeringPane prompts the triggering pane directly by its injected HERDR_PANE_ID", async () => {
+  const effects = fakeHerdrEffects([json({ result: { type: "ok" } })], { mainRoot: "/root" });
+  await withHerdrPaneId("w1:p1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
+  assert.deepEqual(effects._calls, [["herdr", "agent", "prompt", "w1:p1", "crew-afk (alpha): sprint finished."]]);
+});
+
+test("notifyTriggeringPane swallows a failed prompt — the sprint's own outcome is already decided by then", async () => {
+  const calls = [];
+  const effects = {
+    mainRoot: "/root",
+    spawnWithTimeout: async (cmd, args) => {
+      calls.push([cmd, ...args]);
+      throw new Error("herdr unreachable");
+    },
+  };
+  await withHerdrPaneId("w1:p1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
+  assert.equal(calls.length, 1, "still attempted once, just didn't throw");
 });
 
 test("dispatchViaHerdr never reuses one worker's pane for another role on the same issue", async () => {

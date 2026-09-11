@@ -793,6 +793,29 @@ export async function closeHerdrWorkspace(effects) {
   }
 }
 
+/**
+ * With HERDR_ENV=1, crew-afk is commonly launched as a backgrounded command inside the very
+ * pane a human (or the agent driving it) is watching, then left to poll it — see main.mjs's
+ * doc comment and ensureHerdrWorkspace's. That pane sits idle between polls, so pushing this
+ * run's outcome straight into it, once, at the very end, lets the caller stop polling
+ * altogether and just wait for the next turn instead. `$HERDR_PANE_ID` is the triggering
+ * pane's own ID, which herdr injects into every process it starts (see herdr's own --skill:
+ * agent commands take either a live agent name or "the pane ID currently hosting that
+ * agent") — no lookup needed. Absent (not running inside herdr) or any failure (no agent
+ * recognized in that pane, one already at a dialog, herdr unreachable) is a silent no-op:
+ * the run's own outcome is already decided by the time this fires, and the printed summary
+ * is still sitting in that pane's scrollback either way.
+ */
+export async function notifyTriggeringPane(effects, message) {
+  const paneId = process.env.HERDR_PANE_ID;
+  if (!paneId) return;
+  try {
+    await herdrExec(effects, ["agent", "prompt", paneId, message]);
+  } catch {
+    /* best effort — see doc comment above */
+  }
+}
+
 /** A scalar TOML value: `key = "value"` — the same shape dispatch-codex-agent.sh's toml_scalar reads. */
 function tomlScalar(text, key) {
   const m = text.match(new RegExp(`^[ \\t]*${key}[ \\t]*=[ \\t]*(.+)$`, "m"));

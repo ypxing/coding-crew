@@ -21,10 +21,14 @@
  *                                           left open at the end rather than closed; only a
  *                                           workspace this run created itself is closed once
  *                                           the run ends (see dispatch.mjs's
- *                                           ensureHerdrWorkspace doc comment). All four
- *                                           platforms; codex's reply-extraction is
- *                                           unverified live (see dispatch.mjs's
- *                                           dispatchViaHerdr doc comment)
+ *                                           ensureHerdrWorkspace doc comment). At the very
+ *                                           end of the run, that same triggering pane gets
+ *                                           one `herdr agent prompt` with the outcome (see
+ *                                           dispatch.mjs's notifyTriggeringPane), so whoever
+ *                                           is watching it can stop polling and just wait for
+ *                                           that nudge. All four platforms; codex's
+ *                                           reply-extraction is unverified live (see
+ *                                           dispatch.mjs's dispatchViaHerdr doc comment)
  *   $CREW_HERDR_KEEP_PANE=1                 with HERDR_ENV=1: leave a failed dispatch's
  *                                           tab open instead of closing it, so `herdr agent
  *                                           read <name>` can show what the pane actually
@@ -59,7 +63,7 @@ import { spawnSync } from "node:child_process";
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { closeHerdrPane, closeHerdrWorkspace, DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
+import { closeHerdrPane, closeHerdrWorkspace, DEFAULT_PARALLEL, notifyTriggeringPane, PLATFORMS, preflight } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { selectDispatchable } from "./lib/tracker.mjs";
@@ -459,8 +463,12 @@ async function main() {
   };
 
   let stalled;
+  let runError;
   try {
     ({ stalled } = await runSprint(ctx));
+  } catch (err) {
+    runError = err;
+    throw err;
   } finally {
     // A slug whose one-shot herdr-reuse pane/worktree (see handleVerificationFailure in
     // pipeline.mjs) never got consumed by a next round — max-rounds hit, an unhandled error,
@@ -475,6 +483,13 @@ async function main() {
     // (see dispatchViaHerdr/ensureHerdrWorkspace) — closed here, once, regardless of how
     // the run ended, so a thrown error above doesn't leave it dangling in herdr's UI.
     await closeHerdrWorkspace(effects);
+    // Only under HERDR_ENV=1 — see notifyTriggeringPane's doc comment for why this is the
+    // one case where the caller (the same pane crew-afk was launched from) can stop polling
+    // and just wait for this nudge instead.
+    if (options.herdr) {
+      const outcome = runError ? "errored" : stalled ? "stalled — blockers need a human" : "finished";
+      await notifyTriggeringPane(effects, `crew-afk (${resolved.slug}): sprint ${outcome}. Check this pane's scrollback for the summary.`);
+    }
   }
   return stalled ? 2 : 0;
 }
