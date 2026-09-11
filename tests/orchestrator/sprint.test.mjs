@@ -268,10 +268,14 @@ test("an unmet acceptance-criteria verdict retains the branch and closes nothing
 test("a review that produced nothing is a gap, not a clean pass", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  fake(root, "alpha.review", ""); // empty review report
+  fake(root, "alpha.review", ""); // empty review report, every round — never recovers
   const r = runSprint(root);
   const s = state(root);
-  assert.equal(s.retention.alpha.reason, "review-not-run");
+  // The first round's failure is a plain review-not-run retry (see the next test for that
+  // shape in isolation, via .review-once). This fixture keeps failing every round, so by the
+  // second attempt runHousekeeping recognises the repeat and escalates to blocked instead of
+  // retrying forever — never a bare "review-not-run" once escalated.
+  assert.match(s.retention.alpha.reason, /^blocked — .*review dispatch/);
   assert.deepEqual(s.merged_branches ?? [], []);
   assert.match(r.stdout, /Unreviewed Branches|review/i);
 });
@@ -293,6 +297,28 @@ test("a review-not-run retry skips the coder dispatch and succeeds on the second
   // The coder ran exactly once — round 2 retried only the review, not the worker.
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
   assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=review-not-run/);
+});
+
+test("a non-empty review report with no verdict line and no findings is review-not-run, not criteria-unmet", () => {
+  // Distinct from the truly-empty case above: a herdr capture that read back a fragment of
+  // the reviewer's reply (non-empty text, but no fenced json and no `AC:` line, and no
+  // FINDING:/[SEV] content either) used to parse as a genuine `AC: unmet` verdict — routing
+  // the retry through a full, expensive coder redispatch to "fix" acceptance criteria the
+  // review never actually found unmet. It must route the same cheap way review-once does.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review-once-garbled", "");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const s = state(root);
+  assert.deepEqual(s.completed_slugs, ["alpha"]);
+  assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
+  assert.equal(s.retention?.alpha, undefined, "the issue should have completed, not stayed retained");
+  // The coder ran exactly once — round 2 retried only the review, not the worker, and did
+  // not take the fixPrompt/criteria-unmet path either.
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
+  assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=review-not-run/);
+  assert.doesNotMatch(traceLog(root), /criteria-unmet/);
 });
 
 test("a merge-failed retry skips the worker, verify, and review, and succeeds on a retried merge", () => {
@@ -747,14 +773,15 @@ test("the sprint reports once, from disk, and the summary is the last thing prin
 
 test("a review that never ran is named in the summary, not just counted in the state", () => {
   // "advisory" must not degrade into "reported as clean": the gap is recorded with
-  // promote-findings.sh mark-not-run and surfaced under its own heading.
+  // promote-findings.sh mark-not-run and surfaced under its own heading, on every attempt —
+  // including the one that escalates the repeat failure to blocked (see the previous test).
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "alpha.review", "");
   const r = runSprint(root);
   assert.match(r.stdout, /## Unreviewed Branches/);
   assert.match(r.stdout, /crew\/demo\/alpha/);
-  assert.equal(state(root).retention.alpha.reason, "review-not-run");
+  assert.match(state(root).retention.alpha.reason, /^blocked — .*review dispatch/);
 });
 
 // ─── eager dependency provisioning ───────────────────────────────────────────

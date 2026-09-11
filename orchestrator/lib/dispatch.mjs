@@ -613,15 +613,31 @@ async function herdrReadSettled(effects, name, deadline) {
  * it falls back to pi's glyph-less shape as the closest documented approximation, not a
  * confirmed one; revise this branch once someone runs it against a real session.
  */
+function herdrIsEchoLine(line, promptFirstLine, platform) {
+  if (platform === "claude") return line.startsWith("❯") && line.slice(1).trim() === promptFirstLine;
+  if (platform === "copilot") return line.startsWith("❯") && line.slice(1).trim().startsWith(promptFirstLine);
+  return line === promptFirstLine; // pi, and codex's unverified fallback
+}
+
+/**
+ * Diagnostic-only sibling of extractHerdrReply's own echo detection, shared via
+ * herdrIsEchoLine rather than duplicated: reports whether the echoed prompt appears
+ * *anywhere* in a captured render, regardless of whether a trailing end marker was ever
+ * found after it. Feeds the outEmpty DISPATCH-FAIL log so a genuinely missing echo (the
+ * read's --lines window too small, or the pane on an alternate screen per herdr's own
+ * `--skill` caveat) is distinguishable from an echo that's present but whose end-marker
+ * pattern didn't match this platform's actual rendering — two different bugs that would
+ * otherwise both just read as "empty reply".
+ */
+function herdrEchoFound(rendered, promptText, platform) {
+  const promptFirstLine = (promptText || "").split("\n", 1)[0].trim();
+  return (rendered || "").split("\n").some((l) => herdrIsEchoLine(l.trim(), promptFirstLine, platform));
+}
+
 export function extractHerdrReply(rendered, promptText, platform = "claude") {
   const lines = (rendered || "").split("\n");
   const promptFirstLine = (promptText || "").split("\n", 1)[0].trim();
-  const isEcho = (t) => {
-    if (platform === "claude") return t.startsWith("❯") && t.slice(1).trim() === promptFirstLine;
-    if (platform === "copilot") return t.startsWith("❯") && t.slice(1).trim().startsWith(promptFirstLine);
-    return t === promptFirstLine; // pi, and codex's unverified fallback
-  };
-  const echoIndex = lines.findLastIndex((l) => isEcho(l.trim()));
+  const echoIndex = lines.findLastIndex((l) => herdrIsEchoLine(l.trim(), promptFirstLine, platform));
   if (echoIndex === -1) return "";
   const rest = lines.slice(echoIndex + 1);
   const isEnd = (l) => {
@@ -1192,7 +1208,17 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   if (!text.trim()) {
     const tail = rendered.trim().slice(-400);
     const statusNote = lastKnownStatus ? ` last agent_status=${lastKnownStatus}` : "";
-    return await finish(0, `herdr pane read empty after every retry${statusNote} — tail: ${tail || "(pane rendered nothing)"}`, text);
+    // lines/echoFound distinguish a capture the --lines window missed entirely (echoFound=no
+    // — see herdrEchoFound's doc comment) from one that has the echo but didn't match the
+    // trailing end-marker pattern (echoFound=yes) — the tail alone can't tell them apart,
+    // since it's always just the pane's last 400 rendered characters either way.
+    const lineCount = rendered ? rendered.split("\n").length : 0;
+    const echoFound = herdrEchoFound(rendered, invocation.prompt, platform) ? "yes" : "no";
+    return await finish(
+      0,
+      `herdr pane read empty after every retry${statusNote} lines=${lineCount} echoFound=${echoFound} — tail: ${tail || "(pane rendered nothing)"}`,
+      text,
+    );
   }
   return await finish(0, "", text);
 }

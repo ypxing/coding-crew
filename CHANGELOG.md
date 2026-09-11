@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.84]
+
+### Changed
+
+- **A herdr `DISPATCH-FAIL outEmpty=true` line now reports the captured render's line count and
+  whether the echoed prompt was found anywhere in it (`lines=N echoFound=yes|no`).** Previously
+  the log's only diagnostic was the last 400 *characters* of the render — which is always just
+  Claude's bottom status-bar chrome whether the reply capture failed or succeeded, so it couldn't
+  distinguish "the read's `--lines` window (or the pane's alt-screen buffer) never captured the
+  echoed prompt at all" from "the echo is there but `extractHerdrReply`'s end-marker pattern
+  didn't match." `echoFound` is computed by `herdrEchoFound`, sharing `herdrIsEchoLine` with
+  `extractHerdrReply` itself rather than reimplementing the echo check.
+
 ## [1.29.83]
 
 ### Changed

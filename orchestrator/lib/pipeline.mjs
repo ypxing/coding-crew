@@ -429,6 +429,19 @@ export async function runHousekeeping(ctx, worker) {
       "--report", review.reportFile,
       "--reason", review.reason,
     ], { env: sprint.childEnv() });
+    // A second consecutive review-not-run (recognised the same way handleVerificationFailure
+    // recognises a repeat not-fixable verdict, via this worker's own `priorReason`) means the
+    // *retry itself* is not landing — retrying a third time would just pay for another herdr
+    // dispatch to relearn that. Escalate to blocked so a human sees it instead of the sprint
+    // spinning on this one slug forever.
+    if (worker.priorReason === "review-not-run") {
+      return finishBlocked(
+        ctx,
+        worker,
+        outcome,
+        `environment — review dispatch still produced no usable report on a repeat, coder-free retry: ${review.reason}`,
+      );
+    }
     return finishPartial(ctx, worker, outcome, "review-not-run");
   }
   outcome.findings = review.parsed.findings;
@@ -645,14 +658,26 @@ async function runReview(ctx, worker, checks) {
   );
 
   const parsed = parseReviewReport(result.text);
-  if (result.timedOut || (result.code !== 0 && !parsed.ok) || !parsed.ok) {
+  // parseReviewReport's markdown fallback fails closed to `unmet, "no verdict line"` for any
+  // text with no fenced json and no `AC:` line, so it can't tell a reviewer that genuinely
+  // wrote prose findings without the (mandatory, per crew-code-reviewer's protocol) verdict
+  // block apart from a herdr capture that read back a truncated fragment of one — the
+  // capture is non-empty (dispatchViaHerdr's own outEmpty check never fires) but never
+  // reached the part of the reply that would have parsed. `findings.length === 0` is the
+  // signal available here to tell those apart: real prose findings survive that parser's
+  // FINDING:/[SEV] fallback regardless of the missing verdict line, so their presence is
+  // itself evidence the capture had actual reviewer content, not just a fragment — treat only
+  // the content-free case as a failed dispatch, so it retries the review instead of demoting
+  // to criteria-unmet and paying for a coder redispatch the review never actually asked for.
+  const emptyVerdictOnly = parsed.ok && parsed.detail === "no verdict line" && parsed.findings.length === 0;
+  if (result.timedOut || (result.code !== 0 && !parsed.ok) || !parsed.ok || emptyVerdictOnly) {
     // parsed.detail is a generic string for an empty report ("empty review report") and
     // says nothing about *why* the dispatch produced nothing. result.stderr is the one
     // place that reason actually lives (a `die()` guard in dispatch-agent.sh, a spawn-level
     // error, ...) — surface a snippet of it here so a human reading the review report's
     // `not_run` stub does not have to reproduce the dispatch by hand to find out why.
     const stderrHint = (result.stderr ?? "").trim().slice(0, 300).replace(/\s+/g, " ");
-    const noDetail = !parsed.detail || parsed.detail === "empty review report";
+    const noDetail = !parsed.detail || parsed.detail === "empty review report" || emptyVerdictOnly;
     return {
       completed: false,
       reportFile,

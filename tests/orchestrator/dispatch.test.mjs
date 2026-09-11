@@ -1253,6 +1253,48 @@ test("dispatchViaHerdr logs outEmpty=true on a herdr DISPATCH-FAIL only after al
     /last agent_status=idle/,
     "the last-seen agent_status lands in the log too, so a real empty reply is distinguishable from one that ran out of deadline while still busy",
   );
+  assert.match(
+    readFileSync(logFile, "utf8"),
+    /lines=1 echoFound=no/,
+    "echoFound=no plus the captured line count says the echo itself was never in the read at all — a window-size or alt-screen problem, not a marker mismatch",
+  );
+});
+
+test("dispatchViaHerdr's outEmpty log reports echoFound=yes when the echo is present but no trailing end marker ever renders", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  // Echoed prompt renders, but the turn's output never settles behind claude's "✻ Worked for"
+  // marker (nor any "─{5,}" rule) in any of the retries — extractHerdrReply's isEnd() never
+  // matches, so body is read to the end of the pane and, being blank here, still yields "".
+  // Distinguishing this from the sibling "echoFound=no" case above is exactly the point of the
+  // new echoFound field: this is an end-marker/rendering mismatch, not a read window too small
+  // to have captured the echo in the first place.
+  const stuckRendered = " ▐▛███▛█   Claude Code v2.1.263\n\n❯ Reply with exactly: herdr spike ok\n\n";
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { agent: { interactive_ready: true } } }), // agent start
+      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
+      { code: 0, stdout: stuckRendered, stderr: "" }, // agent read (empty extraction)
+      { code: 1, stdout: "", stderr: "" }, // pane wait-output (times out — marker never appears)
+      { code: 0, stdout: stuckRendered, stderr: "" }, // agent read (after wait-output — still empty)
+      { code: 0, stdout: stuckRendered, stderr: "" }, // agent read (retry — still empty)
+      { code: 0, stdout: stuckRendered, stderr: "" }, // agent read (retry — still empty)
+      { code: 0, stdout: stuckRendered, stderr: "" }, // agent read (retry — still empty, last attempt)
+      json({ result: { agent: { agent_status: "idle" } } }), // agent get — genuinely idle, not a race
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.text, "");
+  assert.match(readFileSync(logFile, "utf8"), /echoFound=yes/);
 });
 
 // A dialog appearing mid-turn, discovered only once the fixed backoff above is exhausted and

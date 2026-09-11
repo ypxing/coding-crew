@@ -9,6 +9,13 @@
 #                         review dispatch that failed transiently and succeeds on retry.
 #                         Mutually exclusive with <slug>.review; a per-slug call counter is
 #                         kept at <slug>.review-once.calls next to it.
+#   <slug>.review-once-garbled   same shape as <slug>.review-once, except the first call's
+#                         report is *non-empty* prose with no `AC:` line and no findings — a
+#                         herdr capture that read back a truncated fragment rather than a
+#                         truly empty pane, which is not the same code path as review-once
+#                         (see parseReviewReport's emptyVerdictOnly case in pipeline.mjs).
+#                         Mutually exclusive with <slug>.review and <slug>.review-once; shares
+#                         the same <slug>.review-once.calls counter file.
 #   <slug>.nocommit       do not create a commit in the worktree
 #   <slug>.exit           exit with this code instead of 0
 #
@@ -71,14 +78,18 @@ if [ "$AGENT" = "commands-discovery" ]; then
 fi
 
 if [ "$AGENT" = "crew-code-reviewer" ]; then
-  if [ -f "$FAKE_DIR/$SLUG.review-once" ]; then
+  if [ -f "$FAKE_DIR/$SLUG.review-once" ] || [ -f "$FAKE_DIR/$SLUG.review-once-garbled" ]; then
     COUNT_FILE="$FAKE_DIR/$SLUG.review-once.calls"
     COUNT=0
     [ -f "$COUNT_FILE" ] && COUNT=$(cat "$COUNT_FILE")
     COUNT=$((COUNT + 1))
     echo "$COUNT" > "$COUNT_FILE"
     if [ "$COUNT" -eq 1 ]; then
-      : > "$OUT" # empty report — the pipeline reads this as review-not-run
+      if [ -f "$FAKE_DIR/$SLUG.review-once-garbled" ]; then
+        printf 'Looks fine to me.\n' > "$OUT" # non-empty, no AC: line, no findings — a truncated capture
+      else
+        : > "$OUT" # empty report — the pipeline reads this as review-not-run
+      fi
     else
       printf '## Branch: crew/x/%s\nAC: all-met\n\nNo findings.\n' "$SLUG" > "$OUT"
     fi
