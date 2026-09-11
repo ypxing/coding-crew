@@ -578,6 +578,37 @@ async function waitForHerdrIdle(effects, name, deadline) {
 }
 
 /**
+ * Sidecar-first completion signal for a herdr dispatch: a file on disk beats scraping the
+ * pane's rendered text, since it isn't subject to render lag, echo/marker glyph drift, or
+ * ANSI noise the way extractHerdrReply is — it's the same `<slug>.report.json` sidecar
+ * pipeline.mjs already reads for the headless path, just checked here before falling back
+ * to the pane-read chain. Still has to guard against `--wait`'s own "does not track turns"
+ * gap (see waitForHerdrIdle's doc comment): a fast idle/done settle can still land while the
+ * agent is minutes from actually writing the file, so this polls agent_status the same way,
+ * testing for the file each pass rather than for text. Returns "found" once the file exists,
+ * "blocked" on a mid-turn dialog, or "absent" once the pane genuinely settles idle/done (or
+ * the deadline passes) with no file — the caller falls back to the pane-scrape chain only in
+ * that last case, since the file might never come (an older agent build, a crash, a
+ * final-message-only reply the prompt's own fallback wording explicitly allows for).
+ */
+async function waitForSidecarReport(effects, reportPath, name, deadline) {
+  while (Date.now() < deadline) {
+    if (existsSync(reportPath)) return "found";
+    const get = await herdrExec(effects, ["agent", "get", name]);
+    if (get.code !== 0) return "absent";
+    const status = herdrJson(get)?.result?.agent?.agent_status;
+    if (status === "blocked") return "blocked";
+    if (status === "idle" || status === "done") {
+      // The file write and this status settle can race by a beat — one last direct check
+      // before giving up on the sidecar rather than falling back on that alone.
+      return existsSync(reportPath) ? "found" : "absent";
+    }
+    await new Promise((r) => setTimeout(r, HERDR_NOT_IDLE_POLL_MS));
+  }
+  return existsSync(reportPath) ? "found" : "absent";
+}
+
+/**
  * Every `agent read` call in the retry loop below goes through here rather than calling
  * herdrExec directly, so the agent_not_idle recovery only has to be written once. On that
  * error code, waits for the pane to actually settle (bounded by this dispatch's own
@@ -1106,6 +1137,40 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     tabId = null;
     paneId = null;
     return await dispatchViaHerdr(effects, platform, { ...spec, herdrReuse: null }, { timeoutMs });
+  }
+
+  // spec.reportPath (the same <slug>.report.json sidecar the headless path and
+  // pipeline.mjs's post-dispatch parse both already prefer over prose) is checked before
+  // any pane read is attempted: when the agent wrote it, that file is the reliable result,
+  // and every retry/backoff/echo-matching step below exists only to reconstruct the same
+  // information out of a terminal render — so skip straight to success and leave the pane
+  // scrape chain as a fallback for the one case it still earns its keep: the agent settled
+  // without ever writing the file.
+  if (spec.reportPath && promptResult.code === 0) {
+    const sidecarState = await waitForSidecarReport(effects, spec.reportPath, name, dispatchDeadline);
+    if (sidecarState === "blocked") {
+      const tail = await herdrReadSettled(effects, name, dispatchDeadline);
+      return await finish(1, `herdr pane blocked mid-turn: ${tail.trim().slice(-400)}`, "");
+    }
+    if (sidecarState === "found") {
+      // Wrapped in a fenced json block, not handed back bare: outFile's text is not only
+      // pipeline.mjs's own input (which re-reads the sidecar file itself anyway, same as
+      // the headless path) but also, for review, the raw block appended verbatim to the
+      // round's aggregate report file — parseReviewAggregate (and crew-summary.sh/
+      // promote-findings.sh through it) only ever looks for a fenced json block with a
+      // `verdict` field in that text, never at a sidecar. A bare placeholder here would
+      // silently drop this branch's verdict from that aggregate.
+      let sidecarText = "";
+      try {
+        sidecarText = readFileSync(spec.reportPath, "utf8").trim();
+      } catch {
+        sidecarText = "";
+      }
+      const wrapped = sidecarText ? "```json\n" + sidecarText + "\n```" : `(structured result written to ${spec.reportPath})`;
+      return await finish(0, "", wrapped);
+    }
+    // "absent": the pane settled idle/done with no sidecar file — fall through to the
+    // pane-scrape chain below on the chance the reply landed in prose only.
   }
 
   let rendered = await herdrReadSettled(effects, name, dispatchDeadline);

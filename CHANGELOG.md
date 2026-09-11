@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.29.85]
+
+### Changed
+
+- **The `<slug>.report.json` sidecar-first dispatch policy (already used for the crew-coder
+  worker) now also covers the reviewer and triage agents.** `dispatchViaHerdr` checks each
+  role's report file before scraping the pane at all: the review and triage prompts now name
+  a `reportPath` and instruct the agent to write its verdict there as its last action, falling
+  back to the same fenced-json-in-prose reply only if that file never lands.
+  `parseReviewReport`/`parseTriageReport` accept the parsed sidecar and prefer it over the
+  captured text entirely, same policy `parseWorkerReport` already had. Closes the same class of
+  herdr read-capture failure (empty/garbled pane render) for review and triage that the worker
+  fix already closed — a genuine verdict no longer depends on a terminal scrape succeeding.
+
 ## [1.29.84]
 
 ### Changed

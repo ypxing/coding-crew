@@ -324,6 +324,7 @@ export async function runWorker(ctx, issue) {
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
       issueNumber: issue.number,
+      reportPath: sidecarFile,
       herdr: options.herdr,
       herdrPersistPane: options.herdr,
       herdrReuse,
@@ -563,6 +564,7 @@ async function runTriage(ctx, worker, verifyStdout) {
   const { issue, branch } = worker;
   const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage-prompt.md`);
   const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.md`);
+  const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.report.json`);
 
   writeFileSync(
     promptFile,
@@ -572,6 +574,7 @@ async function runTriage(ctx, worker, verifyStdout) {
       issuePath: issue.path,
       featureBranch: sprint.featureBranch,
       checkOutput: verifyStdout,
+      reportPath: sidecarFile,
     }),
   );
 
@@ -596,6 +599,7 @@ async function runTriage(ctx, worker, verifyStdout) {
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
       issueNumber: issue.number,
+      reportPath: sidecarFile,
       herdr: options.herdr,
     },
     {
@@ -604,7 +608,16 @@ async function runTriage(ctx, worker, verifyStdout) {
     },
   );
 
-  const parsed = parseTriageReport(result.text);
+  let sidecar = null;
+  if (existsSync(sidecarFile)) {
+    try {
+      sidecar = JSON.parse(readFileSync(sidecarFile, "utf8"));
+    } catch {
+      sidecar = null;
+    }
+  }
+
+  const parsed = parseTriageReport(result.text, sidecar);
   const completed = !(result.timedOut || (result.code !== 0 && !parsed.ok) || !parsed.ok);
   return { completed, parsed };
 }
@@ -614,6 +627,7 @@ async function runReview(ctx, worker, checks) {
   const { issue, branch } = worker;
   const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review-prompt.md`);
   const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.md`);
+  const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.report.json`);
   const reportFile = ctx.roundReviewFile();
 
   writeFileSync(
@@ -625,6 +639,7 @@ async function runReview(ctx, worker, checks) {
       criteria: issue.criteria,
       featureBranch: sprint.featureBranch,
       checks,
+      reportPath: sidecarFile,
     }),
   );
 
@@ -649,6 +664,7 @@ async function runReview(ctx, worker, checks) {
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
       issueNumber: issue.number,
+      reportPath: sidecarFile,
       herdr: options.herdr,
     },
     {
@@ -657,7 +673,16 @@ async function runReview(ctx, worker, checks) {
     },
   );
 
-  const parsed = parseReviewReport(result.text);
+  let sidecar = null;
+  if (existsSync(sidecarFile)) {
+    try {
+      sidecar = JSON.parse(readFileSync(sidecarFile, "utf8"));
+    } catch {
+      sidecar = null;
+    }
+  }
+
+  const parsed = parseReviewReport(result.text, sidecar);
   // parseReviewReport's markdown fallback fails closed to `unmet, "no verdict line"` for any
   // text with no fenced json and no `AC:` line, so it can't tell a reviewer that genuinely
   // wrote prose findings without the (mandatory, per crew-code-reviewer's protocol) verdict

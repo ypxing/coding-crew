@@ -152,7 +152,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, reportPath }) {
   const c = checks ?? {};
   const stated = ["test", "lint", "typecheck"]
     .map((k) => `${k}=${c[k] ?? "not_run"}`)
@@ -179,8 +179,13 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "yourself. A check reported `not_run` is not evidence of anything. Everything else is",
     "still judged from the diff: no file and line, no evidence, `unmet`.",
     "",
-    "Return your report starting with `## Branch: <branch-name>`, and directly under it",
-    "a fenced json block the orchestrator parses without re-reading your prose — this is",
+    // Same sidecar-first policy as the worker's resultBlock: write the json to disk, then
+    // end the message with the same block as a fallback the orchestrator only reads if the
+    // file above never landed (see report.mjs's parseReviewReport sidecar handling).
+    `Write your structured verdict to ${reportPath} as your last action — that file is what`,
+    "the orchestrator reads first, so it does not have to infer your verdict from prose.",
+    "Then return your report starting with `## Branch: <branch-name>`, and directly under",
+    "it the same fenced json block again, in case the file write did not happen — this is",
     "the only thing that gates the merge and counts findings, so get it exactly right:",
     "",
     "```json",
@@ -209,7 +214,7 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
  * never to the coder that wrote the branch, for the same reason review isn't a self-grade.
  * Answers exactly one question: is this fixable by more code on this branch, or not.
  */
-export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutput }) {
+export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutput, reportPath }) {
   return [
     "A branch failed verification before it could be reviewed or merged. Decide whether the",
     "failure is fixable by writing more code on this branch, or whether it is an environment",
@@ -235,7 +240,12 @@ export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutp
     "'fixable' guess costs one extra round; a wrong 'not fixable' guess strands the issue for",
     "a human who may not be watching.",
     "",
-    "Answer with exactly this fenced json block, and nothing before it:",
+    // Same sidecar-first policy as the worker's resultBlock and the reviewer's verdict
+    // block: the file is what the orchestrator reads first (see report.mjs's
+    // parseTriageReport sidecar handling); the fenced block is the fallback.
+    `Write your structured verdict to ${reportPath} as your last action — that file is`,
+    "what the orchestrator reads first. Then answer with exactly this fenced json block,",
+    "and nothing before it, as a fallback in case the file write did not happen:",
     "",
     "```json",
     JSON.stringify(

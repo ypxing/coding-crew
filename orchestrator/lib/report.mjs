@@ -259,12 +259,17 @@ function reviewFromMarkdown(raw) {
 }
 
 /**
- * Reviewer output for one branch. A fenced ```json block (`verdict` field required) is
- * preferred; the markdown `AC:`/`FINDING:`/`[SEV]` shape stays supported so an older
- * crew-code-reviewer still works, same policy as `parseWorkerReport`.
+ * Reviewer output for one branch. A `<slug>.review.report.json` sidecar (see
+ * parseWorkerReport's own sidecar policy) is preferred over the captured text entirely; a
+ * fenced ```json block (`verdict` field required) inside the text is next; the markdown
+ * `AC:`/`FINDING:`/`[SEV]` shape stays supported so an older crew-code-reviewer still works.
+ *
+ * @param {string|null} text  the reviewer's final message
+ * @param {object|null} sidecar  parsed <slug>.review.report.json, when the reviewer wrote one
  */
-export function parseReviewReport(text) {
+export function parseReviewReport(text, sidecar = null) {
   const raw = text ?? "";
+  if (sidecar && sidecar.verdict) return reviewFromStructured(raw, sidecar);
   if (!raw.trim()) {
     return { ok: false, parsedFrom: "empty", verdict: "unmet", detail: "empty review report", findings: [], raw };
   }
@@ -301,6 +306,21 @@ export function findingsAtOrAbove(findings, threshold /* "critical" | "critical-
 }
 
 /**
+ * One triage sidecar or fenced-json object, normalised — shared by the sidecar branch and
+ * the in-text fenced-json branch below so the two can never drift on field handling.
+ */
+function triageFromStructured(raw, obj) {
+  return {
+    ok: true,
+    parsedFrom: "json",
+    fixable: String(obj.fixable).toLowerCase() !== "no",
+    category: obj.category ? String(obj.category).trim() : "unspecified",
+    detail: obj.detail ? String(obj.detail).trim() : "",
+    raw,
+  };
+}
+
+/**
  * Triage report. Dispatched only after verify-worktree.sh already failed, to answer one
  * question independently of the coder that wrote the branch (the same reason review is
  * independent of the coder, not a self-grade): is this failure fixable by writing more
@@ -308,26 +328,22 @@ export function findingsAtOrAbove(findings, threshold /* "critical" | "critical-
  * recoding touches? Fails closed toward `fixable` — an unparseable or missing verdict
  * must not silently strand an issue that a normal retry could still fix.
  *
- * A fenced ```json block (`fixable` field required) is preferred; the markdown
- * `FIXABLE:`/`CATEGORY:`/`DETAIL:` shape stays supported as a fallback, same policy as
- * `parseWorkerReport` and `parseReviewReport`.
+ * A `<slug>.triage.report.json` sidecar (see parseWorkerReport's own sidecar policy) is
+ * preferred over the captured text entirely; a fenced ```json block (`fixable` field
+ * required) inside the text is next; the markdown `FIXABLE:`/`CATEGORY:`/`DETAIL:` shape
+ * stays supported as a fallback, same policy as `parseWorkerReport` and `parseReviewReport`.
+ *
+ * @param {string|null} text  the triage agent's final message
+ * @param {object|null} sidecar  parsed <slug>.triage.report.json, when it wrote one
  */
-export function parseTriageReport(text) {
+export function parseTriageReport(text, sidecar = null) {
   const raw = text ?? "";
+  if (sidecar && sidecar.fixable != null) return triageFromStructured(raw, sidecar);
   if (!raw.trim()) {
     return { ok: false, fixable: true, category: "", detail: "empty triage report", raw };
   }
   const json = allFencedJson(raw, "fixable")[0];
-  if (json) {
-    return {
-      ok: true,
-      parsedFrom: "json",
-      fixable: String(json.fixable).toLowerCase() !== "no",
-      category: json.category ? String(json.category).trim() : "unspecified",
-      detail: json.detail ? String(json.detail).trim() : "",
-      raw,
-    };
-  }
+  if (json) return triageFromStructured(raw, json);
   const fixable = /^\s*FIXABLE:\s*(yes|no)\b/im.exec(raw);
   const category = /^\s*CATEGORY:\s*(.+)$/im.exec(raw);
   const detail = /^\s*DETAIL:\s*([\s\S]*)$/im.exec(raw);

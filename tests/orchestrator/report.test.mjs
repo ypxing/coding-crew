@@ -191,6 +191,21 @@ test("a herdr-indented, no-## json review block still parses — whitespace betw
   assert.equal(r.verdict, "all-met");
 });
 
+test("a review sidecar with a verdict wins over the captured text entirely, same policy as the worker's sidecar", () => {
+  const sidecar = { branch: "crew/f/x", slug: "x", verdict: "all-met", detail: "", findings: [] };
+  // The captured text is a herdr empty-reply diagnostic string, not a real reviewer reply —
+  // exactly the case the sidecar exists to make irrelevant.
+  const r = parseReviewReport("(structured result written to /r/x.review.report.json)", sidecar);
+  assert.equal(r.parsedFrom, "json");
+  assert.equal(r.verdict, "all-met");
+});
+
+test("a sidecar with no verdict field is ignored, same as parseWorkerReport ignoring a statusless sidecar", () => {
+  const r = parseReviewReport("AC: unmet — see below", { branch: "x" });
+  assert.equal(r.verdict, "unmet");
+  assert.equal(r.parsedFrom, "markdown");
+});
+
 // ─── review: the aggregate multi-branch report file ──────────────────────────────
 
 test("parseReviewAggregate folds a later retry's real verdict over an earlier not_run stub for the same branch", () => {
@@ -262,6 +277,7 @@ test("the review prompt states the checks and forbids unmet-for-lack-of-executio
     criteria: "- [ ] tests pass",
     featureBranch: "feature/f",
     checks: { test: "pass", lint: "not_run", typecheck: "not_run" },
+    reportPath: "/repo/.scratch/f/dispatch/x.review.report.json",
   });
   assert.match(p, /test=pass, lint=not_run, typecheck=not_run/);
   assert.match(p, /do not report a criterion unmet because you could not execute it/);
@@ -272,7 +288,7 @@ test("the review prompt states the checks and forbids unmet-for-lack-of-executio
 });
 
 test("the review prompt still names the checks when none were discovered", () => {
-  const p = reviewPrompt({ branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f" });
+  const p = reviewPrompt({ branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/s.review.report.json" });
   assert.match(p, /test=not_run, lint=not_run, typecheck=not_run/);
 });
 
@@ -281,12 +297,24 @@ test("the review prompt asks for a fenced json verdict, not a bare AC:/FINDING: 
   // only recognizes the fenced json block now — see report.mjs's doc comment on why the
   // old column-0 `## Branch:`/`AC:`/`FINDING:` anchors drifted apart across three
   // independent hand-rolled parsers.
-  const p = reviewPrompt({ branch: "crew/f/x", slug: "x", issuePath: "p", criteria: "", featureBranch: "f" });
+  const p = reviewPrompt({ branch: "crew/f/x", slug: "x", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/x.review.report.json" });
   assert.match(p, /## Branch: <branch-name>/);
   assert.match(p, /```json/);
   assert.match(p, /"verdict": "all-met \| unmet"/);
   assert.match(p, /"findings":/);
   assert.match(p, /"severity": "CRITICAL \| HIGH \| MEDIUM \| LOW"/);
+});
+
+test("the review prompt makes the sidecar file the verdict channel, not an option", () => {
+  const p = reviewPrompt({
+    branch: "crew/f/x",
+    slug: "x",
+    issuePath: "p",
+    criteria: "",
+    featureBranch: "f",
+    reportPath: "/repo/.scratch/f/dispatch/x.review.report.json",
+  });
+  assert.match(p, /Write your structured verdict to \/repo\/\.scratch\/f\/dispatch\/x\.review\.report\.json as your last action/);
 });
 
 test("the worker prompt makes the sidecar file the result channel, not an option", () => {
@@ -351,6 +379,14 @@ test("a fenced json triage block is preferred over the markdown FIXABLE:/CATEGOR
   assert.equal(r.category, "flaky network");
 });
 
+test("a triage sidecar with a fixable field wins over the captured text entirely, same policy as review and worker sidecars", () => {
+  const sidecar = { fixable: "no", category: "registry unreachable", detail: "404 for every package" };
+  const r = parseTriageReport("(structured result written to /r/x.triage.report.json)", sidecar);
+  assert.equal(r.parsedFrom, "json");
+  assert.equal(r.fixable, false);
+  assert.equal(r.category, "registry unreachable");
+});
+
 test("an empty or unparseable triage report fails closed toward fixable, and is not ok", () => {
   const empty = parseTriageReport("");
   assert.equal(empty.ok, false);
@@ -368,6 +404,7 @@ test("the triage prompt states the failing check output and asks for a fenced js
     issuePath: "/repo/.scratch/f/issues/open/01-x.md",
     featureBranch: "feature/f",
     checkOutput: "TEST: fail\nyarn install ... 404 Not Found",
+    reportPath: "/repo/.scratch/f/dispatch/x.triage.report.json",
   });
   assert.match(p, /404 Not Found/);
   assert.match(p, /```json/);
@@ -376,6 +413,18 @@ test("the triage prompt states the failing check output and asks for a fenced js
   assert.match(p, /"detail":/);
   // Never asks the coder that wrote the branch to grade its own failure.
   assert.doesNotMatch(p, /crew-coder/);
+});
+
+test("the triage prompt makes the sidecar file the verdict channel, not an option", () => {
+  const p = triagePrompt({
+    branch: "crew/f/x",
+    slug: "x",
+    issuePath: "/repo/.scratch/f/issues/open/01-x.md",
+    featureBranch: "feature/f",
+    checkOutput: "",
+    reportPath: "/repo/.scratch/f/dispatch/x.triage.report.json",
+  });
+  assert.match(p, /Write your structured verdict to \/repo\/\.scratch\/f\/dispatch\/x\.triage\.report\.json as your last action/);
 });
 
 test("the fix prompt carries the triage verdict forward and forbids redoing finished work", () => {
