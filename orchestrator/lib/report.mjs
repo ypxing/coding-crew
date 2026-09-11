@@ -24,20 +24,31 @@ function normaliseCheck(value) {
   return "not_run";
 }
 
-function fencedJson(text) {
-  const re = /```(?:json)?\s*\n([\s\S]*?)\n```/g;
+/**
+ * Every fenced ```json block in `text` whose parsed object has `requiredField` set,
+ * in document order. JSON's own grammar treats whitespace between tokens as
+ * insignificant, so this is immune to the indentation a herdr-captured pane transcript
+ * sometimes adds — unlike a line-anchored regex or awk pattern, which is not.
+ */
+function allFencedJson(text, requiredField) {
+  const re = /[ \t]*```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g;
+  const out = [];
   let m;
   while ((m = re.exec(text)) !== null) {
     const body = m[1].trim();
     if (!body.startsWith("{")) continue;
     try {
       const parsed = JSON.parse(body);
-      if (parsed && typeof parsed === "object" && parsed.status) return parsed;
+      if (parsed && typeof parsed === "object" && parsed[requiredField]) out.push(parsed);
     } catch {
       /* not the block we want */
     }
   }
-  return null;
+  return out;
+}
+
+function fencedJson(text) {
+  return allFencedJson(text, "status")[0] ?? null;
 }
 
 function fromStructured(raw, obj) {
@@ -177,20 +188,44 @@ export function codegraphLine(stdout) {
 }
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+const VERDICTS = new Set(["all-met", "unmet", "not_run"]);
+
+function findingsFromStructured(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((f) => f && SEVERITIES.includes(String(f.severity).toUpperCase()))
+    .map((f) => ({
+      severity: String(f.severity).toUpperCase(),
+      location: f.location ? String(f.location).trim() : "",
+      criterion: f.criterion ? String(f.criterion).trim() : "",
+      explicit: true,
+    }));
+}
 
 /**
- * Reviewer output. `AC:` is read, never inferred. Findings come from explicit
- * `FINDING: SEV | file:line | criterion` lines when present, otherwise from
- * `[SEV]` headings, so the reviewer can be upgraded independently.
+ * One branch's structured verdict, out of a fenced ```json block: `{branch, slug,
+ * verdict, detail, findings}`. Both `code_review_summary()` and `promote-findings.sh
+ * remind` used to re-derive this from the same raw text with their own line-anchored
+ * awk, and drifted out of sync — this is the one parser both now call through instead
+ * (see orchestrator/review-rollup.mjs).
  */
-export function parseReviewReport(text) {
-  const raw = text ?? "";
-  if (!raw.trim()) {
-    return { ok: false, verdict: "unmet", detail: "empty review report", findings: [], raw };
-  }
+function reviewFromStructured(raw, obj) {
+  return {
+    ok: true,
+    parsedFrom: "json",
+    branch: obj.branch ? String(obj.branch) : null,
+    slug: obj.slug ? String(obj.slug) : null,
+    verdict: VERDICTS.has(String(obj.verdict).toLowerCase()) ? String(obj.verdict).toLowerCase() : "unmet",
+    detail: obj.detail ? String(obj.detail).trim() : "",
+    findings: findingsFromStructured(obj.findings),
+    raw,
+  };
+}
+
+function reviewFromMarkdown(raw) {
   if (/^\s*SKIPPED:/im.test(raw)) {
     const m = /^\s*SKIPPED:\s*(.*)$/im.exec(raw);
-    return { ok: false, verdict: "unmet", detail: `skipped — ${m[1].trim()}`, findings: [], raw };
+    return { ok: false, parsedFrom: "markdown", verdict: "unmet", detail: `skipped — ${m[1].trim()}`, findings: [], raw };
   }
   const ac = /^\s*AC:\s*(all-met|unmet)\s*(?:—|--|-)?\s*(.*)$/im.exec(raw);
   const findings = [];
@@ -211,15 +246,53 @@ export function parseReviewReport(text) {
     }
   }
   if (!ac) {
-    return { ok: true, verdict: "unmet", detail: "no verdict line", findings, raw };
+    return { ok: true, parsedFrom: "markdown", verdict: "unmet", detail: "no verdict line", findings, raw };
   }
   return {
     ok: true,
+    parsedFrom: "markdown",
     verdict: ac[1].toLowerCase(),
     detail: (ac[2] || "").trim(),
     findings,
     raw,
   };
+}
+
+/**
+ * Reviewer output for one branch. A fenced ```json block (`verdict` field required) is
+ * preferred; the markdown `AC:`/`FINDING:`/`[SEV]` shape stays supported so an older
+ * crew-code-reviewer still works, same policy as `parseWorkerReport`.
+ */
+export function parseReviewReport(text) {
+  const raw = text ?? "";
+  if (!raw.trim()) {
+    return { ok: false, parsedFrom: "empty", verdict: "unmet", detail: "empty review report", findings: [], raw };
+  }
+  const json = allFencedJson(raw, "verdict")[0];
+  if (json) return reviewFromStructured(raw, json);
+  return reviewFromMarkdown(raw);
+}
+
+/**
+ * The aggregate `reviews/sprint-review-*.md` file(s): several dispatches' raw text,
+ * appended in creation order across rounds and retries. Folds to one record per
+ * branch, later block wins — a retry's real verdict overrides an earlier `not_run`
+ * stub for the same branch, the same fold semantics `code_review_summary()`'s awk used
+ * to implement by hand. This is the one place that fold happens now; `crew-summary.sh`
+ * and `promote-findings.sh remind` both read its output (see
+ * orchestrator/review-rollup.mjs) instead of re-parsing the file themselves.
+ */
+export function parseReviewAggregate(text) {
+  const raw = text ?? "";
+  const order = [];
+  const byBranch = new Map();
+  for (const obj of allFencedJson(raw, "verdict")) {
+    const rec = reviewFromStructured(raw, obj);
+    const key = rec.branch ?? `#${order.length}`;
+    if (!byBranch.has(key)) order.push(key);
+    byBranch.set(key, rec);
+  }
+  return order.map((key) => byBranch.get(key));
 }
 
 export function findingsAtOrAbove(findings, threshold /* "critical" | "critical-high" */) {
@@ -234,11 +307,26 @@ export function findingsAtOrAbove(findings, threshold /* "critical" | "critical-
  * code on this branch, or is it an environment/infrastructure problem no amount of
  * recoding touches? Fails closed toward `fixable` — an unparseable or missing verdict
  * must not silently strand an issue that a normal retry could still fix.
+ *
+ * A fenced ```json block (`fixable` field required) is preferred; the markdown
+ * `FIXABLE:`/`CATEGORY:`/`DETAIL:` shape stays supported as a fallback, same policy as
+ * `parseWorkerReport` and `parseReviewReport`.
  */
 export function parseTriageReport(text) {
   const raw = text ?? "";
   if (!raw.trim()) {
     return { ok: false, fixable: true, category: "", detail: "empty triage report", raw };
+  }
+  const json = allFencedJson(raw, "fixable")[0];
+  if (json) {
+    return {
+      ok: true,
+      parsedFrom: "json",
+      fixable: String(json.fixable).toLowerCase() !== "no",
+      category: json.category ? String(json.category).trim() : "unspecified",
+      detail: json.detail ? String(json.detail).trim() : "",
+      raw,
+    };
   }
   const fixable = /^\s*FIXABLE:\s*(yes|no)\b/im.exec(raw);
   const category = /^\s*CATEGORY:\s*(.+)$/im.exec(raw);

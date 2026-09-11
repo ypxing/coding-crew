@@ -57,6 +57,25 @@ count_csv() {
   [ -n "$1" ] || { echo 0; return; }
   printf '%s' "$1" | tr ',' '\n' | grep -c . || true
 }
+
+# review_rollup <report-file>... — the one parser of the reviewer's aggregate report
+# file(s), shared with promote-findings.sh's remind. See orchestrator/lib/report.mjs's
+# parseReviewAggregate doc comment: this used to be a hand-rolled, line-anchored awk in
+# each of the two scripts, and they drifted apart on how much whitespace a herdr-captured
+# review header could carry before neither matched it. Prints {"branches": [...]} to
+# stdout; an unreachable CLI degrades to no branches rather than erroring the summary.
+# $CREW_REVIEW_ROLLUP overrides the lookup — bats fixtures set it to the repo's own
+# orchestrator/review-rollup.mjs, since they copy this script alone, not a full install.
+review_rollup() {
+  local node_cli="${CREW_REVIEW_ROLLUP:-}"
+  [ -f "$node_cli" ] || node_cli="$MAIN_ROOT/.coding-crew/crew-afk/review-rollup.mjs"
+  [ -f "$node_cli" ] || node_cli="$HOME/.coding-crew/crew-afk/review-rollup.mjs"
+  if [ -f "$node_cli" ] && command -v node >/dev/null 2>&1; then
+    node "$node_cli" "$@" 2>/dev/null || echo '{"branches":[]}'
+  else
+    echo '{"branches":[]}'
+  fi
+}
 or_none() { [ -n "$1" ] && printf '%s' "$(printf '%s' "$1" | sed 's/,/, /g')" || printf 'none'; }
 
 REVIEW_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews"
@@ -78,49 +97,29 @@ code_review_summary() {
     echo "No branches were reviewed this sprint."
     return
   fi
-  awk '
-    function reset_branch(b) {
-      verdict[b] = ""
-      crit[b] = 0; high[b] = 0; med[b] = 0; low[b] = 0
-    }
-    /^## Branch:/ {
-      branch = $0
-      sub(/^## Branch: */, "", branch)
-      # The reviewer emits a bare "## Branch: <name>"; the not_run stub adds
-      # "(<slug>)". Strip it so both forms key the same branch.
-      sub(/[[:space:]]*\([^)]*\)[[:space:]]*$/, "", branch)
-      if (!(branch in seen)) { order[++n] = branch; seen[branch] = 1 }
-      reset_branch(branch)
-      next
-    }
-    branch == "" { next }
-    /^AC:[[:space:]]*all-met/     { verdict[branch] = "all-met"; next }
-    /^AC:[[:space:]]*unmet/       { verdict[branch] = "unmet"; next }
-    /^Review:[[:space:]]*not_run/ { verdict[branch] = "not-reviewed"; next }
-    /^FINDING:[[:space:]]*CRITICAL/ { crit[branch]++; next }
-    /^FINDING:[[:space:]]*HIGH/     { high[branch]++; next }
-    /^FINDING:[[:space:]]*MEDIUM/   { med[branch]++; next }
-    /^FINDING:[[:space:]]*LOW/      { low[branch]++; next }
-    END {
-      if (n == 0) { print "No branches were reviewed this sprint."; exit }
-      met = 0; unmet = 0; notrun = 0
-      tcrit = 0; thigh = 0; tmed = 0; tlow = 0
-      for (i = 1; i <= n; i++) {
-        b = order[i]
-        if (verdict[b] == "all-met") met++
-        else if (verdict[b] == "unmet") unmet++
-        else if (verdict[b] == "not-reviewed") notrun++
-        tcrit += crit[b]; thigh += high[b]; tmed += med[b]; tlow += low[b]
-      }
-      printf "Branches reviewed: %d (all-met: %d, unmet: %d, not-reviewed: %d)\n", n, met, unmet, notrun
-      printf "Findings: %d total (CRITICAL: %d, HIGH: %d, MEDIUM: %d, LOW: %d)\n", tcrit+thigh+tmed+tlow, tcrit, thigh, tmed, tlow
-      for (i = 1; i <= n; i++) {
-        b = order[i]
-        v = (verdict[b] == "" ? "unknown" : verdict[b])
-        printf "- %s: %s (C:%d H:%d M:%d L:%d)\n", b, v, crit[b], high[b], med[b], low[b]
-      }
-    }
-  ' "${files[@]}"
+
+  local rollup n
+  rollup=$(review_rollup "${files[@]}")
+  n=$(printf '%s' "$rollup" | jq '.branches | length' 2>/dev/null || echo 0)
+  if [ "${n:-0}" -eq 0 ]; then
+    echo "No branches were reviewed this sprint."
+    return
+  fi
+
+  printf '%s' "$rollup" | jq -r '
+    def sevcount(sev): [.findings[] | select(.severity == sev)] | length;
+    (.branches) as $b
+    | ($b | map(select(.verdict == "all-met")) | length) as $met
+    | ($b | map(select(.verdict == "unmet")) | length) as $unmet
+    | ($b | map(select(.verdict == "not_run")) | length) as $notrun
+    | ($b | map(.findings[]?) | map(select(.severity == "CRITICAL")) | length) as $tcrit
+    | ($b | map(.findings[]?) | map(select(.severity == "HIGH")) | length) as $thigh
+    | ($b | map(.findings[]?) | map(select(.severity == "MEDIUM")) | length) as $tmed
+    | ($b | map(.findings[]?) | map(select(.severity == "LOW")) | length) as $tlow
+    | "Branches reviewed: \($b | length) (all-met: \($met), unmet: \($unmet), not-reviewed: \($notrun))",
+      "Findings: \($tcrit + $thigh + $tmed + $tlow) total (CRITICAL: \($tcrit), HIGH: \($thigh), MEDIUM: \($tmed), LOW: \($tlow))",
+      ($b[] | "- \(.branch): \(if .verdict == "not_run" then "not-reviewed" else .verdict end) (C:\(sevcount("CRITICAL")) H:\(sevcount("HIGH")) M:\(sevcount("MEDIUM")) L:\(sevcount("LOW")))")
+  '
 }
 
 MERGED_SLUGS=$(state get completed)

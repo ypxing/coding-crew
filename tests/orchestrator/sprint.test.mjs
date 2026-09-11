@@ -684,8 +684,13 @@ test("a feature slug containing 'skipped' does not silently cancel coverage vali
 test("the promotion threshold has one source: --promote reaches findingsAtOrAbove", () => {
   const reviewWithHigh = [
     "## Branch: crew/demo/alpha",
-    "AC: all-met",
-    "FINDING: HIGH | src/alpha.txt:1 | Move the trust boundary check before the write",
+    "```json",
+    JSON.stringify({
+      branch: "crew/demo/alpha",
+      verdict: "all-met",
+      findings: [{ severity: "HIGH", location: "src/alpha.txt:1", criterion: "Move the trust boundary check before the write" }],
+    }),
+    "```",
   ].join("\n");
 
   // Default: CRITICAL only. A HIGH is reported, never promoted — so the sprint ends after

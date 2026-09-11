@@ -37,16 +37,16 @@ PROTOCOL="$REPO_ROOT/agents/crew-code-reviewer/protocol.md"
 
 # ─── the reviewer carries the verdict ────────────────────────────────────────
 
-@test "the reviewer protocol requires an AC verdict line in every branch block" {
-  grep -q 'AC: all-met' "$PROTOCOL"
-  grep -q 'AC: unmet' "$PROTOCOL"
+@test "the reviewer protocol requires a verdict field in every branch's json block" {
+  grep -q '"verdict": "all-met"' "$PROTOCOL"
+  grep -q '"unmet"' "$PROTOCOL"
   # It is parsed, so its wording and position are not the model's choice.
-  grep -qiE 'never omitted|required, exactly as shown' "$PROTOCOL"
+  grep -qiE 'never omitted' "$PROTOCOL"
 }
 
 @test "the reviewer answers unmet for a branch it could not review" {
   # An empty diff, an unscopable diff, or a failed dispatch must not read as a pass.
-  section=$(awk '/AC: unmet — not verified/{f=1} f' "$PROTOCOL")
+  section=$(awk '/not verified/{f=1} f' "$PROTOCOL")
   [ -n "$section" ]
   echo "$section" | grep -qi 'must not merge on an absent check'
 }

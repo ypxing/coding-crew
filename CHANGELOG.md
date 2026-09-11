@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.29.83]
+
+### Changed
+
+- **The reviewer and triage agents now report their verdict as a fenced json block
+  (`{"branch", "slug", "verdict", "detail", "findings"}` / `{"fixable", "category", "detail"}`)
+  instead of column-0 `## Branch:`/`AC:`/`Review:`/`FINDING:` and `FIXABLE:`/`CATEGORY:`/`DETAIL:`
+  lines, mirroring the structured-result contract `crew-coder` already used.** The old shape had
+  three independent hand-rolled parsers of the same aggregate review report file — a Node regex
+  gating the merge, an awk in `crew-summary.sh`'s rollup, and a second awk in
+  `promote-findings.sh`'s `remind` — and they drifted apart on how much whitespace a
+  herdr-captured review header could carry before a line no longer matched. A genuinely
+  successful, all-met retry review could land indented and without the `##` after an earlier
+  `not_run` stub in the same file and still be silently dropped from the summary and the findings
+  count, even though the merge/AC gate (whose regex already tolerated leading whitespace) had
+  parsed and acted on the real verdict correctly. JSON's whitespace-between-tokens-is-insignificant
+  grammar closes the whole class rather than one more anchor at a time — `crew-summary.sh` and
+  `promote-findings.sh` now both read the aggregate file through one shared parser
+  (`orchestrator/review-rollup.mjs`, over `report.mjs`'s new `parseReviewAggregate`) instead of
+  reimplementing it twice. `report.mjs`'s `parseReviewReport`/`parseTriageReport` prefer the json
+  block and fall back to the old markdown shape, so an un-migrated reviewer/triage agent still
+  works. `mark-not-run`'s stub now emits the same json shape (`verdict: "not_run"`).
+
 ## [1.29.82]
 
 ### Added

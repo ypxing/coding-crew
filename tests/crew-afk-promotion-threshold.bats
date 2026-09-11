@@ -28,14 +28,28 @@ setup() {
   git commit -q -m initial
   export MAIN_ROOT="$TEMP_DIR"
 
+  # promote-findings.sh and crew-summary.sh read the aggregate review report through
+  # review-rollup.mjs, not a hand-rolled awk — point it at the repo's own copy, since
+  # these fixtures exercise the scripts alone, not a full install.
+  export CREW_REVIEW_ROLLUP="$REPO_ROOT/orchestrator/review-rollup.mjs"
+
   mkdir -p .scratch/feat/issues/open .scratch/feat/reviews
   printf '# a\n\nStatus: ready-for-agent\n' > .scratch/feat/issues/open/01-a.md
   export REPORT=.scratch/feat/reviews/sprint-review-1.md
-  cat > "$REPORT" <<'EOF'
+  json=$(jq -n '{
+    branch: "crew/feat/a", slug: "a", verdict: "all-met",
+    findings: [
+      {severity: "CRITICAL", location: "src/x.ts:12", criterion: "unchecked input"},
+      {severity: "HIGH", location: "src/y.ts:40", criterion: "trust boundary crossed"},
+      {severity: "LOW", location: "z.ts:1", criterion: "a nit"}
+    ]
+  }')
+  cat > "$REPORT" <<EOF
 ## Branch: crew/feat/a (a)
-- [CRITICAL] unchecked input at src/x.ts:12
-- [HIGH] trust boundary crossed at src/y.ts:40
-- [LOW] a nit
+
+\`\`\`json
+$json
+\`\`\`
 EOF
   printf -- '- [ ] validate input at src/x.ts:12\n' > crit.md
 }
@@ -94,32 +108,25 @@ teardown() {
   [[ "$output" == *"report: $REPORT"* ]]
 }
 
-@test "a finding that arrives only as a FINDING: line is still counted" {
-  # Promotion parses the machine line; the reminder used to count only the `[SEV]` prose
-  # block. A report carrying just the machine line therefore ended a sprint as "no open
-  # findings" while findingsAtOrAbove() was promoting from the very same lines.
-  cat > "$REPORT" <<'EOF'
+@test "every finding in the report's json block is counted exactly once" {
+  # The reviewer's `findings` array is the only representation now — no separate machine
+  # line and prose block to reconcile, so nothing can double-count or under-count.
+  json=$(jq -n '{
+    branch: "crew/feat/a", slug: "a", verdict: "all-met",
+    findings: [
+      {severity: "CRITICAL", location: "src/x.ts:12", criterion: "Validate input before use"},
+      {severity: "HIGH", location: "src/y.ts:40", criterion: "Move the trust boundary check"}
+    ]
+  }')
+  cat > "$REPORT" <<EOF
 ## Branch: crew/feat/a (a)
 
-### Findings
-FINDING: CRITICAL | src/x.ts:12 | Validate input before use
-FINDING: HIGH | src/y.ts:40 | Move the trust boundary check
+\`\`\`json
+$json
+\`\`\`
 EOF
   run bash "$PROMOTE" remind --feature-slug feat
   [[ "$output" == *"FINDINGS: open=2 (CRITICAL=1, HIGH=1)"* ]]
-}
-
-@test "a finding in both forms is counted once, not twice" {
-  cat > "$REPORT" <<'EOF'
-## Branch: crew/feat/a (a)
-
-### Findings
-FINDING: HIGH | src/y.ts:40 | Move the trust boundary check
-[HIGH] trust boundary crossed
-File: src/y.ts:40
-EOF
-  run bash "$PROMOTE" remind --feature-slug feat
-  [[ "$output" == *"FINDINGS: open=1 (HIGH=1)"* ]]
 }
 
 @test "with --promote critical-high the HIGH is subtracted again" {

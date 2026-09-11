@@ -8,9 +8,17 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { depsLine } from "./report.mjs";
+
+// review-rollup.mjs is always this module's sibling one level up (lib/sprint.mjs ->
+// ../review-rollup.mjs), whether that's the repo's own orchestrator/ during dev/test or
+// an installed .coding-crew/crew-afk/ in production — so childEnv() can hand every
+// bash() child the exact path to the one parser of the aggregate review report, instead
+// of crew-summary.sh/promote-findings.sh guessing an install location themselves.
+const REVIEW_ROLLUP_PATH = join(dirname(dirname(fileURLToPath(import.meta.url))), "review-rollup.mjs");
 
 const ENV_KEYS = [
   "MAIN_ROOT",
@@ -134,7 +142,10 @@ export class Sprint {
   /** Sprint-scoped env for every child: MAIN_ROOT + STATE_FILE + TRACE_LOG. */
   childEnv() {
     const { sprintEnvFile, ...rest } = this.env;
-    return rest;
+    // Only set when unset: a caller (a test, a human debugging by hand) that already
+    // pins a different review-rollup.mjs is deliberately overriding it, not being
+    // overridden back.
+    return { CREW_REVIEW_ROLLUP: REVIEW_ROLLUP_PATH, ...rest };
   }
 
   state(args) {

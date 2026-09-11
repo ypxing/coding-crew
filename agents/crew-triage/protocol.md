@@ -43,30 +43,28 @@ triage pass should not cost. Your output is a verdict, nothing else.
 
 ## Output Format
 
-Answer in exactly these three lines, and nothing before them — the orchestrator parses them literally,
-the same way it parses the reviewer's `AC:` line:
+Answer with exactly this fenced json block, and nothing before it — the orchestrator parses it
+literally, the same way it parses the reviewer's `verdict` field:
 
-```
-FIXABLE: yes | no
-CATEGORY: <one short phrase — e.g. "failing test assertion", "wrong dependency version", "registry unreachable">
-DETAIL: <one or two sentences a worker or a human can act on directly, citing the specific test, file, package, or command the failure names>
+```json
+{
+  "fixable": "yes | no",
+  "category": "<one short phrase — e.g. \"failing test assertion\", \"wrong dependency version\", \"registry unreachable\">",
+  "detail": "<one or two sentences a worker or a human can act on directly, citing the specific test, file, package, or command the failure names>"
+}
 ```
 
-`FIXABLE: yes` routes back to a coder with a narrow "fix this" prompt built from your `CATEGORY`/
-`DETAIL`. `FIXABLE: no` retains the branch without dispatching a coder again; if the identical failure
+`fixable: yes` routes back to a coder with a narrow "fix this" prompt built from your `category`/
+`detail`. `fixable: no` retains the branch without dispatching a coder again; if the identical failure
 recurs on a plain, coder-free retry, the issue is marked blocked for a human, tagged as an environment
 problem so it is not mistaken for a code review finding.
 
 Examples:
 
-```
-FIXABLE: yes
-CATEGORY: wrong dependency version
-DETAIL: package.json (added in this diff) pins @scope/pkg@1.4.19, which 404s on the registry — pin an existing published version or run the package manager's own update command.
+```json
+{"fixable": "yes", "category": "wrong dependency version", "detail": "package.json (added in this diff) pins @scope/pkg@1.4.19, which 404s on the registry — pin an existing published version or run the package manager's own update command."}
 ```
 
-```
-FIXABLE: no
-CATEGORY: registry unreachable
-DETAIL: yarn install fails with a 404 for a package this diff never touched; the same install fails identically on the feature branch before this branch's commits — a registry/network/credentials problem, not this diff.
+```json
+{"fixable": "no", "category": "registry unreachable", "detail": "yarn install fails with a 404 for a package this diff never touched; the same install fails identically on the feature branch before this branch's commits — a registry/network/credentials problem, not this diff."}
 ```

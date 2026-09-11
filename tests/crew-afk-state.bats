@@ -31,6 +31,10 @@ setup() {
   git add .gitignore
   git commit -q -m initial
   export MAIN_ROOT="$TEMP_DIR"
+  # crew-summary.sh and promote-findings.sh read the aggregate review report through
+  # review-rollup.mjs, not a hand-rolled awk — these fixtures copy the scripts alone
+  # (see installed_scripts below), not a full install, so point it at the repo's own copy.
+  export CREW_REVIEW_ROLLUP="$REPO_ROOT/orchestrator/review-rollup.mjs"
 }
 
 teardown() {
@@ -312,10 +316,19 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
 @test "crew-summary reports open findings with a real count" {
   init_sprint calc
   mkdir -p .scratch/calc/reviews
-  cat > .scratch/calc/reviews/sprint-review-1.md <<'EOF'
+  json=$(jq -n '{
+    branch: "crew/calc/a", slug: "a", verdict: "all-met",
+    findings: [
+      {severity: "MEDIUM", location: "a.py:1", criterion: "something worth a look"},
+      {severity: "LOW", location: "a.py:2", criterion: "a nit"}
+    ]
+  }')
+  cat > .scratch/calc/reviews/sprint-review-1.md <<EOF
 ## Branch: crew/calc/a (a)
-- [MEDIUM] something worth a look
-- [LOW] a nit
+
+\`\`\`json
+$json
+\`\`\`
 EOF
 
   run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
@@ -355,6 +368,33 @@ EOF
   [[ "$output" == *"Merged  (1): a"* ]]
   [[ "$output" != *"## Unreviewed Branches"* ]]
   [[ "$output" != *"retained rather than merged"* ]]
+}
+
+@test "crew-summary's code review rollup picks up a later herdr-indented json verdict over a stale not_run stub" {
+  # A herdr-captured reviewer transcript sometimes lands indented, fence lines included
+  # (e.g. two extra leading spaces on every line, "  \`\`\`json" and "  \`\`\`"). JSON
+  # treats whitespace between tokens as insignificant, so the rollup still folds to this
+  # later, real verdict rather than reporting the earlier not_run stub.
+  init_sprint calc
+  mkdir -p .scratch/calc/reviews
+  bash "$(installed_scripts)/promote-findings.sh" mark-not-run --feature-slug calc \
+    --branch crew/calc/a --slug a --report .scratch/calc/reviews/sprint-review-1.md \
+    --reason "reviewer dispatch timed out" >/dev/null
+  json=$(jq -cn '{
+    branch: "crew/calc/a", slug: "a", verdict: "all-met",
+    findings: [{severity: "HIGH", location: "a.py:1", criterion: "something worth a look"}]
+  }')
+  cat >> .scratch/calc/reviews/sprint-review-1.md <<EOF
+
+  Branch: crew/calc/a (a)
+  \`\`\`json
+  $json
+  \`\`\`
+EOF
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *"Branches reviewed: 1 (all-met: 1, unmet: 0, not-reviewed: 0)"* ]]
+  [[ "$output" == *"Findings: 1 total (CRITICAL: 0, HIGH: 1, MEDIUM: 0, LOW: 0)"* ]]
 }
 
 @test "crew-summary lists promoted findings with their fix issue and state" {

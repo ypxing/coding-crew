@@ -147,53 +147,51 @@ Ask: "Would a senior engineer here actually change this in review?" If no, skip.
 
 ## Output Format
 
-One block per branch; attribution is required so a finding traces to the branch that introduced it.
+One block per branch, attribution required. Start with `## Branch: <branch-name> (<slug>)`, then a
+fenced json block — the only thing tooling parses; surrounding prose is never read back:
+
+```json
+{
+  "branch": "<branch-name>",
+  "slug": "<slug>",
+  "verdict": "all-met",
+  "detail": "",
+  "findings": [
+    {"severity": "CRITICAL", "location": "<path>:<line>", "criterion": "<one verifiable fix criterion>"}
+  ]
+}
+```
+
+`verdict` is required, exactly `"all-met"` or `"unmet"` — never omitted, reworded, or restructured; the
+caller reads it to decide whether the branch merges. On `unmet`, `detail` names which criterion and why,
+and findings are still reported — the branch returns to a worker with them. `findings` is `[]` when
+there are none; never omit the block itself for a clean branch.
+
+Every finding needs `severity`, `location` (`file:line`), and **one verifiable fix criterion** — the
+acceptance criterion a fix worker would be given, because that is what it becomes. After the json
+block, add your usual prose per finding, in severity order (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`):
 
 ```
-## Branch: <branch-name> (<slug>)
-AC: all-met
-
-### Findings
-FINDING: CRITICAL | <path>:<line> | <one verifiable fix criterion>
 [CRITICAL] <title>
 File: <path>:<line>
 Snippet:
-```
+~~~
 <exact code from file at cited line>
-```
+~~~
 Issue: <concrete failure mode — input, state, outcome>
 Fix: <specific change required>
 ```
 
-The `AC:` line is required, exactly as shown: `AC: all-met` or `AC: unmet — <criterion>, <criterion>`.
-The caller greps it to decide whether the branch merges, so it is never omitted, reworded, or moved.
-On `unmet`, still report the findings — the branch returns to a worker with them.
+This prose is for the human reader only — a finding missing from `findings` is promoted or triaged by
+nobody, no matter how much prose describes it. No findings: `findings: []`, prose `### Findings\nnone`.
 
-Every finding opens with its `FINDING:` line — severity, `file:line`, and **one verifiable fix
-criterion**, written as the acceptance criterion a fix worker would be given, because that is what it
-becomes. Then repeat the shape below it in severity order (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), each
-with its own `File:`, `Snippet:`, `Issue:` and `Fix:`. Tooling parses the `FINDING:` line, the
-`[SEVERITY]` prefix and the `## Branch:` heading, so none of the three is optional.
+If the diff was empty, exceeded 2000 lines and could not be scoped, or dispatch failed: `verdict:
+"unmet"`, `detail: "not verified (<reason>)"`, `findings: []`, prose `SKIPPED: <reason — empty diff |
+diff too large to scope | dispatch failure>`. A branch you could not review is a branch whose criteria
+you did not confirm — hence `unmet`: the caller must not merge on an absent check.
 
-If no findings: `### Findings\nnone`
-
-If the diff was empty, or exceeded 2000 lines and could not be scoped, or dispatch failed, say so
-rather than omitting the branch block:
-
-```
-## Branch: <branch-name> (<slug>)
-AC: unmet — not verified (<reason>)
-
-### Findings
-SKIPPED: <reason — empty diff | diff too large to scope | dispatch failure>
-```
-
-A branch you could not review is a branch whose criteria you did not confirm — hence `unmet`: the
-caller must not merge on an absent check.
-
-End with a session summary **only when given more than one branch**: on a single branch — what
-crew-afk does before each merge — stop after that branch's block, since N per-branch "session"
-summaries describe no session.
+End with a session summary **only when given more than one branch**: on a single branch, stop after
+that branch's block, since a per-branch "session" summary describes no session.
 
 For multi-branch invocations, end with `## Session Review Summary`: the verbatim
 `dependency-audit.sh` output under `### Dependency Audit`, then `### Branch Findings` — one row per

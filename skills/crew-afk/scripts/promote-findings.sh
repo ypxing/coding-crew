@@ -29,9 +29,30 @@ set -euo pipefail
 # (install.sh does not chmod+x skill-local scripts)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAIN_ROOT="${MAIN_ROOT:-$PWD}"
 # Each subcommand traces its own outcome, so promotion, the phase flip and a review gap
 # are all in the trace whether or not the orchestrator remembered to echo them.
 _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
+
+# review_rollup <report-file>... — the one parser of the reviewer's aggregate report
+# file(s), shared with crew-summary.sh's code_review_summary(). See
+# orchestrator/lib/report.mjs's parseReviewAggregate doc comment: this used to be a
+# hand-rolled, line-anchored awk in each of the two scripts, and they drifted apart on
+# how much whitespace a herdr-captured review header could carry before neither matched
+# it. Prints {"branches": [...]} to stdout; an unreachable CLI degrades to no branches
+# rather than erroring the reminder. $CREW_REVIEW_ROLLUP overrides the lookup — bats
+# fixtures set it to the repo's own orchestrator/review-rollup.mjs, since they exercise
+# this script alone, not a full install.
+review_rollup() {
+  local node_cli="${CREW_REVIEW_ROLLUP:-}"
+  [ -f "$node_cli" ] || node_cli="$MAIN_ROOT/.coding-crew/crew-afk/review-rollup.mjs"
+  [ -f "$node_cli" ] || node_cli="$HOME/.coding-crew/crew-afk/review-rollup.mjs"
+  if [ -f "$node_cli" ] && command -v node >/dev/null 2>&1; then
+    node "$node_cli" "$@" 2>/dev/null || echo '{"branches":[]}'
+  else
+    echo '{"branches":[]}'
+  fi
+}
 
 DEFERRED_STATUS="deferred-findings"
 READY_STATUS="ready-for-agent"
@@ -298,9 +319,20 @@ cmd_mark_not_run() {
     return 0
   fi
 
+  # jq -n builds the JSON safely regardless of what $reason contains (quotes, backslashes,
+  # …) — the same reason a reviewer's own findings never get hand-interpolated into a
+  # report either. See report.mjs's parseReviewAggregate for who reads this block.
+  local json_block
+  json_block=$(jq -n --arg branch "$branch" --arg slug "$issue_slug" --arg reason "$reason" \
+    '{branch: $branch, slug: $slug, verdict: "not_run", detail: $reason, findings: []}')
+
   {
     [ -s "$report" ] && echo ""
     echo "## Branch: $branch ($issue_slug)"
+    echo ""
+    echo '```json'
+    echo "$json_block"
+    echo '```'
     echo ""
     echo "Review: not_run — $reason"
     echo ""
@@ -351,101 +383,45 @@ cmd_remind() {
     return 0
   fi
 
-  # Two passes per file: the ## Promoted Findings section sits at the end of the report,
-  # so the promoted set is not known until after the findings have been seen.
-  local totals
-  totals=$(awk '
-    FNR == 1 { pass = (seen[FILENAME]++ ? 2 : 1) }
-    /^## Promoted Findings/ { inpromoted = 1; next }
-    /^## Branch:/ {
-      inpromoted = 0
-      branch = $0
-      sub(/^## Branch: */, "", branch)
-      # The reviewer emits "## Branch: <branch> (<slug>)". The promotion marker keys the
-      # bare branch name, so the trailing parenthetical must come off or no promoted
-      # finding ever matches and every one of them is counted again.
-      sub(/[[:space:]]*\([^)]*\)[[:space:]]*$/, "", branch)
-      next
-    }
-    pass == 1 && inpromoted && /^- .*:.*→/ {
-      b = $0
-      sub(/^- */, "", b)
-      sub(/:.*/, "", b)
-      sevs = $0
-      sub(/^[^:]*: */, "", sevs)
-      sub(/ *→.*/, "", sevs)
-      n = split(sevs, parts, /, */)
-      for (i = 1; i <= n; i++) {
-        gsub(/^ +| +$/, "", parts[i])
-        promoted[b, parts[i]] = 1
-      }
-      next
-    }
-    # A finding is counted once, whichever form it arrives in. The reviewer emits both a
-    # machine-readable `FINDING: <SEV> | file:line | criterion` line and a `[SEV]` prose
-    # block per finding, but promotion parses only the first — so counting only the second
-    # would let a report that carries just the machine line end a sprint as "no open
-    # findings" while `findingsAtOrAbove()` was happily promoting from it. Per branch and
-    # severity the count is the larger of the two, which is exact when both forms are
-    # present (they are 1:1) and correct when only one is.
-    pass == 2 && /^FINDING:[[:space:]]*(CRITICAL|HIGH|MEDIUM|LOW)/ {
-      sev = $0
-      sub(/^FINDING:[[:space:]]*/, "", sev)
-      sub(/[^A-Z].*$/, "", sev)
-      machine[branch, sev]++
-      next
-    }
-    pass == 2 && /^Review: not_run/ {
-      reason = $0
-      sub(/^Review: not_run[[:space:]]*(—|-)?[[:space:]]*/, "", reason)
-      notrun[branch] = reason
-      next
-    }
-    # A retry that completes clears an earlier round not_run stub for the same branch.
-    # Report files are named with a creation timestamp and globbed in that order, so a
-    # genuine AC verdict (only the mark-not-run stub omits one) seen for a branch after
-    # its not_run entry means the branch *was* reviewed on a later attempt — the earlier
-    # stub is stale and must not still flag the branch as unreviewed.
-    pass == 2 && /^AC:[[:space:]]*(all-met|unmet)/ {
-      if (branch in notrun) delete notrun[branch]
-      next
-    }
-    pass == 2 {
-      for (sev in wanted) {
-        if (index($0, "[" sev "]") > 0) prose[branch, sev]++
-      }
-    }
-    BEGIN { split("CRITICAL HIGH MEDIUM LOW", order, " "); for (i in order) wanted[order[i]] = 1 }
-    END {
-      for (key in machine) seen[key] = 1
-      for (key in prose) seen[key] = 1
-      for (key in seen) {
-        if (key in promoted) continue
-        split(key, kp, SUBSEP)
-        sev = kp[2]
-        open[sev] += (machine[key] > prose[key] ? machine[key] : prose[key])
-      }
-      total = 0
-      out = ""
-      for (i = 1; i <= 4; i++) {
-        sev = order[i]
-        if (open[sev] > 0) {
-          total += open[sev]
-          out = out (out == "" ? "" : ", ") sev "=" open[sev]
-        }
-      }
-      print total "\t" out
-      for (b in notrun) print "GAP\t" b "\t" notrun[b]
-    }
-  ' "${reports[@]}" "${reports[@]}")
+  local rollup
+  rollup=$(review_rollup "${reports[@]}")
 
-  local total breakdown gaps gap_count
-  total=$(printf '%s\n' "$totals" | head -1 | cut -f1)
-  breakdown=$(printf '%s\n' "$totals" | head -1 | cut -f2)
-  gaps=$(printf '%s\n' "$totals" | grep '^GAP' || true)
-  gap_count=$(printf '%s' "$gaps" | grep -c '^GAP' || true)
+  # (branch, severity) pairs already covered by a fix issue this sprint — defer's own
+  # bash-generated "## Promoted Findings" bullets ("- <branch>: SEV, SEV → <path>"),
+  # never the reviewer's free text, so a plain regex capture reads them exactly; no awk
+  # state machine needed for a shape this script itself wrote.
+  local promoted
+  # grep's own "no lines matched" exit status must not reach the pipeline under
+  # `pipefail` — `|| true` neutralises it before jq runs, so the `|| echo '[]'` fallback
+  # below only fires on an actual jq failure, never doubling jq's own (valid) output.
+  promoted=$( (grep -h '^- .*:.*→' "${reports[@]}" 2>/dev/null || true) | jq -R -s '
+    [splits("\n") | select(length > 0) |
+      (capture("^- *(?<b>[^:]+): *(?<sevs>[^→]+)→")?) |
+      select(. != null) |
+      {branch: (.b | rtrimstr(" ")), sevs: [.sevs | splits(", *") | gsub("^\\s+|\\s+$"; "") | select(length > 0)]}
+    ]
+  ' 2>/dev/null || echo '[]')
 
-  if [ "${total:-0}" -eq 0 ]; then
+  # Every open finding, once — there is exactly one representation now (the reviewer's
+  # own `findings` array), not a machine line and a prose block to reconcile.
+  local totals crit high med low total breakdown
+  totals=$(jq -rn --argjson rollup "$rollup" --argjson promoted "$promoted" '
+    ($promoted | map(.branch as $b | .sevs[] as $s | {(($b + " " + $s)): true}) | add // {}) as $pset
+    | [$rollup.branches[] | .branch as $b | .findings[] | select(($pset[$b + " " + .severity] // false) | not) | .severity] as $open
+    | [($open | map(select(. == "CRITICAL")) | length),
+       ($open | map(select(. == "HIGH")) | length),
+       ($open | map(select(. == "MEDIUM")) | length),
+       ($open | map(select(. == "LOW")) | length)] | @tsv
+  ')
+  IFS=$'\t' read -r crit high med low <<< "$totals"
+  total=$((crit + high + med + low))
+  breakdown=""
+  [ "$crit" -gt 0 ] && breakdown="${breakdown:+$breakdown, }CRITICAL=$crit"
+  [ "$high" -gt 0 ] && breakdown="${breakdown:+$breakdown, }HIGH=$high"
+  [ "$med" -gt 0 ] && breakdown="${breakdown:+$breakdown, }MEDIUM=$med"
+  [ "$low" -gt 0 ] && breakdown="${breakdown:+$breakdown, }LOW=$low"
+
+  if [ "$total" -eq 0 ]; then
     echo "FINDINGS: none"
   else
     echo "FINDINGS: open=$total ($breakdown)"
@@ -454,14 +430,21 @@ cmd_remind() {
 
   # Printed after the findings line and never suppressed by it: a sprint with zero open
   # findings and an unreviewed branch is exactly the case that must not look clean.
+  # review_rollup already folded a retried, real verdict over an earlier not_run stub
+  # for the same branch, so a `not_run` entry here is never stale.
+  local gaps gap_count
+  gaps=$(jq -r '.branches[] | select(.verdict == "not_run") | [.branch, (.detail // "")] | @tsv' <<< "$rollup")
+  gap_count=0
+  [ -n "$gaps" ] && gap_count=$(printf '%s\n' "$gaps" | grep -c . || true)
+
   if [ "${gap_count:-0}" -gt 0 ]; then
     echo "REVIEW-GAPS: branches=$gap_count"
-    printf '%s\n' "$gaps" | while IFS=$'\t' read -r _ branch reason; do
+    printf '%s\n' "$gaps" | while IFS=$'\t' read -r branch reason; do
       echo "gap: $branch — $reason"
     done
     # The report paths are printed with the findings line above; when there are no
     # findings, the gap lines are the only reason to name the report, so print them here.
-    if [ "${total:-0}" -eq 0 ]; then
+    if [ "$total" -eq 0 ]; then
       printf 'report: %s\n' "${reports[@]}"
     fi
   fi

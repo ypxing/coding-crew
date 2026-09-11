@@ -11,8 +11,9 @@
 
 load helpers/render
 
-SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/promote-findings.sh"
-SKILL_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk"
+REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
+SCRIPT="$REPO_ROOT/skills/crew-afk/scripts/promote-findings.sh"
+SKILL_DIR="$REPO_ROOT/skills/crew-afk"
 
 setup() {
   export TEMP_DIR=$(mktemp -d)
@@ -20,6 +21,11 @@ setup() {
   export SLUG="my-feature"
   mkdir -p ".scratch/$SLUG/reviews" ".scratch/$SLUG/issues/open"
   export REPORT=".scratch/$SLUG/reviews/sprint-review-20260812.md"
+  # remind reads the aggregate report through review-rollup.mjs, not a hand-rolled awk —
+  # these fixtures exercise promote-findings.sh alone, without a full install, so point
+  # it straight at the repo's own copy instead of the installed path it looks for by
+  # default.
+  export CREW_REVIEW_ROLLUP="$REPO_ROOT/orchestrator/review-rollup.mjs"
 }
 
 teardown() {
@@ -91,14 +97,19 @@ EOF
 }
 
 @test "remind counts findings and gaps independently" {
-  cat > "$REPORT" <<'EOF'
+  json=$(jq -n '{
+    branch: "crew/my-feature/alpha", slug: "alpha", verdict: "all-met",
+    findings: [
+      {severity: "HIGH", location: "a.py:10", criterion: "unsanitised input"},
+      {severity: "MEDIUM", location: "a.py:20", criterion: "missing test"}
+    ]
+  }')
+  cat > "$REPORT" <<EOF
 ## Branch: crew/my-feature/alpha (alpha)
 
-### Findings
-[HIGH] unsanitised input
-File: a.py:10
-[MEDIUM] missing test
-File: a.py:20
+\`\`\`json
+$json
+\`\`\`
 EOF
   bash "$SCRIPT" mark-not-run --feature-slug "$SLUG" --branch "crew/my-feature/beta" \
     --slug beta --report "$REPORT" --reason "killed" >/dev/null
@@ -141,11 +152,16 @@ EOF
     --slug alpha --report "$REPORT" --reason "reviewer dispatch timed out" >/dev/null
 
   LATER_REPORT=".scratch/$SLUG/reviews/sprint-review-20260813.md"
-  cat > "$LATER_REPORT" <<'EOF'
+  json=$(jq -n '{
+    branch: "crew/my-feature/alpha", slug: "alpha", verdict: "all-met",
+    findings: [{severity: "LOW", location: "a.py:1", criterion: "naming nit"}]
+  }')
+  cat > "$LATER_REPORT" <<EOF
 ## Branch: crew/my-feature/alpha
-AC: all-met
 
-FINDING: LOW | a.py:1 | naming nit
+\`\`\`json
+$json
+\`\`\`
 EOF
 
   run bash "$SCRIPT" remind --feature-slug "$SLUG"
@@ -156,12 +172,16 @@ EOF
 }
 
 @test "remind is unchanged when every branch was reviewed" {
-  cat > "$REPORT" <<'EOF'
+  json=$(jq -n '{
+    branch: "crew/my-feature/alpha", slug: "alpha", verdict: "all-met",
+    findings: [{severity: "LOW", location: "a.py:1", criterion: "nit"}]
+  }')
+  cat > "$REPORT" <<EOF
 ## Branch: crew/my-feature/alpha (alpha)
 
-### Findings
-[LOW] nit
-File: a.py:1
+\`\`\`json
+$json
+\`\`\`
 EOF
 
   run bash "$SCRIPT" remind --feature-slug "$SLUG"
@@ -171,12 +191,16 @@ EOF
 }
 
 @test "a promoted finding is still subtracted when the report also has a gap" {
-  cat > "$REPORT" <<'EOF'
+  json=$(jq -n '{
+    branch: "crew/my-feature/alpha", slug: "alpha", verdict: "all-met",
+    findings: [{severity: "HIGH", location: "a.py:10", criterion: "unsanitised input"}]
+  }')
+  cat > "$REPORT" <<EOF
 ## Branch: crew/my-feature/alpha (alpha)
 
-### Findings
-[HIGH] unsanitised input
-File: a.py:10
+\`\`\`json
+$json
+\`\`\`
 
 ## Promoted Findings
 

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   applySchemaPrefilter,
   findingsAtOrAbove,
+  parseReviewAggregate,
   parseReviewReport,
   parseTriageReport,
   parseVerifyChecks,
@@ -143,6 +144,92 @@ test("bracket severities are the fallback when no FINDING lines exist", () => {
   assert.equal(r.findings[0].explicit, false);
 });
 
+// ─── review: a fenced json block is preferred over the markdown shape ────────────
+//
+// crew-summary.sh's code_review_summary() and promote-findings.sh's remind both used
+// to re-derive branch/verdict/findings from the same raw text with their own
+// line-anchored awk, independently of this parser and of each other — and drifted:
+// a herdr-captured retry report that landed indented and without "##" matched neither
+// awk's `^## Branch:`/`^AC:`/`^FINDING:` anchors, so a genuinely successful, all-met
+// review was silently reported as not-reviewed even though the merge had already gone
+// through on this parser's (correct, whitespace-tolerant) read of the same text. The
+// fenced json block sidesteps the whole class: JSON treats whitespace between tokens
+// as insignificant, so an indented block still parses.
+
+test("a fenced json review block is preferred over the markdown AC:/FINDING: shape", () => {
+  const text = [
+    "## Branch: crew/f/x (x)",
+    "",
+    "```json",
+    JSON.stringify({
+      branch: "crew/f/x",
+      slug: "x",
+      verdict: "all-met",
+      findings: [{ severity: "HIGH", location: "src/db.ts:7", criterion: "Parameterise the query" }],
+    }),
+    "```",
+    "",
+    "### Findings",
+    "[HIGH] prose the machine-line-only shape never carried",
+  ].join("\n");
+  const r = parseReviewReport(text);
+  assert.equal(r.parsedFrom, "json");
+  assert.equal(r.branch, "crew/f/x");
+  assert.equal(r.verdict, "all-met");
+  assert.deepEqual(r.findings, [{ severity: "HIGH", location: "src/db.ts:7", criterion: "Parameterise the query", explicit: true }]);
+});
+
+test("a herdr-indented, no-## json review block still parses — whitespace between JSON tokens is insignificant", () => {
+  const text = [
+    "  Branch: crew/f/x (x)",
+    "  ```json",
+    '  {"branch": "crew/f/x", "slug": "x", "verdict": "all-met", "findings": []}',
+    "  ```",
+  ].join("\n");
+  const r = parseReviewReport(text);
+  assert.equal(r.parsedFrom, "json");
+  assert.equal(r.verdict, "all-met");
+});
+
+// ─── review: the aggregate multi-branch report file ──────────────────────────────
+
+test("parseReviewAggregate folds a later retry's real verdict over an earlier not_run stub for the same branch", () => {
+  const stub = [
+    "## Branch: crew/calc/a (a)",
+    "```json",
+    JSON.stringify({ branch: "crew/calc/a", slug: "a", verdict: "not_run", detail: "reviewer dispatch timed out", findings: [] }),
+    "```",
+  ].join("\n");
+  const retry = [
+    "  Branch: crew/calc/a (a)",
+    "  ```json",
+    '  {"branch": "crew/calc/a", "slug": "a", "verdict": "all-met", "findings": [{"severity": "HIGH", "location": "x.ts:1", "criterion": "fix it"}]}',
+    "  ```",
+  ].join("\n");
+  const records = parseReviewAggregate(`${stub}\n\n${retry}\n`);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].branch, "crew/calc/a");
+  assert.equal(records[0].verdict, "all-met");
+  assert.equal(records[0].findings.length, 1);
+});
+
+test("parseReviewAggregate keeps distinct branches separate and in first-seen order", () => {
+  const a = { branch: "crew/f/a", slug: "a", verdict: "all-met", findings: [] };
+  const b = { branch: "crew/f/b", slug: "b", verdict: "unmet", findings: [] };
+  const text = [
+    "```json", JSON.stringify(a), "```",
+    "```json", JSON.stringify(b), "```",
+  ].join("\n");
+  const records = parseReviewAggregate(text);
+  assert.deepEqual(records.map((r) => r.branch), ["crew/f/a", "crew/f/b"]);
+  assert.deepEqual(records.map((r) => r.verdict), ["all-met", "unmet"]);
+});
+
+test("parseReviewAggregate on text with no json blocks returns no records", () => {
+  assert.deepEqual(parseReviewAggregate("## Branch: crew/f/x\nAC: all-met\n"), []);
+  assert.deepEqual(parseReviewAggregate(""), []);
+});
+
 // ─── the reviewer is told what was already executed ──────────────────────────
 //
 // A real codex sprint stalled on this: the issue's third criterion was "a test covers it
@@ -187,6 +274,19 @@ test("the review prompt states the checks and forbids unmet-for-lack-of-executio
 test("the review prompt still names the checks when none were discovered", () => {
   const p = reviewPrompt({ branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f" });
   assert.match(p, /test=not_run, lint=not_run, typecheck=not_run/);
+});
+
+test("the review prompt asks for a fenced json verdict, not a bare AC:/FINDING: line", () => {
+  // parseReviewAggregate (and the crew-summary.sh/promote-findings.sh CLI that reads it)
+  // only recognizes the fenced json block now — see report.mjs's doc comment on why the
+  // old column-0 `## Branch:`/`AC:`/`FINDING:` anchors drifted apart across three
+  // independent hand-rolled parsers.
+  const p = reviewPrompt({ branch: "crew/f/x", slug: "x", issuePath: "p", criteria: "", featureBranch: "f" });
+  assert.match(p, /## Branch: <branch-name>/);
+  assert.match(p, /```json/);
+  assert.match(p, /"verdict": "all-met \| unmet"/);
+  assert.match(p, /"findings":/);
+  assert.match(p, /"severity": "CRITICAL \| HIGH \| MEDIUM \| LOW"/);
 });
 
 test("the worker prompt makes the sidecar file the result channel, not an option", () => {
@@ -238,6 +338,19 @@ test("a not-fixable triage verdict parses the same way", () => {
   assert.equal(r.category, "registry unreachable");
 });
 
+test("a fenced json triage block is preferred over the markdown FIXABLE:/CATEGORY:/DETAIL: shape", () => {
+  const text = [
+    "  FIXABLE: no",
+    "  ```json",
+    '  {"fixable": "yes", "category": "flaky network", "detail": "registry timed out, unrelated to this diff"}',
+    "  ```",
+  ].join("\n");
+  const r = parseTriageReport(text);
+  assert.equal(r.parsedFrom, "json");
+  assert.equal(r.fixable, true);
+  assert.equal(r.category, "flaky network");
+});
+
 test("an empty or unparseable triage report fails closed toward fixable, and is not ok", () => {
   const empty = parseTriageReport("");
   assert.equal(empty.ok, false);
@@ -248,7 +361,7 @@ test("an empty or unparseable triage report fails closed toward fixable, and is 
   assert.equal(noVerdict.fixable, true);
 });
 
-test("the triage prompt states the failing check output and asks for exactly three lines", () => {
+test("the triage prompt states the failing check output and asks for a fenced json verdict", () => {
   const p = triagePrompt({
     branch: "crew/f/x",
     slug: "x",
@@ -257,9 +370,10 @@ test("the triage prompt states the failing check output and asks for exactly thr
     checkOutput: "TEST: fail\nyarn install ... 404 Not Found",
   });
   assert.match(p, /404 Not Found/);
-  assert.match(p, /^FIXABLE: yes \| no$/m);
-  assert.match(p, /^CATEGORY:/m);
-  assert.match(p, /^DETAIL:/m);
+  assert.match(p, /```json/);
+  assert.match(p, /"fixable": "yes \| no"/);
+  assert.match(p, /"category":/);
+  assert.match(p, /"detail":/);
   // Never asks the coder that wrote the branch to grade its own failure.
   assert.doesNotMatch(p, /crew-coder/);
 });

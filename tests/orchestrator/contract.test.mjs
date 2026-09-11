@@ -102,16 +102,25 @@ test("the markdown fallback still works, so an un-migrated coder is not stranded
   assert.equal(r.checks.test, "pass");
 });
 
-test("the reviewer protocol states the FINDING line the parser promotes from", () => {
+test("the reviewer protocol states the findings shape the parser promotes from", () => {
   const protocol = readFileSync(join(REPO, "agents/crew-code-reviewer/protocol.md"), "utf8");
-  assert.match(protocol, /FINDING:\s*CRITICAL\s*\|\s*<path>:<line>\s*\|/);
+  assert.match(protocol, /"severity": "CRITICAL"/);
   assert.match(protocol, /verifiable fix criterion/);
-  // The verdict line it is printed beneath is the other half of the same contract.
-  assert.match(protocol, /^AC: all-met/m);
+  // The verdict field it is printed beneath is the other half of the same contract.
+  assert.match(protocol, /"verdict": "all-met"/);
 
   // And the shape the protocol shows is the shape the parser reads.
   const parsed = parseReviewReport(
-    ["## Branch: crew/f/x (x)", "AC: all-met", "", "### Findings", "FINDING: CRITICAL | src/db.ts:7 | Parameterise the query", ""].join("\n"),
+    [
+      "## Branch: crew/f/x (x)",
+      "```json",
+      JSON.stringify({
+        branch: "crew/f/x",
+        verdict: "all-met",
+        findings: [{ severity: "CRITICAL", location: "src/db.ts:7", criterion: "Parameterise the query" }],
+      }),
+      "```",
+    ].join("\n"),
   );
   assert.equal(parsed.verdict, "all-met");
   assert.deepEqual(parsed.findings, [
@@ -119,11 +128,11 @@ test("the reviewer protocol states the FINDING line the parser promotes from", (
   ]);
 });
 
-test("the triage protocol states the three-line verdict the parser reads, and never trusts the coder's own diagnosis", () => {
+test("the triage protocol states the json verdict the parser reads, and never trusts the coder's own diagnosis", () => {
   const protocol = readFileSync(join(REPO, "agents/crew-triage/protocol.md"), "utf8");
-  assert.match(protocol, /^FIXABLE: yes \| no$/m);
-  assert.match(protocol, /^CATEGORY:/m);
-  assert.match(protocol, /^DETAIL:/m);
+  assert.match(protocol, /"fixable": "yes \| no"/);
+  assert.match(protocol, /"category":/);
+  assert.match(protocol, /"detail":/);
   // Independence from the coder is the whole point of a separate agent — state it, not
   // just imply it, the same way the reviewer protocol states "no branch is blocked or
   // re-queued on a finding" rather than leaving that to be inferred.
@@ -131,7 +140,7 @@ test("the triage protocol states the three-line verdict the parser reads, and ne
 
   // And the shape the protocol shows is the shape the parser reads.
   const parsed = parseTriageReport(
-    ["FIXABLE: yes", "CATEGORY: wrong dependency version", "DETAIL: pinned a version that 404s"].join("\n"),
+    ["```json", JSON.stringify({ fixable: "yes", category: "wrong dependency version", detail: "pinned a version that 404s" }), "```"].join("\n"),
   );
   assert.equal(parsed.ok, true);
   assert.equal(parsed.fixable, true);
