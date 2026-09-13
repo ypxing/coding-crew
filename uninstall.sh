@@ -43,7 +43,7 @@ usage() {
   echo ""
   echo "Examples:"
   echo "  ./uninstall.sh --user                        # remove all from \$HOME"
-  echo "  ./uninstall.sh --user --skills tdd,caveman   # remove specific skills from \$HOME"
+  echo "  ./uninstall.sh --user --skills tdd,to-issues   # remove specific skills from \$HOME"
   exit 1
 }
 

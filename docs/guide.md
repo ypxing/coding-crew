@@ -24,7 +24,6 @@ THIS REPO (source)
 │   ├── solve-issue/
 │   ├── domain-modeling/
 │   ├── crew-grill/
-│   ├── caveman/
 │   └── ...
 └── docs/
     └── agents/
@@ -261,9 +260,7 @@ YOUR_PROJECT/
 │       ├── dep-install/
 │       ├── solve-issue/
 │       ├── crew-address-findings/
-│       ├── caveman/           ← installed with crew-afk
 │       ├── address-pr-comments/    ← installed with "all"
-│       ├── improve-codebase-architecture/  ← installed with "all"
 │       ├── domain-modeling/   ← installed with "all"
 │       ├── to-issues/         ← installed with "all"
 │       ├── to-prd/            ← installed with "all"
@@ -405,8 +402,6 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 | Turn a feature idea into a PRD                     | `/to-prd`                        |
 | Break a PRD into issues                            | `/to-issues`                     |
 | Address GitHub PR review comments                  | `/address-pr-comments`           |
-| Find architecture improvement opportunities        | `/improve-codebase-architecture` |
-| Reduce token usage during long sessions            | `/caveman`                       |
 
 ---
 

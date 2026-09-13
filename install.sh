@@ -50,7 +50,7 @@ fi
 if [[ "$AGENT" == "--skills" ]]; then
   SKILLS_LIST="${3:-}"
   if [[ -z "$SKILLS_LIST" ]]; then
-    echo "Error: --skills requires a comma-separated list (e.g. --skills tdd,caveman)" >&2
+    echo "Error: --skills requires a comma-separated list (e.g. --skills tdd,to-issues)" >&2
     usage
   fi
   AGENT="--skill"  # normalise so later dispatch hits the skill path
@@ -70,7 +70,7 @@ usage() {
   echo "  platform:        all (default), claude, copilot, pi, codex"
   echo "  agent:           all (default), crew-code-reviewer, crew-coder"
   echo "  --skill:         install a single skill (e.g. to-issues)"
-  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,caveman,to-issues)"
+  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd)"
   echo "  --update:        re-install only agents/skills whose version changed since last install"
   echo "  --version:       pin to a release tag (e.g. v1.2.0) or 'latest' to resolve the newest release"
   echo "  --from-lockfile: install from a lockfile (defaults to ./crew.lock; fetches pinned registry version and installs listed items)"
@@ -78,7 +78,7 @@ usage() {
   echo "Examples:"
   echo "  ./install.sh                                      # install everything into project"
   echo "  ./install.sh claude --skill tdd                   # one skill into project"
-  echo "  ./install.sh claude --skills tdd,caveman          # multiple skills at once"
+  echo "  ./install.sh claude --skills tdd,to-issues          # multiple skills at once"
   echo "  ./install.sh claude --skill crew-afk              # crew-afk + crew-coder + crew-code-reviewer"
   echo "  ./install.sh --update                             # update all installed agents/skills"
   echo "  ./install.sh --from-lockfile                      # install from ./crew.lock"

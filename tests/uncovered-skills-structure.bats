@@ -83,20 +83,6 @@ setup() {
   grep -q 'ADR' "$SCRIPT_DIR/skills/domain-modeling/SKILL.md"
 }
 
-# --- caveman ---
-
-@test "caveman SKILL.md exists" {
-  [ -f "$SCRIPT_DIR/skills/caveman/SKILL.md" ]
-}
-
-@test "caveman SKILL.md references token reduction" {
-  grep -qi 'token' "$SCRIPT_DIR/skills/caveman/SKILL.md"
-}
-
-@test "caveman SKILL.md describes compressed communication mode" {
-  grep -qi 'compress\|token.*reduc\|reduc.*token\|75%\|caveman' "$SCRIPT_DIR/skills/caveman/SKILL.md"
-}
-
 # --- address-pr-comments ---
 
 @test "address-pr-comments SKILL.md exists" {
@@ -111,16 +97,3 @@ setup() {
   grep -qi 'PR\|pull request' "$SCRIPT_DIR/skills/address-pr-comments/SKILL.md"
 }
 
-# --- improve-codebase-architecture ---
-
-@test "improve-codebase-architecture SKILL.md exists" {
-  [ -f "$SCRIPT_DIR/skills/improve-codebase-architecture/SKILL.md" ]
-}
-
-@test "improve-codebase-architecture SKILL.md references CONTEXT.md" {
-  grep -q 'CONTEXT\.md' "$SCRIPT_DIR/skills/improve-codebase-architecture/SKILL.md"
-}
-
-@test "improve-codebase-architecture SKILL.md describes refactoring or deepening opportunities" {
-  grep -qi 'refactor\|deepen\|architecture' "$SCRIPT_DIR/skills/improve-codebase-architecture/SKILL.md"
-}

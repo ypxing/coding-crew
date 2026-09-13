@@ -4,7 +4,7 @@
 #   curl -fsSL .../bootstrap.sh | bash -s -- copilot
 #   curl -fsSL .../bootstrap.sh | bash -s -- pi
 #   curl -fsSL .../bootstrap.sh | bash -s -- codex
-#   curl -fsSL .../bootstrap.sh | bash -s -- copilot --skills tdd,caveman
+#   curl -fsSL .../bootstrap.sh | bash -s -- copilot --skills tdd,to-issues
 #   curl -fsSL .../bootstrap.sh | bash -s -- --project
 #   curl -fsSL .../bootstrap.sh | bash -s -- --version v1.0.0
 #   curl -fsSL .../bootstrap.sh | bash -s -- --version latest

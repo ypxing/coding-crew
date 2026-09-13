@@ -161,12 +161,10 @@ Use `protocol.md` for markdown instructions, `workflow.js` for Workflow scripts.
 | `solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
 | `crew-address-findings` | Triage and fix code review findings using TDD |
 | `address-pr-comments` | Fetch PR review comments, implement sensible ones with TDD |
-| `improve-codebase-architecture` | Find deepening opportunities for testability and AI-navigability |
 | `domain-modeling` | Update CONTEXT.md glossary and create ADRs inline as decisions crystallise |
 | `to-issues` | Break plan/PRD into independently-grabbable issues |
 | `to-prd` | Synthesize conversation into PRD and publish to tracker |
 | `crew-plan` | Full design pipeline: grill → PRD → issues. Add "with docs" to also update CONTEXT.md and ADRs |
-| `caveman` | Ultra-compressed communication mode (~75% token reduction) |
 | `dep-install` | Detect install mode (host/docker) and install dependencies once |
 
 ---

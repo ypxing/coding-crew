@@ -119,20 +119,6 @@ teardown() {
   [ -f "$TEMP_DIR/.claude/skills/configure-tracker/scripts/configure-tracker-auto.sh" ]
 }
 
-@test "installing crew-afk does not drag in the unrelated caveman skill" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-
-  # caveman is a communication mode, not part of a sprint. It is still installable
-  # on its own; it is just no longer a dependency of every crew-afk install.
-  [ ! -d "$TEMP_DIR/.claude/skills/caveman" ]
-  run jq -r '.skills["crew-afk"].deps | index("caveman")' "$SCRIPT_DIR/registry.json"
-  [ "$output" = "null" ]
-
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill caveman
-  [ -f "$TEMP_DIR/.claude/skills/caveman/SKILL.md" ]
-}
-
 @test "solve-issue ships no feature-branch-setup.sh: its step 0 is a guard, not a branch creation" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue

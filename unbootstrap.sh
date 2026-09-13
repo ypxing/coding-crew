@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
-#   curl -fsSL .../unbootstrap.sh | bash -s -- --skills tdd,caveman
+#   curl -fsSL .../unbootstrap.sh | bash -s -- --skills tdd,to-issues
 #   curl -fsSL .../unbootstrap.sh | bash -s -- --agent coder
 #   curl -fsSL .../unbootstrap.sh | bash -s -- --project
 set -euo pipefail

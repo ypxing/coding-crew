@@ -167,16 +167,6 @@
         "tdd"
       ]
     },
-    "improve-codebase-architecture": {
-      "version": "1.1.0",
-      "source-dir": "improve-codebase-architecture",
-      "description": "Find deepening opportunities \u2014 refactors that turn shallow modules into deep ones for testability and AI-navigability.",
-      "source": "mattpocock/skills",
-      "install": ".claude/skills/improve-codebase-architecture",
-      "deps": [
-        "domain-modeling"
-      ]
-    },
     "to-issues": {
       "version": "1.4.1",
       "source-dir": "to-issues",
@@ -217,13 +207,6 @@
         "to-prd",
         "to-issues"
       ]
-    },
-    "caveman": {
-      "version": "1.0.0",
-      "source-dir": "caveman",
-      "description": "Ultra-compressed communication mode. Cuts token usage ~75% by speaking like caveman while keeping full technical accuracy. Supports lite/full/ultra and wenyan intensity levels.",
-      "source": "JuliusBrussee/crew-caveman",
-      "install": ".claude/skills/caveman"
     },
     "configure-tracker": {
       "version": "1.1.3",
