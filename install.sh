@@ -91,7 +91,9 @@ usage() {
   echo "  platform:        all (default), claude, copilot, pi, codex"
   echo "  agent:           all (default), crew-code-reviewer, crew-coder"
   echo "  --skill:         install a single skill (e.g. to-issues)"
-  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd)"
+  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd);"
+  echo "                   treated as the full desired set — any skill from a prior --skills"
+  echo "                   install that's missing from this list is uninstalled"
   echo "  --update:        re-install only agents/skills whose version changed since last install"
   echo "  --version:       pin to a release tag (e.g. v1.2.0) or 'latest' to resolve the newest release"
   echo "  --from-lockfile: install from a lockfile (defaults to ./crew.lock; fetches pinned registry version and installs listed items)"
@@ -864,6 +866,28 @@ write_manifest() {
   echo "  .coding-crew/manifest.json"
 }
 
+# --skills a,b,c is a declaration of the full desired skill set, but write_manifest's
+# merge only adds/updates keys — it never drops one, so a skill dropped from a repeat
+# --skills call would keep living on disk with nothing to remove it. This is install.sh's
+# only removal path; it shells out to uninstall.sh's --skill (the single writer of skill
+# files) rather than duplicating that removal logic here, then deletes the pruned key from
+# the manifest on disk so the write_manifest() merge below doesn't resurrect it.
+prune_skills_not_in() {
+  local requested="$1"
+  local manifest="$REPO_ROOT/.coding-crew/manifest.json"
+  [[ -f "$manifest" ]] || return 0
+  local existing name
+  existing=$(jq -r '.skills | keys[]?' "$manifest")
+  [[ -n "$existing" ]] || return 0
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    grep -qxF "$name" <<< "$requested" && continue
+    echo "  pruning $name (not in --skills list)"
+    TARGET_REPO="$REPO_ROOT" "$SCRIPT_DIR/uninstall.sh" --skill "$name" | sed 's/^/  /'
+    jq --arg n "$name" 'del(.skills[$n])' "$manifest" > "$manifest.tmp" && mv "$manifest.tmp" "$manifest"
+  done <<< "$existing"
+}
+
 # git remotes are often SSH (git@github.com:owner/repo.git); the release/tarball
 # endpoints need an https URL, so normalise before using or recording one.
 normalize_registry_url() {
@@ -1377,11 +1401,16 @@ if [[ "$AGENT" == "--skill" ]]; then
     echo "Skills: $SKILLS_LIST"
     echo "---"
     IFS=',' read -ra _skills_arr <<< "$SKILLS_LIST"
+    _requested_skills=""
     for _s in "${_skills_arr[@]}"; do
       _s="${_s// /}"  # trim spaces
-      [[ -n "$_s" ]] && install_single_skill "$_s"
+      if [[ -n "$_s" ]]; then
+        install_single_skill "$_s"
+        _requested_skills+="$_s"$'\n'
+      fi
     done
-    unset _skills_arr _s
+    prune_skills_not_in "$_requested_skills"
+    unset _skills_arr _s _requested_skills
   else
     # --skill <name>  path
     SKILL_NAME="${3:-}"

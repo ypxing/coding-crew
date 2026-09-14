@@ -13,6 +13,16 @@
   hops to a findable newer bash (Homebrew's common install locations, or `PATH`), and exits with
   `brew install bash` guidance if none exists.
 
+### Added
+
+- **`install.sh claude --skills a,b,c` now treats that list as the full desired skill set:** a
+  name present in a prior `--skills` install but missing from this one is uninstalled, instead
+  of being silently left on disk forever. `write_manifest()`'s merge only adds/updates keys, so
+  without this a shrunk `--skills` list had no way to actually drop anything. The new
+  `prune_skills_not_in()` shells out to `uninstall.sh --skill` — the existing single writer of
+  skill removal — rather than duplicating that logic, then deletes the pruned key from
+  `manifest.json` so the merge doesn't resurrect it.
+
 ## [1.29.87]
 
 ### Removed

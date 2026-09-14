@@ -260,6 +260,24 @@ teardown() {
   [[ ! "$output" =~ "@@" ]]
 }
 
+@test "--skills is the full desired set: a name dropped from the list is uninstalled" {
+  cd "$SCRIPT_DIR"
+
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skills tdd,to-issues,to-prd > /dev/null
+  [ -d "$TEMP_DIR/.claude/skills/to-prd" ]
+  run jq -r '.skills | has("to-prd")' "$TEMP_DIR/.coding-crew/manifest.json"
+  [ "$output" == "true" ]
+
+  run bash -c "cd '$SCRIPT_DIR' && TARGET_REPO='$TEMP_DIR' ./install.sh claude --skills tdd,to-issues"
+
+  [[ "$output" =~ "pruning to-prd" ]]
+  [ ! -d "$TEMP_DIR/.claude/skills/to-prd" ]
+  [ -d "$TEMP_DIR/.claude/skills/tdd" ]
+  [ -d "$TEMP_DIR/.claude/skills/to-issues" ]
+  run jq -r '.skills | has("to-prd")' "$TEMP_DIR/.coding-crew/manifest.json"
+  [ "$output" == "false" ]
+}
+
 @test "reinstalling an unmodified install reports no updates" {
   cd "$SCRIPT_DIR"
 
