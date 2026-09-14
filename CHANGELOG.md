@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.88]
+
+### Fixed
+
+- **`install.sh` now re-execs into a newer bash instead of dying with `declare: -A: invalid
+  option` on macOS.** Apple's stock `/bin/bash` is 3.2 (frozen there since the GPLv2→GPLv3
+  switch) and `install.sh`'s own `#!/bin/bash` shebang is resolved by the kernel from that
+  hardcoded path, not from `$PATH` — so a newer Homebrew bash already on a user's `PATH` was
+  never picked up just by running the script (which is what `bootstrap.sh`'s `exec "$INSTALL"`
+  does). The registry-read cache needs `declare -A` (bash ≥ 4). The script now detects bash < 4,
+  hops to a findable newer bash (Homebrew's common install locations, or `PATH`), and exits with
+  `brew install bash` guidance if none exists.
+
 ## [1.29.87]
 
 ### Removed

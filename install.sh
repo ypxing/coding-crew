@@ -1,4 +1,25 @@
 #!/bin/bash
+# macOS ships bash 3.2 at /bin/bash (Apple froze it there after the GPLv2 -> GPLv3
+# switch) and this script's own `#!/bin/bash` shebang is resolved by the kernel from
+# that hardcoded path, not from $PATH — so a newer Homebrew bash already on a user's
+# PATH is never picked up just by running this file directly. The registry-read cache
+# below needs `declare -A` (bash >= 4), so hop to a newer bash if one is findable
+# before anything else runs, and fail with actionable advice if none is.
+if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 && -z "${_CODING_CREW_REEXEC:-}" ]]; then
+  for _candidate in /opt/homebrew/bin/bash /usr/local/bin/bash /usr/local/opt/bash/bin/bash $(command -v bash 2>/dev/null); do
+    [[ -x "$_candidate" ]] || continue
+    _candidate_major=$("$_candidate" -c 'echo "${BASH_VERSINFO[0]}"' 2>/dev/null) || continue
+    if [[ "$_candidate_major" =~ ^[0-9]+$ && "$_candidate_major" -ge 4 ]]; then
+      export _CODING_CREW_REEXEC=1
+      exec "$_candidate" "$0" "$@"
+    fi
+  done
+  echo "Error: coding-crew's install.sh requires bash >= 4 (found bash ${BASH_VERSION:-unknown})." >&2
+  echo "On macOS this is Apple's stock /bin/bash. Install a newer bash and re-run, e.g.:" >&2
+  echo "  brew install bash" >&2
+  exit 1
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
