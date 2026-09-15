@@ -208,12 +208,12 @@ EOF
   [[ "$output" == *"1 source file(s) found"* ]]
 }
 
-# --- Skip: cache already exists (bootstrap-once, no staleness re-check) ---
+# --- Skip: cache already exists AND is complete (bootstrap-once, no staleness re-check) ---
 
-@test "skips when .coding-crew/dev-commands.json already exists, regardless of source content" {
+@test "skips when .coding-crew/dev-commands.json already has all six fields, regardless of source content" {
   echo "claude notes" > CLAUDE.md
   mkdir -p .coding-crew
-  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null}' > .coding-crew/dev-commands.json
+  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null}' > .coding-crew/dev-commands.json
 
   run bash "$DISCOVER_SCRIPT"
 
@@ -223,12 +223,52 @@ EOF
   [[ "$output" != *"command discovery prompt"* ]]
 }
 
-@test "does not re-run just because a source doc changed, once the cache file exists" {
+@test "does not re-run just because a source doc changed, once the cache file is complete" {
   echo "claude notes v1" > CLAUDE.md
   mkdir -p .coding-crew
-  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null}' > .coding-crew/dev-commands.json
+  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null}' > .coding-crew/dev-commands.json
 
   echo "claude notes v2 — totally different content now" > CLAUDE.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skipped"* ]]
+  [[ "$output" != *"command discovery prompt"* ]]
+}
+
+# --- Does not skip: cache exists but is missing one or more of the six fields ---
+
+@test "does not skip when the cache file exists but is missing a field (e.g. a partial write from a failed dispatch)" {
+  echo "claude notes" > CLAUDE.md
+  mkdir -p .coding-crew
+  # Only test/lint/typecheck ever got written (install/env/credential_target never asked).
+  printf '{"test": "npm test", "lint": null, "typecheck": null}' > .coding-crew/dev-commands.json
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == *"command discovery prompt"* ]]
+}
+
+@test "does not skip when the cache file only has ensure-deps.sh's own fields (install_mode/docker_service), not any of the six discovery fields" {
+  echo "claude notes" > CLAUDE.md
+  mkdir -p .coding-crew
+  printf '{"docker_service": "node", "install_mode": "docker"}' > .coding-crew/dev-commands.json
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == *"command discovery prompt"* ]]
+}
+
+@test "treats a field present as JSON null as already discovered, not missing" {
+  echo "claude notes" > CLAUDE.md
+  mkdir -p .coding-crew
+  # All six present, every discovery field explicitly null — still complete.
+  printf '{"test": null, "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null}' > .coding-crew/dev-commands.json
 
   run bash "$DISCOVER_SCRIPT"
 

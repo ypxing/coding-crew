@@ -55,9 +55,14 @@ set -euo pipefail
 # Skips (mechanically, no model call, no tokens) when either:
 #   1. none of the known source files exist — verify-worktree.sh's own ecosystem-convention
 #      fallback already covers this case for free, so there is nothing to ask a model
-#   2. the committed .coding-crew/dev-commands.json already exists — bootstrap-once, not a
-#      recurring staleness check: the file is committed and human-editable, so it is trusted
-#      as-is, indefinitely, until a human clears it or explicitly asks for --refresh
+#   2. the committed .coding-crew/dev-commands.json already has all six fields (test, lint,
+#      typecheck, install, env, credential_target) — any value, including null, counts as
+#      "already discovered" for that field. This is bootstrap-once, not a recurring staleness
+#      check: the file is committed and human-editable, so a *complete* file is trusted as-is,
+#      indefinitely, until a human clears it or explicitly asks for --refresh. A file missing
+#      even one field — e.g. only ensure-deps.sh's own install_mode/docker_service ever landed,
+#      because an earlier sprint's model dispatch failed before writing any of these six — is
+#      not complete and does not trigger this skip.
 #
 # Invocation: bash "<skill-dir>/scripts/discover-commands.sh" [--refresh]
 # Env: CREW_COMMANDS_REFRESH=1 has the same effect as --refresh.
@@ -94,6 +99,38 @@ if [ -z "$MAIN_ROOT" ]; then
   MAIN_ROOT=$(_main_root_of "$(pwd)") || MAIN_ROOT=$(git rev-parse --show-toplevel)
 fi
 CACHE_FILE="$MAIN_ROOT/.coding-crew/dev-commands.json"
+
+# The six categories write-commands-cache.sh persists. A key is "already discovered" once it
+# is *present* in the cache file with any value — including JSON `null`, which means "a model
+# already looked and confirmed no such command exists" (see write-commands-cache.sh's own
+# comment on that distinction). A key that is absent entirely means nobody has ever asked.
+# This matters because ensure-deps.sh writes its own two fields (install_mode/docker_service —
+# a *different* file section, not one of these six) independently of this script, regardless
+# of whether discovery ever ran; a sprint whose first attempt failed before writing anything
+# (an expired credential, a dispatch timeout) can leave this same cache file on disk with none
+# of these six keys in it. Trusting *any* existing file, as this script used to, then means
+# discovery never gets a second chance.
+CACHE_FIELDS=(test lint typecheck install env credential_target)
+
+# _cache_field_present <file> <key> — true if <key> appears in <file> with a quoted-string or
+# `null` value. Mirrors write-commands-cache.sh's own _extract_field regex so "present" means
+# the same thing to both scripts.
+_cache_field_present() {
+  local file="$1" key="$2"
+  [ -f "$file" ] || return 1
+  grep -q "\"$key\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$file"
+}
+
+# _cache_complete <file> — true only if every one of the six fields above is present (any
+# value, including null). A cache missing even one — the partial-write scenario above — is
+# not "already discovered" and must not make this script skip.
+_cache_complete() {
+  local file="$1" key
+  for key in "${CACHE_FIELDS[@]}"; do
+    _cache_field_present "$file" "$key" || return 1
+  done
+  return 0
+}
 
 # Fixed, deterministic order — keeps the hash (and the prompt's file order) stable across
 # runs regardless of filesystem iteration order. Not tied to any one repo's stack: covers the
@@ -143,9 +180,13 @@ if [ "${#FOUND_FILES[@]}" -eq 0 ]; then
   exit 0
 fi
 
-# Bootstrap-once, not a recurring staleness re-check: once the committed cache file exists,
-# it is trusted as-is until a human clears it or explicitly passes --refresh.
-if [ "$REFRESH" != "1" ] && [ -f "$CACHE_FILE" ]; then
+# Bootstrap-once, not a recurring staleness re-check: once every one of the six fields is
+# present in the committed cache file (any value, including null — see _cache_complete
+# above), the file is trusted as-is until a human clears it or explicitly passes --refresh.
+# A cache missing one or more fields (e.g. only ensure-deps.sh's install_mode/docker_service
+# ever got written, because the model dispatch that would have written these six failed
+# first) is not "already discovered" — fall through and ask again so the gap gets filled.
+if [ "$REFRESH" != "1" ] && [ -f "$CACHE_FILE" ] && _cache_complete "$CACHE_FILE"; then
   echo "Command discovery: skipped (already cached at .coding-crew/dev-commands.json)"
   exit 0
 fi
