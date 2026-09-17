@@ -164,6 +164,11 @@ per project, `~/.copilot/` when installed user-level (Copilot does not read `.co
 repo); pi → `.pi/` per project, `~/.pi/agent/` when installed user-level; Codex → skills in
 `.agents/skills/`, agents in `.codex/agents/*.toml`.
 
+A user-level install honors each platform's own config-dir override instead of assuming `$HOME`:
+`CLAUDE_CONFIG_DIR` (Claude Code), `COPILOT_HOME` (Copilot CLI), `PI_CODING_AGENT_DIR` (pi),
+`CODEX_HOME` (Codex). Set the one(s) you use before installing user-level and files land where
+that CLI actually looks; unset, each falls back to its own `$HOME`-relative default above.
+
 On every platform, `/crew-afk` runs each coder as its own child process in its own git worktree —
 the matching CLI (`pi`, `codex`, `claude`, or `copilot`) must be on `PATH`. Two platform-specific
 requirements:

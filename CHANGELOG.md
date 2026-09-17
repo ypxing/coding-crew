@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.90]
+
+### Added
+
+- **A user-level install now honors each platform's own config-dir override instead of always
+  writing under `$HOME`.** `install.sh`/`uninstall.sh` previously hardcoded `$HOME/.claude`,
+  `$HOME/.copilot`, `$HOME/.pi/agent`, `$HOME/.codex` at user scope, so a user who points their
+  CLI elsewhere via `CLAUDE_CONFIG_DIR`, `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, or `CODEX_HOME`
+  got files installed where that CLI never reads them. Both scripts now resolve each platform's
+  destination through the matching env var (falling back to the `$HOME`-relative default when
+  unset), and `uninstall.sh` removes from wherever `install.sh` actually wrote.
+
 ## [1.29.89]
 
 ### Fixed

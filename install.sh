@@ -112,6 +112,8 @@ usage() {
   echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
   echo ""
   echo "Set TARGET_REPO to install into a different repo root."
+  echo "A user-level install (TARGET_REPO=\$HOME) honors each platform's own config-dir override:"
+  echo "  CLAUDE_CONFIG_DIR (claude), COPILOT_HOME (copilot), PI_CODING_AGENT_DIR (pi), CODEX_HOME (codex)."
   exit 1
 }
 
@@ -216,6 +218,34 @@ adjust_platform_path() {
   else
     printf '%s' "$path"
   fi
+}
+
+# Each platform's own CLI can be told to read its config from somewhere other than the
+# dot-dir default under $HOME — Claude Code via CLAUDE_CONFIG_DIR, Copilot CLI via
+# COPILOT_HOME, pi via PI_CODING_AGENT_DIR, Codex via CODEX_HOME. A user-scope install
+# that kept writing to $HOME/.claude etc regardless would land where that tool never
+# looks once the override is set. Only applies at user scope ($REPO_ROOT == $HOME) —
+# these variables move a user's home config, not a project checkout's tracked files.
+# Sets $_DEST_ROOT (absolute base dir to use in place of $REPO_ROOT) and $_DEST_REL
+# (path's remainder under that base); a caller joins them once and reuses the result,
+# rather than calling this per file, to keep the fork count down (see the jq-cache
+# comment above for why that matters on Git Bash).
+_DEST_ROOT=""; _DEST_REL=""
+resolve_dest() {
+  local platform="$1" path="$2" env_name prefix
+  _DEST_ROOT="$REPO_ROOT"; _DEST_REL="$path"
+  [[ "$REPO_ROOT" == "$HOME" ]] || return 0
+  case "$platform" in
+    claude)  env_name=CLAUDE_CONFIG_DIR;   prefix=".claude/" ;;
+    copilot) env_name=COPILOT_HOME;        prefix=".copilot/" ;;
+    pi)      env_name=PI_CODING_AGENT_DIR; prefix=".pi/agent/" ;;
+    codex)   env_name=CODEX_HOME;          prefix=".codex/" ;;
+    *) return 0 ;;
+  esac
+  local env_val="${!env_name:-}"
+  [[ -n "$env_val" && "$path" == "$prefix"* ]] || return 0
+  _DEST_ROOT="$env_val"
+  _DEST_REL="${path#$prefix}"
 }
 
 # A project install used to write Copilot resources to .copilot/, which Copilot does not
@@ -466,7 +496,8 @@ install_agent() {
       local shim_dest_raw="$shim_dest"
       shim_dest=$(adjust_platform_path "$target_platform" "$shim_dest")
       prune_legacy_copilot_path "$target_platform" "$shim_dest_raw"
-      expand_shim "$shim_src" "$REPO_ROOT/$shim_dest"
+      resolve_dest "$target_platform" "$shim_dest"
+      expand_shim "$shim_src" "$_DEST_ROOT/$_DEST_REL"
     fi
   done
 
@@ -540,16 +571,18 @@ install_single_skill() {
   local skill_dest_declared="$skill_dest"
   skill_dest=$(adjust_platform_path "$PLATFORM" "$skill_dest")
   prune_legacy_copilot_path "$PLATFORM" "$skill_dest_declared"
-  
+  resolve_dest "$PLATFORM" "$skill_dest"
+  local skill_root="$_DEST_ROOT/$_DEST_REL"
+
   # Resolve source directory: use source-dir field if present, otherwise use skill name
   local source_dir
   _skill_scalar "$skill_name" source_dir '.skills[$s]["source-dir"] // $s'
   source_dir="$_SKILL_SCALAR"
-  
+
   [[ -d "$SCRIPT_DIR/skills/$source_dir" ]] || { echo "Error: skill source not found: skills/$source_dir" >&2; exit 1; }
   # Remove a stale symlink before mkdir -p; mkdir would succeed but cp into it would fail
-  [[ -L "$REPO_ROOT/$skill_dest" ]] && rm -f "$REPO_ROOT/$skill_dest"
-  mkdir -p "$REPO_ROOT/$skill_dest"
+  [[ -L "$skill_root" ]] && rm -f "$skill_root"
+  mkdir -p "$skill_root"
   
   # Resolve which SKILL.md this platform gets BEFORE copying. The installed file is
   # always named SKILL.md, so diffing the shared fallback against a previously
@@ -605,7 +638,7 @@ install_single_skill() {
     if [[ "$foreign_index" == *"|$rel_path|"* ]]; then
       continue
     fi
-    local dest_file="$REPO_ROOT/$skill_dest/$rel_path"
+    local dest_file="$skill_root/$rel_path"
     local rel_dest="${dest_file#$REPO_ROOT/}"
     mkdir -p "$(dirname "$dest_file")"
 
@@ -634,8 +667,8 @@ install_single_skill() {
   local stale_body
   while IFS= read -r stale_body; do
     [[ -n "$stale_body" ]] && rm -f "$stale_body"
-  done < <(find "$REPO_ROOT/$skill_dest" -maxdepth 1 -name "*.SKILL.md" 2>/dev/null || true)
-  rm -rf "$REPO_ROOT/$skill_dest/fragments"
+  done < <(find "$skill_root" -maxdepth 1 -name "*.SKILL.md" 2>/dev/null || true)
+  rm -rf "$skill_root/fragments"
   # Files a skill installed in an earlier version and no longer ships. A stale copy is not
   # inert: an agent that lists the skill directory reads it, so a retired reference or a
   # developer README keeps costing tokens and can contradict the current body. Scoped per
@@ -647,13 +680,13 @@ install_single_skill() {
     solve-issue) retired_files=("scripts/feature-branch-setup.sh") ;;
   esac
   for retired in "${retired_files[@]+"${retired_files[@]}"}"; do
-    rm -f "$REPO_ROOT/$skill_dest/$retired"
+    rm -f "$skill_root/$retired"
   done
   # Drop other platforms' gated files left behind by older installs, which copied
   # every file regardless of platform.
   local foreign_file
   for foreign_file in "${foreign_files[@]+"${foreign_files[@]}"}"; do
-    rm -f "$REPO_ROOT/$skill_dest/$foreign_file"
+    rm -f "$skill_root/$foreign_file"
   done
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
@@ -663,15 +696,15 @@ install_single_skill() {
   local scripts_arr=()
   while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && scripts_arr+=("$_line"); done <<< "$scripts"
   if [[ "${#scripts_arr[@]}" -gt 0 ]]; then
-    mkdir -p "$REPO_ROOT/$skill_dest/scripts"
+    mkdir -p "$skill_root/scripts"
     for script in "${scripts_arr[@]}"; do
       local script_src="$SCRIPT_DIR/scripts/skill-utils/git-workflow/$script"
       if [[ ! -f "$script_src" ]]; then
         echo "Error: script source not found: scripts/skill-utils/git-workflow/$script" >&2
         exit 1
       fi
-      cp "$script_src" "$REPO_ROOT/$skill_dest/scripts/$script"
-      chmod +x "$REPO_ROOT/$skill_dest/scripts/$script"
+      cp "$script_src" "$skill_root/scripts/$script"
+      chmod +x "$skill_root/scripts/$script"
     done
     echo "  $skill_dest/scripts/ (${#scripts_arr[@]} scripts from skill-utils/git-workflow)"
   fi
@@ -788,10 +821,14 @@ warn_shadowing_user_installs() {
 
   local found=()
   local d
-  for d in "$HOME/.pi/agent/skills" "$HOME/.pi/agent/agents" \
-           "$HOME/.claude/skills" "$HOME/.claude/agents" \
-           "$HOME/.copilot/skills" "$HOME/.copilot/agents" \
-           "$HOME/.agents/skills" "$HOME/.codex/agents"; do
+  local pi_home="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+  local claude_home="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  local copilot_home="${COPILOT_HOME:-$HOME/.copilot}"
+  local codex_home="${CODEX_HOME:-$HOME/.codex}"
+  for d in "$pi_home/skills" "$pi_home/agents" \
+           "$claude_home/skills" "$claude_home/agents" \
+           "$copilot_home/skills" "$copilot_home/agents" \
+           "$HOME/.agents/skills" "$codex_home/agents"; do
     [[ -d "$d" ]] || continue
     local name
     for name in crew-afk crew-coder crew-code-reviewer solve-issue; do

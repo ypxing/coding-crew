@@ -110,12 +110,36 @@ rmdir_if_empty() {
   rmdir "$dir" 2>/dev/null
 }
 
-# Walk up from a removed path removing now-empty directories, stopping at REPO_ROOT.
+# Mirrors install.sh's resolve_dest: each platform's own CLI can be told to read its
+# config from somewhere other than the dot-dir default under $HOME (CLAUDE_CONFIG_DIR,
+# COPILOT_HOME, PI_CODING_AGENT_DIR, CODEX_HOME). A user-level uninstall must remove
+# from wherever install.sh actually wrote, or a copy under an active override is left
+# behind while this script reports removing it. Sets $_DEST_ROOT/$_DEST_REL; only ever
+# differs from ($REPO_ROOT, $path) at user scope with the platform's env var set.
+_DEST_ROOT=""; _DEST_REL=""
+resolve_dest() {
+  local platform="$1" path="$2" env_name prefix
+  _DEST_ROOT="$REPO_ROOT"; _DEST_REL="$path"
+  [[ "$REPO_ROOT" == "$HOME" ]] || return 0
+  case "$platform" in
+    claude)  env_name=CLAUDE_CONFIG_DIR;   prefix=".claude/" ;;
+    copilot) env_name=COPILOT_HOME;        prefix=".copilot/" ;;
+    pi)      env_name=PI_CODING_AGENT_DIR; prefix=".pi/agent/" ;;
+    codex)   env_name=CODEX_HOME;          prefix=".codex/" ;;
+    *) return 0 ;;
+  esac
+  local env_val="${!env_name:-}"
+  [[ -n "$env_val" && "$path" == "$prefix"* ]] || return 0
+  _DEST_ROOT="$env_val"
+  _DEST_REL="${path#$prefix}"
+}
+
+# Walk up from a removed path removing now-empty directories, stopping at $root —
+# normally REPO_ROOT, but the platform's own override root when resolve_dest moved it.
 prune_empty_dirs() {
-  local dir
-  dir=$(cd "$REPO_ROOT" 2>/dev/null && pwd) || return 0
-  local root="$dir"
-  dir="$(dirname "$REPO_ROOT/$1")"
+  local root="$1" rel="$2" dir
+  root=$(cd "$root" 2>/dev/null && pwd) || return 0
+  dir="$(dirname "$root/$rel")"
   while [[ "$dir" != "$root" && "$dir" == "$root"/* ]]; do
     rmdir_if_empty "$dir" || break
     echo "  removed ${dir#$root/}/"
@@ -144,11 +168,12 @@ remove_agent() {
     [[ -z "$path" ]] && continue
     while IFS= read -r candidate; do
       [[ -n "$candidate" ]] || continue
-      full="$REPO_ROOT/$candidate"
+      resolve_dest "$platform" "$candidate"
+      full="$_DEST_ROOT/$_DEST_REL"
       if [[ -f "$full" ]]; then
         rm -f "$full"
         echo "  removed $candidate"
-        prune_empty_dirs "$candidate"
+        prune_empty_dirs "$_DEST_ROOT" "$_DEST_REL"
         removed=1
       fi
     done < <(removal_candidates "$platform" "$path")
@@ -161,7 +186,7 @@ remove_agent() {
   if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
     rm -rf "$REPO_ROOT/$assets_dest"
     echo "  removed $assets_dest/"
-    prune_empty_dirs "$assets_dest"
+    prune_empty_dirs "$REPO_ROOT" "$assets_dest"
     removed=1
   fi
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
@@ -190,11 +215,12 @@ remove_skill() {
     [[ -z "$dest" ]] && continue
     while IFS= read -r candidate; do
       [[ -n "$candidate" ]] || continue
-      full="$REPO_ROOT/$candidate"
+      resolve_dest "$platform" "$candidate"
+      full="$_DEST_ROOT/$_DEST_REL"
       if [[ -d "$full" ]]; then
         rm -rf "$full"
         echo "  removed $candidate/"
-        prune_empty_dirs "$candidate"
+        prune_empty_dirs "$_DEST_ROOT" "$_DEST_REL"
         removed=1
       fi
     done < <(removal_candidates "$platform" "$dest")
@@ -210,7 +236,7 @@ remove_skill() {
   if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
     rm -rf "$REPO_ROOT/$assets_dest"
     echo "  removed $assets_dest/"
-    prune_empty_dirs "$assets_dest"
+    prune_empty_dirs "$REPO_ROOT" "$assets_dest"
   fi
 }
 
