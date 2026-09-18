@@ -106,6 +106,28 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
+@test "omits coverage from the cache when neither this response nor any prior write ever answered it" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  run grep -q '"coverage"' "$CACHE_FILE"
+  [ "$status" -ne 0 ]
+}
+
+@test "omits integration from the cache when neither this response nor any prior write ever answered it" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  run grep -q '"integration"' "$CACHE_FILE"
+  [ "$status" -ne 0 ]
+}
+
 @test "a response with only env recognisable writes only env, leaving the rest unasked" {
   echo "claude notes" > CLAUDE.md
   echo '{"env": "make env"}' > response.txt
@@ -128,6 +150,26 @@ teardown() {
 
   [ "$status" -eq 0 ]
   grep -q '"credential_target": *"\.npmrc"' "$CACHE_FILE"
+}
+
+@test "writes a seventh coverage command from a response that documents one" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "coverage": "npm test -- --coverage"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"coverage": *"npm test -- --coverage"' "$CACHE_FILE"
+}
+
+@test "writes an eighth integration command from a response that documents one" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "integration": "make test-integration"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"integration": *"make test-integration"' "$CACHE_FILE"
 }
 
 @test "a response with only credential_target recognisable writes only credential_target" {
@@ -170,6 +212,32 @@ teardown() {
   grep -q '"test": *"npm test"' "$CACHE_FILE"
 }
 
+@test "a later partial write preserves a coverage command already resolved by an earlier write" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"coverage": "npm test -- --coverage"}' > response.txt
+  bash "$WRITE_SCRIPT" --response-file response.txt
+
+  echo '{"test": "npm test", "lint": null, "typecheck": null}' > response2.txt
+  run bash "$WRITE_SCRIPT" --response-file response2.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"coverage": *"npm test -- --coverage"' "$CACHE_FILE"
+  grep -q '"test": *"npm test"' "$CACHE_FILE"
+}
+
+@test "a later partial write preserves a confirmed-null integration from an earlier write" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"integration": null}' > response.txt
+  bash "$WRITE_SCRIPT" --response-file response.txt
+
+  echo '{"test": "npm test"}' > response2.txt
+  run bash "$WRITE_SCRIPT" --response-file response2.txt
+
+  [ "$status" -eq 0 ]
+  grep -q '"integration": *null' "$CACHE_FILE"
+  grep -q '"test": *"npm test"' "$CACHE_FILE"
+}
+
 @test "a response that re-answers a field overwrites the earlier cached value for it" {
   echo "claude notes" > CLAUDE.md
   echo '{"install": "make bootstrap"}' > response.txt
@@ -196,6 +264,20 @@ teardown() {
   run grep -q "sourceHash" "$CACHE_FILE"
   [ "$status" -ne 0 ]
   for field in test lint typecheck install env credential_target; do
+    grep -q "\"$field\"" "$CACHE_FILE"
+  done
+}
+
+@test "the written cache has all eight fields when a response answers all eight, and no sourceHash key" {
+  echo "claude notes" > CLAUDE.md
+  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit", "install": "make bootstrap", "env": "make env", "credential_target": null, "coverage": "npm test -- --coverage", "integration": "make test-integration"}' > response.txt
+
+  run bash "$WRITE_SCRIPT" --response-file response.txt
+
+  [ "$status" -eq 0 ]
+  run grep -q "sourceHash" "$CACHE_FILE"
+  [ "$status" -ne 0 ]
+  for field in test lint typecheck install env credential_target coverage integration; do
     grep -q "\"$field\"" "$CACHE_FILE"
   done
 }

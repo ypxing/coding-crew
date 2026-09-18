@@ -14,7 +14,7 @@ set -uo pipefail
 # fence — no fence-stripping needed, since the regex just looks for the substring anywhere in
 # the response text.
 #
-# A response with none of the six fields recognisable is treated as a failed discovery, not
+# A response with none of the eight fields recognisable is treated as a failed discovery, not
 # as "everything is null": it exits non-zero and never touches any existing cache file, so a
 # bad model response cannot destroy a prior good (possibly hand-edited) cache.
 #
@@ -32,7 +32,7 @@ set -uo pipefail
 # bootstrap-once skip permanently foreclose a category nobody ever actually checked.
 #
 # Because a response is authoritative for whatever field it does name, a full re-discovery
-# (discover-commands.sh --refresh, which always asks about all six) is expected to overwrite
+# (discover-commands.sh --refresh, which always asks about all eight) is expected to overwrite
 # every field it names, including turning a previously-cached command back to null if the
 # model no longer finds one. Callers that only ever investigate a subset of fields must not
 # name the fields they did not check — naming one as null when it was never actually asked
@@ -54,9 +54,18 @@ set -uo pipefail
 # cached: ensure-deps.sh forwards a cached value to docker-install.sh's own --credential-target
 # flag, which passes it straight to ensure-env.sh.
 #
+# coverage is the seventh field: the local command that produces a test coverage report,
+# consumed by the add-tests skill in place of asking a model to guess one from scratch on
+# every run. Same optional/absent-vs-null semantics as the five fields above.
+#
+# integration is the eighth field: the command (if any) that runs a real dependency-backed
+# integration test tier, as distinct from a tier that only mocks the dependency away — also
+# consumed by the add-tests skill, to route external-dependency gap-fix issues to the real
+# tier instead of a mocked one. Same optional/absent-vs-null semantics as the other fields.
+#
 # Usage: bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file <path>
 
-FIELDS=(test lint typecheck install env credential_target)
+FIELDS=(test lint typecheck install env credential_target coverage integration)
 
 RESPONSE_FILE=""
 while [ $# -gt 0 ]; do
@@ -109,7 +118,7 @@ for f in "${FIELDS[@]}"; do
 done
 
 if [ "$ANY_FOUND" -eq 0 ]; then
-  echo "ERROR: could not find test, lint, typecheck, install, env, or credential_target in the response — leaving any existing cache untouched" >&2
+  echo "ERROR: could not find test, lint, typecheck, install, env, credential_target, coverage, or integration in the response — leaving any existing cache untouched" >&2
   echo "--- response was ---" >&2
   printf '%s\n' "$RESPONSE_TEXT" >&2
   exit 1

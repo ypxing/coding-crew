@@ -149,6 +149,35 @@ EOF
   [[ "$output" == *"guessing one here would only override"* ]]
 }
 
+@test "prompt also requests a coverage command, only when the source documents one" {
+  echo "some project notes" > AGENTS.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *'"coverage"'* ]]
+  [[ "$output" == *"coverage (the local command"* ]]
+  [[ "$output" == *"guessing one here would only override"* ]]
+}
+
+@test "prompt also requests a real dependency-backed integration command, only when explicitly discoverable" {
+  echo "some project notes" > AGENTS.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *'"integration"'* ]]
+  [[ "$output" == *"integration (the command"* ]]
+  [[ "$output" == *"mocks the dependency away"* ]]
+}
+
+@test "the example JSON response shape includes both coverage and integration" {
+  echo "some project notes" > AGENTS.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *'"coverage": "<command or null>"'* ]]
+  [[ "$output" == *'"integration": "<command or null>"'* ]]
+}
+
 @test "prompt instructs to ignore build/deploy/CI-pipeline steps" {
   echo "some project notes" > AGENTS.md
 
@@ -210,10 +239,10 @@ EOF
 
 # --- Skip: cache already exists AND is complete (bootstrap-once, no staleness re-check) ---
 
-@test "skips when .coding-crew/dev-commands.json already has all six fields, regardless of source content" {
+@test "skips when .coding-crew/dev-commands.json already has all eight fields, regardless of source content" {
   echo "claude notes" > CLAUDE.md
   mkdir -p .coding-crew
-  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null}' > .coding-crew/dev-commands.json
+  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null, "coverage": null, "integration": null}' > .coding-crew/dev-commands.json
 
   run bash "$DISCOVER_SCRIPT"
 
@@ -226,7 +255,7 @@ EOF
 @test "does not re-run just because a source doc changed, once the cache file is complete" {
   echo "claude notes v1" > CLAUDE.md
   mkdir -p .coding-crew
-  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null}' > .coding-crew/dev-commands.json
+  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null, "coverage": null, "integration": null}' > .coding-crew/dev-commands.json
 
   echo "claude notes v2 — totally different content now" > CLAUDE.md
 
@@ -235,6 +264,18 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"skipped"* ]]
   [[ "$output" != *"command discovery prompt"* ]]
+}
+
+@test "does not skip when the cache file has all six original fields but is missing coverage and integration" {
+  echo "claude notes" > CLAUDE.md
+  mkdir -p .coding-crew
+  printf '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null}' > .coding-crew/dev-commands.json
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == *"command discovery prompt"* ]]
 }
 
 # --- Does not skip: cache exists but is missing one or more of the six fields ---
@@ -267,8 +308,8 @@ EOF
 @test "treats a field present as JSON null as already discovered, not missing" {
   echo "claude notes" > CLAUDE.md
   mkdir -p .coding-crew
-  # All six present, every discovery field explicitly null — still complete.
-  printf '{"test": null, "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null}' > .coding-crew/dev-commands.json
+  # All eight present, every discovery field explicitly null — still complete.
+  printf '{"test": null, "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null, "coverage": null, "integration": null}' > .coding-crew/dev-commands.json
 
   run bash "$DISCOVER_SCRIPT"
 
