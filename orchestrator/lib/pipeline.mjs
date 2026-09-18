@@ -419,7 +419,20 @@ export async function runHousekeeping(ctx, worker) {
     return finishBlocked(ctx, worker, outcome, pre.reason ?? worker.report.notes ?? "blocked");
   }
   if (pre.status !== "complete") {
-    return finishPartial(ctx, worker, outcome, pre.reason ?? "partial");
+    // A coder's own honest partial self-report gets redispatched next round the same as an
+    // AC:unmet or fixable-verify-failure retry does — its pane (herdrPersistPane in runWorker)
+    // is worth carrying into that retry too, bounded to one reuse per issue like the other two.
+    const herdrEligible =
+      options.herdr && !!worker.dispatch.herdrTabId && sprint.herdrReuseState(issue.slug) === "none";
+    if (herdrEligible) {
+      sprint.markHerdrReusePending(issue.slug, {
+        tabId: worker.dispatch.herdrTabId,
+        paneId: worker.dispatch.herdrPaneId,
+        name: worker.dispatch.herdrName,
+        worktree: worker.worktree,
+      });
+    }
+    return finishPartial(ctx, worker, outcome, pre.reason ?? "partial", { keepWorktree: herdrEligible });
   }
 
   // --- gate 1: independent verification in the worktree ----------------------

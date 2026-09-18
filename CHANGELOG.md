@@ -16,6 +16,9 @@
 - **A worker dispatch that died (timeout, process crash, herdr transport failure) is now retried
   as `partial` instead of `blocked` when its branch already has commits** — there is real work
   worth resuming next round, not just a repeat failure to report.
+- **A coder's own honest partial self-report now reuses its already-open herdr pane for the
+  retry too**, the same one-reuse-per-issue bound `AC: unmet` and a fixable verify failure
+  already get.
 
 ## [1.29.90]
 
