@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.29.91]
+
+### Changed
+
+- **crew-afk keeps a failed herdr dispatch's pane open by default instead of closing it
+  immediately.** A `DISPATCH-FAIL` used to close the tab the moment it was logged, so the one
+  thing worth inspecting — what the pane actually rendered — was already gone. `CREW_HERDR_KEEP_PANE`
+  is no longer opt-in for this; set `CREW_HERDR_KEEP_PANE=0` to restore the old close-on-fail
+  behavior (e.g. to avoid panes piling up in unattended CI). A retry's fresh dispatch name now
+  folds in the round number (`i42-r2-...`) so it never collides with a still-open kept pane from
+  an earlier round under `agent_name_taken`.
+- **An `AC: unmet` review verdict now reuses the coder's already-open herdr pane for its retry**,
+  the same way a verify failure already did, instead of always starting the fix cold.
+- **A worker dispatch that died (timeout, process crash, herdr transport failure) is now retried
+  as `partial` instead of `blocked` when its branch already has commits** — there is real work
+  worth resuming next round, not just a repeat failure to report.
+
 ## [1.29.90]
 
 ### Added

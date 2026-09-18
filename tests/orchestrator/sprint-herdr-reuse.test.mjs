@@ -21,11 +21,11 @@ test("herdrReuseState is 'none' for a slug that was never queued", () => {
 
 test("markHerdrReusePending queues exactly one reuse, consumed once by consumeHerdrReusePending", () => {
   const s = sprint();
-  s.markHerdrReusePending("alpha", { tabId: "w1:t1", paneId: "w1:p1" });
+  s.markHerdrReusePending("alpha", { tabId: "w1:t1", paneId: "w1:p1", name: "i1-alpha-coder" });
   assert.equal(s.herdrReuseState("alpha"), "pending");
 
   const consumed = s.consumeHerdrReusePending("alpha");
-  assert.deepEqual(consumed, { tabId: "w1:t1", paneId: "w1:p1" });
+  assert.deepEqual(consumed, { tabId: "w1:t1", paneId: "w1:p1", name: "i1-alpha-coder" });
   assert.equal(s.herdrReuseState("alpha"), "used", "spending the one reuse leaves the slug permanently 'used'");
 });
 

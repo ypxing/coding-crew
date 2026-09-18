@@ -837,6 +837,27 @@ test("herdrDispatchName never collides across two different issue slugs, even wh
   assert.match(nameB, /^[a-z][a-z0-9_-]{0,31}$/);
 });
 
+test("herdrDispatchName folds the round into the name, right after the issue number, leading with a letter", () => {
+  const round1 = herdrDispatchName("implement-user-auth", "crew-coder", "42", 1);
+  const round2 = herdrDispatchName("implement-user-auth", "crew-coder", "42", 2);
+  assert.equal(round1, "i42-r1-implement-user-auth-coder");
+  assert.equal(round2, "i42-r2-implement-user-auth-coder");
+  assert.notEqual(round1, round2, "a same-issue retry's fresh name must never collide with an earlier round's kept-open pane");
+  assert.match(round1, /^[a-z][a-z0-9_-]{0,31}$/);
+});
+
+test("herdrDispatchName omits the round segment when none is given, unchanged from before rounds were folded in", () => {
+  assert.equal(herdrDispatchName("implement-user-auth", "crew-coder", "42", null), "i42-implement-user-auth-coder");
+  assert.equal(herdrDispatchName("implement-user-auth", "crew-coder", "42", undefined), "i42-implement-user-auth-coder");
+});
+
+test("herdrDispatchName still fits herdr's 32-char cap with an issue number, a round, and a long slug, falling back to the hash", () => {
+  const label = "implement-a-very-long-descriptive-issue-slug-that-exceeds-the-limit";
+  const name = herdrDispatchName(label, "crew-coder", "7", 3);
+  assert.match(name, /^[a-z][a-z0-9_-]{0,31}$/);
+  assert.match(name, /^i7-r3-.*-coder-[0-9a-f]{6}$/);
+});
+
 test("extractHerdrReply pulls the reply from between the echoed prompt and the trailing status line", () => {
   assert.equal(extractHerdrReply(RENDERED_REPLY, "Reply with exactly: herdr spike ok"), "herdr spike ok");
 });
@@ -2054,7 +2075,7 @@ test("dispatchViaHerdr leaves a successful dispatch's tab open when spec.herdrPe
   );
 });
 
-test("dispatchViaHerdr still closes the tab despite spec.herdrPersistPane when the dispatch itself failed", async () => {
+test("dispatchViaHerdr keeps a failed dispatch's tab open by default, naming it with the round so a same-issue retry never collides", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
   const effects = fakeHerdrEffects(
@@ -2065,7 +2086,7 @@ test("dispatchViaHerdr still closes the tab despite spec.herdrPersistPane when t
       json({ result: { agent: { interactive_ready: true } } }),
       err(1, "boom", "agent_prompt_stalled"),
       { code: 0, stdout: "", stderr: "" }, // agent read after the failed prompt
-      json({ result: { type: "ok" } }), // tab close — persistPane only defers closing on success
+      // No "tab close" response: a failed dispatch is kept open by default now.
     ],
     { mainRoot: root },
   );
@@ -2073,13 +2094,59 @@ test("dispatchViaHerdr still closes the tab despite spec.herdrPersistPane when t
   const result = await dispatchViaHerdr(
     effects,
     "claude",
-    spec(root, promptFile, { slug: "alpha", herdrPersistPane: true }),
+    spec(root, promptFile, { slug: "alpha", herdrPersistPane: true, round: 2 }),
     { timeoutMs: 60_000 },
   );
 
   assert.equal(result.code, 1);
-  assert.equal(result.herdrTabId, null, "a failed dispatch never hands back ids to keep open");
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
+  assert.equal(result.herdrTabId, "w1:t1", "a failed dispatch hands back its ids to keep open by default");
+  assert.equal(result.herdrName, "r2-alpha-coder");
+  assert.ok(
+    !effects._calls.some((c) => c[1] === "tab" && c[2] === "close"),
+    "the default keeps a failed dispatch's tab open for inspection",
+  );
+
+  const startCall = effects._calls.find((c) => c[1] === "agent" && c[2] === "start");
+  assert.equal(
+    startCall[3],
+    "r2-alpha-coder",
+    "the round folds into the pane's own herdr name, so a later retry's fresh name never collides with this kept-open one",
+  );
+});
+
+test("dispatchViaHerdr closes a failed dispatch's tab when CREW_HERDR_KEEP_PANE=0 opts out of the new default", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      err(1, "boom", "agent_prompt_stalled"),
+      { code: 0, stdout: "", stderr: "" }, // agent read after the failed prompt
+      json({ result: { type: "ok" } }), // tab close — opted back out of the keep-open default
+    ],
+    { mainRoot: root },
+  );
+
+  const prior = process.env.CREW_HERDR_KEEP_PANE;
+  process.env.CREW_HERDR_KEEP_PANE = "0";
+  try {
+    const result = await dispatchViaHerdr(
+      effects,
+      "claude",
+      spec(root, promptFile, { slug: "alpha", herdrPersistPane: true }),
+      { timeoutMs: 60_000 },
+    );
+
+    assert.equal(result.code, 1);
+    assert.equal(result.herdrTabId, null, "opting out never hands back ids to keep open");
+    assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
+  } finally {
+    if (prior === undefined) delete process.env.CREW_HERDR_KEEP_PANE;
+    else process.env.CREW_HERDR_KEEP_PANE = prior;
+  }
 });
 
 test("closeHerdrPane closes the given tab, and is a no-op when tabId is falsy", async () => {

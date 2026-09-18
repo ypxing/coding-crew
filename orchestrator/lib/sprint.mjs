@@ -242,20 +242,22 @@ export class Sprint {
    * (see pendingHerdrReuses) — consumeHerdrReusePending itself never hands worktree back,
    * since the caller that spends the reuse already has its own worktree path.
    */
-  markHerdrReusePending(slug, { tabId, paneId, worktree }) {
-    this._herdrReuse.set(slug, { state: "pending", tabId, paneId, worktree });
+  markHerdrReusePending(slug, { tabId, paneId, name, worktree }) {
+    this._herdrReuse.set(slug, { state: "pending", tabId, paneId, name, worktree });
   }
 
   /**
    * Reads and spends the one queued reuse in the same call — a slug can only ever get this
    * back non-null once. Returns null when nothing was queued (options.herdr was off when
    * the failure happened, the retry already consumed it, or this is a fresh dispatch).
+   * `name` rides along so dispatchViaHerdr can target this exact pane's own herdr agent name
+   * instead of recomputing one from the *retry's* round number (see herdrDispatchName).
    */
   consumeHerdrReusePending(slug) {
     const entry = this._herdrReuse.get(slug);
     if (!entry || entry.state !== "pending") return null;
     this._herdrReuse.set(slug, { state: "used" });
-    return { tabId: entry.tabId, paneId: entry.paneId };
+    return { tabId: entry.tabId, paneId: entry.paneId, name: entry.name };
   }
 
   /**

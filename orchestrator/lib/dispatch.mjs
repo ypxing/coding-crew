@@ -502,18 +502,26 @@ function herdrUniqueSuffix(raw) {
  * issueNumber()), is prepended so panes for the same feature sort and scan by issue, the same
  * way the issue tracker's own files do — e.g. `i42-implement-user-auth-coder`. Led with `i`
  * because herdr's name regex requires a leading letter, so a bare digit can't start the name.
+ *
+ * round, when given, is inserted the same way (`r3-`) — a kept-open failed pane (see
+ * CREW_HERDR_KEEP_PANE's new default in dispatchViaHerdr) still holds its herdr agent name
+ * until something closes it, so the *next* round's fresh dispatch for the same issue+role
+ * needs a name distinct from that still-live one to avoid `agent_name_taken`. Omitted only
+ * by a caller reusing a specific already-open pane (spec.herdrReuse carries that pane's own
+ * name forward instead of asking this function to recompute it — see dispatchViaHerdr).
  */
-export function herdrDispatchName(label, agent, issueNumber) {
+export function herdrDispatchName(label, agent, issueNumber, round) {
   const tag = herdrRoleTag(agent);
   const prefix = issueNumber ? `i${issueNumber}-` : "";
+  const roundTag = round ? `r${round}-` : "";
   const full = herdrAgentName(label);
-  const budgetNoHash = Math.max(1, 32 - prefix.length - tag.length - 1);
-  if (full.length <= budgetNoHash) return `${prefix}${full}-${tag}`;
+  const budgetNoHash = Math.max(1, 32 - prefix.length - roundTag.length - tag.length - 1);
+  if (full.length <= budgetNoHash) return `${prefix}${roundTag}${full}-${tag}`;
 
   const suffix = herdrUniqueSuffix(label);
-  const budget = Math.max(1, 32 - prefix.length - tag.length - suffix.length - 2);
+  const budget = Math.max(1, 32 - prefix.length - roundTag.length - tag.length - suffix.length - 2);
   const base = full.slice(0, budget).replace(/-+$/, "") || "a";
-  return `${prefix}${base}-${tag}-${suffix}`;
+  return `${prefix}${roundTag}${base}-${tag}-${suffix}`;
 }
 
 /**
@@ -981,25 +989,32 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   const bound = timeoutMs || 45 * 60 * 1000;
   const dispatchDeadline = Date.now() + bound;
   const label = spec.slug || spec.agent;
-  const name = herdrDispatchName(label, spec.agent, spec.issueNumber);
-  // spec.herdrReuse ({tabId, paneId}) names a pane a prior dispatch under this same
-  // deterministic name left open (see spec.herdrPersistPane below) — set only by a caller
-  // that tracked those ids itself (pipeline.mjs's herdr-reuse bookkeeping), never derived
-  // here. Reusing it skips workspace/tab-create/agent-start entirely and goes straight to
-  // `agent prompt`, so the coder's own session (files already read, decisions already made)
-  // carries into the retry instead of starting cold. Never verified live against a real
-  // herdr server — reusedPromptFailed below falls back to a fresh dispatch rather than
-  // trusting that unverified path to fail loud.
+  // spec.herdrReuse ({tabId, paneId, name}) names a pane a prior dispatch left open (see
+  // spec.herdrPersistPane below) — set only by a caller that tracked those ids itself
+  // (pipeline.mjs's herdr-reuse bookkeeping), never derived here. Its own `name` rides along
+  // rather than being recomputed from this call's (possibly later) spec.round: the pane is
+  // still registered in herdr under whatever name it was `agent start`-ed with originally,
+  // and this round's own round number has nothing to do with that. Reusing it skips
+  // workspace/tab-create/agent-start entirely and goes straight to `agent prompt`, so the
+  // coder's own session (files already read, decisions already made) carries into the retry
+  // instead of starting cold. Never verified live against a real herdr server —
+  // reusedPromptFailed below falls back to a fresh dispatch rather than trusting that
+  // unverified path to fail loud.
+  const name = spec.herdrReuse?.name ?? herdrDispatchName(label, spec.agent, spec.issueNumber, spec.round);
   let tabId = spec.herdrReuse?.tabId ?? null;
   let paneId = spec.herdrReuse?.paneId ?? null;
   const reusingPane = !!spec.herdrReuse;
 
-  // CREW_HERDR_KEEP_PANE=1 leaves a failed dispatch's tab open instead of closing it here, so
-  // `herdr agent read <name>` (or the herdr UI) can show what the pane actually rendered —
-  // otherwise the transcript is gone the instant a DISPATCH-FAIL is logged, which is exactly
-  // when you'd want to see it. Debug-only: every dispatch after the first failure in a sprint
-  // still holds that pane, so a retry under the same name then fails with agent_name_taken.
-  const keepPaneOnFail = !!process.env.CREW_HERDR_KEEP_PANE;
+  // Default on: a failed dispatch's tab stays open instead of closing here, so `herdr agent
+  // read <name>` (or the herdr UI) can show what the pane actually rendered — otherwise the
+  // transcript is gone the instant a DISPATCH-FAIL is logged, which is exactly when you'd
+  // want to see it. This used to be debug-only (opt-in via CREW_HERDR_KEEP_PANE=1) because a
+  // kept pane holds its herdr agent name, and a same-named retry would fail with
+  // agent_name_taken — spec.round folded into `name` above is what makes that safe to default
+  // on: the next round's fresh dispatch for this same issue+role gets a distinct name, never
+  // the one the kept-open failed pane still holds. Set CREW_HERDR_KEEP_PANE=0 to opt back out
+  // (e.g. to avoid panes piling up in unattended CI).
+  const keepPaneOnFail = process.env.CREW_HERDR_KEEP_PANE !== "0";
   // spec.herdrPersistPane (set only for a herdr coder dispatch — see pipeline.mjs) defers
   // closing a *successful* dispatch's tab to the caller: verify-worktree.sh runs after this
   // returns, so at this point nobody yet knows whether the pane will be worth reusing.
@@ -1029,6 +1044,15 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
       text: text ?? "",
       herdrTabId: tabId && keepOpen ? tabId : null,
       herdrPaneId: paneId && keepOpen ? paneId : null,
+      herdrName: tabId && keepOpen ? name : null,
+      // This dispatch's own attempt failed to communicate (a transport/CLI error, a timeout,
+      // a rejected/blocked pane) or produced nothing usable — not whether some *later* step
+      // (verify, review) went on to fail. A caller that keeps this herdrTabId open past this
+      // call (pipeline.mjs's own cleanup) reads this to tell "kept because it might still be
+      // reused" apart from "kept so a human can see why it failed" — the latter must never be
+      // closed as a side effect of demoting the issue, or the one thing worth inspecting is
+      // gone the instant the demotion runs.
+      herdrFailed: failed,
     };
   };
 
