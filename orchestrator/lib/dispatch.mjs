@@ -445,6 +445,20 @@ const HERDR_READ_MAX_ATTEMPTS = 5;
 // falls through to the fixed-delay backoff loop instead of waiting here.
 const HERDR_WAIT_OUTPUT_TIMEOUT_MS = 10_000;
 
+// `agent prompt --wait --timeout <bound>` is told to self-report a stall at exactly `bound`,
+// but the JS-side spawnWithTimeout kill used to fire at that same instant — a race where our
+// own SIGKILL could win and erase herdr's chance to ever print the agent_prompt_stalled/timeout
+// JSON envelope its exit is diagnosed from, leaving a DISPATCH-FAIL log with an empty stderr and
+// a falsely-false timedOut. Giving the JS-side kill a grace period past herdr's own --timeout
+// lets herdr detect and report the stall first; the JS-side timer stays only as a backstop for
+// a herdr CLI that hangs without ever honouring its own --timeout at all.
+const HERDR_CLI_KILL_GRACE_MS = 2 * 60 * 1000;
+
+// Bounds the one-off `herdr status` health check a DISPATCH-FAIL takes when `agent prompt`
+// failed with literally no stdout/stderr to explain why — small, since this is a diagnostic
+// side-call on an already-failed dispatch, not something worth waiting on at length.
+const HERDR_STATUS_CHECK_TIMEOUT_MS = 10_000;
+
 /**
  * herdr's `agent start` rejects any name that isn't `^[a-z][a-z0-9_-]{0,31}$` — issue slugs
  * are usually already that shape, but come from a markdown filename (issueSlug()), so nothing
@@ -1096,7 +1110,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     const created = herdrJson(create)?.result;
     paneId = created?.root_pane?.pane_id;
     if (create.code !== 0 || !paneId) {
-      return await finish(1, `herdr tab create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
+      return await finish(create.code || 1, `herdr tab create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
     }
     tabId = created?.tab?.tab_id;
 
@@ -1112,7 +1126,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     const start = await herdrExec(effects, ["agent", "start", name, "--kind", platform, "--pane", paneId, "--", ...invocation.args], bound);
     if (start.code !== 0) {
       if (herdrJson(start)?.error?.code !== "agent_not_ready") {
-        return await finish(1, `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`, "");
+        return await finish(start.code || 1, `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`, "", start.timedOut);
       }
       // Unlike every other herdr subcommand used here, `agent read`/`pane read` print raw
       // rendered text on stdout, never a JSON envelope — confirmed live, and the reason
@@ -1150,7 +1164,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   const promptResult = await herdrExec(
     effects,
     ["agent", "prompt", name, invocation.prompt, "--wait", "--until", "idle", "--until", "done", "--timeout", String(bound)],
-    bound,
+    bound + HERDR_CLI_KILL_GRACE_MS,
   );
 
   // The reused pane may no longer exist (herdr restarted, a human closed it by hand) — this
@@ -1277,16 +1291,24 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
 
   if (promptResult.code !== 0) {
     const errorCode = herdrJson(promptResult)?.error?.code;
-    const timedOut = errorCode === "agent_prompt_stalled" || errorCode === "timeout";
+    // promptResult.timedOut is spawnWithTimeout's own signal that *our* SIGKILL fired
+    // (effects.mjs) — checked in addition to herdr's self-reported error code because that
+    // JS-side kill has a grace period past herdr's own --timeout (HERDR_CLI_KILL_GRACE_MS)
+    // specifically so herdr gets to report a stall first, but if herdr never does (hung
+    // client, dead server) our kill is still the reason this call ended and should still log
+    // as a timeout rather than a silent, code-less failure.
+    const timedOut = promptResult.timedOut || errorCode === "agent_prompt_stalled" || errorCode === "timeout";
     // agent_blocked: herdr rejects the submission outright, before sending any input, when
     // the pane was already blocked — extractHerdrReply finds nothing (the prompt was never
     // echoed), so without this the failure reads as an empty reply with no clue why. Read
     // the rendered pane directly into the failure message instead of just the CLI's own
     // stderr, which never contains the dialog text itself.
     if (errorCode === "agent_blocked") {
-      return await finish(1, `herdr agent prompt rejected — agent already blocked: ${rendered.trim().slice(-400)}`, text, timedOut);
+      return await finish(promptResult.code, `herdr agent prompt rejected — agent already blocked: ${rendered.trim().slice(-400)}`, text, timedOut);
     }
-    return await finish(1, `herdr agent prompt failed: ${(promptResult.stderr || promptResult.stdout || "").trim()}`, text, timedOut);
+    const rawError = (promptResult.stderr || promptResult.stdout || "").trim();
+    const message = rawError ? `herdr agent prompt failed: ${rawError}` : await describeHerdrUnavailability(effects);
+    return await finish(promptResult.code, message, text, timedOut);
   }
   // Every retry above (the anchored wait-output check, then the fixed-delay backoff) is
   // built on one assumption: the reply is there, just not rendered yet. If text is still
@@ -1592,6 +1614,27 @@ export function preflight(effects, platform, mainRoot, agents, { herdr = false }
  * check fails the sprint at startup with one clear message, rather than every dispatch
  * discovering mid-round that herdr's CLI or server isn't there.
  */
+/**
+ * Only called from dispatchViaHerdr's generic `agent prompt` failure branch, and only when
+ * that failure came with no stdout/stderr at all to explain it — preflightHerdr already
+ * proved the server was up once, at sprint start, but that says nothing about whether it's
+ * still up minutes or hours later when one particular dispatch's prompt call dies silently.
+ * Without this, "the herdr server crashed/restarted mid-sprint" and "herdr rejected this one
+ * call for a reason it just didn't print" log identically — an empty DISPATCH-FAIL line with
+ * no way to tell which retrying would fix.
+ */
+async function describeHerdrUnavailability(effects) {
+  const status = await herdrExec(effects, ["status"], HERDR_STATUS_CHECK_TIMEOUT_MS);
+  if (status.timedOut) {
+    return "herdr agent prompt failed with no output, and `herdr status` itself timed out — the herdr server looks unresponsive";
+  }
+  if (status.code !== 0 || !/status:\s*running/.test(status.stdout || "")) {
+    const detail = (status.stderr || status.stdout || "").trim().slice(0, 200);
+    return `herdr agent prompt failed with no output, and \`herdr status\` no longer reports running — the herdr server may have crashed or restarted mid-sprint${detail ? `: ${detail}` : ""}`;
+  }
+  return "herdr agent prompt failed with no output, though the herdr server still reports running — likely a transport or session-specific issue with this one pane, not a dead server";
+}
+
 function preflightHerdr(effects) {
   const which = effects.exec("sh", ["-c", "command -v herdr"], { mutating: false });
   if (which.code !== 0) return ["HERDR_ENV=1 but the herdr CLI was not found on PATH"];

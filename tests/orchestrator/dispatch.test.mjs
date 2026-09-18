@@ -1651,6 +1651,56 @@ test("dispatchViaHerdr treats a herdr `timeout` error the same as `agent_prompt_
   assert.equal(result.timedOut, true);
 });
 
+test("dispatchViaHerdr checks herdr's own server status when a prompt call fails with no output at all, and reports the server still running", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      { code: 1, stdout: "", stderr: "" },
+      { code: 0, stdout: "", stderr: "" },
+      { code: 0, stdout: "status: running\n", stderr: "" },
+      // No "tab close" response: a failed dispatch keeps its pane open by default.
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /still reports running/);
+  assert.match(result.stderr, /not a dead server/);
+});
+
+test("dispatchViaHerdr's herdr-status check reports a crashed/restarted server, not a mysteriously silent one, when status itself fails", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      { code: 1, stdout: "", stderr: "" },
+      { code: 0, stdout: "", stderr: "" },
+      { code: 1, stdout: "", stderr: "connection refused" },
+      // No "tab close" response: a failed dispatch keeps its pane open by default.
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /crashed or restarted mid-sprint/);
+  assert.match(result.stderr, /connection refused/);
+});
+
 test("dispatch() routes to dispatchViaHerdr for every platform once spec.herdr is set", () => {
   const { root, promptFile } = fixture();
   const outFile = join(root, "dispatch", "alpha.report.md");

@@ -19,6 +19,17 @@
 - **A coder's own honest partial self-report now reuses its already-open herdr pane for the
   retry too**, the same one-reuse-per-issue bound `AC: unmet` and a fixable verify failure
   already get.
+- **The JS-side kill on a `herdr agent prompt` call now waits 2 minutes past herdr's own
+  `--timeout` before firing**, instead of racing it at the same instant. That race could let our
+  own `SIGKILL` win and erase herdr's chance to ever print the `agent_prompt_stalled`/`timeout`
+  JSON its exit is diagnosed from, leaving a `DISPATCH-FAIL` with empty stderr and a
+  falsely-false `timedOut`; the JS-side timer now only backstops a herdr CLI that hangs without
+  ever honouring its own `--timeout`. Herdr call failures also now propagate the CLI's actual
+  exit code instead of always logging `1`.
+- **A herdr `agent prompt` failure with no stdout/stderr at all now runs a one-off `herdr status`
+  check** to say whether the server crashed or restarted mid-sprint, or is still running (a
+  transport/session-specific hiccup with that one pane) — previously this logged identically to
+  every other silent failure, with no way to tell which one retrying would fix.
 
 ## [1.29.90]
 
