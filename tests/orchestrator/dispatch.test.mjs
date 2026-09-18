@@ -978,6 +978,7 @@ test("dispatchViaHerdr opens a log tab that tails the sprint's trace log, once p
       json({ result: { type: "ok" } }), // pane run tail -f
       json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // dispatch tab create
       json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { type: "ok" } }), // pane rename
       json({ result: { agent: { agent_status: "idle" } } }),
       { code: 0, stdout: RENDERED_REPLY, stderr: "" },
       json({ result: { type: "ok" } }), // dispatch tab close
@@ -1856,6 +1857,7 @@ test("dispatchViaHerdr reuses the triggering pane's own workspace via HERDR_WORK
       ...herdrLogTabResponses(),
       json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
       json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { type: "ok" } }), // pane rename
       json({ result: { agent: { agent_status: "idle" } } }),
       { code: 0, stdout: RENDERED_REPLY, stderr: "" },
       json({ result: { type: "ok" } }), // tab close
@@ -1900,6 +1902,7 @@ test("dispatchViaHerdr renames the triggering pane's own tab to the feature slug
       ...herdrLogTabResponses(),
       json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
       json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { type: "ok" } }), // pane rename
       json({ result: { agent: { agent_status: "idle" } } }),
       { code: 0, stdout: RENDERED_REPLY, stderr: "" },
       json({ result: { type: "ok" } }), // dispatch tab close
@@ -1927,6 +1930,7 @@ test("dispatchViaHerdr never renames the triggering pane's own tab when no featu
       ...herdrLogTabResponses(),
       json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
       json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { type: "ok" } }), // pane rename
       json({ result: { agent: { agent_status: "idle" } } }),
       { code: 0, stdout: RENDERED_REPLY, stderr: "" },
       json({ result: { type: "ok" } }),
@@ -1953,6 +1957,7 @@ test("closeHerdrWorkspace never closes a workspace reused via HERDR_WORKSPACE_ID
       ...herdrLogTabResponses(),
       json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
       json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { type: "ok" } }), // pane rename
       json({ result: { agent: { agent_status: "idle" } } }),
       { code: 0, stdout: RENDERED_REPLY, stderr: "" },
       json({ result: { type: "ok" } }), // tab close

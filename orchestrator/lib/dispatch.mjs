@@ -1153,6 +1153,18 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
       }
       if (!ready) return await finish(1, "herdr agent never became ready after answering the trust dialog", "");
     }
+
+    // Nothing else titles this pane: absent this, herdr falls back to labelling it after the
+    // agent identifier alone (e.g. "crew-coder"), identical across every issue and round, so a
+    // human scanning panes can't tell which is which. Only for a freshly created pane — a
+    // reused one (spec.herdrReuse) skips every other setup step here too and goes straight to
+    // `agent prompt`, and it was already named on the dispatch that first created it.
+    // Best-effort: a failed rename leaves herdr's own default title, never the dispatch itself.
+    try {
+      await herdrExec(effects, ["pane", "rename", paneId, `${spec.round ? `${spec.round}. ` : ""}${label} (${herdrRoleTag(spec.agent)})`]);
+    } catch {
+      /* best effort — see comment above */
+    }
   }
 
   // --until idle --until done, not the default (idle/done/blocked/unknown all match): herdr's
