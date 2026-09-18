@@ -307,6 +307,32 @@ test("ensureWorktree flags a stale branch instead of silently reusing it on a fr
   assert.ok(!listed.includes(branch));
 });
 
+test("ensureWorktree discards and recreates a stale branch whose tree is identical to base — debris squashed elsewhere, not real unique work", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/team-scoring-lane";
+  // The branch forked from the seed commit and committed some work — then that same
+  // work landed on main via a squash on a different path entirely (a sibling issue's
+  // squash-commits.sh run), so main's tree now matches the branch's tip tree exactly,
+  // even though the branch's own commit is not part of main's history at all.
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "component.txt"), "issue-03's own work\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "issue-03 branch's own commit");
+  git("checkout", "-q", "main");
+  writeFileSync(join(mainRoot, "component.txt"), "issue-03's own work\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "squash of other issues lands the identical tree");
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "HEAD", expectReuse: false });
+
+  assert.equal(result.stale, undefined);
+  assert.equal(result.created, true);
+  assert.ok(existsSync(result.path));
+  const branchTip = execFileSync("git", ["-C", mainRoot, "rev-parse", branch], { encoding: "utf8" }).trim();
+  const headTip = execFileSync("git", ["-C", mainRoot, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  assert.equal(branchTip, headTip, "the debris branch was deleted and recreated fresh at base, not reused as-is");
+});
+
 test("ensureWorktree defaults expectReuse to true — existing callers keep silent-reuse behavior", () => {
   const { mainRoot, git, effects } = gitRoot();
   const branch = "crew/feat/a";

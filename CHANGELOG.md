@@ -30,6 +30,12 @@
   check** to say whether the server crashed or restarted mid-sprint, or is still running (a
   transport/session-specific hiccup with that one pane) — previously this logged identically to
   every other silent failure, with no way to tell which one retrying would fix.
+- **`ensureWorktree` no longer stalls on a branch whose tree is byte-identical to `base`'s**, even
+  though ancestry can't see it as a fast-forward (a squash elsewhere produces a new commit
+  carrying the same tree). That branch holds no unique work — typically debris left by a prior
+  run whose commits were later squashed into the feature branch and never cleaned up — so it's
+  deleted and recreated fresh from `base` instead of stalling for a human. A real ancestry
+  mismatch with actual unique content still stalls, unchanged.
 
 ## [1.29.90]
 

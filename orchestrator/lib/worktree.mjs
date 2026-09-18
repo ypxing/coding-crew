@@ -64,26 +64,41 @@ export function ensureWorktreeInclude(mainRoot) {
  * step, where it surfaces 45 minutes later as an unexplained conflict. Detected
  * here instead: `base` not being an ancestor of the existing branch, on a dispatch
  * nobody expected to resume, is reported back as `stale` rather than reused.
+ *
+ * One case auto-resolves rather than staying `stale`: a branch whose tree is byte-identical
+ * to `base`'s. Ancestry can't see this (a squash elsewhere produces a new commit carrying
+ * the same tree, so `base` is never literally a git ancestor of it), but tree equality still
+ * can, and it means the branch holds no unique work at all — the common shape being debris
+ * left by a prior run whose commits were later squashed into the feature branch and never
+ * cleaned up. That branch is deleted and recreated fresh from `base`. Anything else — a real
+ * ancestry mismatch with actual unique content — still stalls for a human, unchanged.
  */
 export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expectReuse = true }) {
   const path = worktreePath(mainRoot, branch);
   const listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   if (listed.includes(`worktree ${path}\n`) && existsSync(path)) return { path, created: false, reusedBranch: true };
 
-  const exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
+  let exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
 
   if (exists && !expectReuse) {
     const isAncestor = effects.gitRead(["merge-base", "--is-ancestor", base, branch]).code === 0;
     if (!isAncestor) {
-      return {
-        path: null,
-        created: false,
-        stale: true,
-        reason:
-          `branch '${branch}' already exists but this issue has no recorded progress, and ` +
-          `'${base}' is not an ancestor of it — likely stale from an earlier run; delete ` +
-          `the branch or reconcile it by hand before retrying`,
-      };
+      const baseTree = effects.gitRead(["rev-parse", `${base}^{tree}`]).stdout.trim();
+      const branchTree = effects.gitRead(["rev-parse", `${branch}^{tree}`]).stdout.trim();
+      const sameTree = !!baseTree && baseTree === branchTree;
+      const discarded = sameTree && effects.git(["branch", "-D", branch]).code === 0;
+      if (!discarded) {
+        return {
+          path: null,
+          created: false,
+          stale: true,
+          reason:
+            `branch '${branch}' already exists but this issue has no recorded progress, and ` +
+            `'${base}' is not an ancestor of it — likely stale from an earlier run; delete ` +
+            `the branch or reconcile it by hand before retrying`,
+        };
+      }
+      exists = false;
     }
   }
 
