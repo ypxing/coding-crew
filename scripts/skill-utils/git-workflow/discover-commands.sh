@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Command discovery — mechanical gate for crew-afk (prompt-builder half)
 #
-# Finds the *local dev-loop* command for test/lint/typecheck/install/env/credential_target once
-# per sprint, before
+# Finds the *local dev-loop* command for test/lint/typecheck/install/env/credential_target/
+# coverage/integration once per sprint, before
 # any worktree exists, by asking a model to read whatever of CLAUDE.md/AGENTS.md/Makefile/manifest
 # files this repo actually has — the same reference chain solve-issue's verification.md names,
 # but read by a model instead of pattern-matched by this script. Real repos document these
@@ -24,10 +24,10 @@ set -euo pipefail
 # model can open each file itself instead of having every candidate — a 950-line CLAUDE.md
 # included — pasted whole into a single CLI argv string. Content-in-prompt used to be how
 # this was built; it spent tokens on files the model often never needed (a Makefile no one
-# asked about, once CLAUDE.md alone answered all six categories), and had no ceiling as a
+# asked about, once CLAUDE.md alone answered all eight categories), and had no ceiling as a
 # repo's own docs grew. Paths are listed in the same fixed priority order as CANDIDATE_FILES
 # below (docs before build files before manifests), and the model is told to stop reading
-# once it has an answer for all six categories, so a repo that documents everything in
+# once it has an answer for all eight categories, so a repo that documents everything in
 # CLAUDE.md never pays to have its Makefile and package.json read too.
 #
 # install is the fourth category, added so ensure-deps.sh (which deliberately never reads
@@ -52,17 +52,31 @@ set -euo pipefail
 # Also optional: a null here means no such target exists, so ensure-env.sh's own template-only
 # fallback (envsubst on any *.tpl files) already covers this repo.
 #
+# coverage is the seventh category: the local command that produces a test coverage report
+# (e.g. "npm test -- --coverage", "pytest --cov", "go test -cover ./..."), consumed by the
+# add-tests skill in place of asking a model to guess one from scratch on every run. Optional,
+# same rule as install/env/credential_target: only report one if explicitly documented (or an
+# unambiguous build-file target serves this purpose); a null here means add-tests reports "no
+# coverage tooling configured" plainly rather than guessing.
+#
+# integration is the eighth category: the command (if any) that runs a *real*
+# dependency-backed integration test tier — as distinct from a tier that only mocks the
+# dependency away — so add-tests can route external-dependency gap-fix issues to the real tier
+# instead of a mocked one. Optional, same rule as the other five optional fields: only report
+# one if explicitly discoverable; a null here means no such tier exists.
+#
 # Skips (mechanically, no model call, no tokens) when either:
 #   1. none of the known source files exist — verify-worktree.sh's own ecosystem-convention
 #      fallback already covers this case for free, so there is nothing to ask a model
-#   2. the committed .coding-crew/dev-commands.json already has all six fields (test, lint,
-#      typecheck, install, env, credential_target) — any value, including null, counts as
-#      "already discovered" for that field. This is bootstrap-once, not a recurring staleness
-#      check: the file is committed and human-editable, so a *complete* file is trusted as-is,
-#      indefinitely, until a human clears it or explicitly asks for --refresh. A file missing
-#      even one field — e.g. only ensure-deps.sh's own install_mode/docker_service ever landed,
-#      because an earlier sprint's model dispatch failed before writing any of these six — is
-#      not complete and does not trigger this skip.
+#   2. the committed .coding-crew/dev-commands.json already has all eight fields (test, lint,
+#      typecheck, install, env, credential_target, coverage, integration) — any value,
+#      including null, counts as "already discovered" for that field. This is bootstrap-once,
+#      not a recurring staleness check: the file is committed and human-editable, so a
+#      *complete* file is trusted as-is, indefinitely, until a human clears it or explicitly
+#      asks for --refresh. A file missing even one field — e.g. only ensure-deps.sh's own
+#      install_mode/docker_service ever landed, because an earlier sprint's model dispatch
+#      failed before writing any of these eight — is not complete and does not trigger this
+#      skip.
 #
 # Invocation: bash "<skill-dir>/scripts/discover-commands.sh" [--refresh]
 # Env: CREW_COMMANDS_REFRESH=1 has the same effect as --refresh.
@@ -100,17 +114,17 @@ if [ -z "$MAIN_ROOT" ]; then
 fi
 CACHE_FILE="$MAIN_ROOT/.coding-crew/dev-commands.json"
 
-# The six categories write-commands-cache.sh persists. A key is "already discovered" once it
+# The eight categories write-commands-cache.sh persists. A key is "already discovered" once it
 # is *present* in the cache file with any value — including JSON `null`, which means "a model
 # already looked and confirmed no such command exists" (see write-commands-cache.sh's own
 # comment on that distinction). A key that is absent entirely means nobody has ever asked.
 # This matters because ensure-deps.sh writes its own two fields (install_mode/docker_service —
-# a *different* file section, not one of these six) independently of this script, regardless
+# a *different* file section, not one of these eight) independently of this script, regardless
 # of whether discovery ever ran; a sprint whose first attempt failed before writing anything
 # (an expired credential, a dispatch timeout) can leave this same cache file on disk with none
-# of these six keys in it. Trusting *any* existing file, as this script used to, then means
+# of these eight keys in it. Trusting *any* existing file, as this script used to, then means
 # discovery never gets a second chance.
-CACHE_FIELDS=(test lint typecheck install env credential_target)
+CACHE_FIELDS=(test lint typecheck install env credential_target coverage integration)
 
 # _cache_field_present <file> <key> — true if <key> appears in <file> with a quoted-string or
 # `null` value. Mirrors write-commands-cache.sh's own _extract_field regex so "present" means
@@ -121,7 +135,7 @@ _cache_field_present() {
   grep -q "\"$key\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$file"
 }
 
-# _cache_complete <file> — true only if every one of the six fields above is present (any
+# _cache_complete <file> — true only if every one of the eight fields above is present (any
 # value, including null). A cache missing even one — the partial-write scenario above — is
 # not "already discovered" and must not make this script skip.
 _cache_complete() {
@@ -180,11 +194,11 @@ if [ "${#FOUND_FILES[@]}" -eq 0 ]; then
   exit 0
 fi
 
-# Bootstrap-once, not a recurring staleness re-check: once every one of the six fields is
+# Bootstrap-once, not a recurring staleness re-check: once every one of the eight fields is
 # present in the committed cache file (any value, including null — see _cache_complete
 # above), the file is trusted as-is until a human clears it or explicitly passes --refresh.
 # A cache missing one or more fields (e.g. only ensure-deps.sh's install_mode/docker_service
-# ever got written, because the model dispatch that would have written these six failed
+# ever got written, because the model dispatch that would have written these eight failed
 # first) is not "already discovered" — fall through and ask again so the gap gets filled.
 if [ "$REFRESH" != "1" ] && [ -f "$CACHE_FILE" ] && _cache_complete "$CACHE_FILE"; then
   echo "Command discovery: skipped (already cached at .coding-crew/dev-commands.json)"
@@ -198,7 +212,7 @@ cat <<'PROMPT'
 --- command discovery prompt (do not run this on a cheap model tier — it is genuine reasoning) ---
 You are working in this repository's own working directory and have normal file-read access
 to it. Identify the command a developer runs **locally**, during normal iteration, for each
-of these six categories only:
+of these eight categories only:
 
 - test
 - lint
@@ -221,6 +235,18 @@ of these six categories only:
   install and env above. Only report one if such a target explicitly exists; a repo with none
   already falls back to expanding any `*.tpl` files with no generated counterpart elsewhere, so
   guessing here would only override that convention with a worse guess.
+- coverage (the local command that produces a test coverage report — e.g. `npm test --
+  --coverage`, `pytest --cov`, `go test -cover ./...` — not a coverage upload or
+  reporting-service step). Only report one if the source explicitly documents it, or an
+  unambiguous build-file target clearly serves this purpose; a repo with no discoverable
+  coverage command has no fallback convention to guess from, so guessing one here would only
+  override the honest answer "no coverage tooling configured" with a worse guess.
+- integration (the command, if any, that runs a *real* dependency-backed integration test tier
+  — e.g. `make test-integration`, something gated behind a `startLocalstack`-style setup — as
+  distinct from a tier that only mocks the dependency away). Only report one if explicitly
+  discoverable; a repo with no such tier already falls back to treating every test as running
+  against a mocked boundary elsewhere, so guessing one here would only override that convention
+  with a worse guess.
 
 Read these files yourself, in the order listed below — that order is priority order, most
 authoritative first (project docs, then build files, then package manifests):
@@ -233,8 +259,8 @@ done
 cat <<'PROMPT'
 
 Stop reading as soon as you have a confident answer — including a confident "no local command
-exists" — for all six categories; you do not need to open every file above if an earlier one
-already answers all six. The three exceptions are install, env, and credential_target:
+exists" — for all eight categories; you do not need to open every file above if an earlier one
+already answers all eight. The three exceptions are install, env, and credential_target:
 you MUST open any Makefile in the list above before concluding any of the three is null —
 see the rule below. This overrides the "stop once confident" instruction; do not skip it just
 because the docs already answered the other three, and do not treat a confident-sounding
@@ -262,6 +288,6 @@ Rules:
 - If a category has no discoverable local command, use null for it — do not guess one.
 
 Respond with **only** this JSON shape, no other prose:
-{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>", "env": "<command or null>", "credential_target": "<command or null, e.g. \"make _registry\">"}
+{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>", "env": "<command or null>", "credential_target": "<command or null, e.g. \"make _registry\">", "coverage": "<command or null>", "integration": "<command or null>"}
 --- end command discovery prompt ---
 PROMPT
