@@ -41,8 +41,16 @@ for (const f of ["feature-branch-setup.sh", "discover-commands.sh", "write-comma
 after(() => rmSync(SCRIPTS_BASE, { recursive: true, force: true }));
 const FAKE = join(HERE, "fixtures/fake-dispatch.sh");
 
+// Every call site below spreads process.env into its own `env` (or omits `env` and gets
+// it by default); this test's own process inherits HERDR_ENV/HERDR_PANE_ID whenever it runs
+// inside a real herdr pane, and main.mjs's notifyTriggeringPane sends the fixture sprint's
+// outcome straight to that real pane if those leak through — stripped here, once, so no
+// call site has to remember to.
 function sh(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, { encoding: "utf8", ...opts });
+  const env = { ...(opts.env ?? process.env) };
+  delete env.HERDR_ENV;
+  delete env.HERDR_PANE_ID;
+  const r = spawnSync(cmd, args, { encoding: "utf8", ...opts, env });
   return { code: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
