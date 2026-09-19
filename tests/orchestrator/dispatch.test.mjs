@@ -11,11 +11,44 @@
  * The claude cutover adds its own section at the bottom, for the same reason.
  */
 
-import { test } from "node:test";
+import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// resolveAgentFile()'s home-dir fallback reads os.homedir(), which reads $HOME — so a
+// real per-user install (e.g. ~/.claude/agents/crew-coder.md) would otherwise leak into
+// the "no definition anywhere" assertions below. Point HOME at an empty directory for
+// the whole file, and restore it once these tests are done.
+const isolatedHome = mkdtempSync(join(tmpdir(), "crew-dispatch-home-"));
+const realHome = process.env.HOME;
+
+// ensureHerdrWorkspace/renameHerdrTriggeringTab/notifyTriggeringPane all key off
+// HERDR_WORKSPACE_ID/HERDR_TAB_ID/HERDR_PANE_ID — injected by a real herdr session, which
+// this suite may itself be running inside of (e.g. a herdr-managed dev sandbox). Left
+// ambient, those leak into every "not inside herdr" / "creates its own workspace"
+// assertion below. Cleared for the whole file; the handful of tests that need a specific
+// value set and restore it themselves, locally.
+const ambientHerdrEnv = {
+  HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID,
+  HERDR_TAB_ID: process.env.HERDR_TAB_ID,
+  HERDR_PANE_ID: process.env.HERDR_PANE_ID,
+};
+before(() => {
+  process.env.HOME = isolatedHome;
+  delete process.env.HERDR_WORKSPACE_ID;
+  delete process.env.HERDR_TAB_ID;
+  delete process.env.HERDR_PANE_ID;
+});
+after(() => {
+  if (realHome === undefined) delete process.env.HOME;
+  else process.env.HOME = realHome;
+  for (const [key, value] of Object.entries(ambientHerdrEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+});
 
 import {
   buildDispatch,

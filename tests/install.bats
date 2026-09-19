@@ -354,39 +354,6 @@ teardown() {
   [ ! -d "$TEMP_DIR/.claude/skills/address-code-review/" ]
 }
 
-@test "--version latest resolves to a concrete tag in crew.lock" {
-  # Stub curl so the test never touches the network: mimic GitHub's
-  # /releases/latest -> /releases/tag/<tag> redirect that install.sh follows.
-  local bindir="$TEMP_DIR/bin"
-  mkdir -p "$bindir"
-  cat > "$bindir/curl" <<'STUB'
-#!/usr/bin/env bash
-echo "https://github.com/ypxing/coding-crew/releases/tag/v2.3.4"
-STUB
-  chmod +x "$bindir/curl"
-
-  cd "$SCRIPT_DIR"
-  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh claude --skill tdd \
-    --version latest --registry https://github.com/ypxing/coding-crew
-  [ "$status" -eq 0 ]
-
-  run jq -r '.version' "$TEMP_DIR/crew.lock"
-  [ "$output" = "v2.3.4" ]
-}
-
-@test "--version latest fails loudly when no registry can be determined" {
-  local bindir="$TEMP_DIR/bin"
-  mkdir -p "$bindir"
-  printf '#!/usr/bin/env bash\nexit 22\n' > "$bindir/curl"
-  chmod +x "$bindir/curl"
-
-  cd "$SCRIPT_DIR"
-  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh claude --skill tdd \
-    --version latest --registry https://github.com/ypxing/coding-crew
-  [ "$status" -ne 0 ]
-  [ ! -f "$TEMP_DIR/crew.lock" ]
-}
-
 @test "uninstall leaves no empty platform directories behind" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh >/dev/null
@@ -405,115 +372,6 @@ STUB
   done
   # .coding-crew survives only because it still holds user-customisable docs
   [ -f "$TEMP_DIR/.coding-crew/docs/issue-tracker.md" ]
-}
-
-# ── crew.lock round-trip ───────────────────────────────────────────────────────
-# Stubs curl the way the "--version latest" test above does, so none of these
-# touch the network.
-
-_stub_curl_latest() {  # $1 = tag to report as the newest release
-  local bindir="$TEMP_DIR/bin"
-  mkdir -p "$bindir"
-  cat > "$bindir/curl" <<STUB
-#!/usr/bin/env bash
-echo "https://github.com/ypxing/coding-crew/releases/tag/$1"
-STUB
-  chmod +x "$bindir/curl"
-  echo "$bindir"
-}
-
-@test "--update on a lockfile already at the latest release is a no-op" {
-  local bindir
-  bindir=$(_stub_curl_latest v9.9.9)
-
-  cat > "$TEMP_DIR/crew.lock" <<'LOCK'
-{
-  "registry": "https://github.com/ypxing/coding-crew",
-  "version": "v9.9.9",
-  "platform": "pi",
-  "agents": {},
-  "skills": {}
-}
-LOCK
-
-  cd "$SCRIPT_DIR"
-  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh --update
-  [ "$status" -eq 0 ]
-  # The v-prefix must be normalised on both sides; a mismatch here reinstalls
-  # everything on every --update and prints "vv9.9.9".
-  [[ "$output" == *"Already at v9.9.9"* ]]
-  [[ "$output" != *"vv9.9.9"* ]]
-  [[ "$output" != *"Update available"* ]]
-}
-
-@test "--version records a v-prefixed tag and the installed platform in crew.lock" {
-  local bindir
-  bindir=$(_stub_curl_latest v2.3.4)
-
-  cd "$SCRIPT_DIR"
-  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh pi --skill tdd \
-    --version latest --registry https://github.com/ypxing/coding-crew
-  [ "$status" -eq 0 ]
-
-  run jq -r '.version' "$TEMP_DIR/crew.lock"
-  [ "$output" = "v2.3.4" ]
-  run jq -r '.platform' "$TEMP_DIR/crew.lock"
-  [ "$output" = "pi" ]
-  # Item versions are objects, so a later --update can read .version back out
-  run jq -r '.skills.tdd.version' "$TEMP_DIR/crew.lock"
-  [ "$output" != "null" ]
-}
-
-@test "--from-lockfile installs the pinned tag without a doubled v and honours platform" {
-  cd "$SCRIPT_DIR"
-  local pinned
-  # tr: a Windows jq appends \r, and a raw CR inside a JSON string would make the
-  # fixture itself the bug under test instead of install.sh's handling of it.
-  pinned=$(jq -r '.skills.tdd.version' registry.json | tr -d '\r')
-
-  # file:// registry keeps this off the network; version still exercises the
-  # v-prefix path that used to build a "vv1.2.3.tar.gz" URL and 404.
-  cat > "$TEMP_DIR/crew.lock" <<LOCK
-{
-  "registry": "file://$SCRIPT_DIR",
-  "version": "v1.17.0",
-  "platform": "pi",
-  "agents": {},
-  "skills": { "tdd": { "version": "$pinned" } }
-}
-LOCK
-
-  TARGET_REPO="$TEMP_DIR" run ./install.sh --from-lockfile
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"vv1.17.0"* ]]
-  [[ "$output" != *"version mismatch"* ]]
-  [ -f "$TEMP_DIR/.pi/skills/tdd/SKILL.md" ]
-  # platform was "pi": other platforms must not be installed
-  [ ! -d "$TEMP_DIR/.claude/skills/tdd" ]
-}
-
-@test "--update reads object-form lockfile item versions instead of reinstalling blindly" {
-  local bindir
-  bindir=$(_stub_curl_latest v9.9.9)
-  cd "$SCRIPT_DIR"
-  local current
-  current=$(jq -r '.skills.tdd.version' registry.json | tr -d '\r')
-
-  cat > "$TEMP_DIR/crew.lock" <<LOCK
-{
-  "registry": "file://$SCRIPT_DIR",
-  "version": "v9.9.9",
-  "platform": "pi",
-  "agents": {},
-  "skills": { "tdd": { "version": "$current" } }
-}
-LOCK
-
-  # Same version on both sides -> the early "already at latest" exit fires,
-  # which is itself the regression guard for the v-prefix comparison.
-  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh --update
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Already at v9.9.9"* ]]
 }
 
 # ── Windows: jq that emits CRLF ────────────────────────────────────────────────
@@ -548,29 +406,6 @@ STUB
   # A \r that survived into a path would install to "tdd?" instead
   run bash -c "ls \"$TEMP_DIR/.pi/skills\" | cat -v"
   [[ "$output" != *'^M'* ]]
-}
-
-@test "--from-lockfile installs the skill when jq emits CRLF" {
-  cd "$SCRIPT_DIR"
-  local bindir pinned
-  bindir=$(_stub_jq_crlf)
-  pinned=$(jq -r '.skills.tdd.version' registry.json | tr -d '\r')
-
-  cat > "$TEMP_DIR/crew.lock" <<LOCK
-{
-  "registry": "file://$SCRIPT_DIR",
-  "version": "v1.17.0",
-  "platform": "pi",
-  "agents": {},
-  "skills": { "tdd": { "version": "$pinned" } }
-}
-LOCK
-
-  PATH="$bindir:$PATH" TARGET_REPO="$TEMP_DIR" run ./install.sh --from-lockfile
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"not found in registry"* ]]
-  [[ "$output" != *"version mismatch"* ]]
-  [ -f "$TEMP_DIR/.pi/skills/tdd/SKILL.md" ]
 }
 
 @test "uninstall removes installed files when jq emits CRLF" {

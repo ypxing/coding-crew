@@ -1,5 +1,6 @@
 .env*
 *sync-conflict*
+/bootstrap
 .npmrc*
 .claude/settings*.json
 .claude/agents/

@@ -154,10 +154,7 @@ Opens the review report, triages findings, implements fixes with TDD.
 | `pi`                     | pi only                                                                                   |
 | `codex`                  | Codex only                                                                                |
 | `--project`              | Install into the current project instead of `$HOME`                                       |
-| `--version v1.2.0`       | Pin to a specific release and write a `crew.lock` recording it                            |
-| `--version latest`       | Resolve the newest published release, then pin to it (`crew.lock` records the real tag)   |
-| `--from-lockfile [path]` | Install the versions pinned in `crew.lock` (defaults to `./crew.lock`)                    |
-| `--update`               | Check for and apply updates (uses `crew.lock` if present, otherwise the install manifest) |
+| `--update`               | Check for and apply updates, based on `.coding-crew/manifest.json`                        |
 
 **Where things land:** Claude Code → `.claude/`; Copilot → `.github/agents/` + `.github/skills/`
 per project, `~/.copilot/` when installed user-level (Copilot does not read `.copilot/` inside a
@@ -184,25 +181,6 @@ To uninstall:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
-```
-
-### Team distribution
-
-Pinning to a version writes a `crew.lock` automatically — commit it to your dotfiles or team config
-repo:
-
-```bash
-./install.sh --version v1.2.0
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --project --version v1.2.0
-```
-
-Team members install from it (defaults to `./crew.lock`; pass a path for a different location):
-
-```bash
-./install.sh --from-lockfile
-# or, without a local clone:
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --from-lockfile
-curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --update
 ```
 
 ---

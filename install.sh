@@ -26,40 +26,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 REPO_ROOT="${TARGET_REPO:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
-# Pull --version/--registry out of the args wherever they appear, before positional
-# parsing below assigns platform/agent from $1/$2/$3. Passing --version pins the
-# install to that tag AND writes crew.lock recording it — see write_lockfile().
-# --version latest resolves to the newest published release tag before pinning, so
-# crew.lock always records a concrete version, never the moving "latest" alias.
-PIN_VERSION=""
-PIN_REGISTRY=""
-_ARGS=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --version=*) PIN_VERSION="${1#--version=}"; shift ;;
-    --version) PIN_VERSION="${2:-}"; shift 2 ;;
-    --registry=*) PIN_REGISTRY="${1#--registry=}"; shift ;;
-    --registry) PIN_REGISTRY="${2:-}"; shift 2 ;;
-    *) _ARGS+=("$1"); shift ;;
-  esac
-done
-set -- "${_ARGS[@]+"${_ARGS[@]}"}"
-
 UPDATE_MODE=false
-LOCKFILE_MODE=false
-LOCKFILE_PATH=""
 SKILLS_LIST=""  # comma-separated list from --skills a,b,c
 if [[ "${1:-}" == "--update" ]]; then
   UPDATE_MODE=true
-  PLATFORM="all"
-  AGENT="all"
-elif [[ "${1:-}" == "--from-lockfile" ]]; then
-  LOCKFILE_MODE=true
-  LOCKFILE_PATH="${2:-$REPO_ROOT/crew.lock}"
-  if [[ ! -f "$LOCKFILE_PATH" ]]; then
-    echo "Error: lockfile not found: $LOCKFILE_PATH" >&2
-    exit 1
-  fi
   PLATFORM="all"
   AGENT="all"
 else
@@ -86,17 +56,14 @@ usage() {
   echo "       ./install.sh [platform] --skill <skill-name>"
   echo "       ./install.sh [platform] --skills <a,b,c>"
   echo "       ./install.sh --update"
-  echo "       ./install.sh --from-lockfile [path]"
   echo ""
-  echo "  platform:        all (default), claude, copilot, pi, codex"
-  echo "  agent:           all (default), crew-code-reviewer, crew-coder"
-  echo "  --skill:         install a single skill (e.g. to-issues)"
-  echo "  --skills:        install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd);"
-  echo "                   treated as the full desired set — any skill from a prior --skills"
-  echo "                   install that's missing from this list is uninstalled"
-  echo "  --update:        re-install only agents/skills whose version changed since last install"
-  echo "  --version:       pin to a release tag (e.g. v1.2.0) or 'latest' to resolve the newest release"
-  echo "  --from-lockfile: install from a lockfile (defaults to ./crew.lock; fetches pinned registry version and installs listed items)"
+  echo "  platform:  all (default), claude, copilot, pi, codex"
+  echo "  agent:     all (default), crew-code-reviewer, crew-coder"
+  echo "  --skill:   install a single skill (e.g. to-issues)"
+  echo "  --skills:  install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd);"
+  echo "             treated as the full desired set — any skill from a prior --skills"
+  echo "             install that's missing from this list is uninstalled"
+  echo "  --update:  re-install only agents/skills whose version changed since last install"
   echo ""
   echo "Examples:"
   echo "  ./install.sh                                      # install everything into project"
@@ -104,9 +71,6 @@ usage() {
   echo "  ./install.sh claude --skills tdd,to-issues          # multiple skills at once"
   echo "  ./install.sh claude --skill crew-afk              # crew-afk + crew-coder + crew-code-reviewer"
   echo "  ./install.sh --update                             # update all installed agents/skills"
-  echo "  ./install.sh --from-lockfile                      # install from ./crew.lock"
-  echo "  ./install.sh --from-lockfile path/to/crew.lock    # install from a specific lockfile"
-  echo "  ./install.sh --version latest                     # pin to the newest published release"
   echo ""
   echo "Available skills:"
   echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
@@ -129,11 +93,11 @@ done
 
 # ── jq output normalisation (Windows) ──────────────────────────────────────────
 # jq on Windows (Git Bash) writes stdout in text mode, so every line arrives with a
-# trailing \r that then lives *inside* the value. A lockfile skill name read as
+# trailing \r that then lives *inside* the value. A skill name read as
 # 'tdd\r' misses `.skills[$n]` in registry.json and the skill is skipped with
 # "not found in registry" — the install silently does nothing. Individual read loops
-# used to strip it one at a time, which left every loop added later (the crew.lock
-# and manifest loops) broken again. Normalise once, here, so no call site can forget.
+# used to strip it one at a time, which left every loop added later (the manifest
+# loop) broken again. Normalise once, here, so no call site can forget.
 # Defined after the dependency check so `command -v jq` still sees a missing binary.
 #
 # Command substitution, NOT `command jq "$@" | tr -d '\r'`: that pipeline spawned two
@@ -925,317 +889,7 @@ prune_skills_not_in() {
   done <<< "$existing"
 }
 
-# git remotes are often SSH (git@github.com:owner/repo.git); the release/tarball
-# endpoints need an https URL, so normalise before using or recording one.
-normalize_registry_url() {
-  local url="${1%.git}"
-  case "$url" in
-    git@*:*)
-      url="${url#git@}"          # github.com:owner/repo
-      url="https://${url/://}"   # https://github.com/owner/repo
-      ;;
-    ssh://git@*) url="https://${url#ssh://git@}" ;;
-  esac
-  printf '%s' "$url"
-}
-
-# crew.lock records the release as "v<semver>", but tarball URLs and version
-# comparisons need the bare semver. Normalise on read rather than changing the
-# recorded format, so lockfiles written by older versions keep working.
-lock_bare_version() { printf '%s' "${1#v}"; }
-
-# Reads one item's version out of a lockfile. write_lockfile records objects
-# ({"version": "1.2.3"}); older lockfiles recorded a bare string, so accept both
-# — reading the object as if it were a string is what made every comparison
-# downstream see a mismatch and reinstall unconditionally.
-lock_item_version() {
-  local lockfile="$1" section="$2" name="$3"
-  jq -r --arg s "$section" --arg n "$name" \
-    'getpath([$s, $n]) as $e
-     | if ($e | type) == "object" then ($e.version // empty)
-       elif ($e | type) == "string" then $e
-       else empty end' "$lockfile"
-}
-
-# Writes crew.lock recording the pinned version/registry, the platform installed
-# for, plus the agents/skills just installed. Only called when --version was
-# passed — see PIN_VERSION above.
-write_lockfile() {
-  local registry="$PIN_REGISTRY"
-  if [[ -z "$registry" ]]; then
-    registry=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "")
-  fi
-  if [[ -z "$registry" ]]; then
-    echo "Warning: could not determine registry URL (no git remote and no --registry given) — skipping crew.lock" >&2
-    return
-  fi
-  registry=$(normalize_registry_url "$registry")
-
-  local agents_json="{}"
-  for entry in "${MANIFEST_AGENT_ENTRIES[@]+"${MANIFEST_AGENT_ENTRIES[@]}"}"; do
-    local name version platform_val
-    read -r name version platform_val <<< "$entry"
-    agents_json=$(jq -n --argjson base "$agents_json" --arg n "$name" --arg v "$version" \
-      '$base | .[$n] = {version: $v}')
-  done
-
-  local skills_json="{}"
-  for entry in "${MANIFEST_SKILL_ENTRIES[@]+"${MANIFEST_SKILL_ENTRIES[@]}"}"; do
-    local name version
-    read -r name version <<< "$entry"
-    skills_json=$(jq -n --argjson base "$skills_json" --arg n "$name" --arg v "$version" \
-      '$base | .[$n] = {version: $v}')
-  done
-
-  # Record the platform too: without it, --update from a lockfile fell back to
-  # "all" and reinstalled every platform over a single-platform install.
-  jq -n \
-    --arg registry "$registry" \
-    --arg version "v$(lock_bare_version "$PIN_VERSION")" \
-    --arg platform "$PLATFORM" \
-    --argjson agents "$agents_json" \
-    --argjson skills "$skills_json" \
-    '{
-      registry: $registry,
-      version: $version,
-      platform: $platform,
-      agents: $agents,
-      skills: $skills
-    }' > "$REPO_ROOT/crew.lock"
-
-  echo "  crew.lock (pinned to $PIN_VERSION)"
-}
-
-fetch_latest_release_version() {
-  local registry_url
-  registry_url=$(normalize_registry_url "$1")
-  local url="${registry_url}/releases/latest"
-  
-  # Follow redirect and get final URL
-  local final_url
-  if ! final_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "$url" 2>&1); then
-    echo "Error: failed to fetch latest release from $url" >&2
-    echo "Network error or no releases available" >&2
-    return 1
-  fi
-  
-  # Extract tag from URL like https://github.com/owner/repo/releases/tag/v1.2.3
-  local tag
-  tag=$(echo "$final_url" | sed -E 's|.*/releases/tag/([^/]+)$|\1|')
-  local version="${tag#v}"  # Strip leading 'v' if present
-  
-  if [[ -z "$version" ]]; then
-    echo "Error: failed to extract version from $final_url" >&2
-    return 1
-  fi
-  
-  echo "$version"
-}
-
-# Turns --version latest into the concrete newest release tag; any other value is
-# left untouched. Called just before write_lockfile so the recorded version is
-# always reproducible.
-resolve_pin_version() {
-  [[ "$PIN_VERSION" == "latest" ]] || return 0
-
-  local registry="$PIN_REGISTRY"
-  if [[ -z "$registry" ]]; then
-    registry=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "")
-  fi
-  if [[ -z "$registry" ]]; then
-    echo "Error: --version latest needs a registry URL (no git remote and no --registry given)" >&2
-    exit 1
-  fi
-  registry=$(normalize_registry_url "$registry")
-
-  local resolved
-  if ! resolved=$(fetch_latest_release_version "$registry"); then
-    exit 1
-  fi
-  PIN_VERSION="v${resolved#v}"
-  echo "Resolved --version latest to $PIN_VERSION"
-}
-
-run_update_from_lockfile() {
-  local lockfile="$REPO_ROOT/crew.lock"
-  
-  if [[ ! -f "$lockfile" ]]; then
-    echo "Error: crew.lock not found at $lockfile" >&2
-    return 1
-  fi
-  
-  # Read lockfile
-  local current_version registry lock_platform
-  current_version=$(jq -r '.version // empty' "$lockfile")
-  registry=$(jq -r '.registry // empty' "$lockfile")
-  lock_platform=$(jq -r '.platform // empty' "$lockfile")
-  
-  if [[ -z "$current_version" || -z "$registry" ]]; then
-    echo "Error: crew.lock missing required fields (version, registry)" >&2
-    exit 1
-  fi
-
-  # Lockfiles written before platform was recorded fall back to the manifest,
-  # then to "all" — never silently widen a single-platform install.
-  if [[ -z "$lock_platform" ]]; then
-    local prior_manifest="$REPO_ROOT/.coding-crew/manifest.json"
-    if [[ -f "$prior_manifest" ]]; then
-      lock_platform=$(jq -r '.platform // empty' "$prior_manifest")
-    fi
-  fi
-  PLATFORM="${lock_platform:-all}"
-
-  current_version=$(lock_bare_version "$current_version")
-  
-  echo "Current version: v${current_version} (from crew.lock)"
-  echo "Platform: $PLATFORM (from crew.lock)"
-  echo "Checking for updates from $registry..."
-  
-  # Fetch latest release version
-  local latest_version
-  if ! latest_version=$(fetch_latest_release_version "$registry"); then
-    exit 1
-  fi
-  latest_version=$(lock_bare_version "$latest_version")
-  
-  echo "Latest version: v${latest_version}"
-  echo "---"
-  
-  # Compare versions
-  if [[ "$current_version" == "$latest_version" ]]; then
-    echo "Already at v${current_version} — nothing to update"
-    exit 0
-  fi
-  
-  echo "Update available: v${current_version} → v${latest_version}"
-  echo "Fetching registry tarball..."
-  
-  # Create temp directory for tarball extraction
-  local temp_dir
-  temp_dir=$(mktemp -d)
-  trap "rm -rf '$temp_dir'" EXIT
-  
-  # Fetch and extract tarball
-  local tarball_url="${registry}/archive/refs/tags/v${latest_version}.tar.gz"
-  if ! curl -fsSL "$tarball_url" | tar -xz -C "$temp_dir"; then
-    echo "Error: failed to fetch or extract tarball from $tarball_url" >&2
-    exit 1
-  fi
-  
-  # Find extracted directory
-  local extracted_dir
-  extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d | grep -v "^$temp_dir$" | head -1)
-  if [[ -z "$extracted_dir" || ! -d "$extracted_dir" ]]; then
-    echo "Error: failed to locate extracted registry directory in $temp_dir" >&2
-    exit 1
-  fi
-  
-  # Override SCRIPT_DIR to point to the extracted registry
-  SCRIPT_DIR="$extracted_dir"
-  
-  echo "---"
-  echo "Updating agents and skills..."
-  
-  local updated=0
-  local changelog=()
-  
-  # Update agents from lockfile
-  while IFS= read -r agent_name; do
-    local old_version new_version
-    old_version=$(lock_item_version "$lockfile" agents "$agent_name")
-    old_version="${old_version:-unknown}"
-    new_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
-    
-    if [[ -z "$new_version" ]]; then
-      echo "  $agent_name: removed from registry — skipping"
-      continue
-    fi
-    
-    if [[ "$old_version" != "$new_version" ]]; then
-      changelog+=("  $agent_name: $old_version → $new_version")
-      install_agent "$agent_name" "$PLATFORM"
-      updated=$((updated + 1))
-    fi
-  done < <(jq -r '.agents | keys[]' "$lockfile")
-  
-  # Update skills from lockfile
-  while IFS= read -r skill_name; do
-    local old_version new_version
-    old_version=$(lock_item_version "$lockfile" skills "$skill_name")
-    old_version="${old_version:-unknown}"
-    new_version=$(jq -r --arg n "$skill_name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
-    
-    if [[ -z "$new_version" ]]; then
-      echo "  $skill_name: removed from registry — skipping"
-      continue
-    fi
-    
-    if [[ "$old_version" != "$new_version" ]]; then
-      changelog+=("  $skill_name: $old_version → $new_version")
-      install_single_skill "$skill_name"
-      updated=$((updated + 1))
-    fi
-  done < <(jq -r '.skills | keys[]' "$lockfile")
-  
-  # Rewrite lockfile with new version and updated item versions. Item entries stay
-  # in write_lockfile's object form so the next --update can read them back.
-  local new_agents_json="{}"
-  while IFS= read -r agent_name; do
-    local version
-    version=$(jq -r --arg n "$agent_name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
-    if [[ -n "$version" ]]; then
-      new_agents_json=$(jq -n --argjson base "$new_agents_json" --arg n "$agent_name" --arg v "$version" \
-        '$base | .[$n] = {version: $v}')
-    fi
-  done < <(jq -r '.agents | keys[]' "$lockfile")
-  
-  local new_skills_json="{}"
-  while IFS= read -r skill_name; do
-    local version
-    version=$(jq -r --arg n "$skill_name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
-    if [[ -n "$version" ]]; then
-      new_skills_json=$(jq -n --argjson base "$new_skills_json" --arg n "$skill_name" --arg v "$version" \
-        '$base | .[$n] = {version: $v}')
-    fi
-  done < <(jq -r '.skills | keys[]' "$lockfile")
-  
-  jq -n \
-    --arg registry "$registry" \
-    --arg version "v${latest_version}" \
-    --arg platform "$PLATFORM" \
-    --argjson agents "$new_agents_json" \
-    --argjson skills "$new_skills_json" \
-    '{
-      registry: $registry,
-      version: $version,
-      platform: $platform,
-      agents: $agents,
-      skills: $skills
-    }' > "$lockfile"
-  
-  echo "---"
-  if [[ "$updated" -gt 0 ]]; then
-    echo "Changes:"
-    for line in "${changelog[@]}"; do
-      echo "$line"
-    done
-    echo "---"
-  fi
-  echo "$updated item(s) updated"
-  echo "crew.lock updated to v${latest_version}"
-}
-
 run_update() {
-  # Check for crew.lock first
-  if [[ -f "$REPO_ROOT/crew.lock" ]]; then
-    run_update_from_lockfile
-    if [[ "${#MANIFEST_AGENT_ENTRIES[@]}" -gt 0 || "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
-      write_manifest
-    fi
-    return
-  fi
-  
-  # Fall back to manifest-based update (legacy mode)
   local manifest="$REPO_ROOT/.coding-crew/manifest.json"
   local legacy_manifest="$REPO_ROOT/.coding-crew.manifest.json"
   if [[ ! -f "$manifest" && -f "$legacy_manifest" ]]; then
@@ -1296,121 +950,6 @@ run_update() {
   echo "$updated item(s) updated"
 }
 
-run_from_lockfile() {
-  local lockfile="$1"
-  
-  # Validate lockfile format
-  if ! jq empty "$lockfile" 2>/dev/null; then
-    echo "Error: invalid JSON in lockfile: $lockfile" >&2
-    exit 1
-  fi
-  
-  local registry version lock_platform
-  registry=$(jq -r '.registry // empty' "$lockfile")
-  version=$(jq -r '.version // empty' "$lockfile")
-  lock_platform=$(jq -r '.platform // empty' "$lockfile")
-  
-  if [[ -z "$registry" || -z "$version" ]]; then
-    echo "Error: lockfile must contain 'registry' and 'version' fields" >&2
-    exit 1
-  fi
-
-  # The lockfile records "v<semver>"; tags/URLs are built from the bare semver.
-  version=$(lock_bare_version "$version")
-  # Reproduce the platform the lockfile was written for, not "all".
-  PLATFORM="${lock_platform:-all}"
-  
-  echo "Lockfile: $lockfile"
-  echo "Registry: $registry"
-  echo "Version: v${version}"
-  echo "Platform: $PLATFORM"
-  echo "---"
-
-  # file:// registries point directly to a local directory — no tarball fetch needed
-  if [[ "$registry" == file://* ]]; then
-    local local_path="${registry#file://}"
-    if [[ ! -d "$local_path" ]]; then
-      echo "Error: local registry path does not exist: $local_path" >&2
-      exit 1
-    fi
-    SCRIPT_DIR="$local_path"
-  else
-    # Construct tarball URL
-    local tarball_url="${registry}/archive/refs/tags/v${version}.tar.gz"
-    echo "Fetching registry tarball from: $tarball_url"
-
-    # Create temp directory with cleanup trap
-    local temp_dir
-    temp_dir=$(mktemp -d)
-    trap "rm -rf '$temp_dir'" EXIT
-
-    # Fetch and extract tarball
-    if ! curl -fsSL "$tarball_url" | tar -xz -C "$temp_dir"; then
-      echo "Error: failed to fetch or extract tarball from $tarball_url" >&2
-      exit 1
-    fi
-
-    # Find the extracted directory (GitHub tarballs extract to owner-repo-sha/)
-    local extracted_dir
-    extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d | grep -v "^$temp_dir$" | head -1)
-    if [[ -z "$extracted_dir" || ! -d "$extracted_dir" ]]; then
-      echo "Error: failed to locate extracted registry directory in $temp_dir" >&2
-      exit 1
-    fi
-
-    echo "Extracted to: $extracted_dir"
-    SCRIPT_DIR="$extracted_dir"
-  fi
-  
-  # Install agents from lockfile
-  local agents_json
-  agents_json=$(jq -r '.agents // {}' "$lockfile")
-  if [[ "$agents_json" != "{}" ]]; then
-    echo "---"
-    echo "Installing agents from lockfile..."
-    while IFS= read -r agent_name; do
-      local lockfile_version registry_version
-      lockfile_version=$(lock_item_version "$lockfile" agents "$agent_name")
-      registry_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
-      
-      if [[ -z "$registry_version" ]]; then
-        echo "Warning: agent '$agent_name' not found in registry v${version} — skipping"
-        continue
-      fi
-      
-      if [[ -n "$lockfile_version" && "$lockfile_version" != "$registry_version" ]]; then
-        echo "Warning: agent '$agent_name' version mismatch (lockfile: $lockfile_version, registry: $registry_version) — using registry version"
-      fi
-      
-      install_agent "$agent_name" "$PLATFORM"
-    done < <(jq -r '.agents | keys[]' "$lockfile")
-  fi
-  
-  # Install skills from lockfile
-  local skills_json
-  skills_json=$(jq -r '.skills // {}' "$lockfile")
-  if [[ "$skills_json" != "{}" ]]; then
-    echo "---"
-    echo "Installing skills from lockfile..."
-    while IFS= read -r skill_name; do
-      local lockfile_version registry_version
-      lockfile_version=$(lock_item_version "$lockfile" skills "$skill_name")
-      registry_version=$(jq -r --arg n "$skill_name" '.skills[$n].version // empty' "$SCRIPT_DIR/registry.json")
-      
-      if [[ -z "$registry_version" ]]; then
-        echo "Warning: skill '$skill_name' not found in registry v${version} — skipping"
-        continue
-      fi
-      
-      if [[ -n "$lockfile_version" && "$lockfile_version" != "$registry_version" ]]; then
-        echo "Warning: skill '$skill_name' version mismatch (lockfile: $lockfile_version, registry: $registry_version) — using registry version"
-      fi
-      
-      install_single_skill "$skill_name"
-    done < <(jq -r '.skills | keys[]' "$lockfile")
-  fi
-}
-
 echo "Target: $REPO_ROOT"
 
 if [[ "$UPDATE_MODE" == "true" ]]; then
@@ -1418,14 +957,6 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
   if [[ "${#MANIFEST_AGENT_ENTRIES[@]}" -gt 0 || "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
     write_manifest
   fi
-  echo "Done."
-  exit 0
-fi
-
-if [[ "$LOCKFILE_MODE" == "true" ]]; then
-  run_from_lockfile "$LOCKFILE_PATH"
-  echo "---"
-  write_manifest
   echo "Done."
   exit 0
 fi
@@ -1482,10 +1013,6 @@ fi
 install_docs
 echo "---"
 write_manifest
-if [[ -n "$PIN_VERSION" ]]; then
-  resolve_pin_version
-  write_lockfile
-fi
 
 warn_shadowing_user_installs
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.29.94]
+
+### Removed
+
+- **Dropped `crew.lock`, `--version`, `--from-lockfile`, and `bootstrap.sh`'s matching flags.**
+  The pinned-version team-distribution flow only refreshed `crew.lock` when `--version` was
+  explicitly passed — a plain re-install (the common case) left a previously pinned lockfile
+  stale with no warning, and `--update` would silently keep "updating" against that stale pin.
+  `--update` now always reads `.coding-crew/manifest.json`, which every install already writes
+  unconditionally.
+
 ## [1.29.93]
 
 ### Changed

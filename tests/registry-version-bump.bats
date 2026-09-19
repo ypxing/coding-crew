@@ -1,8 +1,7 @@
 #!/usr/bin/env bats
 
-# install.sh --update (both the crew.lock tarball path and the legacy manifest path) decides
-# whether to reinstall an agent/skill by comparing registry.json's version field alone — see
-# run_update_from_lockfile / run_update in install.sh. If an entry's own effect (registry.json
+# install.sh --update decides whether to reinstall an agent/skill by comparing
+# registry.json's version field alone — see run_update in install.sh. If an entry's own effect (registry.json
 # fields, or the actual files it ships) changes without its version also changing, every
 # existing --update silently keeps the old files forever, with no error and no hint that
 # anything was skipped.
