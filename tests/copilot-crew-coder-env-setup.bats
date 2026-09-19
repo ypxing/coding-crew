@@ -36,14 +36,6 @@ setup() {
   grep -q 'blocked' "$COPILOT_AGENT"
 }
 
-@test "copilot.agent.md trace log path uses MAIN_ROOT/.scratch/<feature-slug>/traces" {
-  grep -q 'MAIN_ROOT.*scratch.*traces\|scratch.*FEATURE_SLUG.*traces\|FEATURE_SLUG.*traces' "$COPILOT_AGENT"
-}
-
-@test "copilot.agent.md trace log path includes branch name" {
-  grep -q 'traces/.*\.log\|traces.*BRANCH\|BRANCH.*traces' "$COPILOT_AGENT"
-}
-
 @test "copilot.agent.md BRANCH derived from git rev-parse abbrev-ref HEAD" {
   grep -q 'git rev-parse --abbrev-ref HEAD' "$COPILOT_AGENT"
 }

@@ -68,14 +68,6 @@ setup() {
   done
 }
 
-@test "every crew-coder variant still derives the feature slug exactly once" {
-  # Needed for the trace path; deriving it twice was the duplication that was cut.
-  for f in "$COPILOT_AGENT" "$CLAUDE_AGENT" "$PI_AGENT" "$CODEX_AGENT"; do
-    count=$(grep -c "FEATURE_SLUG=\$(echo" "$f")
-    [ "$count" -eq 1 ] || { echo "$(basename "$f") derives FEATURE_SLUG $count times" >&2; return 1; }
-  done
-}
-
 @test "every crew-coder variant points at solve-issue for the PRD read" {
   for f in "$COPILOT_AGENT" "$CLAUDE_AGENT" "$PI_AGENT" "$CODEX_AGENT"; do
     grep -qi 'solve-issue.*reads the PRD' "$f" || {

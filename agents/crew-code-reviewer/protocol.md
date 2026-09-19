@@ -147,8 +147,8 @@ Ask: "Would a senior engineer here actually change this in review?" If no, skip.
 
 ## Output Format
 
-One block per branch, attribution required. Start with `## Branch: <branch-name> (<slug>)`, then a
-fenced json block — the only thing tooling parses; surrounding prose is never read back:
+**Write this JSON to the report path the caller names, as your last action** — the only thing parsed.
+Still start each branch's message with `## Branch: <branch-name> (<slug>)`, then the same object:
 
 ```json
 {

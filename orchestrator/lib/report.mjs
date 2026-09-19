@@ -1,15 +1,18 @@
 /**
  * report.mjs — parse what the models return, and apply the schema pre-filter.
  *
- * The worker's report is the only channel between a worker's context window and
- * the pipeline, so it is parsed strictly and *pessimistically*: an unparseable
- * report is `blocked`, never a silent `complete`. A structured block is preferred
- * (```json fence, or a <slug>.report.json sidecar); the markdown headings stay
- * supported so an older crew-coder still works.
+ * One file, one schema, one parser, fail closed: every role (coder/triage/review) writes
+ * its result to a `<slug>.<role>.report.json` sidecar as its own last action, and that file
+ * is the *only* thing read here — never the dispatch's captured text. There is no fallback
+ * to a fenced ```json block in the final message or to markdown headings; a missing or
+ * invalid sidecar is read as the failure state (`blocked` / `unmet` / `fixable`, per role),
+ * deterministically, the same way for every platform and for both the headless and herdr
+ * dispatch paths. See dispatch.mjs's file header for why herdr has no separate fallback here
+ * either.
  *
- * The reviewer's report carries two things the pipeline gates on: the `AC:`
- * verdict line and the findings list. Both fail closed — a missing verdict is
- * `unmet`, an unreadable report is a review that did not happen.
+ * The reviewer's report carries two things the pipeline gates on: the `AC:`-equivalent
+ * `verdict` field and the findings list. Both fail closed — a missing or unreadable sidecar
+ * is `unmet`, a review that did not happen.
  */
 
 export const CHECK_CATEGORIES = ["test", "lint", "typecheck"];
@@ -29,6 +32,13 @@ function normaliseCheck(value) {
  * in document order. JSON's own grammar treats whitespace between tokens as
  * insignificant, so this is immune to the indentation a herdr-captured pane transcript
  * sometimes adds — unlike a line-anchored regex or awk pattern, which is not.
+ *
+ * The only remaining caller is parseReviewAggregate: the round-aggregate file is a
+ * concatenation of several dispatches' sidecar contents (see pipeline.mjs's runReview),
+ * appended as fenced json blocks so a later retry's block can be told apart from an
+ * earlier one for the same branch. Per-dispatch parsing (parseWorkerReport,
+ * parseReviewReport, parseTriageReport) reads the sidecar object directly and never
+ * scans text for a fence.
  */
 function allFencedJson(text, requiredField) {
   const re = /[ \t]*```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g;
@@ -45,10 +55,6 @@ function allFencedJson(text, requiredField) {
     }
   }
   return out;
-}
-
-function fencedJson(text) {
-  return allFencedJson(text, "status")[0] ?? null;
 }
 
 function fromStructured(raw, obj) {
@@ -69,58 +75,40 @@ function fromStructured(raw, obj) {
   };
 }
 
-function fromMarkdown(raw) {
-  const status = /^\s*(?:\*\*)?Status(?:\*\*)?:\s*(?:`)?(complete|partial|blocked)/im.exec(raw);
-  const checks = {};
-  for (const c of CHECK_CATEGORIES) {
-    // "test: pass", "| tests | fail |", "- Typecheck — not_run"
-    const re = new RegExp(`${c}s?\\b[^\\n|]*[:|\\-—]\\s*\`?(\\w[\\w /]*)`, "i");
-    const m = re.exec(raw);
-    checks[c] = m ? normaliseCheck(m[1]) : "not_run";
-  }
-  const wd = /(?:working[_ ]directory|worktree)\s*[:=]\s*(\S+)/i.exec(raw);
-  const branch = /^\s*(?:\*\*)?Branch(?:\*\*)?:\s*(\S+)/im.exec(raw);
+/**
+ * The one blocked shape every missing-or-invalid-sidecar case collapses to — same fields as
+ * fromStructured's success shape, so a caller never has to branch on which one it got before
+ * reading `status`/`checks`/`criteria`.
+ */
+function missingReport(raw, unparseable) {
   return {
-    parsedFrom: "markdown",
-    status: status ? status[1].toLowerCase() : null,
-    checks,
-    branch: branch ? branch[1] : null,
-    workingDirectory: wd ? wd[1] : null,
+    parsedFrom: "missing",
+    status: "blocked",
+    checks: Object.fromEntries(CHECK_CATEGORIES.map((c) => [c, "not_run"])),
+    branch: null,
+    workingDirectory: null,
     progress: null,
     notes: null,
     criteria: [],
+    unparseable,
     raw,
   };
 }
 
 /**
- * @param {string|null} text  the worker's final message
+ * @param {string|null} text  the worker's captured dispatch text — kept only as `raw` for a
+ *   human reading a blocked report; never parsed
  * @param {object|null} sidecar  parsed <slug>.report.json, when the worker wrote one
  */
 export function parseWorkerReport(text, sidecar = null) {
   const raw = text ?? "";
-  if (sidecar && sidecar.status) return fromStructured(raw, sidecar);
-  const json = fencedJson(raw);
-  if (json) return fromStructured(raw, json);
-  if (!raw.trim()) {
-    return {
-      parsedFrom: "empty",
-      status: "blocked",
-      checks: Object.fromEntries(CHECK_CATEGORIES.map((c) => [c, "not_run"])),
-      branch: null,
-      workingDirectory: null,
-      progress: null,
-      notes: null,
-      criteria: [],
-      unparseable: "empty report — the worker died before reporting",
-      raw,
-    };
-  }
-  const md = fromMarkdown(raw);
-  if (!md.status) {
-    return { ...md, status: "blocked", unparseable: "no Status: line in the worker report" };
-  }
-  return md;
+  if (sidecar && STATUSES.has(String(sidecar.status).toLowerCase())) return fromStructured(raw, sidecar);
+  return missingReport(
+    raw,
+    sidecar
+      ? "the worker's report.json has no valid status field"
+      : "no report.json — the worker never wrote its result file",
+  );
 }
 
 /**
@@ -222,60 +210,26 @@ function reviewFromStructured(raw, obj) {
   };
 }
 
-function reviewFromMarkdown(raw) {
-  if (/^\s*SKIPPED:/im.test(raw)) {
-    const m = /^\s*SKIPPED:\s*(.*)$/im.exec(raw);
-    return { ok: false, parsedFrom: "markdown", verdict: "unmet", detail: `skipped — ${m[1].trim()}`, findings: [], raw };
-  }
-  const ac = /^\s*AC:\s*(all-met|unmet)\s*(?:—|--|-)?\s*(.*)$/im.exec(raw);
-  const findings = [];
-  const explicit = [...raw.matchAll(/^\s*FINDING:\s*(\w+)\s*\|\s*([^|\n]*)\|\s*(.+)$/gim)];
-  for (const m of explicit) {
-    const severity = m[1].toUpperCase();
-    if (!SEVERITIES.includes(severity)) continue;
-    findings.push({ severity, location: m[2].trim(), criterion: m[3].trim(), explicit: true });
-  }
-  if (!explicit.length) {
-    for (const m of raw.matchAll(/\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*(.*)$/gim)) {
-      findings.push({
-        severity: m[1].toUpperCase(),
-        location: "",
-        criterion: m[2].trim(),
-        explicit: false,
-      });
-    }
-  }
-  if (!ac) {
-    return { ok: true, parsedFrom: "markdown", verdict: "unmet", detail: "no verdict line", findings, raw };
-  }
-  return {
-    ok: true,
-    parsedFrom: "markdown",
-    verdict: ac[1].toLowerCase(),
-    detail: (ac[2] || "").trim(),
-    findings,
-    raw,
-  };
-}
-
 /**
- * Reviewer output for one branch. A `<slug>.review.report.json` sidecar (see
- * parseWorkerReport's own sidecar policy) is preferred over the captured text entirely; a
- * fenced ```json block (`verdict` field required) inside the text is next; the markdown
- * `AC:`/`FINDING:`/`[SEV]` shape stays supported so an older crew-code-reviewer still works.
+ * Reviewer output for one branch. The `<slug>.review.report.json` sidecar (see
+ * parseWorkerReport's own sidecar policy) is the only thing read — never the captured text.
  *
- * @param {string|null} text  the reviewer's final message
+ * @param {string|null} text  the reviewer's captured dispatch text — kept only as `raw`
  * @param {object|null} sidecar  parsed <slug>.review.report.json, when the reviewer wrote one
  */
 export function parseReviewReport(text, sidecar = null) {
   const raw = text ?? "";
-  if (sidecar && sidecar.verdict) return reviewFromStructured(raw, sidecar);
-  if (!raw.trim()) {
-    return { ok: false, parsedFrom: "empty", verdict: "unmet", detail: "empty review report", findings: [], raw };
-  }
-  const json = allFencedJson(raw, "verdict")[0];
-  if (json) return reviewFromStructured(raw, json);
-  return reviewFromMarkdown(raw);
+  if (sidecar && VERDICTS.has(String(sidecar.verdict).toLowerCase())) return reviewFromStructured(raw, sidecar);
+  return {
+    ok: false,
+    parsedFrom: "missing",
+    verdict: "unmet",
+    detail: sidecar
+      ? "the reviewer's report.json has no valid verdict field"
+      : "no report.json — the reviewer never wrote its verdict file",
+    findings: [],
+    raw,
+  };
 }
 
 /**
@@ -328,39 +282,22 @@ function triageFromStructured(raw, obj) {
  * recoding touches? Fails closed toward `fixable` — an unparseable or missing verdict
  * must not silently strand an issue that a normal retry could still fix.
  *
- * A `<slug>.triage.report.json` sidecar (see parseWorkerReport's own sidecar policy) is
- * preferred over the captured text entirely; a fenced ```json block (`fixable` field
- * required) inside the text is next; the markdown `FIXABLE:`/`CATEGORY:`/`DETAIL:` shape
- * stays supported as a fallback, same policy as `parseWorkerReport` and `parseReviewReport`.
+ * The `<slug>.triage.report.json` sidecar (see parseWorkerReport's own sidecar policy) is
+ * the only thing read — never the captured text.
  *
- * @param {string|null} text  the triage agent's final message
+ * @param {string|null} text  the triage agent's captured dispatch text — kept only as `raw`
  * @param {object|null} sidecar  parsed <slug>.triage.report.json, when it wrote one
  */
 export function parseTriageReport(text, sidecar = null) {
   const raw = text ?? "";
   if (sidecar && sidecar.fixable != null) return triageFromStructured(raw, sidecar);
-  if (!raw.trim()) {
-    return { ok: false, fixable: true, category: "", detail: "empty triage report", raw };
-  }
-  const json = allFencedJson(raw, "fixable")[0];
-  if (json) return triageFromStructured(raw, json);
-  const fixable = /^\s*FIXABLE:\s*(yes|no)\b/im.exec(raw);
-  const category = /^\s*CATEGORY:\s*(.+)$/im.exec(raw);
-  const detail = /^\s*DETAIL:\s*([\s\S]*)$/im.exec(raw);
-  if (!fixable) {
-    return {
-      ok: false,
-      fixable: true,
-      category: category ? category[1].trim() : "",
-      detail: detail ? detail[1].trim() : "no FIXABLE: line",
-      raw,
-    };
-  }
   return {
-    ok: true,
-    fixable: fixable[1].toLowerCase() === "yes",
-    category: category ? category[1].trim() : "unspecified",
-    detail: detail ? detail[1].trim() : "",
+    ok: false,
+    fixable: true,
+    category: "",
+    detail: sidecar
+      ? "the triage report.json has no valid fixable field"
+      : "no report.json — triage never wrote its verdict file",
     raw,
   };
 }

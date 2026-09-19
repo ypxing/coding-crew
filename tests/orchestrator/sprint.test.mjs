@@ -263,7 +263,11 @@ test("a worker-reported partial carries its own unmet criteria into the Progress
 test("an unmet acceptance-criteria verdict retains the branch and closes nothing", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  fake(root, "alpha.review", "## Branch: crew/demo/alpha\nAC: unmet — no test covers the criterion\n");
+  fake(
+    root,
+    "alpha.review",
+    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "no test covers the criterion", findings: [] })}\n\`\`\`\n`,
+  );
   const r = runSprint(root);
   const s = state(root);
   assert.equal(r.code, 2);
@@ -413,7 +417,11 @@ test("a close-refused retry skips the worker, verify, and review, no-ops the alr
 test("a criteria-unmet retry still redispatches the full worker, not just review", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  fake(root, "alpha.review", "## Branch: crew/demo/alpha\nAC: unmet — no test covers the criterion\n");
+  fake(
+    root,
+    "alpha.review",
+    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "no test covers the criterion", findings: [] })}\n\`\`\`\n`,
+  );
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 2, "unmet criteria never resolve on their own, so the sprint stalls");
   const s = state(root);
@@ -490,12 +498,15 @@ test("CRITICAL findings are promoted into a Phase 2 fix issue and run again", ()
   fake(
     root,
     "alpha.review",
-    [
-      "## Branch: crew/demo/alpha",
-      "AC: all-met",
-      "FINDING: CRITICAL | src/alpha.txt:1 | Reject unsigned input before use",
-      "FINDING: MEDIUM | src/alpha.txt:2 | Rename the variable",
-    ].join("\n"),
+    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({
+      branch: "crew/demo/alpha",
+      slug: "alpha",
+      verdict: "all-met",
+      findings: [
+        { severity: "CRITICAL", location: "src/alpha.txt:1", criterion: "Reject unsigned input before use" },
+        { severity: "MEDIUM", location: "src/alpha.txt:2", criterion: "Rename the variable" },
+      ],
+    })}\n\`\`\`\n`,
   );
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);

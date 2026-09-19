@@ -93,13 +93,12 @@ test("the JSON a launcher coder is told to emit round-trips through the parser",
   assert.notEqual(report.workingDirectory, null);
 });
 
-test("the markdown fallback still works, so an un-migrated coder is not stranded", () => {
+test("there is no markdown fallback — an un-migrated coder that never writes the sidecar is blocked, on purpose", () => {
   const r = parseWorkerReport(
     ["## Issue: alpha", "Status: complete", "", "### Checks", "npm test: pass", "npx tsc: pass"].join("\n"),
   );
-  assert.equal(r.parsedFrom, "markdown");
-  assert.equal(r.status, "complete");
-  assert.equal(r.checks.test, "pass");
+  assert.equal(r.parsedFrom, "missing");
+  assert.equal(r.status, "blocked");
 });
 
 test("the reviewer protocol states the findings shape the parser promotes from", () => {
@@ -109,19 +108,14 @@ test("the reviewer protocol states the findings shape the parser promotes from",
   // The verdict field it is printed beneath is the other half of the same contract.
   assert.match(protocol, /"verdict": "all-met"/);
 
-  // And the shape the protocol shows is the shape the parser reads.
-  const parsed = parseReviewReport(
-    [
-      "## Branch: crew/f/x (x)",
-      "```json",
-      JSON.stringify({
-        branch: "crew/f/x",
-        verdict: "all-met",
-        findings: [{ severity: "CRITICAL", location: "src/db.ts:7", criterion: "Parameterise the query" }],
-      }),
-      "```",
-    ].join("\n"),
-  );
+  // And the shape the protocol shows is the shape the parser reads — from the sidecar,
+  // never from the surrounding text.
+  const sidecar = {
+    branch: "crew/f/x",
+    verdict: "all-met",
+    findings: [{ severity: "CRITICAL", location: "src/db.ts:7", criterion: "Parameterise the query" }],
+  };
+  const parsed = parseReviewReport("## Branch: crew/f/x (x)", sidecar);
   assert.equal(parsed.verdict, "all-met");
   assert.deepEqual(parsed.findings, [
     { severity: "CRITICAL", location: "src/db.ts:7", criterion: "Parameterise the query", explicit: true },
@@ -138,10 +132,9 @@ test("the triage protocol states the json verdict the parser reads, and never tr
   // re-queued on a finding" rather than leaving that to be inferred.
   assert.match(protocol, /independent of the coder/i);
 
-  // And the shape the protocol shows is the shape the parser reads.
-  const parsed = parseTriageReport(
-    ["```json", JSON.stringify({ fixable: "yes", category: "wrong dependency version", detail: "pinned a version that 404s" }), "```"].join("\n"),
-  );
+  // And the shape the protocol shows is the shape the parser reads — from the sidecar.
+  const sidecar = { fixable: "yes", category: "wrong dependency version", detail: "pinned a version that 404s" };
+  const parsed = parseTriageReport("", sidecar);
   assert.equal(parsed.ok, true);
   assert.equal(parsed.fixable, true);
   assert.equal(parsed.category, "wrong dependency version");

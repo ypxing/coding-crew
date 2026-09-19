@@ -1,10 +1,14 @@
 #!/usr/bin/env bats
 
 # Tests for issue 05-trim-redundant-prescription
-# Verifies three patterns of redundant prescription are removed:
+# Verifies two patterns of redundant prescription are removed:
 #   1. Echo-only bash blocks for PRD check
 #   2. Duplicated root derivation (second call reuses established values)
-#   3. Per-call trace logging collapsed to phase-level
+#
+# A third pattern this file used to pin — per-call trace logging collapsed to a two-line
+# [START]/[DONE] phase marker — no longer applies: the per-worker trace file it described
+# was removed outright (nothing ever read it back), not further collapsed. See
+# agents/crew-coder/protocol.md and tests/crew-coder-protocol.bats.
 
 load helpers/render
 
@@ -39,53 +43,3 @@ setup() {
   ! grep -q 'MAIN_ROOT=\$(cd.*\.\.' "$SOLVE_ISSUE"
 }
 
-# --- Pattern 3: Per-call logging collapsed all the way to [START]/[DONE] ---
-#
-# This started as "log at phase level, not per call". The phase-level markers were
-# themselves ~10 shell round trips per worker for a log nobody reads mid-run, so the
-# trace is now two lines. tests/crew-coder-per-agent-trace.bats owns the detail; these
-# keep the original defect (a log line before every command) from coming back.
-
-@test "claude.agent.md does not instruct logging before every individual Bash command" {
-  ! grep -q 'before every Bash command\|Log \[CMD\] before every' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md does not instruct logging before every individual shell command" {
-  ! grep -q 'before every shell command\|Log \[CMD\] before every' "$COPILOT_AGENT"
-}
-
-@test "claude.agent.md emits no per-command trace marker at all" {
-  ! grep -q '\[CMD\]' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md emits no per-command trace marker at all" {
-  ! grep -q '\[CMD\]' "$COPILOT_AGENT"
-}
-
-# --- Start/done markers preserved ---
-
-@test "claude.agent.md still has [START] marker" {
-  grep -q '\[START\]' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md still has [START] marker" {
-  grep -q '\[START\]' "$COPILOT_AGENT"
-}
-
-@test "claude.agent.md bounds the trace to the worker's start and end" {
-  grep -qi 'two lines per worker' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md bounds the trace to the worker's start and end" {
-  grep -qi 'two lines per worker' "$COPILOT_AGENT"
-}
-
-@test "claude.agent.md still has [DONE] marker including for blocked" {
-  grep -q '\[DONE\]' "$CLAUDE_AGENT"
-  grep -A5 '\[DONE\]' "$CLAUDE_AGENT" | grep -qi 'always\|blocked'
-}
-
-@test "copilot.agent.md still has [DONE] marker including for blocked" {
-  grep -q '\[DONE\]' "$COPILOT_AGENT"
-  grep -A5 '\[DONE\]' "$COPILOT_AGENT" | grep -qi 'always\|blocked'
-}

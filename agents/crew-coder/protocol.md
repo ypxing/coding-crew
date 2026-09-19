@@ -20,31 +20,8 @@ fi
 ```
 
 Use absolute paths under `$PROJECT_ROOT` for every file read, edit and shell command — never relative
-ones. Write nothing outside it except the two paths mandated below: your trace file, and your report
-file when the caller passes an output path. Never touch the issue file — closing it is the
-orchestrator's job (see **Issue Ownership**).
-
-## Agent Trace Logging
-
-Each worker writes its own trace file so parallel runs stay observable in isolation. Set it up
-immediately after environment setup; `FEATURE_SLUG` is derived once here and reused everywhere:
-
-```bash
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
-TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/$BRANCH.log"
-mkdir -p "$(dirname "$TRACE_LOG")"
-echo "[$(date -u +%H:%M:%SZ)] [START] issue=$ISSUE_PATH" >> "$TRACE_LOG"
-```
-
-**Emit `[DONE]` as the last action before returning the report.** Always emit this line — including when status is `blocked`:
-
-```bash
-echo "[$(date -u +%H:%M:%SZ)] [DONE] status=<complete|partial|blocked> reason=<notes>" >> "$TRACE_LOG"
-```
-
-Two lines per worker, not two per tool call. The trace answers "did this worker start, and how did it
-end" — nothing else, so it never costs a round trip mid-implementation.
+ones. Write nothing outside it except your report file, when the caller passes an output path. Never
+touch the issue file — closing it is the orchestrator's job (see **Issue Ownership**).
 
 ## Code Search
 
@@ -73,23 +50,21 @@ itself says to stop and output `BLOCKED:`, that is the same outcome — report i
 ## Report
 
 `solve-issue` § Outcome defines `complete`, `partial` and `blocked`; what follows is only how to
-transmit the one you reached. `report.mjs` parses one JSON shape — the sidecar file first, then a
-fenced block in your final message — and never scrapes prose, so a markdown report of the same
-fields would only be generated and thrown away unread.
+transmit the one you reached. `report.mjs` parses exactly one file — the report path the caller
+names — and never reads your final message at all, so a markdown report or a repeated json block in
+your reply would only be generated and thrown away unread.
 
-**Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action** —
-`report.mjs` reads it first, and its presence does not depend on how your final message ends. The
-field names are fixed:
+**Write this JSON to the report path the caller names (`<slug>.report.json`) as your last action.**
+That file is the only thing `report.mjs` reads; its absence, whatever you printed, is read as
+`blocked`. The field names are fixed:
 
 ```json
 {"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
 ```
 
-**End your final message with one line reading `Status: complete`, `Status: partial`, or `Status:
-blocked`, a short summary for the human reading the transcript, then the same JSON block, verbatim,
-last.** The summary is never parsed; the JSON block is — it is the fallback if the sidecar write
-fails. A message with no JSON block is read as `blocked`, never a silent `complete`, costing the
-issue a whole round.
+Still end your final message with one line reading `Status: complete`, `Status: partial`, or
+`Status: blocked`, then a short summary — for the human reading the transcript only; nothing in your
+final message is parsed, so it cannot substitute for the file write above.
 
 Rules:
 
@@ -97,7 +72,7 @@ Rules:
 2. `criteria` — one entry per criterion, including any under `## Cross-cutting Requirements` when the issue has one. `text` is the criterion verbatim; `met` is `true` only when it is fully satisfied.
 3. One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
 4. `progress` is required for `partial` and is where the remaining work goes — the orchestrator copies it into the issue file, which you never write to.
-5. The sidecar holds the JSON object alone. Your final message holds the `Status:` line, the summary, and the same object — never a second, differently-shaped report.
+5. The report file holds the JSON object alone.
 
 ## Issue Ownership
 
@@ -115,15 +90,11 @@ with every check passing would be `complete`, never `partial`.
 {"status":"partial","branch":"crew/auth-flow/refactor-validation","working_directory":"/repo/.scratch/worktrees/crew/auth-flow/refactor-validation","checks":{"test":"fail","lint":"not_run","typecheck":"pass"},"criteria":[{"text":"Validation logic extracted to src/validation.ts","met":true},{"text":"All existing call sites migrated","met":false}],"progress":"Committed as [WIP]. Remaining: migrate src/api/orders.ts and reconcile the 2 failing order-validation tests.","notes":"none"}
 ```
 
-Your final message repeats the `Status:` line, a summary, and the same object above, verbatim,
-as the last thing you send:
+Your final message, for the human reading the transcript only, is just the `Status:` line and a
+summary — nothing here is parsed:
 
 Status: partial
 
 Extracted the validation logic and migrated one of two call sites; src/api/orders.ts still
 imports the old helper, and 2 order-validation tests fail against the new signature. Committed
 as [WIP] so the branch preserves this for the next round.
-
-```json
-{"status":"partial", … the same object as above}
-```

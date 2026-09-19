@@ -43,8 +43,9 @@ triage pass should not cost. Your output is a verdict, nothing else.
 
 ## Output Format
 
-Answer with exactly this fenced json block, and nothing before it — the orchestrator parses it
-literally, the same way it parses the reviewer's `verdict` field:
+**Write this JSON to the report path the caller names, as your last action.** That file is the only
+thing the orchestrator reads — nothing you print afterward is parsed, so a verdict that never reaches
+disk is read as `fixable` deferred to a plain retry, never as your actual answer:
 
 ```json
 {

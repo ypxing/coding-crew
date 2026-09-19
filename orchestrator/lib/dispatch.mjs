@@ -111,11 +111,13 @@ export function splitFrontmatter(text) {
  * @returns {{cmd: string, args: string[], cwd: string, env: object, capture: "stdout"|"file"}}
  */
 export function buildDispatch(platform, spec) {
-  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug } = spec;
+  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug, reportPath } = spec;
   const shared = { cwd, env: { MAIN_ROOT: mainRoot, CREW_ORCHESTRATED: "1" } };
 
   // A test/CI seam: one script stands in for every model dispatch, so the whole state
   // machine (stall, Phase 2, conflicts, timeouts) is exercisable for zero tokens.
+  // --report-path is passed through so fake-dispatch.sh can write the sidecar report.mjs
+  // actually reads — the same file a real agent's own Write tool call would produce.
   if (process.env.CREW_FAKE_DISPATCH) {
     return {
       cmd: "bash",
@@ -127,6 +129,7 @@ export function buildDispatch(platform, spec) {
         "--out", outFile,
         ...(model ? ["--model", model] : []),
         ...(slug ? ["--slug", slug] : []),
+        ...(reportPath ? ["--report-path", reportPath] : []),
       ],
       ...shared,
       cwd: mainRoot,
@@ -392,24 +395,30 @@ export function extractFinalText(platform, lines) {
  * their own `-p` mode, which always skips it) — but that trust is keyed off the repository,
  * not the literal cwd, so it fires once per repo, on whichever dispatch happens to hit it
  * first, not once per worktree; the detect-and-answer block in dispatchViaHerdr handles that
- * single occurrence, per platform (see HERDR_DIALOGS). `agent read` returns *rendered*
- * terminal text, not the clean `.result` field stream-json gives extractFinalText.
+ * single occurrence, per platform (see HERDR_DIALOGS).
  *
  * All four platforms now go through this path when spec.herdr is set: herdr's own `--kind`
  * already lists pi/claude/codex/copilot as supported kinds (`herdr agent start --help`), and
  * its idle/working/blocked/done detection is generic per kind — nothing here is claude-only
  * by herdr's own design, only by how much of each platform's interactive quirks had been
  * verified live. claude and copilot were verified live against herdr 0.8.2 with real
- * transcripts (trust dialog text, reply framing — see HERDR_DIALOGS and extractHerdrReply).
- * pi was verified live too, but needs no dialog table entry: it's launched with --approve,
- * which skips its trust prompt outright rather than answering it, the same way claude's
- * bypassPermissions and copilot's --allow-all-tools remove a prompt instead of clicking
- * through it. codex could not be verified live in the environment this was built in (no
- * ChatGPT/API-key credentials to get past its sign-in screen) — its argv is built from
- * documented flags only, and extractHerdrReply falls back to the same generic text-window
- * heuristic pi uses. An unrecognised block still fails loud rather than guessing a keystroke
- * (see HERDR_DIALOGS) — codex hitting an unhandled first-run dialog fails clearly instead of
- * silently misbehaving; the fix, once someone runs it for real, is a new HERDR_DIALOGS entry.
+ * transcripts (trust dialog text — see HERDR_DIALOGS). pi was verified live too, but needs no
+ * dialog table entry: it's launched with --approve, which skips its trust prompt outright
+ * rather than answering it, the same way claude's bypassPermissions and copilot's
+ * --allow-all-tools remove a prompt instead of clicking through it. codex could not be
+ * verified live in the environment this was built in (no ChatGPT/API-key credentials to get
+ * past its sign-in screen) — its argv is built from documented flags only. An unrecognised
+ * block still fails loud rather than guessing a keystroke (see HERDR_DIALOGS) — codex hitting
+ * an unhandled first-run dialog fails clearly instead of silently misbehaving; the fix, once
+ * someone runs it for real, is a new HERDR_DIALOGS entry.
+ *
+ * The result of any dispatch — herdr or headless — is read from exactly one place: the
+ * `<slug>.<role>.report.json` sidecar the agent writes itself (spec.reportPath). herdr has no
+ * pane-text fallback for a settled pane with no sidecar; that used to be a text-scraping
+ * heuristic (matching an echoed prompt and a trailing status marker in rendered terminal
+ * text) and was the least robust, least-verified part of this whole file. A settled pane with
+ * no sidecar now fails the same way the headless path already does when its own report.json
+ * never appears: `blocked`, deterministically, never guessed at from a terminal render.
  */
 const HERDR_DIALOGS = {
   claude: { match: "is this a project you created or one you trust", keys: ["down", "enter"] },
@@ -430,20 +439,6 @@ const HERDR_DIALOGS = {
 async function herdrExec(effects, args, timeoutMs) {
   return effects.spawnWithTimeout("herdr", args, { cwd: effects.mainRoot, timeoutMs });
 }
-
-// How long to wait before re-reading a pane whose `agent prompt --wait` already reported
-// idle/done but whose rendered screen came back with no extractable reply — see the retry
-// loop in dispatchViaHerdr, below. Backs off linearly (250ms, 500ms, 750ms, 1000ms) across
-// HERDR_READ_MAX_ATTEMPTS total reads — herdr exposes no signal for "the render buffer has
-// caught up", so this only covers flush lag, not a genuinely empty or unparsable reply.
-const HERDR_READ_RETRY_DELAY_MS = 250;
-const HERDR_READ_MAX_ATTEMPTS = 5;
-
-// Bounds the one `pane wait-output` pre-check below — generous relative to typical TUI
-// flush latency, small relative to the dispatch's own timeout. A pane that never renders the
-// anchor (blocked, or a platform whose rendering doesn't match herdrReplyReadyPattern) just
-// falls through to the fixed-delay backoff loop instead of waiting here.
-const HERDR_WAIT_OUTPUT_TIMEOUT_MS = 10_000;
 
 // `agent prompt --wait --timeout <bound>` is told to self-report a stall at exactly `bound`,
 // but the JS-side spawnWithTimeout kill used to fire at that same instant — a race where our
@@ -565,19 +560,16 @@ function herdrJson(result) {
  * recent-unwrapped` that follows then rejects with agent_not_idle — recent-unwrapped needs
  * the pane idle to scroll its alt-screen buffer — putting a JSON error envelope on stdout
  * instead of rendered text (the one case where `agent read` doesn't return raw pane text; see
- * herdrJson's doc comment). extractHerdrReply finds no echoed prompt in that JSON and returns
- * "", indistinguishable from a pane that genuinely rendered nothing. Naming the one error code
- * that means "still working, not blank" lets the retry loop below wait out the actual
- * remaining work instead of burning the short flush-lag backoff meant for a different failure
- * mode and reporting a false empty reply.
+ * herdrJson's doc comment). Naming the one error code that means "still working, not blank"
+ * lets herdrReadSettled wait out the actual remaining work (waitForHerdrIdle) instead of
+ * misreading a diagnostic read as a genuinely empty pane.
  */
 function herdrReadNotIdle(readResult) {
   return herdrJson(readResult)?.error?.code === "agent_not_idle";
 }
 
-// Polling interval while waiting out a live agent_not_idle — coarser than the flush-lag
-// backoff (HERDR_READ_RETRY_DELAY_MS) since this is waiting on actual agent work, not a
-// terminal render catching up.
+// Polling interval while waiting out a live agent_not_idle or a sidecar-report wait — coarse,
+// since both are waiting on actual agent work, not a terminal render catching up.
 const HERDR_NOT_IDLE_POLL_MS = 2_000;
 
 /**
@@ -600,18 +592,17 @@ async function waitForHerdrIdle(effects, name, deadline) {
 }
 
 /**
- * Sidecar-first completion signal for a herdr dispatch: a file on disk beats scraping the
- * pane's rendered text, since it isn't subject to render lag, echo/marker glyph drift, or
- * ANSI noise the way extractHerdrReply is — it's the same `<slug>.report.json` sidecar
- * pipeline.mjs already reads for the headless path, just checked here before falling back
- * to the pane-read chain. Still has to guard against `--wait`'s own "does not track turns"
- * gap (see waitForHerdrIdle's doc comment): a fast idle/done settle can still land while the
- * agent is minutes from actually writing the file, so this polls agent_status the same way,
- * testing for the file each pass rather than for text. Returns "found" once the file exists,
- * "blocked" on a mid-turn dialog, or "absent" once the pane genuinely settles idle/done (or
- * the deadline passes) with no file — the caller falls back to the pane-scrape chain only in
- * that last case, since the file might never come (an older agent build, a crash, a
- * final-message-only reply the prompt's own fallback wording explicitly allows for).
+ * The one completion signal a herdr dispatch reads: a file on disk, never the pane's rendered
+ * text — it isn't subject to render lag, echo/marker glyph drift, or ANSI noise the way a
+ * terminal scrape is. It's the same `<slug>.<role>.report.json` sidecar pipeline.mjs already
+ * reads for the headless path. Still has to guard against `--wait`'s own "does not track
+ * turns" gap (see waitForHerdrIdle's doc comment): a fast idle/done settle can still land
+ * while the agent is minutes from actually writing the file, so this polls agent_status the
+ * same way, testing for the file each pass rather than for text. Returns "found" once the
+ * file exists, "blocked" on a mid-turn dialog, or "absent" once the pane genuinely settles
+ * idle/done (or the deadline passes) with no file — the caller (dispatchViaHerdr) treats
+ * "absent" as a hard failure, the same as the headless path's own missing-sidecar case, with
+ * no fallback attempt to reconstruct a result from the pane's rendered text.
  */
 async function waitForSidecarReport(effects, reportPath, name, deadline) {
   while (Date.now() < deadline) {
@@ -645,96 +636,6 @@ async function herdrReadSettled(effects, name, deadline) {
     result = await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"]);
   }
   return result.stdout || "";
-}
-
-/**
- * Pull the assistant's reply out of `agent read`'s rendered pane text. There is no
- * structured field here (unlike extractFinalText's clean `.result`), so this is a
- * text-window heuristic — the reply sits between the echoed prompt and some trailing
- * status marker, but exactly what marks each is per-platform TUI rendering, not a herdr
- * contract. Two shapes, verified against real transcripts:
- *
- *   - claude/copilot echo the prompt on a line starting with `❯` (copilot appends a
- *     right-aligned timestamp on the same line, hence startsWith rather than an exact
- *     match) and settle behind a status line: claude's `✻ Worked for …`, copilot's
- *     bottom input box (a `─{5,}` rule, immediately after a status bar ending in the
- *     credit-usage text "AIC used").
- *   - pi echoes the literal prompt with no marker glyph at all, and settles behind its
- *     own `─{5,}` rule pair before the cwd/branch status line.
- *
- * codex has no verified transcript (no credentials to get one when this was built) —
- * it falls back to pi's glyph-less shape as the closest documented approximation, not a
- * confirmed one; revise this branch once someone runs it against a real session.
- */
-function herdrIsEchoLine(line, promptFirstLine, platform) {
-  if (platform === "claude") return line.startsWith("❯") && line.slice(1).trim() === promptFirstLine;
-  if (platform === "copilot") return line.startsWith("❯") && line.slice(1).trim().startsWith(promptFirstLine);
-  return line === promptFirstLine; // pi, and codex's unverified fallback
-}
-
-/**
- * Diagnostic-only sibling of extractHerdrReply's own echo detection, shared via
- * herdrIsEchoLine rather than duplicated: reports whether the echoed prompt appears
- * *anywhere* in a captured render, regardless of whether a trailing end marker was ever
- * found after it. Feeds the outEmpty DISPATCH-FAIL log so a genuinely missing echo (the
- * read's --lines window too small, or the pane on an alternate screen per herdr's own
- * `--skill` caveat) is distinguishable from an echo that's present but whose end-marker
- * pattern didn't match this platform's actual rendering — two different bugs that would
- * otherwise both just read as "empty reply".
- */
-function herdrEchoFound(rendered, promptText, platform) {
-  const promptFirstLine = (promptText || "").split("\n", 1)[0].trim();
-  return (rendered || "").split("\n").some((l) => herdrIsEchoLine(l.trim(), promptFirstLine, platform));
-}
-
-export function extractHerdrReply(rendered, promptText, platform = "claude") {
-  const lines = (rendered || "").split("\n");
-  const promptFirstLine = (promptText || "").split("\n", 1)[0].trim();
-  const echoIndex = lines.findLastIndex((l) => herdrIsEchoLine(l.trim(), promptFirstLine, platform));
-  if (echoIndex === -1) return "";
-  const rest = lines.slice(echoIndex + 1);
-  const isEnd = (l) => {
-    if (/^─{5,}/.test(l.trim())) return true;
-    if (platform === "claude") return /^\s*✻\s/.test(l);
-    if (platform === "copilot") return /AIC used/.test(l);
-    return false;
-  };
-  const endIndex = rest.findIndex(isEnd);
-  const body = endIndex === -1 ? rest : rest.slice(0, endIndex);
-  return body
-    .map((l) => l.replace(/^\s*[●○!✗]\s?/, ""))
-    .filter((l) => l.trim().length > 0)
-    .join("\n")
-    .trim();
-}
-
-function escapeHerdrRegex(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Same trailing status markers extractHerdrReply's isEnd() looks for, expressed as a Rust
- * regex fragment for `herdr pane wait-output` — a separate, parallel definition rather than
- * a shared one, so this doesn't reshape isEnd()'s already-verified-against-real-transcripts
- * matching. Update both if a platform's rendering ever changes.
- */
-function herdrEndMarkerPattern(platform) {
-  const rule = "─{5,}";
-  if (platform === "claude") return `(${rule}|✻\\s)`;
-  if (platform === "copilot") return `(${rule}|AIC used)`;
-  return rule; // pi, and codex's unverified fallback
-}
-
-/**
- * Anchors on this dispatch's own echoed prompt, not just any trailing status marker, so
- * `pane wait-output` can't lock onto a stale echo+marker pair a prior turn left in the same
- * pane — see the reusingPane guard at its one call site, in dispatchViaHerdr.
- */
-function herdrReplyReadyPattern(promptText, platform) {
-  const promptFirstLine = (promptText || "").split("\n", 1)[0].trim();
-  const escaped = escapeHerdrRegex(promptFirstLine);
-  const echo = platform === "pi" || platform === "codex" ? escaped : `❯\\s*${escaped}`;
-  return `${echo}[\\s\\S]*?${herdrEndMarkerPattern(platform)}`;
 }
 
 /**
@@ -1189,118 +1090,6 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     return await dispatchViaHerdr(effects, platform, { ...spec, herdrReuse: null }, { timeoutMs });
   }
 
-  // spec.reportPath (the same <slug>.report.json sidecar the headless path and
-  // pipeline.mjs's post-dispatch parse both already prefer over prose) is checked before
-  // any pane read is attempted: when the agent wrote it, that file is the reliable result,
-  // and every retry/backoff/echo-matching step below exists only to reconstruct the same
-  // information out of a terminal render — so skip straight to success and leave the pane
-  // scrape chain as a fallback for the one case it still earns its keep: the agent settled
-  // without ever writing the file.
-  if (spec.reportPath && promptResult.code === 0) {
-    const sidecarState = await waitForSidecarReport(effects, spec.reportPath, name, dispatchDeadline);
-    if (sidecarState === "blocked") {
-      const tail = await herdrReadSettled(effects, name, dispatchDeadline);
-      return await finish(1, `herdr pane blocked mid-turn: ${tail.trim().slice(-400)}`, "");
-    }
-    if (sidecarState === "found") {
-      // Wrapped in a fenced json block, not handed back bare: outFile's text is not only
-      // pipeline.mjs's own input (which re-reads the sidecar file itself anyway, same as
-      // the headless path) but also, for review, the raw block appended verbatim to the
-      // round's aggregate report file — parseReviewAggregate (and crew-summary.sh/
-      // promote-findings.sh through it) only ever looks for a fenced json block with a
-      // `verdict` field in that text, never at a sidecar. A bare placeholder here would
-      // silently drop this branch's verdict from that aggregate.
-      let sidecarText = "";
-      try {
-        sidecarText = readFileSync(spec.reportPath, "utf8").trim();
-      } catch {
-        sidecarText = "";
-      }
-      const wrapped = sidecarText ? "```json\n" + sidecarText + "\n```" : `(structured result written to ${spec.reportPath})`;
-      return await finish(0, "", wrapped);
-    }
-    // "absent": the pane settled idle/done with no sidecar file — fall through to the
-    // pane-scrape chain below on the chance the reply landed in prose only.
-  }
-
-  let rendered = await herdrReadSettled(effects, name, dispatchDeadline);
-  let text = extractHerdrReply(rendered, invocation.prompt, platform);
-  let attempt = 1;
-
-  // herdr's own idle/done detector already said this pane settled successfully — an empty
-  // extractHerdrReply() here means a later `agent read` call caught the pane's rendering
-  // before it caught up (buffered terminal flush lag), not that the dispatch failed. Rather
-  // than guess with a fixed delay, actively wait for this dispatch's own echoed prompt and
-  // its trailing status marker to actually appear in the exact snapshot `agent read` uses
-  // next — once matched, the full reply is provably present, not just probably. Skipped on a
-  // reused pane: its buffer already carries a prior turn's echo+marker (see
-  // herdrReplyReadyPattern's doc comment).
-  if (promptResult.code === 0 && !text.trim() && !reusingPane) {
-    await herdrExec(effects, [
-      "pane",
-      "wait-output",
-      paneId,
-      "--regex",
-      herdrReplyReadyPattern(invocation.prompt, platform),
-      "--source",
-      "recent-unwrapped",
-      "--lines",
-      "400",
-      "--timeout",
-      String(HERDR_WAIT_OUTPUT_TIMEOUT_MS),
-    ]);
-    attempt++;
-    rendered = await herdrReadSettled(effects, name, dispatchDeadline);
-    text = extractHerdrReply(rendered, invocation.prompt, platform);
-  }
-
-  // Fallback for whatever the wait-output step above didn't cover — a reused pane, or an
-  // echo/marker pattern that doesn't match this platform's actual rendering. Same fixed-delay
-  // backoff as before, just resuming from whichever attempt the step above already spent.
-  while (promptResult.code === 0 && !text.trim() && attempt < HERDR_READ_MAX_ATTEMPTS) {
-    attempt++;
-    await new Promise((r) => setTimeout(r, HERDR_READ_RETRY_DELAY_MS * (attempt - 1)));
-    rendered = await herdrReadSettled(effects, name, dispatchDeadline);
-    text = extractHerdrReply(rendered, invocation.prompt, platform);
-  }
-
-  // Every retry above assumed the reply was already there, just not rendered yet — the same
-  // assumption herdrReadSettled makes when a *read* comes back agent_not_idle. But a read can
-  // also come back with no error at all and still catch nothing but the pane's live status
-  // footer: --wait's own "does not track turns" gap means the coder can still be minutes into
-  // active tool calls when it settled early, long past wait-output's 10s timeout and this
-  // fixed backoff's few seconds. Ask `agent get` directly rather than assume: a busy status
-  // means text is absent because the turn is still running, not because it produced nothing,
-  // so wait it out (bounded by this dispatch's own deadline) and read again — repeating for as
-  // long as the pane keeps reporting busy, so a genuinely long-running turn is never cut off
-  // early. Once status itself reports idle/done with text still empty, that's a real empty
-  // reply, not a race, and the loop below stops. A status of blocked fails immediately
-  // instead of polling: a dialog appearing sometime after --wait's stale match already
-  // settled the prompt call needs an answer, not more waiting, and nothing here would make
-  // it resolve on its own before the deadline — see waitForHerdrIdle's doc comment.
-  // lastKnownStatus rides into the outEmpty message below purely for diagnosis: it says
-  // whether the pane was genuinely idle/done (a real empty reply) or this loop simply ran
-  // out of deadline while still busy, without guessing from the rendered tail alone.
-  let lastKnownStatus = null;
-  while (promptResult.code === 0 && !text.trim() && Date.now() < dispatchDeadline) {
-    const get = await herdrExec(effects, ["agent", "get", name]);
-    const status = herdrJson(get)?.result?.agent?.agent_status;
-    lastKnownStatus = status ?? lastKnownStatus;
-    if (get.code !== 0 || status === "idle" || status === "done") break;
-    if (status === "blocked") {
-      rendered = await herdrReadSettled(effects, name, dispatchDeadline);
-      return await finish(1, `herdr pane blocked mid-turn: ${rendered.trim().slice(-400)}`, "");
-    }
-    const settled = await waitForHerdrIdle(effects, name, dispatchDeadline);
-    lastKnownStatus = settled ?? lastKnownStatus;
-    if (settled === "blocked") {
-      rendered = await herdrReadSettled(effects, name, dispatchDeadline);
-      return await finish(1, `herdr pane blocked mid-turn: ${rendered.trim().slice(-400)}`, "");
-    }
-    rendered = await herdrReadSettled(effects, name, dispatchDeadline);
-    text = extractHerdrReply(rendered, invocation.prompt, platform);
-  }
-
   if (promptResult.code !== 0) {
     const errorCode = herdrJson(promptResult)?.error?.code;
     // promptResult.timedOut is spawnWithTimeout's own signal that *our* SIGKILL fired
@@ -1311,39 +1100,55 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     // as a timeout rather than a silent, code-less failure.
     const timedOut = promptResult.timedOut || errorCode === "agent_prompt_stalled" || errorCode === "timeout";
     // agent_blocked: herdr rejects the submission outright, before sending any input, when
-    // the pane was already blocked — extractHerdrReply finds nothing (the prompt was never
-    // echoed), so without this the failure reads as an empty reply with no clue why. Read
-    // the rendered pane directly into the failure message instead of just the CLI's own
-    // stderr, which never contains the dialog text itself.
+    // the pane was already blocked. Read the rendered pane directly into the failure
+    // message instead of just the CLI's own stderr, which never contains the dialog text.
     if (errorCode === "agent_blocked") {
-      return await finish(promptResult.code, `herdr agent prompt rejected — agent already blocked: ${rendered.trim().slice(-400)}`, text, timedOut);
+      const tail = await herdrReadSettled(effects, name, dispatchDeadline);
+      return await finish(promptResult.code, `herdr agent prompt rejected — agent already blocked: ${tail.trim().slice(-400)}`, "", timedOut);
     }
     const rawError = (promptResult.stderr || promptResult.stdout || "").trim();
     const message = rawError ? `herdr agent prompt failed: ${rawError}` : await describeHerdrUnavailability(effects);
-    return await finish(promptResult.code, message, text, timedOut);
+    return await finish(promptResult.code, message, "", timedOut);
   }
-  // Every retry above (the anchored wait-output check, then the fixed-delay backoff) is
-  // built on one assumption: the reply is there, just not rendered yet. If text is still
-  // empty here, that assumption already failed once — worth knowing whether the pane was
-  // genuinely blank (real flush lag outlasting every retry) or had content extractHerdrReply
-  // just couldn't match (an echo/marker pattern out of sync with this platform's actual
-  // rendering — a different bug, and one this snippet is the only way to ever notice).
-  if (!text.trim()) {
-    const tail = rendered.trim().slice(-400);
-    const statusNote = lastKnownStatus ? ` last agent_status=${lastKnownStatus}` : "";
-    // lines/echoFound distinguish a capture the --lines window missed entirely (echoFound=no
-    // — see herdrEchoFound's doc comment) from one that has the echo but didn't match the
-    // trailing end-marker pattern (echoFound=yes) — the tail alone can't tell them apart,
-    // since it's always just the pane's last 400 rendered characters either way.
-    const lineCount = rendered ? rendered.split("\n").length : 0;
-    const echoFound = herdrEchoFound(rendered, invocation.prompt, platform) ? "yes" : "no";
-    return await finish(
-      0,
-      `herdr pane read empty after every retry${statusNote} lines=${lineCount} echoFound=${echoFound} — tail: ${tail || "(pane rendered nothing)"}`,
-      text,
-    );
+
+  // The pane submitted and settled cleanly. The one thing this dispatch reads back is the
+  // sidecar file at spec.reportPath — the same file the headless path reads, via the same
+  // report.mjs parser. There is no pane-text fallback: a settle with no sidecar is a real
+  // failure (the agent never wrote its result, whatever it may have printed), reported as
+  // `blocked` the same way an absent sidecar is on the headless path, rather than guessed at
+  // from a scraped terminal render. See the file header comment and dispatch.mjs's plain
+  // dispatch() for the matching contract.
+  if (!spec.reportPath) return await finish(0, "", "");
+
+  const sidecarState = await waitForSidecarReport(effects, spec.reportPath, name, dispatchDeadline);
+  if (sidecarState === "blocked") {
+    const tail = await herdrReadSettled(effects, name, dispatchDeadline);
+    return await finish(1, `herdr pane blocked mid-turn: ${tail.trim().slice(-400)}`, "");
   }
-  return await finish(0, "", text);
+  if (sidecarState === "found") {
+    // Wrapped in a fenced json block, not handed back bare: this text is not only
+    // pipeline.mjs's own input (which re-reads the sidecar file itself anyway, same as the
+    // headless path) but also, for review, the raw block appended verbatim to the round's
+    // aggregate report file — parseReviewAggregate (and crew-summary.sh/promote-findings.sh
+    // through it) only ever looks for a fenced json block with a `verdict` field in that
+    // text, never at a sidecar. A bare placeholder here would silently drop this branch's
+    // verdict from that aggregate.
+    let sidecarText = "";
+    try {
+      sidecarText = readFileSync(spec.reportPath, "utf8").trim();
+    } catch {
+      sidecarText = "";
+    }
+    const wrapped = sidecarText ? "```json\n" + sidecarText + "\n```" : `(structured result written to ${spec.reportPath})`;
+    return await finish(0, "", wrapped);
+  }
+  // "absent": the pane settled idle/done and never wrote a sidecar. No pane-text scrape —
+  // that heuristic (matching an echoed prompt and a trailing status marker in rendered
+  // terminal text) was this file's least robust code, and a settled pane with no sidecar is
+  // exactly the same failure the headless path already reports as `blocked` when its own
+  // report.json never appears. Fail the same way here, with the pane's tail for diagnosis.
+  const tail = await herdrReadSettled(effects, name, dispatchDeadline);
+  return await finish(0, `herdr pane settled with no ${spec.reportPath} — treating as blocked. tail: ${tail.trim().slice(-400) || "(pane rendered nothing)"}`, "");
 }
 
 /**

@@ -27,7 +27,7 @@ test("a structured sidecar wins over prose", () => {
   assert.deepEqual(r.checks, { test: "pass", lint: "pass", typecheck: "not_run" });
 });
 
-test("a fenced json block is read out of a markdown report", () => {
+test("a fenced json block in the final message alone, with no sidecar, is never read — text is not a fallback", () => {
   const text = [
     "## Issue: thing",
     "Status: complete",
@@ -37,12 +37,11 @@ test("a fenced json block is read out of a markdown report", () => {
     "```",
   ].join("\n");
   const r = parseWorkerReport(text);
-  assert.equal(r.parsedFrom, "json");
-  assert.equal(r.status, "partial");
-  assert.equal(r.progress, "half");
+  assert.equal(r.parsedFrom, "missing");
+  assert.equal(r.status, "blocked");
 });
 
-test("markdown fallback reads Status and check rows", () => {
+test("markdown-shaped text alone, with no sidecar, is never read — text is not a fallback", () => {
   const text = [
     "## Issue: thing",
     "Status: complete",
@@ -55,22 +54,26 @@ test("markdown fallback reads Status and check rows", () => {
     "working_directory: /wt/thing",
   ].join("\n");
   const r = parseWorkerReport(text);
-  assert.equal(r.parsedFrom, "markdown");
-  assert.equal(r.status, "complete");
-  assert.deepEqual(r.checks, { test: "pass", lint: "fail", typecheck: "not_run" });
-  assert.equal(r.workingDirectory, "/wt/thing");
+  assert.equal(r.parsedFrom, "missing");
+  assert.equal(r.status, "blocked");
 });
 
 test("an empty report is blocked, never complete", () => {
   const r = parseWorkerReport("");
   assert.equal(r.status, "blocked");
-  assert.match(r.unparseable, /empty report/);
+  assert.match(r.unparseable, /never wrote its result file/);
 });
 
-test("a report with no Status line is blocked, never complete", () => {
+test("non-empty text with no sidecar is blocked the same way as empty text — the sidecar is the only channel", () => {
   const r = parseWorkerReport("I finished everything, all good!");
   assert.equal(r.status, "blocked");
-  assert.match(r.unparseable, /no Status/);
+  assert.match(r.unparseable, /never wrote its result file/);
+});
+
+test("a sidecar present but missing a valid status field is blocked, distinctly from a wholly absent sidecar", () => {
+  const r = parseWorkerReport("anything", { branch: "x" });
+  assert.equal(r.status, "blocked");
+  assert.match(r.unparseable, /no valid status field/);
 });
 
 test("prefilter demotes complete on a failing check", () => {
@@ -96,32 +99,32 @@ test("prefilter records lint/typecheck not_run as a coverage gap, not a demotion
   assert.deepEqual(v.coverageGaps, ["lint", "typecheck"]);
 });
 
-test("review verdict is read, and a missing verdict is unmet", () => {
-  assert.equal(parseReviewReport("## Branch: crew/f/x\nAC: all-met\n").verdict, "all-met");
+test("a reviewer's captured text is never read — only the sidecar's verdict counts, missing or present", () => {
+  assert.equal(parseReviewReport("## Branch: crew/f/x\nAC: all-met\n").verdict, "unmet");
   assert.equal(parseReviewReport("## Branch: crew/f/x\nAC: unmet — no tests\n").verdict, "unmet");
   const none = parseReviewReport("## Branch: crew/f/x\n\nLooks fine to me.\n");
   assert.equal(none.verdict, "unmet");
-  assert.match(none.detail, /no verdict/);
+  assert.match(none.detail, /never wrote its verdict file/);
 });
 
-test("an empty or skipped review fails closed and is not ok", () => {
+test("an empty review, with no sidecar, fails closed and is not ok", () => {
   const empty = parseReviewReport("");
   assert.equal(empty.ok, false);
   assert.equal(empty.verdict, "unmet");
-  const skipped = parseReviewReport("SKIPPED: empty diff\n");
-  assert.equal(skipped.ok, false);
-  assert.match(skipped.detail, /empty diff/);
 });
 
-test("explicit FINDING lines parse into severity, location and criterion", () => {
-  const text = [
-    "## Branch: crew/f/x",
-    "AC: all-met",
-    "FINDING: CRITICAL | src/auth.ts:42 | Reject unsigned tokens before use",
-    "FINDING: HIGH | src/db.ts:7 | Parameterise the query",
-    "FINDING: bogus | x | y",
-  ].join("\n");
-  const r = parseReviewReport(text);
+test("a review sidecar's findings parse into severity, location and criterion", () => {
+  const sidecar = {
+    branch: "crew/f/x",
+    slug: "x",
+    verdict: "all-met",
+    findings: [
+      { severity: "CRITICAL", location: "src/auth.ts:42", criterion: "Reject unsigned tokens before use" },
+      { severity: "HIGH", location: "src/db.ts:7", criterion: "Parameterise the query" },
+      { severity: "bogus", location: "x", criterion: "y" },
+    ],
+  };
+  const r = parseReviewReport("", sidecar);
   assert.equal(r.findings.length, 2);
   assert.deepEqual(r.findings[0], {
     severity: "CRITICAL",
@@ -136,62 +139,15 @@ test("explicit FINDING lines parse into severity, location and criterion", () =>
   ]);
 });
 
-test("bracket severities are the fallback when no FINDING lines exist", () => {
-  const text = "## Branch: crew/f/x\nAC: all-met\n\n### [CRITICAL] SQL injection in db.ts:7\n";
-  const r = parseReviewReport(text);
-  assert.equal(r.findings.length, 1);
-  assert.equal(r.findings[0].severity, "CRITICAL");
-  assert.equal(r.findings[0].explicit, false);
-});
-
-// ─── review: a fenced json block is preferred over the markdown shape ────────────
+// ─── review: the sidecar is the only channel ─────────────────────────────────────
 //
-// crew-summary.sh's code_review_summary() and promote-findings.sh's remind both used
-// to re-derive branch/verdict/findings from the same raw text with their own
-// line-anchored awk, independently of this parser and of each other — and drifted:
-// a herdr-captured retry report that landed indented and without "##" matched neither
-// awk's `^## Branch:`/`^AC:`/`^FINDING:` anchors, so a genuinely successful, all-met
-// review was silently reported as not-reviewed even though the merge had already gone
-// through on this parser's (correct, whitespace-tolerant) read of the same text. The
-// fenced json block sidesteps the whole class: JSON treats whitespace between tokens
-// as insignificant, so an indented block still parses.
+// crew-summary.sh's code_review_summary() and promote-findings.sh's remind both used to
+// re-derive branch/verdict/findings from raw dispatch text with their own line-anchored
+// awk, independently of this parser and of each other, and drifted apart. The sidecar
+// removes the class entirely: it is a plain JSON object the agent wrote itself, never a
+// terminal render or a chat reply that has to be scraped or pattern-matched.
 
-test("a fenced json review block is preferred over the markdown AC:/FINDING: shape", () => {
-  const text = [
-    "## Branch: crew/f/x (x)",
-    "",
-    "```json",
-    JSON.stringify({
-      branch: "crew/f/x",
-      slug: "x",
-      verdict: "all-met",
-      findings: [{ severity: "HIGH", location: "src/db.ts:7", criterion: "Parameterise the query" }],
-    }),
-    "```",
-    "",
-    "### Findings",
-    "[HIGH] prose the machine-line-only shape never carried",
-  ].join("\n");
-  const r = parseReviewReport(text);
-  assert.equal(r.parsedFrom, "json");
-  assert.equal(r.branch, "crew/f/x");
-  assert.equal(r.verdict, "all-met");
-  assert.deepEqual(r.findings, [{ severity: "HIGH", location: "src/db.ts:7", criterion: "Parameterise the query", explicit: true }]);
-});
-
-test("a herdr-indented, no-## json review block still parses — whitespace between JSON tokens is insignificant", () => {
-  const text = [
-    "  Branch: crew/f/x (x)",
-    "  ```json",
-    '  {"branch": "crew/f/x", "slug": "x", "verdict": "all-met", "findings": []}',
-    "  ```",
-  ].join("\n");
-  const r = parseReviewReport(text);
-  assert.equal(r.parsedFrom, "json");
-  assert.equal(r.verdict, "all-met");
-});
-
-test("a review sidecar with a verdict wins over the captured text entirely, same policy as the worker's sidecar", () => {
+test("a review sidecar with a verdict wins over the captured text entirely", () => {
   const sidecar = { branch: "crew/f/x", slug: "x", verdict: "all-met", detail: "", findings: [] };
   // The captured text is a herdr empty-reply diagnostic string, not a real reviewer reply —
   // exactly the case the sidecar exists to make irrelevant.
@@ -200,10 +156,11 @@ test("a review sidecar with a verdict wins over the captured text entirely, same
   assert.equal(r.verdict, "all-met");
 });
 
-test("a sidecar with no verdict field is ignored, same as parseWorkerReport ignoring a statusless sidecar", () => {
+test("a sidecar with no verdict field is treated the same as a wholly absent one", () => {
   const r = parseReviewReport("AC: unmet — see below", { branch: "x" });
   assert.equal(r.verdict, "unmet");
-  assert.equal(r.parsedFrom, "markdown");
+  assert.equal(r.parsedFrom, "missing");
+  assert.match(r.detail, /no valid verdict field/);
 });
 
 // ─── review: the aggregate multi-branch report file ──────────────────────────────
@@ -341,45 +298,32 @@ test("the worker prompt makes the sidecar file the result channel, not an option
 
 // ─── triage: parseTriageReport ────────────────────────────────────────────────
 
-test("a fixable triage verdict parses category and detail", () => {
-  const r = parseTriageReport(
-    [
-      "FIXABLE: yes",
-      "CATEGORY: wrong dependency version",
-      "DETAIL: package.json pins @scope/pkg@1.4.19, which does not exist on the registry.",
-    ].join("\n"),
-  );
+test("a fixable triage sidecar parses category and detail", () => {
+  const sidecar = {
+    fixable: "yes",
+    category: "wrong dependency version",
+    detail: "package.json pins @scope/pkg@1.4.19, which does not exist on the registry.",
+  };
+  const r = parseTriageReport("", sidecar);
   assert.equal(r.ok, true);
   assert.equal(r.fixable, true);
   assert.equal(r.category, "wrong dependency version");
   assert.match(r.detail, /does not exist on the registry/);
 });
 
-test("a not-fixable triage verdict parses the same way", () => {
-  const r = parseTriageReport(
-    ["FIXABLE: no", "CATEGORY: registry unreachable", "DETAIL: the private registry returned 404 for every package, not just this diff's."].join(
-      "\n",
-    ),
-  );
+test("a not-fixable triage sidecar parses the same way", () => {
+  const sidecar = {
+    fixable: "no",
+    category: "registry unreachable",
+    detail: "the private registry returned 404 for every package, not just this diff's.",
+  };
+  const r = parseTriageReport("", sidecar);
   assert.equal(r.ok, true);
   assert.equal(r.fixable, false);
   assert.equal(r.category, "registry unreachable");
 });
 
-test("a fenced json triage block is preferred over the markdown FIXABLE:/CATEGORY:/DETAIL: shape", () => {
-  const text = [
-    "  FIXABLE: no",
-    "  ```json",
-    '  {"fixable": "yes", "category": "flaky network", "detail": "registry timed out, unrelated to this diff"}',
-    "  ```",
-  ].join("\n");
-  const r = parseTriageReport(text);
-  assert.equal(r.parsedFrom, "json");
-  assert.equal(r.fixable, true);
-  assert.equal(r.category, "flaky network");
-});
-
-test("a triage sidecar with a fixable field wins over the captured text entirely, same policy as review and worker sidecars", () => {
+test("a triage sidecar with a fixable field wins over the captured text entirely", () => {
   const sidecar = { fixable: "no", category: "registry unreachable", detail: "404 for every package" };
   const r = parseTriageReport("(structured result written to /r/x.triage.report.json)", sidecar);
   assert.equal(r.parsedFrom, "json");
@@ -387,14 +331,16 @@ test("a triage sidecar with a fixable field wins over the captured text entirely
   assert.equal(r.category, "registry unreachable");
 });
 
-test("an empty or unparseable triage report fails closed toward fixable, and is not ok", () => {
+test("an empty or missing-verdict triage report fails closed toward fixable, and is not ok", () => {
   const empty = parseTriageReport("");
   assert.equal(empty.ok, false);
   assert.equal(empty.fixable, true);
+  assert.match(empty.detail, /never wrote its verdict file/);
 
-  const noVerdict = parseTriageReport("CATEGORY: something\nDETAIL: something else");
+  const noVerdict = parseTriageReport("anything", { category: "something", detail: "something else" });
   assert.equal(noVerdict.ok, false);
   assert.equal(noVerdict.fixable, true);
+  assert.match(noVerdict.detail, /no valid fixable field/);
 });
 
 test("the triage prompt states the failing check output and asks for a fenced json verdict", () => {

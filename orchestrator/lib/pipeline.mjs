@@ -694,7 +694,7 @@ async function runTriage(ctx, worker, verifyStdout) {
   }
 
   const parsed = parseTriageReport(result.text, sidecar);
-  const completed = !(result.timedOut || (result.code !== 0 && !parsed.ok) || !parsed.ok);
+  const completed = !result.timedOut && parsed.ok;
   return { completed, parsed };
 }
 
@@ -764,40 +764,37 @@ async function runReview(ctx, worker, checks) {
   }
 
   const parsed = parseReviewReport(result.text, sidecar);
-  // parseReviewReport's markdown fallback fails closed to `unmet, "no verdict line"` for any
-  // text with no fenced json and no `AC:` line, so it can't tell a reviewer that genuinely
-  // wrote prose findings without the (mandatory, per crew-code-reviewer's protocol) verdict
-  // block apart from a herdr capture that read back a truncated fragment of one — the
-  // capture is non-empty (dispatchViaHerdr's own outEmpty check never fires) but never
-  // reached the part of the reply that would have parsed. `findings.length === 0` is the
-  // signal available here to tell those apart: real prose findings survive that parser's
-  // FINDING:/[SEV] fallback regardless of the missing verdict line, so their presence is
-  // itself evidence the capture had actual reviewer content, not just a fragment — treat only
-  // the content-free case as a failed dispatch, so it retries the review instead of demoting
-  // to criteria-unmet and paying for a coder redispatch the review never actually asked for.
-  const emptyVerdictOnly = parsed.ok && parsed.detail === "no verdict line" && parsed.findings.length === 0;
-  if (result.timedOut || (result.code !== 0 && !parsed.ok) || !parsed.ok || emptyVerdictOnly) {
-    // parsed.detail is a generic string for an empty report ("empty review report") and
-    // says nothing about *why* the dispatch produced nothing. result.stderr is the one
-    // place that reason actually lives (a `die()` guard in dispatch-agent.sh, a spawn-level
-    // error, ...) — surface a snippet of it here so a human reading the review report's
-    // `not_run` stub does not have to reproduce the dispatch by hand to find out why.
+  // sidecar-only, fail-closed: parsed.ok is false whenever the sidecar is missing or has no
+  // valid verdict, whatever the dispatch's captured text happened to contain (headless or a
+  // herdr pane's rendered scroll-back alike) — there is no separate "real prose findings
+  // without a verdict block" case to disambiguate any more, since findings are only ever
+  // read from the sidecar too.
+  if (result.timedOut || !parsed.ok) {
+    // result.stderr is where a dispatch-level failure reason actually lives (a `die()`
+    // guard in dispatch-agent.sh, a spawn-level error, ...) — surfaced here so a human
+    // reading the review report's `not_run` stub does not have to reproduce the dispatch
+    // by hand to find out why.
     const stderrHint = (result.stderr ?? "").trim().slice(0, 300).replace(/\s+/g, " ");
-    const noDetail = !parsed.detail || parsed.detail === "empty review report" || emptyVerdictOnly;
     return {
       completed: false,
       reportFile,
-      reason: result.timedOut
-        ? "review dispatch timed out"
-        : noDetail
-          ? `review dispatch exited ${result.code} with no usable report${stderrHint ? ` — ${stderrHint}` : ""}`
-          : parsed.detail,
+      reason: result.timedOut ? "review dispatch timed out" : `${parsed.detail}${stderrHint ? ` — ${stderrHint}` : ""}`,
       parsed,
     };
   }
 
+  // The aggregate file is fed straight from the sidecar's own bytes, not the dispatch's
+  // captured text — the two used to usually agree (the reviewer's protocol asked for the
+  // same block twice, once to disk and once in its final message) but only ever *usually*:
+  // this makes them identical by construction, for both the headless and herdr paths, since
+  // dispatchViaHerdr's own success text is already this same sidecar content wrapped in a
+  // fence (see dispatch.mjs). The `## Branch:` heading is cosmetic — parseReviewAggregate
+  // only ever scans for the fenced json block — but keeps the aggregate readable for a human,
+  // sourced from the sidecar's own branch/slug rather than trusting the model's chat reply to
+  // have written one correctly.
   mkdirSync(sprint.reviewDir, { recursive: true });
-  const block = result.text.trim();
+  const heading = `## Branch: ${sidecar.branch ?? branch} (${sidecar.slug ?? issue.slug})`;
+  const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
   return { completed: true, reportFile, parsed };

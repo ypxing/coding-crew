@@ -59,8 +59,10 @@ export function workerPrompt({ mainRoot, worktree, issuePath, slug, criteria, re
  */
 function resultBlock(worktree, reportPath) {
   return [
-    `Write your structured result to ${reportPath} as your last action — that file is what`,
-    "the orchestrator reads, so it does not have to infer your result from prose:",
+    `Write your structured result to ${reportPath} as your last action. This file is the`,
+    "only thing the orchestrator reads — nothing you print in your final message is parsed,",
+    "so a summary sentence with no file write is",
+    "read as `blocked` — never as a silent `complete` — no matter how the work actually went:",
     "",
     "```json",
     JSON.stringify(
@@ -77,12 +79,6 @@ function resultBlock(worktree, reportPath) {
       2,
     ),
     "```",
-    "",
-    // Observed on a real claude sprint: the final message ended with a sentence of
-    // summary, nothing parsed, and the issue lost a whole round to `blocked` even though
-    // the work was committed. A file write does not depend on how a message ends.
-    "End your final message with the same block too. If neither the file nor the block",
-    "exists, your result is read as `blocked` — never as a silent `complete`.",
   ];
 }
 
@@ -179,14 +175,13 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "yourself. A check reported `not_run` is not evidence of anything. Everything else is",
     "still judged from the diff: no file and line, no evidence, `unmet`.",
     "",
-    // Same sidecar-first policy as the worker's resultBlock: write the json to disk, then
-    // end the message with the same block as a fallback the orchestrator only reads if the
-    // file above never landed (see report.mjs's parseReviewReport sidecar handling).
-    `Write your structured verdict to ${reportPath} as your last action — that file is what`,
-    "the orchestrator reads first, so it does not have to infer your verdict from prose.",
-    "Then return your report starting with `## Branch: <branch-name>`, and directly under",
-    "it the same fenced json block again, in case the file write did not happen — this is",
-    "the only thing that gates the merge and counts findings, so get it exactly right:",
+    // Same policy as the worker's resultBlock: the file is the only thing read. No fallback
+    // fenced block in the final message — see report.mjs's parseReviewReport. The "##
+    // Branch:" heading below shapes only the transcript a human reads, never the merge gate.
+    `Write your structured verdict to ${reportPath} as your last action. This file is the`,
+    "only thing that gates the merge and counts findings, so get it exactly right — nothing",
+    "you print in your final message is parsed. In your final message, still start with",
+    "`## Branch: <branch-name>`, for the human reading the transcript, then the same object:",
     "",
     "```json",
     JSON.stringify(
@@ -240,12 +235,10 @@ export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutp
     "'fixable' guess costs one extra round; a wrong 'not fixable' guess strands the issue for",
     "a human who may not be watching.",
     "",
-    // Same sidecar-first policy as the worker's resultBlock and the reviewer's verdict
-    // block: the file is what the orchestrator reads first (see report.mjs's
-    // parseTriageReport sidecar handling); the fenced block is the fallback.
-    `Write your structured verdict to ${reportPath} as your last action — that file is`,
-    "what the orchestrator reads first. Then answer with exactly this fenced json block,",
-    "and nothing before it, as a fallback in case the file write did not happen:",
+    // Same policy as the worker's resultBlock and the reviewer's verdict block: the file is
+    // the only thing read — see report.mjs's parseTriageReport.
+    `Write your structured verdict to ${reportPath} as your last action. This file is the`,
+    "only thing the orchestrator reads — nothing you print in your final message is parsed:",
     "",
     "```json",
     JSON.stringify(

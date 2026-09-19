@@ -3,21 +3,29 @@
 #
 # Behaviour is driven by files in $CREW_FAKE_DIR:
 #   <slug>.worker         the worker report to emit (default: a clean `complete`)
-#   <slug>.review         the review report to emit (default: AC: all-met, no findings)
+#   <slug>.review         the review report to emit (default: verdict all-met, no findings)
 #   <slug>.review-once    the review report is empty (review-not-run) on the *first* call
-#                         for this slug, then AC: all-met on every call after — simulates a
+#                         for this slug, then verdict all-met on every call after — simulates a
 #                         review dispatch that failed transiently and succeeds on retry.
 #                         Mutually exclusive with <slug>.review; a per-slug call counter is
 #                         kept at <slug>.review-once.calls next to it.
 #   <slug>.review-once-garbled   same shape as <slug>.review-once, except the first call's
-#                         report is *non-empty* prose with no `AC:` line and no findings — a
-#                         herdr capture that read back a truncated fragment rather than a
-#                         truly empty pane, which is not the same code path as review-once
-#                         (see parseReviewReport's emptyVerdictOnly case in pipeline.mjs).
+#                         report is *non-empty* prose with no fenced json at all — a herdr
+#                         capture that read back a truncated fragment rather than a truly
+#                         empty pane. report.mjs's sidecar-only policy treats this identically
+#                         to a truly empty first call (neither has a sidecar), which is the
+#                         behaviour this fixture exists to pin down.
 #                         Mutually exclusive with <slug>.review and <slug>.review-once; shares
 #                         the same <slug>.review-once.calls counter file.
 #   <slug>.nocommit       do not create a commit in the worktree
 #   <slug>.exit           exit with this code instead of 0
+#
+# Every fixture's own content — whatever this script writes to --out, whether from a default
+# above or a <slug>.worker/.review/... file a test dropped — is expected to carry the fenced
+# ```json block report.mjs actually reads. mirror_sidecar() (below) copies the *last* such
+# block into --report-path, the same file a real agent's own Write tool call would produce —
+# so a fixture whose content has no fenced json at all (to exercise the fail-closed "no
+# sidecar" path on purpose) correctly leaves none written.
 #
 # `--agent coverage-validation` stands in for the agent-less wrap-up dispatch.
 # `--agent commands-discovery` stands in for the agent-less one-time command-discovery
@@ -28,7 +36,7 @@
 # custom response at $CREW_FAKE_DIR/commands.response — read verbatim instead of the default.
 set -uo pipefail
 
-AGENT=""; DIR=""; PROMPT_FILE=""; OUT=""; SLUG_ARG=""
+AGENT=""; DIR=""; PROMPT_FILE=""; OUT=""; SLUG_ARG=""; REPORT_PATH=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --agent) AGENT="$2"; shift 2 ;;
@@ -36,10 +44,30 @@ while [ $# -gt 0 ]; do
     --prompt-file) PROMPT_FILE="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
     --slug) SLUG_ARG="$2"; shift 2 ;;
+    --report-path) REPORT_PATH="$2"; shift 2 ;;
     --model) shift 2 ;;
     *) shift ;;
   esac
 done
+
+# report.mjs reads only the sidecar at --report-path, never --out's text — the same contract
+# a real agent's own Write tool call fulfils. Every branch below still writes --out (kept for
+# a human debugging a test failure, and because dispatch.mjs always writes it), but mirrors
+# the last fenced ```json block out of that same text into the sidecar, once, right before
+# exiting — a fixture that wants a *missing* sidecar (to exercise the fail-closed path) writes
+# --out text with no fenced json block at all, and none is mirrored.
+mirror_sidecar() {
+  [ -n "$REPORT_PATH" ] || return 0
+  local body
+  body=$(awk '
+    /^[ \t]*```(json)?[ \t]*$/ { if (inside) { inside=0 } else { inside=1; buf=""; next } }
+    inside { buf = buf $0 "\n" }
+    END { if (found) printf "%s", buf }
+    /^[ \t]*```(json)?[ \t]*$/ { found=1 }
+  ' "$OUT" 2>/dev/null)
+  [ -n "$body" ] && printf '%s' "$body" > "$REPORT_PATH"
+}
+trap mirror_sidecar EXIT
 
 # --slug is the real dispatch's own slug (see dispatch.mjs's --slug forwarding), independent
 # of --out's filename convention. Only a call with no --slug at all (coverage-validation,
@@ -91,14 +119,14 @@ if [ "$AGENT" = "crew-code-reviewer" ]; then
         : > "$OUT" # empty report — the pipeline reads this as review-not-run
       fi
     else
-      printf '## Branch: crew/x/%s\nAC: all-met\n\nNo findings.\n' "$SLUG" > "$OUT"
+      printf '## Branch: crew/x/%s\n```json\n{"branch":"crew/x/%s","slug":"%s","verdict":"all-met","detail":"","findings":[]}\n```\n' "$SLUG" "$SLUG" "$SLUG" > "$OUT"
     fi
     exit 0
   fi
   if [ -f "$FAKE_DIR/$SLUG.review" ]; then
     cat "$FAKE_DIR/$SLUG.review" > "$OUT"
   else
-    printf '## Branch: crew/x/%s\nAC: all-met\n\nNo findings.\n' "$SLUG" > "$OUT"
+    printf '## Branch: crew/x/%s\n```json\n{"branch":"crew/x/%s","slug":"%s","verdict":"all-met","detail":"","findings":[]}\n```\n' "$SLUG" "$SLUG" "$SLUG" > "$OUT"
   fi
   exit 0
 fi

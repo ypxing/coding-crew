@@ -9,7 +9,6 @@
 #   4. Dispatch instruction tells the next worker to resume, not re-implement from scratch
 #   5. Sprint summary lists retained branches with reason
 #   6. Progress notes are positioned as context alongside code, not a substitute
-#   7. Trace continuity: branch key reused across rounds
 
 load helpers/render
 
@@ -48,19 +47,6 @@ setup() {
 
 @test "copilot.agent.md instructs worker to commit partial work with a marker" {
   grep -qiE 'WIP|partial.*commit|commit.*partial|incomplete.*marker|marker.*incomplete|commit.*wip' "$COPILOT_AGENT"
-}
-
-# ─── Trace continuity: branch key reused across rounds ───────────────────────
-
-@test "claude.agent.md trace file path keys on branch name (for continuity across rounds)" {
-  # Already verified in crew-coder-per-agent-trace.bats but confirm traces/branch.log pattern
-  grep -q 'BRANCH\|branch' "$CLAUDE_AGENT"
-  grep -q 'traces/' "$CLAUDE_AGENT"
-}
-
-@test "copilot.agent.md trace file path keys on branch name (for continuity across rounds)" {
-  grep -q 'BRANCH\|branch' "$COPILOT_AGENT"
-  grep -q 'traces/' "$COPILOT_AGENT"
 }
 
 # ─── Git-state test: retained branches survive cleanup script ─────────────────

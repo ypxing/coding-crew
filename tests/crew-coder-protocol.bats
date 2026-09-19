@@ -135,7 +135,7 @@ neutral_part_of() {
       codex) src="$CODER_DIR/codex.agent.toml" ;;
       *)     src="$CODER_DIR/$p.agent.md" ;;
     esac
-    for phrase in 'Issue Ownership' 'Machine-readable block' 'Agent Trace Logging' \
+    for phrase in 'Issue Ownership' 'Machine-readable block' \
                   'Status definitions' 'Example Report' 'You are a software engineer'; do
       ! grep -q "$phrase" "$src" || {
         echo "$src carries protocol prose inline: $phrase" >&2; return 1; }
@@ -218,7 +218,10 @@ neutral_part_of() {
   # 1.28.2 report-shape fix retired on purpose (`## Issue: <slug>`, `### Acceptance
   # Criteria`, `### Changes`, `### Notes`, the pipe-joined `Status:` line) — see CHANGELOG
   # and "the report's worked example" test below. Checking for the old heading text would
-  # pin the very duplication that fix removed.
+  # pin the very duplication that fix removed. Likewise, the per-worker `[START]`/`[DONE]`
+  # trace file (`Agent Trace Logging`) was retired on purpose in a later change: nothing
+  # ever read it back (report.mjs reads only the `<slug>.report.json` sidecar), so it was
+  # a write with no reader — see CHANGELOG.
   for p in "${CODER_VARIANTS[@]}"; do
     local f
     f=$(coder_variant "$p")
@@ -228,8 +231,6 @@ neutral_part_of() {
       'MAIN_ROOT' \
       'PROJECT_ROOT' \
       'is not a worktree' \
-      '[START] issue=' \
-      '[DONE] status=' \
       'codegraph' \
       'solve-issue' \
       'dep-install' \

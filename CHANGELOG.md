@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.29.93]
+
+### Changed
+
+- **`crew-coder`, `crew-code-reviewer`, and `crew-triage` reports are now read exclusively from
+  their `<slug>.<role>.report.json` sidecar file.** `report.mjs` no longer falls back to scanning
+  a dispatch's final message for a fenced ` ```json ` block or the older markdown headings
+  (`Status:`, `Branch:`) — a missing or invalid sidecar is read as the fail-closed state
+  (`blocked` for a worker, `unmet` for a review, `fixable` for triage) deterministically, the
+  same way for every platform and for both the headless and herdr dispatch paths.
+  `dispatchViaHerdr` drops its pane-text-scraping fallback (`extractHerdrReply` and its
+  echo/end-marker heuristics) to match: a herdr pane that settles idle/done with no sidecar now
+  fails the same way the headless path already did, instead of reconstructing a result from
+  rendered terminal text — the least robust, least-verified code in that file.
+- **`crew-coder` no longer writes a per-worker `traces/<branch>.log` file.** The `[START]`/`[DONE]`
+  trace was a write with no reader now that `report.mjs` only ever reads the sidecar; removed
+  outright rather than trimmed further.
+
 ## [1.29.92]
 
 ### Changed
