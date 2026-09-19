@@ -1231,7 +1231,7 @@ test("command discovery writes .coding-crew/dev-commands.json from the repo's ow
   assert.equal(cache.sourceHash, undefined, "the committed cache has no sourceHash field");
   assert.deepEqual(
     Object.keys(cache).sort(),
-    ["credential_target", "env", "install", "lint", "test", "typecheck"],
+    ["coverage", "credential_target", "env", "install", "integration", "lint", "test", "typecheck"],
   );
 });
 

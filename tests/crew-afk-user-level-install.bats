@@ -32,6 +32,13 @@ setup() {
   FAKE_HOME="$BATS_TEST_TMPDIR/home"
   WORK_REPO="$BATS_TEST_TMPDIR/work"
   mkdir -p "$FAKE_HOME" "$WORK_REPO"
+  # install.sh's resolve_dest() redirects a user-scope (.claude/, .copilot/, .pi/agent/,
+  # .codex/) install to these when set, the same way the real CLIs do — see install.sh's
+  # own comment above resolve_dest(). Left ambient (e.g. this suite running inside a real
+  # Claude Code session, where CLAUDE_CONFIG_DIR already points at the real ~/.claude),
+  # every "user-level" test below would silently install into that real location instead
+  # of $FAKE_HOME and then fail asserting against the empty fake one.
+  unset CLAUDE_CONFIG_DIR COPILOT_HOME PI_CODING_AGENT_DIR CODEX_HOME
 }
 
 # user_install <platform> — a user-level install into $FAKE_HOME (TARGET_REPO=$HOME)

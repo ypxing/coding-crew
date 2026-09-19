@@ -40,7 +40,7 @@ words_of() {
   done
 }
 
-@test "budget: solve-issue is under 1,850 words" {
+@test "budget: solve-issue is under 2,100 words" {
   # Raised from 1,300 by the one-writer-per-issue-file fix: §7/§8 became a real branch on
   # "who owns the issue file", so the skill now carries two close paths where it carried
   # one. That is a new rule, not a re-explained one — the worker used to be told both to
@@ -62,8 +62,14 @@ words_of() {
   # existing chain. Raised again to 1,850 when §6 gained a new §6.5: the dev-commands.json
   # cache is committed but nothing here auto-commits it, so a bootstrap write needs its own
   # reminder step — a real new step, not a rephrasing of §6's existing commit instructions.
+  # Raised again to 2,100 to cover four real rules the ceiling missed when they landed:
+  # the dev-commands.json cache moving to its committed path (commit-dev-commands-cache),
+  # batching grep/read/verification calls so each doesn't re-bill accumulated context, the
+  # docker-mode dep-install check becoming unskippable (a worker could no longer substitute
+  # its own node_modules/.venv probing for it), and the git-common mount's per-worktree
+  # GIT_DIR/GIT_COMMON_DIR/hooksPath resolution. None restate an existing step.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 1850 ] || { echo "solve-issue is $words words (budget 1850)" >&2; return 1; }
+  [ "$words" -lt 2100 ] || { echo "solve-issue is $words words (budget 2100)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {
@@ -71,7 +77,7 @@ words_of() {
   [ "$words" -lt 750 ] || { echo "tdd is $words words (budget 750)" >&2; return 1; }
 }
 
-@test "budget: the whole per-issue worker chain is under 4,100 words" {
+@test "budget: the whole per-issue worker chain is under 4,300 words" {
   # crew-coder + solve-issue + its verification reference + tdd. Read once per issue,
   # so this total is what a sprint multiplies by its issue count. It was 4,158 words
   # before the duplication below was cut; the ceiling leaves room for one genuinely new
@@ -84,14 +90,15 @@ words_of() {
   # Raised from 3,800 with solve-issue's §5 cache fast path (see that ceiling's own
   # comment) — the same real new rule, not restated here. Raised from 4,000 with
   # solve-issue's §6.5 dev-commands.json reminder (see that ceiling's own comment) —
-  # again a real new step, not restated here.
+  # again a real new step, not restated here. Raised from 4,100 to 4,300 alongside
+  # solve-issue's 2,100 ceiling above — the same four real rules, not restated here.
   total=$(words_of "$(coder_variant pi)")
   for f in "$REPO_ROOT"/skills/solve-issue/SKILL.md \
            "$REPO_ROOT"/skills/solve-issue/references/verification.md \
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 4100 ] || { echo "worker chain is $total words (budget 4100)" >&2; return 1; }
+  [ "$total" -lt 4300 ] || { echo "worker chain is $total words (budget 4300)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────

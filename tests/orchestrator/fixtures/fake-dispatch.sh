@@ -98,9 +98,9 @@ if [ "$AGENT" = "commands-discovery" ]; then
   if [ -f "$FAKE_DIR/commands.response" ]; then
     cat "$FAKE_DIR/commands.response" > "$OUT"
   else
-    # A real model, following discover-commands.sh's prompt, always answers all six fields —
-    # including a confirmed null for the three the fixture's own Makefile never documents.
-    printf '{"test": "make test", "lint": "make lint", "typecheck": "make typecheck", "install": null, "env": null, "credential_target": null}' > "$OUT"
+    # A real model, following discover-commands.sh's prompt, always answers all eight fields —
+    # including a confirmed null for the five the fixture's own Makefile never documents.
+    printf '{"test": "make test", "lint": "make lint", "typecheck": "make typecheck", "install": null, "env": null, "credential_target": null, "coverage": null, "integration": null}' > "$OUT"
   fi
   exit 0
 fi

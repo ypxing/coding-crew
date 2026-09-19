@@ -286,7 +286,7 @@ teardown() {
 
 @test "once written, a subsequent discover-commands.sh run skips (bootstrap-only, no re-check)" {
   echo "claude notes" > CLAUDE.md
-  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit"}' > response.txt
+  echo '{"test": "npm test", "lint": "npm run lint", "typecheck": "tsc --noEmit", "install": null, "env": null, "credential_target": null, "coverage": null, "integration": null}' > response.txt
 
   bash "$WRITE_SCRIPT" --response-file response.txt
 
@@ -298,7 +298,7 @@ teardown() {
 @test "a symlinked AGENTS.md is not needed for the written cache to make discovery skip afterward" {
   echo "run tests with: npm test" > CLAUDE.md
   ln -s CLAUDE.md AGENTS.md
-  echo '{"test": "npm test", "lint": null, "typecheck": null}' > response.txt
+  echo '{"test": "npm test", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null, "coverage": null, "integration": null}' > response.txt
 
   bash "$WRITE_SCRIPT" --response-file response.txt
 
