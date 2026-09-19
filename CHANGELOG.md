@@ -21,6 +21,15 @@
   `dev-commands.json`'s `typecheck` field up front (via `add-tests`'s own discovery/cache
   mechanism) so step 6d has a real command to run.
 
+### Fixed
+
+- **`.worktreeinclude`'s `.env` entry is now provisioned into a worktree as a real copy
+  instead of a symlink.** A symlink to mainRoot's absolute path resolves to a path that
+  does not exist for a worker running inside a container that bind-mounts only the
+  worktree, so a from-worktree read/write of `.env` failed with ENOENT even though the
+  file was "there" from the host's point of view. Every other `.worktreeinclude` entry
+  (`node_modules`, `.venv`, `docker-compose.override.yml`, …) is still symlinked.
+
 ## [1.29.91]
 
 ### Changed

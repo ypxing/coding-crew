@@ -6,7 +6,7 @@
  * or on a Copilot worker obeying a "Working directory:" line in its prompt.
  */
 
-import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
 /**
@@ -27,13 +27,23 @@ export function worktreePath(mainRoot, branch) {
 const AUTO_INCLUDE_ENTRIES = ["docker-compose.override.yml", ".env"];
 
 /**
+ * Entries provisioned as a real copy instead of a symlink. `.env` is the one case where
+ * a symlink to mainRoot's absolute path is actively wrong, not just unnecessary: a worker
+ * running inside a container that bind-mounts only the worktree (not mainRoot) resolves
+ * the link to a path that does not exist in its filesystem, so a from-worktree read/write
+ * of `.env` fails with ENOENT even though the file is "there" from the host's point of
+ * view. A copy has no such target to lose.
+ */
+const COPY_ENTRIES = new Set([".env"]);
+
+/**
  * Make sure `.worktreeinclude` at mainRoot lists docker-compose.override.yml and .env, before
  * any worktree exists. Without this, each only reaches a worktree via its own script's fast
  * path — docker-compose.override.yml via gen-override.sh's docker-present check inside
  * ensure-deps.sh (which requires DOCKER_MARKER to already be on disk, a race the first round's
  * concurrently-created worktrees can lose), .env via dep-install's ensure-env.sh (which
  * requires a worker to have actually reached that step first). Listing both entries here means
- * every worktree's own applyWorktreeInclude() symlinks them in deterministically at creation
+ * every worktree's own applyWorktreeInclude() provisions them in deterministically at creation
  * time instead, before any of that has had a chance to run.
  *
  * Safe to call unconditionally, even when the project has neither file yet:
@@ -112,19 +122,23 @@ export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expec
 }
 
 /**
- * Symlink each `.worktreeinclude` entry into the worktree (node_modules, .venv, …).
- * Blank lines and `#` comments are skipped. A missing source is skipped, not fatal.
+ * Provision each `.worktreeinclude` entry into the worktree: a symlink for most entries
+ * (node_modules, .venv, …), a real copy for `COPY_ENTRIES` (see `.env` above). Blank lines
+ * and `#` comments are skipped. A missing source is skipped, not fatal.
  *
  * `existsSync` follows symlinks, so it reports `false` for a *dangling* one — the same
- * value it reports for "nothing here yet". A dangling link that already points at the
- * current `mainRoot/<entry>` self-heals for free once that path becomes real (same target,
- * no relink needed). But a `dest` left as a broken symlink pointing anywhere else — a
- * worktree reused after `.worktreeinclude` changed, or a link this function did not create —
- * used to hit `EEXIST` from `symlinkSync` and get swallowed as "a pre-existing entry is not
- * a failure", so it never healed: the worker's own `cp .env.template .env` kept failing with
- * "not writing through dangling symlink". `lstatSync` (no follow) tells the three states
- * apart: nothing at `dest` (link it), a live entry (leave it — reuse matters for resume), or
- * a broken symlink (clear it and relink to the current source).
+ * value it reports for "nothing here yet". For a symlinked entry, a dangling link that
+ * already points at the current `mainRoot/<entry>` self-heals for free once that path
+ * becomes real (same target, no relink needed). But a `dest` left as a broken symlink
+ * pointing anywhere else — a worktree reused after `.worktreeinclude` changed, or a link
+ * this function did not create — used to hit `EEXIST` from `symlinkSync` and get swallowed
+ * as "a pre-existing entry is not a failure", so it never healed: the worker's own
+ * `cp .env.template .env` kept failing with "not writing through dangling symlink".
+ * `lstatSync` (no follow) tells the three states apart: nothing at `dest` (provision it), a
+ * live entry (leave it — reuse matters for resume), or a broken symlink (clear it and
+ * reprovision from the current source). A copy entry can never be left dangling, so for it
+ * this only ever clears a stale *symlink* sitting at `dest` (e.g. one made before `.env`
+ * moved into `COPY_ENTRIES`) before copying fresh.
  */
 export function applyWorktreeInclude(mainRoot, worktree) {
   const manifest = join(mainRoot, ".worktreeinclude");
@@ -136,12 +150,13 @@ export function applyWorktreeInclude(mainRoot, worktree) {
     const src = join(mainRoot, entry);
     const dest = join(worktree, entry);
     if (!existsSync(src)) continue;
+    const copy = COPY_ENTRIES.has(entry);
 
     let destStat = null;
     try {
       destStat = lstatSync(dest);
     } catch {
-      /* nothing at dest — the common case, fall through to link it */
+      /* nothing at dest — the common case, fall through to provision it */
     }
     if (destStat) {
       if (!destStat.isSymbolicLink() || existsSync(dest)) continue; // live entry — leave it
@@ -154,10 +169,11 @@ export function applyWorktreeInclude(mainRoot, worktree) {
 
     mkdirSync(dirname(dest), { recursive: true });
     try {
-      symlinkSync(src, dest);
+      if (copy) copyFileSync(src, dest);
+      else symlinkSync(src, dest);
       linked.push(entry);
     } catch {
-      /* another process linked it between our check and this call — not a failure */
+      /* another process provisioned it between our check and this call — not a failure */
     }
   }
   return linked;
