@@ -225,7 +225,7 @@
       ]
     },
     "upgrade-deps": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "upgrade-deps",
       "description": "Audit outdated npm/yarn/pnpm dependencies for exploitability, transitive conflicts, and usage, then publish issues (batched safe bumps, one per risky package or coupled group) with a safety checklist.",
       "install": ".claude/skills/upgrade-deps",

@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.29.92]
+
+### Changed
+
+- **`upgrade-deps`'s major-bump review is now five mechanical signals instead of a single
+  changelog text search.** Step 6 ("Mechanical impact signals") now runs, in order: a tarball
+  diff between the current and target versions (proves zero code change when metadata/docs are
+  all that moved), a structural API diff against the call sites step 5 found, breaking-change
+  commit mining against the package's declared repo, a disposable-worktree
+  typecheck/test/lint run at the bumped version, and — last resort — the changelog text search
+  step 6 used to do alone. A major bump whose tarball diff is provably empty, with no confirmed
+  export break and a clean worktree run, now downgrades to `Status: ready-for-agent` instead of
+  always escalating to `ready-for-human`; every other major-bump case still escalates
+  regardless of how many mechanical checks came back clean, since those checks are proxies for
+  behavior that could still have changed underneath them. Step 4's `npm ls`/`why` conflict scan
+  is now paired with a resolver dry-run (`npm install --dry-run`, `pnpm add --lockfile-only`, or
+  `yarn up --mode=update-lockfile`) so the safety checklist reports the actual post-bump
+  resolution instead of inferring it from today's tree. The skill also resolves
+  `dev-commands.json`'s `typecheck` field up front (via `add-tests`'s own discovery/cache
+  mechanism) so step 6d has a real command to run.
+
 ## [1.29.91]
 
 ### Changed
