@@ -37,6 +37,23 @@
   deleted and recreated fresh from `base` instead of stalling for a human. A real ancestry
   mismatch with actual unique content still stalls, unchanged.
 
+### Added
+
+- **`add-tests` skill**: discovers the project's coverage/integration commands, ranks
+  under-covered files by external-dependency import > recent-diff touch > inverse coverage,
+  resolves a per-ecosystem mocking convention (repo precedent > built-in defaults > ask-once,
+  cached to `test-conventions.md`), routes findings to a real or explicitly-labeled
+  "component test (mocked)" tier, and hands them to `to-issues` as `ready-for-agent` issues
+  rather than slicing/publishing them itself. The shared `discover-commands.sh`/
+  `write-commands-cache.sh` cache (`dev-commands.json`) grows two new fields, `coverage` and
+  `integration`, following the same only-if-documented/else-null convention as the existing six.
+- **`upgrade-deps` skill**: audits outdated npm/yarn/pnpm dependencies across a monorepo for
+  security-advisory exploitability, transitive/peer conflicts, and real call-site usage, with a
+  targeted changelog review for major bumps, then files `ready-for-agent`/`ready-for-human`
+  issues (batched for trivial in-range bumps, one per risky package or coupled group otherwise)
+  with a required safety checklist and test additions, for `crew-afk`/`solve-issue` to execute.
+  Never touches `package.json`, lockfiles, or `node_modules` itself.
+
 ## [1.29.90]
 
 ### Added
