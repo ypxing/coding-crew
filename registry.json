@@ -72,7 +72,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.3.8",
+      "version": "2.3.9",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -126,7 +126,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.9.11",
+      "version": "1.9.12",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
@@ -205,6 +205,22 @@
       "deps": [
         "domain-modeling",
         "to-prd",
+        "to-issues"
+      ]
+    },
+    "add-tests": {
+      "version": "1.0.0",
+      "source-dir": "add-tests",
+      "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
+      "install": ".claude/skills/add-tests",
+      "install-copilot": ".copilot/skills/add-tests",
+      "install-pi": ".pi/skills/add-tests",
+      "install-codex": ".agents/skills/add-tests",
+      "scripts": [
+        "discover-commands.sh",
+        "write-commands-cache.sh"
+      ],
+      "deps": [
         "to-issues"
       ]
     },
