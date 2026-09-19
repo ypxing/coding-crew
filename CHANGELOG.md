@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.95]
+
+### Changed
+
+- **`upgrade-deps` now also scans for advisories on transitive-only dependencies.**
+  Cross-referencing an audit against the step-2 inventory alone misses any advisory on a
+  package that never gets its own row there (e.g. `follow-redirects` pulled in only via
+  `axios`). After cross-referencing, the skill now scans the raw audit output a second time
+  for advisories with no matching step-2 row, names the direct dependency pulling each one
+  in, and checks whether another issue in the same batch already resolves it as a side effect
+  of its own bump before filing a duplicate.
+- **Major-bump review step 6a (tarball diff) is now a required minimum, not skippable in favor
+  of the changelog text search (6e).** 6b–6d must each be attempted and their result — including
+  "skipped because X" — stated in the issue; a silent omission read as "not checked" is
+  indistinguishable from "checked and clean" to whoever picks up the issue next.
+- **"It's just a dev-tool/config dependency" no longer excuses downgrading a major bump's
+  status on its own.** That reasoning is about blast radius, not whether behavior changed, and
+  a lint/build tool major can still hide a judgment-call regression (e.g. mass-suppressed lint
+  rules) that the mechanical checks won't catch. Only a proven zero-code-diff still downgrades.
+
 ## [1.29.94]
 
 ### Removed

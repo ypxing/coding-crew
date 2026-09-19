@@ -92,6 +92,15 @@ loosen or tighten). Otherwise run the manager's audit command directly (`npm aud
 `yarn audit --json` / `yarn npm audit --json` for berry, `pnpm audit --json`) and
 cross-reference advisories against the inventory from step 2.
 
+Cross-referencing against step 2 alone misses any advisory on a package that never appears
+there — a transitive-only dependency (e.g. `follow-redirects` pulled in by `axios`) has no
+row of its own in step 2 but can still carry its own CVE. After cross-referencing, scan the
+raw audit output a second time for every advisory whose package has no matching step-2 row,
+and file those too. For each: name the direct dependency (or dependencies) that pull it in,
+and check whether another issue already in this batch resolves it as a side effect of its
+own bump (e.g. bumping `axios` to a version that vendors a fixed `follow-redirects`) — if so,
+say which issue and don't file a duplicate; if not, file it on its own per the CVE rule below.
+
 For every advisory hit:
 
 - Note the fixed version and whether reaching it is an in-range or range-edit move. If the
@@ -159,7 +168,12 @@ For each range-edit candidate, grep the repo (all workspaces) for real call site
 Skip this step for patch/minor range-edit bumps; go straight to drafting. For every **major**
 version bump, run these signals in order — each is cheaper/more decisive than the next, and a
 decisive answer from an earlier one doesn't excuse skipping the later ones, since they catch
-different failure classes:
+different failure classes. **6a is a required minimum for every major bump — it is nearly
+free (no worktree, no install) and skipping straight to a changelog text search (6e) is not a
+substitute for it.** 6b–6d are not optional-in-practice either: attempt each and state its
+result in the issue, even when that result is just "skipped because X" (no types available,
+repo unreachable, tags unresolvable) — a silent omission reads as "not checked," which is
+indistinguishable from "checked and clean" to whoever picks up the issue next.
 
 **6a. Tarball diff — is there even a code change?** The cheapest, most decisive check: many
 "major" bumps only move for a `package.json` metadata reason (dropped Node engine support,
@@ -285,6 +299,13 @@ Each range-edit issue must include:
     to have changed. State this reasoning explicitly in the issue ("major version bump, zero
     code diff between vX and vY per tarball comparison") so a reviewer can verify the claim
     without redoing the diff.
+  - **"It's just a dev-tool/config dependency, no runtime impact" is not grounds for
+    downgrading a major bump's status on its own** — that reasoning is about *blast radius*,
+    not about whether behavior changed, and it isn't one of the checks above. A lint/build
+    tool major can still hide a judgment-call regression a mechanical check won't catch (e.g.
+    a coder mass-suppressing lint rules just to get `make lint` green again after a ruleset
+    bump). Only the zero-code-impact exception above downgrades a major; "it's just eslint"
+    by itself doesn't.
 - **Minor/patch** range-edit bumps default to `Status: ready-for-agent`, unless any of these
   hold, in which case escalate to `ready-for-human` and say which:
   - Step 4 found a transitive/peer conflict with no clean resolution
