@@ -19,7 +19,6 @@ import { join } from "node:path";
 
 import {
   applySchemaPrefilter,
-  codegraphLine,
   depsLine,
   findingsAtOrAbove,
   parseReviewReport,
@@ -239,17 +238,6 @@ export async function runWorker(ctx, issue) {
     });
     ctx.log(`slug=${issue.slug} round=${ctx.round} ${depsLine(deps.stdout)}`);
   }
-
-  // Independent of deps — codegraph indexes source, not installed packages — and skipped
-  // by default (CREW_CODEGRAPH is off unless an operator opts in; see ensure-codegraph.sh).
-  // Same unconditional-before-skipWorker placement as deps, for the same reason: a
-  // worktree recreated bare after a prior partial round has no index of its own yet
-  // either, and no CLI flag pairs with this one — CREW_CODEGRAPH is already the off switch.
-  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=codegraph`);
-  const codegraph = effects.bash("ensure-codegraph.sh", ["--dir", worktree, "--slug", issue.slug], {
-    env: sprint.childEnv(),
-  });
-  ctx.log(`slug=${issue.slug} round=${ctx.round} ${codegraphLine(codegraph.stdout)}`);
 
   if (skipWorker) {
     const label = notFixableRetry ? "not-fixable-recheck" : "review-not-run";

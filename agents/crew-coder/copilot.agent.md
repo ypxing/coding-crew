@@ -21,8 +21,4 @@ loads this definition and enforces its tool list.
 **Tool naming:** `bash`, `view`, `create`, `edit`, `grep`, `glob`. Unknown tool names are dropped
 silently rather than rejected, so this list is the CLI's own vocabulary.
 
-**Code search order:** `codegraph explore "<query>"` via the execute tool when `.codegraph/` exists and
-the binary is on PATH; otherwise keyword search. Copilot has no MCP tool, so the CLI is the only
-CodeGraph path here — there is no `codegraph_explore` equivalent to try first.
-
 **Skill resolution:** the `skills:` list above loads them for you. `$MAIN_ROOT` holds `.github/`.

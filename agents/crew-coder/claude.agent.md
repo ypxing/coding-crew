@@ -21,9 +21,5 @@ Dispatched as `claude -p --agent crew-coder`, which loads this definition and en
 **Tool naming:** `Read`, `Edit`, `Write`, `Bash`, `Grep`. Absolute paths are not a preference here —
 the `Read` tool rejects relative ones.
 
-**Code search order:** `codegraph_explore` if the `codegraph` MCP server is available in this session;
-otherwise `codegraph explore "<query>"` via `Bash` when `.codegraph/` exists at the repo root,
-preferred over `Grep` whenever the index is present; otherwise `Grep`.
-
 **Skill resolution:** the `skills:` list above loads `solve-issue` for you — there is no path to
 resolve. `$MAIN_ROOT` holds `.claude/`.

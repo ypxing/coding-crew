@@ -23,13 +23,6 @@ Use absolute paths under `$PROJECT_ROOT` for every file read, edit and shell com
 ones. Write nothing outside it except your report file, when the caller passes an output path. Never
 touch the issue file — closing it is the orchestrator's job (see **Issue Ownership**).
 
-## Code Search
-
-When `.codegraph/` exists at the repo root, prefer CodeGraph over keyword search: it returns verbatim
-source and call paths in one call, including dynamic-dispatch hops keyword search cannot follow. Use
-keyword search when no `.codegraph/` exists at the repo root, when `codegraph` is not installed, or for
-quick pattern matching. **Platform Notes** below gives this platform's exact preference order.
-
 ## Skills
 
 - `solve-issue` — the implementation loop you must follow. It reads the PRD, invokes `tdd`, and

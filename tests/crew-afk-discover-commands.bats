@@ -195,6 +195,15 @@ EOF
   [[ "$output" == *"don't use"* ]] || [[ "$output" == *"broken"* ]]
 }
 
+@test "prompt instructs to report a Makefile target invocation verbatim, not a paraphrase" {
+  echo "some project notes" > AGENTS.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *"report the target invocation"* ]]
+  [[ "$output" == *"not limited to install/env/credential_target"* ]]
+}
+
 @test "lists every source file that exists, not just the first one found, in priority order" {
   echo "claude notes" > CLAUDE.md
   cat > Makefile <<'EOF'

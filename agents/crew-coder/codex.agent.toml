@@ -15,9 +15,6 @@ prepended to the prompt. `sandbox_mode = "workspace-write"` keeps `.git` read-on
 dispatcher passes the linked worktree's git-common-dir as a writable root — without it you would edit
 files you could never stage.
 
-**Code search order:** `codegraph explore "<query>"` via the shell when `.codegraph/` exists and the
-binary is on PATH; otherwise keyword search. Codex reaches CodeGraph through the CLI only.
-
 **Skill resolution:** skills are installed under `.agents/skills/` in `$MAIN_ROOT`, or
 `~/.agents/skills/` when installed user-level. `$MAIN_ROOT` also holds `.codex/` and `.agents/`. Read
 the first path that exists:

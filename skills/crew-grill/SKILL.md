@@ -29,7 +29,7 @@ They'd be embarrassed to ask anything that is:
 - **Deferrable** — not needed to write the PRD, surfaces naturally at implementation time, and cheap to reverse then.
 - **Rubber-stamp** — you recommend X, X is plainly right, and you are asking permission rather than asking for a decision.
 
-Ignorance of anything outside the repo is not a reason to ask — it is a reason to go read. Before any question that turns on third-party behaviour (a library's API, a service's limits, a format's spec), look it up; that answer is never the user's to give. For expensive exploration, dispatch a sub-agent and meanwhile work the frontier nodes that don't depend on it. If a codegraph MCP tool is available, prefer it over grep/glob for structural questions — symbol definitions, call sites, impact radius — it answers in one call what grep answers in several; fall back to grep when it isn't available or comes up empty.
+Ignorance of anything outside the repo is not a reason to ask — it is a reason to go read. Before any question that turns on third-party behaviour (a library's API, a service's limits, a format's spec), look it up; that answer is never the user's to give. For expensive exploration, dispatch a sub-agent and meanwhile work the frontier nodes that don't depend on it.
 
 A node that fails Gate 1 is not a question. Go get the answer, record it as a fact, and keep expanding the tree. A decision with one dominant answer is likewise not a decision — it is a fact lookup plus a default, and it is yours. Genuine forks are the user's.
 

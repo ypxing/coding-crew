@@ -286,6 +286,14 @@ Rules:
 - Where the source recommends against a shortcut (calls it broken, misleading, or says
   "don't use it"), use the alternative it recommends instead of the discouraged shortcut.
 - If a category has no discoverable local command, use null for it — do not guess one.
+- When any of the eight categories resolves to a Makefile target, report the target invocation
+  itself (e.g. "make test", "make deps", "make env") — never a command you believe is equivalent
+  to what the target's recipe does underneath. A target's recipe can hide an existence guard
+  (won't overwrite a file that's already there), a prerequisite chain, or an environment
+  conditional (CI vs local) that a paraphrased "equivalent" command silently drops. This applies
+  even if the recipe's final line is a single simple command — report the target invocation, not
+  that line. This is not limited to install/env/credential_target: a "test" or "lint" target is
+  eval'd the same way downstream and loses the same guards if paraphrased.
 
 Respond with **only** this JSON shape, no other prose:
 {"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>", "env": "<command or null>", "credential_target": "<command or null, e.g. \"make _registry\">", "coverage": "<command or null>", "integration": "<command or null>"}

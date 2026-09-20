@@ -16,9 +16,6 @@ user-invocable: false
 
 Dispatched as `pi -p`, with this definition appended to the system prompt.
 
-**Code search order:** `codegraph explore "<query>"` via the `bash` tool when `.codegraph/` exists and
-the binary is on PATH; otherwise the `grep` / `find` tools. pi reaches CodeGraph through the CLI only.
-
 **Skill resolution:** skills are installed under `.pi/skills/` in `$MAIN_ROOT`, or
 `~/.pi/agent/skills/` when installed user-level. `$MAIN_ROOT` also holds `.pi/`. Read the first path
 that exists:

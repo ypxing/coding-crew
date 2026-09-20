@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.97]
+
+### Removed
+
+- **Dropped CodeGraph support.** `ensure-codegraph.sh` (and its dedicated pipeline step, run
+  between deps and dispatch) is gone, along with the `codegraph`/`codegraph_explore` search
+  fallback in `crew-coder`'s protocol and every platform file, and the codegraph-preference
+  callout in `crew-brainstorm`/`crew-grill`. Workers fall back to keyword search (`Grep`/`grep`)
+  unconditionally now; nothing reads or writes a `.codegraph/` index anymore.
+
 ## [1.29.96]
 
 ### Added

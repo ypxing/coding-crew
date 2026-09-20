@@ -231,7 +231,6 @@ neutral_part_of() {
       'MAIN_ROOT' \
       'PROJECT_ROOT' \
       'is not a worktree' \
-      'codegraph' \
       'solve-issue' \
       'dep-install' \
       'tdd' \
