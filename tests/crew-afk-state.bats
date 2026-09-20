@@ -82,7 +82,7 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ "$FEATURE_BRANCH" = "$(git rev-parse --abbrev-ref HEAD)" ]
 }
 
-@test "sourcing .scratch/sprint.env is enough — no slug lookup needed" {
+@test "sourcing .scratch/sprint.env is enough - no slug lookup needed" {
   init_sprint calc
 
   run bash -c 'source "$TEMP_DIR/.scratch/sprint.env" && echo "$FEATURE_SLUG"'

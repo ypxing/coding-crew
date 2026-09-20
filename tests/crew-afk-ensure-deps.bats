@@ -131,7 +131,7 @@ deps_line() {
   [ "$(deps_line)" = "DEPS: none" ]
 }
 
-@test "this repo — bats only, no manifest — is DEPS: none and exit 0" {
+@test "this repo - bats only, no manifest - is DEPS: none and exit 0" {
   local repo_root
   repo_root="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   run bash "$SCRIPT" --dir "$repo_root"

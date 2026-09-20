@@ -178,7 +178,7 @@ make_unmerged_worktree() {
   [ ! -d "$path" ]
 }
 
-@test "cleanup: is idempotent — a second run is a clean no-op" {
+@test "cleanup: is idempotent - a second run is a clean no-op" {
   make_merged_worktree "crew/feat/01-a"
 
   bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR" --feature-slug feat >/dev/null

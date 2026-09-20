@@ -55,7 +55,7 @@ launcher_body() {
   done
 }
 
-@test "launcher: it stays a launcher — no pipeline, no state, no receipts prose" {
+@test "launcher: it stays a launcher - no pipeline, no state, no receipts prose" {
   # Each of these was a step the body used to perform. Naming the pipeline once, as the
   # program's contract, is fine; issuing its commands is not.
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do

@@ -116,7 +116,7 @@ teardown() {
   rm -rf "$MAIN"
 }
 
-@test "--main-root: neither exists yet — generated once at MAIN_ROOT, then linked into PROJECT_ROOT" {
+@test "--main-root: neither exists yet - generated once at MAIN_ROOT, then linked into PROJECT_ROOT" {
   MAIN=$(mktemp -d)
   echo "FOO=bar" > "$MAIN/.env.example"
 
@@ -130,7 +130,7 @@ teardown() {
   rm -rf "$MAIN"
 }
 
-@test "--main-root: neither exists and MAIN_ROOT has no .env.example — empty .env generated at MAIN_ROOT and linked" {
+@test "--main-root: neither exists and MAIN_ROOT has no .env.example - empty .env generated at MAIN_ROOT and linked" {
   MAIN=$(mktemp -d)
 
   run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
@@ -349,7 +349,7 @@ MK
   rm -rf "$MAIN"
 }
 
-@test "--main-root: a PROJECT_ROOT-only cached env command is ignored — the override lives with MAIN_ROOT's discovery" {
+@test "--main-root: a PROJECT_ROOT-only cached env command is ignored - the override lives with MAIN_ROOT's discovery" {
   MAIN=$(mktemp -d)
   mkdir -p "$PROJECT/.coding-crew"
   printf '{"env": "echo SHOULD_NOT_RUN=1 > .env"}' > "$PROJECT/.coding-crew/dev-commands.json"

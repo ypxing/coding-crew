@@ -67,7 +67,7 @@ stack_for() {
 
 # ─── Relocation is lossless ──────────────────────────────────────────────────
 
-@test "no checklist item was deleted — every pre-P5 class survives in protocol or a reference" {
+@test "no checklist item was deleted - every pre-P5 class survives in protocol or a reference" {
   # Snapshot of the checklist vocabulary the protocol carried inline before P5. Each entry must
   # still be findable somewhere the reviewer reads, otherwise the trim deleted a control.
   local union="$TEMP_DIR/union.txt"
@@ -152,7 +152,7 @@ stack_for() {
 
 # ─── Selection is correct per stack ──────────────────────────────────────────
 
-@test "a generic repo loads quality only — no React or backend noise" {
+@test "a generic repo loads quality only - no React or backend noise" {
   local root; root=$(fixture generic a.sh 'echo hi')
   run refs_for "$root"
   [ "$output" = "quality.md" ]
@@ -265,7 +265,7 @@ require github.com/gin-gonic/gin v1.9.0')
   [ -x "$TEMP_DIR/.coding-crew/code-review/scripts/dependency-audit.sh" ]
 }
 
-@test "assets are always overwritten — a stale reference cannot survive a re-install" {
+@test "assets are always overwritten - a stale reference cannot survive a re-install" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-code-reviewer >/dev/null
   echo "STALE" > "$TEMP_DIR/.coding-crew/code-review/references/quality.md"

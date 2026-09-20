@@ -250,21 +250,21 @@ solve_issue_section() {
     "$REPO_ROOT/skills/solve-issue/SKILL.md"
 }
 
-@test "solve-issue §7 branches on the same fact mark-issue-done.sh checks" {
+@test "solve-issue section 7 branches on the same fact mark-issue-done.sh checks" {
   section=$(solve_issue_section 7)
   # The capability check, not the caller's name.
   echo "$section" | grep -q 'CREW_ORCHESTRATED'
   echo "$section" | grep -q '\.orchestrated'
 }
 
-@test "solve-issue §7 forbids every issue-file write on an orchestrated run" {
+@test "solve-issue section 7 forbids every issue-file write on an orchestrated run" {
   section=$(solve_issue_section 7)
   # An orchestrated branch that says what not to write: no tick, no mark-done.
   echo "$section" | grep -qiE 'write nothing to the issue file|no issue file writes'
   echo "$section" | grep -qi 'do not tick\|no tick'
 }
 
-@test "solve-issue §7 keeps the direct-invocation close intact" {
+@test "solve-issue section 7 keeps the direct-invocation close intact" {
   section=$(solve_issue_section 7)
   # Unorchestrated: still ticks its own boxes and still routes the close through the
   # tracker operation rather than a hand-rolled mv.
@@ -274,7 +274,7 @@ solve_issue_section() {
   ! echo "$section" | grep -qE '^ *mv '
 }
 
-@test "solve-issue §8 writes ## Unmet criteria only when nobody else owns the file" {
+@test "solve-issue section 8 writes ## Unmet criteria only when nobody else owns the file" {
   section=$(awk '/^### 8\./{f=1;next} /^## /{if(f)exit} f' \
     "$REPO_ROOT/skills/solve-issue/SKILL.md")
   echo "$section" | grep -q '## Unmet criteria'
