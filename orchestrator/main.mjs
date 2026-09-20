@@ -277,10 +277,15 @@ function resolveScriptsDir(mainRoot) {
   // install, which is the documented default (`TARGET_REPO=$HOME`, "works in any project"):
   // without it a sprint could only run in a repo that had installed crew-afk itself, and
   // reported that as the skill being half-installed. Then this repo's source tree (dev).
+  //
+  // $HOME first, not os.homedir() alone: on Windows, os.homedir() reads USERPROFILE, not
+  // HOME, so a $HOME override (bash's own portable way to redirect "home", and what
+  // TARGET_REPO=$HOME above documents) would be silently ignored there.
+  const home = process.env.HOME || homedir();
   const candidates = [
     process.env.CREW_SCRIPTS,
     ...PROJECT_SKILL_DIRS.map((d) => join(mainRoot, d)),
-    ...USER_SKILL_DIRS.map((d) => join(homedir(), d)),
+    ...USER_SKILL_DIRS.map((d) => join(home, d)),
     join(HERE, "../skills/crew-afk/scripts"),
   ].filter(Boolean);
   for (const c of candidates) if (existsSync(join(c, "state.sh"))) return resolve(c);

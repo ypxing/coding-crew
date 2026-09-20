@@ -61,7 +61,9 @@ export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
 export const DEFAULT_PARALLEL = { pi: 3, codex: 3, claude: 3, copilot: 2 };
 
 function agentFileCandidates(platform, mainRoot, agent) {
-  const home = homedir();
+  // $HOME first: os.homedir() reads USERPROFILE on Windows, not HOME, so a $HOME override
+  // — bash's own portable way to redirect "home" — would be silently ignored there.
+  const home = process.env.HOME || homedir();
   switch (platform) {
     case "pi":
       return [
@@ -1394,7 +1396,8 @@ export async function dispatchPlain(
  * sprint has started.
  */
 function copilotWorktreeVisible(effects, mainRoot, agent) {
-  const home = homedir();
+  // See agentFileCandidates' comment above on $HOME vs os.homedir() on Windows.
+  const home = process.env.HOME || homedir();
   for (const p of [
     join(home, ".copilot/agents", `${agent}.agent.md`),
     join(home, ".copilot/agents", `${agent}.md`),

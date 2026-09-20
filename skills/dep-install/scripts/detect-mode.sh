@@ -71,17 +71,16 @@ if [ -z "$_mode" ]; then
 fi
 
 if [ -z "$_mode" ]; then
-  _git_root=$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null) || _git_root=""
-  # git's --show-toplevel resolves symlinks in the path it returns; PROJECT_ROOT as passed
-  # in usually hasn't been. On macOS $TMPDIR sits under /var, itself a symlink to
-  # /private/var, so a bare string comparison here always disagreed for any project under
-  # a tmp dir — falsely treating a real git worktree as outside its own repo and forcing
-  # host mode before the Makefile scan below ever ran.
-  _project_root_real=$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P) || _project_root_real="$PROJECT_ROOT"
-  case "$_project_root_real/" in
-    "$_git_root/"*) ;;
-    *) _mode="host" ;;
-  esac
+  # Whether PROJECT_ROOT is inside a git working tree at all — not a string comparison of
+  # PROJECT_ROOT against --show-toplevel's own answer, because -C "$PROJECT_ROOT" resolves
+  # from inside PROJECT_ROOT itself, so success already *means* containment; comparing two
+  # renderings of the same directory as strings only invited them to disagree instead. They
+  # did, twice: --show-toplevel resolves symlinks (macOS's $TMPDIR sits under /var, itself a
+  # symlink to /private/var) while a plain `pwd -P` comparison doesn't, and on Windows git's
+  # own "absolute" is a bare drive-letter path ("C:/Users/...") that no bash-rendered path
+  # ever matches either way. Both falsely forced host mode before the Makefile scan below
+  # ever ran.
+  git -C "$PROJECT_ROOT" rev-parse --show-toplevel >/dev/null 2>&1 || _mode="host"
 fi
 
 if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then

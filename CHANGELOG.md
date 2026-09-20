@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.29.106]
+
+### Fixed
+
+- **`detect-mode.sh`'s git-containment check still forced `host` mode on Windows** even
+  after v1.29.102's macOS symlink fix — the same root cause (a bare string comparison of two
+  differently-rendered paths) but a different mismatch: `git rev-parse --show-toplevel`
+  renders a Windows-absolute path as a bare drive letter (`C:/Users/...`), which a bash
+  `pwd -P` comparison never matches. Removed the string comparison entirely — checking
+  `-C "$PROJECT_ROOT" rev-parse`'s own exit status already answers "is this inside a git
+  repo," since it resolves from inside `$PROJECT_ROOT` itself; there was never a need to
+  compare rendered paths as strings in the first place.
+- **`orchestrator/main.mjs` and `orchestrator/lib/dispatch.mjs` used `os.homedir()` instead
+  of `$HOME`** to resolve every user-level path (agent definitions, crew-afk's own
+  scripts dir). On Windows, `os.homedir()` reads `USERPROFILE`, not `HOME` — the documented,
+  portable override (`TARGET_REPO=$HOME`) was silently ignored there, and a user-level
+  install could never be found from a repo with no project-level copy of its own. Both now
+  prefer `process.env.HOME` when set.
+
 ## [1.29.105]
 
 ### Fixed
