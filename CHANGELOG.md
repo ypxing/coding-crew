@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.29.100]
+
+### Fixed
+
+- **`git rev-parse --git-common-dir` is now called with `--path-format=absolute`** in
+  `dispatch-codex-agent.sh`, `receipts.sh`, `verify-worktree.sh`, `detect-mode.sh`, and
+  `ensure-env.sh`. Without it, a bare drive-letter Windows path (e.g. `C:/Users/...`) doesn't
+  start with `/`, so each caller's own "is this already absolute" branch wrongly treated it as
+  relative and mangled it.
+- **`dep-install`'s Makefile-target scans (`detect-mode.sh`, `detect-service.sh`,
+  `ensure-env.sh`, `host-install.sh`) no longer gate on `make -n <target>`'s exit status.** A
+  recipe whose expanded text contains the literal word "make" (not just the `$(MAKE)` variable)
+  makes some GNU Make builds — notably 3.81, the last GPLv2 version and still macOS's default —
+  actually run it instead of only printing it under `-n`, so a real (sandboxed, daemon-less)
+  docker failure could make the dry run exit non-zero even though the recipe text itself was
+  right there in its output. Each now treats a non-empty dry-run as the "target exists" signal.
+- **`ensure-env.sh` and `gen-override.sh` fall back to copying instead of symlinking** when
+  `ln -s` doesn't produce a real symlink — the default on Windows without Developer Mode or
+  elevation, where MSYS's own undocumented fallback can otherwise silently substitute a
+  hardlink or copy that this code then trusted without verifying.
+
 ## [1.29.99]
 
 ### Fixed

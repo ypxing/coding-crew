@@ -110,14 +110,18 @@ _makefile_env_command() {
   local dir="$1" target recipe
   [[ -f "$dir/Makefile" ]] || return 0
   for target in env .env dotenv setup-env; do
-    if ( cd "$dir" && make -n "$target" ) >/dev/null 2>&1; then
-      recipe=$(cd "$dir" && make -n "$target" 2>/dev/null || true)
-      if printf '%s' "$recipe" | grep -qE 'docker (compose|run|exec)'; then
-        continue
-      fi
-      printf 'make %s' "$target"
-      return 0
+    # A non-empty dry-run is the "target exists" signal, not exit status — a recipe
+    # containing the literal word "make" can make some GNU Make builds (macOS's default
+    # 3.81 included) actually run it under -n instead of only printing it, so a real
+    # (sandboxed, daemon-less) docker failure could otherwise be mistaken for "no such
+    # target" even though the recipe text we want is right there in the output.
+    recipe=$(cd "$dir" && make -n "$target" 2>/dev/null || true)
+    [[ -n "$recipe" ]] || continue
+    if printf '%s' "$recipe" | grep -qE 'docker (compose|run|exec)'; then
+      continue
     fi
+    printf 'make %s' "$target"
+    return 0
   done
   return 0
 }
@@ -159,7 +163,12 @@ _ensure_env_at() {
 # Best-effort and silent: PROJECT_ROOT not being a git repo at all is not this script's problem.
 _git_exclude_env() {
   local dir="$1" common exclude
-  common=$(cd "$dir" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null) || return 0
+  # --path-format=absolute: without it, git's own returned format is inconsistent (a plain
+  # checkout gets a cwd-relative ".git", but on Windows an unqualified absolute path can come
+  # back as a bare drive-letter path like "C:/Users/...", which does NOT start with "/" — the
+  # *)-branch's own "prepend $dir/" fallback below would then double up into garbage instead
+  # of leaving an already-absolute path alone.
+  common=$(cd "$dir" 2>/dev/null && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
   case "$common" in
     /*) : ;;
     *) common="$dir/$common" ;;
@@ -192,12 +201,22 @@ if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
     fi
     if [[ ! -f "$MAIN_ROOT/.env" ]]; then
       gen_log="$(_ensure_env_at "$MAIN_ROOT" "$MAIN_ROOT")"
-      log="$gen_log at MAIN_ROOT; linked .env"
+      log="$gen_log at MAIN_ROOT"
       _git_exclude_env "$MAIN_ROOT"
     else
-      log="Linked .env from MAIN_ROOT"
+      log="MAIN_ROOT's .env"
     fi
-    ln -s "$MAIN_ROOT/.env" "$PROJECT_ROOT/.env"
+    ln -s "$MAIN_ROOT/.env" "$PROJECT_ROOT/.env" 2>/dev/null || true
+    if [[ -L "$PROJECT_ROOT/.env" ]]; then
+      log="$log; linked into PROJECT_ROOT"
+    else
+      # No symlink privilege (the default on Windows without Developer Mode/elevation):
+      # `ln -s` either errored, or MSYS's own undocumented fallback silently substituted a
+      # hardlink/copy. Force a clean, known-correct copy instead of trusting that fallback.
+      rm -f "$PROJECT_ROOT/.env"
+      cp "$MAIN_ROOT/.env" "$PROJECT_ROOT/.env"
+      log="$log; copied into PROJECT_ROOT (symlink unavailable)"
+    fi
     _git_exclude_env "$PROJECT_ROOT"
   else
     log="$(_ensure_env_at "$PROJECT_ROOT" "${MAIN_ROOT:-$PROJECT_ROOT}")"

@@ -8,6 +8,20 @@
 
 SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/ensure-env.sh"
 
+# assert_linked_or_copied <project-env> <main-root-env> — the MAIN_ROOT-into-PROJECT_ROOT
+# case: a real symlink where the platform allows it, or (no symlink privilege — the default
+# on Windows without Developer Mode/elevation) an independent file with identical content
+# instead — see ensure-env.sh's own symlink-with-fallback.
+assert_linked_or_copied() {
+  local link="$1" target="$2"
+  if [[ -L "$link" ]]; then
+    [ "$(readlink "$link")" = "$target" ]
+  else
+    [ -f "$link" ]
+    diff "$link" "$target"
+  fi
+}
+
 setup() {
   PROJECT=$(mktemp -d)
   export PROJECT
@@ -82,7 +96,7 @@ teardown() {
   run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
   [ "$status" -eq 0 ]
   [[ "$output" == *"MAIN_ROOT"* || "$output" == *"Linked"* ]]
-  [ -L "$PROJECT/.env" ]
+  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
   [ "$(cat "$PROJECT/.env")" = "SECRET=real" ]
   [ "$(cat "$MAIN/.env")" = "SECRET=real" ]
   rm -rf "$MAIN"
@@ -97,7 +111,7 @@ teardown() {
   [ -f "$MAIN/.env" ]
   [ ! -L "$MAIN/.env" ]
   diff "$MAIN/.env.example" "$MAIN/.env"
-  [ -L "$PROJECT/.env" ]
+  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
   [ "$(cat "$PROJECT/.env")" = "$(cat "$MAIN/.env")" ]
   rm -rf "$MAIN"
 }
@@ -109,7 +123,7 @@ teardown() {
   [ "$status" -eq 0 ]
   [ -f "$MAIN/.env" ]
   [ ! -L "$MAIN/.env" ]
-  [ -L "$PROJECT/.env" ]
+  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
   rm -rf "$MAIN"
 }
 
@@ -144,7 +158,7 @@ teardown() {
   [ -f "$MAIN/.env" ]
   [ ! -L "$MAIN/.env" ]
   diff "$MAIN/.env.example" "$MAIN/.env"
-  [ -L "$PROJECT/.env" ]
+  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
   rm -rf "$MAIN"
 }
 
@@ -317,7 +331,7 @@ MK
   [ -f "$MAIN/.env" ]
   [ ! -L "$MAIN/.env" ]
   [ "$(cat "$MAIN/.env")" = "CUSTOM=1" ]
-  [ -L "$PROJECT/.env" ]
+  assert_linked_or_copied "$PROJECT/.env" "$MAIN/.env"
   rm -rf "$MAIN"
 }
 

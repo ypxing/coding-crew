@@ -426,8 +426,14 @@ STUBEOF
   run bash "$SCRIPT" --dir "$WT" --slug widget
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker-present" ]
-  [ -L "$WT/docker-compose.override.yml" ]
-  [ "$(readlink "$WT/docker-compose.override.yml")" = "$WORK/docker-compose.override.yml" ]
+  # A real symlink where the platform allows it, or (no symlink privilege — the default on
+  # Windows without Developer Mode/elevation) an independent file with identical content —
+  # see gen-override.sh's `_link_override` fallback.
+  if [ -L "$WT/docker-compose.override.yml" ]; then
+    [ "$(readlink "$WT/docker-compose.override.yml")" = "$WORK/docker-compose.override.yml" ]
+  else
+    diff "$WT/docker-compose.override.yml" "$WORK/docker-compose.override.yml"
+  fi
 }
 
 @test "a worktree call (--slug) with no marker yet is still DEPS: docker, deferred" {

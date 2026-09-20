@@ -35,9 +35,10 @@
 # named volumes shared across every worktree — the volume name prefix alone does not.
 #
 # Worktree symlink: when PROJECT_ROOT differs from MAIN_ROOT, the file written at MAIN_ROOT
-# is also symlinked to PROJECT_ROOT/docker-compose.override.yml. Every mechanical caller
-# still passes the file's absolute MAIN_ROOT path via an explicit second `-f` regardless of
-# this symlink — that stays the correct, cwd-independent way to invoke it. The symlink exists
+# is also symlinked to PROJECT_ROOT/docker-compose.override.yml (falling back to a plain
+# copy where symlink privilege is unavailable — see `_link_override` below). Every mechanical
+# caller still passes the file's absolute MAIN_ROOT path via an explicit second `-f` regardless
+# of this symlink — that stays the correct, cwd-independent way to invoke it. The symlink exists
 # only so a bare `docker compose run` typed with no `-f` at all still picks the override up
 # via compose's own same-directory discovery convention, instead of silently running without
 # it.
@@ -197,8 +198,19 @@ _link_override() {
     rm -f "$override_link"
   fi
   if [[ ! -e "$override_link" ]]; then
-    ln -s "$MAIN_ROOT/docker-compose.override.yml" "$override_link"
-    echo "Linked: $override_link -> $MAIN_ROOT/docker-compose.override.yml"
+    ln -s "$MAIN_ROOT/docker-compose.override.yml" "$override_link" 2>/dev/null || true
+    if [[ -L "$override_link" ]]; then
+      echo "Linked: $override_link -> $MAIN_ROOT/docker-compose.override.yml"
+    else
+      # No symlink privilege (the default on Windows without Developer Mode/elevation):
+      # `ln -s` either errored, or MSYS's own undocumented fallback silently substituted a
+      # hardlink/copy. Force a clean, known-correct copy rather than trust that fallback —
+      # the same tradeoff `.env` already accepts via COPY_ENTRIES in orchestrator/lib/worktree.mjs:
+      # correct content now, just doesn't auto-follow a later MAIN_ROOT regeneration.
+      rm -f "$override_link"
+      cp "$MAIN_ROOT/docker-compose.override.yml" "$override_link"
+      echo "Copied: $override_link (from $MAIN_ROOT/docker-compose.override.yml; symlink unavailable)"
+    fi
   fi
 }
 

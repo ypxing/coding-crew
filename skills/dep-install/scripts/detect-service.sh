@@ -67,7 +67,9 @@ _service_from_recipe() {
 }
 
 for _target in install deps setup depend bootstrap prepare up build dev lint test typecheck; do
-  ( cd "$PROJECT_ROOT" && make -n "$_target" ) >/dev/null 2>&1 || continue
+  # No exit-code gate — see detect-mode.sh's own Makefile scan for why: a recipe
+  # containing the literal word "make" can make some GNU Make builds (macOS's default
+  # 3.81 included) actually run it under -n instead of only printing it.
   _recipe="$(cd "$PROJECT_ROOT" && make -n "$_target" 2>/dev/null || true)"
   printf '%s' "$_recipe" | grep -qE 'docker (compose|run|exec)' || continue
   _found="$(_service_from_recipe "$_recipe")"

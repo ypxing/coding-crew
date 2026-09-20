@@ -78,8 +78,13 @@ _mark_installed() {
 # --- 1. Makefile target (install or deps, no docker) ---
 if [[ -f Makefile ]]; then
   for target in install deps; do
-    if make -n "$target" &>/dev/null 2>&1; then
-      recipe=$(make -n "$target" 2>/dev/null || true)
+    # A non-empty dry-run is the "target exists" signal, not exit status — a recipe
+    # containing the literal word "make" can make some GNU Make builds (macOS's default
+    # 3.81 included) actually run it under -n instead of only printing it, so a real
+    # (sandboxed, daemon-less) docker failure could otherwise be mistaken for "no such
+    # target" even though the recipe text we want is right there in the output.
+    recipe=$(make -n "$target" 2>/dev/null || true)
+    if [[ -n "$recipe" ]]; then
       if echo "$recipe" | grep -qE 'docker (compose|run|exec)'; then
         echo "Skipping make $target — recipe invokes docker" >&2
       else

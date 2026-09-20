@@ -88,7 +88,10 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # worktree's), not the per-worktree one, which is what makes this work from inside one.
 _main_root_of() {
   local dir="$1" common
-  common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
+  # --path-format=absolute: without it, a bare drive-letter Windows path (e.g.
+  # "C:/Users/...") doesn't start with "/", so the *)-branch below would wrongly treat an
+  # already-absolute path as relative and mangle it.
+  common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
   case "$common" in
     /*) : ;;
     *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;

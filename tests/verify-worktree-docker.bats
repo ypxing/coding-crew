@@ -55,6 +55,22 @@ printf '%s\n' "\$@" > "$DOCKER_LOG"
 exit $rc
 EOF
   chmod +x "$STUB/docker"
+
+  # Windows only: the docker-in-docker guard's host-fallback path runs the discovered
+  # command through the system's GNU Make, whose native Windows port shells recipe lines
+  # through cmd.exe — which only resolves PATH entries matching %PATHEXT% (.exe/.cmd/...),
+  # so the extensionless bash stub above is invisible to it and a nested-recipe test would
+  # silently fall through to a real docker.exe instead. A .cmd sibling with the same
+  # behaviour closes that gap; unused (and harmless) on every other platform.
+  if command -v cygpath >/dev/null 2>&1; then
+    local win_log
+    win_log="$(cygpath -w "$DOCKER_LOG")"
+    cat > "$STUB/docker.cmd" <<EOF
+@echo off
+(for %%a in (%*) do @echo %%~a) > "$win_log"
+exit /b $rc
+EOF
+  fi
 }
 
 # _docker_ready — a worktree wired for docker-mode verification: a compose file with one

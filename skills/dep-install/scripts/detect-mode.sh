@@ -46,7 +46,10 @@ _mode=$(git -C "$PROJECT_ROOT" config --local agent.install-mode 2>/dev/null || 
 if [ -z "$_mode" ]; then
   _main_root_of() {
     local dir="$1" common
-    common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
+    # --path-format=absolute: without it, a bare drive-letter Windows path (e.g.
+    # "C:/Users/...") doesn't start with "/", so the *)-branch below would wrongly treat an
+    # already-absolute path as relative and mangle it.
+    common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
     case "$common" in
       /*) : ;;
       *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;
@@ -77,12 +80,15 @@ fi
 if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
   _mode="host"
   for _target in install deps setup depend bootstrap prepare up build dev; do
-    if ( cd "$PROJECT_ROOT" && make -n "$_target" ) >/dev/null 2>&1; then
-      _recipe="$(cd "$PROJECT_ROOT" && make -n "$_target" 2>/dev/null || true)"
-      if printf '%s' "$_recipe" | grep -qE 'docker (compose|run|exec)'; then
-        _mode="docker"
-        break
-      fi
+    # No exit-code gate: a recipe whose expanded text contains the literal word "make"
+    # (not just the $(MAKE) variable) makes some GNU Make builds — notably 3.81, the last
+    # GPLv2 version and still macOS's default — actually run it instead of only printing it
+    # under -n, so a real (sandboxed, daemon-less) docker failure can make this exit
+    # non-zero even though the recipe text we actually want is right there in its output.
+    _recipe="$(cd "$PROJECT_ROOT" && make -n "$_target" 2>/dev/null || true)"
+    if printf '%s' "$_recipe" | grep -qE 'docker (compose|run|exec)'; then
+      _mode="docker"
+      break
     fi
   done
 fi

@@ -10,6 +10,21 @@
 SCRIPTS_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts"
 SCRIPT="$SCRIPTS_DIR/docker-install.sh"
 
+# assert_linked_or_copied <worktree-path> <main-root-path> — the fresh-worktree case fed by
+# gen-override.sh's/ensure-env.sh's own symlink-with-fallback: a real symlink where the
+# platform allows it, or (no symlink privilege — the default on Windows without Developer
+# Mode/elevation) an independent file with identical content instead. Either satisfies every
+# mechanical caller, which always also passes the MAIN_ROOT file explicitly via its own `-f`.
+assert_linked_or_copied() {
+  local link="$1" target="$2"
+  if [[ -L "$link" ]]; then
+    [ "$(readlink "$link")" = "$target" ]
+  else
+    [ -f "$link" ]
+    diff "$link" "$target"
+  fi
+}
+
 setup() {
   TEMP_DIR=$(mktemp -d)
   export TEMP_DIR
@@ -83,9 +98,7 @@ stub_docker() {
 @test "a worktree PROJECT_ROOT gets a symlink to the MAIN_ROOT override" {
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  [ -L "$WORK/docker-compose.override.yml" ]
-  [ "$(readlink "$WORK/docker-compose.override.yml")" = "$MAIN/docker-compose.override.yml" ]
-  diff "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
+  assert_linked_or_copied "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
 }
 
 @test "--dry-run prints YAML but writes and links nothing" {
@@ -108,8 +121,7 @@ stub_docker() {
   ln -s "$other_main/docker-compose.override.yml" "$WORK/docker-compose.override.yml"
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  [ -L "$WORK/docker-compose.override.yml" ]
-  [ "$(readlink "$WORK/docker-compose.override.yml")" = "$MAIN/docker-compose.override.yml" ]
+  assert_linked_or_copied "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
   rm -rf "$other_main"
 }
 
@@ -126,8 +138,7 @@ stub_docker() {
   [ "$status" -eq 0 ]
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  [ -L "$WORK/docker-compose.override.yml" ]
-  [ "$(readlink "$WORK/docker-compose.override.yml")" = "$MAIN/docker-compose.override.yml" ]
+  assert_linked_or_copied "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
 }
 
 @test "gen-override.sh falls back to /app when no bind-mount volume line matches" {
@@ -211,7 +222,7 @@ YML
   [[ "$output" == "Running: docker compose run --rm app sh -c"* ]]
   [[ "$output" == *"npm ci"* ]]
   [ -f "$MAIN/docker-compose.override.yml" ]
-  [ -L "$WORK/docker-compose.override.yml" ]
+  assert_linked_or_copied "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"
 }
 
 @test "--service overrides the first-service default" {
@@ -362,7 +373,7 @@ MAKE
   stub_docker 0
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
-  [ -L "$WORK/.env" ]
+  assert_linked_or_copied "$WORK/.env" "$MAIN/.env"
   [ "$(cat "$WORK/.env")" = "SECRET=real" ]
 }
 
