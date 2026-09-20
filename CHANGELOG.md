@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.29.103]
+
+### Tests
+
+- Several more bats tests hard-coded Unix/Linux-only assumptions surfaced by a Windows CI
+  run: a raw `ln -s` in test setup (no fallback, unlike the scripts under test) that fails
+  without symlink privilege; a `git rev-parse --git-common-dir` comparison missing the
+  `--path-format=absolute` the script under test actually uses; two path-fragment assertions
+  comparing against forward-slash literals against Node's native-separator output; and a
+  fixed 15s dispatch-preflight timing bound that doesn't account for how much more expensive
+  process spawning is under Git Bash's fork() emulation. Each now matches the same rendering
+  the code under test produces, or gets a platform-specific bound.
+- Skipped two `verify-worktree-docker.bats` docker-in-docker guard tests on Windows: CI logs
+  show the recipe's real `docker.exe` runs instead of the test's stub even with the shell
+  pinned to `sh`, so something in how GNU Make's Windows port resolves the recipe's `PATH`
+  isn't reachable from this test's own prepend. The guard logic itself is still covered on
+  Linux/macOS; fixing the Windows case needs an actual Windows box to iterate against.
+
 ## [1.29.102]
 
 ### Fixed

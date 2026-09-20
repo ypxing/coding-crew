@@ -118,7 +118,13 @@ stub_docker() {
 
 @test "a stale symlink pointing at a different MAIN_ROOT is cleared and relinked, not left dangling" {
   local other_main; other_main=$(mktemp -d)
-  ln -s "$other_main/docker-compose.override.yml" "$WORK/docker-compose.override.yml"
+  # A real symlink to a target that doesn't exist yet is the whole point of "stale" — but
+  # creating one at all needs symlink privilege, which Windows withholds without Developer
+  # Mode/elevation. gen-override.sh's own writes already fall back to a copy there (see
+  # assert_linked_or_copied above), so a dangling *symlink* specifically can't occur on such
+  # a platform; nothing for this test to exercise.
+  ln -s "$other_main/docker-compose.override.yml" "$WORK/docker-compose.override.yml" 2>/dev/null \
+    || skip "this platform cannot create symlinks; a stale symlink can't occur here"
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN"
   [ "$status" -eq 0 ]
   assert_linked_or_copied "$WORK/docker-compose.override.yml" "$MAIN/docker-compose.override.yml"

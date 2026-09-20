@@ -23,6 +23,15 @@
 
 load helpers/render
 
+# path_matches <output> <unix-style-fragment> — true if output contains the fragment with
+# either separator style. Node prints resolved paths with the host's native separator
+# (backslash on Windows); our expected fragments are written with forward slashes for
+# readability, so check both.
+path_matches() {
+  local out="$1" frag="$2"
+  [[ "$out" == *"$frag"* || "$out" == *"${frag//\//\\}"* ]]
+}
+
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   export REPO_ROOT
@@ -71,7 +80,7 @@ work_repo_with_issue() {
   run env HOME="$FAKE_HOME" node "$FAKE_HOME/.coding-crew/crew-afk/main.mjs" plan --platform copilot
   [ "$status" -eq 0 ]
   [[ "$output" == *"widget"* ]]
-  [[ "$output" == *".copilot/skills/crew-afk/scripts"* ]] || {
+  path_matches "$output" ".copilot/skills/crew-afk/scripts" || {
     echo "did not resolve the user-level scripts dir:" >&2; echo "$output" >&2; return 1; }
 }
 
@@ -92,7 +101,7 @@ work_repo_with_issue() {
     esac
     run env HOME="$FAKE_HOME" node "$FAKE_HOME/.coding-crew/crew-afk/main.mjs" plan --platform "$p"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"$expected"* ]] || {
+    path_matches "$output" "$expected" || {
       echo "$p: expected scripts under $expected, got:" >&2; echo "$output" >&2; return 1; }
   done
 }
@@ -106,10 +115,16 @@ work_repo_with_issue() {
   cd "$WORK_REPO"
   run env HOME="$FAKE_HOME" node .coding-crew/crew-afk/main.mjs plan --platform pi
   [ "$status" -eq 0 ]
+  # Compare against Node's own path.resolve() rendering, not the raw bash strings — see the
+  # CREW_SCRIPTS test below for why they can differ on Windows (MSYS path mangling, 8.3 short
+  # names in %TEMP%).
+  local expected_project expected_home
+  expected_project="$(WORK_REPO="$WORK_REPO" node -e 'console.log(require("path").resolve(process.env.WORK_REPO, ".pi/skills/crew-afk/scripts"))')"
+  expected_home="$(FAKE_HOME="$FAKE_HOME" node -e 'console.log(require("path").resolve(process.env.FAKE_HOME, ".pi"))')"
   # The repo's own copy, not $HOME's: a project install is what a repo pins deliberately.
-  [[ "$output" == *"$WORK_REPO/.pi/skills/crew-afk/scripts"* ]] || {
+  [[ "$output" == *"$expected_project"* ]] || {
     echo "project install did not take priority:" >&2; echo "$output" >&2; return 1; }
-  [[ "$output" != *"$FAKE_HOME/.pi"* ]]
+  [[ "$output" != *"$expected_home"* ]]
 }
 
 @test "user-level install: CREW_SCRIPTS still overrides both" {

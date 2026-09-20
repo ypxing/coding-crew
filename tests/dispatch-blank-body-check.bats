@@ -79,12 +79,20 @@ teardown() {
     done; } > "$TEMP_DIR/.pi/agents/big.md"
   [ "$(wc -c < "$TEMP_DIR/.pi/agents/big.md")" -gt 10000 ]
 
-  # /bin/bash is bash 3.2 on macOS, which is where the blowup is worst.
+  # /bin/bash is bash 3.2 on macOS, which is where the quadratic blowup this guards against
+  # was worst. A separate, non-quadratic cost dominates on Windows instead: stream_events
+  # below shells out to jq once per line pi prints (here, once per line of the appended
+  # body, echoed back by the test's own stub), and process creation under Git Bash's fork()
+  # emulation is far more expensive than a real fork — cheap on Linux/macOS, ~1s/spawn on
+  # Windows. 400 lines of real overhead, not a regression, so it gets its own bound.
+  limit=15
+  command -v cygpath >/dev/null 2>&1 && limit=90
+
   start=$SECONDS
   run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
     /bin/bash "$PI_DISPATCH" --agent big --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md"
   elapsed=$((SECONDS - start))
 
   [ "$status" -eq 0 ]
-  [ "$elapsed" -lt 15 ]
+  [ "$elapsed" -lt "$limit" ]
 }

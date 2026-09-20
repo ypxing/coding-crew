@@ -146,7 +146,11 @@ assert len(d['developer_instructions']) > 200
     bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
       --agent crew-coder --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md"
   [ "$status" -eq 0 ]
-  common_dir=$(cd "$TEMP_DIR/wt" && git rev-parse --git-common-dir)
+  # --path-format=absolute: dispatch-codex-agent.sh resolves its own writable root the same
+  # way (see the CHANGELOG's v1.29.100 entry); without it, git's default (cwd-relative, or a
+  # differently-normalized absolute form on Windows) can disagree with the script's own
+  # rendering even though both name the same directory.
+  common_dir=$(cd "$TEMP_DIR/wt" && git rev-parse --path-format=absolute --git-common-dir)
   [[ "$output" == *"sandbox_workspace_write.writable_roots=[\"$common_dir\"]"* ]] || {
     echo "$output" >&2; return 1; }
 }

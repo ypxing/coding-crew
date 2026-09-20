@@ -137,13 +137,16 @@ EOF
 }
 
 @test "docker mode: a Makefile target whose recipe already invokes docker runs on the host, not nested" {
+  # SHELL=sh below (a bare name, PATH-searched by GNU Make itself) was meant to make this
+  # recipe's real execution (the host-fallback path, unlike detect-docker-nesting.sh's own
+  # `make -n` scan above it) find our stub `docker` regardless of platform. On the Windows
+  # CI runner it still resolves the real docker.exe instead — CI logs show an actual `docker
+  # compose` network created and a real build-context failure, so make's Windows port is
+  # routing the recipe's PATH lookup somewhere this test's own PATH prepend doesn't reach.
+  # Needs an actual Windows box to iterate on; the guard logic itself (does the discovered
+  # command already invoke docker) is still exercised on Linux/macOS.
+  command -v cygpath >/dev/null 2>&1 && skip "docker-in-docker guard: real docker.exe runs instead of the stub on Windows — see comment above"
   _docker_ready
-  # SHELL=sh (a bare name, PATH-searched by GNU Make itself) rather than the platform
-  # default: this recipe actually runs (the host-fallback path, unlike detect-docker-
-  # nesting.sh's own `make -n` scan above it, is a real execution) and GNU Make's native
-  # Windows port defaults to cmd.exe, which resolves the stubbed, extensionless `docker`
-  # via %PATHEXT% and can miss it — pin the recipe shell so the stub is found the same
-  # way on every platform, independent of that resolution.
   cat > "$TEMP_DIR/Makefile" <<'EOF'
 SHELL = sh
 test:
@@ -167,8 +170,9 @@ EOF
 }
 
 @test "docker mode: a Makefile target whose recipe invokes docker through a variable also runs on the host" {
+  # See the sibling test above — same real-execution path, same unresolved Windows skip.
+  command -v cygpath >/dev/null 2>&1 && skip "docker-in-docker guard: real docker.exe runs instead of the stub on Windows — see comment on the sibling test above"
   _docker_ready
-  # See SHELL=sh comment on the sibling test above — same real-execution path.
   cat > "$TEMP_DIR/Makefile" <<'EOF'
 SHELL = sh
 RUN_IN_DOCKER = docker compose run --rm app
