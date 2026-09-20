@@ -133,9 +133,33 @@ The override file is written to `$MAIN_ROOT/docker-compose.override.yml` and is 
 
 ### 2. Run install once
 
-Named volumes start empty — always run install inside the container.
+Named volumes start empty the *first* time — but this MAIN_ROOT may already have installed once
+in a prior session. **Check the fingerprint stamp first**, before anything else in this step:
 
-**Check the cache first**, the same way step 0a checked `credential_target`:
+```bash
+STAMP="$MAIN_ROOT/.scratch/docker-install.fingerprint"
+bash "<skill-dir>/scripts/manifest-fingerprint.sh" check --project-root "$PROJECT_ROOT" --stamp "$STAMP"
+```
+
+- Prints `FRESH` — no manifest/lockfile has changed since the last successful install into this
+  MAIN_ROOT's shared volumes. Skip the rest of this step entirely and go to step 3.
+- Prints `STALE` (including when the stamp file doesn't exist yet) — continue below as normal.
+
+After a successful install below (either sub-step a or b), write the new stamp so the next
+session's check can skip:
+
+```bash
+bash "<skill-dir>/scripts/manifest-fingerprint.sh" write --project-root "$PROJECT_ROOT" --stamp "$STAMP"
+```
+
+This is the same check `docker-install.sh` runs internally for its own `ensure-deps.sh` caller —
+duplicated here as the two steps above because this guide has the model run install by hand
+instead of shelling out to that script. Skip this fingerprint check entirely if you were told to
+retry after a module-not-found error (see `SKILL.md`'s retry rule) — a `FRESH` verdict there only
+means the manifests didn't change, not that the install is actually intact, and skipping again
+would make the retry a no-op.
+
+**Check the install-command cache next**, the same way step 0a checked `credential_target`:
 `$MAIN_ROOT/.coding-crew/dev-commands.json`'s `"install"` field may already hold this repo's
 documented install command.
 

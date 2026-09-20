@@ -17,7 +17,11 @@
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> --main-root <path> \
 #     [--service <name>] [--install-cmd <cmd>] [--credential-target <command>] \
-#     [--timeout <sec, default 600>] [--lock-timeout <sec, default 30>]
+#     [--timeout <sec, default 600>] [--lock-timeout <sec, default 30>] [--force]
+#
+# --force skips the manifest-fingerprint fast path below (see step 0) and always reinstalls —
+# dep-install's own retry rule uses this on a module-not-found error, since a FRESH verdict
+# there would otherwise make the retry a no-op.
 #
 # --install-cmd is a documented project override (e.g. dev-commands.json's discovered
 # "install" field, forwarded by ensure-deps.sh) — it takes priority over the per-manifest
@@ -53,6 +57,7 @@ INSTALL_CMD_OVERRIDE=""
 CREDENTIAL_TARGET=""
 TIMEOUT=600
 LOCK_TIMEOUT=30
+FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -63,6 +68,7 @@ while [[ $# -gt 0 ]]; do
     --credential-target) CREDENTIAL_TARGET="$2"; shift 2 ;;
     --timeout)       TIMEOUT="$2";      shift 2 ;;
     --lock-timeout)  LOCK_TIMEOUT="$2"; shift 2 ;;
+    --force)         FORCE=1;           shift   ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -89,6 +95,24 @@ ENSURE_ENV="$SELF_DIR/ensure-env.sh"
 if [[ ! -f "$GEN_OVERRIDE" ]]; then
   echo "Error: gen-override.sh not found next to $0" >&2
   exit 1
+fi
+
+# ─── 0. skip if manifests are unchanged since this shared volume's last successful install ──
+# Stamp lives at MAIN_ROOT, not PROJECT_ROOT: the named volumes this installs into are shared
+# across every worktree of MAIN_ROOT (see the lock below), so the fast path has to agree across
+# worktrees too, not just within one. The scan itself still reads PROJECT_ROOT's own manifests
+# (usually the same as MAIN_ROOT's, for the one MAIN_ROOT call ensure-deps.sh makes before any
+# worktree exists) — a worktree's own branch adding a dependency is left to the retry rule to
+# catch reactively, the same way ensure-deps.sh's own worktree fast path already treats that
+# case, rather than have every worktree call re-derive a MAIN_ROOT-wide answer here.
+# Resolved before any ecosystem/service detection below, so the common "nothing changed" case
+# pays for none of it.
+FINGERPRINT="$SELF_DIR/manifest-fingerprint.sh"
+DOCKER_STAMP="$MAIN_ROOT/.scratch/docker-install.fingerprint"
+if [[ "$FORCE" -ne 1 ]] && [[ -f "$FINGERPRINT" ]] &&
+   [[ "$(bash "$FINGERPRINT" check --project-root "$PROJECT_ROOT" --stamp "$DOCKER_STAMP" 2>/dev/null)" == "FRESH" ]]; then
+  echo "Running: (skipped — manifests unchanged since last install)"
+  exit 0
 fi
 
 # ─── 1. resolve what to run, before taking the lock ──────────────────────────
@@ -247,6 +271,8 @@ if [[ "$RC" -ne 0 ]]; then
   echo "--- end ---" >&2
   exit 3
 fi
+
+[[ -f "$FINGERPRINT" ]] && bash "$FINGERPRINT" write --project-root "$PROJECT_ROOT" --stamp "$DOCKER_STAMP" >/dev/null 2>&1 || true
 
 cat "$OUT_FILE"
 exit 0

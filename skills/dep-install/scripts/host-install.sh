@@ -3,9 +3,15 @@
 # Checks (in order): Makefile install/deps target, then signal file fallback.
 # CLAUDE.md is intentionally excluded — the LLM reads that for context.
 #
-# Usage: host-install.sh --project-root <path> [--main-root <path>]
+# Usage: host-install.sh --project-root <path> [--main-root <path>] [--force]
+#
+# --force skips the manifest-fingerprint fast path below and always reinstalls — dep-install's
+# own retry rule uses this on a module-not-found error, since a FRESH verdict there would
+# otherwise make the retry a no-op (see manifest-fingerprint.sh's own header comment on what
+# a FRESH verdict does and does not prove).
+#
 # Exit codes:
-#   0  install ran successfully
+#   0  install ran successfully, or skipped because manifests are unchanged since last time
 #   1  argument error
 #   2  no install method found
 #   3  install command failed
@@ -14,11 +20,13 @@ set -euo pipefail
 
 PROJECT_ROOT=""
 MAIN_ROOT=""
+FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-root) PROJECT_ROOT="$2"; shift 2 ;;
     --main-root)    MAIN_ROOT="$2";    shift 2 ;;
+    --force)        FORCE=1;          shift   ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -50,6 +58,23 @@ if [[ -f "$ENSURE_ENV" ]]; then
   fi
 fi
 
+# --- 0b. skip if manifests are unchanged since this worktree's own last successful install ---
+# STAMP lives per-worktree (unlike docker's shared-volume marker) since host installs land in
+# this worktree's own node_modules/.venv/etc., not somewhere shared across worktrees.
+FINGERPRINT="$SELF_DIR/manifest-fingerprint.sh"
+STAMP="$PROJECT_ROOT/.scratch/host-install.done"
+if [[ "$FORCE" -ne 1 ]] && [[ -f "$FINGERPRINT" ]] &&
+   [[ "$(bash "$FINGERPRINT" check --project-root "$PROJECT_ROOT" --stamp "$STAMP" 2>/dev/null)" == "FRESH" ]]; then
+  echo "Running: (skipped — manifests unchanged since last install)"
+  exit 0
+fi
+
+# _mark_installed — record this run's fingerprint so the next call can skip. Best-effort:
+# a write failure here just costs the next call its fast path, not this one's success.
+_mark_installed() {
+  [[ -f "$FINGERPRINT" ]] && bash "$FINGERPRINT" write --project-root "$PROJECT_ROOT" --stamp "$STAMP" >/dev/null 2>&1 || true
+}
+
 # --- 1. Makefile target (install or deps, no docker) ---
 if [[ -f Makefile ]]; then
   for target in install deps; do
@@ -60,6 +85,7 @@ if [[ -f Makefile ]]; then
       else
         echo "Running: make $target"
         make "$target"
+        _mark_installed
         exit 0
       fi
     fi
@@ -70,6 +96,7 @@ fi
 run() {
   echo "Running: $*"
   "$@"
+  _mark_installed
   exit 0
 }
 

@@ -72,3 +72,78 @@ MK
   [ -f "$PROJECT/installed.marker" ]
   rm -rf "$MAIN"
 }
+
+# ─── the manifest-fingerprint fast path ──────────────────────────────────────
+
+@test "a FRESH fingerprint stamp skips install without running it again" {
+  cat > "$PROJECT/Makefile" <<'MK'
+install:
+	touch installed.marker
+MK
+  echo '{}' > "$PROJECT/package-lock.json"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/installed.marker" ]
+  rm -f "$PROJECT/installed.marker"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skipped"* ]]
+  [ ! -f "$PROJECT/installed.marker" ]
+}
+
+@test "changing a lockfile after install makes the next run reinstall" {
+  cat > "$PROJECT/Makefile" <<'MK'
+install:
+	touch installed.marker
+MK
+  echo '{}' > "$PROJECT/package-lock.json"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  rm -f "$PROJECT/installed.marker"
+
+  echo '{"changed":true}' > "$PROJECT/package-lock.json"
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [ -f "$PROJECT/installed.marker" ]
+}
+
+@test "--force bypasses a FRESH stamp and reinstalls anyway" {
+  cat > "$PROJECT/Makefile" <<'MK'
+install:
+	touch installed.marker
+MK
+  echo '{}' > "$PROJECT/package-lock.json"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  rm -f "$PROJECT/installed.marker"
+
+  run bash "$SCRIPT" --project-root "$PROJECT" --force
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [ -f "$PROJECT/installed.marker" ]
+}
+
+@test "a successful install writes a fingerprint stamp matching the current manifests" {
+  cat > "$PROJECT/Makefile" <<'MK'
+install:
+	touch installed.marker
+MK
+  echo '{}' > "$PROJECT/package-lock.json"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.scratch/host-install.done" ]
+  expected="$(bash "$SCRIPT_DIR/skills/dep-install/scripts/manifest-fingerprint.sh" compute --project-root "$PROJECT")"
+  [ "$(cat "$PROJECT/.scratch/host-install.done")" = "$expected" ]
+}
+
+@test "a failed install (no method found) writes no fingerprint stamp" {
+  run bash "$SCRIPT" --project-root "$PROJECT"
+  [ "$status" -eq 2 ]
+  [ ! -f "$PROJECT/.scratch/host-install.done" ]
+}

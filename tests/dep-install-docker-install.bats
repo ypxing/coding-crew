@@ -403,6 +403,59 @@ MK
   [ -x "$SCRIPT" ]
 }
 
+# ─── the manifest-fingerprint fast path ──────────────────────────────────────
+
+@test "a FRESH fingerprint stamp skips install entirely, without touching docker" {
+  stub_docker 1 "docker should never be invoked on a FRESH stamp"
+  bash "$SCRIPTS_DIR/manifest-fingerprint.sh" write --project-root "$WORK" \
+    --stamp "$MAIN/.scratch/docker-install.fingerprint"
+
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skipped"* ]]
+  [ ! -f "$MAIN/docker-compose.override.yml" ]
+}
+
+@test "changing the lockfile after a successful install makes the next run reinstall" {
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+
+  echo '{"changed":true}' > "$WORK/package-lock.json"
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == "Running: docker compose run"* ]]
+}
+
+@test "--force bypasses a FRESH stamp and reinstalls anyway" {
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --force
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == "Running: docker compose run"* ]]
+}
+
+@test "a successful install writes the fingerprint stamp at MAIN_ROOT" {
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -f "$MAIN/.scratch/docker-install.fingerprint" ]
+  expected="$(bash "$SCRIPTS_DIR/manifest-fingerprint.sh" compute --project-root "$WORK")"
+  [ "$(cat "$MAIN/.scratch/docker-install.fingerprint")" = "$expected" ]
+}
+
+@test "a failed install writes no fingerprint stamp" {
+  stub_docker 1 "boom"
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 3 ]
+  [ ! -f "$MAIN/.scratch/docker-install.fingerprint" ]
+}
+
 # ─── docker-in-docker guard (prose, step 2 of docker-install.md) ─────────────
 # docker-install.sh's own per-directory install table only ever reads a fixed
 # lockfile→package-manager map, so that path cannot recurse into a nested docker call.
