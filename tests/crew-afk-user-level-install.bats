@@ -115,11 +115,14 @@ work_repo_with_issue() {
   cd "$WORK_REPO"
   run env HOME="$FAKE_HOME" node .coding-crew/crew-afk/main.mjs plan --platform pi
   [ "$status" -eq 0 ]
-  # Compare against Node's own path.resolve() rendering, not the raw bash strings — see the
-  # CREW_SCRIPTS test below for why they can differ on Windows (MSYS path mangling, 8.3 short
-  # names in %TEMP%).
+  # Resolve expected_project from node's own cwd, not a bash-string round trip through an
+  # env var: main.mjs's own mainRoot comes from `git rev-parse --show-toplevel`, spawned
+  # from the same cwd this test already `cd`s into above, so matching that cwd-based
+  # resolution (rather than reconstructing the path from $WORK_REPO passed as an env var,
+  # which MSYS can convert differently — short 8.3 names, separator style) is what actually
+  # mirrors the real invocation on Windows.
   local expected_project expected_home
-  expected_project="$(WORK_REPO="$WORK_REPO" node -e 'console.log(require("path").resolve(process.env.WORK_REPO, ".pi/skills/crew-afk/scripts"))')"
+  expected_project="$(node -e 'console.log(require("path").resolve(".pi/skills/crew-afk/scripts"))')"
   expected_home="$(FAKE_HOME="$FAKE_HOME" node -e 'console.log(require("path").resolve(process.env.FAKE_HOME, ".pi"))')"
   # The repo's own copy, not $HOME's: a project install is what a repo pins deliberately.
   [[ "$output" == *"$expected_project"* ]] || {

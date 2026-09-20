@@ -85,7 +85,10 @@ teardown() {
 
 @test "leaves a valid (resolving) .env symlink untouched" {
   echo "REAL=1" > "$PROJECT/.env.actual"
-  ln -s "$PROJECT/.env.actual" "$PROJECT/.env"
+  ln -s "$PROJECT/.env.actual" "$PROJECT/.env" 2>/dev/null \
+    || skip "this platform cannot create symlinks; a resolving symlink can't occur here"
+  [ -L "$PROJECT/.env" ] \
+    || skip "this platform's ln -s silently substituted a copy; a resolving symlink can't occur here"
   run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"already exists"* ]]

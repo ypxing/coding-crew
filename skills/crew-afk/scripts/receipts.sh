@@ -73,8 +73,15 @@ _main_root_of() {
   common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
   case "$common" in
     /*|[A-Za-z]:*) : ;;
-    *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;
+    *) common="$dir/$common" ;;
   esac
+  # Re-canonicalize through this shell's own `pwd -P` even though $common is already
+  # absolute: git's drive-letter form ("C:/Users/...") is a different string than what
+  # `pwd -P` prints for the same directory in this MSYS/git-bash shell ("/c/Users/..."),
+  # and callers compare this return value against other `pwd -P`-resolved paths — leaving
+  # it in git's own form breaks that string equality on Windows even though both name the
+  # same directory.
+  common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")"
   dirname "$common"
 }
 
