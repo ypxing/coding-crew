@@ -138,7 +138,14 @@ EOF
 
 @test "docker mode: a Makefile target whose recipe already invokes docker runs on the host, not nested" {
   _docker_ready
+  # SHELL=sh (a bare name, PATH-searched by GNU Make itself) rather than the platform
+  # default: this recipe actually runs (the host-fallback path, unlike detect-docker-
+  # nesting.sh's own `make -n` scan above it, is a real execution) and GNU Make's native
+  # Windows port defaults to cmd.exe, which resolves the stubbed, extensionless `docker`
+  # via %PATHEXT% and can miss it — pin the recipe shell so the stub is found the same
+  # way on every platform, independent of that resolution.
   cat > "$TEMP_DIR/Makefile" <<'EOF'
+SHELL = sh
 test:
 	docker compose run --rm app pytest
 EOF
@@ -161,7 +168,9 @@ EOF
 
 @test "docker mode: a Makefile target whose recipe invokes docker through a variable also runs on the host" {
   _docker_ready
+  # See SHELL=sh comment on the sibling test above — same real-execution path.
   cat > "$TEMP_DIR/Makefile" <<'EOF'
+SHELL = sh
 RUN_IN_DOCKER = docker compose run --rm app
 test:
 	$(RUN_IN_DOCKER) pytest

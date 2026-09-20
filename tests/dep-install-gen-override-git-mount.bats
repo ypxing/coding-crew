@@ -66,7 +66,12 @@ teardown() {
 
   run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$MAIN/.git:/git-common:ro"* ]]
+  # Compare against git's own --path-format=absolute rendering of MAIN, not the bash
+  # variable itself: on Windows those differ (MSYS "/c/..." vs git.exe's "C:/..."), and
+  # the script's mount is built from the former, same as gen-override.sh does internally.
+  local git_common_dir_abs
+  git_common_dir_abs="$(git -C "$MAIN" rev-parse --path-format=absolute --git-common-dir)"
+  [[ "$output" == *"${git_common_dir_abs}:/git-common:ro"* ]]
   [[ "$output" =~ wt_[A-Za-z0-9_]+_git_info:/git-common/info ]]
   # bare passthrough names are expected (see header comment); no worktree-specific
   # value is ever written to the shared file

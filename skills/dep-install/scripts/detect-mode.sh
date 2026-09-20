@@ -79,18 +79,29 @@ fi
 
 if [ -z "$_mode" ] && [ -f "$PROJECT_ROOT/Makefile" ]; then
   _mode="host"
+  # A recipe whose expanded text contains the literal word "make" (not just the $(MAKE)
+  # variable) makes some GNU Make builds — notably 3.81, the last GPLv2 version and still
+  # macOS's default — actually run it instead of only printing it under -n. Rather than trust
+  # -n's own promise not to execute, shadow docker/docker-compose on PATH for this probe with
+  # stubs that just log their argv and exit 0: real or dry-run, any docker invocation lands
+  # harmlessly in the log instead of hanging or failing against a daemon that may not exist.
+  _stub_dir="$(mktemp -d)"
+  _stub_log="$_stub_dir/invoked"
+  for _cmd in docker docker-compose; do
+    cat > "$_stub_dir/$_cmd" <<STUB
+#!/bin/sh
+printf '%s\n' "\$0 \$*" >> "$_stub_log"
+STUB
+    chmod +x "$_stub_dir/$_cmd"
+  done
   for _target in install deps setup depend bootstrap prepare up build dev; do
-    # No exit-code gate: a recipe whose expanded text contains the literal word "make"
-    # (not just the $(MAKE) variable) makes some GNU Make builds — notably 3.81, the last
-    # GPLv2 version and still macOS's default — actually run it instead of only printing it
-    # under -n, so a real (sandboxed, daemon-less) docker failure can make this exit
-    # non-zero even though the recipe text we actually want is right there in its output.
-    _recipe="$(cd "$PROJECT_ROOT" && make -n "$_target" 2>/dev/null || true)"
-    if printf '%s' "$_recipe" | grep -qE 'docker (compose|run|exec)'; then
+    _recipe="$(cd "$PROJECT_ROOT" && PATH="$_stub_dir:$PATH" make -n "$_target" 2>/dev/null || true)"
+    if printf '%s' "$_recipe" | grep -qE 'docker (compose|run|exec)' || [ -s "$_stub_log" ]; then
       _mode="docker"
       break
     fi
   done
+  rm -rf "$_stub_dir"
 fi
 
 [ "$_mode" = "docker" ] && echo "USE_DOCKER" || echo "USE_HOST"

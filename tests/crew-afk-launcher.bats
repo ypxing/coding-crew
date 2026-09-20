@@ -195,5 +195,6 @@ launcher_body() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"widget"* ]]
   # It found the bash mechanism layer inside the installed skill, unaided.
-  [[ "$output" == *".pi/skills/crew-afk/scripts"* ]]
+  # Node prints the scripts dir with the host's native separator (backslash on Windows).
+  [[ "$output" == *".pi/skills/crew-afk/scripts"* || "$output" == *".pi\\skills\\crew-afk\\scripts"* ]]
 }

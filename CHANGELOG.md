@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.101]
+
+### Fixed
+
+- **`detect-mode.sh`'s Makefile-target scan no longer relies on recipe text alone to catch
+  docker.** A `make -n <target>` whose expanded recipe runs a nested `make` that only then
+  invokes docker (or invokes it via a target chain the grep for `docker (compose|run|exec)`
+  doesn't match) previously fell through to `host` mode. The scan now also shadows `docker`
+  and `docker-compose` on `PATH` with stub binaries that just log their invocation, so any
+  dry run that actually executes one — through however many layers of indirection — still
+  flips the result to `docker`.
+
+### Tests
+
+- Several bats tests hard-coded assumptions that don't hold on Windows/MSYS or under root:
+  path-separator comparisons, `CREW_SCRIPTS`/git mount path rendering, symlink-vs-copy `.env`
+  fallback, and `chmod 000` actually denying the owner a read. Each now compares against the
+  same tool's own rendering of the platform-specific value, or skips when the platform doesn't
+  enforce the permission being tested, instead of asserting a Unix-specific literal.
+
 ## [1.29.100]
 
 ### Fixed

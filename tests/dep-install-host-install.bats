@@ -67,7 +67,10 @@ MK
   run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
 
   [ "$status" -eq 0 ]
-  [ -L "$PROJECT/.env" ]
+  # A symlink where privilege allows it (the normal case); ensure-env.sh falls back to a
+  # plain copy on Windows without Developer Mode/elevation — either way it must not be
+  # regenerated independently, so content equality is what actually matters here.
+  [ -L "$PROJECT/.env" ] || [ -f "$PROJECT/.env" ]
   [ "$(cat "$PROJECT/.env")" = "SECRET=real" ]
   [ -f "$PROJECT/installed.marker" ]
   rm -rf "$MAIN"

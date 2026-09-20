@@ -123,7 +123,14 @@ work_repo_with_issue() {
   run env HOME="$FAKE_HOME" CREW_SCRIPTS="$override" \
     node "$FAKE_HOME/.coding-crew/crew-afk/main.mjs" plan --platform pi
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$override"* ]]
+  # Compare against Node's own path.resolve() of CREW_SCRIPTS, not the raw bash string:
+  # resolveScriptsDir() calls resolve() on it verbatim, and on Windows that string can
+  # differ from bash's own (MSYS env-var path mangling, 8.3 short names in %TEMP%) even
+  # though both name the same directory.
+  local expected
+  expected="$(env HOME="$FAKE_HOME" CREW_SCRIPTS="$override" \
+    node -e 'console.log(require("path").resolve(process.env.CREW_SCRIPTS))')"
+  [[ "$output" == *"$expected"* ]]
 }
 
 # ─── the launcher's own path ──────────────────────────────────────────────────

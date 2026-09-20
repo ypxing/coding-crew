@@ -43,6 +43,14 @@ teardown() {
   echo "implement issue 01" > "$TEMP_DIR/prompt.md"
   chmod 000 "$TEMP_DIR/prompt.md"
 
+  # chmod 000 doesn't deny the owner a read everywhere (Windows/MSYS ignores POSIX mode
+  # bits for the file owner; so does running as root) — skip rather than assert on a
+  # permission this platform never actually withheld.
+  if cat "$TEMP_DIR/prompt.md" >/dev/null 2>&1; then
+    chmod 644 "$TEMP_DIR/prompt.md"
+    skip "this platform does not enforce chmod 000 against the file's own owner"
+  fi
+
   run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
     bash "$PI_DISPATCH" --agent worker --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md"
 
