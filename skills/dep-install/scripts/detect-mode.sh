@@ -71,7 +71,13 @@ fi
 
 if [ -z "$_mode" ]; then
   _git_root=$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null) || _git_root=""
-  case "$PROJECT_ROOT/" in
+  # git's --show-toplevel resolves symlinks in the path it returns; PROJECT_ROOT as passed
+  # in usually hasn't been. On macOS $TMPDIR sits under /var, itself a symlink to
+  # /private/var, so a bare string comparison here always disagreed for any project under
+  # a tmp dir — falsely treating a real git worktree as outside its own repo and forcing
+  # host mode before the Makefile scan below ever ran.
+  _project_root_real=$(cd "$PROJECT_ROOT" 2>/dev/null && pwd -P) || _project_root_real="$PROJECT_ROOT"
+  case "$_project_root_real/" in
     "$_git_root/"*) ;;
     *) _mode="host" ;;
   esac

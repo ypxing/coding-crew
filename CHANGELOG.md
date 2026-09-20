@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.102]
+
+### Fixed
+
+- **`detect-mode.sh` no longer falsely forces `host` mode for a project root reached through
+  a symlink.** Its git-containment check compared `$PROJECT_ROOT` verbatim against
+  `git rev-parse --show-toplevel`'s output, which git returns with symlinks already resolved.
+  On macOS, `$TMPDIR` sits under `/var`, itself a symlink to `/private/var`, so every project
+  root under a tmp dir failed this comparison and skipped the Makefile-based docker scan
+  entirely, before ever looking at the Makefile. `$PROJECT_ROOT` is now canonicalized with
+  `pwd -P` before the comparison.
+
 ## [1.29.101]
 
 ### Fixed
