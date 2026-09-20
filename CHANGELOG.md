@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.98]
+
+### Fixed
+
+- **`crew-afk`'s herdr pane/tab titles now carry the issue number.** `dispatchViaHerdr` built the
+  visible tab label and pane title from the bare issue slug alone (e.g. `implement-user-auth
+  (coder)`), so a human scanning panes across multiple issues and rounds couldn't tell which
+  pane belonged to which issue — only the internal herdr agent name carried the `i<N>-` prefix.
+  Both now show `#<issueNumber> <slug>` when an issue number is known.
+
 ## [1.29.97]
 
 ### Removed

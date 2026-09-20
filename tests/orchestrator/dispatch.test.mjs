@@ -1035,6 +1035,32 @@ test("dispatchViaHerdr opens a log tab that tails the sprint's trace log, once p
   assert.ok(effects._calls[3].includes(spec(root, promptFile).cwd));
 });
 
+test("dispatchViaHerdr prefixes the tab label and pane title with the issue number — a human scanning panes must be able to tell which issue each one is", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // dispatch tab create
+      json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { type: "ok" } }), // pane rename
+      json({ result: { agent: { agent_status: "idle" } } }),
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
+      json({ result: { type: "ok" } }), // dispatch tab close
+    ],
+    { mainRoot: root },
+  );
+
+  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "implement-user-auth", issueNumber: "42", logFile: null }), {
+    timeoutMs: 60_000,
+  });
+
+  const tabCreate = effects._calls[1];
+  assert.equal(tabCreate[tabCreate.indexOf("--label") + 1], "#42 implement-user-auth");
+  assert.deepEqual(effects._calls[3], ["herdr", "pane", "rename", "w1:p1", "#42 implement-user-auth (coder)"]);
+});
+
 test("dispatchViaHerdr opens no log tab when the dispatch has no trace log to tail", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");

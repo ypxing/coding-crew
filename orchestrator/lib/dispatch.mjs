@@ -904,6 +904,11 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   const bound = timeoutMs || 45 * 60 * 1000;
   const dispatchDeadline = Date.now() + bound;
   const label = spec.slug || spec.agent;
+  // Distinct from `label` (which stays bare for herdrDispatchName's own prefixing): this is
+  // what a human actually reads in the tab/pane title, and without the issue number a pane
+  // titled just "implement-user-auth (coder)" is indistinguishable from any other coder pane
+  // on the same slug across rounds/retries once more than one issue is in flight.
+  const displayLabel = spec.issueNumber ? `#${spec.issueNumber} ${label}` : label;
   // spec.herdrReuse ({tabId, paneId, name}) names a pane a prior dispatch left open (see
   // spec.herdrPersistPane below) — set only by a caller that tracked those ids itself
   // (pipeline.mjs's herdr-reuse bookkeeping), never derived here. Its own `name` rides along
@@ -1000,7 +1005,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
       "--cwd",
       spec.cwd,
       "--label",
-      label,
+      displayLabel,
       ...(platform === "claude" ? ["--env", "CLAUDE_CODE_SESSION_ID=", "--env", "CLAUDE_CODE_CHILD_SESSION="] : []),
       "--env",
       `MAIN_ROOT=${spec.mainRoot}`,
@@ -1062,7 +1067,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     // `agent prompt`, and it was already named on the dispatch that first created it.
     // Best-effort: a failed rename leaves herdr's own default title, never the dispatch itself.
     try {
-      await herdrExec(effects, ["pane", "rename", paneId, `${spec.round ? `${spec.round}. ` : ""}${label} (${herdrRoleTag(spec.agent)})`]);
+      await herdrExec(effects, ["pane", "rename", paneId, `${spec.round ? `${spec.round}. ` : ""}${displayLabel} (${herdrRoleTag(spec.agent)})`]);
     } catch {
       /* best effort — see comment above */
     }
