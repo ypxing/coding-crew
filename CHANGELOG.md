@@ -10,6 +10,13 @@
   callout in `crew-brainstorm`/`crew-grill`. Workers fall back to keyword search (`Grep`/`grep`)
   unconditionally now; nothing reads or writes a `.codegraph/` index anymore.
 
+### Changed
+
+- **`discover-commands.sh` (used by `add-tests`) now tells its command-discovery prompt to report
+  a Makefile target's own invocation** (e.g. `make test`) rather than a paraphrased "equivalent"
+  command, since the recipe can hide guards, prerequisites, or CI/local conditionals a paraphrase
+  would drop.
+
 ## [1.29.96]
 
 ### Added

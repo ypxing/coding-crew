@@ -209,7 +209,7 @@
       ]
     },
     "add-tests": {
-      "version": "1.0.0",
+      "version": "1.0.1",
       "source-dir": "add-tests",
       "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
       "install": ".claude/skills/add-tests",
