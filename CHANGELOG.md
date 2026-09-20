@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.104]
+
+### Tests
+
+- `dep-install-ensure-env.bats` had the same bug just fixed in `dep-install-docker-install.bats`:
+  three tests set up a *dangling* symlink (target deliberately nonexistent) via a raw `ln -s`,
+  which fails outright on Windows without symlink privilege — unlike a symlink to a target
+  that already exists, which Windows/MSYS silently substitutes with a copy even without that
+  privilege (confirmed from the CI logs: the sibling "symlinked AGENTS.md" tests elsewhere in
+  the suite, which link to an existing file, already pass on Windows). Factored into a
+  `make_dangling_symlink` helper that skips when the platform can't produce one.
+
 ## [1.29.103]
 
 ### Tests

@@ -22,6 +22,17 @@ assert_linked_or_copied() {
   fi
 }
 
+# make_dangling_symlink <link> — a symlink whose target doesn't exist, for tests that need
+# ensure-env.sh to clear one. Creating a symlink to a target that doesn't exist has nothing
+# for Windows/MSYS's own copy-fallback to fall back to (unlike a symlink to a real file,
+# which that fallback silently substitutes even without symlink privilege), so `ln -s` fails
+# outright there; skip in that case rather than assert on a dangling symlink this platform
+# can't produce.
+make_dangling_symlink() {
+  ln -s "$(dirname "$1")/nonexistent-target" "$1" 2>/dev/null \
+    || skip "this platform cannot create symlinks; a dangling symlink can't occur here"
+}
+
 setup() {
   PROJECT=$(mktemp -d)
   export PROJECT
@@ -56,7 +67,7 @@ teardown() {
 
 @test "clears a dangling .env symlink and creates a real .env from .env.example" {
   echo "FOO=bar" > "$PROJECT/.env.example"
-  ln -s "$PROJECT/nonexistent-target" "$PROJECT/.env"
+  make_dangling_symlink "$PROJECT/.env"
   run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [ -f "$PROJECT/.env" ]
@@ -65,7 +76,7 @@ teardown() {
 }
 
 @test "clears a dangling .env symlink and creates a real empty .env with no .env.example" {
-  ln -s "$PROJECT/nonexistent-target" "$PROJECT/.env"
+  make_dangling_symlink "$PROJECT/.env"
   run bash "$SCRIPT" --project-root "$PROJECT"
   [ "$status" -eq 0 ]
   [ -f "$PROJECT/.env" ]
@@ -150,7 +161,7 @@ teardown() {
 
 @test "--main-root: a dangling MAIN_ROOT .env symlink is cleared before generating a real one" {
   MAIN=$(mktemp -d)
-  ln -s "$MAIN/nonexistent-target" "$MAIN/.env"
+  make_dangling_symlink "$MAIN/.env"
   echo "FOO=bar" > "$MAIN/.env.example"
 
   run bash "$SCRIPT" --project-root "$PROJECT" --main-root "$MAIN"
