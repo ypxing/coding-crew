@@ -16,6 +16,11 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/e
 
 setup() {
   TEMP_DIR=$(mktemp -d)
+  # Physical path: the script resolves --dir (and derives MAIN_ROOT/marker/log paths from
+  # it) with `pwd -P`, so on a host where $TEMP_DIR itself is a symlink or mount alias the
+  # raw mktemp path differs textually from what the script prints while naming the same
+  # directory. Matches crew-afk-receipts.bats / verify-worktree-docker.bats.
+  TEMP_DIR=$(cd "$TEMP_DIR" && pwd -P)
   export TEMP_DIR
   WORK="$TEMP_DIR/work"
   mkdir -p "$WORK"

@@ -546,11 +546,13 @@ if [ -n "$CACHED_INSTALL" ]; then
   # Run in $DIR, not $MAIN_ROOT_EFFECTIVE — this call installs into whichever directory
   # was passed as --dir (a worktree, or the main root itself), the same target
   # host-install.sh would have used.
+  # "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}", not "${GIT_ENV_LINES[@]}": bash < 4.4
+  # (macOS's stock /bin/bash is 3.2) treats an empty array under `set -u` as unbound.
   if [ -n "$TIMEOUT_BIN" ]; then
-    "$TIMEOUT_BIN" "$TIMEOUT" env "${GIT_ENV_LINES[@]}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
+    "$TIMEOUT_BIN" "$TIMEOUT" env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
       >"$OUT_FILE" 2>&1
   else
-    env "${GIT_ENV_LINES[@]}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" >"$OUT_FILE" 2>&1
+    env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" >"$OUT_FILE" 2>&1
   fi
   RC=$?
   CMD="$CACHED_INSTALL"

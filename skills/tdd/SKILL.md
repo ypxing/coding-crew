@@ -88,6 +88,7 @@ After all tests pass, look for refactor candidates (see `references/refactoring.
 - [ ] Deepen modules (move complexity behind simple interfaces)
 - [ ] Apply SOLID principles where natural
 - [ ] Consider what new code reveals about existing code
+- [ ] Remove any abstraction this cycle added that isn't earning its keep (interface with one implementation, config for a value that never changes)
 - [ ] Run tests after each refactor step
 
 **Never refactor while RED.** Get to GREEN first.

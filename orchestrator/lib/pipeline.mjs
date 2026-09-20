@@ -843,17 +843,22 @@ async function finishPartial(ctx, worker, outcome, reason, { keepWorktree = fals
   // keepWorktree (set only by handleVerificationFailure's herdr-reuse path) leaves both the
   // worktree and its herdr pane exactly as they are, for next round's redispatch to pick up
   // — every other partial reason has no reuse concept, so it removes/closes as before.
-  // Closing the pane is skipped either way when worker.dispatch.herdrFailed — this dispatch's
-  // own attempt failed to communicate or reported an error, so its pane is the one thing
-  // worth a human inspecting, not something to discard as a side effect of demoting the
-  // issue (see dispatch.mjs's own herdrFailed doc comment). The worktree itself still comes
-  // down in that case: there is no reuse queued for it (herdrFailed is never combined with
-  // keepWorktree above), only the pane survives, purely for inspection.
+  // worker.dispatch.herdrFailed also keeps both, for a different reason: this dispatch's own
+  // attempt failed to communicate or reported an error without herdr ever confirming the
+  // underlying agent process exited (a reused pane's `--wait` can falsely settle on a stale
+  // idle/done from a prior turn — see dispatchViaHerdr's "absent" case in dispatch.mjs — or
+  // the pane may still be sitting on a blocked dialog). Removing the worktree out from under
+  // a process that turns out to still be alive is exactly the two-coders-one-worktree bug
+  // this guard exists to prevent; next round's ensureWorktree reuses the path in place if it's
+  // still there instead of recreating it. Only a plain (non-herdr) dispatch, where
+  // spawnWithTimeout SIGKILLs the actual worker process itself, gets to assume it's gone.
   if (keepWorktree) {
     ctx.log(`[HERDR-REUSE] slug=${issue.slug} round=${ctx.round} — keeping worktree and pane open for one retry`);
+  } else if (worker.dispatch?.herdrFailed) {
+    ctx.log(`[HERDR-FAILED] slug=${issue.slug} round=${ctx.round} — keeping worktree and pane open, process status unconfirmed`);
   } else {
     removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-    if (!worker.dispatch?.herdrFailed) await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
+    await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
   }
   sprint.retain(issue.slug, branch, reason);
   outcome.status = "partial";
@@ -867,11 +872,16 @@ async function finishBlocked(ctx, worker, outcome, reason) {
   if (!effects.dryRun && existsSync(issue.path)) {
     writeIssueSection(issue.path, "Blocked", `Round ${ctx.round}: ${reason}`, { append: true });
   }
-  removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-  // See finishPartial's matching comment: a pane whose own dispatch failed to communicate or
-  // reported an error stays open for inspection, never closed as a side effect of blocking
-  // the issue.
-  if (!worker.dispatch?.herdrFailed) await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
+  // See finishPartial's matching comment: a dispatch whose own attempt failed to communicate
+  // or reported an error leaves both its pane and its worktree alone — herdr never confirmed
+  // the underlying process actually exited, and removing the worktree out from under a
+  // process that's still alive is the two-coders-one-worktree bug this guard prevents.
+  if (worker.dispatch?.herdrFailed) {
+    ctx.log(`[HERDR-FAILED] slug=${issue.slug} round=${ctx.round} — keeping worktree and pane open, process status unconfirmed`);
+  } else {
+    removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
+    await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
+  }
   sprint.blocked(issue.slug, branch, reason);
   outcome.status = "blocked";
   outcome.reason = reason;

@@ -57,6 +57,8 @@ setup_file() {
   dir="$(mktemp -d)"
   cd "$dir"
   git init -q
+  git config user.email t@test
+  git config user.name T
   printf '.scratch/\n' > .gitignore
   git add .gitignore
   git commit -q -m init

@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.29.99]
+
+### Fixed
+
+- **`crew-afk` no longer tears down a worktree whose worker process status is unconfirmed.**
+  `finishPartial`/`finishBlocked` only skipped closing the herdr pane when `worker.dispatch.herdrFailed`,
+  but still removed the worktree underneath it — a reused herdr pane's `--wait` can falsely settle
+  on a stale idle/done from a prior turn, or sit on a blocked dialog, so the underlying agent
+  process may still be alive. Both paths now keep the worktree in place too when `herdrFailed`,
+  matching the existing `keepWorktree` reuse path, so next round's `ensureWorktree` can reuse it in
+  place instead of racing a live process for its own directory.
+- **`ensure-deps.sh`'s cached-install re-run no longer aborts under bash 3.2 (macOS's stock
+  `/bin/bash`) when there's no captured git env.** `env "${GIT_ENV_LINES[@]}" ...` treats an empty
+  array as unbound under `set -u` on bash < 4.4; switched to `"${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}"`.
+- **`dep-install`'s `ensure-env.sh`/`gen-override.sh` worktree-vs-main-root comparisons now work on
+  Windows.** Both used bash's `-ef` (device/inode identity), which MSYS's NTFS emulation doesn't
+  reliably support; both now compare `pwd -P`-resolved paths instead.
+- **CI installs a bash >= 4 on macOS runners** before any test step runs, since Apple has frozen
+  `/bin/bash` at 3.2 (GPLv2) and several scripts (`declare -A`, empty-array expansion under
+  `set -u`) require bash >= 4.
+
+### Added
+
+- **`solve-issue` now tells a bug-fix issue to fix shared behavior at the function every caller
+  routes through**, not only at the call site the issue names, so a guard added at one caller
+  doesn't leave every sibling still broken.
+- **`solve-issue` now commits after every TDD GREEN, not only once at the end**, via
+  `commit-changes.sh --prefix "[<slug>][WIP]"`, so a dispatcher timeout that kills a run mid-loop
+  still leaves a resumable commit on the branch instead of an indistinguishable-from-unstarted
+  worktree. These WIP commits get squashed away before merge.
+- **`tdd`'s refactor checklist now includes removing abstractions that cycle didn't earn its
+  keep** (an interface with one implementation, config for a value that never changes).
+
 ## [1.29.98]
 
 ### Fixed

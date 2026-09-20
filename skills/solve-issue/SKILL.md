@@ -146,6 +146,10 @@ if that guess was wrong.
 2. Grep for similar patterns to what you're about to implement — find existing utilities, helpers, or conventions you should follow or reuse.
 3. Identify callers of the files you plan to change — understand how they're used before modifying them.
 
+**Bug-fix issues:** if multiple callers share the broken behavior, fix it in the function they all
+route through, not only at the call site the issue names — a guard added at one caller leaves every
+sibling still broken.
+
 **Then for each hypothesized file from Step 1:**
 
 1. Read the source file.
@@ -166,6 +170,22 @@ bullet above.
 `docker`, every command runs inside docker, not on the host.
 
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
+
+**Commit after every GREEN, not only once at the end.** A dispatcher-imposed timeout can kill this
+run mid-loop; only a branch that already has a commit on it is resumable next round — one with
+everything still staged, uncommitted, is indistinguishable from a run that never started. Before
+starting the next RED, checkpoint what just went green:
+
+```bash
+ISSUE_SLUG=$(basename "$ISSUE_PATH" | sed 's/\.md$//')
+bash "<skill-dir>/scripts/commit-changes.sh" \
+  --prefix "[$ISSUE_SLUG][WIP]" \
+  --message "<behavior just made green>" \
+  --files "<files touched this cycle>"
+```
+
+Commit message quality doesn't matter here — these checkpoints get squashed away with the rest of
+the branch's history before merge. Getting one on disk before the next cycle does.
 
 ### 4.5. Update documentation
 

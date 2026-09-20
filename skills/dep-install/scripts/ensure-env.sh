@@ -181,11 +181,12 @@ fi
 
 # A MAIN_ROOT distinct from PROJECT_ROOT is the worktree case: honor whatever is already at
 # MAIN_ROOT (existing, or newly generated there) instead of ever generating independently
-# inside PROJECT_ROOT. `-ef` compares resolved identity, not string equality, so the one
-# MAIN_ROOT call itself (where callers commonly pass the same path for both flags) falls
-# through to the plain branch below rather than linking a directory to itself.
+# inside PROJECT_ROOT. Compared by resolved path, not string equality (nor `-ef`, whose
+# device/inode comparison MSYS's NTFS emulation does not reliably support on Windows), so
+# the one MAIN_ROOT call itself (where callers commonly pass the same path for both flags)
+# falls through to the plain branch below rather than linking a directory to itself.
 if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
-  if [[ -n "$MAIN_ROOT" && -d "$MAIN_ROOT" ]] && ! [[ "$MAIN_ROOT" -ef "$PROJECT_ROOT" ]]; then
+  if [[ -n "$MAIN_ROOT" && -d "$MAIN_ROOT" ]] && [[ "$(cd "$MAIN_ROOT" && pwd -P)" != "$(cd "$PROJECT_ROOT" && pwd -P)" ]]; then
     if [[ -L "$MAIN_ROOT/.env" && ! -e "$MAIN_ROOT/.env" ]]; then
       rm -f "$MAIN_ROOT/.env"
     fi

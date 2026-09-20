@@ -68,8 +68,12 @@ words_of() {
   # docker-mode dep-install check becoming unskippable (a worker could no longer substitute
   # its own node_modules/.venv probing for it), and the git-common mount's per-worktree
   # GIT_DIR/GIT_COMMON_DIR/hooksPath resolution. None restate an existing step.
+  # Raised again to 2,200 for two real rules landing together: §3 now tells a bug-fix issue
+  # to fix shared behavior at the function every caller routes through, not just the call
+  # site the issue names; §4 now commits after every GREEN instead of once at the end, so a
+  # worker killed mid-loop by workerTimeoutMs still leaves a resumable commit on its branch.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 2100 ] || { echo "solve-issue is $words words (budget 2100)" >&2; return 1; }
+  [ "$words" -lt 2200 ] || { echo "solve-issue is $words words (budget 2200)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {

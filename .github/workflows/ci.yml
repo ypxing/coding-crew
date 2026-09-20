@@ -50,6 +50,14 @@ jobs:
           Add-MpPreference -ExclusionPath $env:RUNNER_TEMP, $env:GITHUB_WORKSPACE, "$env:TEMP"
           Add-MpPreference -ExclusionProcess "bash.exe", "git.exe", "jq.exe"
 
+      # macOS ships bash 3.2 at /bin/bash (Apple froze it there after the GPLv2 -> GPLv3
+      # switch). install.sh's own re-exec guard and several scripts (declare -A, empty
+      # array expansion under `set -u`) need bash >= 4, so give the runner one on PATH
+      # before anything else runs bash.
+      - name: Install bash >= 4 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install bash
+
       # bats-core is pure bash — cloning a pinned tag avoids `npm install -g bats`
       # (and the Node setup it needed), which alone cost ~1 minute on Windows.
       - name: Install bats-core

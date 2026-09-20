@@ -189,7 +189,9 @@ fi
 # need the exact same "leave a live entry alone, clear a dangling one" rule (see the
 # "Worktree symlink" header comment) rather than two copies of it drifting apart.
 _link_override() {
-  [[ "$PROJECT_ROOT" -ef "$MAIN_ROOT" ]] && return 0
+  # Compared by resolved path, not `-ef`: MSYS's NTFS emulation does not reliably support
+  # the device/inode comparison `-ef` needs, on Windows.
+  [[ "$(cd "$PROJECT_ROOT" && pwd -P)" == "$(cd "$MAIN_ROOT" && pwd -P)" ]] && return 0
   local override_link="$PROJECT_ROOT/docker-compose.override.yml"
   if [[ -L "$override_link" && ! -e "$override_link" ]]; then
     rm -f "$override_link"
