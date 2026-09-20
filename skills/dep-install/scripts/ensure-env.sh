@@ -170,7 +170,7 @@ _git_exclude_env() {
   # of leaving an already-absolute path alone.
   common=$(cd "$dir" 2>/dev/null && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
   case "$common" in
-    /*) : ;;
+    /*|[A-Za-z]:*) : ;;
     *) common="$dir/$common" ;;
   esac
   exclude="$common/info/exclude"

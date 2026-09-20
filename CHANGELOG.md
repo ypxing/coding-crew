@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.105]
+
+### Fixed
+
+- **A drive-letter Windows path from `git rev-parse --path-format=absolute --git-common-dir`
+  was still getting the `$dir/` prefix wrongly prepended**, in `dispatch-codex-agent.sh`,
+  `receipts.sh`, `verify-worktree.sh`, `detect-mode.sh`, and `ensure-env.sh` — the same five
+  scripts the v1.29.100 `--path-format=absolute` fix touched, and the same underlying bug: git's
+  own idea of "absolute" on Windows is `C:/Users/...`, which doesn't start with `/`, so the
+  `case` guard each of these added to catch an already-absolute path never matched it and fell
+  through to the relative-path branch anyway. Observed in `dispatch-codex-agent.sh` as a mangled
+  `sandbox_workspace_write.writable_roots=["<worktree>/C:/Users/.../.git"]` — a codex worker's
+  sandbox would have kept the real git dir read-only, the exact failure the v1.29.100 fix was
+  meant to prevent. Each `case` now also matches `[A-Za-z]:*`.
+
 ## [1.29.104]
 
 ### Tests

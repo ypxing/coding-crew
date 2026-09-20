@@ -152,13 +152,15 @@ ARGS=(exec --cd "$DIR" --sandbox "$SANDBOX" --json)
 # or commit them: observed as `fatal: Unable to create '…/index.lock': Operation not
 # permitted`, which the pipeline correctly reads as `blocked` — every codex sprint stalls.
 if [[ "$SANDBOX" == "workspace-write" ]]; then
-  # --path-format=absolute: without it, a bare drive-letter Windows path (e.g.
-  # "C:/Users/...") doesn't start with "/", so the *)-branch below would wrongly treat an
-  # already-absolute path as relative and mangle it.
+  # --path-format=absolute: without it, plain `--git-common-dir` can come back cwd-relative.
+  # It still isn't enough on its own — git's own idea of "absolute" on Windows is a bare
+  # drive-letter path like "C:/Users/...", which doesn't start with "/", so the *)-branch
+  # below needs its own drive-letter case or it wrongly treats that as relative and mangles
+  # it (observed: "$DIR/C:/Users/...").
   GIT_COMMON_DIR=$(cd "$DIR" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
   case "$GIT_COMMON_DIR" in
     "") ;;
-    /*) ;;
+    /*|[A-Za-z]:*) ;;
     *) GIT_COMMON_DIR="$DIR/$GIT_COMMON_DIR" ;;
   esac
   [[ -n "$GIT_COMMON_DIR" ]] &&
