@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.29.96]
+
+### Added
+
+- **`dep-install` skips a redundant install when manifests are unchanged since its own last
+  successful run.** `host-install.sh` and `docker-install.sh` now fingerprint every recognised
+  lockfile/manifest (`manifest-fingerprint.sh`) before doing any ecosystem detection, and skip
+  straight to done on a match. Both scripts gain `--force` to bypass that fast path, and the
+  skill's own retry rule (triggered by a module-not-found error) now passes it — otherwise the
+  retry would see the same unchanged manifests and skip itself again, making the retry a no-op.
+
 ## [1.29.95]
 
 ### Changed
