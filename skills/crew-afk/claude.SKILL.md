@@ -42,9 +42,9 @@ merges, and closes real work against the wrong feature.
 
 It owns the whole loop: a worktree and `crew-coder` process per issue, then verify →
 review → merge → close, then promotion, squash, cleanup and the summary — until no issues
-remain or every remaining one is blocked (its retries spent, or a dependency of one that is). Workers are `claude -p --agent crew-coder` child
-processes, three at a time (`--max-parallel`), each in its own worktree — not an `Agent`
-call here, so a hung worker times out instead of hanging the sprint.
+remain or every remaining one is blocked (its retries spent, or a dependency of one that is).
+Workers are `claude -p --agent crew-coder` processes, three at a time, not `Agent` calls,
+so a hung one times out without hanging the sprint.
 
 ## Your part
 

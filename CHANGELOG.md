@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.29.111]
+
+### Fixed
+
+- **The claude, copilot, and codex `crew-afk` launcher SKILL.md bodies had drifted back over
+  the 500-word budget** (`tests/crew-afk-launcher.bats`'s "it replaced ~2,400" check), each
+  having grown its own sentence describing the worker process type and concurrency default.
+  Trimmed those sentences to the same information in fewer words — no behavior change.
+
 ## [1.29.110]
 
 ### Fixed

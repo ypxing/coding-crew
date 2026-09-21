@@ -42,9 +42,9 @@ It owns the whole loop: a worktree and `crew-coder` process per issue, then veri
 review → merge → close, then promotion, squash, cleanup and the summary — until no issues
 remain or every remaining one is blocked (its retries spent, or a dependency of one that is).
 
-**Requires the local Codex CLI.** Every worker is a `codex exec` child process against a
-local clone, so `codex` must be on `PATH` and already authenticated — if not, say so and
-stop rather than implementing issues yourself.
+**Requires the local Codex CLI.** Workers are `codex exec` child processes against a
+local clone; `codex` must be on `PATH` and authenticated, or stop rather than
+implementing issues yourself.
 
 ## Your part
 
