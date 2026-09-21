@@ -53,6 +53,7 @@ after(() => {
 import {
   buildDispatch,
   buildHerdrInvocation,
+  closeHerdrLogTab,
   closeHerdrPane,
   closeHerdrWorkspace,
   dispatch,
@@ -1789,6 +1790,68 @@ test("closeHerdrWorkspace never closes a workspace reused via HERDR_WORKSPACE_ID
     !effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"),
     "the reused workspace is left open — it belongs to whoever is still using that pane",
   );
+});
+
+test("closeHerdrLogTab closes the log tab a herdr dispatch created, and is a no-op when none was ever created", async () => {
+  const untouched = fakeHerdrEffects([], { mainRoot: "/root" });
+  await closeHerdrLogTab(untouched);
+  assert.deepEqual(untouched._calls, [], "nothing to close — no herdr dispatch ever created a log tab on this effects instance");
+
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { agent: { agent_status: "idle" } } }),
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
+      json({ result: { type: "ok" } }), // dispatch tab close
+      json({ result: { type: "ok" } }), // log tab close, from closeHerdrLogTab
+    ],
+    { mainRoot: root },
+  );
+  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile: join(root, "a.md"), slug: "alpha", logFile }), { timeoutMs: 60_000 });
+  await closeHerdrLogTab(effects);
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:log"]);
+});
+
+// This is the case closeHerdrWorkspace's own reuse test above leaves unclosed: a workspace
+// reused via HERDR_WORKSPACE_ID survives (it belongs to whoever's pane triggered the run), but
+// this run's own log tab inside it is still this run's to close — otherwise it tails the trace
+// log forever after a run launched from inside an existing herdr pane.
+test("closeHerdrLogTab closes this run's own log tab even when the workspace it lives in was reused, not created", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { type: "ok" } }), // pane rename
+      json({ result: { agent: { agent_status: "idle" } } }),
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
+      json({ result: { type: "ok" } }), // dispatch tab close
+      json({ result: { type: "ok" } }), // log tab close, from closeHerdrLogTab
+    ],
+    { mainRoot: root },
+  );
+
+  await withHerdrWorkspaceId("w1", () =>
+    dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", logFile }), { timeoutMs: 60_000 }),
+  );
+  await closeHerdrWorkspace(effects);
+  await closeHerdrLogTab(effects);
+
+  assert.ok(
+    !effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"),
+    "the reused workspace itself is still left open",
+  );
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:log"], "but this run's own log tab is closed");
 });
 
 function withHerdrPaneId(id, fn) {

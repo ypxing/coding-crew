@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.109]
+
+### Fixed
+
+- **A crew-afk run launched from inside an existing herdr pane (`HERDR_WORKSPACE_ID` reused)
+  left its log tab — the one tailing the sprint's trace log — open forever.** `closeHerdrWorkspace`
+  already closes that tab when this run created its own workspace, but no-ops on a reused one, since
+  closing someone else's workspace would yank the terminal out from under whoever launched it. The
+  log tab it creates inside that reused workspace is still this run's own, though. A new
+  `closeHerdrLogTab`, called alongside `closeHerdrWorkspace` at the end of every run regardless of
+  outcome, now closes it directly.
+
 ## [1.29.108]
 
 ### Fixed

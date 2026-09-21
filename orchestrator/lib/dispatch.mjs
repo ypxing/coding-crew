@@ -658,6 +658,12 @@ function herdrWorkspaceLabel(featureSlug) {
  * only ever shows that one worker's turn, not the orchestrator's round-by-round narration.
  * Best-effort: a broken log tab is cosmetic, not a reason to fail every dispatch this run —
  * unlike the dispatch's own tab, nothing downstream reads this one back.
+ *
+ * Stashes the created tab's id on `effects._herdrLogTabId` so closeHerdrLogTab can close it
+ * directly at the end of the run — closeHerdrWorkspace already covers this tab when the
+ * workspace itself was created by this run, but no-ops on a *reused* workspace (see
+ * ensureHerdrWorkspace), which would otherwise leave this tab tailing forever after a run
+ * launched from inside an existing herdr pane.
  */
 async function ensureHerdrLogTab(effects, workspaceId, label, logFile) {
   try {
@@ -672,8 +678,10 @@ async function ensureHerdrLogTab(effects, workspaceId, label, logFile) {
       `${label}-log`,
       "--no-focus",
     ]);
+    const tabId = herdrJson(create)?.result?.tab?.tab_id;
     const paneId = herdrJson(create)?.result?.root_pane?.pane_id;
     if (create.code !== 0 || !paneId) return;
+    effects._herdrLogTabId = tabId;
     await herdrExec(effects, ["pane", "run", paneId, "tail", "-f", logFile]);
   } catch {
     /* the sprint's own dispatch tabs are what matters; a broken log tab is cosmetic */
@@ -762,6 +770,24 @@ export async function closeHerdrWorkspace(effects) {
     await herdrExec(effects, ["workspace", "close", workspaceId]);
   } catch {
     /* already reported at the dispatch that first hit it, or nothing was ever created */
+  }
+}
+
+/**
+ * Closes the log tab ensureHerdrLogTab created, once, at the end of the whole crew-afk run
+ * (see main.mjs) — called alongside closeHerdrWorkspace, not instead of it, because
+ * closeHerdrWorkspace no-ops on a *reused* workspace (the run was launched from inside an
+ * existing herdr pane), and this tab is this run's own regardless of who owns the workspace
+ * it lives in. A no-op when no log tab was ever created this run. Harmless when the workspace
+ * close above already tore this tab down too — closing an already-gone tab just fails, and
+ * that failure is swallowed the same as everywhere else in this file.
+ */
+export async function closeHerdrLogTab(effects) {
+  if (!effects._herdrLogTabId) return;
+  try {
+    await herdrExec(effects, ["tab", "close", effects._herdrLogTabId]);
+  } catch {
+    /* cosmetic — either already closed with the workspace above, or nothing left to close */
   }
 }
 

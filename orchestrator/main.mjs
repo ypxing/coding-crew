@@ -70,7 +70,7 @@ import { spawnSync } from "node:child_process";
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { closeHerdrPane, closeHerdrWorkspace, DEFAULT_PARALLEL, notifyTriggeringPane, PLATFORMS, preflight } from "./lib/dispatch.mjs";
+import { closeHerdrLogTab, closeHerdrPane, closeHerdrWorkspace, DEFAULT_PARALLEL, notifyTriggeringPane, PLATFORMS, preflight } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { selectDispatchable } from "./lib/tracker.mjs";
@@ -511,6 +511,11 @@ async function main() {
     // (see dispatchViaHerdr/ensureHerdrWorkspace) — closed here, once, regardless of how
     // the run ended, so a thrown error above doesn't leave it dangling in herdr's UI.
     await closeHerdrWorkspace(effects);
+    // Covers the one case closeHerdrWorkspace above cannot: a reused workspace (this run was
+    // launched from inside an existing herdr pane), where the workspace itself must survive
+    // but this run's own log tab — tailing the trace log — is still this run's to close, same
+    // "regardless of how the run ended" rule as everything else in this block.
+    await closeHerdrLogTab(effects);
     // Only under HERDR_ENV=1 — see notifyTriggeringPane's doc comment for why this is the
     // one case where the caller (the same pane crew-afk was launched from) can stop polling
     // and just wait for this nudge instead. Covers every way the run above can end, including
