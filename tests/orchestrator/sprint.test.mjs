@@ -15,6 +15,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { Sprint } from "../../orchestrator/lib/sprint.mjs";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "../..");
 const MAIN = join(REPO, "orchestrator/main.mjs");
@@ -940,6 +942,31 @@ test("a discovered install override is used by the sprint-level deps call, not h
   assert.equal(cache.install, "touch .scratch/install-ran.marker");
   assert.equal(existsSync(join(root, ".scratch/install-ran.marker")), true, "the discovered install command never ran against MAIN_ROOT");
   assert.match(traceLog(root), /\[DEPS\].*installed.*touch \.scratch\/install-ran\.marker/);
+});
+
+test("Sprint.installDeps streams ensure-deps.sh's own live output, each line exactly once, then the DEPS summary exactly once", async () => {
+  // ensure-deps.sh's own CACHED_INSTALL/docker paths now tee their child's output live (see
+  // ensure-deps.sh/docker-install.sh), and installDeps() now streams that through the log
+  // callback via spawnWithTimeout's onLine instead of capturing it wholesale and reporting
+  // one summary line after the fact — this used to produce zero visible output for however
+  // long a real install took. A fake effects.spawnWithTimeout stands in for the real
+  // subprocess here, split across two chunks with a line broken mid-chunk, to exercise the
+  // buffering logic the same way a real, arbitrarily-chunked stdout stream would.
+  const logged = [];
+  const fakeEffects = {
+    mainRoot: "/fake/root",
+    script: (name) => `/fake/scripts/${name}`,
+    spawnWithTimeout: async (cmd, args, { onLine } = {}) => {
+      onLine("installing-widget-a\ninstall");
+      onLine("ing-widget-b\nDEPS: installed echo\n");
+      return { code: 0, stdout: "installing-widget-a\ninstalling-widget-b\nDEPS: installed echo\n", stderr: "" };
+    },
+  };
+  const sprint = new Sprint(fakeEffects, {});
+
+  await sprint.installDeps((line) => logged.push(line));
+
+  assert.deepEqual(logged, ["installing-widget-a", "installing-widget-b", "DEPS: installed echo"]);
 });
 
 test("the worktree call comes after .worktreeinclude is applied, so an inherited dep dir costs nothing", () => {

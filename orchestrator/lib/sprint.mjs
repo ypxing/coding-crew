@@ -79,7 +79,7 @@ export class Sprint {
     this._blockedThisRun = new Set();
   }
 
-  static init(effects, { featureSlug, coverage, promote, passthrough = [], deps = true, log = () => {} }) {
+  static async init(effects, { featureSlug, coverage, promote, passthrough = [], deps = true, log = () => {} }) {
     const args = [];
     if (featureSlug) args.push("--feature-slug", featureSlug);
     if (coverage) args.push("--coverage");
@@ -99,7 +99,7 @@ export class Sprint {
     // time ensure-deps.sh runs: commands finding before deps installing, so the finding
     // can be used rather than raced. main.mjs is that caller; init() itself no longer
     // installs so that ordering is possible.
-    if (deps) sprint.installDeps(log);
+    if (deps) await sprint.installDeps(log);
     return sprint;
   }
 
@@ -113,11 +113,32 @@ export class Sprint {
    * Call this after one-time command discovery (see commands.mjs), not before: discovery
    * may cache a documented install override at `.coding-crew/dev-commands.json`, and
    * `ensure-deps.sh` only reads that cache, it never waits for one to appear.
+   *
+   * Streamed through `log` line-by-line as ensure-deps.sh runs (via spawnWithTimeout's
+   * `onLine`, the same mechanism dispatch()'s headless path already uses for a worker's own
+   * trace) rather than captured wholesale and reported once at the end — a cold-cache
+   * install of hundreds of packages used to produce zero visible output for however long it
+   * took, since the previous effects.bash()/spawnSync call only ever surfaced ensure-deps.sh's
+   * own final summary line. ensure-deps.sh's own `DEPS: ...` line is filtered out of the live
+   * stream and logged exactly once at the end (via depsLine() against the full captured
+   * stdout spawnWithTimeout already accumulates) so it is never printed twice.
    */
-  installDeps(log = () => {}) {
-    const d = this.effects.bash("ensure-deps.sh", ["--dir", this.effects.mainRoot], {
+  async installDeps(log = () => {}) {
+    let lineBuffer = "";
+    const emit = (line) => {
+      if (line.trim() && !/^DEPS:/.test(line)) log(line);
+    };
+    const d = await this.effects.spawnWithTimeout("bash", [this.effects.script("ensure-deps.sh"), "--dir", this.effects.mainRoot], {
+      cwd: this.effects.mainRoot,
       env: this.childEnv(),
+      onLine: (chunk) => {
+        lineBuffer += String(chunk);
+        const parts = lineBuffer.split("\n");
+        lineBuffer = parts.pop();
+        for (const part of parts) emit(part);
+      },
     });
+    emit(lineBuffer);
     const line = depsLine(d.stdout);
     if (line) log(line);
   }

@@ -31,19 +31,16 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 
 ## Steps
 
-> **If you arrived here via the fast-path** (override already exists at `$MAIN_ROOT/docker-compose.override.yml`): skip steps 0–1 and go directly to step 2 (run install).
->
-> **If `$MAIN_ROOT/.scratch/docker-install.done` exists**: an AFK sprint already warmed the shared
-> volume for this checkout before any worktree existed (`ensure-deps.sh`'s docker path, mechanized
-> because generating the override and running the install command are both deterministic). Skip
-> steps 0–2 entirely and go to step 3 — the volume this worktree's compose file also mounts already
-> has the baseline deps. Still apply the retry rule below if a later command fails with a
-> module-not-found error: this worktree's own branch may have added a dependency the shared install
-> ran before that branch existed.
->
-> Either fast-path still means resolving and passing `GIT_ENV_ARGS` (see Never above) on every
-> `docker compose run` you do reach — that rule is never one of the steps being skipped, since it
-> is per-invocation, not part of generating or warming the shared file.
+Step 1 always calls `docker-install.sh`, whether or not `$MAIN_ROOT/.scratch/docker-install.done`
+already exists or an override already sits at `$MAIN_ROOT/docker-compose.override.yml` — the
+script itself checks its own fingerprint stamp and regenerates the override idempotently, so
+there is no separate fast-path to skip ahead to by hand; a repeat call against an unchanged
+`MAIN_ROOT` is already a fast no-op. Still apply the retry rule below if a later command fails
+with a module-not-found error: a worktree's own branch may have added a dependency since the
+last successful install.
+
+Resolving and passing `GIT_ENV_ARGS` (see Never above) on every `docker compose run` you reach in
+step 2 onward is never something to skip — it is per-invocation, not part of installing.
 
 ### 0. Check the cache, then ensure `.env` exists
 
@@ -84,82 +81,13 @@ JSON
 bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/credential-target-discovery.json
 ```
 
-**c. Run the env setup script**, passing `--credential-target` with whichever command (from the
-cache in step a, or your own scan in step b) you resolved, if any:
-
-Run `scripts/ensure-env.sh` from the same directory you read this skill file from:
-
-```bash
-# No credential target resolved:
-bash "<skill-dir>/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT"
-# A credential target resolved (from the cache, or step b):
-bash "<skill-dir>/scripts/ensure-env.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --credential-target "make _registry"
-```
-
-Pass the command through unwrapped, exactly as discovered — do not put `docker compose run`
-around it yourself either way. The script itself dry-runs it against `detect-docker-nesting.sh`
-before evaling it: if the recipe already invokes docker, the script skips it (falling back to
-template expansion) rather than risk nesting docker-in-docker.
-
-The script itself already checks `dev-commands.json`'s own `"env"` field for a documented
-`.env`-bootstrap command before falling back to its `.env.example`-or-empty convention — that
-lookup needs no model involvement, so this step does not repeat it. It prints a one-line log of
-what it did and always exits 0 — this step never blocks.
-
 **Never read the contents of `.env*` or any credential config file** — not to log, not to inspect, not to verify.
 
 Always continue to step 1 — this step never blocks. If `docker compose` later fails because a required env var is missing, stop and report blocked with the verbatim error.
 
-### 1. Generate `docker-compose.override.yml`
+### 1. Run install once, through the one locked mechanism every install goes through
 
-Run the generation script. It reads the compose file, detects the ecosystem from manifest files (`package.json`, `pyproject.toml`, etc.), and writes the override deterministically — same repo, same output every run.
-
-Run `scripts/gen-override.sh` from the same directory you read this skill file from:
-
-```bash
-bash "<skill-dir>/scripts/gen-override.sh" \
-  --project-root "$PROJECT_ROOT" \
-  --main-root "$MAIN_ROOT"
-```
-
-The script prints what it wrote, which ecosystem it detected, and which services it found. If it exits non-zero, stop and report `BLOCKED` with the error message.
-
-If more than one service was found, use `dev-commands.json`'s `"docker_service"` field (Step 0 of
-`SKILL.md`) as `<service>` below rather than picking one — it is not necessarily the first
-service listed, and an unrelated service (a db, a sidecar with a different toolchain) will not
-have the package manager the install/verify commands below need.
-
-The override file is written to `$MAIN_ROOT/docker-compose.override.yml` and is shared across all worktrees — do not write it to `PROJECT_ROOT`.
-
-### 2. Run install once
-
-Named volumes start empty the *first* time — but this MAIN_ROOT may already have installed once
-in a prior session. **Check the fingerprint stamp first**, before anything else in this step:
-
-```bash
-STAMP="$MAIN_ROOT/.scratch/docker-install.fingerprint"
-bash "<skill-dir>/scripts/manifest-fingerprint.sh" check --project-root "$PROJECT_ROOT" --stamp "$STAMP"
-```
-
-- Prints `FRESH` — no manifest/lockfile has changed since the last successful install into this
-  MAIN_ROOT's shared volumes. Skip the rest of this step entirely and go to step 3.
-- Prints `STALE` (including when the stamp file doesn't exist yet) — continue below as normal.
-
-After a successful install below (either sub-step a or b), write the new stamp so the next
-session's check can skip:
-
-```bash
-bash "<skill-dir>/scripts/manifest-fingerprint.sh" write --project-root "$PROJECT_ROOT" --stamp "$STAMP"
-```
-
-This is the same check `docker-install.sh` runs internally for its own `ensure-deps.sh` caller —
-duplicated here as the two steps above because this guide has the model run install by hand
-instead of shelling out to that script. Skip this fingerprint check entirely if you were told to
-retry after a module-not-found error (see `SKILL.md`'s retry rule) — a `FRESH` verdict there only
-means the manifests didn't change, not that the install is actually intact, and skipping again
-would make the retry a no-op.
-
-**Check the install-command cache next**, the same way step 0a checked `credential_target`:
+**Check the install-command cache first**, the same way step 0a checked `credential_target`:
 `$MAIN_ROOT/.coding-crew/dev-commands.json`'s `"install"` field may already hold this repo's
 documented install command.
 
@@ -168,56 +96,68 @@ RAW=""
 [ -f "$CACHE" ] && RAW=$(grep -o '"install"[[:space:]]*:[[:space:]]*\("[^"]*"\|null\)' "$CACHE" | head -1)
 ```
 
-- A quoted command found — that is the target/command step a would otherwise have you guess at.
-  Still dry-run it per step a's own rule below (a documented command can itself invoke docker),
-  but skip hunting for which Makefile target it is.
-- `null` — a model already confirmed no documented install override exists. Continue with steps
-  a/b's own per-manifest-file detection unchanged; do not re-derive this from the Makefile
-  yourself first.
-- Empty (no cache file, or the key is missing) — continue with steps a/b unchanged, then persist
-  whatever you conclude the same way step 0b does, using `{"install": "<command or null>"}`.
-
-**a. Is there a Makefile `install`/`deps` target?** Check whether the Makefile has a public `install` or `deps` target whose recipe explicitly runs the package manager in every subdirectory that has a named volume (not just the root).
-
-- **No** — skip to step b (run the package manager directly).
-- **Yes** — dry-run it first, to make sure wrapping it in `docker compose run` would not nest docker inside docker:
+- A quoted command found — that is your `--install-cmd` below. Skip hunting for a Makefile
+  target yourself; docker-install.sh dry-runs it for you (see below).
+- `null` — a model already confirmed no documented install override exists. Continue without
+  `--install-cmd`; do not re-derive this from the Makefile yourself.
+- Empty (no cache file, or the key is missing) — check whether the Makefile has a public
+  `install`/`deps` target whose recipe explicitly runs the package manager in every
+  subdirectory that has a named volume (not just the root). If it does, that target invocation
+  (e.g. `make install`) is your `--install-cmd`. Either way, persist whatever you conclude —
+  the command, or `null` — so no future session re-scans this Makefile:
 
   ```bash
-  make -n install   # or: make -n deps
+  cat > /tmp/install-discovery.json <<'JSON'
+  {"install": "<the command you found, or null>"}
+  JSON
+  bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/install-discovery.json
   ```
 
-  - If that output already contains `docker compose`, `docker run`, or `docker exec` (directly, or via a variable — `make -n` expands those too), the recipe manages its own container. Run it **on the host, unwrapped** — do not put `docker compose run` around it — then skip the rest of this step:
-
-    ```bash
-    make install
-    ```
-
-  - Otherwise (no docker indirection in the recipe), run it inside the container and skip step b:
-
-    ```bash
-    docker compose \
-      -f "$PROJECT_ROOT/docker-compose.yml" \
-      -f "$MAIN_ROOT/docker-compose.override.yml" \
-      run --rm "${GIT_ENV_ARGS[@]}" <service> make install
-    ```
-
-**b. Run the package manager directly** for each directory with a named volume. Pass all `cd && install` commands in a single `sh -c` to avoid re-starting the container per directory:
+**Then run `scripts/docker-install.sh`** — the one mechanism every docker install goes through,
+whether this is a fresh worktree's own call or the sprint's own MAIN_ROOT warm-up
+(`ensure-deps.sh`'s docker path). It generates the override, checks the fingerprint stamp
+(skipping a no-op reinstall when nothing changed), dry-runs a Makefile `--install-cmd` for
+docker-in-docker nesting before wrapping it, and — the reason to call it here instead of
+hand-running `docker compose` yourself — takes a lock shared across every worktree of this
+`MAIN_ROOT` before actually installing, so this call and any other install already in flight
+(the sprint's own warm-up, or a sibling worktree's own dep-install session) can never run at the
+same time against the same shared volume:
 
 ```bash
-docker compose \
-  -f "$PROJECT_ROOT/docker-compose.yml" \
-  -f "$MAIN_ROOT/docker-compose.override.yml" \
-  run --rm "${GIT_ENV_ARGS[@]}" <service> sh -c "
-    cd /opt/app && <install-command> &&
-    cd /opt/app/events && <install-command>
-  "
+bash "<skill-dir>/scripts/docker-install.sh" \
+  --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
+  --lock-timeout 1800 \
+  # only if step 0 resolved one:
+  --credential-target "make _registry" \
+  # only if the cache/Makefile check above resolved one:
+  --install-cmd "make install"
 ```
 
-Pass both `-f` flags, and `"${GIT_ENV_ARGS[@]}"` (resolved fresh in the same call — see Never above), on every `docker compose` command.
+Unlike every other `docker compose` call in this guide, this one needs no `GIT_ENV_ARGS` of your
+own — `docker-install.sh` resolves and passes them itself for the `docker compose run` it
+constructs internally.
 
-### 3. All subsequent `docker compose` commands must pass both `-f` flags and this worktree's git-env args
+Handle its exit code:
 
-**Complete steps 0–2 in order before running any `docker compose` command. Do not skip ahead.**
+- **0** — installed (or skipped: manifests unchanged since the last successful install into
+  this shared volume). Continue to step 2.
+- **2** — nothing this mechanism could do here (no compose file, no service, no supported
+  ecosystem, or an `--install-cmd` that itself invokes docker — nesting it would just repeat the
+  same docker-in-docker failure). Report this plainly rather than guessing a workaround.
+- **3** — the install command failed *inside* the container. Report `BLOCKED` with the tail of
+  output the script prints to stderr.
+- **4** — could not acquire the lock within `--lock-timeout`: another install (the sprint's own
+  warm-up, or a sibling worktree) is still running. **Stop and report `BLOCKED`** with that
+  message — do not fall back to running `docker compose` yourself. That fallback is exactly the
+  unlocked, uncoordinated install this mechanism exists to prevent: two installs racing the same
+  shared named volume causes real lock contention inside the container (a package manager's own
+  lockfile, or dpkg/apt), not just a herdr-UI nuisance. If this repeats, the sprint's own
+  warm-up may itself be stuck — that is a sprint-level problem to surface, not something this
+  session should retry around.
+
+### 2. All subsequent `docker compose` commands must pass both `-f` flags and this worktree's git-env args
+
+**Complete steps 0–1 in order before running any `docker compose` command. Do not skip ahead.**
 
 Pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command — including test, lint, and type-check runs. Never omit the `-f override` flag. Resolve and pass `"${GIT_ENV_ARGS[@]}"` (see Never above) on every one of these too, in the same bash call — a lint/test run that shells out to git (coverage tooling, a `--changed` flag, a release plugin reading the commit SHA) hits the same unmountable-host-path failure an install-time postinstall hook does.
 

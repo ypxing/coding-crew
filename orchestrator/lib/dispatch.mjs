@@ -44,10 +44,10 @@
  * tool-permission prompt is a sprint that never finishes.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { appendLine } from "./effects.mjs";
 
 export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
@@ -651,51 +651,13 @@ function herdrWorkspaceLabel(featureSlug) {
 }
 
 /**
- * A second tab in the shared workspace, alongside the workspace itself, that just tails the
- * sprint's own trace log — the same file every dispatch's [DISPATCH-FAIL] line already lands
- * in (see dispatch()'s onTrace/logFile handling). Without it, watching a sprint live means
- * either tailing that file from a separate terminal or reading a dispatch's own pane, which
- * only ever shows that one worker's turn, not the orchestrator's round-by-round narration.
- * Best-effort: a broken log tab is cosmetic, not a reason to fail every dispatch this run —
- * unlike the dispatch's own tab, nothing downstream reads this one back.
- *
- * Stashes the created tab's id on `effects._herdrLogTabId` so closeHerdrLogTab can close it
- * directly at the end of the run — closeHerdrWorkspace already covers this tab when the
- * workspace itself was created by this run, but no-ops on a *reused* workspace (see
- * ensureHerdrWorkspace), which would otherwise leave this tab tailing forever after a run
- * launched from inside an existing herdr pane.
- */
-async function ensureHerdrLogTab(effects, workspaceId, label, logFile) {
-  try {
-    const create = await herdrExec(effects, [
-      "tab",
-      "create",
-      "--workspace",
-      workspaceId,
-      "--cwd",
-      effects.mainRoot,
-      "--label",
-      `${label}-log`,
-      "--no-focus",
-    ]);
-    const tabId = herdrJson(create)?.result?.tab?.tab_id;
-    const paneId = herdrJson(create)?.result?.root_pane?.pane_id;
-    if (create.code !== 0 || !paneId) return;
-    effects._herdrLogTabId = tabId;
-    await herdrExec(effects, ["pane", "run", paneId, "tail", "-f", logFile]);
-  } catch {
-    /* the sprint's own dispatch tabs are what matters; a broken log tab is cosmetic */
-  }
-}
-
-/**
  * The triggering pane's own tab still shows whatever it was called before crew-afk started
  * running in it (often the literal "crew-afk" the human typed to launch it) — herdr injects
  * that pane's tab as `HERDR_TAB_ID` alongside `HERDR_WORKSPACE_ID`, so this is the one chance
  * to relabel it to the sprint's feature slug the same way a freshly created workspace already
  * is (see herdrWorkspaceLabel). Skipped when no feature slug resolved: relabelling someone's
- * own tab to the "crew-afk" fallback would just clobber a title they chose with no gain. Best
- * effort like ensureHerdrLogTab — a failed rename is cosmetic, not a reason to fail the run.
+ * own tab to the "crew-afk" fallback would just clobber a title they chose with no gain.
+ * Best-effort: a failed rename is cosmetic, not a reason to fail the run.
  */
 async function renameHerdrTriggeringTab(effects, featureSlug) {
   if (!featureSlug) return;
@@ -727,18 +689,17 @@ async function renameHerdrTriggeringTab(effects, featureSlug) {
  * a workspace this run didn't create — that would yank the terminal out from under whoever
  * is still typing in it.
  *
- * `featureSlug`/`logFile` are only consulted by whichever call actually creates the
- * workspace — every dispatch this run passes the same sprint's values, so which one wins
- * the race makes no difference.
+ * `featureSlug` is only consulted by whichever call actually creates the workspace — every
+ * dispatch this run passes the same sprint's values, so which one wins the race makes no
+ * difference.
  */
-function ensureHerdrWorkspace(effects, { featureSlug, logFile } = {}) {
+function ensureHerdrWorkspace(effects, { featureSlug } = {}) {
   if (!effects._herdrWorkspace) {
     effects._herdrWorkspace = (async () => {
       const triggeringWorkspaceId = process.env.HERDR_WORKSPACE_ID;
       if (triggeringWorkspaceId) {
         effects._herdrWorkspaceReused = true;
         await renameHerdrTriggeringTab(effects, featureSlug);
-        if (logFile) await ensureHerdrLogTab(effects, triggeringWorkspaceId, herdrWorkspaceLabel(featureSlug), logFile);
         return triggeringWorkspaceId;
       }
       const label = herdrWorkspaceLabel(featureSlug);
@@ -747,7 +708,6 @@ function ensureHerdrWorkspace(effects, { featureSlug, logFile } = {}) {
       if (create.code !== 0 || !workspaceId) {
         throw new Error(`herdr workspace create failed: ${(create.stderr || create.stdout || "").trim()}`);
       }
-      if (logFile) await ensureHerdrLogTab(effects, workspaceId, label, logFile);
       return workspaceId;
     })();
   }
@@ -774,24 +734,6 @@ export async function closeHerdrWorkspace(effects) {
 }
 
 /**
- * Closes the log tab ensureHerdrLogTab created, once, at the end of the whole crew-afk run
- * (see main.mjs) — called alongside closeHerdrWorkspace, not instead of it, because
- * closeHerdrWorkspace no-ops on a *reused* workspace (the run was launched from inside an
- * existing herdr pane), and this tab is this run's own regardless of who owns the workspace
- * it lives in. A no-op when no log tab was ever created this run. Harmless when the workspace
- * close above already tore this tab down too — closing an already-gone tab just fails, and
- * that failure is swallowed the same as everywhere else in this file.
- */
-export async function closeHerdrLogTab(effects) {
-  if (!effects._herdrLogTabId) return;
-  try {
-    await herdrExec(effects, ["tab", "close", effects._herdrLogTabId]);
-  } catch {
-    /* cosmetic — either already closed with the workspace above, or nothing left to close */
-  }
-}
-
-/**
  * With HERDR_ENV=1, crew-afk is commonly launched as a backgrounded command inside the very
  * pane a human (or the agent driving it) is watching, then left to poll it — see main.mjs's
  * doc comment and ensureHerdrWorkspace's. That pane sits idle between polls, so pushing this
@@ -812,6 +754,140 @@ export async function notifyTriggeringPane(effects, message) {
   } catch {
     /* best effort — see doc comment above */
   }
+}
+
+// How long the front door will wait for the relaunched instance to report its own
+// completion before giving up — see relaunchIntoDedicatedPane's own doc comment for why
+// there is no better signal than this ceiling: `pane run` starts a plain command
+// fire-and-forget, with no way to read its later exit code back (no `pane wait`, no
+// exit_code field anywhere in herdr's own responses). Deliberately generous: a real sprint
+// can legitimately run for hours across many issues and rounds.
+const DEFAULT_RELAUNCH_TIMEOUT_MS = 8 * 60 * 60 * 1000;
+const RELAUNCH_POLL_MS = 3_000;
+
+// Ambient env the front door itself may have that the dedicated pane has no reason to
+// already know — a dev/test seam (CREW_FAKE_DISPATCH, CREW_SCRIPTS), a debug flag
+// (CREW_VERBOSE), a pane-retention knob (CREW_HERDR_KEEP_PANE), or HOME. Forwarded only
+// when actually set on the front door's own env, never assumed present in the new pane —
+// `pane run` is not confirmed to inject anything beyond what `tab create --env` names.
+const RELAUNCH_ENV_PASSTHROUGH = ["HOME", "CREW_SCRIPTS", "CREW_VERBOSE", "CREW_FAKE_DISPATCH", "CREW_HERDR_KEEP_PANE"];
+
+/**
+ * The dedicated run pane's own env, built explicitly rather than assumed inherited. Never
+ * includes `HERDR_TAB_ID`: `renameHerdrTriggeringTab` only fires when it reads one from
+ * `process.env`, and this pane is not "the triggering pane" — its own tab is already
+ * labelled correctly at create time, so there is nothing for that rename logic to do here,
+ * and omitting the var is what keeps it from trying. `HERDR_PANE_ID`, when forwarded, still
+ * points at the *original* triggering pane (whatever the front door's own env named), not
+ * this new one — so the relaunched instance's own end-of-run notifyTriggeringPane still
+ * nudges the right pane.
+ */
+function relaunchEnvPairs({ workspaceId, triggeringPaneId, platform, sentinelPath, env }) {
+  const pairs = {
+    HERDR_ENV: "1",
+    HERDR_WORKSPACE_ID: workspaceId,
+    CREW_AFK_RELAUNCHED: "1",
+    CREW_AFK_RELAUNCH_SENTINEL: sentinelPath,
+    CREW_PLATFORM: platform,
+  };
+  if (triggeringPaneId) pairs.HERDR_PANE_ID = triggeringPaneId;
+  for (const k of RELAUNCH_ENV_PASSTHROUGH) if (env[k] !== undefined) pairs[k] = env[k];
+  return pairs;
+}
+
+function envFlags(pairs) {
+  return Object.entries(pairs).flatMap(([k, v]) => ["--env", `${k}=${v}`]);
+}
+
+/**
+ * Blocks until the relaunched instance's own finally block writes `sentinelPath` (its last
+ * act — see main.mjs), or until `timeoutMs` elapses. There is no herdr primitive that can
+ * tell us this any other way (see DEFAULT_RELAUNCH_TIMEOUT_MS above), so a sentinel file is
+ * the whole mechanism: `{exitCode, at}`, written once, read once, then deleted here
+ * regardless of outcome so `.scratch/.crew-afk-relaunch/` doesn't accumulate one file per run
+ * forever.
+ */
+async function waitForRelaunchSentinel(sentinelPath, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(sentinelPath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(sentinelPath, "utf8"));
+        return { exitCode: typeof parsed.exitCode === "number" ? parsed.exitCode : 1, timedOut: false };
+      } catch {
+        return { exitCode: 1, timedOut: false }; // partial/corrupt write — a real failure, not a hang
+      } finally {
+        try {
+          unlinkSync(sentinelPath);
+        } catch {
+          /* hygiene only */
+        }
+      }
+    }
+    // Never sleeps past the deadline — a short relaunchTimeoutMs (a test, or a genuinely
+    // fast-failing child) must not overshoot it by up to one full poll interval.
+    await new Promise((r) => setTimeout(r, Math.max(0, Math.min(RELAUNCH_POLL_MS, deadline - Date.now()))));
+  }
+  return { exitCode: 1, timedOut: true };
+}
+
+/**
+ * Gives crew-afk's own process a herdr pane of its own, distinct from the triggering pane and
+ * from every coder/reviewer/triage dispatch tab, so a human can watch the sprint's own
+ * round-by-round narration live without it competing with whatever else the triggering pane
+ * is doing. Runs a *plain* command via `pane run`, not `agent start` — crew-afk's own process
+ * is not a chat agent herdr should idle-detect or prompt.
+ *
+ * Returns `{exitCode, delegated, error?}`. `delegated` is true once responsibility for
+ * nudging the triggering pane (see notifyTriggeringPane) has been handed off — either because
+ * the relaunched instance itself got far enough to send its own nudge, or because this
+ * function sent an equivalent one itself after giving up — so the caller's own end-of-run
+ * nudge must fire only when `delegated` is false (the child never started at all).
+ */
+export async function relaunchIntoDedicatedPane(effects, { mainRoot, featureSlug, platform, argv, mainScript, relaunchTimeoutMs = DEFAULT_RELAUNCH_TIMEOUT_MS } = {}) {
+  const sentinelPath = join(mainRoot, ".scratch", ".crew-afk-relaunch", `${randomUUID()}.json`);
+  mkdirSync(dirname(sentinelPath), { recursive: true });
+
+  let workspaceId;
+  try {
+    workspaceId = await ensureHerdrWorkspace(effects, { featureSlug });
+  } catch (err) {
+    return { exitCode: 1, delegated: false, error: `could not create/reuse a herdr workspace for the dedicated run pane: ${err.message}` };
+  }
+
+  const pairs = relaunchEnvPairs({
+    workspaceId,
+    triggeringPaneId: process.env.HERDR_PANE_ID,
+    platform,
+    sentinelPath,
+    env: process.env,
+  });
+  const label = `${herdrWorkspaceLabel(featureSlug)}-run`;
+  const create = await herdrExec(effects, ["tab", "create", "--workspace", workspaceId, "--cwd", mainRoot, "--label", label, ...envFlags(pairs), "--no-focus"]);
+  const created = herdrJson(create)?.result;
+  const paneId = created?.root_pane?.pane_id;
+  const tabId = created?.tab?.tab_id;
+  if (create.code !== 0 || !paneId) {
+    return { exitCode: 1, delegated: false, error: `herdr tab create failed for the dedicated run pane: ${(create.stderr || create.stdout || "").trim()}` };
+  }
+
+  const run = await herdrExec(effects, ["pane", "run", paneId, process.execPath, mainScript, "run", ...argv]);
+  if (run.code !== 0) {
+    // herdr rejected the request outright — the node process never started, so there is no
+    // sentinel to wait for and no pane worth leaving open.
+    await closeHerdrPane(effects, tabId);
+    return { exitCode: 1, delegated: false, error: `herdr pane run failed to start the dedicated run pane: ${(run.stderr || run.stdout || "").trim()}` };
+  }
+
+  const { exitCode, timedOut } = await waitForRelaunchSentinel(sentinelPath, relaunchTimeoutMs);
+  if (timedOut) {
+    await notifyTriggeringPane(
+      effects,
+      `crew-afk: gave up waiting on its own dedicated pane after ${Math.round(relaunchTimeoutMs / 3_600_000)}h with no completion report — check that pane directly, and .scratch/<feature-slug>/traces/orchestrator.log.`,
+    );
+  }
+  await closeHerdrPane(effects, tabId);
+  return { exitCode, delegated: true };
 }
 
 /** A scalar TOML value: `key = "value"` — the same shape dispatch-codex-agent.sh's toml_scalar reads. */
@@ -1008,7 +1084,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   if (!reusingPane) {
     let workspaceId;
     try {
-      workspaceId = await ensureHerdrWorkspace(effects, { featureSlug: spec.featureSlug, logFile: spec.logFile });
+      workspaceId = await ensureHerdrWorkspace(effects, { featureSlug: spec.featureSlug });
     } catch (err) {
       return await finish(1, err.message, "");
     }

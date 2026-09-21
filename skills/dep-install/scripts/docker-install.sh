@@ -17,7 +17,7 @@
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> --main-root <path> \
 #     [--service <name>] [--install-cmd <cmd>] [--credential-target <command>] \
-#     [--timeout <sec, default 600>] [--lock-timeout <sec, default 30>] [--force]
+#     [--timeout <sec, default 1800>] [--lock-timeout <sec, default 30>] [--force]
 #
 # --force skips the manifest-fingerprint fast path below (see step 0) and always reinstalls —
 # dep-install's own retry rule uses this on a module-not-found error, since a FRESH verdict
@@ -55,7 +55,7 @@ MAIN_ROOT=""
 SERVICE=""
 INSTALL_CMD_OVERRIDE=""
 CREDENTIAL_TARGET=""
-TIMEOUT=600
+TIMEOUT=1800
 LOCK_TIMEOUT=30
 FORCE=0
 
@@ -258,12 +258,17 @@ OUT_FILE="$(mktemp)"
 trap 'rmdir "$LOCK_DIR" 2>/dev/null || true; rm -f "$OUT_FILE"' EXIT
 
 echo "Running: docker compose run --rm $SERVICE sh -c '$CONTAINER_CMD'"
+# Streamed live via tee, not just captured to $OUT_FILE — a caller running this in the
+# foreground (a human watching a herdr pane, or ensure-deps.sh's own MAIN_ROOT call once it
+# streams through too) otherwise sees nothing at all for however long the install takes.
+# $OUT_FILE still gets the full output for the tail-on-failure diagnostic below; PIPESTATUS[0]
+# (not plain $?) is required to read the actual command's exit code through the pipe to tee.
 if [[ -n "$TIMEOUT_BIN" ]]; then
-  "$TIMEOUT_BIN" "$TIMEOUT" "${RUN_CMD[@]}" >"$OUT_FILE" 2>&1
+  "$TIMEOUT_BIN" "$TIMEOUT" "${RUN_CMD[@]}" 2>&1 | tee "$OUT_FILE"
 else
-  "${RUN_CMD[@]}" >"$OUT_FILE" 2>&1
+  "${RUN_CMD[@]}" 2>&1 | tee "$OUT_FILE"
 fi
-RC=$?
+RC=${PIPESTATUS[0]}
 
 if [[ "$RC" -ne 0 ]]; then
   echo "--- docker compose output (tail) ---" >&2
@@ -274,5 +279,4 @@ fi
 
 [[ -f "$FINGERPRINT" ]] && bash "$FINGERPRINT" write --project-root "$PROJECT_ROOT" --stamp "$DOCKER_STAMP" >/dev/null 2>&1 || true
 
-cat "$OUT_FILE"
 exit 0

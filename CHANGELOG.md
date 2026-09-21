@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.29.110]
+
+### Fixed
+
+- **A coder worker whose worktree found no `docker-install.done` marker fell back to hand-running
+  `docker compose run` for its own install, with no locking at all** — unlike the mechanized
+  `ensure-deps.sh`/`docker-install.sh` path, which already serializes every docker install
+  through a shared `mkdir`-based lock. Multiple coders reaching that fallback around the same
+  time (confirmed from a real `orchestrator.log`: two issue slugs both logged `DEPS: docker`
+  deferred in the same round) each started their own container against the same shared named
+  volume — the redundant-install/lock-contention symptom this fixes. `docker-install.md`'s
+  install step now delegates to `docker-install.sh` itself (which already regenerates the
+  override, checks the fingerprint stamp, and guards against docker-in-docker nesting) instead
+  of reimplementing all of that by hand; on a lock timeout (exit 4) it now reports `BLOCKED`
+  rather than falling back to an unlocked install. Also raises `ensure-deps.sh`'s and
+  `docker-install.sh`'s shared install timeout default from 600s to 1800s, and the delegated
+  call's own `--lock-timeout` to 1800s, so a large first-time install has room to finish instead
+  of forcing every later caller to fall back to the (now-removed) unlocked path.
+
+### Added
+
+- **crew-afk's own process now runs in a dedicated herdr pane, not inside the triggering agent's
+  own pane.** Under `HERDR_ENV=1`, `run` relaunches itself into a fresh tab in the shared herdr
+  workspace (`relaunchIntoDedicatedPane`, reporting completion back to the front-door process via
+  a sentinel file — herdr's `pane run` has no way to read back a plain command's exit code) and
+  closes that tab itself once done. This frees the triggering pane for other use and makes the
+  sprint's own round-by-round narration show up live, natively, in its own pane. The previous
+  `tail -f` "log tab" (`ensureHerdrLogTab`/`closeHerdrLogTab`) is now redundant and removed.
+- **`Sprint.installDeps()` streams the install command's own live output** (via
+  `spawnWithTimeout`'s `onLine`, the same mechanism the headless dispatch path already used for a
+  worker's own trace) instead of capturing it wholesale and reporting one summary line after the
+  fact — previously the one step with zero visible progress for however long a cold-cache
+  install took. `ensure-deps.sh`/`docker-install.sh` now `tee` the actual install command's
+  output live rather than fully buffering it into a temp file, so this has something to stream.
+
 ## [1.29.109]
 
 ### Fixed

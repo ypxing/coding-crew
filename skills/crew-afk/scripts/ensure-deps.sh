@@ -4,7 +4,7 @@ set -uo pipefail
 # ensure-deps.sh — make a directory ready to run the project's own checks.
 #
 # Usage:
-#   ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, default 600>]
+#   ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, default 1800>]
 #
 # Output — exactly one `DEPS:` line, always exit 0:
 #
@@ -43,7 +43,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DIR=""
 SLUG=""
-TIMEOUT=600
+TIMEOUT=1800
 
 _usage() {
   echo "Usage: $0 --dir <path> [--slug <issue-slug>] [--timeout <sec>]" >&2
@@ -476,8 +476,12 @@ if [ "$MODE" = "USE_DOCKER" ]; then
   # needs a generated .npmrc/pip.conf/etc. silently gets ensure-env.sh's template-only
   # fallback instead of the credential-generating target a prior discovery already found.
   [ -n "$CACHED_CREDENTIAL_TARGET" ] && DOCKER_ARGS+=(--credential-target "$CACHED_CREDENTIAL_TARGET")
-  bash "$DOCKER_INSTALL_SCRIPT" "${DOCKER_ARGS[@]}" >"$DOCKER_OUT" 2>&1
-  DOCKER_RC=$?
+  # Streamed live via tee (PIPESTATUS[0] reads the real exit code through the pipe), not a
+  # plain redirect — a caller running this in the foreground otherwise sees nothing at all
+  # while the install runs. $DOCKER_OUT still gets the full output for the tail-on-failure
+  # diagnostic below.
+  bash "$DOCKER_INSTALL_SCRIPT" "${DOCKER_ARGS[@]}" 2>&1 | tee "$DOCKER_OUT"
+  DOCKER_RC=${PIPESTATUS[0]}
   DOCKER_CMD="$(grep -m1 '^Running: ' "$DOCKER_OUT" 2>/dev/null | sed 's/^Running: //')"
   [ -n "$DOCKER_CMD" ] || DOCKER_CMD="docker-install.sh"
 
@@ -548,13 +552,15 @@ if [ -n "$CACHED_INSTALL" ]; then
   # host-install.sh would have used.
   # "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}", not "${GIT_ENV_LINES[@]}": bash < 4.4
   # (macOS's stock /bin/bash is 3.2) treats an empty array under `set -u` as unbound.
+  # Streamed live via tee (see the docker path above for why) — $OUT_FILE still gets the
+  # full output for the failure diagnostic below.
   if [ -n "$TIMEOUT_BIN" ]; then
     "$TIMEOUT_BIN" "$TIMEOUT" env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
-      >"$OUT_FILE" 2>&1
+      2>&1 | tee "$OUT_FILE"
   else
-    env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" >"$OUT_FILE" 2>&1
+    env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" 2>&1 | tee "$OUT_FILE"
   fi
-  RC=$?
+  RC=${PIPESTATUS[0]}
   CMD="$CACHED_INSTALL"
 
   if [ "$RC" -eq 0 ]; then
@@ -571,14 +577,16 @@ if [ -n "$CACHED_INSTALL" ]; then
   _report "failed $CMD (exit $RC) (see $DEPS_LOG)" skip
 fi
 
+# Streamed live via tee (see the docker path above for why) — $OUT_FILE still gets the full
+# output for the failure diagnostic below.
 if [ -n "$TIMEOUT_BIN" ]; then
   "$TIMEOUT_BIN" "$TIMEOUT" bash "$DEP_SCRIPTS/host-install.sh" --project-root "$DIR" \
-    --main-root "$MAIN_ROOT_EFFECTIVE" >"$OUT_FILE" 2>&1
+    --main-root "$MAIN_ROOT_EFFECTIVE" 2>&1 | tee "$OUT_FILE"
 else
   bash "$DEP_SCRIPTS/host-install.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" \
-    >"$OUT_FILE" 2>&1
+    2>&1 | tee "$OUT_FILE"
 fi
-RC=$?
+RC=${PIPESTATUS[0]}
 
 # host-install.sh announces what it ran ("Running: npm ci"), so the command in the DEPS:
 # line is its own report of it rather than a second guess at the package manager.
