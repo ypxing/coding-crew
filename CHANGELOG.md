@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.107]
+
+### Changed
+
+- **`crew-afk` dispatches issues from a continuous worker pool instead of round batches.**
+  Workers now pull from one live queue for the whole sprint, so a freed slot picks up
+  whichever issue is dispatchable the moment it is, instead of waiting for every issue in
+  the same round to finish first. Per-issue attempt tracking (`state.sh`'s new `attempt`
+  subcommand) replaces the sprint-wide round counter, and an explicit per-issue retry cap
+  (2 attempts before blocking) replaces the old "two dry rounds" stall detection.
+  `--max-rounds` now caps attempts per issue rather than the sprint's total round count.
+
+### Fixed
+
+- **A sprint that hit `--max-rounds` could leave a CRITICAL review finding stuck at
+  `deferred-findings` forever.** The capped exit broke out of the sprint loop without
+  flushing parked fix issues to `ready-for-agent`, unlike every other exit path — a
+  pre-existing bug in the old round-batch loop, carried forward until now. The `--max-rounds`
+  exit now flushes findings before ending the sprint, same as a clean finish or a stall.
+
 ## [1.29.106]
 
 ### Fixed
