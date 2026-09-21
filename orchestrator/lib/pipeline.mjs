@@ -311,9 +311,8 @@ export async function runWorker(ctx, issue) {
   );
   // herdrReuse is non-null only when handleVerificationFailure queued this exact slug's
   // pane last round (see sprint.consumeHerdrReusePending) — spending it here, once, is what
-  // bounds reuse to a single retry. herdrPersistPane applies to every coder dispatch, not
-  // just a retry: verify-worktree.sh runs after this returns, so even a first attempt might
-  // turn out to be the one worth keeping open (see handleVerificationFailure below).
+  // bounds reuse to a single retry, and only ever finds anything when CREW_HERDR_KEEP_PANE=1
+  // kept that prior pane open (see dispatch.mjs's keepPane).
   const herdrReuse = options.herdr ? sprint.consumeHerdrReusePending(issue.slug) : null;
   const result = await dispatch(
     effects,
@@ -333,7 +332,6 @@ export async function runWorker(ctx, issue) {
       round: ctx.round,
       reportPath: sidecarFile,
       herdr: options.herdr,
-      herdrPersistPane: options.herdr,
       herdrReuse,
     },
     {
@@ -408,8 +406,9 @@ export async function runHousekeeping(ctx, worker) {
   }
   if (pre.status !== "complete") {
     // A coder's own honest partial self-report gets redispatched next round the same as an
-    // AC:unmet or fixable-verify-failure retry does — its pane (herdrPersistPane in runWorker)
-    // is worth carrying into that retry too, bounded to one reuse per issue like the other two.
+    // AC:unmet or fixable-verify-failure retry does — its pane, if CREW_HERDR_KEEP_PANE=1 kept
+    // one open, is worth carrying into that retry too, bounded to one reuse per issue like the
+    // other two.
     const herdrEligible =
       options.herdr && !!worker.dispatch.herdrTabId && sprint.herdrReuseState(issue.slug) === "none";
     if (herdrEligible) {
@@ -482,8 +481,8 @@ export async function runHousekeeping(ctx, worker) {
   if (review.parsed.verdict !== "all-met") {
     // Same bounded, one-retry-per-issue reuse handleVerificationFailure offers a fixable
     // triage verdict — an AC: unmet verdict sends the coder back to fix its own branch too,
-    // so the pane it already kept open (herdrPersistPane in runWorker) is worth carrying into
-    // that retry instead of starting the fix cold.
+    // so a pane CREW_HERDR_KEEP_PANE=1 already kept open is worth carrying into that retry
+    // instead of starting the fix cold.
     const herdrEligible =
       options.herdr && !!worker.dispatch.herdrTabId && sprint.herdrReuseState(issue.slug) === "none";
     if (herdrEligible) {
@@ -596,8 +595,8 @@ async function handleVerificationFailure(ctx, worker, outcome, verify) {
   // herdr pane reuse, bounded to one retry per issue (see sprint.consumeHerdrReusePending):
   // only worth queuing when the coder is actually getting redispatched next round (a fixable
   // verdict — a not-fixable retry skips the coder entirely, see runWorker's notFixableRetry),
-  // this dispatch actually left a pane open (herdrPersistPane, options.herdr), and this slug
-  // hasn't already spent its one reuse.
+  // this dispatch actually left a pane open (only when CREW_HERDR_KEEP_PANE=1, options.herdr),
+  // and this slug hasn't already spent its one reuse.
   const herdrEligible =
     fixable && options.herdr && !!worker.dispatch.herdrTabId && sprint.herdrReuseState(worker.issue.slug) === "none";
   if (herdrEligible) {

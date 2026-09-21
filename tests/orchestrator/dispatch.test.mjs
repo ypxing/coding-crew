@@ -1460,7 +1460,7 @@ test("dispatchViaHerdr checks herdr's own server status when a prompt call fails
       json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
       { code: 1, stdout: "", stderr: "" }, // agent prompt --wait — fails with no output
       { code: 0, stdout: "status: running\n", stderr: "" }, // herdr status check
-      // No "tab close" response: a failed dispatch keeps its pane open by default.
+      json({ result: { type: "ok" } }), // tab close — CREW_HERDR_KEEP_PANE unset, off by default
     ],
     { mainRoot: root },
   );
@@ -1485,7 +1485,7 @@ test("dispatchViaHerdr's herdr-status check reports a crashed/restarted server, 
       json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
       { code: 1, stdout: "", stderr: "" }, // agent prompt --wait — fails with no output
       { code: 1, stdout: "", stderr: "connection refused" }, // herdr status check — also fails
-      // No "tab close" response: a failed dispatch keeps its pane open by default.
+      json({ result: { type: "ok" } }), // tab close — CREW_HERDR_KEEP_PANE unset, off by default
     ],
     { mainRoot: root },
   );
@@ -1929,7 +1929,7 @@ test("dispatchViaHerdr never reuses one coder's pane for another coder — two d
 
 // ─── herdr pane persistence + reuse (one retry, see pipeline.mjs's herdr-reuse) ────────
 
-test("dispatchViaHerdr leaves a successful dispatch's tab open when spec.herdrPersistPane is set, returning its ids instead of closing it", async () => {
+test("dispatchViaHerdr closes a successful dispatch's tab by default", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
   const effects = fakeHerdrEffects(
@@ -1940,28 +1940,21 @@ test("dispatchViaHerdr leaves a successful dispatch's tab open when spec.herdrPe
       json({ result: { agent: { interactive_ready: true } } }),
       json({ result: { agent: { agent_status: "idle" } } }),
       { code: 0, stdout: RENDERED_REPLY, stderr: "" },
-      // No "tab close" response: persistPane must skip it entirely on success.
+      json({ result: { type: "ok" } }), // tab close — CREW_HERDR_KEEP_PANE unset, off by default
     ],
     { mainRoot: root },
   );
 
-  const result = await dispatchViaHerdr(
-    effects,
-    "claude",
-    spec(root, promptFile, { slug: "alpha", herdrPersistPane: true }),
-    { timeoutMs: 60_000 },
-  );
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { slug: "alpha" }), {
+    timeoutMs: 60_000,
+  });
 
   assert.equal(result.code, 0);
-  assert.equal(result.herdrTabId, "w1:t1");
-  assert.equal(result.herdrPaneId, "w1:p1");
-  assert.ok(
-    !effects._calls.some((c) => c[1] === "tab" && c[2] === "close"),
-    "a persisted pane's tab is never closed by the dispatch that produced it",
-  );
+  assert.equal(result.herdrTabId, null, "a successful dispatch's ids are not handed back once its tab is closed");
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
 });
 
-test("dispatchViaHerdr keeps a failed dispatch's tab open by default, naming it with the round so a same-issue retry never collides", async () => {
+test("dispatchViaHerdr keeps a successful dispatch's tab open when CREW_HERDR_KEEP_PANE=1, returning its ids instead of closing it", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
   const effects = fakeHerdrEffects(
@@ -1970,67 +1963,100 @@ test("dispatchViaHerdr keeps a failed dispatch's tab open by default, naming it 
       ...herdrLogTabResponses(),
       json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
       json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      err(1, "boom", "agent_prompt_stalled"),
-      { code: 0, stdout: "", stderr: "" }, // agent read after the failed prompt
-      // No "tab close" response: a failed dispatch is kept open by default now.
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(
-    effects,
-    "claude",
-    spec(root, promptFile, { slug: "alpha", herdrPersistPane: true, round: 2 }),
-    { timeoutMs: 60_000 },
-  );
-
-  assert.equal(result.code, 1);
-  assert.equal(result.herdrTabId, "w1:t1", "a failed dispatch hands back its ids to keep open by default");
-  assert.equal(result.herdrName, "r2-alpha-coder");
-  assert.ok(
-    !effects._calls.some((c) => c[1] === "tab" && c[2] === "close"),
-    "the default keeps a failed dispatch's tab open for inspection",
-  );
-
-  const startCall = effects._calls.find((c) => c[1] === "agent" && c[2] === "start");
-  assert.equal(
-    startCall[3],
-    "r2-alpha-coder",
-    "the round folds into the pane's own herdr name, so a later retry's fresh name never collides with this kept-open one",
-  );
-});
-
-test("dispatchViaHerdr closes a failed dispatch's tab when CREW_HERDR_KEEP_PANE=0 opts out of the new default", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      ...herdrLogTabResponses(),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      err(1, "boom", "agent_prompt_stalled"),
-      { code: 0, stdout: "", stderr: "" }, // agent read after the failed prompt
-      json({ result: { type: "ok" } }), // tab close — opted back out of the keep-open default
+      json({ result: { agent: { agent_status: "idle" } } }),
+      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
+      // No "tab close" response: CREW_HERDR_KEEP_PANE=1 must skip it entirely on success.
     ],
     { mainRoot: root },
   );
 
   const prior = process.env.CREW_HERDR_KEEP_PANE;
-  process.env.CREW_HERDR_KEEP_PANE = "0";
+  process.env.CREW_HERDR_KEEP_PANE = "1";
+  try {
+    const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { slug: "alpha" }), {
+      timeoutMs: 60_000,
+    });
+
+    assert.equal(result.code, 0);
+    assert.equal(result.herdrTabId, "w1:t1");
+    assert.equal(result.herdrPaneId, "w1:p1");
+    assert.ok(
+      !effects._calls.some((c) => c[1] === "tab" && c[2] === "close"),
+      "a kept-open pane's tab is never closed by the dispatch that produced it",
+    );
+  } finally {
+    if (prior === undefined) delete process.env.CREW_HERDR_KEEP_PANE;
+    else process.env.CREW_HERDR_KEEP_PANE = prior;
+  }
+});
+
+test("dispatchViaHerdr closes a failed dispatch's tab by default", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
+      err(1, "boom", "agent_prompt_stalled"),
+      { code: 0, stdout: "", stderr: "" }, // agent read after the failed prompt
+      json({ result: { type: "ok" } }), // tab close — CREW_HERDR_KEEP_PANE unset, off by default
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { slug: "alpha" }), {
+    timeoutMs: 60_000,
+  });
+
+  assert.equal(result.code, 1);
+  assert.equal(result.herdrTabId, null, "a failed dispatch's ids are not handed back once its tab is closed");
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
+});
+
+test("dispatchViaHerdr keeps a failed dispatch's tab open when CREW_HERDR_KEEP_PANE=1, naming it with the round so a same-issue retry never collides", async () => {
+  const { root, promptFile } = fixture();
+  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      ...herdrLogTabResponses(),
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
+      json({ result: { agent: { interactive_ready: true } } }),
+      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
+      err(1, "boom", "agent_prompt_stalled"),
+      { code: 0, stdout: "", stderr: "" }, // agent read after the failed prompt
+      // No "tab close" response: CREW_HERDR_KEEP_PANE=1 keeps a failed dispatch's tab open.
+    ],
+    { mainRoot: root },
+  );
+
+  const prior = process.env.CREW_HERDR_KEEP_PANE;
+  process.env.CREW_HERDR_KEEP_PANE = "1";
   try {
     const result = await dispatchViaHerdr(
       effects,
       "claude",
-      spec(root, promptFile, { slug: "alpha", herdrPersistPane: true }),
+      spec(root, promptFile, { slug: "alpha", round: 2 }),
       { timeoutMs: 60_000 },
     );
 
     assert.equal(result.code, 1);
-    assert.equal(result.herdrTabId, null, "opting out never hands back ids to keep open");
-    assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
+    assert.equal(result.herdrTabId, "w1:t1", "a kept-open failed dispatch hands back its ids");
+    assert.equal(result.herdrName, "r2-alpha-coder");
+    assert.ok(
+      !effects._calls.some((c) => c[1] === "tab" && c[2] === "close"),
+      "CREW_HERDR_KEEP_PANE=1 keeps a failed dispatch's tab open for inspection",
+    );
+
+    const startCall = effects._calls.find((c) => c[1] === "agent" && c[2] === "start");
+    assert.equal(
+      startCall[3],
+      "r2-alpha-coder",
+      "the round folds into the pane's own herdr name, so a later retry's fresh name never collides with this kept-open one",
+    );
   } finally {
     if (prior === undefined) delete process.env.CREW_HERDR_KEEP_PANE;
     else process.env.CREW_HERDR_KEEP_PANE = prior;

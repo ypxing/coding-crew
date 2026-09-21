@@ -514,8 +514,8 @@ function herdrUniqueSuffix(raw) {
  * way the issue tracker's own files do — e.g. `i42-implement-user-auth-coder`. Led with `i`
  * because herdr's name regex requires a leading letter, so a bare digit can't start the name.
  *
- * round, when given, is inserted the same way (`r3-`) — a kept-open failed pane (see
- * CREW_HERDR_KEEP_PANE's new default in dispatchViaHerdr) still holds its herdr agent name
+ * round, when given, is inserted the same way (`r3-`) — a kept-open pane (see
+ * CREW_HERDR_KEEP_PANE in dispatchViaHerdr) still holds its herdr agent name
  * until something closes it, so the *next* round's fresh dispatch for the same issue+role
  * needs a name distinct from that still-live one to avoid `agent_name_taken`. Omitted only
  * by a caller reusing a specific already-open pane (spec.herdrReuse carries that pane's own
@@ -911,9 +911,10 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   // titled just "implement-user-auth (coder)" is indistinguishable from any other coder pane
   // on the same slug across rounds/retries once more than one issue is in flight.
   const displayLabel = spec.issueNumber ? `#${spec.issueNumber} ${label}` : label;
-  // spec.herdrReuse ({tabId, paneId, name}) names a pane a prior dispatch left open (see
-  // spec.herdrPersistPane below) — set only by a caller that tracked those ids itself
-  // (pipeline.mjs's herdr-reuse bookkeeping), never derived here. Its own `name` rides along
+  // spec.herdrReuse ({tabId, paneId, name}) names a pane a prior dispatch left open (only
+  // possible when CREW_HERDR_KEEP_PANE=1 kept it — see keepPane below) — set only by a caller
+  // that tracked those ids itself (pipeline.mjs's herdr-reuse bookkeeping), never derived
+  // here. Its own `name` rides along
   // rather than being recomputed from this call's (possibly later) spec.round: the pane is
   // still registered in herdr under whatever name it was `agent start`-ed with originally,
   // and this round's own round number has nothing to do with that. Reusing it skips
@@ -927,32 +928,25 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   let paneId = spec.herdrReuse?.paneId ?? null;
   const reusingPane = !!spec.herdrReuse;
 
-  // Default on: a failed dispatch's tab stays open instead of closing here, so `herdr agent
-  // read <name>` (or the herdr UI) can show what the pane actually rendered — otherwise the
-  // transcript is gone the instant a DISPATCH-FAIL is logged, which is exactly when you'd
-  // want to see it. This used to be debug-only (opt-in via CREW_HERDR_KEEP_PANE=1) because a
-  // kept pane holds its herdr agent name, and a same-named retry would fail with
-  // agent_name_taken — spec.round folded into `name` above is what makes that safe to default
-  // on: the next round's fresh dispatch for this same issue+role gets a distinct name, never
-  // the one the kept-open failed pane still holds. Set CREW_HERDR_KEEP_PANE=0 to opt back out
-  // (e.g. to avoid panes piling up in unattended CI).
-  const keepPaneOnFail = process.env.CREW_HERDR_KEEP_PANE !== "0";
-  // spec.herdrPersistPane (set only for a herdr coder dispatch — see pipeline.mjs) defers
-  // closing a *successful* dispatch's tab to the caller: verify-worktree.sh runs after this
-  // returns, so at this point nobody yet knows whether the pane will be worth reusing.
-  // herdrTabId/herdrPaneId ride on the return value either way so the caller can close it
-  // itself once it does know.
-  const persistPane = !!spec.herdrPersistPane;
+  // Off by default: this call closes its own tab as soon as it finishes, whether the
+  // dispatch succeeded or failed, so panes don't pile up across rounds. Set
+  // CREW_HERDR_KEEP_PANE=1 to keep every pane open instead — e.g. to inspect a failed
+  // dispatch's transcript with `herdr agent read <name>` (otherwise it's gone the instant
+  // [DISPATCH-FAIL] is logged), or to let a successful dispatch's pane be reused by
+  // handleVerificationFailure if verify-worktree.sh fails later this round (see
+  // spec.herdrReuse above). A kept pane holds its herdr agent name, but spec.round folded
+  // into `name` above makes that safe: the next round's fresh dispatch for this same
+  // issue+role gets a distinct name, never the one a kept-open pane still holds.
+  const keepPane = process.env.CREW_HERDR_KEEP_PANE === "1";
 
   const finish = async (code, stderr, text, timedOut = false) => {
     const failed = code !== 0 || !((text ?? "").trim());
-    const keepOpen = failed ? keepPaneOnFail : persistPane;
-    if (tabId && !keepOpen) {
+    if (tabId && !keepPane) {
       await herdrExec(effects, ["tab", "close", tabId]);
     }
     writeFileSync(spec.outFile, text ?? "");
     if (spec.logFile && failed) {
-      const kept = failed && keepPaneOnFail ? ` kept-pane=${name} pane=${paneId ?? "?"}` : "";
+      const kept = keepPane ? ` kept-pane=${name} pane=${paneId ?? "?"}` : "";
       appendLine(
         spec.logFile,
         `[DISPATCH-FAIL] agent=${spec.agent} herdr=1 code=${code} timedOut=${!!timedOut} outEmpty=${!((text ?? "").trim())}${kept} slug=${spec.slug ?? "?"} ${(stderr || "").trim().slice(0, 400)}`,
@@ -964,9 +958,9 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
       dryRun: false,
       stderr: stderr ?? "",
       text: text ?? "",
-      herdrTabId: tabId && keepOpen ? tabId : null,
-      herdrPaneId: paneId && keepOpen ? paneId : null,
-      herdrName: tabId && keepOpen ? name : null,
+      herdrTabId: tabId && keepPane ? tabId : null,
+      herdrPaneId: paneId && keepPane ? paneId : null,
+      herdrName: tabId && keepPane ? name : null,
       // This dispatch's own attempt failed to communicate (a transport/CLI error, a timeout,
       // a rejected/blocked pane) or produced nothing usable — not whether some *later* step
       // (verify, review) went on to fail. A caller that keeps this herdrTabId open past this
@@ -1159,7 +1153,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
 }
 
 /**
- * Explicit close for a pane a caller kept open via spec.herdrPersistPane (see
+ * Explicit close for a pane a caller kept open via CREW_HERDR_KEEP_PANE=1 (see
  * dispatchViaHerdr's finish()) — the herdr-reuse bookkeeping in pipeline.mjs calls this once
  * it knows the pane will not be reused again (verify passed, or the one retry is spent).
  * A no-op when tabId is falsy, so a caller that never persisted a pane can call this

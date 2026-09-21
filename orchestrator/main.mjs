@@ -29,14 +29,18 @@
  *                                           that nudge. All four platforms; codex's
  *                                           reply-extraction is unverified live (see
  *                                           dispatch.mjs's dispatchViaHerdr doc comment)
- *   $CREW_HERDR_KEEP_PANE=1                 with HERDR_ENV=1: leave a failed dispatch's
- *                                           tab open instead of closing it, so `herdr agent
- *                                           read <name>` can show what the pane actually
- *                                           rendered. Named agent = the issue number,
+ *   $CREW_HERDR_KEEP_PANE=1                 with HERDR_ENV=1: leave every dispatch's tab
+ *                                           open instead of closing it as soon as it finishes
+ *                                           (success or fail), so `herdr agent read <name>`
+ *                                           can show what a failed pane actually rendered, and
+ *                                           so a successful coder's pane can be reused on a
+ *                                           same-round retry (verify-fail/AC-unmet/partial)
+ *                                           instead of starting cold. Off by default so panes
+ *                                           don't pile up. Named agent = the issue number,
  *                                           sanitised slug and a role tag, one per coder/review/
- *                                           triage dispatch (see herdrDispatchName). Debug
- *                                           only — a kept pane holds its name, so a retry
- *                                           fails with agent_name_taken.
+ *                                           triage dispatch (see herdrDispatchName); spec.round
+ *                                           folded into that name keeps a same-issue+role retry
+ *                                           safe from agent_name_taken even with a pane kept open.
  *   --model <alias|inherit>                coder model; reviewer/triage/commandsDiscovery/
  *                                           coverageValidation match it unless
  *                                           .coding-crew/afk-models.json names them explicitly
