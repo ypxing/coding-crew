@@ -66,6 +66,17 @@ export class Sprint {
     // reuse to exactly one retry per issue for *this* process's run. A crashed/resumed
     // sprint just loses the optimisation (falls back to a fresh pane), never correctness.
     this._herdrReuse = new Map();
+    // slug -> count, in-memory only, this invocation's own retry-cap counter (see
+    // bumpAttempt). Deliberately never read back from sprint-state.json: crew-summary.sh's
+    // "STALLED: resolve blockers and re-run" is the documented recovery path for a blocked
+    // issue, and a persisted, ever-growing count would make that re-run permanently refuse
+    // to retry it. What's written to disk (`.attempts`, `.round`, `.rounds`) is a mirror
+    // for reporting only, never read back to decide anything.
+    this._attempts = new Map();
+    // slug set, in-memory only, this invocation's own record of which issues finishBlocked
+    // has already given up on (see markBlockedThisRun) — what loop.mjs's claimNext() checks
+    // instead of the persisted `blocked_slugs`, for the same cross-invocation reason above.
+    this._blockedThisRun = new Set();
   }
 
   static init(effects, { featureSlug, coverage, promote, passthrough = [], deps = true, log = () => {} }) {
@@ -181,8 +192,46 @@ export class Sprint {
   setModel(alias) {
     return this.state(["model", alias]);
   }
-  setRound(n, issues) {
-    return this.state(["round", String(n), ...(issues != null ? ["--issues", String(issues)] : [])]);
+  /**
+   * Spend one attempt at `slug` and return its 1-based number for this invocation. Called
+   * exactly once per dispatch, at claim time (see runOne in loop.mjs) — before runWorker/
+   * runHousekeeping run, so every pass (including the one that finally completes) is
+   * counted, and pipeline.mjs's retry cap (finishRetryOrBlock) can compare this same
+   * number against the cap with no separate read needed. The count itself lives only in
+   * memory (see the constructor) — what's written to disk here is a mirror for
+   * crew-summary.sh's "Rounds: N", not a value anything reads back.
+   */
+  bumpAttempt(slug) {
+    const n = (this._attempts.get(slug) ?? 0) + 1;
+    this._attempts.set(slug, n);
+    this.state(["attempt", "--slug", slug, "--n", String(n)]);
+    return n;
+  }
+
+  /**
+   * Read-only peek at the same in-memory counter, before spending another attempt — what
+   * claimNext() (loop.mjs) uses to enforce `--max-rounds` per issue: every issue may reach
+   * that many attempts, the same way a round-batch sprint gave every issue one attempt per
+   * round. Checking a global dispatch count instead would let the first issue claimed
+   * exhaust the whole budget while its siblings never ran even once.
+   */
+  attemptCount(slug) {
+    return this._attempts.get(slug) ?? 0;
+  }
+
+  /** Recorded once finishBlocked gives up on `slug` — see claimNext() in loop.mjs. */
+  markBlockedThisRun(slug) {
+    this._blockedThisRun.add(slug);
+  }
+
+  /**
+   * Whether `slug` has already been given up on *this invocation* — deliberately not the
+   * persisted `blocked_slugs` (see the constructor's comment): a fresh `crew-afk` run must
+   * always get a fresh attempt budget, so a human who fixes whatever blocked it can just
+   * re-run rather than needing some separate unblock step.
+   */
+  isBlockedThisRun(slug) {
+    return this._blockedThisRun.has(slug);
   }
   complete(slug, branch) {
     return this.state(["complete", "--slug", slug, "--branch", branch]);

@@ -1,93 +1,128 @@
 /**
- * loop.mjs — the sprint loop and the wrap-up, as a state machine.
+ * loop.mjs — the sprint loop and the wrap-up, as a continuous dispatch pool.
  *
- * Round → dispatch → housekeep → repeat, with three exits: no issues left, the stall
- * limit, or a round cap. Every exit runs the findings flush first, because a sprint
- * that stalled on unrelated issues may still have merged code carrying a CRITICAL
- * finding — and a flush that promotes something re-enters the loop as Phase 2 with the
- * stall counter reset (entering Phase 2 at the stall limit would abort it on the first
- * partial round).
+ * `options.parallel` workers pull from the same live queue for the whole sprint — there
+ * is no batch boundary where the pool waits for every currently-running issue to finish
+ * before a freed slot can pick up the next one. A worker that just failed becomes
+ * dispatchable again (via its retry) the moment it's retained, and a sibling that just
+ * unblocked a dependent issue makes that issue dispatchable the moment it completes —
+ * both get picked up by whichever slot frees first, not by whatever slower issue the old
+ * round-batch model happened to still be waiting on.
  *
- * Phase is deliberately not stored anywhere: the parked `Status: deferred-findings`
- * lines on disk are the only record, which is what makes the flush idempotent.
+ * What used to be "round" — a wave of issues dispatched together — no longer exists as a
+ * synchronization point. What's left of the word is repurposed as each *issue's own*
+ * attempt count (see sprint.bumpAttempt, spent once per dispatch in runOne below, and
+ * pipeline.mjs's finishRetryOrBlock): the per-issue retry cap that used to fall out
+ * accidentally from a round's real wall-clock cost is now the only thing throttling
+ * retries, so it has to be explicit.
+ *
+ * Two exits: nothing left to do (every open issue completed, or permanently blocked by a
+ * spent retry cap or an unresolvable dependency), or the `--max-rounds` safety cap — each
+ * issue may reach that many attempts, the same guarantee a round-batch sprint gave for
+ * free (every issue gets one attempt per round before any issue gets a second). Checked
+ * per issue, not as a global dispatch count, so a small --max-rounds still lets every
+ * issue take its turn instead of the first one claimed exhausting the whole budget while
+ * its siblings never run. Either way, findings are flushed first — see flush() below —
+ * because a sprint that stalled on unrelated issues may still have merged code carrying a
+ * CRITICAL finding.
  */
 
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { mapPool } from "./effects.mjs";
 import { runHousekeeping, runWorker } from "./pipeline.mjs";
-import { selectDispatchable } from "./tracker.mjs";
+import { listOpenIssueFiles, selectDispatchable } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
-
-const STALL_LIMIT = 2;
 
 export async function runSprint(ctx) {
   const { sprint, effects, options } = ctx;
-  let round = 0;
-  let dryRounds = 0;
-  let stalled = false;
+  const parallel = Math.max(1, options.parallel ?? 1);
+  const inFlight = new Set();
   const history = [];
+  let waiters = [];
 
-  while (true) {
-    // Scoped to this sprint's own feature — see selectDispatchable()'s docstring. An
-    // unscoped scan here would dispatch a ready-for-agent issue from an unrelated
-    // .scratch/<other-feature>/ onto this sprint's feature branch.
+  const notifyAll = () => {
+    const pending = waiters;
+    waiters = [];
+    for (const resolve of pending) resolve();
+  };
+  const waitForChange = () => new Promise((resolve) => waiters.push(resolve));
+
+  // Scoped to this sprint's own feature — see selectDispatchable()'s docstring. An
+  // unscoped scan here would dispatch a ready-for-agent issue from an unrelated
+  // .scratch/<other-feature>/ onto this sprint's feature branch. sprint.isBlockedThisRun
+  // (in-memory, this invocation only) is consulted here — not the persisted
+  // `blocked_slugs` — because a slug that spent its retry cap never has its issue file's
+  // own `Status:` rewritten (only close-issue.sh writes that), so nothing on disk marks it
+  // unavailable; if this checked the persisted list instead, a fresh `crew-afk` run could
+  // never retry it, breaking crew-summary.sh's own "resolve blockers and re-run" advice.
+  function claimNext() {
     const issues = selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug });
+    return issues.find(
+      (i) =>
+        !inFlight.has(i.slug) &&
+        !sprint.isBlockedThisRun(i.slug) &&
+        (!options.maxRounds || sprint.attemptCount(i.slug) < options.maxRounds),
+    ) ?? null;
+  }
 
-    if (!issues.length) {
-      if (flush(ctx) > 0) {
-        dryRounds = 0;
-        continue;
-      }
-      break;
-    }
-
-    round += 1;
-    ctx.round = round;
-    sprint.setRound(round, issues.length);
-    ctx.log(`\n=== Round ${round}: ${issues.length} issue(s) — ${issues.map((i) => i.slug).join(", ")}`);
-
-    // Worker dispatch and housekeeping (verify → review → merge → close) run as one
-    // pipeline per issue, all under the same pool — so issue A's review is dispatched the
-    // moment issue A's coder and verify finish, instead of waiting for every coder in the
-    // round to land first. This is safe to run concurrently across issues without a lock:
-    // every step that touches the main checkout (verify-worktree.sh, merge-branches.sh,
-    // close-issue.sh, git checkout) goes through effects.bash/git, which shells out with
-    // spawnSync — a blocking call that cannot interleave with another issue's JS in this
-    // single-threaded process, so two of them can never actually run at the same instant.
-    // Only the two truly async legs (the coder/reviewer dispatch itself) overlap, which is
-    // the whole point. mapPool still returns results in issue order regardless of which
-    // finished first, so `outcomes` below stays deterministic.
-    const outcomes = await mapPool(issues, options.parallel, async (issue) => {
-      const worker = await runWorker(ctx, issue);
-      return runHousekeeping(ctx, worker);
-    });
-    history.push({ round, outcomes });
-
-    const completed = outcomes.filter((o) => o.status === "complete").length;
-    dryRounds = completed > 0 ? 0 : dryRounds + 1;
-    ctx.log(
-      `--- Round ${round}: complete=${completed} partial=${outcomes.filter((o) => o.status === "partial").length} blocked=${outcomes.filter((o) => o.status === "blocked").length}`,
+  /** True once every remaining open issue is either done, blocked, or at its --max-rounds
+   * limit — as opposed to genuinely nothing left, which flush() still needs to check. */
+  function cappedByMaxRounds() {
+    if (!options.maxRounds) return false;
+    return selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).some(
+      (i) => !sprint.isBlockedThisRun(i.slug) && sprint.attemptCount(i.slug) >= options.maxRounds,
     );
+  }
 
-    if (dryRounds >= STALL_LIMIT) {
-      // One dry round is not a stall — retry once first. Two is.
-      if (flush(ctx) > 0) {
-        dryRounds = 0;
+  async function runOne(issue) {
+    inFlight.add(issue.slug);
+    const attempt = sprint.bumpAttempt(issue.slug);
+    ctx.log(`\n=== slug=${issue.slug} attempt=${attempt} — dispatching`);
+    const worker = await runWorker(ctx, issue, attempt);
+    const outcome = await runHousekeeping(ctx, worker);
+    history.push(outcome);
+    ctx.log(
+      `--- slug=${issue.slug} attempt=${attempt} status=${outcome.status}${outcome.reason ? ` reason=${outcome.reason}` : ""}`,
+    );
+    inFlight.delete(issue.slug);
+    notifyAll();
+  }
+
+  // One of `parallel` of these runs concurrently. Each keeps claiming and running issues
+  // until there's genuinely nothing left to claim (nothing claimable and nothing any
+  // sibling is still working on that could unblock or free up more).
+  async function workerLoop() {
+    while (true) {
+      const issue = claimNext();
+      if (issue) {
+        await runOne(issue);
         continue;
       }
-      stalled = true;
-      break;
-    }
-    if (options.maxRounds && round >= options.maxRounds) {
-      ctx.log(`Round cap reached (--max-rounds ${options.maxRounds}).`);
-      break;
+      if (inFlight.size === 0) return;
+      await waitForChange();
     }
   }
 
+  let capped = false;
+  while (true) {
+    await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
+
+    capped = cappedByMaxRounds();
+    if (capped) {
+      flush(ctx);
+      ctx.log(`Round cap reached (--max-rounds ${options.maxRounds}).`);
+      break;
+    }
+    if (flush(ctx) > 0) continue;
+    break;
+  }
+
+  const stalled =
+    !capped && listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0;
+
   await wrapUp(ctx, { stalled });
-  return { rounds: round, stalled, history };
+  return { stalled, history };
 }
 
 /** Phase 1 → Phase 2: flip parked fix issues to ready-for-agent. */
@@ -123,8 +158,8 @@ async function wrapUp(ctx, { stalled }) {
   // of coverage.stdout (as this used to do) matches "skipped" anywhere inside the PRD's own
   // requirements prose — a PRD describing what should or shouldn't be skipped is exactly the
   // kind of text this step exists to read — and would silently skip a real validation with
-  // nothing logged to say why. See commands.mjs's discoverCommands() for the same fix on
-  // command discovery's identical shape.
+  // nothing logged to say why. See commands.mjs for the same fix on command discovery's
+  // identical shape.
   const coverageFirstLine = coverage.stdout.split("\n", 1)[0] ?? "";
   if (!/^Coverage validation: skipped/.test(coverageFirstLine)) {
     const outFile = join(sprint.env.SPRINT_DIR, "coverage-report.md");
@@ -164,7 +199,7 @@ async function wrapUp(ctx, { stalled }) {
   ctx.out("NO MORE TASKS");
 }
 
-/** Per-round review report file: one timestamped file, appended to across a round. */
+/** Per-sprint review report file: one timestamped file, appended to across the whole run. */
 export function makeRoundReviewFile(sprint) {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
   let cached = null;

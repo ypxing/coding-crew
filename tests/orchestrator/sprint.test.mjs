@@ -226,10 +226,10 @@ test("a worker-reported failing check is demoted and never merges", () => {
   );
   const r = runSprint(root);
   const s = state(root);
-  assert.equal(r.code, 2, "a sprint that completes nothing twice is a stall");
+  assert.equal(r.code, 2, "the issue spends both its retry attempts and stays blocked");
   assert.deepEqual(s.completed_slugs ?? [], []);
   assert.deepEqual(s.merged_branches ?? [], []);
-  assert.equal(s.retention.alpha.reason, "reported checks failed: test");
+  assert.equal(s.retention.alpha.reason, "blocked — retry limit reached (2 attempts) — reported checks failed: test");
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true);
   assert.match(readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8"), /## Progress/);
 });
@@ -251,8 +251,8 @@ test("a worker-reported partial carries its own unmet criteria into the Progress
   );
   const r = runSprint(root);
   const s = state(root);
-  assert.equal(r.code, 2, "a sprint that completes nothing twice is a stall");
-  assert.equal(s.retention.alpha.reason, "partial");
+  assert.equal(r.code, 2, "the issue spends both its retry attempts and stays blocked");
+  assert.equal(s.retention.alpha.reason, "blocked — retry limit reached (2 attempts) — partial");
   const issueText = readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8");
   // The next round's resume must not depend on the coder's own prose having named every
   // gap — the structured criteria array from its report is carried forward verbatim.
@@ -283,11 +283,11 @@ test("a review that produced nothing is a gap, not a clean pass", () => {
   fake(root, "alpha.review", ""); // empty review report, every round — never recovers
   const r = runSprint(root);
   const s = state(root);
-  // The first round's failure is a plain review-not-run retry (see the next test for that
-  // shape in isolation, via .review-once). This fixture keeps failing every round, so by the
-  // second attempt runHousekeeping recognises the repeat and escalates to blocked instead of
-  // retrying forever — never a bare "review-not-run" once escalated.
-  assert.match(s.retention.alpha.reason, /^blocked — .*review dispatch/);
+  // The first attempt's failure is a plain review-not-run retry (see the next test for that
+  // shape in isolation, via .review-once). This fixture keeps failing every attempt, so the
+  // second attempt spends this issue's retry cap and it blocks instead of retrying forever —
+  // never a bare "review-not-run" once blocked.
+  assert.match(s.retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — review-not-run$/);
   assert.deepEqual(s.merged_branches ?? [], []);
   assert.match(r.stdout, /Unreviewed Branches|review/i);
 });
@@ -444,7 +444,7 @@ test("a verification-failed retry still redispatches the full worker, not just r
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 2);
   const s = state(root);
-  assert.equal(s.retention.alpha.reason, "verification-failed");
+  assert.equal(s.retention.alpha.reason, "blocked — retry limit reached (2 attempts) — verification-failed");
   assert.equal(
     lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length,
     2,
@@ -480,16 +480,46 @@ test("a dead dispatch is blocked with the worker-failed reason", () => {
   assert.match(s.retention.alpha.reason, /worker process failed/);
 });
 
-test("a blocked-by dependency is not dispatched until its blocker closes", () => {
+test("a blocked-by dependency is not dispatched until its blocker closes, and dispatches the moment it does", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   addIssue(root, "02-beta.md", { blockedBy: ["01-alpha.md"] });
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const s = state(root);
-  // alpha closes in round 1, which unblocks beta for round 2 — both merge.
   assert.deepEqual(s.completed_slugs.sort(), ["alpha", "beta"]);
-  assert.ok(s.rounds >= 2, `expected at least 2 rounds, got ${s.rounds}`);
+  // Neither issue needs a retry — beta is picked up by a freed pool slot the instant alpha
+  // closes, not on some later synchronization point, so both complete on their first
+  // attempt: "Rounds: 1" (the highest per-issue attempt count reached by either).
+  assert.equal(s.rounds, 1, `expected exactly 1 attempt per issue, got ${s.rounds}`);
+});
+
+test("--max-rounds caps attempts per issue, not the sprint's total dispatch count", () => {
+  // A continuous pool has no round barrier serializing "everyone gets one attempt before
+  // anyone gets a second" for free — --max-rounds has to enforce that itself, per issue,
+  // or the first issue a worker claims could exhaust the whole budget while its siblings
+  // never run even once.
+  const root = fixtureRepo();
+  const slugs = ["alpha", "beta", "gamma"];
+  slugs.forEach((n, i) => {
+    addIssue(root, `0${i + 1}-${n}.md`);
+    fake(
+      root,
+      `${n}.worker`,
+      ['## Issue: ' + n, 'Status: partial', '', '```json', '{"status":"partial","checks":{"test":"pass","lint":"pass","typecheck":"pass"},"progress":"stuck"}', '```'].join("\n"),
+    );
+  });
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const s = state(root);
+  for (const slug of slugs) {
+    assert.equal(s.retention?.[slug]?.reason, "partial", `${slug} never got its one attempt`);
+  }
+  assert.equal(
+    lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length,
+    3,
+    "all three issues must be dispatched once, not just the first one claimed",
+  );
 });
 
 test("CRITICAL findings are promoted into a Phase 2 fix issue and run again", () => {
@@ -800,7 +830,7 @@ test("a review that never ran is named in the summary, not just counted in the s
   const r = runSprint(root);
   assert.match(r.stdout, /## Unreviewed Branches/);
   assert.match(r.stdout, /crew\/demo\/alpha/);
-  assert.match(state(root).retention.alpha.reason, /^blocked — .*review dispatch/);
+  assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — review-not-run$/);
 });
 
 // ─── eager dependency provisioning ───────────────────────────────────────────
@@ -1119,9 +1149,18 @@ test("a worktree that starts with no node_modules is verified and merged, with n
   addIssue(root2, "01-alpha.md");
   seed(root2);
   const off = commandLines(root2, ["--no-deps"], depScripts);
-  assert.equal(off.r.code, 2, "without deps the round should stall, not merge");
+  assert.equal(off.r.code, 2, "without deps the issue never passes verify, so it spends both attempts and blocks");
   assert.deepEqual(state(root2).merged_branches ?? [], []);
-  assert.equal(state(root2).retention.alpha.reason, "verification-failed");
+  assert.equal(state(root2).retention.alpha.reason, "blocked — retry limit reached (2 attempts) — verification-failed");
+
+  // The retry cap is per invocation, not permanent: crew-summary.sh tells a human to
+  // "resolve blockers and re-run" for exactly this reason. Drop --no-deps (the "fix") and
+  // re-run — a blocked issue must still be picked up and given a fresh attempt budget, not
+  // skipped forever because a *prior* process already spent its two attempts.
+  const retry = commandLines(root2, [], depScripts);
+  assert.equal(retry.r.code, 0, `${retry.r.stdout}\n${retry.r.stderr}`);
+  assert.deepEqual(state(root2).completed_slugs, ["alpha"]);
+  assert.deepEqual(state(root2).blocked_slugs ?? [], []);
 });
 
 // ─── one-time command discovery ───────────────────────────────────────────────

@@ -1907,7 +1907,7 @@ test("dispatchViaHerdr never reuses one coder's pane for another coder — two d
     { mainRoot: root },
   );
 
-  // Two different issues' coders — as mapPool dispatches them concurrently within a round.
+  // Two different issues' coders — as the dispatch pool runs them concurrently.
   await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile: join(root, "a.md"), slug: "alpha", reportPath: reportPathAlpha }), {
     timeoutMs: 60_000,
   });

@@ -32,10 +32,10 @@ import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktre
 import { closeHerdrPane, dispatch } from "./dispatch.mjs";
 
 // Retention-reason tags for a verify-worktree.sh failure, once triage (see runTriage
-// below) has classified it. Read back by runWorker (to route the *next* round) and by
-// runHousekeeping (to recognise a second consecutive not-fixable verdict without asking
-// triage again). Centralised here, not restated at each comparison, so the tag and its
-// separator cannot drift between the writer and the two readers.
+// below) has classified it. Read back by runWorker to route the *next* attempt — a
+// fixable verdict to a narrower fix prompt, a not-fixable one to a coder-free recheck.
+// Centralised here, not restated at each comparison, so the tag and its separator cannot
+// drift between the writer and the reader.
 const FIXABLE_TAG = "verification-failed:fixable";
 const NOT_FIXABLE_TAG = "verification-failed:not-fixable";
 // Written by runHousekeeping on an `AC: unmet` verdict, read back by runWorker the same
@@ -44,6 +44,15 @@ const NOT_FIXABLE_TAG = "verification-failed:not-fixable";
 // thing a fix needs, unlike a verify failure's raw check output.
 const CRITERIA_UNMET_TAG = "criteria-unmet";
 const REASON_SEP = " — ";
+
+// Every non-`complete` outcome — verify failure, unmet AC, a failed merge, a review that
+// never landed a report, anything — spends one of this issue's attempts (see
+// finishRetryOrBlock below). Two spent attempts and the third demotion becomes `blocked`
+// instead of another retry: one retry is "might have been transient", a second failure in
+// the same shape is the answer, not a reason to ask a fourth time. Replaces what used to
+// be two separate, reason-specific repeat-checks (a second not-fixable verdict, a second
+// review-not-run) with one rule that covers every retry path the same way.
+const MAX_ATTEMPTS_PER_ISSUE = 2;
 
 function taggedReason(tag, summary) {
   return `${tag}${REASON_SEP}${summary}`;
@@ -73,8 +82,13 @@ function branchHasCommits(effects, featureBranch, branch) {
   return r.code === 0 && parseInt(r.stdout.trim(), 10) > 0;
 }
 
-/** Phase 1 of an issue: worktree + worker dispatch. Runs concurrently across issues. */
-export async function runWorker(ctx, issue) {
+/**
+ * Phase 1 of an issue: worktree + worker dispatch. Runs concurrently across issues.
+ * `attempt` is this issue's own 1-based attempt number (see sprint.attemptCount in
+ * loop.mjs) — independent of any other issue's, since the scheduler no longer batches
+ * issues into synchronized rounds.
+ */
+export async function runWorker(ctx, issue, attempt) {
   const { sprint, effects, platform, options } = ctx;
   const branch = branchFor(sprint.featureSlug, issue.slug);
   const dispatchDir = sprint.dispatchDir;
@@ -103,6 +117,7 @@ export async function runWorker(ctx, issue) {
     return {
       issue,
       branch,
+      attempt,
       worktree: null,
       dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
       report: {
@@ -111,7 +126,7 @@ export async function runWorker(ctx, issue) {
         checks: { test: "pass", lint: "pass", typecheck: "pass" },
         branch,
         workingDirectory: null,
-        progress: `Round ${ctx.round}: merge/close retry — coder dispatch, verify, and review all skipped`,
+        progress: `Round ${attempt}: merge/close retry — coder dispatch, verify, and review all skipped`,
         notes: "merge/close retry: the prior round's only failure was the merge or close step itself",
         criteria: [],
         raw: "",
@@ -132,12 +147,11 @@ export async function runWorker(ctx, issue) {
   //
   // A not-fixable triage verdict (see runTriage in runHousekeeping) earns the same skip,
   // for a different reason: triage already said no code on this branch can fix it, so
-  // dispatching the coder again would only relearn that. What this round *does* attempt is
+  // dispatching the coder again would only relearn that. What this attempt *does* try is
   // the one thing a not-fixable verdict cannot rule out by itself — a transient failure
   // (a registry blip, a flaky network) that a plain, coder-free deps + verify re-run might
-  // simply not hit a second time. If it fails again the same way, runHousekeeping below
-  // recognises the repeat (via this worker's own `priorReason`) and escalates to blocked
-  // without asking triage again.
+  // simply not hit a second time. If it fails again, this issue's retry cap (see
+  // finishRetryOrBlock) is what stops a third attempt, not a reason-specific repeat-check.
   const notFixableRetry = priorBranch != null && retentionReason?.startsWith(NOT_FIXABLE_TAG);
   const skipWorker = (priorBranch != null && retentionReason === "review-not-run") || notFixableRetry;
 
@@ -154,7 +168,7 @@ export async function runWorker(ctx, issue) {
   // (branches are never deleted except by cleanup-worktrees.sh's own ancestry-checked
   // sweep), and silently reusing it can carry a base that predates work this sprint has
   // since merged, surfacing only much later as an unexplained merge conflict.
-  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=worktree`);
+  ctx.log(`[STEP] slug=${issue.slug} round=${attempt} step=worktree`);
   const wt = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
     branch,
@@ -167,6 +181,7 @@ export async function runWorker(ctx, issue) {
     return {
       issue,
       branch,
+      attempt,
       worktree: null,
       dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
       report: {
@@ -190,7 +205,7 @@ export async function runWorker(ctx, issue) {
   // issues merged into it — sync that history in now, before the coder ever sees the
   // branch, instead of letting the gap surface as a conflict at the merge gate later.
   if (wt.reusedBranch) {
-    ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=sync-feature-branch`);
+    ctx.log(`[STEP] slug=${issue.slug} round=${attempt} step=sync-feature-branch`);
     const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch });
     if (sync.conflict) {
       ctx.log(`[SYNC-CONFLICT] slug=${issue.slug} branch=${branch} — ${sync.reason}`);
@@ -200,6 +215,7 @@ export async function runWorker(ctx, issue) {
       return {
         issue,
         branch,
+        attempt,
         worktree,
         dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
         report: {
@@ -215,7 +231,7 @@ export async function runWorker(ctx, issue) {
         },
       };
     }
-    if (sync.merged) ctx.log(`slug=${issue.slug} round=${ctx.round} SYNC: merged ${sprint.featureBranch} into ${branch}`);
+    if (sync.merged) ctx.log(`slug=${issue.slug} round=${attempt} SYNC: merged ${sprint.featureBranch} into ${branch}`);
   }
 
   applyWorktreeInclude(effects.mainRoot, worktree);
@@ -232,11 +248,11 @@ export async function runWorker(ctx, issue) {
   // verify gate already fails closed on the consequence, and stalling a whole round on
   // whatever host-install.sh mishandled would be worse than letting the gate say so.
   if (options.deps !== false) {
-    ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=deps`);
+    ctx.log(`[STEP] slug=${issue.slug} round=${attempt} step=deps`);
     const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug], {
       env: sprint.childEnv(),
     });
-    ctx.log(`slug=${issue.slug} round=${ctx.round} ${depsLine(deps.stdout)}`);
+    ctx.log(`slug=${issue.slug} round=${attempt} ${depsLine(deps.stdout)}`);
   }
 
   if (skipWorker) {
@@ -248,6 +264,7 @@ export async function runWorker(ctx, issue) {
     return {
       issue,
       branch,
+      attempt,
       worktree,
       dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
       report: {
@@ -257,8 +274,8 @@ export async function runWorker(ctx, issue) {
         branch,
         workingDirectory: worktree,
         progress: notFixableRetry
-          ? `Round ${ctx.round}: not-fixable recheck — coder and triage both skipped; only deps + verify re-run`
-          : `Round ${ctx.round}: review-only retry — coder dispatch skipped, branch content unchanged`,
+          ? `Round ${attempt}: not-fixable recheck — coder and triage both skipped; only deps + verify re-run`
+          : `Round ${attempt}: review-only retry — coder dispatch skipped, branch content unchanged`,
         notes: notFixableRetry
           ? "not-fixable recheck: a prior triage pass judged this verification failure not fixable by recoding; re-checking once, cheaply, in case it was transient"
           : "review-only retry: the prior round's only failure was the review dispatch itself",
@@ -266,7 +283,6 @@ export async function runWorker(ctx, issue) {
         raw: "",
       },
       skippedWorker: true,
-      priorReason: retentionReason,
     };
   }
 
@@ -307,7 +323,7 @@ export async function runWorker(ctx, issue) {
   );
 
   ctx.log(
-    `[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-coder model=${options.model ?? "inherit"}`,
+    `[STEP] slug=${issue.slug} round=${attempt} step=dispatch-coder model=${options.model ?? "inherit"}`,
   );
   // herdrReuse is non-null only when handleVerificationFailure queued this exact slug's
   // pane last round (see sprint.consumeHerdrReusePending) — spending it here, once, is what
@@ -329,14 +345,14 @@ export async function runWorker(ctx, issue) {
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
       issueNumber: issue.number,
-      round: ctx.round,
+      round: attempt,
       reportPath: sidecarFile,
       herdr: options.herdr,
       herdrReuse,
     },
     {
       timeoutMs: options.workerTimeoutMs,
-      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${ctx.round} ${line}`),
+      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${attempt} ${line}`),
     },
   );
 
@@ -350,7 +366,7 @@ export async function runWorker(ctx, issue) {
   }
 
   const report = parseWorkerReport(result.text, sidecar);
-  return { issue, branch, worktree, dispatch: result, report, priorReason: retentionReason };
+  return { issue, branch, attempt, worktree, dispatch: result, report };
 }
 
 /**
@@ -384,7 +400,7 @@ export async function runHousekeeping(ctx, worker) {
   // never got the coder to commit anything has nothing to resume — that one still blocks.
   if (worker.dispatch.timedOut) {
     const reason = `worker timed out after ${Math.round(options.workerTimeoutMs / 60000)}m`;
-    if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishPartial(ctx, worker, outcome, reason);
+    if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
     return finishBlocked(ctx, worker, outcome, reason);
   }
   if (worker.dispatch.code !== 0 && worker.report.unparseable) {
@@ -392,7 +408,7 @@ export async function runHousekeeping(ctx, worker) {
     // Its own report is preferred whenever there is one — a worker that exited badly
     // but reported `blocked` with a reason knows more than the exit code does.
     const reason = "worker process failed — see traces/";
-    if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishPartial(ctx, worker, outcome, reason);
+    if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
     return finishBlocked(ctx, worker, outcome, reason);
   }
 
@@ -419,15 +435,15 @@ export async function runHousekeeping(ctx, worker) {
         worktree: worker.worktree,
       });
     }
-    return finishPartial(ctx, worker, outcome, pre.reason ?? "partial", { keepWorktree: herdrEligible });
+    return finishRetryOrBlock(ctx, worker, outcome, pre.reason ?? "partial", { keepWorktree: herdrEligible });
   }
 
   // --- gate 1: independent verification in the worktree ----------------------
-  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=verify`);
+  ctx.log(`[STEP] slug=${issue.slug} round=${worker.attempt} step=verify`);
   const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree], {
     env: sprint.childEnv(),
   });
-  ctx.log(`slug=${issue.slug} round=${ctx.round} ${verify.stdout.trim()}`);
+  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${verify.stdout.trim()}`);
   if (verify.code !== 0) {
     return await handleVerificationFailure(ctx, worker, outcome, verify);
   }
@@ -458,23 +474,12 @@ export async function runHousekeeping(ctx, worker) {
       "--report", review.reportFile,
       "--reason", review.reason,
     ], { env: sprint.childEnv() });
-    // A second consecutive review-not-run (recognised the same way handleVerificationFailure
-    // recognises a repeat not-fixable verdict, via this worker's own `priorReason`) means the
-    // *retry itself* is not landing — retrying a third time would just pay for another herdr
-    // dispatch to relearn that. Escalate to blocked so a human sees it instead of the sprint
-    // spinning on this one slug forever.
-    // Neither outcome here redispatches the coder (only the reviewer) — finishBlocked/
-    // finishPartial's own default cleanup (no keepWorktree) is exactly right, nothing left
-    // that a coder retry could reuse.
-    if (worker.priorReason === "review-not-run") {
-      return finishBlocked(
-        ctx,
-        worker,
-        outcome,
-        `environment — review dispatch still produced no usable report on a repeat, coder-free retry: ${review.reason}`,
-      );
-    }
-    return finishPartial(ctx, worker, outcome, "review-not-run");
+    // This issue's retry cap (see finishRetryOrBlock) is what stops a third attempt if the
+    // review dispatch itself keeps failing to land a report — no reason-specific repeat-check
+    // needed here. Neither outcome here redispatches the coder (only the reviewer) —
+    // finishBlocked/finishPartial's own default cleanup (no keepWorktree) is exactly right,
+    // nothing left that a coder retry could reuse.
+    return finishRetryOrBlock(ctx, worker, outcome, "review-not-run");
   }
   outcome.findings = review.parsed.findings;
 
@@ -493,7 +498,7 @@ export async function runHousekeeping(ctx, worker) {
         worktree: worker.worktree,
       });
     }
-    return finishPartial(
+    return finishRetryOrBlock(
       ctx,
       worker,
       outcome,
@@ -514,7 +519,7 @@ export async function runHousekeeping(ctx, worker) {
     env: sprint.childEnv(),
   });
   if (acReceipt.code !== 0) {
-    return finishPartial(ctx, worker, outcome, "ac-receipt-failed");
+    return finishRetryOrBlock(ctx, worker, outcome, "ac-receipt-failed");
   }
 
   // --- findings promotion (advisory findings routed back into the sprint) ----
@@ -534,20 +539,20 @@ function mergeAndClose(ctx, worker, outcome) {
   const { issue, branch } = worker;
 
   effects.git(["checkout", sprint.featureBranch]);
-  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=merge`);
+  ctx.log(`[STEP] slug=${issue.slug} round=${worker.attempt} step=merge`);
   const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {
     env: sprint.childEnv(),
   });
-  ctx.log(`slug=${issue.slug} round=${ctx.round} ${merge.stdout.trim()}`);
+  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${merge.stdout.trim()}`);
   if (merge.code !== 0) {
-    return finishPartial(ctx, worker, outcome, "merge-failed");
+    return finishRetryOrBlock(ctx, worker, outcome, "merge-failed");
   }
 
-  ctx.log(`[STEP] slug=${issue.slug} round=${ctx.round} step=close`);
+  ctx.log(`[STEP] slug=${issue.slug} round=${worker.attempt} step=close`);
   const close = effects.bash("close-issue.sh", [issue.path], { env: sprint.childEnv() });
-  ctx.log(`slug=${issue.slug} round=${ctx.round} ${close.stdout.trim()}`);
+  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${close.stdout.trim()}`);
   if (close.code !== 0) {
-    return finishPartial(ctx, worker, outcome, `close-refused — ${close.stderr.trim() || close.stdout.trim()}`);
+    return finishRetryOrBlock(ctx, worker, outcome, `close-refused — ${close.stderr.trim() || close.stdout.trim()}`);
   }
 
   sprint.complete(issue.slug, branch);
@@ -558,34 +563,21 @@ function mergeAndClose(ctx, worker, outcome) {
 /**
  * Verify-worktree.sh already failed — decide what that failure means before demoting.
  *
- * Two consecutive not-fixable verdicts for the same slug (recognised via `worker.priorReason`,
- * set by runWorker) skip straight to blocked: the round in between already re-ran deps +
- * verify with no coder and no triage involved, purely to rule out a transient failure, so a
- * second identical result is not "ask the model again" territory — it is the answer. Every
- * other case dispatches `runTriage`, an agent independent of the coder that wrote the branch
+ * Always dispatches `runTriage`, an agent independent of the coder that wrote the branch
  * (the same reason review is independent of the coder, not a self-grade), and tags the
- * retention reason with its verdict so the *next* round's runWorker can route on it without
- * re-deriving anything.
+ * retention reason with its verdict so the next attempt's runWorker can route on it without
+ * re-deriving anything. A not-fixable verdict that recurs stops on its own, via this issue's
+ * retry cap (see finishRetryOrBlock) — no reason-specific repeat-check needed here.
  */
 async function handleVerificationFailure(ctx, worker, outcome, verify) {
   const { sprint, options } = ctx;
-  const priorReason = worker.priorReason ?? null;
-  if (priorReason && priorReason.startsWith(NOT_FIXABLE_TAG)) {
-    const carried = stripReasonTag(priorReason, NOT_FIXABLE_TAG);
-    return finishBlocked(
-      ctx,
-      worker,
-      outcome,
-      `environment — verification still fails the same way after a clean, coder-free retry: ${carried}`,
-    );
-  }
 
   const triage = await runTriage(ctx, worker, verify.stdout);
   if (!triage.completed) {
     // Triage itself is unusable (dispatch failure, timeout, unparseable answer) — fall back
     // to the plain reason rather than let a helper's own failure stall the branch. The next
-    // round still gets a full coder redispatch, same as before this existed.
-    return finishPartial(ctx, worker, outcome, "verification-failed");
+    // attempt still gets a full coder redispatch, same as before this existed.
+    return finishRetryOrBlock(ctx, worker, outcome, "verification-failed");
   }
 
   const summary = `${triage.parsed.category || "unspecified"}: ${triage.parsed.detail || "no detail given"}`;
@@ -608,7 +600,7 @@ async function handleVerificationFailure(ctx, worker, outcome, verify) {
     });
   }
 
-  return finishPartial(ctx, worker, outcome, taggedReason(tag, summary), { keepWorktree: herdrEligible });
+  return finishRetryOrBlock(ctx, worker, outcome, taggedReason(tag, summary), { keepWorktree: herdrEligible });
 }
 
 /**
@@ -641,7 +633,7 @@ async function runTriage(ctx, worker, verifyStdout) {
   );
 
   ctx.log(
-    `[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-triage model=${options.triageModel ?? "inherit"}`,
+    `[STEP] slug=${issue.slug} round=${worker.attempt} step=dispatch-triage model=${options.triageModel ?? "inherit"}`,
   );
   const result = await dispatch(
     effects,
@@ -661,13 +653,13 @@ async function runTriage(ctx, worker, verifyStdout) {
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
       issueNumber: issue.number,
-      round: ctx.round,
+      round: worker.attempt,
       reportPath: sidecarFile,
       herdr: options.herdr,
     },
     {
       timeoutMs: options.reviewTimeoutMs,
-      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${ctx.round} ${line}`),
+      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${worker.attempt} ${line}`),
     },
   );
 
@@ -711,7 +703,7 @@ async function runReview(ctx, worker, checks) {
   );
 
   ctx.log(
-    `[STEP] slug=${issue.slug} round=${ctx.round} step=dispatch-review model=${options.reviewerModel ?? "inherit"}`,
+    `[STEP] slug=${issue.slug} round=${worker.attempt} step=dispatch-review model=${options.reviewerModel ?? "inherit"}`,
   );
   const result = await dispatch(
     effects,
@@ -731,13 +723,13 @@ async function runReview(ctx, worker, checks) {
       scriptsDir: effects.scriptsDir,
       slug: issue.slug,
       issueNumber: issue.number,
-      round: ctx.round,
+      round: worker.attempt,
       reportPath: sidecarFile,
       herdr: options.herdr,
     },
     {
       timeoutMs: options.reviewTimeoutMs,
-      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${ctx.round} ${line}`),
+      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${worker.attempt} ${line}`),
     },
   );
 
@@ -794,7 +786,7 @@ async function promote(ctx, worker, review, outcome) {
     env: sprint.childEnv(),
   });
   const guardText = guard.stdout.trim();
-  ctx.log(`slug=${issue.slug} round=${ctx.round} ${guardText}`);
+  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${guardText}`);
   if (!/promotable/.test(guardText)) return; // source-guarded: the depth bound
 
   const threshold = /critical-high/i.test(guardText) ? "critical-high" : sprint.promoteThreshold;
@@ -814,14 +806,29 @@ async function promote(ctx, worker, review, outcome) {
     "--report", review.reportFile,
     "--criteria-file", criteriaPath,
   ], { env: sprint.childEnv() });
-  ctx.log(`slug=${issue.slug} round=${ctx.round} ${defer.stdout.trim()}`);
+  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${defer.stdout.trim()}`);
   outcome.promoted = promotable.length;
+}
+
+/**
+ * Every retryable demotion goes through here instead of calling finishPartial directly —
+ * this is the one place that decides, from this dispatch's own attempt number (spent at
+ * claim time, see sprint.bumpAttempt in loop.mjs), whether there's still a retry left or
+ * whether it's time to give up and let a human look. `reason` is passed through unchanged
+ * on a retry; finishBlocked gets a reason that says *why* the cap tripped, since by then
+ * the original reason has already repeated once.
+ */
+function finishRetryOrBlock(ctx, worker, outcome, reason, opts) {
+  if (worker.attempt >= MAX_ATTEMPTS_PER_ISSUE) {
+    return finishBlocked(ctx, worker, outcome, `retry limit reached (${worker.attempt} attempts) — ${reason}`);
+  }
+  return finishPartial(ctx, worker, outcome, reason, opts);
 }
 
 async function finishPartial(ctx, worker, outcome, reason, { keepWorktree = false } = {}) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
-  const progress = worker.report.progress || worker.report.notes || `Round ${ctx.round}: ${reason}`;
+  const progress = worker.report.progress || worker.report.notes || `Round ${worker.attempt}: ${reason}`;
   // The worker's own criteria array, when it reports any as unmet, is a structured signal
   // the prose progress/notes text does not reliably restate — carry it forward verbatim so
   // the next round's resume doesn't depend on the coder's summary having named every gap.
@@ -836,7 +843,7 @@ async function finishPartial(ctx, worker, outcome, reason, { keepWorktree = fals
     writeIssueSection(
       issue.path,
       "Progress",
-      `Round ${ctx.round}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
+      `Round ${worker.attempt}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
     );
   }
   // keepWorktree (set only by handleVerificationFailure's herdr-reuse path) leaves both the
@@ -852,9 +859,9 @@ async function finishPartial(ctx, worker, outcome, reason, { keepWorktree = fals
   // still there instead of recreating it. Only a plain (non-herdr) dispatch, where
   // spawnWithTimeout SIGKILLs the actual worker process itself, gets to assume it's gone.
   if (keepWorktree) {
-    ctx.log(`[HERDR-REUSE] slug=${issue.slug} round=${ctx.round} — keeping worktree and pane open for one retry`);
+    ctx.log(`[HERDR-REUSE] slug=${issue.slug} round=${worker.attempt} — keeping worktree and pane open for one retry`);
   } else if (worker.dispatch?.herdrFailed) {
-    ctx.log(`[HERDR-FAILED] slug=${issue.slug} round=${ctx.round} — keeping worktree and pane open, process status unconfirmed`);
+    ctx.log(`[HERDR-FAILED] slug=${issue.slug} round=${worker.attempt} — keeping worktree and pane open, process status unconfirmed`);
   } else {
     removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
     await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
@@ -869,19 +876,24 @@ async function finishBlocked(ctx, worker, outcome, reason) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
   if (!effects.dryRun && existsSync(issue.path)) {
-    writeIssueSection(issue.path, "Blocked", `Round ${ctx.round}: ${reason}`, { append: true });
+    writeIssueSection(issue.path, "Blocked", `Round ${worker.attempt}: ${reason}`, { append: true });
   }
   // See finishPartial's matching comment: a dispatch whose own attempt failed to communicate
   // or reported an error leaves both its pane and its worktree alone — herdr never confirmed
   // the underlying process actually exited, and removing the worktree out from under a
   // process that's still alive is the two-coders-one-worktree bug this guard prevents.
   if (worker.dispatch?.herdrFailed) {
-    ctx.log(`[HERDR-FAILED] slug=${issue.slug} round=${ctx.round} — keeping worktree and pane open, process status unconfirmed`);
+    ctx.log(`[HERDR-FAILED] slug=${issue.slug} round=${worker.attempt} — keeping worktree and pane open, process status unconfirmed`);
   } else {
     removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
     await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
   }
   sprint.blocked(issue.slug, branch, reason);
+  // In-memory, this invocation only — see sprint.mjs's isBlockedThisRun. Persisted
+  // `blocked_slugs` (just above) is for crew-summary.sh's report; it must not be what
+  // keeps a future `crew-afk` run from retrying this issue after a human fixes whatever
+  // blocked it.
+  sprint.markBlockedThisRun(issue.slug);
   outcome.status = "blocked";
   outcome.reason = reason;
   return outcome;

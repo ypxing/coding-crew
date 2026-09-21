@@ -12,7 +12,7 @@ set -euo pipefail
 #
 # Usage:
 #   state.sh model <alias>
-#   state.sh round <n> [--issues <count>]
+#   state.sh attempt --slug <slug> --n <n>
 #   state.sh complete --slug <slug> --branch <branch>
 #   state.sh retain   --slug <slug> --branch <branch> --reason <reason>
 #   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>]
@@ -110,12 +110,30 @@ case "$CMD" in
     echo "MODEL: $alias_name"
     ;;
 
-  round)
-    n="${1:?state.sh round <n>}"
-    issues=$(flag issues "" "$@")
-    edit_state --argjson n "$n" '.round = $n | .rounds = ([.rounds // 0, $n] | max)'
-    trace ROUND "round=$n${issues:+ issues=$issues}"
-    echo "ROUND: $n${issues:+ issues=$issues}"
+  attempt)
+    # Records one attempt at one issue, across the whole sprint (not a batch) — the
+    # scheduler (loop.mjs's runOne) calls this exactly once per dispatch, at claim time,
+    # before runWorker/runHousekeeping run, so `.attempts[slug]` mirrors every pass
+    # including the one that finally completes. `.rounds` (still read by crew-summary.sh
+    # as "Rounds: N") becomes the highest count any single issue has reached this run, with
+    # no other meaning attached to "round" any more.
+    #
+    # `--n` is supplied by the caller, not derived from `.attempts[slug]` here — the real
+    # counter lives in the orchestrator's own in-memory Sprint instance (see sprint.mjs's
+    # bumpAttempt), reset every invocation on purpose: a persisted, ever-growing count
+    # would make crew-summary.sh's "resolve blockers and re-run" recovery advice a lie, by
+    # permanently refusing to retry whatever it told a human to go fix. This command is a
+    # write-only mirror for reporting, never read back to decide anything.
+    slug=$(flag slug "" "$@")
+    n=$(flag n "" "$@")
+    [ -n "$slug" ] || die "attempt requires --slug"
+    [ -n "$n" ] || die "attempt requires --n"
+    edit_state --arg s "$slug" --argjson n "$n" '
+      .attempts[$s] = $n
+      | .round = $n
+      | .rounds = ([.rounds // 0, $n] | max)'
+    trace ATTEMPT "slug=$slug n=$n"
+    echo "ATTEMPT: slug=$slug n=$n"
     ;;
 
   complete)

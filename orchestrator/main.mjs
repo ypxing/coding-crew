@@ -33,14 +33,15 @@
  *                                           open instead of closing it as soon as it finishes
  *                                           (success or fail), so `herdr agent read <name>`
  *                                           can show what a failed pane actually rendered, and
- *                                           so a successful coder's pane can be reused on a
- *                                           same-round retry (verify-fail/AC-unmet/partial)
+ *                                           so a successful coder's pane can be reused on this
+ *                                           issue's own next retry (verify-fail/AC-unmet/partial)
  *                                           instead of starting cold. Off by default so panes
  *                                           don't pile up. Named agent = the issue number,
  *                                           sanitised slug and a role tag, one per coder/review/
  *                                           triage dispatch (see herdrDispatchName); spec.round
- *                                           folded into that name keeps a same-issue+role retry
- *                                           safe from agent_name_taken even with a pane kept open.
+ *                                           (this issue's own attempt number, not a sprint-wide
+ *                                           round) folded into that name keeps a same-issue+role
+ *                                           retry safe from agent_name_taken even with a pane kept open.
  *   --model <alias|inherit>                coder model; reviewer/triage/commandsDiscovery/
  *                                           coverageValidation match it unless
  *                                           .coding-crew/afk-models.json names them explicitly
@@ -49,7 +50,9 @@
  *   --promote <critical|critical-high>      findings promotion threshold
  *   --max-parallel <n>                     concurrent workers (platform default)
  *   --worker-timeout <minutes>             default 45 — a hung worker cannot hang the sprint
- *   --max-rounds <n>                       hard cap on rounds
+ *   --max-rounds <n>                       hard cap on attempts *per issue* this invocation
+ *                                           makes (independent of, and typically larger than,
+ *                                           each issue's own 2-attempt cap before it blocks)
  *   --no-deps                              skip both ensure-deps.sh call sites
  *   --no-commands                          skip one-time command discovery (verify-worktree.sh
  *                                           falls back to its own CLAUDE.md/Makefile heuristics)
@@ -475,7 +478,6 @@ async function main() {
       effects,
       options,
       platform: options.platform,
-      round: 0,
       roundReviewFile: makeRoundReviewFile(sprint),
       log: (line) => {
         if (!line) return;

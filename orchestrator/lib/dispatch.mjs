@@ -431,7 +431,7 @@ const HERDR_DIALOGS = {
  * effects.exec runs spawnSync — it blocks Node's single event loop for the child's whole
  * lifetime. Fine for the short bash scripts effects.exec is otherwise used for, but herdr's
  * own calls are not short: `agent prompt --wait` blocks until the pane goes idle/done, up to
- * the full worker timeout (45 min by default). mapPool (loop.mjs) dispatches issues
+ * the full worker timeout (45 min by default). The dispatch pool (loop.mjs) runs issues
  * concurrently by interleaving promises on that same single event loop — a blocked loop
  * blocks every other "concurrent" dispatch too, so a spawnSync herdrExec silently serialised
  * every herdr-enabled sprint no matter how high --max-parallel was set. spawnWithTimeout
@@ -489,7 +489,7 @@ function herdrRoleTag(agent) {
 
 /**
  * herdrAgentName truncates a label to 32 chars with nothing to disambiguate what got cut —
- * two different issues (two different coders dispatched concurrently by mapPool, or two
+ * two different issues (two different coders dispatched concurrently by the pool, or two
  * different reviewers/triages) whose slugs happen to share the same truncated prefix would
  * otherwise land on the identical herdr name and race for the same pane. A 6-hex-char hash
  * of the *untruncated* raw label, appended after truncation, makes that collision astronomically
@@ -703,7 +703,7 @@ async function renameHerdrTriggeringTab(effects, featureSlug) {
 /**
  * The one herdr workspace for a whole crew-afk run, created by whichever dispatch gets here
  * first and reused by every dispatch after it — see the file-header comment for why. Cached
- * as a promise, not a plain field: mapPool dispatches concurrently, and the promise is
+ * as a promise, not a plain field: the pool dispatches concurrently, and the promise is
  * assigned synchronously (before this function's first `await`), so a second call that
  * arrives before the first `workspace create` resolves still sees the cached promise instead
  * of racing its own `workspace create`. A rejection is cached too — every dispatch this run

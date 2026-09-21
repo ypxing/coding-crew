@@ -130,21 +130,6 @@ function quote(s) {
   return /[^\w@%+=:,./-]/.test(s) ? `'${String(s).replace(/'/g, "'\\''")}'` : s;
 }
 
-/** Bounded-concurrency map — the pool that replaces "batches of 3" in prose. */
-export async function mapPool(items, limit, fn) {
-  const out = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-    while (true) {
-      const i = next++;
-      if (i >= items.length) return;
-      out[i] = await fn(items[i], i);
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
-
 export function appendLine(file, line) {
   mkdirSync(dirname(file), { recursive: true });
   appendFileSync(file, `${line}\n`);

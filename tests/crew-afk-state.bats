@@ -263,7 +263,8 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
 @test "crew-summary renders the rollup from state, not from a print template" {
   init_sprint calc
   state model sonnet >/dev/null
-  state round 2 --issues 3 >/dev/null
+  state attempt --slug b --n 1 >/dev/null
+  state attempt --slug b --n 2 >/dev/null
   state complete --slug a --branch crew/calc/a >/dev/null
   state retain --slug b --branch crew/calc/b --reason "verification-failed — tests did not pass" >/dev/null
   state blocked --slug c --branch crew/calc/c --reason "spec is ambiguous" >/dev/null

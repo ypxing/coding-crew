@@ -69,12 +69,14 @@ no state. Flush is a file rewrite for the same reason, which also makes reaching
 harmless no-op.
 
 **Flush on every exit, not just the normal one.** A sprint that stalls on unrelated issues still
-merged code that may carry a CRITICAL finding. The stall path and the "no unblocked ready issues"
-path both flush before printing `NO MORE TASKS`.
+merged code that may carry a CRITICAL finding. There is one exit from the dispatch pool — nothing
+in flight and nothing left dispatchable, for any reason — and it flushes before printing
+`NO MORE TASKS`, whether that's a clean finish or a stall.
 
-**Reset stall counters when Phase 2 begins.** Entering Phase 2 with `stall` already at its limit
-would trip stall detection on the first `partial` fix round, denying Phase 2 the one-dry-round
-grace Phase 1 gets.
+**Flush runs the moment the pool is idle, with no delay to reset.** The dispatch pool has no
+round-batch or dry-round counter any more (see `orchestrator/lib/loop.mjs`) — flush is tried
+exactly when nothing is in flight and nothing is dispatchable, Phase 1 or Phase 2 alike, so
+there is no stall-counter state that Phase 2 could inherit stale from Phase 1 in the first place.
 
 **Nothing merged ⇒ nothing promoted, for free.** Findings only exist for branches that passed
 both verification gates and merged. A sprint that stalls on a broken environment reviewed nothing,

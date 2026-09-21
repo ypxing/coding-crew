@@ -43,6 +43,7 @@ function fakeSprint() {
     calls,
     coverageGap: (slug, categories) => calls.push(["coverageGap", slug, categories]),
     blocked: (slug, branch, reason) => calls.push(["blocked", slug, branch, reason]),
+    markBlockedThisRun: (slug) => calls.push(["markBlockedThisRun", slug]),
   };
 }
 
@@ -53,10 +54,11 @@ async function runBlockedScenario({ herdrFailed }) {
   assert.ok(existsSync(wt.path), "worktree must exist before the scenario runs");
 
   const sprint = fakeSprint();
-  const ctx = { sprint, effects, options: {}, round: 4, log: () => {} };
+  const ctx = { sprint, effects, options: {}, log: () => {} };
   const worker = {
     issue: { slug: "alpha", path: join(mainRoot, "no-such-issue.md") },
     branch,
+    attempt: 1,
     worktree: wt.path,
     dispatch: { code: 0, timedOut: false, herdrFailed, herdrTabId: null },
     // The exact shape dispatchViaHerdr's "absent" case produces: code 0, empty text, so
