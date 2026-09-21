@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.108]
+
+### Fixed
+
+- **`add-tests` had no step that ever ran an install command**, even though its own step 1
+  discovers one (`install` in `.coding-crew/dev-commands.json`). A run against a repo whose
+  dependency step is only a documented Makefile target (e.g. `make deps`) could silently fall
+  back to a guessed package-manager command instead of that override — the same override
+  `ensure-deps.sh` already trusts. `add-tests` now declares a dependency on the `dep-install`
+  skill and invokes it (unconditionally in docker mode, or on a missing-dependency failure in
+  host mode) before running coverage.
+
 ## [1.29.107]
 
 ### Changed

@@ -45,7 +45,23 @@ yourself — a low-fidelity guess standing in for real coverage data is worse th
 `integration` may be `null`; that only affects the tier-routing decision in step 6, it never
 blocks this skill on its own.
 
-### 2. Run coverage and read the report directly
+### 2. Dependencies — only when something is missing
+
+The discovered `install` command from step 1 (if non-null) already overrides `dep-install`'s own
+Makefile/lockfile heuristic — it exists so a documented `make deps`-style target is used instead
+of a guessed package-manager command. Never substitute your own guess (`npm install`,
+`pnpm install`, …) for it.
+
+Check docker mode first — `bash <dep-install skill dir>/scripts/detect-mode.sh --project-root
+<repo root>`. `USE_DOCKER` → invoke the `dep-install` skill now, unconditionally, before running
+coverage. `USE_HOST` → don't install pre-emptively; run coverage in step 3 first, and only invoke
+`dep-install` if it fails for a missing-dependency reason (module-not-found, import error, test
+runner not found), then retry.
+
+If the `dep-install` skill is not installed in this repo, stop and report `BLOCKED: dep-install
+skill not installed`.
+
+### 3. Run coverage and read the report directly
 
 Run the discovered `coverage` command and read whatever report format it produces (lcov,
 Cobertura XML, a JS test runner's JSON summary, `go tool cover`'s profile, …) yourself, as a
@@ -54,7 +70,7 @@ parser per format; the report formats vary too much for that to stay maintainabl
 the raw text directly is the same reasoning `discover-commands.sh` already uses for reading
 CLAUDE.md/Makefile instead of regexing them.
 
-### 3. Score and cap under-covered files
+### 4. Score and cap under-covered files
 
 Score each under-covered file by, in priority order:
 
@@ -65,19 +81,19 @@ Score each under-covered file by, in priority order:
 
 Skip trivial files: default threshold is fewer than 10 statements, or a type/interface-only file
 with no executable logic. This default is tunable per project, not a hardcoded requirement —
-note it as configurable in whatever findings document you write in step 7.
+note it as configurable in whatever findings document you write in step 8.
 
 Cap total findings per run: default is the smaller of (a) the top 20 files by score, or (b)
 however many files close the top 50% of the total uncovered-statement gap. Also tunable, not
 hardcoded.
 
-### 4. Group by module
+### 5. Group by module
 
 Group the surviving files by their existing directory/module boundary — the same units the
 coverage tool itself already reports by — into one findings entry per module, not one per file.
 A module with many small gaps is one issue; a module with one large gap is still one issue.
 
-### 5. Resolve the mocking convention per ecosystem
+### 6. Resolve the mocking convention per ecosystem
 
 For each ecosystem present in the repo (detected the same way `discover-commands.sh` already
 scans manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`,
@@ -107,7 +123,7 @@ table (not an operations doc like `.coding-crew/docs/issue-tracker.md`):
 If this file already exists, read it first — a prior run (or a human) may have already resolved
 an ecosystem's convention; don't re-ask for one already cached.
 
-### 6. Route each finding to a real or mocked tier
+### 7. Route each finding to a real or mocked tier
 
 For every module-level finding whose files touch an external dependency:
 
@@ -122,7 +138,7 @@ If a single module has some files covered by the real tier and others only reach
 mocked boundary, produce **two** findings entries for that module, one per tier — do not pick one
 tier for the whole module.
 
-### 7. Write findings and hand off to `to-issues`
+### 8. Write findings and hand off to `to-issues`
 
 Write the findings — per-module gaps, priority rationale, the resolved mock convention (cite it
 by name from `test-conventions.md`), and tier routing — as a lightweight PRD-style document at
