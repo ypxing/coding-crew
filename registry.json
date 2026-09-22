@@ -144,7 +144,7 @@
       ]
     },
     "crew-address-findings": {
-      "version": "1.3.0",
+      "version": "1.3.1",
       "source-dir": "crew-address-findings",
       "description": "Triage and fix findings from a crew-afk code review report using TDD.",
       "install": ".claude/skills/crew-address-findings",
@@ -172,14 +172,14 @@
       ]
     },
     "to-issues": {
-      "version": "1.4.1",
+      "version": "1.4.2",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
       "install": ".claude/skills/to-issues"
     },
     "to-prd": {
-      "version": "1.2.2",
+      "version": "1.2.3",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",
@@ -230,7 +230,7 @@
       ]
     },
     "upgrade-deps": {
-      "version": "1.1.1",
+      "version": "1.1.2",
       "source-dir": "upgrade-deps",
       "description": "Audit outdated npm/yarn/pnpm dependencies for exploitability, transitive conflicts, and usage, then publish issues (batched safe bumps, one per risky package or coupled group) with a safety checklist.",
       "install": ".claude/skills/upgrade-deps",

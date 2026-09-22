@@ -10,7 +10,10 @@
 #   3. skills/<source-dir>/SKILL.md                      — shared fallback
 #
 # Expansion inside the body:
-#   {{FRAGMENT:<key>}}  → skills/<source-dir>/fragments/<platform>/<key>.md (whole line)
+#   {{FRAGMENT:<key>}}  → skills/<source-dir>/fragments/<platform>/<key>.md (whole line),
+#                          falling back to skills/_shared/fragments/<platform>/<key>.md when
+#                          no skill-local fragment of that key exists — one canonical source
+#                          for a fragment several skills share, instead of one copy each.
 #   {{PLATFORM}}        → the platform name
 #
 # A missing fragment, or any placeholder left unexpanded, is a hard error: a body
@@ -67,9 +70,11 @@ render() {
     if [[ "$line" =~ ^[[:space:]]*\{\{FRAGMENT:([A-Za-z0-9_-]+)\}\}[[:space:]]*$ ]]; then
       key="${BASH_REMATCH[1]}"
       fragment="$SKILL_SRC/fragments/$PLATFORM/$key.md"
+      [[ -f "$fragment" ]] || fragment="$SCRIPT_DIR/skills/_shared/fragments/$PLATFORM/$key.md"
       if [[ ! -f "$fragment" ]]; then
         echo "Error: $SKILL/$BODY needs fragment '$key' for platform '$PLATFORM'," \
-             "but skills/$SOURCE_DIR/fragments/$PLATFORM/$key.md does not exist" >&2
+             "but neither skills/$SOURCE_DIR/fragments/$PLATFORM/$key.md nor" \
+             "skills/_shared/fragments/$PLATFORM/$key.md exists" >&2
         exit 1
       fi
       # Fragments are stored with a trailing newline; strip it so the body's own

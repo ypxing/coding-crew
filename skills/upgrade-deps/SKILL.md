@@ -20,14 +20,7 @@ Plan safe dependency upgrades and hand them off as issues. This skill never edit
 Ecosystem support: npm, yarn, pnpm (Node.js). If the repo uses another package manager,
 stop and ask the user before proceeding.
 
-## Tracker Configuration
-
-Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
-
-1. `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md` (project-level)
-
-If it does not exist, invoke the `configure-tracker` skill now, then continue. All tracker
-operations here use the operation definitions in that file, same as `to-issues`.
+{{FRAGMENT:tracker-configuration}}
 
 Before running any package-manager command (`outdated`, `audit`, `ls`/`why`, or a later
 reinstall), use the `dep-install` skill first to detect and lock the session's install mode.
@@ -318,9 +311,17 @@ criteria / Blocked by / Interfaces where relevant).
 
 ### 8. Publish
 
-Execute the `publish` operation from `issue-tracker.md` for each issue, same as `to-issues`.
-Write `.scratch/<slug>/issues/issues-deps.json` with the same blocker map so the crew-afk
-orchestrator can resolve dispatch order without re-parsing prose.
+Execute the `publish` operation from `issue-tracker.md` for each issue, same as `to-issues`'s
+"Write the issues" step — including, under a configured `github` tracker, that same step's
+github branch: `## Blocked by` entries written as `Issue #<n>` citing an already-created
+blocker's number (the `Blocked by` edges from step 4's coupling analysis), milestoned to the
+feature slug, and labeled per this issue's own `Status:` decision above (`ready-for-agent` or
+`ready-for-human` — both are real, pre-created labels; see `github.md`'s Labels table).
+
+Under `local`, also write `.scratch/<slug>/issues/issues-deps.json` with the same blocker map
+so the crew-afk orchestrator can resolve dispatch order without re-parsing prose — this sidecar
+has no github equivalent, since a github issue number is already the blocker's ref (see
+`github.md`'s Workspace section).
 
 ### 9. Summarize
 

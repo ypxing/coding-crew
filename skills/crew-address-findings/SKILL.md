@@ -8,15 +8,7 @@ argument-hint: "Optional: path to report file"
 
 You are working through the findings from a crew-afk code review report. Follow every step below in order.
 
-## Tracker Configuration
-
-Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
-
-1. `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md` (project-level)
-
-If it does not exist, invoke the `configure-tracker` skill now to set it up, then continue.
-
-All tracker operations in this skill use the operation definitions in that file.
+{{FRAGMENT:tracker-configuration}}
 
 **Examples:**
 
@@ -69,7 +61,10 @@ If using a file, print the path so the user knows which file is being processed.
 ## Step 1.5 — Load design context
 
 Derive `<feature-slug>` from the report path (the segment between `.scratch/` and `/reviews/`).
-Read `.scratch/<feature-slug>/PRD.md` if it exists.
+Under a `local` tracker, read `.scratch/<feature-slug>/PRD.md` if it exists. Under a configured
+`github` tracker, fetch it instead via that tracker's `list`/`fetch` operations: find the
+milestone's `PRD: <feature title>` issue and read its body (per `github.md`'s Workspace section —
+the PRD is identified by title convention plus milestone scope, not a local file).
 
 Use this context during Step 3 triage: a finding whose proposed fix contradicts a documented
 architectural decision (e.g. a tracker abstraction rule, a naming invariant) should be classified
@@ -82,12 +77,15 @@ Read the report file. Extract every finding — each `[CRITICAL]`, `[HIGH]`, `[M
 Group findings by branch so related items are reviewed together.
 
 **Skip findings crew-afk already fixed.** If the report has a `## Promoted Findings` section, each
-line reads `<branch>: <severities> → <fix issue path>`. Those findings were auto-promoted to fix
+line reads `<branch>: <severities> → <fix issue reference>` — a local file path under a `local`
+tracker, or the created issue's URL under a configured `github` tracker (`promote-findings.sh`
+writes whichever `issue-tracker.md` configures; see `to-issues`'s "Write the issues" step for the
+same backend branch, reused here rather than reinvented). Those findings were auto-promoted to fix
 issues and implemented in a later round of the same sprint, so exclude every finding matching a
 listed (branch, severity) pair from the triage table entirely — do not re-read, re-triage, or
 re-implement them. Findings from the same branch at *other* severities (typically MEDIUM/LOW) are
 still open and must be triaged normally. List the skipped pairs once under **Skipped** in Step 6 as
-`already fixed in sprint (issue <path>)`.
+`already fixed in sprint (issue <reference>)`.
 
 ## Step 3 — Challenge each finding
 
