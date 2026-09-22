@@ -141,7 +141,7 @@ Opens the review report, triages findings, implements fixes with TDD.
 | ---------------------- | ---------------------------------------------------------------- |
 | `/solve-issue`         | Implement a single issue end-to-end                              |
 | `/address-pr-comments` | Fetch PR review comments from GitHub and implement sensible ones |
-| `/configure-tracker`   | Select and install an issue tracker template                     |
+| `/configure-tracker`   | Select and install an issue tracker template — local markdown files or GitHub Issues |
 
 ---
 
