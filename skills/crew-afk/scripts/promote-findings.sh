@@ -54,6 +54,23 @@ review_rollup() {
   fi
 }
 
+# Which backend (local|github) this repo tracks issues in, and its optional --repo
+# override — read once, the same lookup-chain shape review_rollup() uses above.
+# $CREW_TRACKER_CONFIG overrides the lookup for bats fixtures that exercise this script
+# alone, not a full install. Fails safe to local when the reader is missing entirely — an
+# in-between install state (this script updated, tracker-config.sh not yet installed)
+# must not break the local path.
+TRACKER_CONFIG_TRACKER="local"
+TRACKER_CONFIG_REPO=""
+_tracker_config_sh="${CREW_TRACKER_CONFIG:-}"
+[ -f "$_tracker_config_sh" ] || _tracker_config_sh="$MAIN_ROOT/.coding-crew/scripts/tracker-config.sh"
+[ -f "$_tracker_config_sh" ] || _tracker_config_sh="$HOME/.coding-crew/scripts/tracker-config.sh"
+if [ -f "$_tracker_config_sh" ]; then
+  # shellcheck disable=SC1090
+  source "$_tracker_config_sh"
+  read_tracker_config "$MAIN_ROOT"
+fi
+
 DEFERRED_STATUS="deferred-findings"
 READY_STATUS="ready-for-agent"
 
@@ -79,7 +96,7 @@ Usage:
   promote-findings.sh guard --issue <issue-file>
   promote-findings.sh defer --feature-slug <slug> --branch <branch> --slug <issue-slug>
                             --title <title> --report <review-report> --criteria-file <file>
-                            [--severities CRITICAL,HIGH]
+                            [--severities CRITICAL,HIGH] [--blocked-by <issue-number>]
   promote-findings.sh flush --feature-slug <slug>
   promote-findings.sh list  --feature-slug <slug>
   promote-findings.sh remind --feature-slug <slug>
@@ -135,13 +152,28 @@ cmd_guard() {
   done
   [ -n "$issue" ] || usage
 
-  # A missing file cannot be shown to be a fix issue. Fail closed: no promotion.
-  if [ ! -f "$issue" ]; then
-    echo "guard: skip — issue file not found: $issue"
-    exit 0
+  local body
+  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+    # No local file to grep — under github, `--issue` is the issue number, and the depth
+    # bound must hold against whatever the body says *right now*, not a stale in-memory
+    # copy from an earlier `gh issue list`. A human may have edited the body since.
+    local repo_args=()
+    [ -n "$TRACKER_CONFIG_REPO" ] && repo_args=(--repo "$TRACKER_CONFIG_REPO")
+    if ! body="$(gh issue view "$issue" "${repo_args[@]}" --json body -q .body 2>/dev/null)"; then
+      # A missing/unreachable issue cannot be shown to be a fix issue. Fail closed: no promotion.
+      echo "guard: skip — issue not found: $issue"
+      exit 0
+    fi
+  else
+    # A missing file cannot be shown to be a fix issue. Fail closed: no promotion.
+    if [ ! -f "$issue" ]; then
+      echo "guard: skip — issue file not found: $issue"
+      exit 0
+    fi
+    body="$(cat "$issue")"
   fi
 
-  if grep -q '^Source:' "$issue"; then
+  if printf '%s\n' "$body" | grep -q '^Source:'; then
     echo "guard: skip — source-guarded (this issue was itself promoted from a review)"
   else
     # The severity list is printed with the verdict so no caller has to carry the threshold in
@@ -159,27 +191,11 @@ cmd_policy() {
 }
 
 # --- defer -------------------------------------------------------------------
-cmd_defer() {
-  local slug="" branch="" issue_slug="" title="" report="" criteria_file="" severities
-  severities="$(promote_severities)"
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --feature-slug) slug="${2:-}"; shift 2 ;;
-      --branch) branch="${2:-}"; shift 2 ;;
-      --slug) issue_slug="${2:-}"; shift 2 ;;
-      --title) title="${2:-}"; shift 2 ;;
-      --report) report="${2:-}"; shift 2 ;;
-      --criteria-file) criteria_file="${2:-}"; shift 2 ;;
-      --severities) severities="${2:-}"; shift 2 ;;
-      *) usage ;;
-    esac
-  done
-  [ -n "$slug" ] && [ -n "$branch" ] && [ -n "$issue_slug" ] || usage
-  [ -n "$title" ] && [ -n "$report" ] && [ -n "$criteria_file" ] || usage
-  [ -f "$criteria_file" ] || die "criteria file not found: $criteria_file"
-  [ -f "$report" ] || die "review report not found: $report"
-  [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to promote)"
 
+# _defer_local <slug> <issue-slug> <title> <criteria-file> <severities> — unchanged: still
+# hand-writes a numbered file under issues/open/. Prints the new file's path.
+_defer_local() {
+  local slug="$1" issue_slug="$2" title="$3" criteria_file="$4" severities="$5" branch="$6"
   local open_dir num issue_path
   open_dir=$(issues_open_dir "$slug")
   mkdir -p "$open_dir"
@@ -206,11 +222,88 @@ cmd_defer() {
     cat "$criteria_file"
   } > "$issue_path"
 
+  echo "$issue_path"
+}
+
+# _defer_github <slug> <title> <branch> <report> <criteria-file> <severities> <blocked-by> —
+# github path: an ordinary `gh issue create`, labeled ready-for-agent immediately (github has
+# no pre-created label to represent "parked", so there is no local-style park/flush step for
+# this backend — flush/list correctly report nothing to promote, see cmd_flush/cmd_list). The
+# body mirrors local's Source: convention exactly, plus a numeric `## Blocked by` reference
+# when the caller names one, so issue 04's parseIssue parses both the same way. Prints the
+# created issue's URL (gh issue create's own stdout).
+_defer_github() {
+  local slug="$1" title="$2" branch="$3" report="$4" criteria_file="$5" severities="$6" blocked_by="$7"
+  local repo_args=()
+  [ -n "$TRACKER_CONFIG_REPO" ] && repo_args=(--repo "$TRACKER_CONFIG_REPO")
+
+  local body_file
+  body_file="$(mktemp)"
+  {
+    echo "Source: $report ($branch)"
+    if [ -n "$blocked_by" ]; then
+      echo ""
+      echo "## Blocked by"
+      echo ""
+      echo "- Issue #$blocked_by"
+    fi
+    echo ""
+    echo "## Context"
+    echo ""
+    echo "Auto-promoted by crew-afk from the $severities findings raised against \`$branch\`."
+    echo "The branch already merged — these are follow-up fixes, not a revert. Full reviewer"
+    echo "notes, including the snippet citations, are in the review report named in \`Source:\`."
+    echo ""
+    echo "## Acceptance criteria"
+    echo ""
+    cat "$criteria_file"
+  } > "$body_file"
+
+  local issue_ref
+  if ! issue_ref=$(gh issue create "${repo_args[@]}" --title "$title" --body-file "$body_file" \
+      --label "$READY_STATUS" --milestone "$slug"); then
+    rm -f "$body_file"
+    die "gh issue create failed for: $title"
+  fi
+  rm -f "$body_file"
+  echo "$issue_ref"
+}
+
+cmd_defer() {
+  local slug="" branch="" issue_slug="" title="" report="" criteria_file="" severities blocked_by=""
+  severities="$(promote_severities)"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --feature-slug) slug="${2:-}"; shift 2 ;;
+      --branch) branch="${2:-}"; shift 2 ;;
+      --slug) issue_slug="${2:-}"; shift 2 ;;
+      --title) title="${2:-}"; shift 2 ;;
+      --report) report="${2:-}"; shift 2 ;;
+      --criteria-file) criteria_file="${2:-}"; shift 2 ;;
+      --severities) severities="${2:-}"; shift 2 ;;
+      --blocked-by) blocked_by="${2:-}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$slug" ] && [ -n "$branch" ] && [ -n "$issue_slug" ] || usage
+  [ -n "$title" ] && [ -n "$report" ] && [ -n "$criteria_file" ] || usage
+  [ -f "$criteria_file" ] || die "criteria file not found: $criteria_file"
+  [ -f "$report" ] || die "review report not found: $report"
+  [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to promote)"
+
+  local ref
+  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+    ref="$(_defer_github "$slug" "$title" "$branch" "$report" "$criteria_file" "$severities" "$blocked_by")"
+  else
+    ref="$(_defer_local "$slug" "$issue_slug" "$title" "$criteria_file" "$severities" "$branch")"
+  fi
+
   # Annotate the report so a later human run of /crew-address-findings does not
   # re-triage findings this sprint already fixed. Appended at the end of the file
   # (the report is fully written before promotion runs), keyed by branch + severity —
   # promotion always takes *all* findings at those severities for that branch, so the
-  # pair is an unambiguous marker with no per-finding parsing.
+  # pair is an unambiguous marker with no per-finding parsing. Shared across backends:
+  # the review report is runtime bookkeeping, always local (see docs/PRD's Decisions).
   if ! grep -q '^## Promoted Findings' "$report"; then
     {
       echo ""
@@ -222,10 +315,10 @@ cmd_defer() {
       echo ""
     } >> "$report"
   fi
-  echo "- $branch: $severities → $issue_path" >> "$report"
+  echo "- $branch: $severities → $ref" >> "$report"
 
-  _trace PROMOTE "branch=$branch issue=$issue_path severities=$severities"
-  echo "defer: $issue_path"
+  _trace PROMOTE "branch=$branch issue=$ref severities=$severities"
+  echo "defer: $ref"
 }
 
 # --- flush -------------------------------------------------------------------
@@ -242,6 +335,17 @@ cmd_flush() {
     esac
   done
   [ -n "$slug" ] || usage
+
+  # github's defer (cmd_defer) creates fix issues labeled ready-for-agent immediately —
+  # there is no pre-created "parked" label to represent local's deferred-findings Status,
+  # so nothing is ever queued here for github to promote. Still "works" in the sense the
+  # AC asks for: no crash, and an honest zero rather than scanning a local dir that, under
+  # `tracker: github`, holds no issue content at all.
+  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+    _trace FLUSH "promoted=0"
+    echo "FLUSH: none"
+    return
+  fi
 
   local open_dir count=0 f
   open_dir=$(issues_open_dir "$slug")
@@ -273,6 +377,13 @@ cmd_list() {
     esac
   done
   [ -n "$slug" ] || usage
+
+  # Same reasoning as cmd_flush's github branch: defer never parks a github issue, so
+  # there is never a deferred one to list.
+  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+    echo "DEFERRED: none"
+    return
+  fi
 
   local open_dir count=0 f
   open_dir=$(issues_open_dir "$slug")
