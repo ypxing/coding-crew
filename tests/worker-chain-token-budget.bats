@@ -40,7 +40,7 @@ words_of() {
   done
 }
 
-@test "budget: solve-issue is under 2,100 words" {
+@test "budget: solve-issue is under 2,300 words" {
   # Raised from 1,300 by the one-writer-per-issue-file fix: §7/§8 became a real branch on
   # "who owns the issue file", so the skill now carries two close paths where it carried
   # one. That is a new rule, not a re-explained one — the worker used to be told both to
@@ -72,8 +72,13 @@ words_of() {
   # to fix shared behavior at the function every caller routes through, not just the call
   # site the issue names; §4 now commits after every GREEN instead of once at the end, so a
   # worker killed mid-loop by workerTimeoutMs still leaves a resumable commit on its branch.
+  # Raised again to 2,300 when §5's cache fast path grew a `$MAIN_ROOT` fallback: it now
+  # resolves the shared main checkout via `--git-common-dir` itself (mirroring
+  # write-commands-cache.sh) instead of trusting a `$MAIN_ROOT` a prior step may have left
+  # unset, which used to make the check wrongly conclude no cache existed and overwrite a
+  # correct shared one. A real new branch, not a restatement of the existing cache check.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 2200 ] || { echo "solve-issue is $words words (budget 2200)" >&2; return 1; }
+  [ "$words" -lt 2300 ] || { echo "solve-issue is $words words (budget 2300)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {
@@ -81,7 +86,7 @@ words_of() {
   [ "$words" -lt 750 ] || { echo "tdd is $words words (budget 750)" >&2; return 1; }
 }
 
-@test "budget: the whole per-issue worker chain is under 4,300 words" {
+@test "budget: the whole per-issue worker chain is under 4,450 words" {
   # crew-coder + solve-issue + its verification reference + tdd. Read once per issue,
   # so this total is what a sprint multiplies by its issue count. It was 4,158 words
   # before the duplication below was cut; the ceiling leaves room for one genuinely new
@@ -96,13 +101,15 @@ words_of() {
   # solve-issue's §6.5 dev-commands.json reminder (see that ceiling's own comment) —
   # again a real new step, not restated here. Raised from 4,100 to 4,300 alongside
   # solve-issue's 2,100 ceiling above — the same four real rules, not restated here.
+  # Raised from 4,300 to 4,450 alongside solve-issue's 2,300 ceiling above — the same
+  # `$MAIN_ROOT` fallback, not restated here.
   total=$(words_of "$(coder_variant pi)")
   for f in "$REPO_ROOT"/skills/solve-issue/SKILL.md \
            "$REPO_ROOT"/skills/solve-issue/references/verification.md \
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 4300 ] || { echo "worker chain is $total words (budget 4300)" >&2; return 1; }
+  [ "$total" -lt 4450 ] || { echo "worker chain is $total words (budget 4450)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────

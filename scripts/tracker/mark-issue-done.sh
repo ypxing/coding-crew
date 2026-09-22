@@ -56,6 +56,117 @@ if [ -z "$ISSUE_PATH" ]; then
   exit 1
 fi
 
+# ─── tracker backend: local (file path) or github (issue number) ────────────
+#
+# tracker-config.sh (issue 01) is the single source of truth for which backend the
+# whole pipeline uses. It ships as a real sibling of this script both in the source
+# tree and once installed (registry.json bundles the two together), so the first
+# candidate below is the normal hit; the other two cover running this script
+# straight out of the repo checkout against an installed `.coding-crew/`. Finding
+# none of them is not an error — it means `tracker: local` with no front matter at
+# all, the same zero-config default tracker-config.sh itself falls back to.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAIN_ROOT="${MAIN_ROOT:-.}"
+TRACKER_CONFIG_TRACKER="local"
+TRACKER_CONFIG_REPO=""
+for _tc in \
+  "$SCRIPT_DIR/tracker-config.sh" \
+  "$MAIN_ROOT/.coding-crew/scripts/tracker-config.sh" \
+  "$MAIN_ROOT/scripts/tracker/tracker-config.sh"
+do
+  if [ -f "$_tc" ]; then
+    # shellcheck source=./tracker-config.sh
+    . "$_tc"
+    read_tracker_config "$MAIN_ROOT"
+    break
+  fi
+done
+
+if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+  # ─────────────────────────── github backend ────────────────────────────
+  #
+  # The argument is a GitHub issue number here, not a file path — there is no
+  # local file for a github-tracked issue. Mirrors orchestrator/lib/trackers/
+  # github.mjs's markDone (issue 05) for the two directly-invoked scripts that
+  # don't go through that Node module.
+  ISSUE_NUMBER="$ISSUE_PATH"
+  case "$ISSUE_NUMBER" in
+    ''|*[!0-9]*)
+      echo "ERROR: expected a GitHub issue number under tracker: github, got: $ISSUE_NUMBER" >&2
+      exit 1 ;;
+  esac
+
+  REPO_ARGS=()
+  if [ -n "$TRACKER_CONFIG_REPO" ]; then
+    REPO_ARGS=(--repo "$TRACKER_CONFIG_REPO")
+  fi
+
+  # ─── guard 1: does an orchestrator own this close? (identical semantics) ────
+  if [ "$FORCE" -eq 0 ]; then
+    reason=""
+    case "${CREW_ORCHESTRATED:-}" in
+      1|true|yes) reason="CREW_ORCHESTRATED=${CREW_ORCHESTRATED}" ;;
+    esac
+    if [ -z "$reason" ]; then
+      # No file path to derive the sprint dir from — use the env session-init.sh
+      # already exports (SPRINT_DIR, or FEATURE_SLUG to rebuild it), same as
+      # state.sh's fallback. Neither present means no sprint context to check.
+      _sprint_dir="${SPRINT_DIR:-}"
+      if [ -z "$_sprint_dir" ] && [ -n "${FEATURE_SLUG:-}" ]; then
+        _sprint_dir="$MAIN_ROOT/.scratch/$FEATURE_SLUG"
+      fi
+      if [ -n "$_sprint_dir" ] && [ -f "$_sprint_dir/.orchestrated" ]; then
+        reason="sprint marker $_sprint_dir/.orchestrated"
+      fi
+    fi
+    if [ -n "$reason" ]; then
+      echo "REFUSED: issue #$ISSUE_NUMBER is orchestrated ($reason) — the orchestrator closes it." >&2
+      echo "  It closes only after independent check verification, acceptance-criteria" >&2
+      echo "  verification and code review pass on your branch. Report your status and stop." >&2
+      echo "  If no sprint is running: remove the sprint's .orchestrated marker if it exists," >&2
+      echo "  unset CREW_ORCHESTRATED, or pass --force." >&2
+      exit 3
+    fi
+  fi
+
+  # ─── guard 2: are all criteria checked off, against a fresh fetch? ──────────
+  # Re-fetch live rather than trusting any body the caller might be holding from
+  # an earlier `listOpen` — a human may have edited the issue since.
+  if ! BODY="$(gh issue view "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --json body --jq .body 2>&1)"; then
+    echo "ERROR: gh issue view failed for #$ISSUE_NUMBER:" >&2
+    echo "$BODY" >&2
+    exit 1
+  fi
+
+  if [ "$FORCE" -eq 0 ]; then
+    UNCHECKED=$(printf '%s\n' "$BODY" | awk '
+      /^##+[ \t]*[Aa]cceptance [Cc]riteria/       { inside = 1; next }
+      /^##+[ \t]*[Cc]ross-cutting [Rr]equirements/ { inside = 1; next }
+      /^##/                                        { inside = 0 }
+      inside && /^[ \t]*[-*][ \t]+\[[ ]\]/         { print }
+    ')
+    if [ -n "$UNCHECKED" ]; then
+      echo "REFUSED: issue #$ISSUE_NUMBER still has unchecked criteria — not closing it." >&2
+      printf '%s\n' "$UNCHECKED" >&2
+      echo "  Check each one off once the code satisfies it, or record why it is descoped" >&2
+      echo "  under '## Unmet criteria' and re-run with --force." >&2
+      exit 4
+    fi
+  fi
+
+  # ─── close ───────────────────────────────────────────────────────────────
+  # No label is added or swapped — the closed state itself is "done".
+  if ! CLOSE_OUT="$(gh issue close "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --reason completed 2>&1)"; then
+    echo "ERROR: gh issue close failed for #$ISSUE_NUMBER:" >&2
+    echo "$CLOSE_OUT" >&2
+    exit 1
+  fi
+
+  echo "DONE: issue #$ISSUE_NUMBER closed"
+  exit 0
+fi
+
+# ─────────────────────────── local backend (byte-identical to today) ────────
 OPEN_DIR=$(dirname "$ISSUE_PATH")
 DONE_DIR="$(dirname "$OPEN_DIR")/done"
 FILENAME=$(basename "$ISSUE_PATH")

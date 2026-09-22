@@ -2,6 +2,8 @@
 
 # Tests for preamble and tracker operation references in implementation skills
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export SOLVE_ISSUE="$SCRIPT_DIR/skills/solve-issue/SKILL.md"
@@ -26,7 +28,9 @@ setup() {
 }
 
 @test "crew-address-findings/SKILL.md contains the Tracker Configuration section" {
-  grep -q '^## Tracker Configuration' "$ADDRESS_REVIEW"
+  # The preamble now comes from the shared fragment (skills/_shared/fragments/<platform>/
+  # tracker-configuration.md) via {{FRAGMENT:...}}, so assert against the rendered body.
+  grep -q '^## Tracker Configuration' "$(rendered_skill crew-address-findings claude)"
 }
 
 @test "solve-issue/SKILL.md preamble references issue-tracker.md lookup chain" {
@@ -35,8 +39,9 @@ setup() {
 }
 
 @test "crew-address-findings/SKILL.md preamble references issue-tracker.md lookup chain" {
-  grep -q 'issue-tracker.md' "$ADDRESS_REVIEW"
-  grep -q 'git rev-parse --show-toplevel' "$ADDRESS_REVIEW"
+  local f="$(rendered_skill crew-address-findings claude)"
+  grep -q 'issue-tracker.md' "$f"
+  grep -q 'git rev-parse --show-toplevel' "$f"
 }
 
 # --- Core workflows still intact ---

@@ -3,7 +3,10 @@ set -euo pipefail
 
 # close-issue.sh — mechanical issue close: rewrite Status line and move file
 #
-# Usage: close-issue.sh <issue-file-path>
+# Usage: close-issue.sh <issue-file-path>                 # tracker: local
+#        close-issue.sh <issue-number> <branch>            # tracker: github — the
+#        branch is required so receipts.sh can check the ac receipt without a file
+#        path to derive a feature/slug from (see receipts.sh's own comment on this).
 #
 # What it does:
 #   1. Validates the issue file exists.
@@ -34,6 +37,79 @@ if [ -z "$ISSUE_PATH" ]; then
   echo "Usage: $0 <issue-file-path>" >&2
   exit 1
 fi
+
+# ─── tracker backend: local (file path) or github (issue number) ────────────
+#
+# tracker-config.sh (issue 01) is not a sibling of this script either in the
+# source tree (skills/crew-afk/scripts/) or once installed (.coding-crew/scripts/,
+# alongside mark-issue-done.sh) — it lives under the main checkout's root, so it
+# is looked up relative to MAIN_ROOT instead. Finding none of the candidates is
+# not an error: it means `tracker: local`, tracker-config.sh's own zero-config
+# default, so an in-between install state can never break the local path.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAIN_ROOT="${MAIN_ROOT:-.}"
+TRACKER_CONFIG_TRACKER="local"
+TRACKER_CONFIG_REPO=""
+for _tc in \
+  "$SCRIPT_DIR/tracker-config.sh" \
+  "$MAIN_ROOT/.coding-crew/scripts/tracker-config.sh" \
+  "$MAIN_ROOT/scripts/tracker/tracker-config.sh"
+do
+  if [ -f "$_tc" ]; then
+    # shellcheck source=/dev/null
+    . "$_tc"
+    read_tracker_config "$MAIN_ROOT"
+    break
+  fi
+done
+
+if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+  # ─────────────────────────── github backend ────────────────────────────
+  #
+  # The argument is a GitHub issue number here, not a file path. Who is allowed
+  # to trigger this close is unchanged — the same ac-receipt gate as local, keyed
+  # on the same argument — only how the close itself happens differs.
+  ISSUE_NUMBER="$ISSUE_PATH"
+  case "$ISSUE_NUMBER" in
+    ''|*[!0-9]*)
+      echo "ERROR: expected a GitHub issue number under tracker: github, got: $ISSUE_NUMBER" >&2
+      exit 1 ;;
+  esac
+
+  REPO_ARGS=()
+  if [ -n "$TRACKER_CONFIG_REPO" ]; then
+    REPO_ARGS=(--repo "$TRACKER_CONFIG_REPO")
+  fi
+
+  RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
+  _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
+  # CREW_RECEIPTS=off is the same escape hatch receipts.sh's own receipts_enabled() grants
+  # (see its header comment) — mirrored here, not just left to receipts.sh, because a
+  # missing branch arg must not become a hard error when no check is going to run at all.
+  if [ -f "$RECEIPTS_SCRIPT" ] && [ "${CREW_RECEIPTS:-on}" != "off" ]; then
+    # No issue file path to derive a feature/slug from (see receipts.sh's own comment on
+    # this) — the branch is the one thing both the write (runHousekeeping, pre-merge) and
+    # this check agree on, so receipts.sh splits it the same way for both.
+    BRANCH_ARG="${2:-}"
+    if [ -z "$BRANCH_ARG" ]; then
+      echo "ERROR: tracker: github requires the branch as a second argument: $0 <issue-number> <branch>" >&2
+      exit 1
+    fi
+    bash "$RECEIPTS_SCRIPT" check ac --branch "$BRANCH_ARG"
+  fi
+
+  # No label is added or swapped — the closed state itself is "done". Acceptance
+  # criteria were already re-verified pre-merge (the receipt above is that fact);
+  # this script's job, same as local, is the close, not a second criteria check.
+  gh issue close "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --reason completed
+
+  _trace CLOSE "issue=$ISSUE_NUMBER"
+
+  echo "Closed: issue #$ISSUE_NUMBER (github)"
+  exit 0
+fi
+
+# ─────────────────────────── local backend (byte-identical to today) ────────
 
 # finalize_issue — mark an issue file closed: Status: done, plus every criterion ticked.
 #

@@ -2,6 +2,8 @@
 
 # Tests for preamble and tracker operation references in planning skills
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export TO_ISSUES="$SCRIPT_DIR/skills/to-issues/SKILL.md"
@@ -9,23 +11,32 @@ setup() {
 }
 
 # --- Tracker Configuration preamble ---
+#
+# The preamble itself now lives in one shared fragment (skills/_shared/fragments/<platform>/
+# tracker-configuration.md), referenced from the source SKILL.md via {{FRAGMENT:...}} rather
+# than copy-pasted — see .scratch/github-issue-tracker/issues/open/
+# 08-skill-prose-github-support.md. So these assertions run against the *rendered* body,
+# which is what a consuming repo actually receives, same as tests/helpers/render.bash's own
+# rationale for every other rendered-body assertion in this suite.
 
 @test "to-issues/SKILL.md contains the Tracker Configuration section" {
-  grep -q '^## Tracker Configuration' "$TO_ISSUES"
+  grep -q '^## Tracker Configuration' "$(rendered_skill to-issues claude)"
 }
 
 @test "to-prd/SKILL.md contains the Tracker Configuration section" {
-  grep -q '^## Tracker Configuration' "$TO_PRD"
+  grep -q '^## Tracker Configuration' "$(rendered_skill to-prd claude)"
 }
 
 @test "to-issues/SKILL.md preamble references issue-tracker.md lookup chain" {
-  grep -q 'issue-tracker.md' "$TO_ISSUES"
-  grep -q 'git rev-parse --show-toplevel' "$TO_ISSUES"
+  local f="$(rendered_skill to-issues claude)"
+  grep -q 'issue-tracker.md' "$f"
+  grep -q 'git rev-parse --show-toplevel' "$f"
 }
 
 @test "to-prd/SKILL.md preamble references issue-tracker.md lookup chain" {
-  grep -q 'issue-tracker.md' "$TO_PRD"
-  grep -q 'git rev-parse --show-toplevel' "$TO_PRD"
+  local f="$(rendered_skill to-prd claude)"
+  grep -q 'issue-tracker.md' "$f"
+  grep -q 'git rev-parse --show-toplevel' "$f"
 }
 
 # --- No inline .scratch/ tracker operation logic ---

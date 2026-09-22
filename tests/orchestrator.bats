@@ -22,7 +22,8 @@ setup_file() {
 @test "orchestrator: unit and integration suite passes" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$REPO_ROOT"
-  run node --test tests/orchestrator/tracker.test.mjs tests/orchestrator/report.test.mjs \
+  run node --test tests/orchestrator/tracker.test.mjs tests/orchestrator/tracker-config.test.mjs \
+    tests/orchestrator/report.test.mjs \
     tests/orchestrator/dispatch.test.mjs tests/orchestrator/contract.test.mjs \
     tests/orchestrator/sprint.test.mjs
   if [ "$status" -ne 0 ]; then

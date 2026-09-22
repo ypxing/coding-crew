@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.29.115]
+
+### Added
+
+- **GitHub Issues as a second tracker backend**, selected via `configure-tracker`, usable
+  across the whole pipeline (`crew-grill`/`crew-brainstorm` → `crew-afk` →
+  `crew-address-findings`) alongside the existing local-file backend. GitHub is the live
+  source of truth for issue content/status — no local mirror file to drift out of sync — so a
+  sprint can resume on a different machine once the feature branch is pulled and `gh auth
+  login` is done. `.coding-crew/docs/issue-tracker.md` gains optional YAML front matter
+  (`tracker: github`/`repo: owner/name`) read by a shared `tracker-config.mjs`/
+  `tracker-config.sh`; missing front matter defaults to `{tracker: "local"}`, so existing
+  installs need no changes. `orchestrator/lib/tracker.mjs` is now a thin factory over
+  `trackers/local.mjs` (today's logic, unchanged) and the new `trackers/github.mjs`, sharing
+  markdown-body parsing via `trackers/body-format.mjs` so both backends produce identical
+  `parseIssue` shapes. The GitHub backend uses one batched `gh issue list --state all` call
+  per dispatch pass (no N+1), a milestone per feature slug, four pre-seeded triage labels
+  (`done`/`wontfix` map to close-reason/state instead of labels), `## Blocked by` issue-number
+  references as the dependency graph (no sidecar file), and a PRD-as-pinned-issue convention.
+  `close-issue.sh`, `mark-issue-done.sh`, and `promote-findings.sh` all branch on the
+  configured backend, re-fetching an issue's live body before closing it rather than trusting
+  a cached copy. `configure-tracker` gains a `gh auth status` check, a repo-override prompt,
+  and idempotent creation of the four triage labels for the `github` choice.
+
 ## [1.29.114]
 
 ### Fixed
