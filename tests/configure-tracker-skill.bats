@@ -139,3 +139,10 @@ teardown() {
   [ "$status" -eq 0 ]
   [ -f ".coding-crew/docs/issue-tracker.md" ]
 }
+
+# --- README documents the github backend ---
+
+@test "README.md mentions GitHub Issues as a supported tracker backend via configure-tracker" {
+  grep -qi 'GitHub Issues' "$SCRIPT_DIR/README.md"
+  grep -q 'configure-tracker' "$SCRIPT_DIR/README.md"
+}
