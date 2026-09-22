@@ -30,6 +30,7 @@ If the trailing arguments aren't CLI syntax, look up what exists first:
 ```bash
 ls -d .scratch/*/ 2>/dev/null
 grep -rl "Status: ready-for-agent" .scratch/*/issues/open/*.md 2>/dev/null
+# tracker: github — gh issue list --milestone <slug> --label ready-for-agent
 ```
 
 Match against those names (exact, fuzzy/typo, then issue content). One match →

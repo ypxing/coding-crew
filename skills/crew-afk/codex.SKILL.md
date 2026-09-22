@@ -19,9 +19,9 @@ CREW_AFK="$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs"
 node "$CREW_AFK" run --platform codex "$@"
 ```
 
-Pass CLI-looking arguments straight through — `--model`, `--coverage`, `--max-parallel N`,
+Pass CLI-looking arguments through — `--model`, `--coverage`, `--max-parallel N`,
 `--jira TICKET-123`, a `.scratch/<feature-slug>/…` path — never rewrite those. A bare
-word, typo, or free-form phrase is resolved first, below.
+word, typo, or phrase is resolved first, below.
 
 ## Resolving the sprint target
 
@@ -30,6 +30,7 @@ If the trailing arguments aren't CLI syntax, look up what exists first:
 ```bash
 ls -d .scratch/*/ 2>/dev/null
 grep -rl "Status: ready-for-agent" .scratch/*/issues/open/*.md 2>/dev/null
+# tracker: github — gh issue list --milestone <slug> --label ready-for-agent
 ```
 
 Match against those names (exact, fuzzy/typo, then issue content). One match →
@@ -38,9 +39,9 @@ Match against those names (exact, fuzzy/typo, then issue content). One match →
 create a new `.scratch/<slug>` directory, and never guess — a wrong resolution dispatches,
 merges, and closes real work against the wrong feature.
 
-It owns the whole loop: a worktree and `crew-coder` process per issue, then verify →
-review → merge → close, then promotion, squash, cleanup and the summary — until no issues
-remain or every remaining one is blocked (its retries spent, or a dependency of one that is).
+It owns the whole loop: worktree and `crew-coder` process per issue, then verify → review →
+merge → close, then promotion, squash, cleanup and summary — until no issues remain or
+every remaining one is blocked (retries spent, or a dependency's).
 
 **Requires the local Codex CLI.** Workers are `codex exec` child processes against a
 local clone; `codex` must be on `PATH` and authenticated, or stop rather than
@@ -55,8 +56,8 @@ implementing issues yourself.
    prompted directly once the sprint finishes or stalls. The printed summary is the
    report — don't rewrite it.
 3. Mention `.scratch/<feature-slug>/traces/orchestrator.log` if asked.
-4. Report the exit code and stop: `0` finished, `2` stalled (blockers need a human), `3`
-   no ready issues, `1` setup problem — print its stderr verbatim.
+4. Report the exit code and stop: `0` finished, `2` stalled (needs a human), `3` no ready
+   issues, `1` setup problem — print its stderr verbatim.
 
 ## Failure handling
 

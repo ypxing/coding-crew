@@ -20,9 +20,9 @@ CREW_AFK="$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs"
 node "$CREW_AFK" run --platform copilot "$@"
 ```
 
-Pass CLI-looking arguments straight through — `--model`, `--coverage`, `--max-parallel N`,
+Pass CLI-looking arguments through — `--model`, `--coverage`, `--max-parallel N`,
 `--jira TICKET-123`, a `.scratch/<feature-slug>/…` path — never rewrite those. A bare
-word or free-form phrase is resolved first, below.
+word or phrase is resolved first, below.
 
 ## Resolving the sprint target
 
@@ -31,6 +31,7 @@ If the trailing arguments aren't CLI syntax, look up what exists first:
 ```bash
 ls -d .scratch/*/ 2>/dev/null
 grep -rl "Status: ready-for-agent" .scratch/*/issues/open/*.md 2>/dev/null
+# tracker: github — gh issue list --milestone <slug> --label ready-for-agent
 ```
 
 Match against those names (exact, fuzzy/typo, then issue content). One match →
@@ -39,11 +40,11 @@ Match against those names (exact, fuzzy/typo, then issue content). One match →
 create a new `.scratch/<slug>` directory, and never guess — a wrong resolution dispatches,
 merges, and closes real work against the wrong feature.
 
-It owns the whole loop: a worktree and `crew-coder` process per issue, then verify →
-review → merge → close, then promotion, squash, cleanup and the summary — until no issues
-remain or every remaining one is blocked (its retries spent, or a dependency of one that is).
-Workers are `copilot -p --agent crew-coder` processes, two at a time, not `task` calls,
-so a hung one times out without hanging the sprint.
+It owns the whole loop: worktree and `crew-coder` process per issue, then verify → review →
+merge → close, then promotion, squash, cleanup and summary — until no issues remain or
+every remaining one is blocked (retries spent, or a dependency's). Workers are
+`copilot -p --agent crew-coder` processes, 2 at a time, not `task` calls, so a hung one
+times out without hanging the sprint.
 
 ## Your part
 
