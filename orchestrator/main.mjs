@@ -457,6 +457,10 @@ async function main() {
     // normal run below instead of relaunching itself again. Skipped under --dry-run: a preview
     // run has nothing worth watching live and shouldn't leave a pane behind.
     if (options.herdr && !options.dryRun && process.env.CREW_AFK_RELAUNCHED !== "1") {
+      // Self-identifying in `ps` so a second `main.mjs run` for the same feature-slug reads
+      // as "expected front door", not "duplicate to kill" — see relaunchIntoDedicatedPane's
+      // doc comment for why this process exists at all.
+      process.title = "crew-afk-frontdoor (waiting on dedicated pane — do not kill)";
       const relaunchArgv = process.argv.slice(2);
       if (resolved.slug && !relaunchArgv.includes("--feature-slug")) {
         relaunchArgv.push("--feature-slug", resolved.slug);
@@ -472,6 +476,12 @@ async function main() {
       exitCode = result.exitCode;
       delegatedNotification = result.delegated;
       return exitCode;
+    }
+
+    // Same self-identifying reasoning as the front door's own process.title above, for
+    // whoever runs `ps` while this is the live sprint in its own dedicated pane.
+    if (process.env.CREW_AFK_RELAUNCHED === "1") {
+      process.title = `crew-afk-sprint (${resolved.slug})`;
     }
 
     // Before any worktree exists: make sure docker-compose.override.yml and .env are in

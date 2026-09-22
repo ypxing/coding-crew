@@ -10,6 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 SCRIPT="$SCRIPT_DIR/skills/dep-install/scripts/host-install.sh"
 
 setup() {
+  # Isolation from whatever the ambient shell happens to export — a real crew-afk dispatch
+  # always sets MAIN_ROOT for its worker, and without this a test that means to exercise "no
+  # --main-root passed" would silently pick that up instead.
+  unset MAIN_ROOT
   PROJECT=$(mktemp -d)
   export PROJECT
 }

@@ -15,6 +15,10 @@ DISCOVER_SCRIPT="$SCRIPT_DIR/scripts/skill-utils/git-workflow/discover-commands.
 CACHE_FILE=".coding-crew/dev-commands.json"
 
 setup() {
+  # Isolation from whatever the ambient shell happens to export — a real crew-afk dispatch
+  # always sets MAIN_ROOT for its worker, and without this a test that means to exercise "no
+  # $MAIN_ROOT set" would silently pick that up instead.
+  unset MAIN_ROOT
   export TEMP_DIR=$(mktemp -d)
   cd "$TEMP_DIR"
 

@@ -212,10 +212,25 @@ Do not add documentation for things that are already self-evident from the code.
 **Use the same INSTALL_MODE from Step 2** — every check command runs inside docker or on the host,
 matching what was established then.
 
-**Cache fast path** — command discovery is a property of the repo, not of this issue:
+**Cache fast path** — command discovery is a property of the repo, not of this issue. Resolve
+`$MAIN_ROOT` the same way `write-commands-cache.sh` does — via `--git-common-dir`, not a bare
+`git rev-parse --show-toplevel` — so a `$MAIN_ROOT` that is unset or wrong in this shell (a prior
+step may have cleared it for an unrelated reason) still lands on the *shared* main checkout's
+cache instead of concluding, wrongly, that no cache exists:
 
 ```bash
-CACHE="$MAIN_ROOT/.coding-crew/dev-commands.json"
+_main_root_of() {
+  local dir="$1" common
+  common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$common" in
+    /*) : ;;
+    *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;
+  esac
+  dirname "$common"
+}
+MAIN_ROOT_EFFECTIVE="${MAIN_ROOT:-}"
+[ -z "$MAIN_ROOT_EFFECTIVE" ] && MAIN_ROOT_EFFECTIVE="$(_main_root_of "$PROJECT_ROOT")"
+CACHE="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"
 if [ -f "$CACHE" ] && grep -q '"test"' "$CACHE"; then echo USE_CACHE; else echo DISCOVER; fi
 ```
 

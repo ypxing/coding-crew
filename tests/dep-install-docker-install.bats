@@ -26,6 +26,10 @@ assert_linked_or_copied() {
 }
 
 setup() {
+  # Isolation from whatever the ambient shell happens to export — a real crew-afk dispatch
+  # always sets MAIN_ROOT for its worker, and without this a test that means to exercise "no
+  # --main-root passed" would silently pick that up instead.
+  unset MAIN_ROOT
   TEMP_DIR=$(mktemp -d)
   export TEMP_DIR
   MAIN=$(mktemp -d)

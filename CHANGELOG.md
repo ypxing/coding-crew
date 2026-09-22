@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.29.113]
+
+### Fixed
+
+- **A crew-afk sprint's dedicated herdr pane could be mistaken for a stray duplicate and
+  killed by whatever is watching the triggering pane** — both the front-door process (waiting
+  on the relaunched sprint) and the relaunched sprint itself showed up in `ps` as plain
+  `node .../main.mjs run ...`, indistinguishable from a runaway duplicate invocation. Each now
+  sets its own `process.title` (`crew-afk-frontdoor (waiting on dedicated pane — do not kill)`
+  / `crew-afk-sprint (<feature-slug>)`), so `ps aux` is self-explanatory without needing to
+  read the skill doc first.
+- **`solve-issue`'s Step 5 cache-fast-path trusted `$MAIN_ROOT` literally, with no fallback if
+  it was ever unset** — unlike `write-commands-cache.sh`'s own `--git-common-dir` fallback for
+  exactly this case. If `$MAIN_ROOT` is empty when this check runs (e.g. a coder unsets it to
+  dodge an unrelated test-env leak), it always concluded `DISCOVER` even when the real, correct
+  shared `.coding-crew/dev-commands.json` cache already existed — and a wrong rediscovery
+  answer then overwrites that shared cache for the rest of the sprint. Gives the check the same
+  fallback, via a new `MAIN_ROOT_EFFECTIVE`, without redefining `$MAIN_ROOT` itself.
+- **~90 `dep-install`/`verify-worktree` bats tests assumed `$MAIN_ROOT` is never set in their
+  shell**, but crew-afk's own dispatch always exports it for every worker — so running these
+  tests from inside a real dispatch environment (exactly what a coder solving an issue in this
+  repo does) broke tests meant to exercise the "no `--main-root` passed" / "no `$MAIN_ROOT` set"
+  fallback paths, and was the actual reason a coder would ever need to unset it (see above).
+  Each affected file's `setup()` now unsets `MAIN_ROOT` itself instead of assuming the caller's
+  shell never has it.
+- **A not-fixable-recheck round dispatched `crew-triage` again anyway**, despite its own
+  `[SKIP-WORKER]` log line promising "no triage and no coder dispatch, in case the failure was
+  transient." `handleVerificationFailure` always re-triaged on any verify failure, and the
+  `skippedWorker` flag meant to signal "skip that" was set but never read anywhere. The recheck
+  round now reuses the prior round's triage verdict verbatim instead of paying for a redundant
+  dispatch — the retry cap (2 attempts) still blocks the issue exactly as before.
+
 ## [1.29.112]
 
 ### Fixed

@@ -563,14 +563,25 @@ function mergeAndClose(ctx, worker, outcome) {
 /**
  * Verify-worktree.sh already failed — decide what that failure means before demoting.
  *
- * Always dispatches `runTriage`, an agent independent of the coder that wrote the branch
- * (the same reason review is independent of the coder, not a self-grade), and tags the
- * retention reason with its verdict so the next attempt's runWorker can route on it without
+ * Dispatches `runTriage`, an agent independent of the coder that wrote the branch (the same
+ * reason review is independent of the coder, not a self-grade), and tags the retention
+ * reason with its verdict so the next attempt's runWorker can route on it without
  * re-deriving anything. A not-fixable verdict that recurs stops on its own, via this issue's
  * retry cap (see finishRetryOrBlock) — no reason-specific repeat-check needed here.
+ *
+ * Exception: a not-fixable-recheck round (runWorker's skipWorker path, worker.skippedWorker)
+ * already carries a triage verdict from the round that first retained this branch — that is
+ * the whole point of "recheck deps + verify only" ([SKIP-WORKER]'s own "no triage" promise).
+ * Re-triaging here on the exact same failure would just re-ask the same question at the cost
+ * of another dispatch, so this reuses that prior verdict verbatim instead.
  */
 async function handleVerificationFailure(ctx, worker, outcome, verify) {
   const { sprint, options } = ctx;
+
+  if (worker.skippedWorker) {
+    const priorReason = sprint.retentionReason(worker.issue.slug) ?? "verification-failed";
+    return finishRetryOrBlock(ctx, worker, outcome, priorReason);
+  }
 
   const triage = await runTriage(ctx, worker, verify.stdout);
   if (!triage.completed) {
