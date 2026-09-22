@@ -6,6 +6,7 @@ setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export ISSUE_TRACKER="$SCRIPT_DIR/docs/templates/trackers/local.md"
   export TEMPLATE="$SCRIPT_DIR/docs/templates/trackers/local.md"
+  export GITHUB_TEMPLATE="$SCRIPT_DIR/docs/templates/trackers/github.md"
 }
 
 @test "issue-tracker.md contains all seven required sections" {
@@ -55,4 +56,39 @@ setup() {
 
 @test "docs/agents/ directory has been removed from source repo" {
   [ ! -d "$SCRIPT_DIR/docs/agents" ]
+}
+
+@test "docs/templates/trackers/github.md exists" {
+  [ -f "$GITHUB_TEMPLATE" ]
+}
+
+@test "docs/templates/trackers/github.md contains all seven required sections" {
+  grep -q '^## Operation: list'          "$GITHUB_TEMPLATE"
+  grep -q '^## Operation: fetch'         "$GITHUB_TEMPLATE"
+  grep -q '^## Operation: publish'       "$GITHUB_TEMPLATE"
+  grep -q '^## Operation: mark-done'     "$GITHUB_TEMPLATE"
+  grep -q '^## Operation: status-update' "$GITHUB_TEMPLATE"
+  grep -q '^## Labels'                   "$GITHUB_TEMPLATE"
+  grep -q '^## Workspace'                "$GITHUB_TEMPLATE"
+}
+
+@test "docs/templates/trackers/github.md operations are described in terms of gh issue/gh api" {
+  grep -q 'gh issue' "$GITHUB_TEMPLATE"
+  grep -q 'gh api'   "$GITHUB_TEMPLATE"
+}
+
+@test "docs/templates/trackers/github.md Labels table maps done/wontfix to close-reasons, not labels" {
+  grep -q -- '--reason completed'    "$GITHUB_TEMPLATE"
+  grep -q -- '--reason not-planned'  "$GITHUB_TEMPLATE"
+  # The Labels section must explicitly say these two are not represented as labels.
+  local labels_content
+  labels_content=$(awk '/^## Labels/{found=1} found{print}' "$GITHUB_TEMPLATE")
+  echo "$labels_content" | grep -qi 'not a label'
+}
+
+@test "docs/templates/trackers/github.md Labels section still lists the four real GitHub labels" {
+  grep -q 'needs-triage'    "$GITHUB_TEMPLATE"
+  grep -q 'needs-info'      "$GITHUB_TEMPLATE"
+  grep -q 'ready-for-agent' "$GITHUB_TEMPLATE"
+  grep -q 'ready-for-human' "$GITHUB_TEMPLATE"
 }
