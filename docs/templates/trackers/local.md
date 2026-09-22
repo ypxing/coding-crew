@@ -2,6 +2,24 @@
 
 Issues and PRDs for this repo live as markdown files in `.scratch/`.
 
+## Tracker config (optional front matter)
+
+This file may open with YAML front matter declaring which tracker backend the whole
+pipeline should use:
+
+```yaml
+---
+tracker: local          # or "github"
+# repo: owner/name      # optional override — omit to let `gh` infer it from the git remote
+---
+```
+
+Omitting the front matter entirely — as this template does — means `tracker: local` with no
+`repo`. `orchestrator/lib/tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and
+`scripts/tracker/tracker-config.sh`'s `read_tracker_config` are the two readers of this front
+matter; both default to `{tracker: "local", repo: null}` when it, or this whole file, is absent,
+so existing local-tracker installs need no changes.
+
 ## Operation: list
 
 Find all open issues ready for an agent:

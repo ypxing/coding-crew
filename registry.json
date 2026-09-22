@@ -10,6 +10,10 @@
       "mark-issue-done": {
         "source": "scripts/tracker/mark-issue-done.sh",
         "dest": ".coding-crew/scripts/mark-issue-done.sh"
+      },
+      "tracker-config": {
+        "source": "scripts/tracker/tracker-config.sh",
+        "dest": ".coding-crew/scripts/tracker-config.sh"
       }
     }
   },
