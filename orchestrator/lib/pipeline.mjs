@@ -207,7 +207,7 @@ export async function runWorker(ctx, issue, attempt) {
   // (branches are never deleted except by cleanup-worktrees.sh's own ancestry-checked
   // sweep), and silently reusing it can carry a base that predates work this sprint has
   // since merged, surfacing only much later as an unexplained merge conflict.
-  ctx.log(`[STEP] slug=${issue.slug} round=${attempt} step=worktree`);
+  ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=worktree`);
   const wt = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
     branch,
@@ -244,7 +244,7 @@ export async function runWorker(ctx, issue, attempt) {
   // issues merged into it — sync that history in now, before the coder ever sees the
   // branch, instead of letting the gap surface as a conflict at the merge gate later.
   if (wt.reusedBranch) {
-    ctx.log(`[STEP] slug=${issue.slug} round=${attempt} step=sync-feature-branch`);
+    ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=sync-feature-branch`);
     const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch });
     if (sync.conflict) {
       ctx.log(`[SYNC-CONFLICT] slug=${issue.slug} branch=${branch} — ${sync.reason}`);
@@ -287,7 +287,7 @@ export async function runWorker(ctx, issue, attempt) {
   // verify gate already fails closed on the consequence, and stalling a whole round on
   // whatever host-install.sh mishandled would be worse than letting the gate say so.
   if (options.deps !== false) {
-    ctx.log(`[STEP] slug=${issue.slug} round=${attempt} step=deps`);
+    ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=deps`);
     const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug], {
       env: sprint.childEnv(),
     });
@@ -362,7 +362,7 @@ export async function runWorker(ctx, issue, attempt) {
   );
 
   ctx.log(
-    `[STEP] slug=${issue.slug} round=${attempt} step=dispatch-coder model=${options.model ?? "inherit"}`,
+    `[STEP] slug=${dispatchStem(issue)} round=${attempt} step=dispatch-coder model=${options.model ?? "inherit"}`,
   );
   // herdrReuse is non-null only when handleVerificationFailure queued this exact slug's
   // pane last round (see sprint.consumeHerdrReusePending) — spending it here, once, is what
@@ -488,7 +488,7 @@ export async function runHousekeeping(ctx, worker) {
   }
 
   // --- gate 1: independent verification in the worktree ----------------------
-  ctx.log(`[STEP] slug=${issue.slug} round=${worker.attempt} step=verify`);
+  ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
   const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree], {
     env: sprint.childEnv(),
   });
@@ -588,7 +588,7 @@ function mergeAndClose(ctx, worker, outcome) {
   const { issue, branch } = worker;
 
   effects.git(["checkout", sprint.featureBranch]);
-  ctx.log(`[STEP] slug=${issue.slug} round=${worker.attempt} step=merge`);
+  ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=merge`);
   const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {
     env: sprint.childEnv(),
   });
@@ -597,7 +597,7 @@ function mergeAndClose(ctx, worker, outcome) {
     return finishRetryOrBlock(ctx, worker, outcome, "merge-failed");
   }
 
-  ctx.log(`[STEP] slug=${issue.slug} round=${worker.attempt} step=close`);
+  ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=close`);
   // The branch is only needed by the github path (receipts.sh check ac --branch — see
   // close-issue.sh's own comment); harmless as a trailing arg for local, which ignores it.
   const close = effects.bash("close-issue.sh", [issueRef(issue), branch], { env: sprint.childEnv() });
@@ -695,7 +695,7 @@ async function runTriage(ctx, worker, verifyStdout) {
   );
 
   ctx.log(
-    `[STEP] slug=${issue.slug} round=${worker.attempt} step=dispatch-triage model=${options.triageModel ?? "inherit"}`,
+    `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-triage model=${options.triageModel ?? "inherit"}`,
   );
   const result = await dispatch(
     effects,
@@ -765,7 +765,7 @@ async function runReview(ctx, worker, checks) {
   );
 
   ctx.log(
-    `[STEP] slug=${issue.slug} round=${worker.attempt} step=dispatch-review model=${options.reviewerModel ?? "inherit"}`,
+    `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-review model=${options.reviewerModel ?? "inherit"}`,
   );
   const result = await dispatch(
     effects,

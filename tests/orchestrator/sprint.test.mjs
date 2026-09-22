@@ -454,9 +454,9 @@ test("a verification-failed retry still redispatches the full worker, not just r
   );
   // A failed verify routes to triage (not the coder) to classify the failure — that
   // dispatch needs the same live-stream visibility as the coder/review dispatches.
-  const steps = r.stderr.split("\n").filter((l) => l.startsWith("[STEP]") && l.includes("slug=alpha"));
+  const steps = r.stderr.split("\n").filter((l) => l.startsWith("[STEP]") && l.includes("slug=01-alpha"));
   assert.ok(
-    steps.some((l) => /^\[STEP\] slug=alpha round=1 step=dispatch-triage model=.+$/.test(l)),
+    steps.some((l) => /^\[STEP\] slug=01-alpha round=1 step=dispatch-triage model=.+$/.test(l)),
     `expected a round-1 dispatch-triage step marker, got:\n${steps.join("\n")}`,
   );
 });
@@ -1195,7 +1195,7 @@ test("the orchestrator prints a [STEP] marker before each gate, slug/round-tagge
   addIssue(root, "01-alpha.md");
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  const steps = r.stderr.split("\n").filter((l) => l.startsWith("[STEP]") && l.includes("slug=alpha"));
+  const steps = r.stderr.split("\n").filter((l) => l.startsWith("[STEP]") && l.includes("slug=01-alpha"));
   // Every gate this clean issue passes through, in the order pipeline.mjs runs them,
   // with no dispatch-triage marker since verify never fails on this path.
   assert.deepEqual(
@@ -1203,7 +1203,7 @@ test("the orchestrator prints a [STEP] marker before each gate, slug/round-tagge
     ["worktree", "deps", "dispatch-coder", "verify", "dispatch-review", "merge", "close"],
     steps.join("\n"),
   );
-  for (const l of steps) assert.match(l, /^\[STEP\] slug=alpha round=1 step=[\w-]+( model=\S+)?$/, l);
+  for (const l of steps) assert.match(l, /^\[STEP\] slug=01-alpha round=1 step=[\w-]+( model=\S+)?$/, l);
 });
 
 test("PR 2: a throttled [TOOL] heartbeat from the bash dispatcher reaches the live stream via onTrace, slug/round-tagged", () => {

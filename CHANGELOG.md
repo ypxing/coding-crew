@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.29.116]
+
+### Fixed
+
+- **crew-afk's `[STEP]` log lines now carry the issue number**, e.g. `slug=01-alpha` instead of
+  `slug=alpha`, matching the `NN-<slug>` naming already used for dispatch stems and issue files —
+  making the round-by-round trace easier to cross-reference against `.scratch/<slug>/issues/`.
+
 ## [1.29.115]
 
 ### Added
