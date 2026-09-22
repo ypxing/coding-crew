@@ -72,6 +72,35 @@ resume_feature_branch() {
   return 0
 }
 
+# --- tracker config (issue 01) --------------------------------------------------
+# Read once, this early, because it changes two things below: whether omitting
+# --feature-slug is even allowed, and whether an off-default-branch resume with no
+# sprint.env may silently adopt the current branch. Sourced from its fixed install
+# location (registry.json's docs.scripts entry), not a path relative to this script,
+# since it ships independently of any one skill. An in-between install state (this
+# script updated, tracker-config.sh not yet installed) must not break the local
+# path, so a missing file fails safe to the same "local" defaults the reader itself
+# returns when the doc is absent.
+MAIN_ROOT_FOR_TRACKER=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+TRACKER_CONFIG_TRACKER="local"
+TRACKER_CONFIG_REPO=""
+TRACKER_CONFIG_SCRIPT="$MAIN_ROOT_FOR_TRACKER/.coding-crew/scripts/tracker-config.sh"
+if [ -f "$TRACKER_CONFIG_SCRIPT" ]; then
+  # shellcheck source=/dev/null
+  source "$TRACKER_CONFIG_SCRIPT"
+  read_tracker_config "$MAIN_ROOT_FOR_TRACKER"
+fi
+
+# Under tracker: github there is nothing local to scan (issues live on GitHub, not
+# under .scratch/*/issues/open/), so the local-scan fallback below is not a fallback
+# at all there — it would silently pick whatever .scratch/ happens to contain. Require
+# the slug explicitly instead of guessing.
+if [ "$TRACKER_CONFIG_TRACKER" = "github" ] && [ -z "$FEATURE_SLUG_ARG" ]; then
+  echo "ERROR: --feature-slug is required under tracker: github (no local .scratch/ issues to scan for one)." >&2
+  echo "Pass --feature-slug <slug> explicitly." >&2
+  exit 1
+fi
+
 if [ -n "$FEATURE_SLUG_ARG" ]; then
   # Use the provided slug directly — bypass first-issue detection
   if resume_feature_branch "$FEATURE_SLUG_ARG"; then
@@ -90,7 +119,21 @@ if [ -n "$FEATURE_SLUG_ARG" ]; then
         echo "Creating new feature branch: $SUGGESTED_BRANCH"
         git checkout -b "$SUGGESTED_BRANCH"
       fi
+    elif [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+      # Cross-machine resume depends on the branch name being deterministic — off the
+      # default branch with no sprint.env to resume from, the only branch a github-
+      # tracked sprint may legitimately be on is feature/<slug>. Anything else is a
+      # leftover branch from something unrelated (a prior issue's own branch, a
+      # detached HEAD, a colleague's branch), not this sprint continuing.
+      EXPECTED_BRANCH="feature/$FEATURE_SLUG_ARG"
+      if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
+        echo "ERROR: tracker: github requires resuming on branch '$EXPECTED_BRANCH', but the current branch is '$CURRENT_BRANCH' and no .scratch/$FEATURE_SLUG_ARG/sprint.env exists to resume from." >&2
+        echo "Checkout '$EXPECTED_BRANCH' (or a branch that has a recorded sprint.env), or pass a different --feature-slug." >&2
+        exit 1
+      fi
     fi
+    # local tracker (or absent config): off the default branch with no sprint.env
+    # silently keeps whatever branch is checked out — unchanged, existing behavior.
   fi
 else
   # Find first ready issue to determine branch name
