@@ -28,6 +28,9 @@ setup() {
   # Same reasoning for tracker-config.sh: point straight at the repo's own copy instead of
   # requiring a full install under .coding-crew/scripts/.
   export CREW_TRACKER_CONFIG="$REPO_ROOT/scripts/tracker/tracker-config.sh"
+  # _defer_github's github path shells out to github.mjs's own create-issue CLI — point it
+  # at the repo's own copy too, same reasoning.
+  export CREW_GITHUB_TRACKER_CLI="$REPO_ROOT/orchestrator/lib/trackers/github.mjs"
 
   mkdir -p .scratch/feat/issues/open .scratch/feat/reviews
   export REPORT=.scratch/feat/reviews/sprint-review-1.md
@@ -50,6 +53,7 @@ EOF
   export GH_CALLS_LOG="$TEMP_DIR/gh-calls.log"
   export GH_LAST_BODY="$TEMP_DIR/gh-last-body.txt"
   export GH_VIEW_BODY_FILE="$TEMP_DIR/gh-view-body.txt"
+  export GH_MILESTONES_FILE="$TEMP_DIR/gh-milestones.json"
   : > "$GH_CALLS_LOG"
 }
 
@@ -69,13 +73,35 @@ configure_github() {
   } > .coding-crew/docs/issue-tracker.md
 }
 
-# stub_gh — a fake `gh` on PATH. Handles exactly the two subcommands this script calls:
-# `gh issue create` (captures argv and the --body-file content, prints a fake issue URL)
-# and `gh issue view <n> --json body -q .body` (prints back a canned body).
+# stub_gh [existing-milestones-json] — a fake `gh` on PATH. Handles the subcommands this
+# script calls: `gh issue create` (captures argv and the --body-file content, prints a fake
+# issue URL), `gh issue view <n> --json body -q .body` (prints back a canned body), and
+# `gh api repos/.../milestones` (list returns $1, default `[]`; create logs the call and
+# appends to GH_MILESTONES_FILE so a second list call in the same test observes it).
 stub_gh() {
+  local milestones="${1:-[]}"
+  printf '%s' "$milestones" > "$GH_MILESTONES_FILE"
   cat > "$STUB/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GH_CALLS_LOG"
+case "$1" in
+  api)
+    shift 2
+    case "${1:-}" in
+      -f)
+        # milestone create: -f title=<slug> — record it as an existing milestone.
+        title="${2#title=}"
+        jq --arg t "$title" '. + [{title: $t}]' "$GH_MILESTONES_FILE" > "$GH_MILESTONES_FILE.tmp"
+        mv "$GH_MILESTONES_FILE.tmp" "$GH_MILESTONES_FILE"
+        echo "{}"
+        ;;
+      *)
+        # milestone list
+        cat "$GH_MILESTONES_FILE"
+        ;;
+    esac
+    ;;
+  *)
 case "$1 $2" in
   "issue create")
     args=("$@")
@@ -92,6 +118,8 @@ case "$1 $2" in
   *)
     echo "gh-stub: unhandled invocation: $*" >&2
     exit 1
+    ;;
+esac
     ;;
 esac
 SH
@@ -161,6 +189,53 @@ SH
   bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   ! grep -q '## Blocked by' "$GH_LAST_BODY"
+}
+
+@test "defer bootstraps a missing milestone before creating the issue" {
+  configure_github
+  stub_gh "[]"
+
+  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+
+  grep -q -- 'api repos/{owner}/{repo}/milestones' "$GH_CALLS_LOG"
+  grep -q -- 'api repos/{owner}/{repo}/milestones -f title=feat' "$GH_CALLS_LOG"
+  jq -e '.[0].title == "feat"' "$GH_MILESTONES_FILE" >/dev/null
+}
+
+@test "defer makes no milestone-create call when the milestone already exists" {
+  configure_github
+  stub_gh '[{"title": "feat"}]'
+
+  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+
+  grep -q -- 'api repos/{owner}/{repo}/milestones$' "$GH_CALLS_LOG"
+  ! grep -q -- '-f title=feat' "$GH_CALLS_LOG"
+}
+
+@test "defer's milestone bootstrap uses the repo override path when one is configured" {
+  configure_github "owner/name"
+  stub_gh "[]"
+
+  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+
+  grep -q -- 'api repos/owner/name/milestones' "$GH_CALLS_LOG"
+}
+
+@test "defer dies without creating an issue when the milestone list call fails" {
+  configure_github
+  cat > "$STUB/gh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$STUB/gh"
+
+  run bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"gh api milestones list failed"* ]]
 }
 
 @test "defer still annotates the review report under github, same as local" {

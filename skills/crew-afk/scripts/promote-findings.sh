@@ -225,17 +225,31 @@ _defer_local() {
   echo "$issue_path"
 }
 
+# _github_tracker_cli <args...> — shells out to orchestrator/lib/trackers/github.mjs's own
+# CLI, so `defer`'s github path calls the exact same `createIssue` (+ lazy, idempotent
+# milestone bootstrap) every other GitHub write path uses, rather than a second hand-rolled
+# `gh issue create` that can drift from it (it did: this script's own milestone bootstrap
+# used to be missing entirely). Same lookup-chain shape as review_rollup() above.
+# $CREW_GITHUB_TRACKER_CLI overrides the lookup for bats fixtures that exercise this script
+# alone, not a full install.
+_github_tracker_cli() {
+  local node_cli="${CREW_GITHUB_TRACKER_CLI:-}"
+  [ -f "$node_cli" ] || node_cli="$MAIN_ROOT/.coding-crew/crew-afk/lib/trackers/github.mjs"
+  [ -f "$node_cli" ] || node_cli="$HOME/.coding-crew/crew-afk/lib/trackers/github.mjs"
+  [ -f "$node_cli" ] || { echo "ERROR: github tracker CLI (github.mjs) not found" >&2; return 1; }
+  node "$node_cli" "$@"
+}
+
 # _defer_github <slug> <title> <branch> <report> <criteria-file> <severities> <blocked-by> —
-# github path: an ordinary `gh issue create`, labeled ready-for-agent immediately (github has
-# no pre-created label to represent "parked", so there is no local-style park/flush step for
-# this backend — flush/list correctly report nothing to promote, see cmd_flush/cmd_list). The
-# body mirrors local's Source: convention exactly, plus a numeric `## Blocked by` reference
-# when the caller names one, so issue 04's parseIssue parses both the same way. Prints the
-# created issue's URL (gh issue create's own stdout).
+# github path: creates the issue via _github_tracker_cli, labeled ready-for-agent immediately
+# (github has no pre-created label to represent "parked", so there is no local-style
+# park/flush step for this backend — flush/list correctly report nothing to promote, see
+# cmd_flush/cmd_list). The body mirrors local's Source: convention exactly, plus a numeric
+# `## Blocked by` reference when the caller names one, so issue 04's parseIssue parses both
+# the same way. Prints the created issue's URL (github.mjs's own stdout, itself `gh issue
+# create`'s stdout passed through).
 _defer_github() {
   local slug="$1" title="$2" branch="$3" report="$4" criteria_file="$5" severities="$6" blocked_by="$7"
-  local repo_args=()
-  [ -n "$TRACKER_CONFIG_REPO" ] && repo_args=(--repo "$TRACKER_CONFIG_REPO")
 
   local body_file
   body_file="$(mktemp)"
@@ -260,8 +274,8 @@ _defer_github() {
   } > "$body_file"
 
   local issue_ref
-  if ! issue_ref=$(gh issue create "${repo_args[@]}" --title "$title" --body-file "$body_file" \
-      --label "$READY_STATUS" --milestone "$slug"); then
+  if ! issue_ref=$(_github_tracker_cli create-issue --title "$title" --body-file "$body_file" \
+      --feature-slug "$slug" --label "$READY_STATUS" --main-root "$MAIN_ROOT"); then
     rm -f "$body_file"
     die "gh issue create failed for: $title"
   fi

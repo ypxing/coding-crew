@@ -28,9 +28,10 @@
 
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { unlinkSync, writeFileSync } from "node:fs";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { readTrackerConfig } from "../tracker-config.mjs";
 import { criteriaSection, extractBlockedByNumbers, isSourceGuarded, sectionBody } from "./body-format.mjs";
@@ -271,4 +272,64 @@ export function writeProgress(issue, body, { heading = "Progress", mainRoot, exe
     throw new Error(`gh issue comment failed (exit ${result.code}): ${result.stderr || result.stdout}`);
   }
   return result;
+}
+
+/**
+ * CLI entry point — the shape `promote-findings.sh`'s `_defer_github` shells out to
+ * (`node github.mjs create-issue --title ... --body-file ... --feature-slug ...
+ * [--label ...] [--main-root ...]`), the same "bash calls a small Node CLI" pattern
+ * `review-rollup.mjs` already established for `promote-findings.sh`'s `remind`. Without
+ * this, the bash script would have to hand-roll its own `gh issue create` + milestone
+ * bootstrap — a second implementation of `createIssue` that can (and did) drift from this
+ * one. Prints the created issue's URL to stdout, matching `gh issue create`'s own stdout,
+ * so callers see the exact same value either way.
+ */
+function cliCreateIssue(argv) {
+  const opts = { labels: [] };
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case "--title":
+        opts.title = argv[++i];
+        break;
+      case "--body-file":
+        opts.bodyFile = argv[++i];
+        break;
+      case "--feature-slug":
+        opts.featureSlug = argv[++i];
+        break;
+      case "--label":
+        opts.labels.push(argv[++i]);
+        break;
+      case "--main-root":
+        opts.mainRoot = argv[++i];
+        break;
+      default:
+        throw new Error(`create-issue: unknown argument: ${argv[i]}`);
+    }
+  }
+  if (!opts.title || !opts.bodyFile || !opts.featureSlug) {
+    throw new Error("create-issue requires --title, --body-file, and --feature-slug");
+  }
+  const body = readFileSync(opts.bodyFile, "utf8");
+  const { url } = createIssue(
+    { title: opts.title, body, labels: opts.labels, featureSlug: opts.featureSlug },
+    { mainRoot: opts.mainRoot ?? process.cwd() },
+  );
+  process.stdout.write(`${url}\n`);
+}
+
+function cliMain(argv) {
+  const [command, ...rest] = argv;
+  if (command === "create-issue") return cliCreateIssue(rest);
+  throw new Error(`unknown command: ${command}`);
+}
+
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
+  try {
+    cliMain(process.argv.slice(2));
+  } catch (err) {
+    process.stderr.write(`${err.message}\n`);
+    process.exitCode = 1;
+  }
 }
