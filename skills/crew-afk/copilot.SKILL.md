@@ -50,6 +50,9 @@ times out without hanging the sprint.
 
 1. Resolve the target first if needed, then launch **in the background** — a dispatch can
    run up to 45 minutes — with `--dry-run` first only if the user asked what it would do.
+   Use your tool's own background-process tracking, not a manual shell `&`/`disown` with
+   redirected output — that bypasses the completion notification and no summary reaches
+   you when the sprint finishes.
 2. Poll and relay each new line; `[STEP]` lines and a throttled heartbeat go to
    **stderr**, so read that too. **If `HERDR_ENV=1`, skip polling** — this pane is
    prompted directly once the sprint finishes or stalls. The printed summary is the

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.29.117]
+
+### Changed
+
+- **crew-afk's dispatch step now tells every platform to use the harness's own background-task
+  tracking (`run_in_background`), not a manual shell `&`/`disown` with redirected output** — the
+  manual form bypasses the completion notification, so no summary ever reached the caller when
+  the sprint finished.
+
 ## [1.29.116]
 
 ### Fixed
