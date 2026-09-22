@@ -871,7 +871,12 @@ export async function relaunchIntoDedicatedPane(effects, { mainRoot, featureSlug
     return { exitCode: 1, delegated: false, error: `herdr tab create failed for the dedicated run pane: ${(create.stderr || create.stdout || "").trim()}` };
   }
 
-  const run = await herdrExec(effects, ["pane", "run", paneId, process.execPath, mainScript, "run", ...argv]);
+  // No hardcoded "run" here: argv is process.argv.slice(2) from the front door, which
+  // already carries its own "run" token whenever the caller passed one explicitly (every
+  // platform launcher does) — and main.mjs's own parseArgs() defaults to "run" anyway when
+  // the first token isn't one. Adding another "run" duplicated it into "run run ...",
+  // which parseArgs then rejected as an unrecognized argument.
+  const run = await herdrExec(effects, ["pane", "run", paneId, process.execPath, mainScript, ...argv]);
   if (run.code !== 0) {
     // herdr rejected the request outright — the node process never started, so there is no
     // sentinel to wait for and no pane worth leaving open.

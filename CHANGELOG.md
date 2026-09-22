@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.112]
+
+### Fixed
+
+- **`crew-afk run` relaunched into its own dedicated herdr pane (`HERDR_ENV=1`) with a
+  duplicated `run` argument** — `relaunchIntoDedicatedPane` hardcoded a `"run"` token ahead of
+  the forwarded `argv`, but every platform launcher already passes `run` explicitly in that
+  same `argv`, so the relaunched process saw `run run --platform ... --feature-slug ...` and
+  `parseArgs` rejected the second `run` as an unrecognized argument. Dropped the redundant
+  hardcoded token — `parseArgs` already defaults to command `run` when none is given, so
+  nothing depended on it. Only affects the `HERDR_ENV=1` relaunch path.
+
 ## [1.29.111]
 
 ### Fixed

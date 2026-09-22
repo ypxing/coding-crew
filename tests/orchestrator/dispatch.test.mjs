@@ -1727,9 +1727,35 @@ test("relaunchIntoDedicatedPane creates a dedicated tab with an explicit env lis
   assert.deepEqual(paneRun.slice(0, 4), ["herdr", "pane", "run", "w1:p1"]);
   assert.equal(paneRun[4], process.execPath);
   assert.equal(paneRun[5], "/path/to/main.mjs");
-  assert.deepEqual(paneRun.slice(6), ["run", "--platform", "claude"]);
+  assert.deepEqual(paneRun.slice(6), ["--platform", "claude"]);
 
   assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
+});
+
+test("relaunchIntoDedicatedPane does not duplicate a \"run\" token already present in argv", async () => {
+  // argv here is process.argv.slice(2) from the front door, which every platform launcher
+  // invokes as `... run --platform claude ...` — argv already carries its own "run".
+  const { root } = fixture();
+  const effects = fakeRelaunchEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { type: "ok" } }), // pane run
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root, exitCode: 0 },
+  );
+
+  await relaunchIntoDedicatedPane(effects, {
+    mainRoot: root,
+    featureSlug: "implement-user-auth",
+    platform: "claude",
+    argv: ["run", "--platform", "claude"],
+    mainScript: "/path/to/main.mjs",
+  });
+
+  const paneRun = effects._calls[2];
+  assert.deepEqual(paneRun.slice(6), ["run", "--platform", "claude"], "argv's own \"run\" is forwarded once, not doubled");
 });
 
 test("relaunchIntoDedicatedPane reuses an ambient HERDR_WORKSPACE_ID instead of creating one, and forwards HERDR_PANE_ID", async () => {
