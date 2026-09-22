@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Non-interactive tracker setup. Picks the single available template, or defaults
-# to 'local' when multiple exist. Exits 1 if no templates are found.
+# Non-interactive tracker setup. Auto-applies the single available template.
+# Exits 1 if no templates are found. Exits 2 if 2+ templates exist and nothing is
+# configured yet — ambiguous, so the caller must fall back to an interactive menu
+# instead of silently defaulting to any one template.
 set -euo pipefail
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -29,8 +31,8 @@ COUNT=$(echo "$TEMPLATES" | grep -c "." || true)
 if [ "$COUNT" -eq 1 ]; then
   CHOSEN="$TEMPLATES"
 else
-  CHOSEN=$(echo "$TEMPLATES" | grep "local" | head -1)
-  [ -z "$CHOSEN" ] && CHOSEN=$(echo "$TEMPLATES" | head -1)
+  echo "Multiple tracker templates found and none configured yet — interactive selection required." >&2
+  exit 2
 fi
 
 mkdir -p "$(dirname "$DEST")"

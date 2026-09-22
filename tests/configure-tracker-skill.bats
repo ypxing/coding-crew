@@ -66,3 +66,76 @@ teardown() {
 @test "configure-tracker/SKILL.md auto-selects when exactly one template is found" {
   grep -qE 'exactly one|one template|skip.*Step 2|automatically' "$SKILL_FILE"
 }
+
+# --- github backend setup ---
+
+@test "configure-tracker/SKILL.md checks gh auth status before any github write" {
+  grep -q 'gh auth status' "$SKILL_FILE"
+}
+
+@test "configure-tracker/SKILL.md prompts for the repo, blank meaning omit repo:" {
+  grep -q 'press enter to use this repository, or enter' "$SKILL_FILE"
+  grep -qi 'blank' "$SKILL_FILE"
+}
+
+@test "configure-tracker/SKILL.md idempotently creates the 4 canonical github labels" {
+  grep -q 'needs-triage'    "$SKILL_FILE"
+  grep -q 'needs-info'      "$SKILL_FILE"
+  grep -q 'ready-for-agent' "$SKILL_FILE"
+  grep -q 'ready-for-human' "$SKILL_FILE"
+  grep -qi 'idempotent' "$SKILL_FILE"
+}
+
+@test "configure-tracker/SKILL.md writes tracker/repo front matter using readTrackerConfig's field names" {
+  grep -q 'tracker: github' "$SKILL_FILE"
+  grep -q 'repo:' "$SKILL_FILE"
+}
+
+# --- ambiguous-template exit code (dormant-bug fix) ---
+
+@test "configure-tracker/SKILL.md Step 1 branches on exit code 2 into the interactive menu" {
+  grep -qE 'exits? 2' "$SKILL_FILE"
+}
+
+@test "configure-tracker-auto.sh exits 2 (not 0) when 2+ templates exist and nothing is configured yet" {
+  local AUTO_SCRIPT="$SCRIPT_DIR/scripts/skill-utils/git-workflow/configure-tracker-auto.sh"
+  cd "$TEMP_DIR"
+  git init -q .
+  mkdir -p .coding-crew/docs/templates/trackers
+  cp "$SCRIPT_DIR/docs/templates/trackers/local.md"  .coding-crew/docs/templates/trackers/
+  cp "$SCRIPT_DIR/docs/templates/trackers/github.md" .coding-crew/docs/templates/trackers/
+
+  run bash "$AUTO_SCRIPT"
+
+  [ "$status" -eq 2 ]
+  [ ! -f ".coding-crew/docs/issue-tracker.md" ]
+}
+
+@test "configure-tracker-auto.sh still no-ops (exit 0) when already configured, regardless of template count" {
+  local AUTO_SCRIPT="$SCRIPT_DIR/scripts/skill-utils/git-workflow/configure-tracker-auto.sh"
+  cd "$TEMP_DIR"
+  git init -q .
+  mkdir -p .coding-crew/docs/templates/trackers
+  cp "$SCRIPT_DIR/docs/templates/trackers/local.md"  .coding-crew/docs/templates/trackers/
+  cp "$SCRIPT_DIR/docs/templates/trackers/github.md" .coding-crew/docs/templates/trackers/
+  mkdir -p .coding-crew/docs
+  echo "already here" > .coding-crew/docs/issue-tracker.md
+
+  run bash "$AUTO_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  grep -q "already here" .coding-crew/docs/issue-tracker.md
+}
+
+@test "configure-tracker-auto.sh still auto-applies (exit 0) when exactly one template exists" {
+  local AUTO_SCRIPT="$SCRIPT_DIR/scripts/skill-utils/git-workflow/configure-tracker-auto.sh"
+  cd "$TEMP_DIR"
+  git init -q .
+  mkdir -p .coding-crew/docs/templates/trackers
+  cp "$SCRIPT_DIR/docs/templates/trackers/local.md" .coding-crew/docs/templates/trackers/
+
+  run bash "$AUTO_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [ -f ".coding-crew/docs/issue-tracker.md" ]
+}
