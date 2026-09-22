@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.29.114]
+
+### Fixed
+
+- **Two `crew-afk run` invocations for the same feature-slug could race** — each relaunches
+  into its own dedicated herdr pane with no shared state between them, so both can dispatch
+  the same issue's coder under the exact same deterministic agent name; herdr rejects the
+  loser (`agent_name_taken`), which used to burn a real attempt off that issue's 2-attempt
+  retry cap for a collision its own code never caused. `main.mjs` now holds a pidfile lock at
+  `.scratch/<slug>/.crew-afk.lock` for a run's whole lifetime, so a second `run` for the same
+  slug refuses outright instead of racing (a stale lock — dead pid — is reclaimed silently).
+  An `agent_name_taken` start failure is also now tagged and retried unconditionally, bypassing
+  the retry cap, in case one is still hit some other way.
+
 ## [1.29.113]
 
 ### Fixed
