@@ -1,22 +1,36 @@
 /**
- * github.mjs — the GitHub Issues tracker backend. Read path only (issue 04); the write
- * path (`writeProgress`, `markDone`, `createIssue`, milestone/label bootstrap) is added on
- * top of this same module by issue 05.
+ * github.mjs — the GitHub Issues tracker backend.
  *
  * Backed by the `gh` CLI via `execFile`-style argv shelling-out (no shell string, no REST
  * client dependency) — the same argv-array pattern `dispatch.mjs`'s `effects.exec` uses.
  * `exec` is an injectable `(cmd, args) => {code, stdout, stderr}` so tests stub `gh`
  * without touching `PATH`; it defaults to a real `execFileSync`-backed shell-out.
  *
- * `listOpen` is the one place a network round trip happens: exactly one `gh issue list`
- * call per invocation, `--state all` and parsed client-side, never a call per issue — the
- * N+1 this design exists to avoid (see `.scratch/github-issue-tracker/PRD.md`).
- * `parseIssue` stays pure and I/O-free over one already-fetched issue's JSON, sharing the
- * markdown-body parsing in `./body-format.mjs` with the local backend so both backends'
- * output shape is identical without duplicating the parsing.
+ * Read path (issue 04): `listOpen` is the one place a network round trip happens for
+ * dispatchability: exactly one `gh issue list` call per invocation, `--state all` and
+ * parsed client-side, never a call per issue — the N+1 this design exists to avoid (see
+ * `.scratch/github-issue-tracker/PRD.md`). `parseIssue` stays pure and I/O-free over one
+ * already-fetched issue's JSON, sharing the markdown-body parsing in `./body-format.mjs`
+ * with the local backend so both backends' output shape is identical without duplicating
+ * the parsing.
+ *
+ * Write path (issue 05): `createIssue`, `markDone`, `writeProgress`. `createIssue` lazily
+ * bootstraps the feature's milestone (list-first, idempotent) and passes the caller's
+ * `body` through to `gh issue create --body-file` unmodified — the producer side of the
+ * `## Blocked by`/`Source:` prose flow issues 07/08 write and issue 04's `parseIssue` reads
+ * back. `markDone` re-fetches the issue body live before checking criteria, mirroring
+ * `scripts/tracker/mark-issue-done.sh`'s github branch (never trusting a cached
+ * `issue.text` a caller might be holding from an earlier `listOpen`). `writeProgress`
+ * always posts a new `gh issue comment` — a GitHub comment thread is a timeline, not an
+ * in-place-edited section, so every call is a new comment, deliberately, including for a
+ * `## Blocked` write (there is no `blocked` label anywhere in this module).
  */
 
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { readTrackerConfig } from "../tracker-config.mjs";
 import { criteriaSection, extractBlockedByNumbers, isSourceGuarded, sectionBody } from "./body-format.mjs";
@@ -123,4 +137,138 @@ export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlu
   return ready
     .map((i) => ({ ...i, blockers: i.blockedBy.filter((n) => statusByNumber.get(n) !== "done") }))
     .filter((i) => i.blockers.length === 0);
+}
+
+/** `repos/{owner}/{repo}/milestones` when `repo` is unset, letting `gh` resolve the
+ * placeholder from the git remote (this `gh` version's `api` subcommand has no `--repo`
+ * flag); the literal `owner/name` path otherwise, so a `readTrackerConfig` override is
+ * honored the same way it is for every `gh issue ...` call in this module. */
+function milestonesPath(repo) {
+  return repo ? `repos/${repo}/milestones` : "repos/{owner}/{repo}/milestones";
+}
+
+/**
+ * Ensure a milestone named `featureSlug` exists, list-first so a second call for the
+ * same slug makes no create request — idempotent, as `createIssue` needs since it calls
+ * this on every publish, not just the feature's first.
+ */
+function ensureMilestone(featureSlug, { repo, exec }) {
+  const path = milestonesPath(repo);
+  const list = exec("gh", ["api", path]);
+  if (list.code !== 0) {
+    throw new Error(`gh api milestones list failed (exit ${list.code}): ${list.stderr || list.stdout}`);
+  }
+  const milestones = list.stdout && list.stdout.trim() ? JSON.parse(list.stdout) : [];
+  if (milestones.some((m) => m.title === featureSlug)) return;
+
+  const created = exec("gh", ["api", path, "-f", `title=${featureSlug}`]);
+  if (created.code !== 0) {
+    throw new Error(`gh api milestone create failed (exit ${created.code}): ${created.stderr || created.stdout}`);
+  }
+}
+
+/**
+ * Create a work (or PRD) issue in the feature's milestone, bootstrapping the milestone
+ * first. `body` is written through unmodified via a throwaway `--body-file` — this
+ * function does not add or strip `## Blocked by`/`Source:` prose; that is the caller's
+ * (issues 07/08's) job. Returns `{number, url}` parsed from `gh issue create`'s printed
+ * URL, so a caller citing this issue as a blocker (issue 06's `to-issues` flow) has the
+ * number without a second fetch.
+ */
+export function createIssue({ title, body, labels = [], featureSlug }, { mainRoot, exec = shellOut } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  ensureMilestone(featureSlug, { repo, exec });
+
+  const bodyFile = join(tmpdir(), `crew-github-issue-${randomUUID()}.md`);
+  writeFileSync(bodyFile, body);
+  try {
+    const args = ["issue", "create"];
+    if (repo) args.push("--repo", repo);
+    args.push("--title", title, "--body-file", bodyFile);
+    for (const label of [].concat(labels).filter(Boolean)) args.push("--label", label);
+    args.push("--milestone", featureSlug);
+
+    const result = exec("gh", args);
+    if (result.code !== 0) {
+      throw new Error(`gh issue create failed (exit ${result.code}): ${result.stderr || result.stdout}`);
+    }
+    const url = result.stdout.trim();
+    const match = /\/(\d+)\s*$/.exec(url);
+    return { number: match ? Number(match[1]) : null, url };
+  } finally {
+    try {
+      unlinkSync(bodyFile);
+    } catch {
+      // best-effort cleanup of a throwaway temp file — nothing depends on it surviving.
+    }
+  }
+}
+
+/** Matches the `## Acceptance criteria` / `## Cross-cutting Requirements` headings whose
+ * `- [ ]` boxes `markDone` must all be checked before it will close the issue — the same
+ * two headings `scripts/tracker/mark-issue-done.sh`'s awk guard scopes to. */
+const CRITERIA_HEADING_RE = /^#{1,6}\s+(?:Acceptance Criteria|Cross-cutting Requirements)\s*$/i;
+
+/** Every still-unchecked `- [ ]` line found under either criteria heading in `text`. */
+function uncheckedCriteria(text) {
+  let inside = false;
+  const unchecked = [];
+  for (const line of text.split("\n")) {
+    const heading = /^#{1,6}\s+/.test(line);
+    if (heading) {
+      inside = CRITERIA_HEADING_RE.test(line);
+      continue;
+    }
+    if (inside && /^\s*[-*]\s*\[\s\]/.test(line)) unchecked.push(line);
+  }
+  return unchecked;
+}
+
+/**
+ * Close an issue as done — `gh issue close --reason completed`, no label added or
+ * removed (the closed state itself is "done"; see the PRD's Labels decision). Before
+ * closing, re-fetches the issue body live (`gh issue view --json body`) and checks
+ * criteria against *that* fetch, never against `issue.text`/any other field the caller
+ * might be holding from an earlier `listOpen` — a human may have edited the issue since.
+ * Refuses (throws, without closing) while any criterion is still unchecked.
+ */
+export function markDone(issue, { mainRoot, exec = shellOut } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const repoArgs = repo ? ["--repo", repo] : [];
+
+  const view = exec("gh", ["issue", "view", String(issue.number), ...repoArgs, "--json", "body", "--jq", ".body"]);
+  if (view.code !== 0) {
+    throw new Error(`gh issue view failed (exit ${view.code}): ${view.stderr || view.stdout}`);
+  }
+  const freshBody = view.stdout.replace(/\n$/, "");
+
+  const unchecked = uncheckedCriteria(freshBody);
+  if (unchecked.length > 0) {
+    throw new Error(`markDone: issue #${issue.number} still has unchecked criteria:\n${unchecked.join("\n")}`);
+  }
+
+  const close = exec("gh", ["issue", "close", String(issue.number), ...repoArgs, "--reason", "completed"]);
+  if (close.code !== 0) {
+    throw new Error(`gh issue close failed (exit ${close.code}): ${close.stderr || close.stdout}`);
+  }
+  return close;
+}
+
+/**
+ * Post `body` as a new `gh issue comment` under `## <heading>` — never an in-place edit
+ * of an existing comment or the issue body; local's `{append}` splice/append distinction
+ * (see `local.mjs`'s `writeIssueSection`) does not apply here. `heading` is typically
+ * `"Progress"` or `"Blocked"`; a `## Blocked` write is not special-cased — it is this
+ * same comment path, and there is no `blocked` label anywhere in this module.
+ */
+export function writeProgress(issue, body, { heading = "Progress", mainRoot, exec = shellOut } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const repoArgs = repo ? ["--repo", repo] : [];
+  const commentBody = `## ${heading}\n\n${body}`;
+
+  const result = exec("gh", ["issue", "comment", String(issue.number), ...repoArgs, "--body", commentBody]);
+  if (result.code !== 0) {
+    throw new Error(`gh issue comment failed (exit ${result.code}): ${result.stderr || result.stdout}`);
+  }
+  return result;
 }
