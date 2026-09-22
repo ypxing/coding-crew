@@ -34,7 +34,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readTrackerConfig } from "../tracker-config.mjs";
-import { criteriaSection, extractBlockedByNumbers, isSourceGuarded, sectionBody } from "./body-format.mjs";
+import {
+  criteriaSection,
+  extractBlockedByNumbers,
+  isSourceGuarded,
+  sectionBody,
+  uncheckedCriteria,
+} from "./body-format.mjs";
 
 export const READY_STATUS = "ready-for-agent";
 
@@ -203,26 +209,6 @@ export function createIssue({ title, body, labels = [], featureSlug }, { mainRoo
       // best-effort cleanup of a throwaway temp file — nothing depends on it surviving.
     }
   }
-}
-
-/** Matches the `## Acceptance criteria` / `## Cross-cutting Requirements` headings whose
- * `- [ ]` boxes `markDone` must all be checked before it will close the issue — the same
- * two headings `scripts/tracker/mark-issue-done.sh`'s awk guard scopes to. */
-const CRITERIA_HEADING_RE = /^#{1,6}\s+(?:Acceptance Criteria|Cross-cutting Requirements)\s*$/i;
-
-/** Every still-unchecked `- [ ]` line found under either criteria heading in `text`. */
-function uncheckedCriteria(text) {
-  let inside = false;
-  const unchecked = [];
-  for (const line of text.split("\n")) {
-    const heading = /^#{1,6}\s+/.test(line);
-    if (heading) {
-      inside = CRITERIA_HEADING_RE.test(line);
-      continue;
-    }
-    if (inside && /^\s*[-*]\s*\[\s\]/.test(line)) unchecked.push(line);
-  }
-  return unchecked;
 }
 
 /**

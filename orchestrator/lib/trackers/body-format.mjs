@@ -89,6 +89,30 @@ export function isSourceGuarded(text) {
   return /^\s*(?:\*\*)?Source(?:\*\*)?:/im.test(text);
 }
 
+/** Matches an `## Acceptance criteria` / `## Cross-cutting Requirements` heading — the
+ * same two headings `scripts/tracker/mark-issue-done.sh`'s awk guard scopes to on both
+ * backends. */
+const CRITERIA_HEADING_RE = /^#{1,6}\s+(?:Acceptance Criteria|Cross-cutting Requirements)\s*$/i;
+
+/**
+ * Every still-unchecked `- [ ]` line found under either criteria heading in `text` — the
+ * same close-time guard `mark-issue-done.sh`'s awk runs for both backends, shared here so
+ * a Node caller (`github.mjs`'s `markDone`) does not reimplement the scan a third time.
+ */
+export function uncheckedCriteria(text) {
+  let inside = false;
+  const unchecked = [];
+  for (const line of text.split("\n")) {
+    const heading = /^#{1,6}\s+/.test(line);
+    if (heading) {
+      inside = CRITERIA_HEADING_RE.test(line);
+      continue;
+    }
+    if (inside && /^\s*[-*]\s*\[\s\]/.test(line)) unchecked.push(line);
+  }
+  return unchecked;
+}
+
 /**
  * The numeric-matching half of `resolveBlockedBy`: `## Blocked by` entries written as
  * `Issue NN` (optionally `Issue #NN`) rather than a literal filename. Returns the matched

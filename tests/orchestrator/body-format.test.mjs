@@ -8,6 +8,7 @@ import {
   isSourceGuarded,
   sectionBody,
   spliceSection,
+  uncheckedCriteria,
 } from "../../orchestrator/lib/trackers/body-format.mjs";
 
 // These are the backend-agnostic markdown-body helpers, extracted verbatim out of the
@@ -45,6 +46,25 @@ test("isSourceGuarded detects a Source: line regardless of bold markup", () => {
   assert.equal(isSourceGuarded("Source: crew/feat/thing review\n"), true);
   assert.equal(isSourceGuarded("**Source:** crew/feat/thing review\n"), true);
   assert.equal(isSourceGuarded("no source line here\n"), false);
+});
+
+test("uncheckedCriteria scans both the Acceptance criteria and Cross-cutting Requirements headings", () => {
+  const text = [
+    "## Acceptance criteria",
+    "",
+    "- [x] done one",
+    "- [ ] still open",
+    "",
+    "## Cross-cutting Requirements",
+    "",
+    "- [ ] also open",
+    "",
+    "## Notes",
+    "",
+    "- [ ] not scoped, ignored",
+  ].join("\n");
+  assert.deepEqual(uncheckedCriteria(text), ["- [ ] still open", "- [ ] also open"]);
+  assert.deepEqual(uncheckedCriteria("## Acceptance criteria\n\n- [x] all done\n"), []);
 });
 
 test("extractBlockedByNumbers matches 'Issue NN' references, with or without a #, zero-padded or not", () => {
