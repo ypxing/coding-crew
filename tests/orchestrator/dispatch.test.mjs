@@ -1273,6 +1273,50 @@ test("dispatchViaHerdr fails (does not blindly send keys) on a blocked state it 
   assert.doesNotMatch(effects._calls.map((c) => c.join(" ")).join("\n"), /send-keys/, "never answers a dialog it can't identify");
 });
 
+test("dispatchViaHerdr tags an agent_name_taken start failure as a name collision, not a worker failure", async () => {
+  // Two sprints racing the same feature-slug both build the exact same deterministic agent
+  // name (same issue+role+round) — herdr rejects the second one's `agent start` outright,
+  // before any coder process exists. pipeline.mjs reads this flag to skip spending the
+  // issue's own retry cap on a collision the code never caused.
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      err(1, "agent name i01-r1-alpha-coder-abc123 is already used", "agent_name_taken"), // agent start
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 1);
+  assert.equal(result.nameCollision, true);
+});
+
+test("dispatchViaHerdr does not tag an unrelated agent-start failure as a name collision", async () => {
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      err(1, "herdr's own CLI crashed", "internal_error"), // agent start
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
+
+  assert.equal(result.code, 1);
+  assert.equal(result.nameCollision, false);
+});
+
 test("dispatchViaHerdr surfaces the rendered pane when the agent is already blocked, instead of a mysterious empty success", async () => {
   const { root, promptFile } = fixture();
   writeFileSync(promptFile, "Reply with exactly: herdr spike ok");

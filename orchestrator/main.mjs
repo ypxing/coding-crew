@@ -73,7 +73,7 @@
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
 
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -231,6 +231,57 @@ function resolveFeatureSlug(mainRoot, explicitSlug) {
     "Pass --feature-slug <slug> or a .scratch/<slug>/... path to pick one.",
   ];
   return { error: lines.join("\n") };
+}
+
+/**
+ * A pidfile at .scratch/<slug>/.crew-afk.lock, so a second `run` for the same feature-slug
+ * refuses instead of racing the first — two independent sprints dispatching the same issue's
+ * coder concurrently hit herdr's own `agent_name_taken` (same deterministic name, same
+ * issue+round), and whichever one loses that race burns a real attempt off its 2-attempt cap
+ * for a collision that was never its own fault. Only the front door (or a plain, non-herdr,
+ * single process) takes this lock — see the CREW_AFK_RELAUNCHED guard at the call site: the
+ * relaunched instance shares the front door's whole lifetime (it's what the front door is
+ * blocked waiting on via relaunchIntoDedicatedPane's sentinel), so it trusts the check the
+ * front door already made rather than acquiring its own and deadlocking against it. A stale
+ * lock (holder's pid no longer alive — a crash, a SIGKILL) is reclaimed silently, since a dead
+ * process has no other cleanup path back to this file.
+ */
+function acquireSprintLock(mainRoot, slug) {
+  const lockPath = join(mainRoot, ".scratch", slug, ".crew-afk.lock");
+  if (existsSync(lockPath)) {
+    let holder;
+    try {
+      holder = JSON.parse(readFileSync(lockPath, "utf8"));
+    } catch {
+      holder = null;
+    }
+    if (holder?.pid && isPidAlive(holder.pid)) {
+      return {
+        error: `crew-afk: a sprint for feature-slug '${slug}' is already running (pid ${holder.pid}, started ${holder.startedAt}) — wait for it to finish, or remove ${lockPath} if that process is actually gone.`,
+      };
+    }
+  }
+  mkdirSync(dirname(lockPath), { recursive: true });
+  writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+  return { lockPath };
+}
+
+function isPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseSprintLock(lockPath) {
+  if (!lockPath) return;
+  try {
+    unlinkSync(lockPath);
+  } catch {
+    /* already gone, or this process never held one */
+  }
 }
 
 /**
@@ -426,6 +477,7 @@ async function main() {
   let exitCode = 0;
   let runError;
   let delegatedNotification = false;
+  let lockPath;
   try {
     const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
       herdr: options.herdr,
@@ -445,6 +497,19 @@ async function main() {
       console.error(resolved.error);
       exitCode = 1;
       return exitCode;
+    }
+
+    // See acquireSprintLock's doc comment for why this is skipped for the relaunched
+    // instance, and why a null slug (session-init.sh's own single-feature fallback) can't
+    // be locked on at all.
+    if (process.env.CREW_AFK_RELAUNCHED !== "1" && resolved.slug) {
+      const lock = acquireSprintLock(mainRoot, resolved.slug);
+      if (lock.error) {
+        console.error(lock.error);
+        exitCode = 1;
+        return exitCode;
+      }
+      lockPath = lock.lockPath;
     }
 
     // Give crew-afk's own process a herdr pane of its own — see relaunchIntoDedicatedPane's
@@ -589,6 +654,9 @@ async function main() {
         /* the front door's own timeout ceiling is the fallback if even this fails */
       }
     }
+    // Last, not first: releasing this before the cleanup above would let a second `run`
+    // for the same slug slip in and start racing this one while it's still closing panes.
+    releaseSprintLock(lockPath);
   }
 }
 

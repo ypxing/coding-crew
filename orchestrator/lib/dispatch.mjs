@@ -1046,7 +1046,7 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
   // issue+role gets a distinct name, never the one a kept-open pane still holds.
   const keepPane = process.env.CREW_HERDR_KEEP_PANE === "1";
 
-  const finish = async (code, stderr, text, timedOut = false) => {
+  const finish = async (code, stderr, text, timedOut = false, nameCollision = false) => {
     const failed = code !== 0 || !((text ?? "").trim());
     if (tabId && !keepPane) {
       await herdrExec(effects, ["tab", "close", tabId]);
@@ -1076,6 +1076,13 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
       // closed as a side effect of demoting the issue, or the one thing worth inspecting is
       // gone the instant the demotion runs.
       herdrFailed: failed,
+      // herdr rejected this dispatch before the coder process ever started, because another
+      // dispatch already holds the exact same deterministic name (same issue+role+round) —
+      // a race between two sprints on the same feature-slug (see acquireSprintLock in
+      // main.mjs), not this attempt's own fault. runHousekeeping reads this to skip the
+      // demotion path entirely rather than spending a slot of the issue's 2-attempt cap on
+      // a collision the code on this branch had nothing to do with.
+      nameCollision,
     };
   };
 
@@ -1134,8 +1141,15 @@ export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = 
     // --approve; codex has none verified yet) fails the same way an unmatched dialog text does.
     const start = await herdrExec(effects, ["agent", "start", name, "--kind", platform, "--pane", paneId, "--", ...invocation.args], bound);
     if (start.code !== 0) {
-      if (herdrJson(start)?.error?.code !== "agent_not_ready") {
-        return await finish(start.code || 1, `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`, "", start.timedOut);
+      const startErrorCode = herdrJson(start)?.error?.code;
+      if (startErrorCode !== "agent_not_ready") {
+        return await finish(
+          start.code || 1,
+          `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`,
+          "",
+          start.timedOut,
+          startErrorCode === "agent_name_taken",
+        );
       }
       // Unlike every other herdr subcommand used here, `agent read`/`pane read` print raw
       // rendered text on stdout, never a JSON envelope — confirmed live, and the reason

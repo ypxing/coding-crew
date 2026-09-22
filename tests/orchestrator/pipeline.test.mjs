@@ -44,6 +44,7 @@ function fakeSprint() {
     coverageGap: (slug, categories) => calls.push(["coverageGap", slug, categories]),
     blocked: (slug, branch, reason) => calls.push(["blocked", slug, branch, reason]),
     markBlockedThisRun: (slug) => calls.push(["markBlockedThisRun", slug]),
+    retain: (slug, branch, reason) => calls.push(["retain", slug, branch, reason]),
   };
 }
 
@@ -83,4 +84,31 @@ test("a dispatch confirmed dead (herdrFailed false/absent) still removes the wor
 
   assert.equal(outcome.status, "blocked");
   assert.equal(existsSync(worktreePath), false, "no live-process risk here — the old cleanup behaviour is unchanged");
+});
+
+test("a herdr agent-name collision retries unconditionally, never blocked by the issue's own attempt cap", async () => {
+  // Two sprints racing the same feature-slug can both claim attempt N for the same issue —
+  // herdr rejects the second dispatch outright (agent_name_taken) before the coder process
+  // ever starts. That collision is not this attempt's own fault, so it must not spend the
+  // issue's 2-attempt cap: attempt is set at the cap here (2) and the outcome must still be
+  // "partial", not "blocked".
+  const { mainRoot, effects } = gitRoot();
+  const branch = "crew/demo/alpha";
+  const wt = ensureWorktree(effects, { mainRoot, branch, base: "HEAD", expectReuse: false });
+  const sprint = fakeSprint();
+  const ctx = { sprint, effects, options: {}, log: () => {} };
+  const worker = {
+    issue: { slug: "alpha", path: join(mainRoot, "no-such-issue.md") },
+    branch,
+    attempt: 2,
+    worktree: wt.path,
+    dispatch: { code: 1, timedOut: false, herdrFailed: true, nameCollision: true, herdrTabId: null },
+    report: parseWorkerReport("", null),
+  };
+
+  const outcome = await runHousekeeping(ctx, worker);
+
+  assert.equal(outcome.status, "partial");
+  assert.match(outcome.reason, /name collision/);
+  assert.equal(sprint.calls.some((c) => c[0] === "blocked"), false, "must never reach finishBlocked");
 });

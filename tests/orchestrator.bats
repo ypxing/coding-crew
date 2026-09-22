@@ -82,6 +82,42 @@ setup_file() {
   rm -rf "$dir"
 }
 
+@test "orchestrator: run refuses to start when another sprint already holds this feature-slug's lock" {
+  # Regression: two `crew-afk run` invocations for the same feature-slug used to race —
+  # each relaunches into its own dedicated herdr pane with no shared state between them,
+  # so both dispatch the same issue's coder under the exact same deterministic agent name
+  # and herdr rejects the second (agent_name_taken), burning a real retry attempt on a
+  # collision neither process's own code caused. acquireSprintLock in main.mjs now refuses
+  # a second `run` outright instead.
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  local dir
+  dir="$(mktemp -d)"
+  cd "$dir"
+  git init -q
+  git config user.email t@test
+  git config user.name T
+  printf '.scratch/\n' > .gitignore
+  git add .gitignore
+  git commit -q -m init
+  mkdir -p .scratch/feat-a/issues/open
+  printf '# A\n\nStatus: ready-for-agent\n' > .scratch/feat-a/issues/open/01-a.md
+  # $$ (this bats test's own shell pid) is guaranteed alive for the test's duration —
+  # a deterministic stand-in for "a sprint that is still actually running".
+  printf '{"pid": %s, "startedAt": "2020-01-01T00:00:00.000Z"}' "$$" > .scratch/feat-a/.crew-afk.lock
+
+  # CREW_FAKE_DISPATCH short-circuits preflight()'s CLI/agent-file checks (this repo has
+  # neither `pi` nor any agent definitions installed), so the run reaches the lock check on
+  # its own merits. HERDR_ENV is explicitly unset (this suite may itself be running inside a
+  # herdr-managed pane) so a real notifyTriggeringPane call never fires into it.
+  run env -u HERDR_ENV CREW_FAKE_DISPATCH=1 node "$REPO_ROOT/orchestrator/main.mjs" run --platform pi --feature-slug feat-a
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"already running"* ]]
+  [[ "$output" == *"pid $$"* ]]
+
+  cd /
+  rm -rf "$dir"
+}
+
 @test "orchestrator: every platform builds a headless per-agent dispatch" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$REPO_ROOT"

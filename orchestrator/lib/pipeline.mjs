@@ -403,6 +403,16 @@ export async function runHousekeeping(ctx, worker) {
     if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
     return finishBlocked(ctx, worker, outcome, reason);
   }
+  // herdr refused this dispatch outright because another dispatch already holds the exact
+  // same deterministic agent name (same issue+role+round) — a race between two sprints on
+  // the same feature-slug, not anything this attempt's own code did. Uncapped and always a
+  // plain retry, bypassing finishRetryOrBlock's cap check entirely: the coder process never
+  // started, so there is nothing to resume and nothing about this branch's own history that
+  // a repeat would need to avoid — see acquireSprintLock in main.mjs for the fix that should
+  // make this collision rare going forward.
+  if (worker.dispatch.nameCollision) {
+    return finishPartial(ctx, worker, outcome, "herdr agent name collision — retrying");
+  }
   if (worker.dispatch.code !== 0 && worker.report.unparseable) {
     // A non-zero exit *and* nothing usable back: the worker died before reporting.
     // Its own report is preferred whenever there is one — a worker that exited badly
