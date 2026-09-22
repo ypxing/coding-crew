@@ -31,11 +31,16 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { runHousekeeping, runWorker } from "./pipeline.mjs";
-import { listOpenIssueFiles, selectDispatchable } from "./tracker.mjs";
+import { getTracker } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
 
 export async function runSprint(ctx) {
   const { sprint, effects, options } = ctx;
+  // Resolved once per sprint, per `tracker.mjs`'s own contract — see its docstring — so
+  // this loop dispatches against whichever backend `tracker-config.mjs` names, github or
+  // local, instead of always the local file scan `tracker.mjs`'s static re-exports are
+  // bound to.
+  const tracker = await getTracker(effects.mainRoot);
   const parallel = Math.max(1, options.parallel ?? 1);
   const inFlight = new Set();
   const history = [];
@@ -57,7 +62,7 @@ export async function runSprint(ctx) {
   // unavailable; if this checked the persisted list instead, a fresh `crew-afk` run could
   // never retry it, breaking crew-summary.sh's own "resolve blockers and re-run" advice.
   function claimNext() {
-    const issues = selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug });
+    const issues = tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug });
     return issues.find(
       (i) =>
         !inFlight.has(i.slug) &&
@@ -70,7 +75,7 @@ export async function runSprint(ctx) {
    * limit — as opposed to genuinely nothing left, which flush() still needs to check. */
   function cappedByMaxRounds() {
     if (!options.maxRounds) return false;
-    return selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).some(
+    return tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).some(
       (i) => !sprint.isBlockedThisRun(i.slug) && sprint.attemptCount(i.slug) >= options.maxRounds,
     );
   }
@@ -118,8 +123,14 @@ export async function runSprint(ctx) {
     break;
   }
 
+  // listOpenIssueFiles is local-only (a directory scan); github's counterpart is listOpen,
+  // whose entries carry their own `status` (a close-state, not a file location) instead of
+  // requiring a second directory read to know which are still open.
   const stalled =
-    !capped && listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0;
+    !capped &&
+    (tracker.listOpenIssueFiles
+      ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
+      : tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug }).some((i) => i.status !== "done"));
 
   await wrapUp(ctx, { stalled });
   return { stalled, history };

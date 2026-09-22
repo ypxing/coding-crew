@@ -26,7 +26,7 @@ import {
   parseVerifyChecks,
   parseWorkerReport,
 } from "./report.mjs";
-import { branchFor, writeIssueSection } from "./tracker.mjs";
+import { getTracker } from "./tracker.mjs";
 import { criteriaFile, fixPrompt, resumeNote, reviewPrompt, triagePrompt, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
 import { closeHerdrPane, dispatch } from "./dispatch.mjs";
@@ -65,9 +65,42 @@ function dispatchStem(issue) {
   return issue.number ? `${issue.number}-${issue.slug}` : issue.slug;
 }
 
+/** close-issue.sh / promote-findings.sh's own `--issue`/positional argument: an issue
+ * file path for local, a bare GitHub issue number for github (both scripts branch on
+ * tracker-config.sh the same way; see close-issue.sh's own "tracker backend" comment). */
+function issueRef(issue) {
+  return issue.path ?? String(issue.number);
+}
+
+/** The `issuePath:` value handed to prompts.mjs's builders — a real path to `cat` for
+ * local; for github (no file, just an already-fetched body this dispatch doesn't
+ * forward), a pointer the dispatched agent can act on directly instead of the literal
+ * string "undefined". */
+function issueDescriptor(issue) {
+  return issue.path ?? `GitHub issue #${issue.number} — fetch its current body with: gh issue view ${issue.number} --json body -q .body`;
+}
+
 /** The free text after a tag this module itself wrote — never applied to a reason whose tag is unknown. */
 function stripReasonTag(reason, tag) {
   return reason.startsWith(tag + REASON_SEP) ? reason.slice(tag.length + REASON_SEP.length) : reason;
+}
+
+/**
+ * Write a `## <heading>` note against `issue`, through whichever backend `getTracker`
+ * resolves — local's in-place file splice (`writeIssueSection`) or github's new-comment-
+ * per-call (`writeProgress`; see its own docstring for why a github write is never an
+ * in-place edit). The two take different argument shapes (a path vs. the issue itself),
+ * so this is the one place that branches on which the resolved tracker exposes, instead
+ * of every call site guessing the backend from `issue.path`'s presence.
+ */
+async function writeTrackerSection(effects, issue, heading, body, { append = false } = {}) {
+  if (effects.dryRun) return;
+  const tracker = await getTracker(effects.mainRoot);
+  if (tracker.writeIssueSection) {
+    if (issue.path && existsSync(issue.path)) tracker.writeIssueSection(issue.path, heading, body, { append });
+    return;
+  }
+  if (tracker.writeProgress) tracker.writeProgress(issue, body, { heading, mainRoot: effects.mainRoot });
 }
 
 /**
@@ -90,7 +123,13 @@ function branchHasCommits(effects, featureBranch, branch) {
  */
 export async function runWorker(ctx, issue, attempt) {
   const { sprint, effects, platform, options } = ctx;
-  const branch = branchFor(sprint.featureSlug, issue.slug);
+  const tracker = await getTracker(effects.mainRoot);
+  // github.mjs has no branchFor of its own — an issue number is already the unique part a
+  // filename-derived slug exists to provide for local, so the branch name is computed
+  // inline here per the PRD's Slug/branch mapping decision instead of a factory method.
+  const branch = tracker.branchFor
+    ? tracker.branchFor(sprint.featureSlug, issue.slug)
+    : `crew/${sprint.featureSlug}/${issue.number}-${issue.slug}`;
   const dispatchDir = sprint.dispatchDir;
   mkdirSync(dispatchDir, { recursive: true });
 
@@ -302,7 +341,7 @@ export async function runWorker(ctx, issue, attempt) {
       ? fixPrompt({
           mainRoot: effects.mainRoot,
           worktree,
-          issuePath: issue.path,
+          issuePath: issueDescriptor(issue),
           slug: issue.slug,
           branch,
           context: criteriaUnmetRetry
@@ -314,7 +353,7 @@ export async function runWorker(ctx, issue, attempt) {
       : workerPrompt({
           mainRoot: effects.mainRoot,
           worktree,
-          issuePath: issue.path,
+          issuePath: issueDescriptor(issue),
           slug: issue.slug,
           criteria: issue.criteria,
           resume: resumeNote({ priorBranch, hasProgress: issue.hasProgress, hasBlocked: issue.hasBlocked }),
@@ -559,7 +598,9 @@ function mergeAndClose(ctx, worker, outcome) {
   }
 
   ctx.log(`[STEP] slug=${issue.slug} round=${worker.attempt} step=close`);
-  const close = effects.bash("close-issue.sh", [issue.path], { env: sprint.childEnv() });
+  // The branch is only needed by the github path (receipts.sh check ac --branch — see
+  // close-issue.sh's own comment); harmless as a trailing arg for local, which ignores it.
+  const close = effects.bash("close-issue.sh", [issueRef(issue), branch], { env: sprint.childEnv() });
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${close.stdout.trim()}`);
   if (close.code !== 0) {
     return finishRetryOrBlock(ctx, worker, outcome, `close-refused — ${close.stderr.trim() || close.stdout.trim()}`);
@@ -646,7 +687,7 @@ async function runTriage(ctx, worker, verifyStdout) {
     triagePrompt({
       branch,
       slug: issue.slug,
-      issuePath: issue.path,
+      issuePath: issueDescriptor(issue),
       featureBranch: sprint.featureBranch,
       checkOutput: verifyStdout,
       reportPath: sidecarFile,
@@ -715,7 +756,7 @@ async function runReview(ctx, worker, checks) {
     reviewPrompt({
       branch,
       slug: issue.slug,
-      issuePath: issue.path,
+      issuePath: issueDescriptor(issue),
       criteria: issue.criteria,
       featureBranch: sprint.featureBranch,
       checks,
@@ -803,7 +844,7 @@ async function runReview(ctx, worker, checks) {
 async function promote(ctx, worker, review, outcome) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
-  const guard = effects.bash("promote-findings.sh", ["guard", "--issue", issue.path], {
+  const guard = effects.bash("promote-findings.sh", ["guard", "--issue", issueRef(issue)], {
     env: sprint.childEnv(),
   });
   const guardText = guard.stdout.trim();
@@ -860,13 +901,12 @@ async function finishPartial(ctx, worker, outcome, reason, { keepWorktree = fals
   const unmetBlock = unmet.length
     ? `\n\nUnmet criteria (from the worker's own report):\n${unmet.map((c) => `- ${c.text}`).join("\n")}`
     : "";
-  if (!effects.dryRun && existsSync(issue.path)) {
-    writeIssueSection(
-      issue.path,
-      "Progress",
-      `Round ${worker.attempt}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
-    );
-  }
+  await writeTrackerSection(
+    effects,
+    issue,
+    "Progress",
+    `Round ${worker.attempt}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
+  );
   // keepWorktree (set only by handleVerificationFailure's herdr-reuse path) leaves both the
   // worktree and its herdr pane exactly as they are, for next round's redispatch to pick up
   // — every other partial reason has no reuse concept, so it removes/closes as before.
@@ -896,9 +936,7 @@ async function finishPartial(ctx, worker, outcome, reason, { keepWorktree = fals
 async function finishBlocked(ctx, worker, outcome, reason) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
-  if (!effects.dryRun && existsSync(issue.path)) {
-    writeIssueSection(issue.path, "Blocked", `Round ${worker.attempt}: ${reason}`, { append: true });
-  }
+  await writeTrackerSection(effects, issue, "Blocked", `Round ${worker.attempt}: ${reason}`, { append: true });
   // See finishPartial's matching comment: a dispatch whose own attempt failed to communicate
   // or reported an error leaves both its pane and its worktree alone — herdr never confirmed
   // the underlying process actually exited, and removing the worktree out from under a

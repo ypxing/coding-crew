@@ -85,7 +85,7 @@ import { discoverCommands } from "./lib/commands.mjs";
 import { closeHerdrPane, closeHerdrWorkspace, DEFAULT_PARALLEL, notifyTriggeringPane, PLATFORMS, preflight, relaunchIntoDedicatedPane } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
-import { selectDispatchable } from "./lib/tracker.mjs";
+import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktreeInclude, removeWorktree } from "./lib/worktree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -200,6 +200,15 @@ function existingFeatureSlugs(mainRoot) {
  * this file's selectDispatchable() scoping fix exists to prevent. Resolving it here,
  * once, before session-init.sh ever runs, means every platform launcher gets the same
  * refusal instead of each depending on its own skill-level disambiguation prompt.
+ *
+ * Deliberately local-only (the static, not the tracker-resolved, selectDispatchable):
+ * `tracker: github` is one setting for the whole repo, not per feature (see
+ * `.coding-crew/docs/issue-tracker.md`'s front matter), so there is no cross-feature
+ * scan to do under github — a milestone-scoped `gh issue list` always requires already
+ * knowing the feature slug, unlike a local `.scratch/<feature>/issues/open/` glob. Under github
+ * this simply finds nothing local to scan, `candidates.size` stays 0, and the caller
+ * falls through to session-init.sh's own explicit `--feature-slug`-required error —
+ * still correct, just not resolved here.
  */
 function readyFeatureCandidates(mainRoot) {
   const byFeature = new Map();
@@ -445,7 +454,8 @@ async function main() {
       console.error(resolved.error);
       return 1;
     }
-    const issues = selectDispatchable(mainRoot, { featureSlug: resolved.slug });
+    const tracker = await getTracker(mainRoot);
+    const issues = tracker.selectDispatchable(mainRoot, { featureSlug: resolved.slug });
     const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
       herdr: options.herdr,
     });
@@ -455,8 +465,10 @@ async function main() {
     console.log(`scripts:   ${scriptsDir}`);
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);
     console.log(`dispatchable now (${issues.length}):`);
-    for (const i of issues) console.log(`  - ${i.slug}  [${i.status}]  ${i.path}`);
-    const skipped = selectDispatchable(mainRoot, { status: "deferred-findings", featureSlug: resolved.slug });
+    // Local issues have `.path`; github issues have no file, only `.number` — printed as a
+    // `#<number>` ref instead, so this line never prints the literal string "undefined".
+    for (const i of issues) console.log(`  - ${i.slug}  [${i.status}]  ${i.path ?? `#${i.number}`}`);
+    const skipped = tracker.selectDispatchable(mainRoot, { status: "deferred-findings", featureSlug: resolved.slug });
     if (skipped.length) console.log(`parked fix issues (${skipped.length}): ${skipped.map((i) => i.slug).join(", ")}`);
     console.log("\npipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close");
     console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint (bootstrap-only), before deps (cached at .coding-crew/dev-commands.json)" : "disabled (--no-commands)"}`);

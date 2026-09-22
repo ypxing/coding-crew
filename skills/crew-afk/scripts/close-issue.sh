@@ -3,7 +3,10 @@ set -euo pipefail
 
 # close-issue.sh — mechanical issue close: rewrite Status line and move file
 #
-# Usage: close-issue.sh <issue-file-path>
+# Usage: close-issue.sh <issue-file-path>                 # tracker: local
+#        close-issue.sh <issue-number> <branch>            # tracker: github — the
+#        branch is required so receipts.sh can check the ac receipt without a file
+#        path to derive a feature/slug from (see receipts.sh's own comment on this).
 #
 # What it does:
 #   1. Validates the issue file exists.
@@ -80,8 +83,19 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
 
   RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
   _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
-  if [ -f "$RECEIPTS_SCRIPT" ]; then
-    bash "$RECEIPTS_SCRIPT" check ac --issue "$ISSUE_NUMBER"
+  # CREW_RECEIPTS=off is the same escape hatch receipts.sh's own receipts_enabled() grants
+  # (see its header comment) — mirrored here, not just left to receipts.sh, because a
+  # missing branch arg must not become a hard error when no check is going to run at all.
+  if [ -f "$RECEIPTS_SCRIPT" ] && [ "${CREW_RECEIPTS:-on}" != "off" ]; then
+    # No issue file path to derive a feature/slug from (see receipts.sh's own comment on
+    # this) — the branch is the one thing both the write (runHousekeeping, pre-merge) and
+    # this check agree on, so receipts.sh splits it the same way for both.
+    BRANCH_ARG="${2:-}"
+    if [ -z "$BRANCH_ARG" ]; then
+      echo "ERROR: tracker: github requires the branch as a second argument: $0 <issue-number> <branch>" >&2
+      exit 1
+    fi
+    bash "$RECEIPTS_SCRIPT" check ac --branch "$BRANCH_ARG"
   fi
 
   # No label is added or swapped — the closed state itself is "done". Acceptance

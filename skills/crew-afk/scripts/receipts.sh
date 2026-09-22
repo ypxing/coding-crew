@@ -9,7 +9,8 @@ set -uo pipefail
 #   receipts.sh clear <verify|ac>  --dir   <worktree-path>
 #   receipts.sh path  <verify|ac>  --dir   <worktree-path>
 #   receipts.sh check verify       --branch <branch>            # cwd: main root
-#   receipts.sh check ac           --issue  <issue-file-path>
+#   receipts.sh check ac           --issue  <issue-file-path>   # local backend
+#   receipts.sh check ac           --branch <branch>            # github backend, cwd: main root
 #
 #   --branch is the form to use once the worktree is gone: some variants remove a
 #   worktree straight after its checks, then verify acceptance criteria from the
@@ -51,6 +52,7 @@ Usage:
   receipts.sh path  <verify|ac>  --dir    <worktree-path>
   receipts.sh check verify       --branch <branch>
   receipts.sh check ac           --issue  <issue-file-path>
+  receipts.sh check ac           --branch <branch>
 EOF
 }
 
@@ -256,23 +258,41 @@ case "$ACTION" in
         ;;
 
       ac)
-        [ -n "$ISSUE" ] || { echo "ERROR: check ac requires --issue <issue-file-path>" >&2; exit 1; }
+        # --branch is the github-backend form: there is no issue file path to derive a
+        # slug/feature dir from (see close-issue.sh's github branch), so this splits the
+        # branch itself — the exact same derivation `write ac --branch` already used to
+        # place the receipt in the first place, and `check verify --branch` above already
+        # uses for the same reason. --issue stays the local form, unchanged.
+        if [ -n "$BRANCH" ]; then
+          split=$(_split_crew_branch "$BRANCH") || split=""
+          if [ -z "$split" ]; then
+            echo "ERROR: branch '$BRANCH' is not a crew/<feature>/<issue> branch — cannot check a receipt" >&2
+            exit 1
+          fi
+          read -r feature slug <<<"$split"
+          main_root=$(_main_root_of ".") || { echo "ERROR: not in a git repository" >&2; exit 1; }
+          file=$(_receipt_file "$main_root" "$feature" "$slug" "ac")
+          label="$BRANCH"
+        else
+          [ -n "$ISSUE" ] || { echo "ERROR: check ac requires --issue <issue-file-path> or --branch <branch>" >&2; exit 1; }
 
-        # Derive both slugs from the path, so this works whether or not the
-        # branch still exists: .scratch/<feature>/issues/<state>/<file>.md
-        state_dir=$(dirname "$ISSUE")
-        feature_dir=$(dirname "$(dirname "$state_dir")")
-        slug=$(issue_slug_of "$ISSUE")
-        file="$feature_dir/dispatch/$slug.ac.ok"
+          # Derive both slugs from the path, so this works whether or not the
+          # branch still exists: .scratch/<feature>/issues/<state>/<file>.md
+          state_dir=$(dirname "$ISSUE")
+          feature_dir=$(dirname "$(dirname "$state_dir")")
+          slug=$(issue_slug_of "$ISSUE")
+          file="$feature_dir/dispatch/$slug.ac.ok"
+          label=$(basename "$ISSUE")
+        fi
 
         if [ ! -f "$file" ]; then
-          echo "RECEIPT: $(basename "$ISSUE") has no acceptance-criteria receipt — refusing to close it." >&2
+          echo "RECEIPT: $label has no acceptance-criteria receipt — refusing to close it." >&2
           echo "  Expected: $file" >&2
           echo "  A receipt is written only for the branch crew/<feature>/$slug after its own" >&2
           echo "  acceptance-criteria check returns 'AC: all-met'. Another issue's receipt will not do." >&2
           exit 1
         fi
-        echo "RECEIPT: $(basename "$ISSUE") criteria-verified"
+        echo "RECEIPT: $label criteria-verified"
         ;;
     esac
     ;;

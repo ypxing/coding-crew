@@ -835,6 +835,141 @@ test("a review that never ran is named in the summary, not just counted in the s
   assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — review-not-run$/);
 });
 
+// ─── GitHub tracker backend wiring ────────────────────────────────────────────
+//
+// Regression for a gap the PRD's own Decisions section explicitly called for (callers
+// "stop importing local.mjs directly and call through the factory instead") but no
+// issue's acceptance criteria ever operationalised: main.mjs/loop.mjs/pipeline.mjs used
+// to import tracker.mjs's static, local-only re-exports directly, so a repo configured
+// for `tracker: github` still dispatched against local .scratch/ files — finding none —
+// instead of ever calling into trackers/github.mjs. `gh` is stubbed on PATH; these tests
+// pin that the wiring reaches it at all, not real GitHub behaviour (already covered by
+// tracker-github.test.mjs).
+
+function githubFixtureRepo() {
+  const root = mkdtempSync(join(tmpdir(), "crew-sprint-gh-"));
+  const git = (...args) => sh("git", ["-C", root, ...args]);
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@test");
+  git("config", "user.name", "T");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo ok\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  writeFileSync(join(root, ".gitignore"), ".scratch/\n");
+  mkdirSync(join(root, ".coding-crew/docs"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/docs/issue-tracker.md"),
+    "---\ntracker: github\n---\n\n# Issue tracker: GitHub Issues\n",
+  );
+  // close-issue.sh/promote-findings.sh look for tracker-config.sh at their own script dir,
+  // then at .coding-crew/scripts/ (the installed layout), then at scripts/tracker/ (this
+  // source tree) — none of which a bare fixture repo has, so without this copy every
+  // lookup falls through to its own "missing means local" default, silently defeating the
+  // very test this fixture exists for.
+  mkdirSync(join(root, ".coding-crew/scripts"), { recursive: true });
+  cpSync(join(REPO, "scripts/tracker/tracker-config.sh"), join(root, ".coding-crew/scripts/tracker-config.sh"));
+  git("add", "-A");
+  git("commit", "-q", "-m", "init");
+  git("checkout", "-q", "-b", "feature/demo");
+  mkdirSync(join(root, ".scratch/fake"), { recursive: true });
+  return root;
+}
+
+/**
+ * A fake `gh` on its own PATH-prepended dir: logs every invocation (one line per call) to
+ * `gh.log` and answers just enough of the CLI surface a live sprint's dispatch loop and
+ * close-issue.sh's github branch actually call — `issue list` from the fixture's own
+ * `gh-issues.json` (mutated to `state: CLOSED` by `issue close`, so a second `listOpen`
+ * fetch sees the closed state the same way a real re-fetch would), `issue view --json
+ * body --jq .body` echoing that same issue's body, `issue close`/`issue comment` as
+ * plain no-ops. Everything else exits 0 — this pins the wiring, not the full `gh` surface
+ * (already covered by tracker-github.test.mjs / tracker-mark-done-github.bats).
+ */
+function stubGh(root, issues) {
+  const stub = join(root, ".stub");
+  mkdirSync(stub, { recursive: true });
+  const log = join(root, "gh.log");
+  writeFileSync(log, "");
+  const issuesFile = join(root, "gh-issues.json");
+  writeFileSync(issuesFile, JSON.stringify(issues));
+  // The issues-file path is passed as a node argv, never interpolated into the -e source
+  // itself — nesting a JSON.stringify()'d path *inside* an already-double-quoted `-e "..."`
+  // string breaks out of bash's outer quoting the moment the path itself is unquoted
+  // between the two halves, silently truncating the script (node then throws before ever
+  // touching the file, node exits non-zero, but the wrapping `if` block still `exit 0`s —
+  // so a write that never happened still reports success to the caller).
+  const viewJs = "const fs=require('fs');const p=process.argv[1];const n=Number(process.argv[2]);" +
+    "const issues=JSON.parse(fs.readFileSync(p,'utf8'));" +
+    "process.stdout.write((issues.find(i=>i.number===n)||{}).body||'')";
+  const closeJs = "const fs=require('fs');const p=process.argv[1];const n=Number(process.argv[2]);" +
+    "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const i=issues.find(x=>x.number===n);" +
+    "if(i)i.state='CLOSED';fs.writeFileSync(p,JSON.stringify(issues))";
+  writeFileSync(
+    join(stub, "gh"),
+    [
+      "#!/usr/bin/env bash",
+      `echo "$@" >> ${JSON.stringify(log)}`,
+      'if [ "$1" = "issue" ] && [ "$2" = "list" ]; then',
+      `  cat ${JSON.stringify(issuesFile)}`,
+      "  exit 0",
+      "fi",
+      'if [ "$1" = "issue" ] && [ "$2" = "view" ]; then',
+      `  node -e ${JSON.stringify(viewJs)} ${JSON.stringify(issuesFile)} "$3"`,
+      "  exit 0",
+      "fi",
+      'if [ "$1" = "issue" ] && [ "$2" = "close" ]; then',
+      `  node -e ${JSON.stringify(closeJs)} ${JSON.stringify(issuesFile)} "$3"`,
+      "  exit 0",
+      "fi",
+      "exit 0",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(stub, "gh"), 0o755);
+  return { stub, log, issuesFile };
+}
+
+const GH_ALPHA = {
+  number: 1,
+  title: "alpha",
+  body: "# alpha\n\n## Acceptance criteria\n\n- [x] alpha exists\n",
+  labels: [{ name: "ready-for-agent" }],
+  state: "OPEN",
+};
+
+test("plan resolves the github backend and lists a milestone issue instead of silently finding nothing", () => {
+  const root = githubFixtureRepo();
+  const { stub, log } = stubGh(root, [GH_ALPHA]);
+  const r = sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, PATH: `${stub}:${process.env.PATH}` },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /dispatchable now \(1\):/);
+  assert.match(r.stdout, /- alpha .*#1/);
+  const calls = readFileSync(log, "utf8");
+  assert.match(calls, /issue list .*--milestone demo/, "plan never called gh issue list at all");
+});
+
+test("a github-configured sprint dispatches, closes via gh, and stops finding work — the same live loop local runs through", () => {
+  const root = githubFixtureRepo();
+  const { stub, log } = stubGh(root, [GH_ALPHA]);
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const calls = readFileSync(log, "utf8");
+  assert.match(calls, /issue list .*--milestone demo/, "the dispatch loop never listed github issues");
+  assert.match(calls, /issue close 1 /, "the issue was never closed via gh");
+  assert.match(r.stdout, /NO MORE TASKS/);
+});
+
 // ─── eager dependency provisioning ───────────────────────────────────────────
 //
 // dep-install is failure-triggered, which is right for a human's direct solve-issue run.
