@@ -1,20 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { getTracker } from "../../orchestrator/lib/tracker.mjs";
 import * as local from "../../orchestrator/lib/trackers/local.mjs";
+import * as github from "../../orchestrator/lib/trackers/github.mjs";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const GITHUB_BACKEND_PATH = join(HERE, "..", "..", "orchestrator", "lib", "trackers", "github.mjs");
+function writeTrackerConfig(root, contents) {
+  const dir = join(root, ".coding-crew", "docs");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "issue-tracker.md"), contents);
+}
 
-test("github.mjs does not exist on disk yet (issue 04+ adds it)", () => {
-  // Load-bearing precondition for the next test: it only proves anything about the
-  // dynamic-import requirement if there is really nothing to statically import here.
-  assert.equal(existsSync(GITHUB_BACKEND_PATH), false);
+test("getTracker resolves to the github backend module under `tracker: github` (issue 04 adds github.mjs)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "crew-tracker-factory-"));
+  writeTrackerConfig(root, "---\ntracker: github\n---\n");
+  const tracker = await getTracker(root);
+  assert.equal(tracker, github);
+  assert.equal(typeof tracker.selectDispatchable, "function");
 });
 
 test("getTracker resolves to the local backend under `tracker: local` (the default) without throwing", async () => {
