@@ -7,15 +7,7 @@ Synthesize the current conversation context into a PRD. Do not ask discovery que
 something is unclear, state your assumption. Do confirm technical choices (seams, contracts) with
 the user before writing the final document.
 
-## Tracker Configuration
-
-Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
-
-1. `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md` (project-level)
-
-If it does not exist, invoke the `configure-tracker` skill now to set it up, then continue.
-
-All tracker operations in this skill use the operation definitions in that file.
+{{FRAGMENT:tracker-configuration}}
 
 ## Process
 
@@ -32,11 +24,11 @@ All tracker operations in this skill use the operation definitions in that file.
 
 4. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible. **If decisions are already captured in the existing PRD (e.g. after `crew-grill`), skip re-confirming seams that were already settled — only present genuinely open questions.**
 
-5. Write the PRD using the template below, then execute the `publish` operation from `issue-tracker.md` to save it to `.scratch/<feature-slug>/PRD.md` (creating the directory if needed).
+5. Write the PRD using the template below, then execute the `publish` operation from `issue-tracker.md`. Under `local`, this saves it to `.scratch/<feature-slug>/PRD.md` (creating the directory if needed). Under a configured `github` tracker (per `github.md`'s `Operation: publish`), this creates or updates — `gh issue create`/`gh issue edit --body-file`, keying off whether a `PRD: <feature title>` issue already exists in the feature's milestone (created lazily on first write if absent, matching the milestone's own bootstrap semantics wherever else it's created) — a PRD issue titled `PRD: <feature title>`, then best-effort pins it (`gh issue pin`); a pin failure (e.g. the repo already has 3 pinned issues) must not fail the publish itself.
 
-**Security**: Only write to paths under `.scratch/` within the current repo. Never publish to external APIs, remote issue trackers, or paths outside the repository root.
+**Security**: Only write to paths under `.scratch/` within the current repo, or — under a configured `github` tracker — through that tracker's own defined operations (`gh issue`/`gh api` calls per `issue-tracker.md`). Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 
-> **Never commit `PRD.md`.** This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
+> **Never commit `PRD.md`.** (Local tracker only — under `github` the PRD is a GitHub issue, with no local file to accidentally commit.) This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
 
 <prd-template>
 

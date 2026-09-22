@@ -7,21 +7,13 @@ description: Break a plan, spec, or PRD into independently-grabbable issues on t
 
 Break a plan into independently-grabbable issues using vertical slices (tracer bullets).
 
-## Tracker Configuration
-
-Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
-
-1. `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md` (project-level)
-
-If it does not exist, invoke the `configure-tracker` skill now to set it up, then continue.
-
-All tracker operations in this skill use the operation definitions in that file.
+{{FRAGMENT:tracker-configuration}}
 
 ## Process
 
 ### 1. Gather context and determine feature slug
 
-Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a local file path (e.g. `.scratch/feature/issues/01-slug.md`) or an issue number within `.scratch/`. Do NOT fetch from external URLs or remote issue trackers — only read local files.
+Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a local file path (e.g. `.scratch/feature/issues/01-slug.md`) or an issue number within `.scratch/` — or, under a configured `github` tracker, an issue number resolved via that tracker's `fetch` operation. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker; reads and writes through the *configured* tracker's own operations (as defined in `issue-tracker.md`) are permitted.
 
 Determine the **feature slug** (the directory name under `.scratch/`):
 
@@ -33,11 +25,11 @@ Never guess the slug silently — confirm with the user if there's any ambiguity
 
 ### 2. Check for a PRD
 
-Check whether a PRD exists at `.scratch/<feature-slug>/PRD.md`. If one exists, read it and use it as the primary source material for decomposition.
+Under a `local` tracker, check whether a PRD exists at `.scratch/<feature-slug>/PRD.md`. If one exists, read it and use it as the primary source material for decomposition. Under a configured `github` tracker, check instead (via that tracker's `list`/`fetch` operations) whether a `PRD: <feature title>` issue already exists in the feature's milestone; if so, fetch and read its body the same way. Either way, note the PRD's number/path — step 6 cites it in each work issue.
 
 If no PRD exists, ask the user:
 
-> "I don't see a PRD at `.scratch/<feature-slug>/PRD.md`. Would you like me to run `/to-prd` first to formalize the spec, or should I work from the current conversation context?"
+> "I don't see a PRD for this feature. Would you like me to run `/to-prd` first to formalize the spec, or should I work from the current conversation context?"
 
 If the user chooses to run `/to-prd`, invoke it (using the same feature slug), then continue with the resulting PRD. If the user declines, proceed with conversation context as before.
 
@@ -139,9 +131,9 @@ Look in `PRD.md` for descriptions of end-to-end operations that span multiple ve
 - Which downstream issues depend on this one
 - A brief description of this issue's role in the overall flow
 
-### 6. Write the issues to local markdown
+### 6. Write the issues
 
-**Re-run handling**: Before writing, check if `.scratch/<feature-slug>/issues/` already contains issue files.
+**Re-run handling** (local tracker only — see the github paragraph below for that backend): Before writing, check if `.scratch/<feature-slug>/issues/` already contains issue files.
 
 - If it does and a `done/` subdirectory exists with files in it, **stop** — tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
 - If it does but no issues are done (no `done/` subdirectory or it's empty), list the existing files, warn the user they'll be overwritten, and ask for confirmation before proceeding.
@@ -151,6 +143,8 @@ For each approved slice, execute the `publish` operation from `issue-tracker.md`
 
 Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field. Work the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, publish all currently unblocked issues before their dependents.
 
+**Under a configured `github` tracker**, `publish` (per `github.md`'s `Operation: publish`) creates one GitHub issue per slice via `gh issue create --body-file <file> --label ready-for-agent --milestone <feature-slug>`, where `<file>` is the issue-template body below rendered to text — the body itself, not a sidecar, carries the dependency graph for this backend. Write `## Blocked by` entries as `Issue #<n>`, citing the number `gh issue create` returned for each already-created blocker (the same numeric convention `body-format.mjs`'s `extractBlockedByNumbers` parses) — this is why blockers must still be created before their dependents under this backend too. When step 2 found a PRD, cite it in `## Context Documents` as `PRD: #<n>` using its issue number. The local-only re-run handling above does not apply: a milestone accumulates issues across runs with no local directory to inspect, so re-running against an existing milestone always adds new issues rather than overwriting; confirm with the user first if this doesn't look like a re-run they intended.
+
 <issue-template>
 Status: ready-for-agent
 
@@ -158,7 +152,7 @@ Status: ready-for-agent
 
 > **Optional — only include this section if a PRD exists for this feature. Omit entirely if no PRD exists.**
 
-- PRD: `.scratch/<feature-slug>/PRD.md`
+- PRD: `.scratch/<feature-slug>/PRD.md` (local tracker) — or `PRD: #<n>` citing the feature's PRD issue number (github tracker)
 
 Read this document before implementing. It contains architecture decisions, integration constraints, and technical context essential for this issue.
 
@@ -200,7 +194,7 @@ This issue implements [step description] of the [flow name] flow.
 
 ## Blocked by
 
-- A reference to the blocking ticket (if any)
+- A reference to the blocking ticket (if any) — the blocker's filename under `local`, or `Issue #<n>` under `github` (see step 6's github paragraph)
 
 Or "None - can start immediately" if no blockers.
 
@@ -220,6 +214,8 @@ Exact signatures, types, or contracts this issue produces for any downstream iss
 
 ### 7. Write the machine-readable dependency map
 
+**Local tracker only** — a `github`-tracked feature has no sidecar to write: a github issue number is already the blocker's ref, resolved directly from the numbers step 6's `## Blocked by` prose cites, so this step is skipped entirely under that backend.
+
 After publishing all issues, write `.scratch/<feature-slug>/issues/issues-deps.json` — a flat map from each issue's filename to the filenames of its blockers, e.g.:
 
 ```json
@@ -234,4 +230,4 @@ Source it from the same blocking edges the user confirmed in the quiz step — d
 
 Do NOT close or modify any parent issue.
 
-**Security**: Only read from and write to paths under `.scratch/` within the current repo. Never fetch from external URLs, remote APIs, or paths outside the repository root.
+**Security**: Only read from and write to paths under `.scratch/` within the current repo, or — under a configured `github` tracker — through that tracker's own defined operations (`gh issue`/`gh api` calls per `issue-tracker.md`). Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside the repository root, and never target a github repo other than the one `issue-tracker.md` configures.

@@ -6,6 +6,8 @@
 # operation, both already covered by their own suites, so it needs a structural test, not an
 # execution-behavior suite.
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export SKILL="$SCRIPT_DIR/skills/upgrade-deps/SKILL.md"
@@ -24,8 +26,11 @@ setup() {
 }
 
 @test "upgrade-deps SKILL.md references the issue-tracker.md lookup chain" {
-  grep -q 'issue-tracker.md' "$SKILL"
-  grep -q 'git rev-parse --show-toplevel' "$SKILL"
+  # The preamble now comes from the shared fragment (skills/_shared/fragments/<platform>/
+  # tracker-configuration.md) via {{FRAGMENT:...}}, so assert against the rendered body.
+  local f="$(rendered_skill upgrade-deps claude)"
+  grep -q 'issue-tracker.md' "$f"
+  grep -q 'git rev-parse --show-toplevel' "$f"
 }
 
 @test "upgrade-deps SKILL.md never modifies package.json or lockfiles" {
