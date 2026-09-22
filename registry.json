@@ -76,7 +76,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.3.28",
+      "version": "2.3.29",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -213,7 +213,7 @@
       ]
     },
     "add-tests": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "source-dir": "add-tests",
       "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
       "install": ".claude/skills/add-tests",

@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.29.118]
+
+### Fixed
+
+- **Command discovery (`discover-commands.sh`) now only asks a model about fields still missing
+  from `.coding-crew/dev-commands.json`**, instead of re-asking all eight fields whenever the
+  cache was missing even one (e.g. a repo that predates `coverage`/`integration`) — a partial
+  re-discovery could silently overwrite a hand-edited value (e.g. `test` set to `make testUnit`)
+  with a freshly-guessed default. `--refresh`/`CREW_COMMANDS_REFRESH=1` still re-asks every
+  field unconditionally, the one supported way to force a correction.
+
 ## [1.29.117]
 
 ### Changed

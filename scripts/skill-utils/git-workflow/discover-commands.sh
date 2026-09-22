@@ -24,11 +24,12 @@ set -euo pipefail
 # model can open each file itself instead of having every candidate — a 950-line CLAUDE.md
 # included — pasted whole into a single CLI argv string. Content-in-prompt used to be how
 # this was built; it spent tokens on files the model often never needed (a Makefile no one
-# asked about, once CLAUDE.md alone answered all eight categories), and had no ceiling as a
-# repo's own docs grew. Paths are listed in the same fixed priority order as CANDIDATE_FILES
-# below (docs before build files before manifests), and the model is told to stop reading
-# once it has an answer for all eight categories, so a repo that documents everything in
-# CLAUDE.md never pays to have its Makefile and package.json read too.
+# asked about, once CLAUDE.md alone answered every category being asked), and had no ceiling
+# as a repo's own docs grew. Paths are listed in the same fixed priority order as
+# CANDIDATE_FILES below (docs before build files before manifests), and the model is told to
+# stop reading once it has an answer for every category in this run's prompt (a subset of the
+# eight, see ASK_FIELDS below — not necessarily all of them), so a repo that documents
+# everything in CLAUDE.md never pays to have its Makefile and package.json read too.
 #
 # install is the fourth category, added so ensure-deps.sh (which deliberately never reads
 # CLAUDE.md itself — see its own header comment) can use a documented override instead of its
@@ -70,13 +71,19 @@ set -euo pipefail
 #      fallback already covers this case for free, so there is nothing to ask a model
 #   2. the committed .coding-crew/dev-commands.json already has all eight fields (test, lint,
 #      typecheck, install, env, credential_target, coverage, integration) — any value,
-#      including null, counts as "already discovered" for that field. This is bootstrap-once,
-#      not a recurring staleness check: the file is committed and human-editable, so a
-#      *complete* file is trusted as-is, indefinitely, until a human clears it or explicitly
-#      asks for --refresh. A file missing even one field — e.g. only ensure-deps.sh's own
-#      install_mode/docker_service ever landed, because an earlier sprint's model dispatch
-#      failed before writing any of these eight — is not complete and does not trigger this
-#      skip.
+#      including null, counts as "already discovered" for that field.
+#
+# Otherwise this asks a model about only the fields still missing from the cache — a field
+# already present (even as null) is trusted as-is and left out of the prompt entirely, so a
+# fresh discovery run can never let a fresh guess silently overwrite a real (possibly
+# hand-edited) answer; write-commands-cache.sh's merge trusts whatever field a response names.
+# This is bootstrap-once per field, not a recurring staleness check: the file is committed and
+# human-editable, so a present field is trusted indefinitely until a human clears it or passes
+# --refresh, which re-asks all eight fields unconditionally regardless of what is already
+# cached — the one supported way to force a correction. A file missing even one field — e.g.
+# only ensure-deps.sh's own install_mode/docker_service ever landed, because an earlier sprint's
+# model dispatch failed before writing any of these eight — still counts as "missing" for
+# whichever of the eight it lacks.
 #
 # Invocation: bash "<skill-dir>/scripts/discover-commands.sh" [--refresh]
 # Env: CREW_COMMANDS_REFRESH=1 has the same effect as --refresh.
@@ -135,17 +142,6 @@ _cache_field_present() {
   grep -q "\"$key\"[[:space:]]*:[[:space:]]*\(\"[^\"]*\"\|null\)" "$file"
 }
 
-# _cache_complete <file> — true only if every one of the eight fields above is present (any
-# value, including null). A cache missing even one — the partial-write scenario above — is
-# not "already discovered" and must not make this script skip.
-_cache_complete() {
-  local file="$1" key
-  for key in "${CACHE_FIELDS[@]}"; do
-    _cache_field_present "$file" "$key" || return 1
-  done
-  return 0
-}
-
 # Fixed, deterministic order — keeps the hash (and the prompt's file order) stable across
 # runs regardless of filesystem iteration order. Not tied to any one repo's stack: covers the
 # doc conventions (CLAUDE.md/AGENTS.md/Makefile) plus one manifest per common ecosystem. This
@@ -194,40 +190,69 @@ if [ "${#FOUND_FILES[@]}" -eq 0 ]; then
   exit 0
 fi
 
-# Bootstrap-once, not a recurring staleness re-check: once every one of the eight fields is
-# present in the committed cache file (any value, including null — see _cache_complete
-# above), the file is trusted as-is until a human clears it or explicitly passes --refresh.
-# A cache missing one or more fields (e.g. only ensure-deps.sh's install_mode/docker_service
-# ever got written, because the model dispatch that would have written these eight failed
-# first) is not "already discovered" — fall through and ask again so the gap gets filled.
-if [ "$REFRESH" != "1" ] && [ -f "$CACHE_FILE" ] && _cache_complete "$CACHE_FILE"; then
+# ASK_FIELDS — the fields this run actually asks about: a field already present in the cache
+# (any value, including null) is trusted as-is and left off this list, so the prompt never
+# re-asks a category a human or an earlier run already answered (write-commands-cache.sh's
+# merge trusts whatever field a response names — asking again is what let a re-discovery
+# silently clobber a hand-edited value). --refresh/CREW_COMMANDS_REFRESH=1 asks all eight
+# regardless of what is cached, the one supported way to force a correction.
+ASK_FIELDS=()
+for key in "${CACHE_FIELDS[@]}"; do
+  if [ "$REFRESH" = "1" ] || [ ! -f "$CACHE_FILE" ] || ! _cache_field_present "$CACHE_FILE" "$key"; then
+    ASK_FIELDS+=("$key")
+  fi
+done
+
+if [ "${#ASK_FIELDS[@]}" -eq 0 ]; then
   echo "Command discovery: skipped (already cached at .coding-crew/dev-commands.json)"
   exit 0
 fi
 
-echo "Command discovery: ${#FOUND_FILES[@]} source file(s) found — building discovery prompt"
+echo "Command discovery: ${#FOUND_FILES[@]} source file(s) found — building discovery prompt for ${#ASK_FIELDS[@]} of eight categories"
 echo
+
+# _in_ask <key> — true if <key> is one of this run's ASK_FIELDS.
+_in_ask() {
+  local key="$1" f
+  for f in "${ASK_FIELDS[@]}"; do
+    [ "$f" = "$key" ] && return 0
+  done
+  return 1
+}
 
 cat <<'PROMPT'
 --- command discovery prompt (do not run this on a cheap model tier — it is genuine reasoning) ---
 You are working in this repository's own working directory and have normal file-read access
 to it. Identify the command a developer runs **locally**, during normal iteration, for each
-of these eight categories only:
+of the categories below only:
 
+PROMPT
+
+_in_ask test && cat <<'PROMPT'
 - test
+PROMPT
+_in_ask lint && cat <<'PROMPT'
 - lint
+PROMPT
+_in_ask typecheck && cat <<'PROMPT'
 - typecheck (a static/type-checking pass — not the test suite)
+PROMPT
+_in_ask install && cat <<'PROMPT'
 - install (installing project dependencies before running the other three — not building,
   compiling, migrating, or seeding data). Only report one if the source explicitly documents
   it; a repo with no stated install command already falls back to its own lockfile/manifest
   convention (npm ci, bundle install, …) elsewhere, so guessing one here would only override
   that convention with a worse guess.
+PROMPT
+_in_ask env && cat <<'PROMPT'
 - env (the command that creates or bootstraps a working local `.env` file — e.g. `cp
   .env.example .env`, `make env`, a documented setup script — not setting one variable inline,
   not CI/deploy secrets). Only report one if the source explicitly documents it; a repo with
   no stated env command already falls back to copying `.env.example` (or creating an empty
   file) elsewhere, so guessing one here would only override that convention with a worse
   guess.
+PROMPT
+_in_ask credential_target && cat <<'PROMPT'
 - credential_target (the build target — if any — whose recipe generates package-manager
   credential config files such as `.npmrc`, `pip.conf`, or `.cargo/credentials.toml` from a
   template or env vars — not the `.env` bootstrap itself, that's env above). Report the full
@@ -235,18 +260,25 @@ of these eight categories only:
   install and env above. Only report one if such a target explicitly exists; a repo with none
   already falls back to expanding any `*.tpl` files with no generated counterpart elsewhere, so
   guessing here would only override that convention with a worse guess.
+PROMPT
+_in_ask coverage && cat <<'PROMPT'
 - coverage (the local command that produces a test coverage report — e.g. `npm test --
   --coverage`, `pytest --cov`, `go test -cover ./...` — not a coverage upload or
   reporting-service step). Only report one if the source explicitly documents it, or an
   unambiguous build-file target clearly serves this purpose; a repo with no discoverable
   coverage command has no fallback convention to guess from, so guessing one here would only
   override the honest answer "no coverage tooling configured" with a worse guess.
+PROMPT
+_in_ask integration && cat <<'PROMPT'
 - integration (the command, if any, that runs a *real* dependency-backed integration test tier
   — e.g. `make test-integration`, something gated behind a `startLocalstack`-style setup — as
   distinct from a tier that only mocks the dependency away). Only report one if explicitly
   discoverable; a repo with no such tier already falls back to treating every test as running
   against a mocked boundary elsewhere, so guessing one here would only override that convention
   with a worse guess.
+PROMPT
+
+cat <<'PROMPT'
 
 Read these files yourself, in the order listed below — that order is priority order, most
 authoritative first (project docs, then build files, then package manifests):
@@ -259,8 +291,13 @@ done
 cat <<'PROMPT'
 
 Stop reading as soon as you have a confident answer — including a confident "no local command
-exists" — for all eight categories; you do not need to open every file above if an earlier one
-already answers all eight. The three exceptions are install, env, and credential_target:
+exists" — for every category listed above; you do not need to open every file above if an
+earlier one already answers them all.
+PROMPT
+
+if _in_ask install && _in_ask env && _in_ask credential_target; then
+  cat <<'PROMPT'
+The three exceptions are install, env, and credential_target:
 you MUST open any Makefile in the list above before concluding any of the three is null —
 see the rule below. This overrides the "stop once confident" instruction; do not skip it just
 because the docs already answered the other three, and do not treat a confident-sounding
@@ -278,6 +315,29 @@ Rules:
   Makefile in the list and found no matching target, or (b) confirmed no Makefile appears in
   the list above at all. Silence in the docs alone never justifies null for these three
   categories.
+PROMPT
+elif _in_ask install || _in_ask env || _in_ask credential_target; then
+  NAMES=""
+  _in_ask install && NAMES="${NAMES:+$NAMES, }install"
+  _in_ask env && NAMES="${NAMES:+$NAMES, }env"
+  _in_ask credential_target && NAMES="${NAMES:+$NAMES, }credential_target"
+  cat <<PROMPT
+The exception is $NAMES: you MUST open any Makefile in the list above before concluding it is
+null — this overrides the "stop once confident" instruction; do not treat a confident-sounding
+silence in the docs as answering $NAMES on its own. You may only answer null for it once you
+have either (a) opened every Makefile in the list and found no matching target, or (b)
+confirmed no Makefile appears in the list above at all.
+
+Rules:
+PROMPT
+else
+  cat <<'PROMPT'
+
+Rules:
+PROMPT
+fi
+
+cat <<'PROMPT'
 - Only local dev-loop commands. Ignore build, deploy, publish, and infra-provisioning steps
   (Docker image builds, CDK/Terraform/CloudFormation, docs bundling/rendering, release/publish
   workflows) even if they appear in the same file as a test/lint/typecheck/install command.
@@ -286,7 +346,7 @@ Rules:
 - Where the source recommends against a shortcut (calls it broken, misleading, or says
   "don't use it"), use the alternative it recommends instead of the discouraged shortcut.
 - If a category has no discoverable local command, use null for it — do not guess one.
-- When any of the eight categories resolves to a Makefile target, report the target invocation
+- When any of the categories above resolves to a Makefile target, report the target invocation
   itself (e.g. "make test", "make deps", "make env") — never a command you believe is equivalent
   to what the target's recipe does underneath. A target's recipe can hide an existence guard
   (won't overwrite a file that's already there), a prerequisite chain, or an environment
@@ -296,6 +356,17 @@ Rules:
   eval'd the same way downstream and loses the same guards if paraphrased.
 
 Respond with **only** this JSON shape, no other prose:
-{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>", "install": "<command or null>", "env": "<command or null>", "credential_target": "<command or null, e.g. \"make _registry\">", "coverage": "<command or null>", "integration": "<command or null>"}
---- end command discovery prompt ---
 PROMPT
+
+JSON_SHAPE=""
+for key in "${CACHE_FIELDS[@]}"; do
+  _in_ask "$key" || continue
+  [ -n "$JSON_SHAPE" ] && JSON_SHAPE="$JSON_SHAPE, "
+  if [ "$key" = "credential_target" ]; then
+    JSON_SHAPE="${JSON_SHAPE}\"credential_target\": "'"<command or null, e.g. \"make _registry\">"'
+  else
+    JSON_SHAPE="$JSON_SHAPE\"$key\": \"<command or null>\""
+  fi
+done
+printf '{%s}\n' "$JSON_SHAPE"
+echo "--- end command discovery prompt ---"

@@ -291,6 +291,41 @@ EOF
   [[ "$output" == *"command discovery prompt"* ]]
 }
 
+@test "a re-discovery triggered by missing fields only asks about those fields, not ones already cached" {
+  echo "claude notes" > CLAUDE.md
+  mkdir -p .coding-crew
+  printf '{"test": "make testUnit", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null}' > .coding-crew/dev-commands.json
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  # coverage/integration are missing and must be asked about.
+  [[ "$output" == *'"coverage"'* ]]
+  [[ "$output" == *'"integration"'* ]]
+  # test/lint/typecheck/install/env/credential_target are already cached and must not be
+  # re-asked, so a fresh guess can never overwrite the hand-set "make testUnit".
+  [[ "$output" != *'"test":'* ]]
+  [[ "$output" != *'"lint":'* ]]
+  [[ "$output" != *'"typecheck":'* ]]
+  [[ "$output" != *'"install":'* ]]
+  [[ "$output" != *'"env":'* ]]
+  [[ "$output" != *'"credential_target":'* ]]
+}
+
+@test "--refresh re-asks every field, including ones already cached" {
+  echo "claude notes" > CLAUDE.md
+  mkdir -p .coding-crew
+  printf '{"test": "make testUnit", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null, "coverage": null, "integration": null}' > .coding-crew/dev-commands.json
+
+  run bash "$DISCOVER_SCRIPT" --refresh
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == *'"test":'* ]]
+  [[ "$output" == *'"coverage":'* ]]
+}
+
 # --- Does not skip: cache exists but is missing one or more of the six fields ---
 
 @test "does not skip when the cache file exists but is missing a field (e.g. a partial write from a failed dispatch)" {
