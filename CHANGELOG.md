@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.123]
+
+### Added
+
+- **The triggering herdr pane now hears from an issue as soon as its coder finishes**, not
+  just at the next terminal outcome (complete/partial/blocked). The coder is the longest
+  single step in the pipeline, and verify/review/merge can still take a while after it —
+  previously the triggering pane heard nothing about that issue in between, which reads as
+  silence indistinguishable from a stuck sprint.
+
 ## [1.29.122]
 
 ### Fixed
@@ -22,16 +32,6 @@
   `--merge-timeout <minutes>` option (default 10) now bounds both calls; a timeout demotes
   the issue to `merge-failed` (retried next round like any other merge failure) and runs
   `git merge --abort` to leave the working tree clean instead of mid-merge.
-
-## [1.29.123]
-
-### Added
-
-- **The triggering herdr pane now hears from an issue as soon as its coder finishes**, not
-  just at the next terminal outcome (complete/partial/blocked). The coder is the longest
-  single step in the pipeline, and verify/review/merge can still take a while after it —
-  previously the triggering pane heard nothing about that issue in between, which reads as
-  silence indistinguishable from a stuck sprint.
 
 ## [1.29.121]
 
