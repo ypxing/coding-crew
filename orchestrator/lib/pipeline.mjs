@@ -29,7 +29,7 @@ import {
 import { getTracker } from "./tracker.mjs";
 import { criteriaFile, fixPrompt, resumeNote, reviewPrompt, triagePrompt, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
-import { dispatch } from "./dispatch.mjs";
+import { dispatch, notifyTriggeringPane } from "./dispatch.mjs";
 
 // Retention-reason tags for a verify-worktree.sh failure, once triage (see runTriage
 // below) has classified it. Read back by runWorker to route the *next* attempt — a
@@ -63,6 +63,13 @@ function taggedReason(tag, summary) {
  * back to the bare slug when the issue file carries no leading number. */
 function dispatchStem(issue) {
   return issue.number ? `${issue.number}-${issue.slug}` : issue.slug;
+}
+
+/** The one push per issue per round a caller polling for milestones actually needs —
+ * a terminal outcome, not every gate in between (see notifyTriggeringPane's own doc
+ * comment: a no-op off-herdr, so this costs nothing when HERDR_PANE_ID is unset). */
+function notifyMilestone(ctx, issue, message) {
+  return notifyTriggeringPane(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`);
 }
 
 /** close-issue.sh / promote-findings.sh's own `--issue`/positional argument: an issue
@@ -544,7 +551,7 @@ export async function runHousekeeping(ctx, worker) {
  * rely on merge-branches.sh's already-merged short-circuit and receipts.sh's own SHA-
  * bound checks to make a retry safe, not on anything re-derived above this function.
  */
-function mergeAndClose(ctx, worker, outcome) {
+async function mergeAndClose(ctx, worker, outcome) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
 
@@ -569,6 +576,7 @@ function mergeAndClose(ctx, worker, outcome) {
 
   sprint.complete(issue.slug, branch);
   outcome.status = "complete";
+  await notifyMilestone(ctx, issue, `complete — merged and closed (round ${worker.attempt})`);
   return outcome;
 }
 
@@ -851,6 +859,7 @@ async function finishPartial(ctx, worker, outcome, reason) {
   sprint.retain(issue.slug, branch, reason);
   outcome.status = "partial";
   outcome.reason = reason;
+  await notifyMilestone(ctx, issue, `partial — retrying (round ${worker.attempt}) — ${reason}`);
   return outcome;
 }
 
@@ -867,5 +876,6 @@ async function finishBlocked(ctx, worker, outcome, reason) {
   sprint.markBlockedThisRun(issue.slug);
   outcome.status = "blocked";
   outcome.reason = reason;
+  await notifyMilestone(ctx, issue, `blocked — ${reason}`);
   return outcome;
 }
