@@ -10,19 +10,17 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
- *   $HERDR_ENV=1                            run dispatches through herdr.dev instead of
- *                                           headless, so a human can watch them live in a
- *                                           pane; requires `herdr server` already running.
- *                                           `run` itself first relaunches into a dedicated
- *                                           pane of its own (see dispatch.mjs's
- *                                           relaunchIntoDedicatedPane), so the triggering
- *                                           pane is freed up and the sprint's own round-by-
- *                                           round narration is visible live, natively, in
- *                                           that new pane — no separate log-tailing pane
- *                                           needed. Every dispatch this run shares that same
- *                                           herdr workspace (one tab per dispatch). If
- *                                           crew-afk itself is running inside a herdr-managed
- *                                           pane, that pane's own workspace
+ *   $HERDR_ENV=1                            give crew-afk's own process a dedicated herdr.dev
+ *                                           pane, distinct from the triggering pane, so a
+ *                                           human can watch the sprint's round-by-round
+ *                                           narration live without it competing with whatever
+ *                                           else the triggering pane is doing; requires
+ *                                           `herdr server` already running. `run` relaunches
+ *                                           into that dedicated pane (see dispatch.mjs's
+ *                                           relaunchIntoDedicatedPane) — every coder/review/
+ *                                           triage dispatch is always headless, herdr or not.
+ *                                           If crew-afk itself is running inside a herdr-
+ *                                           managed pane, that pane's own workspace
  *                                           ($HERDR_WORKSPACE_ID) is reused instead of
  *                                           opening a new one, and is left open at the end
  *                                           rather than closed; only a workspace this run
@@ -36,24 +34,9 @@
  *                                           prompt` with the outcome (see dispatch.mjs's
  *                                           notifyTriggeringPane), so whoever is watching it
  *                                           can stop polling and just wait for that nudge.
- *                                           All four platforms; codex's reply-extraction is
- *                                           unverified live (see dispatch.mjs's
- *                                           dispatchViaHerdr doc comment). The durable record
- *                                           of everything printed either way is still
+ *                                           The durable record of everything printed either
+ *                                           way is still
  *                                           `.scratch/<feature-slug>/traces/orchestrator.log`.
- *   $CREW_HERDR_KEEP_PANE=1                 with HERDR_ENV=1: leave every dispatch's tab
- *                                           open instead of closing it as soon as it finishes
- *                                           (success or fail), so `herdr agent read <name>`
- *                                           can show what a failed pane actually rendered, and
- *                                           so a successful coder's pane can be reused on this
- *                                           issue's own next retry (verify-fail/AC-unmet/partial)
- *                                           instead of starting cold. Off by default so panes
- *                                           don't pile up. Named agent = the issue number,
- *                                           sanitised slug and a role tag, one per coder/review/
- *                                           triage dispatch (see herdrDispatchName); spec.round
- *                                           (this issue's own attempt number, not a sprint-wide
- *                                           round) folded into that name keeps a same-issue+role
- *                                           retry safe from agent_name_taken even with a pane kept open.
  *   --model <alias|inherit>                coder model; reviewer/triage/commandsDiscovery/
  *                                           coverageValidation match it unless
  *                                           .coding-crew/afk-models.json names them explicitly
@@ -82,11 +65,11 @@ import { spawnSync } from "node:child_process";
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { closeHerdrPane, closeHerdrWorkspace, DEFAULT_PARALLEL, notifyTriggeringPane, PLATFORMS, preflight, relaunchIntoDedicatedPane } from "./lib/dispatch.mjs";
+import { closeHerdrWorkspace, DEFAULT_PARALLEL, notifyTriggeringPane, PLATFORMS, preflight, relaunchIntoDedicatedPane } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
-import { ensureWorktreeInclude, removeWorktree } from "./lib/worktree.mjs";
+import { ensureWorktreeInclude } from "./lib/worktree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -245,10 +228,10 @@ function resolveFeatureSlug(mainRoot, explicitSlug) {
 /**
  * A pidfile at .scratch/<slug>/.crew-afk.lock, so a second `run` for the same feature-slug
  * refuses instead of racing the first — two independent sprints dispatching the same issue's
- * coder concurrently hit herdr's own `agent_name_taken` (same deterministic name, same
- * issue+round), and whichever one loses that race burns a real attempt off its 2-attempt cap
- * for a collision that was never its own fault. Only the front door (or a plain, non-herdr,
- * single process) takes this lock — see the CREW_AFK_RELAUNCHED guard at the call site: the
+ * coder concurrently would race for the same worktree/branch, and whichever one loses burns
+ * a real attempt off its 2-attempt cap for a collision that was never its own fault. Only the
+ * front door (or a plain, single process) takes this lock — see the CREW_AFK_RELAUNCHED guard
+ * at the call site: the
  * relaunched instance shares the front door's whole lifetime (it's what the front door is
  * blocked waiting on via relaunchIntoDedicatedPane's sentinel), so it trusts the check the
  * front door already made rather than acquiring its own and deadlocking against it. A stale
@@ -622,20 +605,8 @@ async function main() {
     exitCode = 1;
     throw err;
   } finally {
-    // A slug whose one-shot herdr-reuse pane/worktree (see handleVerificationFailure in
-    // pipeline.mjs) never got consumed by a next round — max-rounds hit, an unhandled error,
-    // or every other issue resolving before this one's retry ran — would otherwise leave that
-    // worktree on disk, and, unless the whole workspace is closed just below, that pane open.
-    // Swept here, once, regardless of how the run ended. A no-op when the run never got as
-    // far as initialising a sprint (preflight/resolveFeatureSlug failed first).
-    if (sprint) {
-      for (const { tabId, worktree } of sprint.pendingHerdrReuses()) {
-        await closeHerdrPane(effects, tabId);
-        removeWorktree(effects, { mainRoot: effects.mainRoot, path: worktree });
-      }
-    }
     // A no-op unless a herdr dispatch actually created the sprint's one shared workspace
-    // (see dispatchViaHerdr/ensureHerdrWorkspace) — closed here, once, regardless of how
+    // (see ensureHerdrWorkspace in dispatch.mjs) — closed here, once, regardless of how
     // the run ended, so a thrown error above doesn't leave it dangling in herdr's UI.
     await closeHerdrWorkspace(effects);
     // Only under HERDR_ENV=1, and only when nobody else already has (or will) — see

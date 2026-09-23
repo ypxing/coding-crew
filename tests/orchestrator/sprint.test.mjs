@@ -314,11 +314,11 @@ test("a review-not-run retry skips the coder dispatch and succeeds on the second
 });
 
 test("a non-empty review report with no verdict line and no findings is review-not-run, not criteria-unmet", () => {
-  // Distinct from the truly-empty case above: a herdr capture that read back a fragment of
-  // the reviewer's reply (non-empty text, but no fenced json and no `AC:` line, and no
-  // FINDING:/[SEV] content either) used to parse as a genuine `AC: unmet` verdict — routing
-  // the retry through a full, expensive coder redispatch to "fix" acceptance criteria the
-  // review never actually found unmet. It must route the same cheap way review-once does.
+  // Distinct from the truly-empty case above: a garbled capture of the reviewer's reply
+  // (non-empty text, but no fenced json and no `AC:` line, and no FINDING:/[SEV] content
+  // either) used to parse as a genuine `AC: unmet` verdict — routing the retry through a
+  // full, expensive coder redispatch to "fix" acceptance criteria the review never
+  // actually found unmet. It must route the same cheap way review-once does.
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "alpha.review-once-garbled", "");

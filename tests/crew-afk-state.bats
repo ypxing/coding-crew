@@ -371,11 +371,11 @@ EOF
   [[ "$output" != *"retained rather than merged"* ]]
 }
 
-@test "crew-summary's code review rollup picks up a later herdr-indented json verdict over a stale not_run stub" {
-  # A herdr-captured reviewer transcript sometimes lands indented, fence lines included
-  # (e.g. two extra leading spaces on every line, "  \`\`\`json" and "  \`\`\`"). JSON
-  # treats whitespace between tokens as insignificant, so the rollup still folds to this
-  # later, real verdict rather than reporting the earlier not_run stub.
+@test "crew-summary's code review rollup picks up a later indented json verdict over a stale not_run stub" {
+  # A captured reviewer transcript sometimes lands indented, fence lines included (e.g.
+  # two extra leading spaces on every line, "  \`\`\`json" and "  \`\`\`"). JSON treats
+  # whitespace between tokens as insignificant, so the rollup still folds to this later,
+  # real verdict rather than reporting the earlier not_run stub.
   init_sprint calc
   mkdir -p .scratch/calc/reviews
   bash "$(installed_scripts)/promote-findings.sh" mark-not-run --feature-slug calc \

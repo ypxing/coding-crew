@@ -6,9 +6,7 @@
  * is the *only* thing read here — never the dispatch's captured text. There is no fallback
  * to a fenced ```json block in the final message or to markdown headings; a missing or
  * invalid sidecar is read as the failure state (`blocked` / `unmet` / `fixable`, per role),
- * deterministically, the same way for every platform and for both the headless and herdr
- * dispatch paths. See dispatch.mjs's file header for why herdr has no separate fallback here
- * either.
+ * deterministically, the same way for every platform.
  *
  * The reviewer's report carries two things the pipeline gates on: the `AC:`-equivalent
  * `verdict` field and the findings list. Both fail closed — a missing or unreadable sidecar

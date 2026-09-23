@@ -47,7 +47,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { appendLine } from "./effects.mjs";
 
 export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
@@ -94,18 +94,6 @@ function agentFileCandidates(platform, mainRoot, agent) {
 
 export function resolveAgentFile(platform, mainRoot, agent) {
   return agentFileCandidates(platform, mainRoot, agent).find((p) => existsSync(p)) ?? null;
-}
-
-/** Strip YAML frontmatter, returning { frontmatter, body }. */
-export function splitFrontmatter(text) {
-  if (!text.startsWith("---")) return { frontmatter: {}, body: text };
-  const end = text.indexOf("\n---", 3);
-  if (end === -1) return { frontmatter: {}, body: text };
-  const head = text.slice(4, end);
-  const body = text.slice(end + 4).replace(/^\n/, "");
-  const frontmatter = {};
-  for (const m of head.matchAll(/^([\w-]+):\s*(.*)$/gm)) frontmatter[m[1]] = m[2].trim();
-  return { frontmatter, body };
 }
 
 /**
@@ -382,50 +370,48 @@ export function extractFinalText(platform, lines) {
   return "";
 }
 
+const EMPTY_RESULT_META = { isError: null, costUsd: null, durationMs: null, numTurns: null, permissionDenials: [], sessionId: null };
+
 /**
- * herdr (https://herdr.dev) drives coding agents as long-lived interactive REPLs inside
- * panes it manages — idle/working/blocked/done/unknown, not a one-shot batch run — so this
- * is a second dispatch path, not a flag on buildDispatch's claude branch. Verified live
- * against herdr 0.8.2: `agent start` never creates a pane, only occupies one that already
- * exists — dispatchViaHerdr gets one via `tab create --workspace <the sprint's one shared
- * workspace> --cwd <the issue's worktree>`, one tab per dispatch, closed when it's done. Every
- * coder/reviewer/triage dispatch for the whole crew-afk run shares that one workspace
- * (created lazily by the first dispatch, see ensureHerdrWorkspace) instead of each opening
- * its own — a human watching herdr sees one steady window gaining and losing tabs as work
- * starts and finishes, not a new window flashing open and closed per dispatch. A fresh
- * worktree trips claude's and copilot's one-time trust dialog in interactive mode (unlike
- * their own `-p` mode, which always skips it) — but that trust is keyed off the repository,
- * not the literal cwd, so it fires once per repo, on whichever dispatch happens to hit it
- * first, not once per worktree; the detect-and-answer block in dispatchViaHerdr handles that
- * single occurrence, per platform (see HERDR_DIALOGS).
- *
- * All four platforms now go through this path when spec.herdr is set: herdr's own `--kind`
- * already lists pi/claude/codex/copilot as supported kinds (`herdr agent start --help`), and
- * its idle/working/blocked/done detection is generic per kind — nothing here is claude-only
- * by herdr's own design, only by how much of each platform's interactive quirks had been
- * verified live. claude and copilot were verified live against herdr 0.8.2 with real
- * transcripts (trust dialog text — see HERDR_DIALOGS). pi was verified live too, but needs no
- * dialog table entry: it's launched with --approve, which skips its trust prompt outright
- * rather than answering it, the same way claude's bypassPermissions and copilot's
- * --allow-all-tools remove a prompt instead of clicking through it. codex could not be
- * verified live in the environment this was built in (no ChatGPT/API-key credentials to get
- * past its sign-in screen) — its argv is built from documented flags only. An unrecognised
- * block still fails loud rather than guessing a keystroke (see HERDR_DIALOGS) — codex hitting
- * an unhandled first-run dialog fails clearly instead of silently misbehaving; the fix, once
- * someone runs it for real, is a new HERDR_DIALOGS entry.
- *
- * The result of any dispatch — herdr or headless — is read from exactly one place: the
- * `<slug>.<role>.report.json` sidecar the agent writes itself (spec.reportPath). herdr has no
- * pane-text fallback for a settled pane with no sidecar; that used to be a text-scraping
- * heuristic (matching an echoed prompt and a trailing status marker in rendered terminal
- * text) and was the least robust, least-verified part of this whole file. A settled pane with
- * no sidecar now fails the same way the headless path already does when its own report.json
- * never appears: `blocked`, deterministically, never guessed at from a terminal render.
+ * claude's terminal `result` event (verified live against 2.1.280) carries cost, error, and
+ * timing fields that extractFinalText discards, keeping only `.result`. Scoped to claude
+ * only: copilot's own terminal event has no confirmed equivalent (its documented event set —
+ * see buildDispatch's copilot branch — has no "turn complete" shape at all), and pi/codex
+ * don't run through this JS-side parsing path. Any platform/line-shape this doesn't recognise
+ * returns the same all-null/empty shape, matching extractFinalText's own fail-open contract.
  */
-const HERDR_DIALOGS = {
-  claude: { match: "is this a project you created or one you trust", keys: ["down", "enter"] },
-  copilot: { match: "do you trust the files in this folder", keys: ["enter"] },
-};
+export function extractResultMeta(platform, lines) {
+  if (platform !== "claude") return EMPTY_RESULT_META;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const evt = JSON.parse(lines[i]);
+      if (evt.type === "result") {
+        return {
+          isError: evt.is_error ?? null,
+          costUsd: evt.total_cost_usd ?? null,
+          durationMs: evt.duration_ms ?? null,
+          numTurns: evt.num_turns ?? null,
+          permissionDenials: evt.permission_denials ?? [],
+          sessionId: evt.session_id ?? null,
+        };
+      }
+    } catch {
+      /* skip an unparseable line */
+    }
+  }
+  return EMPTY_RESULT_META;
+}
+
+/**
+ * herdr (https://herdr.dev) is ambient only: crew-afk's own process gets a dedicated pane
+ * under HERDR_ENV=1 (see relaunchIntoDedicatedPane), but every coder/reviewer/triage
+ * dispatch is always headless (`-p`/equivalent), whether or not HERDR_ENV is set. An earlier
+ * version drove each dispatch as a long-lived interactive REPL in its own herdr pane
+ * (`agent start`/`agent prompt --wait`, one tab per dispatch, pane reuse across retries) —
+ * removed once headless `-p` was confirmed to run correctly with a herdr server active in
+ * the background, since that REPL-per-worker machinery bought only live pane-watching and a
+ * retry-continuity bonus that headless retries already work fine without.
+ */
 
 /**
  * effects.exec runs spawnSync — it blocks Node's single event loop for the child's whole
@@ -440,99 +426,6 @@ const HERDR_DIALOGS = {
  */
 async function herdrExec(effects, args, timeoutMs) {
   return effects.spawnWithTimeout("herdr", args, { cwd: effects.mainRoot, timeoutMs });
-}
-
-// `agent prompt --wait --timeout <bound>` is told to self-report a stall at exactly `bound`,
-// but the JS-side spawnWithTimeout kill used to fire at that same instant — a race where our
-// own SIGKILL could win and erase herdr's chance to ever print the agent_prompt_stalled/timeout
-// JSON envelope its exit is diagnosed from, leaving a DISPATCH-FAIL log with an empty stderr and
-// a falsely-false timedOut. Giving the JS-side kill a grace period past herdr's own --timeout
-// lets herdr detect and report the stall first; the JS-side timer stays only as a backstop for
-// a herdr CLI that hangs without ever honouring its own --timeout at all.
-const HERDR_CLI_KILL_GRACE_MS = 2 * 60 * 1000;
-
-// Bounds the one-off `herdr status` health check a DISPATCH-FAIL takes when `agent prompt`
-// failed with literally no stdout/stderr to explain why — small, since this is a diagnostic
-// side-call on an already-failed dispatch, not something worth waiting on at length.
-const HERDR_STATUS_CHECK_TIMEOUT_MS = 10_000;
-
-/**
- * herdr's `agent start` rejects any name that isn't `^[a-z][a-z0-9_-]{0,31}$` — issue slugs
- * are usually already that shape, but come from a markdown filename (issueSlug()), so nothing
- * stops one running long or carrying an uppercase letter. Sanitising here, once, at the herdr
- * boundary keeps issueSlug() itself free of a constraint that's herdr's, not the tracker's.
- */
-export function herdrAgentName(raw) {
-  const lowered = (raw || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-  const startsValid = /^[a-z]/.test(lowered) ? lowered : `a-${lowered.replace(/^-+/, "")}`;
-  const trimmed = startsValid.slice(0, 32).replace(/-+$/, "");
-  return trimmed || "a";
-}
-
-/**
- * Coder, reviewer and triage dispatches for one issue all pass the same spec.slug — without
- * a role tag here, herdrAgentName(spec.slug) alone collapses all three onto the identical
- * pane name, so a reviewer or triage dispatch would reuse the coder's herdr pane (and, were
- * two of them ever dispatched concurrently for the same issue, race for it) instead of each
- * getting its own claude instance. Each role gets a short, fixed tag so the three are never
- * the same name for the same issue.
- */
-const HERDR_ROLE_TAGS = {
-  "crew-coder": "coder",
-  "crew-code-reviewer": "review",
-  "crew-triage": "triage",
-};
-
-function herdrRoleTag(agent) {
-  return HERDR_ROLE_TAGS[agent] ?? (herdrAgentName(agent).slice(0, 8) || "agent");
-}
-
-/**
- * herdrAgentName truncates a label to 32 chars with nothing to disambiguate what got cut —
- * two different issues (two different coders dispatched concurrently by the pool, or two
- * different reviewers/triages) whose slugs happen to share the same truncated prefix would
- * otherwise land on the identical herdr name and race for the same pane. A 6-hex-char hash
- * of the *untruncated* raw label, appended after truncation, makes that collision astronomically
- * unlikely without needing every dispatch to see every other slug in the round.
- */
-function herdrUniqueSuffix(raw) {
-  return createHash("sha1").update(raw || "").digest("hex").slice(0, 6);
-}
-
-/**
- * herdrAgentName(label) with a role tag appended, so a human scanning `herdr agent list`
- * can tell coder/review/triage apart at a glance — e.g. `implement-user-auth-coder`. Most
- * issue slugs fit alongside their tag well within herdr's 32-char cap, so the common case
- * stays fully readable with no decoration beyond the tag. Only when the label is long enough
- * that fitting it in would truncate two different labels down to the same prefix (or the same
- * label's own truncation would drop the disambiguating tail) does a 6-hex-char hash of the
- * *untruncated* label get appended — trading readability for collision-safety only when
- * truncation actually makes it necessary.
- *
- * issueNumber, when given (the issue file's own `NN-` prefix — see tracker.mjs's
- * issueNumber()), is prepended so panes for the same feature sort and scan by issue, the same
- * way the issue tracker's own files do — e.g. `i42-implement-user-auth-coder`. Led with `i`
- * because herdr's name regex requires a leading letter, so a bare digit can't start the name.
- *
- * round, when given, is inserted the same way (`r3-`) — a kept-open pane (see
- * CREW_HERDR_KEEP_PANE in dispatchViaHerdr) still holds its herdr agent name
- * until something closes it, so the *next* round's fresh dispatch for the same issue+role
- * needs a name distinct from that still-live one to avoid `agent_name_taken`. Omitted only
- * by a caller reusing a specific already-open pane (spec.herdrReuse carries that pane's own
- * name forward instead of asking this function to recompute it — see dispatchViaHerdr).
- */
-export function herdrDispatchName(label, agent, issueNumber, round) {
-  const tag = herdrRoleTag(agent);
-  const prefix = issueNumber ? `i${issueNumber}-` : "";
-  const roundTag = round ? `r${round}-` : "";
-  const full = herdrAgentName(label);
-  const budgetNoHash = Math.max(1, 32 - prefix.length - roundTag.length - tag.length - 1);
-  if (full.length <= budgetNoHash) return `${prefix}${roundTag}${full}-${tag}`;
-
-  const suffix = herdrUniqueSuffix(label);
-  const budget = Math.max(1, 32 - prefix.length - roundTag.length - tag.length - suffix.length - 2);
-  const base = full.slice(0, budget).replace(/-+$/, "") || "a";
-  return `${prefix}${roundTag}${base}-${tag}-${suffix}`;
 }
 
 /**
@@ -553,91 +446,6 @@ function herdrJson(result) {
     }
   }
   return null;
-}
-
-/**
- * `agent prompt --wait`'s own contract admits it "does not track turns": if the pane was
- * already working when this dispatch's prompt landed, --wait can settle on that *earlier*
- * turn's idle/done transition instead of this one's. The `agent read --source
- * recent-unwrapped` that follows then rejects with agent_not_idle — recent-unwrapped needs
- * the pane idle to scroll its alt-screen buffer — putting a JSON error envelope on stdout
- * instead of rendered text (the one case where `agent read` doesn't return raw pane text; see
- * herdrJson's doc comment). Naming the one error code that means "still working, not blank"
- * lets herdrReadSettled wait out the actual remaining work (waitForHerdrIdle) instead of
- * misreading a diagnostic read as a genuinely empty pane.
- */
-function herdrReadNotIdle(readResult) {
-  return herdrJson(readResult)?.error?.code === "agent_not_idle";
-}
-
-// Polling interval while waiting out a live agent_not_idle or a sidecar-report wait — coarse,
-// since both are waiting on actual agent work, not a terminal render catching up.
-const HERDR_NOT_IDLE_POLL_MS = 2_000;
-
-/**
- * Polls `agent get` until agent_status settles to idle, done, or blocked, or the deadline
- * passes. blocked is a stopping condition too, not something to wait out: unlike idle/done
- * it doesn't arrive from work finishing, so a pane that lands there stays there until a
- * human (or a keystroke this file already knows to send — see the trust-dialog handling
- * above) answers it. Polling past that would just spend the rest of the deadline for no
- * reason. Returns the settled status string, or null if the deadline passed first.
- */
-async function waitForHerdrIdle(effects, name, deadline) {
-  while (Date.now() < deadline) {
-    const get = await herdrExec(effects, ["agent", "get", name]);
-    if (get.code !== 0) return null;
-    const status = herdrJson(get)?.result?.agent?.agent_status;
-    if (status === "idle" || status === "done" || status === "blocked") return status;
-    await new Promise((r) => setTimeout(r, HERDR_NOT_IDLE_POLL_MS));
-  }
-  return null;
-}
-
-/**
- * The one completion signal a herdr dispatch reads: a file on disk, never the pane's rendered
- * text — it isn't subject to render lag, echo/marker glyph drift, or ANSI noise the way a
- * terminal scrape is. It's the same `<slug>.<role>.report.json` sidecar pipeline.mjs already
- * reads for the headless path. Still has to guard against `--wait`'s own "does not track
- * turns" gap (see waitForHerdrIdle's doc comment): a fast idle/done settle can still land
- * while the agent is minutes from actually writing the file, so this polls agent_status the
- * same way, testing for the file each pass rather than for text. Returns "found" once the
- * file exists, "blocked" on a mid-turn dialog, or "absent" once the pane genuinely settles
- * idle/done (or the deadline passes) with no file — the caller (dispatchViaHerdr) treats
- * "absent" as a hard failure, the same as the headless path's own missing-sidecar case, with
- * no fallback attempt to reconstruct a result from the pane's rendered text.
- */
-async function waitForSidecarReport(effects, reportPath, name, deadline) {
-  while (Date.now() < deadline) {
-    if (existsSync(reportPath)) return "found";
-    const get = await herdrExec(effects, ["agent", "get", name]);
-    if (get.code !== 0) return "absent";
-    const status = herdrJson(get)?.result?.agent?.agent_status;
-    if (status === "blocked") return "blocked";
-    if (status === "idle" || status === "done") {
-      // The file write and this status settle can race by a beat — one last direct check
-      // before giving up on the sidecar rather than falling back on that alone.
-      return existsSync(reportPath) ? "found" : "absent";
-    }
-    await new Promise((r) => setTimeout(r, HERDR_NOT_IDLE_POLL_MS));
-  }
-  return existsSync(reportPath) ? "found" : "absent";
-}
-
-/**
- * Every `agent read` call in the retry loop below goes through here rather than calling
- * herdrExec directly, so the agent_not_idle recovery only has to be written once. On that
- * error code, waits for the pane to actually settle (bounded by this dispatch's own
- * deadline, not another fixed retry budget) and reads again — the second read's stdout is
- * returned as-is even if it's still an error envelope (deadline exceeded), since that's a
- * real failure the caller's existing empty-reply handling already reports correctly.
- */
-async function herdrReadSettled(effects, name, deadline) {
-  let result = await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"]);
-  if (herdrReadNotIdle(result)) {
-    await waitForHerdrIdle(effects, name, deadline);
-    result = await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "400"]);
-  }
-  return result.stdout || "";
 }
 
 /**
@@ -766,11 +574,11 @@ const DEFAULT_RELAUNCH_TIMEOUT_MS = 8 * 60 * 60 * 1000;
 const RELAUNCH_POLL_MS = 3_000;
 
 // Ambient env the front door itself may have that the dedicated pane has no reason to
-// already know — a dev/test seam (CREW_FAKE_DISPATCH, CREW_SCRIPTS), a debug flag
-// (CREW_VERBOSE), a pane-retention knob (CREW_HERDR_KEEP_PANE), or HOME. Forwarded only
-// when actually set on the front door's own env, never assumed present in the new pane —
-// `pane run` is not confirmed to inject anything beyond what `tab create --env` names.
-const RELAUNCH_ENV_PASSTHROUGH = ["HOME", "CREW_SCRIPTS", "CREW_VERBOSE", "CREW_FAKE_DISPATCH", "CREW_HERDR_KEEP_PANE"];
+// already know — a dev/test seam (CREW_FAKE_DISPATCH, CREW_SCRIPTS), or a debug flag
+// (CREW_VERBOSE). Forwarded only when actually set on the front door's own env, never
+// assumed present in the new pane — `pane run` is not confirmed to inject anything beyond
+// what `tab create --env` names.
+const RELAUNCH_ENV_PASSTHROUGH = ["HOME", "CREW_SCRIPTS", "CREW_VERBOSE", "CREW_FAKE_DISPATCH"];
 
 /**
  * The dedicated run pane's own env, built explicitly rather than assumed inherited. Never
@@ -895,390 +703,10 @@ export async function relaunchIntoDedicatedPane(effects, { mainRoot, featureSlug
   return { exitCode, delegated: true };
 }
 
-/** A scalar TOML value: `key = "value"` — the same shape dispatch-codex-agent.sh's toml_scalar reads. */
-function tomlScalar(text, key) {
-  const m = text.match(new RegExp(`^[ \\t]*${key}[ \\t]*=[ \\t]*(.+)$`, "m"));
-  if (!m) return "";
-  return m[1]
-    .trim()
-    .replace(/^["']/, "")
-    .replace(/["'][ \t]*$/, "");
-}
-
-/** A multi-line literal TOML value: `key = '''\n...\n'''` — dispatch-codex-agent.sh's toml_multiline. */
-function tomlMultiline(text, key) {
-  const m = text.match(new RegExp(`^[ \\t]*${key}[ \\t]*=[ \\t]*'''[ \\t]*\\n([\\s\\S]*?)\\n[ \\t]*'''`, "m"));
-  return m ? m[1] : "";
-}
-
 /**
- * dispatch-agent.sh's/dispatch-codex-agent.sh's own `--model inherit means pass nothing`
- * rule: an explicit override wins, an empty one falls back to the agent file's own model,
- * and a literal "inherit" (only possible calling dispatchViaHerdr directly, outside
- * main.mjs's own normalisation) is treated the same as empty.
- */
-function effectiveHerdrModel(model, agentModel) {
-  if (model && model !== "inherit") return model;
-  if (!model) return agentModel || "";
-  return "";
-}
-
-/**
- * The AGENT_ARG argv for `herdr agent start <name> --kind <platform> --pane <id> -- <...>`,
- * and the literal text later submitted via `agent prompt` — herdr's interactive equivalent
- * of buildDispatch's headless argv, with the -p/prompt/output-format machinery stripped:
- * the prompt is submitted once the pane is ready, not at launch.
- *
- * claude and copilot resolve `--agent <name>` themselves (see buildDispatch's own header
- * comment), so no agent-file parsing happens here for them — same flags, minus -p/prompt/
- * output-format. pi and codex have no such CLI concept: dispatch-agent.sh's and
- * dispatch-codex-agent.sh's own agent-file resolution (frontmatter tools/model,
- * developer_instructions) is reproduced here so a herdr-driven pi/codex session gets the
- * same tools/model/instructions a batch dispatch would. codex has no --append-system-prompt
- * equivalent (see dispatch-codex-agent.sh's own comment on this), so its instructions are
- * prepended to the task and submitted together as one prompt, exactly like COMBINED there.
- */
-export function buildHerdrInvocation(effects, platform, spec) {
-  if (platform === "claude") {
-    const args = ["--permission-mode", "bypassPermissions", "--add-dir", spec.mainRoot, "--agent", spec.agent];
-    if (spec.model) args.push("--model", spec.model);
-    return { args, prompt: readFileSync(spec.promptFile, "utf8") };
-  }
-
-  if (platform === "copilot") {
-    const args = ["--agent", spec.agent, "-C", spec.cwd, "--add-dir", spec.mainRoot, "--allow-all-tools", "--no-color"];
-    if (spec.model) args.push("--model", spec.model);
-    return { args, prompt: readFileSync(spec.promptFile, "utf8") };
-  }
-
-  if (platform === "pi") {
-    const agentFile = resolveAgentFile("pi", spec.mainRoot, spec.agent);
-    if (!agentFile) throw new Error(`pi agent definition not found for '${spec.agent}' (looked in .pi/agents and ~/.pi/agent/agents)`);
-    const { frontmatter, body } = splitFrontmatter(readFileSync(agentFile, "utf8"));
-    const model = effectiveHerdrModel(spec.model, frontmatter.model);
-    // --approve trusts this run's project-local files outright, the same role
-    // bypassPermissions/--allow-all-tools play for claude/copilot: removing the prompt
-    // entirely rather than needing HERDR_DIALOGS to answer one.
-    const args = ["--approve"];
-    if (model) args.push("--model", model);
-    if (frontmatter.tools) args.push("--tools", frontmatter.tools.replace(/[[\]"]/g, "").replace(/\s/g, ""));
-    args.push("--append-system-prompt", body);
-    return { args, prompt: readFileSync(spec.promptFile, "utf8") };
-  }
-
-  if (platform === "codex") {
-    const agentFile = resolveAgentFile("codex", spec.mainRoot, spec.agent);
-    if (!agentFile) throw new Error(`codex agent definition not found for '${spec.agent}' (looked in .codex/agents and ~/.codex/agents)`);
-    const toml = readFileSync(agentFile, "utf8");
-    const instructions = tomlMultiline(toml, "developer_instructions");
-    if (!instructions.trim()) throw new Error(`agent definition has empty developer_instructions: ${agentFile}`);
-    const sandbox = tomlScalar(toml, "sandbox_mode") || process.env.CREW_CODEX_SANDBOX || "workspace-write";
-    const model = effectiveHerdrModel(spec.model, tomlScalar(toml, "model"));
-    const effort = tomlScalar(toml, "model_reasoning_effort");
-    const args = ["-C", spec.cwd, "-a", "never", "-s", sandbox];
-    if (sandbox === "workspace-write") {
-      // Workers install deps and fetch packages; a sandboxed workspace blocks network by
-      // default, which would fail every dep-install step.
-      args.push("-c", "sandbox_workspace_write.network_access=true");
-      // Same fix as dispatch-codex-agent.sh's: a linked worktree's index lives in the main
-      // repo's git dir, which the sandbox otherwise keeps read-only even with --add-dir.
-      const gitCommonDirRaw = effects.gitRead(["rev-parse", "--git-common-dir"], { cwd: spec.cwd }).stdout.trim();
-      const gitCommonDir = !gitCommonDirRaw
-        ? ""
-        : gitCommonDirRaw.startsWith("/")
-          ? gitCommonDirRaw
-          : join(spec.cwd, gitCommonDirRaw);
-      if (gitCommonDir) args.push("-c", `sandbox_workspace_write.writable_roots=["${gitCommonDir}"]`);
-    }
-    if (spec.mainRoot !== spec.cwd) args.push("--add-dir", spec.mainRoot);
-    if (model) args.push("--model", model);
-    if (effort) args.push("-c", `model_reasoning_effort="${effort}"`);
-    const task = readFileSync(spec.promptFile, "utf8");
-    return { args, prompt: `${instructions}\n\n---\n\n# Task\n\n${task}` };
-  }
-
-  throw new Error(`unknown platform: ${platform}`);
-}
-
-/**
- * The herdr equivalent of dispatch(): same {code, timedOut, dryRun, stderr, text} contract,
- * same [DISPATCH-FAIL] logging, same always-leaves-a-report-file behaviour — pipeline.mjs
- * and report.mjs need no changes to call this instead. See the doc comment above for why
- * this is a separate function rather than a buildDispatch branch.
- */
-export async function dispatchViaHerdr(effects, platform, spec, { timeoutMs } = {}) {
-  mkdirSync(dirname(spec.outFile), { recursive: true });
-  if (effects.dryRun) return { code: 0, timedOut: false, dryRun: true, stderr: "", text: "" };
-
-  const bound = timeoutMs || 45 * 60 * 1000;
-  const dispatchDeadline = Date.now() + bound;
-  const label = spec.slug || spec.agent;
-  // Distinct from `label` (which stays bare for herdrDispatchName's own prefixing): this is
-  // what a human actually reads in the tab/pane title, and without the issue number a pane
-  // titled just "implement-user-auth (coder)" is indistinguishable from any other coder pane
-  // on the same slug across rounds/retries once more than one issue is in flight.
-  const displayLabel = spec.issueNumber ? `#${spec.issueNumber} ${label}` : label;
-  // spec.herdrReuse ({tabId, paneId, name}) names a pane a prior dispatch left open (only
-  // possible when CREW_HERDR_KEEP_PANE=1 kept it — see keepPane below) — set only by a caller
-  // that tracked those ids itself (pipeline.mjs's herdr-reuse bookkeeping), never derived
-  // here. Its own `name` rides along
-  // rather than being recomputed from this call's (possibly later) spec.round: the pane is
-  // still registered in herdr under whatever name it was `agent start`-ed with originally,
-  // and this round's own round number has nothing to do with that. Reusing it skips
-  // workspace/tab-create/agent-start entirely and goes straight to `agent prompt`, so the
-  // coder's own session (files already read, decisions already made) carries into the retry
-  // instead of starting cold. Never verified live against a real herdr server —
-  // reusedPromptFailed below falls back to a fresh dispatch rather than trusting that
-  // unverified path to fail loud.
-  const name = spec.herdrReuse?.name ?? herdrDispatchName(label, spec.agent, spec.issueNumber, spec.round);
-  let tabId = spec.herdrReuse?.tabId ?? null;
-  let paneId = spec.herdrReuse?.paneId ?? null;
-  const reusingPane = !!spec.herdrReuse;
-
-  // Off by default: this call closes its own tab as soon as it finishes, whether the
-  // dispatch succeeded or failed, so panes don't pile up across rounds. Set
-  // CREW_HERDR_KEEP_PANE=1 to keep every pane open instead — e.g. to inspect a failed
-  // dispatch's transcript with `herdr agent read <name>` (otherwise it's gone the instant
-  // [DISPATCH-FAIL] is logged), or to let a successful dispatch's pane be reused by
-  // handleVerificationFailure if verify-worktree.sh fails later this round (see
-  // spec.herdrReuse above). A kept pane holds its herdr agent name, but spec.round folded
-  // into `name` above makes that safe: the next round's fresh dispatch for this same
-  // issue+role gets a distinct name, never the one a kept-open pane still holds.
-  const keepPane = process.env.CREW_HERDR_KEEP_PANE === "1";
-
-  const finish = async (code, stderr, text, timedOut = false, nameCollision = false) => {
-    const failed = code !== 0 || !((text ?? "").trim());
-    if (tabId && !keepPane) {
-      await herdrExec(effects, ["tab", "close", tabId]);
-    }
-    writeFileSync(spec.outFile, text ?? "");
-    if (spec.logFile && failed) {
-      const kept = keepPane ? ` kept-pane=${name} pane=${paneId ?? "?"}` : "";
-      appendLine(
-        spec.logFile,
-        `[DISPATCH-FAIL] agent=${spec.agent} herdr=1 code=${code} timedOut=${!!timedOut} outEmpty=${!((text ?? "").trim())}${kept} slug=${spec.slug ?? "?"} ${(stderr || "").trim().slice(0, 400)}`,
-      );
-    }
-    return {
-      code,
-      timedOut: !!timedOut,
-      dryRun: false,
-      stderr: stderr ?? "",
-      text: text ?? "",
-      herdrTabId: tabId && keepPane ? tabId : null,
-      herdrPaneId: paneId && keepPane ? paneId : null,
-      herdrName: tabId && keepPane ? name : null,
-      // This dispatch's own attempt failed to communicate (a transport/CLI error, a timeout,
-      // a rejected/blocked pane) or produced nothing usable — not whether some *later* step
-      // (verify, review) went on to fail. A caller that keeps this herdrTabId open past this
-      // call (pipeline.mjs's own cleanup) reads this to tell "kept because it might still be
-      // reused" apart from "kept so a human can see why it failed" — the latter must never be
-      // closed as a side effect of demoting the issue, or the one thing worth inspecting is
-      // gone the instant the demotion runs.
-      herdrFailed: failed,
-      // herdr rejected this dispatch before the coder process ever started, because another
-      // dispatch already holds the exact same deterministic name (same issue+role+round) —
-      // a race between two sprints on the same feature-slug (see acquireSprintLock in
-      // main.mjs), not this attempt's own fault. runHousekeeping reads this to skip the
-      // demotion path entirely rather than spending a slot of the issue's 2-attempt cap on
-      // a collision the code on this branch had nothing to do with.
-      nameCollision,
-    };
-  };
-
-  let invocation;
-  try {
-    invocation = buildHerdrInvocation(effects, platform, spec);
-  } catch (err) {
-    return await finish(1, err.message, "");
-  }
-
-  if (!reusingPane) {
-    let workspaceId;
-    try {
-      workspaceId = await ensureHerdrWorkspace(effects, { featureSlug: spec.featureSlug });
-    } catch (err) {
-      return await finish(1, err.message, "");
-    }
-
-    // One tab per dispatch, in the sprint's one shared workspace, closed in finish() (unless
-    // persistPane keeps it for a caller-tracked retry) — the workspace itself outlives every
-    // individual dispatch and is closed once, at the end of the whole run (see
-    // closeHerdrWorkspace, called from main.mjs). CLAUDE_CODE_SESSION_ID/
-    // CLAUDE_CODE_CHILD_SESSION clearing is claude-only (see buildDispatch's claude branch for
-    // why): pi/codex/copilot have no equivalent parent-session inheritance documented here.
-    const create = await herdrExec(effects, [
-      "tab",
-      "create",
-      "--workspace",
-      workspaceId,
-      "--cwd",
-      spec.cwd,
-      "--label",
-      displayLabel,
-      ...(platform === "claude" ? ["--env", "CLAUDE_CODE_SESSION_ID=", "--env", "CLAUDE_CODE_CHILD_SESSION="] : []),
-      "--env",
-      `MAIN_ROOT=${spec.mainRoot}`,
-      "--env",
-      "CREW_ORCHESTRATED=1",
-      "--no-focus",
-    ]);
-    const created = herdrJson(create)?.result;
-    paneId = created?.root_pane?.pane_id;
-    if (create.code !== 0 || !paneId) {
-      return await finish(create.code || 1, `herdr tab create failed: ${(create.stderr || create.stdout || "").trim()}`, "");
-    }
-    tabId = created?.tab?.tab_id;
-
-    // A one-time trust/consent dialog some platforms' interactive mode shows on a fresh repo,
-    // keyed off the repository, not the literal cwd (confirmed live for claude: trusting
-    // mainRoot once, then starting claude in a git worktree of that same repo, skipped the
-    // dialog entirely). So this only actually answers it on whichever dispatch happens to hit
-    // an untrusted repo first — every dispatch after that, in this sprint or a later one,
-    // starts ready immediately and skips straight past this block. Never a blind keypress: an
-    // unrecognised blocked reason is a real failure (see herdr's own --skill guidance), and a
-    // platform with no HERDR_DIALOGS entry (pi never needs one — see buildHerdrInvocation's
-    // --approve; codex has none verified yet) fails the same way an unmatched dialog text does.
-    const start = await herdrExec(effects, ["agent", "start", name, "--kind", platform, "--pane", paneId, "--", ...invocation.args], bound);
-    if (start.code !== 0) {
-      const startErrorCode = herdrJson(start)?.error?.code;
-      if (startErrorCode !== "agent_not_ready") {
-        return await finish(
-          start.code || 1,
-          `herdr agent start failed: ${(start.stderr || start.stdout || "").trim()}`,
-          "",
-          start.timedOut,
-          startErrorCode === "agent_name_taken",
-        );
-      }
-      // Unlike every other herdr subcommand used here, `agent read`/`pane read` print raw
-      // rendered text on stdout, never a JSON envelope — confirmed live, and the reason
-      // herdrJson() must not be used on this call.
-      const blockedText = (await herdrExec(effects, ["agent", "read", name, "--source", "recent-unwrapped", "--lines", "40"])).stdout || "";
-      const dialog = HERDR_DIALOGS[platform];
-      if (!dialog || !blockedText.toLowerCase().includes(dialog.match)) {
-        return await finish(1, `herdr agent start blocked on an unrecognised dialog: ${blockedText.trim().slice(0, 300)}`, "");
-      }
-      await herdrExec(effects, ["agent", "send-keys", name, ...dialog.keys]);
-      const deadline = Date.now() + Math.min(bound, 30_000);
-      let ready = false;
-      while (Date.now() < deadline) {
-        const get = await herdrExec(effects, ["agent", "get", name]);
-        if (get.code !== 0) break;
-        if (herdrJson(get)?.result?.agent?.interactive_ready) {
-          ready = true;
-          break;
-        }
-        // A live run against a real server hammered it with a spawnSync call every tick
-        // here before this existed — hundreds of polls in the ~2s claude actually took to
-        // settle after `send-keys`. 300ms keeps the poll responsive without doing that again.
-        await new Promise((r) => setTimeout(r, 300));
-      }
-      if (!ready) return await finish(1, "herdr agent never became ready after answering the trust dialog", "");
-    }
-
-    // Nothing else titles this pane: absent this, herdr falls back to labelling it after the
-    // agent identifier alone (e.g. "crew-coder"), identical across every issue and round, so a
-    // human scanning panes can't tell which is which. Only for a freshly created pane — a
-    // reused one (spec.herdrReuse) skips every other setup step here too and goes straight to
-    // `agent prompt`, and it was already named on the dispatch that first created it.
-    // Best-effort: a failed rename leaves herdr's own default title, never the dispatch itself.
-    try {
-      await herdrExec(effects, ["pane", "rename", paneId, `${spec.round ? `${spec.round}. ` : ""}${displayLabel} (${herdrRoleTag(spec.agent)})`]);
-    } catch {
-      /* best effort — see comment above */
-    }
-  }
-
-  // --until idle --until done, not the default (idle/done/blocked/unknown all match): herdr's
-  // own docs recommend this pairing for automation, "to differentiate between truly finished
-  // work and intermediate idle states" — and without it, a pane sitting at any blocking dialog
-  // this file doesn't already know to answer would settle the wait and read back as a mundane
-  // empty reply, indistinguishable from a worker that produced nothing. Excluding "blocked"
-  // means such a pane now runs out the clock on --timeout instead, a real, loggable failure.
-  const promptResult = await herdrExec(
-    effects,
-    ["agent", "prompt", name, invocation.prompt, "--wait", "--until", "idle", "--until", "done", "--timeout", String(bound)],
-    bound + HERDR_CLI_KILL_GRACE_MS,
-  );
-
-  // The reused pane may no longer exist (herdr restarted, a human closed it by hand) — this
-  // is the only place that finds out, since reusingPane skipped every earlier check that
-  // would otherwise have caught it. Retried exactly once, as a normal fresh dispatch, rather
-  // than failing the whole round over an optimisation that didn't pan out.
-  if (reusingPane && promptResult.code !== 0 && herdrJson(promptResult)?.error?.code === "agent_not_found") {
-    tabId = null;
-    paneId = null;
-    return await dispatchViaHerdr(effects, platform, { ...spec, herdrReuse: null }, { timeoutMs });
-  }
-
-  if (promptResult.code !== 0) {
-    const errorCode = herdrJson(promptResult)?.error?.code;
-    // promptResult.timedOut is spawnWithTimeout's own signal that *our* SIGKILL fired
-    // (effects.mjs) — checked in addition to herdr's self-reported error code because that
-    // JS-side kill has a grace period past herdr's own --timeout (HERDR_CLI_KILL_GRACE_MS)
-    // specifically so herdr gets to report a stall first, but if herdr never does (hung
-    // client, dead server) our kill is still the reason this call ended and should still log
-    // as a timeout rather than a silent, code-less failure.
-    const timedOut = promptResult.timedOut || errorCode === "agent_prompt_stalled" || errorCode === "timeout";
-    // agent_blocked: herdr rejects the submission outright, before sending any input, when
-    // the pane was already blocked. Read the rendered pane directly into the failure
-    // message instead of just the CLI's own stderr, which never contains the dialog text.
-    if (errorCode === "agent_blocked") {
-      const tail = await herdrReadSettled(effects, name, dispatchDeadline);
-      return await finish(promptResult.code, `herdr agent prompt rejected — agent already blocked: ${tail.trim().slice(-400)}`, "", timedOut);
-    }
-    const rawError = (promptResult.stderr || promptResult.stdout || "").trim();
-    const message = rawError ? `herdr agent prompt failed: ${rawError}` : await describeHerdrUnavailability(effects);
-    return await finish(promptResult.code, message, "", timedOut);
-  }
-
-  // The pane submitted and settled cleanly. The one thing this dispatch reads back is the
-  // sidecar file at spec.reportPath — the same file the headless path reads, via the same
-  // report.mjs parser. There is no pane-text fallback: a settle with no sidecar is a real
-  // failure (the agent never wrote its result, whatever it may have printed), reported as
-  // `blocked` the same way an absent sidecar is on the headless path, rather than guessed at
-  // from a scraped terminal render. See the file header comment and dispatch.mjs's plain
-  // dispatch() for the matching contract.
-  if (!spec.reportPath) return await finish(0, "", "");
-
-  const sidecarState = await waitForSidecarReport(effects, spec.reportPath, name, dispatchDeadline);
-  if (sidecarState === "blocked") {
-    const tail = await herdrReadSettled(effects, name, dispatchDeadline);
-    return await finish(1, `herdr pane blocked mid-turn: ${tail.trim().slice(-400)}`, "");
-  }
-  if (sidecarState === "found") {
-    // Wrapped in a fenced json block, not handed back bare: this text is not only
-    // pipeline.mjs's own input (which re-reads the sidecar file itself anyway, same as the
-    // headless path) but also, for review, the raw block appended verbatim to the round's
-    // aggregate report file — parseReviewAggregate (and crew-summary.sh/promote-findings.sh
-    // through it) only ever looks for a fenced json block with a `verdict` field in that
-    // text, never at a sidecar. A bare placeholder here would silently drop this branch's
-    // verdict from that aggregate.
-    let sidecarText = "";
-    try {
-      sidecarText = readFileSync(spec.reportPath, "utf8").trim();
-    } catch {
-      sidecarText = "";
-    }
-    const wrapped = sidecarText ? "```json\n" + sidecarText + "\n```" : `(structured result written to ${spec.reportPath})`;
-    return await finish(0, "", wrapped);
-  }
-  // "absent": the pane settled idle/done and never wrote a sidecar. No pane-text scrape —
-  // that heuristic (matching an echoed prompt and a trailing status marker in rendered
-  // terminal text) was this file's least robust code, and a settled pane with no sidecar is
-  // exactly the same failure the headless path already reports as `blocked` when its own
-  // report.json never appears. Fail the same way here, with the pane's tail for diagnosis.
-  const tail = await herdrReadSettled(effects, name, dispatchDeadline);
-  return await finish(0, `herdr pane settled with no ${spec.reportPath} — treating as blocked. tail: ${tail.trim().slice(-400) || "(pane rendered nothing)"}`, "");
-}
-
-/**
- * Explicit close for a pane a caller kept open via CREW_HERDR_KEEP_PANE=1 (see
- * dispatchViaHerdr's finish()) — the herdr-reuse bookkeeping in pipeline.mjs calls this once
- * it knows the pane will not be reused again (verify passed, or the one retry is spent).
- * A no-op when tabId is falsy, so a caller that never persisted a pane can call this
- * unconditionally without checking first.
+ * Explicit close for a tab this file itself opened — currently only
+ * relaunchIntoDedicatedPane's own dedicated run pane. A no-op when tabId is falsy, so a
+ * caller that never opened one can call this unconditionally without checking first.
  */
 export async function closeHerdrPane(effects, tabId) {
   if (!tabId) return;
@@ -1295,9 +723,6 @@ export async function closeHerdrPane(effects, tabId) {
  * to read rather than infer.
  */
 export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } = {}) {
-  if (spec.herdr && !process.env.CREW_FAKE_DISPATCH) {
-    return await dispatchViaHerdr(effects, platform, spec, { timeoutMs });
-  }
   const built = buildDispatch(platform, spec);
   mkdirSync(dirname(spec.outFile), { recursive: true });
 
@@ -1365,10 +790,12 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   });
   consumeLine(lineBuffer);
 
+  let meta = EMPTY_RESULT_META;
   if (built.jsonEvents && !r.dryRun) {
     writeFileSync(`${spec.outFile}.events.jsonl`, lines.length ? `${lines.join("\n")}\n` : "");
     // report.mjs reads outFile as the worker's final message text, not the event stream.
     writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines));
+    meta = extractResultMeta(built.jsonEvents, lines);
   } else if (built.capture === "stdout" && !r.dryRun) {
     writeFileSync(spec.outFile, r.stdout ?? "");
   }
@@ -1381,11 +808,18 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   // and the one place the reason lived — this child's stderr — was read into `r.stderr`
   // and then never looked at again by any caller. Log it here, once, so a repeat isn't a
   // mystery a second time. Never throws and never blocks a dispatch on its own account.
-  if (spec.logFile && !r.dryRun && (r.code !== 0 || r.timedOut || !text.trim())) {
+  //
+  // Also fires on meta.isError/permissionDenials even when code===0 and text is non-empty:
+  // claude can flag a turn `is_error: true` or record a permission denial while still
+  // exiting 0 and writing something — a case that otherwise left no trace anywhere.
+  if (spec.logFile && !r.dryRun && (r.code !== 0 || r.timedOut || !text.trim() || meta.isError || meta.permissionDenials.length)) {
     const stderrSnippet = (r.stderr ?? "").trim().slice(0, 500).replace(/\s+/g, " ");
+    const metaTag = meta.isError || meta.permissionDenials.length
+      ? ` isError=${!!meta.isError} permissionDenials=${meta.permissionDenials.length}`
+      : "";
     appendLine(
       spec.logFile,
-      `[DISPATCH-FAIL] agent=${spec.agent} slug=${spec.slug ?? "?"} code=${r.code} timedOut=${!!r.timedOut} outEmpty=${!text.trim()} stderr=${JSON.stringify(stderrSnippet || "(none)")}`,
+      `[DISPATCH-FAIL] agent=${spec.agent} slug=${spec.slug ?? "?"} code=${r.code} timedOut=${!!r.timedOut} outEmpty=${!text.trim()}${metaTag} stderr=${JSON.stringify(stderrSnippet || "(none)")}`,
     );
   }
 
@@ -1395,6 +829,12 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     dryRun: !!r.dryRun,
     stderr: r.stderr ?? "",
     text,
+    isError: meta.isError,
+    costUsd: meta.costUsd,
+    durationMs: meta.durationMs,
+    numTurns: meta.numTurns,
+    permissionDenials: meta.permissionDenials,
+    sessionId: meta.sessionId,
   };
 }
 
@@ -1549,32 +989,10 @@ export function preflight(effects, platform, mainRoot, agents, { herdr = false }
 }
 
 /**
- * HERDR_ENV=1 applies to whichever --platform the sprint runs (see
- * dispatchViaHerdr's doc comment — herdr's own --kind already covers all four), so this
- * check fails the sprint at startup with one clear message, rather than every dispatch
- * discovering mid-round that herdr's CLI or server isn't there.
+ * HERDR_ENV=1 applies to whichever --platform the sprint runs, so this check fails the
+ * sprint at startup with one clear message, rather than crew-afk's own dedicated run pane
+ * (relaunchIntoDedicatedPane) discovering mid-run that herdr's CLI or server isn't there.
  */
-/**
- * Only called from dispatchViaHerdr's generic `agent prompt` failure branch, and only when
- * that failure came with no stdout/stderr at all to explain it — preflightHerdr already
- * proved the server was up once, at sprint start, but that says nothing about whether it's
- * still up minutes or hours later when one particular dispatch's prompt call dies silently.
- * Without this, "the herdr server crashed/restarted mid-sprint" and "herdr rejected this one
- * call for a reason it just didn't print" log identically — an empty DISPATCH-FAIL line with
- * no way to tell which retrying would fix.
- */
-async function describeHerdrUnavailability(effects) {
-  const status = await herdrExec(effects, ["status"], HERDR_STATUS_CHECK_TIMEOUT_MS);
-  if (status.timedOut) {
-    return "herdr agent prompt failed with no output, and `herdr status` itself timed out — the herdr server looks unresponsive";
-  }
-  if (status.code !== 0 || !/status:\s*running/.test(status.stdout || "")) {
-    const detail = (status.stderr || status.stdout || "").trim().slice(0, 200);
-    return `herdr agent prompt failed with no output, and \`herdr status\` no longer reports running — the herdr server may have crashed or restarted mid-sprint${detail ? `: ${detail}` : ""}`;
-  }
-  return "herdr agent prompt failed with no output, though the herdr server still reports running — likely a transport or session-specific issue with this one pane, not a dead server";
-}
-
 function preflightHerdr(effects) {
   const which = effects.exec("sh", ["-c", "command -v herdr"], { mutating: false });
   if (which.code !== 0) return ["HERDR_ENV=1 but the herdr CLI was not found on PATH"];

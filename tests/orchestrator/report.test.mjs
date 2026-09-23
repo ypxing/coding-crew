@@ -149,8 +149,8 @@ test("a review sidecar's findings parse into severity, location and criterion", 
 
 test("a review sidecar with a verdict wins over the captured text entirely", () => {
   const sidecar = { branch: "crew/f/x", slug: "x", verdict: "all-met", detail: "", findings: [] };
-  // The captured text is a herdr empty-reply diagnostic string, not a real reviewer reply —
-  // exactly the case the sidecar exists to make irrelevant.
+  // The captured text is an arbitrary placeholder, not a real reviewer reply — exactly the
+  // case the sidecar exists to make irrelevant.
   const r = parseReviewReport("(structured result written to /r/x.review.report.json)", sidecar);
   assert.equal(r.parsedFrom, "json");
   assert.equal(r.verdict, "all-met");

@@ -61,11 +61,6 @@ export class Sprint {
   constructor(effects, env) {
     this.effects = effects;
     this.env = env;
-    // slug -> {state: "pending"|"used", tabId, paneId} — herdr pane-reuse bookkeeping.
-    // In-memory only, never persisted to sprint-state.json: it bounds a herdr coder's pane
-    // reuse to exactly one retry per issue for *this* process's run. A crashed/resumed
-    // sprint just loses the optimisation (falls back to a fresh pane), never correctness.
-    this._herdrReuse = new Map();
     // slug -> count, in-memory only, this invocation's own retry-cap counter (see
     // bumpAttempt). Deliberately never read back from sprint-state.json: crew-summary.sh's
     // "STALLED: resolve blockers and re-run" is the documented recovery path for a blocked
@@ -270,6 +265,25 @@ export class Sprint {
     return this.state(["coverage-gap", "--slug", slug, "--categories", categories.join(",")]);
   }
 
+  /**
+   * Accumulates one dispatch's cost/duration/turns into the sprint's running totals —
+   * called unconditionally, since cost is incurred even on a blocked/timed-out dispatch.
+   * Claude-only for now (see extractResultMeta in dispatch.mjs); a dispatch with no metadata
+   * (pi/codex/copilot, or a dry run) passes 0s, which the additive state.sh command is a
+   * no-op for.
+   */
+  recordDispatchCost({ costUsd, durationMs, numTurns }) {
+    return this.state([
+      "dispatch-cost",
+      "--cost",
+      String(costUsd ?? 0),
+      "--duration-ms",
+      String(durationMs ?? 0),
+      "--turns",
+      String(numTurns ?? 0),
+    ]);
+  }
+
   /** `resume: <branch>` | `no prior branch` — a recorded name plus a live ref check. */
   resumeBranch(slug) {
     const r = this.effects.exec(
@@ -301,44 +315,4 @@ export class Sprint {
     return this.effects.bash("trace.sh", [marker, text], { env: this.childEnv() });
   }
 
-  /** "none" (never offered or already spent) | "pending" (one reuse queued for next round). */
-  herdrReuseState(slug) {
-    return this._herdrReuse.get(slug)?.state ?? "none";
-  }
-
-  /**
-   * Queue this slug's just-kept-open pane and worktree for exactly one reuse, next round.
-   * worktree rides along only so a queued-but-never-consumed entry can still be cleaned up
-   * (see pendingHerdrReuses) — consumeHerdrReusePending itself never hands worktree back,
-   * since the caller that spends the reuse already has its own worktree path.
-   */
-  markHerdrReusePending(slug, { tabId, paneId, name, worktree }) {
-    this._herdrReuse.set(slug, { state: "pending", tabId, paneId, name, worktree });
-  }
-
-  /**
-   * Reads and spends the one queued reuse in the same call — a slug can only ever get this
-   * back non-null once. Returns null when nothing was queued (options.herdr was off when
-   * the failure happened, the retry already consumed it, or this is a fresh dispatch).
-   * `name` rides along so dispatchViaHerdr can target this exact pane's own herdr agent name
-   * instead of recomputing one from the *retry's* round number (see herdrDispatchName).
-   */
-  consumeHerdrReusePending(slug) {
-    const entry = this._herdrReuse.get(slug);
-    if (!entry || entry.state !== "pending") return null;
-    this._herdrReuse.set(slug, { state: "used" });
-    return { tabId: entry.tabId, paneId: entry.paneId, name: entry.name };
-  }
-
-  /**
-   * Every slug whose queued reuse was never consumed — the sprint stopped (max-rounds, an
-   * unhandled error, every other issue resolving first) before a next round redispatched it.
-   * main.mjs's end-of-run sweep reads this once to close each pane and remove each worktree
-   * that would otherwise sit there with nothing left to reuse them.
-   */
-  pendingHerdrReuses() {
-    return [...this._herdrReuse.entries()]
-      .filter(([, entry]) => entry.state === "pending")
-      .map(([slug, entry]) => ({ slug, tabId: entry.tabId, paneId: entry.paneId, worktree: entry.worktree }));
-  }
 }

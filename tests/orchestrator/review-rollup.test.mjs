@@ -18,7 +18,7 @@ function runRollup(files) {
   return JSON.parse(chunks.join(""));
 }
 
-test("review-rollup folds a later herdr-indented retry over an earlier not_run stub, across files", () => {
+test("review-rollup folds a later indented retry over an earlier not_run stub, across files", () => {
   const dir = mkdtempSync(join(tmpdir(), "review-rollup-"));
   const f1 = join(dir, "sprint-review-1.md");
   const f2 = join(dir, "sprint-review-2.md");

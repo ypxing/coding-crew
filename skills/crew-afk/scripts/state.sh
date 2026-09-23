@@ -17,6 +17,7 @@ set -euo pipefail
 #   state.sh retain   --slug <slug> --branch <branch> --reason <reason>
 #   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>]
 #   state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
+#   state.sh dispatch-cost [--cost <usd>] [--duration-ms <ms>] [--turns <n>]
 #   state.sh resume --slug <slug>
 #   state.sh retention --slug <slug>
 #   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|state-file>
@@ -187,6 +188,21 @@ case "$CMD" in
     echo "STATE: coverage-gap slug=$slug categories=$cats"
     ;;
 
+  dispatch-cost)
+    # Accumulates every dispatch's cost/duration/turns into one sprint-wide running total —
+    # additive, unlike attempt's `max`, since this sums across every dispatch the sprint
+    # makes (coder, reviewer, triage, every retry), not one issue's own latest attempt.
+    # Claude-only for now (see extractResultMeta in dispatch.mjs); 0 for every other
+    # platform, which this is a no-op for.
+    cost=$(flag cost "0" "$@"); duration_ms=$(flag duration-ms "0" "$@"); turns=$(flag turns "0" "$@")
+    edit_state --argjson c "$cost" --argjson d "$duration_ms" --argjson t "$turns" '
+      .total_cost_usd = ((.total_cost_usd // 0) + $c)
+      | .total_dispatch_duration_ms = ((.total_dispatch_duration_ms // 0) + $d)
+      | .total_dispatch_turns = ((.total_dispatch_turns // 0) + $t)'
+    trace STATE "dispatch-cost cost=$cost duration_ms=$duration_ms turns=$turns"
+    echo "STATE: dispatch-cost cost=$cost duration_ms=$duration_ms turns=$turns"
+    ;;
+
   resume)
     # Does this issue have a branch from an earlier round that still exists?
     # Both halves are mechanical — a recorded branch name and a ref lookup — and both
@@ -229,6 +245,9 @@ case "$CMD" in
       model) jq -r '.model // "sonnet"' "$SF" ;;
       round) jq -r '.round // 1' "$SF" ;;
       rounds) jq -r '.rounds // .round // 1' "$SF" ;;
+      total-cost-usd) jq -r '.total_cost_usd // 0' "$SF" ;;
+      total-dispatch-duration-ms) jq -r '.total_dispatch_duration_ms // 0' "$SF" ;;
+      total-dispatch-turns) jq -r '.total_dispatch_turns // 0' "$SF" ;;
       feature-slug) jq -r '.feature_slug // empty' "$SF" ;;
       state-file) printf '%s\n' "$SF" ;;
       *) die "unknown field: $field" ;;

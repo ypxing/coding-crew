@@ -52,21 +52,16 @@ after(() => {
 
 import {
   buildDispatch,
-  buildHerdrInvocation,
-  closeHerdrPane,
   closeHerdrWorkspace,
   dispatch,
   dispatchPlain,
-  dispatchViaHerdr,
   extractFinalText,
-  herdrAgentName,
-  herdrDispatchName,
+  extractResultMeta,
   formatJsonTraceLine,
   notifyTriggeringPane,
   preflight,
   relaunchIntoDedicatedPane,
   resolveAgentFile,
-  splitFrontmatter,
   DEFAULT_PARALLEL,
 } from "../../orchestrator/lib/dispatch.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
@@ -170,12 +165,6 @@ test("a missing CLI is a preflight failure, not a first-dispatch failure", () =>
   const effects = { exec: () => ({ code: 1, stdout: "", stderr: "" }) };
   const problems = preflight(effects, "codex", root, ["crew-coder"]);
   assert.deepEqual(problems, ["codex CLI not found on PATH"]);
-});
-
-test("splitFrontmatter keeps the agent body and drops the YAML head", () => {
-  const { frontmatter, body } = splitFrontmatter("---\nname: crew-coder\ntools: bash\n---\nDo the work.\n");
-  assert.equal(frontmatter.name, "crew-coder");
-  assert.equal(body, "Do the work.\n");
 });
 
 // ─── claude ──────────────────────────────────────────────────────────────────
@@ -733,16 +722,16 @@ test("dispatch() wires onLine for pi/codex too, but only forwards their own alre
   assert.deepEqual(traced, ["[TOOL] agent=crew-coder tool=bash $ ls\n".trimEnd()]);
 });
 
-// ─── herdr (https://herdr.dev), verified live against 0.8.2 ─────────────────
-//
-// herdr drives an interactive REPL agent (idle/working/blocked/done), not a `-p` batch run,
-// so dispatchViaHerdr is a second path, not a buildDispatch branch — see its doc comment.
-// These fixtures are the actual JSON shapes/transcript text captured from a real
-// workspace-create → tab-create → agent-start → agent-prompt → agent-read round-trip.
 
-// herdrExec now runs through spawnWithTimeout (async spawn), not exec (blocking spawnSync)
-// — see herdrExec's doc comment in dispatch.mjs for why a blocking call silently serialised
-// every herdr-enabled sprint regardless of --max-parallel.
+// ─── herdr (https://herdr.dev): ambient only — crew-afk's own dedicated run pane ──────
+//
+// Per-worker herdr panes (dispatchViaHerdr) are gone: every coder/reviewer/triage dispatch
+// is always headless now. What's left of herdr here is ambient: crew-afk's own process
+// getting a dedicated pane (relaunchIntoDedicatedPane), the shared workspace it and every
+// future ambient caller reuse (closeHerdrWorkspace), and the one-time triggering-pane
+// nudge at the end of a run (notifyTriggeringPane). These fixtures are the actual JSON
+// shapes captured from a real herdr workspace/tab-create round-trip.
+
 function fakeHerdrEffects(responses, { mainRoot = "/root", dryRun = false } = {}) {
   const calls = [];
   return {
@@ -755,951 +744,10 @@ function fakeHerdrEffects(responses, { mainRoot = "/root", dryRun = false } = {}
       if (!next) throw new Error(`no more canned herdr responses — call was: ${cmd} ${args.join(" ")}`);
       return next;
     },
-    // buildHerdrInvocation's codex branch reads this for the writable-roots sandbox fix
-    // (see dispatch-codex-agent.sh's identical one) — a plain relative ".git" is enough for
-    // these fixtures, which never actually run git.
     gitRead: () => ({ code: 0, stdout: ".git\n", stderr: "" }),
   };
 }
 const json = (obj) => ({ code: 0, stdout: JSON.stringify(obj), stderr: "" });
-// herdr's own contract (`herdr --skill`): "CLI server errors are JSON on stderr with exit
-// status 1" — confirmed against a real server, where agent_not_ready landed on stderr.
-const err = (code, message, errCode) => ({ code, stdout: "", stderr: JSON.stringify({ error: { code: errCode, message } }) });
-
-const RENDERED_REPLY = [
-  " ▐▛███▛█   Claude Code v2.1.263",
-  "",
-  "❯ Reply with exactly: herdr spike ok",
-  "",
-  "● herdr spike ok",
-  "",
-  "✻ Worked for 2s · done 7:57 AM",
-  "",
-].join("\n");
-
-const COPILOT_RENDERED_REPLY = [
-  " ● Selected custom agent: crew-coder",
-  "",
-  " ❯ Reply with exactly: herdr spike ok                                                08:54",
-  "",
-  " herdr spike ok",
-  "",
-  " ~/repo [master]                                                        Session: 0 AIC used",
-  "─────────────────────────────",
-  " ❯",
-].join("\n");
-
-test("herdrAgentName sanitises issue slugs into herdr's ^[a-z][a-z0-9_-]{0,31}$ contract", () => {
-  assert.equal(herdrAgentName("Implement-User-Auth"), "implement-user-auth");
-  assert.equal(herdrAgentName("123-numeric-lead").length <= 32, true);
-  assert.match(herdrAgentName("123-numeric-lead"), /^[a-z][a-z0-9_-]{0,31}$/);
-  assert.match(
-    herdrAgentName("implement-a-very-long-descriptive-issue-slug-that-exceeds-the-limit"),
-    /^[a-z][a-z0-9_-]{0,31}$/,
-  );
-  assert.match(herdrAgentName(""), /^[a-z][a-z0-9_-]{0,31}$/);
-});
-
-test("herdrDispatchName gives coder/review/triage distinct, human-readable pane names for the same issue slug — no worker reuses another's pane", () => {
-  const coder = herdrDispatchName("implement-user-auth", "crew-coder");
-  const review = herdrDispatchName("implement-user-auth", "crew-code-reviewer");
-  const triage = herdrDispatchName("implement-user-auth", "crew-triage");
-  assert.equal(coder, "implement-user-auth-coder");
-  assert.equal(review, "implement-user-auth-review");
-  assert.equal(triage, "implement-user-auth-triage");
-  assert.equal(new Set([coder, review, triage]).size, 3, "each role gets its own pane name");
-  for (const name of [coder, review, triage]) assert.match(name, /^[a-z][a-z0-9_-]{0,31}$/);
-});
-
-test("herdrDispatchName is deterministic and stable across repeated calls for the same (label, agent)", () => {
-  assert.equal(herdrDispatchName("implement-user-auth", "crew-coder"), herdrDispatchName("implement-user-auth", "crew-coder"));
-});
-
-test("herdrDispatchName prefixes the issue number, leading with a letter since herdr forbids a leading digit", () => {
-  const coder = herdrDispatchName("implement-user-auth", "crew-coder", "42");
-  const review = herdrDispatchName("implement-user-auth", "crew-code-reviewer", "42");
-  assert.equal(coder, "i42-implement-user-auth-coder");
-  assert.equal(review, "i42-implement-user-auth-review");
-  assert.match(coder, /^[a-z][a-z0-9_-]{0,31}$/);
-});
-
-test("herdrDispatchName omits the issue-number prefix when none is given, unchanged from before issue numbers existed", () => {
-  assert.equal(herdrDispatchName("implement-user-auth", "crew-coder", null), "implement-user-auth-coder");
-  assert.equal(herdrDispatchName("implement-user-auth", "crew-coder", undefined), "implement-user-auth-coder");
-});
-
-test("herdrDispatchName still fits herdr's 32-char cap with an issue number and a long slug, falling back to the hash", () => {
-  const label = "implement-a-very-long-descriptive-issue-slug-that-exceeds-the-limit";
-  const name = herdrDispatchName(label, "crew-coder", "7");
-  assert.match(name, /^[a-z][a-z0-9_-]{0,31}$/);
-  assert.match(name, /^i7-.*-coder-[0-9a-f]{6}$/);
-});
-
-test("herdrDispatchName keeps the role tag and hash intact even when the label alone would fill herdr's 32-char limit", () => {
-  const label = "implement-a-very-long-descriptive-issue-slug-that-exceeds-the-limit";
-  const coder = herdrDispatchName(label, "crew-coder");
-  const review = herdrDispatchName(label, "crew-code-reviewer");
-  assert.match(coder, /^[a-z][a-z0-9_-]{0,31}$/);
-  assert.match(review, /^[a-z][a-z0-9_-]{0,31}$/);
-  assert.match(coder, /-coder-[0-9a-f]{6}$/);
-  assert.match(review, /-review-[0-9a-f]{6}$/);
-  assert.notEqual(coder, review, "truncation must never make two roles collide");
-});
-
-test("herdrDispatchName never collides across two different issue slugs, even when both truncate to the same 32-char prefix", () => {
-  const longPrefix = "a".repeat(40);
-  const slugA = `${longPrefix}-issue-one`;
-  const slugB = `${longPrefix}-issue-two`;
-  // Both slugs share the same first 32+ characters, so herdrAgentName's own truncation alone
-  // would collapse them onto the identical base — the hash suffix is what tells them apart.
-  assert.equal(herdrAgentName(slugA), herdrAgentName(slugB));
-  const nameA = herdrDispatchName(slugA, "crew-coder");
-  const nameB = herdrDispatchName(slugB, "crew-coder");
-  assert.notEqual(nameA, nameB, "two different issues must never share a coder's pane, even under truncation");
-  assert.match(nameA, /^[a-z][a-z0-9_-]{0,31}$/);
-  assert.match(nameB, /^[a-z][a-z0-9_-]{0,31}$/);
-});
-
-test("herdrDispatchName folds the round into the name, right after the issue number, leading with a letter", () => {
-  const round1 = herdrDispatchName("implement-user-auth", "crew-coder", "42", 1);
-  const round2 = herdrDispatchName("implement-user-auth", "crew-coder", "42", 2);
-  assert.equal(round1, "i42-r1-implement-user-auth-coder");
-  assert.equal(round2, "i42-r2-implement-user-auth-coder");
-  assert.notEqual(round1, round2, "a same-issue retry's fresh name must never collide with an earlier round's kept-open pane");
-  assert.match(round1, /^[a-z][a-z0-9_-]{0,31}$/);
-});
-
-test("herdrDispatchName omits the round segment when none is given, unchanged from before rounds were folded in", () => {
-  assert.equal(herdrDispatchName("implement-user-auth", "crew-coder", "42", null), "i42-implement-user-auth-coder");
-  assert.equal(herdrDispatchName("implement-user-auth", "crew-coder", "42", undefined), "i42-implement-user-auth-coder");
-});
-
-test("herdrDispatchName still fits herdr's 32-char cap with an issue number, a round, and a long slug, falling back to the hash", () => {
-  const label = "implement-a-very-long-descriptive-issue-slug-that-exceeds-the-limit";
-  const name = herdrDispatchName(label, "crew-coder", "7", 3);
-  assert.match(name, /^[a-z][a-z0-9_-]{0,31}$/);
-  assert.match(name, /^i7-r3-.*-coder-[0-9a-f]{6}$/);
-});
-
-test("preflightHerdr (via preflight's herdr option) fails when the herdr CLI is missing", () => {
-  const { root } = fixture();
-  const effects = {
-    exec: (cmd, args) => {
-      if (cmd === "sh" && args[1]?.includes("herdr")) return { code: 1, stdout: "", stderr: "" };
-      return { code: 0, stdout: "/usr/bin/claude", stderr: "" };
-    },
-  };
-  const problems = preflight(effects, "claude", root, [], { herdr: true });
-  assert.deepEqual(problems, ["HERDR_ENV=1 but the herdr CLI was not found on PATH"]);
-});
-
-test("preflightHerdr fails when herdr's server is not running", () => {
-  const { root } = fixture();
-  const effects = {
-    exec: (cmd, args) => {
-      if (cmd === "sh") return { code: 0, stdout: "/usr/local/bin/herdr", stderr: "" };
-      if (args[0] === "status") return { code: 0, stdout: "server:\n  status: not running\n", stderr: "" };
-      return { code: 0, stdout: "", stderr: "" };
-    },
-  };
-  const problems = preflight(effects, "claude", root, [], { herdr: true });
-  assert.deepEqual(problems, ["HERDR_ENV=1 but the herdr server is not running — start it with: herdr server"]);
-});
-
-test("preflightHerdr passes when herdr is on PATH and its server is running", () => {
-  const { root } = fixture();
-  const effects = {
-    exec: (cmd, args) => {
-      if (cmd === "sh") return { code: 0, stdout: "/usr/local/bin/herdr", stderr: "" };
-      if (args[0] === "status") return { code: 0, stdout: "server:\n  status: running\n", stderr: "" };
-      return { code: 0, stdout: "", stderr: "" };
-    },
-  };
-  assert.deepEqual(preflight(effects, "claude", root, [], { herdr: true }), []);
-});
-
-test("dispatchViaHerdr under --dry-run runs nothing and reports dryRun: true", async () => {
-  const { root, promptFile } = fixture();
-  const effects = fakeHerdrEffects([], { mainRoot: root, dryRun: true });
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile));
-  assert.deepEqual(result, { code: 0, timedOut: false, dryRun: true, stderr: "", text: "" });
-  assert.deepEqual(effects._calls, []);
-});
-
-// A human running several crew-afk sprints at once tells them apart in herdr's UI by this
-// label — see ensureHerdrWorkspace's own doc comment for why it used to be the same
-// hardcoded "crew-afk" for every run.
-test("dispatchViaHerdr labels the shared workspace with the sprint's feature slug, not a hardcoded 'crew-afk'", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { agent: { interactive_ready: true } } }), // agent start
-      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", featureSlug: "implement-user-auth" }), {
-    timeoutMs: 60_000,
-  });
-
-  const workspaceCreate = effects._calls[0];
-  const labelIndex = workspaceCreate.indexOf("--label");
-  assert.equal(workspaceCreate[labelIndex + 1], "implement-user-auth");
-});
-
-test("dispatchViaHerdr falls back to 'crew-afk' as the workspace label when no feature slug is given", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { agent: { agent_status: "idle" } } }),
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
-      json({ result: { type: "ok" } }),
-    ],
-    { mainRoot: root },
-  );
-
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
-
-  const workspaceCreate = effects._calls[0];
-  const labelIndex = workspaceCreate.indexOf("--label");
-  assert.equal(workspaceCreate[labelIndex + 1], "crew-afk");
-});
-
-test("dispatchViaHerdr prefixes the tab label and pane title with the issue number — a human scanning panes must be able to tell which issue each one is", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // dispatch tab create
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename
-      json({ result: { agent: { agent_status: "idle" } } }),
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
-      json({ result: { type: "ok" } }), // dispatch tab close
-    ],
-    { mainRoot: root },
-  );
-
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "implement-user-auth", issueNumber: "42", logFile: null }), {
-    timeoutMs: 60_000,
-  });
-
-  const tabCreate = effects._calls[1];
-  assert.equal(tabCreate[tabCreate.indexOf("--label") + 1], "#42 implement-user-auth");
-  assert.deepEqual(effects._calls[3], ["herdr", "pane", "rename", "w1:p1", "#42 implement-user-auth (coder)"]);
-});
-
-test("dispatchViaHerdr: workspace create, tab create, start, prompt, sidecar read, tab close — the happy path", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const reportPath = join(root, "dispatch", "alpha.report.json");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create (once per run)
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create (once per dispatch)
-      json({ result: { agent: { interactive_ready: true } } }), // agent start
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      // No agent read canned — the sidecar already exists on disk by the time
-      // waitForSidecarReport's first existsSync check runs, so none is needed.
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", reportPath }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 0);
-  assert.match(result.text, /```json/);
-  assert.match(result.text, /"status":\s*"complete"/);
-  assert.equal(readFileSync(outFile, "utf8"), result.text);
-  assert.deepEqual(effects._calls[0].slice(0, 3), ["herdr", "workspace", "create"]);
-  assert.ok(effects._calls[0].includes(root), "the shared workspace is anchored at mainRoot, not any one dispatch's worktree");
-  assert.deepEqual(effects._calls[1].slice(0, 3), ["herdr", "tab", "create"]);
-  assert.ok(effects._calls[1].includes(spec(root, promptFile).cwd), "the dispatch's own worktree, not mainRoot");
-  const paneName = effects._calls[2][3];
-  assert.equal(paneName, "alpha-coder");
-  assert.deepEqual(effects._calls[2], [
-    "herdr",
-    "agent",
-    "start",
-    paneName,
-    "--kind",
-    "claude",
-    "--pane",
-    "w1:p1",
-    "--",
-    "--permission-mode",
-    "bypassPermissions",
-    "--add-dir",
-    root,
-    "--agent",
-    "crew-coder",
-  ]);
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"], "the dispatch's own tab is closed, not the shared workspace");
-  const promptCall = effects._calls.find((c) => c[1] === "agent" && c[2] === "prompt");
-  assert.ok(
-    promptCall.includes("--until") &&
-      promptCall.filter((a) => a === "--until").length === 2 &&
-      promptCall[promptCall.indexOf("--until") + 1] === "idle" &&
-      promptCall[promptCall.lastIndexOf("--until") + 1] === "done",
-    "waits only for idle or done, not the default idle/done/blocked/unknown — a pane stuck on an unhandled dialog must time out, not read back as a mundane empty reply",
-  );
-});
-
-// ─── herdr: the <slug>.report.json sidecar beats scraping the pane's rendered text ────
-//
-// The pane-read chain below (wait-output, backoff retries, agent_status polling,
-// extractHerdrReply's echo/marker heuristics) exists to reconstruct a report out of a
-// terminal render. When the agent wrote its report straight to spec.reportPath — the same
-// sidecar report.mjs's parse*Report functions already prefer over prose — none of that
-// reconstruction is needed: the file itself is the reliable result.
-
-test("dispatchViaHerdr skips the entire pane-read chain once spec.reportPath already exists on disk", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const reportPath = join(root, "dispatch", "alpha.report.json");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { agent: { interactive_ready: true } } }), // agent start
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      json({ result: { type: "ok" } }), // tab close
-      // Deliberately no `agent read` / `pane wait-output` / extra `agent get` canned
-      // response — the sidecar is found on the very first check, before any of those
-      // would run; a leftover canned response never being consumed would fail nothing,
-      // but an *extra* call this test didn't expect throws "no more canned responses".
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", reportPath }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 0);
-  assert.match(result.text, /```json/);
-  assert.match(result.text, /"status":\s*"complete"/);
-  assert.equal(readFileSync(outFile, "utf8"), result.text);
-  assert.equal(
-    effects._calls.some((c) => c[1] === "agent" && c[2] === "read"),
-    false,
-    "never reads the pane's rendered text when the sidecar file already answers the question",
-  );
-  assert.equal(
-    effects._calls.some((c) => c[1] === "pane" && c[2] === "wait-output"),
-    false,
-  );
-});
-
-test("dispatchViaHerdr fails closed — never scrapes the pane — when it settles idle with no sidecar file ever written", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const logFile = join(root, "trace.log");
-  const reportPath = join(root, "dispatch", "alpha.report.json"); // never written
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { agent: { interactive_ready: true } } }), // agent start
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      json({ result: { agent: { agent_status: "idle" } } }), // waitForSidecarReport's own agent get, before it gives up
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // one diagnostic tail read, for the failure message only
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(
-    effects,
-    "claude",
-    spec(root, promptFile, { outFile, logFile, slug: "alpha", reportPath }),
-    { timeoutMs: 60_000 },
-  );
-
-  assert.equal(result.code, 0, "herdr's own exit code is untouched — the empty text is what marks this a failure");
-  assert.equal(result.text, "", "no pane-scrape fallback — an absent sidecar is never reconstructed from rendered text");
-  assert.match(readFileSync(outFile, "utf8"), /^$/);
-  assert.match(
-    readFileSync(logFile, "utf8"),
-    new RegExp(`herdr pane settled with no ${reportPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} — treating as blocked`),
-  );
-});
-
-test("dispatchViaHerdr fails fast when the sidecar-wait loop itself finds the pane blocked mid-turn", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const reportPath = join(root, "dispatch", "alpha.report.json"); // never written
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { agent: { interactive_ready: true } } }), // agent start
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      json({ result: { agent: { agent_status: "blocked" } } }), // waitForSidecarReport's agent get: blocked
-      { code: 0, stdout: "some dialog text", stderr: "" }, // herdrReadSettled for the failure message
-      json({ result: { type: "ok" } }), // tab close (keepPaneOnFail is false by default)
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", reportPath }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /herdr pane blocked mid-turn/);
-});
-
-test("dispatchViaHerdr sanitises an issue slug for herdr's agent name but keeps it readable as the tab label", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { agent: { interactive_ready: true } } }), // agent start
-      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" }, // agent read (raw text, not JSON)
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "Implement-User-Auth" }), { timeoutMs: 60_000 });
-
-  const labelIndex = effects._calls[1].indexOf("--label");
-  assert.equal(effects._calls[1][labelIndex + 1], "Implement-User-Auth", "label stays human-readable");
-  const paneName = effects._calls[2][3];
-  assert.equal(paneName, "implement-user-auth-coder");
-  assert.deepEqual(effects._calls[2], [
-    "herdr",
-    "agent",
-    "start",
-    paneName,
-    "--kind",
-    "claude",
-    "--pane",
-    "w1:p1",
-    "--",
-    "--permission-mode",
-    "bypassPermissions",
-    "--add-dir",
-    root,
-    "--agent",
-    "crew-coder",
-  ]);
-});
-
-// Claude's workspace-trust dialog is keyed off the repository, not the literal cwd
-// (confirmed live), so it fires at most once per repo, on whichever dispatch happens to hit
-// an untrusted one first — there is no separate priming step.
-test("dispatchViaHerdr answers the one-time workspace-trust dialog, but only when the blocked text actually matches it", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const reportPath = join(root, "dispatch", "alpha.report.json");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      err(1, "agent alpha is blocked during startup and is not ready for prompts", "agent_not_ready"), // agent start
-      { code: 0, stdout: "Is this a project you created or one you trust? (Like your own code...)", stderr: "" }, // agent read (blocked check)
-      json({ result: { type: "ok" } }), // agent send-keys down enter
-      json({ result: { agent: { interactive_ready: true } } }), // agent get (poll)
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", reportPath }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 0);
-  assert.match(result.text, /"status":\s*"complete"/);
-  const paneName = effects._calls[4][3];
-  assert.equal(paneName, "alpha-coder");
-  assert.deepEqual(effects._calls[4], ["herdr", "agent", "send-keys", paneName, "down", "enter"]);
-});
-
-test("dispatchViaHerdr fails (does not blindly send keys) on a blocked state it doesn't recognise", async () => {
-  const { root, promptFile } = fixture();
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const logFile = join(root, "trace.log");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      err(1, "agent alpha is blocked during startup and is not ready for prompts", "agent_not_ready"),
-      { code: 0, stdout: "Allow this MCP server to run? [y/n]", stderr: "" }, // an unrelated approval dialog
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /unrecognised dialog/);
-  assert.match(readFileSync(logFile, "utf8"), /\[DISPATCH-FAIL\] agent=crew-coder herdr=1/);
-  assert.doesNotMatch(effects._calls.map((c) => c.join(" ")).join("\n"), /send-keys/, "never answers a dialog it can't identify");
-});
-
-test("dispatchViaHerdr tags an agent_name_taken start failure as a name collision, not a worker failure", async () => {
-  // Two sprints racing the same feature-slug both build the exact same deterministic agent
-  // name (same issue+role+round) — herdr rejects the second one's `agent start` outright,
-  // before any coder process exists. pipeline.mjs reads this flag to skip spending the
-  // issue's own retry cap on a collision the code never caused.
-  const { root, promptFile } = fixture();
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const logFile = join(root, "trace.log");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      err(1, "agent name i01-r1-alpha-coder-abc123 is already used", "agent_name_taken"), // agent start
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 1);
-  assert.equal(result.nameCollision, true);
-});
-
-test("dispatchViaHerdr does not tag an unrelated agent-start failure as a name collision", async () => {
-  const { root, promptFile } = fixture();
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const logFile = join(root, "trace.log");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      err(1, "herdr's own CLI crashed", "internal_error"), // agent start
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 1);
-  assert.equal(result.nameCollision, false);
-});
-
-test("dispatchViaHerdr surfaces the rendered pane when the agent is already blocked, instead of a mysterious empty success", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const logFile = join(root, "trace.log");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { agent: { interactive_ready: true } } }), // agent start
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      err(1, "agent alpha is blocked and rejected the prompt", "agent_blocked"), // agent prompt --wait
-      { code: 0, stdout: "Allow this MCP server to run? [y/n]", stderr: "" }, // agent read (final)
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /already blocked/);
-  assert.match(result.stderr, /Allow this MCP server to run/, "the actual blocked screen, not just the CLI's own error JSON");
-  assert.match(readFileSync(logFile, "utf8"), /\[DISPATCH-FAIL\] agent=crew-coder herdr=1/);
-});
-
-test("dispatchViaHerdr treats a herdr `timeout` error the same as `agent_prompt_stalled` — both mean the worker never settled", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { agent: { interactive_ready: true } } }), // agent start
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      err(1, "timed out waiting for idle or done", "timeout"), // agent prompt --wait
-      { code: 0, stdout: "some unrelated pane text", stderr: "" }, // agent read (final)
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 1);
-  assert.equal(result.timedOut, true);
-});
-
-test("dispatchViaHerdr checks herdr's own server status when a prompt call fails with no output at all, and reports the server still running", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      { code: 1, stdout: "", stderr: "" }, // agent prompt --wait — fails with no output
-      { code: 0, stdout: "status: running\n", stderr: "" }, // herdr status check
-      json({ result: { type: "ok" } }), // tab close — CREW_HERDR_KEEP_PANE unset, off by default
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /still reports running/);
-  assert.match(result.stderr, /not a dead server/);
-});
-
-test("dispatchViaHerdr's herdr-status check reports a crashed/restarted server, not a mysteriously silent one, when status itself fails", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      { code: 1, stdout: "", stderr: "" }, // agent prompt --wait — fails with no output
-      { code: 1, stdout: "", stderr: "connection refused" }, // herdr status check — also fails
-      json({ result: { type: "ok" } }), // tab close — CREW_HERDR_KEEP_PANE unset, off by default
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /crashed or restarted mid-sprint/);
-  assert.match(result.stderr, /connection refused/);
-});
-
-test("dispatch() routes to dispatchViaHerdr for every platform once spec.herdr is set", () => {
-  const { root, promptFile } = fixture();
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const reportPath = join(root, "dispatch", "alpha.report.json");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }),
-    ],
-    { mainRoot: root },
-  );
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-
-  return dispatch(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", herdr: true, reportPath })).then((result) => {
-    assert.match(result.text, /"status":\s*"complete"/);
-    assert.ok(effects._calls[0][1] === "workspace", "went through the herdr path, not buildDispatch/spawnWithTimeout");
-  });
-});
-
-test("dispatch() routes to dispatchViaHerdr for copilot too — the platform gate is gone, not just widened to claude", () => {
-  const { root, promptFile } = fixture();
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const reportPath = join(root, "dispatch", "alpha.report.json");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }),
-    ],
-    { mainRoot: root },
-  );
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-
-  return dispatch(effects, "copilot", spec(root, promptFile, { outFile, slug: "alpha", herdr: true, reportPath })).then((result) => {
-    assert.match(result.text, /"status":\s*"complete"/);
-    assert.ok(effects._calls[0][1] === "workspace", "went through the herdr path, not buildDispatch/spawnWithTimeout");
-  });
-});
-
-test("dispatch() never routes to dispatchViaHerdr under CREW_FAKE_DISPATCH, even with spec.herdr set", async () => {
-  const { root, promptFile } = fixture();
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [{ code: 0, stdout: "", stderr: "" }], // the one CREW_FAKE_DISPATCH spawnWithTimeout call
-    { mainRoot: root },
-  );
-  const prior = process.env.CREW_FAKE_DISPATCH;
-  process.env.CREW_FAKE_DISPATCH = "fake-dispatch.sh";
-  try {
-    await dispatch(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", herdr: true }));
-  } finally {
-    if (prior === undefined) delete process.env.CREW_FAKE_DISPATCH;
-    else process.env.CREW_FAKE_DISPATCH = prior;
-  }
-  assert.equal(effects._calls.length, 1, "the test seam bypasses herdr entirely — exactly the one CREW_FAKE_DISPATCH call, no herdr call");
-  assert.notEqual(effects._calls[0][0], "herdr");
-});
-
-test("dispatchViaHerdr shares one herdr workspace across every dispatch in a run, closing only its own tab each time", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  const reportPathAlpha = join(root, "dispatch", "alpha.report.json");
-  const reportPathBeta = join(root, "dispatch", "beta.report.json");
-  writeFileSync(reportPathAlpha, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  writeFileSync(reportPathBeta, JSON.stringify({ status: "complete", branch: "crew/f/beta" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create — first dispatch only
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create (alpha)
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (alpha)
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }), // tab close (alpha)
-      json({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } } }), // tab create (beta) — no workspace create here
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (beta)
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }), // tab close (beta)
-    ],
-    { mainRoot: root },
-  );
-
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile: join(root, "a.md"), slug: "alpha", reportPath: reportPathAlpha }), {
-    timeoutMs: 60_000,
-  });
-  const callsAfterFirst = effects._calls.length;
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile: join(root, "b.md"), slug: "beta", reportPath: reportPathBeta }), {
-    timeoutMs: 60_000,
-  });
-
-  assert.equal(effects._calls.length - callsAfterFirst, 5, "tab create, agent start, pane rename, agent prompt, tab close — no second workspace create");
-  const workspaceCreateCalls = effects._calls.filter((c) => c[1] === "workspace" && c[2] === "create");
-  assert.equal(workspaceCreateCalls.length, 1, "the workspace is created once for the whole run, not once per dispatch");
-  // Excludes the one log tab (its --cwd is mainRoot, not a worktree) — each dispatch's own
-  // tab is what "one tab per dispatch" is actually asserting here.
-  const tabCreateCalls = effects._calls.filter((c) => c[1] === "tab" && c[2] === "create" && c.includes(spec(root, promptFile).cwd));
-  assert.equal(tabCreateCalls.length, 2, "each dispatch still gets its own tab");
-  for (const c of tabCreateCalls) assert.ok(c.includes("w1"), "every dispatch's tab belongs to the one shared workspace");
-  const workspaceCloseCalls = effects._calls.filter((c) => c[1] === "workspace" && c[2] === "close");
-  assert.equal(workspaceCloseCalls.length, 0, "dispatchViaHerdr never closes the shared workspace itself — only closeHerdrWorkspace does");
-  assert.deepEqual(
-    effects._calls.filter((c) => c[1] === "tab" && c[2] === "close"),
-    [
-      ["herdr", "tab", "close", "w1:t1"],
-      ["herdr", "tab", "close", "w1:t2"],
-    ],
-    "each dispatch closes only its own tab",
-  );
-});
-
-test("closeHerdrWorkspace closes the workspace a herdr dispatch created, and is a no-op when no herdr dispatch ever ran", async () => {
-  const untouched = fakeHerdrEffects([], { mainRoot: "/root" });
-  await closeHerdrWorkspace(untouched);
-  assert.deepEqual(untouched._calls, [], "nothing to close — no herdr dispatch ever created a workspace on this effects instance");
-
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { agent: { agent_status: "idle" } } }),
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
-      json({ result: { type: "ok" } }), // tab close
-      json({ result: { type: "ok" } }), // workspace close, from closeHerdrWorkspace
-    ],
-    { mainRoot: root },
-  );
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile: join(root, "a.md"), slug: "alpha" }), { timeoutMs: 60_000 });
-  await closeHerdrWorkspace(effects);
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w1"]);
-});
-
-function withHerdrWorkspaceId(id, fn) {
-  const prior = process.env.HERDR_WORKSPACE_ID;
-  process.env.HERDR_WORKSPACE_ID = id;
-  return Promise.resolve()
-    .then(fn)
-    .finally(() => {
-      if (prior === undefined) delete process.env.HERDR_WORKSPACE_ID;
-      else process.env.HERDR_WORKSPACE_ID = prior;
-    });
-}
-
-test("dispatchViaHerdr reuses the triggering pane's own workspace via HERDR_WORKSPACE_ID, never calling workspace create", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const reportPath = join(root, "dispatch", "alpha.report.json");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await withHerdrWorkspaceId("w1", () =>
-    dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", reportPath }), { timeoutMs: 60_000 }),
-  );
-
-  assert.equal(result.code, 0);
-  assert.match(result.text, /"status":\s*"complete"/);
-  assert.ok(
-    !effects._calls.some((c) => c[1] === "workspace" && c[2] === "create"),
-    "no new workspace — the triggering pane's own is reused instead",
-  );
-  assert.deepEqual(effects._calls[0].slice(0, 3), ["herdr", "tab", "create"]);
-  assert.ok(effects._calls[0].includes(spec(root, promptFile).cwd), "the dispatch's own worktree, not mainRoot — no log tab to precede it now");
-});
-
-function withHerdrTabId(id, fn) {
-  const prior = process.env.HERDR_TAB_ID;
-  process.env.HERDR_TAB_ID = id;
-  return Promise.resolve()
-    .then(fn)
-    .finally(() => {
-      if (prior === undefined) delete process.env.HERDR_TAB_ID;
-      else process.env.HERDR_TAB_ID = prior;
-    });
-}
-
-// The reused pane's own tab still shows whatever it was called before crew-afk started running
-// in it — herdr also injects that pane's own tab as HERDR_TAB_ID, so this is the one chance to
-// relabel it to the sprint's feature slug, the same way a freshly created workspace already is.
-test("dispatchViaHerdr renames the triggering pane's own tab to the feature slug when reusing HERDR_WORKSPACE_ID", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { type: "ok" } }), // tab rename
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename
-      json({ result: { agent: { agent_status: "idle" } } }),
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
-      json({ result: { type: "ok" } }), // dispatch tab close
-    ],
-    { mainRoot: root },
-  );
-
-  await withHerdrWorkspaceId("w1", () =>
-    withHerdrTabId("w1:t1", () =>
-      dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha", featureSlug: "implement-user-auth" }), {
-        timeoutMs: 60_000,
-      }),
-    ),
-  );
-
-  assert.deepEqual(effects._calls[0], ["herdr", "tab", "rename", "w1:t1", "implement-user-auth"]);
-});
-
-test("dispatchViaHerdr never renames the triggering pane's own tab when no feature slug resolved — nothing meaningful to relabel it to", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename
-      json({ result: { agent: { agent_status: "idle" } } }),
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
-      json({ result: { type: "ok" } }),
-    ],
-    { mainRoot: root },
-  );
-
-  await withHerdrWorkspaceId("w1", () =>
-    withHerdrTabId("w1:t1", () => dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 })),
-  );
-
-  assert.ok(
-    !effects._calls.some((c) => c[1] === "tab" && c[2] === "rename"),
-    "no feature slug resolved, so the pane's own tab is left exactly as the human named it",
-  );
-});
-
-test("closeHerdrWorkspace never closes a workspace reused via HERDR_WORKSPACE_ID — that would close the pane crew-afk was launched from", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename
-      json({ result: { agent: { agent_status: "idle" } } }),
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  await withHerdrWorkspaceId("w1", () => dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile, slug: "alpha" }), { timeoutMs: 60_000 }));
-  await closeHerdrWorkspace(effects);
-
-  assert.ok(
-    !effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"),
-    "the reused workspace is left open — it belongs to whoever is still using that pane",
-  );
-});
 
 // fakeRelaunchEffects — like fakeHerdrEffects, but the fake `pane run` call writes the
 // sentinel file itself (extracted from the preceding `tab create`'s own --env flags) before
@@ -1726,6 +774,141 @@ function fakeRelaunchEffects(responses, { mainRoot, exitCode = 0 } = {}) {
     },
   };
 }
+
+function withHerdrWorkspaceId(id, fn) {
+  const prior = process.env.HERDR_WORKSPACE_ID;
+  process.env.HERDR_WORKSPACE_ID = id;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (prior === undefined) delete process.env.HERDR_WORKSPACE_ID;
+      else process.env.HERDR_WORKSPACE_ID = prior;
+    });
+}
+
+function withHerdrTabId(id, fn) {
+  const prior = process.env.HERDR_TAB_ID;
+  process.env.HERDR_TAB_ID = id;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (prior === undefined) delete process.env.HERDR_TAB_ID;
+      else process.env.HERDR_TAB_ID = prior;
+    });
+}
+
+function withHerdrPaneId(id, fn) {
+  const prior = process.env.HERDR_PANE_ID;
+  process.env.HERDR_PANE_ID = id;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (prior === undefined) delete process.env.HERDR_PANE_ID;
+      else process.env.HERDR_PANE_ID = prior;
+    });
+}
+
+test("closeHerdrWorkspace closes the workspace created for crew-afk's own dedicated run pane, and is a no-op when nothing was ever created", async () => {
+  const untouched = fakeHerdrEffects([], { mainRoot: "/root" });
+  await closeHerdrWorkspace(untouched);
+  assert.deepEqual(untouched._calls, [], "nothing to close — no run ever created a workspace on this effects instance");
+
+  const { root } = fixture();
+  const effects = fakeRelaunchEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { type: "ok" } }), // pane run
+      json({ result: { type: "ok" } }), // tab close, from relaunchIntoDedicatedPane
+    ],
+    { mainRoot: root },
+  );
+  await relaunchIntoDedicatedPane(effects, {
+    mainRoot: root,
+    featureSlug: "alpha",
+    platform: "claude",
+    argv: [],
+    mainScript: "/path/to/main.mjs",
+  });
+  await closeHerdrWorkspace(effects);
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w1"]);
+});
+
+test("closeHerdrWorkspace never closes a workspace reused via HERDR_WORKSPACE_ID — that would close the pane crew-afk was launched from", async () => {
+  const { root } = fixture();
+  const effects = fakeRelaunchEffects(
+    [
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create — no HERDR_TAB_ID set, so renameHerdrTriggeringTab makes no call
+      json({ result: { type: "ok" } }), // pane run
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  await withHerdrWorkspaceId("w1", () =>
+    relaunchIntoDedicatedPane(effects, { mainRoot: root, featureSlug: "alpha", platform: "claude", argv: [], mainScript: "/path/to/main.mjs" }),
+  );
+  await closeHerdrWorkspace(effects);
+
+  assert.ok(
+    !effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"),
+    "the reused workspace is left open — it belongs to whoever is still using that pane",
+  );
+});
+
+// The reused pane's own tab still shows whatever it was called before crew-afk started running
+// in it — herdr also injects that pane's own tab as HERDR_TAB_ID, so relaunchIntoDedicatedPane's
+// own ensureHerdrWorkspace call is the one chance to relabel it to the sprint's feature slug,
+// the same way a freshly created workspace already is.
+test("relaunchIntoDedicatedPane renames the triggering pane's own tab to the feature slug when reusing HERDR_WORKSPACE_ID", async () => {
+  const { root } = fixture();
+  const effects = fakeRelaunchEffects(
+    [
+      json({ result: { type: "ok" } }), // tab rename
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { type: "ok" } }), // pane run
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  await withHerdrWorkspaceId("w1", () =>
+    withHerdrTabId("w1:t1", () =>
+      relaunchIntoDedicatedPane(effects, {
+        mainRoot: root,
+        featureSlug: "implement-user-auth",
+        platform: "claude",
+        argv: [],
+        mainScript: "/path/to/main.mjs",
+      }),
+    ),
+  );
+
+  assert.deepEqual(effects._calls[0], ["herdr", "tab", "rename", "w1:t1", "implement-user-auth"]);
+});
+
+test("relaunchIntoDedicatedPane never renames the triggering pane's own tab when no feature slug resolved — nothing meaningful to relabel it to", async () => {
+  const { root } = fixture();
+  const effects = fakeRelaunchEffects(
+    [
+      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
+      json({ result: { type: "ok" } }), // pane run
+      json({ result: { type: "ok" } }), // tab close
+    ],
+    { mainRoot: root },
+  );
+
+  await withHerdrWorkspaceId("w1", () =>
+    withHerdrTabId("w1:t1", () =>
+      relaunchIntoDedicatedPane(effects, { mainRoot: root, platform: "claude", argv: [], mainScript: "/path/to/main.mjs" }),
+    ),
+  );
+
+  assert.ok(
+    !effects._calls.some((c) => c[1] === "tab" && c[2] === "rename"),
+    "no feature slug resolved, so the pane's own tab is left exactly as the human named it",
+  );
+});
 
 test("relaunchIntoDedicatedPane creates a dedicated tab with an explicit env list, waits for the sentinel, and closes the tab", async () => {
   const { root } = fixture();
@@ -1947,17 +1130,6 @@ test("relaunchIntoDedicatedPane treats a corrupt sentinel as a real failure, not
   assert.deepEqual(result, { exitCode: 1, delegated: true });
 });
 
-function withHerdrPaneId(id, fn) {
-  const prior = process.env.HERDR_PANE_ID;
-  process.env.HERDR_PANE_ID = id;
-  return Promise.resolve()
-    .then(fn)
-    .finally(() => {
-      if (prior === undefined) delete process.env.HERDR_PANE_ID;
-      else process.env.HERDR_PANE_ID = prior;
-    });
-}
-
 test("notifyTriggeringPane is a no-op when not running inside herdr — no HERDR_PANE_ID", async () => {
   const effects = fakeHerdrEffects([], { mainRoot: "/root" });
   await notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished.");
@@ -1983,451 +1155,57 @@ test("notifyTriggeringPane swallows a failed prompt — the sprint's own outcome
   assert.equal(calls.length, 1, "still attempted once, just didn't throw");
 });
 
-test("dispatchViaHerdr never reuses one worker's pane for another role on the same issue", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  const reportPathCoder = join(root, "dispatch", "coder.report.json");
-  const reportPathReview = join(root, "dispatch", "review.report.json");
-  writeFileSync(reportPathCoder, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  writeFileSync(reportPathReview, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }),
-      json({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }),
-    ],
-    { mainRoot: root },
-  );
-
-  // The coder's dispatch for this issue.
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile: join(root, "coder.md"), slug: "alpha", reportPath: reportPathCoder }), {
-    timeoutMs: 60_000,
+// ─── extractResultMeta: claude's cost/error/turn metadata, scoped to claude only ──────
+test("extractResultMeta pulls cost/error/turns/session out of claude's terminal result event", () => {
+  const lines = [
+    JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "hi" }] } }),
+    JSON.stringify({
+      type: "result",
+      is_error: false,
+      total_cost_usd: 0.08,
+      duration_ms: 2500,
+      num_turns: 1,
+      permission_denials: [],
+      session_id: "abc123",
+      result: "done",
+    }),
+  ];
+  assert.deepEqual(extractResultMeta("claude", lines), {
+    isError: false,
+    costUsd: 0.08,
+    durationMs: 2500,
+    numTurns: 1,
+    permissionDenials: [],
+    sessionId: "abc123",
   });
-  // The reviewer's dispatch for the same issue, same slug, once the coder's own tab is closed.
-  await dispatchViaHerdr(
-    effects,
-    "claude",
-    spec(root, promptFile, { outFile: join(root, "review.md"), slug: "alpha", agent: "crew-code-reviewer", reportPath: reportPathReview }),
-    { timeoutMs: 60_000 },
-  );
-
-  const startCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "start");
-  assert.equal(startCalls.length, 2);
-  assert.equal(startCalls[0][3], "alpha-coder");
-  assert.equal(startCalls[1][3], "alpha-review");
-  assert.notEqual(startCalls[0][3], startCalls[1][3], "coder and reviewer must never start on the same pane name");
-  assert.equal(
-    effects._calls.filter((c) => c[1] === "workspace" && c[2] === "create").length,
-    1,
-    "coder and reviewer share the same herdr workspace",
-  );
 });
 
-test("dispatchViaHerdr never reuses one coder's pane for another coder — two different issues, same role", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  const reportPathAlpha = join(root, "dispatch", "alpha.report.json");
-  const reportPathBeta = join(root, "dispatch", "beta.report.json");
-  writeFileSync(reportPathAlpha, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  writeFileSync(reportPathBeta, JSON.stringify({ status: "complete", branch: "crew/f/beta" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }),
-      json({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }),
-    ],
-    { mainRoot: root },
-  );
-
-  // Two different issues' coders — as the dispatch pool runs them concurrently.
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile: join(root, "a.md"), slug: "alpha", reportPath: reportPathAlpha }), {
-    timeoutMs: 60_000,
+test("extractResultMeta returns the all-null/empty shape when no result event is found", () => {
+  assert.deepEqual(extractResultMeta("claude", [JSON.stringify({ type: "assistant" })]), {
+    isError: null,
+    costUsd: null,
+    durationMs: null,
+    numTurns: null,
+    permissionDenials: [],
+    sessionId: null,
   });
-  await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { outFile: join(root, "b.md"), slug: "beta", reportPath: reportPathBeta }), {
-    timeoutMs: 60_000,
+});
+
+test("extractResultMeta returns the empty shape for non-claude platforms — no confirmed equivalent field", () => {
+  const lines = [JSON.stringify({ type: "result", is_error: true, total_cost_usd: 1 })];
+  assert.deepEqual(extractResultMeta("copilot", lines), {
+    isError: null,
+    costUsd: null,
+    durationMs: null,
+    numTurns: null,
+    permissionDenials: [],
+    sessionId: null,
   });
-
-  const startCalls = effects._calls.filter((c) => c[1] === "agent" && c[2] === "start");
-  assert.equal(startCalls.length, 2);
-  assert.equal(startCalls[0][3], "alpha-coder");
-  assert.equal(startCalls[1][3], "beta-coder");
-  assert.notEqual(startCalls[0][3], startCalls[1][3], "two different issues' coders must never share a pane");
-  assert.equal(
-    effects._calls.filter((c) => c[1] === "workspace" && c[2] === "create").length,
-    1,
-    "two different issues' coders still share the same herdr workspace",
-  );
 });
 
-// ─── herdr pane persistence + reuse (one retry, see pipeline.mjs's herdr-reuse) ────────
-
-test("dispatchViaHerdr closes a successful dispatch's tab by default", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { agent: { agent_status: "idle" } } }),
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
-      json({ result: { type: "ok" } }), // tab close — CREW_HERDR_KEEP_PANE unset, off by default
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { slug: "alpha" }), {
-    timeoutMs: 60_000,
-  });
-
-  assert.equal(result.code, 0);
-  assert.equal(result.herdrTabId, null, "a successful dispatch's ids are not handed back once its tab is closed");
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
-});
-
-test("dispatchViaHerdr keeps a successful dispatch's tab open when CREW_HERDR_KEEP_PANE=1, returning its ids instead of closing it", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { agent: { agent_status: "idle" } } }),
-      { code: 0, stdout: RENDERED_REPLY, stderr: "" },
-      // No "tab close" response: CREW_HERDR_KEEP_PANE=1 must skip it entirely on success.
-    ],
-    { mainRoot: root },
-  );
-
-  const prior = process.env.CREW_HERDR_KEEP_PANE;
-  process.env.CREW_HERDR_KEEP_PANE = "1";
-  try {
-    const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { slug: "alpha" }), {
-      timeoutMs: 60_000,
-    });
-
-    assert.equal(result.code, 0);
-    assert.equal(result.herdrTabId, "w1:t1");
-    assert.equal(result.herdrPaneId, "w1:p1");
-    assert.ok(
-      !effects._calls.some((c) => c[1] === "tab" && c[2] === "close"),
-      "a kept-open pane's tab is never closed by the dispatch that produced it",
-    );
-  } finally {
-    if (prior === undefined) delete process.env.CREW_HERDR_KEEP_PANE;
-    else process.env.CREW_HERDR_KEEP_PANE = prior;
-  }
-});
-
-test("dispatchViaHerdr closes a failed dispatch's tab by default", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      err(1, "boom", "agent_prompt_stalled"),
-      { code: 0, stdout: "", stderr: "" }, // agent read after the failed prompt
-      json({ result: { type: "ok" } }), // tab close — CREW_HERDR_KEEP_PANE unset, off by default
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "claude", spec(root, promptFile, { slug: "alpha" }), {
-    timeoutMs: 60_000,
-  });
-
-  assert.equal(result.code, 1);
-  assert.equal(result.herdrTabId, null, "a failed dispatch's ids are not handed back once its tab is closed");
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
-});
-
-test("dispatchViaHerdr keeps a failed dispatch's tab open when CREW_HERDR_KEEP_PANE=1, naming it with the round so a same-issue retry never collides", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      err(1, "boom", "agent_prompt_stalled"),
-      { code: 0, stdout: "", stderr: "" }, // agent read after the failed prompt
-      // No "tab close" response: CREW_HERDR_KEEP_PANE=1 keeps a failed dispatch's tab open.
-    ],
-    { mainRoot: root },
-  );
-
-  const prior = process.env.CREW_HERDR_KEEP_PANE;
-  process.env.CREW_HERDR_KEEP_PANE = "1";
-  try {
-    const result = await dispatchViaHerdr(
-      effects,
-      "claude",
-      spec(root, promptFile, { slug: "alpha", round: 2 }),
-      { timeoutMs: 60_000 },
-    );
-
-    assert.equal(result.code, 1);
-    assert.equal(result.herdrTabId, "w1:t1", "a kept-open failed dispatch hands back its ids");
-    assert.equal(result.herdrName, "r2-alpha-coder");
-    assert.ok(
-      !effects._calls.some((c) => c[1] === "tab" && c[2] === "close"),
-      "CREW_HERDR_KEEP_PANE=1 keeps a failed dispatch's tab open for inspection",
-    );
-
-    const startCall = effects._calls.find((c) => c[1] === "agent" && c[2] === "start");
-    assert.equal(
-      startCall[3],
-      "r2-alpha-coder",
-      "the round folds into the pane's own herdr name, so a later retry's fresh name never collides with this kept-open one",
-    );
-  } finally {
-    if (prior === undefined) delete process.env.CREW_HERDR_KEEP_PANE;
-    else process.env.CREW_HERDR_KEEP_PANE = prior;
-  }
-});
-
-test("closeHerdrPane closes the given tab, and is a no-op when tabId is falsy", async () => {
-  const effects = fakeHerdrEffects([json({ result: { type: "ok" } })], { mainRoot: "/root" });
-  await closeHerdrPane(effects, null);
-  assert.equal(effects._calls.length, 0, "no herdr call at all when there is nothing to close");
-  await closeHerdrPane(effects, "w1:t1");
-  assert.deepEqual(effects._calls[0], ["herdr", "tab", "close", "w1:t1"]);
-});
-
-test("dispatchViaHerdr reuses an existing pane via spec.herdrReuse — skips workspace/tab create and agent start, goes straight to agent prompt", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const reportPath = join(root, "dispatch", "alpha.report.json");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }), // tab close, using the reused (carried-forward) tabId
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(
-    effects,
-    "claude",
-    spec(root, promptFile, { slug: "alpha", reportPath, herdrReuse: { tabId: "w1:t1", paneId: "w1:p1" } }),
-    { timeoutMs: 60_000 },
-  );
-
-  assert.equal(result.code, 0);
-  assert.match(result.text, /"status":\s*"complete"/);
-  assert.ok(
-    !effects._calls.some((c) => c[1] === "workspace" && c[2] === "create"),
-    "a reuse never needs its own workspace — the one from the prior dispatch is already there",
-  );
-  assert.ok(!effects._calls.some((c) => c[1] === "tab" && c[2] === "create"), "a reuse skips tab create entirely");
-  assert.ok(!effects._calls.some((c) => c[1] === "agent" && c[2] === "start"), "a reuse skips agent start — the agent is already running");
-  assert.deepEqual(effects._calls[0], ["herdr", "agent", "prompt", "alpha-coder", "Reply with exactly: herdr spike ok", "--wait", "--until", "idle", "--until", "done", "--timeout", "60000"]);
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"], "closes using the reused tab id, not a freshly created one");
-});
-
-test("dispatchViaHerdr falls back to a fresh dispatch when the reused pane's agent is gone", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const reportPath = join(root, "dispatch", "alpha.report.json");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  const effects = fakeHerdrEffects(
-    [
-      err(1, "no such agent", "agent_not_found"), // agent prompt --wait, against the stale reuse target
-      // Falls through to a normal fresh dispatch:
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } } }),
-      json({ result: { agent: { interactive_ready: true } } }),
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      json({ result: { agent: { agent_status: "idle" } } }),
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }),
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(
-    effects,
-    "claude",
-    spec(root, promptFile, { slug: "alpha", reportPath, herdrReuse: { tabId: "w1:t1", paneId: "w1:p1" } }),
-    { timeoutMs: 60_000 },
-  );
-
-  assert.equal(result.code, 0);
-  assert.match(result.text, /"status":\s*"complete"/);
-  assert.ok(
-    effects._calls.some((c) => c[1] === "tab" && c[2] === "create"),
-    "the stale reuse target falls back to creating a brand-new tab",
-  );
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t2"], "closes the freshly created tab, not the stale one");
-});
-
-// ─── herdr, per platform ─────────────────────────────────────────────────────
-//
-// The claude-only gate is gone (see dispatch()'s own doc comment): herdr's own --kind
-// already lists pi/claude/codex/copilot as supported kinds, so buildHerdrInvocation builds
-// each platform's interactive argv the same way buildDispatch builds its headless one, minus
-// -p/prompt/output-format — the prompt is submitted after the pane is ready, not at launch.
-// pi and copilot were verified live against herdr 0.8.2 with real transcripts; codex could
-// not be (no credentials in the environment this was built in), so its argv comes from
-// documented flags only and its reply-extraction falls back to pi's glyph-less shape.
-
-test("buildHerdrInvocation resolves pi's agent file into --tools/--model/--append-system-prompt, always trusting the run with --approve", () => {
-  const { root, promptFile } = fixture();
-  mkdirSync(join(root, ".pi/agents"), { recursive: true });
-  writeFileSync(join(root, ".pi/agents/crew-coder.md"), "---\ntools: read, bash, edit\nmodel: some-default\n---\nDo the work.\n");
-  const { args, prompt } = buildHerdrInvocation({}, "pi", spec(root, promptFile, { model: "gpt-5" }));
-  assert.deepEqual(args, ["--approve", "--model", "gpt-5", "--tools", "read,bash,edit", "--append-system-prompt", "Do the work.\n"]);
-  assert.equal(prompt, readFileSync(promptFile, "utf8"));
-});
-
-test("buildHerdrInvocation falls back to pi's agent file's own model when spec.model is empty, but an explicit override wins", () => {
-  const { root, promptFile } = fixture();
-  mkdirSync(join(root, ".pi/agents"), { recursive: true });
-  writeFileSync(join(root, ".pi/agents/crew-coder.md"), "---\nmodel: agent-default\n---\nDo the work.\n");
-  const withDefault = buildHerdrInvocation({}, "pi", spec(root, promptFile, { model: null }));
-  assert.deepEqual(withDefault.args.slice(0, 3), ["--approve", "--model", "agent-default"]);
-  const withOverride = buildHerdrInvocation({}, "pi", spec(root, promptFile, { model: "gpt-5" }));
-  assert.deepEqual(withOverride.args.slice(0, 3), ["--approve", "--model", "gpt-5"]);
-});
-
-test("buildHerdrInvocation throws when the pi agent definition is missing, so dispatchViaHerdr fails before ever touching herdr", () => {
-  const { root, promptFile } = fixture();
-  assert.throws(() => buildHerdrInvocation({}, "pi", spec(root, promptFile)), /pi agent definition not found/);
-});
-
-test("buildHerdrInvocation prepends codex's developer_instructions to the task and submits both as one prompt", () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Fix the bug.");
-  mkdirSync(join(root, ".codex/agents"), { recursive: true });
-  writeFileSync(join(root, ".codex/agents/crew-coder.toml"), "model = \"gpt-5-codex\"\ndeveloper_instructions = '''\nYou are the coder.\n'''\n");
-  const effects = { gitRead: () => ({ code: 0, stdout: ".git\n", stderr: "" }) };
-  const { args, prompt } = buildHerdrInvocation(effects, "codex", spec(root, promptFile));
-  assert.equal(prompt, "You are the coder.\n\n---\n\n# Task\n\nFix the bug.");
-  assert.match(args.join(" "), /-C .*worktree -a never -s workspace-write/);
-  assert.match(args.join(" "), /--model gpt-5-codex/);
-});
-
-test("buildHerdrInvocation adds codex's git-common-dir as a writable root under workspace-write, the same fix dispatch-codex-agent.sh carries", () => {
-  const { root, promptFile } = fixture();
-  mkdirSync(join(root, ".codex/agents"), { recursive: true });
-  writeFileSync(join(root, ".codex/agents/crew-coder.toml"), "developer_instructions = '''\nInstructions.\n'''\n");
-  const effects = { gitRead: (args, opts) => ({ code: 0, stdout: "../.git/worktrees/alpha\n", stderr: "" }) };
-  const { args } = buildHerdrInvocation(effects, "codex", spec(root, promptFile));
-  assert.match(args.join(" "), /sandbox_workspace_write\.writable_roots=\["[^"]*\.git\/worktrees\/alpha"]/);
-});
-
-test("buildHerdrInvocation throws when the codex agent definition is missing", () => {
-  const { root, promptFile } = fixture();
-  assert.throws(() => buildHerdrInvocation({}, "codex", spec(root, promptFile)), /codex agent definition not found/);
-});
-
-test("buildHerdrInvocation throws when the codex agent definition has empty developer_instructions", () => {
-  const { root, promptFile } = fixture();
-  mkdirSync(join(root, ".codex/agents"), { recursive: true });
-  writeFileSync(join(root, ".codex/agents/crew-coder.toml"), 'model = "gpt-5-codex"\n');
-  assert.throws(() => buildHerdrInvocation({}, "codex", spec(root, promptFile)), /empty developer_instructions/);
-});
-
-test("buildHerdrInvocation builds copilot's interactive argv the same as buildDispatch's headless one, minus -p/prompt/output-format", () => {
-  const { root, promptFile } = fixture();
-  const { args, prompt } = buildHerdrInvocation({}, "copilot", spec(root, promptFile, { model: "gpt-5.4" }));
-  assert.deepEqual(args, [
-    "--agent",
-    "crew-coder",
-    "-C",
-    join(root, "worktree"),
-    "--add-dir",
-    root,
-    "--allow-all-tools",
-    "--no-color",
-    "--model",
-    "gpt-5.4",
-  ]);
-  assert.equal(prompt, readFileSync(promptFile, "utf8"));
-});
-
-test("dispatchViaHerdr answers copilot's own trust dialog with a plain enter, not claude's down+enter", async () => {
-  const { root, promptFile } = fixture();
-  writeFileSync(promptFile, "Reply with exactly: herdr spike ok");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const reportPath = join(root, "dispatch", "alpha.report.json");
-  mkdirSync(join(root, "dispatch"), { recursive: true });
-  writeFileSync(reportPath, JSON.stringify({ status: "complete", branch: "crew/f/alpha" }));
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      err(1, "agent alpha is blocked during startup", "agent_not_ready"),
-      { code: 0, stdout: "Do you trust the files in this folder?\n❯ 1. Yes", stderr: "" },
-      json({ result: { type: "ok" } }), // agent send-keys enter
-      json({ result: { agent: { interactive_ready: true } } }), // agent get (poll)
-      json({ result: { type: "ok" } }), // pane rename (best-effort, freshly created pane)
-      json({ result: { agent: { agent_status: "idle" } } }), // agent prompt --wait
-      // No agent read canned — the sidecar already exists on disk.
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "copilot", spec(root, promptFile, { outFile, slug: "alpha", reportPath }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 0);
-  assert.match(result.text, /"status":\s*"complete"/);
-  const paneName = effects._calls[4][3];
-  assert.deepEqual(effects._calls[4], ["herdr", "agent", "send-keys", paneName, "enter"]);
-});
-
-test("dispatchViaHerdr fails loud on codex's sign-in screen instead of guessing a keystroke — codex has no HERDR_DIALOGS entry", async () => {
-  const { root, promptFile } = fixture();
-  mkdirSync(join(root, ".codex/agents"), { recursive: true });
-  writeFileSync(join(root, ".codex/agents/crew-coder.toml"), "developer_instructions = '''\nInstructions.\n'''\n");
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  const logFile = join(root, "trace.log");
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      err(1, "agent alpha is blocked during startup", "agent_not_ready"),
-      { code: 0, stdout: "Sign in with ChatGPT to use Codex\n1. Sign in with ChatGPT", stderr: "" },
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await dispatchViaHerdr(effects, "codex", spec(root, promptFile, { outFile, logFile, slug: "alpha" }), { timeoutMs: 60_000 });
-
-  assert.equal(result.code, 1);
-  assert.match(result.stderr, /unrecognised dialog/);
-  assert.doesNotMatch(effects._calls.map((c) => c.join(" ")).join("\n"), /send-keys/, "no HERDR_DIALOGS entry for codex — never a blind keypress");
+test("extractResultMeta skips unparseable lines instead of throwing", () => {
+  const lines = ["not json", JSON.stringify({ type: "result", is_error: true, permission_denials: [{ tool: "Bash" }] })];
+  const meta = extractResultMeta("claude", lines);
+  assert.equal(meta.isError, true);
+  assert.equal(meta.permissionDenials.length, 1);
 });

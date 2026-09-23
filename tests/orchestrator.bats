@@ -85,11 +85,9 @@ setup_file() {
 
 @test "orchestrator: run refuses to start when another sprint already holds this feature-slug's lock" {
   # Regression: two `crew-afk run` invocations for the same feature-slug used to race —
-  # each relaunches into its own dedicated herdr pane with no shared state between them,
-  # so both dispatch the same issue's coder under the exact same deterministic agent name
-  # and herdr rejects the second (agent_name_taken), burning a real retry attempt on a
-  # collision neither process's own code caused. acquireSprintLock in main.mjs now refuses
-  # a second `run` outright instead.
+  # both dispatching the same issue's coder concurrently, racing for the same worktree and
+  # branch, burning a real retry attempt on a collision neither process's own code caused.
+  # acquireSprintLock in main.mjs now refuses a second `run` outright instead.
   command -v node >/dev/null 2>&1 || skip "node not installed"
   local dir
   dir="$(mktemp -d)"

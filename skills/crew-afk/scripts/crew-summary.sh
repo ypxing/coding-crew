@@ -128,6 +128,14 @@ BLOCKED_SLUGS=$(state get blocked)
 
 echo "Rounds: $(state get rounds)"
 echo "Model:  $(state get model)"
+# Claude-only for now (see extractResultMeta in dispatch.mjs) — omitted rather than
+# printed as $0.00 when nothing was recorded, since a pi/codex/copilot-only sprint has
+# no cost data at all, not genuinely zero cost.
+TOTAL_COST_USD=$(state get total-cost-usd)
+if awk -v c="$TOTAL_COST_USD" 'BEGIN { exit !(c > 0) }'; then
+  TOTAL_TURNS=$(state get total-dispatch-turns)
+  echo "Cost:   $(awk -v c="$TOTAL_COST_USD" 'BEGIN { printf "$%.2f", c }') · agent time: $(awk -v ms="$(state get total-dispatch-duration-ms)" 'BEGIN { printf "%.1fm", ms / 60000 }') across $TOTAL_TURNS turns"
+fi
 echo "Merged  ($(count_csv "$MERGED_SLUGS")): $(or_none "$MERGED_SLUGS")"
 echo "Partial ($(count_csv "$PARTIAL_SLUGS")): $(or_none "$PARTIAL_SLUGS")"
 echo "Blocked ($(count_csv "$BLOCKED_SLUGS")): $(or_none "$BLOCKED_SLUGS")"

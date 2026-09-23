@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.29.119]
+
+### Changed
+
+- **crew-afk's coder/reviewer/triage dispatches are now always headless, even under
+  `HERDR_ENV=1`.** Per-worker herdr panes (`dispatchViaHerdr`) drove each dispatch as a
+  long-lived interactive REPL in its own tab — idle-polling, a trust-dialog keystroke
+  table, and pane-reuse bookkeeping across retries — confirmed live that headless `-p`
+  already runs correctly with a herdr server active in the background, so that machinery
+  bought only live per-worker pane-watching and a retry-continuity bonus headless retries
+  already work fine without. `HERDR_ENV=1` still gives crew-afk's own process a dedicated
+  pane (`relaunchIntoDedicatedPane`) and still nudges the triggering pane at the end of a
+  run — only individual dispatches changed. `CREW_HERDR_KEEP_PANE` is gone with it.
+
+### Added
+
+- **claude's headless dispatches now capture cost/error/turn metadata that used to be
+  discarded.** `--output-format stream-json`'s terminal `result` event carries
+  `total_cost_usd`, `duration_ms`, `num_turns`, `is_error`, and `permission_denials`;
+  `dispatch.mjs` only ever kept `.result` (the final text). A dispatch that ends
+  `is_error: true` with no usable sidecar now counts as a process-level failure the same
+  way a non-zero exit already does, and a non-empty `permission_denials` now shows up in
+  the `[DISPATCH-FAIL]` trace line. Sprint-wide cost/duration/turn totals accumulate in
+  `sprint-state.json` (`state.sh dispatch-cost`) and crew-summary.sh now prints a `Cost:`
+  line when any were recorded. Claude-only for now — pi/codex/copilot have no confirmed
+  equivalent field.
+
 ## [1.29.118]
 
 ### Fixed

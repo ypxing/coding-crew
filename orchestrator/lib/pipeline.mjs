@@ -29,7 +29,7 @@ import {
 import { getTracker } from "./tracker.mjs";
 import { criteriaFile, fixPrompt, resumeNote, reviewPrompt, triagePrompt, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
-import { closeHerdrPane, dispatch } from "./dispatch.mjs";
+import { dispatch } from "./dispatch.mjs";
 
 // Retention-reason tags for a verify-worktree.sh failure, once triage (see runTriage
 // below) has classified it. Read back by runWorker to route the *next* attempt — a
@@ -106,9 +106,9 @@ async function writeTrackerSection(effects, issue, heading, body, { append = fal
 /**
  * Whether `branch` carries any commit the feature branch doesn't already have — the same
  * question ensureWorktree's own staleness check answers from the other side. Used to tell a
- * dispatch that died before writing any report (worker process crash, herdr transport
- * failure, timeout) apart from one that also never got the coder to commit anything: only
- * the former has real work worth resuming next round instead of just a reason to give up.
+ * dispatch that died before writing any report (worker process crash, timeout) apart from
+ * one that also never got the coder to commit anything: only the former has real work
+ * worth resuming next round instead of just a reason to give up.
  */
 function branchHasCommits(effects, featureBranch, branch) {
   const r = effects.gitRead(["rev-list", "--count", `${featureBranch}..${branch}`]);
@@ -330,9 +330,7 @@ export async function runWorker(ctx, issue, attempt) {
   const sidecarFile = join(dispatchDir, `${dispatchStem(issue)}.report.json`);
 
   // A prior round's (or a prior resumed sprint's) sidecar at this same fixed path must not
-  // be mistaken for this round's verdict if the coder's turn dies before writing one — see
-  // waitForSidecarReport in dispatch.mjs, which reads existsSync as "found" the instant the
-  // herdr wait settles.
+  // be mistaken for this round's verdict if the coder's turn dies before writing one.
   rmSync(sidecarFile, { force: true });
 
   writeFileSync(
@@ -364,11 +362,6 @@ export async function runWorker(ctx, issue, attempt) {
   ctx.log(
     `[STEP] slug=${dispatchStem(issue)} round=${attempt} step=dispatch-coder model=${options.model ?? "inherit"}`,
   );
-  // herdrReuse is non-null only when handleVerificationFailure queued this exact slug's
-  // pane last round (see sprint.consumeHerdrReusePending) — spending it here, once, is what
-  // bounds reuse to a single retry, and only ever finds anything when CREW_HERDR_KEEP_PANE=1
-  // kept that prior pane open (see dispatch.mjs's keepPane).
-  const herdrReuse = options.herdr ? sprint.consumeHerdrReusePending(issue.slug) : null;
   const result = await dispatch(
     effects,
     platform,
@@ -386,8 +379,6 @@ export async function runWorker(ctx, issue, attempt) {
       issueNumber: issue.number,
       round: attempt,
       reportPath: sidecarFile,
-      herdr: options.herdr,
-      herdrReuse,
     },
     {
       timeoutMs: options.workerTimeoutMs,
@@ -430,32 +421,33 @@ export async function runHousekeeping(ctx, worker) {
     return mergeAndClose(ctx, worker, outcome);
   }
 
+  // Every dispatch's cost/duration/turns count toward the sprint's running totals
+  // (crew-summary.sh's cost line) regardless of what it did — a timed-out or blocked
+  // dispatch still spent tokens. Claude-only fields for now (dispatch.mjs's
+  // extractResultMeta); no-ops to 0 for every other platform.
+  sprint.recordDispatchCost({
+    costUsd: worker.dispatch.costUsd,
+    durationMs: worker.dispatch.durationMs,
+    numTurns: worker.dispatch.numTurns,
+  });
+
   // --- dispatch health -------------------------------------------------------
-  // A dead dispatch (timeout, crash, herdr transport failure — see [DISPATCH-FAIL] tracing
-  // in dispatch.mjs) with real commits on the branch already is worth resuming, not
-  // discarding: finishPartial writes the same ## Progress section a genuine partial-work
-  // report would, so the next round's resumeNote correctly says "resume on that branch, the
-  // code is preserved" instead of just warning about a repeat failure. A dead dispatch that
-  // never got the coder to commit anything has nothing to resume — that one still blocks.
+  // A dead dispatch (timeout, crash — see [DISPATCH-FAIL] tracing in dispatch.mjs) with
+  // real commits on the branch already is worth resuming, not discarding: finishPartial
+  // writes the same ## Progress section a genuine partial-work report would, so the next
+  // round's resumeNote correctly says "resume on that branch, the code is preserved"
+  // instead of just warning about a repeat failure. A dead dispatch that never got the
+  // coder to commit anything has nothing to resume — that one still blocks.
   if (worker.dispatch.timedOut) {
     const reason = `worker timed out after ${Math.round(options.workerTimeoutMs / 60000)}m`;
     if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
     return finishBlocked(ctx, worker, outcome, reason);
   }
-  // herdr refused this dispatch outright because another dispatch already holds the exact
-  // same deterministic agent name (same issue+role+round) — a race between two sprints on
-  // the same feature-slug, not anything this attempt's own code did. Uncapped and always a
-  // plain retry, bypassing finishRetryOrBlock's cap check entirely: the coder process never
-  // started, so there is nothing to resume and nothing about this branch's own history that
-  // a repeat would need to avoid — see acquireSprintLock in main.mjs for the fix that should
-  // make this collision rare going forward.
-  if (worker.dispatch.nameCollision) {
-    return finishPartial(ctx, worker, outcome, "herdr agent name collision — retrying");
-  }
-  if (worker.dispatch.code !== 0 && worker.report.unparseable) {
-    // A non-zero exit *and* nothing usable back: the worker died before reporting.
-    // Its own report is preferred whenever there is one — a worker that exited badly
-    // but reported `blocked` with a reason knows more than the exit code does.
+  // A non-zero exit, or claude's own `is_error: true` on the terminal result, *and*
+  // nothing usable back: the worker died (or ended in an error state) before reporting.
+  // Its own report is preferred whenever there is one — a worker that exited badly but
+  // reported `blocked` with a reason knows more than the process signal does.
+  if ((worker.dispatch.code !== 0 || worker.dispatch.isError) && worker.report.unparseable) {
     const reason = "worker process failed — see traces/";
     if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
     return finishBlocked(ctx, worker, outcome, reason);
@@ -470,21 +462,7 @@ export async function runHousekeeping(ctx, worker) {
     return finishBlocked(ctx, worker, outcome, pre.reason ?? worker.report.notes ?? "blocked");
   }
   if (pre.status !== "complete") {
-    // A coder's own honest partial self-report gets redispatched next round the same as an
-    // AC:unmet or fixable-verify-failure retry does — its pane, if CREW_HERDR_KEEP_PANE=1 kept
-    // one open, is worth carrying into that retry too, bounded to one reuse per issue like the
-    // other two.
-    const herdrEligible =
-      options.herdr && !!worker.dispatch.herdrTabId && sprint.herdrReuseState(issue.slug) === "none";
-    if (herdrEligible) {
-      sprint.markHerdrReusePending(issue.slug, {
-        tabId: worker.dispatch.herdrTabId,
-        paneId: worker.dispatch.herdrPaneId,
-        name: worker.dispatch.herdrName,
-        worktree: worker.worktree,
-      });
-    }
-    return finishRetryOrBlock(ctx, worker, outcome, pre.reason ?? "partial", { keepWorktree: herdrEligible });
+    return finishRetryOrBlock(ctx, worker, outcome, pre.reason ?? "partial");
   }
 
   // --- gate 1: independent verification in the worktree ----------------------
@@ -507,11 +485,10 @@ export async function runHousekeeping(ctx, worker) {
   }
 
   // --- gate 2: independent review (findings + acceptance-criteria verdict) ---
-  // The worktree and any herdr pane the coder dispatch kept open stay alive across this gate
-  // (deliberately not cleaned up right after verify, despite review reading the branch from
-  // the main checkout and needing neither) — an `AC: unmet` verdict below sends the coder
-  // back to fix its own branch, and closing either eagerly would throw away exactly what
-  // that retry needs.
+  // The worktree stays alive across this gate (deliberately not removed right after
+  // verify, despite review reading the branch from the main checkout and needing none of
+  // it) — an `AC: unmet` verdict below sends the coder back to fix its own branch, and
+  // removing it eagerly would throw away exactly what that retry needs.
   const review = await runReview(ctx, worker, parseVerifyChecks(verify.stdout));
   outcome.reviewReport = review.reportFile;
   if (!review.completed) {
@@ -533,34 +510,18 @@ export async function runHousekeeping(ctx, worker) {
   outcome.findings = review.parsed.findings;
 
   if (review.parsed.verdict !== "all-met") {
-    // Same bounded, one-retry-per-issue reuse handleVerificationFailure offers a fixable
-    // triage verdict — an AC: unmet verdict sends the coder back to fix its own branch too,
-    // so a pane CREW_HERDR_KEEP_PANE=1 already kept open is worth carrying into that retry
-    // instead of starting the fix cold.
-    const herdrEligible =
-      options.herdr && !!worker.dispatch.herdrTabId && sprint.herdrReuseState(issue.slug) === "none";
-    if (herdrEligible) {
-      sprint.markHerdrReusePending(issue.slug, {
-        tabId: worker.dispatch.herdrTabId,
-        paneId: worker.dispatch.herdrPaneId,
-        name: worker.dispatch.herdrName,
-        worktree: worker.worktree,
-      });
-    }
     return finishRetryOrBlock(
       ctx,
       worker,
       outcome,
       taggedReason(CRITERIA_UNMET_TAG, review.parsed.detail || "see review"),
-      { keepWorktree: herdrEligible },
     );
   }
 
   // Every gate after this reads the branch from the main checkout, same as review just did —
   // but review confirming all-met means there is no more fix retry coming, so the worktree
-  // and any herdr pane the coder kept open are finally done being useful.
+  // is finally done being useful.
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-  await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
 
   // The receipt close-issue.sh demands, written only on an all-met verdict, and only
   // ever for this issue's own slug.
@@ -627,7 +588,7 @@ function mergeAndClose(ctx, worker, outcome) {
  * of another dispatch, so this reuses that prior verdict verbatim instead.
  */
 async function handleVerificationFailure(ctx, worker, outcome, verify) {
-  const { sprint, options } = ctx;
+  const { sprint } = ctx;
 
   if (worker.skippedWorker) {
     const priorReason = sprint.retentionReason(worker.issue.slug) ?? "verification-failed";
@@ -646,23 +607,7 @@ async function handleVerificationFailure(ctx, worker, outcome, verify) {
   const fixable = triage.parsed.fixable;
   const tag = fixable ? FIXABLE_TAG : NOT_FIXABLE_TAG;
 
-  // herdr pane reuse, bounded to one retry per issue (see sprint.consumeHerdrReusePending):
-  // only worth queuing when the coder is actually getting redispatched next round (a fixable
-  // verdict — a not-fixable retry skips the coder entirely, see runWorker's notFixableRetry),
-  // this dispatch actually left a pane open (only when CREW_HERDR_KEEP_PANE=1, options.herdr),
-  // and this slug hasn't already spent its one reuse.
-  const herdrEligible =
-    fixable && options.herdr && !!worker.dispatch.herdrTabId && sprint.herdrReuseState(worker.issue.slug) === "none";
-  if (herdrEligible) {
-    sprint.markHerdrReusePending(worker.issue.slug, {
-      tabId: worker.dispatch.herdrTabId,
-      paneId: worker.dispatch.herdrPaneId,
-      name: worker.dispatch.herdrName,
-      worktree: worker.worktree,
-    });
-  }
-
-  return finishRetryOrBlock(ctx, worker, outcome, taggedReason(tag, summary), { keepWorktree: herdrEligible });
+  return finishRetryOrBlock(ctx, worker, outcome, taggedReason(tag, summary));
 }
 
 /**
@@ -717,7 +662,6 @@ async function runTriage(ctx, worker, verifyStdout) {
       issueNumber: issue.number,
       round: worker.attempt,
       reportPath: sidecarFile,
-      herdr: options.herdr,
     },
     {
       timeoutMs: options.reviewTimeoutMs,
@@ -787,7 +731,6 @@ async function runReview(ctx, worker, checks) {
       issueNumber: issue.number,
       round: worker.attempt,
       reportPath: sidecarFile,
-      herdr: options.herdr,
     },
     {
       timeoutMs: options.reviewTimeoutMs,
@@ -806,10 +749,9 @@ async function runReview(ctx, worker, checks) {
 
   const parsed = parseReviewReport(result.text, sidecar);
   // sidecar-only, fail-closed: parsed.ok is false whenever the sidecar is missing or has no
-  // valid verdict, whatever the dispatch's captured text happened to contain (headless or a
-  // herdr pane's rendered scroll-back alike) — there is no separate "real prose findings
-  // without a verdict block" case to disambiguate any more, since findings are only ever
-  // read from the sidecar too.
+  // valid verdict, whatever the dispatch's captured text happened to contain — there is no
+  // separate "real prose findings without a verdict block" case to disambiguate any more,
+  // since findings are only ever read from the sidecar too.
   if (result.timedOut || !parsed.ok) {
     // result.stderr is where a dispatch-level failure reason actually lives (a `die()`
     // guard in dispatch-agent.sh, a spawn-level error, ...) — surfaced here so a human
@@ -827,12 +769,10 @@ async function runReview(ctx, worker, checks) {
   // The aggregate file is fed straight from the sidecar's own bytes, not the dispatch's
   // captured text — the two used to usually agree (the reviewer's protocol asked for the
   // same block twice, once to disk and once in its final message) but only ever *usually*:
-  // this makes them identical by construction, for both the headless and herdr paths, since
-  // dispatchViaHerdr's own success text is already this same sidecar content wrapped in a
-  // fence (see dispatch.mjs). The `## Branch:` heading is cosmetic — parseReviewAggregate
-  // only ever scans for the fenced json block — but keeps the aggregate readable for a human,
-  // sourced from the sidecar's own branch/slug rather than trusting the model's chat reply to
-  // have written one correctly.
+  // this makes them identical by construction. The `## Branch:` heading is cosmetic —
+  // parseReviewAggregate only ever scans for the fenced json block — but keeps the
+  // aggregate readable for a human, sourced from the sidecar's own branch/slug rather than
+  // trusting the model's chat reply to have written one correctly.
   mkdirSync(sprint.reviewDir, { recursive: true });
   const heading = `## Branch: ${sidecar.branch ?? branch} (${sidecar.slug ?? issue.slug})`;
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
@@ -880,14 +820,14 @@ async function promote(ctx, worker, review, outcome) {
  * on a retry; finishBlocked gets a reason that says *why* the cap tripped, since by then
  * the original reason has already repeated once.
  */
-function finishRetryOrBlock(ctx, worker, outcome, reason, opts) {
+function finishRetryOrBlock(ctx, worker, outcome, reason) {
   if (worker.attempt >= MAX_ATTEMPTS_PER_ISSUE) {
     return finishBlocked(ctx, worker, outcome, `retry limit reached (${worker.attempt} attempts) — ${reason}`);
   }
-  return finishPartial(ctx, worker, outcome, reason, opts);
+  return finishPartial(ctx, worker, outcome, reason);
 }
 
-async function finishPartial(ctx, worker, outcome, reason, { keepWorktree = false } = {}) {
+async function finishPartial(ctx, worker, outcome, reason) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
   const progress = worker.report.progress || worker.report.notes || `Round ${worker.attempt}: ${reason}`;
@@ -907,26 +847,7 @@ async function finishPartial(ctx, worker, outcome, reason, { keepWorktree = fals
     "Progress",
     `Round ${worker.attempt}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
   );
-  // keepWorktree (set only by handleVerificationFailure's herdr-reuse path) leaves both the
-  // worktree and its herdr pane exactly as they are, for next round's redispatch to pick up
-  // — every other partial reason has no reuse concept, so it removes/closes as before.
-  // worker.dispatch.herdrFailed also keeps both, for a different reason: this dispatch's own
-  // attempt failed to communicate or reported an error without herdr ever confirming the
-  // underlying agent process exited (a reused pane's `--wait` can falsely settle on a stale
-  // idle/done from a prior turn — see dispatchViaHerdr's "absent" case in dispatch.mjs — or
-  // the pane may still be sitting on a blocked dialog). Removing the worktree out from under
-  // a process that turns out to still be alive is exactly the two-coders-one-worktree bug
-  // this guard exists to prevent; next round's ensureWorktree reuses the path in place if it's
-  // still there instead of recreating it. Only a plain (non-herdr) dispatch, where
-  // spawnWithTimeout SIGKILLs the actual worker process itself, gets to assume it's gone.
-  if (keepWorktree) {
-    ctx.log(`[HERDR-REUSE] slug=${issue.slug} round=${worker.attempt} — keeping worktree and pane open for one retry`);
-  } else if (worker.dispatch?.herdrFailed) {
-    ctx.log(`[HERDR-FAILED] slug=${issue.slug} round=${worker.attempt} — keeping worktree and pane open, process status unconfirmed`);
-  } else {
-    removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-    await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
-  }
+  removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
   sprint.retain(issue.slug, branch, reason);
   outcome.status = "partial";
   outcome.reason = reason;
@@ -937,16 +858,7 @@ async function finishBlocked(ctx, worker, outcome, reason) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
   await writeTrackerSection(effects, issue, "Blocked", `Round ${worker.attempt}: ${reason}`, { append: true });
-  // See finishPartial's matching comment: a dispatch whose own attempt failed to communicate
-  // or reported an error leaves both its pane and its worktree alone — herdr never confirmed
-  // the underlying process actually exited, and removing the worktree out from under a
-  // process that's still alive is the two-coders-one-worktree bug this guard prevents.
-  if (worker.dispatch?.herdrFailed) {
-    ctx.log(`[HERDR-FAILED] slug=${issue.slug} round=${worker.attempt} — keeping worktree and pane open, process status unconfirmed`);
-  } else {
-    removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-    await closeHerdrPane(effects, worker.dispatch?.herdrTabId);
-  }
+  removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
   sprint.blocked(issue.slug, branch, reason);
   // In-memory, this invocation only — see sprint.mjs's isBlockedThisRun. Persisted
   // `blocked_slugs` (just above) is for crew-summary.sh's report; it must not be what
