@@ -553,10 +553,20 @@ export async function closeHerdrWorkspace(effects) {
  * recognized in that pane, one already at a dialog, herdr unreachable) is a silent no-op:
  * the run's own outcome is already decided by the time this fires, and the printed summary
  * is still sitting in that pane's scrollback either way.
+ *
+ * Returns `{sent, reason?}` rather than void: `effects.log` — the only thing this used to
+ * report through — is a dead sink for most callers (see main.mjs's own Effects
+ * construction, buffered into an array nothing reads, mirrored to stderr only under
+ * CREW_VERBOSE, never written to orchestrator.log), so a caller that does have a real
+ * trace-log writer (see notifyMilestone in pipeline.mjs) needs this outcome handed back to
+ * actually surface a skip or failure anywhere durable.
  */
 export async function notifyTriggeringPane(effects, message) {
   const paneId = process.env.HERDR_PANE_ID;
-  if (!paneId) return;
+  if (!paneId) {
+    effects.log?.("NOTIFY-SKIP no HERDR_PANE_ID in env");
+    return { sent: false, reason: "no HERDR_PANE_ID in env" };
+  }
   try {
     const result = await herdrExec(effects, ["agent", "prompt", paneId, message]);
     // herdrExec/spawnWithTimeout resolves rather than rejects on a nonzero exit (see
@@ -565,11 +575,16 @@ export async function notifyTriggeringPane(effects, message) {
     // must be checked here explicitly or it is never seen at all, not even in this
     // best-effort log line.
     if (result.code !== 0) {
-      effects.log?.(`NOTIFY-FAIL herdr agent prompt exit=${result.code} ${(result.stderr || result.stdout || "").trim()}`);
+      const reason = `herdr agent prompt exit=${result.code} ${(result.stderr || result.stdout || "").trim()}`;
+      effects.log?.(`NOTIFY-FAIL ${reason}`);
+      return { sent: false, reason };
     }
+    return { sent: true };
   } catch (err) {
     /* best effort — see doc comment above */
-    effects.log?.(`NOTIFY-FAIL herdr agent prompt threw: ${err.message}`);
+    const reason = `herdr agent prompt threw: ${err.message}`;
+    effects.log?.(`NOTIFY-FAIL ${reason}`);
+    return { sent: false, reason };
   }
 }
 

@@ -72,9 +72,11 @@ function dispatchStem(issue) {
  * so without this line a whole sprint's worth of milestones was previously invisible to
  * anyone not running under herdr, discoverable only after the fact from a finished
  * sprint's final summary. */
-function notifyMilestone(ctx, issue, message) {
+async function notifyMilestone(ctx, issue, message) {
   ctx.log(`[MILESTONE] ${dispatchStem(issue)}: ${message}`);
-  return notifyTriggeringPane(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`);
+  const result = await notifyTriggeringPane(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`);
+  if (!result.sent) ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: ${result.reason}`);
+  return result;
 }
 
 /** close-issue.sh / promote-findings.sh's own `--issue`/positional argument: an issue

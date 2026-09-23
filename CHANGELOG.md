@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.125]
+
+### Fixed
+
+- **A skipped or failed herdr milestone push is now visible in `orchestrator.log`, not just
+  in a caller-supplied `effects.log`.** `notifyTriggeringPane` now returns `{sent, reason?}`
+  instead of void — `effects.log` is a dead sink for most callers (buffered into an array
+  nothing reads, mirrored to stderr only under `CREW_VERBOSE`, never written to
+  `orchestrator.log`) — so `notifyMilestone` can log a `[MILESTONE-PUSH-SKIPPED]` line via
+  `ctx.log` whenever the push didn't go out, including the no-`HERDR_PANE_ID` case, which
+  previously returned silently with no log line at all.
+
 ## [1.29.124]
 
 ### Fixed
