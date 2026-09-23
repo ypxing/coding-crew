@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.29.121]
+
+### Added
+
+- **crew-afk now pushes a per-issue outcome notification to the triggering herdr pane**,
+  not just one at the very end of the sprint. Under `HERDR_ENV=1`, a caller previously had
+  to poll `[STEP]` log lines to see progress on individual issues between the sprint's
+  start and its final `notifyTriggeringPane` nudge — `mergeAndClose`, `finishPartial`, and
+  `finishBlocked` now each push a one-line complete/partial/blocked notification (with
+  round and reason) as soon as that issue reaches a terminal outcome for the round.
+  No-op off-herdr, same as the existing end-of-run notification.
+
+### Fixed
+
+- **Dispatch trace tagging (`--slug`, `onTrace`'s log prefix) now carries the issue's own
+  `NN-<slug>` stem**, matching the `[STEP]` lines and prompt/report filenames that already
+  used it, instead of the bare slug. `dispatch.mjs` also tags trace lines with `round=`
+  alongside `slug=`.
+- **`merge-branches.sh`'s docker-mode detection now checks every dep-install script root
+  `ensure-deps.sh` checks**, not just the project root, and logs why docker mode is off at
+  each guard instead of failing silently.
+
 ## [1.29.120]
 
 ### Fixed
