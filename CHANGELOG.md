@@ -23,6 +23,8 @@
   the issue to `merge-failed` (retried next round like any other merge failure) and runs
   `git merge --abort` to leave the working tree clean instead of mid-merge.
 
+## [1.29.123]
+
 ### Added
 
 - **The triggering herdr pane now hears from an issue as soon as its coder finishes**, not
