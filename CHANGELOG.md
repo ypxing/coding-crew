@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.29.122]
+
+### Fixed
+
+- **`merge-branches.sh` no longer routes merges through `docker compose run`.** The
+  docker-mode merge (added in 1.29.120) existed only so a project's commit-msg hook
+  (lefthook -> commitlint -> pnpm, etc.) had its tooling available when that tooling only
+  lived inside the project's docker service. Every merge now runs `git merge --no-ff
+  --no-verify` on the host instead: the merge commit's message is a fixed template this
+  script generates, so a hook has nothing useful to lint, and skipping it removes the need
+  for the hook's tooling at all. This also removes a real hang: `MAIN_ROOT` never gets its
+  own dependency install the way worker worktrees do, so the docker-mode merge's container
+  was always cold — one sprint hung 16+ minutes with `pnpm commitlint --edit` stalled on a
+  registry fetch inside a fresh container, blocking the whole sprint behind it (see the
+  next entry). `CREW_MERGE_DOCKER` is gone with it.
+- **A hung merge or close call can no longer freeze the whole sprint indefinitely.**
+  `mergeAndClose` runs `merge-branches.sh`/`close-issue.sh` via `effects.bash`, which blocks
+  Node's single event loop for the child's entire lifetime — the same hazard `dispatch.mjs`
+  already documents and worked around for herdr dispatch, but never applied here. A new
+  `--merge-timeout <minutes>` option (default 10) now bounds both calls; a timeout demotes
+  the issue to `merge-failed` (retried next round like any other merge failure) and runs
+  `git merge --abort` to leave the working tree clean instead of mid-merge.
+
 ## [1.29.121]
 
 ### Added

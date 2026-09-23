@@ -45,6 +45,11 @@
  *   --promote <critical|critical-high>      findings promotion threshold
  *   --max-parallel <n>                     concurrent workers (platform default)
  *   --worker-timeout <minutes>             default 45 — a hung worker cannot hang the sprint
+ *   --merge-timeout <minutes>              default 10 — merge/close run via blocking spawnSync
+ *                                           on the same event loop every issue's dispatch
+ *                                           shares, so an unbounded hang here (e.g. a stalled
+ *                                           docker-mode merge) freezes the whole sprint, not
+ *                                           just the merging issue
  *   --max-rounds <n>                       hard cap on attempts *per issue* this invocation
  *                                           makes (independent of, and typically larger than,
  *                                           each issue's own 2-attempt cap before it blocks)
@@ -85,6 +90,7 @@ function parseArgs(argv) {
     parallel: null,
     workerTimeoutMs: 45 * 60 * 1000,
     reviewTimeoutMs: 20 * 60 * 1000,
+    mergeTimeoutMs: 10 * 60 * 1000,
     maxRounds: null,
     deps: true,
     commands: true,
@@ -106,6 +112,7 @@ function parseArgs(argv) {
       case "--max-parallel": o.parallel = Number(args.shift()); break;
       case "--worker-timeout": o.workerTimeoutMs = Number(args.shift()) * 60 * 1000; break;
       case "--review-timeout": o.reviewTimeoutMs = Number(args.shift()) * 60 * 1000; break;
+      case "--merge-timeout": o.mergeTimeoutMs = Number(args.shift()) * 60 * 1000; break;
       case "--max-rounds": o.maxRounds = Number(args.shift()); break;
       case "--no-deps": o.deps = false; break;
       case "--no-commands": o.commands = false; break;
@@ -365,7 +372,7 @@ async function main() {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--coverage] [--promote critical|critical-high]\n" +
-        "  [--max-parallel N] [--worker-timeout MIN] [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]\n" +
+        "  [--max-parallel N] [--worker-timeout MIN] [--merge-timeout MIN] [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]\n" +
         "  --model sets the coder's model; reviewer/triage/commandsDiscovery/coverageValidation\n" +
         "  match it unless .coding-crew/afk-models.json names\n" +
         "  {coder, reviewer, triage, commandsDiscovery, coverageValidation} explicitly.",
