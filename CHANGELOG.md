@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.29.120]
+
+### Fixed
+
+- **`merge-branches.sh` now merges inside the project's own docker service when the sprint
+  is running in docker mode**, instead of always on the host. A project whose dev tooling
+  (e.g. a package manager a commit-msg hook shells out to) only exists inside its docker
+  container previously had every merge commit fail closed on the host — indistinguishable
+  from a real merge conflict — because the merge step never checked the same
+  `agent.install-mode` flag `verify-worktree.sh` already trusts. Docker-mode merges now also
+  carry `GIT_AUTHOR_NAME`/`EMAIL`/`GIT_COMMITTER_NAME`/`EMAIL` into the container, since a
+  container never mounts `~/.gitconfig` and would otherwise fail the merge commit with
+  "Please tell me who you are". `CREW_MERGE_DOCKER=off` is the rollback lever.
+
 ## [1.29.119]
 
 ### Changed
