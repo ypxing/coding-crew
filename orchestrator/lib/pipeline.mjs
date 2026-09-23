@@ -66,9 +66,14 @@ function dispatchStem(issue) {
 }
 
 /** The one push per issue per round a caller polling for milestones actually needs —
- * a terminal outcome, not every gate in between (see notifyTriggeringPane's own doc
- * comment: a no-op off-herdr, so this costs nothing when HERDR_PANE_ID is unset). */
+ * a terminal outcome, not every gate in between. Always written to ctx.log (stderr +
+ * orchestrator.log) first: that is the only signal a non-herdr caller ever gets — the
+ * herdr push below it is a no-op off-herdr (see notifyTriggeringPane's own doc comment),
+ * so without this line a whole sprint's worth of milestones was previously invisible to
+ * anyone not running under herdr, discoverable only after the fact from a finished
+ * sprint's final summary. */
 function notifyMilestone(ctx, issue, message) {
+  ctx.log(`[MILESTONE] ${dispatchStem(issue)}: ${message}`);
   return notifyTriggeringPane(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`);
 }
 

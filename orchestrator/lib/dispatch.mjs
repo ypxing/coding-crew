@@ -558,9 +558,18 @@ export async function notifyTriggeringPane(effects, message) {
   const paneId = process.env.HERDR_PANE_ID;
   if (!paneId) return;
   try {
-    await herdrExec(effects, ["agent", "prompt", paneId, message]);
-  } catch {
+    const result = await herdrExec(effects, ["agent", "prompt", paneId, message]);
+    // herdrExec/spawnWithTimeout resolves rather than rejects on a nonzero exit (see
+    // effects.mjs) — the catch below only ever catches a thrown error (e.g. herdr not on
+    // PATH), so a failed push (agent_not_ready, no agent in that pane, herdr unreachable)
+    // must be checked here explicitly or it is never seen at all, not even in this
+    // best-effort log line.
+    if (result.code !== 0) {
+      effects.log?.(`NOTIFY-FAIL herdr agent prompt exit=${result.code} ${(result.stderr || result.stdout || "").trim()}`);
+    }
+  } catch (err) {
     /* best effort — see doc comment above */
+    effects.log?.(`NOTIFY-FAIL herdr agent prompt threw: ${err.message}`);
   }
 }
 

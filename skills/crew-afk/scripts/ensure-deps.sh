@@ -201,9 +201,10 @@ CACHED_CREDENTIAL_TARGET="$(_cached_credential_target)"
 # solve-issue's own per-platform skill directories.
 _merge_mode_cache() {
   local mode_val="$1" service_val="${2:-}" cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json" old=""
-  # Mirrors write-commands-cache.sh's FIELDS (test lint typecheck install env credential_target)
-  # plus install_mode/docker_service — keep this list in sync if a field is ever added/removed there.
-  local fields=(test lint typecheck install env credential_target)
+  # Mirrors write-commands-cache.sh's FIELDS (test lint typecheck install env credential_target
+  # coverage integration) plus install_mode/docker_service — keep this list in sync if a field
+  # is ever added/removed there.
+  local fields=(test lint typecheck install env credential_target coverage integration)
   [ -f "$cache" ] && old="$(cat "$cache" 2>/dev/null || true)"
   # An empty detection this call (e.g. no Makefile, or no recipe named a real service) must not
   # erase a service a prior call already found — fall back to whatever is already cached.

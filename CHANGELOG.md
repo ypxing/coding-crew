@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.29.124]
+
+### Fixed
+
+- **`ensure-deps.sh`'s mode cache no longer drops `coverage`/`integration` on merge.**
+  `_merge_mode_cache`'s field list had drifted out of sync with
+  `write-commands-cache.sh`'s own `FIELDS`, which already covers both — any prior run's
+  `coverage`/`integration` detection was silently erased the next time install/docker-mode
+  detection wrote to the same cache file.
+- **A failed herdr push out of `notifyTriggeringPane` is no longer invisible.**
+  `herdrExec`/`spawnWithTimeout` resolve rather than reject on a nonzero exit, so the
+  existing `catch` only ever caught a thrown error (e.g. herdr missing from `PATH`) — a
+  real push failure (`agent_not_ready`, no agent in that pane, herdr unreachable) went
+  unlogged even as a best-effort line. Both the nonzero-exit and thrown-error paths now log
+  to `ctx.log`. `notifyMilestone` also now always logs its milestone locally first, so a
+  sprint's milestones are visible in `orchestrator.log`/stderr even for callers not running
+  under herdr, instead of only being discoverable after the fact from the final summary.
+
 ## [1.29.123]
 
 ### Added
