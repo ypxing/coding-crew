@@ -23,6 +23,14 @@
   the issue to `merge-failed` (retried next round like any other merge failure) and runs
   `git merge --abort` to leave the working tree clean instead of mid-merge.
 
+### Added
+
+- **The triggering herdr pane now hears from an issue as soon as its coder finishes**, not
+  just at the next terminal outcome (complete/partial/blocked). The coder is the longest
+  single step in the pipeline, and verify/review/merge can still take a while after it —
+  previously the triggering pane heard nothing about that issue in between, which reads as
+  silence indistinguishable from a stuck sprint.
+
 ## [1.29.121]
 
 ### Added

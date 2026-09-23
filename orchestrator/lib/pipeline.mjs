@@ -472,6 +472,12 @@ export async function runHousekeeping(ctx, worker) {
     return finishRetryOrBlock(ctx, worker, outcome, pre.reason ?? "partial");
   }
 
+  // The coder's own report is not yet the sprint's verdict — verify/review/merge still
+  // gate it — but it is the longest single step in the pipeline, and the triggering pane
+  // otherwise hears nothing about this issue until one of those later gates reaches a
+  // terminal outcome. A milestone here gives it a mid-pipeline heartbeat instead of silence.
+  await notifyMilestone(ctx, issue, `coder finished (round ${worker.attempt}) — verifying`);
+
   // --- gate 1: independent verification in the worktree ----------------------
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
   const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree], {
