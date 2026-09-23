@@ -72,7 +72,11 @@ trap mirror_sidecar EXIT
 # --slug is the real dispatch's own slug (see dispatch.mjs's --slug forwarding), independent
 # of --out's filename convention. Only a call with no --slug at all (coverage-validation,
 # commands-discovery — both exit before SLUG is used) falls back to deriving it from --out.
+# pipeline.mjs forwards its own dispatchStem (`<issue-number>-<slug>`, e.g. "1-alpha") here,
+# not the bare slug — stripped back to the bare form so it still matches every fixture file
+# below, which every test writes by the issue's plain slug (e.g. "alpha.worker").
 SLUG="${SLUG_ARG:-$(basename "$OUT" | sed -E 's/\.(report|review)\.md$//')}"
+SLUG="$(printf '%s' "$SLUG" | sed -E 's/^[0-9]+-//')"
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
 mkdir -p "$(dirname "$OUT")"
 

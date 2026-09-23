@@ -63,27 +63,40 @@ DOCKER_CONTAINER_SRC=""
 DOCKER_COMPOSE_FILE=""
 DOCKER_OVERRIDE_FILE=""
 
-# _find_dep_scripts <main-root> — the same candidate order ensure-deps.sh/verify-worktree.sh
-# use, so this script finds dep-install the same way regardless of which platform installed it.
+# _dep_script_roots — same convention as ensure-deps.sh's _script_roots: dep-install can be
+# installed into this project (MAIN_ROOT) or only alongside wherever crew-afk's own scripts
+# were installed (a global/user-level skill install, e.g. ~/.claude/skills, never copied into
+# the project) — check both, in the same order ensure-deps.sh already checks them, or a lone
+# global install (the common case for a per-user Claude Code skill directory) is never found.
+_dep_script_roots() {
+  printf '%s\n' "$MERGE_MAIN_ROOT"
+  printf '%s\n' "$(cd "$SCRIPT_DIR/../../.." && pwd -P)"
+  printf '%s\n' "$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+}
+
+# _find_dep_scripts — the same candidate order ensure-deps.sh/verify-worktree.sh use, so this
+# script finds dep-install the same way regardless of which platform installed it.
 _find_dep_scripts() {
-  local main_root="$1"
   if [ -n "${CREW_DEP_INSTALL_SCRIPTS:-}" ]; then
     [ -f "$CREW_DEP_INSTALL_SCRIPTS/gen-override.sh" ] && printf '%s' "$CREW_DEP_INSTALL_SCRIPTS"
     return 0
   fi
-  local candidate
-  for candidate in \
-    "$main_root/.coding-crew/dep-install/scripts" \
-    "$main_root/.claude/skills/dep-install/scripts" \
-    "$main_root/.pi/skills/dep-install/scripts" \
-    "$main_root/.agents/skills/dep-install/scripts" \
-    "$main_root/.github/skills/dep-install/scripts" \
-    "$main_root/skills/dep-install/scripts"; do
-    if [ -f "$candidate/gen-override.sh" ]; then
-      printf '%s' "$candidate"
-      return 0
-    fi
-  done
+  local root candidate
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    for candidate in \
+      "$root/.coding-crew/dep-install/scripts" \
+      "$root/.claude/skills/dep-install/scripts" \
+      "$root/.pi/skills/dep-install/scripts" \
+      "$root/.agents/skills/dep-install/scripts" \
+      "$root/.github/skills/dep-install/scripts" \
+      "$root/skills/dep-install/scripts"; do
+      if [ -f "$candidate/gen-override.sh" ]; then
+        printf '%s' "$candidate"
+        return 0
+      fi
+    done
+  done < <(_dep_script_roots)
 }
 
 # _detect_docker_mode — populates the DOCKER_* globals when the merge commit below must run
@@ -93,20 +106,32 @@ _find_dep_scripts() {
 _detect_docker_mode() {
   local mode
   mode=$(git -C "$MERGE_MAIN_ROOT" config --local agent.install-mode 2>/dev/null || true)
-  [ "$mode" = "docker" ] || return 1
+  if [ "$mode" != "docker" ]; then
+    echo "MERGE: docker mode off (agent.install-mode=${mode:-<unset>})" >&2
+    return 1
+  fi
 
   local override_file="$MERGE_MAIN_ROOT/docker-compose.override.yml"
-  [ -f "$override_file" ] || return 1
+  if [ ! -f "$override_file" ]; then
+    echo "MERGE: docker mode off (no $override_file)" >&2
+    return 1
+  fi
 
   local compose_file="" name
   for name in docker-compose.yml docker-compose.yaml compose.yml; do
     if [ -f "$MERGE_MAIN_ROOT/$name" ]; then compose_file="$MERGE_MAIN_ROOT/$name"; break; fi
   done
-  [ -n "$compose_file" ] || return 1
+  if [ -z "$compose_file" ]; then
+    echo "MERGE: docker mode off (no docker-compose.yml/.yaml/compose.yml at $MERGE_MAIN_ROOT)" >&2
+    return 1
+  fi
 
   local scripts_dir
-  scripts_dir="$(_find_dep_scripts "$MERGE_MAIN_ROOT")"
-  [ -n "$scripts_dir" ] || return 1
+  scripts_dir="$(_find_dep_scripts)"
+  if [ -z "$scripts_dir" ]; then
+    echo "MERGE: docker mode off (dep-install scripts not found under any of: $(_dep_script_roots | tr '\n' ' '))" >&2
+    return 1
+  fi
 
   local service
   service=$(git -C "$MERGE_MAIN_ROOT" config --local agent.install-service 2>/dev/null || true)
@@ -117,11 +142,17 @@ _detect_docker_mode() {
   if [ -z "$service" ]; then
     service=$(bash "$scripts_dir/gen-override.sh" --project-root "$MERGE_MAIN_ROOT" --main-root "$MERGE_MAIN_ROOT" --query services 2>/dev/null | head -1)
   fi
-  [ -n "$service" ] || return 1
+  if [ -z "$service" ]; then
+    echo "MERGE: docker mode off (no compose service resolved via agent.install-service, dev-commands.json, or gen-override.sh)" >&2
+    return 1
+  fi
 
   local container_src
   container_src=$(bash "$scripts_dir/gen-override.sh" --project-root "$MERGE_MAIN_ROOT" --main-root "$MERGE_MAIN_ROOT" --query container-src 2>/dev/null)
-  [ -n "$container_src" ] || return 1
+  if [ -z "$container_src" ]; then
+    echo "MERGE: docker mode off (gen-override.sh --query container-src returned empty for service '$service')" >&2
+    return 1
+  fi
 
   DOCKER_MODE=1
   DOCKER_SERVICE="$service"

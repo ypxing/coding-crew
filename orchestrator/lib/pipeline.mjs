@@ -375,14 +375,14 @@ export async function runWorker(ctx, issue, attempt) {
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
       scriptsDir: effects.scriptsDir,
-      slug: issue.slug,
+      slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: attempt,
       reportPath: sidecarFile,
     },
     {
       timeoutMs: options.workerTimeoutMs,
-      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${attempt} ${line}`),
+      onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${attempt} ${line}`),
     },
   );
 
@@ -658,14 +658,14 @@ async function runTriage(ctx, worker, verifyStdout) {
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
       scriptsDir: effects.scriptsDir,
-      slug: issue.slug,
+      slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: worker.attempt,
       reportPath: sidecarFile,
     },
     {
       timeoutMs: options.reviewTimeoutMs,
-      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${worker.attempt} ${line}`),
+      onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   );
 
@@ -727,14 +727,14 @@ async function runReview(ctx, worker, checks) {
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
       scriptsDir: effects.scriptsDir,
-      slug: issue.slug,
+      slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: worker.attempt,
       reportPath: sidecarFile,
     },
     {
       timeoutMs: options.reviewTimeoutMs,
-      onTrace: (line) => ctx.log(`slug=${issue.slug} round=${worker.attempt} ${line}`),
+      onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   );
 

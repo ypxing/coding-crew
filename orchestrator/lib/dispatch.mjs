@@ -760,7 +760,8 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
       if (trace) {
         if (spec.logFile) {
           const slugTag = spec.slug ? ` slug=${spec.slug}` : "";
-          appendLine(spec.logFile, `[${traceTimestamp()}]${slugTag} ${trace}`);
+          const roundTag = spec.round != null ? ` round=${spec.round}` : "";
+          appendLine(spec.logFile, `[${traceTimestamp()}]${slugTag}${roundTag} ${trace}`);
         }
         maybeHeartbeat(trace);
       }
