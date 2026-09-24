@@ -571,8 +571,8 @@ export async function notifyTriggeringPane(effects, message) {
   }
   try {
     // --wait --until working is load-bearing, not just a status check: plain `agent prompt`
-    // exits 0 even when the pane never receives the message (herdrdev/herdr#4537, hit against
-    // a --no-focus pane that's never attached — exactly how this pane is created). --wait
+    // exits 0 even when the pane never receives the message — hit against a --no-focus pane
+    // that's never attached, exactly how this pane is created. --wait
     // makes herdr itself confirm the target agent picked the prompt up, surfacing
     // agent_prompt_stalled as a nonzero exit instead of a false success. Short timeout because
     // this push is advisory only (see doc comment above) — never worth blocking a dispatch on.

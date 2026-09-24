@@ -35,7 +35,7 @@
  *                                           the outcome (see dispatch.mjs's
  *                                           notifyTriggeringPane), so whoever is watching it
  *                                           can stop polling — but that push can silently not
- *                                           land (herdrdev/herdr#4537), so the log tab (or a
+ *                                           land, so the log tab (or a
  *                                           caller's own poll of the same file) is the
  *                                           fallback, not an afterthought. The durable record
  *                                           either way is

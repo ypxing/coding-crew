@@ -24,8 +24,8 @@ All herdr calls are isolated behind `herdrExec` and the handful of functions exp
 backend is active — consistent with this repo's control-flow ownership rule for
 `orchestrator/`.
 
-Since herdrdev/herdr#4537 (`agent prompt`/`pane run` giving no reliable signal against an
-unattended pane), crew-afk stopped asking herdr to host or report on anything load-bearing:
+Since `agent prompt`/`pane run` give no reliable signal against an unattended pane, crew-afk
+stopped asking herdr to host or report on anything load-bearing:
 `ensureHerdrLogTab` only ever runs one trivial, robust command (`tail -f
 orchestrator.log`) in its pane, and the sprint's own process runs wherever it was invoked,
 never relaunched into a herdr-hosted pane. This shrinks what an alternate backend needs to
@@ -44,8 +44,8 @@ support considerably — no exit-code readback, no sentinel-file/timeout machine
 
 1. **No orca equivalent to `agent prompt`.** The only text-injection primitive orca documents
    is `terminal send --text --enter` — the same keystroke-simulation approach herdr's own
-   `send-text`/`send-keys` fallback uses, and issue #4537 shows that fallback is exactly as
-   unreliable against an unattended (`--no-focus`, never-attached) pane as `agent prompt` is.
+   `send-text`/`send-keys` fallback uses, which is exactly as unreliable against an unattended
+   (`--no-focus`, never-attached) pane as `agent prompt` is.
    Switching backends would likely relocate this reliability problem, not fix it — and since
    `notifyTriggeringPane` is already advisory-only (the log tab/file is the real fallback),
    this gap matters less than it used to.

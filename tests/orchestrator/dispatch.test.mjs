@@ -728,9 +728,9 @@ test("dispatch() wires onLine for pi/codex too, but only forwards their own alre
 //
 // Per-worker herdr panes (dispatchViaHerdr) are gone: every coder/reviewer/triage dispatch
 // is always headless now. crew-afk's own process is never relaunched into a herdr-hosted
-// pane either (herdrdev/herdr#4537: `pane run` cannot report a real exit code back, so an
-// earlier design had to fake completion-detection with a sentinel-file poll and a blind
-// timeout — removed rather than worked around). What's left of herdr is: a shared
+// pane either (`pane run` cannot report a real exit code back, so an earlier design had to
+// fake completion-detection with a sentinel-file poll and a blind timeout — removed rather
+// than worked around). What's left of herdr is: a shared
 // workspace with one tab that just tails the sprint's own trace log (ensureHerdrWorkspace/
 // ensureHerdrLogTab, closed by closeHerdrWorkspace/closeHerdrLogTab), and a best-effort,
 // advisory nudge to the triggering pane at the end of a run (notifyTriggeringPane). These
@@ -954,7 +954,7 @@ test("notifyTriggeringPane prompts the triggering pane directly by its injected 
   assert.deepEqual(result, { sent: true });
 });
 
-test("notifyTriggeringPane reports a stalled push as a failure instead of a false success — herdrdev/herdr#4537", async () => {
+test("notifyTriggeringPane reports a stalled push as a failure instead of a false success", async () => {
   const effects = fakeHerdrEffects([{ code: 1, stdout: "", stderr: "agent_prompt_stalled" }], { mainRoot: "/root" });
   const result = await withHerdrPaneId("w1:p1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
   assert.equal(result.sent, false);
