@@ -190,14 +190,15 @@ case "$ACTION" in
         echo "$file"
         ;;
       write)
-        mkdir -p "$(dirname "$file")"
         if [ -n "$sha_source" ]; then
           sha=$(cd "$sha_source" && git rev-parse HEAD 2>/dev/null)
         else
           sha=$(git rev-parse "${branch}^{commit}" 2>/dev/null)
         fi
         [ -n "$sha" ] || { echo "ERROR: cannot record commit for $branch" >&2; exit 1; }
-        echo "$sha" > "$file"
+        # No `set -e` here: an unchecked failed write would still print "wrote" and exit 0.
+        { mkdir -p "$(dirname "$file")" && echo "$sha" > "$file"; } 2>/dev/null || {
+          echo "ERROR: cannot write $KIND receipt: $file" >&2; exit 1; }
         # An ac receipt is only ever written after an acceptance-criteria check returned
         # `AC: all-met`, so writing it *is* the event worth tracing. Tracing it here rather
         # than asking the orchestrator for a second `trace.sh ACVERIFY` call means the

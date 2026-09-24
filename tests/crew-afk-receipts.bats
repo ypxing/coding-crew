@@ -112,6 +112,31 @@ EOF
   [ -f "$DISPATCH_DIR/task-a.ac.ok" ]
 }
 
+# A receipt that was never written must not be reported as written: the pipeline treats
+# exit 0 as "the gate passed", and close-issue.sh would later refuse the close for a
+# reason that points nowhere near the real one. A directory at the receipt path makes the
+# write fail even as root, where a chmod would not.
+@test "receipts: write fails, and claims nothing, when the receipt file cannot be written" {
+  wt=$(_make_worktree "task-a")
+  mkdir -p "$DISPATCH_DIR/task-a.ac.ok"
+
+  run bash "$RECEIPTS_SCRIPT" write ac --dir "$wt"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot write"* ]]
+  [[ "$output" != *"RECEIPT: wrote"* ]]
+}
+
+@test "receipts: write fails when the dispatch directory cannot be created" {
+  wt=$(_make_worktree "task-a")
+  mkdir -p "$(dirname "$DISPATCH_DIR")"
+  : > "$DISPATCH_DIR"
+
+  run bash "$RECEIPTS_SCRIPT" write ac --dir "$wt"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot write"* ]]
+  [[ "$output" != *"RECEIPT: wrote"* ]]
+}
+
 # ─── the ac receipt traces itself ────────────────────────────────────────────
 #
 # ACVERIFY was the one marker the orchestrator hand-wrote, as a second bash call

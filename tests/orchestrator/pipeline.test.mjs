@@ -15,13 +15,20 @@ const CASES = [
   ["worker timed out after 45m", { route: "restart" }],
   ["worker process failed — see traces/", { route: "restart" }],
   ["verification-failed", { route: "restart" }],
-  ["ac-receipt-failed", { route: "restart" }],
+  ["ac-receipt-failed", { route: "verify", label: "ac-receipt-retry" }],
   ["merge-failed", { route: "merge" }],
   ["close-refused — issue already closed", { route: "merge" }],
   ["review-not-run", { route: "verify", label: "review-not-run" }],
   ["verification-failed:not-fixable — registry 503", { route: "verify", label: "not-fixable-recheck" }],
   ["verification-failed:fixable — lint: unused import", { route: "fix", kind: "verify", context: "lint: unused import" }],
   ["criteria-unmet — AC 2 has no test", { route: "fix", kind: "review", context: "AC 2 has no test" }],
+  ["ac-receipt-failed — ERROR: cannot write ac receipt", { route: "verify", label: "ac-receipt-retry" }],
+  // A human reran crew-afk after fixing what blocked it: the branch itself was fine, so
+  // this one reason resumes at verify rather than restarting the coder.
+  ["blocked — retry limit reached (2 attempts) — ac-receipt-failed — ERROR: x", { route: "verify", label: "ac-receipt-retry" }],
+  // Every other blocked reason still restarts, as before.
+  ["blocked — retry limit reached (2 attempts) — merge-failed", { route: "restart" }],
+  ["blocked — retry limit reached (2 attempts) — review-not-run", { route: "restart" }],
 ];
 
 for (const [reason, expected] of CASES) {

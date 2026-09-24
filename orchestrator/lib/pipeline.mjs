@@ -27,6 +27,7 @@ import { finishBlocked, finishRetryOrBlock } from "./pipeline/finish.mjs";
 import { mergeAndClose } from "./pipeline/merge.mjs";
 import { promote, runReview } from "./pipeline/review.mjs";
 import {
+  AC_RECEIPT_FAILED_TAG,
   CRITERIA_UNMET_TAG,
   dispatchStem,
   FIXABLE_TAG,
@@ -45,6 +46,9 @@ function branchHasCommits(effects, featureBranch, branch) {
   return r.code === 0 && parseInt(r.stdout.trim(), 10) > 0;
 }
 
+/** How state.sh records a block (`blocked — <reason>`), and finishRetryOrBlock a capped retry. */
+const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )?/;
+
 /**
  * Where a retry re-enters the pipeline, by the reason the prior attempt retained its branch
  * (finishRetryOrBlock writes it; state.sh records it). The one table of resume targets:
@@ -55,6 +59,9 @@ function branchHasCommits(effects, featureBranch, branch) {
  *   verify  `review-not-run` — the branch is done; only the review dispatch failed.
  *           `verification-failed:not-fixable` — triage ruled out recoding, so skip the
  *           coder and re-run deps + verify once, in case the failure was transient.
+ *           `ac-receipt-failed …` — review was all-met; only the receipt write failed. The
+ *           receipt is rewritten only after a fresh all-met review, never on this note's
+ *           word. Also the route once a human reruns after the retry cap blocked it.
  *   fix     `verification-failed:fixable`, `criteria-unmet` — the coder runs on fixPrompt,
  *           told exactly what failed, instead of re-reading the whole issue.
  *   restart anything else, including no reason — the coder runs on workerPrompt.
@@ -63,6 +70,7 @@ function branchHasCommits(effects, featureBranch, branch) {
  */
 export function resumeRoute(reason) {
   if (reason == null) return { route: "restart" };
+  if (reason.replace(BLOCKED_PREFIX, "").startsWith(AC_RECEIPT_FAILED_TAG)) return { route: "verify", label: "ac-receipt-retry" };
   if (reason === "merge-failed" || reason.startsWith("close-refused")) return { route: "merge" };
   if (reason === "review-not-run") return { route: "verify", label: "review-not-run" };
   if (reason.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };
@@ -72,6 +80,26 @@ export function resumeRoute(reason) {
   }
   return { route: "restart" };
 }
+
+/** The verify route's labels: what each skipped-worker attempt logs and records. */
+const SKIPPED_WORKER = {
+  "review-not-run": {
+    what: "retrying review only, no coder dispatch",
+    progress: "review-only retry — coder dispatch skipped, branch content unchanged",
+    notes: "review-only retry: the prior round's only failure was the review dispatch itself",
+  },
+  "not-fixable-recheck": {
+    what: "rechecking deps + verify only, no triage and no coder dispatch, in case the failure was transient",
+    progress: "not-fixable recheck — coder and triage both skipped; only deps + verify re-run",
+    notes:
+      "not-fixable recheck: a prior triage pass judged this verification failure not fixable by recoding; re-checking once, cheaply, in case it was transient",
+  },
+  "ac-receipt-retry": {
+    what: "re-running verify + review to rewrite the AC receipt, no coder dispatch",
+    progress: "AC receipt retry — coder dispatch skipped; verify + review re-run before the receipt is rewritten",
+    notes: "AC receipt retry: the prior round's review was all-met but writing its receipt failed",
+  },
+};
 
 /**
  * Phase 1 of an issue: worktree + worker dispatch. Runs concurrently across issues.
@@ -196,11 +224,8 @@ export async function runWorker(ctx, issue, attempt) {
   }
 
   if (resume.route === "verify") {
-    const notFixableRetry = resume.label === "not-fixable-recheck";
-    const what = notFixableRetry
-      ? "rechecking deps + verify only, no triage and no coder dispatch, in case the failure was transient"
-      : "retrying review only, no coder dispatch";
-    ctx.log(`[SKIP-WORKER] slug=${issue.slug} reason=${resume.label} branch=${branch} — ${what}`);
+    const skip = SKIPPED_WORKER[resume.label];
+    ctx.log(`[SKIP-WORKER] slug=${issue.slug} reason=${resume.label} branch=${branch} — ${skip.what}`);
     return {
       issue,
       branch,
@@ -213,12 +238,8 @@ export async function runWorker(ctx, issue, attempt) {
         checks: { test: "pass", lint: "pass", typecheck: "pass" },
         branch,
         workingDirectory: worktree,
-        progress: notFixableRetry
-          ? `Round ${attempt}: not-fixable recheck — coder and triage both skipped; only deps + verify re-run`
-          : `Round ${attempt}: review-only retry — coder dispatch skipped, branch content unchanged`,
-        notes: notFixableRetry
-          ? "not-fixable recheck: a prior triage pass judged this verification failure not fixable by recoding; re-checking once, cheaply, in case it was transient"
-          : "review-only retry: the prior round's only failure was the review dispatch itself",
+        progress: `Round ${attempt}: ${skip.progress}`,
+        notes: skip.notes,
         criteria: [],
         raw: "",
       },
@@ -399,7 +420,8 @@ export async function runHousekeeping(ctx, worker) {
     env: sprint.childEnv(),
   });
   if (acReceipt.code !== 0) {
-    return finishRetryOrBlock(ctx, worker, outcome, "ac-receipt-failed");
+    const detail = (acReceipt.stderr || acReceipt.stdout || "").trim() || `exit ${acReceipt.code}`;
+    return finishRetryOrBlock(ctx, worker, outcome, taggedReason(AC_RECEIPT_FAILED_TAG, detail));
   }
 
   // --- findings promotion (advisory findings routed back into the sprint) ----

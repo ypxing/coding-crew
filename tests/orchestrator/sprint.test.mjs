@@ -432,6 +432,52 @@ test("a close-refused retry skips the worker, verify, and review, no-ops the alr
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=close-refused/);
 });
 
+test("an ac receipt that can't be written retries review without the coder, blocks with the error, and resumes at verify once fixed", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // `receipts.sh write ac` fails while the flag exists; every other receipts.sh call (the
+  // verify receipt, the checks) runs the real script. Removing the flag is the human fix.
+  const scripts = privateScripts();
+  const flag = join(root, ".scratch/ac-receipt-broken");
+  writeFileSync(flag, "");
+  const real = join(scripts, "_real-receipts.sh");
+  cpSync(join(scripts, "receipts.sh"), real);
+  writeFileSync(
+    join(scripts, "receipts.sh"),
+    [
+      "#!/usr/bin/env bash",
+      `if [ "$1 $2" = "write ac" ] && [ -f ${JSON.stringify(flag)} ]; then`,
+      '  echo "ERROR: forced ac receipt failure" >&2',
+      "  exit 1",
+      "fi",
+      `exec bash ${JSON.stringify(real)} "$@"`,
+      "",
+    ].join("\n"),
+  );
+  const count = (lines, re) => lines.filter((l) => re.test(l)).length;
+
+  const broken = commandLines(root, [], { scripts });
+  assert.equal(broken.r.code, 2, `${broken.r.stdout}\n${broken.r.stderr}`);
+  let s = state(root);
+  assert.deepEqual(s.blocked_slugs, ["alpha"]);
+  assert.match(s.retention?.alpha?.reason ?? "", /retry limit reached .* ac-receipt-failed — ERROR: forced ac receipt failure/);
+  assert.equal(count(broken.lines, /^SPAWN .*--agent crew-coder/), 1, "the retry never re-ran the coder");
+  assert.equal(count(broken.lines, /^SPAWN .*--agent crew-code-reviewer/), 2, "the retry re-ran review before rewriting the receipt");
+  assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=ac-receipt-retry/);
+  const issue = readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8");
+  assert.match(issue, /## Blocked[\s\S]*ERROR: forced ac receipt failure/, "the human sees the real cause");
+
+  rmSync(flag);
+  const fixed = commandLines(root, [], { scripts });
+  assert.equal(fixed.r.code, 0, `${fixed.r.stdout}\n${fixed.r.stderr}`);
+  s = state(root);
+  assert.deepEqual(s.completed_slugs, ["alpha"]);
+  assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
+  assert.equal(count(fixed.lines, /^SPAWN .*--agent crew-coder/), 0, "resumed at verify, not a coder restart");
+  assert.equal(count(fixed.lines, /^SPAWN .*--agent crew-code-reviewer/), 1);
+  assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
+});
+
 test("a criteria-unmet retry still redispatches the full worker, not just review", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

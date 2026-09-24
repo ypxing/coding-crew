@@ -19,6 +19,18 @@
   With neither `HERDR_ENV` nor `ORCA_ENV` set but an ambient `HERDR_PANE_ID` (crew-afk
   launched inside a herdr pane without opting in), each milestone push tried to spawn a
   null command. It now returns `{sent: false, reason: "no pane host"}`.
+- **`receipts.sh write` no longer reports a receipt it failed to write.** It never checked
+  its own `mkdir`/write, and without `set -e` a full disk or unwritable path still printed
+  `RECEIPT: wrote …` and exited 0 — the pipeline took the gate as passed, and
+  `close-issue.sh` later refused the close as `close-refused`, pointing at the wrong cause.
+  It now exits 1 with `ERROR: cannot write <kind> receipt: <path>`.
+- **A failed AC receipt write no longer reruns the coder.** `ac-receipt-failed` used to
+  restart the whole issue, though the branch had already passed verify and an all-met
+  review. It now carries `receipts.sh`'s error in the reason and takes the verify route:
+  no coder, verify + review re-run, then the receipt is rewritten. A second failure blocks
+  with that error in `## Blocked`, and a rerun after the fix resumes at verify again —
+  the only blocked reason that doesn't restart the coder, since the cause is never the
+  branch.
 
 ## [1.29.128]
 

@@ -14,6 +14,9 @@ export const FIXABLE_TAG = "verification-failed:fixable";
 export const NOT_FIXABLE_TAG = "verification-failed:not-fixable";
 // An `AC: unmet` review verdict. No triage: the reviewer's detail is already actionable.
 export const CRITERIA_UNMET_TAG = "criteria-unmet";
+// `receipts.sh write ac` failed after an all-met review. Never the branch's fault: the
+// branch is fine, so no route for it re-runs the coder.
+export const AC_RECEIPT_FAILED_TAG = "ac-receipt-failed";
 const REASON_SEP = " — ";
 
 export function taggedReason(tag, summary) {
