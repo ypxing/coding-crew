@@ -31,6 +31,12 @@
 
 ### Fixed
 
+- **A pi dispatch can no longer hang on its caller's stdin.** `dispatch-agent.sh` passes the
+  prompt as an argument but left `pi`'s stdin inherited, so a `pi` that reads stdin waited
+  on whatever the caller held open — a backgrounded shell hung
+  `dispatch-agent-prompt-read.bats` indefinitely. `pi` now gets `/dev/null`, as codex
+  already gets its prompt file.
+
 - **`notifyTriggeringPane` with no pane host selected no longer falls through to herdr.**
   With neither `HERDR_ENV` nor `ORCA_ENV` set but an ambient `HERDR_PANE_ID` (crew-afk
   launched inside a herdr pane without opting in), each milestone push tried to spawn a

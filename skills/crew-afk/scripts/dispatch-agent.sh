@@ -267,8 +267,10 @@ stream_events() {
 }
 
 # MAIN_ROOT is exported so the agent's own environment setup can read it. The agent
-# runs with the worktree as cwd, which is what its PROJECT_ROOT check expects.
-(cd "$DIR" && MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 pi "${ARGS[@]}" "$PROMPT_TEXT") 2>>"${LOG:-/dev/null}" | stream_events
+# runs with the worktree as cwd, which is what its PROJECT_ROOT check expects. The prompt
+# is an argument, so stdin is closed: a pi that reads it would otherwise wait on whatever
+# stdin the caller left open.
+(cd "$DIR" && MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 pi "${ARGS[@]}" "$PROMPT_TEXT" < /dev/null) 2>>"${LOG:-/dev/null}" | stream_events
 status=${PIPESTATUS[0]}
 
 # report.mjs reads --out as the worker's final message text, not the event stream — pull
