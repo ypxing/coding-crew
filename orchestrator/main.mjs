@@ -10,36 +10,39 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
- *   $HERDR_ENV=1                            crew-afk runs in whatever pane launched it —
- *                                           herdr is never asked to host or report on the
- *                                           process itself (`pane run` cannot read back a
- *                                           real exit code: no `pane wait`, no exit_code
- *                                           field anywhere in herdr's own responses), only to
- *                                           open one extra tab that runs `tail -f
+ *   $HERDR_ENV=1 / $ORCA_ENV=1              mutually exclusive; pick one pane host (neither
+ *                                           set: no pane integration at all, unchanged from
+ *                                           before either existed). crew-afk runs in whatever
+ *                                           pane launched it — the host is never asked to
+ *                                           host or report on the process itself, only to
+ *                                           open one extra tab/terminal that runs `tail -f
  *                                           .scratch/<feature-slug>/traces/orchestrator.log`
- *                                           (see dispatch.mjs's ensureHerdrLogTab), so a human
+ *                                           (see dispatch.mjs's ensurePaneLogTab), so a human
  *                                           can watch the sprint's own narration live without
- *                                           trusting herdr with anything load-bearing;
- *                                           requires `herdr server` already running. Every
- *                                           coder/review/triage dispatch is always headless,
- *                                           herdr or not. If crew-afk itself is running inside
- *                                           a herdr-managed pane, that pane's own workspace
- *                                           ($HERDR_WORKSPACE_ID) is reused instead of opening
- *                                           a new one, and is left open at the end rather than
- *                                           closed; only a workspace this run created itself
- *                                           is closed once the run ends (see dispatch.mjs's
- *                                           ensureHerdrWorkspace doc comment) — the log tab is
- *                                           always closed by this run regardless of who owns
- *                                           the workspace. At the very end of the run, the
- *                                           triggering pane gets one `herdr agent prompt` with
- *                                           the outcome (see dispatch.mjs's
- *                                           notifyTriggeringPane), so whoever is watching it
- *                                           can stop polling — but that push can silently not
- *                                           land, so the log tab (or a
- *                                           caller's own poll of the same file) is the
- *                                           fallback, not an afterthought. The durable record
- *                                           either way is
- *                                           `.scratch/<feature-slug>/traces/orchestrator.log`.
+ *                                           trusting the host with anything load-bearing.
+ *                                           HERDR_ENV=1 requires `herdr server` already
+ *                                           running; ORCA_ENV=1 requires the orca runtime
+ *                                           reachable (`orca open`). Every coder/review/triage
+ *                                           dispatch is always headless, regardless. If
+ *                                           crew-afk itself is running inside a pane-host pane,
+ *                                           that pane's own workspace is reused instead of
+ *                                           opening a new one, and is left open at the end
+ *                                           rather than closed — herdr via $HERDR_WORKSPACE_ID,
+ *                                           orca implicitly (a worktree already is that
+ *                                           container; see dispatch.mjs's ensurePaneWorkspace).
+ *                                           Only a workspace this run created itself (herdr
+ *                                           only — orca has none to create or close) is closed
+ *                                           once the run ends; the log tab is always closed by
+ *                                           this run regardless of who owns the workspace. At
+ *                                           the very end of the run, the triggering pane gets
+ *                                           one best-effort push with the outcome (see
+ *                                           dispatch.mjs's notifyTriggeringPane) — herdr's push
+ *                                           can silently misreport success (herdrdev/
+ *                                           herdr#4537, worked around with `--wait --until
+ *                                           working`); orca's own `terminal send` self-reports
+ *                                           delivery confidence instead, so no such workaround
+ *                                           is needed there. The durable record either way is
+ *                                           still `.scratch/<feature-slug>/traces/orchestrator.log`.
  *   --model <alias|inherit>                coder model; reviewer/triage/commandsDiscovery/
  *                                           coverageValidation match it unless
  *                                           .coding-crew/afk-models.json names them explicitly
@@ -73,7 +76,7 @@ import { spawnSync } from "node:child_process";
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { closeHerdrLogTab, closeHerdrWorkspace, DEFAULT_PARALLEL, ensureHerdrWorkspace, notifyTriggeringPane, PLATFORMS, preflight } from "./lib/dispatch.mjs";
+import { closePaneLogTab, closePaneWorkspace, DEFAULT_PARALLEL, ensurePaneWorkspace, notifyTriggeringPane, PLATFORMS, preflight } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
@@ -85,7 +88,7 @@ function parseArgs(argv) {
   const o = {
     command: "run",
     platform: process.env.CREW_PLATFORM || "pi",
-    herdr: process.env.HERDR_ENV === "1",
+    paneHost: process.env.ORCA_ENV === "1" ? "orca" : process.env.HERDR_ENV === "1" ? "herdr" : null,
     model: null,
     featureSlug: null,
     coverage: false,
@@ -381,6 +384,10 @@ async function main() {
     console.error(`crew-afk: unknown --platform ${options.platform} (expected ${PLATFORMS.join(", ")})`);
     return 1;
   }
+  if (process.env.HERDR_ENV === "1" && process.env.ORCA_ENV === "1") {
+    console.error("crew-afk: HERDR_ENV=1 and ORCA_ENV=1 are both set — pick one pane host.");
+    return 1;
+  }
 
   const mainRoot = gitRoot();
   if (options.unknown.length) {
@@ -413,10 +420,13 @@ async function main() {
       if (process.env.CREW_VERBOSE) console.error(line);
     },
   });
+  // Not a constructor field: dispatch.mjs's paneHostExec reads this straight off effects,
+  // the same ad hoc way it already stashes _paneWorkspace/_paneLogTabId there.
+  effects.paneHost = options.paneHost;
 
   if (options.command === "doctor") {
     const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
-      herdr: options.herdr,
+      paneHost: options.paneHost,
     });
     console.log(problems.length ? problems.map((p) => `PROBLEM: ${p}`).join("\n") : `OK: ${options.platform} can dispatch.`);
     return problems.length ? 1 : 0;
@@ -445,7 +455,7 @@ async function main() {
     const tracker = await getTracker(mainRoot);
     const issues = tracker.selectDispatchable(mainRoot, { featureSlug: resolved.slug });
     const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
-      herdr: options.herdr,
+      paneHost: options.paneHost,
     });
     console.log(`platform:  ${options.platform}`);
     console.log(`model:     ${options.model ?? "platform default"}${modelBreakdownSuffix(options)}`);
@@ -467,7 +477,7 @@ async function main() {
   // --- run -----------------------------------------------------------------
   // Wrapped from here, not just around runSprint: a preflight or feature-slug failure below
   // exits just as early (still `return 1`, same as before) but now also reaches the
-  // notifyTriggeringPane call in `finally` — under HERDR_ENV=1 that's the one nudge the
+  // notifyTriggeringPane call in `finally` — under HERDR_ENV=1/ORCA_ENV=1 that's the one nudge the
   // triggering pane gets, so a setup failure has to reach it too, not just a completed or
   // stalled sprint. `sprint`/`resolved` are declared here, outside the try, so `finally` can
   // still see whichever of them got as far as being assigned.
@@ -479,7 +489,7 @@ async function main() {
   let lockPath;
   try {
     const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
-      herdr: options.herdr,
+      paneHost: options.paneHost,
     });
     if (problems.length) {
       console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));
@@ -528,15 +538,16 @@ async function main() {
     });
     sprint.setModel(options.model ?? "agent default");
 
-    // The only thing herdr is ever asked to host for crew-afk's own narration — a tab that
-    // just runs `tail -f` on this sprint's own trace log (see dispatch.mjs's
-    // ensureHerdrLogTab). Best-effort: a failure here is cosmetic and never reported to the
-    // caller, since the log file itself — not this tab — is the run's real, durable output.
-    if (options.herdr && !options.dryRun) {
+    // The only thing a pane host is ever asked to host for crew-afk's own narration — a
+    // tab/terminal that just runs `tail -f` on this sprint's own trace log (see
+    // dispatch.mjs's ensurePaneLogTab). Best-effort: a failure here is cosmetic and never
+    // reported to the caller, since the log file itself — not this tab — is the run's real,
+    // durable output.
+    if (options.paneHost && !options.dryRun) {
       try {
-        await ensureHerdrWorkspace(effects, { featureSlug: resolved.slug, logFile: sprint.traceLog });
+        await ensurePaneWorkspace(effects, { featureSlug: resolved.slug, logFile: sprint.traceLog });
       } catch (err) {
-        console.error(`crew-afk: could not open a herdr log tab: ${err.message} — continuing without one.`);
+        console.error(`crew-afk: could not open the ${options.paneHost} log tab: ${err.message} — continuing without one.`);
       }
     }
 
@@ -583,19 +594,21 @@ async function main() {
     exitCode = 1;
     throw err;
   } finally {
-    // Neither is more than a no-op unless a herdr dispatch actually created/opened the
-    // sprint's shared workspace and log tab (see ensureHerdrWorkspace/ensureHerdrLogTab in
+    // Neither is more than a no-op unless a dispatch actually created/opened the sprint's
+    // shared workspace and log tab (see ensurePaneWorkspace/ensurePaneLogTab in
     // dispatch.mjs) — closed here, once, regardless of how the run ended, so a thrown error
-    // above doesn't leave either dangling in herdr's UI. The log tab is closed independently
-    // of the workspace because closeHerdrWorkspace no-ops on a *reused* workspace.
-    await closeHerdrLogTab(effects);
-    await closeHerdrWorkspace(effects);
-    // Only under HERDR_ENV=1 — see notifyTriggeringPane's doc comment for why this is the
-    // one case where the caller (the same pane crew-afk was launched from) can stop polling
-    // and just wait for this nudge instead. Covers every way the run above can end, including
-    // a preflight/feature-slug failure that returned before a sprint ever existed — those
-    // still need the nudge, since nothing else will tell a non-polling caller the run is over.
-    if (options.herdr) {
+    // above doesn't leave either dangling in the pane host's UI. The log tab is closed
+    // independently of the workspace because closePaneWorkspace no-ops on a *reused*
+    // workspace (herdr) or always (orca — see ensurePaneWorkspace's doc comment).
+    await closePaneLogTab(effects);
+    await closePaneWorkspace(effects);
+    // Only under HERDR_ENV=1/ORCA_ENV=1 — see notifyTriggeringPane's doc comment for why
+    // this is the one case where the caller (the same pane crew-afk was launched from) can
+    // stop polling and just wait for this nudge instead. Covers every way the run above can
+    // end, including a preflight/feature-slug failure that returned before a sprint ever
+    // existed — those still need the nudge, since nothing else will tell a non-polling
+    // caller the run is over.
+    if (options.paneHost) {
       const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : stalled ? "stalled — blockers need a human" : "finished";
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
       await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);

@@ -451,4 +451,4 @@ EOF
 #   - cleanup's `--merged` / `--retain` lists come from `state.sh get` in
 #     orchestrator/lib/loop.mjs                                                        → ditto
 #   - the sprint reports once, from disk, at the end                                   → ditto
-#   - the word budget is now 500 words per launcher → tests/crew-afk-launcher.bats
+#   - the word budget is AFK_LAUNCHER_WORD_BUDGET per launcher → tests/crew-afk-launcher.bats

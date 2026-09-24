@@ -402,11 +402,12 @@ export function extractResultMeta(platform, lines) {
 }
 
 /**
- * herdr (https://herdr.dev) is ambient only: under HERDR_ENV=1, crew-afk's own process opens
- * one log-tailing tab in a shared workspace (see ensureHerdrLogTab) but never asks herdr to
- * host or report on anything load-bearing, and every coder/reviewer/triage dispatch is
- * always headless (`-p`/equivalent), whether or not HERDR_ENV is set. An earlier
- * version drove each dispatch as a long-lived interactive REPL in its own herdr pane
+ * A pane host — herdr (https://herdr.dev) or orca (https://onorca.dev) — is ambient only:
+ * under HERDR_ENV=1/ORCA_ENV=1 (mutually exclusive; see main.mjs), crew-afk's own process
+ * opens one log-tailing tab/terminal in a shared workspace (see ensurePaneLogTab) but never
+ * asks either host to host or report on anything load-bearing, and every coder/reviewer/
+ * triage dispatch is always headless (`-p`/equivalent), whether or not a pane host is set. An
+ * earlier version drove each dispatch as a long-lived interactive REPL in its own herdr pane
  * (`agent start`/`agent prompt --wait`, one tab per dispatch, pane reuse across retries) —
  * removed once headless `-p` was confirmed to run correctly with a herdr server active in
  * the background, since that REPL-per-worker machinery bought only live pane-watching and a
@@ -415,28 +416,34 @@ export function extractResultMeta(platform, lines) {
 
 /**
  * effects.exec runs spawnSync — it blocks Node's single event loop for the child's whole
- * lifetime. Fine for the short bash scripts effects.exec is otherwise used for, but herdr's
- * own calls are not short: `agent prompt --wait` blocks until the pane goes idle/done, up to
- * the full worker timeout (45 min by default). The dispatch pool (loop.mjs) runs issues
- * concurrently by interleaving promises on that same single event loop — a blocked loop
- * blocks every other "concurrent" dispatch too, so a spawnSync herdrExec silently serialised
- * every herdr-enabled sprint no matter how high --max-parallel was set. spawnWithTimeout
- * uses async spawn instead, which yields the loop back between I/O events and lets the pool
- * actually run herdr dispatches side by side.
+ * lifetime. Fine for the short bash scripts effects.exec is otherwise used for, but a pane
+ * host's own calls are not short: herdr's `agent prompt --wait` blocks until the pane goes
+ * idle/done, up to the full worker timeout (45 min by default). The dispatch pool (loop.mjs)
+ * runs issues concurrently by interleaving promises on that same single event loop — a
+ * blocked loop blocks every other "concurrent" dispatch too, so a spawnSync call would
+ * silently serialise every pane-host-enabled sprint no matter how high --max-parallel was
+ * set. spawnWithTimeout uses async spawn instead, which yields the loop back between I/O
+ * events and lets the pool actually run these dispatches side by side.
  */
-async function herdrExec(effects, args, timeoutMs) {
-  return effects.spawnWithTimeout("herdr", args, { cwd: effects.mainRoot, timeoutMs });
+async function paneHostExec(effects, args, timeoutMs) {
+  return effects.spawnWithTimeout(effects.paneHost, args, { cwd: effects.mainRoot, timeoutMs });
 }
 
 /**
- * herdr's own contract (`herdr --skill`): "CLI server errors are JSON on stderr with exit
- * status 1." Success responses are JSON on stdout. Tried in that order so a failed call's
- * `.error.code` (e.g. `agent_not_ready`) is actually reachable — the first live end-to-end
- * run against a real herdr server hit exactly this: `agent start`'s error landed on stderr
- * and a stdout-only parse silently swallowed the agent_not_ready code, so the trust-dialog
- * recovery branch below was never reached.
+ * Bound on the orca calls that have no timeout of their own: orca is a desktop app that can
+ * be quit mid-run, and an unbounded create would block the sprint from starting, an
+ * unbounded close in main.mjs's `finally` would block it from exiting.
  */
-function herdrJson(result) {
+const ORCA_CALL_TIMEOUT_MS = 10000;
+
+/**
+ * Both herdr (`herdr --skill`: "CLI server errors are JSON on stderr with exit status 1")
+ * and orca emit success as JSON on stdout, and a failure can land on stderr instead — tried
+ * in that order so a failed call's own error detail is actually reachable. The first live
+ * end-to-end run against a real herdr server hit exactly this: an error landed on stderr and
+ * a stdout-only parse silently swallowed it.
+ */
+function paneHostJson(result) {
   for (const text of [result?.stdout, result?.stderr]) {
     if (!text) continue;
     try {
@@ -449,112 +456,137 @@ function herdrJson(result) {
 }
 
 /**
- * A human watching herdr across several concurrent crew-afk runs sees one workspace per
+ * A human watching across several concurrent crew-afk runs sees one workspace/worktree per
  * run — the feature slug is what tells those apart at a glance; the hardcoded "crew-afk"
  * every run used to share told them apart not at all. Falls back to "crew-afk" for callers
  * that never resolved one (dry-run planning, tests), so the label is always non-empty.
  */
-function herdrWorkspaceLabel(featureSlug) {
+function paneWorkspaceLabel(featureSlug) {
   return featureSlug || "crew-afk";
 }
 
 /**
- * The triggering pane's own tab still shows whatever it was called before crew-afk started
- * running in it (often the literal "crew-afk" the human typed to launch it) — herdr injects
- * that pane's tab as `HERDR_TAB_ID` alongside `HERDR_WORKSPACE_ID`, so this is the one chance
- * to relabel it to the sprint's feature slug the same way a freshly created workspace already
- * is (see herdrWorkspaceLabel). Skipped when no feature slug resolved: relabelling someone's
- * own tab to the "crew-afk" fallback would just clobber a title they chose with no gain.
- * Best-effort: a failed rename is cosmetic, not a reason to fail the run.
+ * The triggering pane's own tab/terminal still shows whatever it was called before crew-afk
+ * started running in it (often the literal "crew-afk" the human typed to launch it) — both
+ * backends inject that terminal's own id ambiently (`HERDR_TAB_ID`/`ORCA_TERMINAL_HANDLE`),
+ * so this is the one chance to relabel it to the sprint's feature slug the same way a freshly
+ * created workspace already is (see paneWorkspaceLabel). Skipped when no feature slug
+ * resolved: relabelling someone's own tab to the "crew-afk" fallback would just clobber a
+ * title they chose with no gain. Best-effort: a failed rename is cosmetic, not a reason to
+ * fail the run.
  */
-async function renameHerdrTriggeringTab(effects, featureSlug) {
+async function renameTriggeringPaneTab(effects, featureSlug) {
   if (!featureSlug) return;
-  const tabId = process.env.HERDR_TAB_ID;
-  if (!tabId) return;
   try {
-    await herdrExec(effects, ["tab", "rename", tabId, featureSlug]);
+    if (effects.paneHost === "orca") {
+      const handle = process.env.ORCA_TERMINAL_HANDLE;
+      if (!handle) return;
+      await paneHostExec(effects, ["terminal", "rename", "--terminal", handle, "--title", featureSlug, "--json"], ORCA_CALL_TIMEOUT_MS);
+      return;
+    }
+    const tabId = process.env.HERDR_TAB_ID;
+    if (!tabId) return;
+    await paneHostExec(effects, ["tab", "rename", tabId, featureSlug]);
   } catch {
     /* cosmetic — the sprint's own dispatch tabs are what matters */
   }
 }
 
 /**
- * The one herdr workspace for a whole crew-afk run, created by whichever dispatch gets here
- * first and reused by every dispatch after it — see the file-header comment for why. Cached
- * as a promise, not a plain field: the pool dispatches concurrently, and the promise is
- * assigned synchronously (before this function's first `await`), so a second call that
- * arrives before the first `workspace create` resolves still sees the cached promise instead
- * of racing its own `workspace create`. A rejection is cached too — every dispatch this run
- * then fails fast with the same error rather than each retrying the same broken call.
+ * The one shared "workspace" for a whole crew-afk run, created by whichever dispatch gets
+ * here first and reused by every dispatch after it — see the file-header comment for why.
+ * Cached as a promise, not a plain field: the pool dispatches concurrently, and the promise
+ * is assigned synchronously (before this function's first `await`), so a second call that
+ * arrives before the first create resolves still sees the cached promise instead of racing
+ * its own create. A rejection is cached too — every dispatch this run then fails fast with
+ * the same error rather than each retrying the same broken call.
  *
- * When crew-afk itself is running inside a herdr-managed pane — a human started their own
- * claude/pi/codex/copilot session through herdr and is running crew-afk from inside it —
- * herdr has already injected that pane's workspace as `HERDR_WORKSPACE_ID` (see herdr's own
- * `--skill` guidance). Dispatches then add their tabs to that same workspace instead of
- * popping open a second, unrelated one: the human is already looking at the workspace that
- * triggered the sprint, so a new window would just be a second place to watch instead of the
- * one they have focused. Marked `_herdrWorkspaceReused` so closeHerdrWorkspace never closes
- * a workspace this run didn't create — that would yank the terminal out from under whoever
- * is still typing in it.
+ * herdr and orca differ in shape here: herdr has an actual workspace object to create/reuse/
+ * close, containing tabs. Orca has no such container — a worktree already is one (confirmed
+ * live: `orca worktree current` from this repo's own root resolves straight to this
+ * checkout's existing Orca-managed worktree, no `repo add`/`worktree create` needed), so
+ * every `terminal create --worktree path:<mainRoot>` lands in the same place with nothing
+ * extra to create or reuse. The orca branch below skips straight to the log terminal.
  *
- * `featureSlug`/`logFile` are only consulted by whichever call actually creates the
- * workspace — every dispatch this run passes the same sprint's values, so which one wins
- * the race makes no difference.
+ * When crew-afk itself is running inside a pane-host-managed pane — a human started their
+ * own claude/pi/codex/copilot session there and is running crew-afk from inside it — the
+ * host has already injected that pane's own ids (`HERDR_WORKSPACE_ID`/`HERDR_TAB_ID` for
+ * herdr, `ORCA_WORKTREE_ID`/`ORCA_TAB_ID`/`ORCA_TERMINAL_HANDLE` for orca). herdr's
+ * dispatches then add their tabs to that same workspace instead of popping open a second,
+ * unrelated one: the human is already looking at the workspace that triggered the sprint, so
+ * a new window would just be a second place to watch instead of the one they have focused.
+ * Marked `_paneWorkspaceReused` so closePaneWorkspace never closes a workspace this run
+ * didn't create — that would yank the terminal out from under whoever is still typing in it.
+ *
+ * `featureSlug`/`logFile` are only consulted by whichever call actually creates/resolves the
+ * workspace — every dispatch this run passes the same sprint's values, so which one wins the
+ * race makes no difference.
  */
-export function ensureHerdrWorkspace(effects, { featureSlug, logFile } = {}) {
-  if (!effects._herdrWorkspace) {
-    effects._herdrWorkspace = (async () => {
+export function ensurePaneWorkspace(effects, { featureSlug, logFile } = {}) {
+  if (!effects._paneWorkspace) {
+    effects._paneWorkspace = (async () => {
+      if (effects.paneHost === "orca") {
+        await renameTriggeringPaneTab(effects, featureSlug);
+        // Orca has no workspace create to fail loudly the way herdr's does, so a failed log
+        // terminal is surfaced here instead — otherwise the likeliest failure (ORCA_ENV=1 in
+        // a checkout orca doesn't manage) leaves no tab and no word of why.
+        if (logFile) {
+          const failure = await ensurePaneLogTab(effects, null, paneWorkspaceLabel(featureSlug), logFile);
+          if (failure) throw new Error(`orca terminal create failed: ${failure}`);
+        }
+        return process.env.ORCA_WORKTREE_ID ?? null;
+      }
       const triggeringWorkspaceId = process.env.HERDR_WORKSPACE_ID;
       if (triggeringWorkspaceId) {
-        effects._herdrWorkspaceReused = true;
-        await renameHerdrTriggeringTab(effects, featureSlug);
-        if (logFile) await ensureHerdrLogTab(effects, triggeringWorkspaceId, herdrWorkspaceLabel(featureSlug), logFile);
+        effects._paneWorkspaceReused = true;
+        await renameTriggeringPaneTab(effects, featureSlug);
+        if (logFile) await ensurePaneLogTab(effects, triggeringWorkspaceId, paneWorkspaceLabel(featureSlug), logFile);
         return triggeringWorkspaceId;
       }
-      const label = herdrWorkspaceLabel(featureSlug);
-      const create = await herdrExec(effects, ["workspace", "create", "--cwd", effects.mainRoot, "--label", label, "--no-focus"]);
-      const workspaceId = herdrJson(create)?.result?.workspace?.workspace_id;
+      const label = paneWorkspaceLabel(featureSlug);
+      const create = await paneHostExec(effects, ["workspace", "create", "--cwd", effects.mainRoot, "--label", label, "--no-focus"]);
+      const workspaceId = paneHostJson(create)?.result?.workspace?.workspace_id;
       if (create.code !== 0 || !workspaceId) {
         throw new Error(`herdr workspace create failed: ${(create.stderr || create.stdout || "").trim()}`);
       }
-      if (logFile) await ensureHerdrLogTab(effects, workspaceId, label, logFile);
+      if (logFile) await ensurePaneLogTab(effects, workspaceId, label, logFile);
       return workspaceId;
     })();
   }
-  return effects._herdrWorkspace;
+  return effects._paneWorkspace;
 }
 
 /**
- * Closes the shared workspace ensureHerdrWorkspace created, once, at the end of the whole
- * crew-afk run (see main.mjs). A no-op when no herdr dispatch ever ran this run — nothing to
- * close — or when that workspace was the triggering pane's own, reused rather than created
- * (see ensureHerdrWorkspace): closing it would close the terminal crew-afk was launched
- * from. Otherwise swallows a failed close rather than throwing, since by this point the
- * run's own exit code is already decided and a stray workspace is a herdr-UI nuisance, not a
- * reason to report the run itself as failed.
+ * Closes the shared workspace ensurePaneWorkspace created, once, at the end of the whole
+ * crew-afk run (see main.mjs). A no-op under orca — there is no workspace object to close,
+ * only the log terminal (see closePaneLogTab) — when no dispatch ever ran this run (nothing
+ * to close), or when the workspace was the triggering pane's own, reused rather than created
+ * (see ensurePaneWorkspace): closing it would close the terminal crew-afk was launched from.
+ * Otherwise swallows a failed close rather than throwing, since by this point the run's own
+ * exit code is already decided and a stray workspace is a UI nuisance, not a reason to
+ * report the run itself as failed.
  */
-export async function closeHerdrWorkspace(effects) {
-  if (!effects._herdrWorkspace || effects._herdrWorkspaceReused) return;
+export async function closePaneWorkspace(effects) {
+  if (effects.paneHost === "orca") return;
+  if (!effects._paneWorkspace || effects._paneWorkspaceReused) return;
   try {
-    const workspaceId = await effects._herdrWorkspace;
-    await herdrExec(effects, ["workspace", "close", workspaceId]);
+    const workspaceId = await effects._paneWorkspace;
+    await paneHostExec(effects, ["workspace", "close", workspaceId]);
   } catch {
     /* already reported at the dispatch that first hit it, or nothing was ever created */
   }
 }
 
 /**
- * With HERDR_ENV=1, crew-afk is commonly launched as a backgrounded command inside the very
- * pane a human (or the agent driving it) is watching, then left to poll it — see main.mjs's
- * doc comment and ensureHerdrWorkspace's. That pane sits idle between polls, so pushing this
- * run's outcome straight into it, once, at the very end, lets the caller stop polling
- * altogether and just wait for the next turn instead. `$HERDR_PANE_ID` is the triggering
- * pane's own ID, which herdr injects into every process it starts (see herdr's own --skill:
- * agent commands take either a live agent name or "the pane ID currently hosting that
- * agent") — no lookup needed. Absent (not running inside herdr) or any failure (no agent
- * recognized in that pane, one already at a dialog, herdr unreachable) is a silent no-op:
- * the run's own outcome is already decided by the time this fires, and the printed summary
- * is still sitting in that pane's scrollback either way.
+ * With HERDR_ENV=1/ORCA_ENV=1, crew-afk is commonly launched as a backgrounded command
+ * inside the very pane a human (or the agent driving it) is watching, then left to poll it —
+ * see main.mjs's doc comment and ensurePaneWorkspace's. That pane sits idle between polls, so
+ * pushing this run's outcome straight into it, once, at the very end, lets the caller stop
+ * polling altogether and just wait for the next turn instead. `$HERDR_PANE_ID`/
+ * `$ORCA_TERMINAL_HANDLE` is the triggering pane's own id, which each host injects into every
+ * process it starts — no lookup needed. Absent (not running inside a pane host) or any
+ * failure is a silent no-op: the run's own outcome is already decided by the time this fires,
+ * and the printed summary is still sitting in that pane's scrollback either way.
  *
  * Returns `{sent, reason?}` rather than void: `effects.log` — the only thing this used to
  * report through — is a dead sink for most callers (see main.mjs's own Effects
@@ -564,6 +596,54 @@ export async function closeHerdrWorkspace(effects) {
  * actually surface a skip or failure anywhere durable.
  */
 export async function notifyTriggeringPane(effects, message) {
+  if (effects.paneHost === "orca") {
+    const handle = process.env.ORCA_TERMINAL_HANDLE;
+    if (!handle) {
+      effects.log?.("NOTIFY-SKIP no ORCA_TERMINAL_HANDLE in env");
+      return { sent: false, reason: "no ORCA_TERMINAL_HANDLE in env" };
+    }
+    try {
+      // herdr's `agent prompt` can only ever reach a pane running an agent; orca's `terminal
+      // send` types into any terminal, and reports `accepted: true` even for a plain shell —
+      // where the message plus Enter runs as a shell command (confirmed live: `syntax error
+      // near unexpected token`). `terminal show` reports `agentIdentity` (e.g. "claude") only
+      // for a pane orca recognises as an agent, and keeps reporting it mid-tool-call, which
+      // is exactly when this fires. No identity, or no answer, means no send.
+      const show = await paneHostExec(effects, ["terminal", "show", "--terminal", handle, "--json"], 5000);
+      const agentIdentity = paneHostJson(show)?.result?.terminal?.agentIdentity;
+      if (show.code !== 0 || !agentIdentity) {
+        const reason = "triggering terminal is not running an agent orca recognises";
+        effects.log?.(`NOTIFY-SKIP ${reason}`);
+        return { sent: false, reason };
+      }
+      // Unlike herdr's `agent prompt`, orca's own `terminal send` response already reports
+      // whether input was merely accepted or actually delivered (confirmed live: sending
+      // into a plain shell terminal came back `accepted: true` but
+      // `prompt.observation: "unsupported"`, with an explicit warning that delivery
+      // couldn't be confirmed) — so there is no herdr-style `--wait`/false-success bug to
+      // work around here, just this accepted flag to check. 20s, not herdr's 5s: against a
+      // live claude pane, orca's send itself watches for turn start before returning (8.25s
+      // measured idle, exit 0), so a 5s cap killed it at exit 124 after it had already
+      // delivered — a false NOTIFY-FAIL for a message that landed.
+      const result = await paneHostExec(effects, ["terminal", "send", "--terminal", handle, "--text", message, "--enter", "--json"], 20000);
+      if (result.code !== 0) {
+        const reason = `orca terminal send exit=${result.code} ${(result.stderr || result.stdout || "").trim()}`;
+        effects.log?.(`NOTIFY-FAIL ${reason}`);
+        return { sent: false, reason };
+      }
+      const send = paneHostJson(result)?.result?.send;
+      if (send && send.accepted === false) {
+        const reason = `orca terminal send not accepted: ${JSON.stringify(send)}`;
+        effects.log?.(`NOTIFY-FAIL ${reason}`);
+        return { sent: false, reason };
+      }
+      return { sent: true };
+    } catch (err) {
+      const reason = `orca terminal send threw: ${err.message}`;
+      effects.log?.(`NOTIFY-FAIL ${reason}`);
+      return { sent: false, reason };
+    }
+  }
   const paneId = process.env.HERDR_PANE_ID;
   if (!paneId) {
     effects.log?.("NOTIFY-SKIP no HERDR_PANE_ID in env");
@@ -576,12 +656,12 @@ export async function notifyTriggeringPane(effects, message) {
     // makes herdr itself confirm the target agent picked the prompt up, surfacing
     // agent_prompt_stalled as a nonzero exit instead of a false success. Short timeout because
     // this push is advisory only (see doc comment above) — never worth blocking a dispatch on.
-    const result = await herdrExec(
+    const result = await paneHostExec(
       effects,
       ["agent", "prompt", paneId, message, "--wait", "--until", "working", "--timeout-ms", "2000"],
       5000,
     );
-    // herdrExec/spawnWithTimeout resolves rather than rejects on a nonzero exit (see
+    // paneHostExec/spawnWithTimeout resolves rather than rejects on a nonzero exit (see
     // effects.mjs) — the catch below only ever catches a thrown error (e.g. herdr not on
     // PATH), so a failed push (agent_not_ready, no agent in that pane, herdr unreachable,
     // agent_prompt_stalled) must be checked here explicitly or it is never seen at all, not
@@ -600,29 +680,58 @@ export async function notifyTriggeringPane(effects, message) {
   }
 }
 
+/** POSIX single-quoting, for text orca types into a shell rather than passing as argv. */
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 /**
- * A second tab in the shared workspace, alongside the workspace itself, that just tails the
- * sprint's own trace log — the same file every milestone/[STEP] line already lands in (see
+ * A second tab/terminal alongside the shared workspace that just tails the sprint's own
+ * trace log — the same file every milestone/[STEP] line already lands in (see
  * notifyMilestone in pipeline.mjs and ctx.log in main.mjs). This is deliberately the only
- * thing crew-afk ever asks herdr to run for its own narration: `pane run` cannot report a
- * real exit code back (no `pane wait`, no exit_code field anywhere in herdr's own
- * responses — that gap is exactly why an earlier design instead relaunched crew-afk's whole
- * own process into a herdr-hosted pane, then had to fake completion-detection with a
- * sentinel-file poll and an 8-hour blind timeout), so nothing load-bearing runs through
- * herdr — only a trivial, robust `tail -f`, with the run's real outcome always coming from
- * this same log file / sprint-state.json, never from herdr.
+ * thing crew-afk ever asks a pane host to run for its own narration: herdr's `pane run`
+ * cannot report a real exit code back (no `pane wait`, no exit_code field anywhere in
+ * herdr's own responses — that gap is exactly why an earlier design instead relaunched
+ * crew-afk's whole own process into a herdr-hosted pane, then had to fake
+ * completion-detection with a sentinel-file poll and an 8-hour blind timeout), so nothing
+ * load-bearing runs through either host — only a trivial, robust `tail -f`, with the run's
+ * real outcome always coming from this same log file / sprint-state.json.
  *
  * Best-effort: a broken log tab is cosmetic, not a reason to fail the run — unlike a
- * dispatch's own tab, nothing downstream reads this one back. Stashes the created tab's id
- * on `effects._herdrLogTabId` so closeHerdrLogTab can close it directly at the end of the
- * run — closeHerdrWorkspace already covers this tab when the workspace itself was created by
- * this run, but no-ops on a *reused* workspace (see ensureHerdrWorkspace), which would
- * otherwise leave this tab tailing forever after a run launched from inside an existing
- * herdr pane.
+ * dispatch's own tab, nothing downstream reads this one back. Never throws; returns a
+ * failure reason instead, which only the orca caller surfaces (herdr's caller already
+ * reports its own workspace-create failure). Stashes the created tab/
+ * terminal id on `effects._paneLogTabId` so closePaneLogTab can close it directly at the end
+ * of the run — closePaneWorkspace already covers this tab when the workspace itself was
+ * created by this run (herdr only), but no-ops on a *reused* workspace, or always under
+ * orca (no workspace object at all), which would otherwise leave this tab tailing forever.
+ *
+ * `workspaceId` is unused under orca — every terminal create is scoped by `--worktree
+ * path:<mainRoot>`, not `active`: `active` isn't documented as cwd-relative and may mean the
+ * worktree focused in orca's GUI, which is not this checkout when crew-afk runs outside orca.
+ * `--command` is typed into the terminal's shell (orca's own `terminal create --help`), so
+ * the log path is shell-quoted, unlike herdr's `pane run` which takes it as its own argv.
  */
-async function ensureHerdrLogTab(effects, workspaceId, label, logFile) {
+async function ensurePaneLogTab(effects, workspaceId, label, logFile) {
   try {
-    const create = await herdrExec(effects, [
+    if (effects.paneHost === "orca") {
+      const create = await paneHostExec(effects, [
+        "terminal",
+        "create",
+        "--worktree",
+        `path:${effects.mainRoot}`,
+        "--title",
+        `${label}-log`,
+        "--command",
+        `tail -f ${shellQuote(logFile)}`,
+        "--json",
+      ], ORCA_CALL_TIMEOUT_MS);
+      const handle = paneHostJson(create)?.result?.terminal?.handle;
+      if (create.code !== 0 || !handle) return `exit=${create.code} ${(create.stderr || create.stdout || "").trim()}`;
+      effects._paneLogTabId = handle;
+      return;
+    }
+    const create = await paneHostExec(effects, [
       "tab",
       "create",
       "--workspace",
@@ -633,29 +742,35 @@ async function ensureHerdrLogTab(effects, workspaceId, label, logFile) {
       `${label}-log`,
       "--no-focus",
     ]);
-    const tabId = herdrJson(create)?.result?.tab?.tab_id;
-    const paneId = herdrJson(create)?.result?.root_pane?.pane_id;
+    const tabId = paneHostJson(create)?.result?.tab?.tab_id;
+    const paneId = paneHostJson(create)?.result?.root_pane?.pane_id;
     if (create.code !== 0 || !paneId) return;
-    effects._herdrLogTabId = tabId;
-    await herdrExec(effects, ["pane", "run", paneId, "tail", "-f", logFile]);
-  } catch {
+    effects._paneLogTabId = tabId;
+    await paneHostExec(effects, ["pane", "run", paneId, "tail", "-f", logFile]);
+  } catch (err) {
     /* the sprint's own outcome is what matters; a broken log tab is cosmetic */
+    return err.message;
   }
 }
 
 /**
- * Closes the log tab ensureHerdrLogTab created, once, at the end of the whole crew-afk run
- * (see main.mjs) — called alongside closeHerdrWorkspace, not instead of it, because
- * closeHerdrWorkspace no-ops on a *reused* workspace (the run was launched from inside an
- * existing herdr pane), and this tab is this run's own regardless of who owns the workspace
- * it lives in. A no-op when no log tab was ever created this run. Harmless when the workspace
- * close above already tore this tab down too — closing an already-gone tab just fails, and
- * that failure is swallowed the same as everywhere else in this file.
+ * Closes the log tab/terminal ensurePaneLogTab created, once, at the end of the whole
+ * crew-afk run (see main.mjs) — called alongside closePaneWorkspace, not instead of it,
+ * because closePaneWorkspace no-ops on a *reused* workspace (the run was launched from
+ * inside an existing pane-host pane) or always under orca, and this tab is this run's own
+ * regardless of who owns the workspace it lives in. A no-op when no log tab was ever created
+ * this run. Harmless when the workspace close above already tore this tab down too (herdr
+ * only) — closing an already-gone tab just fails, and that failure is swallowed the same as
+ * everywhere else in this file.
  */
-export async function closeHerdrLogTab(effects) {
-  if (!effects._herdrLogTabId) return;
+export async function closePaneLogTab(effects) {
+  if (!effects._paneLogTabId) return;
   try {
-    await herdrExec(effects, ["tab", "close", effects._herdrLogTabId]);
+    if (effects.paneHost === "orca") {
+      await paneHostExec(effects, ["terminal", "close", "--terminal", effects._paneLogTabId, "--json"], ORCA_CALL_TIMEOUT_MS);
+      return;
+    }
+    await paneHostExec(effects, ["tab", "close", effects._paneLogTabId]);
   } catch {
     /* cosmetic — either already closed with the workspace above, or nothing left to close */
   }
@@ -911,7 +1026,7 @@ function copilotWorktreeVisible(effects, mainRoot, agent) {
 }
 
 /** Preflight: is this platform's CLI and agent definition actually present? */
-export function preflight(effects, platform, mainRoot, agents, { herdr = false } = {}) {
+export function preflight(effects, platform, mainRoot, agents, { paneHost = null } = {}) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
   const cli = { pi: "pi", codex: "codex", claude: "claude", copilot: "copilot" }[platform];
   const which = effects.exec("sh", ["-c", `command -v ${cli}`], { mutating: false });
@@ -929,14 +1044,15 @@ export function preflight(effects, platform, mainRoot, agents, { herdr = false }
       );
     }
   }
-  if (herdr) problems.push(...preflightHerdr(effects));
+  if (paneHost === "herdr") problems.push(...preflightHerdr(effects));
+  if (paneHost === "orca") problems.push(...preflightOrca(effects));
   return problems;
 }
 
 /**
  * HERDR_ENV=1 applies to whichever --platform the sprint runs, so this check fails the
- * sprint at startup with one clear message, rather than ensureHerdrWorkspace/
- * ensureHerdrLogTab discovering mid-run that herdr's CLI or server isn't there.
+ * sprint at startup with one clear message, rather than ensurePaneWorkspace/
+ * ensurePaneLogTab discovering mid-run that herdr's CLI or server isn't there.
  */
 function preflightHerdr(effects) {
   const which = effects.exec("sh", ["-c", "command -v herdr"], { mutating: false });
@@ -944,6 +1060,27 @@ function preflightHerdr(effects) {
   const status = effects.exec("herdr", ["status"], { mutating: false });
   if (status.code !== 0 || !/status:\s*running/.test(status.stdout || "")) {
     return ["HERDR_ENV=1 but the herdr server is not running — start it with: herdr server"];
+  }
+  return [];
+}
+
+/**
+ * ORCA_ENV=1's equivalent of preflightHerdr — same reasoning, different shape: confirmed
+ * live that `orca status --json` reports readiness as `result.runtime.reachable`, not an
+ * exit code or a human-readable "status: running" line like herdr's.
+ */
+function preflightOrca(effects) {
+  const which = effects.exec("sh", ["-c", "command -v orca"], { mutating: false });
+  if (which.code !== 0) return ["ORCA_ENV=1 but the orca CLI was not found on PATH"];
+  const status = effects.exec("orca", ["status", "--json"], { mutating: false });
+  if (status.code !== 0) return ["ORCA_ENV=1 but `orca status` failed — start it with: orca open"];
+  try {
+    const parsed = JSON.parse(status.stdout || "{}");
+    if (!parsed?.result?.runtime?.reachable) {
+      return ["ORCA_ENV=1 but the orca runtime is not reachable — start it with: orca open"];
+    }
+  } catch {
+    return ["ORCA_ENV=1 but `orca status --json` returned unparseable output"];
   }
   return [];
 }

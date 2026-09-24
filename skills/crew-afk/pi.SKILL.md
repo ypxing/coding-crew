@@ -52,8 +52,9 @@ remain or every remaining one is blocked (its retries spent, or a dependency of 
    you when the sprint finishes.
 2. Poll and relay each new line; `[STEP]` lines and a throttled heartbeat go to
    **stderr**, so read that too. **If `HERDR_ENV=1`, skip polling** — this pane is
-   prompted directly once the sprint finishes or stalls. The printed summary is the
-   report — don't rewrite it.
+   prompted directly once the sprint finishes or stalls (not under `ORCA_ENV=1` — orca may
+   not recognise this pane, so keep polling). The printed summary is the report — don't
+   rewrite it.
 3. Mention `.scratch/<feature-slug>/traces/orchestrator.log` if asked.
 4. Report the exit code and stop: `0` finished, `2` stalled (blockers need a human), `3`
    no ready issues, `1` setup problem — print its stderr verbatim.

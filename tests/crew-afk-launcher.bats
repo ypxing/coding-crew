@@ -70,11 +70,11 @@ launcher_body() {
   done
 }
 
-@test "launcher: it is under 500 words (it replaced ~2,400)" {
+@test "launcher: it is under the launcher word budget (it replaced ~2,400)" {
   local words
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     words=$(wc -w < "$(launcher_body "$p")")
-    [ "$words" -lt 500 ] || { echo "$p launcher is $words words" >&2; return 1; }
+    [ "$words" -lt "$AFK_LAUNCHER_WORD_BUDGET" ] || { echo "$p launcher is $words words" >&2; return 1; }
   done
 }
 

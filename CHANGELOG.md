@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.29.128]
+
+### Added
+
+- **orca as a second pane host for crew-afk.** `ORCA_ENV=1` selects orca the way
+  `HERDR_ENV=1` selects herdr (mutually exclusive — crew-afk exits at startup if both are
+  set): one `terminal create --worktree path:<repo> --command "tail -f orchestrator.log"`
+  log terminal, a rename of the triggering terminal via `ORCA_TERMINAL_HANDLE`, and one
+  end-of-run `terminal send` into it. `doctor`/preflight check `orca status --json` for a
+  reachable runtime. The herdr-named functions in `dispatch.mjs` are now backend-neutral
+  (`ensurePaneWorkspace`, `ensurePaneLogTab`, `closePaneWorkspace`, `closePaneLogTab`),
+  selected by `effects.paneHost`. The end-of-run push is sent only when `orca terminal show`
+  reports an `agentIdentity` for the triggering terminal. Unlike herdr's `agent prompt`,
+  `terminal send` types into a plain shell too, where the message would run as a command.
+  Its timeout is 20s, not herdr's 5s: against a live claude pane, `terminal send` takes ~8s
+  to return. Every other orca call is capped at 10s, so a quit orca can't block the sprint
+  from starting or exiting. A failed log-terminal create is printed rather than swallowed.
+  The pi/codex/copilot skills keep polling under `ORCA_ENV=1`, since orca isn't confirmed
+  to recognise those panes as agents and skips the push when it doesn't. See
+  `docs/orca-support.md`.
+
 ## [1.29.127]
 
 ### Changed

@@ -67,10 +67,10 @@ function dispatchStem(issue) {
 
 /** The one push per issue per round a caller polling for milestones actually needs —
  * a terminal outcome, not every gate in between. Always written to ctx.log (stderr +
- * orchestrator.log) first: that is the only signal a non-herdr caller ever gets — the
- * herdr push below it is a no-op off-herdr (see notifyTriggeringPane's own doc comment),
+ * orchestrator.log) first: that is the only signal a caller with no pane host ever gets —
+ * the push below it is a no-op without one (see notifyTriggeringPane's own doc comment),
  * so without this line a whole sprint's worth of milestones was previously invisible to
- * anyone not running under herdr, discoverable only after the fact from a finished
+ * anyone not running under herdr/orca, discoverable only after the fact from a finished
  * sprint's final summary. */
 async function notifyMilestone(ctx, issue, message) {
   ctx.log(`[MILESTONE] ${dispatchStem(issue)}: ${message}`);
@@ -571,7 +571,7 @@ async function mergeAndClose(ctx, worker, outcome) {
   effects.git(["checkout", sprint.featureBranch]);
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=merge`);
   // effects.bash runs spawnSync, which blocks the same single event loop every issue's
-  // dispatch shares (see dispatch.mjs's herdrExec comment for the same hazard elsewhere) —
+  // dispatch shares (see dispatch.mjs's paneHostExec comment for the same hazard elsewhere) —
   // without a bound here, a stalled merge (e.g. a docker-mode merge whose container hangs
   // on a network fetch) freezes the whole sprint, not just this issue.
   const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {

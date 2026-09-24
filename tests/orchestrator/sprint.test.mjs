@@ -44,14 +44,16 @@ after(() => rmSync(SCRIPTS_BASE, { recursive: true, force: true }));
 const FAKE = join(HERE, "fixtures/fake-dispatch.sh");
 
 // Every call site below spreads process.env into its own `env` (or omits `env` and gets
-// it by default); this test's own process inherits HERDR_ENV/HERDR_PANE_ID whenever it runs
-// inside a real herdr pane, and main.mjs's notifyTriggeringPane sends the fixture sprint's
-// outcome straight to that real pane if those leak through — stripped here, once, so no
-// call site has to remember to.
+// it by default); this test's own process inherits HERDR_ENV/HERDR_PANE_ID (or
+// ORCA_ENV/ORCA_TERMINAL_HANDLE) whenever it runs inside a real herdr/orca pane, and
+// main.mjs's notifyTriggeringPane sends the fixture sprint's outcome straight to that real
+// pane if those leak through — stripped here, once, so no call site has to remember to.
 function sh(cmd, args, opts = {}) {
   const env = { ...(opts.env ?? process.env) };
   delete env.HERDR_ENV;
   delete env.HERDR_PANE_ID;
+  delete env.ORCA_ENV;
+  delete env.ORCA_TERMINAL_HANDLE;
   const r = spawnSync(cmd, args, { encoding: "utf8", ...opts, env });
   return { code: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
@@ -179,6 +181,20 @@ function failFirstCall(scriptsDir, scriptName, marker, message) {
   ];
   writeFileSync(join(scriptsDir, scriptName), lines.join("\n"));
 }
+
+// Spawned directly, not through sh(): sh() strips both vars, which is exactly what this
+// test needs set.
+test("run refuses to start when HERDR_ENV and ORCA_ENV are both set", () => {
+  const root = fixtureRepo();
+  const r = spawnSync("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env, HERDR_ENV: "1", ORCA_ENV: "1", HERDR_PANE_ID: "", ORCA_TERMINAL_HANDLE: "", CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE },
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /HERDR_ENV=1 and ORCA_ENV=1 are both set/);
+  assert.equal(existsSync(join(root, ".scratch/demo/sprint-state.json")), false);
+});
 
 test("plan lists dispatchable issues and changes nothing", () => {
   const root = fixtureRepo();

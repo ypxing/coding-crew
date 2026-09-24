@@ -12,6 +12,8 @@
 # dependency step must not stall a sprint, and a failed install is diagnosed by the check
 # that follows it, never by this script's exit code.
 
+load helpers/render
+
 SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/ensure-deps.sh"
 
 setup() {
@@ -859,7 +861,7 @@ line two"
   grep -q 'worktreeinclude' "$f"
 }
 
-@test "no launcher SKILL.md mentions the script, and every launcher is still under 500 words" {
+@test "no launcher SKILL.md mentions the script, and every launcher is still under the word budget" {
   local repo="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   local p body words
   for p in pi codex claude copilot; do
@@ -867,6 +869,6 @@ line two"
     ! grep -q 'ensure-deps' "$body" || {
       echo "$p launcher names ensure-deps.sh" >&2; return 1; }
     words=$(wc -w < "$body")
-    [ "$words" -lt 500 ] || { echo "$p launcher is $words words" >&2; return 1; }
+    [ "$words" -lt "$AFK_LAUNCHER_WORD_BUDGET" ] || { echo "$p launcher is $words words" >&2; return 1; }
   done
 }

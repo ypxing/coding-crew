@@ -106,9 +106,10 @@ setup_file() {
 
   # CREW_FAKE_DISPATCH short-circuits preflight()'s CLI/agent-file checks (this repo has
   # neither `pi` nor any agent definitions installed), so the run reaches the lock check on
-  # its own merits. HERDR_ENV is explicitly unset (this suite may itself be running inside a
-  # herdr-managed pane) so a real notifyTriggeringPane call never fires into it.
-  run env -u HERDR_ENV CREW_FAKE_DISPATCH=1 node "$REPO_ROOT/orchestrator/main.mjs" run --platform pi --feature-slug feat-a
+  # its own merits. HERDR_ENV/ORCA_ENV are explicitly unset (this suite may itself be
+  # running inside a herdr- or orca-managed pane) so a real notifyTriggeringPane call never
+  # fires into it.
+  run env -u HERDR_ENV -u ORCA_ENV CREW_FAKE_DISPATCH=1 node "$REPO_ROOT/orchestrator/main.mjs" run --platform pi --feature-slug feat-a
   [ "$status" -eq 1 ]
   [[ "$output" == *"already running"* ]]
   [[ "$output" == *"pid $$"* ]]

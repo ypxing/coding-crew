@@ -55,8 +55,8 @@ times out without hanging the sprint.
    shell `&`/`disown` with redirected output — that bypasses the completion notification
    and no summary reaches you when the sprint finishes.
 2. Poll and relay each new line; `[STEP]` lines and a throttled heartbeat go to
-   **stderr**, so read that too. **If `HERDR_ENV=1`, skip polling** — this pane is
-   prompted directly once the sprint finishes or stalls. The printed summary is the
+   **stderr**, so read that too. **If `HERDR_ENV=1` or `ORCA_ENV=1`, skip polling** — this
+   pane is prompted directly once the sprint finishes or stalls. The printed summary is the
    report — don't rewrite it.
 3. Mention `.scratch/<feature-slug>/traces/orchestrator.log` if asked.
 4. Report the exit code and stop: `0` finished, `2` stalled (needs a human), `3` no ready

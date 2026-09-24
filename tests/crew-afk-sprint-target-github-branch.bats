@@ -86,12 +86,12 @@ sprint_target_fence() {
   done
 }
 
-@test "sprint target: no other platform-specific SKILL.md ever went over the existing 500-word launcher budget" {
+@test "sprint target: no other platform-specific SKILL.md ever went over the existing launcher word budget" {
   # Guards against the github addition silently pushing a launcher over the pre-existing
   # word cap asserted by tests/crew-afk-launcher.bats — a regression there is a regression
   # here too, just caught earlier and with more context about why.
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     words=$(wc -w < "$(afk_variant "$p")")
-    [ "$words" -lt 500 ] || { echo "$p launcher is $words words" >&2; return 1; }
+    [ "$words" -lt "$AFK_LAUNCHER_WORD_BUDGET" ] || { echo "$p launcher is $words words" >&2; return 1; }
   done
 }
