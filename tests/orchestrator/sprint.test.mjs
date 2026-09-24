@@ -193,6 +193,7 @@ test("run refuses to start when HERDR_ENV and ORCA_ENV are both set", () => {
   });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /HERDR_ENV=1 and ORCA_ENV=1 are both set/);
+  assert.match(r.stderr, /unset HERDR_ENV to use Orca .*unset ORCA_ENV to use herdr/);
   assert.equal(existsSync(join(root, ".scratch/demo/sprint-state.json")), false);
 });
 

@@ -328,7 +328,10 @@ async function main() {
     return 1;
   }
   if (process.env.HERDR_ENV === "1" && process.env.ORCA_ENV === "1") {
-    console.error("crew-afk: HERDR_ENV=1 and ORCA_ENV=1 are both set — pick one pane host.");
+    console.error(
+      "crew-afk: HERDR_ENV=1 and ORCA_ENV=1 are both set — pick one pane host: unset HERDR_ENV to use Orca " +
+        "(e.g. `env -u HERDR_ENV ORCA_ENV=1 <command>`), or unset ORCA_ENV to use herdr.",
+    );
     return 1;
   }
 
