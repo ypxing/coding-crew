@@ -193,7 +193,7 @@ export function applyWorktreeInclude(mainRoot, worktree) {
  * like merge-branches.sh's own "never attempts resolution" rule — reconciling by hand
  * is the caller's job, not this function's.
  */
-export function mergeFeatureBranch(effects, { worktree, branch, featureBranch }) {
+export function mergeFeatureBranch(effects, { worktree, branch, featureBranch, keepConflict = false }) {
   if (!featureBranch || featureBranch === branch) return { merged: false };
   const pending = effects.gitRead(["log", `${branch}..${featureBranch}`, "--oneline"], { cwd: worktree }).stdout.trim();
   if (!pending) return { merged: false };
@@ -202,6 +202,11 @@ export function mergeFeatureBranch(effects, { worktree, branch, featureBranch })
     ["merge", "--no-ff", featureBranch, "-m", `Merge '${featureBranch}' into '${branch}'`],
     { cwd: worktree },
   );
+  if (r.code !== 0 && keepConflict) {
+    // Left in progress for the coder to resolve; the files are what it is told to fix.
+    const files = effects.gitRead(["diff", "--name-only", "--diff-filter=U"], { cwd: worktree }).stdout.trim().split("\n").filter(Boolean);
+    return { merged: false, conflict: true, kept: true, files };
+  }
   if (r.code !== 0) {
     effects.git(["merge", "--abort"], { cwd: worktree });
     return {

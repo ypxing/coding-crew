@@ -31,6 +31,7 @@ import {
   CRITERIA_UNMET_TAG,
   dispatchStem,
   FIXABLE_TAG,
+  MERGE_CONFLICT_TAG,
   issueDescriptor,
   NOT_FIXABLE_TAG,
   notifyMilestone,
@@ -64,6 +65,10 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
  *           word. Also the route once a human reruns after the retry cap blocked it.
  *   fix     `verification-failed:fixable`, `criteria-unmet` — the coder runs on fixPrompt,
  *           told exactly what failed, instead of re-reading the whole issue.
+ *           `merge-conflict` — the feature branch moved on under this one. The sync step
+ *           leaves the conflicted merge in the worktree and the coder resolves it; verify
+ *           and review then re-run on the new commit. If the sync merges cleanly after
+ *           all, the coder is skipped and only verify + review re-run.
  *   restart anything else, including no reason — the coder runs on workerPrompt.
  *
  * The retry cap (MAX_ATTEMPTS_PER_ISSUE, pipeline/finish.mjs) bounds every route alike.
@@ -71,6 +76,9 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
 export function resumeRoute(reason) {
   if (reason == null) return { route: "restart" };
   if (reason.replace(BLOCKED_PREFIX, "").startsWith(AC_RECEIPT_FAILED_TAG)) return { route: "verify", label: "ac-receipt-retry" };
+  if (reason.startsWith(MERGE_CONFLICT_TAG)) {
+    return { route: "fix", kind: "conflict", context: stripReasonTag(reason, MERGE_CONFLICT_TAG) };
+  }
   if (reason === "merge-failed" || reason.startsWith("close-refused")) return { route: "merge" };
   if (reason === "review-not-run") return { route: "verify", label: "review-not-run" };
   if (reason.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };
@@ -93,6 +101,11 @@ const SKIPPED_WORKER = {
     progress: "not-fixable recheck — coder and triage both skipped; only deps + verify re-run",
     notes:
       "not-fixable recheck: a prior triage pass judged this verification failure not fixable by recoding; re-checking once, cheaply, in case it was transient",
+  },
+  "conflict-merged-clean": {
+    what: "the feature branch now merges cleanly, so re-running verify + review only, no coder dispatch",
+    progress: "merge-conflict retry — the sync merged cleanly, so the coder was skipped; verify + review re-run",
+    notes: "merge-conflict retry: the conflict the prior round hit did not recur when the feature branch was merged in",
   },
   "ac-receipt-retry": {
     what: "re-running verify + review to rewrite the AC receipt, no coder dispatch",
@@ -119,7 +132,7 @@ export async function runWorker(ctx, issue, attempt) {
   // resumeBranch then says whether state still retains it and the ref still exists.
   const priorBranch = issue.hasProgress || issue.hasBlocked ? sprint.resumeBranch(issue.slug) : null;
   const retentionReason = priorBranch != null ? sprint.retentionReason(issue.slug) : null;
-  const resume = resumeRoute(retentionReason);
+  let resume = resumeRoute(retentionReason);
 
   if (resume.route === "merge") {
     ctx.log(
@@ -181,13 +194,22 @@ export async function runWorker(ctx, issue, attempt) {
   }
 
   const { path: worktree } = wt;
+  // A conflict retry needs its retained branch; without it there is nothing to reconcile.
+  if (resume.kind === "conflict" && !wt.reusedBranch) resume = { route: "restart" };
 
   // A reused branch may predate other issues' merges: sync it now, so the gap surfaces
   // here rather than as a conflict at the merge gate.
   if (wt.reusedBranch) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=sync-feature-branch`);
-    const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch });
-    if (sync.conflict) {
+    const conflictRetry = resume.kind === "conflict";
+    const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch, keepConflict: conflictRetry });
+    if (sync.kept) {
+      ctx.log(`[SYNC-CONFLICT-KEPT] slug=${issue.slug} branch=${branch} files=${sync.files.join(",")} — left for the coder to resolve`);
+      resume = { ...resume, conflictFiles: sync.files };
+    } else if (conflictRetry) {
+      resume = { route: "verify", label: "conflict-merged-clean" };
+    }
+    if (sync.conflict && !sync.kept) {
       ctx.log(`[SYNC-CONFLICT] slug=${issue.slug} branch=${branch} — ${sync.reason}`);
       // worktree, not null: finishBlocked's removeWorktree needs the real path. Only the
       // branch ref is retained.
@@ -269,6 +291,8 @@ export async function runWorker(ctx, issue, attempt) {
           branch,
           context: resume.context,
           kind: resume.kind,
+          featureBranch: sprint.featureBranch,
+          conflictFiles: resume.conflictFiles,
           reportPath: sidecarFile,
         })
       : workerPrompt({

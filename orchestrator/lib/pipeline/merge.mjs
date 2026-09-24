@@ -3,7 +3,7 @@
  */
 
 import { finishRetryOrBlock } from "./finish.mjs";
-import { dispatchStem, issueRef, notifyMilestone } from "./shared.mjs";
+import { MERGE_CONFLICT_TAG, dispatchStem, issueRef, notifyMilestone, taggedReason } from "./shared.mjs";
 
 /**
  * Merge, then close only on the merge's success. Also the merge route's entry point: a
@@ -25,6 +25,11 @@ export async function mergeAndClose(ctx, worker, outcome) {
   if (merge.code !== 0) {
     if (merge.code === 124) {
       effects.git(["merge", "--abort"]);
+    }
+    // merge-branches.sh's own conflict line; it has already aborted the merge.
+    if (/failed \(conflict/.test(merge.stderr)) {
+      const summary = `'${sprint.featureBranch}' gained commits that conflict with '${branch}'`;
+      return finishRetryOrBlock(ctx, worker, outcome, taggedReason(MERGE_CONFLICT_TAG, summary));
     }
     return finishRetryOrBlock(ctx, worker, outcome, "merge-failed");
   }

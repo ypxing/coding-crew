@@ -19,6 +19,8 @@ const CASES = [
   ["verification-failed", { route: "restart" }],
   ["ac-receipt-failed", { route: "verify", label: "ac-receipt-retry" }],
   ["merge-failed", { route: "merge" }],
+  // A conflict needs code, not another merge attempt.
+  ["merge-conflict — 'feature/x' gained commits that conflict with 'crew/x/a'", { route: "fix", kind: "conflict", context: "'feature/x' gained commits that conflict with 'crew/x/a'" }],
   ["close-refused — issue already closed", { route: "merge" }],
   ["review-not-run", { route: "verify", label: "review-not-run" }],
   ["verification-failed:not-fixable — registry 503", { route: "verify", label: "not-fixable-recheck" }],
@@ -30,6 +32,7 @@ const CASES = [
   ["blocked — retry limit reached (2 attempts) — ac-receipt-failed — ERROR: x", { route: "verify", label: "ac-receipt-retry" }],
   // Every other blocked reason still restarts, as before.
   ["blocked — retry limit reached (2 attempts) — merge-failed", { route: "restart" }],
+  ["blocked — retry limit reached (2 attempts) — merge-conflict — x", { route: "restart" }],
   ["blocked — retry limit reached (2 attempts) — review-not-run", { route: "restart" }],
 ];
 

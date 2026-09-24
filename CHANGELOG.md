@@ -31,6 +31,15 @@
 
 ### Fixed
 
+- **A merge conflict is now retried through the coder, not by merging again.** A conflict
+  at the merge gate was retained as `merge-failed`, whose retry skips straight to merge —
+  so the same conflict recurred and the issue blocked, as two issues editing one file did
+  in a live trial. It is now retained as `merge-conflict`, and its retry routes to the
+  coder: the sync step leaves the feature-branch merge conflicted in the worktree
+  (`[SYNC-CONFLICT-KEPT]`), the coder resolves it keeping both sides, and verify and
+  review re-run on the new commit before it merges. If the sync merges cleanly after all,
+  the coder is skipped. Other merge failures keep the merge-only retry.
+
 - **A pi dispatch can no longer hang on its caller's stdin.** `dispatch-agent.sh` passes the
   prompt as an argument but left `pi`'s stdin inherited, so a `pi` that reads stdin waited
   on whatever the caller held open — a backgrounded shell hung

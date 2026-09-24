@@ -17,6 +17,9 @@ export const CRITERIA_UNMET_TAG = "criteria-unmet";
 // `receipts.sh write ac` failed after an all-met review. Never the branch's fault: the
 // branch is fine, so no route for it re-runs the coder.
 export const AC_RECEIPT_FAILED_TAG = "ac-receipt-failed";
+// merge-branches.sh hit a conflict: the feature branch moved on under this branch. Only a
+// coder can reconcile that; retrying the merge alone would conflict again.
+export const MERGE_CONFLICT_TAG = "merge-conflict";
 const REASON_SEP = " — ";
 
 export function taggedReason(tag, summary) {

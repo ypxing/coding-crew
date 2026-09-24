@@ -92,7 +92,10 @@ function resultBlock(worktree, reportPath) {
  * is already accepted — the only job is to make the stated problem go away with the
  * smallest change that does it.
  */
-export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify" }) {
+export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify", featureBranch, conflictFiles = [] }) {
+  if (kind === "conflict") {
+    return conflictPrompt({ mainRoot, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles });
+  }
   const isReview = kind === "review";
   const judged = isReview
     ? "This branch's code was already reviewed and accepted overall — it only failed on one or\n" +
@@ -126,6 +129,31 @@ export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context
       "---",
     );
   }
+  lines.push("", ...resultBlock(worktree, reportPath));
+  return `${lines.join("\n")}\n`;
+}
+
+/** A merge of the feature branch into this one, left conflicted in the worktree. */
+function conflictPrompt({ mainRoot, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles }) {
+  const lines = [
+    `MAIN_ROOT=${mainRoot}`,
+    ...installModeLines(mainRoot),
+    `Working directory: ${worktree}`,
+    `Issue path: ${issuePath}`,
+    `Issue title: ${slug}`,
+    `Branch: ${branch}`,
+    "",
+    "This branch's work was already verified and reviewed. It failed only to merge:",
+    `${context || `'${featureBranch}' moved on under it`}.`,
+    "",
+    `A merge of \`${featureBranch}\` into this branch is in progress in the working directory, with`,
+    "conflicts in:",
+    ...conflictFiles.map((f) => `- ${f}`),
+    "",
+    "Resolve every conflict so both sides' changes survive — the other side is work that has",
+    "already been merged and must not be lost. Do not abort the merge, and do not redo this",
+    "issue's work. Run the project's checks, then conclude the merge with `git commit --no-edit`.",
+  ];
   lines.push("", ...resultBlock(worktree, reportPath));
   return `${lines.join("\n")}\n`;
 }

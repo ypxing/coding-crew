@@ -390,6 +390,41 @@ test("a merge-failed retry skips the worker, verify, and review, and succeeds on
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=merge-failed/);
 });
 
+// Two issues editing the same file, dispatched in one round: whichever merges second
+// conflicts. Retrying only its merge would conflict again and block; instead the retry
+// leaves the conflicted sync merge in its worktree for the coder, then re-runs verify and
+// review on the resolution.
+test("a merge conflict is retried through the coder, resolved, re-verified, re-reviewed and merged", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  fake(root, "alpha.shared");
+  fake(root, "beta.shared");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+
+  const s = state(root);
+  assert.deepEqual([...s.completed_slugs].sort(), ["alpha", "beta"]);
+  assert.deepEqual([...s.merged_branches].sort(), ["crew/demo/alpha", "crew/demo/beta"]);
+  const shared = sh("git", ["-C", root, "show", "feature/demo:src/shared.txt"]).stdout;
+  assert.deepEqual(shared.trim().split("\n").sort(), ["alpha", "beta"], "both sides survive the resolution");
+
+  const log = traceLog(root);
+  const kept = log.match(/\[SYNC-CONFLICT-KEPT\] slug=(\w+) branch=\S+ files=src\/shared\.txt/);
+  assert.ok(kept, `no kept sync conflict in the trace log:\n${log}`);
+  const loser = kept[1];
+  assert.match(log, new RegExp(`MERGE\\] branch=crew/demo/${loser} success=false reason=conflict`));
+  assert.doesNotMatch(log, /\[SKIP-TO-MERGE\]/, "a conflict must not take the merge-only route");
+  const prompt = readFileSync(join(root, `.scratch/demo/dispatch/${loser === "alpha" ? "01" : "02"}-${loser}.prompt.md`), "utf8");
+  assert.match(prompt, /A merge of `feature\/demo` into this branch is in progress/);
+  assert.match(prompt, /^- src\/shared\.txt$/m);
+
+  // Three coder runs (two issues, plus the resolution), and verify + review re-ran on it.
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 3);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 3);
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 3);
+});
+
 test("a close-refused retry skips the worker, verify, and review, no-ops the already-merged retry, and succeeds on a retried close", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
