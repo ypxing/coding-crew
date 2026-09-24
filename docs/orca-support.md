@@ -87,6 +87,12 @@ the terminal through a 0600 `env.sh` that `run.sh` deletes once sourced; the ter
 `ORCA_TERMINAL_HANDLE`/`ORCA_TAB_ID`/`ORCA_WORKTREE_ID` are left alone. The terminal is
 closed when the dispatch ends; `<outFile>.term/` is removed on success and kept on failure.
 
+orca opens terminals only in a repo it has registered, and a repo on an SSH host can
+only be registered from the desktop app. Preflight checks the checkout with
+`orca worktree show --worktree path:<mainRoot>` (`selector_not_found`, exit 1, when orca
+doesn't know it) and stops the sprint, rather than letting every dispatch fall back to
+headless.
+
 The pid checks assume the terminal runs on crew-afk's own host — true when crew-afk is
 launched from an orca terminal in that checkout, including over orca's SSH relay, where
 both sit on the SSH host.

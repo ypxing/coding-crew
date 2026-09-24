@@ -28,13 +28,19 @@ export function preflight(effects) {
   } catch {
     return ["ORCA_ENV=1 but `orca status --json` returned unparseable output"];
   }
+  // Every terminal is scoped to mainRoot. In a checkout orca doesn't manage, each create
+  // fails and every dispatch quietly falls back to headless, so no tab ever appears.
+  const show = effects.exec("orca", ["worktree", "show", "--worktree", `path:${effects.mainRoot}`, "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS });
+  if (show.code === 124) return [`ORCA_ENV=1 but \`orca worktree show\` timed out after ${CALL_TIMEOUT_MS / 1000}s — is orca responding?`];
+  if (show.code !== 0) {
+    return [`ORCA_ENV=1 but orca does not manage ${effects.mainRoot} — add it as a repo in the orca app (on the host this runs on), or unset ORCA_ENV`];
+  }
   return [];
 }
 
 /**
  * Throws when the log terminal can't be created: with no workspace create to fail loudly,
- * this is the only place the likeliest misconfiguration (ORCA_ENV=1 in a checkout orca
- * doesn't manage) can surface.
+ * a failure preflight didn't catch would otherwise leave no tab and no reason.
  */
 export async function ensureWorkspace(effects, { featureSlug, logFile }) {
   await renameTriggeringTerminal(effects, featureSlug);

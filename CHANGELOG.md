@@ -12,6 +12,11 @@
   an exit code as a failure, and falls back to the plain spawn if the terminal can't be
   created. Without `ORCA_ENV`, and under `HERDR_ENV`, dispatch is unchanged. See
   `docs/orca-support.md#worker-terminals`.
+- **`ORCA_ENV=1` in a checkout orca doesn't manage now stops the sprint at preflight.**
+  orca only opens terminals in repos it has registered, so every worker used to fall back
+  to headless with no tab and no word of why. Preflight now runs `orca worktree show
+  --worktree path:<mainRoot>` and names the fix: add the repo in the orca app, or unset
+  `ORCA_ENV`.
 
 ### Changed
 

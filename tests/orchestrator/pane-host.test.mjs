@@ -606,8 +606,19 @@ test("preflightPaneHost (herdr) passes when the server reports running", () => {
 test("preflightPaneHost (orca) reads readiness from result.runtime.reachable, not the exit code", () => {
   const down = fakeExecEffects([ok("/usr/bin/orca\n"), ok(JSON.stringify({ result: { runtime: { reachable: false } } }))]);
   assert.match(preflightPaneHost(down, "orca")[0], /orca runtime is not reachable/);
-  const up = fakeExecEffects([ok("/usr/bin/orca\n"), ok(JSON.stringify({ result: { runtime: { reachable: true } } }))]);
+  const up = fakeExecEffects([ok("/usr/bin/orca\n"), ok(JSON.stringify({ result: { runtime: { reachable: true } } })), ok("{}")]);
   assert.deepEqual(preflightPaneHost(up, "orca"), []);
+});
+
+// Live: `orca worktree show --worktree path:<dir>` exits 1 with selector_not_found for a git
+// repo orca has never registered, and 0 for one it has.
+test("preflightPaneHost (orca) fails for a checkout orca doesn't manage, instead of every dispatch falling back to headless", () => {
+  const reachable = ok(JSON.stringify({ result: { runtime: { reachable: true } } }));
+  const effects = { ...fakeExecEffects([ok("/usr/bin/orca\n"), reachable, { code: 1, stdout: '{"ok":false,"error":{"code":"selector_not_found"}}', stderr: "" }]), mainRoot: "/repo" };
+  assert.deepEqual(preflightPaneHost(effects, "orca"), [
+    "ORCA_ENV=1 but orca does not manage /repo — add it as a repo in the orca app (on the host this runs on), or unset ORCA_ENV",
+  ]);
+  assert.deepEqual(effects._calls[2], ["orca", "worktree", "show", "--worktree", "path:/repo", "--json"]);
 });
 
 test("preflightPaneHost (orca) names a missing CLI", () => {
