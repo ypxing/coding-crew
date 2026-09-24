@@ -277,7 +277,12 @@ export async function runWorker(ctx, issue, attempt) {
           issuePath: issueDescriptor(issue),
           slug: issue.slug,
           criteria: issue.criteria,
-          resume: resumeNote({ priorBranch, hasProgress: issue.hasProgress, hasBlocked: issue.hasBlocked }),
+          // A block before any commit still retains the branch: name it only if it holds work.
+          resume: resumeNote({
+            priorBranch: priorBranch && branchHasCommits(effects, sprint.featureBranch, priorBranch) ? priorBranch : null,
+            hasProgress: issue.hasProgress,
+            hasBlocked: issue.hasBlocked,
+          }),
           reportPath: sidecarFile,
         }),
   );

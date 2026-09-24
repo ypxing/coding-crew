@@ -197,7 +197,10 @@ case "$ACTION" in
         fi
         [ -n "$sha" ] || { echo "ERROR: cannot record commit for $branch" >&2; exit 1; }
         # No `set -e` here: an unchecked failed write would still print "wrote" and exit 0.
+        # `>` creates the file before the write can fail, and `check` only tests that the
+        # file exists, so a failed write removes what it left behind.
         { mkdir -p "$(dirname "$file")" && echo "$sha" > "$file"; } 2>/dev/null || {
+          rm -f "$file" 2>/dev/null
           echo "ERROR: cannot write $KIND receipt: $file" >&2; exit 1; }
         # An ac receipt is only ever written after an acceptance-criteria check returned
         # `AC: all-met`, so writing it *is* the event worth tracing. Tracing it here rather

@@ -137,6 +137,21 @@ EOF
   [[ "$output" != *"RECEIPT: wrote"* ]]
 }
 
+# A write that fails partway (a full disk) must not leave a receipt behind: `check ac`
+# tests only for the file, so an empty one would pass a later hand-run close-issue.sh.
+# /dev/full at the receipt path is a full disk on demand.
+@test "receipts: a write that fails partway leaves no receipt the gate accepts" {
+  [ -e /dev/full ] || skip "no /dev/full on this platform"
+  wt=$(_make_worktree "task-a")
+  mkdir -p "$DISPATCH_DIR"
+  ln -s /dev/full "$DISPATCH_DIR/task-a.ac.ok"
+
+  run bash "$RECEIPTS_SCRIPT" write ac --dir "$wt"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot write"* ]]
+  [ ! -e "$DISPATCH_DIR/task-a.ac.ok" ]
+}
+
 # ─── the ac receipt traces itself ────────────────────────────────────────────
 #
 # ACVERIFY was the one marker the orchestrator hand-wrote, as a second bash call

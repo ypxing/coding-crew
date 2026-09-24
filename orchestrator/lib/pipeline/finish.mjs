@@ -51,7 +51,9 @@ export async function finishBlocked(ctx, worker, outcome, reason) {
   const { issue, branch } = worker;
   await writeTrackerSection(effects, issue, "Blocked", `Round ${worker.attempt}: ${reason}`, { append: true });
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-  sprint.blocked(issue.slug, branch, reason);
+  // A branch refused as stale is someone else's leftover, not this issue's: retaining it
+  // would make the next run resume on it (runWorker's priorBranch) and skip the refusal.
+  sprint.blocked(issue.slug, worker.report.parsedFrom === "stale-branch" ? null : branch, reason);
   // In-memory only: persisted `blocked_slugs` feeds the summary, and must not stop a
   // future run retrying once a human has fixed the blocker.
   sprint.markBlockedThisRun(issue.slug);

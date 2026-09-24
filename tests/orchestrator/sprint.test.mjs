@@ -507,6 +507,30 @@ test("a blocked issue's branch is resumed and synced on the next run, not re-blo
   assert.equal(readFileSync(join(root, "src/alpha.txt"), "utf8"), "// alpha\n// alpha\n");
 });
 
+test("a branch refused as stale stays refused on the next run, not resumed as the issue's own", () => {
+  const root = fixtureRepo();
+  const git = (...args) => sh("git", ["-C", root, ...args]);
+  const count = (lines, re) => lines.filter((l) => re.test(l)).length;
+  addIssue(root, "01-alpha.md");
+  // A leftover branch with unique work, forked before the feature branch moved on.
+  git("checkout", "-q", "-b", "crew/demo/alpha");
+  writeFileSync(join(root, "leftover.txt"), "abandoned work\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "leftover work");
+  git("checkout", "-q", "feature/demo");
+  writeFileSync(join(root, "advance.txt"), "advance\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "advance the feature branch");
+
+  const first = commandLines(root, ["--max-parallel", "1"]);
+  assert.deepEqual(state(root).blocked_slugs, ["alpha"], `${first.r.stdout}\n${first.r.stderr}`);
+  assert.equal(state(root).retained_branches?.alpha, undefined, "a refused branch is not this issue's own");
+
+  const second = commandLines(root, ["--max-parallel", "1"]);
+  assert.match(traceLog(root), /\[STALE-BRANCH\] slug=alpha/, "still refused on the rerun");
+  assert.equal(count(second.lines, /^SPAWN .*--agent crew-coder/), 0, "no coder is dispatched onto the leftover branch");
+});
+
 test("a criteria-unmet retry still redispatches the full worker, not just review", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -571,6 +595,21 @@ test("a dead dispatch is blocked with the worker-failed reason", () => {
   const s = state(root);
   assert.deepEqual(s.blocked_slugs, ["alpha"]);
   assert.match(s.retention.alpha.reason, /worker process failed/);
+});
+
+test("a rerun after a block with no commits is not told commits are preserved", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.exit", "7");
+  runSprint(root);
+  assert.deepEqual(state(root).blocked_slugs, ["alpha"]);
+
+  rmSync(join(root, ".scratch/fake/alpha.exit"));
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
+  assert.match(prompt, /## Blocked/);
+  assert.doesNotMatch(prompt, /preserved on branch/);
 });
 
 test("a blocked-by dependency is not dispatched until its blocker closes, and dispatches the moment it does", () => {
