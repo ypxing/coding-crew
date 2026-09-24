@@ -131,6 +131,34 @@ function branchHasCommits(effects, featureBranch, branch) {
 }
 
 /**
+ * Where a retry re-enters the pipeline, by the reason the prior attempt retained its branch
+ * (finishRetryOrBlock writes it; state.sh records it). The one table of resume targets:
+ *
+ *   merge   `merge-failed`, `close-refused …` — verify, review and the AC receipt already
+ *           passed; only merge/close runs again. Safe because merge-branches.sh and
+ *           close-issue.sh re-check the SHA-bound receipts themselves on every run.
+ *   verify  `review-not-run` — the branch is done; only the review dispatch failed.
+ *           `verification-failed:not-fixable` — triage ruled out recoding, so skip the
+ *           coder and re-run deps + verify once, in case the failure was transient.
+ *   fix     `verification-failed:fixable`, `criteria-unmet` — the coder runs on fixPrompt,
+ *           told exactly what failed, instead of re-reading the whole issue.
+ *   restart anything else, including no reason — the coder runs on workerPrompt.
+ *
+ * The retry cap (MAX_ATTEMPTS_PER_ISSUE) bounds every route alike.
+ */
+export function resumeRoute(reason) {
+  if (reason == null) return { route: "restart" };
+  if (reason === "merge-failed" || reason.startsWith("close-refused")) return { route: "merge" };
+  if (reason === "review-not-run") return { route: "verify", label: "review-not-run" };
+  if (reason.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };
+  if (reason.startsWith(FIXABLE_TAG)) return { route: "fix", kind: "verify", context: stripReasonTag(reason, FIXABLE_TAG) };
+  if (reason.startsWith(CRITERIA_UNMET_TAG)) {
+    return { route: "fix", kind: "review", context: stripReasonTag(reason, CRITERIA_UNMET_TAG) };
+  }
+  return { route: "restart" };
+}
+
+/**
  * Phase 1 of an issue: worktree + worker dispatch. Runs concurrently across issues.
  * `attempt` is this issue's own 1-based attempt number (see sprint.attemptCount in
  * loop.mjs) — independent of any other issue's, since the scheduler no longer batches
@@ -150,21 +178,9 @@ export async function runWorker(ctx, issue, attempt) {
 
   const priorBranch = issue.hasProgress ? sprint.resumeBranch(issue.slug) : null;
   const retentionReason = priorBranch != null ? sprint.retentionReason(issue.slug) : null;
+  const resume = resumeRoute(retentionReason);
 
-  // merge-failed and close-refused are a stronger guarantee than review-not-run: verify
-  // already passed, review already returned `AC: all-met`, and the AC receipt is already
-  // on disk — only the merge (or, for close-refused, the already-merged no-op plus the
-  // close) step itself needs another attempt. This resume target skips not just the
-  // coder dispatch but the worktree it would run in, verify-worktree.sh, and the reviewer
-  // dispatch too, re-entering runHousekeeping directly at the merge step with the branch
-  // already on disk. That is safe only because merge-branches.sh and close-issue.sh
-  // themselves re-check the SHA-bound verify receipt and the AC receipt every time they
-  // run, rather than trusting a prior round's pass — this resume target relies on that
-  // re-check, it does not replace it.
-  if (
-    priorBranch != null &&
-    (retentionReason === "merge-failed" || retentionReason?.startsWith("close-refused"))
-  ) {
+  if (resume.route === "merge") {
     ctx.log(
       `[SKIP-TO-MERGE] slug=${issue.slug} reason=${retentionReason} branch=${branch} — retrying merge/close only, no coder dispatch, no verify, no review`,
     );
@@ -188,33 +204,6 @@ export async function runWorker(ctx, issue, attempt) {
       resumeAtMerge: true,
     };
   }
-
-  // A branch retained purely because its *review* dispatch failed to produce a usable
-  // report (timeout, crash, transient dispatch failure — see `[DISPATCH-FAIL]` tracing in
-  // dispatch.mjs) already has a worker that completed and a verify that passed in the
-  // prior round: nothing about the branch's content needs to change, only the review needs
-  // another attempt. Every other retention reason (verification-failed, criteria-unmet,
-  // merge-failed, close-refused) means the branch itself needs more work, so only this one
-  // reason skips the coder — re-entering the pipeline at the verify gate below with the
-  // already-retained branch, instead of paying for a brand new ~45m worker dispatch to
-  // reach a functionally identical outcome.
-  //
-  // A not-fixable triage verdict (see runTriage in runHousekeeping) earns the same skip,
-  // for a different reason: triage already said no code on this branch can fix it, so
-  // dispatching the coder again would only relearn that. What this attempt *does* try is
-  // the one thing a not-fixable verdict cannot rule out by itself — a transient failure
-  // (a registry blip, a flaky network) that a plain, coder-free deps + verify re-run might
-  // simply not hit a second time. If it fails again, this issue's retry cap (see
-  // finishRetryOrBlock) is what stops a third attempt, not a reason-specific repeat-check.
-  const notFixableRetry = priorBranch != null && retentionReason?.startsWith(NOT_FIXABLE_TAG);
-  const skipWorker = (priorBranch != null && retentionReason === "review-not-run") || notFixableRetry;
-
-  // A fixable triage verdict, or a reviewer's `AC: unmet` verdict, routes to a narrower
-  // prompt (fixPrompt, below) instead of the generic workerPrompt + resumeNote — the coder
-  // still runs, just told exactly what failed and why, instead of re-reading the whole
-  // issue as if starting over.
-  const fixableRetry = priorBranch != null && retentionReason?.startsWith(FIXABLE_TAG);
-  const criteriaUnmetRetry = priorBranch != null && retentionReason?.startsWith(CRITERIA_UNMET_TAG);
 
   // expectReuse: true only when the issue itself has a recorded reason to already have
   // a branch (progress from an earlier round). A branch ref that exists despite this
@@ -309,12 +298,12 @@ export async function runWorker(ctx, issue, attempt) {
     ctx.log(`slug=${issue.slug} round=${attempt} ${depsLine(deps.stdout)}`);
   }
 
-  if (skipWorker) {
-    const label = notFixableRetry ? "not-fixable-recheck" : "review-not-run";
+  if (resume.route === "verify") {
+    const notFixableRetry = resume.label === "not-fixable-recheck";
     const what = notFixableRetry
       ? "rechecking deps + verify only, no triage and no coder dispatch, in case the failure was transient"
       : "retrying review only, no coder dispatch";
-    ctx.log(`[SKIP-WORKER] slug=${issue.slug} reason=${label} branch=${branch} — ${what}`);
+    ctx.log(`[SKIP-WORKER] slug=${issue.slug} reason=${resume.label} branch=${branch} — ${what}`);
     return {
       issue,
       branch,
@@ -350,17 +339,15 @@ export async function runWorker(ctx, issue, attempt) {
 
   writeFileSync(
     promptFile,
-    fixableRetry || criteriaUnmetRetry
+    resume.route === "fix"
       ? fixPrompt({
           mainRoot: effects.mainRoot,
           worktree,
           issuePath: issueDescriptor(issue),
           slug: issue.slug,
           branch,
-          context: criteriaUnmetRetry
-            ? stripReasonTag(retentionReason, CRITERIA_UNMET_TAG)
-            : stripReasonTag(retentionReason, FIXABLE_TAG),
-          kind: criteriaUnmetRetry ? "review" : "verify",
+          context: resume.context,
+          kind: resume.kind,
           reportPath: sidecarFile,
         })
       : workerPrompt({
@@ -614,7 +601,7 @@ async function mergeAndClose(ctx, worker, outcome) {
  * re-deriving anything. A not-fixable verdict that recurs stops on its own, via this issue's
  * retry cap (see finishRetryOrBlock) — no reason-specific repeat-check needed here.
  *
- * Exception: a not-fixable-recheck round (runWorker's skipWorker path, worker.skippedWorker)
+ * Exception: a not-fixable-recheck round (runWorker's verify route, worker.skippedWorker)
  * already carries a triage verdict from the round that first retained this branch — that is
  * the whole point of "recheck deps + verify only" ([SKIP-WORKER]'s own "no triage" promise).
  * Re-triaging here on the exact same failure would just re-ask the same question at the cost
