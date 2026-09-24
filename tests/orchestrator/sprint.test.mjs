@@ -478,6 +478,35 @@ test("an ac receipt that can't be written retries review without the coder, bloc
   assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
 });
 
+test("a blocked issue's branch is resumed and synced on the next run, not re-blocked as stale once siblings merge", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  // alpha's worker commits, then reports itself blocked; beta then merges, moving the
+  // feature branch past the point alpha's branch forked from.
+  const blockedReport = (dir) =>
+    `## Issue: alpha\nStatus: blocked\n\n\`\`\`json\n${JSON.stringify({ status: "blocked", branch: "crew/demo/alpha", working_directory: dir, checks: { test: "pass", lint: "pass", typecheck: "pass" }, progress: "", notes: "needs a decision on the API shape" })}\n\`\`\`\n`;
+  fake(root, "alpha.worker", blockedReport(join(root, ".scratch/worktrees/crew/demo/alpha")));
+
+  const first = commandLines(root, ["--max-parallel", "1"]);
+  let s = state(root);
+  assert.deepEqual(s.blocked_slugs, ["alpha"], `${first.r.stdout}\n${first.r.stderr}`);
+  assert.deepEqual(s.merged_branches, ["crew/demo/beta"]);
+  assert.match(readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8"), /## Blocked/);
+
+  // The human answers the question; the worker now completes.
+  rmSync(join(root, ".scratch/fake/alpha.worker"));
+  const second = commandLines(root, ["--max-parallel", "1"]);
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  s = state(root);
+  assert.doesNotMatch(traceLog(root), /\[STALE-BRANCH\] slug=alpha/);
+  assert.deepEqual([...s.completed_slugs].sort(), ["alpha", "beta"]);
+  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
+  // Resumed on the blocked worker's branch: each fake worker run appends one line, so the
+  // blocked attempt's line is still there alongside the resumed one's.
+  assert.equal(readFileSync(join(root, "src/alpha.txt"), "utf8"), "// alpha\n// alpha\n");
+});
+
 test("a criteria-unmet retry still redispatches the full worker, not just review", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

@@ -1,5 +1,6 @@
 /**
- * pipeline.test.mjs — resumeRoute, the one table of where a retry re-enters the pipeline.
+ * pipeline.test.mjs — resumeRoute, the one table of where a retry re-enters the pipeline,
+ * and the resume note a re-entering coder is given.
  * End-to-end behaviour of each route is asserted in sprint.test.mjs; this pins the table.
  */
 
@@ -7,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
+import { resumeNote } from "../../orchestrator/lib/prompts.mjs";
 
 // Every retention reason runHousekeeping and its gates hand to finishRetryOrBlock.
 const CASES = [
@@ -36,3 +38,17 @@ for (const [reason, expected] of CASES) {
     assert.deepEqual(resumeRoute(reason), expected);
   });
 }
+
+// ─── resumeNote for a blocked issue whose branch was retained ──────────────────────────
+
+test("a blocked issue resumed on its retained branch is told the commits are there", () => {
+  const note = resumeNote({ priorBranch: "crew/demo/alpha", hasProgress: false, hasBlocked: true });
+  assert.match(note, /## Blocked/);
+  assert.match(note, /preserved on branch `crew\/demo\/alpha`/);
+});
+
+test("the blocked note names no branch when none was retained, or when ## Progress already does", () => {
+  assert.doesNotMatch(resumeNote({ priorBranch: null, hasProgress: false, hasBlocked: true }), /branch/);
+  const both = resumeNote({ priorBranch: "crew/demo/alpha", hasProgress: true, hasBlocked: true });
+  assert.equal((both.match(/crew\/demo\/alpha/g) ?? []).length, 1);
+});

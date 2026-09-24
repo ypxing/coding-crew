@@ -115,7 +115,9 @@ export async function runWorker(ctx, issue, attempt) {
   const dispatchDir = sprint.dispatchDir;
   mkdirSync(dispatchDir, { recursive: true });
 
-  const priorBranch = issue.hasProgress ? sprint.resumeBranch(issue.slug) : null;
+  // A recorded Progress or Blocked section means a prior attempt left a branch on purpose;
+  // resumeBranch then says whether state still retains it and the ref still exists.
+  const priorBranch = issue.hasProgress || issue.hasBlocked ? sprint.resumeBranch(issue.slug) : null;
   const retentionReason = priorBranch != null ? sprint.retentionReason(issue.slug) : null;
   const resume = resumeRoute(retentionReason);
 
@@ -144,14 +146,16 @@ export async function runWorker(ctx, issue, attempt) {
     };
   }
 
-  // expectReuse only with recorded progress: any other existing branch is leftover from an
-  // abandoned attempt and may carry a base predating work this sprint has since merged.
+  // expectReuse only for a branch this issue's own earlier attempt retained: any other
+  // existing branch is leftover from an abandoned attempt and may carry a base predating
+  // work this sprint has since merged. A reused branch is synced with the feature branch
+  // below, where a real conflict still blocks.
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=worktree`);
   const wt = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
     branch,
     base: "HEAD",
-    expectReuse: issue.hasProgress,
+    expectReuse: issue.hasProgress || priorBranch != null,
   });
 
   if (wt.stale) {

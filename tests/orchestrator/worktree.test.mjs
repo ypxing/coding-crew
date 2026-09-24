@@ -342,10 +342,14 @@ test("ensureWorktree reuses an existing branch without a staleness check when it
 test("ensureWorktree flags a stale branch instead of silently reusing it on a fresh dispatch", () => {
   const { mainRoot, git, effects } = gitRoot();
   const branch = "crew/feat/live-api-integration";
-  // The branch exists from an earlier, abandoned attempt, based on an old commit —
-  // then main advances (e.g. a dependency's branch merges) without the leftover
-  // branch ever being rebased or deleted.
-  git("branch", branch);
+  // The branch exists from an earlier, abandoned attempt, with a commit of its own, based
+  // on an old commit — then main advances (e.g. a dependency's branch merges) without the
+  // leftover branch ever being rebased or deleted.
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "abandoned.txt"), "abandoned attempt's own work\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "abandoned attempt");
+  git("checkout", "-q", "main");
   writeFileSync(join(mainRoot, "component.txt"), "merged dependency work\n");
   git("add", "-A");
   git("commit", "-q", "-m", "component-with-mock merges into the feature branch");
@@ -385,6 +389,26 @@ test("ensureWorktree discards and recreates a stale branch whose tree is identic
   const branchTip = execFileSync("git", ["-C", mainRoot, "rev-parse", branch], { encoding: "utf8" }).trim();
   const headTip = execFileSync("git", ["-C", mainRoot, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   assert.equal(branchTip, headTip, "the debris branch was deleted and recreated fresh at base, not reused as-is");
+});
+
+test("ensureWorktree discards and recreates a branch with no commits of its own — nothing on it to lose", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/dead-dispatch";
+  // A worker that died before committing leaves a branch pointing at an old commit of
+  // main, which main has since moved past: every commit on it is already on main.
+  git("branch", branch);
+  writeFileSync(join(mainRoot, "sibling.txt"), "a sibling issue merged\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "a sibling issue merges into the feature branch");
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "HEAD", expectReuse: false });
+
+  assert.equal(result.stale, undefined);
+  assert.equal(result.created, true);
+  assert.equal(result.reusedBranch, false);
+  const branchTip = execFileSync("git", ["-C", mainRoot, "rev-parse", branch], { encoding: "utf8" }).trim();
+  const headTip = execFileSync("git", ["-C", mainRoot, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  assert.equal(branchTip, headTip, "recreated fresh at base");
 });
 
 test("ensureWorktree defaults expectReuse to true — existing callers keep silent-reuse behavior", () => {

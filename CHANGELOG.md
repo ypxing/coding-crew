@@ -31,6 +31,15 @@
   with that error in `## Blocked`, and a rerun after the fix resumes at verify again —
   the only blocked reason that doesn't restart the coder, since the cause is never the
   branch.
+- **A blocked issue is no longer re-blocked as a stale branch on the next run.** Only an
+  issue with `## Progress` counted as resumable, so one blocked before it ever wrote
+  progress (a worker that reported itself blocked, a dead dispatch, a sync conflict) was
+  treated as a fresh dispatch — and once siblings had merged, its own retained branch was
+  flagged stale with "delete the branch or reconcile it by hand". A `## Blocked` section
+  now counts too: the retained branch is reused and synced with the feature branch (a real
+  conflict still blocks), and the coder is told its commits are there. Separately, a
+  leftover branch with no commits of its own is now deleted and recreated rather than
+  flagged stale, since there is nothing on it to lose.
 
 ## [1.29.128]
 

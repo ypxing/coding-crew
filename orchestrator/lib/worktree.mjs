@@ -75,13 +75,12 @@ export function ensureWorktreeInclude(mainRoot) {
  * here instead: `base` not being an ancestor of the existing branch, on a dispatch
  * nobody expected to resume, is reported back as `stale` rather than reused.
  *
- * One case auto-resolves rather than staying `stale`: a branch whose tree is byte-identical
- * to `base`'s. Ancestry can't see this (a squash elsewhere produces a new commit carrying
- * the same tree, so `base` is never literally a git ancestor of it), but tree equality still
- * can, and it means the branch holds no unique work at all — the common shape being debris
- * left by a prior run whose commits were later squashed into the feature branch and never
- * cleaned up. That branch is deleted and recreated fresh from `base`. Anything else — a real
- * ancestry mismatch with actual unique content — still stalls for a human, unchanged.
+ * Two cases auto-resolve rather than staying `stale`, both because the branch holds no
+ * unique work: it has no commits `base` lacks (a worker that died before committing), or
+ * its tree is byte-identical to `base`'s (debris whose commits were squashed into the
+ * feature branch elsewhere — ancestry can't see that, tree equality can). The branch is
+ * deleted and recreated fresh from `base`. A branch with real unique content still stalls
+ * for a human.
  */
 export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expectReuse = true }) {
   const path = worktreePath(mainRoot, branch);
@@ -96,7 +95,8 @@ export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expec
       const baseTree = effects.gitRead(["rev-parse", `${base}^{tree}`]).stdout.trim();
       const branchTree = effects.gitRead(["rev-parse", `${branch}^{tree}`]).stdout.trim();
       const sameTree = !!baseTree && baseTree === branchTree;
-      const discarded = sameTree && effects.git(["branch", "-D", branch]).code === 0;
+      const noUniqueCommits = effects.gitRead(["rev-list", "--count", `${base}..${branch}`]).stdout.trim() === "0";
+      const discarded = (sameTree || noUniqueCommits) && effects.git(["branch", "-D", branch]).code === 0;
       if (!discarded) {
         return {
           path: null,

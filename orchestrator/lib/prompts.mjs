@@ -141,8 +141,12 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
     );
   }
   if (hasBlocked) {
+    const onBranch =
+      priorBranch && !hasProgress
+        ? ` Its commits are preserved on branch \`${priorBranch}\` — resume there rather than starting over.`
+        : "";
     parts.push(
-      "A previous worker was blocked — the explanation is in ## Blocked. Review it before starting to avoid repeating the same failure.",
+      `A previous worker was blocked — the explanation is in ## Blocked. Review it before starting to avoid repeating the same failure.${onBranch}`,
     );
   }
   return parts.join("\n\n");
