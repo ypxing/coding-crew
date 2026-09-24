@@ -47,7 +47,7 @@ import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
 import { DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
-import { closePaneLogTab, closePaneWorkspace, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
+import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
@@ -518,6 +518,7 @@ async function main() {
     // Every ending, setup failures included: a caller waiting on this push instead of
     // polling has no other way to learn the run is over.
     if (options.paneHost) {
+      await drainPaneNotices(effects);
       const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : stalled ? "stalled — blockers need a human" : "finished";
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
       await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);

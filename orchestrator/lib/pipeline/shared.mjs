@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import { getTracker } from "../tracker.mjs";
-import { notifyTriggeringPane } from "../pane-host/index.mjs";
+import { queuePaneNotice } from "../pane-host/index.mjs";
 
 // Retention-reason tags, written by the gates and read back by resumeRoute. Defined once
 // so writer and reader cannot drift. The two verification tags carry triage's verdict.
@@ -28,12 +28,19 @@ export function dispatchStem(issue) {
   return issue.number ? `${issue.number}-${issue.slug}` : issue.slug;
 }
 
-/** A milestone: always logged (the only signal without a pane host), then pushed to the pane. */
-export async function notifyMilestone(ctx, issue, message) {
+/**
+ * A milestone: always logged (the only signal without a pane host), then queued for the
+ * pane. Not awaited: the push is advisory and must not hold the issue's pipeline.
+ */
+export function notifyMilestone(ctx, issue, message) {
   ctx.log(`[MILESTONE] ${dispatchStem(issue)}: ${message}`);
-  const result = await notifyTriggeringPane(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`);
-  if (!result.sent) ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: ${result.reason}`);
-  return result;
+  if (!ctx.effects.paneHost) {
+    ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: no pane host`);
+    return;
+  }
+  queuePaneNotice(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`, (result) => {
+    if (!result.sent) ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: ${result.reason}`);
+  });
 }
 
 /** close-issue.sh / promote-findings.sh's issue argument: a file path (local) or number (github). */

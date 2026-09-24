@@ -119,7 +119,11 @@ agent definition.
   `ORCA_TERMINAL_HANDLE` into its terminals, but not `ORCA_ENV` itself.
 - `terminal send` into a live claude pane takes ~8s to return (it watches for turn start),
   so the orca push gets a 20s timeout. With 5s it exited 124 after the message had already
-  been delivered.
+  been delivered. Per-issue milestone pushes (coder finished, merged, partial, blocked) are
+  queued rather than awaited, so that delay never holds an issue's pipeline. The queue sends
+  one at a time, in order, and is drained before the end-of-run push.
+- `ORCA_TAB_ID` is read by nothing: every create is already scoped by `--worktree`, and the
+  rename and push go by `ORCA_TERMINAL_HANDLE`.
 - `--worktree path:<mainRoot>`, not `active`: `active` isn't documented as cwd-relative and
   may resolve to whatever worktree orca's GUI has focused. `--command` is typed into the
   terminal's shell rather than passed as argv, so the log path is shell-quoted.

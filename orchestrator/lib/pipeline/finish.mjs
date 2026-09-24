@@ -42,7 +42,7 @@ export async function finishPartial(ctx, worker, outcome, reason) {
   sprint.retain(issue.slug, branch, reason);
   outcome.status = "partial";
   outcome.reason = reason;
-  await notifyMilestone(ctx, issue, `partial — retrying (round ${worker.attempt}) — ${reason}`);
+  notifyMilestone(ctx, issue, `partial — retrying (round ${worker.attempt}) — ${reason}`);
   return outcome;
 }
 
@@ -59,6 +59,6 @@ export async function finishBlocked(ctx, worker, outcome, reason) {
   sprint.markBlockedThisRun(issue.slug);
   outcome.status = "blocked";
   outcome.reason = reason;
-  await notifyMilestone(ctx, issue, `blocked — ${reason}`);
+  notifyMilestone(ctx, issue, `blocked — ${reason}`);
   return outcome;
 }

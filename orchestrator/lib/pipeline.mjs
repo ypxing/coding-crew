@@ -373,7 +373,7 @@ export async function runHousekeeping(ctx, worker) {
   }
 
   // Not a verdict yet, but the coder is the longest step: a mid-pipeline heartbeat.
-  await notifyMilestone(ctx, issue, `coder finished (round ${worker.attempt}) — verifying`);
+  notifyMilestone(ctx, issue, `coder finished (round ${worker.attempt}) — verifying`);
 
   // --- gate 1: independent verification in the worktree ----------------------
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);

@@ -12,8 +12,8 @@
  * still comes from the child's pid and exit code on disk, never from the host.
  *
  * Run-scoped state lives on `effects`: `_paneWorkspace` (cached promise),
- * `_paneWorkspaceReused` (never close a workspace this run didn't create) and
- * `_paneLogTabId`.
+ * `_paneWorkspaceReused` (never close a workspace this run didn't create),
+ * `_paneLogTabId` and `_paneNotices` (the queued-push chain).
  */
 
 import * as herdr from "./herdr.mjs";
@@ -88,4 +88,26 @@ export async function notifyTriggeringPane(effects, message) {
   const adapter = adapterFor(effects);
   if (!adapter) return { sent: false, reason: "no pane host" };
   return adapter.notify(effects, message);
+}
+
+/**
+ * A mid-run push: queued, not awaited. An orca push takes ~8s (terminal show + send), and
+ * awaited inline it held each issue's pipeline that long. The chain keeps pushes into the one
+ * pane in order and never overlapping. `onResult` gets notifyTriggeringPane's `{sent, reason?}`.
+ */
+export function queuePaneNotice(effects, message, onResult) {
+  const prior = effects._paneNotices ?? Promise.resolve();
+  effects._paneNotices = prior.then(async () => {
+    const result = await notifyTriggeringPane(effects, message);
+    try {
+      onResult?.(result);
+    } catch {
+      /* a logging callback must not break the chain */
+    }
+  });
+}
+
+/** Before the end-of-run push, so it lands last and none is cut off by exit. */
+export async function drainPaneNotices(effects) {
+  await effects._paneNotices;
 }

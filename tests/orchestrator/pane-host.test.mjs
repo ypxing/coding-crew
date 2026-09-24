@@ -11,9 +11,11 @@ import { join } from "node:path";
 import {
   closePaneLogTab,
   closePaneWorkspace,
+  drainPaneNotices,
   ensurePaneWorkspace,
   notifyTriggeringPane,
   preflightPaneHost,
+  queuePaneNotice,
 } from "../../orchestrator/lib/pane-host/index.mjs";
 
 // A real herdr/orca session injects these, and this suite may itself run inside one. Left
@@ -520,6 +522,15 @@ test("notifyTriggeringPane (orca) never sends when terminal show itself fails", 
   const result = await withOrcaTerminalHandle("term_1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
   assert.equal(effects._calls.length, 1, "show only — an unknown pane is never typed into");
   assert.equal(result.sent, false);
+  // orca quit or timing out is not "the pane isn't an agent": the log must say which.
+  assert.match(result.reason, /terminal show exit=1 terminal not found/);
+});
+
+test("notifyTriggeringPane (orca) names show, not send, when show throws", async () => {
+  const effects = { paneHost: "orca", mainRoot: "/root", spawnWithTimeout: async () => { throw new Error("spawn orca ENOENT"); } };
+  const result = await withOrcaTerminalHandle("term_1", () => notifyTriggeringPane(effects, "msg"));
+  assert.equal(result.sent, false);
+  assert.match(result.reason, /orca terminal show threw: spawn orca ENOENT/);
 });
 
 // Measured live: `terminal send` into an idle claude pane takes ~8s to return (it watches for
@@ -602,4 +613,62 @@ test("preflightPaneHost (orca) reads readiness from result.runtime.reachable, no
 test("preflightPaneHost (orca) names a missing CLI", () => {
   const effects = fakeExecEffects([{ code: 1, stdout: "", stderr: "" }]);
   assert.deepEqual(preflightPaneHost(effects, "orca"), ["ORCA_ENV=1 but the orca CLI was not found on PATH"]);
+});
+
+test("preflightPaneHost bounds each host's status call, and names a timeout as one", () => {
+  for (const [host, bin] of [["herdr", "/usr/bin/herdr\n"], ["orca", "/usr/bin/orca\n"]]) {
+    const opts = [];
+    const effects = {
+      exec: (cmd, args, o) => {
+        opts.push(o);
+        return opts.length === 1 ? ok(bin) : { code: 124, stdout: "", stderr: "" };
+      },
+    };
+    assert.match(preflightPaneHost(effects, host)[0], /timed out/, host);
+    assert.ok(opts[1]?.timeoutMs > 0, `${host} status call has no timeout`);
+  }
+});
+
+// ─── queued milestone pushes ───────────────────────────────────────────────────────────
+
+test("queuePaneNotice returns before the push lands, sends one at a time in order, and drainPaneNotices waits for all", async () => {
+  const sent = [];
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const releases = [];
+  const effects = {
+    paneHost: "herdr",
+    mainRoot: "/root",
+    spawnWithTimeout: (cmd, args) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      return new Promise((resolve) =>
+        releases.push(() => {
+          inFlight--;
+          sent.push(args[3]);
+          resolve({ code: 0, stdout: "", stderr: "" });
+        }),
+      );
+    },
+  };
+  const reasons = [];
+  await withHerdrPaneId("w1:p1", async () => {
+    queuePaneNotice(effects, "one", (r) => reasons.push(r));
+    queuePaneNotice(effects, "two", (r) => reasons.push(r));
+    let drained = false;
+    const drain = drainPaneNotices(effects).then(() => (drained = true));
+    while (sent.length < 2) {
+      await new Promise((r) => setImmediate(r));
+      releases.shift()?.();
+    }
+    await drain;
+    assert.equal(drained, true);
+  });
+  assert.deepEqual(sent, ["one", "two"]);
+  assert.equal(maxInFlight, 1, "pushes into one pane never overlap");
+  assert.deepEqual(reasons.map((r) => r.sent), [true, true]);
+});
+
+test("drainPaneNotices is a no-op when nothing was queued", async () => {
+  await drainPaneNotices({ paneHost: null });
 });

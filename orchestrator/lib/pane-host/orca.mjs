@@ -17,7 +17,8 @@ const SEND_TIMEOUT_MS = 20000;
 export function preflight(effects) {
   const which = effects.exec("sh", ["-c", "command -v orca"], { mutating: false });
   if (which.code !== 0) return ["ORCA_ENV=1 but the orca CLI was not found on PATH"];
-  const status = effects.exec("orca", ["status", "--json"], { mutating: false });
+  const status = effects.exec("orca", ["status", "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS });
+  if (status.code === 124) return [`ORCA_ENV=1 but \`orca status\` timed out after ${CALL_TIMEOUT_MS / 1000}s — is orca responding?`];
   if (status.code !== 0) return ["ORCA_ENV=1 but `orca status` failed — start it with: orca open"];
   try {
     const parsed = JSON.parse(status.stdout || "{}");
@@ -125,10 +126,23 @@ export async function notify(effects, message) {
     effects.log?.("NOTIFY-SKIP no ORCA_TERMINAL_HANDLE in env");
     return { sent: false, reason: "no ORCA_TERMINAL_HANDLE in env" };
   }
+  let show;
   try {
-    const show = await paneHostExec(effects, ["terminal", "show", "--terminal", handle, "--json"], 5000);
+    show = await paneHostExec(effects, ["terminal", "show", "--terminal", handle, "--json"], 5000);
+  } catch (err) {
+    const reason = `orca terminal show threw: ${err.message}`;
+    effects.log?.(`NOTIFY-FAIL ${reason}`);
+    return { sent: false, reason };
+  }
+  // A failed show (orca quit, timed out) is orca's problem, not the pane's: say which.
+  if (show.code !== 0) {
+    const reason = `orca terminal show exit=${show.code} ${failureDetail(show)}`;
+    effects.log?.(`NOTIFY-FAIL ${reason}`);
+    return { sent: false, reason };
+  }
+  try {
     const agentIdentity = paneHostJson(show)?.result?.terminal?.agentIdentity;
-    if (show.code !== 0 || !agentIdentity) {
+    if (!agentIdentity) {
       const reason = "triggering terminal is not running an agent orca recognises";
       effects.log?.(`NOTIFY-SKIP ${reason}`);
       return { sent: false, reason };

@@ -5,10 +5,14 @@
 
 import { failureDetail, paneHostExec, paneHostJson, paneWorkspaceLabel } from "./shared.mjs";
 
+/** A stalled server must not hang startup. */
+const STATUS_TIMEOUT_MS = 10000;
+
 export function preflight(effects) {
   const which = effects.exec("sh", ["-c", "command -v herdr"], { mutating: false });
   if (which.code !== 0) return ["HERDR_ENV=1 but the herdr CLI was not found on PATH"];
-  const status = effects.exec("herdr", ["status"], { mutating: false });
+  const status = effects.exec("herdr", ["status"], { mutating: false, timeoutMs: STATUS_TIMEOUT_MS });
+  if (status.code === 124) return [`HERDR_ENV=1 but \`herdr status\` timed out after ${STATUS_TIMEOUT_MS / 1000}s — is the herdr server responding?`];
   if (status.code !== 0 || !/status:\s*running/.test(status.stdout || "")) {
     return ["HERDR_ENV=1 but the herdr server is not running — start it with: herdr server"];
   }

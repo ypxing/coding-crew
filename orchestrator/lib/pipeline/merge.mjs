@@ -42,6 +42,6 @@ export async function mergeAndClose(ctx, worker, outcome) {
 
   sprint.complete(issue.slug, branch);
   outcome.status = "complete";
-  await notifyMilestone(ctx, issue, `complete — merged and closed (round ${worker.attempt})`);
+  notifyMilestone(ctx, issue, `complete — merged and closed (round ${worker.attempt})`);
   return outcome;
 }
