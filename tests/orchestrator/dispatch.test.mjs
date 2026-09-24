@@ -52,15 +52,16 @@ after(() => {
 
 import {
   buildDispatch,
+  closeHerdrLogTab,
   closeHerdrWorkspace,
   dispatch,
   dispatchPlain,
+  ensureHerdrWorkspace,
   extractFinalText,
   extractResultMeta,
   formatJsonTraceLine,
   notifyTriggeringPane,
   preflight,
-  relaunchIntoDedicatedPane,
   resolveAgentFile,
   DEFAULT_PARALLEL,
 } from "../../orchestrator/lib/dispatch.mjs";
@@ -723,14 +724,18 @@ test("dispatch() wires onLine for pi/codex too, but only forwards their own alre
 });
 
 
-// ─── herdr (https://herdr.dev): ambient only — crew-afk's own dedicated run pane ──────
+// ─── herdr (https://herdr.dev): ambient only, nothing load-bearing ────────────────────
 //
 // Per-worker herdr panes (dispatchViaHerdr) are gone: every coder/reviewer/triage dispatch
-// is always headless now. What's left of herdr here is ambient: crew-afk's own process
-// getting a dedicated pane (relaunchIntoDedicatedPane), the shared workspace it and every
-// future ambient caller reuse (closeHerdrWorkspace), and the one-time triggering-pane
-// nudge at the end of a run (notifyTriggeringPane). These fixtures are the actual JSON
-// shapes captured from a real herdr workspace/tab-create round-trip.
+// is always headless now. crew-afk's own process is never relaunched into a herdr-hosted
+// pane either (herdrdev/herdr#4537: `pane run` cannot report a real exit code back, so an
+// earlier design had to fake completion-detection with a sentinel-file poll and a blind
+// timeout — removed rather than worked around). What's left of herdr is: a shared
+// workspace with one tab that just tails the sprint's own trace log (ensureHerdrWorkspace/
+// ensureHerdrLogTab, closed by closeHerdrWorkspace/closeHerdrLogTab), and a best-effort,
+// advisory nudge to the triggering pane at the end of a run (notifyTriggeringPane). These
+// fixtures are the actual JSON shapes captured from a real herdr workspace/tab-create
+// round-trip.
 
 function fakeHerdrEffects(responses, { mainRoot = "/root", dryRun = false } = {}) {
   const calls = [];
@@ -749,31 +754,13 @@ function fakeHerdrEffects(responses, { mainRoot = "/root", dryRun = false } = {}
 }
 const json = (obj) => ({ code: 0, stdout: JSON.stringify(obj), stderr: "" });
 
-// fakeRelaunchEffects — like fakeHerdrEffects, but the fake `pane run` call writes the
-// sentinel file itself (extracted from the preceding `tab create`'s own --env flags) before
-// returning, simulating the relaunched child completing instantly — so
-// waitForRelaunchSentinel's very first existsSync check (before any sleep) already succeeds
-// and these tests never actually wait out RELAUNCH_POLL_MS.
-function fakeRelaunchEffects(responses, { mainRoot, exitCode = 0 } = {}) {
-  const calls = [];
-  return {
-    mainRoot,
-    dryRun: false,
-    _calls: calls,
-    spawnWithTimeout: async (cmd, args) => {
-      calls.push([cmd, ...args]);
-      if (args[0] === "pane" && args[1] === "run") {
-        const tabCreateCall = calls.find((c) => c[1] === "tab" && c[2] === "create");
-        const sentinelArg = tabCreateCall.find((a) => typeof a === "string" && a.startsWith("CREW_AFK_RELAUNCH_SENTINEL="));
-        const sentinelPath = sentinelArg.slice("CREW_AFK_RELAUNCH_SENTINEL=".length);
-        writeFileSync(sentinelPath, JSON.stringify({ exitCode, at: new Date().toISOString() }));
-      }
-      const next = responses.shift();
-      if (!next) throw new Error(`no more canned herdr responses — call was: ${cmd} ${args.join(" ")}`);
-      return next;
-    },
-  };
-}
+// Every canned-response list for ensureHerdrWorkspace that passes a logFile needs these two
+// responses spliced in right after the workspace create/reuse response — ensureHerdrLogTab
+// always fires immediately after, in both branches.
+const herdrLogTabResponses = () => [
+  json({ result: { tab: { tab_id: "w1:log" }, root_pane: { pane_id: "w1:plog" } } }), // log tab create
+  json({ result: { type: "ok" } }), // pane run tail -f
+];
 
 function withHerdrWorkspaceId(id, fn) {
   const prior = process.env.HERDR_WORKSPACE_ID;
@@ -808,46 +795,109 @@ function withHerdrPaneId(id, fn) {
     });
 }
 
-test("closeHerdrWorkspace closes the workspace created for crew-afk's own dedicated run pane, and is a no-op when nothing was ever created", async () => {
+test("ensureHerdrWorkspace creates a workspace and opens a log tab that tails logFile", async () => {
+  const { root } = fixture();
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
+      ...herdrLogTabResponses(),
+    ],
+    { mainRoot: root },
+  );
+
+  const workspaceId = await ensureHerdrWorkspace(effects, { featureSlug: "implement-user-auth", logFile });
+
+  assert.equal(workspaceId, "w1");
+  const workspaceCreate = effects._calls[0];
+  assert.deepEqual(workspaceCreate.slice(0, 3), ["herdr", "workspace", "create"]);
+  assert.equal(workspaceCreate[workspaceCreate.indexOf("--label") + 1], "implement-user-auth");
+
+  const tabCreate = effects._calls[1];
+  assert.deepEqual(tabCreate.slice(0, 6), ["herdr", "tab", "create", "--workspace", "w1", "--cwd"]);
+  assert.equal(tabCreate[tabCreate.indexOf("--label") + 1], "implement-user-auth-log");
+
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "pane", "run", "w1:plog", "tail", "-f", logFile]);
+});
+
+test("ensureHerdrWorkspace never opens a log tab when no logFile is given", async () => {
+  const { root } = fixture();
+  const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w1" } } })], { mainRoot: root });
+
+  await ensureHerdrWorkspace(effects, { featureSlug: "alpha" });
+
+  assert.deepEqual(effects._calls, [effects._calls[0]], "only the workspace create — no tab was ever requested");
+  assert.ok(!effects._calls.some((c) => c[1] === "tab"));
+});
+
+test("ensureHerdrWorkspace swallows a failed log tab create — cosmetic, not a reason to fail the run", async () => {
+  const { root } = fixture();
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { workspace: { workspace_id: "w1" } } }),
+      { code: 1, stdout: "", stderr: "herdr unreachable" }, // log tab create fails
+    ],
+    { mainRoot: root },
+  );
+
+  const workspaceId = await ensureHerdrWorkspace(effects, { featureSlug: "alpha", logFile });
+
+  assert.equal(workspaceId, "w1", "the workspace itself is still returned — only the log tab is best-effort");
+  assert.ok(!effects._calls.some((c) => c[1] === "pane" && c[2] === "run"), "never attempted pane run without a pane id");
+});
+
+// The reused pane's own tab still shows whatever it was called before crew-afk started
+// running in it — herdr also injects that pane's own tab as HERDR_TAB_ID, so this is the
+// one chance to relabel it to the sprint's feature slug, the same way a freshly created
+// workspace already is. The run's own log tab still opens inside the reused workspace too.
+test("ensureHerdrWorkspace reuses an ambient HERDR_WORKSPACE_ID, renames the triggering tab, and still opens its own log tab", async () => {
+  const { root } = fixture();
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects(
+    [
+      json({ result: { type: "ok" } }), // tab rename
+      ...herdrLogTabResponses(),
+    ],
+    { mainRoot: root },
+  );
+
+  const workspaceId = await withHerdrWorkspaceId("w1", () =>
+    withHerdrTabId("w1:t1", () => ensureHerdrWorkspace(effects, { featureSlug: "implement-user-auth", logFile })),
+  );
+
+  assert.equal(workspaceId, "w1", "the ambient workspace is reused, not created");
+  assert.ok(!effects._calls.some((c) => c[1] === "workspace" && c[2] === "create"));
+  assert.deepEqual(effects._calls[0], ["herdr", "tab", "rename", "w1:t1", "implement-user-auth"]);
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "pane", "run", "w1:plog", "tail", "-f", logFile]);
+});
+
+test("ensureHerdrWorkspace never renames the triggering pane's own tab when no feature slug resolved", async () => {
+  const { root } = fixture();
+  const effects = fakeHerdrEffects([], { mainRoot: root });
+
+  await withHerdrWorkspaceId("w1", () => withHerdrTabId("w1:t1", () => ensureHerdrWorkspace(effects, {})));
+
+  assert.deepEqual(effects._calls, [], "no feature slug resolved, so the pane's own tab is left exactly as the human named it");
+});
+
+test("closeHerdrWorkspace closes the workspace ensureHerdrWorkspace created, and is a no-op when nothing was ever created", async () => {
   const untouched = fakeHerdrEffects([], { mainRoot: "/root" });
   await closeHerdrWorkspace(untouched);
   assert.deepEqual(untouched._calls, [], "nothing to close — no run ever created a workspace on this effects instance");
 
   const { root } = fixture();
-  const effects = fakeRelaunchEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { type: "ok" } }), // pane run
-      json({ result: { type: "ok" } }), // tab close, from relaunchIntoDedicatedPane
-    ],
-    { mainRoot: root },
-  );
-  await relaunchIntoDedicatedPane(effects, {
-    mainRoot: root,
-    featureSlug: "alpha",
-    platform: "claude",
-    argv: [],
-    mainScript: "/path/to/main.mjs",
-  });
+  const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w1" } } }), json({ result: { type: "ok" } })], { mainRoot: root });
+  await ensureHerdrWorkspace(effects, { featureSlug: "alpha" });
   await closeHerdrWorkspace(effects);
   assert.deepEqual(effects._calls.at(-1), ["herdr", "workspace", "close", "w1"]);
 });
 
 test("closeHerdrWorkspace never closes a workspace reused via HERDR_WORKSPACE_ID — that would close the pane crew-afk was launched from", async () => {
   const { root } = fixture();
-  const effects = fakeRelaunchEffects(
-    [
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create — no HERDR_TAB_ID set, so renameHerdrTriggeringTab makes no call
-      json({ result: { type: "ok" } }), // pane run
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
+  const effects = fakeHerdrEffects([], { mainRoot: root });
 
-  await withHerdrWorkspaceId("w1", () =>
-    relaunchIntoDedicatedPane(effects, { mainRoot: root, featureSlug: "alpha", platform: "claude", argv: [], mainScript: "/path/to/main.mjs" }),
-  );
+  await withHerdrWorkspaceId("w1", () => ensureHerdrWorkspace(effects, { featureSlug: "alpha" }));
   await closeHerdrWorkspace(effects);
 
   assert.ok(
@@ -856,278 +906,37 @@ test("closeHerdrWorkspace never closes a workspace reused via HERDR_WORKSPACE_ID
   );
 });
 
-// The reused pane's own tab still shows whatever it was called before crew-afk started running
-// in it — herdr also injects that pane's own tab as HERDR_TAB_ID, so relaunchIntoDedicatedPane's
-// own ensureHerdrWorkspace call is the one chance to relabel it to the sprint's feature slug,
-// the same way a freshly created workspace already is.
-test("relaunchIntoDedicatedPane renames the triggering pane's own tab to the feature slug when reusing HERDR_WORKSPACE_ID", async () => {
+test("closeHerdrLogTab closes the log tab ensureHerdrWorkspace opened, and is a no-op when none was ever created", async () => {
+  const untouched = fakeHerdrEffects([], { mainRoot: "/root" });
+  await closeHerdrLogTab(untouched);
+  assert.deepEqual(untouched._calls, [], "nothing to close — no run ever created a log tab on this effects instance");
+
   const { root } = fixture();
-  const effects = fakeRelaunchEffects(
-    [
-      json({ result: { type: "ok" } }), // tab rename
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { type: "ok" } }), // pane run
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  await withHerdrWorkspaceId("w1", () =>
-    withHerdrTabId("w1:t1", () =>
-      relaunchIntoDedicatedPane(effects, {
-        mainRoot: root,
-        featureSlug: "implement-user-auth",
-        platform: "claude",
-        argv: [],
-        mainScript: "/path/to/main.mjs",
-      }),
-    ),
-  );
-
-  assert.deepEqual(effects._calls[0], ["herdr", "tab", "rename", "w1:t1", "implement-user-auth"]);
-});
-
-test("relaunchIntoDedicatedPane never renames the triggering pane's own tab when no feature slug resolved — nothing meaningful to relabel it to", async () => {
-  const { root } = fixture();
-  const effects = fakeRelaunchEffects(
-    [
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { type: "ok" } }), // pane run
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-
-  await withHerdrWorkspaceId("w1", () =>
-    withHerdrTabId("w1:t1", () =>
-      relaunchIntoDedicatedPane(effects, { mainRoot: root, platform: "claude", argv: [], mainScript: "/path/to/main.mjs" }),
-    ),
-  );
-
-  assert.ok(
-    !effects._calls.some((c) => c[1] === "tab" && c[2] === "rename"),
-    "no feature slug resolved, so the pane's own tab is left exactly as the human named it",
-  );
-});
-
-test("relaunchIntoDedicatedPane creates a dedicated tab with an explicit env list, waits for the sentinel, and closes the tab", async () => {
-  const { root } = fixture();
-  const effects = fakeRelaunchEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { type: "ok" } }), // pane run
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root, exitCode: 0 },
-  );
-
-  const result = await relaunchIntoDedicatedPane(effects, {
-    mainRoot: root,
-    featureSlug: "implement-user-auth",
-    platform: "claude",
-    argv: ["--platform", "claude"],
-    mainScript: "/path/to/main.mjs",
-  });
-
-  assert.deepEqual(result, { exitCode: 0, delegated: true });
-
-  const tabCreate = effects._calls[1];
-  assert.deepEqual(tabCreate.slice(0, 7), ["herdr", "tab", "create", "--workspace", "w1", "--cwd", root]);
-  assert.equal(tabCreate[tabCreate.indexOf("--label") + 1], "implement-user-auth-run");
-  const envPairs = {};
-  for (let i = 0; i < tabCreate.length; i++) {
-    if (tabCreate[i] === "--env") {
-      const [k, v] = tabCreate[i + 1].split("=");
-      envPairs[k] = v;
-    }
-  }
-  assert.equal(envPairs.HERDR_ENV, "1");
-  assert.equal(envPairs.HERDR_WORKSPACE_ID, "w1");
-  assert.equal(envPairs.CREW_AFK_RELAUNCHED, "1");
-  assert.equal(envPairs.CREW_PLATFORM, "claude");
-  assert.ok(envPairs.CREW_AFK_RELAUNCH_SENTINEL, "a sentinel path is always forwarded");
-  assert.ok(!("HERDR_TAB_ID" in envPairs), "never forwarded — this pane is not the triggering pane");
-  assert.ok(!("HERDR_PANE_ID" in envPairs), "no ambient HERDR_PANE_ID this run, so none is forwarded");
-
-  const paneRun = effects._calls[2];
-  assert.deepEqual(paneRun.slice(0, 4), ["herdr", "pane", "run", "w1:p1"]);
-  assert.equal(paneRun[4], process.execPath);
-  assert.equal(paneRun[5], "/path/to/main.mjs");
-  assert.deepEqual(paneRun.slice(6), ["--platform", "claude"]);
-
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
-});
-
-test("relaunchIntoDedicatedPane does not duplicate a \"run\" token already present in argv", async () => {
-  // argv here is process.argv.slice(2) from the front door, which every platform launcher
-  // invokes as `... run --platform claude ...` — argv already carries its own "run".
-  const { root } = fixture();
-  const effects = fakeRelaunchEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }), // workspace create
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create
-      json({ result: { type: "ok" } }), // pane run
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root, exitCode: 0 },
-  );
-
-  await relaunchIntoDedicatedPane(effects, {
-    mainRoot: root,
-    featureSlug: "implement-user-auth",
-    platform: "claude",
-    argv: ["run", "--platform", "claude"],
-    mainScript: "/path/to/main.mjs",
-  });
-
-  const paneRun = effects._calls[2];
-  assert.deepEqual(paneRun.slice(6), ["run", "--platform", "claude"], "argv's own \"run\" is forwarded once, not doubled");
-});
-
-test("relaunchIntoDedicatedPane reuses an ambient HERDR_WORKSPACE_ID instead of creating one, and forwards HERDR_PANE_ID", async () => {
-  const { root } = fixture();
-  const effects = fakeRelaunchEffects(
-    [
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }), // tab create — no HERDR_TAB_ID set, so renameHerdrTriggeringTab makes no call
-      json({ result: { type: "ok" } }), // pane run
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root, exitCode: 2 },
-  );
-
-  const result = await withHerdrWorkspaceId("w1", () =>
-    withHerdrPaneId("triggering-pane", () =>
-      relaunchIntoDedicatedPane(effects, {
-        mainRoot: root,
-        featureSlug: "alpha",
-        platform: "claude",
-        argv: [],
-        mainScript: "/path/to/main.mjs",
-      }),
-    ),
-  );
-
-  assert.deepEqual(result, { exitCode: 2, delegated: true });
-  assert.ok(
-    !effects._calls.some((c) => c[1] === "workspace" && c[2] === "create"),
-    "the ambient workspace is reused, not created",
-  );
-  const tabCreate = effects._calls.find((c) => c[1] === "tab" && c[2] === "create");
-  assert.ok(tabCreate.includes("HERDR_PANE_ID=triggering-pane"), "forwards the original triggering pane, not this run's own");
-});
-
-test("relaunchIntoDedicatedPane fails fast when tab create fails, without ever attempting pane run", async () => {
-  const { root } = fixture();
-  const effects = fakeRelaunchEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      { code: 1, stdout: "", stderr: "boom" }, // tab create fails
-    ],
-    { mainRoot: root },
-  );
-
-  const result = await relaunchIntoDedicatedPane(effects, {
-    mainRoot: root,
-    featureSlug: "alpha",
-    platform: "claude",
-    argv: [],
-    mainScript: "/path/to/main.mjs",
-  });
-
-  assert.equal(result.exitCode, 1);
-  assert.equal(result.delegated, false);
-  assert.match(result.error, /tab create failed/);
-  assert.ok(!effects._calls.some((c) => c[1] === "pane" && c[2] === "run"));
-});
-
-test("relaunchIntoDedicatedPane fails fast and closes the tab it just created when pane run itself fails to start", async () => {
-  const { root } = fixture();
+  const logFile = join(root, "trace.log");
   const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      { code: 1, stdout: "", stderr: "herdr unreachable" }, // pane run fails
-      json({ result: { type: "ok" } }), // tab close, from the early-failure cleanup
-    ],
+    [json({ result: { workspace: { workspace_id: "w1" } } }), ...herdrLogTabResponses(), json({ result: { type: "ok" } })],
     { mainRoot: root },
   );
-
-  const result = await relaunchIntoDedicatedPane(effects, {
-    mainRoot: root,
-    featureSlug: "alpha",
-    platform: "claude",
-    argv: [],
-    mainScript: "/path/to/main.mjs",
-  });
-
-  assert.equal(result.exitCode, 1);
-  assert.equal(result.delegated, false);
-  assert.match(result.error, /pane run failed/);
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
+  await ensureHerdrWorkspace(effects, { featureSlug: "alpha", logFile });
+  await closeHerdrLogTab(effects);
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:log"]);
 });
 
-test("relaunchIntoDedicatedPane gives up after its own timeout ceiling, nudges the triggering pane itself, and still closes the tab", async () => {
+// The case closeHerdrWorkspace's own reuse test above leaves unclosed: a workspace reused
+// via HERDR_WORKSPACE_ID survives (it belongs to whoever's pane triggered the run), but this
+// run's own log tab inside it is still this run's to close — otherwise it tails the trace
+// log forever after a run launched from inside an existing herdr pane.
+test("closeHerdrLogTab closes this run's own log tab even when the workspace it lives in was reused, not created", async () => {
   const { root } = fixture();
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      json({ result: { type: "ok" } }), // pane run — never writes a sentinel this time
-      json({ result: { type: "ok" } }), // agent prompt — the fallback nudge
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
+  const logFile = join(root, "trace.log");
+  const effects = fakeHerdrEffects([...herdrLogTabResponses(), json({ result: { type: "ok" } })], { mainRoot: root });
 
-  const result = await withHerdrPaneId("triggering-pane", () =>
-    relaunchIntoDedicatedPane(effects, {
-      mainRoot: root,
-      featureSlug: "alpha",
-      platform: "claude",
-      argv: [],
-      mainScript: "/path/to/main.mjs",
-      relaunchTimeoutMs: 20,
-    }),
-  );
+  await withHerdrWorkspaceId("w1", () => ensureHerdrWorkspace(effects, { featureSlug: "alpha", logFile }));
+  await closeHerdrWorkspace(effects);
+  await closeHerdrLogTab(effects);
 
-  assert.deepEqual(result, { exitCode: 1, delegated: true });
-  assert.deepEqual(effects._calls.at(-2), ["herdr", "agent", "prompt", "triggering-pane", effects._calls.at(-2)[4]]);
-  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:t1"]);
-});
-
-test("relaunchIntoDedicatedPane treats a corrupt sentinel as a real failure, not a hang", async () => {
-  const { root } = fixture();
-  const effects = fakeHerdrEffects(
-    [
-      json({ result: { workspace: { workspace_id: "w1" } } }),
-      json({ result: { tab: { tab_id: "w1:t1" }, root_pane: { pane_id: "w1:p1" } } }),
-      { code: 0, stdout: "", stderr: "" }, // pane run — the test writes a corrupt sentinel below before this resolves
-      json({ result: { type: "ok" } }), // tab close
-    ],
-    { mainRoot: root },
-  );
-  const originalSpawn = effects.spawnWithTimeout;
-  effects.spawnWithTimeout = async (cmd, args) => {
-    const result = await originalSpawn(cmd, args);
-    if (args[0] === "pane" && args[1] === "run") {
-      const tabCreate = effects._calls.find((c) => c[1] === "tab" && c[2] === "create");
-      const sentinelArg = tabCreate.find((a) => typeof a === "string" && a.startsWith("CREW_AFK_RELAUNCH_SENTINEL="));
-      writeFileSync(sentinelArg.slice("CREW_AFK_RELAUNCH_SENTINEL=".length), "not valid json");
-    }
-    return result;
-  };
-
-  const result = await relaunchIntoDedicatedPane(effects, {
-    mainRoot: root,
-    featureSlug: "alpha",
-    platform: "claude",
-    argv: [],
-    mainScript: "/path/to/main.mjs",
-    relaunchTimeoutMs: 60_000,
-  });
-
-  assert.deepEqual(result, { exitCode: 1, delegated: true });
+  assert.ok(!effects._calls.some((c) => c[1] === "workspace" && c[2] === "close"), "the reused workspace itself is still left open");
+  assert.deepEqual(effects._calls.at(-1), ["herdr", "tab", "close", "w1:log"], "but this run's own log tab is closed");
 });
 
 test("notifyTriggeringPane is a no-op when not running inside herdr — no HERDR_PANE_ID", async () => {
@@ -1136,10 +945,20 @@ test("notifyTriggeringPane is a no-op when not running inside herdr — no HERDR
   assert.deepEqual(effects._calls, [], "nothing to notify — the run wasn't launched inside a herdr pane");
 });
 
-test("notifyTriggeringPane prompts the triggering pane directly by its injected HERDR_PANE_ID", async () => {
+test("notifyTriggeringPane prompts the triggering pane directly by its injected HERDR_PANE_ID, waiting for herdr to confirm delivery", async () => {
   const effects = fakeHerdrEffects([json({ result: { type: "ok" } })], { mainRoot: "/root" });
-  await withHerdrPaneId("w1:p1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
-  assert.deepEqual(effects._calls, [["herdr", "agent", "prompt", "w1:p1", "crew-afk (alpha): sprint finished."]]);
+  const result = await withHerdrPaneId("w1:p1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
+  assert.deepEqual(effects._calls, [
+    ["herdr", "agent", "prompt", "w1:p1", "crew-afk (alpha): sprint finished.", "--wait", "--until", "working", "--timeout-ms", "2000"],
+  ]);
+  assert.deepEqual(result, { sent: true });
+});
+
+test("notifyTriggeringPane reports a stalled push as a failure instead of a false success — herdrdev/herdr#4537", async () => {
+  const effects = fakeHerdrEffects([{ code: 1, stdout: "", stderr: "agent_prompt_stalled" }], { mainRoot: "/root" });
+  const result = await withHerdrPaneId("w1:p1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
+  assert.equal(result.sent, false);
+  assert.match(result.reason, /agent_prompt_stalled/);
 });
 
 test("notifyTriggeringPane swallows a failed prompt — the sprint's own outcome is already decided by then", async () => {
@@ -1151,8 +970,9 @@ test("notifyTriggeringPane swallows a failed prompt — the sprint's own outcome
       throw new Error("herdr unreachable");
     },
   };
-  await withHerdrPaneId("w1:p1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
+  const result = await withHerdrPaneId("w1:p1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
   assert.equal(calls.length, 1, "still attempted once, just didn't throw");
+  assert.equal(result.sent, false);
 });
 
 // ─── extractResultMeta: claude's cost/error/turn metadata, scoped to claude only ──────

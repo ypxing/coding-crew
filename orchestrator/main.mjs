@@ -10,36 +10,35 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
- *   $HERDR_ENV=1                            give crew-afk's own process a dedicated herdr.dev
- *                                           pane, distinct from the triggering pane, so a
- *                                           human can watch the sprint's round-by-round
- *                                           narration live without it competing with whatever
- *                                           else the triggering pane is doing; requires
- *                                           `herdr server` already running. `run` relaunches
- *                                           into that dedicated pane (see dispatch.mjs's
- *                                           relaunchIntoDedicatedPane) — every coder/review/
- *                                           triage dispatch is always headless, herdr or not.
- *                                           If crew-afk itself is running inside a herdr-
- *                                           managed pane, that pane's own workspace
- *                                           ($HERDR_WORKSPACE_ID) is reused instead of
- *                                           opening a new one, and is left open at the end
- *                                           rather than closed; only a workspace this run
- *                                           created itself is closed once the run ends (see
- *                                           dispatch.mjs's ensureHerdrWorkspace doc comment)
- *                                           — the dedicated run pane itself is always closed
- *                                           by the front-door process once the relaunched
- *                                           instance finishes, regardless of who owns the
- *                                           workspace. At the very end of the run, the
- *                                           original triggering pane gets one `herdr agent
- *                                           prompt` with the outcome (see dispatch.mjs's
+ *   $HERDR_ENV=1                            crew-afk runs in whatever pane launched it —
+ *                                           herdr is never asked to host or report on the
+ *                                           process itself (`pane run` cannot read back a
+ *                                           real exit code: no `pane wait`, no exit_code
+ *                                           field anywhere in herdr's own responses), only to
+ *                                           open one extra tab that runs `tail -f
+ *                                           .scratch/<feature-slug>/traces/orchestrator.log`
+ *                                           (see dispatch.mjs's ensureHerdrLogTab), so a human
+ *                                           can watch the sprint's own narration live without
+ *                                           trusting herdr with anything load-bearing;
+ *                                           requires `herdr server` already running. Every
+ *                                           coder/review/triage dispatch is always headless,
+ *                                           herdr or not. If crew-afk itself is running inside
+ *                                           a herdr-managed pane, that pane's own workspace
+ *                                           ($HERDR_WORKSPACE_ID) is reused instead of opening
+ *                                           a new one, and is left open at the end rather than
+ *                                           closed; only a workspace this run created itself
+ *                                           is closed once the run ends (see dispatch.mjs's
+ *                                           ensureHerdrWorkspace doc comment) — the log tab is
+ *                                           always closed by this run regardless of who owns
+ *                                           the workspace. At the very end of the run, the
+ *                                           triggering pane gets one `herdr agent prompt` with
+ *                                           the outcome (see dispatch.mjs's
  *                                           notifyTriggeringPane), so whoever is watching it
- *                                           can stop polling and just wait for that nudge —
- *                                           but that push can silently not land (herdrdev/
- *                                           herdr#4537), so the front door also prints a
- *                                           tail-the-log fallback into the triggering pane's
- *                                           own scrollback before it starts waiting. The
- *                                           durable record of everything printed either way
- *                                           is still
+ *                                           can stop polling — but that push can silently not
+ *                                           land (herdrdev/herdr#4537), so the log tab (or a
+ *                                           caller's own poll of the same file) is the
+ *                                           fallback, not an afterthought. The durable record
+ *                                           either way is
  *                                           `.scratch/<feature-slug>/traces/orchestrator.log`.
  *   --model <alias|inherit>                coder model; reviewer/triage/commandsDiscovery/
  *                                           coverageValidation match it unless
@@ -74,7 +73,7 @@ import { spawnSync } from "node:child_process";
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { closeHerdrWorkspace, DEFAULT_PARALLEL, notifyTriggeringPane, PLATFORMS, preflight, relaunchIntoDedicatedPane } from "./lib/dispatch.mjs";
+import { closeHerdrLogTab, closeHerdrWorkspace, DEFAULT_PARALLEL, ensureHerdrWorkspace, notifyTriggeringPane, PLATFORMS, preflight } from "./lib/dispatch.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
@@ -240,12 +239,7 @@ function resolveFeatureSlug(mainRoot, explicitSlug) {
  * A pidfile at .scratch/<slug>/.crew-afk.lock, so a second `run` for the same feature-slug
  * refuses instead of racing the first — two independent sprints dispatching the same issue's
  * coder concurrently would race for the same worktree/branch, and whichever one loses burns
- * a real attempt off its 2-attempt cap for a collision that was never its own fault. Only the
- * front door (or a plain, single process) takes this lock — see the CREW_AFK_RELAUNCHED guard
- * at the call site: the
- * relaunched instance shares the front door's whole lifetime (it's what the front door is
- * blocked waiting on via relaunchIntoDedicatedPane's sentinel), so it trusts the check the
- * front door already made rather than acquiring its own and deadlocking against it. A stale
+ * a real attempt off its 2-attempt cap for a collision that was never its own fault. A stale
  * lock (holder's pid no longer alive — a crash, a SIGKILL) is reclaimed silently, since a dead
  * process has no other cleanup path back to this file.
  */
@@ -482,7 +476,6 @@ async function main() {
   let stalled;
   let exitCode = 0;
   let runError;
-  let delegatedNotification = false;
   let lockPath;
   try {
     const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
@@ -505,10 +498,9 @@ async function main() {
       return exitCode;
     }
 
-    // See acquireSprintLock's doc comment for why this is skipped for the relaunched
-    // instance, and why a null slug (session-init.sh's own single-feature fallback) can't
-    // be locked on at all.
-    if (process.env.CREW_AFK_RELAUNCHED !== "1" && resolved.slug) {
+    // A null slug (session-init.sh's own single-feature fallback) can't be locked on at all
+    // — see acquireSprintLock's doc comment.
+    if (resolved.slug) {
       const lock = acquireSprintLock(mainRoot, resolved.slug);
       if (lock.error) {
         console.error(lock.error);
@@ -516,51 +508,6 @@ async function main() {
         return exitCode;
       }
       lockPath = lock.lockPath;
-    }
-
-    // Give crew-afk's own process a herdr pane of its own — see relaunchIntoDedicatedPane's
-    // doc comment for why (the triggering pane stays free for other use, and the sprint's own
-    // narration is visible live, natively, in the new pane instead of behind a separate
-    // tail-log pane). Resolved *after* the feature slug above, not before, so the dedicated
-    // pane's own label is the real slug rather than a generic fallback. Guarded by
-    // CREW_AFK_RELAUNCHED so the relaunched instance itself (forwarded this exact env var,
-    // rather than left to any unconfirmed herdr auto-injection) falls straight through to the
-    // normal run below instead of relaunching itself again. Skipped under --dry-run: a preview
-    // run has nothing worth watching live and shouldn't leave a pane behind.
-    if (options.herdr && !options.dryRun && process.env.CREW_AFK_RELAUNCHED !== "1") {
-      // Self-identifying in `ps` so a second `main.mjs run` for the same feature-slug reads
-      // as "expected front door", not "duplicate to kill" — see relaunchIntoDedicatedPane's
-      // doc comment for why this process exists at all.
-      process.title = "crew-afk-frontdoor (waiting on dedicated pane — do not kill)";
-      const relaunchArgv = process.argv.slice(2);
-      if (resolved.slug && !relaunchArgv.includes("--feature-slug")) {
-        relaunchArgv.push("--feature-slug", resolved.slug);
-      }
-      // Printed straight to this pane's own scrollback, not pushed through herdr — the one
-      // way of watching the sprint that cannot fail the way notifyTriggeringPane's end-of-run
-      // nudge can (herdrdev/herdr#4537: `agent prompt` can report success against a pane that
-      // never actually received it). Front-door process blocks here until the sprint ends, so
-      // whoever is watching this pane sees it before the wait, not just at the end.
-      if (resolved.slug) {
-        console.log(`crew-afk: sprint running in its own pane. If this pane's end-of-run nudge never arrives, follow progress directly: tail -f ${mainRoot}/.scratch/${resolved.slug}/traces/orchestrator.log`);
-      }
-      const result = await relaunchIntoDedicatedPane(effects, {
-        mainRoot,
-        featureSlug: resolved.slug,
-        platform: options.platform,
-        argv: relaunchArgv,
-        mainScript: fileURLToPath(import.meta.url),
-      });
-      if (result.error) console.error(`crew-afk: ${result.error}`);
-      exitCode = result.exitCode;
-      delegatedNotification = result.delegated;
-      return exitCode;
-    }
-
-    // Same self-identifying reasoning as the front door's own process.title above, for
-    // whoever runs `ps` while this is the live sprint in its own dedicated pane.
-    if (process.env.CREW_AFK_RELAUNCHED === "1") {
-      process.title = `crew-afk-sprint (${resolved.slug})`;
     }
 
     // Before any worktree exists: make sure docker-compose.override.yml and .env are in
@@ -580,6 +527,18 @@ async function main() {
       log: (line) => console.error(line),
     });
     sprint.setModel(options.model ?? "agent default");
+
+    // The only thing herdr is ever asked to host for crew-afk's own narration — a tab that
+    // just runs `tail -f` on this sprint's own trace log (see dispatch.mjs's
+    // ensureHerdrLogTab). Best-effort: a failure here is cosmetic and never reported to the
+    // caller, since the log file itself — not this tab — is the run's real, durable output.
+    if (options.herdr && !options.dryRun) {
+      try {
+        await ensureHerdrWorkspace(effects, { featureSlug: resolved.slug, logFile: sprint.traceLog });
+      } catch (err) {
+        console.error(`crew-afk: could not open a herdr log tab: ${err.message} — continuing without one.`);
+      }
+    }
 
     if (options.commands) {
       await discoverCommands(effects, {
@@ -624,37 +583,22 @@ async function main() {
     exitCode = 1;
     throw err;
   } finally {
-    // A no-op unless a herdr dispatch actually created the sprint's one shared workspace
-    // (see ensureHerdrWorkspace in dispatch.mjs) — closed here, once, regardless of how
-    // the run ended, so a thrown error above doesn't leave it dangling in herdr's UI.
+    // Neither is more than a no-op unless a herdr dispatch actually created/opened the
+    // sprint's shared workspace and log tab (see ensureHerdrWorkspace/ensureHerdrLogTab in
+    // dispatch.mjs) — closed here, once, regardless of how the run ended, so a thrown error
+    // above doesn't leave either dangling in herdr's UI. The log tab is closed independently
+    // of the workspace because closeHerdrWorkspace no-ops on a *reused* workspace.
+    await closeHerdrLogTab(effects);
     await closeHerdrWorkspace(effects);
-    // Only under HERDR_ENV=1, and only when nobody else already has (or will) — see
-    // notifyTriggeringPane's doc comment for why this is the one case where the caller (the
-    // same pane crew-afk was launched from) can stop polling and just wait for this nudge
-    // instead. delegatedNotification is true once the relaunch branch above has already sent
-    // (or arranged to send) this exact nudge itself — see relaunchIntoDedicatedPane's own doc
-    // comment — so this must not fire a second time for the same run. Covers every way the run
-    // above can end, including a preflight/feature-slug failure that returned before a sprint
-    // ever existed — those still need the nudge, since nothing else will tell a non-polling
-    // caller the run is over.
-    if (options.herdr && !delegatedNotification) {
+    // Only under HERDR_ENV=1 — see notifyTriggeringPane's doc comment for why this is the
+    // one case where the caller (the same pane crew-afk was launched from) can stop polling
+    // and just wait for this nudge instead. Covers every way the run above can end, including
+    // a preflight/feature-slug failure that returned before a sprint ever existed — those
+    // still need the nudge, since nothing else will tell a non-polling caller the run is over.
+    if (options.herdr) {
       const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : stalled ? "stalled — blockers need a human" : "finished";
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
       await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);
-    }
-    // The relaunched instance's last act: report its own exit code back to the front-door
-    // process, which is otherwise given no way to learn it — herdr's `pane run` starts a
-    // plain command fire-and-forget, with no exit-code readback (see
-    // relaunchIntoDedicatedPane's doc comment). Only ever set on the relaunched instance
-    // itself (the front door never sets CREW_AFK_RELAUNCHED), and only after the nudge above,
-    // so the front door can never read this sentinel before the triggering pane has already
-    // been notified.
-    if (process.env.CREW_AFK_RELAUNCHED === "1" && process.env.CREW_AFK_RELAUNCH_SENTINEL) {
-      try {
-        writeFileSync(process.env.CREW_AFK_RELAUNCH_SENTINEL, JSON.stringify({ exitCode, at: new Date().toISOString() }));
-      } catch {
-        /* the front door's own timeout ceiling is the fallback if even this fails */
-      }
     }
     // Last, not first: releasing this before the cleanup above would let a second `run`
     // for the same slug slip in and start racing this one while it's still closing panes.

@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.29.127]
+
+### Changed
+
+- **crew-afk's own process is no longer relaunched into a herdr-hosted pane.** herdr's `pane
+  run` cannot report a real exit code back (no `pane wait`, no `exit_code` field anywhere in
+  herdr's own responses), so the previous design had to fake completion-detection with a
+  sentinel-file poll and an 8-hour blind timeout (`relaunchIntoDedicatedPane`,
+  `waitForRelaunchSentinel`) — all removed. Under `HERDR_ENV=1`, crew-afk now just runs in
+  whatever pane launched it and opens one extra tab that runs `tail -f
+  orchestrator.log` (`ensureHerdrLogTab`), the same design used before that relaunch existed.
+  herdr is never asked to host or report on anything load-bearing again; the log file /
+  `sprint-state.json` are the only real source of a run's outcome, matching [1.29.126]'s
+  `notifyTriggeringPane` fix. `CREW_AFK_RELAUNCHED` and its sentinel-file env plumbing are
+  gone with it.
+
 ## [1.29.126]
 
 ### Fixed
