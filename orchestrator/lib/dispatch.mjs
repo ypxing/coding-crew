@@ -568,12 +568,22 @@ export async function notifyTriggeringPane(effects, message) {
     return { sent: false, reason: "no HERDR_PANE_ID in env" };
   }
   try {
-    const result = await herdrExec(effects, ["agent", "prompt", paneId, message]);
+    // --wait --until working is load-bearing, not just a status check: plain `agent prompt`
+    // exits 0 even when the pane never receives the message (herdrdev/herdr#4537, hit against
+    // a --no-focus pane that's never attached — exactly how this pane is created). --wait
+    // makes herdr itself confirm the target agent picked the prompt up, surfacing
+    // agent_prompt_stalled as a nonzero exit instead of a false success. Short timeout because
+    // this push is advisory only (see doc comment above) — never worth blocking a dispatch on.
+    const result = await herdrExec(
+      effects,
+      ["agent", "prompt", paneId, message, "--wait", "--until", "working", "--timeout-ms", "2000"],
+      5000,
+    );
     // herdrExec/spawnWithTimeout resolves rather than rejects on a nonzero exit (see
     // effects.mjs) — the catch below only ever catches a thrown error (e.g. herdr not on
-    // PATH), so a failed push (agent_not_ready, no agent in that pane, herdr unreachable)
-    // must be checked here explicitly or it is never seen at all, not even in this
-    // best-effort log line.
+    // PATH), so a failed push (agent_not_ready, no agent in that pane, herdr unreachable,
+    // agent_prompt_stalled) must be checked here explicitly or it is never seen at all, not
+    // even in this best-effort log line.
     if (result.code !== 0) {
       const reason = `herdr agent prompt exit=${result.code} ${(result.stderr || result.stdout || "").trim()}`;
       effects.log?.(`NOTIFY-FAIL ${reason}`);

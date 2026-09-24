@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.126]
+
+### Fixed
+
+- **A stalled `herdr agent prompt` push into an unattended triggering pane no longer reports
+  success.** `notifyTriggeringPane` now passes `--wait --until working --timeout-ms 2000` —
+  without it, a push herdr can't actually deliver (herdrdev/herdr#4537, hit against a
+  `--no-focus` pane that's never attached, exactly how crew-afk creates the triggering pane)
+  still exited 0, so the existing `result.code !== 0` check could never catch it. `--wait`
+  makes herdr itself confirm the target agent picked the prompt up, surfacing
+  `agent_prompt_stalled` as a real, loggable failure instead of a false success.
+
+### Added
+
+- **The front-door process prints a `tail -f orchestrator.log` fallback into the triggering
+  pane before it starts waiting on the dedicated run pane.** Every per-issue milestone and
+  the final outcome were already durably logged there (`notifyMilestone` writes to `ctx.log`
+  before ever attempting the herdr push) — this just tells whoever is watching the triggering
+  pane where to look, so a lost push reads as "check the log" instead of a stalled sprint.
+
 ## [1.29.125]
 
 ### Fixed

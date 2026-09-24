@@ -33,9 +33,13 @@
  *                                           original triggering pane gets one `herdr agent
  *                                           prompt` with the outcome (see dispatch.mjs's
  *                                           notifyTriggeringPane), so whoever is watching it
- *                                           can stop polling and just wait for that nudge.
- *                                           The durable record of everything printed either
- *                                           way is still
+ *                                           can stop polling and just wait for that nudge —
+ *                                           but that push can silently not land (herdrdev/
+ *                                           herdr#4537), so the front door also prints a
+ *                                           tail-the-log fallback into the triggering pane's
+ *                                           own scrollback before it starts waiting. The
+ *                                           durable record of everything printed either way
+ *                                           is still
  *                                           `.scratch/<feature-slug>/traces/orchestrator.log`.
  *   --model <alias|inherit>                coder model; reviewer/triage/commandsDiscovery/
  *                                           coverageValidation match it unless
@@ -531,6 +535,14 @@ async function main() {
       const relaunchArgv = process.argv.slice(2);
       if (resolved.slug && !relaunchArgv.includes("--feature-slug")) {
         relaunchArgv.push("--feature-slug", resolved.slug);
+      }
+      // Printed straight to this pane's own scrollback, not pushed through herdr — the one
+      // way of watching the sprint that cannot fail the way notifyTriggeringPane's end-of-run
+      // nudge can (herdrdev/herdr#4537: `agent prompt` can report success against a pane that
+      // never actually received it). Front-door process blocks here until the sprint ends, so
+      // whoever is watching this pane sees it before the wait, not just at the end.
+      if (resolved.slug) {
+        console.log(`crew-afk: sprint running in its own pane. If this pane's end-of-run nudge never arrives, follow progress directly: tail -f ${mainRoot}/.scratch/${resolved.slug}/traces/orchestrator.log`);
       }
       const result = await relaunchIntoDedicatedPane(effects, {
         mainRoot,
