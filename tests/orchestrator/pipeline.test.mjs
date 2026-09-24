@@ -30,9 +30,10 @@ const CASES = [
   // A human reran crew-afk after fixing what blocked it: the branch itself was fine, so
   // this one reason resumes at verify rather than restarting the coder.
   ["blocked — retry limit reached (2 attempts) — ac-receipt-failed — ERROR: x", { route: "verify", label: "ac-receipt-retry" }],
+  // So does a conflict: a restart would only hit the same conflict at the sync step.
+  ["blocked — retry limit reached (2 attempts) — merge-conflict — x", { route: "fix", kind: "conflict", context: "x" }],
   // Every other blocked reason still restarts, as before.
   ["blocked — retry limit reached (2 attempts) — merge-failed", { route: "restart" }],
-  ["blocked — retry limit reached (2 attempts) — merge-conflict — x", { route: "restart" }],
   ["blocked — retry limit reached (2 attempts) — review-not-run", { route: "restart" }],
 ];
 

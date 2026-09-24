@@ -22,6 +22,8 @@
 #                         so two such issues conflict when the second one merges. A worker
 #                         dispatched into a worktree with a merge in progress resolves it
 #                         first, keeping both sides' lines (ours first), as crew-coder is told to.
+#   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
+#                         of resolving it, so the branch conflicts again at the merge gate.
 #   <slug>.exit           exit with this code instead of 0
 #
 # Every fixture's own content — whatever this script writes to --out, whether from a default
@@ -144,6 +146,10 @@ if [ ! -f "$FAKE_DIR/$SLUG.nocommit" ]; then
   (
     cd "$DIR" || exit 1
     if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+      if [ -f "$FAKE_DIR/$SLUG.no-resolve" ]; then
+        git merge --abort >/dev/null 2>&1
+        exit 0
+      fi
       for f in $(git diff --name-only --diff-filter=U); do
         { git show ":2:$f"; git show ":3:$f"; } | awk '!seen[$0]++' > "$f"
         git add "$f"

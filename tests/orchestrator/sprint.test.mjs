@@ -443,6 +443,32 @@ test("merge-conflict retries run one at a time, so a sibling's resolution can't 
   assert.match(traceLog(root), /\[CONFLICT-RETRY-WAIT\] slug=\w+/);
 });
 
+test("a rerun after a merge conflict spent the retry cap resolves it through the coder, not a restart", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  fake(root, "alpha.shared");
+  fake(root, "beta.shared");
+  // Whichever loses the first merge can't resolve it, so its one retry conflicts again.
+  fake(root, "alpha.no-resolve");
+  fake(root, "beta.no-resolve");
+  const capped = commandLines(root, ["--max-parallel", "2"]);
+  assert.equal(capped.r.code, 2, `${capped.r.stdout}\n${capped.r.stderr}`);
+  let s = state(root);
+  assert.equal(s.blocked_slugs?.length, 1, traceLog(root));
+  const loser = s.blocked_slugs[0];
+  assert.match(s.retention?.[loser]?.reason ?? "", /retry limit reached .* merge-conflict/);
+
+  unlinkSync(join(root, ".scratch/fake", `${loser}.no-resolve`));
+  const rerun = commandLines(root);
+  assert.equal(rerun.r.code, 0, `${rerun.r.stdout}\n${rerun.r.stderr}`);
+  s = state(root);
+  assert.deepEqual([...s.completed_slugs].sort(), ["alpha", "beta"]);
+  assert.match(traceLog(root), new RegExp(`\\[SYNC-CONFLICT-KEPT\\] slug=${loser} `));
+  const shared = sh("git", ["-C", root, "show", "feature/demo:src/shared.txt"]).stdout;
+  assert.deepEqual(shared.trim().split("\n").sort(), ["alpha", "beta"]);
+});
+
 test("a close-refused retry skips the worker, verify, and review, no-ops the already-merged retry, and succeeds on a retried close", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

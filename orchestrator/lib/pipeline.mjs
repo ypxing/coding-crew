@@ -69,15 +69,18 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
  *           leaves the conflicted merge in the worktree and the coder resolves it; verify
  *           and review then re-run on the new commit. If the sync merges cleanly after
  *           all, the coder is skipped and only verify + review re-run.
+ *           Also the route once a human reruns after the retry cap blocked it: a restart
+ *           would only hit the same conflict at the sync step.
  *   restart anything else, including no reason — the coder runs on workerPrompt.
  *
  * The retry cap (MAX_ATTEMPTS_PER_ISSUE, pipeline/finish.mjs) bounds every route alike.
  */
 export function resumeRoute(reason) {
   if (reason == null) return { route: "restart" };
-  if (reason.replace(BLOCKED_PREFIX, "").startsWith(AC_RECEIPT_FAILED_TAG)) return { route: "verify", label: "ac-receipt-retry" };
-  if (reason.startsWith(MERGE_CONFLICT_TAG)) {
-    return { route: "fix", kind: "conflict", context: stripReasonTag(reason, MERGE_CONFLICT_TAG) };
+  const unblocked = reason.replace(BLOCKED_PREFIX, "");
+  if (unblocked.startsWith(AC_RECEIPT_FAILED_TAG)) return { route: "verify", label: "ac-receipt-retry" };
+  if (unblocked.startsWith(MERGE_CONFLICT_TAG)) {
+    return { route: "fix", kind: "conflict", context: stripReasonTag(unblocked, MERGE_CONFLICT_TAG) };
   }
   if (reason === "merge-failed" || reason.startsWith("close-refused")) return { route: "merge" };
   if (reason === "review-not-run") return { route: "verify", label: "review-not-run" };
