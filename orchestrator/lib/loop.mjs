@@ -12,7 +12,7 @@
  * What used to be "round" — a wave of issues dispatched together — no longer exists as a
  * synchronization point. What's left of the word is repurposed as each *issue's own*
  * attempt count (see sprint.bumpAttempt, spent once per dispatch in runOne below, and
- * pipeline.mjs's finishRetryOrBlock): the per-issue retry cap that used to fall out
+ * pipeline/finish.mjs's finishRetryOrBlock): the per-issue retry cap that used to fall out
  * accidentally from a round's real wall-clock cost is now the only thing throttling
  * retries, so it has to be explicit.
  *

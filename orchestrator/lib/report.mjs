@@ -32,7 +32,7 @@ function normaliseCheck(value) {
  * sometimes adds — unlike a line-anchored regex or awk pattern, which is not.
  *
  * The only remaining caller is parseReviewAggregate: the round-aggregate file is a
- * concatenation of several dispatches' sidecar contents (see pipeline.mjs's runReview),
+ * concatenation of several dispatches' sidecar contents (see pipeline/review.mjs's runReview),
  * appended as fenced json blocks so a later retry's block can be told apart from an
  * earlier one for the same branch. Per-dispatch parsing (parseWorkerReport,
  * parseReviewReport, parseTriageReport) reads the sidecar object directly and never

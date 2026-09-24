@@ -169,5 +169,5 @@ EOF
     fi
   done
   grep -q 'CREW_PROMOTE' "$REPO_ROOT/orchestrator/lib/sprint.mjs"
-  ! grep -qE '"CRITICAL"\s*,\s*"HIGH"' "$REPO_ROOT/orchestrator/lib/pipeline.mjs"
+  ! grep -qE '"CRITICAL"\s*,\s*"HIGH"' "$REPO_ROOT/orchestrator/lib/pipeline.mjs" "$REPO_ROOT"/orchestrator/lib/pipeline/*.mjs
 }

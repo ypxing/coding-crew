@@ -190,7 +190,7 @@ if [ -n "$MERGE_CONFLICTS" ]; then
 fi
 
 # --- Environment blockers (triage said not-fixable, twice — see handleVerificationFailure
-# in orchestrator/lib/pipeline.mjs) -------------------------------------------
+# in orchestrator/lib/pipeline/verify.mjs) ------------------------------------
 # A `blocked — environment — ...` reason is the other case, alongside merge-failed, that
 # isn't the branch's own content needing more work: crew-triage judged the verification
 # failure unfixable by recoding, a plain coder-free retry hit the identical failure again,

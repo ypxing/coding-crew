@@ -12,111 +12,35 @@
  *
  * Every failure demotes to `partial` and retains the branch. Nothing merges on an
  * absent check.
+ *
+ * The order lives here (runWorker, runHousekeeping); each stage's body lives in
+ * pipeline/: verify.mjs (triage), review.mjs (review + promotion), merge.mjs (merge +
+ * close), finish.mjs (partial/blocked endings), shared.mjs (reason tags, helpers).
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import {
-  applySchemaPrefilter,
-  depsLine,
-  findingsAtOrAbove,
-  parseReviewReport,
-  parseTriageReport,
-  parseVerifyChecks,
-  parseWorkerReport,
-} from "./report.mjs";
+import { applySchemaPrefilter, depsLine, parseVerifyChecks, parseWorkerReport } from "./report.mjs";
 import { getTracker } from "./tracker.mjs";
-import { criteriaFile, fixPrompt, resumeNote, reviewPrompt, triagePrompt, workerPrompt } from "./prompts.mjs";
+import { fixPrompt, resumeNote, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
 import { dispatch } from "./dispatch.mjs";
-import { notifyTriggeringPane } from "./pane-host/index.mjs";
-
-// Retention-reason tags for a verify-worktree.sh failure, once triage (see runTriage
-// below) has classified it. Read back by runWorker to route the *next* attempt — a
-// fixable verdict to a narrower fix prompt, a not-fixable one to a coder-free recheck.
-// Centralised here, not restated at each comparison, so the tag and its separator cannot
-// drift between the writer and the reader.
-const FIXABLE_TAG = "verification-failed:fixable";
-const NOT_FIXABLE_TAG = "verification-failed:not-fixable";
-// Written by runHousekeeping on an `AC: unmet` verdict, read back by runWorker the same
-// way FIXABLE_TAG is: routes the retry to fixPrompt instead of a full workerPrompt restart.
-// No triage step here — the reviewer's own detail is already the concrete, actionable
-// thing a fix needs, unlike a verify failure's raw check output.
-const CRITERIA_UNMET_TAG = "criteria-unmet";
-const REASON_SEP = " — ";
-
-// Every non-`complete` outcome — verify failure, unmet AC, a failed merge, a review that
-// never landed a report, anything — spends one of this issue's attempts (see
-// finishRetryOrBlock below). Two spent attempts and the third demotion becomes `blocked`
-// instead of another retry: one retry is "might have been transient", a second failure in
-// the same shape is the answer, not a reason to ask a fourth time. Replaces what used to
-// be two separate, reason-specific repeat-checks (a second not-fixable verdict, a second
-// review-not-run) with one rule that covers every retry path the same way.
-const MAX_ATTEMPTS_PER_ISSUE = 2;
-
-function taggedReason(tag, summary) {
-  return `${tag}${REASON_SEP}${summary}`;
-}
-
-/** Dispatch filename stem — the issue's own `NN-<slug>` (see tracker.mjs's issueNumber), so
- * prompt/report files sort and scan the same way the issue tracker's own files do. Falls
- * back to the bare slug when the issue file carries no leading number. */
-function dispatchStem(issue) {
-  return issue.number ? `${issue.number}-${issue.slug}` : issue.slug;
-}
-
-/** The one push per issue per round a caller polling for milestones actually needs —
- * a terminal outcome, not every gate in between. Always written to ctx.log (stderr +
- * orchestrator.log) first: that is the only signal a caller with no pane host ever gets —
- * the push below it is a no-op without one (see notifyTriggeringPane's own doc comment),
- * so without this line a whole sprint's worth of milestones was previously invisible to
- * anyone not running under herdr/orca, discoverable only after the fact from a finished
- * sprint's final summary. */
-async function notifyMilestone(ctx, issue, message) {
-  ctx.log(`[MILESTONE] ${dispatchStem(issue)}: ${message}`);
-  const result = await notifyTriggeringPane(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`);
-  if (!result.sent) ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: ${result.reason}`);
-  return result;
-}
-
-/** close-issue.sh / promote-findings.sh's own `--issue`/positional argument: an issue
- * file path for local, a bare GitHub issue number for github (both scripts branch on
- * tracker-config.sh the same way; see close-issue.sh's own "tracker backend" comment). */
-function issueRef(issue) {
-  return issue.path ?? String(issue.number);
-}
-
-/** The `issuePath:` value handed to prompts.mjs's builders — a real path to `cat` for
- * local; for github (no file, just an already-fetched body this dispatch doesn't
- * forward), a pointer the dispatched agent can act on directly instead of the literal
- * string "undefined". */
-function issueDescriptor(issue) {
-  return issue.path ?? `GitHub issue #${issue.number} — fetch its current body with: gh issue view ${issue.number} --json body -q .body`;
-}
-
-/** The free text after a tag this module itself wrote — never applied to a reason whose tag is unknown. */
-function stripReasonTag(reason, tag) {
-  return reason.startsWith(tag + REASON_SEP) ? reason.slice(tag.length + REASON_SEP.length) : reason;
-}
-
-/**
- * Write a `## <heading>` note against `issue`, through whichever backend `getTracker`
- * resolves — local's in-place file splice (`writeIssueSection`) or github's new-comment-
- * per-call (`writeProgress`; see its own docstring for why a github write is never an
- * in-place edit). The two take different argument shapes (a path vs. the issue itself),
- * so this is the one place that branches on which the resolved tracker exposes, instead
- * of every call site guessing the backend from `issue.path`'s presence.
- */
-async function writeTrackerSection(effects, issue, heading, body, { append = false } = {}) {
-  if (effects.dryRun) return;
-  const tracker = await getTracker(effects.mainRoot);
-  if (tracker.writeIssueSection) {
-    if (issue.path && existsSync(issue.path)) tracker.writeIssueSection(issue.path, heading, body, { append });
-    return;
-  }
-  if (tracker.writeProgress) tracker.writeProgress(issue, body, { heading, mainRoot: effects.mainRoot });
-}
+import { finishBlocked, finishRetryOrBlock } from "./pipeline/finish.mjs";
+import { mergeAndClose } from "./pipeline/merge.mjs";
+import { promote, runReview } from "./pipeline/review.mjs";
+import {
+  CRITERIA_UNMET_TAG,
+  dispatchStem,
+  FIXABLE_TAG,
+  issueDescriptor,
+  NOT_FIXABLE_TAG,
+  notifyMilestone,
+  readSidecar,
+  stripReasonTag,
+  taggedReason,
+} from "./pipeline/shared.mjs";
+import { handleVerificationFailure } from "./pipeline/verify.mjs";
 
 /**
  * Whether `branch` carries any commit the feature branch doesn't already have — the same
@@ -144,7 +68,7 @@ function branchHasCommits(effects, featureBranch, branch) {
  *           told exactly what failed, instead of re-reading the whole issue.
  *   restart anything else, including no reason — the coder runs on workerPrompt.
  *
- * The retry cap (MAX_ATTEMPTS_PER_ISSUE) bounds every route alike.
+ * The retry cap (MAX_ATTEMPTS_PER_ISSUE, pipeline/finish.mjs) bounds every route alike.
  */
 export function resumeRoute(reason) {
   if (reason == null) return { route: "restart" };
@@ -388,14 +312,7 @@ export async function runWorker(ctx, issue, attempt) {
     },
   );
 
-  let sidecar = null;
-  if (existsSync(sidecarFile)) {
-    try {
-      sidecar = JSON.parse(readFileSync(sidecarFile, "utf8"));
-    } catch {
-      sidecar = null;
-    }
-  }
+  const sidecar = readSidecar(sidecarFile);
 
   const report = parseWorkerReport(result.text, sidecar);
   return { issue, branch, attempt, worktree, dispatch: result, report };
@@ -546,348 +463,3 @@ export async function runHousekeeping(ctx, worker) {
   return mergeAndClose(ctx, worker, outcome);
 }
 
-/**
- * Merge, then close only on the merge's success. Shared by the normal end-of-pipeline
- * path and the merge-failed/close-refused resume, which re-enters here directly — both
- * rely on merge-branches.sh's already-merged short-circuit and receipts.sh's own SHA-
- * bound checks to make a retry safe, not on anything re-derived above this function.
- */
-async function mergeAndClose(ctx, worker, outcome) {
-  const { sprint, effects, options } = ctx;
-  const { issue, branch } = worker;
-
-  effects.git(["checkout", sprint.featureBranch]);
-  ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=merge`);
-  // effects.bash runs spawnSync, which blocks the same single event loop every issue's
-  // dispatch shares (see pane-host/shared.mjs's paneHostExec comment for the same hazard elsewhere) —
-  // without a bound here, a stalled merge (e.g. a docker-mode merge whose container hangs
-  // on a network fetch) freezes the whole sprint, not just this issue.
-  const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {
-    env: sprint.childEnv(),
-    timeoutMs: options.mergeTimeoutMs,
-  });
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${merge.stdout.trim()}`);
-  if (merge.code !== 0) {
-    if (merge.code === 124) {
-      effects.git(["merge", "--abort"]);
-    }
-    return finishRetryOrBlock(ctx, worker, outcome, "merge-failed");
-  }
-
-  ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=close`);
-  // The branch is only needed by the github path (receipts.sh check ac --branch — see
-  // close-issue.sh's own comment); harmless as a trailing arg for local, which ignores it.
-  const close = effects.bash("close-issue.sh", [issueRef(issue), branch], {
-    env: sprint.childEnv(),
-    timeoutMs: options.mergeTimeoutMs,
-  });
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${close.stdout.trim()}`);
-  if (close.code !== 0) {
-    return finishRetryOrBlock(ctx, worker, outcome, `close-refused — ${close.stderr.trim() || close.stdout.trim()}`);
-  }
-
-  sprint.complete(issue.slug, branch);
-  outcome.status = "complete";
-  await notifyMilestone(ctx, issue, `complete — merged and closed (round ${worker.attempt})`);
-  return outcome;
-}
-
-/**
- * Verify-worktree.sh already failed — decide what that failure means before demoting.
- *
- * Dispatches `runTriage`, an agent independent of the coder that wrote the branch (the same
- * reason review is independent of the coder, not a self-grade), and tags the retention
- * reason with its verdict so the next attempt's runWorker can route on it without
- * re-deriving anything. A not-fixable verdict that recurs stops on its own, via this issue's
- * retry cap (see finishRetryOrBlock) — no reason-specific repeat-check needed here.
- *
- * Exception: a not-fixable-recheck round (runWorker's verify route, worker.skippedWorker)
- * already carries a triage verdict from the round that first retained this branch — that is
- * the whole point of "recheck deps + verify only" ([SKIP-WORKER]'s own "no triage" promise).
- * Re-triaging here on the exact same failure would just re-ask the same question at the cost
- * of another dispatch, so this reuses that prior verdict verbatim instead.
- */
-async function handleVerificationFailure(ctx, worker, outcome, verify) {
-  const { sprint } = ctx;
-
-  if (worker.skippedWorker) {
-    const priorReason = sprint.retentionReason(worker.issue.slug) ?? "verification-failed";
-    return finishRetryOrBlock(ctx, worker, outcome, priorReason);
-  }
-
-  const triage = await runTriage(ctx, worker, verify.stdout);
-  if (!triage.completed) {
-    // Triage itself is unusable (dispatch failure, timeout, unparseable answer) — fall back
-    // to the plain reason rather than let a helper's own failure stall the branch. The next
-    // attempt still gets a full coder redispatch, same as before this existed.
-    return finishRetryOrBlock(ctx, worker, outcome, "verification-failed");
-  }
-
-  const summary = `${triage.parsed.category || "unspecified"}: ${triage.parsed.detail || "no detail given"}`;
-  const fixable = triage.parsed.fixable;
-  const tag = fixable ? FIXABLE_TAG : NOT_FIXABLE_TAG;
-
-  return finishRetryOrBlock(ctx, worker, outcome, taggedReason(tag, summary));
-}
-
-/**
- * Dispatched to `crew-triage`, never to `crew-coder` — the coder that wrote the branch has
- * every incentive to call its own failure "environmental" rather than do more work, the same
- * self-grading risk that keeps review off the coder too. cwd is mainRoot, not the worktree:
- * the branch ref and the captured check output are all triage needs, matching runReview.
- */
-async function runTriage(ctx, worker, verifyStdout) {
-  const { sprint, effects, platform, options } = ctx;
-  const { issue, branch } = worker;
-  const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage-prompt.md`);
-  const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.md`);
-  const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.report.json`);
-
-  // See runWorker's matching rmSync: this path is fixed per issue, so a stale sidecar from
-  // a prior triage dispatch must not be read back as this round's verdict.
-  rmSync(sidecarFile, { force: true });
-
-  writeFileSync(
-    promptFile,
-    triagePrompt({
-      branch,
-      slug: issue.slug,
-      issuePath: issueDescriptor(issue),
-      featureBranch: sprint.featureBranch,
-      checkOutput: verifyStdout,
-      reportPath: sidecarFile,
-    }),
-  );
-
-  ctx.log(
-    `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-triage model=${options.triageModel ?? "inherit"}`,
-  );
-  const result = await dispatch(
-    effects,
-    platform,
-    {
-      agent: "crew-triage",
-      cwd: effects.mainRoot,
-      promptFile,
-      outFile,
-      // Same convention as the reviewer: triage judges the coder's work, so it defaults to
-      // the coder's own model — never a cheaper one the sprint did not choose — unless
-      // .coding-crew/afk-models.json explicitly names a different (typically stronger) one.
-      model: options.triageModel,
-      mainRoot: effects.mainRoot,
-      logFile: sprint.traceLog,
-      featureSlug: sprint.featureSlug,
-      scriptsDir: effects.scriptsDir,
-      slug: dispatchStem(issue),
-      issueNumber: issue.number,
-      round: worker.attempt,
-      reportPath: sidecarFile,
-    },
-    {
-      timeoutMs: options.reviewTimeoutMs,
-      onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
-    },
-  );
-
-  let sidecar = null;
-  if (existsSync(sidecarFile)) {
-    try {
-      sidecar = JSON.parse(readFileSync(sidecarFile, "utf8"));
-    } catch {
-      sidecar = null;
-    }
-  }
-
-  const parsed = parseTriageReport(result.text, sidecar);
-  const completed = !result.timedOut && parsed.ok;
-  return { completed, parsed };
-}
-
-async function runReview(ctx, worker, checks) {
-  const { sprint, effects, platform, options } = ctx;
-  const { issue, branch } = worker;
-  const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review-prompt.md`);
-  const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.md`);
-  const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.report.json`);
-  const reportFile = ctx.roundReviewFile();
-
-  // See runWorker's matching rmSync: this path is fixed per issue, so a stale sidecar from
-  // a prior review dispatch must not be read back as this round's verdict.
-  rmSync(sidecarFile, { force: true });
-
-  writeFileSync(
-    promptFile,
-    reviewPrompt({
-      branch,
-      slug: issue.slug,
-      issuePath: issueDescriptor(issue),
-      criteria: issue.criteria,
-      featureBranch: sprint.featureBranch,
-      checks,
-      reportPath: sidecarFile,
-    }),
-  );
-
-  ctx.log(
-    `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-review model=${options.reviewerModel ?? "inherit"}`,
-  );
-  const result = await dispatch(
-    effects,
-    platform,
-    {
-      agent: "crew-code-reviewer",
-      cwd: effects.mainRoot,
-      promptFile,
-      outFile,
-      // The reviewer defaults to the coder's model: reviewing on a weaker one silently
-      // changes the standard the branch is held to. .coding-crew/afk-models.json can name
-      // a different (typically stronger) one explicitly.
-      model: options.reviewerModel,
-      mainRoot: effects.mainRoot,
-      logFile: sprint.traceLog,
-      featureSlug: sprint.featureSlug,
-      scriptsDir: effects.scriptsDir,
-      slug: dispatchStem(issue),
-      issueNumber: issue.number,
-      round: worker.attempt,
-      reportPath: sidecarFile,
-    },
-    {
-      timeoutMs: options.reviewTimeoutMs,
-      onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
-    },
-  );
-
-  let sidecar = null;
-  if (existsSync(sidecarFile)) {
-    try {
-      sidecar = JSON.parse(readFileSync(sidecarFile, "utf8"));
-    } catch {
-      sidecar = null;
-    }
-  }
-
-  const parsed = parseReviewReport(result.text, sidecar);
-  // sidecar-only, fail-closed: parsed.ok is false whenever the sidecar is missing or has no
-  // valid verdict, whatever the dispatch's captured text happened to contain — there is no
-  // separate "real prose findings without a verdict block" case to disambiguate any more,
-  // since findings are only ever read from the sidecar too.
-  if (result.timedOut || !parsed.ok) {
-    // result.stderr is where a dispatch-level failure reason actually lives (a `die()`
-    // guard in dispatch-agent.sh, a spawn-level error, ...) — surfaced here so a human
-    // reading the review report's `not_run` stub does not have to reproduce the dispatch
-    // by hand to find out why.
-    const stderrHint = (result.stderr ?? "").trim().slice(0, 300).replace(/\s+/g, " ");
-    return {
-      completed: false,
-      reportFile,
-      reason: result.timedOut ? "review dispatch timed out" : `${parsed.detail}${stderrHint ? ` — ${stderrHint}` : ""}`,
-      parsed,
-    };
-  }
-
-  // The aggregate file is fed straight from the sidecar's own bytes, not the dispatch's
-  // captured text — the two used to usually agree (the reviewer's protocol asked for the
-  // same block twice, once to disk and once in its final message) but only ever *usually*:
-  // this makes them identical by construction. The `## Branch:` heading is cosmetic —
-  // parseReviewAggregate only ever scans for the fenced json block — but keeps the
-  // aggregate readable for a human, sourced from the sidecar's own branch/slug rather than
-  // trusting the model's chat reply to have written one correctly.
-  mkdirSync(sprint.reviewDir, { recursive: true });
-  const heading = `## Branch: ${sidecar.branch ?? branch} (${sidecar.slug ?? issue.slug})`;
-  const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
-  const prefix = existsSync(reportFile) ? "\n\n" : "";
-  writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
-  return { completed: true, reportFile, parsed };
-}
-
-async function promote(ctx, worker, review, outcome) {
-  const { sprint, effects } = ctx;
-  const { issue, branch } = worker;
-  const guard = effects.bash("promote-findings.sh", ["guard", "--issue", issueRef(issue)], {
-    env: sprint.childEnv(),
-  });
-  const guardText = guard.stdout.trim();
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${guardText}`);
-  if (!/promotable/.test(guardText)) return; // source-guarded: the depth bound
-
-  const threshold = /critical-high/i.test(guardText) ? "critical-high" : sprint.promoteThreshold;
-  const promotable = findingsAtOrAbove(review.parsed.findings, threshold);
-  if (!promotable.length) return;
-
-  mkdirSync(sprint.reviewDir, { recursive: true });
-  const criteriaPath = join(sprint.reviewDir, `${issue.slug}.criteria.md`);
-  writeFileSync(criteriaPath, criteriaFile({ branch, findings: promotable }));
-
-  const defer = effects.bash("promote-findings.sh", [
-    "defer",
-    "--feature-slug", sprint.featureSlug,
-    "--branch", branch,
-    "--slug", issue.slug,
-    "--title", `Fix review findings: ${issue.slug}`,
-    "--report", review.reportFile,
-    "--criteria-file", criteriaPath,
-  ], { env: sprint.childEnv() });
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${defer.stdout.trim()}`);
-  outcome.promoted = promotable.length;
-}
-
-/**
- * Every retryable demotion goes through here instead of calling finishPartial directly —
- * this is the one place that decides, from this dispatch's own attempt number (spent at
- * claim time, see sprint.bumpAttempt in loop.mjs), whether there's still a retry left or
- * whether it's time to give up and let a human look. `reason` is passed through unchanged
- * on a retry; finishBlocked gets a reason that says *why* the cap tripped, since by then
- * the original reason has already repeated once.
- */
-function finishRetryOrBlock(ctx, worker, outcome, reason) {
-  if (worker.attempt >= MAX_ATTEMPTS_PER_ISSUE) {
-    return finishBlocked(ctx, worker, outcome, `retry limit reached (${worker.attempt} attempts) — ${reason}`);
-  }
-  return finishPartial(ctx, worker, outcome, reason);
-}
-
-async function finishPartial(ctx, worker, outcome, reason) {
-  const { sprint, effects } = ctx;
-  const { issue, branch } = worker;
-  const progress = worker.report.progress || worker.report.notes || `Round ${worker.attempt}: ${reason}`;
-  // The worker's own criteria array, when it reports any as unmet, is a structured signal
-  // the prose progress/notes text does not reliably restate — carry it forward verbatim so
-  // the next round's resume doesn't depend on the coder's summary having named every gap.
-  // Only meaningful straight from the worker's own report: by the criteria-unmet-from-review
-  // path (see runHousekeeping), the worker already believed everything was met, so this array
-  // is empty there and adds nothing — the review's own detail already rides in `reason` below.
-  const unmet = (worker.report.criteria || []).filter((c) => c && c.met === false && c.text);
-  const unmetBlock = unmet.length
-    ? `\n\nUnmet criteria (from the worker's own report):\n${unmet.map((c) => `- ${c.text}`).join("\n")}`
-    : "";
-  await writeTrackerSection(
-    effects,
-    issue,
-    "Progress",
-    `Round ${worker.attempt}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
-  );
-  removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-  sprint.retain(issue.slug, branch, reason);
-  outcome.status = "partial";
-  outcome.reason = reason;
-  await notifyMilestone(ctx, issue, `partial — retrying (round ${worker.attempt}) — ${reason}`);
-  return outcome;
-}
-
-async function finishBlocked(ctx, worker, outcome, reason) {
-  const { sprint, effects } = ctx;
-  const { issue, branch } = worker;
-  await writeTrackerSection(effects, issue, "Blocked", `Round ${worker.attempt}: ${reason}`, { append: true });
-  removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-  sprint.blocked(issue.slug, branch, reason);
-  // In-memory, this invocation only — see sprint.mjs's isBlockedThisRun. Persisted
-  // `blocked_slugs` (just above) is for crew-summary.sh's report; it must not be what
-  // keeps a future `crew-afk` run from retrying this issue after a human fixes whatever
-  // blocked it.
-  sprint.markBlockedThisRun(issue.slug);
-  outcome.status = "blocked";
-  outcome.reason = reason;
-  await notifyMilestone(ctx, issue, `blocked — ${reason}`);
-  return outcome;
-}
