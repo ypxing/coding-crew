@@ -17,7 +17,7 @@
  *                                           host or report on the process itself, only to
  *                                           open one extra tab/terminal that runs `tail -f
  *                                           .scratch/<feature-slug>/traces/orchestrator.log`
- *                                           (see dispatch.mjs's ensurePaneLogTab), so a human
+ *                                           (see pane-host/'s openLogTab), so a human
  *                                           can watch the sprint's own narration live without
  *                                           trusting the host with anything load-bearing.
  *                                           HERDR_ENV=1 requires `herdr server` already
@@ -29,14 +29,14 @@
  *                                           opening a new one, and is left open at the end
  *                                           rather than closed — herdr via $HERDR_WORKSPACE_ID,
  *                                           orca implicitly (a worktree already is that
- *                                           container; see dispatch.mjs's ensurePaneWorkspace).
+ *                                           container; see pane-host/orca.mjs).
  *                                           Only a workspace this run created itself (herdr
  *                                           only — orca has none to create or close) is closed
  *                                           once the run ends; the log tab is always closed by
  *                                           this run regardless of who owns the workspace. At
  *                                           the very end of the run, the triggering pane gets
  *                                           one best-effort push with the outcome (see
- *                                           dispatch.mjs's notifyTriggeringPane) — herdr's push
+ *                                           pane-host/index.mjs's notifyTriggeringPane) — herdr's push
  *                                           can silently misreport success (herdrdev/
  *                                           herdr#4537, worked around with `--wait --until
  *                                           working`); orca's own `terminal send` self-reports
@@ -76,7 +76,8 @@ import { spawnSync } from "node:child_process";
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { closePaneLogTab, closePaneWorkspace, DEFAULT_PARALLEL, ensurePaneWorkspace, notifyTriggeringPane, PLATFORMS, preflight } from "./lib/dispatch.mjs";
+import { DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
+import { closePaneLogTab, closePaneWorkspace, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
@@ -420,7 +421,7 @@ async function main() {
       if (process.env.CREW_VERBOSE) console.error(line);
     },
   });
-  // Not a constructor field: dispatch.mjs's paneHostExec reads this straight off effects,
+  // Not a constructor field: pane-host/shared.mjs's paneHostExec reads this straight off effects,
   // the same ad hoc way it already stashes _paneWorkspace/_paneLogTabId there.
   effects.paneHost = options.paneHost;
 
@@ -540,7 +541,7 @@ async function main() {
 
     // The only thing a pane host is ever asked to host for crew-afk's own narration — a
     // tab/terminal that just runs `tail -f` on this sprint's own trace log (see
-    // dispatch.mjs's ensurePaneLogTab). Best-effort: a failure here is cosmetic and never
+    // pane-host/'s openLogTab). Best-effort: a failure here is cosmetic and never
     // reported to the caller, since the log file itself — not this tab — is the run's real,
     // durable output.
     if (options.paneHost && !options.dryRun) {

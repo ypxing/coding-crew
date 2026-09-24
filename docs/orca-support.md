@@ -1,7 +1,7 @@
 # orca support
 
 [orca](https://www.onorca.dev/docs/cli/overview) is a second, interchangeable backend for
-the ambient pane-host integration in `orchestrator/lib/dispatch.mjs` — the same narration
+the ambient pane-host integration in `orchestrator/lib/pane-host/` — the same narration
 role herdr (https://herdr.dev) already played. `ORCA_ENV=1` selects it, `HERDR_ENV=1` selects
 herdr, neither selects neither (today's default, unchanged); the two are mutually exclusive
 (`main.mjs` fails fast if both are set). Nothing else in the pipeline needs to know which

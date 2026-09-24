@@ -29,7 +29,8 @@ import {
 import { getTracker } from "./tracker.mjs";
 import { criteriaFile, fixPrompt, resumeNote, reviewPrompt, triagePrompt, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
-import { dispatch, notifyTriggeringPane } from "./dispatch.mjs";
+import { dispatch } from "./dispatch.mjs";
+import { notifyTriggeringPane } from "./pane-host/index.mjs";
 
 // Retention-reason tags for a verify-worktree.sh failure, once triage (see runTriage
 // below) has classified it. Read back by runWorker to route the *next* attempt — a
@@ -571,7 +572,7 @@ async function mergeAndClose(ctx, worker, outcome) {
   effects.git(["checkout", sprint.featureBranch]);
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=merge`);
   // effects.bash runs spawnSync, which blocks the same single event loop every issue's
-  // dispatch shares (see dispatch.mjs's paneHostExec comment for the same hazard elsewhere) —
+  // dispatch shares (see pane-host/shared.mjs's paneHostExec comment for the same hazard elsewhere) —
   // without a bound here, a stalled merge (e.g. a docker-mode merge whose container hangs
   // on a network fetch) freezes the whole sprint, not just this issue.
   const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {
