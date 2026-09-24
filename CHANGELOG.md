@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.129]
+
+### Changed
+
+- **crew-afk's orchestrator is reorganised, with no change in behaviour.** Pane-host code
+  moves out of `dispatch.mjs` into `orchestrator/lib/pane-host/` (`herdr.mjs`, `orca.mjs`,
+  one adapter each, behind `index.mjs`), so `dispatch.mjs` is back to spawning and parsing.
+  `pipeline.mjs` keeps the gate order; each stage's body moves to
+  `orchestrator/lib/pipeline/` (`verify`, `review`, `merge`, `finish`, `shared`). Where a
+  retry re-enters the pipeline is now one table, `resumeRoute(reason)`, instead of four
+  flags in `runWorker`. Comments across `dispatch.mjs`, `pipeline*` and `main.mjs` are cut
+  back to the constraints they document; the history lives in this changelog.
+
+### Fixed
+
+- **`notifyTriggeringPane` with no pane host selected no longer falls through to herdr.**
+  With neither `HERDR_ENV` nor `ORCA_ENV` set but an ambient `HERDR_PANE_ID` (crew-afk
+  launched inside a herdr pane without opting in), each milestone push tried to spawn a
+  null command. It now returns `{sent: false, reason: "no pane host"}`.
+
 ## [1.29.128]
 
 ### Added

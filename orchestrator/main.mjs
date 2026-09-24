@@ -10,39 +10,12 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
- *   $HERDR_ENV=1 / $ORCA_ENV=1              mutually exclusive; pick one pane host (neither
- *                                           set: no pane integration at all, unchanged from
- *                                           before either existed). crew-afk runs in whatever
- *                                           pane launched it — the host is never asked to
- *                                           host or report on the process itself, only to
- *                                           open one extra tab/terminal that runs `tail -f
- *                                           .scratch/<feature-slug>/traces/orchestrator.log`
- *                                           (see pane-host/'s openLogTab), so a human
- *                                           can watch the sprint's own narration live without
- *                                           trusting the host with anything load-bearing.
- *                                           HERDR_ENV=1 requires `herdr server` already
- *                                           running; ORCA_ENV=1 requires the orca runtime
- *                                           reachable (`orca open`). Every coder/review/triage
- *                                           dispatch is always headless, regardless. If
- *                                           crew-afk itself is running inside a pane-host pane,
- *                                           that pane's own workspace is reused instead of
- *                                           opening a new one, and is left open at the end
- *                                           rather than closed — herdr via $HERDR_WORKSPACE_ID,
- *                                           orca implicitly (a worktree already is that
- *                                           container; see pane-host/orca.mjs).
- *                                           Only a workspace this run created itself (herdr
- *                                           only — orca has none to create or close) is closed
- *                                           once the run ends; the log tab is always closed by
- *                                           this run regardless of who owns the workspace. At
- *                                           the very end of the run, the triggering pane gets
- *                                           one best-effort push with the outcome (see
- *                                           pane-host/index.mjs's notifyTriggeringPane) — herdr's push
- *                                           can silently misreport success (herdrdev/
- *                                           herdr#4537, worked around with `--wait --until
- *                                           working`); orca's own `terminal send` self-reports
- *                                           delivery confidence instead, so no such workaround
- *                                           is needed there. The durable record either way is
- *                                           still `.scratch/<feature-slug>/traces/orchestrator.log`.
+ *   $HERDR_ENV=1 / $ORCA_ENV=1              mutually exclusive; pick one pane host (neither:
+ *                                           none). Opens one tab tailing the trace log and
+ *                                           pushes the outcome to the launching pane at the
+ *                                           end; nothing load-bearing runs through it. Needs
+ *                                           `herdr server` / `orca open` running. See
+ *                                           lib/pane-host/index.mjs and docs/orca-support.md.
  *   --model <alias|inherit>                coder model; reviewer/triage/commandsDiscovery/
  *                                           coverageValidation match it unless
  *                                           .coding-crew/afk-models.json names them explicitly
@@ -51,11 +24,8 @@
  *   --promote <critical|critical-high>      findings promotion threshold
  *   --max-parallel <n>                     concurrent workers (platform default)
  *   --worker-timeout <minutes>             default 45 — a hung worker cannot hang the sprint
- *   --merge-timeout <minutes>              default 10 — merge/close run via blocking spawnSync
- *                                           on the same event loop every issue's dispatch
- *                                           shares, so an unbounded hang here (e.g. a stalled
- *                                           docker-mode merge) freezes the whole sprint, not
- *                                           just the merging issue
+ *   --merge-timeout <minutes>              default 10 — merge/close block the event loop
+ *                                           (spawnSync), so a hang would freeze the sprint
  *   --max-rounds <n>                       hard cap on attempts *per issue* this invocation
  *                                           makes (independent of, and typically larger than,
  *                                           each issue's own 2-attempt cap before it blocks)
@@ -132,12 +102,7 @@ function parseArgs(argv) {
           // A path argument names the sprint: derive the slug from it, exactly once.
           o.featureSlug ??= a.replace(/^\.scratch\//, "").split("/")[0] || null;
         } else {
-          // Anything else is not a recognised flag or a .scratch/ path. Collect it rather
-          // than forward it — session-init.sh and feature-branch-setup.sh two hops down
-          // only know --jira, so a stray word used to die there with a confusing
-          // "Unknown argument" from a script the user never invoked. Fail here instead,
-          // where we can name the accepted forms and, once mainRoot is known, suggest the
-          // closest existing .scratch/<feature-slug> dir for a likely typo.
+          // Collected, not forwarded — see reportUnknownArgs.
           o.unknown.push(a);
         }
     }
@@ -185,27 +150,14 @@ function existingFeatureSlugs(mainRoot) {
 }
 
 /**
- * Every feature slug that currently has at least one ready-for-agent, unblocked issue,
- * mapped to that issue's own slugs — read with an unscoped selectDispatchable() (no
- * sprint exists yet at this point, so there is nothing to scope to).
+ * Feature slug → its ready-for-agent, unblocked issue slugs, from an unscoped
+ * selectDispatchable() (no sprint exists yet). session-init.sh's own no-slug fallback
+ * picks an arbitrary feature once two have ready issues; this lets resolveFeatureSlug
+ * refuse instead, identically for every launcher.
  *
- * This is what resolveFeatureSlug() below uses to answer "which feature would a bare
- * `crew-afk run` mean" without ever guessing: session-init.sh's own fallback for no
- * `--feature-slug` (first issue found by `find`, unordered across sibling feature dirs)
- * is fine for the common single-feature repo, but silently arbitrary the moment a second
- * feature dir also has a ready issue — exactly the shape of the cross-feature dispatch
- * this file's selectDispatchable() scoping fix exists to prevent. Resolving it here,
- * once, before session-init.sh ever runs, means every platform launcher gets the same
- * refusal instead of each depending on its own skill-level disambiguation prompt.
- *
- * Deliberately local-only (the static, not the tracker-resolved, selectDispatchable):
- * `tracker: github` is one setting for the whole repo, not per feature (see
- * `.coding-crew/docs/issue-tracker.md`'s front matter), so there is no cross-feature
- * scan to do under github — a milestone-scoped `gh issue list` always requires already
- * knowing the feature slug, unlike a local `.scratch/<feature>/issues/open/` glob. Under github
- * this simply finds nothing local to scan, `candidates.size` stays 0, and the caller
- * falls through to session-init.sh's own explicit `--feature-slug`-required error —
- * still correct, just not resolved here.
+ * Local-only on purpose: under `tracker: github` there is no cross-feature scan (a
+ * milestone query needs the slug already), so this finds nothing and session-init.sh's
+ * own `--feature-slug`-required error applies.
  */
 function readyFeatureCandidates(mainRoot) {
   const byFeature = new Map();
@@ -240,12 +192,9 @@ function resolveFeatureSlug(mainRoot, explicitSlug) {
 }
 
 /**
- * A pidfile at .scratch/<slug>/.crew-afk.lock, so a second `run` for the same feature-slug
- * refuses instead of racing the first — two independent sprints dispatching the same issue's
- * coder concurrently would race for the same worktree/branch, and whichever one loses burns
- * a real attempt off its 2-attempt cap for a collision that was never its own fault. A stale
- * lock (holder's pid no longer alive — a crash, a SIGKILL) is reclaimed silently, since a dead
- * process has no other cleanup path back to this file.
+ * A pidfile at .scratch/<slug>/.crew-afk.lock: a second `run` for the same slug refuses
+ * rather than racing the first for the same worktrees/branches (the loser would burn real
+ * attempts off its retry cap). A lock whose pid is dead (crash, SIGKILL) is reclaimed.
  */
 function acquireSprintLock(mainRoot, slug) {
   const lockPath = join(mainRoot, ".scratch", slug, ".crew-afk.lock");
@@ -286,11 +235,9 @@ function releaseSprintLock(lockPath) {
 }
 
 /**
- * A bare word that isn't a recognised flag or a .scratch/ path used to be forwarded
- * unexamined to session-init.sh, then to feature-branch-setup.sh, which only knows
- * --jira and dies with "Unknown argument" — two hops from where the mistake was made,
- * in a script whose job has nothing to do with crew-afk's own CLI. Report it here
- * instead, where the accepted forms are known and a likely typo can be named.
+ * A bare word that isn't a flag or a .scratch/ path. Reported here, with the accepted
+ * forms and a likely-typo suggestion, rather than forwarded to session-init.sh, whose
+ * downstream scripts only know --jira.
  */
 function reportUnknownArgs(unknown, mainRoot) {
   const slugs = existingFeatureSlugs(mainRoot);
@@ -344,14 +291,9 @@ const USER_SKILL_DIRS = [
 ];
 
 function resolveScriptsDir(mainRoot) {
-  // Project install first — a repo that pins its own copy means it. Then the user-level
-  // install, which is the documented default (`TARGET_REPO=$HOME`, "works in any project"):
-  // without it a sprint could only run in a repo that had installed crew-afk itself, and
-  // reported that as the skill being half-installed. Then this repo's source tree (dev).
-  //
-  // $HOME first, not os.homedir() alone: on Windows, os.homedir() reads USERPROFILE, not
-  // HOME, so a $HOME override (bash's own portable way to redirect "home", and what
-  // TARGET_REPO=$HOME above documents) would be silently ignored there.
+  // Project install first (a pinned copy wins), then user-level (`TARGET_REPO=$HOME`, the
+  // documented default), then this repo's source tree (dev). $HOME before os.homedir():
+  // on Windows homedir() reads USERPROFILE and would ignore a $HOME override.
   const home = process.env.HOME || homedir();
   const candidates = [
     process.env.CREW_SCRIPTS,
@@ -396,8 +338,7 @@ async function main() {
     return 1;
   }
 
-  // .coding-crew/afk-models.json is optional — absent or unreadable, this is a no-op and
-  // reviewer/triage keep defaulting to the coder's own --model value, exactly as before.
+  // .coding-crew/afk-models.json is optional; absent, every tier follows --model.
   const resolvedModels = resolveModelTiers({
     fileConfig: loadModelConfig(mainRoot),
     cliModel: options.model,
@@ -421,8 +362,7 @@ async function main() {
       if (process.env.CREW_VERBOSE) console.error(line);
     },
   });
-  // Not a constructor field: pane-host/shared.mjs's paneHostExec reads this straight off effects,
-  // the same ad hoc way it already stashes _paneWorkspace/_paneLogTabId there.
+  // Read by pane-host/, which keeps its run-scoped state on effects too.
   effects.paneHost = options.paneHost;
 
   if (options.command === "doctor") {
@@ -445,9 +385,7 @@ async function main() {
 
   // --- plan: read-only, zero tokens ----------------------------------------
   if (options.command === "plan") {
-    // Resolved the same way `run` resolves it (below) — refuses instead of guessing when
-    // more than one feature dir has a ready issue and no --feature-slug was given, so
-    // plan's preview always matches what a following `run` would actually do.
+    // Resolved exactly as `run` resolves it, so the preview matches what `run` would do.
     const resolved = resolveFeatureSlug(mainRoot, options.featureSlug);
     if (resolved.error) {
       console.error(resolved.error);
@@ -464,8 +402,7 @@ async function main() {
     console.log(`scripts:   ${scriptsDir}`);
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);
     console.log(`dispatchable now (${issues.length}):`);
-    // Local issues have `.path`; github issues have no file, only `.number` — printed as a
-    // `#<number>` ref instead, so this line never prints the literal string "undefined".
+    // github issues have no `.path`, only `.number`.
     for (const i of issues) console.log(`  - ${i.slug}  [${i.status}]  ${i.path ?? `#${i.number}`}`);
     const skipped = tracker.selectDispatchable(mainRoot, { status: "deferred-findings", featureSlug: resolved.slug });
     if (skipped.length) console.log(`parked fix issues (${skipped.length}): ${skipped.map((i) => i.slug).join(", ")}`);
@@ -476,12 +413,9 @@ async function main() {
   }
 
   // --- run -----------------------------------------------------------------
-  // Wrapped from here, not just around runSprint: a preflight or feature-slug failure below
-  // exits just as early (still `return 1`, same as before) but now also reaches the
-  // notifyTriggeringPane call in `finally` — under HERDR_ENV=1/ORCA_ENV=1 that's the one nudge the
-  // triggering pane gets, so a setup failure has to reach it too, not just a completed or
-  // stalled sprint. `sprint`/`resolved` are declared here, outside the try, so `finally` can
-  // still see whichever of them got as far as being assigned.
+  // The try starts here, not around runSprint, so a setup failure also reaches the
+  // end-of-run push in `finally` — the only nudge the triggering pane gets. State is
+  // declared outside it so `finally` sees whatever got assigned.
   let sprint;
   let resolved;
   let stalled;
@@ -498,10 +432,7 @@ async function main() {
       return exitCode;
     }
 
-    // Resolved once, here, before session-init.sh (or anything else) touches disk — see
-    // resolveFeatureSlug()'s docstring. Passing the resolved slug down means session-init.sh's
-    // own no-argument fallback (`find | head -n 1`) is only ever reached for the single-feature
-    // repo it was built for; a second feature dir with a ready issue is refused here instead.
+    // Before session-init.sh touches disk — see readyFeatureCandidates.
     resolved = resolveFeatureSlug(mainRoot, options.featureSlug);
     if (resolved.error) {
       console.error(resolved.error);
@@ -509,8 +440,7 @@ async function main() {
       return exitCode;
     }
 
-    // A null slug (session-init.sh's own single-feature fallback) can't be locked on at all
-    // — see acquireSprintLock's doc comment.
+    // A null slug (session-init.sh's single-feature fallback) has nothing to lock on.
     if (resolved.slug) {
       const lock = acquireSprintLock(mainRoot, resolved.slug);
       if (lock.error) {
@@ -521,9 +451,7 @@ async function main() {
       lockPath = lock.lockPath;
     }
 
-    // Before any worktree exists: make sure docker-compose.override.yml and .env are in
-    // .worktreeinclude, so every worktree this sprint creates gets them symlinked in at
-    // creation time (see ensureWorktreeInclude()'s docstring).
+    // Before any worktree exists, so every one gets the included files at creation.
     ensureWorktreeInclude(mainRoot);
 
     sprint = await Sprint.init(effects, {
@@ -531,19 +459,13 @@ async function main() {
       coverage: options.coverage,
       promote: options.promote,
       passthrough: options.passthrough,
-      // Deps are not installed as part of init here — commands finding runs first, below, so
-      // its own cached "install" override (when it finds one) is already on disk before the
-      // sprint's first ensure-deps.sh call reads it.
+      // Installed below, after command discovery has cached any install override.
       deps: false,
       log: (line) => console.error(line),
     });
     sprint.setModel(options.model ?? "agent default");
 
-    // The only thing a pane host is ever asked to host for crew-afk's own narration — a
-    // tab/terminal that just runs `tail -f` on this sprint's own trace log (see
-    // pane-host/'s openLogTab). Best-effort: a failure here is cosmetic and never
-    // reported to the caller, since the log file itself — not this tab — is the run's real,
-    // durable output.
+    // Best-effort: the log file, not this tab, is the run's durable output.
     if (options.paneHost && !options.dryRun) {
       try {
         await ensurePaneWorkspace(effects, { featureSlug: resolved.slug, logFile: sprint.traceLog });
@@ -557,10 +479,7 @@ async function main() {
         platform: options.platform,
         model: options.commandsDiscoveryModel,
         timeoutMs: options.reviewTimeoutMs,
-        // Persisted, not just printed: this step runs once, unattended, before any
-        // worktree exists, and its own dispatch failure (bad model output, timeout) was
-        // otherwise visible only in a live terminal — gone the moment it scrolled past,
-        // with no artifact left afterwards to diagnose it from.
+        // Persisted too: this runs unattended, and a failure must outlive the scrollback.
         log: (line) => {
           console.error(line);
           if (sprint.traceLog) appendLine(sprint.traceLog, line);
@@ -568,9 +487,7 @@ async function main() {
       });
     }
 
-    // Deps, once per sprint against $MAIN_ROOT, after commands finding — not before: a
-    // documented install command discover-commands.sh finds is only usable by ensure-deps.sh
-    // if the cache it lands in already exists by the time this runs.
+    // After command discovery: ensure-deps.sh reads the install command it cached.
     if (options.deps) await sprint.installDeps((line) => console.error(line));
 
     const ctx = {
@@ -595,27 +512,17 @@ async function main() {
     exitCode = 1;
     throw err;
   } finally {
-    // Neither is more than a no-op unless a dispatch actually created/opened the sprint's
-    // shared workspace and log tab (see ensurePaneWorkspace/ensurePaneLogTab in
-    // dispatch.mjs) — closed here, once, regardless of how the run ended, so a thrown error
-    // above doesn't leave either dangling in the pane host's UI. The log tab is closed
-    // independently of the workspace because closePaneWorkspace no-ops on a *reused*
-    // workspace (herdr) or always (orca — see ensurePaneWorkspace's doc comment).
+    // No-ops unless opened above; here so a thrown error can't leave them dangling.
     await closePaneLogTab(effects);
     await closePaneWorkspace(effects);
-    // Only under HERDR_ENV=1/ORCA_ENV=1 — see notifyTriggeringPane's doc comment for why
-    // this is the one case where the caller (the same pane crew-afk was launched from) can
-    // stop polling and just wait for this nudge instead. Covers every way the run above can
-    // end, including a preflight/feature-slug failure that returned before a sprint ever
-    // existed — those still need the nudge, since nothing else will tell a non-polling
-    // caller the run is over.
+    // Every ending, setup failures included: a caller waiting on this push instead of
+    // polling has no other way to learn the run is over.
     if (options.paneHost) {
       const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : stalled ? "stalled — blockers need a human" : "finished";
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
       await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);
     }
-    // Last, not first: releasing this before the cleanup above would let a second `run`
-    // for the same slug slip in and start racing this one while it's still closing panes.
+    // Last: released earlier, a second `run` could start while this one is still closing.
     releaseSprintLock(lockPath);
   }
 }

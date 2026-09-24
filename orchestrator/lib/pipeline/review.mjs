@@ -18,8 +18,7 @@ export async function runReview(ctx, worker, checks) {
   const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.report.json`);
   const reportFile = ctx.roundReviewFile();
 
-  // See runWorker's matching rmSync: this path is fixed per issue, so a stale sidecar from
-  // a prior review dispatch must not be read back as this round's verdict.
+  // A stale sidecar at this fixed path must not be read back as this round's verdict.
   rmSync(sidecarFile, { force: true });
 
   writeFileSync(
@@ -46,9 +45,8 @@ export async function runReview(ctx, worker, checks) {
       cwd: effects.mainRoot,
       promptFile,
       outFile,
-      // The reviewer defaults to the coder's model: reviewing on a weaker one silently
-      // changes the standard the branch is held to. .coding-crew/afk-models.json can name
-      // a different (typically stronger) one explicitly.
+      // Defaults to the coder's model: a weaker reviewer silently lowers the bar.
+      // afk-models.json can name another explicitly.
       model: options.reviewerModel,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
@@ -68,15 +66,9 @@ export async function runReview(ctx, worker, checks) {
   const sidecar = readSidecar(sidecarFile);
 
   const parsed = parseReviewReport(result.text, sidecar);
-  // sidecar-only, fail-closed: parsed.ok is false whenever the sidecar is missing or has no
-  // valid verdict, whatever the dispatch's captured text happened to contain — there is no
-  // separate "real prose findings without a verdict block" case to disambiguate any more,
-  // since findings are only ever read from the sidecar too.
+  // Sidecar-only, fail-closed: no valid sidecar verdict means not run, whatever the text says.
   if (result.timedOut || !parsed.ok) {
-    // result.stderr is where a dispatch-level failure reason actually lives (a `die()`
-    // guard in dispatch-agent.sh, a spawn-level error, ...) — surfaced here so a human
-    // reading the review report's `not_run` stub does not have to reproduce the dispatch
-    // by hand to find out why.
+    // stderr holds dispatch-level failures (a dispatcher `die()`, a spawn error).
     const stderrHint = (result.stderr ?? "").trim().slice(0, 300).replace(/\s+/g, " ");
     return {
       completed: false,
@@ -86,13 +78,9 @@ export async function runReview(ctx, worker, checks) {
     };
   }
 
-  // The aggregate file is fed straight from the sidecar's own bytes, not the dispatch's
-  // captured text — the two used to usually agree (the reviewer's protocol asked for the
-  // same block twice, once to disk and once in its final message) but only ever *usually*:
-  // this makes them identical by construction. The `## Branch:` heading is cosmetic —
-  // parseReviewAggregate only ever scans for the fenced json block — but keeps the
-  // aggregate readable for a human, sourced from the sidecar's own branch/slug rather than
-  // trusting the model's chat reply to have written one correctly.
+  // The aggregate is built from the sidecar's bytes, not the chat reply, so the two can't
+  // disagree. The `## Branch:` heading is for humans; parseReviewAggregate reads only the
+  // fenced json.
   mkdirSync(sprint.reviewDir, { recursive: true });
   const heading = `## Branch: ${sidecar.branch ?? branch} (${sidecar.slug ?? issue.slug})`;
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;

@@ -13,19 +13,9 @@ import { finishRetryOrBlock } from "./finish.mjs";
 import { dispatchStem, FIXABLE_TAG, issueDescriptor, NOT_FIXABLE_TAG, readSidecar, taggedReason } from "./shared.mjs";
 
 /**
- * Verify-worktree.sh already failed — decide what that failure means before demoting.
- *
- * Dispatches `runTriage`, an agent independent of the coder that wrote the branch (the same
- * reason review is independent of the coder, not a self-grade), and tags the retention
- * reason with its verdict so the next attempt's runWorker can route on it without
- * re-deriving anything. A not-fixable verdict that recurs stops on its own, via this issue's
- * retry cap (see finishRetryOrBlock) — no reason-specific repeat-check needed here.
- *
- * Exception: a not-fixable-recheck round (runWorker's verify route, worker.skippedWorker)
- * already carries a triage verdict from the round that first retained this branch — that is
- * the whole point of "recheck deps + verify only" ([SKIP-WORKER]'s own "no triage" promise).
- * Re-triaging here on the exact same failure would just re-ask the same question at the cost
- * of another dispatch, so this reuses that prior verdict verbatim instead.
+ * verify-worktree.sh already failed: triage it, and tag the retention reason with the
+ * verdict. A not-fixable-recheck round (worker.skippedWorker) already has a verdict from
+ * the round that retained the branch, and reuses it verbatim instead of re-triaging.
  */
 export async function handleVerificationFailure(ctx, worker, outcome, verify) {
   const { sprint } = ctx;
@@ -37,9 +27,8 @@ export async function handleVerificationFailure(ctx, worker, outcome, verify) {
 
   const triage = await runTriage(ctx, worker, verify.stdout);
   if (!triage.completed) {
-    // Triage itself is unusable (dispatch failure, timeout, unparseable answer) — fall back
-    // to the plain reason rather than let a helper's own failure stall the branch. The next
-    // attempt still gets a full coder redispatch, same as before this existed.
+    // Triage itself failed: fall back to the plain reason (a full coder retry) rather than
+    // let a helper's failure stall the branch.
     return finishRetryOrBlock(ctx, worker, outcome, "verification-failed");
   }
 
@@ -51,10 +40,8 @@ export async function handleVerificationFailure(ctx, worker, outcome, verify) {
 }
 
 /**
- * Dispatched to `crew-triage`, never to `crew-coder` — the coder that wrote the branch has
- * every incentive to call its own failure "environmental" rather than do more work, the same
- * self-grading risk that keeps review off the coder too. cwd is mainRoot, not the worktree:
- * the branch ref and the captured check output are all triage needs, matching runReview.
+ * Dispatched to `crew-triage`, never the coder: the coder has every incentive to call its
+ * own failure "environmental". cwd is mainRoot — the branch ref and check output suffice.
  */
 export async function runTriage(ctx, worker, verifyStdout) {
   const { sprint, effects, platform, options } = ctx;
@@ -63,8 +50,7 @@ export async function runTriage(ctx, worker, verifyStdout) {
   const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.md`);
   const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.report.json`);
 
-  // See runWorker's matching rmSync: this path is fixed per issue, so a stale sidecar from
-  // a prior triage dispatch must not be read back as this round's verdict.
+  // A stale sidecar at this fixed path must not be read back as this round's verdict.
   rmSync(sidecarFile, { force: true });
 
   writeFileSync(
@@ -90,9 +76,7 @@ export async function runTriage(ctx, worker, verifyStdout) {
       cwd: effects.mainRoot,
       promptFile,
       outFile,
-      // Same convention as the reviewer: triage judges the coder's work, so it defaults to
-      // the coder's own model — never a cheaper one the sprint did not choose — unless
-      // .coding-crew/afk-models.json explicitly names a different (typically stronger) one.
+      // Defaults to the coder's model, never a cheaper one; afk-models.json can override.
       model: options.triageModel,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,

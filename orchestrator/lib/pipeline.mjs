@@ -4,11 +4,8 @@
  *     worktree → include → deps → dispatch → prefilter → verify → review → AC receipt
  *     → promote → merge → close
  *
- * This is the part that was prose, and the part that failed in real sprints: a branch
- * merged with a failing VERIFY, an issue closed off a sibling's branch, a review
- * skipped and read as clean. Here the order is a function body, so it cannot be
- * reordered by a model that is running low on context, and each gate's refusal is a
- * return value rather than a paragraph asking to be obeyed.
+ * The order is a function body, so no model can reorder or skip it, and each gate's
+ * refusal is a return value rather than a paragraph asking to be obeyed.
  *
  * Every failure demotes to `partial` and retains the branch. Nothing merges on an
  * absent check.
@@ -42,13 +39,7 @@ import {
 } from "./pipeline/shared.mjs";
 import { handleVerificationFailure } from "./pipeline/verify.mjs";
 
-/**
- * Whether `branch` carries any commit the feature branch doesn't already have — the same
- * question ensureWorktree's own staleness check answers from the other side. Used to tell a
- * dispatch that died before writing any report (worker process crash, timeout) apart from
- * one that also never got the coder to commit anything: only the former has real work
- * worth resuming next round instead of just a reason to give up.
- */
+/** Whether `branch` has commits the feature branch lacks: a dead dispatch with commits is worth resuming. */
 function branchHasCommits(effects, featureBranch, branch) {
   const r = effects.gitRead(["rev-list", "--count", `${featureBranch}..${branch}`]);
   return r.code === 0 && parseInt(r.stdout.trim(), 10) > 0;
@@ -84,16 +75,12 @@ export function resumeRoute(reason) {
 
 /**
  * Phase 1 of an issue: worktree + worker dispatch. Runs concurrently across issues.
- * `attempt` is this issue's own 1-based attempt number (see sprint.attemptCount in
- * loop.mjs) — independent of any other issue's, since the scheduler no longer batches
- * issues into synchronized rounds.
+ * `attempt` is this issue's own 1-based attempt number (sprint.attemptCount in loop.mjs).
  */
 export async function runWorker(ctx, issue, attempt) {
   const { sprint, effects, platform, options } = ctx;
   const tracker = await getTracker(effects.mainRoot);
-  // github.mjs has no branchFor of its own — an issue number is already the unique part a
-  // filename-derived slug exists to provide for local, so the branch name is computed
-  // inline here per the PRD's Slug/branch mapping decision instead of a factory method.
+  // github.mjs has no branchFor: the issue number is already the unique part.
   const branch = tracker.branchFor
     ? tracker.branchFor(sprint.featureSlug, issue.slug)
     : `crew/${sprint.featureSlug}/${issue.number}-${issue.slug}`;
@@ -129,12 +116,8 @@ export async function runWorker(ctx, issue, attempt) {
     };
   }
 
-  // expectReuse: true only when the issue itself has a recorded reason to already have
-  // a branch (progress from an earlier round). A branch ref that exists despite this
-  // being a fresh dispatch is not a resume — it's leftover from an abandoned attempt
-  // (branches are never deleted except by cleanup-worktrees.sh's own ancestry-checked
-  // sweep), and silently reusing it can carry a base that predates work this sprint has
-  // since merged, surfacing only much later as an unexplained merge conflict.
+  // expectReuse only with recorded progress: any other existing branch is leftover from an
+  // abandoned attempt and may carry a base predating work this sprint has since merged.
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=worktree`);
   const wt = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
@@ -167,18 +150,15 @@ export async function runWorker(ctx, issue, attempt) {
 
   const { path: worktree } = wt;
 
-  // A reused branch (this round's resume, or a worktree left over from an earlier
-  // `crew-afk` invocation) may have been forked from the feature branch before other
-  // issues merged into it — sync that history in now, before the coder ever sees the
-  // branch, instead of letting the gap surface as a conflict at the merge gate later.
+  // A reused branch may predate other issues' merges: sync it now, so the gap surfaces
+  // here rather than as a conflict at the merge gate.
   if (wt.reusedBranch) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=sync-feature-branch`);
     const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch });
     if (sync.conflict) {
       ctx.log(`[SYNC-CONFLICT] slug=${issue.slug} branch=${branch} — ${sync.reason}`);
-      // worktree (not null): the checkout was actually created above and merge --abort
-      // already left it clean — finishBlocked's own removeWorktree() call needs the real
-      // path to clean it up. Only the branch ref (and whatever WIP it holds) is retained.
+      // worktree, not null: finishBlocked's removeWorktree needs the real path. Only the
+      // branch ref is retained.
       return {
         issue,
         branch,
@@ -203,17 +183,10 @@ export async function runWorker(ctx, issue, attempt) {
 
   applyWorktreeInclude(effects.mainRoot, worktree);
 
-  // Deps, here, because this position is the whole point: after the include (so an
-  // inherited node_modules is seen by the presence guard and costs nothing) and before
-  // *both* consumers of them. The worker is the obvious one; verify-worktree.sh is the one
-  // no worker skill can cover — it runs the project's own tests in this worktree, has no
-  // dep recovery path, and being a gate it cannot invoke dep-install. That second consumer
-  // still needs this even on the skipped-worker path: the worktree removed at the end of
-  // the prior (partial) round is recreated bare here, with no node_modules of its own yet.
-  //
-  // The DEPS: line is logged and nothing more. A failed install is not a demotion: the
-  // verify gate already fails closed on the consequence, and stalling a whole round on
-  // whatever host-install.sh mishandled would be worse than letting the gate say so.
+  // Deps sit after the include (an inherited node_modules costs nothing) and before both
+  // consumers: the worker, and verify-worktree.sh, a gate that cannot invoke dep-install.
+  // The skipped-worker path needs them too — its worktree is recreated bare. A failed
+  // install is only logged, not a demotion: the verify gate fails closed on it anyway.
   if (options.deps !== false) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=deps`);
     const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug], {
@@ -257,8 +230,7 @@ export async function runWorker(ctx, issue, attempt) {
   const outFile = join(dispatchDir, `${dispatchStem(issue)}.report.md`);
   const sidecarFile = join(dispatchDir, `${dispatchStem(issue)}.report.json`);
 
-  // A prior round's (or a prior resumed sprint's) sidecar at this same fixed path must not
-  // be mistaken for this round's verdict if the coder's turn dies before writing one.
+  // A stale sidecar at this fixed path must not be read back as this round's verdict.
   rmSync(sidecarFile, { force: true });
 
   writeFileSync(
@@ -319,31 +291,23 @@ export async function runWorker(ctx, issue, attempt) {
 }
 
 /**
- * Phase 2 of an issue: everything after the worker. Runs concurrently across issues, in
- * the same pool as the worker dispatch (see runSprint in loop.mjs) — merges and closes
- * touch the main checkout, but every such step shells out via effects.bash/git's
- * spawnSync, which blocks this single-threaded process until it returns, so two issues'
- * merge-and-close can never actually interleave. Only which issue's merge lands first
- * becomes completion-order rather than issue-list-order; merge-branches.sh already
- * tolerates any order (it merges by branch, independent of the others).
+ * Phase 2 of an issue: everything after the worker. Runs concurrently across issues, but
+ * merge and close shell out via spawnSync, which blocks this process, so two issues'
+ * merge-and-close never interleave. Merge order is completion order; merge-branches.sh
+ * tolerates any.
  */
 export async function runHousekeeping(ctx, worker) {
   const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
   const outcome = { slug: issue.slug, branch, status: null, reason: null, coverageGaps: [], findings: [], reviewReport: null };
 
-  // merge-failed / close-refused resume: verify, review, and the AC receipt already
-  // happened in the round that produced this retention reason. Nothing here re-derives
-  // any of that — it goes straight to the merge/close step, which re-checks both
-  // receipts itself.
+  // The merge route (see resumeRoute): straight to merge/close, which re-checks both receipts.
   if (worker.resumeAtMerge) {
     return mergeAndClose(ctx, worker, outcome);
   }
 
-  // Every dispatch's cost/duration/turns count toward the sprint's running totals
-  // (crew-summary.sh's cost line) regardless of what it did — a timed-out or blocked
-  // dispatch still spent tokens. Claude-only fields for now (dispatch.mjs's
-  // extractResultMeta); no-ops to 0 for every other platform.
+  // Counted whatever the outcome: a timed-out dispatch still spent tokens. Claude-only
+  // fields for now; 0 elsewhere.
   sprint.recordDispatchCost({
     costUsd: worker.dispatch.costUsd,
     durationMs: worker.dispatch.durationMs,
@@ -351,21 +315,15 @@ export async function runHousekeeping(ctx, worker) {
   });
 
   // --- dispatch health -------------------------------------------------------
-  // A dead dispatch (timeout, crash — see [DISPATCH-FAIL] tracing in dispatch.mjs) with
-  // real commits on the branch already is worth resuming, not discarding: finishPartial
-  // writes the same ## Progress section a genuine partial-work report would, so the next
-  // round's resumeNote correctly says "resume on that branch, the code is preserved"
-  // instead of just warning about a repeat failure. A dead dispatch that never got the
-  // coder to commit anything has nothing to resume — that one still blocks.
+  // A dead dispatch (timeout, crash) with commits on the branch is resumed, not discarded;
+  // with none, there is nothing to resume and it blocks.
   if (worker.dispatch.timedOut) {
     const reason = `worker timed out after ${Math.round(options.workerTimeoutMs / 60000)}m`;
     if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
     return finishBlocked(ctx, worker, outcome, reason);
   }
-  // A non-zero exit, or claude's own `is_error: true` on the terminal result, *and*
-  // nothing usable back: the worker died (or ended in an error state) before reporting.
-  // Its own report is preferred whenever there is one — a worker that exited badly but
-  // reported `blocked` with a reason knows more than the process signal does.
+  // A bad exit (or claude's `is_error`) counts only with no usable report: a worker that
+  // exited badly but reported a reason knows more than the process signal does.
   if ((worker.dispatch.code !== 0 || worker.dispatch.isError) && worker.report.unparseable) {
     const reason = "worker process failed — see traces/";
     if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
@@ -384,10 +342,7 @@ export async function runHousekeeping(ctx, worker) {
     return finishRetryOrBlock(ctx, worker, outcome, pre.reason ?? "partial");
   }
 
-  // The coder's own report is not yet the sprint's verdict — verify/review/merge still
-  // gate it — but it is the longest single step in the pipeline, and the triggering pane
-  // otherwise hears nothing about this issue until one of those later gates reaches a
-  // terminal outcome. A milestone here gives it a mid-pipeline heartbeat instead of silence.
+  // Not a verdict yet, but the coder is the longest step: a mid-pipeline heartbeat.
   await notifyMilestone(ctx, issue, `coder finished (round ${worker.attempt}) — verifying`);
 
   // --- gate 1: independent verification in the worktree ----------------------
@@ -410,10 +365,8 @@ export async function runHousekeeping(ctx, worker) {
   }
 
   // --- gate 2: independent review (findings + acceptance-criteria verdict) ---
-  // The worktree stays alive across this gate (deliberately not removed right after
-  // verify, despite review reading the branch from the main checkout and needing none of
-  // it) — an `AC: unmet` verdict below sends the coder back to fix its own branch, and
-  // removing it eagerly would throw away exactly what that retry needs.
+  // The worktree stays alive across review (which needs none of it): an `AC: unmet`
+  // verdict sends the coder back to fix this branch.
   const review = await runReview(ctx, worker, parseVerifyChecks(verify.stdout));
   outcome.reviewReport = review.reportFile;
   if (!review.completed) {
@@ -425,11 +378,6 @@ export async function runHousekeeping(ctx, worker) {
       "--report", review.reportFile,
       "--reason", review.reason,
     ], { env: sprint.childEnv() });
-    // This issue's retry cap (see finishRetryOrBlock) is what stops a third attempt if the
-    // review dispatch itself keeps failing to land a report — no reason-specific repeat-check
-    // needed here. Neither outcome here redispatches the coder (only the reviewer) —
-    // finishBlocked/finishPartial's own default cleanup (no keepWorktree) is exactly right,
-    // nothing left that a coder retry could reuse.
     return finishRetryOrBlock(ctx, worker, outcome, "review-not-run");
   }
   outcome.findings = review.parsed.findings;
@@ -443,13 +391,10 @@ export async function runHousekeeping(ctx, worker) {
     );
   }
 
-  // Every gate after this reads the branch from the main checkout, same as review just did —
-  // but review confirming all-met means there is no more fix retry coming, so the worktree
-  // is finally done being useful.
+  // All-met: no fix retry is coming, and every later gate reads from the main checkout.
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
 
-  // The receipt close-issue.sh demands, written only on an all-met verdict, and only
-  // ever for this issue's own slug.
+  // The receipt close-issue.sh demands: only on all-met, only for this issue's branch.
   const acReceipt = effects.bash("receipts.sh", ["write", "ac", "--branch", branch], {
     env: sprint.childEnv(),
   });

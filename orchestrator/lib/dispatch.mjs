@@ -9,39 +9,21 @@
  *   claude   claude -p --agent <name> --add-dir … --output-format stream-json --verbose
  *   copilot  copilot -p --agent <name> -C … --output-format json
  *
- * pi and codex keep their existing bash dispatchers, which already resolve the agent
- * definition and map its frontmatter onto CLI flags. claude and copilot resolve their
- * own agent by name (`--agent`).
+ * pi and codex run through bash dispatchers that resolve the agent definition and map its
+ * frontmatter onto CLI flags; claude and copilot resolve their own agent by name.
  *
- * All four now run through a live event stream rather than a plain -p/text mode that
- * prints nothing until the whole turn is done: pi's --mode json, codex's --json, claude's
- * stream-json, and copilot's json output-format each emit one JSON object per event
- * (tool calls, in particular) as it happens. dispatch() and the two bash dispatchers read
- * that stream one line at a time and turn a recognised tool call into a `[TOOL]`/
- * `[TOOL-ERROR]` line in the sprint's trace log *while the worker is still running* — the
- * visibility a `tail -f` on that log did not have when a dispatch was a subprocess whose
- * only signal was silence, then its buffered final answer. The full raw stream is kept
- * next to outFile as `<outFile>.events.jsonl` for anyone who needs more than that one
- * line; only the final assistant text — the one thing report.mjs actually parses — goes
- * into outFile itself. See formatJsonTraceLine/extractFinalText below for claude/copilot,
- * and each bash dispatcher's own trace_event for pi/codex.
+ * All four emit a JSON event stream. Recognised tool calls become `[TOOL]`/`[TOOL-ERROR]`
+ * lines in the trace log while the worker runs; the raw stream is kept as
+ * `<outFile>.events.jsonl`, and only the final assistant text goes into outFile (the one
+ * thing report.mjs parses).
  *
- * For claude that name is the whole contract, verified against 2.1.221: `--agent` loads
- * the project-level `.claude/agents/<name>.md`, enforces its `tools:` list, and exits 1
- * with `--agent '<name>' not found` rather than silently falling back. So no agent body
- * is re-sent as a system prompt — an append would duplicate the definition Claude has
- * already loaded and, on any conflict, override it.
- *
- * Copilot 1.0.79 behaves the same way in `-p` mode — `No such agent: <name>, available: …`
- * on exit 1, and the definition's `tools:` list binds even under `--allow-all-tools` — with
- * one difference that matters here: **it resolves `.github/agents/` relative to its own
- * working directory and does not walk up.** A worker runs with the worktree as cwd, so only
- * a definition present in that checkout (tracked in `HEAD`) or under `~/.copilot/agents/`
- * resolves. `preflight()` checks exactly that, because the alternative is every worker
- * dying on `No such agent` after the sprint has already started.
+ * claude (2.1.221) and copilot (1.0.79): `--agent` loads the definition, binds its `tools:`
+ * list, and exits 1 on an unknown name — so no body is re-sent. Copilot resolves
+ * `.github/agents/` from its cwd without walking up, so a worker in a worktree only sees
+ * definitions tracked in HEAD or under `~/.copilot/agents/`; preflight() checks that.
  *
  * Permissions are explicit per platform: an unattended sprint that stops on a
- * tool-permission prompt is a sprint that never finishes.
+ * tool-permission prompt never finishes.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -53,16 +35,13 @@ import { preflightPaneHost } from "./pane-host/index.mjs";
 export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
 
 /**
- * Default parallelism per platform. Copilot's plan tier (Free 2 … Enterprise 32) capped
- * *in-session* subagents; a worker is its own `copilot -p` session now, so what binds is
- * the account's request rate — which the CLI does not expose. Hence the conservative
- * default, raised with `--max-parallel`.
+ * Default parallelism per platform. Copilot's is conservative because what binds is the
+ * account's request rate, which the CLI does not expose; raise with `--max-parallel`.
  */
 export const DEFAULT_PARALLEL = { pi: 3, codex: 3, claude: 3, copilot: 2 };
 
 function agentFileCandidates(platform, mainRoot, agent) {
-  // $HOME first: os.homedir() reads USERPROFILE on Windows, not HOME, so a $HOME override
-  // — bash's own portable way to redirect "home" — would be silently ignored there.
+  // $HOME first: os.homedir() ignores a $HOME override on Windows (reads USERPROFILE).
   const home = process.env.HOME || homedir();
   switch (platform) {
     case "pi":
@@ -104,10 +83,8 @@ export function buildDispatch(platform, spec) {
   const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug, reportPath } = spec;
   const shared = { cwd, env: { MAIN_ROOT: mainRoot, CREW_ORCHESTRATED: "1" } };
 
-  // A test/CI seam: one script stands in for every model dispatch, so the whole state
-  // machine (stall, Phase 2, conflicts, timeouts) is exercisable for zero tokens.
-  // --report-path is passed through so fake-dispatch.sh can write the sidecar report.mjs
-  // actually reads — the same file a real agent's own Write tool call would produce.
+  // Test/CI seam: one script stands in for every model dispatch, so the whole state
+  // machine runs for zero tokens. --report-path lets it write the sidecar report.mjs reads.
   if (process.env.CREW_FAKE_DISPATCH) {
     return {
       cmd: "bash",
@@ -151,20 +128,12 @@ export function buildDispatch(platform, spec) {
   const prompt = readFileSync(promptFile, "utf8");
 
   if (platform === "claude") {
-    // bypassPermissions removes the *prompt*, not the allowlist: the agent definition's
-    // `tools:` still applies, so the reviewer stays read-only and the coder still cannot
-    // spawn agents. A narrower --allowedTools cannot be written in advance — a worker runs
+    // bypassPermissions removes the *prompt*, not the allowlist: the definition's `tools:`
+    // still applies. A narrower --allowedTools can't be written in advance — a worker runs
     // the consuming project's own checks.
     //
-    // --output-format stream-json --verbose (required together, or claude refuses to start:
-    // "--output-format=stream-json requires --verbose") replaces plain -p text output. Text
-    // mode prints nothing until the whole turn is done; stream-json emits one JSON object per
-    // turn as it happens — an assistant message per turn (its `content` carries `tool_use`
-    // blocks when the agent calls a tool), a user message carrying that tool's `tool_result`,
-    // and a final `result` line with the agent's last answer in `.result`. dispatch() reads
-    // that stream for the same visibility pi's --mode json and codex's --json give: a
-    // `[TOOL]`/`[TOOL-ERROR]` line in --log as each tool call starts/fails, instead of
-    // silence until the child exits or times out.
+    // stream-json requires --verbose, or claude refuses to start. Its final `result` line
+    // carries the agent's last answer in `.result`.
     const args = [
       "-p",
       "--permission-mode",
@@ -179,12 +148,8 @@ export function buildDispatch(platform, spec) {
     ];
     if (model) args.push("--model", model);
     args.push(prompt);
-    // Dispatched from inside a Claude Code session, this child would otherwise inherit
-    // CLAUDE_CODE_SESSION_ID/CLAUDE_CODE_CHILD_SESSION from the parent process's own
-    // environment and attach to the parent session's hook chain (e.g. a global
-    // UserPromptSubmit hook), which can mutate or swallow the prompt before the agent
-    // ever sees it. Clearing both severs that inheritance so the child always starts a
-    // session of its own.
+    // Cleared so a child launched from inside a Claude Code session starts its own session
+    // instead of attaching to the parent's hook chain, which can mutate or swallow the prompt.
     return {
       cmd: "claude",
       args,
@@ -196,21 +161,10 @@ export function buildDispatch(platform, spec) {
   }
 
   if (platform === "copilot") {
-    // `--agent <name>` is the contract here too: probed against 1.0.79, the definition's
-    // body governs the run and its `tools:` list binds even under --allow-all-tools, which
-    // removes the confirmation prompt and nothing else. So no body is prepended — it would
-    // duplicate what the CLI loads, and it cannot rescue a name the CLI refuses.
-    //
-    // --add-dir names the main checkout because the worker reads the issue file and writes
-    // its <slug>.report.json under .scratch/ there, outside its worktree cwd.
-    //
-    // --output-format json (JSONL, one object per line — copilot-sdk's generated
-    // session-events.d.ts is the schema) replaces --silent's plain text: a
-    // `tool.execution_start` event per tool call (with `data.toolName`/`data.arguments`),
-    // `tool.execution_complete` on success/failure, and `assistant.message` events whose
-    // `data.content` is that turn's full text — the last one is the agent's final answer.
-    // --silent only suppressed a stats footer in text mode and does nothing for json output;
-    // dropped here for clarity, not because of a conflict.
+    // --allow-all-tools removes the confirmation prompt only; the definition's `tools:`
+    // still binds. --add-dir: the worker reads the issue and writes its report under
+    // .scratch/ in the main checkout, outside its worktree cwd. The json schema is
+    // copilot-sdk's session-events.d.ts.
     const args = [
       "-p",
       prompt,
@@ -232,12 +186,7 @@ export function buildDispatch(platform, spec) {
   throw new Error(`unknown platform: ${platform}`);
 }
 
-/**
- * A JSON preview that never silently swallows a truncation: a bare `.slice(0, max)` reads
- * as if the value just happened to be short, so a human (or a future grep) has no way to
- * tell "this is everything" from "this is cut off". Appending the byte count that got cut
- * makes the two cases distinguishable without needing to go find the original.
- */
+/** A capped JSON preview that says how much it cut, so truncation is never mistaken for the whole value. */
 function safePreview(value, max = 200) {
   let text;
   try {
@@ -249,12 +198,8 @@ function safePreview(value, max = 200) {
 }
 
 /**
- * A one-line, human-readable stand-in for a tool call's raw args — `$ <command>` for a
- * shell call, a bare path for a read/write/edit — mirroring the style pi's own bundled
- * subagent extension uses for the same purpose (`examples/extensions/subagent/index.ts`'s
- * formatToolCall). Only the two argument shapes every platform's file/shell tools actually
- * use are recognised; anything else (an MCP call, a web fetch, a tool this doesn't know
- * about) falls through to a capped JSON preview rather than guessing.
+ * `$ <command>` for a shell call, a bare path for a file tool; null for any other shape,
+ * which formatArgs renders as a capped JSON preview instead.
  */
 function summarizeArgs(args) {
   if (!args || typeof args !== "object") return null;
@@ -268,15 +213,9 @@ function formatArgs(args) {
 }
 
 /**
- * One [TOOL]/[TOOL-ERROR] line per recognised event, or null for everything else
- * (message text deltas, session bookkeeping, a line that failed to parse) — the same
- * "observability must never fail the dispatch" rule dispatch-agent.sh's and
- * dispatch-codex-agent.sh's trace_event follow. Claude's shape is the standard Anthropic
- * Messages content-block schema (`assistant.message.content[]` carries `tool_use`/
- * `tool_result` blocks); copilot's is copilot-sdk's own generated session-events.d.ts
- * (`tool.execution_start`/`tool.execution_complete`). The returned line carries no
- * timestamp or slug — dispatch() adds both when it lands the line in spec.logFile, the one
- * place that knows which dispatch this stream belongs to.
+ * One [TOOL]/[TOOL-ERROR] line per recognised event, null for anything else including an
+ * unparseable line — observability never fails the dispatch. No timestamp or slug;
+ * dispatch() adds both.
  */
 export function formatJsonTraceLine(platform, agent, line) {
   let evt;
@@ -320,13 +259,9 @@ function traceTimestamp() {
 }
 
 /**
- * Throttle for the one live signal a long dispatch sends to the parent session: not every
- * tool call (unbounded over a 45-minute worker — gates × issues × rounds must stay the
- * bound, never tool calls × issues × rounds, see .scratch/crew-afk-visibility/plan.md),
- * but a heartbeat every Nth one or every INTERVAL_MS, whichever comes first. pi's and
- * codex's own bash dispatchers apply the identical rule before ever writing to their own
- * stdout (see dispatch-agent.sh/dispatch-codex-agent.sh's maybe_heartbeat) — this is
- * claude/copilot's equivalent, applied here since their tracing is already JS-side.
+ * onTrace heartbeat throttle: every Nth tool call or every INTERVAL_MS, whichever first, so
+ * the live signal to the parent stays bounded over a long worker. The bash dispatchers'
+ * maybe_heartbeat applies the same rule for pi/codex.
  */
 const HEARTBEAT_EVERY_N = 5;
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -335,14 +270,9 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 const BASH_HEARTBEAT = /^\[(?:TOOL|TOOL-ERROR)\] /;
 
 /**
- * The worker's final message, pulled back out of the raw event lines — report.mjs reads
- * outFile as that text, not the NDJSON envelope, the same contract pi's and codex's
- * dispatchers keep. Claude's terminal `result` line carries the final answer directly in
- * `.result`; copilot has no equivalent terminal event, so the last `assistant.message` —
- * the one after any tool calls — stands in for it, the same message copilot's own text
- * mode would have printed. Either extraction failing (a truncated stream, an unrecognised
- * shape) returns "": an empty report is already a handled state (report.mjs's "empty"
- * parsedFrom), and is safer than leaking raw JSONL into what the pipeline parses as text.
+ * The worker's final message from the raw event lines: claude's terminal `result.result`,
+ * or copilot's last `assistant.message` (it has no terminal event). Returns "" when nothing
+ * is found — an empty report is a handled state, and safer than leaking raw JSONL.
  */
 export function extractFinalText(platform, lines) {
   if (platform === "claude") {
@@ -373,12 +303,8 @@ export function extractFinalText(platform, lines) {
 const EMPTY_RESULT_META = { isError: null, costUsd: null, durationMs: null, numTurns: null, permissionDenials: [], sessionId: null };
 
 /**
- * claude's terminal `result` event (verified live against 2.1.280) carries cost, error, and
- * timing fields that extractFinalText discards, keeping only `.result`. Scoped to claude
- * only: copilot's own terminal event has no confirmed equivalent (its documented event set —
- * see buildDispatch's copilot branch — has no "turn complete" shape at all), and pi/codex
- * don't run through this JS-side parsing path. Any platform/line-shape this doesn't recognise
- * returns the same all-null/empty shape, matching extractFinalText's own fail-open contract.
+ * Cost, error and timing from claude's terminal `result` event (2.1.280). Claude only:
+ * copilot has no equivalent event. Anything unrecognised returns the all-null shape.
  */
 export function extractResultMeta(platform, lines) {
   if (platform !== "claude") return EMPTY_RESULT_META;
@@ -411,23 +337,12 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   const built = buildDispatch(platform, spec);
   mkdirSync(dirname(spec.outFile), { recursive: true });
 
-  // claude's stream-json and copilot's json visibility: read the child's NDJSON one line
-  // at a time as it arrives, the same way dispatch-agent.sh/dispatch-codex-agent.sh do for
-  // pi/codex. A recognised tool call becomes a `[TOOL]`/`[TOOL-ERROR]` line in spec.logFile
-  // *while the worker is still running*; every raw line is also kept, for post-hoc
-  // debugging, next to outFile as `<outFile>.events.jsonl`.
-  //
-  // effects.spawnWithTimeout's onLine is misnamed: it hands back raw stdout chunks, not
-  // lines — a long JSON line can arrive split across two chunks. lineBuffer holds the
-  // trailing partial line between calls; only complete lines (newline-terminated) are
-  // processed as they arrive, and any remainder left after the child closes is flushed
-  // once, below, the same as a final chunk with an implicit trailing newline.
+  // spawnWithTimeout's onLine hands back raw chunks, not lines — a long JSON line can span
+  // two. lineBuffer holds the trailing partial line; the remainder is flushed after close.
   const lines = [];
   let lineBuffer = "";
   let heartbeatCount = 0;
-  // Seeded to "now", not 0: an elapsed-time check against the epoch is always >=
-  // INTERVAL_MS on the very first call, which would fire a heartbeat on tool call #1
-  // regardless of the count throttle.
+  // Seeded to now, not 0, or the first tool call would always pass the interval check.
   let lastHeartbeatAt = Date.now();
   const maybeHeartbeat = (trace) => {
     if (!onTrace) return;
@@ -452,13 +367,8 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
       }
       return;
     }
-    // pi/codex (and the CREW_FAKE_DISPATCH test seam): the bash dispatcher already writes
-    // full [TOOL]/[TOOL-ERROR] detail to spec.logFile itself, tagged and timestamped —
-    // the only thing on its stdout meant for the live stream is its own already-throttled
-    // copy of that same line (see dispatch-agent.sh/dispatch-codex-agent.sh's
-    // maybe_heartbeat). Everything else on that stdout (the raw NDJSON stream, forwarded
-    // there for a human running the script by hand) is not a heartbeat and is dropped
-    // rather than mirrored.
+    // pi/codex (and the fake seam): the bash dispatcher writes spec.logFile itself; of its
+    // stdout, only its already-throttled [TOOL] lines are heartbeats — the raw stream is not.
     if (onTrace && BASH_HEARTBEAT.test(line)) onTrace(line);
   };
   const onLine = (chunk) => {
@@ -479,7 +389,6 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   let meta = EMPTY_RESULT_META;
   if (built.jsonEvents && !r.dryRun) {
     writeFileSync(`${spec.outFile}.events.jsonl`, lines.length ? `${lines.join("\n")}\n` : "");
-    // report.mjs reads outFile as the worker's final message text, not the event stream.
     writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines));
     meta = extractResultMeta(built.jsonEvents, lines);
   } else if (built.capture === "stdout" && !r.dryRun) {
@@ -487,17 +396,9 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   }
   const text = existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
 
-  // The dispatch scripts (dispatch-agent.sh/dispatch-codex-agent.sh) trace their own
-  // [DISPATCH]/[DISPATCH-END] lines from *inside* the script — so a failure before the
-  // script gets that far (an early `die()` guard, or the child process never starting at
-  // all: ENOENT, a killed process, fork/resource exhaustion) leaves zero trace anywhere,
-  // and the one place the reason lived — this child's stderr — was read into `r.stderr`
-  // and then never looked at again by any caller. Log it here, once, so a repeat isn't a
-  // mystery a second time. Never throws and never blocks a dispatch on its own account.
-  //
-  // Also fires on meta.isError/permissionDenials even when code===0 and text is non-empty:
-  // claude can flag a turn `is_error: true` or record a permission denial while still
-  // exiting 0 and writing something — a case that otherwise left no trace anywhere.
+  // A failure before a bash dispatcher traces anything (an early die(), ENOENT, a killed
+  // child) otherwise leaves its reason only in stderr. Also fires on isError/permission
+  // denials, which claude can report while still exiting 0 with text.
   if (spec.logFile && !r.dryRun && (r.code !== 0 || r.timedOut || !text.trim() || meta.isError || meta.permissionDenials.length)) {
     const stderrSnippet = (r.stderr ?? "").trim().slice(0, 500).replace(/\s+/g, " ");
     const metaTag = meta.isError || meta.permissionDenials.length
@@ -525,28 +426,15 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
 }
 
 /**
- * An agent-less dispatch: one reasoning pass with no agent definition. Used for the
- * opt-in coverage validation, whose prompt is printed by coverage-validation.sh, and for
- * one-time command discovery (see commands.mjs) — so the prompt only exists in a context
- * window when the step that built it actually runs.
+ * An agent-less dispatch: one reasoning pass with no agent definition, for coverage
+ * validation and one-time command discovery (commands.mjs).
  *
- * Deliberately does not strip tool access: a `noTools` option restricting command
- * discovery's dispatch once existed here (pi's `--no-tools --no-context-files`, claude's
- * `--tools ""`), but claude's `--tools` flag is variadic — with no `--model` between it and
- * the prompt (the default, unless a sprint passes `--model`), `--tools ""` swallowed the
- * prompt itself as part of its own argument list, so claude saw no prompt at all and exited
- * 1 with "Input must be provided either through stdin or as a prompt argument", surfaced as
- * "Command discovery: model dispatch did not complete (exit 1)". Every caller of this
- * function gets the same read/bash/edit/write toolset an interactive session would.
+ * Tool access is not restricted: claude's `--tools` is variadic and swallows the prompt
+ * when no flag separates them.
  *
- * claude's auto-memory *is* disabled here (CLAUDE_CODE_DISABLE_AUTO_MEMORY=1), unlike its
- * tool access above: every dispatchPlain call is a one-shot, stateless reasoning pass —
- * command discovery re-derives its answer from a source hash every run, coverage validation
- * likewise takes the current diff as input — so there is nothing for either to usefully
- * remember between runs. Worse, auto-memory's project directory is shared across every
- * worktree in the repo, and this dispatch gets full write-tool access before any worktree
- * exists; a "learned" note written here would leak into every future interactive session
- * and worker's context with no reviewer ever having signed off on it.
+ * claude's auto-memory is disabled: each call is stateless, and the memory directory is
+ * shared across every worktree, so a note written here would leak into every later session
+ * unreviewed.
  */
 export async function dispatchPlain(
   effects,
@@ -559,20 +447,14 @@ export async function dispatchPlain(
     ...(platform === "claude"
       ? {
           CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-          // See buildDispatch's claude branch: without these cleared, a claude -p run
-          // launched from inside a Claude Code session inherits the parent's session
-          // id and attaches to its hook chain instead of starting its own session.
+          // See buildDispatch's claude branch.
           CLAUDE_CODE_SESSION_ID: "",
           CLAUDE_CODE_CHILD_SESSION: "",
         }
       : {}),
   };
 
-  // The same test/CI seam buildDispatch has: an agent-less dispatch is still a model
-  // call, so any step that makes one must be exercisable for zero tokens or it is the one
-  // step no test ever runs. fakeAgent tells fake-dispatch.sh which canned response to play
-  // — coverage validation and command discovery are both agent-less, but need different
-  // answers.
+  // Same test/CI seam as buildDispatch. fakeAgent picks fake-dispatch.sh's canned answer.
   if (process.env.CREW_FAKE_DISPATCH) {
     const out = outFile ?? join(cwd, "plain-dispatch.out");
     const r = await effects.spawnWithTimeout(
@@ -597,13 +479,7 @@ export async function dispatchPlain(
       break;
     case "claude":
       cmd = "claude";
-      // Prompt must not be the argv token right after --add-dir's value: --add-dir is
-      // variadic (`<directories...>`) and, with no --model in between (the default,
-      // unless a sprint passes --model), claude's own parser would consume the prompt as
-      // a second directory instead of the -p positional argument — claude then sees no
-      // prompt at all and exits 1 with "Input must be provided either through stdin or as
-      // a prompt argument". Placed immediately after -p instead, exactly like copilot's
-      // argv below, so no later flag's arity can ever swallow it.
+      // Prompt right after -p: --add-dir is variadic and would swallow a prompt following it.
       args = [
         "-p",
         prompt,
@@ -630,14 +506,11 @@ export async function dispatchPlain(
 }
 
 /**
- * Copilot resolves `--agent` from the worker's own cwd and does not walk up, so the only
- * definitions a worker in a worktree can see are the ones that checkout has (i.e. tracked
- * in `HEAD`) and the user-level ones. A definition sitting untracked in the main root is
- * installed and invisible — the failure is `No such agent` on every worker, after the
- * sprint has started.
+ * Whether a worker in a worktree can see this copilot definition: tracked in HEAD, or
+ * user-level. An untracked one in the main root is invisible (see the file header).
  */
 function copilotWorktreeVisible(effects, mainRoot, agent) {
-  // See agentFileCandidates' comment above on $HOME vs os.homedir() on Windows.
+  // $HOME first — see agentFileCandidates.
   const home = process.env.HOME || homedir();
   for (const p of [
     join(home, ".copilot/agents", `${agent}.agent.md`),
