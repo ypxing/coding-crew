@@ -425,6 +425,24 @@ test("a merge conflict is retried through the coder, resolved, re-verified, re-r
   assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 3);
 });
 
+// Three issues on one file, all dispatched at once: two conflict. Their retries each resolve
+// against the feature-branch tip, so run together the second would conflict again with the
+// first's resolution and hit the retry cap. One at a time, both merge.
+test("merge-conflict retries run one at a time, so a sibling's resolution can't re-conflict the next", () => {
+  const root = fixtureRepo();
+  for (const name of ["01-alpha.md", "02-beta.md", "03-gamma.md"]) {
+    fake(root, `${addIssue(root, name)}.shared`);
+  }
+  const { r } = commandLines(root, ["--max-parallel", "3"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+
+  const s = state(root);
+  assert.deepEqual([...s.completed_slugs].sort(), ["alpha", "beta", "gamma"], traceLog(root));
+  const shared = sh("git", ["-C", root, "show", "feature/demo:src/shared.txt"]).stdout;
+  assert.deepEqual(shared.trim().split("\n").sort(), ["alpha", "beta", "gamma"]);
+  assert.match(traceLog(root), /\[CONFLICT-RETRY-WAIT\] slug=\w+/);
+});
+
 test("a close-refused retry skips the worker, verify, and review, no-ops the already-merged retry, and succeeds on a retried close", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

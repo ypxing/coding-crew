@@ -21,7 +21,7 @@
 #   <slug>.shared         write src/shared.txt (one line, the slug) instead of src/<slug>.txt,
 #                         so two such issues conflict when the second one merges. A worker
 #                         dispatched into a worktree with a merge in progress resolves it
-#                         first, keeping both sides' lines, as crew-coder is told to.
+#                         first, keeping both sides' lines (ours first), as crew-coder is told to.
 #   <slug>.exit           exit with this code instead of 0
 #
 # Every fixture's own content — whatever this script writes to --out, whether from a default
@@ -145,7 +145,7 @@ if [ ! -f "$FAKE_DIR/$SLUG.nocommit" ]; then
     cd "$DIR" || exit 1
     if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
       for f in $(git diff --name-only --diff-filter=U); do
-        { git show ":2:$f"; git show ":3:$f"; } | sort -u > "$f"
+        { git show ":2:$f"; git show ":3:$f"; } | awk '!seen[$0]++' > "$f"
         git add "$f"
       done
       git -c user.email=fake@test -c user.name=fake commit -q --no-edit >/dev/null 2>&1

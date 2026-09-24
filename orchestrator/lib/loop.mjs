@@ -30,7 +30,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { runHousekeeping, runWorker } from "./pipeline.mjs";
+import { resumeRoute, runHousekeeping, runWorker } from "./pipeline.mjs";
 import { getTracker } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
 
@@ -43,6 +43,12 @@ export async function runSprint(ctx) {
   const tracker = await getTracker(effects.mainRoot);
   const parallel = Math.max(1, options.parallel ?? 1);
   const inFlight = new Set();
+  // At most one merge-conflict retry at a time: each resolves against the feature-branch
+  // tip, so two in flight together resolve against the same tip, and whichever merges
+  // second conflicts again with the first's resolution — spending its retry cap on a
+  // conflict its sibling caused. Serialized, each syncs after the previous one merged.
+  let conflictRetryInFlight = null;
+  const conflictWaitsLogged = new Set();
   const history = [];
   let waiters = [];
 
@@ -67,8 +73,22 @@ export async function runSprint(ctx) {
       (i) =>
         !inFlight.has(i.slug) &&
         !sprint.isBlockedThisRun(i.slug) &&
-        (!options.maxRounds || sprint.attemptCount(i.slug) < options.maxRounds),
+        (!options.maxRounds || sprint.attemptCount(i.slug) < options.maxRounds) &&
+        !waitsForConflictRetry(i.slug),
     ) ?? null;
+  }
+
+  function isConflictRetry(slug) {
+    return resumeRoute(sprint.retentionReason(slug)).kind === "conflict";
+  }
+
+  function waitsForConflictRetry(slug) {
+    if (conflictRetryInFlight == null || !isConflictRetry(slug)) return false;
+    const key = `${slug} ${conflictRetryInFlight}`;
+    if (conflictWaitsLogged.has(key)) return true;
+    conflictWaitsLogged.add(key);
+    ctx.log(`[CONFLICT-RETRY-WAIT] slug=${slug} — waiting for ${conflictRetryInFlight}'s merge-conflict retry to finish`);
+    return true;
   }
 
   /** True once every remaining open issue is either done, blocked, or at its --max-rounds
@@ -82,6 +102,8 @@ export async function runSprint(ctx) {
 
   async function runOne(issue) {
     inFlight.add(issue.slug);
+    const conflictRetry = isConflictRetry(issue.slug);
+    if (conflictRetry) conflictRetryInFlight = issue.slug;
     const attempt = sprint.bumpAttempt(issue.slug);
     ctx.log(`\n=== slug=${issue.slug} attempt=${attempt} — dispatching`);
     const worker = await runWorker(ctx, issue, attempt);
@@ -91,6 +113,7 @@ export async function runSprint(ctx) {
       `--- slug=${issue.slug} attempt=${attempt} status=${outcome.status}${outcome.reason ? ` reason=${outcome.reason}` : ""}`,
     );
     inFlight.delete(issue.slug);
+    if (conflictRetry) conflictRetryInFlight = null;
     notifyAll();
   }
 
