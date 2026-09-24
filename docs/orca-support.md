@@ -17,10 +17,11 @@ terminals, and agent sessions, and can also run headless (`orca serve`).
 
 ## Why so little was needed
 
-Every coder/reviewer/triage dispatch is a direct, headless `child_process` spawn — neither
-backend is ever asked to host or report on anything load-bearing. The only things a pane
-host is ever asked to do are: open one tab/terminal that runs `tail -f orchestrator.log`, and
-push a best-effort outcome message into the pane that triggered the run. That shrunk surface
+Every coder/reviewer/triage dispatch is headless — neither backend is ever asked to report
+on anything load-bearing. A pane host is asked to open one tab/terminal that runs
+`tail -f orchestrator.log`, and to push a best-effort outcome message into the pane that
+triggered the run. orca additionally hosts each dispatch in a terminal of its own (see
+[Worker terminals](#worker-terminals)), but only as a place to run it. That shrunk surface
 is why orca support didn't need `worktree create`, `repo add`, or any env injection scheme —
 confirmed with a live spike against a running orca runtime (not just the CLI reference doc):
 
@@ -56,6 +57,44 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 | reuse signal (ambient env)         | `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`       | `ORCA_WORKTREE_ID` (implicit — every create already lands there) / `ORCA_TAB_ID` / `ORCA_TERMINAL_HANDLE` |
 | preflight readiness check          | `herdr status` (text: `status: running`)                     | `orca status --json` → `result.runtime.reachable`                          |
 
+## Worker terminals
+
+Under `ORCA_ENV=1`, each coder/reviewer/triage dispatch runs in its own orca terminal,
+titled `<slug> <agent>` and scoped to the main checkout, so every worker is a tab you can
+watch. Without it, dispatch is the plain headless spawn, unchanged. herdr keeps the plain
+spawn too: its per-worker panes (`dispatchViaHerdr`) were removed for driving an
+interactive REPL and scraping it, and this design does neither.
+
+The worker is the same headless argv (`claude -p … --output-format stream-json`, etc.).
+orca never reports on it — `--command` is typed into a login shell that outlives the
+command, so `terminal wait --for exit` never fires and no exit code comes back (checked
+live). `orchestrator/lib/pane-host/worker-terminal.mjs` writes a `run.sh` that records the
+child's pid and exit code under `<outFile>.term/`, and polls those:
+
+| on disk                                  | result                                      |
+| ---------------------------------------- | ------------------------------------------- |
+| `rc` written                             | that exit code                              |
+| past the dispatch timeout                | SIGKILL the pid, 124 (as the headless path) |
+| pid gone, no `rc` after 5s               | 1 — the terminal was closed under it        |
+| no `pid` within 30s                      | 127 — the shell never ran `run.sh`          |
+| `terminal create` fails                  | the headless spawn instead                  |
+
+stdout goes straight to a file that crew-afk tails, so traces, heartbeats and report
+parsing are the headless path's. What the tab shows comes from a separate follower
+(`follow-output.mjs`: `[TOOL]` lines and assistant text for a JSON stream, raw text
+otherwise), so a display failure can't reach the worker. crew-afk's env is exported into
+the terminal through a 0600 `env.sh` that `run.sh` deletes once sourced; the terminal's own
+`ORCA_TERMINAL_HANDLE`/`ORCA_TAB_ID`/`ORCA_WORKTREE_ID` are left alone. The terminal is
+closed when the dispatch ends; `<outFile>.term/` is removed on success and kept on failure.
+
+The pid checks assume the terminal runs on crew-afk's own host — true when crew-afk is
+launched from an orca terminal in that checkout, including over orca's SSH relay, where
+both sit on the SSH host.
+
+orca's own worker supervision (`orchestration worker-start`) is not used: it signals
+completion by the agent sending `worker_done` itself, and it binds a provider, not a named
+agent definition.
+
 ## Known limitations
 
 - `terminal send`'s delivery confidence is provider-dependent: a plain shell terminal (what
@@ -84,8 +123,6 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 - `--worktree path:<mainRoot>`, not `active`: `active` isn't documented as cwd-relative and
   may resolve to whatever worktree orca's GUI has focused. `--command` is typed into the
   terminal's shell rather than passed as argv, so the log path is shell-quoted.
-- Orca's own richer orchestration layer (`orchestration run-create`/`task-create`/
-  `worker-start`, worker supervision, gates) is untouched by this integration — it's a
-  message-bus design, architecturally closer to dispatch→verify→review→merge than herdr's
-  pane model, but adopting it would be a bigger rewrite than matching herdr's now-much-smaller
-  surface. Out of scope unless crew-afk's own dispatch model changes.
+- Orca's own orchestration layer (`orchestration run-create`/`task-create`/`worker-start`,
+  worker supervision, gates) is not used; see [Worker terminals](#worker-terminals) for why.
+  Worker tabs are plain terminals to orca, not supervised workers.

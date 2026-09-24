@@ -66,7 +66,8 @@ test("notifyTriggeringPane is a no-op with no pane host selected, even inside a 
 // worked around). What's left of either host is: a shared workspace with one tab/terminal
 // that just tails the sprint's own trace log (ensurePaneWorkspace/ensurePaneLogTab, closed
 // by closePaneWorkspace/closePaneLogTab), and a best-effort, advisory nudge to the
-// triggering pane at the end of a run (notifyTriggeringPane). The herdr fixtures below are
+// triggering pane at the end of a run (notifyTriggeringPane). orca also hosts each headless
+// dispatch in a terminal for watching; that is worker-terminal.test.mjs. The herdr fixtures below are
 // the actual JSON shapes captured from a real herdr workspace/tab-create round-trip; the
 // orca ones are from a real live spike against a running orca runtime (`orca terminal
 // create`/`rename`/`send`/`close`, each with `--json`).

@@ -2,6 +2,17 @@
 
 ## [1.29.129]
 
+### Added
+
+- **Under `ORCA_ENV=1`, every crew-afk dispatch runs in an orca terminal of its own.** Each
+  coder/reviewer/triage worker gets a tab titled `<slug> <agent>` showing its tool calls
+  and assistant text live. The worker is still the headless `-p` process, and orca is never
+  asked whether it finished: `run.sh` records the child's pid and exit code on disk, and
+  crew-afk polls those. It keeps the same hard timeout, treats a pid that vanished without
+  an exit code as a failure, and falls back to the plain spawn if the terminal can't be
+  created. Without `ORCA_ENV`, and under `HERDR_ENV`, dispatch is unchanged. See
+  `docs/orca-support.md#worker-terminals`.
+
 ### Changed
 
 - **crew-afk's orchestrator is reorganised, with no change in behaviour.** Pane-host code

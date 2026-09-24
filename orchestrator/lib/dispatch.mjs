@@ -30,7 +30,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { appendLine } from "./effects.mjs";
-import { preflightPaneHost } from "./pane-host/index.mjs";
+import { preflightPaneHost, spawnDispatch } from "./pane-host/index.mjs";
 
 export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
 
@@ -378,11 +378,15 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     for (const line of parts) consumeLine(line);
   };
 
-  const r = await effects.spawnWithTimeout(built.cmd, built.args, {
+  const r = await spawnDispatch(effects, built.cmd, built.args, {
     cwd: built.cwd,
     env: built.env,
     timeoutMs,
     onLine,
+    stem: spec.outFile,
+    title: `${spec.slug ?? "crew-afk"} ${spec.agent}`,
+    jsonEvents: built.jsonEvents,
+    agent: spec.agent,
   });
   consumeLine(lineBuffer);
 

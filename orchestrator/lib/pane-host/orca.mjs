@@ -86,6 +86,35 @@ export async function closeLogTab(effects, handle) {
 }
 
 /**
+ * One terminal per dispatch (worker-terminal.mjs), scoped to the main checkout like the log
+ * terminal: orca accepts any git worktree path, but the main one is the only worktree
+ * guaranteed to be orca's already, and it keeps every worker tab in one place. Returns
+ * `{handle}` or `{failure}`, never throws.
+ */
+export async function openWorkerTerminal(effects, { title, command }) {
+  try {
+    const create = await paneHostExec(effects, [
+      "terminal",
+      "create",
+      "--worktree",
+      `path:${effects.mainRoot}`,
+      "--title",
+      title,
+      "--command",
+      command,
+      "--json",
+    ], CALL_TIMEOUT_MS);
+    const handle = paneHostJson(create)?.result?.terminal?.handle;
+    if (create.code !== 0 || !handle) return { failure: `orca terminal create exit=${create.code} ${failureDetail(create)}` };
+    return { handle };
+  } catch (err) {
+    return { failure: `orca terminal create threw: ${err.message}` };
+  }
+}
+
+export const closeWorkerTerminal = closeLogTab;
+
+/**
  * `terminal send` types into any terminal, and in a plain shell the message plus Enter
  * runs as a command. So send only when `terminal show` reports an `agentIdentity` (set for
  * an agent pane, including mid-tool-call; absent for a shell). No identity, no send.

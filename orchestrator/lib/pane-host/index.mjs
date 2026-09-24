@@ -2,11 +2,14 @@
  * pane-host — the ambient integration with a terminal multiplexer, selected by
  * `effects.paneHost` ("herdr" | "orca" | null; HERDR_ENV=1 / ORCA_ENV=1, see main.mjs).
  *
- * Nothing load-bearing runs through a pane host: every coder/reviewer/triage dispatch is
- * headless regardless. A host is asked for exactly two things — one tab/terminal tailing
- * the sprint's trace log, and one best-effort outcome push into the pane that launched the
- * run. Each adapter (herdr.mjs, orca.mjs) implements the same five operations: preflight,
- * ensureWorkspace, closeWorkspace, closeLogTab, notify.
+ * Every coder/reviewer/triage dispatch is headless regardless of host. A host is asked for
+ * one tab/terminal tailing the sprint's trace log, and one best-effort outcome push into the
+ * pane that launched the run. Each adapter (herdr.mjs, orca.mjs) implements the same five
+ * operations for those: preflight, ensureWorkspace, closeWorkspace, closeLogTab, notify.
+ *
+ * An adapter that also has openWorkerTerminal/closeWorkerTerminal (orca only) hosts each
+ * headless dispatch in a terminal of its own, for watching (worker-terminal.mjs). Completion
+ * still comes from the child's pid and exit code on disk, never from the host.
  *
  * Run-scoped state lives on `effects`: `_paneWorkspace` (cached promise),
  * `_paneWorkspaceReused` (never close a workspace this run didn't create) and
@@ -15,6 +18,7 @@
 
 import * as herdr from "./herdr.mjs";
 import * as orca from "./orca.mjs";
+import { spawnInWorkerTerminal } from "./worker-terminal.mjs";
 
 const ADAPTERS = { herdr, orca };
 
@@ -63,6 +67,16 @@ export async function closePaneLogTab(effects) {
   } catch {
     /* cosmetic */
   }
+}
+
+/**
+ * spawnWithTimeout's contract, hosted in a worker terminal when the pane host has them.
+ * `--dry-run` always takes spawnWithTimeout, which records instead of running.
+ */
+export function spawnDispatch(effects, cmd, args, opts) {
+  const adapter = adapterFor(effects);
+  if (effects.dryRun || !adapter?.openWorkerTerminal) return effects.spawnWithTimeout(cmd, args, opts);
+  return spawnInWorkerTerminal(effects, adapter, cmd, args, opts);
 }
 
 /**
