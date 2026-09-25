@@ -141,17 +141,32 @@ elif [[ -z "$MODEL" ]]; then
   EFFECTIVE_MODEL="$AGENT_MODEL"
 fi
 
-ARGS=(exec --cd "$DIR" --sandbox "$SANDBOX" --json)
+# A read-only agent (reviewer, triage) must still write its result file, the only thing
+# report.mjs reads, and codex's read-only sandbox can't write anything. So it runs in
+# workspace-write with --out's directory, where the result file goes, as its cwd: the one
+# writable root. /tmp and $TMPDIR stay read-only, the repo and .git too, and it still reads
+# everything. RESULT_DIR set means this mode; every widening below is skipped for it.
+RESULT_DIR=""
+if [[ "$SANDBOX" == "read-only" && -n "$OUT" ]]; then
+  mkdir -p "$(dirname "$OUT")"
+  RESULT_DIR=$(cd "$(dirname "$OUT")" && pwd)
+  SANDBOX="workspace-write"
+fi
+
+ARGS=(exec --cd "${RESULT_DIR:-$DIR}" --sandbox "$SANDBOX" --json)
+if [[ -n "$RESULT_DIR" ]]; then
+  ARGS+=(-c sandbox_workspace_write.exclude_slash_tmp=true -c sandbox_workspace_write.exclude_tmpdir_env_var=true)
+fi
 # Workers install dependencies and fetch packages; a sandboxed workspace blocks
 # network by default, which would fail every dep-install step.
-[[ "$SANDBOX" == "workspace-write" ]] && ARGS+=(-c sandbox_workspace_write.network_access=true)
+[[ "$SANDBOX" == "workspace-write" && -z "$RESULT_DIR" ]] && ARGS+=(-c sandbox_workspace_write.network_access=true)
 # A linked worktree's index lives in the *main* repo's git dir
 # (`<main>/.git/worktrees/<name>/index.lock`), and codex's workspace-write sandbox keeps
 # `.git` read-only even when the enclosing directory is passed with --add-dir. Without
 # naming the git dir as an explicit writable root, a worker can edit files but never stage
 # or commit them: observed as `fatal: Unable to create '…/index.lock': Operation not
 # permitted`, which the pipeline correctly reads as `blocked` — every codex sprint stalls.
-if [[ "$SANDBOX" == "workspace-write" ]]; then
+if [[ "$SANDBOX" == "workspace-write" && -z "$RESULT_DIR" ]]; then
   # --path-format=absolute: without it, plain `--git-common-dir` can come back cwd-relative.
   # It still isn't enough on its own — git's own idea of "absolute" on Windows is a bare
   # drive-letter path like "C:/Users/...", which doesn't start with "/", so the *)-branch
@@ -180,7 +195,7 @@ if [[ "$SANDBOX" == "workspace-write" ]]; then
   fi
 fi
 # Traces, prompts, and reports live under $MAIN_ROOT/.scratch, outside the worktree.
-[[ "$MAIN_ROOT" != "$DIR" ]] && ARGS+=(--add-dir "$MAIN_ROOT")
+[[ "$MAIN_ROOT" != "$DIR" && -z "$RESULT_DIR" ]] && ARGS+=(--add-dir "$MAIN_ROOT")
 [[ -n "$EFFECTIVE_MODEL" ]] && ARGS+=(--model "$EFFECTIVE_MODEL")
 [[ -n "$AGENT_EFFORT" ]] && ARGS+=(-c "model_reasoning_effort=\"$AGENT_EFFORT\"")
 if [[ -n "$OUT" ]]; then
@@ -195,12 +210,15 @@ trap 'rm -f "$COMBINED"' EXIT
 {
   printf '%s\n' "$INSTRUCTIONS"
   printf '\n---\n\n# Task\n\n'
+  if [[ -n "$RESULT_DIR" ]]; then
+    printf 'Your shell starts in %s, the only writable directory, where your result file goes. The repository is %s: run your commands there (`cd %s && ...`).\n\n' "$RESULT_DIR" "$DIR" "$DIR"
+  fi
   printf '%s\n' "$PROMPT_TEXT"
 } > "$COMBINED"
 
 if [[ -n "$LOG" ]]; then
   mkdir -p "$(dirname "$LOG")"
-  echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] agent=$AGENT${SLUG:+ slug=$SLUG} dir=$DIR model=${EFFECTIVE_MODEL:-inherit} sandbox=$SANDBOX" >> "$LOG"
+  echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] agent=$AGENT${SLUG:+ slug=$SLUG} dir=$DIR model=${EFFECTIVE_MODEL:-inherit} sandbox=$SANDBOX${RESULT_DIR:+ writable=$RESULT_DIR}" >> "$LOG"
 fi
 
 # Every raw event line, kept for anyone who needs more than the one-line trace below.

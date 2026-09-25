@@ -191,6 +191,28 @@ assert len(d['developer_instructions']) > 200
   [[ "$output" == *"--sandbox read-only"* ]]
 }
 
+@test "a read-only agent with --out can write only --out's directory" {
+  # Its result file goes there, and codex's read-only sandbox can't write it at all.
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null
+
+  mkdir -p "$TEMP_DIR/bin"
+  printf '#!/usr/bin/env bash\necho "ARGS: $*"\ncat\n' > "$TEMP_DIR/bin/codex"
+  chmod +x "$TEMP_DIR/bin/codex"
+  echo "review branch" > "$TEMP_DIR/prompt.md"
+
+  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
+    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
+      --agent crew-code-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md" \
+      --out "$TEMP_DIR/.scratch/demo/dispatch/01-a.review.md"
+  [ "$status" -eq 0 ]
+  dispatch=$(cd "$TEMP_DIR/.scratch/demo/dispatch" && pwd)
+  [[ "$output" == *"--cd $dispatch --sandbox workspace-write"* ]] || { echo "$output" >&2; return 1; }
+  [[ "$output" == *"exclude_slash_tmp=true"* && "$output" == *"exclude_tmpdir_env_var=true"* ]]
+  [[ "$output" != *"writable_roots"* && "$output" != *"network_access"* && "$output" != *"--add-dir"* ]]
+  [[ "$output" == *"The repository is $TEMP_DIR"* ]]
+}
+
 @test "--model overrides the agent TOML, --model inherit passes none" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null

@@ -67,6 +67,11 @@
   common dir `dispatch-codex-agent.sh` already named. Every `git add` failed with
   `Read-only file system` and every codex issue blocked. That dir is now a writable root
   too.
+- **codex reviews and triage produce a result again.** They ran in codex's read-only
+  sandbox, which can't write the result file crew-afk has read exclusively since the
+  sidecar-only policy, so every codex review was `review-not-run` and every triage was
+  `fixable`. A read-only codex agent now runs in workspace-write with the dispatch dir as
+  its cwd and only writable root. `/tmp`, `$TMPDIR`, the repo and `.git` stay read-only.
 - **Setting both `HERDR_ENV` and `ORCA_ENV` now names the variable to unset.**
 
 - **A pi dispatch can no longer hang on its caller's stdin.** `dispatch-agent.sh` passes the
