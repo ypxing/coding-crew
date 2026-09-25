@@ -203,9 +203,11 @@ export function mergeFeatureBranch(effects, { worktree, branch, featureBranch, k
     { cwd: worktree },
   );
   if (r.code !== 0 && keepConflict) {
-    // Left in progress for the coder to resolve; the files are what it is told to fix.
+    // Left in progress for the coder to resolve; the files are what it is told to fix. A
+    // merge that failed with nothing conflicted (e.g. an untracked file in the way) has
+    // nothing to resolve, and is aborted below like any other.
     const files = effects.gitRead(["diff", "--name-only", "--diff-filter=U"], { cwd: worktree }).stdout.trim().split("\n").filter(Boolean);
-    return { merged: false, conflict: true, kept: true, files };
+    if (files.length) return { merged: false, conflict: true, kept: true, files };
   }
   if (r.code !== 0) {
     effects.git(["merge", "--abort"], { cwd: worktree });

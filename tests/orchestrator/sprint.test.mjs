@@ -486,6 +486,41 @@ test("a rerun after a merge conflict spent the retry cap resolves it through the
   assert.deepEqual(shared.trim().split("\n").sort(), ["alpha", "beta"]);
 });
 
+// Any retry can find the feature branch moved on under its branch, not only a
+// merge-conflict one: a sibling merged while this issue waited on its fix. Aborting that
+// sync blocked the issue; the coder resolves it instead, alongside whatever it was
+// retrying for. Run 1 retains alpha; in run 2, beta (sorted first, --max-parallel 1)
+// merges an edit to the same file before alpha's retry syncs.
+for (const [label, retained, setup] of [
+  ["a criteria-unmet retry", /criteria-unmet/, (root) => fake(root, "alpha.review", `\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "AC 1 has no test", findings: [] })}\n\`\`\`\n`)],
+  ["a review-only retry", /^review-not-run$/, (root) => fake(root, "alpha.review-once")],
+]) {
+  test(`${label} whose sync conflicts hands the conflict to the coder instead of blocking`, () => {
+    const root = fixtureRepo();
+    addIssue(root, "01-alpha.md");
+    fake(root, "alpha.shared");
+    setup(root);
+    const first = commandLines(root, ["--max-rounds", "1"]);
+    assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+    assert.match(state(root).retention?.alpha?.reason ?? "", retained);
+
+    rmSync(join(root, ".scratch/fake/alpha.review"), { force: true });
+    addIssue(root, "00-beta.md");
+    fake(root, "beta.shared");
+    const second = commandLines(root, ["--max-parallel", "1"]);
+    assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+    const s = state(root);
+    assert.deepEqual([...s.completed_slugs].sort(), ["alpha", "beta"], traceLog(root));
+    assert.match(traceLog(root), /\[SYNC-CONFLICT-KEPT\] slug=alpha /);
+    assert.doesNotMatch(traceLog(root), /\[SYNC-CONFLICT\] slug=alpha/);
+    const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
+    assert.match(prompt, /A merge of `feature\/demo` into this branch is in progress/);
+    if (label.startsWith("a criteria")) assert.match(prompt, /AC 1 has no test/, "the review fix is still asked for");
+    const shared = sh("git", ["-C", root, "show", "feature/demo:src/shared.txt"]).stdout;
+    assert.deepEqual(shared.trim().split("\n").sort(), ["alpha", "beta"]);
+  });
+}
+
 test("a close-refused retry skips the worker, verify, and review, no-ops the already-merged retry, and succeeds on a retried close", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

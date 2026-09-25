@@ -72,6 +72,12 @@
   sidecar-only policy, so every codex review was `review-not-run` and every triage was
   `fixable`. A read-only codex agent now runs in workspace-write with the dispatch dir as
   its cwd and only writable root. `/tmp`, `$TMPDIR`, the repo and `.git` stay read-only.
+- **Any retry whose branch no longer merges cleanly hands the conflict to the coder.**
+  Only a `merge-conflict` retry used to keep a conflicted sync. Any other retry (a review
+  or verify fix, a restart, a review-only retry) aborted it and blocked, which is what
+  happens when a sibling merges while an issue waits on its fix. The conflict is now
+  added to a coder retry's prompt, and a retry that would have skipped the coder becomes
+  a conflict fix. A merge that fails with nothing conflicted still aborts and blocks.
 - **Setting both `HERDR_ENV` and `ORCA_ENV` now names the variable to unset.**
 
 - **A pi dispatch can no longer hang on its caller's stdin.** `dispatch-agent.sh` passes the

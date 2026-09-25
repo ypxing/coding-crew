@@ -73,6 +73,10 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
  *           would only hit the same conflict at the sync step.
  *   restart anything else, including no reason — the coder runs on workerPrompt.
  *
+ * Whatever the route, a retry whose sync with the feature branch conflicts keeps that
+ * conflict in the worktree: a coder-dispatching route adds it to its prompt, and a verify
+ * route becomes a conflict fix.
+ *
  * The retry cap (MAX_ATTEMPTS_PER_ISSUE, pipeline/finish.mjs) bounds every route alike.
  */
 export function resumeRoute(reason) {
@@ -201,13 +205,17 @@ export async function runWorker(ctx, issue, attempt) {
   if (resume.kind === "conflict" && !wt.reusedBranch) resume = { route: "restart" };
 
   // A reused branch may predate other issues' merges: sync it now, so the gap surfaces
-  // here rather than as a conflict at the merge gate.
+  // here rather than as a conflict at the merge gate. A conflict is left in the worktree
+  // for the coder, whatever this retry was for: a sibling can merge while any retry waits.
   if (wt.reusedBranch) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=sync-feature-branch`);
     const conflictRetry = resume.kind === "conflict";
-    const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch, keepConflict: conflictRetry });
+    const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch, keepConflict: true });
     if (sync.kept) {
       ctx.log(`[SYNC-CONFLICT-KEPT] slug=${issue.slug} branch=${branch} files=${sync.files.join(",")} — left for the coder to resolve`);
+      // A retry that would have skipped the coder now needs one, for the conflict alone;
+      // verify and review re-run on its resolution either way.
+      if (resume.route === "verify") resume = { route: "fix", kind: "conflict", context: `'${sprint.featureBranch}' moved on under this branch` };
       resume = { ...resume, conflictFiles: sync.files };
     } else if (conflictRetry) {
       resume = { route: "verify", label: "conflict-merged-clean" };
@@ -310,6 +318,8 @@ export async function runWorker(ctx, issue, attempt) {
             hasProgress: issue.hasProgress,
             hasBlocked: issue.hasBlocked,
           }),
+          featureBranch: sprint.featureBranch,
+          conflictFiles: resume.conflictFiles,
           reportPath: sidecarFile,
         }),
   );

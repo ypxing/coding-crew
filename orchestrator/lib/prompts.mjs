@@ -34,7 +34,7 @@ function installModeLines(mainRoot) {
   return lines;
 }
 
-export function workerPrompt({ mainRoot, worktree, issuePath, slug, criteria, resume, reportPath }) {
+export function workerPrompt({ mainRoot, worktree, issuePath, slug, criteria, resume, reportPath, featureBranch, conflictFiles = [] }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
     ...installModeLines(mainRoot),
@@ -48,6 +48,7 @@ export function workerPrompt({ mainRoot, worktree, issuePath, slug, criteria, re
     "---",
   ];
   if (resume) lines.push("", resume);
+  if (conflictFiles.length) lines.push("", ...conflictLines(featureBranch, conflictFiles));
   lines.push("", ...resultBlock(worktree, reportPath));
   return `${lines.join("\n")}\n`;
 }
@@ -129,11 +130,28 @@ export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context
       "---",
     );
   }
+  if (conflictFiles.length) lines.push("", ...conflictLines(featureBranch, conflictFiles));
   lines.push("", ...resultBlock(worktree, reportPath));
   return `${lines.join("\n")}\n`;
 }
 
-/** A merge of the feature branch into this one, left conflicted in the worktree. */
+/**
+ * A merge of the feature branch into this one, left conflicted in the worktree: the
+ * whole task of a conflict retry, and one more step of any other retry that hit it.
+ */
+function conflictLines(featureBranch, conflictFiles) {
+  return [
+    `A merge of \`${featureBranch}\` into this branch is in progress in the working directory, with`,
+    "conflicts in:",
+    ...conflictFiles.map((f) => `- ${f}`),
+    "",
+    "Resolve every conflict so both sides' changes survive — the other side is work that has",
+    "already been merged and must not be lost. Do not abort the merge. Run the project's",
+    "checks, then conclude the merge with `git commit --no-edit`.",
+  ];
+}
+
+/** A retry whose only job is the conflicted merge. */
 function conflictPrompt({ mainRoot, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
@@ -143,16 +161,10 @@ function conflictPrompt({ mainRoot, worktree, issuePath, slug, branch, context, 
     `Issue title: ${slug}`,
     `Branch: ${branch}`,
     "",
-    "This branch's work was already verified and reviewed. It failed only to merge:",
-    `${context || `'${featureBranch}' moved on under it`}.`,
+    "This branch's work is not in question; do not redo it. It only needs the feature branch",
+    `merged in: ${context || `'${featureBranch}' moved on under it`}.`,
     "",
-    `A merge of \`${featureBranch}\` into this branch is in progress in the working directory, with`,
-    "conflicts in:",
-    ...conflictFiles.map((f) => `- ${f}`),
-    "",
-    "Resolve every conflict so both sides' changes survive — the other side is work that has",
-    "already been merged and must not be lost. Do not abort the merge, and do not redo this",
-    "issue's work. Run the project's checks, then conclude the merge with `git commit --no-edit`.",
+    ...conflictLines(featureBranch, conflictFiles),
   ];
   lines.push("", ...resultBlock(worktree, reportPath));
   return `${lines.join("\n")}\n`;
