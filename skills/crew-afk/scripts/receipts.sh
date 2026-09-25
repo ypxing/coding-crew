@@ -4,10 +4,10 @@ set -uo pipefail
 # receipts.sh — mechanical gate receipts for a crew-afk sprint
 #
 # Usage:
-#   receipts.sh write <verify|ac>  --dir   <worktree-path>
-#   receipts.sh write <verify|ac>  --branch <branch>            # cwd: main root
-#   receipts.sh clear <verify|ac>  --dir   <worktree-path>
-#   receipts.sh path  <verify|ac>  --dir   <worktree-path>
+#   receipts.sh write ac           --dir   <worktree-path>
+#   receipts.sh write ac           --branch <branch>            # cwd: main root
+#   receipts.sh clear <verify|ac>  --dir   <worktree-path> [--stem <n>-<slug>]
+#   receipts.sh path  <verify|ac>  --dir   <worktree-path> [--stem <n>-<slug>]
 #   receipts.sh check verify       --branch <branch>            # cwd: main root
 #   receipts.sh check ac           --issue  <issue-file-path>   # local backend
 #   receipts.sh check ac           --branch <branch>            # github backend, cwd: main root
@@ -25,14 +25,19 @@ set -uo pipefail
 #   mechanical steps downstream can require.
 #
 # What a receipt is
-#   <main-root>/.scratch/<feature-slug>/dispatch/<issue-slug>.<kind>.ok
-#   containing the commit SHA that was gated. Same directory as the worker
+#   Both live in <main-root>/.scratch/<feature-slug>/dispatch/, beside the worker
 #   reports, so a sprint's evidence stays in one place.
 #
-#   The SHA matters for `verify`: it binds the receipt to the exact tree that
-#   passed the checks, so commits pushed after verification cannot ride in on an
-#   earlier pass. `ac` receipts are only checked for existence — by close time
-#   the branch may already be merged and deleted, so there is no tip to compare.
+#   verify: <n>-<slug>.verify.json, verify-worktree.sh's own record of the run (the
+#   bare <slug>.verify.json when no --stem was given). It is written by that script,
+#   never here, pass or fail; `check verify` accepts it only with a `pass` verdict and
+#   a `commit` equal to the branch's tip, so commits pushed after verification cannot
+#   ride in on an earlier pass. `check verify --branch` knows only the slug, so it
+#   finds the record by `<digits>-<slug>` or bare `<slug>`.
+#
+#   ac: <slug>.ac.ok, written here once review returned all-met. Only its existence
+#   is checked — by close time the branch may already be merged and deleted, so
+#   there is no tip to compare.
 #
 #   Writing an `ac` receipt also emits the ACVERIFY trace line, because the receipt
 #   is the only evidence that gate ran. Verify receipts are traced by
@@ -46,10 +51,10 @@ set -uo pipefail
 _usage() {
   cat >&2 <<'EOF'
 Usage:
-  receipts.sh write <verify|ac>  --dir    <worktree-path>
-  receipts.sh write <verify|ac>  --branch <branch>
-  receipts.sh clear <verify|ac>  --dir    <worktree-path>
-  receipts.sh path  <verify|ac>  --dir    <worktree-path>
+  receipts.sh write ac           --dir    <worktree-path>
+  receipts.sh write ac           --branch <branch>
+  receipts.sh clear <verify|ac>  --dir    <worktree-path> [--stem <n>-<slug>]
+  receipts.sh path  <verify|ac>  --dir    <worktree-path> [--stem <n>-<slug>]
   receipts.sh check verify       --branch <branch>
   receipts.sh check ac           --issue  <issue-file-path>
   receipts.sh check ac           --branch <branch>
@@ -103,9 +108,21 @@ _split_crew_branch() {
   esac
 }
 
-# _receipt_file <main-root> <feature-slug> <issue-slug> <kind>
+# _receipt_file <main-root> <feature-slug> <issue-slug> <kind> [<stem>]
+# A verify record with no stem is looked up: the `<digits>-<slug>` one the
+# orchestrator wrote if there is one, else the bare-slug name.
 _receipt_file() {
-  echo "$1/.scratch/$2/dispatch/$3.$4.ok"
+  local dispatch="$1/.scratch/$2/dispatch"
+  if [ "$4" = "ac" ]; then echo "$dispatch/$3.ac.ok"; return; fi
+  if [ -n "${5:-}" ]; then echo "$dispatch/$5.verify.json"; return; fi
+  local f
+  for f in "$dispatch"/[0-9]*-"$3".verify.json; do
+    [ -f "$f" ] || continue
+    if basename "$f" | grep -qE "^[0-9]+-$(printf '%s' "$3" | sed 's/[.[\*^$]/\\&/g')\.verify\.json$"; then
+      echo "$f"; return
+    fi
+  done
+  echo "$dispatch/$3.verify.json"
 }
 
 # issue_slug_of <issue-file-path> — filename minus leading digits and extension,
@@ -134,9 +151,10 @@ esac
 DIR=""
 BRANCH=""
 ISSUE=""
+STEM=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dir|--branch|--issue)
+    --dir|--branch|--issue|--stem)
       # Guard before reading $2: under `set -u` a bare flag would abort with an
       # unbound-variable error instead of the usage message.
       if [ $# -lt 2 ]; then echo "ERROR: $1 requires a value" >&2; exit 1; fi
@@ -144,6 +162,7 @@ while [ $# -gt 0 ]; do
         --dir) DIR="$2" ;;
         --branch) BRANCH="$2" ;;
         --issue) ISSUE="$2" ;;
+        --stem) STEM="$2" ;;
       esac
       shift 2
       ;;
@@ -155,6 +174,10 @@ done
 
 case "$ACTION" in
   write|clear|path)
+    if [ "$ACTION" = "write" ] && [ "$KIND" = "verify" ]; then
+      echo "ERROR: the verify record is written by verify-worktree.sh, not here" >&2
+      exit 1
+    fi
     if [ -z "$DIR" ] && [ -z "$BRANCH" ]; then
       echo "ERROR: $ACTION requires --dir <worktree-path> or --branch <branch>" >&2
       exit 1
@@ -183,7 +206,7 @@ case "$ACTION" in
     read -r feature slug <<<"$split"
 
     main_root=$(_main_root_of "${sha_source:-.}") || { echo "ERROR: cannot resolve main root" >&2; exit 1; }
-    file=$(_receipt_file "$main_root" "$feature" "$slug" "$KIND")
+    file=$(_receipt_file "$main_root" "$feature" "$slug" "$KIND" "$STEM")
 
     case "$ACTION" in
       path)
@@ -248,7 +271,13 @@ case "$ACTION" in
           exit 1
         fi
 
-        recorded=$(cat "$file")
+        verdict=$(grep -o '"verdict"[[:space:]]*:[[:space:]]*"[a-z_]*"' "$file" 2>/dev/null | head -1 | sed -E 's/.*"([a-z_]*)"$/\1/')
+        recorded=$(grep -o '"commit"[[:space:]]*:[[:space:]]*"[0-9a-f]*"' "$file" 2>/dev/null | head -1 | sed -E 's/.*"([0-9a-f]*)"$/\1/')
+        if [ "$verdict" != "pass" ]; then
+          echo "RECEIPT: $BRANCH did not pass verification (verdict: ${verdict:-unreadable}) — refusing to treat it as verified." >&2
+          echo "  Record: $file" >&2
+          exit 1
+        fi
         actual=$(git rev-parse "${BRANCH}^{commit}" 2>/dev/null) || {
           echo "ERROR: cannot resolve branch: $BRANCH" >&2; exit 1; }
         if [ "$recorded" != "$actual" ]; then

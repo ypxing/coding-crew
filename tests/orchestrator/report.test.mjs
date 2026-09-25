@@ -7,9 +7,18 @@ import {
   parseReviewAggregate,
   parseReviewReport,
   parseTriageReport,
-  parseVerifyChecks,
   parseWorkerReport,
+  readVerifyRecord,
 } from "../../orchestrator/lib/report.mjs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+function verifyRecord(obj) {
+  const f = join(mkdtempSync(join(tmpdir(), "verify-rec-")), "01-x.verify.json");
+  writeFileSync(f, typeof obj === "string" ? obj : JSON.stringify(obj));
+  return f;
+}
 import { fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("a structured sidecar wins over prose", () => {
@@ -210,35 +219,29 @@ test("parseReviewAggregate on text with no json blocks returns no records", () =
 // this inspection-only review`. Fail-closed is right; asking for evidence the reviewer is
 // structurally unable to produce is not, and it retained the branch every round forever.
 
-test("verify-worktree output is read back as the reviewer's check evidence", () => {
-  const stdout = [
-    "TYPECHECK: not_run — no command found",
-    "LINT: not_run — no command found",
-    "TEST: running: npm test",
-    "TEST: pass",
-    "Verification: success",
-  ].join("\n");
-  assert.deepEqual(parseVerifyChecks(stdout).checks, { test: "pass", lint: "not_run", typecheck: "not_run" });
+test("the verifier's record is read back as the reviewer's check evidence", () => {
+  const f = verifyRecord({
+    branch: "crew/f/x",
+    commit: "abc",
+    verdict: "pass",
+    checks: [
+      { category: "typecheck", requested: "base", command: null, result: "not_run", exit: null, log: null },
+      { category: "test", requested: "base", command: "npm test", result: "pass", exit: 0, log: "/d/01-x.verify-test.log" },
+      { category: "coverage", requested: "extra", command: "make cov", result: "pass", exit: 0, log: "/d/my dir/01-x.verify-coverage.log" },
+    ],
+    not_requested: ["integration"],
+  });
+  const { checks, logs, notRequested } = readVerifyRecord(f);
+  assert.deepEqual(checks, { test: "pass", lint: "not_run", typecheck: "not_run", coverage: "pass" });
+  assert.deepEqual(logs, { test: "/d/01-x.verify-test.log", coverage: "/d/my dir/01-x.verify-coverage.log" });
+  assert.deepEqual(notRequested, ["integration"]);
 });
 
-test("an unseen or failed check is never reported as evidence", () => {
-  assert.deepEqual(parseVerifyChecks("").checks, { test: "not_run", lint: "not_run", typecheck: "not_run" });
-  assert.equal(parseVerifyChecks("TEST: fail\n").checks.test, "fail");
-});
-
-test("requested extra checks and their logs are read back; unrequested labels are not", () => {
-  const stdout = [
-    "TEST: pass",
-    "WARN: fail — echoed by some command's own output",
-    "COVERAGE: running: make testWithCoverage",
-    "COVERAGE: pass",
-    "COVERAGE: log: /wt/my repo/.scratch/verify-coverage.log",
-    "INTEGRATION: not_run — no command for 'integration'",
-  ].join("\n");
-  const { checks, logs } = parseVerifyChecks(stdout, ["coverage", "integration"]);
-  assert.deepEqual(checks, { test: "pass", lint: "not_run", typecheck: "not_run", coverage: "pass", integration: "not_run" });
-  assert.deepEqual(logs, { coverage: "/wt/my repo/.scratch/verify-coverage.log" });
-  assert.equal(parseVerifyChecks(stdout).checks.warn, undefined);
+test("a missing or unreadable record is never reported as evidence", () => {
+  const none = { checks: { test: "not_run", lint: "not_run", typecheck: "not_run" }, logs: {}, notRequested: [] };
+  assert.deepEqual(readVerifyRecord("/nonexistent/01-x.verify.json"), none);
+  assert.deepEqual(readVerifyRecord(verifyRecord("{not json")), none);
+  assert.equal(readVerifyRecord(verifyRecord({ checks: [{ category: "test", result: "fail" }] })).checks.test, "fail");
 });
 
 test("a worker's extra_checks are names only, deduped, without the base three", () => {
@@ -260,6 +263,18 @@ test("the review prompt states every check that ran, with its full-output file",
   });
   assert.match(p, /typecheck=pass, coverage=pass \(full output: \/wt\/\.scratch\/verify-coverage\.log\)/);
   assert.match(p, /`pass` alone does not prove the figure/);
+});
+
+test("the review prompt names the gate's record, what it never ran, and what counts as a claim", () => {
+  const p = reviewPrompt({
+    branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/s.json",
+    checks: { test: "pass", lint: "pass", typecheck: "pass" },
+    notRequested: ["coverage", "integration"],
+    verifyFile: "/d/01-s.verify.json",
+  });
+  assert.match(p, /The gate's own record of that run: \/d\/01-s\.verify\.json/);
+  assert.match(p, /Not run by the pipeline: coverage, integration — a criterion resting on one of these has no evidence/);
+  assert.match(p, /progress notes, commit messages and the issue's `## Progress` section are claims/);
 });
 
 test("the review prompt states the checks and forbids unmet-for-lack-of-execution", () => {

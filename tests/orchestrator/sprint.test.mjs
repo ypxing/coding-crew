@@ -241,7 +241,7 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), false);
   // The gate receipts both exist and the sprint ends cleanly.
-  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.verify.ok")), true);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha.verify.json")), true);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.ac.ok")), true);
   assert.match(r.stdout, /NO MORE TASKS/);
   // The reviewer was handed the verification result, so a criterion that ends "and the
@@ -272,8 +272,14 @@ test("a worker's extra_checks are re-run by the gate and stated to the reviewer 
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.review-prompt.md"), "utf8");
   assert.match(reviewPromptText, /coverage=pass \(full output: [^)]*verify-coverage\.log\)/);
-  // Only what the worker asked for: integration is in the cache but was never requested.
+  // Only what the worker asked for: integration is in the cache but was never requested —
+  // and the reviewer is told so, rather than left to infer it from what is absent.
   assert.doesNotMatch(reviewPromptText, /integration=/);
+  assert.match(reviewPromptText, /Not run by the pipeline: integration/);
+  assert.match(reviewPromptText, /The gate's own record of that run: \S+\/01-alpha\.verify\.json/);
+  // The logs live beside the record, so they outlive the worktree.
+  assert.match(reviewPromptText, /coverage=pass \(full output: \S+\/dispatch\/01-alpha\.verify-coverage\.log\)/);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha.verify-coverage.log")), true);
 });
 
 test("a worker-reported failing check is demoted and never merges", () => {
@@ -1283,7 +1289,7 @@ function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform 
 }
 
 const SPRINT_LEVEL_DEPS = /ensure-deps\.sh --dir \S+$/;
-const worktreeDepsFor = (slug) => new RegExp(`ensure-deps\\.sh --dir \\S+ --slug ${slug}$`);
+const worktreeDepsFor = (slug) => new RegExp(`ensure-deps\\.sh --dir \\S+ --slug ${slug} --stem \\d+-${slug}$`);
 
 test("deps are provisioned once per sprint and once per dispatched issue", () => {
   const root = fixtureRepo();

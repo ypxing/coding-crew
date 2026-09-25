@@ -8,8 +8,8 @@
 #   2. A second issue was closed off the *first* issue's branch, so `merged=2`
 #      was reported after a single dispatch.
 #
-# The fix is mechanical: verify-worktree.sh writes a receipt naming the exact
-# commit it verified, merge-branches.sh refuses to merge a crew branch without a
+# The fix is mechanical: verify-worktree.sh writes a record naming the exact
+# commit it verified and its verdict, merge-branches.sh refuses to merge a crew branch without a
 # matching receipt, and close-issue.sh refuses to close an issue without an
 # acceptance-criteria receipt for that issue's own slug.
 
@@ -57,6 +57,15 @@ _make_worktree() {
   echo "$wt"
 }
 
+# _write_record <worktree> [verdict] [file-stem] — a verify-worktree.sh record by hand.
+_write_record() {
+  local wt="$1" verdict="${2:-pass}" slug
+  slug=$(basename "$wt")
+  mkdir -p "$DISPATCH_DIR"
+  printf '{"branch": "crew/my-feature/%s", "commit": "%s", "verdict": "%s", "checks": [], "not_requested": []}\n' \
+    "$slug" "$(git -C "$wt" rev-parse HEAD)" "$verdict" > "$DISPATCH_DIR/${3:-$slug}.verify.json"
+}
+
 _write_issue() {
   local filename="$1"
   local dir="$MAIN_ROOT/.scratch/my-feature/issues/open"
@@ -74,14 +83,21 @@ EOF
 
 # ─── receipts.sh ─────────────────────────────────────────────────────────────
 
-@test "receipts: write verify records the verified commit under the main root" {
+@test "receipts: write verify is refused — the record is verify-worktree.sh's own" {
   wt=$(_make_worktree "task-a")
 
   run bash "$RECEIPTS_SCRIPT" write verify --dir "$wt"
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"verify-worktree.sh"* ]]
+}
 
-  [ -f "$DISPATCH_DIR/task-a.verify.ok" ]
-  [ "$(cat "$DISPATCH_DIR/task-a.verify.ok")" = "$(git -C "$wt" rev-parse HEAD)" ]
+@test "receipts: path verify names the record by stem when given, the bare slug otherwise" {
+  wt=$(_make_worktree "task-a")
+
+  run bash "$RECEIPTS_SCRIPT" path verify --dir "$wt" --stem 03-task-a
+  [ "$output" = "$DISPATCH_DIR/03-task-a.verify.json" ]
+  run bash "$RECEIPTS_SCRIPT" path verify --dir "$wt"
+  [ "$output" = "$DISPATCH_DIR/task-a.verify.json" ]
 }
 
 @test "receipts: write ac records a receipt for the branch's own slug" {
@@ -94,11 +110,11 @@ EOF
 
 @test "receipts: clear removes an existing receipt" {
   wt=$(_make_worktree "task-a")
-  bash "$RECEIPTS_SCRIPT" write verify --dir "$wt"
+  _write_record "$wt"
 
   run bash "$RECEIPTS_SCRIPT" clear verify --dir "$wt"
   [ "$status" -eq 0 ]
-  [ ! -f "$DISPATCH_DIR/task-a.verify.ok" ]
+  [ ! -f "$DISPATCH_DIR/task-a.verify.json" ]
 }
 
 @test "receipts: write ac works from the main checkout after the worktree is gone" {
@@ -172,17 +188,6 @@ EOF
   grep -q 'result=all-met' "$TRACE_LOG"
 }
 
-@test "receipts: write verify does not trace ACVERIFY (verify-worktree owns VERIFY)" {
-  wt=$(_make_worktree "task-a")
-  export TRACE_LOG="$MAIN_ROOT/.scratch/my-feature/trace.log"
-
-  run bash "$RECEIPTS_SCRIPT" write verify --dir "$wt"
-  [ "$status" -eq 0 ]
-  if [ -f "$TRACE_LOG" ]; then
-    ! grep -q '\[ACVERIFY\]' "$TRACE_LOG"
-  fi
-}
-
 @test "receipts: write ac still succeeds when no trace log can be resolved" {
   # Tracing is observability: it must never fail the gate that is making progress.
   wt=$(_make_worktree "task-a")
@@ -206,7 +211,7 @@ EOF
 }
 
 @test "receipts: write refuses a directory whose branch is not a crew branch" {
-  run bash "$RECEIPTS_SCRIPT" write verify --dir "$MAIN_ROOT"
+  run bash "$RECEIPTS_SCRIPT" write ac --dir "$MAIN_ROOT"
   [ "$status" -ne 0 ]
   [[ "$output" == *"crew/"* ]]
 }
@@ -227,7 +232,7 @@ EOF
 
 @test "merge gate: crew branch with a matching verify receipt merges" {
   wt=$(_make_worktree "task-a")
-  bash "$RECEIPTS_SCRIPT" write verify --dir "$wt"
+  _write_record "$wt"
 
   run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "crew/my-feature/task-a"
   [ "$status" -eq 0 ]
@@ -237,9 +242,34 @@ EOF
   [[ "$output" == *"task-a work"* ]]
 }
 
+@test "merge gate: a record named with the issue-number prefix is found from the branch alone" {
+  wt=$(_make_worktree "task-a")
+  _write_record "$wt" pass "07-task-a"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "crew/my-feature/task-a"
+  [ "$status" -eq 0 ]
+}
+
+@test "merge gate: a sibling whose slug ends in this one's does not stand in for it" {
+  wt=$(_make_worktree "task-a")
+  _write_record "$wt" pass "07-other-task-a"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "crew/my-feature/task-a"
+  [ "$status" -ne 0 ]
+}
+
+@test "merge gate: a record with a fail verdict for the current tip is not a receipt" {
+  wt=$(_make_worktree "task-a")
+  _write_record "$wt" fail
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "crew/my-feature/task-a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"did not pass verification"* ]]
+}
+
 @test "merge gate: receipt for an older commit is rejected as stale" {
   wt=$(_make_worktree "task-a")
-  bash "$RECEIPTS_SCRIPT" write verify --dir "$wt"
+  _write_record "$wt"
 
   # Worker pushes another commit after verification — the receipt no longer
   # vouches for what is about to merge.
@@ -272,7 +302,7 @@ EOF
 @test "merge gate: an ungated branch still merges when a sibling is gated out" {
   _make_worktree "task-a" >/dev/null
   wt_b=$(_make_worktree "task-b")
-  bash "$RECEIPTS_SCRIPT" write verify --dir "$wt_b"
+  _write_record "$wt_b"
 
   run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "crew/my-feature/task-a" "crew/my-feature/task-b"
   [ "$status" -ne 0 ]
@@ -282,7 +312,7 @@ EOF
   [[ "$output" != *"task-a work"* ]]
 }
 
-# ─── verify-worktree.sh receipt emission ─────────────────────────────────────
+# ─── verify-worktree.sh record emission ─────────────────────────────────────
 
 @test "verify-worktree: writes a receipt when all checks pass" {
   wt=$(_make_worktree "task-a")
@@ -292,10 +322,36 @@ test:
 EOF
   git -C "$wt" add -A && git -C "$wt" commit -q -m "add makefile"
 
-  run bash "$VERIFY_SCRIPT" --dir "$wt"
+  run bash "$VERIFY_SCRIPT" --dir "$wt" --stem 01-task-a
   [ "$status" -eq 0 ]
-  [ -f "$DISPATCH_DIR/task-a.verify.ok" ]
-  [ "$(cat "$DISPATCH_DIR/task-a.verify.ok")" = "$(git -C "$wt" rev-parse HEAD)" ]
+  rec="$DISPATCH_DIR/01-task-a.verify.json"
+  [ -f "$rec" ]
+  grep -q "\"commit\": \"$(git -C "$wt" rev-parse HEAD)\"" "$rec"
+  grep -q '"verdict": "pass"' "$rec"
+  grep -q '"category": "test", "requested": "base", "command": "make test", "result": "pass", "exit": 0' "$rec"
+  # Every check's full output outlives the worktree, beside the record.
+  grep -q "\"log\": \"$DISPATCH_DIR/01-task-a.verify-test.log\"" "$rec"
+  [ -f "$DISPATCH_DIR/01-task-a.verify-test.log" ]
+  [ ! -e "$wt/.scratch/verify-test.log" ]
+  node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$rec"
+
+  cd "$MAIN_ROOT"
+  run bash "$RECEIPTS_SCRIPT" check verify --branch crew/my-feature/task-a
+  [ "$status" -eq 0 ]
+}
+
+@test "verify-worktree: the record names cached checks this run was never asked for" {
+  wt=$(_make_worktree "task-a")
+  mkdir -p "$MAIN_ROOT/.coding-crew"
+  echo '{"test": "true", "lint": null, "typecheck": null, "install": "true", "coverage": "echo c", "integration": "echo i"}' \
+    > "$MAIN_ROOT/.coding-crew/dev-commands.json"
+
+  run bash "$VERIFY_SCRIPT" --dir "$wt" --stem 01-task-a --extra coverage
+  [ "$status" -eq 0 ]
+  rec="$DISPATCH_DIR/01-task-a.verify.json"
+  grep -q '"category": "coverage", "requested": "extra", "command": "echo c", "result": "pass"' "$rec"
+  grep -q '"not_requested": \["integration"\]' "$rec"
+  node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$rec"
 }
 
 @test "verify-worktree: writes no receipt when a check fails" {
@@ -308,13 +364,13 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$wt"
   [ "$status" -ne 0 ]
-  [ ! -f "$DISPATCH_DIR/task-a.verify.ok" ]
+  grep -q '"verdict": "fail"' "$DISPATCH_DIR/task-a.verify.json"
+  grep -q '"result": "fail", "exit": 2' "$DISPATCH_DIR/task-a.verify.json"
 }
 
-@test "verify-worktree: a failing run clears a receipt from an earlier pass" {
+@test "verify-worktree: a failing run revokes a receipt from an earlier pass" {
   wt=$(_make_worktree "task-a")
-  bash "$RECEIPTS_SCRIPT" write verify --dir "$wt"
-  [ -f "$DISPATCH_DIR/task-a.verify.ok" ]
+  _write_record "$wt"
 
   cat > "$wt/Makefile" <<'EOF'
 test:
@@ -324,7 +380,9 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$wt"
   [ "$status" -ne 0 ]
-  [ ! -f "$DISPATCH_DIR/task-a.verify.ok" ]
+  cd "$MAIN_ROOT"
+  run bash "$RECEIPTS_SCRIPT" check verify --branch crew/my-feature/task-a
+  [ "$status" -ne 0 ]
 }
 
 # ─── close gate ──────────────────────────────────────────────────────────────
@@ -387,13 +445,13 @@ EOF
 # and four promises are four things to drift; it is one call site now, in the pipeline every
 # platform runs, and the end-to-end assertion that it happens is
 # tests/orchestrator/sprint.test.mjs ("the gates run in order: verify → AC receipt → merge →
-# close") plus the ac.ok / verify.ok existence checks in the clean-merge and criteria-unmet
+# close") plus the ac.ok / verify.json existence checks in the clean-merge and criteria-unmet
 # cases.
 
 @test "parity: the pipeline writes both receipts, from one place, for every platform" {
   pipeline="$REPO_ROOT/orchestrator/lib/pipeline.mjs"
   grep -q 'receipts.sh' "$pipeline"
   grep -q '"write", "ac"' "$pipeline"
-  # And the verify receipt stays with the script that ran the checks.
-  grep -q 'write verify' "$REPO_ROOT/skills/crew-afk/scripts/verify-worktree.sh"
+  # And the verify record stays with the script that ran the checks.
+  grep -q 'path verify' "$REPO_ROOT/skills/crew-afk/scripts/verify-worktree.sh"
 }

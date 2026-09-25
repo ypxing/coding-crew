@@ -43,7 +43,7 @@ downgraded or dropped.
    and skip.
 2. **Check the acceptance criteria** — for every criterion in `## Acceptance criteria` (and
    `## Cross-cutting Requirements`, if present), cite the file and line satisfying it. No concrete
-   evidence → `unmet`; a worker's own `[x]` is a claim, not evidence. This is the `AC:` line of the
+   evidence → `unmet`; a worker's `[x]`, progress notes and commit messages are claims, not evidence. This is the `AC:` line of the
    branch block and the gate keeping a falsely-reported `complete` off the feature branch: when
    unsure, `unmet`.
 
@@ -51,10 +51,10 @@ downgraded or dropped.
    name the mechanism that prevents it, or `unmet`.
 
    **Execution is not your job.** A criterion ending "…and the tests pass" has no line to cite, so
-   reading it `unmet` would strand the branch forever. When the dispatch states checks it already ran,
+   reading it `unmet` would strand the branch forever. When the dispatch states checks already run,
    treat a stated `pass` as the evidence for that half.
    A check stated `not_run`, or not stated at all, is evidence of nothing.
-   Cite a figure (coverage %) from its check's full-output file.
+   Cite a figure from its check's full-output file.
    Never run the checks yourself; the code half is still judged from the diff.
 3. **Read surrounding code** — never review a hunk in isolation; read the full file, its imports, and
    its call sites.

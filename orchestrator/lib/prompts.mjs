@@ -193,7 +193,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, reportPath }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, notRequested, verifyFile, reportPath }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
   const stated = Object.entries(c)
@@ -216,12 +216,18 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     // criterion reads `unmet` and nothing ever merges. The pipeline ran these checks in
     // this branch's worktree, after the coder finished and before this review.
     `Checks already run by the pipeline in this branch's worktree: ${stated}.`,
+    ...(verifyFile ? [`The gate's own record of that run: ${verifyFile}`] : []),
+    ...(notRequested?.length
+      ? [`Not run by the pipeline: ${notRequested.join(", ")} — a criterion resting on one of these has no evidence.`]
+      : []),
     "Treat that as the evidence for any criterion whose only outstanding part is that a",
     "check passes — do not report a criterion unmet because you could not execute it",
     "yourself. A check reported `not_run` is not evidence of anything. Everything else is",
     "still judged from the diff: no file and line, no evidence, `unmet`. A criterion about a",
     "figure a check produces (a coverage percentage) is judged from that check's full output",
-    "file, when one is given — read it; `pass` alone does not prove the figure.",
+    "file, when one is given — read it; `pass` alone does not prove the figure. The coder's",
+    "progress notes, commit messages and the issue's `## Progress` section are claims, not",
+    "evidence, however specific.",
     "",
     // Same policy as the worker's resultBlock: the file is the only thing read. No fallback
     // fenced block in the final message — see report.mjs's parseReviewReport. The "##

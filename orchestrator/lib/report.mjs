@@ -13,6 +13,8 @@
  * is `unmet`, a review that did not happen.
  */
 
+import { readFileSync } from "node:fs";
+
 export const CHECK_CATEGORIES = ["test", "lint", "typecheck"];
 const STATUSES = new Set(["complete", "partial", "blocked"]);
 
@@ -159,31 +161,36 @@ export function applySchemaPrefilter(report) {
 }
 
 /**
- * verify-worktree.sh's own output, read back as the check evidence the reviewer is given.
+ * verify-worktree.sh's own record (`<stem>.verify.json`), read back as the check evidence the
+ * reviewer is given.
  *
  * The reviewer cannot run commands, so a criterion phrased "…and the tests pass" is
  * unprovable from a diff and reads as `unmet` — which stalled every sprint whose issues
  * were written that way. The pipeline has already run those checks in the branch's
  * worktree and gated the merge on the result; passing that result on is what makes the
- * criteria check answerable without weakening it. `not_run` is never evidence.
+ * criteria check answerable without weakening it. `not_run` is never evidence, and a
+ * missing or unreadable record is every base check `not_run`.
  *
- * `extras` are the categories this run passed as `--extra`: only those, plus the base three,
- * are read back — a check command's own echoed output ("WARN: fail …") must not mint a
- * category nobody asked the gate to run. `logs` holds each `<LABEL>: log: <path>` the gate
- * printed, so a reviewer can read a figure (a coverage percentage) pass/fail cannot carry.
+ * `logs` maps each check to its full-output file, so a reviewer can read a figure (a coverage
+ * percentage) pass/fail cannot carry; `notRequested` names the cached checks this run never
+ * ran, so a criterion resting on one visibly has no evidence.
  */
-export function parseVerifyChecks(stdout, extras = []) {
-  const categories = [...CHECK_CATEGORIES, ...extras.filter((c) => !CHECK_CATEGORIES.includes(c))];
-  const checks = Object.fromEntries(categories.map((c) => [c, "not_run"]));
+export function readVerifyRecord(file) {
+  const checks = Object.fromEntries(CHECK_CATEGORIES.map((c) => [c, "not_run"]));
   const logs = {};
-  const labels = categories.map((c) => c.toUpperCase()).join("|");
-  for (const m of (stdout ?? "").matchAll(new RegExp(`^\\s*(${labels}):\\s*(pass|fail|not_run)\\b`, "gim"))) {
-    checks[m[1].toLowerCase()] = m[2].toLowerCase();
+  let rec = null;
+  try {
+    rec = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return { checks, logs, notRequested: [] };
   }
-  for (const m of (stdout ?? "").matchAll(new RegExp(`^\\s*(${labels}):\\s*log:\\s*(.+?)\\s*$`, "gim"))) {
-    logs[m[1].toLowerCase()] = m[2];
+  for (const c of Array.isArray(rec?.checks) ? rec.checks : []) {
+    if (!c || typeof c.category !== "string") continue;
+    checks[c.category] = normaliseCheck(c.result);
+    if (typeof c.log === "string" && c.log) logs[c.category] = c.log;
   }
-  return { checks, logs };
+  const notRequested = Array.isArray(rec?.not_requested) ? rec.not_requested.filter((c) => typeof c === "string") : [];
+  return { checks, logs, notRequested };
 }
 
 /**

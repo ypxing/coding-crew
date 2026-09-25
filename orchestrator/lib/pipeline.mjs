@@ -18,7 +18,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { applySchemaPrefilter, depsLine, parseVerifyChecks, parseWorkerReport } from "./report.mjs";
+import { applySchemaPrefilter, depsLine, parseWorkerReport, readVerifyRecord } from "./report.mjs";
 import { getTracker } from "./tracker.mjs";
 import { fixPrompt, resumeNote, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
@@ -255,7 +255,7 @@ export async function runWorker(ctx, issue, attempt) {
   // useful work in an unprovisioned worktree, so letting them run only rediscovers it later.
   if (options.deps !== false) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=deps`);
-    const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug], {
+    const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug, "--stem", dispatchStem(issue)], {
       env: sprint.childEnv(),
     });
     const line = depsLine(deps.stdout);
@@ -440,7 +440,7 @@ export async function runHousekeeping(ctx, worker) {
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
   // The coder names the extra categories its criteria need; the gate re-runs them itself.
   const extras = worker.report.extraChecks ?? [];
-  const verifyArgs = ["--dir", worker.worktree];
+  const verifyArgs = ["--dir", worker.worktree, "--stem", dispatchStem(issue)];
   if (extras.length) verifyArgs.push("--extra", extras.join(","));
   const verify = effects.bash("verify-worktree.sh", verifyArgs, {
     env: sprint.childEnv(),
@@ -462,7 +462,9 @@ export async function runHousekeeping(ctx, worker) {
   // --- gate 2: independent review (findings + acceptance-criteria verdict) ---
   // The worktree stays alive across review (which needs none of it): an `AC: unmet`
   // verdict sends the coder back to fix this branch.
-  const review = await runReview(ctx, worker, parseVerifyChecks(verify.stdout, extras));
+  // The gate's own record, not its stdout: the reviewer is pointed at the same file.
+  const verifyFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.verify.json`);
+  const review = await runReview(ctx, worker, { ...readVerifyRecord(verifyFile), file: verifyFile });
   outcome.reviewReport = review.reportFile;
   if (!review.completed) {
     effects.bash("promote-findings.sh", [

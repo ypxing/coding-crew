@@ -3,7 +3,7 @@ set -uo pipefail
 
 # verify-worktree.sh — run project checks in a worktree directory
 #
-# Usage: verify-worktree.sh --dir <worktree-path> [--extra <category>[,<category>...]]
+# Usage: verify-worktree.sh --dir <worktree-path> [--extra <category>[,<category>...]] [--stem <n>-<slug>]
 #
 # --extra names further dev-commands.json categories (e.g. coverage,integration) to run after
 # the three base checks — the ones a worker says this issue's acceptance criteria call for.
@@ -12,6 +12,15 @@ set -uo pipefail
 # required — no cached command for it is fatal, not a silent not_run — and its full output is
 # always persisted, with its path printed as `<LABEL>: log: <path>`, so a reviewer can read a
 # figure (a coverage percentage) that pass/fail alone cannot carry.
+#
+# In a crew worktree the run's evidence is written to the sprint's dispatch directory, next to
+# the issue's other dispatch files and named with the same `<n>-<slug>` stem (--stem; the bare
+# slug when absent): `<stem>.verify.json` — branch, commit, verdict, and per check its
+# category, command, result, exit code and log — plus `<stem>.verify-<check>.log`, every check's
+# full output. The JSON is also the merge receipt (see receipts.sh): merge-branches.sh accepts
+# only a `pass` verdict recorded for the branch's current tip. It outlives the worktree, so what
+# the gate did can be read after the fact. Outside a crew worktree nothing is recorded, and full
+# output is kept under <worktree>/.scratch/ only when it was capped.
 #
 # Discovers check commands using this reference chain:
 #   0. .coding-crew/dev-commands.json at MAIN_ROOT (see discover-commands.sh / write-commands-cache.sh)
@@ -28,15 +37,14 @@ set -uo pipefail
 # A check category with no discoverable command is reported explicitly as
 # not_run — never silently treated as passing.
 #
-# On exit 0 in a crew worktree this writes a verification receipt (see
-# receipts.sh) naming the commit that passed; merge-branches.sh refuses to merge
-# without one. A failing run clears any earlier receipt, so a branch that once
+# A failing run records a `fail` verdict over any earlier pass, so a branch that once
 # passed cannot merge on stale evidence.
 #
 # Exit code: 0 if all discovered checks pass, non-zero otherwise.
 
 WORKTREE_DIR=""
 EXTRA_CHECKS=""
+STEM=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -57,6 +65,14 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       EXTRA_CHECKS="$2"
+      shift 2
+      ;;
+    --stem)
+      if [ $# -lt 2 ]; then
+        echo "ERROR: --stem requires a value" >&2
+        exit 1
+      fi
+      STEM="$2"
       shift 2
       ;;
     *)
@@ -521,6 +537,36 @@ echo ""
 
 NOT_RUN=()
 
+# ─── evidence ────────────────────────────────────────────────────────────────
+# receipts.sh owns where the evidence lives; empty outside a crew worktree.
+RECEIPTS_SCRIPT="$SELF_DIR/receipts.sh"
+EVIDENCE_FILE=""
+if [ -f "$RECEIPTS_SCRIPT" ]; then
+  EVIDENCE_FILE=$(bash "$RECEIPTS_SCRIPT" path verify --dir "$WORKTREE_DIR" ${STEM:+--stem "$STEM"} 2>/dev/null) || EVIDENCE_FILE=""
+fi
+
+# One entry per check run or reported not_run, in order — the JSON's `checks` array.
+REC_JSON=()
+_VW_KIND="base"
+_VW_CMD=""
+
+# _json_str <text> — <text> as a JSON string literal. sed/awk, not ${var//…}: that
+# expansion's quoting differs between macOS's bash 3.2 and bash 5.2.
+_json_str() {
+  printf '"%s"' "$(printf '%s' "$1" | tr '\t\r' '  ' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
+    | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }')"
+}
+
+# _record <label> <command> <result> <exit> <log> — empty command/exit/log are JSON null.
+_record() {
+  local cat cmd=null ex=null log=null
+  cat="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  [ -n "$2" ] && cmd="$(_json_str "$2")"
+  [ -n "$4" ] && ex="$4"
+  [ -n "$5" ] && log="$(_json_str "$5")"
+  REC_JSON+=("{\"category\": $(_json_str "$cat"), \"requested\": \"$_VW_KIND\", \"command\": $cmd, \"result\": \"$3\", \"exit\": $ex, \"log\": $log}")
+}
+
 # ─── output capping ──────────────────────────────────────────────────────────
 # A check command's own stdout/stderr is arbitrary and can be very large — a full test
 # suite's own verbose output, most of all. Streamed straight through, every caller of
@@ -541,7 +587,13 @@ VERIFY_OUTPUT_LINES="${CREW_VERIFY_OUTPUT_LINES:-50}"
 # _verify_log_path <label> — where a category's full, uncapped output is persisted (one
 # file per category, so a re-run does not clobber a sibling category's log mid-read).
 _verify_log_path() {
-  printf '%s/.scratch/verify-%s.log' "$WORKTREE_DIR" "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  local check
+  check="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  if [ -n "$EVIDENCE_FILE" ]; then
+    printf '%s.verify-%s.log' "${EVIDENCE_FILE%.verify.json}" "$check"
+  else
+    printf '%s/.scratch/verify-%s.log' "$WORKTREE_DIR" "$check"
+  fi
 }
 
 # _run_capped <label> <out-file> <rc> — prints <out-file>, capped to VERIFY_OUTPUT_LINES
@@ -589,17 +641,20 @@ _exec_and_report() {
   "$@" >"$out_file" 2>&1
   local rc=$?
   _run_capped "$label" "$out_file" "$rc"
-  if [ "${_VW_PERSIST_LOG:-0}" -eq 1 ]; then
-    local log
+  # Evidence keeps every check's full output; outside it, an extra check's still is.
+  local log=""
+  if [ -n "$EVIDENCE_FILE" ] || [ "$_VW_KIND" = "extra" ]; then
     log="$(_verify_log_path "$label")"
     mkdir -p "$(dirname "$log")" 2>/dev/null || true
-    cp "$out_file" "$log" 2>/dev/null && echo "$label: log: $log"
+    if cp "$out_file" "$log" 2>/dev/null; then echo "$label: log: $log"; else log=""; fi
   fi
   rm -f "$out_file"
   if [ "$rc" -eq 0 ]; then
     echo "$label: pass"
+    _record "$label" "$_VW_CMD" pass "$rc" "$log"
   else
     echo "$label: fail"
+    _record "$label" "$_VW_CMD" fail "$rc" "$log"
     OVERALL_EXIT=1
   fi
 }
@@ -617,10 +672,12 @@ _run_category() {
   local label="$1"
   local cmd="$2"
   local required="${3:-no}"
+  _VW_CMD="$cmd"
 
   if [ -z "$cmd" ]; then
     echo "$label: not_run — no command found (checked CLAUDE.md, Makefile, and ecosystem conventions)"
     NOT_RUN+=("$label")
+    _record "$label" "" not_run "" ""
     if [ "$required" = "yes" ]; then
       echo "$label: not_run is fatal — nothing was verified"
       OVERALL_EXIT=1
@@ -691,10 +748,11 @@ _VW_EXTRAS=()
     echo "$_vw_label: not_run — no command for '$_vw_extra' in .coding-crew/dev-commands.json"
     echo "$_vw_label: not_run is fatal — this check was requested"
     NOT_RUN+=("$_vw_label")
+    _VW_KIND=extra _record "$_vw_label" "" not_run "" ""
     OVERALL_EXIT=1
     continue
   fi
-  _VW_PERSIST_LOG=1 _run_category "$_vw_label" "$_vw_cmd" yes
+  _VW_KIND=extra _run_category "$_vw_label" "$_vw_cmd" yes
 done
 
 echo ""
@@ -715,20 +773,38 @@ else
   echo "Verification: fail — one or more checks did not pass"
 fi
 
-# ─── receipt ─────────────────────────────────────────────────────────────────
+# ─── evidence record (the merge receipt) ────────────────────────────────────
 
-# Record (or revoke) the merge gate's evidence. Failures here are reported but
-# never change the check outcome: this script's exit code must keep meaning "the
-# checks passed", and a missing receipt already fails closed at merge time.
-RECEIPTS_SCRIPT="$SELF_DIR/receipts.sh"
-TRACE_SCRIPT="$SELF_DIR/trace.sh"
-if [ -f "$RECEIPTS_SCRIPT" ]; then
-  if [ "$OVERALL_EXIT" -eq 0 ]; then
-    bash "$RECEIPTS_SCRIPT" write verify --dir "$WORKTREE_DIR" || true
+# Written pass or fail — a `fail` verdict is what revokes an earlier pass. A failed write is
+# reported but never changes the check outcome: this script's exit code must keep meaning
+# "the checks passed", and a missing record already fails closed at merge time.
+if [ -n "$EVIDENCE_FILE" ]; then
+  _vw_sha=$(git -C "$WORKTREE_DIR" rev-parse HEAD 2>/dev/null || true)
+  _vw_rec_branch=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  if [ "$OVERALL_EXIT" -eq 0 ]; then _vw_verdict=pass; else _vw_verdict=fail; fi
+  # Cached checks nobody asked this run for — named so a reviewer sees what has no evidence.
+  _vw_unrun=()
+  if [ -n "$COMMANDS_CACHE" ] && [ -f "$COMMANDS_CACHE" ]; then
+    while IFS= read -r _vw_key; do
+      [[ " test lint typecheck install env credential_target docker_service " == *" $_vw_key "* ]] && continue
+      [[ "$_VW_SEEN" == *" $_vw_key "* ]] && continue
+      _vw_unrun+=("$(_json_str "$_vw_key")")
+    done < <(grep -o '"[a-z][a-z0-9_]*"[[:space:]]*:[[:space:]]*"' "$COMMANDS_CACHE" 2>/dev/null | sed -E 's/^"([a-z0-9_]+)".*/\1/')
+  fi
+  _vw_join() { local IFS=,; printf '%s' "$*"; }
+  _vw_tmp="$EVIDENCE_FILE.tmp.$$"
+  if { mkdir -p "$(dirname "$EVIDENCE_FILE")" && printf '{"branch": %s, "commit": %s, "verdict": "%s", "checks": [%s], "not_requested": [%s]}\n' \
+      "$(_json_str "$_vw_rec_branch")" "$(_json_str "$_vw_sha")" "$_vw_verdict" \
+      "$(_vw_join "${REC_JSON[@]+"${REC_JSON[@]}"}")" "$(_vw_join "${_vw_unrun[@]+"${_vw_unrun[@]}"}")" > "$_vw_tmp" \
+      && mv "$_vw_tmp" "$EVIDENCE_FILE"; } 2>/dev/null; then
+    echo "Verification record: $EVIDENCE_FILE"
   else
-    bash "$RECEIPTS_SCRIPT" clear verify --dir "$WORKTREE_DIR" || true
+    rm -f "$_vw_tmp" "$EVIDENCE_FILE" 2>/dev/null
+    echo "ERROR: cannot write verification record: $EVIDENCE_FILE" >&2
   fi
 fi
+
+TRACE_SCRIPT="$SELF_DIR/trace.sh"
 
 # Trace the gate result from the gate itself. The branch name comes from the worktree,
 # so the trace cannot disagree with what was actually checked.

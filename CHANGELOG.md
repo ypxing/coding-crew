@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.29.132]
+
+### Changed
+
+- **The verify gate keeps a record of what it did.** `verify-worktree.sh` writes
+  `dispatch/<n>-<slug>.verify.json`: branch, commit, verdict, and for every check its command,
+  result, exit code and full-output log, plus the cached checks it was never asked to run. The
+  logs are `dispatch/<n>-<slug>.verify-<check>.log` now, not files inside the worktree, so
+  they outlive it. The record replaces `<slug>.verify.ok` as the merge receipt: `merge-branches.sh`
+  accepts only a `pass` verdict for the branch's current tip. `ensure-deps.sh`'s per-issue
+  markers carry the same `<n>-` prefix.
+- **The reviewer is given that record, and told what it cannot count.** The prompt names the
+  record and every cached check that didn't run. The reviewer protocol now calls a coder's
+  progress notes, commit messages and the issue's `## Progress` section claims, not evidence.
+  A reviewer had passed an issue whose integration criterion rested on nothing but the coder's
+  own detailed progress note.
+
 ## [1.29.131]
 
 ### Fixed

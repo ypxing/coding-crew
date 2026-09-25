@@ -4,7 +4,9 @@ set -uo pipefail
 # ensure-deps.sh — make a directory ready to run the project's own checks.
 #
 # Usage:
-#   ensure-deps.sh --dir <path> [--slug <issue-slug>] [--timeout <sec, default 1800>]
+#   ensure-deps.sh --dir <path> [--slug <issue-slug>] [--stem <n>-<slug>] [--timeout <sec, default 1800>]
+#
+#   --stem names this issue's marker/log files like its other dispatch files (the slug when absent).
 #
 # Output — exactly one `DEPS:` line, always exit 0:
 #
@@ -43,21 +45,23 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DIR=""
 SLUG=""
+STEM=""
 TIMEOUT=1800
 
 _usage() {
-  echo "Usage: $0 --dir <path> [--slug <issue-slug>] [--timeout <sec>]" >&2
+  echo "Usage: $0 --dir <path> [--slug <issue-slug>] [--stem <n>-<slug>] [--timeout <sec>]" >&2
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dir|--slug|--timeout)
+    --dir|--slug|--stem|--timeout)
       # Guard before reading $2: under `set -u` a bare flag would abort with an
       # unbound-variable error instead of the usage message.
       if [ $# -lt 2 ]; then echo "ERROR: $1 requires a value" >&2; _usage; exit 1; fi
       case "$1" in
         --dir) DIR="$2" ;;
         --slug) SLUG="$2" ;;
+        --stem) STEM="$2" ;;
         --timeout) TIMEOUT="$2" ;;
       esac
       shift 2
@@ -93,7 +97,7 @@ MARKER_DIR=""
 MARKER=""
 if [ -n "$SLUG" ]; then
   MARKER_DIR="$(_sprint_dir)"
-  [ -n "$MARKER_DIR" ] && MARKER="$MARKER_DIR/dispatch/$SLUG.deps"
+  [ -n "$MARKER_DIR" ] && MARKER="$MARKER_DIR/dispatch/${STEM:-$SLUG}.deps"
 fi
 
 # _report <outcome-line> <marker-suffix> — the single exit point.
