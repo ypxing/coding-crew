@@ -26,6 +26,15 @@ export function taggedReason(tag, summary) {
   return `${tag}${REASON_SEP}${summary}`;
 }
 
+/**
+ * The runtime and model `role` dispatches on (crew-config.mjs's resolveCrew), and the scripts
+ * dir holding that runtime's own dispatcher — pi's and codex's ship only in their own install.
+ */
+export function roleBinding(ctx, role) {
+  const { runtime, model } = ctx.options.crew[role];
+  return { runtime, model, scriptsDir: ctx.options.dispatcherDirs?.[runtime] ?? ctx.effects.scriptsDir };
+}
+
 /** Dispatch filename stem: `NN-<slug>`, sorting like the tracker's files; bare slug if unnumbered. */
 export function dispatchStem(issue) {
   return issue.number ? `${issue.number}-${issue.slug}` : issue.slug;

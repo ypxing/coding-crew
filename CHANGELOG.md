@@ -4,6 +4,19 @@
 
 ### Changed
 
+- **crew-afk can run each role on a different runtime.** `.coding-crew/config.json`'s `afk`
+  section maps any role (`coder`, `reviewer`, `triage`, `commandsDiscovery`,
+  `coverageValidation`) to an installed runtime and names models per runtime, e.g. a claude coder
+  reviewed by codex. A model string only ever reaches its own runtime's CLI; a role moved to
+  another runtime gets that runtime's default, not the coder's model. `plan` prints the role →
+  runtime/model table, and preflight checks each runtime a role uses, naming the role when one
+  isn't installed. With no config, every role runs on `--platform` as before.
+- **`.coding-crew/afk-models.json` is replaced by `config.json`.** The first `run` that finds it
+  moves its values into `afk.models.claude` and deletes it (`plan` only says it would). Those
+  values only ever applied on claude, so behaviour is unchanged on every platform. An invalid
+  config is now a setup error listing every problem; a malformed `afk-models.json` used to be
+  ignored with a warning.
+- **`[STEP]` dispatch markers carry `runtime=`** after `model=`.
 - **The reviewer's and triage's role preamble lives in their protocol, not in each platform shim.**
   The "establish `ROOT`" block and the read-only rule were copied into all eight shims and had
   drifted: the claude and copilot shims never stated the read-only rule. Each shim is now its

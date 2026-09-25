@@ -36,6 +36,7 @@ import {
   NOT_FIXABLE_TAG,
   notifyMilestone,
   readSidecar,
+  roleBinding,
   stripReasonTag,
   taggedReason,
 } from "./pipeline/shared.mjs";
@@ -126,7 +127,7 @@ const SKIPPED_WORKER = {
  * `attempt` is this issue's own 1-based attempt number (sprint.attemptCount in loop.mjs).
  */
 export async function runWorker(ctx, issue, attempt) {
-  const { sprint, effects, platform, options } = ctx;
+  const { sprint, effects, options } = ctx;
   const tracker = await getTracker(effects.mainRoot);
   // github.mjs has no branchFor: the issue number is already the unique part.
   const branch = tracker.branchFor
@@ -347,22 +348,23 @@ export async function runWorker(ctx, issue, attempt) {
         }),
   );
 
+  const coder = roleBinding(ctx, "coder");
   ctx.log(
-    `[STEP] slug=${dispatchStem(issue)} round=${attempt} step=dispatch-coder model=${options.model ?? "inherit"}`,
+    `[STEP] slug=${dispatchStem(issue)} round=${attempt} step=dispatch-coder model=${coder.model ?? "inherit"} runtime=${coder.runtime}`,
   );
   const result = await dispatch(
     effects,
-    platform,
+    coder.runtime,
     {
       agent: "crew-coder",
       cwd: worktree,
       promptFile,
       outFile,
-      model: options.model,
+      model: coder.model,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: effects.scriptsDir,
+      scriptsDir: coder.scriptsDir,
       slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: attempt,

@@ -16,13 +16,14 @@
  *                                           end; nothing load-bearing runs through it. Needs
  *                                           `herdr server` / `orca open` running. See
  *                                           lib/pane-host/index.mjs and docs/orca-support.md.
- *   --model <alias|inherit>                coder model; reviewer/triage/commandsDiscovery/
- *                                           coverageValidation match it unless
- *                                           .coding-crew/afk-models.json names them explicitly
+ *   --model <alias|inherit>                coder model; every role on the same runtime
+ *                                           matches it unless .coding-crew/config.json's
+ *                                           afk.models names one (see lib/crew-config.mjs,
+ *                                           which also lets a role run on another runtime)
  *   --feature-slug <slug>                  or derived from the first issue's dir
  *   --coverage                             opt into the PRD coverage report
  *   --promote <critical|critical-high>      findings promotion threshold
- *   --max-parallel <n>                     concurrent workers (platform default)
+ *   --max-parallel <n>                     concurrent workers (the coder runtime's default)
  *   --worker-timeout <minutes>             default 45 — a hung worker cannot hang the sprint
  *   --merge-timeout <minutes>              default 10 — merge/close block the event loop
  *                                           (spawnSync), so a hang would freeze the sprint
@@ -47,9 +48,9 @@ import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
 import { DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
+import { ConfigError, ROLE_AGENTS, ROLES, describeModel, loadConfig, resolveCrew } from "./lib/crew-config.mjs";
 import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
-import { loadModelConfig, resolveModelTiers } from "./lib/model-config.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktreeInclude } from "./lib/worktree.mjs";
 
@@ -109,7 +110,6 @@ function parseArgs(argv) {
   }
   if (o.command === "plan") o.dryRun = true;
   o.model = o.model === "inherit" ? null : o.model;
-  o.parallel ??= DEFAULT_PARALLEL[o.platform] ?? 2;
   return o;
 }
 
@@ -131,13 +131,37 @@ function editDistance(a, b) {
   return dp[a.length][b.length];
 }
 
-// " (reviewer: X, triage: Y)" — only when .coding-crew/afk-models.json made one of them
-// diverge from the coder's model; the common case (all three identical) prints nothing extra.
-function modelBreakdownSuffix(options) {
-  const parts = [];
-  if (options.reviewerModel !== options.model) parts.push(`reviewer: ${options.reviewerModel ?? "inherit"}`);
-  if (options.triageModel !== options.model) parts.push(`triage: ${options.triageModel ?? "inherit"}`);
-  return parts.length ? ` (${parts.join(", ")})` : "";
+/** `plan`'s role table: one line per role, its runtime and model. */
+function crewTable(crew) {
+  const width = Math.max(...ROLES.map((r) => r.length));
+  return ROLES.map((r) => `  ${r.padEnd(width)}  ${crew[r].runtime.padEnd(7)}  ${describeModel(crew[r].runtime, crew[r].model)}`);
+}
+
+/**
+ * preflight() once per runtime the crew uses, for the agents bound to it, plus each pi/codex
+ * runtime's dispatcher. A problem on a runtime other than the launcher's names its roles, since
+ * the user chose that runtime in config.json, not on the command line.
+ */
+function crewPreflight(effects, mainRoot, options) {
+  const byRuntime = new Map();
+  for (const role of ROLES) {
+    const { runtime } = options.crew[role];
+    if (!byRuntime.has(runtime)) byRuntime.set(runtime, { roles: [], agents: [] });
+    byRuntime.get(runtime).roles.push(role);
+    if (ROLE_AGENTS[role]) byRuntime.get(runtime).agents.push(ROLE_AGENTS[role]);
+  }
+  const problems = [];
+  let paneHost = options.paneHost;
+  for (const [runtime, { roles, agents }] of byRuntime) {
+    const found = preflight(effects, runtime, mainRoot, agents, { paneHost });
+    paneHost = null; // checked once, not once per runtime
+    if (!process.env.CREW_FAKE_DISPATCH && DISPATCHER[runtime] && !options.dispatcherDirs[runtime]) {
+      found.push(`${DISPATCHER[runtime]} not found for ${runtime} — run: ./install.sh ${runtime} --skill crew-afk`);
+    }
+    const tag = runtime === options.platform ? "" : `${roles.join(", ")} → ${runtime}: `;
+    problems.push(...found.map((p) => `${tag}${p}`));
+  }
+  return problems;
 }
 
 /** Every existing .scratch/<feature-slug> directory name, for a typo suggestion. */
@@ -290,6 +314,9 @@ const USER_SKILL_DIRS = {
   copilot: ".copilot/skills/crew-afk/scripts",
 };
 
+/** The bash dispatcher a runtime needs; claude and copilot resolve their agent themselves. */
+const DISPATCHER = { pi: "dispatch-agent.sh", codex: "dispatch-codex-agent.sh" };
+
 /** `platform`'s own dir first: only its install carries its dispatcher (pi's, codex's). */
 const ownFirst = (dirs, platform) => [dirs[platform], ...Object.values(dirs).filter((d) => d !== dirs[platform])].filter(Boolean);
 
@@ -313,6 +340,25 @@ function resolveScriptsDir(mainRoot, platform) {
   process.exit(1);
 }
 
+/**
+ * The scripts dir holding `runtime`'s own dispatcher, or null. A role on another runtime than
+ * the launcher's needs that runtime's install, not the launcher's: install.sh ships each
+ * dispatcher only to its own platform.
+ */
+function resolveDispatcherDir(mainRoot, runtime) {
+  const script = DISPATCHER[runtime];
+  if (!script) return null;
+  const home = process.env.HOME || homedir();
+  const candidates = [
+    process.env.CREW_SCRIPTS,
+    join(mainRoot, PROJECT_SKILL_DIRS[runtime]),
+    join(home, USER_SKILL_DIRS[runtime]),
+    join(HERE, "../skills/crew-afk/scripts"),
+  ].filter(Boolean);
+  const found = candidates.find((c) => existsSync(join(c, script)));
+  return found ? resolve(found) : null;
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.command === "help") {
@@ -320,9 +366,11 @@ async function main() {
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--coverage] [--promote critical|critical-high]\n" +
         "  [--max-parallel N] [--worker-timeout MIN] [--merge-timeout MIN] [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]\n" +
-        "  --model sets the coder's model; reviewer/triage/commandsDiscovery/coverageValidation\n" +
-        "  match it unless .coding-crew/afk-models.json names\n" +
-        "  {coder, reviewer, triage, commandsDiscovery, coverageValidation} explicitly.",
+        "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
+        "  .coding-crew/config.json names one. Per role (coder, reviewer, triage,\n" +
+        "  commandsDiscovery, coverageValidation):\n" +
+        '    { "afk": { "runtime": { "reviewer": "codex" },\n' +
+        '               "models":  { "claude": { "triage": "opus" } } } }',
     );
     return 0;
   }
@@ -344,19 +392,6 @@ async function main() {
     return 1;
   }
 
-  // .coding-crew/afk-models.json is optional; absent, every tier follows --model.
-  const resolvedModels = resolveModelTiers({
-    fileConfig: loadModelConfig(mainRoot),
-    cliModel: options.model,
-    platform: options.platform,
-  });
-  options.model = resolvedModels.coder;
-  options.reviewerModel = resolvedModels.reviewer;
-  options.triageModel = resolvedModels.triage;
-  options.commandsDiscoveryModel = resolvedModels.commandsDiscovery;
-  options.coverageValidationModel = resolvedModels.coverageValidation;
-  for (const w of resolvedModels.warnings) console.error(`crew-afk: WARNING: ${w}`);
-
   const scriptsDir = resolveScriptsDir(mainRoot, options.platform);
   const logLines = [];
   const effects = new Effects({
@@ -371,14 +406,6 @@ async function main() {
   // Read by pane-host/, which keeps its run-scoped state on effects too.
   effects.paneHost = options.paneHost;
 
-  if (options.command === "doctor") {
-    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
-      paneHost: options.paneHost,
-    });
-    console.log(problems.length ? problems.map((p) => `PROBLEM: ${p}`).join("\n") : `OK: ${options.platform} can dispatch.`);
-    return problems.length ? 1 : 0;
-  }
-
   if (options.command === "status") {
     const sprint = Sprint.attach(effects);
     if (!sprint) {
@@ -387,6 +414,32 @@ async function main() {
     }
     console.log(JSON.stringify({ env: sprint.env, state: sprint.readState() }, null, 2));
     return 0;
+  }
+
+  // .coding-crew/config.json is optional; absent, every role runs on --platform with --model.
+  // Only a real `run` moves a legacy afk-models.json into it on disk.
+  let loaded;
+  try {
+    loaded = loadConfig(mainRoot, { write: options.command === "run" && !options.dryRun });
+  } catch (err) {
+    if (!(err instanceof ConfigError)) throw err;
+    console.error(`crew-afk: ${err.message}`);
+    return 1;
+  }
+  for (const n of loaded.notices) console.error(`crew-afk: ${n}`);
+  const crew = resolveCrew({ afk: loaded.config.afk, cliPlatform: options.platform, cliModel: options.model });
+  for (const w of crew.warnings) console.error(`crew-afk: WARNING: ${w}`);
+  options.crew = crew.roles;
+  options.model = crew.roles.coder.model;
+  options.parallel ??= DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
+  options.dispatcherDirs = Object.fromEntries(
+    [...new Set(ROLES.map((r) => crew.roles[r].runtime))].map((rt) => [rt, resolveDispatcherDir(mainRoot, rt)]),
+  );
+
+  if (options.command === "doctor") {
+    const problems = crewPreflight(effects, mainRoot, options);
+    console.log(problems.length ? problems.map((p) => `PROBLEM: ${p}`).join("\n") : `OK: ${[...new Set(ROLES.map((r) => options.crew[r].runtime))].join(", ")} can dispatch.`);
+    return problems.length ? 1 : 0;
   }
 
   // --- plan: read-only, zero tokens ----------------------------------------
@@ -399,11 +452,10 @@ async function main() {
     }
     const tracker = await getTracker(mainRoot);
     const issues = tracker.selectDispatchable(mainRoot, { featureSlug: resolved.slug });
-    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
-      paneHost: options.paneHost,
-    });
+    const problems = crewPreflight(effects, mainRoot, options);
     console.log(`platform:  ${options.platform}`);
-    console.log(`model:     ${options.model ?? "platform default"}${modelBreakdownSuffix(options)}`);
+    console.log("crew:");
+    for (const line of crewTable(options.crew)) console.log(line);
     console.log(`parallel:  ${options.parallel}`);
     console.log(`scripts:   ${scriptsDir}`);
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);
@@ -429,9 +481,7 @@ async function main() {
   let runError;
   let lockPath;
   try {
-    const problems = preflight(effects, options.platform, mainRoot, ["crew-coder", "crew-code-reviewer", "crew-triage"], {
-      paneHost: options.paneHost,
-    });
+    const problems = crewPreflight(effects, mainRoot, options);
     if (problems.length) {
       console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));
       exitCode = 1;
@@ -482,8 +532,8 @@ async function main() {
 
     if (options.commands) {
       await discoverCommands(effects, {
-        platform: options.platform,
-        model: options.commandsDiscoveryModel,
+        platform: options.crew.commandsDiscovery.runtime,
+        model: options.crew.commandsDiscovery.model,
         timeoutMs: options.reviewTimeoutMs,
         // Persisted too: this runs unattended, and a failure must outlive the scrollback.
         log: (line) => {

@@ -56,6 +56,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# $CREW_FAKE_ECHO_ENV names one env var; its value as this child saw it goes to
+# $CREW_FAKE_DIR/env.<agent>, so a test can assert what a dispatch inherits.
+if [ -n "${CREW_FAKE_ECHO_ENV:-}" ] && [ -n "${CREW_FAKE_DIR:-}" ]; then
+  echo "$CREW_FAKE_ECHO_ENV=${!CREW_FAKE_ECHO_ENV:-}" > "$CREW_FAKE_DIR/env.$AGENT"
+fi
+
 # report.mjs reads only the sidecar at --report-path, never --out's text — the same contract
 # a real agent's own Write tool call fulfils. Every branch below still writes --out (kept for
 # a human debugging a test failure, and because dispatch.mjs always writes it), but mirrors

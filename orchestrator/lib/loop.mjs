@@ -177,7 +177,8 @@ async function wrapUp(ctx, { stalled }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
-  const squashArgs = ["--platform", ctx.platform];
+  // --platform picks the co-author trailer: the coder's runtime wrote the commits.
+  const squashArgs = ["--platform", options.crew.coder.runtime];
   if (options.noSquash) squashArgs.push("--no-squash");
   ctx.log(effects.bash("squash-commits.sh", squashArgs, { env: sprint.childEnv() }).stdout.trim());
 
@@ -197,11 +198,12 @@ async function wrapUp(ctx, { stalled }) {
   const coverageFirstLine = coverage.stdout.split("\n", 1)[0] ?? "";
   if (!/^Coverage validation: skipped/.test(coverageFirstLine)) {
     const outFile = join(sprint.env.SPRINT_DIR, "coverage-report.md");
-    const r = await dispatchPlain(effects, ctx.platform, {
+    const { runtime, model } = options.crew.coverageValidation;
+    const r = await dispatchPlain(effects, runtime, {
       prompt: coverage.stdout,
       cwd: effects.mainRoot,
       mainRoot: effects.mainRoot,
-      model: options.coverageValidationModel,
+      model,
       outFile,
       timeoutMs: options.reviewTimeoutMs,
     });

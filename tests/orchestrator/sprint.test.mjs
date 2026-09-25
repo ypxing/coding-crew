@@ -946,13 +946,13 @@ test("the summary names the resolved model, rendered from disk", () => {
   assert.match(traceLog(root), /\[MODEL\]/);
 });
 
-test(".coding-crew/afk-models.json lets the reviewer diverge from the coder's model, on the claude platform", () => {
+test(".coding-crew/config.json lets the reviewer diverge from the coder's model, on the claude platform", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   mkdirSync(join(root, ".coding-crew"), { recursive: true });
   writeFileSync(
-    join(root, ".coding-crew/afk-models.json"),
-    JSON.stringify({ coder: "sonnet", reviewer: "opus" }),
+    join(root, ".coding-crew/config.json"),
+    JSON.stringify({ afk: { models: { claude: { coder: "sonnet", reviewer: "opus" } } } }),
   );
   const { r, lines } = commandLines(root, [], { platform: "claude" });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
@@ -966,7 +966,7 @@ test(".coding-crew/afk-models.json lets the reviewer diverge from the coder's mo
   );
 });
 
-test(".coding-crew/afk-models.json is ignored on a non-claude platform, with a warning, and no --model is passed", () => {
+test("a legacy afk-models.json is moved into config.json by `run`, and still ignored on a non-claude platform", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   mkdirSync(join(root, ".coding-crew"), { recursive: true });
@@ -976,11 +976,90 @@ test(".coding-crew/afk-models.json is ignored on a non-claude platform, with a w
   );
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stderr, /WARNING: .*afk-models\.json is ignored on the pi platform/);
+  assert.match(r.stderr, /moved \.coding-crew\/afk-models\.json into \.coding-crew\/config\.json/);
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), false);
+  assert.deepEqual(JSON.parse(readFileSync(join(root, ".coding-crew/config.json"), "utf8")), {
+    afk: { models: { claude: { coder: "sonnet", reviewer: "opus" } } },
+  });
   assert.ok(
     lines.some((l) => /^SPAWN .*--agent crew-coder/.test(l) && !/ --model /.test(l)),
-    `expected the coder dispatched with no --model, got:\n${lines.join("\n")}`,
+    `expected the pi coder dispatched with no --model, got:\n${lines.join("\n")}`,
   );
+});
+
+test("`plan` does not move a legacy afk-models.json, only says it would", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/afk-models.json"), JSON.stringify({ coder: "opus" }));
+  const r = sh("node", [MAIN, "plan", "--platform", "claude", "--feature-slug", "demo"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, MAIN_ROOT: root },
+  });
+  assert.match(r.stderr, /will be moved into \.coding-crew\/config\.json/);
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
+  assert.equal(existsSync(join(root, ".coding-crew/config.json")), false);
+  assert.match(r.stdout, /coder\s+claude\s+opus/);
+});
+
+test("a mixed crew dispatches each role on its own runtime, with only that runtime's model", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/config.json"),
+    JSON.stringify({ afk: { runtime: { reviewer: "codex" }, models: { claude: { coder: "sonnet" } } } }),
+  );
+  const { r, lines } = commandLines(root, [], { platform: "claude" });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const spawn = (agent) => lines.find((l) => new RegExp(`^SPAWN .*--agent ${agent} `).test(l)) ?? "";
+  assert.match(spawn("crew-coder"), / --runtime claude .* --model sonnet/);
+  assert.match(spawn("crew-code-reviewer"), / --runtime codex /);
+  assert.doesNotMatch(spawn("crew-code-reviewer"), / --model /, "a claude alias must never reach codex");
+});
+
+test("a runtime's model env var (ANTHROPIC_DEFAULT_*_MODEL) reaches the dispatched child", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r } = commandLines(root, [], {
+    platform: "claude",
+    env: { ANTHROPIC_DEFAULT_SONNET_MODEL: "au.anthropic.claude-sonnet-5", CREW_FAKE_ECHO_ENV: "ANTHROPIC_DEFAULT_SONNET_MODEL" },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  // Agent dispatches and the agent-less plain dispatch (command discovery) alike.
+  for (const agent of ["crew-coder", "crew-code-reviewer", "commands-discovery"]) {
+    assert.equal(
+      readFileSync(join(root, ".scratch/fake", `env.${agent}`), "utf8").trim(),
+      "ANTHROPIC_DEFAULT_SONNET_MODEL=au.anthropic.claude-sonnet-5",
+      agent,
+    );
+  }
+});
+
+test("an invalid config.json is a setup error naming every problem", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/config.json"),
+    JSON.stringify({ afk: { runtime: { reviwer: "codex", triage: "cursor" } } }),
+  );
+  const { r } = commandLines(root);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /unknown role "afk\.runtime\.reviwer"/);
+  assert.match(r.stderr, /"afk\.runtime\.triage" is "cursor"/);
+});
+
+test("doctor names the role when a runtime other than the launcher's is not installed", () => {
+  const root = fixtureRepo();
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { runtime: { reviewer: "codex" } } }));
+  const env = { ...process.env, CREW_SCRIPTS: SCRIPTS, MAIN_ROOT: root, HOME: root };
+  delete env.CREW_FAKE_DISPATCH;
+  const r = sh("node", [MAIN, "doctor", "--platform", "claude"], { cwd: root, env });
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /PROBLEM: reviewer → codex: crew-code-reviewer agent definition not installed for codex/);
+  assert.doesNotMatch(r.stdout, /→ codex: crew-coder/);
 });
 
 test("coverage validation is opt-in, and runs between the squash and cleanup", () => {
@@ -1516,7 +1595,7 @@ test("the orchestrator prints a [STEP] marker before each gate, slug/round-tagge
     ["worktree", "deps", "dispatch-coder", "verify", "dispatch-review", "merge", "close"],
     steps.join("\n"),
   );
-  for (const l of steps) assert.match(l, /^\[STEP\] slug=01-alpha round=1 step=[\w-]+( model=\S+)?$/, l);
+  for (const l of steps) assert.match(l, /^\[STEP\] slug=01-alpha round=1 step=[\w-]+( model=\S+ runtime=\S+)?$/, l);
 });
 
 test("PR 2: a throttled [TOOL] heartbeat from the bash dispatcher reaches the live stream via onTrace, slug/round-tagged", () => {

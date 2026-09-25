@@ -10,7 +10,7 @@ import { dispatch } from "../dispatch.mjs";
 import { triagePrompt } from "../prompts.mjs";
 import { parseTriageReport } from "../report.mjs";
 import { finishRetryOrBlock } from "./finish.mjs";
-import { dispatchStem, FIXABLE_TAG, issueDescriptor, NOT_FIXABLE_TAG, readSidecar, taggedReason } from "./shared.mjs";
+import { dispatchStem, FIXABLE_TAG, issueDescriptor, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason } from "./shared.mjs";
 
 /**
  * verify-worktree.sh already failed: triage it, and tag the retention reason with the
@@ -44,7 +44,7 @@ export async function handleVerificationFailure(ctx, worker, outcome, verify) {
  * own failure "environmental". cwd is mainRoot — the branch ref and check output suffice.
  */
 export async function runTriage(ctx, worker, verifyStdout) {
-  const { sprint, effects, platform, options } = ctx;
+  const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
   const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage-prompt.md`);
   const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.md`);
@@ -65,23 +65,24 @@ export async function runTriage(ctx, worker, verifyStdout) {
     }),
   );
 
+  const triage = roleBinding(ctx, "triage");
   ctx.log(
-    `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-triage model=${options.triageModel ?? "inherit"}`,
+    `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-triage model=${triage.model ?? "inherit"} runtime=${triage.runtime}`,
   );
   const result = await dispatch(
     effects,
-    platform,
+    triage.runtime,
     {
       agent: "crew-triage",
       cwd: effects.mainRoot,
       promptFile,
       outFile,
-      // Defaults to the coder's model, never a cheaper one; afk-models.json can override.
-      model: options.triageModel,
+      // Defaults to the coder's model, never a cheaper one; config.json's afk.models can override.
+      model: triage.model,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: effects.scriptsDir,
+      scriptsDir: triage.scriptsDir,
       slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: worker.attempt,

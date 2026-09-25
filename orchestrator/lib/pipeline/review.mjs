@@ -8,10 +8,10 @@ import { join } from "node:path";
 import { dispatch } from "../dispatch.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { findingsAtOrAbove, parseReviewReport } from "../report.mjs";
-import { dispatchStem, issueDescriptor, issueRef, readSidecar } from "./shared.mjs";
+import { dispatchStem, issueDescriptor, issueRef, readSidecar, roleBinding } from "./shared.mjs";
 
 export async function runReview(ctx, worker, { checks, logs, notConfigured, file } = {}) {
-  const { sprint, effects, platform, options } = ctx;
+  const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
   const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review-prompt.md`);
   const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.md`);
@@ -37,24 +37,25 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
     }),
   );
 
+  const reviewer = roleBinding(ctx, "reviewer");
   ctx.log(
-    `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-review model=${options.reviewerModel ?? "inherit"}`,
+    `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-review model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`,
   );
   const result = await dispatch(
     effects,
-    platform,
+    reviewer.runtime,
     {
       agent: "crew-code-reviewer",
       cwd: effects.mainRoot,
       promptFile,
       outFile,
       // Defaults to the coder's model: a weaker reviewer silently lowers the bar.
-      // afk-models.json can name another explicitly.
-      model: options.reviewerModel,
+      // config.json's afk.models can name another explicitly.
+      model: reviewer.model,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: effects.scriptsDir,
+      scriptsDir: reviewer.scriptsDir,
       slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: worker.attempt,

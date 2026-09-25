@@ -101,9 +101,24 @@ a `[WIP]` marker on its own branch instead of merging; the next round resumes fr
 Two knobs worth knowing about:
 
 - **Model tier** — `/crew-afk --model opus|sonnet|haiku|inherit` (default `sonnet`). The reviewer
-  and triage judge always run on the same tier as the coder — never a cheaper one — so the review
+  and triage judge run on the same model as the coder unless you name another, so the review
   standard doesn't silently drop. Applies on every platform, including Copilot — each worker is
   its own `copilot -p` process now, so the flag reaches the CLI.
+- **Per-role runtime and model** — `.coding-crew/config.json` can put any role (`coder`, `reviewer`,
+  `triage`, `commandsDiscovery`, `coverageValidation`) on another installed runtime, and name
+  models per runtime:
+
+  ```json
+  { "afk": { "runtime": { "reviewer": "codex" },
+             "models":  { "claude": { "triage": "opus" }, "codex": { "reviewer": "gpt-5.1-codex" } } } }
+  ```
+
+  A model is only ever passed to its own runtime's CLI. A role moved to another runtime doesn't
+  inherit the coder's model; with none named under that runtime, the CLI picks its default. Each
+  runtime a role uses must be installed (`./install.sh codex --skill crew-afk`); `crew-afk doctor`
+  checks. Name aliases here, since the file is committed. Provider-specific IDs go in env, e.g.
+  `ANTHROPIC_DEFAULT_SONNET_MODEL`, which every dispatch inherits. `config.json` holds only
+  settings you write; an older `.coding-crew/afk-models.json` is moved into it on the next run.
 - **Gitignored files in worktrees** — each coder runs in an isolated worktree, so `.env` and similar
   files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
   them over.

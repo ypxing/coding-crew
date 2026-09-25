@@ -1,0 +1,192 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { ConfigError, describeModel, loadConfig, resolveCrew } from "../../orchestrator/lib/crew-config.mjs";
+
+function tmpRoot(files = {}) {
+  const root = mkdtempSync(join(tmpdir(), "crew-config-"));
+  mkdirSync(join(root, ".coding-crew"));
+  for (const [name, value] of Object.entries(files)) {
+    writeFileSync(join(root, ".coding-crew", name), typeof value === "string" ? value : JSON.stringify(value));
+  }
+  return root;
+}
+const read = (root, name) => JSON.parse(readFileSync(join(root, ".coding-crew", name), "utf8"));
+const models = (r) => Object.fromEntries(Object.entries(r.roles).map(([k, v]) => [k, v.model]));
+const runtimes = (r) => Object.fromEntries(Object.entries(r.roles).map(([k, v]) => [k, v.runtime]));
+
+// ─── loadConfig ──────────────────────────────────────────────────────────────
+
+test("loadConfig: no files is an empty config", () => {
+  const root = tmpRoot();
+  assert.deepEqual(loadConfig(root), { config: {}, notices: [] });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: malformed JSON is a ConfigError, not silently ignored", () => {
+  const root = tmpRoot({ "config.json": "{ not json" });
+  assert.throws(() => loadConfig(root), ConfigError);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: a legacy afk-models.json moves into afk.models.claude of an existing config.json, and is deleted", () => {
+  const root = tmpRoot({ "afk-models.json": { coder: "sonnet", reviewer: "opus", triage: null } });
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({}));
+  const { config, notices } = loadConfig(root, { write: true });
+  const want = { afk: { models: { claude: { coder: "sonnet", reviewer: "opus" } } } };
+  assert.deepEqual(config, want, "null (the old 'inherit') is dropped, since absent means that now");
+  assert.deepEqual(read(root, "config.json"), want);
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), false);
+  assert.match(notices[0], /moved .*afk-models\.json into .*config\.json \(afk\.models\.claude\) — commit it/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: without write, the move happens in memory only", () => {
+  const root = tmpRoot({ "afk-models.json": { coder: "opus" } });
+  const { config, notices } = loadConfig(root);
+  assert.deepEqual(config, { afk: { models: { claude: { coder: "opus" } } } });
+  assert.equal(existsSync(join(root, ".coding-crew/config.json")), false);
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
+  assert.match(notices[0], /will be moved/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: both files present — config.json wins, the legacy file is left alone and named", () => {
+  const root = tmpRoot({
+    "afk-models.json": { coder: "haiku" },
+    "config.json": { afk: { models: { claude: { coder: "opus" } } } },
+  });
+  const { config, notices } = loadConfig(root, { write: true });
+  assert.equal(config.afk.models.claude.coder, "opus");
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
+  assert.match(notices[0], /afk-models\.json is ignored/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: a legacy file with an unknown role fails validation instead of being moved", () => {
+  const root = tmpRoot({ "afk-models.json": { reviwer: "opus" } });
+  assert.throws(() => loadConfig(root, { write: true }), /unknown role "afk\.models\.claude\.reviwer"/);
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: every validation problem is reported at once", () => {
+  const root = tmpRoot({
+    "config.json": {
+      trackr: {},
+      afk: { runtimes: {}, runtime: { coder: "cursor" }, models: { gemini: {}, claude: { coder: 3 } } },
+    },
+  });
+  let message = "";
+  try {
+    loadConfig(root);
+  } catch (err) {
+    assert.ok(err instanceof ConfigError);
+    message = err.message;
+  }
+  for (const want of [
+    /unknown section "trackr"/,
+    /unknown key "afk\.runtimes"/,
+    /"afk\.runtime\.coder" is "cursor"/,
+    /unknown runtime "afk\.models\.gemini"/,
+    /"afk\.models\.claude\.coder" must be a non-empty string/,
+  ]) {
+    assert.match(message, want);
+  }
+  rmSync(root, { recursive: true, force: true });
+});
+
+// ─── resolveCrew: one runtime (the common case, and every sprint before config.json) ──
+
+test("resolveCrew: nothing configured, claude — every role on claude, on the coder's default", () => {
+  const r = resolveCrew({ cliPlatform: "claude" });
+  assert.deepEqual(new Set(Object.values(runtimes(r))), new Set(["claude"]));
+  assert.deepEqual(new Set(Object.values(models(r))), new Set(["sonnet"]));
+  assert.deepEqual(r.warnings, []);
+});
+
+test("resolveCrew: nothing configured, non-claude — no known default, so no --model for anyone", () => {
+  const r = resolveCrew({ cliPlatform: "codex" });
+  assert.deepEqual(new Set(Object.values(models(r))), new Set([null]));
+});
+
+test("resolveCrew: --model sets every role on the launcher's runtime", () => {
+  const r = resolveCrew({ cliPlatform: "codex", cliModel: "gpt-5.1-codex" });
+  assert.deepEqual(new Set(Object.values(models(r))), new Set(["gpt-5.1-codex"]));
+});
+
+test("resolveCrew: an omitted role inherits the coder's model; a named one keeps its own", () => {
+  const r = resolveCrew({ cliPlatform: "claude", afk: { models: { claude: { coder: "opus", commandsDiscovery: "haiku" } } } });
+  assert.equal(r.roles.reviewer.model, "opus");
+  assert.equal(r.roles.commandsDiscovery.model, "haiku");
+});
+
+test("resolveCrew: --model overrides the file's coder; the file's explicit reviewer is kept", () => {
+  const r = resolveCrew({ cliPlatform: "claude", cliModel: "haiku", afk: { models: { claude: { coder: "opus", reviewer: "opus" } } } });
+  assert.equal(r.roles.coder.model, "haiku");
+  assert.equal(r.roles.reviewer.model, "opus");
+  assert.equal(r.roles.triage.model, "haiku");
+});
+
+test("resolveCrew: an explicit weaker claude role warns, but is honoured", () => {
+  const r = resolveCrew({ cliPlatform: "claude", afk: { models: { claude: { coder: "opus", reviewer: "haiku" } } } });
+  assert.equal(r.roles.reviewer.model, "haiku");
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /reviewer model "haiku" is a weaker tier than coder model "opus"/);
+});
+
+test("resolveCrew: claude models are not honoured when the sprint runs on another runtime", () => {
+  const r = resolveCrew({ cliPlatform: "pi", afk: { models: { claude: { coder: "opus" } } } });
+  assert.equal(r.roles.coder.model, null);
+});
+
+// ─── resolveCrew: mixed runtimes ─────────────────────────────────────────────
+
+test("resolveCrew: a role moved to another runtime does not inherit the coder's model", () => {
+  const r = resolveCrew({ cliPlatform: "claude", afk: { runtime: { reviewer: "codex" } } });
+  assert.deepEqual(r.roles.coder, { runtime: "claude", model: "sonnet" });
+  assert.deepEqual(r.roles.reviewer, { runtime: "codex", model: null });
+  assert.deepEqual(r.roles.triage, { runtime: "claude", model: "sonnet" });
+});
+
+test("resolveCrew: a moved role takes the model named under its own runtime", () => {
+  const r = resolveCrew({
+    cliPlatform: "claude",
+    afk: { runtime: { reviewer: "codex" }, models: { codex: { reviewer: "gpt-5.1-codex" } } },
+  });
+  assert.equal(r.roles.reviewer.model, "gpt-5.1-codex");
+});
+
+test("resolveCrew: a role moved onto claude gets claude's default, not the codex coder's model", () => {
+  const r = resolveCrew({ cliPlatform: "codex", cliModel: "gpt-5.1-codex", afk: { runtime: { triage: "claude" } } });
+  assert.equal(r.roles.coder.model, "gpt-5.1-codex");
+  assert.deepEqual(r.roles.triage, { runtime: "claude", model: "sonnet" });
+});
+
+test("resolveCrew: a coder moved off the launcher's runtime ignores --model, and says so", () => {
+  const r = resolveCrew({ cliPlatform: "claude", cliModel: "opus", afk: { runtime: { coder: "codex" } } });
+  assert.deepEqual(r.roles.coder, { runtime: "codex", model: null });
+  assert.equal(r.roles.reviewer.model, "opus", "--model still reaches the roles left on the launcher's runtime");
+  assert.match(r.warnings[0], /--model opus is ignored for the coder: it runs on codex/);
+});
+
+test("resolveCrew: no tier warning across runtimes, where there is nothing to compare", () => {
+  const r = resolveCrew({
+    cliPlatform: "claude",
+    afk: { runtime: { reviewer: "codex" }, models: { claude: { coder: "opus" }, codex: { reviewer: "haiku" } } },
+  });
+  assert.deepEqual(r.warnings, []);
+});
+
+// ─── describeModel ───────────────────────────────────────────────────────────
+
+test("describeModel shows a visible ANTHROPIC_DEFAULT_*_MODEL mapping for a claude alias", () => {
+  const env = { ANTHROPIC_DEFAULT_SONNET_MODEL: "au.anthropic.claude-sonnet-5" };
+  assert.equal(describeModel("claude", "sonnet", env), "sonnet (→ au.anthropic.claude-sonnet-5, ANTHROPIC_DEFAULT_SONNET_MODEL)");
+  assert.equal(describeModel("claude", "opus", env), "opus");
+  assert.equal(describeModel("codex", "sonnet", env), "sonnet", "the Anthropic env vars mean nothing to codex");
+  assert.equal(describeModel("codex", null, env), "runtime default");
+});

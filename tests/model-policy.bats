@@ -3,9 +3,9 @@
 # Tests for explicit, overridable model policy (D1, revised)
 # Asserts that:
 # - coder, reviewer and triage all declare no model in Claude frontmatter — each inherits
-#   the session model unless crew-afk's own model-config.mjs resolves and passes one
-#   explicitly (its claude-platform coder default lives in CLAUDE_DEFAULT_CODER_MODEL, not
-#   here, so it stays visible to the reviewer/triage "never weaker than coder" check)
+#   the session model unless crew-afk's own crew-config.mjs resolves and passes one
+#   explicitly (its claude coder default lives in RUNTIME_DEFAULT_MODEL, not here, so it
+#   stays visible to the reviewer/triage "never weaker than coder" check)
 # - no model: key survives in files that do not honor one (skills frontmatter)
 
 load helpers/render
@@ -28,8 +28,8 @@ frontmatter() {
 # --- Coder declares no model (crew-afk resolves and passes it explicitly instead) ---
 
 @test "crew-coder claude.agent.md does not declare a model (crew-afk resolves it centrally)" {
-  # A default living only in frontmatter would be invisible to model-config.mjs's
-  # reviewer/triage "never weaker than coder" check — see CLAUDE_DEFAULT_CODER_MODEL.
+  # A default living only in frontmatter would be invisible to crew-config.mjs's
+  # reviewer/triage "never weaker than coder" check — see RUNTIME_DEFAULT_MODEL.
   run bash -c "$(declare -f frontmatter); frontmatter '$CODER_CLAUDE' | grep -q '^model:'"
   [ "$status" -ne 0 ]
 }

@@ -91,6 +91,7 @@ export function buildDispatch(platform, spec) {
       args: [
         process.env.CREW_FAKE_DISPATCH,
         "--agent", agent,
+        "--runtime", platform,
         "--dir", cwd,
         "--prompt-file", promptFile,
         "--out", outFile,
@@ -468,7 +469,14 @@ export async function dispatchPlain(
     const out = outFile ?? join(cwd, "plain-dispatch.out");
     const r = await effects.spawnWithTimeout(
       "bash",
-      [process.env.CREW_FAKE_DISPATCH, "--agent", fakeAgent, "--dir", cwd, "--out", out],
+      [
+        process.env.CREW_FAKE_DISPATCH,
+        "--agent", fakeAgent,
+        "--runtime", platform,
+        ...(model ? ["--model", model] : []),
+        "--dir", cwd,
+        "--out", out,
+      ],
       { cwd: mainRoot, env, timeoutMs },
     );
     const text = existsSync(out) ? readFileSync(out, "utf8") : "";
