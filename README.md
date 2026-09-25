@@ -116,9 +116,14 @@ Two knobs worth knowing about:
   A model is only ever passed to its own runtime's CLI. A role moved to another runtime doesn't
   inherit the coder's model; with none named under that runtime, the CLI picks its default. Each
   runtime a role uses must be installed (`./install.sh codex --skill crew-afk`); `crew-afk doctor`
-  checks. Name aliases here, since the file is committed. Provider-specific IDs go in env, e.g.
-  `ANTHROPIC_DEFAULT_SONNET_MODEL`, which every dispatch inherits. `config.json` holds only
-  settings you write; an older `.coding-crew/afk-models.json` is moved into it on the next run.
+  checks. `config.json` holds only settings you write; an older `.coding-crew/afk-models.json` is
+  moved into it on the next run.
+
+  It's read at two levels: `~/.coding-crew/config.json` for this machine, under the repo's
+  `.coding-crew/config.json` for the team. They merge per setting, the repo's winning, and
+  `crew-afk plan` tags each value with the file it came from. Keep the repo's file to aliases,
+  since it's committed. Provider-specific IDs belong at user level, or in env such as
+  `ANTHROPIC_DEFAULT_SONNET_MODEL`, which every dispatch inherits.
 - **Gitignored files in worktrees** — each coder runs in an isolated worktree, so `.env` and similar
   files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
   them over.

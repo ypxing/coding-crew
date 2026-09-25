@@ -3,8 +3,11 @@
  * runs on.
  *
  * config.json holds user-authored coding-crew settings, one top-level section per consumer.
- * Caches (dev-commands.json) and installer state (manifest.json) are separate files. The only
- * section today is `afk`:
+ * Caches (dev-commands.json) and installer state (manifest.json) are separate files. It is read
+ * at two levels, the same two a coding-crew install has: ~/.coding-crew/config.json (this
+ * machine: e.g. a provider-specific model ID, or which runtime you have) under the repo's own
+ * (team policy, committed). They merge per setting, the repo's winning; CLI flags win over both.
+ * The only section today is `afk`:
  *
  *   { "afk": {
  *       "runtime": { "reviewer": "codex" },
@@ -27,10 +30,12 @@
  * that is the same behaviour on every platform.
  */
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { PLATFORMS } from "./dispatch.mjs";
 
 export const CONFIG_REL = ".coding-crew/config.json";
+export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
 export const LEGACY_REL = ".coding-crew/afk-models.json";
 
 export const ROLES = ["coder", "reviewer", "triage", "commandsDiscovery", "coverageValidation"];
@@ -62,10 +67,10 @@ function readJson(path, rel) {
 }
 
 /** Every problem in one message, so a user fixes the file once rather than once per run. */
-export function validateConfig(config) {
+export function validateConfig(config, label = CONFIG_REL) {
   const problems = [];
   const oneOf = (list) => list.join(", ");
-  if (!isObject(config)) throw new ConfigError(`${CONFIG_REL} must be a JSON object`);
+  if (!isObject(config)) throw new ConfigError(`${label} must be a JSON object`);
   for (const k of Object.keys(config)) {
     if (!SECTIONS.includes(k)) problems.push(`unknown section "${k}" (expected ${oneOf(SECTIONS)})`);
   }
@@ -103,18 +108,38 @@ export function validateConfig(config) {
       }
     }
   }
-  if (problems.length) throw new ConfigError(`${CONFIG_REL}: ${problems.join("; ")}`);
+  if (problems.length) throw new ConfigError(`${label}: ${problems.join("; ")}`);
+}
+
+/** Every afk leaf a file sets, as "runtime.<role>" / "models.<runtime>.<role>". */
+function afkLeaves(afk = {}) {
+  const leaves = Object.keys(afk.runtime ?? {}).map((role) => `runtime.${role}`);
+  for (const [rt, byRole] of Object.entries(afk.models ?? {})) {
+    for (const role of Object.keys(byRole)) leaves.push(`models.${rt}.${role}`);
+  }
+  return leaves;
+}
+
+/** `over` on top of `base`, one setting at a time, so a repo naming one role keeps the rest of yours. */
+function mergeAfk(base = {}, over = {}) {
+  const runtime = { ...base.runtime, ...over.runtime };
+  const models = {};
+  for (const rt of new Set([...Object.keys(base.models ?? {}), ...Object.keys(over.models ?? {})])) {
+    models[rt] = { ...base.models?.[rt], ...over.models?.[rt] };
+  }
+  return {
+    ...(Object.keys(runtime).length ? { runtime } : {}),
+    ...(Object.keys(models).length ? { models } : {}),
+  };
 }
 
 /**
- * Read config.json, moving a legacy afk-models.json into it. Only `write: true` (a real `run`)
- * touches disk; otherwise the move happens in memory and a notice says it would.
- * @returns {{config: object, notices: string[]}}  throws ConfigError on an invalid file
+ * Read the repo's config.json, moving a legacy afk-models.json into it. Only `write: true` (a
+ * real `run`) touches disk; otherwise the move happens in memory and a notice says it would.
  */
-export function loadConfig(mainRoot, { write = false } = {}) {
+function loadProjectConfig(mainRoot, write, notices) {
   const path = join(mainRoot, CONFIG_REL);
   const legacyPath = join(mainRoot, LEGACY_REL);
-  const notices = [];
   let config = existsSync(path) ? readJson(path, CONFIG_REL) : {};
 
   if (existsSync(legacyPath)) {
@@ -138,7 +163,33 @@ export function loadConfig(mainRoot, { write = false } = {}) {
   }
 
   validateConfig(config);
-  return { config, notices };
+  return config;
+}
+
+/**
+ * The user's config under the repo's, merged per setting.
+ * @returns {{config: object, origin: Record<string, "user"|"project">, notices: string[]}}
+ *   origin names which file set each afk leaf ("runtime.reviewer", "models.claude.coder");
+ *   throws ConfigError, naming the file, on an invalid one
+ */
+export function loadConfig(mainRoot, { write = false, home = process.env.HOME || homedir() } = {}) {
+  const notices = [];
+  const project = loadProjectConfig(mainRoot, write, notices);
+
+  // A repo at $HOME (a user-level install's own root) is one file, read once, as the repo's.
+  const userPath = join(home, CONFIG_REL);
+  let user = {};
+  if (resolve(userPath) !== resolve(join(mainRoot, CONFIG_REL)) && existsSync(userPath)) {
+    user = readJson(userPath, USER_CONFIG_LABEL);
+    validateConfig(user, USER_CONFIG_LABEL);
+  }
+
+  const origin = {};
+  for (const leaf of afkLeaves(user.afk)) origin[leaf] = "user";
+  for (const leaf of afkLeaves(project.afk)) origin[leaf] = "project";
+  const config = { ...user, ...project };
+  if (user.afk || project.afk) config.afk = mergeAfk(user.afk, project.afk);
+  return { config, origin, notices };
 }
 
 /**

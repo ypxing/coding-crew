@@ -14,6 +14,7 @@ function tmpRoot(files = {}) {
   }
   return root;
 }
+const EMPTY_HOME = mkdtempSync(join(tmpdir(), "crew-config-home-"));
 const read = (root, name) => JSON.parse(readFileSync(join(root, ".coding-crew", name), "utf8"));
 const models = (r) => Object.fromEntries(Object.entries(r.roles).map(([k, v]) => [k, v.model]));
 const runtimes = (r) => Object.fromEntries(Object.entries(r.roles).map(([k, v]) => [k, v.runtime]));
@@ -22,20 +23,20 @@ const runtimes = (r) => Object.fromEntries(Object.entries(r.roles).map(([k, v]) 
 
 test("loadConfig: no files is an empty config", () => {
   const root = tmpRoot();
-  assert.deepEqual(loadConfig(root), { config: {}, notices: [] });
+  assert.deepEqual(loadConfig(root, { home: EMPTY_HOME }), { config: {}, origin: {}, notices: [] });
   rmSync(root, { recursive: true, force: true });
 });
 
 test("loadConfig: malformed JSON is a ConfigError, not silently ignored", () => {
   const root = tmpRoot({ "config.json": "{ not json" });
-  assert.throws(() => loadConfig(root), ConfigError);
+  assert.throws(() => loadConfig(root, { home: EMPTY_HOME }), ConfigError);
   rmSync(root, { recursive: true, force: true });
 });
 
 test("loadConfig: a legacy afk-models.json moves into afk.models.claude of an existing config.json, and is deleted", () => {
   const root = tmpRoot({ "afk-models.json": { coder: "sonnet", reviewer: "opus", triage: null } });
   writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({}));
-  const { config, notices } = loadConfig(root, { write: true });
+  const { config, notices } = loadConfig(root, { write: true, home: EMPTY_HOME });
   const want = { afk: { models: { claude: { coder: "sonnet", reviewer: "opus" } } } };
   assert.deepEqual(config, want, "null (the old 'inherit') is dropped, since absent means that now");
   assert.deepEqual(read(root, "config.json"), want);
@@ -46,7 +47,7 @@ test("loadConfig: a legacy afk-models.json moves into afk.models.claude of an ex
 
 test("loadConfig: without write, the move happens in memory only", () => {
   const root = tmpRoot({ "afk-models.json": { coder: "opus" } });
-  const { config, notices } = loadConfig(root);
+  const { config, notices } = loadConfig(root, { home: EMPTY_HOME });
   assert.deepEqual(config, { afk: { models: { claude: { coder: "opus" } } } });
   assert.equal(existsSync(join(root, ".coding-crew/config.json")), false);
   assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
@@ -59,7 +60,7 @@ test("loadConfig: both files present — config.json wins, the legacy file is le
     "afk-models.json": { coder: "haiku" },
     "config.json": { afk: { models: { claude: { coder: "opus" } } } },
   });
-  const { config, notices } = loadConfig(root, { write: true });
+  const { config, notices } = loadConfig(root, { write: true, home: EMPTY_HOME });
   assert.equal(config.afk.models.claude.coder, "opus");
   assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
   assert.match(notices[0], /afk-models\.json is ignored/);
@@ -68,7 +69,7 @@ test("loadConfig: both files present — config.json wins, the legacy file is le
 
 test("loadConfig: a legacy file with an unknown role fails validation instead of being moved", () => {
   const root = tmpRoot({ "afk-models.json": { reviwer: "opus" } });
-  assert.throws(() => loadConfig(root, { write: true }), /unknown role "afk\.models\.claude\.reviwer"/);
+  assert.throws(() => loadConfig(root, { write: true, home: EMPTY_HOME }), /unknown role "afk\.models\.claude\.reviwer"/);
   assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
   rmSync(root, { recursive: true, force: true });
 });
@@ -82,7 +83,7 @@ test("loadConfig: every validation problem is reported at once", () => {
   });
   let message = "";
   try {
-    loadConfig(root);
+    loadConfig(root, { home: EMPTY_HOME });
   } catch (err) {
     assert.ok(err instanceof ConfigError);
     message = err.message;
@@ -96,6 +97,54 @@ test("loadConfig: every validation problem is reported at once", () => {
   ]) {
     assert.match(message, want);
   }
+  rmSync(root, { recursive: true, force: true });
+});
+
+// ─── user level (~/.coding-crew/config.json) under the repo's ─────────────────
+
+test("loadConfig: the user's config applies where the repo's says nothing, per setting", () => {
+  const home = tmpRoot({
+    "config.json": { afk: { runtime: { reviewer: "codex" }, models: { claude: { coder: "opus", triage: "haiku" } } } },
+  });
+  const root = tmpRoot({ "config.json": { afk: { models: { claude: { coder: "sonnet" } } } } });
+  const { config, origin } = loadConfig(root, { home });
+  assert.deepEqual(config.afk, { runtime: { reviewer: "codex" }, models: { claude: { coder: "sonnet", triage: "haiku" } } });
+  assert.deepEqual(origin, { "runtime.reviewer": "user", "models.claude.coder": "project", "models.claude.triage": "user" });
+  rmSync(home, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: only a user config — it is the whole config", () => {
+  const home = tmpRoot({ "config.json": { afk: { runtime: { triage: "pi" } } } });
+  const root = tmpRoot();
+  assert.deepEqual(loadConfig(root, { home }).config, { afk: { runtime: { triage: "pi" } } });
+  rmSync(home, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: an invalid user config is an error naming the user file", () => {
+  const home = tmpRoot({ "config.json": { afk: { runtime: { coder: "cursor" } } } });
+  const root = tmpRoot();
+  assert.throws(() => loadConfig(root, { home }), /~\/\.coding-crew\/config\.json: "afk\.runtime\.coder" is "cursor"/);
+  rmSync(home, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: a repo at $HOME is one file, read once, as the repo's", () => {
+  const root = tmpRoot({ "config.json": { afk: { runtime: { reviewer: "codex" } } } });
+  const { origin } = loadConfig(root, { home: root });
+  assert.deepEqual(origin, { "runtime.reviewer": "project" });
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: the legacy move writes only the repo's config, never the user's", () => {
+  const home = tmpRoot({ "config.json": { afk: { runtime: { reviewer: "codex" } } } });
+  const root = tmpRoot({ "afk-models.json": { coder: "opus" } });
+  const { config } = loadConfig(root, { write: true, home });
+  assert.deepEqual(read(root, "config.json"), { afk: { models: { claude: { coder: "opus" } } } });
+  assert.deepEqual(read(home, "config.json"), { afk: { runtime: { reviewer: "codex" } } });
+  assert.deepEqual(config.afk, { runtime: { reviewer: "codex" }, models: { claude: { coder: "opus" } } });
+  rmSync(home, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
 

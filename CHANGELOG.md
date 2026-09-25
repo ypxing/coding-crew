@@ -16,6 +16,10 @@
   values only ever applied on claude, so behaviour is unchanged on every platform. An invalid
   config is now a setup error listing every problem; a malformed `afk-models.json` used to be
   ignored with a warning.
+- **`config.json` is read at user level too.** `~/.coding-crew/config.json` sits under the repo's
+  `.coding-crew/config.json`, merged per setting with the repo's winning, so a machine can keep
+  its own provider model IDs or runtime choices out of the committed file. `plan` tags each value
+  with the file that set it; an invalid file's error names which one.
 - **`[STEP]` dispatch markers carry `runtime=`** after `model=`.
 - **The reviewer's and triage's role preamble lives in their protocol, not in each platform shim.**
   The "establish `ROOT`" block and the read-only rule were copied into all eight shims and had

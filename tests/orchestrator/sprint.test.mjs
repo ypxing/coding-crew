@@ -48,8 +48,14 @@ const FAKE = join(HERE, "fixtures/fake-dispatch.sh");
 // ORCA_ENV/ORCA_TERMINAL_HANDLE) whenever it runs inside a real herdr/orca pane, and
 // main.mjs's notifyTriggeringPane sends the fixture sprint's outcome straight to that real
 // pane if those leak through — stripped here, once, so no call site has to remember to.
+//
+// HOME likewise: a real ~/.coding-crew/config.json would retarget every fixture sprint's roles,
+// so an inherited HOME is swapped for an empty one. A test that sets its own HOME keeps it.
+const EMPTY_HOME = mkdtempSync(join(tmpdir(), "crew-sprint-home-"));
+after(() => rmSync(EMPTY_HOME, { recursive: true, force: true }));
 function sh(cmd, args, opts = {}) {
   const env = { ...(opts.env ?? process.env) };
+  if (env.HOME === process.env.HOME) env.HOME = EMPTY_HOME;
   delete env.HERDR_ENV;
   delete env.HERDR_PANE_ID;
   delete env.ORCA_ENV;
@@ -1000,6 +1006,23 @@ test("`plan` does not move a legacy afk-models.json, only says it would", () => 
   assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
   assert.equal(existsSync(join(root, ".coding-crew/config.json")), false);
   assert.match(r.stdout, /coder\s+claude\s+opus/);
+});
+
+test("`plan` shows which config file set each role's runtime and model", () => {
+  const root = fixtureRepo();
+  const home = mkdtempSync(join(tmpdir(), "crew-sprint-userhome-"));
+  mkdirSync(join(home, ".coding-crew"), { recursive: true });
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(home, ".coding-crew/config.json"), JSON.stringify({ afk: { runtime: { reviewer: "codex" } } }));
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { models: { claude: { triage: "opus" } } } }));
+  const r = sh("node", [MAIN, "plan", "--platform", "claude", "--feature-slug", "demo"], {
+    cwd: root,
+    env: { ...process.env, HOME: home, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, MAIN_ROOT: root },
+  });
+  assert.match(r.stdout, /reviewer\s+codex\s+runtime default\s+\[runtime: user\]/, r.stdout);
+  assert.match(r.stdout, /triage\s+claude\s+opus.*\[model: project\]/, r.stdout);
+  assert.match(r.stdout, /coder\s+claude\s+sonnet(?!.*\[)/, r.stdout);
+  rmSync(home, { recursive: true, force: true });
 });
 
 test("a mixed crew dispatches each role on its own runtime, with only that runtime's model", () => {

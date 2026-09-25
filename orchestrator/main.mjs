@@ -131,10 +131,21 @@ function editDistance(a, b) {
   return dp[a.length][b.length];
 }
 
-/** `plan`'s role table: one line per role, its runtime and model. */
-function crewTable(crew) {
+/**
+ * `plan`'s role table: one line per role, its runtime and model, and which config file set
+ * either — with two files merged, a value's source is otherwise a guess.
+ */
+function crewTable(crew, origin = {}) {
   const width = Math.max(...ROLES.map((r) => r.length));
-  return ROLES.map((r) => `  ${r.padEnd(width)}  ${crew[r].runtime.padEnd(7)}  ${describeModel(crew[r].runtime, crew[r].model)}`);
+  return ROLES.map((r) => {
+    const { runtime, model } = crew[r];
+    const from = [
+      origin[`runtime.${r}`] && `runtime: ${origin[`runtime.${r}`]}`,
+      origin[`models.${runtime}.${r}`] && `model: ${origin[`models.${runtime}.${r}`]}`,
+    ].filter(Boolean);
+    const tag = from.length ? `  [${from.join(", ")}]` : "";
+    return `  ${r.padEnd(width)}  ${runtime.padEnd(7)}  ${describeModel(runtime, model)}${tag}`;
+  });
 }
 
 /**
@@ -416,7 +427,8 @@ async function main() {
     return 0;
   }
 
-  // .coding-crew/config.json is optional; absent, every role runs on --platform with --model.
+  // .coding-crew/config.json (the repo's, over ~/.coding-crew/config.json) is optional;
+  // absent, every role runs on --platform with --model.
   // Only a real `run` moves a legacy afk-models.json into it on disk.
   let loaded;
   try {
@@ -455,7 +467,7 @@ async function main() {
     const problems = crewPreflight(effects, mainRoot, options);
     console.log(`platform:  ${options.platform}`);
     console.log("crew:");
-    for (const line of crewTable(options.crew)) console.log(line);
+    for (const line of crewTable(options.crew, loaded.origin)) console.log(line);
     console.log(`parallel:  ${options.parallel}`);
     console.log(`scripts:   ${scriptsDir}`);
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);
