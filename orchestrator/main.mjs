@@ -440,16 +440,18 @@ async function main() {
 
   // .coding-crew/config.json (the repo's, over ~/.coding-crew/config.json) is optional;
   // absent, every role runs on --platform with --model.
-  // Only a real `run` moves a legacy afk-models.json into it on disk.
+  // Only a real `run` moves a legacy afk-models.json into it on disk, once setup has passed.
   let loaded;
   try {
-    loaded = loadConfig(mainRoot, { write: options.command === "run" && !options.dryRun });
+    loaded = loadConfig(mainRoot);
   } catch (err) {
     if (!(err instanceof ConfigError)) throw err;
     console.error(`crew-afk: ${err.message}`);
     return 1;
   }
   for (const n of loaded.notices) console.error(`crew-afk: ${n}`);
+  const movesLegacy = loaded.legacyMove && options.command === "run" && !options.dryRun;
+  if (loaded.legacyMove && !movesLegacy) console.error(`crew-afk: ${loaded.legacyMove.pending}`);
   const flagProblems = validateFlags(options.cli, options.flagOf);
   if (flagProblems.length) {
     console.error(`crew-afk: ${flagProblems.join("; ")}`);
@@ -555,6 +557,8 @@ async function main() {
       }
       lockPath = lock.lockPath;
     }
+
+    if (movesLegacy) console.error(`crew-afk: ${loaded.legacyMove.apply()}`);
 
     // Before any worktree exists, so every one gets the included files at creation.
     ensureWorktreeInclude(mainRoot);

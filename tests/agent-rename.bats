@@ -56,6 +56,92 @@ _old_shims_left() {
   [ -f "$TEMP_DIR/.codex/agents/crew-code-reviewer.toml" ]
 }
 
+@test "installing one platform keeps the old manifest entry while another platform still has its shim" {
+  # The shared orchestrator now dispatches crew-reviewer, which codex/pi/copilot don't have yet;
+  # dropping the old entry would leave --update nothing to repair them from.
+  _old_install
+  cd "$SCRIPT_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARNING"*"crew-code-reviewer"* ]]
+  [[ "$output" == *".codex/agents/crew-code-reviewer.toml"* ]]
+  [[ "$output" == *"./install.sh --update"* ]]
+  run jq -r '.agents | keys[]' "$TEMP_DIR/.coding-crew/manifest.json"
+  [[ "$output" == *"crew-code-reviewer"* ]]
+}
+
+@test "--update after a one-platform install brings every platform onto the new name" {
+  _old_install
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
+  [ "$status" -eq 0 ]
+  [ -z "$(_old_shims_left)" ] || { echo "left behind: $(_old_shims_left)"; return 1; }
+  [ -f "$TEMP_DIR/.codex/agents/crew-reviewer.toml" ]
+  [ -f "$TEMP_DIR/.pi/agents/crew-reviewer.md" ]
+  [ -f "$TEMP_DIR/.github/agents/crew-reviewer.agent.md" ]
+  run jq -r '.agents | keys[]' "$TEMP_DIR/.coding-crew/manifest.json"
+  [[ "$output" == *"crew-reviewer"* ]]
+  [[ "$output" != *"crew-code-reviewer"* ]]
+}
+
+@test "--update installs the agent that replaces an old manifest name" {
+  _old_install
+  jq '.platform = "all"' "$TEMP_DIR/.coding-crew/manifest.json" > "$TEMP_DIR/m" && mv "$TEMP_DIR/m" "$TEMP_DIR/.coding-crew/manifest.json"
+  cd "$SCRIPT_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"removed from registry"* ]]
+  [[ "$output" == *"crew-code-reviewer: renamed to crew-reviewer"* ]]
+  [ -z "$(_old_shims_left)" ] || { echo "left behind: $(_old_shims_left)"; return 1; }
+  [ -f "$TEMP_DIR/.claude/agents/crew-reviewer.md" ]
+  [ -f "$TEMP_DIR/.codex/agents/crew-reviewer.toml" ]
+  run jq -r '.agents | keys[]' "$TEMP_DIR/.coding-crew/manifest.json"
+  [[ "$output" != *"crew-code-reviewer"* ]]
+}
+
+@test "install.sh accepts an agent's old name and installs its replacement" {
+  cd "$SCRIPT_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-code-reviewer
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"crew-code-reviewer was renamed to crew-reviewer"* ]]
+  [ -f "$TEMP_DIR/.claude/agents/crew-reviewer.md" ]
+  [ ! -e "$TEMP_DIR/.claude/agents/crew-code-reviewer.md" ]
+}
+
+@test "install.sh names an unknown agent instead of failing inside find" {
+  cd "$SCRIPT_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude no-such-agent
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unknown agent 'no-such-agent'"* ]]
+  [[ "$output" != *"find:"* ]]
+}
+
+@test "uninstall --agent accepts an agent's old name" {
+  _old_install
+  cd "$SCRIPT_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --agent crew-code-reviewer
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"crew-code-reviewer was renamed to crew-reviewer"* ]]
+  [[ "$output" != *"nothing found to remove"* ]]
+  [ -z "$(_old_shims_left)" ] || { echo "left behind: $(_old_shims_left)"; return 1; }
+}
+
+@test "full uninstall does not depend on grep's handling of an empty -f pattern" {
+  # Older BSD grep (macOS) matches every line with an empty -f pattern even under -x, so
+  # `grep -v` over a pattern list ending in "" filtered out every agent. Simulate that grep.
+  mkdir -p "$TEMP_DIR/bin" "$TEMP_DIR/repo/.claude/agents"
+  printf '%s\n' '#!/bin/bash' \
+    'if [[ "$1" == -v* && "$2" == "-f" ]] && "$REAL_GREP" -qx "" "$3"; then cat >/dev/null; exit 1; fi' \
+    'exec "$REAL_GREP" "$@"' > "$TEMP_DIR/bin/grep"
+  chmod +x "$TEMP_DIR/bin/grep"
+  echo x > "$TEMP_DIR/repo/.claude/agents/crew-coder.md"
+  cd "$SCRIPT_DIR"
+  run env REAL_GREP="$(command -v grep)" PATH="$TEMP_DIR/bin:$PATH" TARGET_REPO="$TEMP_DIR/repo" ./uninstall.sh
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/repo/.claude/agents/crew-coder.md" ]
+}
+
 @test "uninstall removes a pre-rename install's old shims too" {
   _old_install
   cd "$SCRIPT_DIR"

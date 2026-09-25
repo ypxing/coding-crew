@@ -75,6 +75,10 @@ _normalised_description() {
 @test "read-only agents get no write tools on any platform" {
   # `if`, not a bare `! cmd`: bats only fails on a negated command when it is the last line.
   for a in crew-reviewer crew-triage; do
+    # No tools line means every tool, write included — so an absent list is a failure too.
+    for p in claude copilot pi; do
+      [ -n "$(_field "$p" "$a" tools)" ] || { echo "$p/$a has no tools list"; return 1; }
+    done
     if _field claude "$a" tools | grep -qE '"(Edit|Write|NotebookEdit)"'; then echo "claude/$a can write"; return 1; fi
     if _field copilot "$a" tools | grep -qE '"(edit|create)"'; then echo "copilot/$a can write"; return 1; fi
     if _field pi "$a" tools | grep -qwE 'edit|write'; then echo "pi/$a can write"; return 1; fi

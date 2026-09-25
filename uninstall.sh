@@ -273,6 +273,13 @@ elif [[ "$MODE" == "--agent" ]]; then
   name="${2:-}"
   [[ -z "$name" ]] && { echo "Error: --agent requires an agent name" >&2; usage; }
   echo "---"
+  # An agent's old name (registry.json `replaces`) means its replacement, which removes both.
+  replacement=$(jq -r --arg n "$name" '[.agents | to_entries[] | select((.value.replaces // []) | index($n)) | .key][0] // empty' "$SCRIPT_DIR/registry.json")
+  replacement="${replacement%$'\r'}"
+  if [[ -n "$replacement" ]]; then
+    echo "  $name was renamed to $replacement — removing $replacement and its old name"
+    name="$replacement"
+  fi
   remove_agent "$name"
 
 else
@@ -287,9 +294,12 @@ else
     [[ -n "$name" ]] && _agent_names+=("$name")
   done < <(
     # A name some registry agent `replaces` is removed along with that agent, not on its own.
+    # Filtered in jq: `grep -vxF -f` needs a non-empty pattern list, and BSD grep reads an
+    # empty pattern as match-all even under -x.
     { if [[ -f "$MANIFEST" ]]; then jq -r '.agents | keys[]' "$MANIFEST"; fi
       jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u |
-      grep -vxF -f <(jq -r '[.agents[].replaces // [] | .[]] | .[]' "$SCRIPT_DIR/registry.json" | tr -d '\r'; echo "")
+      jq -R -r --slurpfile reg "$SCRIPT_DIR/registry.json" \
+        'select(. as $n | [$reg[0].agents[].replaces // [] | .[]] | index($n) | not)'
   )
   for name in "${_agent_names[@]+"${_agent_names[@]}"}"; do remove_agent "$name"; done
 

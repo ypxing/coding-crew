@@ -13,7 +13,7 @@ set -euo pipefail
 # orchestrator remembering a flag for a whole sprint. --coverage and --promote are their old
 # names, still accepted from a hand run.
 FEATURE_SLUG_ARG=""
-PRD_AUDIT_OPT="off"
+PRD_AUDIT_OPT="fix"
 FIX_FINDINGS_OPT="high"
 REMAINING_ARGS=()
 while [[ $# -gt 0 ]]; do

@@ -161,7 +161,7 @@ export class Sprint {
   }
   /** "off" | "report" | "fix" — see crew-config.mjs's PRD_AUDIT. */
   get PRDAudit() {
-    return this.env.CREW_PRD_AUDIT || "off";
+    return this.env.CREW_PRD_AUDIT || "fix";
   }
   /** The lowest severity auto-fixed: "critical" | "high" | "medium" | "none". */
   get fixFindings() {

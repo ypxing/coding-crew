@@ -87,6 +87,9 @@ function statusOf({ state, labels = [] }) {
  * reimplemented. Unlike local, a matched `## Blocked by` number *is* the blocker's ref
  * already — no filename lookup — so `blockedBy` holds bare issue numbers.
  */
+/** The feature's PRD: a milestone issue by title convention, not a work issue (to-prd). */
+export const isPrdIssue = (issue) => /^PRD:/.test(issue.title ?? "");
+
 export function parseIssue(json) {
   const text = json.body ?? "";
   const blockedBySection = sectionBody(text, "Blocked by") ?? "";
@@ -304,9 +307,37 @@ function cliCreateIssue(argv) {
   process.stdout.write(`${url}\n`);
 }
 
+/**
+ * `prd --feature-slug <slug> [--main-root <dir>]` — print the milestone's PRD issue body, for
+ * prd-audit.sh, which has no local PRD.md under github. Exit 3 when the milestone has none.
+ */
+function cliPrd(argv) {
+  const opts = {};
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case "--feature-slug":
+        opts.featureSlug = argv[++i];
+        break;
+      case "--main-root":
+        opts.mainRoot = argv[++i];
+        break;
+      default:
+        throw new Error(`prd: unknown argument: ${argv[i]}`);
+    }
+  }
+  if (!opts.featureSlug) throw new Error("prd requires --feature-slug");
+  const prd = listOpen(opts.mainRoot ?? process.cwd(), { featureSlug: opts.featureSlug }).find(isPrdIssue);
+  if (!prd) {
+    process.exitCode = 3;
+    return;
+  }
+  process.stdout.write(`<!-- PRD issue #${prd.number}: ${prd.title} -->\n${prd.text}\n`);
+}
+
 function cliMain(argv) {
   const [command, ...rest] = argv;
   if (command === "create-issue") return cliCreateIssue(rest);
+  if (command === "prd") return cliPrd(rest);
   throw new Error(`unknown command: ${command}`);
 }
 

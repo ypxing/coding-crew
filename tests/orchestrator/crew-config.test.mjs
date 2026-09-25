@@ -32,7 +32,7 @@ const runtimes = (r) => Object.fromEntries(Object.entries(r.roles).map(([k, v]) 
 
 test("loadConfig: no files is an empty config", () => {
   const root = tmpRoot();
-  assert.deepEqual(loadConfig(root, { home: EMPTY_HOME }), { config: {}, origin: {}, notices: [] });
+  assert.deepEqual(loadConfig(root, { home: EMPTY_HOME }), { config: {}, origin: {}, notices: [], legacyMove: null });
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -56,11 +56,15 @@ test("loadConfig: a legacy afk-models.json moves into afk.models.claude of an ex
 
 test("loadConfig: without write, the move happens in memory only", () => {
   const root = tmpRoot({ "afk-models.json": { coder: "opus" } });
-  const { config, notices } = loadConfig(root, { home: EMPTY_HOME });
+  const { config, notices, legacyMove } = loadConfig(root, { home: EMPTY_HOME });
   assert.deepEqual(config, { afk: { models: { claude: { coder: "opus" } } } });
   assert.equal(existsSync(join(root, ".coding-crew/config.json")), false);
   assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
-  assert.match(notices[0], /will be moved/);
+  assert.deepEqual(notices, []);
+  assert.match(legacyMove.pending, /will be moved/);
+  assert.match(legacyMove.apply(), /moved .*afk-models\.json into/);
+  assert.deepEqual(JSON.parse(readFileSync(join(root, ".coding-crew/config.json"), "utf8")), config);
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), false);
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -352,6 +356,18 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
         /"afk\.timeouts\.coder" must be a positive number of minutes/,
         /unknown key "afk\.timeouts\.worker"/,
       ].every((re) => re.test(err.message)),
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: an Object.prototype name is still an unknown timeouts key", () => {
+  const root = tmpRoot({ "config.json": { afk: { timeouts: { toString: 3, constructor: 3 } } } });
+  assert.throws(
+    () => loadConfig(root, { home: EMPTY_HOME }),
+    (err) =>
+      err instanceof ConfigError &&
+      /unknown key "afk\.timeouts\.toString"/.test(err.message) &&
+      /unknown key "afk\.timeouts\.constructor"/.test(err.message),
   );
   rmSync(root, { recursive: true, force: true });
 });

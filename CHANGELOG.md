@@ -10,7 +10,11 @@
   `crew-code-reviewer` shims for each platform it installs, plus its manifest entry, so the host
   doesn't keep listing a stale second reviewer. Uninstall removes them too. A user-level install
   (`TARGET_REPO=$HOME`) is cleaned the same way the next time you install at that level; until
-  then, a project install warns that the old user-level copy may shadow it.
+  then, a project install warns that the old user-level copy may shadow it. Installing one
+  platform over an older all-platform install keeps the old manifest entry and warns while
+  another platform still has an old shim, and `--update` installs `crew-reviewer` in place of a
+  manifest's `crew-code-reviewer` there too. `install.sh`/`uninstall.sh --agent` accept the old
+  name, with a notice; an unknown agent name is a clear error.
 - **crew-afk can run each role on a different runtime.** `.coding-crew/config.json`'s `afk`
   section maps any role (`coder`, `reviewer`, `triage`, `commandFinder`, `prdAuditor`) to an
   installed runtime and names models per runtime, e.g. a claude coder reviewed by codex. A model
@@ -36,7 +40,10 @@
   (`NN-fix-prd-gaps.md`, or a GitHub issue) that Phase 2 implements with the findings fixes; its
   `Source:` line keeps it from being audited or promoted again. Nothing is queued while a Phase 1
   issue is still open; when gaps are found but not queued, the summary's `## PRD Audit` says why.
-  Skipped at no cost when the feature has no `PRD.md`. `coverage-validation.sh` is now
+  Under `tracker: github` it audits the milestone's `PRD:` issue (a local `PRD.md` is still read
+  first), and that open PRD issue no longer counts as unfinished work, which had kept gaps from
+  being queued and marked every github sprint stalled. An audit that fails or times out is named
+  in the summary too. Skipped at no cost when the feature has no PRD. `coverage-validation.sh` is now
   `prd-audit.sh`, its report `prd-audit.md`; `--coverage` still works, as `report`.
 - **Sprint settings move into `config.json`:** `timeouts` (minutes per role, plus `merge`),
   `maxParallel`, `installDeps` and `squashCommits`, each overridden for one run by a flag.
@@ -52,7 +59,8 @@
   values only ever applied on claude, so behaviour is unchanged on every platform. An invalid
   config is now a setup error listing every problem; a malformed `afk-models.json` used to be
   ignored with a warning. An unknown key in it is still ignored, dropped from the move with a
-  notice. An invalid user-level `config.json` fails the run before anything is moved.
+  notice. The move happens only once a `run` has passed setup (flags, config, preflight, the
+  sprint lock), so a run that fails before starting leaves the old file where it is.
 - **`config.json` is read at user level too.** `~/.coding-crew/config.json` sits under the repo's
   `.coding-crew/config.json`, merged per setting with the repo's winning, so a machine can keep
   its own provider model IDs or runtime choices out of the committed file. `plan` tags each value

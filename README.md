@@ -95,8 +95,9 @@ Before any branch merges: the project's own checks run in that worker's worktree
 branch is never merged. A code reviewer then reviews the diff — findings land in
 `.scratch/<feature>/reviews/` and never block a merge. When the queue empties, CRITICAL and HIGH
 findings are fixed automatically in a second phase; the rest wait for `/crew-address-findings`.
-If the feature has a `PRD.md`, it is audited against the merged code at the same point, and any
-requirement no issue carried is fixed in that same second phase.
+If the feature has a PRD (`PRD.md`, or under the github tracker the milestone's `PRD:` issue), it
+is audited against the merged code at the same point, and any requirement no issue carried is
+fixed in that same second phase.
 
 **Partial work is retained, not lost.** A worker that can't finish commits its work-in-progress with
 a `[WIP]` marker on its own branch instead of merging; the next round resumes from there.

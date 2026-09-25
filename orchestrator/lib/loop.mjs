@@ -170,7 +170,7 @@ export async function runSprint(ctx) {
     !capped &&
     (tracker.listOpenIssueFiles
       ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
-      : tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug }).some((i) => i.status !== "done"));
+      : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0);
 
   await wrapUp(ctx, { stalled, prdAudit });
   return { stalled, history };
@@ -187,7 +187,8 @@ function unfinishedIssues(tracker, mainRoot, featureSlug) {
       .map((p) => tracker.parseIssue(p))
       .filter((i) => i.status !== "deferred-findings");
   }
-  return tracker.listOpen(mainRoot, { featureSlug }).filter((i) => i.status !== "done");
+  // The milestone's PRD issue stays open for the life of the feature; it is not work.
+  return tracker.listOpen(mainRoot, { featureSlug }).filter((i) => i.status !== "done" && !tracker.isPrdIssue?.(i));
 }
 
 /**
@@ -195,10 +196,11 @@ function unfinishedIssues(tracker, mainRoot, featureSlug) {
  * requirement no issue carried, a flow across issues. In `fix` mode its ✗ missing
  * requirements become one parked fix issue, which the caller's flush sends into Phase 2.
  * Gaps are not queued while a Phase 1 issue is still open: its requirements would read as
- * missing, and queuing them would duplicate that issue. Returns `{report, queuedReady, unqueued}`:
+ * missing, and queuing them would duplicate that issue. Returns `{report, queuedReady, unqueued, failed}`:
  * the report's path (or null); whether an issue was created already ready-for-agent (github —
- * local parks it for the flush instead); and, in fix mode, why gaps were left unqueued, for the
- * summary — the trace log alone is too easy to miss.
+ * local parks it for the flush instead); in fix mode, why gaps were left unqueued; and why an
+ * audit that ran did not finish. The last two are for the summary — the trace log alone is
+ * too easy to miss.
  */
 async function runPrdAudit(ctx, tracker) {
   const { sprint, effects, options } = ctx;
@@ -227,8 +229,9 @@ async function runPrdAudit(ctx, tracker) {
     timeoutMs: options.timeoutMs.prdAuditor,
   });
   if (r.code !== 0 || r.timedOut) {
-    ctx.log(`PRD audit: dispatch did not complete (${r.timedOut ? "timed out" : `exit ${r.code}`}) — no report, nothing queued.`);
-    return { report: null, queuedReady: false };
+    const failed = `the audit did not complete (${r.timedOut ? "timed out" : `exit ${r.code}`}) — no report, nothing queued.`;
+    ctx.log(`PRD audit: ${failed}`);
+    return { report: null, queuedReady: false, failed };
   }
   ctx.log(`PRD audit report: ${outFile}`);
   if (mode !== "fix" || r.dryRun) return { report: outFile, queuedReady: false };
@@ -305,7 +308,9 @@ async function wrapUp(ctx, { stalled, prdAudit }) {
   if (stalled) summaryArgs.push("--stalled");
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
   ctx.out(summary.stdout);
-  if (prdAudit.report && existsSync(prdAudit.report)) {
+  if (prdAudit.failed) {
+    ctx.out(`\n## PRD Audit\n\n**Failed:** ${prdAudit.failed}\n`);
+  } else if (prdAudit.report && existsSync(prdAudit.report)) {
     ctx.out(`\n## PRD Audit\n\n(see ${prdAudit.report})\n`);
     if (prdAudit.unqueued) ctx.out(`\n**Gaps not queued:** ${prdAudit.unqueued}\n`);
   }

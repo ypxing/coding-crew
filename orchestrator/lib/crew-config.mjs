@@ -127,7 +127,7 @@ export function validateConfig(config, label = CONFIG_REL) {
         if (!isObject(afk.timeouts)) problems.push(`"afk.timeouts" must be an object of role → minutes`);
         else {
           for (const [k, min] of Object.entries(afk.timeouts)) {
-            if (!(k in DEFAULT_TIMEOUTS)) problems.push(`unknown key "afk.timeouts.${k}" (expected ${oneOf(Object.keys(DEFAULT_TIMEOUTS))})`);
+            if (!Object.hasOwn(DEFAULT_TIMEOUTS, k)) problems.push(`unknown key "afk.timeouts.${k}" (expected ${oneOf(Object.keys(DEFAULT_TIMEOUTS))})`);
             const problem = timeoutProblem(min);
             if (problem) problems.push(`"afk.timeouts.${k}" ${problem}`);
           }
@@ -187,10 +187,11 @@ function mergeAfk(base = {}, over = {}) {
 }
 
 /**
- * Read the repo's config.json, moving a legacy afk-models.json into it. Only `write: true` (a
- * real `run`) touches disk; otherwise the move happens in memory and a notice says it would.
+ * Read the repo's config.json, moving a legacy afk-models.json into it in memory. The move on
+ * disk is `legacyMove.apply()`, left to the caller so a run can do it only once setup has passed.
  */
-function loadProjectConfig(mainRoot, write, notices) {
+function loadProjectConfig(mainRoot, notices) {
+  let legacyMove = null;
   const path = join(mainRoot, CONFIG_REL);
   const legacyPath = join(mainRoot, LEGACY_REL);
   let config = existsSync(path) ? readJson(path, CONFIG_REL) : {};
@@ -217,24 +218,28 @@ function loadProjectConfig(mainRoot, write, notices) {
       if (problems.length) throw new ConfigError(`${LEGACY_REL}: ${problems.join("; ")}`);
       config = { ...config, afk: { models: { claude } } };
       validateConfig(config);
-      if (write) {
-        writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
-        unlinkSync(legacyPath);
-        notices.push(`moved ${LEGACY_REL} into ${CONFIG_REL} (afk.models.claude) — commit it.`);
-      } else {
-        notices.push(`${LEGACY_REL} will be moved into ${CONFIG_REL} (afk.models.claude) on the next \`run\`.`);
-      }
+      const moved = config;
+      legacyMove = {
+        pending: `${LEGACY_REL} will be moved into ${CONFIG_REL} (afk.models.claude) on the next \`run\`.`,
+        apply() {
+          writeFileSync(path, `${JSON.stringify(moved, null, 2)}\n`);
+          unlinkSync(legacyPath);
+          return `moved ${LEGACY_REL} into ${CONFIG_REL} (afk.models.claude) — commit it.`;
+        },
+      };
     }
   }
 
   validateConfig(config);
-  return config;
+  return { config, legacyMove };
 }
 
 /**
  * The user's config under the repo's, merged per setting.
- * @returns {{config: object, origin: Record<string, "user"|"project">, notices: string[]}}
+ * @returns {{config: object, origin: Record<string, "user"|"project">, notices: string[],
+ *   legacyMove: {pending: string, apply: () => string}|null}}
  *   origin names which file set each afk leaf ("runtime.reviewer", "models.claude.coder");
+ *   legacyMove is a pending afk-models.json move (`write: true` applies it at once instead);
  *   throws ConfigError, naming the file, on an invalid one
  */
 export function loadConfig(mainRoot, { write = false, home = process.env.HOME || homedir() } = {}) {
@@ -247,14 +252,15 @@ export function loadConfig(mainRoot, { write = false, home = process.env.HOME ||
     user = readJson(userPath, USER_CONFIG_LABEL);
     validateConfig(user, USER_CONFIG_LABEL);
   }
-  const project = loadProjectConfig(mainRoot, write, notices);
+  const { config: project, legacyMove } = loadProjectConfig(mainRoot, notices);
+  if (legacyMove && write) notices.push(legacyMove.apply());
 
   const origin = {};
   for (const leaf of afkLeaves(user.afk)) origin[leaf] = "user";
   for (const leaf of afkLeaves(project.afk)) origin[leaf] = "project";
   const config = { ...user, ...project };
   if (user.afk || project.afk) config.afk = mergeAfk(user.afk, project.afk);
-  return { config, origin, notices };
+  return { config, origin, notices, legacyMove: write ? null : legacyMove };
 }
 
 /**
@@ -293,8 +299,8 @@ export function resolveCrew({ afk = {}, cliPlatform, cliModel = null }) {
       runtime === "claude" &&
       coderRuntime === "claude" &&
       model !== coderModel &&
-      model in CLAUDE_TIER_RANK &&
-      coderModel in CLAUDE_TIER_RANK &&
+      Object.hasOwn(CLAUDE_TIER_RANK, model) &&
+      Object.hasOwn(CLAUDE_TIER_RANK, coderModel) &&
       CLAUDE_TIER_RANK[model] < CLAUDE_TIER_RANK[coderModel]
     ) {
       warnings.push(

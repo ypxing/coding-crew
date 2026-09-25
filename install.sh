@@ -49,7 +49,7 @@ fi
 
 INSTALLED=""
 MANIFEST_AGENT_ENTRIES=()  # each entry: "name version platform"
-MANIFEST_REPLACED_AGENTS=()  # old names a renamed agent's `replaces` drops from the manifest
+MANIFEST_REPLACED_AGENTS=()  # "old new" pairs: a renamed agent's `replaces`, dropped from the manifest once gone
 MANIFEST_SKILL_ENTRIES=()  # each entry: "name version"
 
 usage() {
@@ -242,6 +242,30 @@ prune_replaced_agent_shims() {
       echo "  removed $_DEST_REL (renamed to $agent_name)"
     fi
   done < <(jq -r --arg n "$agent_name" '.agents[$n].replaces // [] | .[]' "$SCRIPT_DIR/registry.json")
+}
+
+# replacement_for <name> — the registry agent whose `replaces` lists <name>, or nothing.
+replacement_for() {
+  jq -r --arg n "$1" '[.agents | to_entries[] | select((.value.replaces // []) | index($n)) | .key][0] // empty' "$SCRIPT_DIR/registry.json"
+}
+
+# replaced_shims_left <old> <new> — every old-name shim still on disk, on any platform. A
+# one-platform install prunes only its own, and the others then lack the agent crew-afk dispatches.
+replaced_shims_left() {
+  local old="$1" new="$2" p raw cand prev
+  for p in "${PLATFORMS[@]}"; do
+    raw=$(jq -r --arg n "$new" --arg p "$p" '.agents[$n].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
+    [[ -n "$raw" ]] || continue
+    raw="${raw//$new/$old}"
+    prev=""
+    for cand in "$(adjust_platform_path "$p" "$raw")" "$raw"; do
+      [[ "$cand" != "$prev" ]] || continue
+      prev="$cand"
+      resolve_dest "$p" "$cand"
+      [[ -f "$_DEST_ROOT/$_DEST_REL" ]] && printf '%s\n' "$cand"
+    done
+  done
+  return 0
 }
 
 assert_identifier() {
@@ -490,7 +514,7 @@ install_agent() {
   local replaced
   while IFS= read -r replaced; do
     replaced="${replaced%$'\r'}"
-    [[ -n "$replaced" ]] && MANIFEST_REPLACED_AGENTS+=("$replaced")
+    [[ -n "$replaced" ]] && MANIFEST_REPLACED_AGENTS+=("$replaced $agent_name")
   done < <(jq -r --arg n "$agent_name" '.agents[$n].replaces // [] | .[]' "$SCRIPT_DIR/registry.json")
 
   install_agent_assets "$agent_name" "$agent_source_dir"
@@ -865,11 +889,26 @@ write_manifest() {
   done
 
   # Merge with existing manifest so entries from prior installs are preserved — except an
-  # agent's old name once its replacement is installed, or --update would chase a name the
-  # registry no longer has.
+  # agent's old name once its replacement is installed on every platform. While another
+  # platform still has the old shim, the old entry is what lets --update repair it.
   local existing_agents="{}" existing_skills="{}" replaced_json="[]"
-  if [[ ${#MANIFEST_REPLACED_AGENTS[@]} -gt 0 ]]; then
-    replaced_json=$(printf '%s\n' "${MANIFEST_REPLACED_AGENTS[@]}" | jq -R . | jq -s .)
+  local droppable=() seen="|" pair old new left
+  for pair in "${MANIFEST_REPLACED_AGENTS[@]+"${MANIFEST_REPLACED_AGENTS[@]}"}"; do
+    read -r old new <<< "$pair"
+    [[ "$seen" != *"|$old|"* ]] || continue
+    seen+="$old|"
+    left=$(replaced_shims_left "$old" "$new")
+    if [[ -z "$left" ]]; then
+      droppable+=("$old")
+      continue
+    fi
+    echo "WARNING: $old was renamed to $new, but these still have only the old definition:"
+    printf '%s\n' "$left" | sed 's/^/    /'
+    echo "  crew-afk dispatches $new, so those platforms can't run it yet. Run ./install.sh --update"
+    echo "  (or ./install.sh <platform> ... for each of them) to install $new there."
+  done
+  if [[ ${#droppable[@]} -gt 0 ]]; then
+    replaced_json=$(printf '%s\n' "${droppable[@]}" | jq -R . | jq -s .)
   fi
   if [[ -f "$manifest" ]]; then
     existing_agents=$(jq --argjson r "$replaced_json" '(.agents // {}) | with_entries(select(.key as $k | $r | index($k) | not))' "$manifest")
@@ -946,7 +985,21 @@ run_update() {
     installed_version=$(jq -r --arg n "$name" '.agents[$n].version // "unknown"' "$manifest")
     current_version=$(jq -r --arg n "$name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
     if [[ -z "$current_version" ]]; then
-      echo "  $name: removed from registry — skipping"
+      local replacement entry_platform
+      replacement=$(replacement_for "$name")
+      if [[ -z "$replacement" ]]; then
+        echo "  $name: removed from registry — skipping"
+        continue
+      fi
+      # The old entry's own platform: a later one-platform install may have narrowed the
+      # manifest's, and the platforms it left out are the ones still on the old name.
+      entry_platform=$(jq -r --arg n "$name" '.agents[$n].platform // empty' "$manifest")
+      [[ -n "$entry_platform" && "$entry_platform" != "null" ]] || entry_platform="$saved_platform"
+      echo "  $name: renamed to $replacement — installing $replacement ($entry_platform)"
+      PLATFORM="$entry_platform"
+      install_agent "$replacement" "$entry_platform"
+      PLATFORM="$saved_platform"
+      updated=$((updated + 1))
       continue
     fi
     if [[ "$installed_version" != "$current_version" ]]; then
@@ -1035,6 +1088,15 @@ elif [[ "$AGENT" == "all" ]]; then
     install_single_skill "$skill_name"
   done
 else
+  _replacement=$(replacement_for "$AGENT")
+  if [[ -n "$_replacement" ]]; then
+    echo "Note: $AGENT was renamed to $_replacement — installing $_replacement"
+    AGENT="$_replacement"
+  fi
+  if ! jq -e --arg n "$AGENT" '.agents | has($n)' "$SCRIPT_DIR/registry.json" >/dev/null; then
+    echo "Error: unknown agent '$AGENT' (expected one of: $(jq -r '.agents | keys | join(", ")' "$SCRIPT_DIR/registry.json"))" >&2
+    exit 1
+  fi
   echo "Agent: $AGENT"
   echo "---"
   install_agent "$AGENT" "$PLATFORM"

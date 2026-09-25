@@ -75,11 +75,11 @@ teardown() {
   echo "Status: ready-for-agent" > .scratch/feat/issues/open/01-a.md
 
   bash "$scripts/session-init.sh" --feature-slug feat >/dev/null
-  grep -q 'export CREW_PRD_AUDIT="off"' .scratch/feat/sprint.env
+  grep -q 'export CREW_PRD_AUDIT="fix"' .scratch/feat/sprint.env
   grep -q 'export CREW_FIX_FINDINGS="high"' .scratch/feat/sprint.env
 
-  bash "$scripts/session-init.sh" --feature-slug feat --prd-audit fix --fix-findings medium >/dev/null
-  grep -q 'export CREW_PRD_AUDIT="fix"' .scratch/feat/sprint.env
+  bash "$scripts/session-init.sh" --feature-slug feat --prd-audit off --fix-findings medium >/dev/null
+  grep -q 'export CREW_PRD_AUDIT="off"' .scratch/feat/sprint.env
   grep -q 'export CREW_FIX_FINDINGS="medium"' .scratch/feat/sprint.env
 
   bash "$scripts/session-init.sh" --feature-slug feat --coverage --promote critical-high >/dev/null
@@ -128,6 +128,58 @@ teardown() {
   [[ "$output" != *"skipped"* ]]
   # Must output the PRD path so the orchestrator knows what to read
   [[ "$output" == *"PRD.md"* ]]
+}
+
+# --- tracker: github ---
+# to-prd publishes the PRD as the milestone's "PRD:" issue, with no local PRD.md.
+
+github_fixture() {
+  git checkout -q -b "feature/test-feature"
+  mkdir -p .coding-crew/docs .stub
+  printf -- '---\ntracker: github\n---\n' > .coding-crew/docs/issue-tracker.md
+  export CREW_TRACKER_CONFIG="$SCRIPT_DIR/scripts/tracker/tracker-config.sh"
+  export CREW_GITHUB_TRACKER_CLI="$SCRIPT_DIR/orchestrator/lib/trackers/github.mjs"
+  # `gh issue list` answers with $TEMP_DIR/issues.json, whatever the flags.
+  printf '#!/usr/bin/env bash\ncat "%s/issues.json"\n' "$TEMP_DIR" > .stub/gh
+  chmod +x .stub/gh
+  export PATH="$TEMP_DIR/.stub:$PATH"
+}
+
+@test "prd-audit.sh under github audits the milestone's PRD issue" {
+  github_fixture
+  echo '[{"number":9,"title":"PRD: Demo","body":"- Export to CSV","labels":[],"state":"OPEN"},
+         {"number":1,"title":"alpha","body":"","labels":[],"state":"CLOSED"}]' > issues.json
+
+  run bash "$AUDIT_SCRIPT" --mode fix
+
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == "PRD audit: PRD found at .scratch/test-feature/prd-issue.md (mode: fix)" ]]
+  grep -q "Export to CSV" .scratch/test-feature/prd-issue.md
+  [[ "$output" == *"closed issues in GitHub milestone 'test-feature'"* ]]
+  [[ "$output" != *"issues/done/"* ]]
+}
+
+@test "prd-audit.sh under github skips, saying why, when the milestone has no PRD issue" {
+  github_fixture
+  echo '[{"number":1,"title":"alpha","body":"","labels":[],"state":"OPEN"}]' > issues.json
+
+  run bash "$AUDIT_SCRIPT" --mode fix
+
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == "PRD audit: skipped (no \"PRD:\" issue in milestone 'test-feature')" ]]
+  [ ! -f .scratch/test-feature/prd-issue.md ]
+}
+
+@test "prd-audit.sh under github still reads a local PRD.md first" {
+  github_fixture
+  echo '[]' > issues.json
+  mkdir -p .scratch/test-feature
+  echo "# PRD" > .scratch/test-feature/PRD.md
+
+  run bash "$AUDIT_SCRIPT" --mode report
+
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == "PRD audit: PRD found at .scratch/test-feature/PRD.md (mode: report)" ]]
 }
 
 # --- No Dead Stub Tests ---

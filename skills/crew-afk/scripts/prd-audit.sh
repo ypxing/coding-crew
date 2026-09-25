@@ -15,7 +15,9 @@ set -euo pipefail
 #
 # Responsibilities:
 #   1. Skip when the mode is off
-#   2. Locate the feature's PRD.md; if absent, print a skip message and exit 0
+#   2. Locate the feature's PRD — .scratch/<slug>/PRD.md, or failing that under tracker:
+#      github the milestone's "PRD:" issue, fetched to .scratch/<slug>/prd-issue.md; if
+#      neither, print a skip message and exit 0
 #   3. If present: print the PRD path *and the audit prompt*, so the prompt is only ever in a
 #      context window when it is about to be used
 #
@@ -52,11 +54,55 @@ if [ -z "${FEATURE_SLUG:-}" ]; then
   FEATURE_SLUG=$(echo "$CURRENT_BRANCH" | sed 's|.*/||' | sed -E 's/^[A-Z]+-[0-9]+-//' | sed 's|-[0-9][0-9]-.*||')
 fi
 
-PRD_PATH=".scratch/$FEATURE_SLUG/PRD.md"
+# Which backend holds the PRD and the finished issues — the lookup chain promote-findings.sh
+# uses. Missing reader means local.
+TRACKER_CONFIG_TRACKER="local"
+TRACKER_CONFIG_REPO=""
+_tracker_config_sh="${CREW_TRACKER_CONFIG:-}"
+[ -f "$_tracker_config_sh" ] || _tracker_config_sh="$MAIN_ROOT/.coding-crew/scripts/tracker-config.sh"
+[ -f "$_tracker_config_sh" ] || _tracker_config_sh="$HOME/.coding-crew/scripts/tracker-config.sh"
+if [ -f "$_tracker_config_sh" ]; then
+  # shellcheck disable=SC1090
+  source "$_tracker_config_sh"
+  read_tracker_config "$MAIN_ROOT"
+fi
 
-if [ ! -f "$PRD_PATH" ]; then
-  echo "PRD audit: skipped (no PRD.md found for feature '$FEATURE_SLUG')"
-  exit 0
+if [ "$TRACKER_CONFIG_TRACKER" = "github" ] && [ ! -f ".scratch/$FEATURE_SLUG/PRD.md" ]; then
+  # to-prd publishes the PRD as the milestone's "PRD: <title>" issue, with no local file, so
+  # its body is fetched into the sprint dir for the auditor to read. A local PRD.md, when
+  # there is one, is still read first.
+  node_cli="${CREW_GITHUB_TRACKER_CLI:-}"
+  [ -f "$node_cli" ] || node_cli="$MAIN_ROOT/.coding-crew/crew-afk/lib/trackers/github.mjs"
+  [ -f "$node_cli" ] || node_cli="$HOME/.coding-crew/crew-afk/lib/trackers/github.mjs"
+  if [ ! -f "$node_cli" ]; then
+    echo "PRD audit: skipped (github tracker CLI github.mjs not found — cannot fetch the PRD issue)"
+    exit 0
+  fi
+  PRD_PATH=".scratch/$FEATURE_SLUG/prd-issue.md"
+  mkdir -p "$MAIN_ROOT/.scratch/$FEATURE_SLUG"
+  set +e
+  prd_err=$(node "$node_cli" prd --feature-slug "$FEATURE_SLUG" --main-root "$MAIN_ROOT" 2>&1 >"$MAIN_ROOT/$PRD_PATH")
+  prd_rc=$?
+  set -e
+  if [ "$prd_rc" -eq 3 ]; then
+    rm -f "$MAIN_ROOT/$PRD_PATH"
+    echo "PRD audit: skipped (no \"PRD:\" issue in milestone '$FEATURE_SLUG')"
+    exit 0
+  elif [ "$prd_rc" -ne 0 ]; then
+    rm -f "$MAIN_ROOT/$PRD_PATH"
+    echo "PRD audit: skipped (could not fetch the PRD issue: ${prd_err:+$(printf "%s" "$prd_err" | tr "\n" " ")}exit $prd_rc)"
+    exit 0
+  fi
+  DONE_ISSUES="the closed issues in GitHub milestone '$FEATURE_SLUG' (gh issue list --milestone '$FEATURE_SLUG' --state closed)"
+else
+  PRD_PATH=".scratch/$FEATURE_SLUG/PRD.md"
+  if [ ! -f "$PRD_PATH" ]; then
+    echo "PRD audit: skipped (no PRD.md found for feature '$FEATURE_SLUG')"
+    exit 0
+  fi
+  DONE_ISSUES=".scratch/$FEATURE_SLUG/issues/done/"
+  [ "$TRACKER_CONFIG_TRACKER" = "github" ] &&
+    DONE_ISSUES="the closed issues in GitHub milestone '$FEATURE_SLUG' (gh issue list --milestone '$FEATURE_SLUG' --state closed)"
 fi
 
 echo "PRD audit: PRD found at $PRD_PATH (mode: $MODE)"
@@ -73,7 +119,7 @@ Categories to extract:
 - Interface contracts
 - Multi-issue flows
 
-Every issue in .scratch/$FEATURE_SLUG/issues/done/ already passed a review of its own
+Every issue in $DONE_ISSUES already passed a review of its own
 acceptance criteria against its diff before it merged. Treat those criteria as met; do not
 re-grade them. Your job is what that per-issue review cannot see:
 1. A requirement no issue's acceptance criteria carry at all.

@@ -64,8 +64,13 @@ function sh(cmd, args, opts = {}) {
   return { code: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+// Every fixture repo, removed after the file: ~130 per run otherwise fill /tmp's inodes.
+const FIXTURE_ROOTS = [];
+after(() => FIXTURE_ROOTS.forEach((d) => rmSync(d, { recursive: true, force: true })));
+
 function fixtureRepo() {
   const root = mkdtempSync(join(tmpdir(), "crew-sprint-"));
+  FIXTURE_ROOTS.push(root);
   const git = (...args) => sh("git", ["-C", root, ...args]);
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@test");
@@ -993,6 +998,21 @@ test("a legacy afk-models.json is moved into config.json by `run`, and still ign
   );
 });
 
+test("a `run` that fails setup leaves a legacy afk-models.json where it is", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/afk-models.json"), JSON.stringify({ coder: "opus" }));
+  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--max-parallel"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, MAIN_ROOT: root },
+  });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /moved \.coding-crew\/afk-models\.json/);
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
+  assert.equal(existsSync(join(root, ".coding-crew/config.json")), false);
+});
+
 test("`plan` does not move a legacy afk-models.json, only says it would", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -1166,6 +1186,16 @@ test("PRDAudit report: the audit runs, and its gaps are left for a human", () =>
   assert.equal(old.code, 0, `${old.stdout}\n${old.stderr}`);
   assert.deepEqual(state(root2).completed_slugs, ["alpha"]);
   assert.match(readFileSync(join(root2, ".scratch/demo/sprint.env"), "utf8"), /CREW_PRD_AUDIT="report"/);
+});
+
+test("a PRD audit that fails is named in the summary, not only the trace", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
+  fake(root, "prd-audit.md.exit", "1");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /## PRD Audit\n\n\*\*Failed:\*\* the audit did not complete \(exit 1\)/);
 });
 
 test("PRDAudit fix queues nothing while a Phase 1 issue is still open", () => {
@@ -1375,6 +1405,7 @@ test("a review that never ran is named in the summary, not just counted in the s
 
 function githubFixtureRepo() {
   const root = mkdtempSync(join(tmpdir(), "crew-sprint-gh-"));
+  FIXTURE_ROOTS.push(root);
   const git = (...args) => sh("git", ["-C", root, ...args]);
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@test");
@@ -1473,6 +1504,14 @@ const GH_ALPHA = {
   state: "OPEN",
 };
 
+const GH_PRD = {
+  number: 9,
+  title: "PRD: Demo",
+  body: "# PRD\n\n- Export to CSV\n",
+  labels: [],
+  state: "OPEN",
+};
+
 test("plan resolves the github backend and lists a milestone issue instead of silently finding nothing", () => {
   const root = githubFixtureRepo();
   const { stub, log } = stubGh(root, [GH_ALPHA]);
@@ -1511,10 +1550,9 @@ test("a github-configured sprint dispatches, closes via gh, and stops finding wo
 test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implemented in Phase 2", () => {
   // github has no parked state, so flush promotes nothing: the loop must go round on the
   // audit's own word, or the sprint ends stalled with the gaps issue open.
+  // As to-prd publishes it: the milestone's open "PRD:" issue, and no local PRD.md.
   const root = githubFixtureRepo();
-  const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
-  mkdirSync(join(root, ".scratch/demo"), { recursive: true });
-  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
+  const { stub, issuesFile } = stubGh(root, [GH_PRD, GH_ALPHA]);
   writeFileSync(join(root, ".scratch/fake/prd-audit.response"), AUDIT_WITH_GAP);
   const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
     cwd: root,
@@ -1533,6 +1571,8 @@ test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implement
   assert.ok(gaps, `defer-gaps never created the issue\n${traceLog(root)}`);
   assert.equal(gaps.state, "CLOSED", "the gaps issue was never implemented");
   assert.equal(traceLog(root).split("step=prd-audit").length - 1, 1, "one audit per sprint");
+  assert.match(readFileSync(join(root, ".scratch/demo/prd-issue.md"), "utf8"), /Export to CSV/);
+  assert.doesNotMatch(r.stdout, /Gaps not queued/);
 });
 
 test("a gaps issue that could not be created is named in the summary, not only the trace", () => {
