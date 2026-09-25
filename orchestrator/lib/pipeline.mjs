@@ -251,13 +251,37 @@ export async function runWorker(ctx, issue, attempt) {
   // Deps sit after the include (an inherited node_modules costs nothing) and before both
   // consumers: the worker, and verify-worktree.sh, a gate that cannot invoke dep-install.
   // The skipped-worker path needs them too — its worktree is recreated bare. A failed
-  // install is only logged, not a demotion: the verify gate fails closed on it anyway.
+  // install stops the issue here: nothing after it — the coder, the verify gate — can do
+  // useful work in an unprovisioned worktree, so letting them run only rediscovers it later.
   if (options.deps !== false) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=deps`);
     const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug], {
       env: sprint.childEnv(),
     });
-    ctx.log(`slug=${issue.slug} round=${attempt} ${depsLine(deps.stdout)}`);
+    const line = depsLine(deps.stdout);
+    ctx.log(`slug=${issue.slug} round=${attempt} ${line}`);
+    if (/^DEPS: failed\b/.test(line)) {
+      ctx.log(`[DEPS-FAILED] slug=${issue.slug} branch=${branch} — ${line}`);
+      return {
+        issue,
+        branch,
+        attempt,
+        worktree,
+        dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
+        report: {
+          parsedFrom: "deps-failed",
+          status: "blocked",
+          checks: { test: "not_run", lint: "not_run", typecheck: "not_run" },
+          extraChecks: [],
+          branch,
+          workingDirectory: worktree,
+          progress: null,
+          notes: `dependency install failed — ${line.replace(/^DEPS:\s*/, "")}`,
+          criteria: [],
+          raw: "",
+        },
+      };
+    }
   }
 
   if (resume.route === "verify") {
@@ -414,7 +438,11 @@ export async function runHousekeeping(ctx, worker) {
 
   // --- gate 1: independent verification in the worktree ----------------------
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
-  const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree], {
+  // The coder names the extra categories its criteria need; the gate re-runs them itself.
+  const extras = worker.report.extraChecks ?? [];
+  const verifyArgs = ["--dir", worker.worktree];
+  if (extras.length) verifyArgs.push("--extra", extras.join(","));
+  const verify = effects.bash("verify-worktree.sh", verifyArgs, {
     env: sprint.childEnv(),
   });
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${verify.stdout.trim()}`);
@@ -434,7 +462,7 @@ export async function runHousekeeping(ctx, worker) {
   // --- gate 2: independent review (findings + acceptance-criteria verdict) ---
   // The worktree stays alive across review (which needs none of it): an `AC: unmet`
   // verdict sends the coder back to fix this branch.
-  const review = await runReview(ctx, worker, parseVerifyChecks(verify.stdout));
+  const review = await runReview(ctx, worker, parseVerifyChecks(verify.stdout, extras));
   outcome.reviewReport = review.reportFile;
   if (!review.completed) {
     effects.bash("promote-findings.sh", [

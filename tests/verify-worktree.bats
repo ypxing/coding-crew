@@ -479,3 +479,76 @@ EOF2
 
   [[ "$output" == *"no-sourcehash-still-usable"* ]]
 }
+
+# ─── --extra: requested checks beyond the base three ─────────────────────────
+#
+# A worker names further dev-commands.json categories its issue's criteria call for; the gate
+# runs them itself, by name, through the cache — never a command the worker supplied.
+
+_extra_cache() {
+  mkdir -p "$TEMP_DIR/.coding-crew"
+  cat > "$TEMP_DIR/.coding-crew/dev-commands.json" <<EOF2
+{"test": "true", "lint": null, "typecheck": null, $1}
+EOF2
+}
+
+@test "verify-worktree: --extra runs a requested cache category and reports it like the base three" {
+  _extra_cache '"coverage": "echo Branches: 82.35%", "integration": "echo integ-ran"'
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR" --extra coverage,integration
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"COVERAGE: pass"* ]]
+  [[ "$output" == *"INTEGRATION: pass"* ]]
+  [[ "$output" == *"integ-ran"* ]]
+}
+
+@test "verify-worktree: an extra check's full output is always persisted and its path printed" {
+  _extra_cache '"coverage": "echo Branches: 82.35%"'
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR" --extra coverage
+
+  [[ "$output" == *"COVERAGE: log: $TEMP_DIR/.scratch/verify-coverage.log"* ]]
+  grep -q "82.35%" "$TEMP_DIR/.scratch/verify-coverage.log"
+}
+
+@test "verify-worktree: a failing extra check fails the gate" {
+  _extra_cache '"integration": "exit 3"'
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR" --extra integration
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"INTEGRATION: fail"* ]]
+}
+
+@test "verify-worktree: a requested extra with no cached command is fatal, not a silent gap" {
+  _extra_cache '"coverage": null'
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR" --extra coverage,e2e
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"COVERAGE: not_run"* ]]
+  [[ "$output" == *"E2E: not_run"* ]]
+}
+
+@test "verify-worktree: --extra never runs a non-check key or a raw command" {
+  _extra_cache '"install": "touch installed-marker"'
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR" --extra 'install,$(touch pwned)'
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"EXTRA: ignored 'install'"* ]]
+  [[ "$output" == *"EXTRA: ignored '\$(touchpwned)'"* ]]
+  [ ! -e "$TEMP_DIR/installed-marker" ]
+  [ ! -e "$TEMP_DIR/pwned" ]
+}
+
+@test "verify-worktree: without --extra only the base three run" {
+  _extra_cache '"coverage": "echo coverage-ran"'
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"coverage-ran"* ]]
+  [[ "$output" != *"COVERAGE"* ]]
+}

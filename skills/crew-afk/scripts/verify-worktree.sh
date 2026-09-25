@@ -3,7 +3,15 @@ set -uo pipefail
 
 # verify-worktree.sh — run project checks in a worktree directory
 #
-# Usage: verify-worktree.sh --dir <worktree-path>
+# Usage: verify-worktree.sh --dir <worktree-path> [--extra <category>[,<category>...]]
+#
+# --extra names further dev-commands.json categories (e.g. coverage,integration) to run after
+# the three base checks — the ones a worker says this issue's acceptance criteria call for.
+# Names only, never commands: each resolves through the same cache lookup as the base three,
+# so the cache stays the allow-list of what this gate will execute. A requested category is
+# required — no cached command for it is fatal, not a silent not_run — and its full output is
+# always persisted, with its path printed as `<LABEL>: log: <path>`, so a reviewer can read a
+# figure (a coverage percentage) that pass/fail alone cannot carry.
 #
 # Discovers check commands using this reference chain:
 #   0. .coding-crew/dev-commands.json at MAIN_ROOT (see discover-commands.sh / write-commands-cache.sh)
@@ -28,6 +36,7 @@ set -uo pipefail
 # Exit code: 0 if all discovered checks pass, non-zero otherwise.
 
 WORKTREE_DIR=""
+EXTRA_CHECKS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -40,6 +49,14 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       WORKTREE_DIR="$2"
+      shift 2
+      ;;
+    --extra)
+      if [ $# -lt 2 ]; then
+        echo "ERROR: --extra requires a value" >&2
+        exit 1
+      fi
+      EXTRA_CHECKS="$2"
       shift 2
       ;;
     *)
@@ -572,6 +589,12 @@ _exec_and_report() {
   "$@" >"$out_file" 2>&1
   local rc=$?
   _run_capped "$label" "$out_file" "$rc"
+  if [ "${_VW_PERSIST_LOG:-0}" -eq 1 ]; then
+    local log
+    log="$(_verify_log_path "$label")"
+    mkdir -p "$(dirname "$log")" 2>/dev/null || true
+    cp "$out_file" "$log" 2>/dev/null && echo "$label: log: $log"
+  fi
   rm -f "$out_file"
   if [ "$rc" -eq 0 ]; then
     echo "$label: pass"
@@ -641,6 +664,38 @@ echo ""
 _run_category "LINT" "$(_discover_lint_command "$WORKTREE_DIR")" no
 echo ""
 _run_category "TEST" "$(_discover_test_command "$WORKTREE_DIR")" yes
+
+# ─── requested extra checks ──────────────────────────────────────────────────
+# Keys of dev-commands.json that are not checks — never runnable through --extra.
+_VW_NOT_CHECKS=" test lint typecheck install env credential_target docker_service "
+_VW_SEEN=" "
+_VW_EXTRAS=()
+# Guarded: bash 3.2 (macOS) reads an empty array's "${a[@]}" as unbound under `set -u`.
+[ -n "$EXTRA_CHECKS" ] && IFS=',' read -r -a _VW_EXTRAS <<< "$EXTRA_CHECKS"
+[ "${#_VW_EXTRAS[@]}" -gt 0 ] && for _vw_extra in "${_VW_EXTRAS[@]}"; do
+  _vw_extra="$(printf '%s' "$_vw_extra" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+  [ -n "$_vw_extra" ] || continue
+  case "$_VW_SEEN" in *" $_vw_extra "*) continue ;; esac
+  _VW_SEEN="$_VW_SEEN$_vw_extra "
+  echo ""
+  # Ignored rather than fatal: nothing ran for it, so a criterion that depended on it still
+  # has no stated evidence and the review reads it unmet — the gate fails safe either way.
+  if ! printf '%s' "$_vw_extra" | grep -qE '^[a-z][a-z0-9_]*$' || [[ "$_VW_NOT_CHECKS" == *" $_vw_extra "* ]]; then
+    echo "EXTRA: ignored '$_vw_extra' — not a check category"
+    continue
+  fi
+  _vw_label="$(printf '%s' "$_vw_extra" | tr '[:lower:]' '[:upper:]')"
+  _vw_cmd=""
+  _vw_cmd="$(_load_cached_command "$_vw_extra")" || _vw_cmd=""
+  if [ -z "$_vw_cmd" ]; then
+    echo "$_vw_label: not_run — no command for '$_vw_extra' in .coding-crew/dev-commands.json"
+    echo "$_vw_label: not_run is fatal — this check was requested"
+    NOT_RUN+=("$_vw_label")
+    OVERALL_EXIT=1
+    continue
+  fi
+  _VW_PERSIST_LOG=1 _run_category "$_vw_label" "$_vw_cmd" yes
+done
 
 echo ""
 # Report bounded coverage explicitly — a category that never ran must not read as

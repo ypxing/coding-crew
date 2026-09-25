@@ -251,6 +251,31 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.match(reviewPromptText, /test=pass/);
 });
 
+test("a worker's extra_checks are re-run by the gate and stated to the reviewer with their log", () => {
+  const root = fixtureRepo();
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/dev-commands.json"),
+    JSON.stringify({ test: "make test", lint: "make lint", typecheck: "make typecheck", coverage: "echo Branches: 82.35%", integration: "echo integ-ran" }),
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "cache"]);
+  // The fake discovery's default answer nulls coverage/integration; answer as the cache does.
+  fake(root, "commands.response", '{"install": null, "env": null, "credential_target": null}');
+  addIssue(root, "01-alpha.md");
+  fake(
+    root,
+    "alpha.worker",
+    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"pass","lint":"pass","typecheck":"pass","coverage":"pass"},"extra_checks":["coverage"],"progress":""}', '```'].join("\n"),
+  );
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.review-prompt.md"), "utf8");
+  assert.match(reviewPromptText, /coverage=pass \(full output: [^)]*verify-coverage\.log\)/);
+  // Only what the worker asked for: integration is in the cache but was never requested.
+  assert.doesNotMatch(reviewPromptText, /integration=/);
+});
+
 test("a worker-reported failing check is demoted and never merges", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -1238,7 +1263,7 @@ test("a github-configured sprint dispatches, closes via gh, and stops finding wo
 // verify-worktree.sh — a gate, which cannot invoke a skill and has no recovery path when
 // `npm test` dies on a missing module. So provisioning is mechanism, at two call sites,
 // and what these tests pin is the *position* of those two calls in the recorded command
-// order. A DEPS: outcome never changes a round's status.
+// order. Only a per-issue `DEPS: failed` changes a round's status: it stops that issue.
 
 /** The effects log — one line per subprocess, in order. CREW_VERBOSE puts it on stderr. */
 function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi" } = {}) {
@@ -1301,6 +1326,25 @@ test("the sprint-level call precedes every worker, and the worktree call precede
   );
 });
 
+test("a failed per-issue install stops the issue before the coder or verify runs", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const scripts = privateScripts();
+  // Sprint-level warm-up (no --slug) succeeds; the issue's own worktree install fails.
+  const real = join(scripts, "_real-ensure-deps.sh");
+  cpSync(join(scripts, "ensure-deps.sh"), real);
+  writeFileSync(
+    join(scripts, "ensure-deps.sh"),
+    ["#!/usr/bin/env bash", 'case " $* " in *" --slug "*) echo "DEPS: failed npm ci (exit 1)"; exit 0 ;; esac', `exec bash ${JSON.stringify(real)} "$@"`, ""].join("\n"),
+  );
+
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 0, "the coder ran on an unprovisioned worktree");
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0, "verify ran on an unprovisioned worktree");
+  assert.match(`${r.stdout}\n${r.stderr}`, /dependency install failed — failed npm ci \(exit 1\)/);
+  assert.deepEqual(state(root).completed_slugs ?? [], []);
+});
+
 test("command discovery precedes the sprint-level deps call, so a discovered install override is on disk before ensure-deps.sh's first read", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -1328,14 +1372,14 @@ test("a discovered install override is used by the sprint-level deps call, not h
   fake(
     root,
     "commands.response",
-    '{"test": "make test", "lint": "make lint", "typecheck": "make typecheck", "install": "touch .scratch/install-ran.marker"}',
+    '{"test": "make test", "lint": "make lint", "typecheck": "make typecheck", "install": "mkdir -p .scratch && touch .scratch/install-ran.marker"}',
   );
 
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
 
   const cache = JSON.parse(readFileSync(join(root, ".coding-crew/dev-commands.json"), "utf8"));
-  assert.equal(cache.install, "touch .scratch/install-ran.marker");
+  assert.equal(cache.install, "mkdir -p .scratch && touch .scratch/install-ran.marker");
   assert.equal(existsSync(join(root, ".scratch/install-ran.marker")), true, "the discovered install command never ran against MAIN_ROOT");
   assert.match(traceLog(root), /\[DEPS\].*installed.*touch \.scratch\/install-ran\.marker/);
 });
@@ -1404,7 +1448,7 @@ test("--no-deps removes both invocations and nothing else", () => {
   assert.deepEqual(names(without.lines), names(withDeps.lines));
 });
 
-test("a DEPS: failed outcome does not demote the issue or change the round summary", () => {
+test("a DEPS: failed outcome blocks the issue at that step, without crashing the sprint", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   // A manifest with no dep dir, plus a dep-install stub whose host install always fails.
@@ -1428,12 +1472,14 @@ test("a DEPS: failed outcome does not demote the issue or change the round summa
       CREW_DEP_INSTALL_SCRIPTS: stub,
     },
   });
-  assert.equal(r.code, 0, `a failed install must not stall the sprint:\n${r.stdout}\n${r.stderr}`);
+  // Stalled (exit 2), not crashed: the issue is blocked with the install's own reason.
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
   assert.match(traceLog(root), /\[DEPS\].*failed/);
   const s = state(root);
-  assert.deepEqual(s.completed_slugs, ["alpha"]);
-  assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
-  assert.equal(s.retention?.alpha, undefined, "a DEPS: failure demoted the issue by itself");
+  assert.deepEqual(s.completed_slugs ?? [], []);
+  assert.deepEqual(s.merged_branches ?? [], []);
+  assert.match(r.stdout, /Blocked \(1\): alpha/);
+  assert.match(readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8"), /dependency install failed/);
 });
 
 test("the orchestrator prints one line per deps call — the DEPS: line itself, slug/round-tagged", () => {

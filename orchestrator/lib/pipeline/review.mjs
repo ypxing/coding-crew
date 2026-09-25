@@ -10,7 +10,7 @@ import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { findingsAtOrAbove, parseReviewReport } from "../report.mjs";
 import { dispatchStem, issueDescriptor, issueRef, readSidecar } from "./shared.mjs";
 
-export async function runReview(ctx, worker, checks) {
+export async function runReview(ctx, worker, { checks, logs } = {}) {
   const { sprint, effects, platform, options } = ctx;
   const { issue, branch } = worker;
   const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review-prompt.md`);
@@ -30,6 +30,7 @@ export async function runReview(ctx, worker, checks) {
       criteria: issue.criteria,
       featureBranch: sprint.featureBranch,
       checks,
+      logs,
       reportPath: sidecarFile,
     }),
   );

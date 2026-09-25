@@ -234,9 +234,10 @@ CACHE="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"
 if [ -f "$CACHE" ] && grep -q '"test"' "$CACHE"; then echo USE_CACHE; else echo DISCOVER; fi
 ```
 
-`USE_CACHE` → read `test`/`lint`/`typecheck` straight from `$CACHE`. An empty/`null` value is
-that discovery's own answer of "no local command" — report `NOT RUN: no command found`, do not
-re-check CLAUDE.md/Makefile instead. Skip straight to running the three, in order.
+`USE_CACHE` → run `test`/`lint`/`typecheck` from `$CACHE`, in order, plus any other key only a
+criterion needs (coverage, integration) — report those keys. An empty/`null` value is that
+discovery's own answer of "no local command" — report `NOT RUN: no command found`, do not
+re-check CLAUDE.md/Makefile instead.
 
 `DISCOVER` → STOP. Read `references/verification.md` now and discover every check as it
 describes. Run every check listed. Do not skip any. Then, pass or fail, persist what you found

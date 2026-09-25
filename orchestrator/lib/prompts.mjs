@@ -71,7 +71,8 @@ function resultBlock(worktree, reportPath) {
         status: "complete | partial | blocked",
         branch: "<branch you committed to>",
         working_directory: worktree,
-        checks: { test: "pass | fail | not_run", lint: "pass | fail | not_run", typecheck: "pass | fail | not_run" },
+        checks: { test: "pass | fail | not_run", lint: "pass | fail | not_run", typecheck: "pass | fail | not_run", "<each extra_checks entry>": "pass | fail | not_run" },
+        extra_checks: ["<dev-commands.json category an acceptance criterion needs run, e.g. coverage>"],
         criteria: [{ text: "<criterion>", met: true }],
         progress: "<what remains — required for partial>",
         notes: "<anything a human needs>",
@@ -192,10 +193,11 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, reportPath }) {
-  const c = checks ?? {};
-  const stated = ["test", "lint", "typecheck"]
-    .map((k) => `${k}=${c[k] ?? "not_run"}`)
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, reportPath }) {
+  const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
+  const l = logs ?? {};
+  const stated = Object.entries(c)
+    .map(([k, v]) => `${k}=${v}` + (l[k] ? ` (full output: ${l[k]})` : ""))
     .join(", ");
   return [
     "Review this branch before it merges.",
@@ -217,7 +219,9 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "Treat that as the evidence for any criterion whose only outstanding part is that a",
     "check passes — do not report a criterion unmet because you could not execute it",
     "yourself. A check reported `not_run` is not evidence of anything. Everything else is",
-    "still judged from the diff: no file and line, no evidence, `unmet`.",
+    "still judged from the diff: no file and line, no evidence, `unmet`. A criterion about a",
+    "figure a check produces (a coverage percentage) is judged from that check's full output",
+    "file, when one is given — read it; `pass` alone does not prove the figure.",
     "",
     // Same policy as the worker's resultBlock: the file is the only thing read. No fallback
     // fenced block in the final message — see report.mjs's parseReviewReport. The "##

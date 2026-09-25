@@ -34,10 +34,10 @@ set -uo pipefail
 #   the host path.
 #
 # Never exits non-zero
-#   A repo with no dependency step must not stall a sprint, and a failed install must not
-#   either: the consequence is caught by verify-worktree.sh, which already fails closed.
-#   Failing fast here would save one dispatch and cost a whole sprint on any environment
-#   quirk host-install.sh mishandles — the same rule dependency-audit.sh follows.
+#   A repo with no dependency step must not stall a sprint, and what a failed install
+#   means is not this script's decision: it reports `DEPS: failed` and the orchestrator
+#   acts on it — a per-issue failure stops that issue before its coder is dispatched; the
+#   sprint-level warm-up's failure stops nothing, since every issue installs again on its own.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

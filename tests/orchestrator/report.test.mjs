@@ -218,12 +218,48 @@ test("verify-worktree output is read back as the reviewer's check evidence", () 
     "TEST: pass",
     "Verification: success",
   ].join("\n");
-  assert.deepEqual(parseVerifyChecks(stdout), { test: "pass", lint: "not_run", typecheck: "not_run" });
+  assert.deepEqual(parseVerifyChecks(stdout).checks, { test: "pass", lint: "not_run", typecheck: "not_run" });
 });
 
 test("an unseen or failed check is never reported as evidence", () => {
-  assert.deepEqual(parseVerifyChecks(""), { test: "not_run", lint: "not_run", typecheck: "not_run" });
-  assert.equal(parseVerifyChecks("TEST: fail\n").test, "fail");
+  assert.deepEqual(parseVerifyChecks("").checks, { test: "not_run", lint: "not_run", typecheck: "not_run" });
+  assert.equal(parseVerifyChecks("TEST: fail\n").checks.test, "fail");
+});
+
+test("requested extra checks and their logs are read back; unrequested labels are not", () => {
+  const stdout = [
+    "TEST: pass",
+    "WARN: fail — echoed by some command's own output",
+    "COVERAGE: running: make testWithCoverage",
+    "COVERAGE: pass",
+    "COVERAGE: log: /wt/my repo/.scratch/verify-coverage.log",
+    "INTEGRATION: not_run — no command for 'integration'",
+  ].join("\n");
+  const { checks, logs } = parseVerifyChecks(stdout, ["coverage", "integration"]);
+  assert.deepEqual(checks, { test: "pass", lint: "not_run", typecheck: "not_run", coverage: "pass", integration: "not_run" });
+  assert.deepEqual(logs, { coverage: "/wt/my repo/.scratch/verify-coverage.log" });
+  assert.equal(parseVerifyChecks(stdout).checks.warn, undefined);
+});
+
+test("a worker's extra_checks are names only, deduped, without the base three", () => {
+  const r = parseWorkerReport(null, {
+    status: "complete",
+    checks: { test: "pass", lint: "pass", typecheck: "pass" },
+    extra_checks: ["Coverage", "coverage", "test", "make testIntegration", "integration", 3],
+  });
+  assert.deepEqual(r.extraChecks, ["coverage", "integration"]);
+  assert.deepEqual(parseWorkerReport(null, { status: "complete" }).extraChecks, []);
+  assert.deepEqual(parseWorkerReport(null, null).extraChecks, []);
+});
+
+test("the review prompt states every check that ran, with its full-output file", () => {
+  const p = reviewPrompt({
+    branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/s.json",
+    checks: { test: "pass", lint: "pass", typecheck: "pass", coverage: "pass" },
+    logs: { coverage: "/wt/.scratch/verify-coverage.log" },
+  });
+  assert.match(p, /typecheck=pass, coverage=pass \(full output: \/wt\/\.scratch\/verify-coverage\.log\)/);
+  assert.match(p, /`pass` alone does not prove the figure/);
 });
 
 test("the review prompt states the checks and forbids unmet-for-lack-of-execution", () => {
@@ -392,3 +428,22 @@ test("the fix prompt carries the triage verdict forward and forbids redoing fini
   assert.match(p, /Write your structured result to \/repo\/\.scratch\/f\/dispatch\/x\.report\.json as your last action/);
 });
 
+
+test("a coder-admitted extra-check failure stops the issue before any gate runs", () => {
+  const base = { status: "complete", extra_checks: ["coverage"] };
+  const failed = applySchemaPrefilter(
+    parseWorkerReport(null, { ...base, checks: { test: "pass", lint: "pass", typecheck: "pass", coverage: "fail" } }),
+  );
+  assert.equal(failed.status, "partial");
+  assert.match(failed.reason, /reported checks failed: coverage/);
+
+  // Nominated but never reported: the coder said a criterion needs it, so it is required.
+  const unrun = applySchemaPrefilter(parseWorkerReport(null, { ...base, checks: { test: "pass", lint: "pass", typecheck: "pass" } }));
+  assert.equal(unrun.status, "partial");
+  assert.match(unrun.reason, /nominated checks not run: coverage/);
+
+  const passed = applySchemaPrefilter(
+    parseWorkerReport(null, { ...base, checks: { test: "pass", lint: "pass", typecheck: "pass", coverage: "pass" } }),
+  );
+  assert.equal(passed.status, "complete");
+});

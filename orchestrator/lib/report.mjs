@@ -16,6 +16,19 @@
 export const CHECK_CATEGORIES = ["test", "lint", "typecheck"];
 const STATUSES = new Set(["complete", "partial", "blocked"]);
 
+/**
+ * The worker's `extra_checks`: further dev-commands.json categories this issue's criteria call
+ * for, passed to verify-worktree.sh as `--extra`. Names only — anything not shaped like a cache
+ * key is dropped here, and verify-worktree.sh re-checks every name against the cache itself.
+ */
+function normaliseExtraChecks(value) {
+  if (!Array.isArray(value)) return [];
+  const names = value
+    .map((v) => String(v ?? "").trim().toLowerCase())
+    .filter((v) => /^[a-z][a-z0-9_]*$/.test(v) && !CHECK_CATEGORIES.includes(v));
+  return [...new Set(names)];
+}
+
 function normaliseCheck(value) {
   if (value == null) return "not_run";
   const v = String(value).trim().toLowerCase();
@@ -56,14 +69,18 @@ function allFencedJson(text, requiredField) {
 }
 
 function fromStructured(raw, obj) {
+  const extraChecks = normaliseExtraChecks(obj.extra_checks ?? obj.extraChecks);
   const checks = {};
-  for (const c of CHECK_CATEGORIES) checks[c] = normaliseCheck(obj.checks?.[c]);
+  // A nominated extra check's own result rides in `checks` beside the base three, so the
+  // pre-filter can stop on a failure the coder already admitted, before any gate runs.
+  for (const c of [...CHECK_CATEGORIES, ...extraChecks]) checks[c] = normaliseCheck(obj.checks?.[c]);
   return {
     parsedFrom: "json",
     status: STATUSES.has(String(obj.status).toLowerCase())
       ? String(obj.status).toLowerCase()
       : "blocked",
     checks,
+    extraChecks,
     branch: obj.branch ?? null,
     workingDirectory: obj.working_directory ?? obj.workingDirectory ?? null,
     progress: obj.progress ?? null,
@@ -83,6 +100,7 @@ function missingReport(raw, unparseable) {
     parsedFrom: "missing",
     status: "blocked",
     checks: Object.fromEntries(CHECK_CATEGORIES.map((c) => [c, "not_run"])),
+    extraChecks: [],
     branch: null,
     workingDirectory: null,
     progress: null,
@@ -114,10 +132,14 @@ export function parseWorkerReport(text, sidecar = null) {
  * gates cannot disagree: a failing check or an un-run test demotes `complete`,
  * while lint/typecheck `not_run` is a recorded coverage gap, not a demotion —
  * many repos legitimately have neither, and demoting there stalls every sprint.
+ * A nominated extra check is required, as it is in verify-worktree.sh: `not_run`
+ * there demotes too — the coder said a criterion needs it.
  */
 export function applySchemaPrefilter(report) {
-  const failed = CHECK_CATEGORIES.filter((c) => report.checks[c] === "fail");
+  const extras = report.extraChecks ?? [];
+  const failed = Object.keys(report.checks).filter((c) => report.checks[c] === "fail");
   const gaps = ["lint", "typecheck"].filter((c) => report.checks[c] === "not_run");
+  const unrunExtras = extras.filter((c) => report.checks[c] === "not_run");
   let status = report.status;
   let reason = report.unparseable ?? null;
 
@@ -128,6 +150,9 @@ export function applySchemaPrefilter(report) {
     } else if (report.checks.test === "not_run") {
       status = "partial";
       reason = "tests not run — nothing was verified";
+    } else if (unrunExtras.length) {
+      status = "partial";
+      reason = `nominated checks not run: ${unrunExtras.join(", ")}`;
     }
   }
   return { status, demoted: status !== report.status, reason, coverageGaps: gaps };
@@ -141,22 +166,32 @@ export function applySchemaPrefilter(report) {
  * were written that way. The pipeline has already run those checks in the branch's
  * worktree and gated the merge on the result; passing that result on is what makes the
  * criteria check answerable without weakening it. `not_run` is never evidence.
+ *
+ * `extras` are the categories this run passed as `--extra`: only those, plus the base three,
+ * are read back — a check command's own echoed output ("WARN: fail …") must not mint a
+ * category nobody asked the gate to run. `logs` holds each `<LABEL>: log: <path>` the gate
+ * printed, so a reviewer can read a figure (a coverage percentage) pass/fail cannot carry.
  */
-export function parseVerifyChecks(stdout) {
-  const checks = { test: "not_run", lint: "not_run", typecheck: "not_run" };
-  for (const m of (stdout ?? "").matchAll(/^\s*(TEST|LINT|TYPECHECK):\s*(pass|fail|not_run)\b/gim)) {
+export function parseVerifyChecks(stdout, extras = []) {
+  const categories = [...CHECK_CATEGORIES, ...extras.filter((c) => !CHECK_CATEGORIES.includes(c))];
+  const checks = Object.fromEntries(categories.map((c) => [c, "not_run"]));
+  const logs = {};
+  const labels = categories.map((c) => c.toUpperCase()).join("|");
+  for (const m of (stdout ?? "").matchAll(new RegExp(`^\\s*(${labels}):\\s*(pass|fail|not_run)\\b`, "gim"))) {
     checks[m[1].toLowerCase()] = m[2].toLowerCase();
   }
-  return checks;
+  for (const m of (stdout ?? "").matchAll(new RegExp(`^\\s*(${labels}):\\s*log:\\s*(.+?)\\s*$`, "gim"))) {
+    logs[m[1].toLowerCase()] = m[2];
+  }
+  return { checks, logs };
 }
 
 /**
  * ensure-deps.sh's single `DEPS:` line, or "" when there is none (a dry run records the
  * command and produces no output).
  *
- * Read and logged, never branched on: an install failure is diagnosed by the verify gate
- * that follows it, so a DEPS: outcome must not be able to demote an issue or change a
- * round's status. Extracting the line is all the orchestrator does with it.
+ * Extracting the line is all this does; pipeline.mjs stops an issue on a per-issue
+ * `DEPS: failed`, and nothing else in the line changes a round's status.
  */
 export function depsLine(stdout) {
   const m = /^DEPS:.*$/m.exec(stdout ?? "");

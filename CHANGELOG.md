@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.29.131]
+
+### Fixed
+
+- **A criterion that needs a check beyond test/lint/typecheck can now be proven.** A coder
+  names the further `dev-commands.json` checks its issue's criteria called for (`coverage`,
+  `integration`) in a new `extra_checks` report field; `verify-worktree.sh --extra` re-runs
+  exactly those, by name through the cache, and fails the gate if one has no command. The
+  reviewer is told every check that ran, with the full-output file for the extra ones, so a
+  criterion such as "branch coverage improves from 73.33%" is judged from the real figure.
+  Before, these criteria were blocked `criteria-unmet` every round, even when the coder had
+  run the commands and they passed.
+- **A coder's own failed or un-run extra check stops the issue before the verifier.** Each
+  `extra_checks` entry carries its own `checks` result, and the pre-filter demotes `complete`
+  when one is `fail` or `not_run`, just as it already did for test/lint/typecheck.
+- **A failed per-issue dependency install stops that issue.** On `DEPS: failed` the issue is
+  blocked with the install's own reason before its coder is dispatched; it used to carry on
+  and fail again at the verify gate. The sprint-level warm-up install still stops nothing.
+
 ## [1.29.130]
 
 ### Changed
