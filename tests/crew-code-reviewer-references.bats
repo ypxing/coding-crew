@@ -136,9 +136,13 @@ stack_for() {
   # citable line and no guidance, so it either got rubber-stamped or stuck at `unmet` forever),
   # and a lockfile/generated-file exclusion before the diff-size top-10 cut (those files were
   # crowding the review budget out of the files that actually carry logic).
+  #
+  # 1,660 → 1,700: moved, not added. The `ROOT=$(pwd)` / read-only preamble used to sit in each
+  # platform shim, outside this count; it now lives here once, and every shim dropped its copy,
+  # so what the reviewer reads per dispatch went down on every platform.
   local words
   words=$(wc -w < "$PROTOCOL")
-  [ "$words" -lt 1660 ] || { echo "protocol.md is $words words"; return 1; }
+  [ "$words" -lt 1700 ] || { echo "protocol.md is $words words"; return 1; }
 }
 
 @test "no single reference is larger than the protocol that conditions it" {

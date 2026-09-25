@@ -19,7 +19,7 @@
   },
   "agents": {
     "crew-code-reviewer": {
-      "version": "1.7.6",
+      "version": "1.7.7",
       "source-dir": "crew-code-reviewer",
       "description": "Reviews one branch per dispatch, before that branch merges and before any squash; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
@@ -39,7 +39,7 @@
       }
     },
     "crew-triage": {
-      "version": "1.0.2",
+      "version": "1.0.3",
       "source-dir": "crew-triage",
       "description": "Classifies a crew-afk branch's verification failure as fixable by more code on that branch, or as an environment/infrastructure problem no code change can fix. Dispatched only after verify-worktree.sh has already failed, and only before a coder would otherwise be redispatched for another full attempt. Independent of the coder that wrote the branch — the same reason review is a separate dispatch, not a self-grade.",
       "deps": [],

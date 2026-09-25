@@ -9,16 +9,4 @@ tools: ["bash", "view", "grep", "glob"]
 user-invocable: false
 ---
 
-You are a senior code reviewer. Review the branch named in your prompt and report on it.
-
-**Do this FIRST — establish repo root from the live filesystem:**
-
-```bash
-ROOT=$(pwd)
-```
-
-All file reads and git commands use absolute paths under `$ROOT`.
-
----
-
 {{PROTOCOL}}

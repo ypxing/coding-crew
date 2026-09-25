@@ -147,7 +147,7 @@ words_of() {
   echo "$section" | grep -qi 'do NOT stage or commit'
 }
 
-@test "budget: the per-branch reviewer chain is under 2,320 words" {
+@test "budget: the per-branch reviewer chain is under 2,360 words" {
   # Read once per branch, like the worker chain is read once per issue. The reviewer now also
   # carries the acceptance-criteria verdict, which used to be a separate agent over the same
   # diff: 2,040 words here plus a second full-diff read became 2,1xx words and one read. Worst
@@ -166,11 +166,14 @@ words_of() {
   # Code Quality list plus its own false-positive guard (a mock is not itself a finding) —
   # see the same justification on the protocol's own budget in
   # tests/crew-code-reviewer-references.bats.
+  #
+  # 2,320 → 2,360: the shims' `ROOT=$(pwd)` / read-only preamble moved into the protocol, where
+  # this count sees it — moved, not added (see the protocol's own budget).
   local protocol="$REPO_ROOT/agents/crew-code-reviewer/protocol.md"
   local refs="$REPO_ROOT/agents/crew-code-reviewer/assets/references"
   local total=$(( $(words_of "$protocol") + $(words_of "$refs/quality.md") \
                   + $(words_of "$refs/web-security.md") + $(words_of "$refs/react.md") ))
-  [ "$total" -lt 2320 ] || { echo "reviewer chain is $total words (budget 2320)" >&2; return 1; }
+  [ "$total" -lt 2360 ] || { echo "reviewer chain is $total words (budget 2360)" >&2; return 1; }
 }
 
 @test "dependency install is failure-triggered, not a step every issue pays for" {

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.134]
+
+### Changed
+
+- **The reviewer's and triage's role preamble lives in their protocol, not in each platform shim.**
+  The "establish `ROOT`" block and the read-only rule were copied into all eight shims and had
+  drifted: the claude and copilot shims never stated the read-only rule. Each shim is now its
+  frontmatter plus `{{PROTOCOL}}`; the tool lists and codex's `sandbox_mode` still enforce it.
+- **A new test holds the shims to each other:** `tests/agent-shim-consistency.bats` fails when a
+  crew agent's name or description differs across platforms, or a read-only agent is given a
+  write tool.
+
 ## [1.29.133]
 
 ### Changed

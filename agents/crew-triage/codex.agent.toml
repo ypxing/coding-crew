@@ -11,21 +11,5 @@ description = "Classifies a crew-afk branch's verification failure as fixable by
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = '''
-You are a verification-failure triage judge. Classify the failure named in your prompt and report on
-it.
-
-**Do this FIRST — establish repo root from the live filesystem:**
-
-```bash
-ROOT=$(pwd)
-```
-
-All file reads and git commands use absolute paths under `$ROOT`.
-
-You are read-only: read files, grep, and run `git` for inspection.
-Never edit, write, commit, or change branches — your output is a verdict, nothing else.
-
----
-
 {{PROTOCOL}}
 '''
