@@ -197,6 +197,22 @@ test("run refuses to start when HERDR_ENV and ORCA_ENV are both set", () => {
   assert.equal(existsSync(join(root, ".scratch/demo/sprint-state.json")), false);
 });
 
+// A repo can hold installs for several platforms, but only its own has pi's or codex's
+// dispatcher. The first install found used to win whatever --platform said, so a codex
+// sprint in a repo also installed for pi ran .pi/…/dispatch-codex-agent.sh, which isn't there.
+test("the running platform's own install supplies the scripts dir, not whichever is found first", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const dirs = { pi: ".pi/skills", codex: ".agents/skills", claude: ".claude/skills", copilot: ".github/skills" };
+  for (const d of Object.values(dirs)) cpSync(SCRIPTS, join(root, d, "crew-afk/scripts"), { recursive: true });
+  const home = mkdtempSync(join(tmpdir(), "crew-home-"));
+  for (const [platform, d] of Object.entries(dirs)) {
+    const r = sh("node", [MAIN, "plan", "--platform", platform], { cwd: root, env: { ...process.env, HOME: home, CREW_SCRIPTS: "" } });
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, new RegExp(`^scripts: +${join(root, d, "crew-afk/scripts").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"), platform);
+  }
+});
+
 test("plan lists dispatchable issues and changes nothing", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

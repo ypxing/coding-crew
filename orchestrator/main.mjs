@@ -277,28 +277,31 @@ function gitRoot() {
 // Where each platform's installer puts a skill, relative to a scope root. Project scope and
 // user scope differ per platform (pi nests under .pi/agent/, Copilot reads .github/ in a repo
 // but ~/.copilot/ at user level), so both lists are spelled out rather than derived.
-const PROJECT_SKILL_DIRS = [
-  ".pi/skills/crew-afk/scripts",
-  ".claude/skills/crew-afk/scripts",
-  ".agents/skills/crew-afk/scripts",
-  ".github/skills/crew-afk/scripts",
-];
-const USER_SKILL_DIRS = [
-  ".pi/agent/skills/crew-afk/scripts",
-  ".claude/skills/crew-afk/scripts",
-  ".agents/skills/crew-afk/scripts",
-  ".copilot/skills/crew-afk/scripts",
-];
+const PROJECT_SKILL_DIRS = {
+  pi: ".pi/skills/crew-afk/scripts",
+  claude: ".claude/skills/crew-afk/scripts",
+  codex: ".agents/skills/crew-afk/scripts",
+  copilot: ".github/skills/crew-afk/scripts",
+};
+const USER_SKILL_DIRS = {
+  pi: ".pi/agent/skills/crew-afk/scripts",
+  claude: ".claude/skills/crew-afk/scripts",
+  codex: ".agents/skills/crew-afk/scripts",
+  copilot: ".copilot/skills/crew-afk/scripts",
+};
 
-function resolveScriptsDir(mainRoot) {
+/** `platform`'s own dir first: only its install carries its dispatcher (pi's, codex's). */
+const ownFirst = (dirs, platform) => [dirs[platform], ...Object.values(dirs).filter((d) => d !== dirs[platform])].filter(Boolean);
+
+function resolveScriptsDir(mainRoot, platform) {
   // Project install first (a pinned copy wins), then user-level (`TARGET_REPO=$HOME`, the
   // documented default), then this repo's source tree (dev). $HOME before os.homedir():
   // on Windows homedir() reads USERPROFILE and would ignore a $HOME override.
   const home = process.env.HOME || homedir();
   const candidates = [
     process.env.CREW_SCRIPTS,
-    ...PROJECT_SKILL_DIRS.map((d) => join(mainRoot, d)),
-    ...USER_SKILL_DIRS.map((d) => join(home, d)),
+    ...ownFirst(PROJECT_SKILL_DIRS, platform).map((d) => join(mainRoot, d)),
+    ...ownFirst(USER_SKILL_DIRS, platform).map((d) => join(home, d)),
     join(HERE, "../skills/crew-afk/scripts"),
   ].filter(Boolean);
   for (const c of candidates) if (existsSync(join(c, "state.sh"))) return resolve(c);
@@ -354,7 +357,7 @@ async function main() {
   options.coverageValidationModel = resolvedModels.coverageValidation;
   for (const w of resolvedModels.warnings) console.error(`crew-afk: WARNING: ${w}`);
 
-  const scriptsDir = resolveScriptsDir(mainRoot);
+  const scriptsDir = resolveScriptsDir(mainRoot, options.platform);
   const logLines = [];
   const effects = new Effects({
     scriptsDir,

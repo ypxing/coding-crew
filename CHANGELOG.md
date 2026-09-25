@@ -58,6 +58,10 @@
   variables alongside crew-afk's, so one crew-afk had unset came back from the shell's
   profile: a copilot worker started with `GH_TOKEN` unset still saw it and failed to
   authenticate. `env.sh` now also unsets what crew-afk doesn't have.
+- **crew-afk uses the running platform's own install for its scripts.** With installs for
+  several platforms in one repo, the first found won (`.pi/` first) whatever `--platform`
+  said. pi's and codex's dispatchers exist only in their own install, so a codex sprint in
+  a repo also installed for pi failed every dispatch with exit 127.
 - **Setting both `HERDR_ENV` and `ORCA_ENV` now names the variable to unset.**
 
 - **A pi dispatch can no longer hang on its caller's stdin.** `dispatch-agent.sh` passes the
