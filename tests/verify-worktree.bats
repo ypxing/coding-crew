@@ -561,3 +561,24 @@ EOF2
   [ "$status" -ne 0 ]
   [[ "$output" == *"Unknown argument: --extra"* ]]
 }
+
+# ─── tracing ─────────────────────────────────────────────────────────────────
+
+@test "verify-worktree: the trace follows --dir's sprint, not the caller's working directory" {
+  cat > "$TEMP_DIR/CLAUDE.md" <<'EOF'
+## Tests
+
+Run: `bash -c 'exit 0'`
+EOF
+  mkdir -p "$TEMP_DIR/.scratch"
+  printf 'export TRACE_LOG="%s/own.log"\n' "$TEMP_DIR" > "$TEMP_DIR/.scratch/sprint.env"
+  local decoy="$TEMP_DIR/decoy"
+  mkdir -p "$decoy/.scratch"
+  git -C "$decoy" init -q
+  printf 'export TRACE_LOG="%s/decoy.log"\n' "$TEMP_DIR" > "$decoy/.scratch/sprint.env"
+  cd "$decoy"
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/decoy.log" ]
+  grep -q '\[VERIFY\] .*result=pass' "$TEMP_DIR/own.log"
+}

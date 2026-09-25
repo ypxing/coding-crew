@@ -136,6 +136,8 @@ deps_line() {
 @test "this repo - bats only, no manifest - is DEPS: none and exit 0" {
   local repo_root
   repo_root="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
+  # Else a live sprint in this checkout would get the DEPS line in its trace log.
+  export TRACE_LOG="$TEMP_DIR/trace.log"
   run bash "$SCRIPT" --dir "$repo_root"
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: none" ]
@@ -818,6 +820,21 @@ line two"
   [ ! -e "$WORK/.scratch" ]
   run bash -c "find '$TEMP_DIR' -name 'orchestrator.log' | wc -l"
   [ "$(echo "$output" | tr -d ' ')" = "0" ]
+}
+
+@test "the trace follows --dir's sprint, not the caller's working directory" {
+  # Run from inside another repo with a live sprint: its trace log must not get this
+  # script's DEPS line — the marker lookup already resolves the sprint from --dir.
+  printf '{}\n' > "$WORK/package.json"
+  stub_scripts USE_HOST 0 "Running: npm ci"
+  local decoy="$TEMP_DIR/decoy"
+  mkdir -p "$decoy/.scratch"
+  git -C "$decoy" init -q
+  printf 'export TRACE_LOG="%s/decoy.log"\n' "$TEMP_DIR" > "$decoy/.scratch/sprint.env"
+  cd "$decoy"
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/decoy.log" ]
 }
 
 # ─── usage ───────────────────────────────────────────────────────────────────

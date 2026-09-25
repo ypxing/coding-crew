@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.29.135]
+
+### Fixed
+
+- **`ensure-deps.sh` and `verify-worktree.sh` trace to the checked directory's sprint.** Run
+  from another directory, their `DEPS`/`VERIFY` lines went to the trace log of whichever sprint
+  the caller's working directory belonged to, while `ensure-deps.sh`'s markers used `--dir`'s.
+  Both now resolve the log from the directory they checked. The test suite no longer appends
+  to a sprint trace log in this checkout.
+
 ## [1.29.134]
 
 ### Changed
