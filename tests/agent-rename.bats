@@ -72,3 +72,14 @@ _old_shims_left() {
   [ "$status" -eq 0 ]
   [ -z "$(_old_shims_left)" ] || { echo "left behind: $(_old_shims_left)"; return 1; }
 }
+
+@test "a project install warns about a user-level copy under the old name" {
+  local home="$TEMP_DIR/home" repo="$TEMP_DIR/repo"
+  mkdir -p "$home/.claude/agents" "$repo"
+  echo old > "$home/.claude/agents/crew-code-reviewer.md"
+  cd "$SCRIPT_DIR"
+  run env HOME="$home" CLAUDE_CONFIG_DIR= TARGET_REPO="$repo" ./install.sh claude --skill crew-afk
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"may shadow"* ]]
+  [[ "$output" == *"$home/.claude/agents/crew-code-reviewer"* ]]
+}

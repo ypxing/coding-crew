@@ -85,7 +85,7 @@ function parseArgs(argv) {
     featureSlug: null,
     // Flags that override a config.json setting; undefined = not given (resolveSettings).
     cli: { timeouts: {} },
-    flagOf: {}, // setting → the flag that set it, when that was an old name (for error text)
+    flagOf: {}, // setting → the flag that set it, when more than one can (for error text)
     maxRounds: null,
     commands: true,
     dryRun: false,
@@ -93,6 +93,8 @@ function parseArgs(argv) {
     unknown: [],
   };
   const args = [...argv];
+  // A setting flag with no value is "", which fails validation, rather than no flag at all.
+  const value = () => args.shift() ?? "";
   if (args[0] && !args[0].startsWith("-")) o.command = args.shift();
   while (args.length) {
     const a = args.shift();
@@ -100,21 +102,30 @@ function parseArgs(argv) {
       case "--platform": o.platform = args.shift(); break;
       case "--model": o.model = args.shift(); break;
       case "--feature-slug": o.featureSlug = args.shift(); break;
-      case "--fix-findings": o.cli.fixFindings = args.shift(); break;
+      case "--fix-findings": o.cli.fixFindings = value(); break;
       case "--promote": {
-        const v = args.shift();
+        const v = value();
         o.cli.fixFindings = { critical: "critical", "critical-high": "high" }[v] ?? v;
         o.flagOf.fixFindings = "--promote";
         break;
       }
-      case "--prd-audit": o.cli.PRDAudit = args.shift(); break;
+      case "--prd-audit": o.cli.PRDAudit = value(); break;
       case "--coverage": o.cli.PRDAudit = "report"; break;
       case "--max-parallel": o.cli.maxParallel = Number(args.shift()); break;
-      case "--coder-timeout": case "--worker-timeout": o.cli.timeouts.coder = Number(args.shift()); break;
-      case "--reviewer-timeout": o.cli.timeouts.reviewer = Number(args.shift()); break;
+      case "--coder-timeout": case "--worker-timeout":
+        o.cli.timeouts.coder = Number(args.shift());
+        o.flagOf["timeouts.coder"] = a;
+        break;
+      case "--reviewer-timeout":
+        o.cli.timeouts.reviewer = Number(args.shift());
+        o.flagOf["timeouts.reviewer"] = a;
+        break;
       case "--review-timeout": {
         const min = Number(args.shift());
-        for (const k of ["reviewer", "triage", "commandFinder", "prdAuditor"]) o.cli.timeouts[k] = min;
+        for (const k of ["reviewer", "triage", "commandFinder", "prdAuditor"]) {
+          o.cli.timeouts[k] = min;
+          o.flagOf[`timeouts.${k}`] = a;
+        }
         break;
       }
       case "--merge-timeout": o.cli.timeouts.merge = Number(args.shift()); break;

@@ -129,13 +129,13 @@ Two knobs worth knowing about:
   since it's committed. Provider-specific IDs belong at user level, or in env such as
   `ANTHROPIC_DEFAULT_SONNET_MODEL`, which every dispatch inherits.
 - **Sprint settings** — the same `afk` section holds the rest of what stays the same run to run.
-  Each has a flag that overrides it for one run:
+  A flag overrides each for one run:
 
   | Setting | Default | Flag | What it does |
   | --- | --- | --- | --- |
   | `fixFindings` | `high` | `--fix-findings` | Lowest review severity fixed automatically: `critical`, `high`, `medium` or `none` |
   | `PRDAudit` | `fix` | `--prd-audit` | `off`; `report` (audit, leave it for you); `fix` (also queue missing requirements) |
-  | `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout` | Minutes, per role; name only the ones you change |
+  | `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` sets every non-coder role | Minutes, per role (at most 35791); name only the ones you change |
   | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
   | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
   | `squashCommits` | `true` | `--no-squash` | Squash the sprint's commits at the end |

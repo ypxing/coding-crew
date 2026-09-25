@@ -819,7 +819,8 @@ warn_shadowing_user_installs() {
            "$HOME/.agents/skills" "$codex_home/agents"; do
     [[ -d "$d" ]] || continue
     local name
-    for name in crew-afk crew-coder crew-reviewer solve-issue; do
+    # A renamed agent's old name too: nothing cleans a stale user-level copy on a project install.
+    for name in crew-afk crew-coder crew-reviewer solve-issue $(jq -r '[.agents[].replaces // [] | .[]] | .[]' "$SCRIPT_DIR/registry.json"); do
       if [[ -e "$d/$name" || -e "$d/$name.md" || -e "$d/$name.toml" || -e "$d/$name.agent.md" ]]; then
         found+=("$d/$name")
       fi

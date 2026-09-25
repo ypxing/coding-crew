@@ -50,6 +50,12 @@ export const FIX_FINDINGS = ["critical", "high", "medium", "none"];
 export const PRD_AUDIT = ["off", "report", "fix"];
 /** Minutes. Every LLM role, plus the merge/close step, which blocks the event loop. */
 export const DEFAULT_TIMEOUTS = { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 };
+// setTimeout fires at once past 2^31-1 ms, so a longer timeout would kill every dispatch.
+export const MAX_TIMEOUT_MINUTES = Math.floor((2 ** 31 - 1) / 60_000);
+const timeoutProblem = (min) =>
+  typeof min === "number" && min > 0 && min <= MAX_TIMEOUT_MINUTES
+    ? null
+    : `must be a positive number of minutes, at most ${MAX_TIMEOUT_MINUTES}`;
 export const DEFAULT_SETTINGS = { fixFindings: "high", PRDAudit: "fix", installDeps: true, squashCommits: true };
 
 // Settings that are one value each, merged by replacement; `check` returns a problem or null.
@@ -122,7 +128,8 @@ export function validateConfig(config, label = CONFIG_REL) {
         else {
           for (const [k, min] of Object.entries(afk.timeouts)) {
             if (!(k in DEFAULT_TIMEOUTS)) problems.push(`unknown key "afk.timeouts.${k}" (expected ${oneOf(Object.keys(DEFAULT_TIMEOUTS))})`);
-            if (typeof min !== "number" || !(min > 0)) problems.push(`"afk.timeouts.${k}" must be a positive number of minutes`);
+            const problem = timeoutProblem(min);
+            if (problem) problems.push(`"afk.timeouts.${k}" ${problem}`);
           }
         }
       }
@@ -196,19 +203,16 @@ function loadProjectConfig(mainRoot, write, notices) {
     } else {
       const legacy = readJson(legacyPath, LEGACY_REL);
       if (!isObject(legacy)) throw new ConfigError(`${LEGACY_REL} must be a JSON object`);
-      // null was the old file's "inherit", which absent now means.
-      const claude = Object.fromEntries(
-        Object.entries(legacy)
-          .filter(([, v]) => v !== null)
-          .map(([role, v]) => [LEGACY_ROLE_NAMES[role] ?? role, v]),
-      );
-      // Checked in the old file's own terms, so the error names the file and key the user wrote.
+      // Checked in the old file's own terms, so the error names the key the user wrote. An
+      // unknown key was ignored by the old loader, so it is dropped with a notice, not fatal.
+      const claude = {};
       const problems = [];
-      for (const [role, model] of Object.entries(claude)) {
-        if (!ROLES.includes(role)) {
-          problems.push(`unknown role "${role}" (expected ${[...ROLES.slice(0, 3), ...Object.keys(LEGACY_ROLE_NAMES)].join(", ")})`);
-        }
-        else if (typeof model !== "string" || !model.trim()) problems.push(`"${role}" must be a non-empty string`);
+      for (const [key, model] of Object.entries(legacy)) {
+        const role = LEGACY_ROLE_NAMES[key] ?? key;
+        if (!ROLES.includes(role)) notices.push(`${LEGACY_REL}: unknown key "${key}" is dropped in the move.`);
+        else if (model === null) continue; // the old file's "inherit", which absent now means
+        else if (typeof model !== "string" || !model.trim()) problems.push(`"${key}" must be a non-empty string`);
+        else claude[role] = model;
       }
       if (problems.length) throw new ConfigError(`${LEGACY_REL}: ${problems.join("; ")}`);
       config = { ...config, afk: { models: { claude } } };
@@ -235,15 +239,15 @@ function loadProjectConfig(mainRoot, write, notices) {
  */
 export function loadConfig(mainRoot, { write = false, home = process.env.HOME || homedir() } = {}) {
   const notices = [];
-  const project = loadProjectConfig(mainRoot, write, notices);
-
   // A repo at $HOME (a user-level install's own root) is one file, read once, as the repo's.
+  // Read first: an invalid user file must fail the run before the legacy move writes anything.
   const userPath = join(home, CONFIG_REL);
   let user = {};
   if (resolve(userPath) !== resolve(join(mainRoot, CONFIG_REL)) && existsSync(userPath)) {
     user = readJson(userPath, USER_CONFIG_LABEL);
     validateConfig(user, USER_CONFIG_LABEL);
   }
+  const project = loadProjectConfig(mainRoot, write, notices);
 
   const origin = {};
   for (const leaf of afkLeaves(user.afk)) origin[leaf] = "user";
@@ -339,7 +343,8 @@ export function validateFlags(cli = {}, flagOf = {}) {
     if (problem) problems.push(`${name(k)} ${problem}`);
   }
   for (const [k, min] of Object.entries(cli.timeouts ?? {})) {
-    if (!(min > 0)) problems.push(`${name(`timeouts.${k}`)} must be a positive number of minutes`);
+    const problem = timeoutProblem(min);
+    if (problem) problems.push(`${name(`timeouts.${k}`)} ${problem}`);
   }
   return [...new Set(problems)];
 }

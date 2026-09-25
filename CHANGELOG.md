@@ -9,7 +9,8 @@
   lets an agent carry its old names: installing `crew-reviewer` removes the old
   `crew-code-reviewer` shims for each platform it installs, plus its manifest entry, so the host
   doesn't keep listing a stale second reviewer. Uninstall removes them too. A user-level install
-  (`TARGET_REPO=$HOME`) is cleaned the same way the next time you install at that level.
+  (`TARGET_REPO=$HOME`) is cleaned the same way the next time you install at that level; until
+  then, a project install warns that the old user-level copy may shadow it.
 - **crew-afk can run each role on a different runtime.** `.coding-crew/config.json`'s `afk`
   section maps any role (`coder`, `reviewer`, `triage`, `commandFinder`, `prdAuditor`) to an
   installed runtime and names models per runtime, e.g. a claude coder reviewed by codex. A model
@@ -32,23 +33,25 @@
   instead of after the squash, and asks only what a per-branch review cannot see: requirements no
   issue carried, flows across issues, cross-cutting concerns — it no longer re-grades criteria a
   review already passed. In `fix` mode its ✗ missing requirements become one fix issue
-  (`NN-fix-prd-gaps.md`) that Phase 2 implements with the findings fixes; its `Source:` line keeps
-  it from being audited or promoted again. Nothing is queued while a Phase 1 issue is still open.
+  (`NN-fix-prd-gaps.md`, or a GitHub issue) that Phase 2 implements with the findings fixes; its
+  `Source:` line keeps it from being audited or promoted again. Nothing is queued while a Phase 1 issue is still open.
   Skipped at no cost when the feature has no `PRD.md`. `coverage-validation.sh` is now
   `prd-audit.sh`, its report `prd-audit.md`; `--coverage` still works, as `report`.
 - **Sprint settings move into `config.json`:** `timeouts` (minutes per role, plus `merge`),
-  `maxParallel`, `installDeps` and `squashCommits`, each overridden for one run by its flag.
+  `maxParallel`, `installDeps` and `squashCommits`, each overridden for one run by a flag.
   Timeouts are per role now: `--coder-timeout` (was `--worker-timeout`, still accepted),
   `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` still sets every non-coder role.
   Two defaults drop: command finding 20 → 5 minutes (a timeout falls back to per-check
   discovery), and merge/close 10 → 5 — a repo with slow git hooks on merge commits should raise
-  `timeouts.merge`. `plan` shows each setting and the file or flag that set it; a bad value is a
-  setup error, in config or on the command line.
+  `timeouts.merge`. A timeout is at most 35791 minutes, where Node's timer overflows and would
+  fire at once. `plan` shows each setting and the file or flag that set it; a bad value is a
+  setup error, in config or on the command line, and so is a setting flag given no value.
 - **`.coding-crew/afk-models.json` is replaced by `config.json`.** The first `run` that finds it
   moves its values into `afk.models.claude` and deletes it (`plan` only says it would). Those
   values only ever applied on claude, so behaviour is unchanged on every platform. An invalid
   config is now a setup error listing every problem; a malformed `afk-models.json` used to be
-  ignored with a warning.
+  ignored with a warning. An unknown key in it is still ignored, dropped from the move with a
+  notice. An invalid user-level `config.json` fails the run before anything is moved.
 - **`config.json` is read at user level too.** `~/.coding-crew/config.json` sits under the repo's
   `.coding-crew/config.json`, merged per setting with the repo's winning, so a machine can keep
   its own provider model IDs or runtime choices out of the committed file. `plan` tags each value

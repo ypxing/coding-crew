@@ -151,11 +151,14 @@ export async function runSprint(ctx) {
     }
     // Once, when Phase 1 has drained: its gaps join the findings in the one flush below,
     // so Phase 2 fixes both, and nothing after it is audited again.
+    // github creates the gaps issue ready-for-agent, so the flush has nothing to promote for
+    // it and the loop has to go round again on the audit's word.
+    let queuedReady = false;
     if (!audited) {
       audited = true;
-      prdAuditReport = await runPrdAudit(ctx, tracker);
+      ({ report: prdAuditReport, queuedReady } = await runPrdAudit(ctx, tracker));
     }
-    if (flush(ctx) > 0) continue;
+    if (flush(ctx) > 0 || queuedReady) continue;
     break;
   }
 
@@ -191,12 +194,14 @@ function unfinishedIssues(tracker, mainRoot, featureSlug) {
  * requirement no issue carried, a flow across issues. In `fix` mode its ✗ missing
  * requirements become one parked fix issue, which the caller's flush sends into Phase 2.
  * Gaps are not queued while a Phase 1 issue is still open: its requirements would read as
- * missing, and queuing them would duplicate that issue. Returns the report's path, or null.
+ * missing, and queuing them would duplicate that issue. Returns `{report, queuedReady}`:
+ * the report's path (or null), and whether an issue was created already ready-for-agent
+ * (github — local parks it for the flush instead).
  */
 async function runPrdAudit(ctx, tracker) {
   const { sprint, effects, options } = ctx;
   const mode = sprint.PRDAudit;
-  if (mode === "off") return null;
+  if (mode === "off") return { report: null, queuedReady: false };
   const audit = effects.exec("bash", [effects.script("prd-audit.sh"), "--mode", mode], {
     env: sprint.childEnv(),
     mutating: false,
@@ -205,7 +210,7 @@ async function runPrdAudit(ctx, tracker) {
   const firstLine = audit.stdout.split("\n", 1)[0] ?? "";
   if (/^PRD audit: skipped/.test(firstLine)) {
     ctx.log(firstLine);
-    return null;
+    return { report: null, queuedReady: false };
   }
 
   const outFile = join(sprint.env.SPRINT_DIR, "prd-audit.md");
@@ -221,10 +226,10 @@ async function runPrdAudit(ctx, tracker) {
   });
   if (r.code !== 0 || r.timedOut) {
     ctx.log(`PRD audit: dispatch did not complete (${r.timedOut ? "timed out" : `exit ${r.code}`}) — no report, nothing queued.`);
-    return null;
+    return { report: null, queuedReady: false };
   }
   ctx.log(`PRD audit report: ${outFile}`);
-  if (mode !== "fix" || r.dryRun) return outFile;
+  if (mode !== "fix" || r.dryRun) return { report: outFile, queuedReady: false };
 
   const unfinished = unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug);
   if (unfinished.length) {
@@ -232,16 +237,16 @@ async function runPrdAudit(ctx, tracker) {
       `PRD audit: gaps not queued — ${unfinished.length} Phase 1 issue(s) still open (${unfinished.map((i) => i.slug).join(", ")}), ` +
         "whose requirements would read as missing. Resolve them and re-run.",
     );
-    return outFile;
+    return { report: outFile, queuedReady: false };
   }
   const parsed = parsePrdAudit(r.text);
   if (!parsed.ok) {
     ctx.log("PRD audit: no closing json block in the report — nothing queued; read it by hand.");
-    return outFile;
+    return { report: outFile, queuedReady: false };
   }
   if (!parsed.missing.length) {
     ctx.log("PRD audit: no missing requirements.");
-    return outFile;
+    return { report: outFile, queuedReady: false };
   }
   const criteriaPath = join(sprint.env.SPRINT_DIR, "prd-gaps.criteria.md");
   writeFileSync(criteriaPath, prdGapsCriteria(parsed.missing));
@@ -251,7 +256,8 @@ async function runPrdAudit(ctx, tracker) {
     { env: sprint.childEnv() },
   );
   ctx.log(`PRD audit: ${parsed.missing.length} missing requirement(s) → ${defer.stdout.trim() || defer.stderr.trim()}`);
-  return outFile;
+  const queued = defer.code === 0 && /^defer-gaps: (?!skip)/m.test(defer.stdout);
+  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles };
 }
 
 /** Phase 1 → Phase 2: flip parked fix issues to ready-for-agent. */

@@ -15,8 +15,23 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
 PROMOTE="$SCRIPT_DIR/promote-findings.sh"
+# remind reads reviews through review-rollup.mjs, which the lookup below the temp repo can't
+# find: point it at this source tree's copy (an install sets its own).
+export CREW_REVIEW_ROLLUP="${CREW_REVIEW_ROLLUP:-$SCRIPT_DIR/../../../orchestrator/review-rollup.mjs}"
 # Pinned: these cases were written against a CRITICAL-only threshold (the default is high).
 export CREW_FIX_FINDINGS=critical
+
+# review <header> <SEVERITY>... — one branch's block in the aggregate report's format: its
+# header, then the reviewer's json, which names the branch (what review-rollup.mjs parses).
+review() {
+    local header="$1"; shift
+    local findings="" sev
+    for sev in "$@"; do
+        findings="$findings${findings:+,}{\"severity\":\"$sev\",\"location\":\"x:1\",\"criterion\":\"$sev finding\"}"
+    done
+    printf '## Branch: %s\n\n```json\n{"branch":"%s","verdict":"all-met","findings":[%s]}\n```\n\n' \
+        "$header" "${header%% (*}" "$findings"
+}
 
 TEST_DIR=$(mktemp -d)
 cd "$TEST_DIR"
@@ -138,18 +153,12 @@ echo
 echo "Test 11: remind counts only findings promotion did not cover"
 mkdir -p .scratch/rem/issues/open .scratch/rem/reviews
 REM=.scratch/rem/reviews/sprint-review-1.md
-cat > "$REM" <<'EOF'
-# Sprint review
-
-## Branch: crew/01-a (01-a)
-[CRITICAL] boom a
-[HIGH] hmm a
-[MEDIUM] meh a
-[LOW] nit a
-
-## Branch: crew/02-b (02-b)
-[MEDIUM] meh b
-EOF
+{
+    echo "# Sprint review"
+    echo
+    review "crew/01-a (01-a)" CRITICAL HIGH MEDIUM LOW
+    review "crew/02-b (02-b)" MEDIUM
+} > "$REM"
 printf -- '- [ ] fix it\n' > rem-crit.md
 bash "$PROMOTE" defer --feature-slug rem --branch crew/01-a --slug a \
     --title "Fix review findings: a" --report "$REM" --criteria-file rem-crit.md >/dev/null
@@ -162,10 +171,7 @@ check_contains "report path listed for the user" "report: $REM" "$out"
 
 echo
 echo "Test 12: a Phase 2 fix branch's own findings are counted (report-only, needs a human)"
-cat > .scratch/rem/reviews/sprint-review-2.md <<'EOF'
-## Branch: crew/08-fix-findings-a (08-fix-findings-a)
-[CRITICAL] the fix itself is broken
-EOF
+review "crew/08-fix-findings-a (08-fix-findings-a)" CRITICAL > .scratch/rem/reviews/sprint-review-2.md
 out=$(bash "$PROMOTE" remind --feature-slug rem)
 check_contains "CRITICAL on a fix branch surfaces in the reminder" \
       "FINDINGS: open=5 (CRITICAL=1, HIGH=1, MEDIUM=2, LOW=1)" "$out"
@@ -177,7 +183,7 @@ check "empty reviews dir reports none" "FINDINGS: none" "$(bash "$PROMOTE" remin
 mkdir -p .scratch/noreviews/issues/open
 check "missing reviews dir reports none" "FINDINGS: none" "$(bash "$PROMOTE" remind --feature-slug noreviews)"
 FULLY=.scratch/quiet/reviews/sprint-review-1.md
-printf '## Branch: crew/01-x (01-x)\n[CRITICAL] boom\n' > "$FULLY"
+review "crew/01-x (01-x)" CRITICAL > "$FULLY"
 printf -- '- [ ] fix it\n' > quiet-crit.md
 bash "$PROMOTE" defer --feature-slug quiet --branch crew/01-x --slug x \
     --title "Fix review findings: x" --report "$FULLY" --criteria-file quiet-crit.md >/dev/null
@@ -185,10 +191,10 @@ check "fully-promoted report reports none" "FINDINGS: none" \
       "$(bash "$PROMOTE" remind --feature-slug quiet)"
 
 echo
-echo "Test 14: branch attribution tolerates a header without the (slug) suffix"
+echo "Test 14: branch attribution is the json's, whether or not the header has a (slug) suffix"
 mkdir -p .scratch/bare/reviews
 BARE=.scratch/bare/reviews/sprint-review-1.md
-printf '## Branch: crew/01-y\n[HIGH] boom\n[LOW] nit\n' > "$BARE"
+review "crew/01-y" HIGH LOW > "$BARE"
 printf -- '- [ ] fix it\n' > bare-crit.md
 CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug bare --branch crew/01-y --slug y \
     --title "Fix review findings: y" --report "$BARE" --criteria-file bare-crit.md >/dev/null

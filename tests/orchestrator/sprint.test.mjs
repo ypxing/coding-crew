@@ -1285,6 +1285,14 @@ test("a bad flag value is a setup error naming the flag", () => {
   assert.equal(r.code, 1);
   assert.match(r.stderr, /--fix-findings is "severe"/);
   assert.match(r.stderr, /--coder-timeout must be a positive number of minutes/);
+  // The flag the user typed, even an old name.
+  const old = runSprint(root, ["--worker-timeout", "abc"]);
+  assert.equal(old.code, 1);
+  assert.match(old.stderr, /--worker-timeout must be/);
+  // A setting flag left without its value is an error, not silently the default.
+  const bare = runSprint(root, ["--prd-audit"]);
+  assert.equal(bare.code, 1);
+  assert.match(bare.stderr, /--prd-audit is ""/);
 });
 
 test("config.json's squashCommits and installDeps turn those steps off, as their flags do", () => {
@@ -1420,6 +1428,13 @@ function stubGh(root, issues) {
   const closeJs = "const fs=require('fs');const p=process.argv[1];const n=Number(process.argv[2]);" +
     "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const i=issues.find(x=>x.number===n);" +
     "if(i)i.state='CLOSED';fs.writeFileSync(p,JSON.stringify(issues))";
+  // `issue create --title T --body-file F [--label L]…`: appended open, so the next list sees it.
+  const createJs = "const fs=require('fs');const [p,...a]=process.argv.slice(1);" +
+    "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const v=(k)=>a[a.indexOf(k)+1];" +
+    "const labels=a.flatMap((x,i)=>x==='--label'?[{name:a[i+1]}]:[]);" +
+    "const number=Math.max(0,...issues.map(i=>i.number))+1;" +
+    "issues.push({number,title:v('--title'),body:fs.readFileSync(v('--body-file'),'utf8'),labels,state:'OPEN'});" +
+    "fs.writeFileSync(p,JSON.stringify(issues));process.stdout.write('https://github.com/o/r/issues/'+number+'\\n')";
   writeFileSync(
     join(stub, "gh"),
     [
@@ -1431,6 +1446,10 @@ function stubGh(root, issues) {
       "fi",
       'if [ "$1" = "issue" ] && [ "$2" = "view" ]; then',
       `  node -e ${JSON.stringify(viewJs)} ${JSON.stringify(issuesFile)} "$3"`,
+      "  exit 0",
+      "fi",
+      'if [ "$1" = "issue" ] && [ "$2" = "create" ]; then',
+      `  node -e ${JSON.stringify(createJs)} ${JSON.stringify(issuesFile)} "\${@:3}"`,
       "  exit 0",
       "fi",
       'if [ "$1" = "issue" ] && [ "$2" = "close" ]; then',
@@ -1486,6 +1505,33 @@ test("a github-configured sprint dispatches, closes via gh, and stops finding wo
   assert.match(calls, /issue list .*--milestone demo/, "the dispatch loop never listed github issues");
   assert.match(calls, /issue close 1 /, "the issue was never closed via gh");
   assert.match(r.stdout, /NO MORE TASKS/);
+});
+
+test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implemented in Phase 2", () => {
+  // github has no parked state, so flush promotes nothing: the loop must go round on the
+  // audit's own word, or the sprint ends stalled with the gaps issue open.
+  const root = githubFixtureRepo();
+  const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
+  mkdirSync(join(root, ".scratch/demo"), { recursive: true });
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
+  writeFileSync(join(root, ".scratch/fake/prd-audit.response"), AUDIT_WITH_GAP);
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_GITHUB_TRACKER_CLI: join(REPO, "orchestrator/lib/trackers/github.mjs"),
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const gaps = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.title === "Fix PRD gaps: demo");
+  assert.ok(gaps, `defer-gaps never created the issue\n${traceLog(root)}`);
+  assert.equal(gaps.state, "CLOSED", "the gaps issue was never implemented");
+  assert.equal(traceLog(root).split("step=prd-audit").length - 1, 1, "one audit per sprint");
 });
 
 // ─── eager dependency provisioning ───────────────────────────────────────────

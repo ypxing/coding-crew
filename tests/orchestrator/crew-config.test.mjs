@@ -88,14 +88,33 @@ test("loadConfig: both files present — config.json wins, the legacy file is le
   rmSync(root, { recursive: true, force: true });
 });
 
-test("loadConfig: a legacy file with an unknown role fails validation instead of being moved", () => {
-  const root = tmpRoot({ "afk-models.json": { reviwer: "opus" } });
-  // Named in the legacy file's own terms: that's the file and key the user has to fix.
+test("loadConfig: a legacy file's unknown key is dropped with a notice, as the old loader ignored it", () => {
+  const root = tmpRoot({ "afk-models.json": { coder: "opus", _comment: "tiers" } });
+  const { config, notices } = loadConfig(root, { write: true, home: EMPTY_HOME });
+  assert.deepEqual(config.afk.models.claude, { coder: "opus" });
+  assert.deepEqual(read(root, "config.json"), { afk: { models: { claude: { coder: "opus" } } } });
+  assert.match(notices.join("\n"), /afk-models\.json: unknown key "_comment" is dropped/);
+  assert.match(notices.join("\n"), /moved .*afk-models\.json into/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: a bad legacy value names the key the user wrote, not its new name", () => {
+  const root = tmpRoot({ "afk-models.json": { coverageValidation: "" } });
   assert.throws(
     () => loadConfig(root, { write: true, home: EMPTY_HOME }),
-    (err) => err instanceof ConfigError && /^\.coding-crew\/afk-models\.json: unknown role "reviwer"/.test(err.message),
+    (err) => err instanceof ConfigError && /afk-models\.json: "coverageValidation" must be a non-empty string/.test(err.message),
   );
   assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: an invalid user config fails before the legacy move writes anything", () => {
+  const home = tmpRoot({ "config.json": { afk: { runtime: { reviewer: "nope" } } } });
+  const root = tmpRoot({ "afk-models.json": { coder: "opus" } });
+  assert.throws(() => loadConfig(root, { write: true, home }), ConfigError);
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true, "the legacy file was moved anyway");
+  assert.equal(existsSync(join(root, ".coding-crew/config.json")), false);
+  rmSync(home, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -381,6 +400,16 @@ test("validateFlags: a bad flag names the flag the user typed", () => {
   assert.match(validateFlags({ fixFindings: "critical-medium" }, { fixFindings: "--promote" })[0], /^--promote is "critical-medium"/);
   assert.match(validateFlags({ timeouts: { coder: Number.NaN } })[0], /^--coder-timeout must be a positive number/);
   assert.match(validateFlags({ maxParallel: 0 })[0], /^--max-parallel must be a positive integer/);
+  // setTimeout fires at once past 2^31-1 ms: a "no limit" timeout would kill every dispatch.
+  assert.match(validateFlags({ timeouts: { coder: 40000 } })[0], /^--coder-timeout .* at most 35791/);
+  assert.match(validateFlags({ timeouts: { coder: Infinity } })[0], /^--coder-timeout .* at most 35791/);
+  assert.deepEqual(validateFlags({ timeouts: { coder: 35791 } }), []);
+  // The flag the user typed, once, when more than one sets the same timeout.
+  assert.match(validateFlags({ timeouts: { coder: Number.NaN } }, { "timeouts.coder": "--worker-timeout" })[0], /^--worker-timeout /);
+  const review = { reviewer: 0, triage: 0, commandFinder: 0, prdAuditor: 0 };
+  const flagOf = Object.fromEntries(Object.keys(review).map((k) => [`timeouts.${k}`, "--review-timeout"]));
+  assert.deepEqual(validateFlags({ timeouts: review }, flagOf).length, 1);
+  assert.match(validateFlags({ timeouts: review }, flagOf)[0], /^--review-timeout /);
 });
 
 test("loadConfig: a legacy afk-models.json's old role names move under the new ones", () => {
