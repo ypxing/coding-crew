@@ -48,7 +48,7 @@ import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
 import { DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
-import { ConfigError, ROLE_AGENTS, ROLES, describeModel, loadConfig, resolveCrew } from "./lib/crew-config.mjs";
+import { ConfigError, DISPATCHER, ROLES, activeRoles, crewPreflight, describeModel, loadConfig, resolveCrew } from "./lib/crew-config.mjs";
 import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
@@ -146,33 +146,6 @@ function crewTable(crew, origin = {}) {
     const tag = from.length ? `  [${from.join(", ")}]` : "";
     return `  ${r.padEnd(width)}  ${runtime.padEnd(7)}  ${describeModel(runtime, model)}${tag}`;
   });
-}
-
-/**
- * preflight() once per runtime the crew uses, for the agents bound to it, plus each pi/codex
- * runtime's dispatcher. A problem on a runtime other than the launcher's names its roles, since
- * the user chose that runtime in config.json, not on the command line.
- */
-function crewPreflight(effects, mainRoot, options) {
-  const byRuntime = new Map();
-  for (const role of ROLES) {
-    const { runtime } = options.crew[role];
-    if (!byRuntime.has(runtime)) byRuntime.set(runtime, { roles: [], agents: [] });
-    byRuntime.get(runtime).roles.push(role);
-    if (ROLE_AGENTS[role]) byRuntime.get(runtime).agents.push(ROLE_AGENTS[role]);
-  }
-  const problems = [];
-  let paneHost = options.paneHost;
-  for (const [runtime, { roles, agents }] of byRuntime) {
-    const found = preflight(effects, runtime, mainRoot, agents, { paneHost });
-    paneHost = null; // checked once, not once per runtime
-    if (!process.env.CREW_FAKE_DISPATCH && DISPATCHER[runtime] && !options.dispatcherDirs[runtime]) {
-      found.push(`${DISPATCHER[runtime]} not found for ${runtime} — run: ./install.sh ${runtime} --skill crew-afk`);
-    }
-    const tag = runtime === options.platform ? "" : `${roles.join(", ")} → ${runtime}: `;
-    problems.push(...found.map((p) => `${tag}${p}`));
-  }
-  return problems;
 }
 
 /** Every existing .scratch/<feature-slug> directory name, for a typo suggestion. */
@@ -325,9 +298,6 @@ const USER_SKILL_DIRS = {
   copilot: ".copilot/skills/crew-afk/scripts",
 };
 
-/** The bash dispatcher a runtime needs; claude and copilot resolve their agent themselves. */
-const DISPATCHER = { pi: "dispatch-agent.sh", codex: "dispatch-codex-agent.sh" };
-
 /** `platform`'s own dir first: only its install carries its dispatcher (pi's, codex's). */
 const ownFirst = (dirs, platform) => [dirs[platform], ...Object.values(dirs).filter((d) => d !== dirs[platform])].filter(Boolean);
 
@@ -441,16 +411,28 @@ async function main() {
   for (const n of loaded.notices) console.error(`crew-afk: ${n}`);
   const crew = resolveCrew({ afk: loaded.config.afk, cliPlatform: options.platform, cliModel: options.model });
   for (const w of crew.warnings) console.error(`crew-afk: WARNING: ${w}`);
+  // --model beats the file's coder model, so `plan` must not credit the file with it.
+  if (options.model && crew.roles.coder.runtime === options.platform) {
+    loaded.origin[`models.${options.platform}.coder`] = "--model";
+  }
   options.crew = crew.roles;
   options.model = crew.roles.coder.model;
   options.parallel ??= DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
   options.dispatcherDirs = Object.fromEntries(
     [...new Set(ROLES.map((r) => crew.roles[r].runtime))].map((rt) => [rt, resolveDispatcherDir(mainRoot, rt)]),
   );
+  const preflightCrew = () =>
+    crewPreflight(effects, mainRoot, {
+      crew: options.crew,
+      roles: activeRoles(options),
+      launcher: options.platform,
+      paneHost: options.paneHost,
+      dispatcherDirs: options.dispatcherDirs,
+    });
 
   if (options.command === "doctor") {
-    const problems = crewPreflight(effects, mainRoot, options);
-    console.log(problems.length ? problems.map((p) => `PROBLEM: ${p}`).join("\n") : `OK: ${[...new Set(ROLES.map((r) => options.crew[r].runtime))].join(", ")} can dispatch.`);
+    const problems = preflightCrew();
+    console.log(problems.length ? problems.map((p) => `PROBLEM: ${p}`).join("\n") : `OK: ${[...new Set(activeRoles(options).map((r) => options.crew[r].runtime))].join(", ")} can dispatch.`);
     return problems.length ? 1 : 0;
   }
 
@@ -464,7 +446,7 @@ async function main() {
     }
     const tracker = await getTracker(mainRoot);
     const issues = tracker.selectDispatchable(mainRoot, { featureSlug: resolved.slug });
-    const problems = crewPreflight(effects, mainRoot, options);
+    const problems = preflightCrew();
     console.log(`platform:  ${options.platform}`);
     console.log("crew:");
     for (const line of crewTable(options.crew, loaded.origin)) console.log(line);
@@ -493,7 +475,7 @@ async function main() {
   let runError;
   let lockPath;
   try {
-    const problems = crewPreflight(effects, mainRoot, options);
+    const problems = preflightCrew();
     if (problems.length) {
       console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));
       exitCode = 1;

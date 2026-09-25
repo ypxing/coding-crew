@@ -1025,6 +1025,18 @@ test("`plan` shows which config file set each role's runtime and model", () => {
   rmSync(home, { recursive: true, force: true });
 });
 
+test("`plan` credits --model, not the config file, when it overrides the file's coder model", () => {
+  const root = fixtureRepo();
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { models: { claude: { coder: "haiku" } } } }));
+  const r = sh("node", [MAIN, "plan", "--platform", "claude", "--model", "opus", "--feature-slug", "demo"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, MAIN_ROOT: root },
+  });
+  assert.match(r.stdout, /coder\s+claude\s+opus.*\[model: --model\]/, r.stdout);
+  assert.doesNotMatch(r.stdout, /coder.*\[model: project\]/, r.stdout);
+});
+
 test("a mixed crew dispatches each role on its own runtime, with only that runtime's model", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

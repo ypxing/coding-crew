@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ConfigError, describeModel, loadConfig, resolveCrew } from "../../orchestrator/lib/crew-config.mjs";
+import { ConfigError, activeRoles, crewPreflight, describeModel, loadConfig, resolveCrew } from "../../orchestrator/lib/crew-config.mjs";
 
 function tmpRoot(files = {}) {
   const root = mkdtempSync(join(tmpdir(), "crew-config-"));
@@ -69,7 +69,11 @@ test("loadConfig: both files present — config.json wins, the legacy file is le
 
 test("loadConfig: a legacy file with an unknown role fails validation instead of being moved", () => {
   const root = tmpRoot({ "afk-models.json": { reviwer: "opus" } });
-  assert.throws(() => loadConfig(root, { write: true, home: EMPTY_HOME }), /unknown role "afk\.models\.claude\.reviwer"/);
+  // Named in the legacy file's own terms: that's the file and key the user has to fix.
+  assert.throws(
+    () => loadConfig(root, { write: true, home: EMPTY_HOME }),
+    (err) => err instanceof ConfigError && /^\.coding-crew\/afk-models\.json: unknown role "reviwer"/.test(err.message),
+  );
   assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
   rmSync(root, { recursive: true, force: true });
 });
@@ -238,4 +242,43 @@ test("describeModel shows a visible ANTHROPIC_DEFAULT_*_MODEL mapping for a clau
   assert.equal(describeModel("claude", "opus", env), "opus");
   assert.equal(describeModel("codex", "sonnet", env), "sonnet", "the Anthropic env vars mean nothing to codex");
   assert.equal(describeModel("codex", null, env), "runtime default");
+});
+
+// ─── crewPreflight ───────────────────────────────────────────────────────────
+
+// Every CLI on PATH, no agent definition anywhere: only dispatcher and agent problems remain.
+const cliFound = { exec: () => ({ code: 0, stdout: "/usr/bin/x", stderr: "" }) };
+const onClaude = (over = {}) => Object.fromEntries(activeRoles({ coverage: true }).map((r) => [r, { runtime: over[r] ?? "claude", model: null }]));
+
+test("crewPreflight: a runtime only a plain dispatch uses needs its CLI, not its dispatcher", () => {
+  const prev = process.env.CREW_FAKE_DISPATCH;
+  delete process.env.CREW_FAKE_DISPATCH;
+  try {
+    const crew = onClaude({ commandsDiscovery: "codex", coverageValidation: "pi" });
+    const problems = crewPreflight(cliFound, EMPTY_HOME, {
+      crew, roles: activeRoles({ coverage: true }), launcher: "claude", dispatcherDirs: { codex: null, pi: null },
+    });
+    assert.deepEqual(problems.filter((p) => /→ (codex|pi)/.test(p)), [], problems.join("\n"));
+  } finally {
+    if (prev !== undefined) process.env.CREW_FAKE_DISPATCH = prev;
+  }
+});
+
+test("crewPreflight: an agent on a pi/codex runtime still needs that runtime's dispatcher", () => {
+  const prev = process.env.CREW_FAKE_DISPATCH;
+  delete process.env.CREW_FAKE_DISPATCH;
+  try {
+    const problems = crewPreflight(cliFound, EMPTY_HOME, {
+      crew: onClaude({ reviewer: "codex" }), roles: activeRoles(), launcher: "claude", dispatcherDirs: { codex: null },
+    });
+    assert.ok(problems.includes("reviewer → codex: dispatch-codex-agent.sh not found for codex — run: ./install.sh codex --skill crew-afk"), problems.join("\n"));
+  } finally {
+    if (prev !== undefined) process.env.CREW_FAKE_DISPATCH = prev;
+  }
+});
+
+test("activeRoles: command discovery and coverage validation are checked only when the run does them", () => {
+  assert.deepEqual(activeRoles(), ["coder", "reviewer", "triage", "commandsDiscovery"]);
+  assert.deepEqual(activeRoles({ commands: false }), ["coder", "reviewer", "triage"]);
+  assert.deepEqual(activeRoles({ coverage: true }), ["coder", "reviewer", "triage", "commandsDiscovery", "coverageValidation"]);
 });

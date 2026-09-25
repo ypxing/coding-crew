@@ -32,7 +32,7 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { PLATFORMS } from "./dispatch.mjs";
+import { PLATFORMS, preflight } from "./dispatch.mjs";
 
 export const CONFIG_REL = ".coding-crew/config.json";
 export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
@@ -150,6 +150,13 @@ function loadProjectConfig(mainRoot, write, notices) {
       if (!isObject(legacy)) throw new ConfigError(`${LEGACY_REL} must be a JSON object`);
       // null was the old file's "inherit", which absent now means.
       const claude = Object.fromEntries(Object.entries(legacy).filter(([, v]) => v !== null));
+      // Checked in the old file's own terms, so the error names the file and key the user wrote.
+      const problems = [];
+      for (const [role, model] of Object.entries(claude)) {
+        if (!ROLES.includes(role)) problems.push(`unknown role "${role}" (expected ${ROLES.join(", ")})`);
+        else if (typeof model !== "string" || !model.trim()) problems.push(`"${role}" must be a non-empty string`);
+      }
+      if (problems.length) throw new ConfigError(`${LEGACY_REL}: ${problems.join("; ")}`);
       config = { ...(isObject(config) ? config : {}), afk: { models: { claude } } };
       validateConfig(config);
       if (write) {
@@ -247,3 +254,38 @@ export function describeModel(runtime, model, env = process.env) {
 
 /** Which agent definition each dispatching role needs installed; the plain-dispatch roles need none. */
 export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage" };
+
+/** The bash dispatcher a runtime's agent dispatch needs; claude and copilot resolve their agent themselves. */
+export const DISPATCHER = { pi: "dispatch-agent.sh", codex: "dispatch-codex-agent.sh" };
+
+/** The roles a run dispatches: command discovery and coverage validation are each optional. */
+export function activeRoles({ commands = true, coverage = false } = {}) {
+  return ROLES.filter((r) => (r !== "commandsDiscovery" || commands) && (r !== "coverageValidation" || coverage));
+}
+
+/**
+ * preflight() once per runtime the active roles use, for the agents bound to it, plus the
+ * dispatcher of each pi/codex runtime an agent dispatches on — a plain dispatch calls the CLI
+ * directly, so a runtime used only by one needs no dispatcher. A problem on a runtime other
+ * than the launcher's names its roles, since the user chose that runtime in config.json.
+ */
+export function crewPreflight(effects, mainRoot, { crew, roles, launcher, paneHost = null, dispatcherDirs = {} }) {
+  const byRuntime = new Map();
+  for (const role of roles) {
+    const { runtime } = crew[role];
+    if (!byRuntime.has(runtime)) byRuntime.set(runtime, { roles: [], agents: [] });
+    byRuntime.get(runtime).roles.push(role);
+    if (ROLE_AGENTS[role]) byRuntime.get(runtime).agents.push(ROLE_AGENTS[role]);
+  }
+  const problems = [];
+  for (const [runtime, { roles: bound, agents }] of byRuntime) {
+    const found = preflight(effects, runtime, mainRoot, agents, { paneHost });
+    paneHost = null; // checked once, not once per runtime
+    if (!process.env.CREW_FAKE_DISPATCH && agents.length && DISPATCHER[runtime] && !dispatcherDirs[runtime]) {
+      found.push(`${DISPATCHER[runtime]} not found for ${runtime} — run: ./install.sh ${runtime} --skill crew-afk`);
+    }
+    const tag = runtime === launcher ? "" : `${bound.join(", ")} → ${runtime}: `;
+    problems.push(...found.map((p) => `${tag}${p}`));
+  }
+  return problems;
+}
