@@ -1097,36 +1097,98 @@ test("doctor names the role when a runtime other than the launcher's is not inst
   assert.doesNotMatch(r.stdout, /→ codex: crew-coder/);
 });
 
-test("coverage validation is opt-in, and runs between the squash and cleanup", () => {
+const lineOf = (log, text) => log.split("\n").findIndex((l) => l.includes(text));
+const AUDIT_WITH_GAP = [
+  "✗ Users can export to CSV: no evidence",
+  "```json",
+  JSON.stringify({ covered: 1, partial: 0, missing: [{ requirement: "Users can export to CSV", detail: "PRD: Export" }] }),
+  "```",
+].join("\n");
+
+test("the PRD audit runs by default after Phase 1, before the flush and the squash", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(existsSync(join(root, ".scratch/demo/prd-audit.md")), true);
+  assert.match(r.stdout, /## PRD Audit/);
+  const log = traceLog(root);
+  const audit = lineOf(log, "step=prd-audit mode=fix");
+  assert.notEqual(audit, -1, log);
+  assert.ok(markerAt(log, "MERGE") < audit, "the audit follows Phase 1's merges");
+  assert.ok(audit < markerAt(log, "FLUSH"), "…and precedes the flush that starts Phase 2");
+  assert.ok(audit < markerAt(log, "SQUASH"));
+  assert.match(log, /PRD audit: no missing requirements\./);
 
-  // Without the flag it never runs, however much PRD there is to validate.
-  const off = runSprint(root);
-  assert.equal(off.code, 0, `${off.stdout}\n${off.stderr}`);
-  assert.equal(existsSync(join(root, ".scratch/demo/coverage-report.md")), false);
-  assert.doesNotMatch(off.stdout, /## Coverage Report/);
-
+  // off: never runs, however much PRD there is.
   const root2 = fixtureRepo();
   addIssue(root2, "01-alpha.md");
   writeFileSync(join(root2, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
-  const on = runSprint(root2, ["--coverage"]);
-  assert.equal(on.code, 0, `${on.stdout}\n${on.stderr}`);
-  assert.equal(existsSync(join(root2, ".scratch/demo/coverage-report.md")), true);
-  assert.match(on.stdout, /## Coverage Report/);
-  const log = traceLog(root2);
-  assert.ok(markerAt(log, "SQUASH") < markerAt(log, "CLEANUP"), "cleanup must follow the squash");
+  const off = runSprint(root2, ["--prd-audit", "off"]);
+  assert.equal(off.code, 0, `${off.stdout}\n${off.stderr}`);
+  assert.equal(existsSync(join(root2, ".scratch/demo/prd-audit.md")), false);
+  assert.doesNotMatch(off.stdout, /## PRD Audit/);
 });
 
-test("a feature slug containing 'skipped' does not silently cancel coverage validation", () => {
-  // Regression: loop.mjs used to test /skipped/i against coverage-validation.sh's *entire*
+test("PRDAudit fix: missing requirements become one Phase 2 fix issue, audited no further", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
+  fake(root, "prd-audit.response", AUDIT_WITH_GAP);
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha", "fix-prd-gaps"]);
+  const issue = readFileSync(join(root, ".scratch/demo/issues/done/02-fix-prd-gaps.md"), "utf8");
+  assert.match(issue, /^Source: .*prd-audit\.md \(prd-audit\)$/m, "the Source: line is the depth bound");
+  assert.match(issue, /- \[[ x]\] Users can export to CSV — PRD: Export/);
+  const log = traceLog(root);
+  assert.equal(log.split("step=prd-audit").length - 1, 1, "one audit per sprint, none after Phase 2");
+});
+
+test("PRDAudit report: the audit runs, and its gaps are left for a human", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
+  fake(root, "prd-audit.response", AUDIT_WITH_GAP);
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { PRDAudit: "report" } }));
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  assert.match(r.stdout, /## PRD Audit/);
+  // --coverage, the old flag, is `report` too.
+  const root2 = fixtureRepo();
+  addIssue(root2, "01-alpha.md");
+  writeFileSync(join(root2, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
+  fake(root2, "prd-audit.response", AUDIT_WITH_GAP);
+  const old = runSprint(root2, ["--coverage"]);
+  assert.equal(old.code, 0, `${old.stdout}\n${old.stderr}`);
+  assert.deepEqual(state(root2).completed_slugs, ["alpha"]);
+  assert.match(readFileSync(join(root2, ".scratch/demo/sprint.env"), "utf8"), /CREW_PRD_AUDIT="report"/);
+});
+
+test("PRDAudit fix queues nothing while a Phase 1 issue is still open", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
+  fake(root, "prd-audit.response", AUDIT_WITH_GAP);
+  fake(root, "beta.exit", "1");
+  const r = runSprint(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /PRD audit: gaps not queued — 1 Phase 1 issue\(s\) still open \(beta\)/);
+  assert.equal(readdirSync(join(root, ".scratch/demo/issues/open")).some((f) => /fix-prd-gaps/.test(f)), false);
+});
+
+test("a feature slug containing 'skipped' does not silently cancel the PRD audit", () => {
+  // Regression: loop.mjs used to test /skipped/i against the audit script's *entire*
   // stdout, not just its one-line skip message. That stdout embeds $PRD_PATH (which embeds
   // $FEATURE_SLUG) on every non-skip line ("PRD found at .scratch/<slug>/PRD.md", "Extract
   // all requirements from ...", "Completed issues in .scratch/<slug>/issues/done/"), so a
   // feature slug that happens to contain the substring "skipped" — a perfectly ordinary name
   // for a feature about skip logic — made that regex match and cancelled a validation the
-  // user explicitly asked for with --coverage. The same bug as command discovery's, just
+  // user explicitly asked for. The same bug as command discovery's, just
   // triggered through the slug instead of a quoted file's content.
   const root = mkdtempSync(join(tmpdir(), "crew-sprint-"));
   const git = (...args) => sh("git", ["-C", root, ...args]);
@@ -1146,14 +1208,14 @@ test("a feature slug containing 'skipped' does not silently cancel coverage vali
   );
   writeFileSync(join(root, ".scratch/skipped-flow/PRD.md"), "# PRD\n\n- The widget exists\n");
 
-  const r = runSprint(root, ["--coverage", "--feature-slug", "skipped-flow"]);
+  const r = runSprint(root, ["--prd-audit", "report", "--feature-slug", "skipped-flow"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(
-    existsSync(join(root, ".scratch/skipped-flow/coverage-report.md")),
+    existsSync(join(root, ".scratch/skipped-flow/prd-audit.md")),
     true,
-    "a feature slug containing 'skipped' must not cancel a requested coverage validation",
+    "a feature slug containing 'skipped' must not cancel a requested PRD audit",
   );
-  assert.match(r.stdout, /## Coverage Report/);
+  assert.match(r.stdout, /## PRD Audit/);
 });
 
 // ─── what the last prose bodies used to assert about themselves ──────────────
@@ -1164,42 +1226,92 @@ test("a feature slug containing 'skipped' does not silently cancel coverage vali
 // threshold has one source, the sprint reports once and last, and a review gap is named in
 // the summary rather than merely counted in the state file.
 
-test("the promotion threshold has one source: --promote reaches findingsAtOrAbove", () => {
-  const reviewWithHigh = [
-    "## Branch: crew/demo/alpha",
-    "```json",
-    JSON.stringify({
-      branch: "crew/demo/alpha",
-      verdict: "all-met",
-      findings: [{ severity: "HIGH", location: "src/alpha.txt:1", criterion: "Move the trust boundary check before the write" }],
-    }),
-    "```",
-  ].join("\n");
+test("the promotion threshold has one source: fixFindings reaches findingsAtOrAbove", () => {
+  const reviewWith = (severity) =>
+    [
+      "## Branch: crew/demo/alpha",
+      "```json",
+      JSON.stringify({
+        branch: "crew/demo/alpha",
+        verdict: "all-met",
+        findings: [{ severity, location: "src/alpha.txt:1", criterion: "Move the trust boundary check before the write" }],
+      }),
+      "```",
+    ].join("\n");
+  const sprintWith = (severity, extra = [], config = null) => {
+    const root = fixtureRepo();
+    addIssue(root, "01-alpha.md");
+    fake(root, "alpha.review", reviewWith(severity));
+    if (config) {
+      mkdirSync(join(root, ".coding-crew"), { recursive: true });
+      writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: config }));
+    }
+    const r = runSprint(root, extra);
+    assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+    return { root, r };
+  };
 
-  // Default: CRITICAL only. A HIGH is reported, never promoted — so the sprint ends after
-  // the one issue, with the finding left open and attributed.
+  // Default: high. The HIGH becomes a Phase 2 fix issue; the threshold is read from
+  // sprint.env (CREW_FIX_FINDINGS), not restated anywhere.
+  const high = sprintWith("HIGH");
+  assert.equal(state(high.root).completed_slugs.length, 2, "the HIGH should have run as its own fix issue");
+  const criteria = readFileSync(join(high.root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
+  assert.match(criteria, /\[HIGH\] Move the trust boundary check before the write/);
+  assert.match(readFileSync(join(high.root, ".scratch/demo/sprint.env"), "utf8"), /CREW_FIX_FINDINGS="high"/);
+
+  // A MEDIUM is reported, never promoted, at the default — left open and attributed.
+  const medium = sprintWith("MEDIUM");
+  assert.deepEqual(state(medium.root).completed_slugs, ["alpha"], "no fix issue for a MEDIUM at the default");
+  assert.match(medium.r.stdout, /## Next Step/);
+
+  // config.json's afk.fixFindings: medium promotes it.
+  const onMedium = sprintWith("MEDIUM", [], { fixFindings: "medium" });
+  assert.equal(state(onMedium.root).completed_slugs.length, 2);
+
+  // --promote critical, the old flag, still narrows to CRITICAL — and names the setting.
+  const critical = sprintWith("HIGH", ["--promote", "critical"]);
+  assert.deepEqual(state(critical.root).completed_slugs, ["alpha"]);
+  assert.match(critical.r.stdout, /afk\.fixFindings, or --fix-findings/);
+
+  // none: nothing promoted, whatever the severity.
+  const none = sprintWith("CRITICAL", ["--fix-findings", "none"]);
+  assert.deepEqual(state(none.root).completed_slugs, ["alpha"]);
+});
+
+test("a bad flag value is a setup error naming the flag", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  fake(root, "alpha.review", reviewWithHigh);
-  const off = runSprint(root);
-  assert.equal(off.code, 0, `${off.stdout}\n${off.stderr}`);
-  assert.deepEqual(state(root).completed_slugs, ["alpha"], "no fix issue at the default threshold");
-  assert.equal(existsSync(join(root, ".scratch/demo/reviews/alpha.criteria.md")), false);
-  // An unpromoted severity is never subtracted from the reminder.
-  assert.match(off.stdout, /## Next Step/);
-  assert.match(off.stdout, /--promote critical-high/);
+  const r = runSprint(root, ["--fix-findings", "severe", "--coder-timeout", "0"]);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /--fix-findings is "severe"/);
+  assert.match(r.stderr, /--coder-timeout must be a positive number of minutes/);
+});
 
-  // With the flag, the same finding becomes a Phase 2 fix issue. The threshold is read
-  // from sprint.env (CREW_PROMOTE), not restated anywhere.
-  const root2 = fixtureRepo();
-  addIssue(root2, "01-alpha.md");
-  fake(root2, "alpha.review", reviewWithHigh);
-  const on = runSprint(root2, ["--promote", "critical-high"]);
-  assert.equal(on.code, 0, `${on.stdout}\n${on.stderr}`);
-  assert.equal(state(root2).completed_slugs.length, 2, "the HIGH should have run as its own fix issue");
-  const criteria = readFileSync(join(root2, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
-  assert.match(criteria, /\[HIGH\] Move the trust boundary check before the write/);
-  assert.match(readFileSync(join(root2, ".scratch/demo/sprint.env"), "utf8"), /CREW_PROMOTE="critical-high"/);
+test("config.json's squashCommits and installDeps turn those steps off, as their flags do", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { squashCommits: false, installDeps: false } }));
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const log = traceLog(root);
+  assert.doesNotMatch(log, /step=deps/);
+  assert.match(`${r.stdout}\n${r.stderr}\n${log}`, /squash skipped|--no-squash|skipping squash/i);
+});
+
+test("`plan` shows each setting and which file or flag set it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { fixFindings: "medium", timeouts: { coder: 60 } } }));
+  const r = sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo", "--prd-audit", "report"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, MAIN_ROOT: root },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /findings: +fix medium and above in Phase 2 +\[project\]/);
+  assert.match(r.stdout, /PRD audit: report +\[flag\]/);
+  assert.match(r.stdout, /timeouts: +coder 60m \[project\], reviewer 20m, triage 20m, commandFinder 5m, prdAuditor 20m, merge 5m/);
 });
 
 test("the sprint reports once, from disk, and the summary is the last thing printed", () => {
@@ -1756,7 +1868,7 @@ test("a worktree that starts with no node_modules is verified and merged, with n
 //
 // discover-commands.sh / write-commands-cache.sh mechanically build the prompt and persist
 // the answer; the model call itself is faked here (fake-dispatch.sh's "commands-discovery"
-// branch), exactly the seam coverage validation already uses for the same reason.
+// branch), exactly the seam the PRD audit already uses for the same reason.
 
 test("command discovery writes .coding-crew/dev-commands.json from the repo's own Makefile", () => {
   const root = fixtureRepo(); // fixtureRepo() always seeds a Makefile with test/lint/typecheck

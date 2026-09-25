@@ -19,7 +19,7 @@ export async function mergeAndClose(ctx, worker, outcome) {
   // Bounded: effects.bash is spawnSync, so a stalled merge would freeze the whole sprint.
   const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {
     env: sprint.childEnv(),
-    timeoutMs: options.mergeTimeoutMs,
+    timeoutMs: options.timeoutMs.merge,
   });
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${merge.stdout.trim()}`);
   if (merge.code !== 0) {
@@ -38,7 +38,7 @@ export async function mergeAndClose(ctx, worker, outcome) {
   // The branch is for github's AC receipt check; local ignores it.
   const close = effects.bash("close-issue.sh", [issueRef(issue), branch], {
     env: sprint.childEnv(),
-    timeoutMs: options.mergeTimeoutMs,
+    timeoutMs: options.timeoutMs.merge,
   });
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${close.stdout.trim()}`);
   if (close.code !== 0) {

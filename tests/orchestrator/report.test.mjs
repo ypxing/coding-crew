@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   applySchemaPrefilter,
   findingsAtOrAbove,
+  parsePrdAudit,
   parseReviewAggregate,
   parseReviewReport,
   parseTriageReport,
@@ -142,10 +143,27 @@ test("a review sidecar's findings parse into severity, location and criterion", 
     explicit: true,
   });
   assert.deepEqual(findingsAtOrAbove(r.findings, "critical").map((f) => f.severity), ["CRITICAL"]);
-  assert.deepEqual(findingsAtOrAbove(r.findings, "critical-high").map((f) => f.severity), [
+  assert.deepEqual(findingsAtOrAbove(r.findings, "high").map((f) => f.severity), [
     "CRITICAL",
     "HIGH",
   ]);
+  assert.deepEqual(findingsAtOrAbove(r.findings, "none"), []);
+});
+
+test("findingsAtOrAbove: medium takes MEDIUM too, never LOW", () => {
+  const findings = ["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((severity) => ({ severity }));
+  assert.deepEqual(findingsAtOrAbove(findings, "medium").map((f) => f.severity), ["MEDIUM", "HIGH", "CRITICAL"]);
+});
+
+test("parsePrdAudit: the last fenced json's missing list; no block queues nothing", () => {
+  const text = [
+    "✗ Export to CSV: no evidence",
+    "```json",
+    '{"covered": 3, "partial": 1, "missing": [{"requirement": "Users can export to CSV", "detail": "PRD §2"}, {"requirement": " "}]}',
+    "```",
+  ].join("\n");
+  assert.deepEqual(parsePrdAudit(text), { ok: true, missing: [{ requirement: "Users can export to CSV", detail: "PRD §2" }] });
+  assert.deepEqual(parsePrdAudit("✗ Export to CSV: no evidence"), { ok: false, missing: [] });
 });
 
 // ─── review: the sidecar is the only channel ─────────────────────────────────────

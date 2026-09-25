@@ -25,7 +25,14 @@ original queue at its normal pace.
 **Phase 2 — fix round.** When the loop is about to exit, flush the parked issues to
 `ready-for-agent` and re-enter the loop instead of exiting. Fix issues are ordinary issues: they
 get a worktree, TDD, `verify-worktree.sh`, AC verification, and their own code review before
-merging. Squash and coverage validation run after both phases, so fixes are included.
+merging. The squash runs after both phases, so fixes are included.
+
+**PRD gaps join the same flush.** When Phase 1 drains, the PRD audit (afk.PRDAudit, default
+`fix`) runs once, before the flush. Its ✗ missing requirements — ones no issue carried, so no
+review ever checked — become one parked fix issue (`promote-findings.sh defer-gaps`), which
+Phase 2 implements alongside the findings fixes. Its `Source:` line is the same depth bound, and
+nothing after Phase 2 is audited again. While a Phase 1 issue is still open, gaps are not queued:
+that issue's requirements would read as missing.
 
 Findings are **not** promoted the moment they are raised. A fix branch running alongside
 still-open Phase 1 issues would edit the same files as its siblings; `merge-branches.sh` aborts
@@ -34,22 +41,22 @@ queue is empty removes that class of conflict entirely.
 
 ## Rules
 
-**Severity threshold: CRITICAL only, by default.** `--promote critical-high` adds HIGH;
-MEDIUM/LOW are never promoted. Unattended promotion has no triage step — it cannot dismiss a
-finding that is technically correct but contradicts a documented architecture decision (which
-`crew-address-findings` Step 1.5 explicitly requires a human to do). That risk is worth taking
-for a CRITICAL, where verification and the Phase 2 review still catch a bad fix. It is not worth
-a full worktree + coder + verify + review cycle for a style nit — and it is not worth it *by
-default* for a HIGH either: HIGH is the reviewer's judgement class ("architecture drift", "trust
-boundary"), the most false-positive-prone severity, so promoting it unattended spends a whole
-pipeline on findings a human would often dismiss. The threshold is a fixed severity string
-printed by `promote-findings.sh guard`, so promotion needs no judgment call — the reviewer already
-assigned severity, and the orchestrator never has to remember which severities this sprint takes.
+**Severity threshold: config.json's `afk.fixFindings`, default `high`** (`--fix-findings` for one
+run). It names the lowest severity fixed: `critical`, `high` (CRITICAL and HIGH), `medium`
+(adds MEDIUM) or `none`. LOW is never promoted. Unattended promotion has no triage step — it
+cannot dismiss a finding that is technically correct but contradicts a documented architecture
+decision (which `crew-address-findings` Step 1.5 explicitly requires a human to do). That risk
+is worth taking for a CRITICAL or a HIGH: the reviewer protocol requires each to name a concrete
+failure scenario and pass a pre-report gate, and verification and the Phase 2 review still catch
+a bad fix. It is not worth a full worktree + coder + verify + review cycle *by default* for a
+MEDIUM, which needs no failure scenario. The threshold is a fixed severity string printed by
+`promote-findings.sh guard`, so promotion needs no judgment call — the reviewer already assigned
+severity, and the orchestrator never has to remember which severities this sprint takes.
 
-Lowering the default is a real coverage reduction, so it is paid for on the way out rather than
-hidden: nothing subtracts an unpromoted severity from `remind`, so every HIGH is counted, named,
-and attributed to its report, and the reminder states the threshold that left it open plus the
-flag that would have promoted it.
+Anything below the threshold is paid for on the way out rather than hidden: nothing subtracts an
+unpromoted severity from `remind`, so every such finding is counted, named, and attributed to its
+report, and the reminder states the threshold that left it open plus the setting that would have
+promoted it.
 
 **Grouping: one fix issue per reviewed branch**, with one acceptance criterion per finding. All
 findings from one branch cite that branch's diff, so they cluster in the same files — one
@@ -90,7 +97,7 @@ After a sprint with promotion, `sprint-review-<TIMESTAMP>.md` distinguishes thre
   `## Promoted Findings` section that `promote-findings.sh defer` appends
   (`<branch>: CRITICAL → <issue path>`).
 - **Open, needs human triage** — everything the threshold did not cover on Phase 1 branches:
-  MEDIUM/LOW always, and HIGH unless the sprint ran `--promote critical-high`.
+  LOW always, and MEDIUM unless `fixFindings` is `medium`.
 - **New, found reviewing the fixes** — findings of any severity raised against Phase 2 branches,
   report-only via the depth bound.
 
@@ -99,9 +106,9 @@ pairs, so a later human run starts with a queue of genuinely open findings.
 
 ## End-of-sprint reminder
 
-Promotion is deliberately partial — MEDIUM/LOW are never promoted, HIGH is not promoted by
-default, and Phase 2 findings are report-only — so a sprint almost always ends with findings a
-human still has to look at. Every
+Promotion is deliberately partial — LOW is never promoted, MEDIUM is not promoted by default,
+and Phase 2 findings are report-only — so a sprint almost always ends with findings a human
+still has to look at. Every
 variant therefore ends by running `promote-findings.sh remind`, which counts the findings **not**
 covered by a `## Promoted Findings` marker (attributing each finding to the `## Branch:` section it
 appears under) and prints either a real count or `FINDINGS: none`.
@@ -114,13 +121,14 @@ dismissed once a human reads them.
 ## Script interface
 
 ```bash
-# Which severities does this sprint promote? (CREW_PROMOTE, set from --promote by session-init.sh)
+# Which severities does this sprint promote? (CREW_FIX_FINDINGS, set by session-init.sh)
 bash "<skill-dir>/scripts/promote-findings.sh" policy
-# → "promote: CRITICAL" | "promote: CRITICAL, HIGH"
+# → "promote: CRITICAL" | "promote: CRITICAL, HIGH" | "promote: CRITICAL, HIGH, MEDIUM" | "promote: "
 
 # Depth bound: is this branch's issue itself a promoted fix issue?
 bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file>"
-# → "guard: promotable — severities: CRITICAL" | "guard: skip — source-guarded ..."
+# → "guard: promotable — severities: CRITICAL, HIGH" | "guard: skip — source-guarded ..."
+#   | "guard: skip — fixFindings is none"
 
 # Park a fix issue and annotate the report. Criteria file = one "- [ ] <finding>" line per finding.
 bash "<skill-dir>/scripts/promote-findings.sh" defer \
@@ -129,6 +137,12 @@ bash "<skill-dir>/scripts/promote-findings.sh" defer \
   --report ".scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md" \
   --criteria-file "<tmp criteria file>"
 # → "defer: .scratch/<slug>/issues/open/<NN>-fix-findings-<issue-slug>.md"
+
+# The PRD audit's missing requirements → one parked fix issue (skipped while one is still open)
+bash "<skill-dir>/scripts/promote-findings.sh" defer-gaps \
+  --feature-slug "$FEATURE_SLUG" --report ".scratch/$FEATURE_SLUG/prd-audit.md" \
+  --criteria-file "<tmp criteria file>"
+# → "defer-gaps: .scratch/<slug>/issues/open/<NN>-fix-prd-gaps.md" | "defer-gaps: skip — already queued: <path>"
 
 # Phase 1 → Phase 2
 bash "<skill-dir>/scripts/promote-findings.sh" flush --feature-slug "$FEATURE_SLUG"

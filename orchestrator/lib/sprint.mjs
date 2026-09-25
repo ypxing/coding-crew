@@ -30,8 +30,8 @@ const ENV_KEYS = [
   "DISPATCH_DIR",
   "REVIEW_DIR",
   "CREW_SCRIPTS",
-  "CREW_COVERAGE",
-  "CREW_PROMOTE",
+  "CREW_PRD_AUDIT",
+  "CREW_FIX_FINDINGS",
 ];
 
 /** Parse the `export K="v"` lines session-init.sh writes. Follows the `.` pointer. */
@@ -74,11 +74,11 @@ export class Sprint {
     this._blockedThisRun = new Set();
   }
 
-  static async init(effects, { featureSlug, coverage, promote, passthrough = [], deps = true, log = () => {} }) {
+  static async init(effects, { featureSlug, fixFindings, PRDAudit, passthrough = [], deps = true, log = () => {} }) {
     const args = [];
     if (featureSlug) args.push("--feature-slug", featureSlug);
-    if (coverage) args.push("--coverage");
-    if (promote) args.push("--promote", promote);
+    if (PRDAudit) args.push("--prd-audit", PRDAudit);
+    if (fixFindings) args.push("--fix-findings", fixFindings);
     args.push(...passthrough);
     const r = effects.bash("session-init.sh", args);
     if (r.code !== 0) {
@@ -159,11 +159,13 @@ export class Sprint {
   get traceLog() {
     return this.env.TRACE_LOG;
   }
-  get coverage() {
-    return this.env.CREW_COVERAGE === "1";
+  /** "off" | "report" | "fix" — see crew-config.mjs's PRD_AUDIT. */
+  get PRDAudit() {
+    return this.env.CREW_PRD_AUDIT || "off";
   }
-  get promoteThreshold() {
-    return this.env.CREW_PROMOTE || "critical";
+  /** The lowest severity auto-fixed: "critical" | "high" | "medium" | "none". */
+  get fixFindings() {
+    return this.env.CREW_FIX_FINDINGS || "high";
   }
 
   /** Sprint-scoped env for every child: MAIN_ROOT + STATE_FILE + TRACE_LOG. */

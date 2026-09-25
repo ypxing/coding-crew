@@ -62,7 +62,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       reportPath: sidecarFile,
     },
     {
-      timeoutMs: options.reviewTimeoutMs,
+      timeoutMs: options.timeoutMs.reviewer,
       onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   );
@@ -103,8 +103,7 @@ export async function promote(ctx, worker, review, outcome) {
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${guardText}`);
   if (!/promotable/.test(guardText)) return; // source-guarded: the depth bound
 
-  const threshold = /critical-high/i.test(guardText) ? "critical-high" : sprint.promoteThreshold;
-  const promotable = findingsAtOrAbove(review.parsed.findings, threshold);
+  const promotable = findingsAtOrAbove(review.parsed.findings, sprint.fixFindings);
   if (!promotable.length) return;
 
   mkdirSync(sprint.reviewDir, { recursive: true });

@@ -11,12 +11,39 @@
   doesn't keep listing a stale second reviewer. Uninstall removes them too. A user-level install
   (`TARGET_REPO=$HOME`) is cleaned the same way the next time you install at that level.
 - **crew-afk can run each role on a different runtime.** `.coding-crew/config.json`'s `afk`
-  section maps any role (`coder`, `reviewer`, `triage`, `commandsDiscovery`,
-  `coverageValidation`) to an installed runtime and names models per runtime, e.g. a claude coder
-  reviewed by codex. A model string only ever reaches its own runtime's CLI; a role moved to
-  another runtime gets that runtime's default, not the coder's model. `plan` prints the role →
-  runtime/model table, and preflight checks each runtime a role uses, naming the role when one
-  isn't installed. With no config, every role runs on `--platform` as before.
+  section maps any role (`coder`, `reviewer`, `triage`, `commandFinder`, `prdAuditor`) to an
+  installed runtime and names models per runtime, e.g. a claude coder reviewed by codex. A model
+  string only ever reaches its own runtime's CLI; a role moved to another runtime gets that
+  runtime's default, not the coder's model. `--model` is in the launcher's vocabulary: it reaches
+  every role on the `--platform` runtime, and when the coder is moved elsewhere a warning names
+  the roles it still applies to. `plan` prints the role → runtime/model table, and preflight
+  checks each runtime a role uses, naming the role when one isn't installed. With no config,
+  every role runs on `--platform` as before.
+- **Two roles are renamed:** `commandsDiscovery` → `commandFinder`, `coverageValidation` →
+  `prdAuditor`. An `afk-models.json` using the old names is moved under the new ones.
+- **Findings are fixed from HIGH up by default, and the threshold is a setting.**
+  `afk.fixFindings` (`--fix-findings` for one run) names the lowest severity promoted into
+  Phase 2: `critical`, `high` (new default — was CRITICAL only), `medium` or `none`. HIGH findings
+  must name a failure scenario and pass the reviewer's pre-report gate, so they are real bugs;
+  MEDIUM needs neither, so it is opt-in. `--promote critical|critical-high` still works as an old
+  name for `critical|high`.
+- **The PRD audit is on by default, and can fix what it finds.** `afk.PRDAudit` (`--prd-audit`)
+  is `off`, `report` or `fix` (default). It now runs once when Phase 1 drains, before the flush,
+  instead of after the squash, and asks only what a per-branch review cannot see: requirements no
+  issue carried, flows across issues, cross-cutting concerns — it no longer re-grades criteria a
+  review already passed. In `fix` mode its ✗ missing requirements become one fix issue
+  (`NN-fix-prd-gaps.md`) that Phase 2 implements with the findings fixes; its `Source:` line keeps
+  it from being audited or promoted again. Nothing is queued while a Phase 1 issue is still open.
+  Skipped at no cost when the feature has no `PRD.md`. `coverage-validation.sh` is now
+  `prd-audit.sh`, its report `prd-audit.md`; `--coverage` still works, as `report`.
+- **Sprint settings move into `config.json`:** `timeouts` (minutes per role, plus `merge`),
+  `maxParallel`, `installDeps` and `squashCommits`, each overridden for one run by its flag.
+  Timeouts are per role now: `--coder-timeout` (was `--worker-timeout`, still accepted),
+  `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` still sets every non-coder role.
+  Two defaults drop: command finding 20 → 5 minutes (a timeout falls back to per-check
+  discovery), and merge/close 10 → 5 — a repo with slow git hooks on merge commits should raise
+  `timeouts.merge`. `plan` shows each setting and the file or flag that set it; a bad value is a
+  setup error, in config or on the command line.
 - **`.coding-crew/afk-models.json` is replaced by `config.json`.** The first `run` that finds it
   moves its values into `afk.models.claude` and deletes it (`plan` only says it would). Those
   values only ever applied on claude, so behaviour is unchanged on every platform. An invalid

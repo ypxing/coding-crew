@@ -436,8 +436,8 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
 }
 
 /**
- * An agent-less dispatch: one reasoning pass with no agent definition, for coverage
- * validation and one-time command discovery (commands.mjs).
+ * An agent-less dispatch: one reasoning pass with no agent definition, for the PRD audit
+ * (loop.mjs) and one-time command discovery (commands.mjs).
  *
  * Tool access is not restricted: claude's `--tools` is variadic and swallows the prompt
  * when no flag separates them.
@@ -449,7 +449,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
 export async function dispatchPlain(
   effects,
   platform,
-  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "coverage-validation" },
+  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "prd-audit" },
 ) {
   const env = {
     MAIN_ROOT: mainRoot,

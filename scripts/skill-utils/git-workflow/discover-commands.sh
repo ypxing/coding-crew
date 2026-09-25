@@ -13,7 +13,7 @@ set -euo pipefail
 # broke the pattern-matched approach this replaces).
 #
 # This script only ever decides whether a model call is needed and, if so, assembles the
-# prompt for it — mirroring coverage-validation.sh's shape exactly, down to the "skipped" /
+# prompt for it — mirroring prd-audit.sh's shape exactly, down to the "skipped" /
 # not-skipped stdout contract loop.mjs already knows how to read (the whole of stdout becomes
 # the prompt, informational preamble included, exactly as it does there). It never calls a
 # model itself, and it never writes a result anywhere; a sibling script owns turning the

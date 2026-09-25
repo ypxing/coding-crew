@@ -25,14 +25,19 @@
  * its siblings never run. Either way, findings are flushed first — see flush() below —
  * because a sprint that stalled on unrelated issues may still have merged code carrying a
  * CRITICAL finding.
+ *
+ * The PRD audit (runPrdAudit) runs once, the first time the queue drains: its gaps are parked
+ * like findings, so the same flush sends both into Phase 2.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { resumeRoute, runHousekeeping, runWorker } from "./pipeline.mjs";
 import { getTracker } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
+import { prdGapsCriteria } from "./prompts.mjs";
+import { parsePrdAudit } from "./report.mjs";
 
 export async function runSprint(ctx) {
   const { sprint, effects, options } = ctx;
@@ -133,6 +138,8 @@ export async function runSprint(ctx) {
   }
 
   let capped = false;
+  let prdAuditReport = null;
+  let audited = false;
   while (true) {
     await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
 
@@ -141,6 +148,12 @@ export async function runSprint(ctx) {
       flush(ctx);
       ctx.log(`Round cap reached (--max-rounds ${options.maxRounds}).`);
       break;
+    }
+    // Once, when Phase 1 has drained: its gaps join the findings in the one flush below,
+    // so Phase 2 fixes both, and nothing after it is audited again.
+    if (!audited) {
+      audited = true;
+      prdAuditReport = await runPrdAudit(ctx, tracker);
     }
     if (flush(ctx) > 0) continue;
     break;
@@ -155,8 +168,90 @@ export async function runSprint(ctx) {
       ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
       : tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug }).some((i) => i.status !== "done"));
 
-  await wrapUp(ctx, { stalled });
+  await wrapUp(ctx, { stalled, prdAuditReport });
   return { stalled, history };
+}
+
+/**
+ * Issues this sprint hasn't finished, other than parked fix issues. Local issues keep their
+ * `Status:` until close-issue.sh moves them, so a blocked one is still in open/.
+ */
+function unfinishedIssues(tracker, mainRoot, featureSlug) {
+  if (tracker.listOpenIssueFiles) {
+    return tracker
+      .listOpenIssueFiles(mainRoot, { featureSlug })
+      .map((p) => tracker.parseIssue(p))
+      .filter((i) => i.status !== "deferred-findings");
+  }
+  return tracker.listOpen(mainRoot, { featureSlug }).filter((i) => i.status !== "done");
+}
+
+/**
+ * The PRD audit (prdAuditor, afk.PRDAudit): what no per-branch review can see — a PRD
+ * requirement no issue carried, a flow across issues. In `fix` mode its ✗ missing
+ * requirements become one parked fix issue, which the caller's flush sends into Phase 2.
+ * Gaps are not queued while a Phase 1 issue is still open: its requirements would read as
+ * missing, and queuing them would duplicate that issue. Returns the report's path, or null.
+ */
+async function runPrdAudit(ctx, tracker) {
+  const { sprint, effects, options } = ctx;
+  const mode = sprint.PRDAudit;
+  if (mode === "off") return null;
+  const audit = effects.exec("bash", [effects.script("prd-audit.sh"), "--mode", mode], {
+    env: sprint.childEnv(),
+    mutating: false,
+  });
+  // Only the script's own first line ever says "skipped" — the PRD it quotes may say it too.
+  const firstLine = audit.stdout.split("\n", 1)[0] ?? "";
+  if (/^PRD audit: skipped/.test(firstLine)) {
+    ctx.log(firstLine);
+    return null;
+  }
+
+  const outFile = join(sprint.env.SPRINT_DIR, "prd-audit.md");
+  const { runtime, model } = options.crew.prdAuditor;
+  ctx.log(`[STEP] step=prd-audit mode=${mode} model=${model ?? "inherit"} runtime=${runtime}`);
+  const r = await dispatchPlain(effects, runtime, {
+    prompt: audit.stdout,
+    cwd: effects.mainRoot,
+    mainRoot: effects.mainRoot,
+    model,
+    outFile,
+    timeoutMs: options.timeoutMs.prdAuditor,
+  });
+  if (r.code !== 0 || r.timedOut) {
+    ctx.log(`PRD audit: dispatch did not complete (${r.timedOut ? "timed out" : `exit ${r.code}`}) — no report, nothing queued.`);
+    return null;
+  }
+  ctx.log(`PRD audit report: ${outFile}`);
+  if (mode !== "fix" || r.dryRun) return outFile;
+
+  const unfinished = unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug);
+  if (unfinished.length) {
+    ctx.log(
+      `PRD audit: gaps not queued — ${unfinished.length} Phase 1 issue(s) still open (${unfinished.map((i) => i.slug).join(", ")}), ` +
+        "whose requirements would read as missing. Resolve them and re-run.",
+    );
+    return outFile;
+  }
+  const parsed = parsePrdAudit(r.text);
+  if (!parsed.ok) {
+    ctx.log("PRD audit: no closing json block in the report — nothing queued; read it by hand.");
+    return outFile;
+  }
+  if (!parsed.missing.length) {
+    ctx.log("PRD audit: no missing requirements.");
+    return outFile;
+  }
+  const criteriaPath = join(sprint.env.SPRINT_DIR, "prd-gaps.criteria.md");
+  writeFileSync(criteriaPath, prdGapsCriteria(parsed.missing));
+  const defer = effects.bash(
+    "promote-findings.sh",
+    ["defer-gaps", "--feature-slug", sprint.featureSlug, "--report", outFile, "--criteria-file", criteriaPath],
+    { env: sprint.childEnv() },
+  );
+  ctx.log(`PRD audit: ${parsed.missing.length} missing requirement(s) → ${defer.stdout.trim() || defer.stderr.trim()}`);
+  return outFile;
 }
 
 /** Phase 1 → Phase 2: flip parked fix issues to ready-for-agent. */
@@ -173,43 +268,14 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { stalled }) {
+async function wrapUp(ctx, { stalled, prdAuditReport }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
   // --platform picks the co-author trailer: the coder's runtime wrote the commits.
   const squashArgs = ["--platform", options.crew.coder.runtime];
-  if (options.noSquash) squashArgs.push("--no-squash");
+  if (!options.squashCommits) squashArgs.push("--no-squash");
   ctx.log(effects.bash("squash-commits.sh", squashArgs, { env: sprint.childEnv() }).stdout.trim());
-
-  // --- coverage validation (opt-in, decided by the script from sprint.env) ---
-  const coverage = effects.exec("bash", [effects.script("coverage-validation.sh")], {
-    env: sprint.childEnv(),
-    mutating: false,
-  });
-  let coverageReport = null;
-  // Only coverage-validation.sh's own *first line* ever says "skipped" — its skip paths echo
-  // that single line and exit immediately, before the PRD is ever quoted. Testing the whole
-  // of coverage.stdout (as this used to do) matches "skipped" anywhere inside the PRD's own
-  // requirements prose — a PRD describing what should or shouldn't be skipped is exactly the
-  // kind of text this step exists to read — and would silently skip a real validation with
-  // nothing logged to say why. See commands.mjs for the same fix on command discovery's
-  // identical shape.
-  const coverageFirstLine = coverage.stdout.split("\n", 1)[0] ?? "";
-  if (!/^Coverage validation: skipped/.test(coverageFirstLine)) {
-    const outFile = join(sprint.env.SPRINT_DIR, "coverage-report.md");
-    const { runtime, model } = options.crew.coverageValidation;
-    const r = await dispatchPlain(effects, runtime, {
-      prompt: coverage.stdout,
-      cwd: effects.mainRoot,
-      mainRoot: effects.mainRoot,
-      model,
-      outFile,
-      timeoutMs: options.reviewTimeoutMs,
-    });
-    coverageReport = r.code === 0 ? outFile : null;
-    ctx.log(coverageReport ? `Coverage report: ${outFile}` : "Coverage validation dispatch failed.");
-  }
 
   // --- worktree cleanup (mechanical, idempotent) ----------------------------
   const cleanupArgs = [
@@ -229,8 +295,8 @@ async function wrapUp(ctx, { stalled }) {
   if (stalled) summaryArgs.push("--stalled");
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
   ctx.out(summary.stdout);
-  if (coverageReport && existsSync(coverageReport)) {
-    ctx.out(`\n## Coverage Report\n\n(see ${coverageReport})\n`);
+  if (prdAuditReport && existsSync(prdAuditReport)) {
+    ctx.out(`\n## PRD Audit\n\n(see ${prdAuditReport})\n`);
   }
   ctx.out("NO MORE TASKS");
 }

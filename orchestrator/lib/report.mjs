@@ -33,7 +33,7 @@ function normaliseCheck(value) {
  * insignificant, so this is immune to the indentation a herdr-captured pane transcript
  * sometimes adds — unlike a line-anchored regex or awk pattern, which is not.
  *
- * The only remaining caller is parseReviewAggregate: the round-aggregate file is a
+ * Callers: parsePrdAudit (one audit report), and parseReviewAggregate: the round-aggregate file is a
  * concatenation of several dispatches' sidecar contents (see pipeline/review.mjs's runReview),
  * appended as fenced json blocks so a later retry's block can be told apart from an
  * earlier one for the same branch. Per-dispatch parsing (parseWorkerReport,
@@ -267,9 +267,16 @@ export function parseReviewAggregate(text) {
   return order.map((key) => byBranch.get(key));
 }
 
-export function findingsAtOrAbove(findings, threshold /* "critical" | "critical-high" */) {
-  const allowed = threshold === "critical-high" ? ["CRITICAL", "HIGH"] : ["CRITICAL"];
-  return findings.filter((f) => allowed.includes(f.severity));
+const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+
+/** Findings at `level` ("critical" | "high" | "medium" | "none", afk.fixFindings) or more severe. */
+export function findingsAtOrAbove(findings, level) {
+  const cut = SEVERITY_ORDER.indexOf(String(level).toUpperCase());
+  if (cut < 0) return [];
+  return findings.filter((f) => {
+    const i = SEVERITY_ORDER.indexOf(f.severity);
+    return i >= 0 && i <= cut;
+  });
 }
 
 /**
@@ -313,4 +320,19 @@ export function parseTriageReport(text, sidecar = null) {
       : "no report.json — triage never wrote its verdict file",
     raw,
   };
+}
+
+/**
+ * The PRD audit's closing fenced json (prd-audit.sh's prompt): `{covered, partial, missing:
+ * [{requirement, detail}]}`. The last such block wins, as the prose above it may quote one.
+ * No block is `ok: false` — nothing is queued from prose.
+ */
+export function parsePrdAudit(text) {
+  const last = allFencedJson(text ?? "", "missing").at(-1);
+  if (!last || !Array.isArray(last.missing)) return { ok: false, missing: [] };
+  const missing = last.missing
+    .map((m) => (typeof m === "string" ? { requirement: m } : m))
+    .filter((m) => m && typeof m.requirement === "string" && m.requirement.trim())
+    .map((m) => ({ requirement: m.requirement.trim(), detail: typeof m.detail === "string" ? m.detail.trim() : "" }));
+  return { ok: true, missing };
 }

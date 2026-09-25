@@ -89,7 +89,7 @@ export async function runTriage(ctx, worker, verifyStdout) {
       reportPath: sidecarFile,
     },
     {
-      timeoutMs: options.reviewTimeoutMs,
+      timeoutMs: options.timeoutMs.triage,
       onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   );

@@ -13,6 +13,7 @@ set -euo pipefail
 #   policy  — which severities this sprint promotes (CRITICAL by default)
 #   guard   — may findings from this issue's branch be promoted, or is it already a fix issue?
 #   defer   — write a parked fix issue (Status: deferred-findings) + annotate the review report
+#   defer-gaps — the same for the PRD audit's ✗ missing requirements: one parked issue
 #   flush   — flip every parked fix issue to ready-for-agent (Phase 1 → Phase 2 transition)
 #   list    — list parked fix issues without changing anything
 #   remind  — count findings still needing human triage, for the end-of-sprint reminder
@@ -75,17 +76,28 @@ DEFERRED_STATUS="deferred-findings"
 READY_STATUS="ready-for-agent"
 
 # --- promotion threshold -----------------------------------------------------
-# Default: CRITICAL only. Each promoted branch costs a full worker + verify + review + merge
-# cycle, and HIGH is the reviewer's judgement class ("architecture drift", "trust boundary") —
-# the most false-positive-prone severity — so promoting it by default spent a whole pipeline on
-# findings a human would often dismiss. HIGH is not dropped: nothing subtracts an unpromoted
-# severity from `remind`, so every HIGH is counted and named for /crew-address-findings.
-# `--promote critical-high` (recorded in sprint.env by session-init.sh as CREW_PROMOTE)
-# restores the old behaviour.
+# The lowest severity fixed automatically: CREW_FIX_FINDINGS (config.json's afk.fixFindings,
+# recorded in sprint.env by session-init.sh), default high. Each promoted branch costs a full
+# coder + verify + review + merge cycle, which is why MEDIUM — no failure scenario required —
+# is opt-in. Nothing unpromoted is dropped: `remind` counts and names it for
+# /crew-address-findings. CREW_PROMOTE is the old name (critical | critical-high).
+fix_findings_level() {
+  local level="${CREW_FIX_FINDINGS:-}"
+  if [ -z "$level" ]; then
+    case "${CREW_PROMOTE:-}" in
+      critical) level="critical" ;;
+      *) level="high" ;;
+    esac
+  fi
+  echo "$level"
+}
+
 promote_severities() {
-  case "${CREW_PROMOTE:-critical}" in
-    critical-high) echo "CRITICAL, HIGH" ;;
-    *) echo "CRITICAL" ;;
+  case "$(fix_findings_level)" in
+    critical) echo "CRITICAL" ;;
+    medium) echo "CRITICAL, HIGH, MEDIUM" ;;
+    none) echo "" ;;
+    *) echo "CRITICAL, HIGH" ;;
   esac
 }
 
@@ -97,6 +109,8 @@ Usage:
   promote-findings.sh defer --feature-slug <slug> --branch <branch> --slug <issue-slug>
                             --title <title> --report <review-report> --criteria-file <file>
                             [--severities CRITICAL,HIGH] [--blocked-by <issue-number>]
+  promote-findings.sh defer-gaps --feature-slug <slug> --report <prd-audit-report>
+                            --criteria-file <file>
   promote-findings.sh flush --feature-slug <slug>
   promote-findings.sh list  --feature-slug <slug>
   promote-findings.sh remind --feature-slug <slug>
@@ -175,6 +189,8 @@ cmd_guard() {
 
   if printf '%s\n' "$body" | grep -q '^Source:'; then
     echo "guard: skip — source-guarded (this issue was itself promoted from a review)"
+  elif [ -z "$(promote_severities)" ]; then
+    echo "guard: skip — fixFindings is none"
   else
     # The severity list is printed with the verdict so no caller has to carry the threshold in
     # prose: promote exactly the severities named here, and nothing else.
@@ -333,6 +349,72 @@ cmd_defer() {
 
   _trace PROMOTE "branch=$branch issue=$ref severities=$severities"
   echo "defer: $ref"
+}
+
+# --- defer-gaps ----------------------------------------------------------------
+# The PRD audit's ✗ missing requirements → one parked fix issue, flushed into Phase 2 with
+# the review findings. Its `Source:` line is the same depth bound: findings on its branch are
+# report-only. One per feature while it's open — a resumed sprint that audits again must not
+# queue the same gaps twice.
+cmd_defer_gaps() {
+  local slug="" report="" criteria_file=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --feature-slug) slug="${2:-}"; shift 2 ;;
+      --report) report="${2:-}"; shift 2 ;;
+      --criteria-file) criteria_file="${2:-}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$slug" ] && [ -n "$report" ] && [ -n "$criteria_file" ] || usage
+  [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to queue)"
+
+  local title="Fix PRD gaps: $slug" ref
+  local context="Auto-queued by crew-afk from the PRD audit's missing requirements. No issue carried
+these, so no review ever checked them. The audit's evidence for each is in the report named in
+\`Source:\`."
+
+  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+    local body_file
+    body_file="$(mktemp)"
+    printf 'Source: %s (prd-audit)\n\n## Context\n\n%s\n\n## Acceptance criteria\n\n' "$report" "$context" > "$body_file"
+    cat "$criteria_file" >> "$body_file"
+    if ! ref=$(_github_tracker_cli create-issue --title "$title" --body-file "$body_file" \
+        --feature-slug "$slug" --label "$READY_STATUS" --main-root "$MAIN_ROOT"); then
+      rm -f "$body_file"
+      die "gh issue create failed for: $title"
+    fi
+    rm -f "$body_file"
+  else
+    local open_dir existing f
+    open_dir=$(issues_open_dir "$slug")
+    mkdir -p "$open_dir"
+    for f in "$open_dir"/*-fix-prd-gaps.md; do
+      [ -f "$f" ] && existing="$f"
+    done
+    if [ -n "${existing:-}" ]; then
+      echo "defer-gaps: skip — already queued: $existing"
+      return 0
+    fi
+    ref="$open_dir/$(next_issue_number "$slug")-fix-prd-gaps.md"
+    {
+      echo "# $title"
+      echo ""
+      echo "Status: $DEFERRED_STATUS"
+      echo "Source: $report (prd-audit)"
+      echo ""
+      echo "## Context"
+      echo ""
+      echo "$context"
+      echo ""
+      echo "## Acceptance criteria"
+      echo ""
+      cat "$criteria_file"
+    } > "$ref"
+  fi
+
+  _trace PROMOTE "prd-gaps issue=$ref"
+  echo "defer-gaps: $ref"
 }
 
 # --- flush -------------------------------------------------------------------
@@ -583,6 +665,7 @@ case "$COMMAND" in
   policy) cmd_policy "$@" ;;
   guard) cmd_guard "$@" ;;
   defer) cmd_defer "$@" ;;
+  defer-gaps) cmd_defer_gaps "$@" ;;
   flush) cmd_flush "$@" ;;
   list)  cmd_list "$@" ;;
   remind) cmd_remind "$@" ;;

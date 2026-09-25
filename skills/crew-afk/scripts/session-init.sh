@@ -7,12 +7,14 @@ set -euo pipefail
 
 # Parse --feature-slug flag (consumed here; remaining args forwarded to feature-branch-setup.sh)
 #
-# --coverage and --promote are the sprint's two policy flags. They are captured here, once,
-# where the user's arguments arrive, and written into sprint.env — so the step that acts on
-# them reads a variable instead of the orchestrator remembering a flag for a whole sprint.
+# --prd-audit and --fix-findings are the sprint's two policy settings (config.json's afk
+# PRDAudit / fixFindings, resolved by the orchestrator). They are captured here, once, and
+# written into sprint.env — so the step that acts on them reads a variable instead of the
+# orchestrator remembering a flag for a whole sprint. --coverage and --promote are their old
+# names, still accepted from a hand run.
 FEATURE_SLUG_ARG=""
-COVERAGE_OPT=0
-PROMOTE_OPT="critical"
+PRD_AUDIT_OPT="off"
+FIX_FINDINGS_OPT="high"
 REMAINING_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,15 +22,24 @@ while [[ $# -gt 0 ]]; do
       FEATURE_SLUG_ARG="${2:?--feature-slug requires a value}"
       shift 2
       ;;
+    --prd-audit)
+      PRD_AUDIT_OPT="${2:?--prd-audit requires off, report or fix}"
+      case "$PRD_AUDIT_OPT" in
+        off|report|fix) ;;
+        *) echo "ERROR: --prd-audit must be 'off', 'report' or 'fix' (got '$PRD_AUDIT_OPT')" >&2; exit 1 ;;
+      esac
+      shift 2
+      ;;
     --coverage)
-      COVERAGE_OPT=1
+      PRD_AUDIT_OPT="report"
       shift
       ;;
-    --promote)
-      PROMOTE_OPT="${2:?--promote requires critical or critical-high}"
-      case "$PROMOTE_OPT" in
-        critical|critical-high) ;;
-        *) echo "ERROR: --promote must be 'critical' or 'critical-high' (got '$PROMOTE_OPT')" >&2; exit 1 ;;
+    --fix-findings|--promote)
+      FIX_FINDINGS_OPT="${2:?$1 requires critical, high, medium or none}"
+      [ "$FIX_FINDINGS_OPT" = "critical-high" ] && FIX_FINDINGS_OPT="high"
+      case "$FIX_FINDINGS_OPT" in
+        critical|high|medium|none) ;;
+        *) echo "ERROR: $1 must be 'critical', 'high', 'medium' or 'none' (got '$FIX_FINDINGS_OPT')" >&2; exit 1 ;;
       esac
       shift 2
       ;;
@@ -251,8 +262,8 @@ export TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/orchestrator.log"
 export DISPATCH_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/dispatch"
 export REVIEW_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews"
 export CREW_SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
-export CREW_COVERAGE="$COVERAGE_OPT"
-export CREW_PROMOTE="$PROMOTE_OPT"
+export CREW_PRD_AUDIT="$PRD_AUDIT_OPT"
+export CREW_FIX_FINDINGS="$FIX_FINDINGS_OPT"
 ENV
 
 # Stable entry point: one path the orchestrator can source without knowing the slug.

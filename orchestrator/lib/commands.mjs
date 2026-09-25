@@ -2,7 +2,7 @@
  * commands.mjs — the sprint's one-time command discovery.
  *
  * Finds the local dev-loop test/lint/typecheck commands once, before any worktree exists,
- * the same shape coverage-validation.sh's step already uses: a bash script decides whether a
+ * the same shape prd-audit.sh's step already uses: a bash script decides whether a
  * model call is needed and builds the prompt (discover-commands.sh), an agent-less
  * dispatchPlain() call answers it, and a second bash script (write-commands-cache.sh) turns
  * the answer into .coding-crew/dev-commands.json. verify-worktree.sh and solve-issue then
@@ -54,7 +54,7 @@ export async function discoverCommands(effects, { platform, model, timeoutMs, lo
       model,
       outFile,
       timeoutMs,
-      // Distinguishes this agent-less dispatch from coverage validation's under the
+      // Distinguishes this agent-less dispatch from the PRD audit's under the
       // CREW_FAKE_DISPATCH test seam — see fake-dispatch.sh's "commands-discovery" branch.
       fakeAgent: "commands-discovery",
     });

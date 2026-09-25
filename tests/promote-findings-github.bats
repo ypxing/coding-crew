@@ -245,7 +245,7 @@ SH
   bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^## Promoted Findings' "$REPORT"
-  grep -q -- '- crew/feat/a: CRITICAL → https://github.com/acme/widgets/issues/42' "$REPORT"
+  grep -q -- '- crew/feat/a: CRITICAL, HIGH → https://github.com/acme/widgets/issues/42' "$REPORT"
 }
 
 # ─── guard: github path ────────────────────────────────────────────────────────

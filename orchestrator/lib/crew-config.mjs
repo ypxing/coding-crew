@@ -11,7 +11,11 @@
  *
  *   { "afk": {
  *       "runtime": { "reviewer": "codex" },
- *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } } } }
+ *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
+ *       "fixFindings": "high", "PRDAudit": "fix",
+ *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": true } }
+ *
+ * Every setting but runtime/models has a flag that wins for one run (resolveSettings).
  *
  * A model string belongs to one runtime, so it's filed under it and never passed to another
  * runtime's CLI. A role that moves to another runtime therefore does not inherit the coder's
@@ -38,9 +42,28 @@ export const CONFIG_REL = ".coding-crew/config.json";
 export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
 export const LEGACY_REL = ".coding-crew/afk-models.json";
 
-export const ROLES = ["coder", "reviewer", "triage", "commandsDiscovery", "coverageValidation"];
+export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prdAuditor"];
 const SECTIONS = ["afk"];
-const AFK_KEYS = ["runtime", "models"];
+
+// The lowest reviewer severity fixed automatically, and what the PRD audit does with its gaps.
+export const FIX_FINDINGS = ["critical", "high", "medium", "none"];
+export const PRD_AUDIT = ["off", "report", "fix"];
+/** Minutes. Every LLM role, plus the merge/close step, which blocks the event loop. */
+export const DEFAULT_TIMEOUTS = { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 };
+export const DEFAULT_SETTINGS = { fixFindings: "high", PRDAudit: "fix", installDeps: true, squashCommits: true };
+
+// Settings that are one value each, merged by replacement; `check` returns a problem or null.
+const SCALARS = {
+  fixFindings: (v) => (FIX_FINDINGS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${FIX_FINDINGS.join(", ")})`),
+  PRDAudit: (v) => (PRD_AUDIT.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PRD_AUDIT.join(", ")})`),
+  maxParallel: (v) => (Number.isInteger(v) && v > 0 ? null : "must be a positive integer"),
+  installDeps: (v) => (typeof v === "boolean" ? null : "must be true or false"),
+  squashCommits: (v) => (typeof v === "boolean" ? null : "must be true or false"),
+};
+const AFK_KEYS = ["runtime", "models", "timeouts", ...Object.keys(SCALARS)];
+
+// afk-models.json's role names, before the plain-dispatch roles were renamed.
+const LEGACY_ROLE_NAMES = { commandsDiscovery: "commandFinder", coverageValidation: "prdAuditor" };
 
 // A runtime's model when nothing names one. Resolved here rather than left to the agent file,
 // so that an unconfigured sprint's reviewer/triage genuinely match what the coder runs on —
@@ -90,6 +113,19 @@ export function validateConfig(config, label = CONFIG_REL) {
           }
         }
       }
+      for (const [k, check] of Object.entries(SCALARS)) {
+        const problem = afk[k] === undefined ? null : check(afk[k]);
+        if (problem) problems.push(`"afk.${k}" ${problem}`);
+      }
+      if (afk.timeouts !== undefined) {
+        if (!isObject(afk.timeouts)) problems.push(`"afk.timeouts" must be an object of role → minutes`);
+        else {
+          for (const [k, min] of Object.entries(afk.timeouts)) {
+            if (!(k in DEFAULT_TIMEOUTS)) problems.push(`unknown key "afk.timeouts.${k}" (expected ${oneOf(Object.keys(DEFAULT_TIMEOUTS))})`);
+            if (typeof min !== "number" || !(min > 0)) problems.push(`"afk.timeouts.${k}" must be a positive number of minutes`);
+          }
+        }
+      }
       if (afk.models !== undefined) {
         if (!isObject(afk.models)) problems.push(`"afk.models" must be an object of runtime → { role: model }`);
         else {
@@ -111,25 +147,35 @@ export function validateConfig(config, label = CONFIG_REL) {
   if (problems.length) throw new ConfigError(`${label}: ${problems.join("; ")}`);
 }
 
-/** Every afk leaf a file sets, as "runtime.<role>" / "models.<runtime>.<role>". */
+/** Every afk leaf a file sets: "runtime.<role>", "models.<runtime>.<role>", "timeouts.<k>", "<scalar>". */
 function afkLeaves(afk = {}) {
   const leaves = Object.keys(afk.runtime ?? {}).map((role) => `runtime.${role}`);
   for (const [rt, byRole] of Object.entries(afk.models ?? {})) {
     for (const role of Object.keys(byRole)) leaves.push(`models.${rt}.${role}`);
   }
+  for (const k of Object.keys(afk.timeouts ?? {})) leaves.push(`timeouts.${k}`);
+  for (const k of Object.keys(SCALARS)) if (afk[k] !== undefined) leaves.push(k);
   return leaves;
 }
 
 /** `over` on top of `base`, one setting at a time, so a repo naming one role keeps the rest of yours. */
 function mergeAfk(base = {}, over = {}) {
   const runtime = { ...base.runtime, ...over.runtime };
+  const timeouts = { ...base.timeouts, ...over.timeouts };
   const models = {};
   for (const rt of new Set([...Object.keys(base.models ?? {}), ...Object.keys(over.models ?? {})])) {
     models[rt] = { ...base.models?.[rt], ...over.models?.[rt] };
   }
+  const scalars = {};
+  for (const k of Object.keys(SCALARS)) {
+    const v = over[k] ?? base[k];
+    if (v !== undefined) scalars[k] = v;
+  }
   return {
     ...(Object.keys(runtime).length ? { runtime } : {}),
     ...(Object.keys(models).length ? { models } : {}),
+    ...(Object.keys(timeouts).length ? { timeouts } : {}),
+    ...scalars,
   };
 }
 
@@ -141,23 +187,31 @@ function loadProjectConfig(mainRoot, write, notices) {
   const path = join(mainRoot, CONFIG_REL);
   const legacyPath = join(mainRoot, LEGACY_REL);
   let config = existsSync(path) ? readJson(path, CONFIG_REL) : {};
+  // Before the legacy move, which would otherwise overwrite a non-object file.
+  if (!isObject(config)) throw new ConfigError(`${CONFIG_REL} must be a JSON object`);
 
   if (existsSync(legacyPath)) {
-    if (isObject(config) && config.afk !== undefined) {
+    if (config.afk !== undefined) {
       notices.push(`${LEGACY_REL} is ignored — ${CONFIG_REL} already has an "afk" section. Delete ${LEGACY_REL}.`);
     } else {
       const legacy = readJson(legacyPath, LEGACY_REL);
       if (!isObject(legacy)) throw new ConfigError(`${LEGACY_REL} must be a JSON object`);
       // null was the old file's "inherit", which absent now means.
-      const claude = Object.fromEntries(Object.entries(legacy).filter(([, v]) => v !== null));
+      const claude = Object.fromEntries(
+        Object.entries(legacy)
+          .filter(([, v]) => v !== null)
+          .map(([role, v]) => [LEGACY_ROLE_NAMES[role] ?? role, v]),
+      );
       // Checked in the old file's own terms, so the error names the file and key the user wrote.
       const problems = [];
       for (const [role, model] of Object.entries(claude)) {
-        if (!ROLES.includes(role)) problems.push(`unknown role "${role}" (expected ${ROLES.join(", ")})`);
+        if (!ROLES.includes(role)) {
+          problems.push(`unknown role "${role}" (expected ${[...ROLES.slice(0, 3), ...Object.keys(LEGACY_ROLE_NAMES)].join(", ")})`);
+        }
         else if (typeof model !== "string" || !model.trim()) problems.push(`"${role}" must be a non-empty string`);
       }
       if (problems.length) throw new ConfigError(`${LEGACY_REL}: ${problems.join("; ")}`);
-      config = { ...(isObject(config) ? config : {}), afk: { models: { claude } } };
+      config = { ...config, afk: { models: { claude } } };
       validateConfig(config);
       if (write) {
         writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
@@ -209,13 +263,6 @@ export function resolveCrew({ afk = {}, cliPlatform, cliModel = null }) {
   const runtimeOf = (role) => afk.runtime?.[role] ?? cliPlatform;
   const coderRuntime = runtimeOf("coder");
 
-  // --model is in the launcher's vocabulary, so it only reaches roles on the launcher's runtime.
-  if (cliModel && coderRuntime !== cliPlatform) {
-    warnings.push(
-      `--model ${cliModel} is ignored for the coder: it runs on ${coderRuntime} (afk.runtime.coder), ` +
-        `not ${cliPlatform}. Name its model under afk.models.${coderRuntime}.coder.`,
-    );
-  }
   const onLauncher = (rt) => (rt === cliPlatform ? cliModel : null);
   const coderModel = onLauncher(coderRuntime) ?? models[coderRuntime]?.coder ?? RUNTIME_DEFAULT_MODEL[coderRuntime] ?? null;
 
@@ -224,6 +271,16 @@ export function resolveCrew({ afk = {}, cliPlatform, cliModel = null }) {
     const runtime = runtimeOf(role);
     const inherited = runtime === coderRuntime ? coderModel : (onLauncher(runtime) ?? RUNTIME_DEFAULT_MODEL[runtime] ?? null);
     roles[role] = { runtime, model: models[runtime]?.[role] ?? inherited };
+  }
+
+  // --model is in the launcher's vocabulary, so it only reaches roles on the launcher's runtime.
+  if (cliModel && coderRuntime !== cliPlatform) {
+    const takers = ROLES.filter((r) => roles[r].runtime === cliPlatform && roles[r].model === cliModel);
+    warnings.push(
+      `--model ${cliModel} is ignored for the coder: it runs on ${coderRuntime} (afk.runtime.coder), ` +
+        `not ${cliPlatform}. Name its model under afk.models.${coderRuntime}.coder.` +
+        (takers.length ? ` It still applies to ${takers.join(", ")}, on ${cliPlatform}.` : ""),
+    );
   }
 
   for (const role of ROLES.slice(1)) {
@@ -258,9 +315,63 @@ export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", tri
 /** The bash dispatcher a runtime's agent dispatch needs; claude and copilot resolve their agent themselves. */
 export const DISPATCHER = { pi: "dispatch-agent.sh", codex: "dispatch-codex-agent.sh" };
 
-/** The roles a run dispatches: command discovery and coverage validation are each optional. */
-export function activeRoles({ commands = true, coverage = false } = {}) {
-  return ROLES.filter((r) => (r !== "commandsDiscovery" || commands) && (r !== "coverageValidation" || coverage));
+/** The roles a run dispatches: the command finder and the PRD audit are each optional. */
+export function activeRoles({ commands = true, PRDAudit = DEFAULT_SETTINGS.PRDAudit } = {}) {
+  return ROLES.filter((r) => (r !== "commandFinder" || commands) && (r !== "prdAuditor" || PRDAudit !== "off"));
+}
+
+// The flag that overrides each setting, for error text.
+const FLAG_FOR = {
+  fixFindings: "--fix-findings",
+  PRDAudit: "--prd-audit",
+  maxParallel: "--max-parallel",
+  "timeouts.coder": "--coder-timeout",
+  "timeouts.reviewer": "--reviewer-timeout",
+  "timeouts.merge": "--merge-timeout",
+};
+
+/** A bad flag value, checked by the same rules as its config.json setting. */
+export function validateFlags(cli = {}, flagOf = {}) {
+  const problems = [];
+  const name = (k) => flagOf[k] ?? FLAG_FOR[k] ?? "--review-timeout";
+  for (const [k, check] of Object.entries(SCALARS)) {
+    const problem = cli[k] === undefined ? null : check(cli[k]);
+    if (problem) problems.push(`${name(k)} ${problem}`);
+  }
+  for (const [k, min] of Object.entries(cli.timeouts ?? {})) {
+    if (!(min > 0)) problems.push(`${name(`timeouts.${k}`)} must be a positive number of minutes`);
+  }
+  return [...new Set(problems)];
+}
+
+/**
+ * The sprint's settings: each flag (`cli`, undefined when not given) over config.json's
+ * afk section over the defaults. `origin` gains "--flag" for each setting a flag decided,
+ * so `plan` credits the right source.
+ * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, maxParallel: number|null,
+ *   timeouts: Record<string, number>}}  timeouts in minutes
+ */
+export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
+  const pick = (k) => {
+    if (cli[k] !== undefined) {
+      origin[k] = "flag";
+      return cli[k];
+    }
+    return afk[k] ?? DEFAULT_SETTINGS[k] ?? null;
+  };
+  const timeouts = {};
+  for (const [k, def] of Object.entries(DEFAULT_TIMEOUTS)) {
+    if (cli.timeouts?.[k] !== undefined) origin[`timeouts.${k}`] = "flag";
+    timeouts[k] = cli.timeouts?.[k] ?? afk.timeouts?.[k] ?? def;
+  }
+  return {
+    fixFindings: pick("fixFindings"),
+    PRDAudit: pick("PRDAudit"),
+    installDeps: pick("installDeps"),
+    squashCommits: pick("squashCommits"),
+    maxParallel: pick("maxParallel"),
+    timeouts,
+  };
 }
 
 /**

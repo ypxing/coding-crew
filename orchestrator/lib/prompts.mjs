@@ -308,6 +308,13 @@ export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutp
 }
 
 /** One `- [ ]` line per promotable finding, each carrying its own citation. */
+/** The PRD audit's missing requirements, as the fix issue's acceptance criteria. */
+export function prdGapsCriteria(missing) {
+  const lines = ["<!-- queued from the PRD audit's missing requirements -->", ""];
+  for (const m of missing) lines.push(`- [ ] ${m.requirement}${m.detail ? ` — ${m.detail}` : ""}`);
+  return `${lines.join("\n")}\n`;
+}
+
 export function criteriaFile({ branch, findings }) {
   const lines = [`<!-- promoted from review of ${branch} -->`, ""];
   for (const f of findings) {

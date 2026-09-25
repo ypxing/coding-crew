@@ -1,15 +1,15 @@
 #!/usr/bin/env bats
 
-# Findings promotion threshold: CRITICAL by default, HIGH only on request.
+# Findings promotion threshold: afk.fixFindings (CREW_FIX_FINDINGS in sprint.env) names the
+# lowest severity fixed automatically — critical | high (default) | medium | none.
 #
-# Every promoted branch costs a full worker + verify + review + merge cycle, and HIGH is the
-# reviewer's judgement class ("architecture drift", "trust boundary") — the most
-# false-positive-prone severity. Promoting it by default spent a whole pipeline on findings a
-# human would often dismiss.
+# Every promoted branch costs a full coder + verify + review + merge cycle. HIGH carries a
+# named failure scenario and a pre-report gate, so it is fixed by default; MEDIUM needs
+# neither, so it is opt-in.
 #
-# The reduction is real, so these tests pin the compensating half: a HIGH the sprint did not
-# promote must still be *counted and named* for /crew-address-findings, and the reminder must
-# say which threshold left it open. A silently dropped HIGH is the failure mode.
+# These tests pin the compensating half too: a finding the sprint did not promote must still
+# be *counted and named* for /crew-address-findings, and the reminder must say which threshold
+# left it open. A silently dropped finding is the failure mode.
 
 load helpers/render
 
@@ -61,23 +61,39 @@ teardown() {
 
 # ─── the default ─────────────────────────────────────────────────────────────
 
-@test "policy defaults to CRITICAL only" {
+@test "policy defaults to CRITICAL and HIGH" {
   run bash "$PROMOTE" policy
   [ "$status" -eq 0 ]
-  [ "$output" = "promote: CRITICAL" ]
+  [ "$output" = "promote: CRITICAL, HIGH" ]
 }
 
-@test "--promote critical-high restores HIGH promotion" {
+@test "each fixFindings level names its severities" {
+  CREW_FIX_FINDINGS=critical run bash "$PROMOTE" policy
+  [ "$output" = "promote: CRITICAL" ]
+  CREW_FIX_FINDINGS=medium run bash "$PROMOTE" policy
+  [ "$output" = "promote: CRITICAL, HIGH, MEDIUM" ]
+  CREW_FIX_FINDINGS=none run bash "$PROMOTE" policy
+  [ "$output" = "promote: " ]
+}
+
+@test "CREW_PROMOTE, the old name, is still read when CREW_FIX_FINDINGS is absent" {
+  CREW_PROMOTE=critical run bash "$PROMOTE" policy
+  [ "$output" = "promote: CRITICAL" ]
   CREW_PROMOTE=critical-high run bash "$PROMOTE" policy
   [ "$output" = "promote: CRITICAL, HIGH" ]
 }
 
 @test "guard names the severities to promote, so no caller carries the threshold in prose" {
   run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
-  [[ "$output" == "guard: promotable — severities: CRITICAL" ]]
+  [[ "$output" == "guard: promotable — severities: CRITICAL, HIGH" ]]
 
-  CREW_PROMOTE=critical-high run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
-  [[ "$output" == *"severities: CRITICAL, HIGH"* ]]
+  CREW_FIX_FINDINGS=critical run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
+  [[ "$output" == "guard: promotable — severities: CRITICAL" ]]
+}
+
+@test "guard skips every branch when fixFindings is none" {
+  CREW_FIX_FINDINGS=none run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
+  [[ "$output" == "guard: skip — fixFindings is none" ]]
 }
 
 @test "guard is still the depth bound regardless of threshold" {
@@ -86,21 +102,44 @@ teardown() {
   [[ "$output" == *"skip — source-guarded"* ]]
 }
 
-@test "defer marks only CRITICAL by default, and CRITICAL, HIGH on request" {
+@test "defer marks CRITICAL, HIGH by default, and CRITICAL alone at fixFindings critical" {
   bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-  grep -q '^- crew/feat/a: CRITICAL → ' "$REPORT"
+  grep -q '^- crew/feat/a: CRITICAL, HIGH → ' "$REPORT"
 
   rm .scratch/feat/issues/open/02-fix-findings-a.md
-  CREW_PROMOTE=critical-high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-  grep -q '^- crew/feat/a: CRITICAL, HIGH → ' "$REPORT"
+  grep -q '^- crew/feat/a: CRITICAL → ' "$REPORT"
+}
+
+# ─── defer-gaps: the PRD audit's missing requirements ────────────────────────
+
+@test "defer-gaps parks one source-guarded fix issue, and never a second while it is open" {
+  printf -- '- [ ] Users can export to CSV\n' > gaps.md
+  : > .scratch/feat/prd-audit.md
+  run bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md
+  [ "$status" -eq 0 ]
+  [[ "$output" == "defer-gaps: .scratch/feat/issues/open/02-fix-prd-gaps.md" ]]
+  f=.scratch/feat/issues/open/02-fix-prd-gaps.md
+  grep -q '^Status: deferred-findings$' "$f"
+  grep -q '^Source: .scratch/feat/prd-audit.md (prd-audit)$' "$f"
+  grep -q '^- \[ \] Users can export to CSV$' "$f"
+
+  run bash "$PROMOTE" guard --issue "$f"
+  [[ "$output" == *"skip — source-guarded"* ]]
+
+  run bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md
+  [[ "$output" == "defer-gaps: skip — already queued: $f" ]]
+
+  run bash "$PROMOTE" flush --feature-slug feat
+  [[ "$output" == *"FLUSH: promoted=1"* ]]
 }
 
 # ─── the compensating half: nothing is dropped ───────────────────────────────
 
 @test "an unpromoted HIGH is counted for a human, not silently dropped" {
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
   run bash "$PROMOTE" remind --feature-slug feat
@@ -129,11 +168,11 @@ EOF
   [[ "$output" == *"FINDINGS: open=2 (CRITICAL=1, HIGH=1)"* ]]
 }
 
-@test "with --promote critical-high the HIGH is subtracted again" {
-  CREW_PROMOTE=critical-high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+@test "at the default, a promoted HIGH is subtracted again" {
+  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
-  CREW_PROMOTE=critical-high run bash "$PROMOTE" remind --feature-slug feat
+  run bash "$PROMOTE" remind --feature-slug feat
   [[ "$output" == *"FINDINGS: open=1 (LOW=1)"* ]]
 }
 
@@ -144,30 +183,30 @@ EOF
   mkdir -p "$scripts"
   cp "$AFK_SCRIPTS"/*.sh "$scripts/"
   cp "$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$scripts/"
-  bash "$scripts/session-init.sh" --feature-slug feat >/dev/null
+  bash "$scripts/session-init.sh" --feature-slug feat --fix-findings critical >/dev/null
   bash "$scripts/state.sh" complete --slug a --branch crew/feat/a --feature-slug feat >/dev/null
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
   run bash "$scripts/crew-summary.sh" --feature-slug feat
   [[ "$output" == *"## Next Step"* ]]
   [[ "$output" == *"promotion covered CRITICAL on Phase 1 branches only"* ]]
-  [[ "$output" == *"--promote critical-high"* ]]
+  [[ "$output" == *"afk.fixFindings, or --fix-findings"* ]]
 }
 
 # ─── one source for the threshold ────────────────────────────────────────────
 
 @test "nothing outside this script and sprint.env states the promotion threshold" {
-  # The threshold is printed by guard and read from CREW_PROMOTE. A second statement of it
-  # — in a launcher, or hard-coded in the pipeline — is a source that can disagree with the
-  # script the moment the default changes again. The wiring end to end (default promotes
-  # CRITICAL only, `--promote critical-high` promotes a HIGH into a Phase 2 fix issue) is
-  # asserted in tests/orchestrator/sprint.test.mjs.
+  # The threshold is printed by guard and read from CREW_FIX_FINDINGS. A second statement of
+  # it — in a launcher, or hard-coded in the pipeline — is a source that can disagree with the
+  # script the moment the default changes again. The wiring end to end (the default promotes
+  # a HIGH into a Phase 2 fix issue, `medium` a MEDIUM) is asserted in
+  # tests/orchestrator/sprint.test.mjs.
   for f in "$REPO_ROOT"/skills/crew-afk/*.SKILL.md; do
     if grep -qiE 'Never promote MEDIUM or LOW|severities: CRITICAL' "$f"; then
       echo "$(basename "$f") states the threshold itself" >&2; return 1
     fi
   done
-  grep -q 'CREW_PROMOTE' "$REPO_ROOT/orchestrator/lib/sprint.mjs"
+  grep -q 'CREW_FIX_FINDINGS' "$REPO_ROOT/orchestrator/lib/sprint.mjs"
   ! grep -qE '"CRITICAL"\s*,\s*"HIGH"' "$REPO_ROOT/orchestrator/lib/pipeline.mjs" "$REPO_ROOT"/orchestrator/lib/pipeline/*.mjs
 }

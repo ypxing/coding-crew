@@ -254,7 +254,7 @@ export async function runWorker(ctx, issue, attempt) {
   // The skipped-worker path needs them too — its worktree is recreated bare. A failed
   // install stops the issue here: nothing after it — the coder, the verify gate — can do
   // useful work in an unprovisioned worktree, so letting them run only rediscovers it later.
-  if (options.deps !== false) {
+  if (options.installDeps !== false) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=deps`);
     const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug, "--stem", dispatchStem(issue)], {
       env: sprint.childEnv(),
@@ -371,7 +371,7 @@ export async function runWorker(ctx, issue, attempt) {
       reportPath: sidecarFile,
     },
     {
-      timeoutMs: options.workerTimeoutMs,
+      timeoutMs: options.timeoutMs.coder,
       onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${attempt} ${line}`),
     },
   );
@@ -410,7 +410,7 @@ export async function runHousekeeping(ctx, worker) {
   // A dead dispatch (timeout, crash) with commits on the branch is resumed, not discarded;
   // with none, there is nothing to resume and it blocks.
   if (worker.dispatch.timedOut) {
-    const reason = `worker timed out after ${Math.round(options.workerTimeoutMs / 60000)}m`;
+    const reason = `worker timed out after ${Math.round(options.timeoutMs.coder / 60000)}m`;
     if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
     return finishBlocked(ctx, worker, outcome, reason);
   }

@@ -93,7 +93,10 @@ code and a review report.
 
 Before any branch merges: the project's own checks run in that worker's worktree, and a failing
 branch is never merged. A code reviewer then reviews the diff — findings land in
-`.scratch/<feature>/reviews/` and are advisory, never blocking.
+`.scratch/<feature>/reviews/` and never block a merge. When the queue empties, CRITICAL and HIGH
+findings are fixed automatically in a second phase; the rest wait for `/crew-address-findings`.
+If the feature has a `PRD.md`, it is audited against the merged code at the same point, and any
+requirement no issue carried is fixed in that same second phase.
 
 **Partial work is retained, not lost.** A worker that can't finish commits its work-in-progress with
 a `[WIP]` marker on its own branch instead of merging; the next round resumes from there.
@@ -105,8 +108,8 @@ Two knobs worth knowing about:
   standard doesn't silently drop. Applies on every platform, including Copilot — each worker is
   its own `copilot -p` process now, so the flag reaches the CLI.
 - **Per-role runtime and model** — `.coding-crew/config.json` can put any role (`coder`, `reviewer`,
-  `triage`, `commandsDiscovery`, `coverageValidation`) on another installed runtime, and name
-  models per runtime:
+  `triage`, `commandFinder`, `prdAuditor`) on another installed runtime, and name models per
+  runtime:
 
   ```json
   { "afk": { "runtime": { "reviewer": "codex" },
@@ -114,7 +117,8 @@ Two knobs worth knowing about:
   ```
 
   A model is only ever passed to its own runtime's CLI. A role moved to another runtime doesn't
-  inherit the coder's model; with none named under that runtime, the CLI picks its default. Each
+  inherit the coder's model; with none named under that runtime, it takes `--model` if one was
+  given and it's on the `--platform` runtime, else `sonnet` on claude, else the CLI's own default. Each
   runtime a role uses must be installed (`./install.sh codex --skill crew-afk`); `crew-afk doctor`
   checks. `config.json` holds only settings you write; an older `.coding-crew/afk-models.json` is
   moved into it on the next run.
@@ -124,6 +128,17 @@ Two knobs worth knowing about:
   `crew-afk plan` tags each value with the file it came from. Keep the repo's file to aliases,
   since it's committed. Provider-specific IDs belong at user level, or in env such as
   `ANTHROPIC_DEFAULT_SONNET_MODEL`, which every dispatch inherits.
+- **Sprint settings** — the same `afk` section holds the rest of what stays the same run to run.
+  Each has a flag that overrides it for one run:
+
+  | Setting | Default | Flag | What it does |
+  | --- | --- | --- | --- |
+  | `fixFindings` | `high` | `--fix-findings` | Lowest review severity fixed automatically: `critical`, `high`, `medium` or `none` |
+  | `PRDAudit` | `fix` | `--prd-audit` | `off`; `report` (audit, leave it for you); `fix` (also queue missing requirements) |
+  | `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout` | Minutes, per role; name only the ones you change |
+  | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
+  | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
+  | `squashCommits` | `true` | `--no-squash` | Squash the sprint's commits at the end |
 - **Gitignored files in worktrees** — each coder runs in an isolated worktree, so `.env` and similar
   files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
   them over.

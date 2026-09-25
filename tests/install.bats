@@ -96,6 +96,7 @@ teardown() {
   echo "stale policy" > "$TEMP_DIR/.claude/skills/crew-afk/references/verification.md"
   echo "stale readme" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md"
   echo "stale tracker setup" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh"
+  echo "stale audit" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/coverage-validation.sh"
 
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
 
@@ -105,6 +106,8 @@ teardown() {
   # issue discovery (orchestrator/lib/tracker.mjs), so crew-afk shipped a script no agent
   # ran. The configure-tracker skill still owns it.
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh" ]
+  # Renamed prd-audit.sh.
+  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/coverage-validation.sh" ]
   # The skill itself is intact.
   [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
   [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/verify-worktree.sh" ]

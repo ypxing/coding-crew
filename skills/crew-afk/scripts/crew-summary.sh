@@ -271,8 +271,8 @@ if [ -n "$DEV_COMMANDS_STATUS" ]; then
 fi
 
 # --- Findings reminder (last thing printed) -----------------------------------
-# Promotion only covered the sprint's threshold severities (CRITICAL by default) on Phase 1
-# branches. Everything else — HIGH under the default threshold, MEDIUM/LOW always, and any
+# Promotion only covered the sprint's threshold severities (CRITICAL and HIGH by default) on
+# Phase 1 branches. Everything else — MEDIUM unless fixFindings is medium, LOW always, and any
 # finding raised against a Phase 2 fix branch — still needs a human.
 REMIND=$(cd "$MAIN_ROOT" && bash "$SCRIPT_DIR/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG" 2>/dev/null || true)
 PROMOTE_POLICY=$(bash "$SCRIPT_DIR/promote-findings.sh" policy 2>/dev/null | sed -n 's/^promote: //p')
@@ -293,7 +293,7 @@ if [ -n "$OPEN_LINE" ]; then
   # consequence shows up: a HIGH the sprint did not fix must be visibly queued, never silent.
   case "$breakdown" in
     *CRITICAL*|*HIGH*)
-      echo "Includes CRITICAL/HIGH findings this sprint did not fix — promotion covered ${PROMOTE_POLICY:-CRITICAL} on Phase 1 branches only, and findings on fix branches are report-only by design. Triage these first (--promote critical-high promotes HIGH too)." ;;
+      echo "Includes CRITICAL/HIGH findings this sprint did not fix — promotion covered ${PROMOTE_POLICY:-no severity} on Phase 1 branches only, and findings on fix branches are report-only by design. Triage these first (config.json's afk.fixFindings, or --fix-findings, sets the lowest severity fixed; default high)." ;;
   esac
 elif [ -z "$GAP_LINE" ]; then
   echo "No open review findings."

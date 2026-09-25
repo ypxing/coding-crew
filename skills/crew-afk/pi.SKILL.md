@@ -3,8 +3,8 @@ name: crew-afk
 description: >
   Implements all ready-for-agent issues by dispatching each to a crew-coder subagent (a separate pi
   process per worktree), then housekeeping the result. Loops until no issues remain or all stall;
-  reviews every branch before merge. Optional: --model <alias|inherit>; --coverage; --promote
-  critical-high.
+  reviews every branch before merge. Optional: --model <alias|inherit>; --prd-audit off|report|fix;
+  --fix-findings critical|high|medium|none.
 ---
 
 # AFK Issue Sprint — pi
@@ -19,9 +19,9 @@ CREW_AFK="$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/main.mjs"
 node "$CREW_AFK" run --platform pi "$@"
 ```
 
-Pass CLI-looking arguments straight through — `--model`, `--coverage`, `--max-parallel N`,
-`--jira TICKET-123`, a `.scratch/<feature-slug>/…` path — never rewrite those. A bare
-word, typo, or free-form phrase is resolved first, below.
+Pass CLI-looking arguments straight through — `--model`, `--prd-audit`, `--fix-findings`,
+`--max-parallel N`, `--jira TICKET-123`, a `.scratch/<feature-slug>/…` path — never rewrite
+those. A bare word, typo, or free-form phrase is resolved first, below.
 
 ## Resolving the sprint target
 

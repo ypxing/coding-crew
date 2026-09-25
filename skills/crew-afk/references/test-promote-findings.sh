@@ -9,12 +9,14 @@
 #   5. flush flips parked issues to ready-for-agent and is idempotent (second run = no-op)
 #   6. flush on a sprint with nothing parked reports FLUSH: none rather than failing
 #   7. remind counts only findings promotion did NOT cover, so the end-of-sprint reminder is honest
-#   8. the promotion threshold is CRITICAL by default and CREW_PROMOTE=critical-high adds HIGH
+#   8. the promotion threshold follows CREW_FIX_FINDINGS (pinned to critical below; high adds HIGH)
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../scripts" && pwd)"
 PROMOTE="$SCRIPT_DIR/promote-findings.sh"
+# Pinned: these cases were written against a CRITICAL-only threshold (the default is high).
+export CREW_FIX_FINDINGS=critical
 
 TEST_DIR=$(mktemp -d)
 cd "$TEST_DIR"
@@ -62,7 +64,7 @@ printf -- '- [ ] fix the CRITICAL race at src/b.ts:42\n' > crit-b.md
 
 echo "Test 1: guard allows promotion for an ordinary issue, naming the threshold"
 out=$(bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md)
-check "guard reports promotable at the default threshold" "guard: promotable — severities: CRITICAL" "$out"
+check "guard reports promotable at the pinned threshold" "guard: promotable — severities: CRITICAL" "$out"
 
 echo
 echo "Test 2: defer numbers after the highest issue across open/ and done/"
@@ -188,10 +190,10 @@ mkdir -p .scratch/bare/reviews
 BARE=.scratch/bare/reviews/sprint-review-1.md
 printf '## Branch: crew/01-y\n[HIGH] boom\n[LOW] nit\n' > "$BARE"
 printf -- '- [ ] fix it\n' > bare-crit.md
-CREW_PROMOTE=critical-high bash "$PROMOTE" defer --feature-slug bare --branch crew/01-y --slug y \
+CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug bare --branch crew/01-y --slug y \
     --title "Fix review findings: y" --report "$BARE" --criteria-file bare-crit.md >/dev/null
 check_contains "bare header still matches its promotion marker" "FINDINGS: open=1 (LOW=1)" \
-      "$(CREW_PROMOTE=critical-high bash "$PROMOTE" remind --feature-slug bare)"
+      "$(CREW_FIX_FINDINGS=high bash "$PROMOTE" remind --feature-slug bare)"
 
 echo
 echo "Results: $PASS passed, $FAIL failed"

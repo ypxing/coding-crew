@@ -21,19 +21,28 @@
  *                                           afk.models names one (see lib/crew-config.mjs,
  *                                           which also lets a role run on another runtime)
  *   --feature-slug <slug>                  or derived from the first issue's dir
- *   --coverage                             opt into the PRD coverage report
- *   --promote <critical|critical-high>      findings promotion threshold
- *   --max-parallel <n>                     concurrent workers (the coder runtime's default)
- *   --worker-timeout <minutes>             default 45 — a hung worker cannot hang the sprint
- *   --merge-timeout <minutes>              default 10 — merge/close block the event loop
+ *
+ * Each flag below overrides the config.json setting in brackets for one run (lib/crew-config.mjs):
+ *   --fix-findings <critical|high|medium|none>  [fixFindings, default high] lowest reviewer
+ *                                           severity auto-fixed in Phase 2 (--promote: old name)
+ *   --prd-audit <off|report|fix>           [PRDAudit, default fix] audit the sprint against its
+ *                                           PRD.md after Phase 1; `fix` queues ✗ missing gaps
+ *                                           for Phase 2 (--coverage: old name, means `report`)
+ *   --max-parallel <n>                     [maxParallel] concurrent coders (the coder runtime's default)
+ *   --coder-timeout <minutes>              [timeouts.coder, 45] a hung coder cannot hang the sprint
+ *                                           (--worker-timeout: old name)
+ *   --reviewer-timeout <minutes>           [timeouts.reviewer, 20] (--review-timeout, the old
+ *                                           name, also sets triage, commandFinder and prdAuditor)
+ *   --merge-timeout <minutes>              [timeouts.merge, 5] merge/close block the event loop
  *                                           (spawnSync), so a hang would freeze the sprint
- *   --max-rounds <n>                       hard cap on attempts *per issue* this invocation
- *                                           makes (independent of, and typically larger than,
- *                                           each issue's own 2-attempt cap before it blocks)
- *   --no-deps                              skip both ensure-deps.sh call sites
+ *   --no-deps                              [installDeps: false] skip both ensure-deps.sh call sites
+ *   --no-squash                            [squashCommits: false] skip the end-of-sprint squash
+ *
+ *   --max-rounds <n>                       cap on attempts per issue this invocation. Each issue
+ *                                           already blocks after 2, so only `1` (no retry) changes
+ *                                           anything: stop every issue after one attempt
  *   --no-commands                          skip one-time command discovery (verify-worktree.sh
  *                                           falls back to its own CLAUDE.md/Makefile heuristics)
- *   --no-squash                            skip the end-of-sprint squash
  *
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
@@ -47,8 +56,19 @@ import { spawnSync } from "node:child_process";
 import { Effects, appendLine } from "./lib/effects.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { DEFAULT_PARALLEL, PLATFORMS, preflight } from "./lib/dispatch.mjs";
-import { ConfigError, DISPATCHER, ROLES, activeRoles, crewPreflight, describeModel, loadConfig, resolveCrew } from "./lib/crew-config.mjs";
+import { DEFAULT_PARALLEL, PLATFORMS } from "./lib/dispatch.mjs";
+import {
+  ConfigError,
+  DISPATCHER,
+  ROLES,
+  activeRoles,
+  crewPreflight,
+  describeModel,
+  loadConfig,
+  resolveCrew,
+  resolveSettings,
+  validateFlags,
+} from "./lib/crew-config.mjs";
 import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
@@ -63,16 +83,11 @@ function parseArgs(argv) {
     paneHost: process.env.ORCA_ENV === "1" ? "orca" : process.env.HERDR_ENV === "1" ? "herdr" : null,
     model: null,
     featureSlug: null,
-    coverage: false,
-    promote: null,
-    parallel: null,
-    workerTimeoutMs: 45 * 60 * 1000,
-    reviewTimeoutMs: 20 * 60 * 1000,
-    mergeTimeoutMs: 10 * 60 * 1000,
+    // Flags that override a config.json setting; undefined = not given (resolveSettings).
+    cli: { timeouts: {} },
+    flagOf: {}, // setting → the flag that set it, when that was an old name (for error text)
     maxRounds: null,
-    deps: true,
     commands: true,
-    noSquash: false,
     dryRun: false,
     passthrough: [],
     unknown: [],
@@ -85,16 +100,28 @@ function parseArgs(argv) {
       case "--platform": o.platform = args.shift(); break;
       case "--model": o.model = args.shift(); break;
       case "--feature-slug": o.featureSlug = args.shift(); break;
-      case "--coverage": o.coverage = true; break;
-      case "--promote": o.promote = args.shift(); break;
-      case "--max-parallel": o.parallel = Number(args.shift()); break;
-      case "--worker-timeout": o.workerTimeoutMs = Number(args.shift()) * 60 * 1000; break;
-      case "--review-timeout": o.reviewTimeoutMs = Number(args.shift()) * 60 * 1000; break;
-      case "--merge-timeout": o.mergeTimeoutMs = Number(args.shift()) * 60 * 1000; break;
+      case "--fix-findings": o.cli.fixFindings = args.shift(); break;
+      case "--promote": {
+        const v = args.shift();
+        o.cli.fixFindings = { critical: "critical", "critical-high": "high" }[v] ?? v;
+        o.flagOf.fixFindings = "--promote";
+        break;
+      }
+      case "--prd-audit": o.cli.PRDAudit = args.shift(); break;
+      case "--coverage": o.cli.PRDAudit = "report"; break;
+      case "--max-parallel": o.cli.maxParallel = Number(args.shift()); break;
+      case "--coder-timeout": case "--worker-timeout": o.cli.timeouts.coder = Number(args.shift()); break;
+      case "--reviewer-timeout": o.cli.timeouts.reviewer = Number(args.shift()); break;
+      case "--review-timeout": {
+        const min = Number(args.shift());
+        for (const k of ["reviewer", "triage", "commandFinder", "prdAuditor"]) o.cli.timeouts[k] = min;
+        break;
+      }
+      case "--merge-timeout": o.cli.timeouts.merge = Number(args.shift()); break;
       case "--max-rounds": o.maxRounds = Number(args.shift()); break;
-      case "--no-deps": o.deps = false; break;
+      case "--no-deps": o.cli.installDeps = false; break;
       case "--no-commands": o.commands = false; break;
-      case "--no-squash": o.noSquash = true; break;
+      case "--no-squash": o.cli.squashCommits = false; break;
       case "--dry-run": o.dryRun = true; break;
       case "--jira": o.passthrough.push("--jira", args.shift()); break;
       case "-h": case "--help": o.command = "help"; break;
@@ -345,13 +372,16 @@ async function main() {
   if (options.command === "help") {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
-        "  [--feature-slug S] [--coverage] [--promote critical|critical-high]\n" +
-        "  [--max-parallel N] [--worker-timeout MIN] [--merge-timeout MIN] [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]\n" +
+        "  [--feature-slug S] [--fix-findings critical|high|medium|none] [--prd-audit off|report|fix]\n" +
+        "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
+        "  [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
         "  .coding-crew/config.json names one. Per role (coder, reviewer, triage,\n" +
-        "  commandsDiscovery, coverageValidation):\n" +
+        "  commandFinder, prdAuditor):\n" +
         '    { "afk": { "runtime": { "reviewer": "codex" },\n' +
-        '               "models":  { "claude": { "triage": "opus" } } } }',
+        '               "models":  { "claude": { "triage": "opus" } } } }\n' +
+        "  The other flags override config.json's afk settings for one run: fixFindings (high),\n" +
+        "  PRDAudit (fix), maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits.",
     );
     return 0;
   }
@@ -409,6 +439,11 @@ async function main() {
     return 1;
   }
   for (const n of loaded.notices) console.error(`crew-afk: ${n}`);
+  const flagProblems = validateFlags(options.cli, options.flagOf);
+  if (flagProblems.length) {
+    console.error(`crew-afk: ${flagProblems.join("; ")}`);
+    return 1;
+  }
   const crew = resolveCrew({ afk: loaded.config.afk, cliPlatform: options.platform, cliModel: options.model });
   for (const w of crew.warnings) console.error(`crew-afk: WARNING: ${w}`);
   // --model beats the file's coder model, so `plan` must not credit the file with it.
@@ -417,7 +452,10 @@ async function main() {
   }
   options.crew = crew.roles;
   options.model = crew.roles.coder.model;
-  options.parallel ??= DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
+  const settings = resolveSettings({ afk: loaded.config.afk, cli: options.cli, origin: loaded.origin });
+  Object.assign(options, settings);
+  options.parallel = settings.maxParallel ?? DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
+  options.timeoutMs = Object.fromEntries(Object.entries(settings.timeouts).map(([k, min]) => [k, min * 60 * 1000]));
   options.dispatcherDirs = Object.fromEntries(
     [...new Set(ROLES.map((r) => crew.roles[r].runtime))].map((rt) => [rt, resolveDispatcherDir(mainRoot, rt)]),
   );
@@ -450,7 +488,11 @@ async function main() {
     console.log(`platform:  ${options.platform}`);
     console.log("crew:");
     for (const line of crewTable(options.crew, loaded.origin)) console.log(line);
-    console.log(`parallel:  ${options.parallel}`);
+    const tag = (k) => (loaded.origin[k] ? `  [${loaded.origin[k]}]` : "");
+    console.log(`parallel:  ${options.parallel}${tag("maxParallel")}`);
+    console.log(`findings:  fix ${options.fixFindings === "none" ? "none" : `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
+    console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);
+    console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
     console.log(`scripts:   ${scriptsDir}`);
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);
     console.log(`dispatchable now (${issues.length}):`);
@@ -460,7 +502,9 @@ async function main() {
     if (skipped.length) console.log(`parked fix issues (${skipped.length}): ${skipped.map((i) => i.slug).join(", ")}`);
     console.log("\npipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close");
     console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint (bootstrap-only), before deps (cached at .coding-crew/dev-commands.json)" : "disabled (--no-commands)"}`);
-    console.log(`deps:      ${options.deps ? "ensure-deps.sh, once per sprint and once per worktree, using a discovered install command when one was cached" : "disabled (--no-deps)"}`);
+    const offBy = (k, flag) => `disabled (${loaded.origin[k] === "flag" ? flag : `${k}: false`})`;
+    console.log(`deps:      ${options.installDeps ? "ensure-deps.sh, once per sprint and once per worktree, using a discovered install command when one was cached" : offBy("installDeps", "--no-deps")}`);
+    console.log(`squash:    ${options.squashCommits ? "at the end of the sprint" : offBy("squashCommits", "--no-squash")}`);
     return issues.length ? 0 : 3;
   }
 
@@ -506,8 +550,8 @@ async function main() {
 
     sprint = await Sprint.init(effects, {
       featureSlug: resolved.slug,
-      coverage: options.coverage,
-      promote: options.promote,
+      fixFindings: options.fixFindings,
+      PRDAudit: options.PRDAudit,
       passthrough: options.passthrough,
       // Installed below, after command discovery has cached any install override.
       deps: false,
@@ -526,9 +570,9 @@ async function main() {
 
     if (options.commands) {
       await discoverCommands(effects, {
-        platform: options.crew.commandsDiscovery.runtime,
-        model: options.crew.commandsDiscovery.model,
-        timeoutMs: options.reviewTimeoutMs,
+        platform: options.crew.commandFinder.runtime,
+        model: options.crew.commandFinder.model,
+        timeoutMs: options.timeoutMs.commandFinder,
         // Persisted too: this runs unattended, and a failure must outlive the scrollback.
         log: (line) => {
           console.error(line);
@@ -538,13 +582,12 @@ async function main() {
     }
 
     // After command discovery: ensure-deps.sh reads the install command it cached.
-    if (options.deps) await sprint.installDeps((line) => console.error(line));
+    if (options.installDeps) await sprint.installDeps((line) => console.error(line));
 
     const ctx = {
       sprint,
       effects,
       options,
-      platform: options.platform,
       roundReviewFile: makeRoundReviewFile(sprint),
       log: (line) => {
         if (!line) return;

@@ -33,7 +33,8 @@
 # so a fixture whose content has no fenced json at all (to exercise the fail-closed "no
 # sidecar" path on purpose) correctly leaves none written.
 #
-# `--agent coverage-validation` stands in for the agent-less wrap-up dispatch.
+# `--agent prd-audit` stands in for the agent-less PRD audit (after Phase 1). Its answer is
+#   $CREW_FAKE_DIR/prd-audit.response when present, else a clean report with nothing missing.
 # `--agent commands-discovery` stands in for the agent-less one-time command-discovery
 # dispatch (see orchestrator/lib/commands.mjs) — answers with commands matching the
 # Makefile fixtureRepo() always writes (test/lint/typecheck targets), so a real
@@ -82,7 +83,7 @@ mirror_sidecar() {
 trap mirror_sidecar EXIT
 
 # --slug is the real dispatch's own slug (see dispatch.mjs's --slug forwarding), independent
-# of --out's filename convention. Only a call with no --slug at all (coverage-validation,
+# of --out's filename convention. Only a call with no --slug at all (prd-audit,
 # commands-discovery — both exit before SLUG is used) falls back to deriving it from --out.
 # pipeline.mjs forwards its own dispatchStem (`<issue-number>-<slug>`, e.g. "1-alpha") here,
 # not the bare slug — stripped back to the bare form so it still matches every fixture file
@@ -105,8 +106,12 @@ if [ -f "$FAKE_DIR/$SLUG.exit" ]; then
   exit "$(cat "$FAKE_DIR/$SLUG.exit")"
 fi
 
-if [ "$AGENT" = "coverage-validation" ]; then
-  printf '## Coverage Report\n\n✓ 1 covered · ⚠ 0 partial · ✗ 0 missing\n' > "$OUT"
+if [ "$AGENT" = "prd-audit" ]; then
+  if [ -f "$FAKE_DIR/prd-audit.response" ]; then
+    cat "$FAKE_DIR/prd-audit.response" > "$OUT"
+  else
+    printf '## PRD Audit\n\n✓ 1 covered · ⚠ 0 partial · ✗ 0 missing\n\n```json\n{"covered": 1, "partial": 0, "missing": []}\n```\n' > "$OUT"
+  fi
   exit 0
 fi
 

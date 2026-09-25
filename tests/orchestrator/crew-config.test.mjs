@@ -4,7 +4,16 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { ConfigError, activeRoles, crewPreflight, describeModel, loadConfig, resolveCrew } from "../../orchestrator/lib/crew-config.mjs";
+import {
+  ConfigError,
+  activeRoles,
+  crewPreflight,
+  describeModel,
+  loadConfig,
+  resolveCrew,
+  resolveSettings,
+  validateFlags,
+} from "../../orchestrator/lib/crew-config.mjs";
 
 function tmpRoot(files = {}) {
   const root = mkdtempSync(join(tmpdir(), "crew-config-"));
@@ -52,6 +61,18 @@ test("loadConfig: without write, the move happens in memory only", () => {
   assert.equal(existsSync(join(root, ".coding-crew/config.json")), false);
   assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
   assert.match(notices[0], /will be moved/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: a non-object config.json is an error, not overwritten by the legacy move", () => {
+  const root = tmpRoot({ "afk-models.json": { coder: "opus" } });
+  writeFileSync(join(root, ".coding-crew/config.json"), "[1]");
+  assert.throws(
+    () => loadConfig(root, { write: true, home: EMPTY_HOME }),
+    (err) => err instanceof ConfigError && /config\.json must be a JSON object/.test(err.message),
+  );
+  assert.equal(readFileSync(join(root, ".coding-crew/config.json"), "utf8"), "[1]");
+  assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -172,9 +193,9 @@ test("resolveCrew: --model sets every role on the launcher's runtime", () => {
 });
 
 test("resolveCrew: an omitted role inherits the coder's model; a named one keeps its own", () => {
-  const r = resolveCrew({ cliPlatform: "claude", afk: { models: { claude: { coder: "opus", commandsDiscovery: "haiku" } } } });
+  const r = resolveCrew({ cliPlatform: "claude", afk: { models: { claude: { coder: "opus", commandFinder: "haiku" } } } });
   assert.equal(r.roles.reviewer.model, "opus");
-  assert.equal(r.roles.commandsDiscovery.model, "haiku");
+  assert.equal(r.roles.commandFinder.model, "haiku");
 });
 
 test("resolveCrew: --model overrides the file's coder; the file's explicit reviewer is kept", () => {
@@ -224,6 +245,7 @@ test("resolveCrew: a coder moved off the launcher's runtime ignores --model, and
   assert.deepEqual(r.roles.coder, { runtime: "codex", model: null });
   assert.equal(r.roles.reviewer.model, "opus", "--model still reaches the roles left on the launcher's runtime");
   assert.match(r.warnings[0], /--model opus is ignored for the coder: it runs on codex/);
+  assert.match(r.warnings[0], /still applies to reviewer, triage, commandFinder, prdAuditor, on claude/);
 });
 
 test("resolveCrew: no tier warning across runtimes, where there is nothing to compare", () => {
@@ -248,15 +270,15 @@ test("describeModel shows a visible ANTHROPIC_DEFAULT_*_MODEL mapping for a clau
 
 // Every CLI on PATH, no agent definition anywhere: only dispatcher and agent problems remain.
 const cliFound = { exec: () => ({ code: 0, stdout: "/usr/bin/x", stderr: "" }) };
-const onClaude = (over = {}) => Object.fromEntries(activeRoles({ coverage: true }).map((r) => [r, { runtime: over[r] ?? "claude", model: null }]));
+const onClaude = (over = {}) => Object.fromEntries(activeRoles().map((r) => [r, { runtime: over[r] ?? "claude", model: null }]));
 
 test("crewPreflight: a runtime only a plain dispatch uses needs its CLI, not its dispatcher", () => {
   const prev = process.env.CREW_FAKE_DISPATCH;
   delete process.env.CREW_FAKE_DISPATCH;
   try {
-    const crew = onClaude({ commandsDiscovery: "codex", coverageValidation: "pi" });
+    const crew = onClaude({ commandFinder: "codex", prdAuditor: "pi" });
     const problems = crewPreflight(cliFound, EMPTY_HOME, {
-      crew, roles: activeRoles({ coverage: true }), launcher: "claude", dispatcherDirs: { codex: null, pi: null },
+      crew, roles: activeRoles(), launcher: "claude", dispatcherDirs: { codex: null, pi: null },
     });
     assert.deepEqual(problems.filter((p) => /→ (codex|pi)/.test(p)), [], problems.join("\n"));
   } finally {
@@ -277,8 +299,93 @@ test("crewPreflight: an agent on a pi/codex runtime still needs that runtime's d
   }
 });
 
-test("activeRoles: command discovery and coverage validation are checked only when the run does them", () => {
-  assert.deepEqual(activeRoles(), ["coder", "reviewer", "triage", "commandsDiscovery"]);
-  assert.deepEqual(activeRoles({ commands: false }), ["coder", "reviewer", "triage"]);
-  assert.deepEqual(activeRoles({ coverage: true }), ["coder", "reviewer", "triage", "commandsDiscovery", "coverageValidation"]);
+test("activeRoles: the command finder and the PRD audit are checked only when the run does them", () => {
+  assert.deepEqual(activeRoles(), ["coder", "reviewer", "triage", "commandFinder", "prdAuditor"]);
+  assert.deepEqual(activeRoles({ commands: false, PRDAudit: "report" }), ["coder", "reviewer", "triage", "prdAuditor"]);
+  assert.deepEqual(activeRoles({ PRDAudit: "off" }), ["coder", "reviewer", "triage", "commandFinder"]);
+});
+
+// ─── settings ────────────────────────────────────────────────────────────────
+
+test("loadConfig: every afk setting is validated, all problems at once", () => {
+  const root = tmpRoot({
+    "config.json": {
+      afk: {
+        fixFindings: "critical-high",
+        PRDAudit: true,
+        maxParallel: 0,
+        installDeps: "no",
+        squashCommits: 1,
+        timeouts: { coder: -1, worker: 5 },
+      },
+    },
+  });
+  assert.throws(
+    () => loadConfig(root, { home: EMPTY_HOME }),
+    (err) =>
+      err instanceof ConfigError &&
+      [
+        /"afk\.fixFindings" is "critical-high" \(expected critical, high, medium, none\)/,
+        /"afk\.PRDAudit" is true \(expected off, report, fix\)/,
+        /"afk\.maxParallel" must be a positive integer/,
+        /"afk\.installDeps" must be true or false/,
+        /"afk\.squashCommits" must be true or false/,
+        /"afk\.timeouts\.coder" must be a positive number of minutes/,
+        /unknown key "afk\.timeouts\.worker"/,
+      ].every((re) => re.test(err.message)),
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: settings merge per key, the repo's over the user's, timeouts one role at a time", () => {
+  const root = tmpRoot({ "config.json": { afk: { fixFindings: "medium", timeouts: { coder: 60 } } } });
+  const home = tmpRoot({ "config.json": { afk: { fixFindings: "critical", maxParallel: 5, timeouts: { merge: 8 } } } });
+  const { config, origin } = loadConfig(root, { home });
+  assert.equal(config.afk.fixFindings, "medium");
+  assert.equal(config.afk.maxParallel, 5);
+  assert.deepEqual(config.afk.timeouts, { merge: 8, coder: 60 });
+  assert.equal(origin.fixFindings, "project");
+  assert.equal(origin.maxParallel, "user");
+  assert.equal(origin["timeouts.merge"], "user");
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+});
+
+test("resolveSettings: defaults, then config.json, then flags — and a flag is credited", () => {
+  const defaults = resolveSettings({});
+  assert.equal(defaults.fixFindings, "high");
+  assert.equal(defaults.PRDAudit, "fix");
+  assert.equal(defaults.installDeps, true);
+  assert.equal(defaults.squashCommits, true);
+  assert.equal(defaults.maxParallel, null);
+  assert.deepEqual(defaults.timeouts, { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 });
+
+  const origin = {};
+  const s = resolveSettings({
+    afk: { fixFindings: "medium", squashCommits: false, timeouts: { coder: 60, merge: 8 } },
+    cli: { fixFindings: "none", timeouts: { merge: 2 } },
+    origin,
+  });
+  assert.equal(s.fixFindings, "none");
+  assert.equal(s.squashCommits, false);
+  assert.equal(s.timeouts.coder, 60);
+  assert.equal(s.timeouts.merge, 2);
+  assert.equal(origin.fixFindings, "flag");
+  assert.equal(origin["timeouts.merge"], "flag");
+  assert.equal(origin.squashCommits, undefined);
+});
+
+test("validateFlags: a bad flag names the flag the user typed", () => {
+  assert.deepEqual(validateFlags({ fixFindings: "high" }), []);
+  assert.match(validateFlags({ fixFindings: "severe" })[0], /^--fix-findings is "severe"/);
+  assert.match(validateFlags({ fixFindings: "critical-medium" }, { fixFindings: "--promote" })[0], /^--promote is "critical-medium"/);
+  assert.match(validateFlags({ timeouts: { coder: Number.NaN } })[0], /^--coder-timeout must be a positive number/);
+  assert.match(validateFlags({ maxParallel: 0 })[0], /^--max-parallel must be a positive integer/);
+});
+
+test("loadConfig: a legacy afk-models.json's old role names move under the new ones", () => {
+  const root = tmpRoot({ "afk-models.json": { commandsDiscovery: "haiku", coverageValidation: "opus" } });
+  const { config } = loadConfig(root, { home: EMPTY_HOME });
+  assert.deepEqual(config.afk.models.claude, { commandFinder: "haiku", prdAuditor: "opus" });
+  rmSync(root, { recursive: true, force: true });
 });

@@ -451,7 +451,7 @@ test("model still comes through, in the same order as before", async () => {
 });
 
 // dispatchPlain is always a one-shot, stateless reasoning pass — command discovery
-// re-derives its answer from a source hash every run, coverage validation from the current
+// re-derives its answer from a source hash every run, the PRD audit from the current
 // diff — so nothing here benefits from persisting across runs, and auto-memory's project
 // directory is shared across every worktree, while this dispatch gets full write-tool
 // access before any worktree exists.
