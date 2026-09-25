@@ -54,6 +54,10 @@
   its tab.** A quota or auth failure arrives only as a JSON event (claude's error
   `result`, copilot's `session.error`), which no trace line was made from. It is now an
   `[AGENT-ERROR]` line.
+- **A worker in an orca tab gets exactly crew-afk's env.** The tab's shell kept its own
+  variables alongside crew-afk's, so one crew-afk had unset came back from the shell's
+  profile: a copilot worker started with `GH_TOKEN` unset still saw it and failed to
+  authenticate. `env.sh` now also unsets what crew-afk doesn't have.
 - **Setting both `HERDR_ENV` and `ORCA_ENV` now names the variable to unset.**
 
 - **A pi dispatch can no longer hang on its caller's stdin.** `dispatch-agent.sh` passes the

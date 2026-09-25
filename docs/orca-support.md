@@ -85,9 +85,11 @@ parsing are the headless path's. What the tab shows comes from a separate follow
 it shows stdout's JSON stream as `[TOOL]` lines, plus claude's assistant text. For pi and
 codex it shows stderr as-is: their bash dispatchers put raw events on stdout, and their
 `[TOOL]` lines and the CLI's own errors on stderr. Either way the tab is a read-only view
-of the headless run, not the agent's interactive UI. crew-afk's env is exported into
-the terminal through a 0600 `env.sh` that `run.sh` deletes once sourced; the terminal's own
-`ORCA_TERMINAL_HANDLE`/`ORCA_TAB_ID`/`ORCA_WORKTREE_ID` are left alone. The terminal is
+of the headless run, not the agent's interactive UI. The worker gets exactly crew-afk's env,
+through a 0600 `env.sh` that `run.sh` deletes once sourced. It also unsets whatever the
+terminal's shell set that crew-afk doesn't have, such as a `GH_TOKEN` from a shell profile.
+The terminal's own geometry and `ORCA_TERMINAL_HANDLE`/`ORCA_TAB_ID`/`ORCA_WORKTREE_ID` are
+left alone. The terminal is
 closed when the dispatch ends; `<outFile>.term/` is removed on success and kept on failure.
 
 orca opens terminals only in a repo it has registered, and a repo on an SSH host can

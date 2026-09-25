@@ -24,7 +24,7 @@ function fixture() {
   return { root, stem: join(root, "coder.out") };
 }
 
-function fakeTerminal({ run = true, openFailure = null } = {}) {
+function fakeTerminal({ run = true, openFailure = null, ambient = {} } = {}) {
   const terminals = new Map();
   const adapter = {
     opened: [],
@@ -34,7 +34,7 @@ function fakeTerminal({ run = true, openFailure = null } = {}) {
       if (openFailure) return { failure: openFailure };
       const handle = `term_${adapter.opened.length}`;
       if (run) {
-        const child = spawn("bash", ["-c", command], { detached: true, stdio: "ignore", env: { ...process.env, ORCA_TERMINAL_HANDLE: handle } });
+        const child = spawn("bash", ["-c", command], { detached: true, stdio: "ignore", env: { ...process.env, ...ambient, ORCA_TERMINAL_HANDLE: handle } });
         child.unref();
         terminals.set(handle, child);
       }
@@ -111,6 +111,20 @@ test("the child sees crew-afk's env, and the terminal keeps its own ambient ids"
     if (prior === undefined) delete process.env.ORCA_TERMINAL_HANDLE;
     else process.env.ORCA_TERMINAL_HANDLE = prior;
   }
+});
+
+// The terminal's login shell has an env of its own (e.g. a GH_TOKEN from its profile). A
+// variable crew-afk doesn't have must not reach the child: the headless path wouldn't pass it.
+test("the child doesn't inherit what the terminal's shell has and crew-afk doesn't", async () => {
+  const { root, stem } = fixture();
+  const r = await spawnInWorkerTerminal(
+    effects(),
+    fakeTerminal({ ambient: { FROM_TERMINAL_PROFILE: "leaked" } }),
+    "bash",
+    ["-c", 'echo "${FROM_TERMINAL_PROFILE-unset}|${PATH:+path}"'],
+    { cwd: root, stem, title: "t", timing: FAST },
+  );
+  assert.equal(r.stdout, "unset|path\n");
 });
 
 test("a timeout SIGKILLs the child and reports 124, as spawnWithTimeout does", async () => {

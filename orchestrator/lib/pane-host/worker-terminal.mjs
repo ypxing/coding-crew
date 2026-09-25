@@ -27,9 +27,11 @@ export const TIMING = { pollMs: 500, startTimeoutMs: 30000, exitGraceMs: 5000 };
 const FOLLOWER = fileURLToPath(new URL("./follow-output.mjs", import.meta.url));
 
 /**
- * The terminal's shell has its own env; the child must see crew-afk's. Skipped: names a
- * shell can't export, the terminal's own geometry and cwd, and the ambient ids that must
- * keep naming the worker's terminal rather than the triggering one.
+ * The terminal's shell has its own env; the child must see crew-afk's, and only that: a
+ * variable crew-afk unset (a GH_TOKEN copilot must not see) would otherwise come back from
+ * the shell's profile. Left alone either way: names a shell can't export, the terminal's
+ * own geometry and cwd, and the ambient ids that must keep naming the worker's terminal
+ * rather than the triggering one.
  */
 const ENV_SKIP = /^(TERM|COLUMNS|LINES|PWD|OLDPWD|SHLVL|_|ORCA_TERMINAL_HANDLE|ORCA_TAB_ID|ORCA_WORKTREE_ID)$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -122,10 +124,15 @@ export async function spawnInWorkerTerminal(
 }
 
 function envScript(env) {
-  return Object.entries(env)
-    .filter(([k, v]) => v !== undefined && ENV_NAME.test(k) && !ENV_SKIP.test(k))
-    .map(([k, v]) => `export ${k}=${shellQuote(v)}\n`)
-    .join("");
+  const vars = Object.entries(env).filter(([k, v]) => v !== undefined && ENV_NAME.test(k) && !ENV_SKIP.test(k));
+  const keep = ` ${vars.map(([k]) => k).join(" ")} `;
+  return [
+    `__keep=${shellQuote(keep)}`,
+    'for __v in $(compgen -e); do [[ "$__keep" == *" $__v "* || "$__v" =~ ' + ENV_SKIP.source + ' ]] || unset "$__v" 2>/dev/null; done',
+    "unset __keep __v",
+    ...vars.map(([k, v]) => `export ${k}=${shellQuote(v)}`),
+    "",
+  ].join("\n");
 }
 
 /**
