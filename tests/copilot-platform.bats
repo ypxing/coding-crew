@@ -34,7 +34,7 @@ teardown() {
   TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
 
   [ -f "$TEMP_DIR/.github/agents/crew-coder.agent.md" ]
-  [ -f "$TEMP_DIR/.github/agents/crew-code-reviewer.agent.md" ]
+  [ -f "$TEMP_DIR/.github/agents/crew-reviewer.agent.md" ]
   [ ! -e "$TEMP_DIR/.copilot/agents/crew-coder.agent.md" ]
 }
 
@@ -52,7 +52,7 @@ teardown() {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
 
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.github/agents/crew-code-reviewer.agent.md"
+  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.github/agents/crew-reviewer.agent.md"
   ! grep -q '{{FRAGMENT' "$TEMP_DIR/.github/skills/crew-afk/SKILL.md"
 }
 

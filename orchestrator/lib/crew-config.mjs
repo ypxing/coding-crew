@@ -246,4 +246,4 @@ export function describeModel(runtime, model, env = process.env) {
 }
 
 /** Which agent definition each dispatching role needs installed; the plain-dispatch roles need none. */
-export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-code-reviewer", triage: "crew-triage" };
+export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage" };

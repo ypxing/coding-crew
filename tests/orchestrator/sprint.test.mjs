@@ -419,7 +419,7 @@ test("a merge-failed retry skips the worker, verify, and review, and succeeds on
   assert.deepEqual(s.merged_branches ?? [], []);
   assert.deepEqual(s.completed_slugs ?? [], []);
   assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
-  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 1);
+  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 1);
   assert.equal(round1.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true);
   // Same mechanism finishPartial already uses for every other partial reason: the
@@ -438,7 +438,7 @@ test("a merge-failed retry skips the worker, verify, and review, and succeeds on
   assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
   // No worker, verify, or review ran in round 2 — only the merge (and then close) retried.
   assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 0);
-  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 0);
+  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 0);
   assert.equal(round2.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
   assert.equal(round2.lines.filter((l) => /merge-branches\.sh /.test(l)).length, 1);
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=merge-failed/);
@@ -475,7 +475,7 @@ test("a merge conflict is retried through the coder, resolved, re-verified, re-r
 
   // Three coder runs (two issues, plus the resolution), and verify + review re-ran on it.
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 3);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 3);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 3);
   assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 3);
 });
 
@@ -576,7 +576,7 @@ test("a close-refused retry skips the worker, verify, and review, no-ops the alr
   assert.deepEqual(s.completed_slugs ?? [], []);
   assert.match(traceLog(root), /\[MERGE\] branch=crew\/demo\/alpha success=true/);
   assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
-  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 1);
+  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 1);
   assert.equal(round1.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true, "close was refused, so the issue stays open");
   assert.match(
@@ -594,7 +594,7 @@ test("a close-refused retry skips the worker, verify, and review, no-ops the alr
   // branches.sh's own already-merged short-circuit is what makes that safe, not new
   // pipeline logic — and reported success with no action before close retried.
   assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 0);
-  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l)).length, 0);
+  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 0);
   assert.equal(round2.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
   assert.match(round2.r.stderr, /already-merged/);
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=close-refused/);
@@ -630,7 +630,7 @@ test("an ac receipt that can't be written retries review without the coder, bloc
   assert.deepEqual(s.blocked_slugs, ["alpha"]);
   assert.match(s.retention?.alpha?.reason ?? "", /retry limit reached .* ac-receipt-failed — ERROR: forced ac receipt failure/);
   assert.equal(count(broken.lines, /^SPAWN .*--agent crew-coder/), 1, "the retry never re-ran the coder");
-  assert.equal(count(broken.lines, /^SPAWN .*--agent crew-code-reviewer/), 2, "the retry re-ran review before rewriting the receipt");
+  assert.equal(count(broken.lines, /^SPAWN .*--agent crew-reviewer/), 2, "the retry re-ran review before rewriting the receipt");
   assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=ac-receipt-retry/);
   const issue = readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8");
   assert.match(issue, /## Blocked[\s\S]*ERROR: forced ac receipt failure/, "the human sees the real cause");
@@ -642,7 +642,7 @@ test("an ac receipt that can't be written retries review without the coder, bloc
   assert.deepEqual(s.completed_slugs, ["alpha"]);
   assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
   assert.equal(count(fixed.lines, /^SPAWN .*--agent crew-coder/), 0, "resumed at verify, not a coder restart");
-  assert.equal(count(fixed.lines, /^SPAWN .*--agent crew-code-reviewer/), 1);
+  assert.equal(count(fixed.lines, /^SPAWN .*--agent crew-reviewer/), 1);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
 });
 
@@ -967,7 +967,7 @@ test(".coding-crew/config.json lets the reviewer diverge from the coder's model,
     `expected the coder dispatched with --model sonnet, got:\n${lines.join("\n")}`,
   );
   assert.ok(
-    lines.some((l) => /^SPAWN .*--agent crew-code-reviewer/.test(l) && / --model opus/.test(l)),
+    lines.some((l) => /^SPAWN .*--agent crew-reviewer/.test(l) && / --model opus/.test(l)),
     `expected the reviewer dispatched with --model opus, got:\n${lines.join("\n")}`,
   );
 });
@@ -1037,8 +1037,8 @@ test("a mixed crew dispatches each role on its own runtime, with only that runti
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const spawn = (agent) => lines.find((l) => new RegExp(`^SPAWN .*--agent ${agent} `).test(l)) ?? "";
   assert.match(spawn("crew-coder"), / --runtime claude .* --model sonnet/);
-  assert.match(spawn("crew-code-reviewer"), / --runtime codex /);
-  assert.doesNotMatch(spawn("crew-code-reviewer"), / --model /, "a claude alias must never reach codex");
+  assert.match(spawn("crew-reviewer"), / --runtime codex /);
+  assert.doesNotMatch(spawn("crew-reviewer"), / --model /, "a claude alias must never reach codex");
 });
 
 test("a runtime's model env var (ANTHROPIC_DEFAULT_*_MODEL) reaches the dispatched child", () => {
@@ -1050,7 +1050,7 @@ test("a runtime's model env var (ANTHROPIC_DEFAULT_*_MODEL) reaches the dispatch
   });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   // Agent dispatches and the agent-less plain dispatch (command discovery) alike.
-  for (const agent of ["crew-coder", "crew-code-reviewer", "commands-discovery"]) {
+  for (const agent of ["crew-coder", "crew-reviewer", "commands-discovery"]) {
     assert.equal(
       readFileSync(join(root, ".scratch/fake", `env.${agent}`), "utf8").trim(),
       "ANTHROPIC_DEFAULT_SONNET_MODEL=au.anthropic.claude-sonnet-5",
@@ -1081,7 +1081,7 @@ test("doctor names the role when a runtime other than the launcher's is not inst
   delete env.CREW_FAKE_DISPATCH;
   const r = sh("node", [MAIN, "doctor", "--platform", "claude"], { cwd: root, env });
   assert.equal(r.code, 1);
-  assert.match(r.stdout, /PROBLEM: reviewer → codex: crew-code-reviewer agent definition not installed for codex/);
+  assert.match(r.stdout, /PROBLEM: reviewer → codex: crew-reviewer agent definition not installed for codex/);
   assert.doesNotMatch(r.stdout, /→ codex: crew-coder/);
 });
 

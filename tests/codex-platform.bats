@@ -27,18 +27,18 @@ teardown() {
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
 
   [ -f "$TEMP_DIR/.codex/agents/crew-coder.toml" ]
-  [ -f "$TEMP_DIR/.codex/agents/crew-code-reviewer.toml" ]
+  [ -f "$TEMP_DIR/.codex/agents/crew-reviewer.toml" ]
   [ -f "$TEMP_DIR/.agents/skills/crew-afk/SKILL.md" ]
 
   # protocol placeholder must be expanded
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.codex/agents/crew-code-reviewer.toml"
+  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.codex/agents/crew-reviewer.toml"
 }
 
 @test "installed codex agent files are valid TOML with the required custom-agent fields" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
 
-  for agent in crew-coder crew-code-reviewer; do
+  for agent in crew-coder crew-reviewer; do
     # Content goes in on stdin, not as a path: on Windows the runner's python3 is a
     # native build that cannot resolve MSYS paths like /tmp/tmp.XXXX/...
     run bash -c "python3 -c \"
@@ -170,7 +170,7 @@ assert len(d['developer_instructions']) > 200
 
   run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
     bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-code-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md"
+      --agent crew-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md"
   [ "$status" -eq 0 ]
   [[ "$output" != *"writable_roots"* ]]
 }
@@ -186,7 +186,7 @@ assert len(d['developer_instructions']) > 200
 
   run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
     bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-code-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md"
+      --agent crew-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"--sandbox read-only"* ]]
 }
@@ -203,7 +203,7 @@ assert len(d['developer_instructions']) > 200
 
   run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
     bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-code-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md" \
+      --agent crew-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md" \
       --out "$TEMP_DIR/.scratch/demo/dispatch/01-a.review.md"
   [ "$status" -eq 0 ]
   dispatch=$(cd "$TEMP_DIR/.scratch/demo/dispatch" && pwd)

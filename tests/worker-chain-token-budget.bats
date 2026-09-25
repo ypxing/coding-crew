@@ -165,12 +165,12 @@ words_of() {
   # crowding out the files with actual logic), and a hollow-tests bullet in quality.md's
   # Code Quality list plus its own false-positive guard (a mock is not itself a finding) —
   # see the same justification on the protocol's own budget in
-  # tests/crew-code-reviewer-references.bats.
+  # tests/crew-reviewer-references.bats.
   #
   # 2,320 → 2,360: the shims' `ROOT=$(pwd)` / read-only preamble moved into the protocol, where
   # this count sees it — moved, not added (see the protocol's own budget).
-  local protocol="$REPO_ROOT/agents/crew-code-reviewer/protocol.md"
-  local refs="$REPO_ROOT/agents/crew-code-reviewer/assets/references"
+  local protocol="$REPO_ROOT/agents/crew-reviewer/protocol.md"
+  local refs="$REPO_ROOT/agents/crew-reviewer/assets/references"
   local total=$(( $(words_of "$protocol") + $(words_of "$refs/quality.md") \
                   + $(words_of "$refs/web-security.md") + $(words_of "$refs/react.md") ))
   [ "$total" -lt 2360 ] || { echo "reviewer chain is $total words (budget 2360)" >&2; return 1; }

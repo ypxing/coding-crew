@@ -103,7 +103,7 @@ test("there is no markdown fallback — an un-migrated coder that never writes t
 });
 
 test("the reviewer protocol states the findings shape the parser promotes from", () => {
-  const protocol = readFileSync(join(REPO, "agents/crew-code-reviewer/protocol.md"), "utf8");
+  const protocol = readFileSync(join(REPO, "agents/crew-reviewer/protocol.md"), "utf8");
   assert.match(protocol, /"severity": "CRITICAL"/);
   assert.match(protocol, /verifiable fix criterion/);
   // The verdict field it is printed beneath is the other half of the same contract.

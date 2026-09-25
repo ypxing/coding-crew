@@ -45,7 +45,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
     effects,
     reviewer.runtime,
     {
-      agent: "crew-code-reviewer",
+      agent: "crew-reviewer",
       cwd: effects.mainRoot,
       promptFile,
       outFile,

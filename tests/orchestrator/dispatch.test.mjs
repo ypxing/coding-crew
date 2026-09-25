@@ -107,14 +107,14 @@ test("the reviewer runs from the main checkout, on the same model as the coder",
   const b = buildDispatch(
     "codex",
     spec(root, promptFile, {
-      agent: "crew-code-reviewer",
+      agent: "crew-reviewer",
       cwd: root,
       outFile: join(root, "dispatch/alpha.review.md"),
       model: "gpt-5",
     }),
   );
   const argv = b.args.join(" ");
-  assert.match(argv, /--agent crew-code-reviewer/);
+  assert.match(argv, /--agent crew-reviewer/);
   assert.match(argv, new RegExp(`--dir ${root}`));
   assert.match(argv, /--model gpt-5/);
 });
@@ -131,7 +131,7 @@ test("codex resolves its agent definition from the project, then the home, TOML"
 test("a missing codex agent definition is a preflight failure naming the fix", () => {
   const { root } = fixture();
   const effects = { exec: () => ({ code: 0, stdout: "/usr/bin/codex", stderr: "" }) };
-  const problems = preflight(effects, "codex", root, ["crew-coder", "crew-code-reviewer"]);
+  const problems = preflight(effects, "codex", root, ["crew-coder", "crew-reviewer"]);
   assert.equal(problems.length, 2);
   assert.match(problems[0], /crew-coder agent definition not installed for codex/);
   assert.match(problems[0], /\.\/install\.sh codex --skill crew-afk/);
@@ -374,13 +374,13 @@ test("the copilot reviewer runs from the main checkout, read-only by its definit
   const b = buildDispatch(
     "copilot",
     spec(root, promptFile, {
-      agent: "crew-code-reviewer",
+      agent: "crew-reviewer",
       cwd: root,
       outFile: join(root, "dispatch/alpha.review.md"),
     }),
   );
   const argv = b.args.join(" ");
-  assert.match(argv, /--agent crew-code-reviewer/);
+  assert.match(argv, /--agent crew-reviewer/);
   assert.match(argv, new RegExp(`-C ${root}`));
   // --allow-all-tools removes the confirmation prompt, not the definition's tools: list —
   // probed: an agent declaring `tools: ["view"]` has no shell under it.

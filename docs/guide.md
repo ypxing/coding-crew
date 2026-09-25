@@ -18,7 +18,7 @@ THIS REPO (source)
 ├── registry.json           ← source of truth for paths, deps, skills
 ├── agents/
 │   ├── crew-coder/         ← single-issue worker agent
-│   └── crew-code-reviewer/ ← post-sprint reviewer agent
+│   └── crew-reviewer/ ← post-sprint reviewer agent
 ├── skills/                 ← reusable skill files
 │   ├── tdd/
 │   ├── solve-issue/
@@ -253,7 +253,7 @@ YOUR_PROJECT/
 ├── .claude/
 │   ├── agents/
 │   │   ├── crew-coder.md           ← crew-coder agent (Claude)
-│   │   └── crew-code-reviewer.md   ← reviewer agent (Claude)
+│   │   └── crew-reviewer.md   ← reviewer agent (Claude)
 │   └── skills/
 │       ├── crew-afk/SKILL.md
 │       ├── tdd/
@@ -269,7 +269,7 @@ YOUR_PROJECT/
 │   └── agents/
 │       ├── crew-afk.agent.md
 │       ├── crew-coder.agent.md
-│       └── crew-code-reviewer.agent.md
+│       └── crew-reviewer.agent.md
 └── docs/
     └── agents/
         ├── issue-tracker.md        ← edit to match your tracker
@@ -301,7 +301,7 @@ YOUR_PROJECT/
 │  2. Spawn crew-coder workers — up to 8 in parallel          │
 │  3. Validate output, merge complete branches                │
 │  4. Write progress / blocked notes, loop                    │
-│  5. Run crew-code-reviewer on exit                          │
+│  5. Run crew-reviewer on exit                          │
 └────────────────────┬────────────────────────────────────────┘
                      │ isolated git worktrees
           ┌──────────┴──────────┐
@@ -313,7 +313,7 @@ YOUR_PROJECT/
           │ branches merged
           ▼
     ┌──────────────────────┐
-    │  crew-code-reviewer  │  advisory findings → .scratch/reviews/
+    │  crew-reviewer  │  advisory findings → .scratch/reviews/
     └──────────────────────┘
           │
           ▼

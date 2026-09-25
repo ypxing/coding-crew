@@ -14,8 +14,8 @@ setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export CODER_CLAUDE="$(coder_variant claude)"
   export CODER_COPILOT="$(coder_variant copilot)"
-  export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
-  export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"
+  export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-reviewer/claude.agent.md"
+  export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-reviewer/copilot.agent.md"
   export CREW_AFK_SKILL="$SCRIPT_DIR/skills/crew-afk/claude.SKILL.md"
   export CREW_AFK_COPILOT="$(afk_variant copilot)"
 }
@@ -42,13 +42,13 @@ frontmatter() {
 
 # --- Reviewer declares no model (inherits session model) ---
 
-@test "crew-code-reviewer claude.agent.md does not declare a model (inherits session model)" {
+@test "crew-reviewer claude.agent.md does not declare a model (inherits session model)" {
   # Reviewer should NOT pin a model — it inherits the session model
   run bash -c "$(declare -f frontmatter); frontmatter '$REVIEWER_CLAUDE' | grep -q '^model:'"
   [ "$status" -ne 0 ]
 }
 
-@test "crew-code-reviewer copilot.agent.md does not declare a model" {
+@test "crew-reviewer copilot.agent.md does not declare a model" {
   run bash -c "$(declare -f frontmatter); frontmatter '$REVIEWER_COPILOT' | grep -q '^model:'"
   [ "$status" -ne 0 ]
 }

@@ -21,13 +21,13 @@ teardown() {
 
 @test "protocol substitution removes {{PROTOCOL}} placeholder" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-code-reviewer
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer
 
   # Verify the agent file exists
-  [ -f "$TEMP_DIR/.claude/agents/crew-code-reviewer.md" ]
+  [ -f "$TEMP_DIR/.claude/agents/crew-reviewer.md" ]
 
   # Verify no {{PROTOCOL}} literal remains in the installed file
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.claude/agents/crew-code-reviewer.md"
+  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.claude/agents/crew-reviewer.md"
 }
 
 @test "manifest contains correct skill name and version after install" {
@@ -44,20 +44,20 @@ teardown() {
   [ "$output" != "null" ]
 }
 
-@test "installing crew-afk installs agent-deps (crew-coder and crew-code-reviewer)" {
+@test "installing crew-afk installs agent-deps (crew-coder and crew-reviewer)" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
 
   # Verify both agent files were installed
   [ -f "$TEMP_DIR/.claude/agents/crew-coder.md" ]
-  [ -f "$TEMP_DIR/.claude/agents/crew-code-reviewer.md" ]
+  [ -f "$TEMP_DIR/.claude/agents/crew-reviewer.md" ]
 
   # Verify manifest contains both agents
   run jq -r '.agents["crew-coder"].version' "$TEMP_DIR/.coding-crew/manifest.json"
   [ "$status" -eq 0 ]
   [ "$output" != "null" ]
 
-  run jq -r '.agents["crew-code-reviewer"].version' "$TEMP_DIR/.coding-crew/manifest.json"
+  run jq -r '.agents["crew-reviewer"].version' "$TEMP_DIR/.coding-crew/manifest.json"
   [ "$status" -eq 0 ]
   [ "$output" != "null" ]
 }
@@ -182,10 +182,11 @@ teardown() {
   run jq -r '.agents | keys[]' registry.json
   [ "$status" -eq 0 ]
   [[ "$output" == *"crew-coder"* ]]
-  [[ "$output" == *"crew-code-reviewer"* ]]
+  [[ "$output" == *"crew-reviewer"* ]]
   # Old keys must not be present
   ! echo "$output" | grep -qxF "coder"
   ! echo "$output" | grep -qxF "code-reviewer"
+  ! echo "$output" | grep -qxF "crew-code-reviewer"
 }
 
 @test "registry.json skill keys crew-afk and crew-grill are present; crew-plan must not exist" {

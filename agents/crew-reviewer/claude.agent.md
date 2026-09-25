@@ -1,5 +1,5 @@
 ---
-name: crew-code-reviewer
+name: crew-reviewer
 description: >
   Reviews one branch from a crew-afk sprint session for security, quality, and correctness.
   Dispatched per-branch before that branch is merged and before any squash. Returns an

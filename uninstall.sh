@@ -161,22 +161,31 @@ removal_candidates() {
 remove_agent() {
   local name="$1"
   local removed=0
-  local platform path full candidate
+  local platform path full candidate old
+  # A renamed agent's old names (registry.json `replaces`) share its paths with the name swapped,
+  # and an install that predates the rename still has them on disk.
+  local -a names=("$name")
+  while IFS= read -r old; do
+    old="${old%$'\r'}"
+    [[ -n "$old" ]] && names+=("$old")
+  done < <(jq -r --arg n "$name" '.agents[$n].replaces // [] | .[]' "$SCRIPT_DIR/registry.json")
   for platform in "${PLATFORMS[@]}"; do
     path=$(jq -r --arg n "$name" --arg p "$platform" '.agents[$n].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
     path="${path%$'\r'}"
     [[ -z "$path" ]] && continue
-    while IFS= read -r candidate; do
-      [[ -n "$candidate" ]] || continue
-      resolve_dest "$platform" "$candidate"
-      full="$_DEST_ROOT/$_DEST_REL"
-      if [[ -f "$full" ]]; then
-        rm -f "$full"
-        echo "  removed $candidate"
-        prune_empty_dirs "$_DEST_ROOT" "$_DEST_REL"
-        removed=1
-      fi
-    done < <(removal_candidates "$platform" "$path")
+    for old in "${names[@]}"; do
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] || continue
+        resolve_dest "$platform" "$candidate"
+        full="$_DEST_ROOT/$_DEST_REL"
+        if [[ -f "$full" ]]; then
+          rm -f "$full"
+          echo "  removed $candidate"
+          prune_empty_dirs "$_DEST_ROOT" "$_DEST_REL"
+          removed=1
+        fi
+      done < <(removal_candidates "$platform" "${path//$name/$old}")
+    done
   done
   # Agent assets install once to a platform-neutral path and are always overwritten by
   # install.sh, so uninstall owns them too.
@@ -277,8 +286,10 @@ else
     name="${name%$'\r'}"
     [[ -n "$name" ]] && _agent_names+=("$name")
   done < <(
+    # A name some registry agent `replaces` is removed along with that agent, not on its own.
     { if [[ -f "$MANIFEST" ]]; then jq -r '.agents | keys[]' "$MANIFEST"; fi
-      jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u
+      jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u |
+      grep -vxF -f <(jq -r '[.agents[].replaces // [] | .[]] | .[]' "$SCRIPT_DIR/registry.json" | tr -d '\r'; echo "")
   )
   for name in "${_agent_names[@]+"${_agent_names[@]}"}"; do remove_agent "$name"; done
 

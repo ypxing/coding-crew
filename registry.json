@@ -18,19 +18,22 @@
     }
   },
   "agents": {
-    "crew-code-reviewer": {
+    "crew-reviewer": {
       "version": "1.7.7",
-      "source-dir": "crew-code-reviewer",
+      "source-dir": "crew-reviewer",
+      "replaces": [
+        "crew-code-reviewer"
+      ],
       "description": "Reviews one branch per dispatch, before that branch merges and before any squash; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
       "skills": [],
       "docs": [],
       "install": {
         "shims": {
-          "claude": ".claude/agents/crew-code-reviewer.md",
-          "copilot": ".copilot/agents/crew-code-reviewer.agent.md",
-          "pi": ".pi/agents/crew-code-reviewer.md",
-          "codex": ".codex/agents/crew-code-reviewer.toml"
+          "claude": ".claude/agents/crew-reviewer.md",
+          "copilot": ".copilot/agents/crew-reviewer.agent.md",
+          "pi": ".pi/agents/crew-reviewer.md",
+          "codex": ".codex/agents/crew-reviewer.toml"
         },
         "assets": {
           "source": "assets",
@@ -78,7 +81,7 @@
     "crew-afk": {
       "version": "2.3.45",
       "source-dir": "crew-afk",
-      "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-code-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
+      "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
       "install-copilot": ".copilot/skills/crew-afk",
       "install-pi": ".pi/skills/crew-afk",
@@ -102,7 +105,7 @@
       },
       "agent-deps": [
         "crew-coder",
-        "crew-code-reviewer",
+        "crew-reviewer",
         "crew-triage"
       ],
       "deps": [

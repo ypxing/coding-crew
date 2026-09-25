@@ -4,7 +4,7 @@
 # Both used ${VAR//[[:space:]]/} to do it, which is O(n^2) in bash 3.2 (the system
 # bash on macOS, and the shell `#!/usr/bin/env bash` resolves to there by default).
 # On a real agent body that is ~40s of pure CPU for crew-coder and ~140s for
-# crew-code-reviewer, paid on every single dispatch before any model work starts.
+# crew-reviewer, paid on every single dispatch before any model work starts.
 #
 # These tests pin both halves of the fix: the check must still reject a blank body,
 # and it must not do it by walking the string quadratically.
@@ -71,7 +71,7 @@ teardown() {
 }
 
 @test "dispatch preflight on a realistic multi-KB agent body is fast under system bash" {
-  # A real crew-coder body is ~10KB; crew-code-reviewer ~15KB. The old code took 40-140s
+  # A real crew-coder body is ~10KB; crew-reviewer ~15KB. The old code took 40-140s
   # here. The bound is deliberately loose — it is catching a quadratic blowup, not
   # benchmarking — so it cannot flake on a slow or loaded CI runner.
   { printf -- '---\nname: big\n---\n'; for _ in $(seq 1 400); do

@@ -121,7 +121,7 @@ if [ "$AGENT" = "commands-discovery" ]; then
   exit 0
 fi
 
-if [ "$AGENT" = "crew-code-reviewer" ]; then
+if [ "$AGENT" = "crew-reviewer" ]; then
   if [ -f "$FAKE_DIR/$SLUG.review-once" ] || [ -f "$FAKE_DIR/$SLUG.review-once-garbled" ]; then
     COUNT_FILE="$FAKE_DIR/$SLUG.review-once.calls"
     COUNT=0

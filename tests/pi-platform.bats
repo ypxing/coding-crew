@@ -30,11 +30,11 @@ teardown() {
   TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
 
   [ -f "$TEMP_DIR/.pi/agents/crew-coder.md" ]
-  [ -f "$TEMP_DIR/.pi/agents/crew-code-reviewer.md" ]
+  [ -f "$TEMP_DIR/.pi/agents/crew-reviewer.md" ]
   [ -f "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md" ]
 
   # protocol placeholder must be expanded
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.pi/agents/crew-code-reviewer.md"
+  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.pi/agents/crew-reviewer.md"
 }
 
 @test "pi crew-afk SKILL.md is the pi variant, not the claude or copilot one" {

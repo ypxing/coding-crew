@@ -12,8 +12,8 @@ setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export CLAUDE_AGENT="$(coder_variant claude)"
   export COPILOT_AGENT="$(coder_variant copilot)"
-  export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
-  export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"
+  export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-reviewer/claude.agent.md"
+  export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-reviewer/copilot.agent.md"
 }
 
 # Extract YAML frontmatter (between first pair of --- delimiters)
@@ -54,10 +54,10 @@ frontmatter() {
   ! grep -q 'mcp__' "$COPILOT_AGENT"
 }
 
-@test "crew-code-reviewer claude.agent.md has no hardcoded mcp__ server name" {
+@test "crew-reviewer claude.agent.md has no hardcoded mcp__ server name" {
   ! grep -q 'mcp__' "$REVIEWER_CLAUDE"
 }
 
-@test "crew-code-reviewer copilot.agent.md has no hardcoded mcp__ server name" {
+@test "crew-reviewer copilot.agent.md has no hardcoded mcp__ server name" {
   ! grep -q 'mcp__' "$REVIEWER_COPILOT"
 }

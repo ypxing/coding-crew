@@ -53,7 +53,7 @@ That's the whole loop. Details on each step below.
   │        typecheck + lint + test, before merge        │
   │                          │                          │
   │                          ▼                          │
-  │              code-reviewer (per branch)             │
+  │              crew-reviewer (per branch)             │
   │              before merge, findings advisory        │
   │                          │                          │
   │                          ▼                          │

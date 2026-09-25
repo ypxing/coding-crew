@@ -4,6 +4,12 @@
 
 ### Changed
 
+- **`crew-code-reviewer` is renamed `crew-reviewer`**, matching `crew-coder` and `crew-triage`.
+  Its review assets stay at `.coding-crew/code-review/`. registry.json's new `replaces` field
+  lets an agent carry its old names: installing `crew-reviewer` removes the old
+  `crew-code-reviewer` shims for each platform it installs, plus its manifest entry, so the host
+  doesn't keep listing a stale second reviewer. Uninstall removes them too. A user-level install
+  (`TARGET_REPO=$HOME`) is cleaned the same way the next time you install at that level.
 - **crew-afk can run each role on a different runtime.** `.coding-crew/config.json`'s `afk`
   section maps any role (`coder`, `reviewer`, `triage`, `commandsDiscovery`,
   `coverageValidation`) to an installed runtime and names models per runtime, e.g. a claude coder

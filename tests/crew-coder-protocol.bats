@@ -8,7 +8,7 @@
 # variant's `partial` definition told the worker to write `## Progress` *in the issue
 # file*, which the one-writer rule forbids, while another said only "write notes to
 # `## Progress`". This is the same disease the dispatch bodies had, and the same cure:
-# `{{PROTOCOL}}` (see agents/crew-code-reviewer/protocol.md for the precedent).
+# `{{PROTOCOL}}` (see agents/crew-reviewer/protocol.md for the precedent).
 #
 # What each layer owns:
 #   protocol.md      everything platform-neutral — read by all four

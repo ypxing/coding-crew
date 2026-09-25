@@ -1,15 +1,15 @@
 #!/usr/bin/env bats
 
 # Tests for per-branch pre-merge code review positioning in crew-afk skill files
-# Following the pattern in tests/crew-code-reviewer-structure.bats
+# Following the pattern in tests/crew-reviewer-structure.bats
 
 load helpers/render
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export REVIEWER_PROTOCOL="$SCRIPT_DIR/agents/crew-code-reviewer/protocol.md"
-  export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
-  export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"
+  export REVIEWER_PROTOCOL="$SCRIPT_DIR/agents/crew-reviewer/protocol.md"
+  export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-reviewer/claude.agent.md"
+  export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-reviewer/copilot.agent.md"
 }
 
 # Extract YAML frontmatter (between first pair of --- delimiters)
@@ -80,14 +80,14 @@ frontmatter() {
 
 # ─── Read-only reviewer ──────────────────────────────────────────────────────
 
-@test "crew-code-reviewer claude.agent.md does not include Edit tool" {
-  AGENT="$SCRIPT_DIR/agents/crew-code-reviewer/claude.agent.md"
+@test "crew-reviewer claude.agent.md does not include Edit tool" {
+  AGENT="$SCRIPT_DIR/agents/crew-reviewer/claude.agent.md"
   # tools list must not include Edit
   ! grep -qE '"Edit"|Edit.*tool|tools.*Edit' "$AGENT"
 }
 
-@test "crew-code-reviewer copilot.agent.md does not include edit tool" {
-  AGENT="$SCRIPT_DIR/agents/crew-code-reviewer/copilot.agent.md"
+@test "crew-reviewer copilot.agent.md does not include edit tool" {
+  AGENT="$SCRIPT_DIR/agents/crew-reviewer/copilot.agent.md"
   # tools list must not include edit
   ! grep -qE '"edit"\b' "$AGENT"
 }

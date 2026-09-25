@@ -13,7 +13,7 @@
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export AGENT_DIR="$SCRIPT_DIR/agents/crew-code-reviewer"
+  export AGENT_DIR="$SCRIPT_DIR/agents/crew-reviewer"
   export PROTOCOL="$AGENT_DIR/protocol.md"
   export ASSETS="$AGENT_DIR/assets"
   export CONTEXT_SH="$ASSETS/scripts/review-context.sh"
@@ -61,7 +61,7 @@ stack_for() {
 }
 
 @test "registry declares the reviewer's assets install path" {
-  run jq -r '.agents["crew-code-reviewer"].install.assets.dest' "$SCRIPT_DIR/registry.json"
+  run jq -r '.agents["crew-reviewer"].install.assets.dest' "$SCRIPT_DIR/registry.json"
   [ "$output" = ".coding-crew/code-review" ]
 }
 
@@ -262,7 +262,7 @@ require github.com/gin-gonic/gin v1.9.0')
 
 @test "installing the reviewer ships references and executable scripts" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-code-reviewer >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
   [ -f "$TEMP_DIR/.coding-crew/code-review/references/quality.md" ]
   [ -f "$TEMP_DIR/.coding-crew/code-review/references/react.md" ]
   [ -x "$TEMP_DIR/.coding-crew/code-review/scripts/review-context.sh" ]
@@ -271,16 +271,16 @@ require github.com/gin-gonic/gin v1.9.0')
 
 @test "assets are always overwritten - a stale reference cannot survive a re-install" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-code-reviewer >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
   echo "STALE" > "$TEMP_DIR/.coding-crew/code-review/references/quality.md"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-code-reviewer >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
   ! grep -q 'STALE' "$TEMP_DIR/.coding-crew/code-review/references/quality.md"
   grep -q 'Code Quality' "$TEMP_DIR/.coding-crew/code-review/references/quality.md"
 }
 
 @test "the installed scripts resolve the installed references" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-code-reviewer >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
   mkdir -p "$TEMP_DIR/app"
   printf '{"dependencies":{"react":"18"}}' > "$TEMP_DIR/app/package.json"
   run bash "$TEMP_DIR/.coding-crew/code-review/scripts/review-context.sh" --root "$TEMP_DIR/app"
@@ -290,8 +290,8 @@ require github.com/gin-gonic/gin v1.9.0')
 
 @test "uninstalling the reviewer removes its assets" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-code-reviewer >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
   [ -d "$TEMP_DIR/.coding-crew/code-review" ]
-  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --agent crew-code-reviewer >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --agent crew-reviewer >/dev/null
   [ ! -d "$TEMP_DIR/.coding-crew/code-review" ]
 }

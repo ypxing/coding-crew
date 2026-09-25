@@ -86,7 +86,7 @@ function resultBlock(worktree, reportPath) {
 /**
  * A retry after a targeted, independent judgment already said the branch's code stands
  * and only one specific thing needs fixing — either verify-worktree.sh failed and triage
- * (see triagePrompt below) judged it fixable, or crew-code-reviewer returned `AC: unmet`
+ * (see triagePrompt below) judged it fixable, or crew-reviewer returned `AC: unmet`
  * on a specific criterion. Deliberately not workerPrompt + resumeNote: that framing
  * re-reads the whole issue as if starting over, which is what turned a wrong dependency
  * version or one failing assertion into a full ~45-minute re-implementation. Here the code

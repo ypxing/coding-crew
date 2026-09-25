@@ -49,7 +49,7 @@ _normalised_description() {
 }
 
 @test "each crew agent has the same name on every platform" {
-  for a in crew-coder crew-code-reviewer crew-triage; do
+  for a in crew-coder crew-reviewer crew-triage; do
     for p in claude copilot pi codex; do
       [ "$(_field "$p" "$a" name)" = "$a" ] || { echo "$p/$a: name is '$(_field "$p" "$a" name)'"; return 1; }
     done
@@ -57,7 +57,7 @@ _normalised_description() {
 }
 
 @test "each crew agent has the same description on every platform" {
-  for a in crew-coder crew-code-reviewer crew-triage; do
+  for a in crew-coder crew-reviewer crew-triage; do
     local want
     want=$(_normalised_description claude "$a")
     [ -n "$want" ]
@@ -74,7 +74,7 @@ _normalised_description() {
 
 @test "read-only agents get no write tools on any platform" {
   # `if`, not a bare `! cmd`: bats only fails on a negated command when it is the last line.
-  for a in crew-code-reviewer crew-triage; do
+  for a in crew-reviewer crew-triage; do
     if _field claude "$a" tools | grep -qE '"(Edit|Write|NotebookEdit)"'; then echo "claude/$a can write"; return 1; fi
     if _field copilot "$a" tools | grep -qE '"(edit|create)"'; then echo "copilot/$a can write"; return 1; fi
     if _field pi "$a" tools | grep -qwE 'edit|write'; then echo "pi/$a can write"; return 1; fi
@@ -83,7 +83,7 @@ _normalised_description() {
 }
 
 @test "read-only agents state the read-only rule in their shared protocol, not per shim" {
-  for a in crew-code-reviewer crew-triage; do
+  for a in crew-reviewer crew-triage; do
     for p in claude copilot pi codex; do
       grep -q 'Never edit, write, commit, or change branches' "$(_shim "$p" "$a")"
     done

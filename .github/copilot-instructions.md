@@ -26,7 +26,7 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 **Prerequisites**: `git`, `jq`
 
 **Platforms**: `all` (default), `claude`, `copilot`  
-**Agents**: `all` (default), `crew-code-reviewer`, `crew-coder`
+**Agents**: `all` (default), `crew-reviewer`, `crew-coder`
 
 ---
 
@@ -34,7 +34,7 @@ TARGET_REPO=/path/to/other/repo ./install.sh
 
 ### Key Components
 
-- **`agents/`** — Two agents: `crew-coder` (implements single issues using TDD in isolated worktrees) and `crew-code-reviewer` (reviews merged branches at sprint end)
+- **`agents/`** — Two agents: `crew-coder` (implements single issues using TDD in isolated worktrees) and `crew-reviewer` (reviews merged branches at sprint end)
 - **`skills/`** — Reusable skill files (tdd, solve-issue, domain-modeling, crew-plan, etc.)
 - **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and doc templates
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
@@ -60,7 +60,7 @@ Each agent/skill has platform-specific files directly under `agents/<name>/`:
 
 Example structure:
 ```
-agents/crew-code-reviewer/
+agents/crew-reviewer/
 ├── claude.agent.md      ← contains {{PROTOCOL}}
 ├── copilot.agent.md     ← contains {{PROTOCOL}}
 └── protocol.md          ← inlined into both files during install
@@ -156,7 +156,7 @@ Use `protocol.md` for markdown instructions, `workflow.js` for Workflow scripts.
 
 | Skill | Description |
 |-------|-------------|
-| `crew-afk` | Orchestrator that spawns parallel crew-coder agents, merges branches, runs crew-code-reviewer |
+| `crew-afk` | Orchestrator that spawns parallel crew-coder agents, merges branches, runs crew-reviewer |
 | `tdd` | Test-driven development with red-green-refactor loop |
 | `solve-issue` | Implement one issue end-to-end: read, explore, install, TDD, verify, commit |
 | `crew-address-findings` | Triage and fix code review findings using TDD |

@@ -1,10 +1,10 @@
-# crew-code-reviewer — Codex custom agent
+# crew-reviewer — Codex custom agent
 # Read by Codex when spawning subagents, and by crew-afk's dispatch-codex-agent.sh
 # when running the reviewer as a separate `codex exec` process.
 #
 # No `model` key: the reviewer inherits the session/spawn model. Reasoning effort is
 # pinned high — review is a correctness judgement, not a mechanical step.
-name = "crew-code-reviewer"
+name = "crew-reviewer"
 description = "Reviews one branch from a crew-afk sprint session for security, quality, and correctness. Dispatched per-branch before that branch is merged and before any squash. Returns an acceptance-criteria verdict, which gates the merge, plus findings, which are advisory for the human — no branch is blocked or re-queued on a finding."
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"

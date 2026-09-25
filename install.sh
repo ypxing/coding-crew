@@ -34,7 +34,7 @@ if [[ "${1:-}" == "--update" ]]; then
   AGENT="all"
 else
   PLATFORM="${1:-all}"    # all | claude | copilot | pi | codex
-  AGENT="${2:-all}"       # all | crew-coder | crew-code-reviewer | --skill <name> | --skills a,b
+  AGENT="${2:-all}"       # all | crew-coder | crew-reviewer | --skill <name> | --skills a,b
 fi
 
 # --skills a,b,c  (multi-skill shorthand, replaces --skill for multiple names)
@@ -49,6 +49,7 @@ fi
 
 INSTALLED=""
 MANIFEST_AGENT_ENTRIES=()  # each entry: "name version platform"
+MANIFEST_REPLACED_AGENTS=()  # old names a renamed agent's `replaces` drops from the manifest
 MANIFEST_SKILL_ENTRIES=()  # each entry: "name version"
 
 usage() {
@@ -58,7 +59,7 @@ usage() {
   echo "       ./install.sh --update"
   echo ""
   echo "  platform:  all (default), claude, copilot, pi, codex"
-  echo "  agent:     all (default), crew-code-reviewer, crew-coder"
+  echo "  agent:     all (default), crew-reviewer, crew-coder"
   echo "  --skill:   install a single skill (e.g. to-issues)"
   echo "  --skills:  install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd);"
   echo "             treated as the full desired set — any skill from a prior --skills"
@@ -69,7 +70,7 @@ usage() {
   echo "  ./install.sh                                      # install everything into project"
   echo "  ./install.sh claude --skill tdd                   # one skill into project"
   echo "  ./install.sh claude --skills tdd,to-issues          # multiple skills at once"
-  echo "  ./install.sh claude --skill crew-afk              # crew-afk + crew-coder + crew-code-reviewer"
+  echo "  ./install.sh claude --skill crew-afk              # crew-afk + crew-coder + crew-reviewer"
   echo "  ./install.sh --update                             # update all installed agents/skills"
   echo ""
   echo "Available skills:"
@@ -224,6 +225,23 @@ prune_legacy_copilot_path() {
   rm -rf "$REPO_ROOT/$original"
   echo "  removed legacy $original (Copilot reads .github/ at project scope)"
   rmdir "$REPO_ROOT/.copilot/agents" "$REPO_ROOT/.copilot/skills" "$REPO_ROOT/.copilot" 2>/dev/null || true
+}
+
+# A renamed agent's old shims would linger as a second, stale definition the host still lists.
+# registry.json's `replaces` names them; each old path is the new one with the name swapped.
+prune_replaced_agent_shims() {
+  local agent_name="$1" platform="$2" shim_dest_raw="$3" old old_raw
+  while IFS= read -r old; do
+    old="${old%$'\r'}"
+    [[ -n "$old" ]] || continue
+    old_raw="${shim_dest_raw//$agent_name/$old}"
+    prune_legacy_copilot_path "$platform" "$old_raw"
+    resolve_dest "$platform" "$(adjust_platform_path "$platform" "$old_raw")"
+    if [[ -f "$_DEST_ROOT/$_DEST_REL" ]]; then
+      rm -f "$_DEST_ROOT/$_DEST_REL"
+      echo "  removed $_DEST_REL (renamed to $agent_name)"
+    fi
+  done < <(jq -r --arg n "$agent_name" '.agents[$n].replaces // [] | .[]' "$SCRIPT_DIR/registry.json")
 }
 
 assert_identifier() {
@@ -462,12 +480,18 @@ install_agent() {
       prune_legacy_copilot_path "$target_platform" "$shim_dest_raw"
       resolve_dest "$target_platform" "$shim_dest"
       expand_shim "$shim_src" "$_DEST_ROOT/$_DEST_REL"
+      prune_replaced_agent_shims "$agent_name" "$target_platform" "$shim_dest_raw"
     fi
   done
 
   local agent_version
   agent_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // "unknown"' "$SCRIPT_DIR/registry.json")
   MANIFEST_AGENT_ENTRIES+=("$agent_name $agent_version $platform")
+  local replaced
+  while IFS= read -r replaced; do
+    replaced="${replaced%$'\r'}"
+    [[ -n "$replaced" ]] && MANIFEST_REPLACED_AGENTS+=("$replaced")
+  done < <(jq -r --arg n "$agent_name" '.agents[$n].replaces // [] | .[]' "$SCRIPT_DIR/registry.json")
 
   install_agent_assets "$agent_name" "$agent_source_dir"
 
@@ -795,7 +819,7 @@ warn_shadowing_user_installs() {
            "$HOME/.agents/skills" "$codex_home/agents"; do
     [[ -d "$d" ]] || continue
     local name
-    for name in crew-afk crew-coder crew-code-reviewer solve-issue; do
+    for name in crew-afk crew-coder crew-reviewer solve-issue; do
       if [[ -e "$d/$name" || -e "$d/$name.md" || -e "$d/$name.toml" || -e "$d/$name.agent.md" ]]; then
         found+=("$d/$name")
       fi
@@ -839,10 +863,15 @@ write_manifest() {
       '$base | .[$n] = {version: $v}')
   done
 
-  # Merge with existing manifest so entries from prior installs are preserved
-  local existing_agents="{}" existing_skills="{}"
+  # Merge with existing manifest so entries from prior installs are preserved — except an
+  # agent's old name once its replacement is installed, or --update would chase a name the
+  # registry no longer has.
+  local existing_agents="{}" existing_skills="{}" replaced_json="[]"
+  if [[ ${#MANIFEST_REPLACED_AGENTS[@]} -gt 0 ]]; then
+    replaced_json=$(printf '%s\n' "${MANIFEST_REPLACED_AGENTS[@]}" | jq -R . | jq -s .)
+  fi
   if [[ -f "$manifest" ]]; then
-    existing_agents=$(jq '.agents // {}' "$manifest")
+    existing_agents=$(jq --argjson r "$replaced_json" '(.agents // {}) | with_entries(select(.key as $k | $r | index($k) | not))' "$manifest")
     existing_skills=$(jq '.skills // {}' "$manifest")
   fi
 
