@@ -62,7 +62,7 @@ _write_record() {
   local wt="$1" verdict="${2:-pass}" slug
   slug=$(basename "$wt")
   mkdir -p "$DISPATCH_DIR"
-  printf '{"branch": "crew/my-feature/%s", "commit": "%s", "verdict": "%s", "checks": [], "not_requested": []}\n' \
+  printf '{"branch": "crew/my-feature/%s", "commit": "%s", "verdict": "%s", "checks": [], "not_configured": []}\n' \
     "$slug" "$(git -C "$wt" rev-parse HEAD)" "$verdict" > "$DISPATCH_DIR/${3:-$slug}.verify.json"
 }
 
@@ -328,7 +328,7 @@ EOF
   [ -f "$rec" ]
   grep -q "\"commit\": \"$(git -C "$wt" rev-parse HEAD)\"" "$rec"
   grep -q '"verdict": "pass"' "$rec"
-  grep -q '"category": "test", "requested": "base", "command": "make test", "result": "pass", "exit": 0' "$rec"
+  grep -q '"category": "test", "command": "make test", "result": "pass", "exit": 0' "$rec"
   # Every check's full output outlives the worktree, beside the record.
   grep -q "\"log\": \"$DISPATCH_DIR/01-task-a.verify-test.log\"" "$rec"
   [ -f "$DISPATCH_DIR/01-task-a.verify-test.log" ]
@@ -340,17 +340,17 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "verify-worktree: the record names cached checks this run was never asked for" {
+@test "verify-worktree: the record runs every cached check and names the ones set to null" {
   wt=$(_make_worktree "task-a")
   mkdir -p "$MAIN_ROOT/.coding-crew"
-  echo '{"test": "true", "lint": null, "typecheck": null, "install": "true", "coverage": "echo c", "integration": "echo i"}' \
+  echo '{"test": "true", "lint": null, "typecheck": null, "install": "true", "coverage": "echo c", "integration": null, "install_mode": "host"}' \
     > "$MAIN_ROOT/.coding-crew/dev-commands.json"
 
-  run bash "$VERIFY_SCRIPT" --dir "$wt" --stem 01-task-a --extra coverage
+  run bash "$VERIFY_SCRIPT" --dir "$wt" --stem 01-task-a
   [ "$status" -eq 0 ]
   rec="$DISPATCH_DIR/01-task-a.verify.json"
-  grep -q '"category": "coverage", "requested": "extra", "command": "echo c", "result": "pass"' "$rec"
-  grep -q '"not_requested": \["integration"\]' "$rec"
+  grep -q '"category": "coverage", "command": "echo c", "result": "pass"' "$rec"
+  grep -q '"not_configured": \["integration"\]' "$rec"
   node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$rec"
 }
 

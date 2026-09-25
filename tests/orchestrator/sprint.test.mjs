@@ -251,12 +251,12 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.match(reviewPromptText, /test=pass/);
 });
 
-test("a worker's extra_checks are re-run by the gate and stated to the reviewer with their log", () => {
+test("every cached check is run by the gate, whatever the worker reported, and stated to the reviewer with its log", () => {
   const root = fixtureRepo();
   mkdirSync(join(root, ".coding-crew"), { recursive: true });
   writeFileSync(
     join(root, ".coding-crew/dev-commands.json"),
-    JSON.stringify({ test: "make test", lint: "make lint", typecheck: "make typecheck", coverage: "echo Branches: 82.35%", integration: "echo integ-ran" }),
+    JSON.stringify({ test: "make test", lint: "make lint", typecheck: "make typecheck", coverage: "echo Branches: 82.35%", integration: null }),
   );
   sh("git", ["-C", root, "add", "-A"]);
   sh("git", ["-C", root, "commit", "-q", "-m", "cache"]);
@@ -266,16 +266,16 @@ test("a worker's extra_checks are re-run by the gate and stated to the reviewer 
   fake(
     root,
     "alpha.worker",
-    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"pass","lint":"pass","typecheck":"pass","coverage":"pass"},"extra_checks":["coverage"],"progress":""}', '```'].join("\n"),
+    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"pass","lint":"pass","typecheck":"pass"},"progress":""}', '```'].join("\n"),
   );
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.review-prompt.md"), "utf8");
   assert.match(reviewPromptText, /coverage=pass \(full output: [^)]*verify-coverage\.log\)/);
-  // Only what the worker asked for: integration is in the cache but was never requested —
-  // and the reviewer is told so, rather than left to infer it from what is absent.
+  // The worker never mentioned coverage; the gate ran it from the cache anyway. integration is
+  // `null` there, and the reviewer is told so rather than left to infer it from what is absent.
   assert.doesNotMatch(reviewPromptText, /integration=/);
-  assert.match(reviewPromptText, /Not run by the pipeline: integration/);
+  assert.match(reviewPromptText, /Not run by the pipeline, no command configured: integration/);
   assert.match(reviewPromptText, /The gate's own record of that run: \S+\/01-alpha\.verify\.json/);
   // The logs live beside the record, so they outlive the worktree.
   assert.match(reviewPromptText, /coverage=pass \(full output: \S+\/dispatch\/01-alpha\.verify-coverage\.log\)/);

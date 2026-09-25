@@ -88,9 +88,8 @@ test("the JSON a launcher coder is told to emit round-trips through the parser",
   const report = parseWorkerReport(null, parsedTemplate);
   assert.equal(report.parsedFrom, "json");
   assert.equal(report.status, "complete");
-  // "<category>" stands for each extra_checks entry, which carries its own checks result.
+  // "<category>" stands for each further dev-commands.json check the coder ran.
   assert.deepEqual(report.checks, { test: "pass", lint: "pass", typecheck: "pass", x: "pass" });
-  assert.deepEqual(report.extraChecks, ["x"]);
   assert.notEqual(report.branch, null);
   assert.notEqual(report.workingDirectory, null);
 });

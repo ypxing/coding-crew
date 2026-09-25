@@ -3,20 +3,20 @@ set -uo pipefail
 
 # verify-worktree.sh — run project checks in a worktree directory
 #
-# Usage: verify-worktree.sh --dir <worktree-path> [--extra <category>[,<category>...]] [--stem <n>-<slug>]
+# Usage: verify-worktree.sh --dir <worktree-path> [--stem <n>-<slug>]
 #
-# --extra names further dev-commands.json categories (e.g. coverage,integration) to run after
-# the three base checks — the ones a worker says this issue's acceptance criteria call for.
-# Names only, never commands: each resolves through the same cache lookup as the base three,
-# so the cache stays the allow-list of what this gate will execute. A requested category is
-# required — no cached command for it is fatal, not a silent not_run — and its full output is
-# always persisted, with its path printed as `<LABEL>: log: <path>`, so a reviewer can read a
-# figure (a coverage percentage) that pass/fail alone cannot carry.
+# After the three base checks, every other check category .coding-crew/dev-commands.json gives
+# a command (coverage, integration, ...) runs too, on every call — no caller chooses which. The
+# cache is committed and human-edited, so its non-null keys are the project's own statement of
+# what its checks are; `null` is how a category opts out. Each such check is required (a
+# failure fails the gate) and its full output is always persisted, with its path printed as
+# `<LABEL>: log: <path>`, so a reviewer can read a figure (a coverage percentage) that
+# pass/fail alone cannot carry.
 #
 # In a crew worktree the run's evidence is written to the sprint's dispatch directory, next to
 # the issue's other dispatch files and named with the same `<n>-<slug>` stem (--stem; the bare
 # slug when absent): `<stem>.verify.json` — branch, commit, verdict, and per check its
-# category, command, result, exit code and log — plus `<stem>.verify-<check>.log`, every check's
+# category, command, result, exit code and log, and the cached categories set to `null` — plus `<stem>.verify-<check>.log`, every check's
 # full output. The JSON is also the merge receipt (see receipts.sh): merge-branches.sh accepts
 # only a `pass` verdict recorded for the branch's current tip. It outlives the worktree, so what
 # the gate did can be read after the fact. Outside a crew worktree nothing is recorded, and full
@@ -43,7 +43,6 @@ set -uo pipefail
 # Exit code: 0 if all discovered checks pass, non-zero otherwise.
 
 WORKTREE_DIR=""
-EXTRA_CHECKS=""
 STEM=""
 
 while [[ $# -gt 0 ]]; do
@@ -57,14 +56,6 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       WORKTREE_DIR="$2"
-      shift 2
-      ;;
-    --extra)
-      if [ $# -lt 2 ]; then
-        echo "ERROR: --extra requires a value" >&2
-        exit 1
-      fi
-      EXTRA_CHECKS="$2"
       shift 2
       ;;
     --stem)
@@ -564,7 +555,7 @@ _record() {
   [ -n "$2" ] && cmd="$(_json_str "$2")"
   [ -n "$4" ] && ex="$4"
   [ -n "$5" ] && log="$(_json_str "$5")"
-  REC_JSON+=("{\"category\": $(_json_str "$cat"), \"requested\": \"$_VW_KIND\", \"command\": $cmd, \"result\": \"$3\", \"exit\": $ex, \"log\": $log}")
+  REC_JSON+=("{\"category\": $(_json_str "$cat"), \"command\": $cmd, \"result\": \"$3\", \"exit\": $ex, \"log\": $log}")
 }
 
 # ─── output capping ──────────────────────────────────────────────────────────
@@ -641,7 +632,7 @@ _exec_and_report() {
   "$@" >"$out_file" 2>&1
   local rc=$?
   _run_capped "$label" "$out_file" "$rc"
-  # Evidence keeps every check's full output; outside it, an extra check's still is.
+  # Evidence keeps every check's full output; outside it, a cached extra check's still is.
   local log=""
   if [ -n "$EVIDENCE_FILE" ] || [ "$_VW_KIND" = "extra" ]; then
     log="$(_verify_log_path "$label")"
@@ -722,36 +713,29 @@ _run_category "LINT" "$(_discover_lint_command "$WORKTREE_DIR")" no
 echo ""
 _run_category "TEST" "$(_discover_test_command "$WORKTREE_DIR")" yes
 
-# ─── requested extra checks ──────────────────────────────────────────────────
-# Keys of dev-commands.json that are not checks — never runnable through --extra.
-_VW_NOT_CHECKS=" test lint typecheck install env credential_target docker_service "
-_VW_SEEN=" "
-_VW_EXTRAS=()
+# ─── the cache's other checks ────────────────────────────────────────────────
+# Keys of dev-commands.json that are not checks.
+_VW_NOT_CHECKS=" test lint typecheck install install_mode env credential_target docker_service "
+# Every other key, in file order: one with a command runs, one that is `null` (or empty) is
+# recorded as unset. Only the cache's own values are ever executed. Keys are collected first so
+# a check that reads stdin (docker compose run) cannot swallow the rest of the list.
+_VW_KEYS=()
+_VW_UNSET=()
+if [ -n "$COMMANDS_CACHE" ] && [ -f "$COMMANDS_CACHE" ] && grep -q '"test"' "$COMMANDS_CACHE" 2>/dev/null; then
+  while IFS= read -r _vw_key; do
+    [[ "$_VW_NOT_CHECKS" == *" $_vw_key "* ]] || _VW_KEYS+=("$_vw_key")
+  done < <(grep -oE '"[a-z][a-z0-9_]*"[[:space:]]*:[[:space:]]*("|null)' "$COMMANDS_CACHE" 2>/dev/null \
+    | sed -E 's/^"([a-z0-9_]+)".*/\1/' | awk '!seen[$0]++')
+fi
 # Guarded: bash 3.2 (macOS) reads an empty array's "${a[@]}" as unbound under `set -u`.
-[ -n "$EXTRA_CHECKS" ] && IFS=',' read -r -a _VW_EXTRAS <<< "$EXTRA_CHECKS"
-[ "${#_VW_EXTRAS[@]}" -gt 0 ] && for _vw_extra in "${_VW_EXTRAS[@]}"; do
-  _vw_extra="$(printf '%s' "$_vw_extra" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
-  [ -n "$_vw_extra" ] || continue
-  case "$_VW_SEEN" in *" $_vw_extra "*) continue ;; esac
-  _VW_SEEN="$_VW_SEEN$_vw_extra "
-  echo ""
-  # Ignored rather than fatal: nothing ran for it, so a criterion that depended on it still
-  # has no stated evidence and the review reads it unmet — the gate fails safe either way.
-  if ! printf '%s' "$_vw_extra" | grep -qE '^[a-z][a-z0-9_]*$' || [[ "$_VW_NOT_CHECKS" == *" $_vw_extra "* ]]; then
-    echo "EXTRA: ignored '$_vw_extra' — not a check category"
-    continue
-  fi
-  _vw_label="$(printf '%s' "$_vw_extra" | tr '[:lower:]' '[:upper:]')"
-  _vw_cmd=""
-  _vw_cmd="$(_load_cached_command "$_vw_extra")" || _vw_cmd=""
+[ "${#_VW_KEYS[@]}" -gt 0 ] && for _vw_key in "${_VW_KEYS[@]}"; do
+  _vw_cmd="$(_load_cached_command "$_vw_key")" || _vw_cmd=""
   if [ -z "$_vw_cmd" ]; then
-    echo "$_vw_label: not_run — no command for '$_vw_extra' in .coding-crew/dev-commands.json"
-    echo "$_vw_label: not_run is fatal — this check was requested"
-    NOT_RUN+=("$_vw_label")
-    _VW_KIND=extra _record "$_vw_label" "" not_run "" ""
-    OVERALL_EXIT=1
+    _VW_UNSET+=("$_vw_key")
     continue
   fi
+  echo ""
+  _vw_label="$(printf '%s' "$_vw_key" | tr '[:lower:]' '[:upper:]')"
   _VW_KIND=extra _run_category "$_vw_label" "$_vw_cmd" yes
 done
 
@@ -782,18 +766,12 @@ if [ -n "$EVIDENCE_FILE" ]; then
   _vw_sha=$(git -C "$WORKTREE_DIR" rev-parse HEAD 2>/dev/null || true)
   _vw_rec_branch=$(git -C "$WORKTREE_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
   if [ "$OVERALL_EXIT" -eq 0 ]; then _vw_verdict=pass; else _vw_verdict=fail; fi
-  # Cached checks nobody asked this run for — named so a reviewer sees what has no evidence.
+  # The cached categories set to `null` — named so a reviewer sees what has no evidence.
   _vw_unrun=()
-  if [ -n "$COMMANDS_CACHE" ] && [ -f "$COMMANDS_CACHE" ]; then
-    while IFS= read -r _vw_key; do
-      [[ " test lint typecheck install env credential_target docker_service " == *" $_vw_key "* ]] && continue
-      [[ "$_VW_SEEN" == *" $_vw_key "* ]] && continue
-      _vw_unrun+=("$(_json_str "$_vw_key")")
-    done < <(grep -o '"[a-z][a-z0-9_]*"[[:space:]]*:[[:space:]]*"' "$COMMANDS_CACHE" 2>/dev/null | sed -E 's/^"([a-z0-9_]+)".*/\1/')
-  fi
+  [ "${#_VW_UNSET[@]}" -gt 0 ] && for _vw_key in "${_VW_UNSET[@]}"; do _vw_unrun+=("$(_json_str "$_vw_key")"); done
   _vw_join() { local IFS=,; printf '%s' "$*"; }
   _vw_tmp="$EVIDENCE_FILE.tmp.$$"
-  if { mkdir -p "$(dirname "$EVIDENCE_FILE")" && printf '{"branch": %s, "commit": %s, "verdict": "%s", "checks": [%s], "not_requested": [%s]}\n' \
+  if { mkdir -p "$(dirname "$EVIDENCE_FILE")" && printf '{"branch": %s, "commit": %s, "verdict": "%s", "checks": [%s], "not_configured": [%s]}\n' \
       "$(_json_str "$_vw_rec_branch")" "$(_json_str "$_vw_sha")" "$_vw_verdict" \
       "$(_vw_join "${REC_JSON[@]+"${REC_JSON[@]}"}")" "$(_vw_join "${_vw_unrun[@]+"${_vw_unrun[@]}"}")" > "$_vw_tmp" \
       && mv "$_vw_tmp" "$EVIDENCE_FILE"; } 2>/dev/null; then

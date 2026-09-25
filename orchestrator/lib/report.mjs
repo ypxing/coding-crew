@@ -18,19 +18,6 @@ import { readFileSync } from "node:fs";
 export const CHECK_CATEGORIES = ["test", "lint", "typecheck"];
 const STATUSES = new Set(["complete", "partial", "blocked"]);
 
-/**
- * The worker's `extra_checks`: further dev-commands.json categories this issue's criteria call
- * for, passed to verify-worktree.sh as `--extra`. Names only — anything not shaped like a cache
- * key is dropped here, and verify-worktree.sh re-checks every name against the cache itself.
- */
-function normaliseExtraChecks(value) {
-  if (!Array.isArray(value)) return [];
-  const names = value
-    .map((v) => String(v ?? "").trim().toLowerCase())
-    .filter((v) => /^[a-z][a-z0-9_]*$/.test(v) && !CHECK_CATEGORIES.includes(v));
-  return [...new Set(names)];
-}
-
 function normaliseCheck(value) {
   if (value == null) return "not_run";
   const v = String(value).trim().toLowerCase();
@@ -71,18 +58,21 @@ function allFencedJson(text, requiredField) {
 }
 
 function fromStructured(raw, obj) {
-  const extraChecks = normaliseExtraChecks(obj.extra_checks ?? obj.extraChecks);
   const checks = {};
-  // A nominated extra check's own result rides in `checks` beside the base three, so the
-  // pre-filter can stop on a failure the coder already admitted, before any gate runs.
-  for (const c of [...CHECK_CATEGORIES, ...extraChecks]) checks[c] = normaliseCheck(obj.checks?.[c]);
+  // Any further dev-commands.json check the coder ran (coverage, integration) rides in `checks`
+  // beside the base three, so the pre-filter can stop on a failure the coder already admitted,
+  // before any gate runs. verify-worktree.sh runs every cached check itself either way.
+  for (const c of CHECK_CATEGORIES) checks[c] = normaliseCheck(obj.checks?.[c]);
+  for (const [k, v] of Object.entries(obj.checks && typeof obj.checks === "object" ? obj.checks : {})) {
+    const c = k.trim().toLowerCase();
+    if (/^[a-z][a-z0-9_]*$/.test(c) && !CHECK_CATEGORIES.includes(c)) checks[c] = normaliseCheck(v);
+  }
   return {
     parsedFrom: "json",
     status: STATUSES.has(String(obj.status).toLowerCase())
       ? String(obj.status).toLowerCase()
       : "blocked",
     checks,
-    extraChecks,
     branch: obj.branch ?? null,
     workingDirectory: obj.working_directory ?? obj.workingDirectory ?? null,
     progress: obj.progress ?? null,
@@ -102,7 +92,6 @@ function missingReport(raw, unparseable) {
     parsedFrom: "missing",
     status: "blocked",
     checks: Object.fromEntries(CHECK_CATEGORIES.map((c) => [c, "not_run"])),
-    extraChecks: [],
     branch: null,
     workingDirectory: null,
     progress: null,
@@ -134,14 +123,11 @@ export function parseWorkerReport(text, sidecar = null) {
  * gates cannot disagree: a failing check or an un-run test demotes `complete`,
  * while lint/typecheck `not_run` is a recorded coverage gap, not a demotion —
  * many repos legitimately have neither, and demoting there stalls every sprint.
- * A nominated extra check is required, as it is in verify-worktree.sh: `not_run`
- * there demotes too — the coder said a criterion needs it.
+ * A further check the coder did not run is left to verify-worktree.sh, which runs it anyway.
  */
 export function applySchemaPrefilter(report) {
-  const extras = report.extraChecks ?? [];
   const failed = Object.keys(report.checks).filter((c) => report.checks[c] === "fail");
   const gaps = ["lint", "typecheck"].filter((c) => report.checks[c] === "not_run");
-  const unrunExtras = extras.filter((c) => report.checks[c] === "not_run");
   let status = report.status;
   let reason = report.unparseable ?? null;
 
@@ -152,9 +138,6 @@ export function applySchemaPrefilter(report) {
     } else if (report.checks.test === "not_run") {
       status = "partial";
       reason = "tests not run — nothing was verified";
-    } else if (unrunExtras.length) {
-      status = "partial";
-      reason = `nominated checks not run: ${unrunExtras.join(", ")}`;
     }
   }
   return { status, demoted: status !== report.status, reason, coverageGaps: gaps };
@@ -172,8 +155,8 @@ export function applySchemaPrefilter(report) {
  * missing or unreadable record is every base check `not_run`.
  *
  * `logs` maps each check to its full-output file, so a reviewer can read a figure (a coverage
- * percentage) pass/fail cannot carry; `notRequested` names the cached checks this run never
- * ran, so a criterion resting on one visibly has no evidence.
+ * percentage) pass/fail cannot carry; `notConfigured` names the cached checks set to `null`,
+ * which the gate never runs, so a criterion resting on one visibly has no evidence.
  */
 export function readVerifyRecord(file) {
   const checks = Object.fromEntries(CHECK_CATEGORIES.map((c) => [c, "not_run"]));
@@ -182,15 +165,15 @@ export function readVerifyRecord(file) {
   try {
     rec = JSON.parse(readFileSync(file, "utf8"));
   } catch {
-    return { checks, logs, notRequested: [] };
+    return { checks, logs, notConfigured: [] };
   }
   for (const c of Array.isArray(rec?.checks) ? rec.checks : []) {
     if (!c || typeof c.category !== "string") continue;
     checks[c.category] = normaliseCheck(c.result);
     if (typeof c.log === "string" && c.log) logs[c.category] = c.log;
   }
-  const notRequested = Array.isArray(rec?.not_requested) ? rec.not_requested.filter((c) => typeof c === "string") : [];
-  return { checks, logs, notRequested };
+  const notConfigured = Array.isArray(rec?.not_configured) ? rec.not_configured.filter((c) => typeof c === "string") : [];
+  return { checks, logs, notConfigured };
 }
 
 /**

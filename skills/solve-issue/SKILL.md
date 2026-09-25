@@ -234,8 +234,8 @@ CACHE="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"
 if [ -f "$CACHE" ] && grep -q '"test"' "$CACHE"; then echo USE_CACHE; else echo DISCOVER; fi
 ```
 
-`USE_CACHE` → run `test`/`lint`/`typecheck` from `$CACHE`, in order, plus any other key only a
-criterion needs (coverage, integration) — report those keys. An empty/`null` value is that
+`USE_CACHE` → run `test`/`lint`/`typecheck` from `$CACHE`, in order, then every other check key
+with a command (coverage, integration) — report each. An empty/`null` value is that
 discovery's own answer of "no local command" — report `NOT RUN: no command found`, do not
 re-check CLAUDE.md/Makefile instead.
 

@@ -225,34 +225,32 @@ test("the verifier's record is read back as the reviewer's check evidence", () =
     commit: "abc",
     verdict: "pass",
     checks: [
-      { category: "typecheck", requested: "base", command: null, result: "not_run", exit: null, log: null },
-      { category: "test", requested: "base", command: "npm test", result: "pass", exit: 0, log: "/d/01-x.verify-test.log" },
-      { category: "coverage", requested: "extra", command: "make cov", result: "pass", exit: 0, log: "/d/my dir/01-x.verify-coverage.log" },
+      { category: "typecheck", command: null, result: "not_run", exit: null, log: null },
+      { category: "test", command: "npm test", result: "pass", exit: 0, log: "/d/01-x.verify-test.log" },
+      { category: "coverage", command: "make cov", result: "pass", exit: 0, log: "/d/my dir/01-x.verify-coverage.log" },
     ],
-    not_requested: ["integration"],
+    not_configured: ["integration"],
   });
-  const { checks, logs, notRequested } = readVerifyRecord(f);
+  const { checks, logs, notConfigured } = readVerifyRecord(f);
   assert.deepEqual(checks, { test: "pass", lint: "not_run", typecheck: "not_run", coverage: "pass" });
   assert.deepEqual(logs, { test: "/d/01-x.verify-test.log", coverage: "/d/my dir/01-x.verify-coverage.log" });
-  assert.deepEqual(notRequested, ["integration"]);
+  assert.deepEqual(notConfigured, ["integration"]);
 });
 
 test("a missing or unreadable record is never reported as evidence", () => {
-  const none = { checks: { test: "not_run", lint: "not_run", typecheck: "not_run" }, logs: {}, notRequested: [] };
+  const none = { checks: { test: "not_run", lint: "not_run", typecheck: "not_run" }, logs: {}, notConfigured: [] };
   assert.deepEqual(readVerifyRecord("/nonexistent/01-x.verify.json"), none);
   assert.deepEqual(readVerifyRecord(verifyRecord("{not json")), none);
   assert.equal(readVerifyRecord(verifyRecord({ checks: [{ category: "test", result: "fail" }] })).checks.test, "fail");
 });
 
-test("a worker's extra_checks are names only, deduped, without the base three", () => {
+test("a worker's further checks are kept by cache-key name only", () => {
   const r = parseWorkerReport(null, {
     status: "complete",
-    checks: { test: "pass", lint: "pass", typecheck: "pass" },
-    extra_checks: ["Coverage", "coverage", "test", "make testIntegration", "integration", 3],
+    checks: { test: "pass", lint: "pass", typecheck: "pass", Coverage: "fail", "make testIntegration": "pass", integration: "passed" },
   });
-  assert.deepEqual(r.extraChecks, ["coverage", "integration"]);
-  assert.deepEqual(parseWorkerReport(null, { status: "complete" }).extraChecks, []);
-  assert.deepEqual(parseWorkerReport(null, null).extraChecks, []);
+  assert.deepEqual(r.checks, { test: "pass", lint: "pass", typecheck: "pass", coverage: "fail", integration: "pass" });
+  assert.deepEqual(parseWorkerReport(null, { status: "complete" }).checks, { test: "not_run", lint: "not_run", typecheck: "not_run" });
 });
 
 test("the review prompt states every check that ran, with its full-output file", () => {
@@ -269,11 +267,11 @@ test("the review prompt names the gate's record, what it never ran, and what cou
   const p = reviewPrompt({
     branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/s.json",
     checks: { test: "pass", lint: "pass", typecheck: "pass" },
-    notRequested: ["coverage", "integration"],
+    notConfigured: ["coverage", "integration"],
     verifyFile: "/d/01-s.verify.json",
   });
   assert.match(p, /The gate's own record of that run: \/d\/01-s\.verify\.json/);
-  assert.match(p, /Not run by the pipeline: coverage, integration — a criterion resting on one of these has no evidence/);
+  assert.match(p, /Not run by the pipeline, no command configured: coverage, integration — a criterion resting on one of these has no evidence/);
   assert.match(p, /progress notes, commit messages and the issue's `## Progress` section are claims/);
 });
 
@@ -445,17 +443,18 @@ test("the fix prompt carries the triage verdict forward and forbids redoing fini
 
 
 test("a coder-admitted extra-check failure stops the issue before any gate runs", () => {
-  const base = { status: "complete", extra_checks: ["coverage"] };
+  const base = { status: "complete" };
   const failed = applySchemaPrefilter(
     parseWorkerReport(null, { ...base, checks: { test: "pass", lint: "pass", typecheck: "pass", coverage: "fail" } }),
   );
   assert.equal(failed.status, "partial");
   assert.match(failed.reason, /reported checks failed: coverage/);
 
-  // Nominated but never reported: the coder said a criterion needs it, so it is required.
-  const unrun = applySchemaPrefilter(parseWorkerReport(null, { ...base, checks: { test: "pass", lint: "pass", typecheck: "pass" } }));
-  assert.equal(unrun.status, "partial");
-  assert.match(unrun.reason, /nominated checks not run: coverage/);
+  // Never reported: left to verify-worktree.sh, which runs every cached check anyway.
+  const unrun = applySchemaPrefilter(
+    parseWorkerReport(null, { ...base, checks: { test: "pass", lint: "pass", typecheck: "pass", coverage: "not_run" } }),
+  );
+  assert.equal(unrun.status, "complete");
 
   const passed = applySchemaPrefilter(
     parseWorkerReport(null, { ...base, checks: { test: "pass", lint: "pass", typecheck: "pass", coverage: "pass" } }),

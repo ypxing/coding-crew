@@ -272,7 +272,6 @@ export async function runWorker(ctx, issue, attempt) {
           parsedFrom: "deps-failed",
           status: "blocked",
           checks: { test: "not_run", lint: "not_run", typecheck: "not_run" },
-          extraChecks: [],
           branch,
           workingDirectory: worktree,
           progress: null,
@@ -438,11 +437,7 @@ export async function runHousekeeping(ctx, worker) {
 
   // --- gate 1: independent verification in the worktree ----------------------
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
-  // The coder names the extra categories its criteria need; the gate re-runs them itself.
-  const extras = worker.report.extraChecks ?? [];
-  const verifyArgs = ["--dir", worker.worktree, "--stem", dispatchStem(issue)];
-  if (extras.length) verifyArgs.push("--extra", extras.join(","));
-  const verify = effects.bash("verify-worktree.sh", verifyArgs, {
+  const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
     env: sprint.childEnv(),
   });
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${verify.stdout.trim()}`);

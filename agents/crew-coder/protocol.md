@@ -52,7 +52,7 @@ That file is the only thing `report.mjs` reads; its absence, whatever you printe
 `blocked`. The field names are fixed:
 
 ```json
-{"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run","<category>":"pass|fail|not_run"},"extra_checks":["<category>"],"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
+{"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run","<category>":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
 ```
 
 Still end your final message with one line reading `Status: complete`, `Status: partial`, or
@@ -64,7 +64,7 @@ Rules:
 1. `status` is exactly one of `complete`, `partial`, `blocked`.
 2. `criteria` — one entry per criterion, including any under `## Cross-cutting Requirements` when the issue has one. `text` is the criterion verbatim; `met` is `true` only when it is fully satisfied.
 3. One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
-4. `extra_checks` — the `dev-commands.json` keys (`coverage`, `integration`) of any further check `solve-issue` Step 5 ran for a criterion, each with its own `checks` entry; `[]` if none.
+4. One further `checks` entry for each other `dev-commands.json` check `solve-issue` Step 5 ran (`coverage`, `integration`), keyed by its `dev-commands.json` key.
 5. `progress` is required for `partial` and is where the remaining work goes — the orchestrator copies it into the issue file, which you never write to.
 6. The report file holds the JSON object alone.
 

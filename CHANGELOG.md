@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.29.133]
+
+### Changed
+
+- **The verify gate runs every configured check, every time.** After test/lint/typecheck,
+  `verify-worktree.sh` runs every other `dev-commands.json` check key that has a command
+  (`coverage`, `integration`), and any failure fails the gate. `null` is how a category opts
+  out. The coder's `extra_checks` report field and the gate's `--extra` flag are gone. A retry
+  that skipped the coder (review-only, not-fixable recheck, clean conflict re-sync, receipt
+  retry), or a fix-prompt coder that didn't name the checks again, used to verify without the
+  extras an acceptance criterion needed, so the reviewer read that criterion `unmet`.
+  `solve-issue` Step 5 runs the same set, so the coder isn't surprised by the gate.
+- **`verify.json` names the checks set to `null` as `not_configured`,** in place of
+  `not_requested`, and its check entries drop the `requested` field. The reviewer prompt reads
+  "Not run by the pipeline, no command configured: …".
+
 ## [1.29.132]
 
 ### Changed
