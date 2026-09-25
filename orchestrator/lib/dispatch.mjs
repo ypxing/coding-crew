@@ -239,6 +239,8 @@ export function formatJsonTraceLine(platform, agent, line) {
         }
       }
     }
+    // A run that dies on an API error (auth, quota) says so only here.
+    if (evt.type === "result" && evt.is_error) return `[AGENT-ERROR] agent=${agent} error=${safePreview(evt.result)}`;
     return null;
   }
   if (platform === "copilot") {
@@ -247,6 +249,9 @@ export function formatJsonTraceLine(platform, agent, line) {
     }
     if (evt.type === "tool.execution_complete" && evt.data?.success === false) {
       return `[TOOL-ERROR] agent=${agent} toolCallId=${evt.data?.toolCallId ?? "?"} error=${safePreview(evt.data?.error?.message)}`;
+    }
+    if (evt.type === "session.error") {
+      return `[AGENT-ERROR] agent=${agent} type=${evt.data?.errorType ?? "?"} error=${safePreview(evt.data?.message)}`;
     }
     return null;
   }

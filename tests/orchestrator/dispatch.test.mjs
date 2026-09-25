@@ -536,6 +536,18 @@ test("formatJsonTraceLine reads claude's failed tool_result", () => {
   assert.equal(formatJsonTraceLine("claude", "crew-coder", line), "[TOOL-ERROR] agent=crew-coder tool_use_id=t1");
 });
 
+// A run that dies on an API error (quota, auth) says so only in an event: without a line
+// for it, the trace log and the orca tab both show nothing at all.
+test("formatJsonTraceLine names a run-ending error from claude's result and copilot's session.error", () => {
+  const claude = JSON.stringify({ type: "result", subtype: "success", is_error: true, result: "API Error: 403 forbidden" });
+  assert.equal(formatJsonTraceLine("claude", "crew-coder", claude), '[AGENT-ERROR] agent=crew-coder error="API Error: 403 forbidden"');
+  const copilot = JSON.stringify({ type: "session.error", data: { errorType: "quota", message: "You have exceeded your monthly quota" } });
+  assert.equal(
+    formatJsonTraceLine("copilot", "crew-coder", copilot),
+    '[AGENT-ERROR] agent=crew-coder type=quota error="You have exceeded your monthly quota"',
+  );
+});
+
 test("formatJsonTraceLine ignores claude's non-tool events and unparseable lines", () => {
   assert.equal(formatJsonTraceLine("claude", "crew-coder", JSON.stringify({ type: "result", result: "done" })), null);
   assert.equal(formatJsonTraceLine("claude", "crew-coder", "not json"), null);

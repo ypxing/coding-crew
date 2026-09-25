@@ -39,6 +39,22 @@
   (`[SYNC-CONFLICT-KEPT]`), the coder resolves it keeping both sides, and verify and
   review re-run on the new commit before it merges. If the sync merges cleanly after all,
   the coder is skipped. Other merge failures keep the merge-only retry.
+- **Merge-conflict retries run one at a time.** Two in flight together both resolved
+  against the same feature-branch tip, so whichever merged second conflicted again with
+  the first's resolution and could spend its retry cap on a conflict its sibling caused.
+  A conflict retry now waits (`[CONFLICT-RETRY-WAIT]`) while another is in flight; other
+  issues are claimed as before.
+- **A rerun after a merge conflict hit the retry cap now resolves it through the coder.**
+  It took the restart route, whose sync step blocked on the same conflict straight away.
+- **pi and codex worker tabs show readable `[TOOL]` lines.** Their dispatchers write the
+  raw event stream to stdout, one line per token delta, and the tab followed stdout. The
+  tab now follows stderr for them, which also carries the CLI's own errors (a pi that
+  rejected a flag used to show an empty tab).
+- **A claude or copilot run that dies on an API error now says so in the trace log and
+  its tab.** A quota or auth failure arrives only as a JSON event (claude's error
+  `result`, copilot's `session.error`), which no trace line was made from. It is now an
+  `[AGENT-ERROR]` line.
+- **Setting both `HERDR_ENV` and `ORCA_ENV` now names the variable to unset.**
 
 - **A pi dispatch can no longer hang on its caller's stdin.** `dispatch-agent.sh` passes the
   prompt as an argument but left `pi`'s stdin inherited, so a `pi` that reads stdin waited
