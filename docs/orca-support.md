@@ -122,10 +122,12 @@ agent definition.
   `show`, means no send.
 - Verified live in real orca panes: a shell with a foreground run and a shell with stdin
   redirected (`< /dev/null`) both skip, with nothing typed. A Claude session running it
-  through its Bash tool sends, and the message arrives as a prompt. Detection of pi, codex
-  and copilot panes is untested (those CLIs weren't available). If orca doesn't identify
-  one, the push is skipped rather than typed in blind — which is why the pi/codex/copilot
-  skills keep polling under `ORCA_ENV=1` instead of waiting for it.
+  through its Bash tool sends, and the message arrives as a prompt. So do interactive pi
+  and codex panes, each launching a sprint through its crew-afk skill. pi reports
+  `agentIdentity` only once its first prompt has fired orca's status extension
+  (`~/.pi/agent/extensions/orca-agent-status.ts`), which a skill invocation already is.
+  copilot pane detection is untested. All four skills skip polling under `ORCA_ENV=1`. If
+  orca doesn't identify a pane, the push is skipped rather than typed in blind.
 - `ORCA_ENV=1` must be set by hand: orca injects `ORCA_WORKTREE_ID`/`ORCA_TAB_ID`/
   `ORCA_TERMINAL_HANDLE` into its terminals, but not `ORCA_ENV` itself.
 - `terminal send` into a live claude pane takes ~8s to return (it watches for turn start),

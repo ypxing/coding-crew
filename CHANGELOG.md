@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.29.130]
+
+### Changed
+
+- **crew-afk's pi, codex and copilot launchers now stop polling under `ORCA_ENV=1`, like
+  claude's.** Orca identifies pi (through its status extension, from the first prompt on)
+  and codex panes as agents, so milestone pushes and the end-of-run push reach them.
+  Verified live for pi and codex, each running a sprint from its own orca pane. copilot is
+  untested.
+
+### Fixed
+
+- **All four crew-afk launchers keep polling under `HERDR_ENV=1`.** They had stopped
+  polling and waited for the end-of-run push, which herdr doesn't reliably deliver. The push
+  is still sent, as an extra.
+
 ## [1.29.129]
 
 ### Added
