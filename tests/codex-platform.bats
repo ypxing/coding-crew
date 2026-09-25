@@ -151,7 +151,10 @@ assert len(d['developer_instructions']) > 200
   # differently-normalized absolute form on Windows) can disagree with the script's own
   # rendering even though both name the same directory.
   common_dir=$(cd "$TEMP_DIR/wt" && git rev-parse --path-format=absolute --git-common-dir)
-  [[ "$output" == *"sandbox_workspace_write.writable_roots=[\"$common_dir\"]"* ]] || {
+  # The worktree's own git dir too: codex mounts it read-only even under a writable
+  # common dir, and it holds the worktree's index.lock.
+  git_dir=$(cd "$TEMP_DIR/wt" && git rev-parse --path-format=absolute --git-dir)
+  [[ "$output" == *"sandbox_workspace_write.writable_roots=[\"$common_dir\",\"$git_dir\"]"* ]] || {
     echo "$output" >&2; return 1; }
 }
 

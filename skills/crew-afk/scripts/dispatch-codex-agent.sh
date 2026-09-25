@@ -157,14 +157,27 @@ if [[ "$SANDBOX" == "workspace-write" ]]; then
   # drive-letter path like "C:/Users/...", which doesn't start with "/", so the *)-branch
   # below needs its own drive-letter case or it wrongly treats that as relative and mangles
   # it (observed: "$DIR/C:/Users/...").
-  GIT_COMMON_DIR=$(cd "$DIR" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
-  case "$GIT_COMMON_DIR" in
-    "") ;;
-    /*|[A-Za-z]:*) ;;
-    *) GIT_COMMON_DIR="$DIR/$GIT_COMMON_DIR" ;;
-  esac
-  [[ -n "$GIT_COMMON_DIR" ]] &&
-    ARGS+=(-c "sandbox_workspace_write.writable_roots=[\"$GIT_COMMON_DIR\"]")
+  #
+  # The worktree's own git dir (`<common>/worktrees/<name>`, where its index.lock lives) is
+  # named too: codex mounts it read-only even under a writable common dir (codex 0.156,
+  # observed as `Read-only file system` on index.lock).
+  abs_git_path() {
+    local p
+    p=$(cd "$DIR" && git rev-parse --path-format=absolute "$1" 2>/dev/null || true)
+    case "$p" in
+      "") ;;
+      /*|[A-Za-z]:*) ;;
+      *) p="$DIR/$p" ;;
+    esac
+    printf '%s' "$p"
+  }
+  GIT_COMMON_DIR=$(abs_git_path --git-common-dir)
+  GIT_DIR_OWN=$(abs_git_path --git-dir)
+  if [[ -n "$GIT_COMMON_DIR" ]]; then
+    ROOTS="\"$GIT_COMMON_DIR\""
+    [[ -n "$GIT_DIR_OWN" && "$GIT_DIR_OWN" != "$GIT_COMMON_DIR" ]] && ROOTS+=",\"$GIT_DIR_OWN\""
+    ARGS+=(-c "sandbox_workspace_write.writable_roots=[$ROOTS]")
+  fi
 fi
 # Traces, prompts, and reports live under $MAIN_ROOT/.scratch, outside the worktree.
 [[ "$MAIN_ROOT" != "$DIR" ]] && ARGS+=(--add-dir "$MAIN_ROOT")

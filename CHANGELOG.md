@@ -62,6 +62,11 @@
   several platforms in one repo, the first found won (`.pi/` first) whatever `--platform`
   said. pi's and codex's dispatchers exist only in their own install, so a codex sprint in
   a repo also installed for pi failed every dispatch with exit 127.
+- **codex workers can commit again.** codex 0.156 mounts a linked worktree's own git dir
+  (`.git/worktrees/<name>`, which holds its `index.lock`) read-only even under the writable
+  common dir `dispatch-codex-agent.sh` already named. Every `git add` failed with
+  `Read-only file system` and every codex issue blocked. That dir is now a writable root
+  too.
 - **Setting both `HERDR_ENV` and `ORCA_ENV` now names the variable to unset.**
 
 - **A pi dispatch can no longer hang on its caller's stdin.** `dispatch-agent.sh` passes the
