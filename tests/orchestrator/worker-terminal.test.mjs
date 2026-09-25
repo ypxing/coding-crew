@@ -170,6 +170,24 @@ test("the terminal shows a claude event stream as trace lines, not raw JSON", ()
   assert.equal(lines.length, 2);
 });
 
+// pi and codex's bash dispatchers write the raw event stream to stdout and their own
+// [TOOL] lines, plus the CLI's errors, to stderr: the terminal shows stderr for them.
+test("the terminal follows stdout for a parsed event stream, stderr for a bash dispatcher", async () => {
+  for (const [jsonEvents, shown] of [["claude", "out"], [undefined, "err"]]) {
+    const { stem } = fixture();
+    const adapter = fakeTerminal();
+    let script = "";
+    const open = adapter.openWorkerTerminal;
+    adapter.openWorkerTerminal = async (e, o) => {
+      script = readFileSync(/^bash '(.*)'$/.exec(o.command)[1], "utf8");
+      return open(e, o);
+    };
+    await spawnInWorkerTerminal(effects(), adapter, "true", [], { cwd: tmpdir(), stem, title: "t", jsonEvents, timing: FAST });
+    const follow = script.split("\n").find((l) => l.includes("follow-output.mjs"));
+    assert.match(follow, new RegExp(`follow-output\\.mjs' '[^']*/${shown}' `), `${jsonEvents}: ${follow}`);
+  }
+});
+
 // ─── spawnDispatch: which path a dispatch takes ─────────────────────────────────────────
 
 test("spawnDispatch stays headless with no pane host, under herdr, and under --dry-run", async () => {

@@ -81,8 +81,11 @@ child's pid and exit code under `<outFile>.term/`, and polls those:
 
 stdout goes straight to a file that crew-afk tails, so traces, heartbeats and report
 parsing are the headless path's. What the tab shows comes from a separate follower
-(`follow-output.mjs`: `[TOOL]` lines and assistant text for a JSON stream, raw text
-otherwise), so a display failure can't reach the worker. crew-afk's env is exported into
+(`follow-output.mjs`), so a display failure can't reach the worker. For claude and copilot
+it shows stdout's JSON stream as `[TOOL]` lines, plus claude's assistant text. For pi and
+codex it shows stderr as-is: their bash dispatchers put raw events on stdout, and their
+`[TOOL]` lines and the CLI's own errors on stderr. Either way the tab is a read-only view
+of the headless run, not the agent's interactive UI. crew-afk's env is exported into
 the terminal through a 0600 `env.sh` that `run.sh` deletes once sourced; the terminal's own
 `ORCA_TERMINAL_HANDLE`/`ORCA_TAB_ID`/`ORCA_WORKTREE_ID` are left alone. The terminal is
 closed when the dispatch ends; `<outFile>.term/` is removed on success and kept on failure.

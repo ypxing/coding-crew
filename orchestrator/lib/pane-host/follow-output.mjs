@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * What a worker terminal shows (worker-terminal.mjs): follows the child's output file until
- * its rc file lands. A JSON event stream is shown as the same `[TOOL]` lines the trace log
+ * What a worker terminal shows (worker-terminal.mjs): follows one of the child's output
+ * files (see runScript for which) until its rc file lands. A JSON event stream is shown as the same `[TOOL]` lines the trace log
  * gets, plus claude's assistant text; anything else is shown as-is. Display only — the
  * child never writes through this process, so it can fail without touching the dispatch.
  *

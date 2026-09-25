@@ -132,7 +132,9 @@ function envScript(env) {
  * bash, whatever the terminal's login shell. `sh -c 'echo $$ …; exec'` records the pid the
  * child keeps (BASHPID is bash 4+; macOS ships 3.2). The child writes straight to `out`;
  * what the terminal shows is a separate follower process, so a display failure can never
- * reach the child.
+ * reach the child. It follows `out` for an event stream it can parse (claude, copilot), and
+ * `err` otherwise: pi and codex's bash dispatchers put raw events on stdout and their own
+ * `[TOOL]` lines, plus the CLI's errors, on stderr.
  */
 function runScript({ f, cwd, cmd, args, jsonEvents, agent }) {
   const q = shellQuote;
@@ -141,8 +143,8 @@ function runScript({ f, cwd, cmd, args, jsonEvents, agent }) {
     "#!/usr/bin/env bash",
     `. ${p("env.sh")}; rm -f ${p("env.sh")}`,
     `cd ${q(cwd)} || { echo 127 > ${p("rc")}; exit; }`,
-    `: > ${p("out")}`,
-    `${q(process.execPath)} ${q(FOLLOWER)} ${p("out")} ${p("rc")} ${q(jsonEvents ?? "")} ${q(agent ?? "")} &`,
+    `: > ${p("out")}; : > ${p("err")}`,
+    `${q(process.execPath)} ${q(FOLLOWER)} ${p(jsonEvents ? "out" : "err")} ${p("rc")} ${q(jsonEvents ?? "")} ${q(agent ?? "")} &`,
     `sh -c 'echo $$ > "$0.tmp" && mv "$0.tmp" "$0" && exec "$@"' ${p("pid")} ${[cmd, ...args].map(q).join(" ")} > ${p("out")} 2> ${p("err")} < /dev/null`,
     `echo $? > ${p("rc.tmp")} && mv ${p("rc.tmp")} ${p("rc")}`,
     "wait",
