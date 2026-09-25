@@ -11,14 +11,21 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 RENDER="$REPO_ROOT/scripts/render-skill.sh"
 PLATFORMS=(claude copilot pi codex)
 
-# A skill absent from registry.json falls back to its own directory name as source-dir
-# (`.skills[$s]["source-dir"] // $s`), so a throwaway fixture needs no registry.json edit —
-# just a real (temporary) directory under the real skills/ tree, cleaned up per test.
+# The probe skill lives in a per-test copy of the render tree (render-skill.sh resolves
+# registry.json and skills/ from its own location), never under the real skills/: bats -j
+# runs tests concurrently, and a shared fixture path there let one test's teardown delete
+# another's fixture, and put a stray skill in front of every other test file rendering skills/.
+# A skill absent from registry.json falls back to its own directory name as source-dir.
 FIXTURE_NAME="__render_skill_fragment_probe__"
-FIXTURE_SKILL_DIR="$REPO_ROOT/skills/$FIXTURE_NAME"
 
 setup() {
-  mkdir -p "$FIXTURE_SKILL_DIR"
+  TREE="$BATS_TEST_TMPDIR/tree"
+  mkdir -p "$TREE/scripts" "$TREE/skills/$FIXTURE_NAME"
+  cp "$RENDER" "$TREE/scripts/render-skill.sh"
+  cp "$REPO_ROOT/registry.json" "$TREE/registry.json"
+  PROBE_RENDER="$TREE/scripts/render-skill.sh"
+  FIXTURE_SKILL_DIR="$TREE/skills/$FIXTURE_NAME"
+  SHARED_DIR="$TREE/skills/_shared/fragments/claude"
   {
     echo "# Probe"
     echo ""
@@ -28,16 +35,11 @@ setup() {
   } > "$FIXTURE_SKILL_DIR/SKILL.md"
 }
 
-teardown() {
-  rm -rf "$FIXTURE_SKILL_DIR"
-  rm -f "$REPO_ROOT/skills/_shared/fragments/claude/shared-only.md"
-}
-
 @test "a fragment absent locally but present under skills/_shared/fragments/<platform> renders" {
-  mkdir -p "$REPO_ROOT/skills/_shared/fragments/claude"
-  echo "Shared fallback content." > "$REPO_ROOT/skills/_shared/fragments/claude/shared-only.md"
+  mkdir -p "$SHARED_DIR"
+  echo "Shared fallback content." > "$SHARED_DIR/shared-only.md"
 
-  run bash "$RENDER" "$FIXTURE_NAME" claude
+  run bash "$PROBE_RENDER" "$FIXTURE_NAME" claude
   [ "$status" -eq 0 ]
   [[ "$output" == *"Shared fallback content."* ]]
   [[ "$output" != *"{{FRAGMENT"* ]]
@@ -46,17 +48,17 @@ teardown() {
 @test "a skill-local fragment of the same key wins over the shared fallback" {
   mkdir -p "$FIXTURE_SKILL_DIR/fragments/claude"
   echo "Skill-local content." > "$FIXTURE_SKILL_DIR/fragments/claude/shared-only.md"
-  mkdir -p "$REPO_ROOT/skills/_shared/fragments/claude"
-  echo "Shared fallback content." > "$REPO_ROOT/skills/_shared/fragments/claude/shared-only.md"
+  mkdir -p "$SHARED_DIR"
+  echo "Shared fallback content." > "$SHARED_DIR/shared-only.md"
 
-  run bash "$RENDER" "$FIXTURE_NAME" claude
+  run bash "$PROBE_RENDER" "$FIXTURE_NAME" claude
   [ "$status" -eq 0 ]
   [[ "$output" == *"Skill-local content."* ]]
   [[ "$output" != *"Shared fallback content."* ]]
 }
 
 @test "missing from both skill-local and shared fallback is still a hard error" {
-  run bash "$RENDER" "$FIXTURE_NAME" claude
+  run bash "$PROBE_RENDER" "$FIXTURE_NAME" claude
   [ "$status" -ne 0 ]
   [[ "$output" == *"fragment"* ]]
 }

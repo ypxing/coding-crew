@@ -1178,6 +1178,7 @@ test("PRDAudit fix queues nothing while a Phase 1 issue is still open", () => {
   const r = runSprint(root);
   assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
   assert.match(traceLog(root), /PRD audit: gaps not queued — 1 Phase 1 issue\(s\) still open \(beta\)/);
+  assert.match(r.stdout, /\*\*Gaps not queued:\*\* 1 Phase 1 issue\(s\) still open/, "the summary says so, not only the trace");
   assert.equal(readdirSync(join(root, ".scratch/demo/issues/open")).some((f) => /fix-prd-gaps/.test(f)), false);
 });
 
@@ -1532,6 +1533,31 @@ test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implement
   assert.ok(gaps, `defer-gaps never created the issue\n${traceLog(root)}`);
   assert.equal(gaps.state, "CLOSED", "the gaps issue was never implemented");
   assert.equal(traceLog(root).split("step=prd-audit").length - 1, 1, "one audit per sprint");
+});
+
+test("a gaps issue that could not be created is named in the summary, not only the trace", () => {
+  const root = githubFixtureRepo();
+  const { stub } = stubGh(root, [GH_ALPHA]);
+  mkdirSync(join(root, ".scratch/demo"), { recursive: true });
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
+  writeFileSync(join(root, ".scratch/fake/prd-audit.response"), AUDIT_WITH_GAP);
+  // No CREW_GITHUB_TRACKER_CLI and no install: defer-gaps cannot find github.mjs.
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      HOME: mkdtempSync(join(tmpdir(), "crew-home-")),
+      CREW_GITHUB_TRACKER_CLI: "",
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /## PRD Audit/);
+  assert.match(r.stdout, /\*\*Gaps not queued:\*\* 1 missing requirement\(s\), but the fix issue was not created: .*github\.mjs/);
 });
 
 // ─── eager dependency provisioning ───────────────────────────────────────────

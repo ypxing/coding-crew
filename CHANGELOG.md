@@ -34,7 +34,8 @@
   issue carried, flows across issues, cross-cutting concerns — it no longer re-grades criteria a
   review already passed. In `fix` mode its ✗ missing requirements become one fix issue
   (`NN-fix-prd-gaps.md`, or a GitHub issue) that Phase 2 implements with the findings fixes; its
-  `Source:` line keeps it from being audited or promoted again. Nothing is queued while a Phase 1 issue is still open.
+  `Source:` line keeps it from being audited or promoted again. Nothing is queued while a Phase 1
+  issue is still open; when gaps are found but not queued, the summary's `## PRD Audit` says why.
   Skipped at no cost when the feature has no `PRD.md`. `coverage-validation.sh` is now
   `prd-audit.sh`, its report `prd-audit.md`; `--coverage` still works, as `report`.
 - **Sprint settings move into `config.json`:** `timeouts` (minutes per role, plus `merge`),

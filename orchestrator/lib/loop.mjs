@@ -138,7 +138,7 @@ export async function runSprint(ctx) {
   }
 
   let capped = false;
-  let prdAuditReport = null;
+  let prdAudit = {};
   let audited = false;
   while (true) {
     await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
@@ -156,7 +156,8 @@ export async function runSprint(ctx) {
     let queuedReady = false;
     if (!audited) {
       audited = true;
-      ({ report: prdAuditReport, queuedReady } = await runPrdAudit(ctx, tracker));
+      prdAudit = await runPrdAudit(ctx, tracker);
+      queuedReady = prdAudit.queuedReady;
     }
     if (flush(ctx) > 0 || queuedReady) continue;
     break;
@@ -171,7 +172,7 @@ export async function runSprint(ctx) {
       ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
       : tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug }).some((i) => i.status !== "done"));
 
-  await wrapUp(ctx, { stalled, prdAuditReport });
+  await wrapUp(ctx, { stalled, prdAudit });
   return { stalled, history };
 }
 
@@ -194,9 +195,10 @@ function unfinishedIssues(tracker, mainRoot, featureSlug) {
  * requirement no issue carried, a flow across issues. In `fix` mode its ✗ missing
  * requirements become one parked fix issue, which the caller's flush sends into Phase 2.
  * Gaps are not queued while a Phase 1 issue is still open: its requirements would read as
- * missing, and queuing them would duplicate that issue. Returns `{report, queuedReady}`:
- * the report's path (or null), and whether an issue was created already ready-for-agent
- * (github — local parks it for the flush instead).
+ * missing, and queuing them would duplicate that issue. Returns `{report, queuedReady, unqueued}`:
+ * the report's path (or null); whether an issue was created already ready-for-agent (github —
+ * local parks it for the flush instead); and, in fix mode, why gaps were left unqueued, for the
+ * summary — the trace log alone is too easy to miss.
  */
 async function runPrdAudit(ctx, tracker) {
   const { sprint, effects, options } = ctx;
@@ -237,12 +239,12 @@ async function runPrdAudit(ctx, tracker) {
       `PRD audit: gaps not queued — ${unfinished.length} Phase 1 issue(s) still open (${unfinished.map((i) => i.slug).join(", ")}), ` +
         "whose requirements would read as missing. Resolve them and re-run.",
     );
-    return { report: outFile, queuedReady: false };
+    return { report: outFile, queuedReady: false, unqueued: `${unfinished.length} Phase 1 issue(s) still open — resolve them and re-run.` };
   }
   const parsed = parsePrdAudit(r.text);
   if (!parsed.ok) {
     ctx.log("PRD audit: no closing json block in the report — nothing queued; read it by hand.");
-    return { report: outFile, queuedReady: false };
+    return { report: outFile, queuedReady: false, unqueued: "the report has no closing json block — read it by hand." };
   }
   if (!parsed.missing.length) {
     ctx.log("PRD audit: no missing requirements.");
@@ -257,7 +259,9 @@ async function runPrdAudit(ctx, tracker) {
   );
   ctx.log(`PRD audit: ${parsed.missing.length} missing requirement(s) → ${defer.stdout.trim() || defer.stderr.trim()}`);
   const queued = defer.code === 0 && /^defer-gaps: (?!skip)/m.test(defer.stdout);
-  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles };
+  const unqueued = defer.code === 0 ? null
+    : `${parsed.missing.length} missing requirement(s), but the fix issue was not created: ${defer.stderr.trim() || `exit ${defer.code}`}`;
+  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles, unqueued };
 }
 
 /** Phase 1 → Phase 2: flip parked fix issues to ready-for-agent. */
@@ -274,7 +278,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { stalled, prdAuditReport }) {
+async function wrapUp(ctx, { stalled, prdAudit }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -301,8 +305,9 @@ async function wrapUp(ctx, { stalled, prdAuditReport }) {
   if (stalled) summaryArgs.push("--stalled");
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
   ctx.out(summary.stdout);
-  if (prdAuditReport && existsSync(prdAuditReport)) {
-    ctx.out(`\n## PRD Audit\n\n(see ${prdAuditReport})\n`);
+  if (prdAudit.report && existsSync(prdAudit.report)) {
+    ctx.out(`\n## PRD Audit\n\n(see ${prdAudit.report})\n`);
+    if (prdAudit.unqueued) ctx.out(`\n**Gaps not queued:** ${prdAudit.unqueued}\n`);
   }
   ctx.out("NO MORE TASKS");
 }
