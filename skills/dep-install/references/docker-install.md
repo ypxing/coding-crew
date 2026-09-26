@@ -16,7 +16,7 @@ MAIN_ROOT="/absolute/path/to/main-checkout"
 - Never use `docker-compose` (v1 hyphenated binary) — always use `docker compose` (v2 plugin).
 - Always pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command.
 - **Never write `docker-compose.override.yml` manually** — always generate it via `gen-override.sh`. Hand-writing the file skips proxy env vars and produces generic volume names that collide across worktrees.
-- **If `PROJECT_ROOT` is a linked worktree, always add this worktree's own git-mount `-e` flags too** — on every `docker compose run`, including install and every test/lint/type-check run. They are never baked into `docker-compose.override.yml` (that file is shared across every worktree; this worktree's `GIT_DIR` is not — see `gen-override.sh`'s own header comment), so each call resolves them fresh:
+- **If `PROJECT_ROOT` is a linked worktree, always add this worktree's own git-mount `-e` flags too** — on every `docker compose run` you build yourself (`run.sh` adds them to every check it runs). They are never baked into `docker-compose.override.yml` (that file is shared across every worktree; this worktree's `GIT_DIR` is not — see `gen-override.sh`'s own header comment), so each call resolves them fresh:
 
   ```bash
   GIT_ENV_ARGS=()
@@ -159,11 +159,21 @@ Handle its exit code:
   `BLOCKED` with the reasons it prints to stderr — the fix is in the project's recipe or in
   `.coding-crew/dev-commands.json`'s `install`, not in this session.
 
-### 2. All subsequent `docker compose` commands must pass both `-f` flags and this worktree's git-env args
+### 2. Run every later command through `run.sh`
 
-**Complete steps 0–1 in order before running any `docker compose` command. Do not skip ahead.**
+**Complete steps 0–1 in order before running any project command. Do not skip ahead.**
 
-Pass both `-f "$PROJECT_ROOT/docker-compose.yml" -f "$MAIN_ROOT/docker-compose.override.yml"` on every `docker compose` command — including test, lint, and type-check runs. Never omit the `-f override` flag. Resolve and pass `"${GIT_ENV_ARGS[@]}"` (see Never above) on every one of these too, in the same bash call — a lint/test run that shells out to git (coverage tooling, a `--changed` flag, a release plugin reading the commit SHA) hits the same unmountable-host-path failure an install-time postinstall hook does.
+Every test, lint and type-check run from here on goes through `scripts/run.sh`, which builds the
+`docker compose run --rm` invocation for you — both `-f` flags, this worktree's `GIT_ENV_ARGS`, the
+service — and runs a command whose own recipe
+already calls docker on the host instead of nesting it:
+
+```bash
+bash "<skill-dir>/scripts/run.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"
+```
+
+Never hand-build that `docker compose` command for a check. The one exception is the entrypoint
+recovery below, which must pass both `-f` flags and `GIT_ENV_ARGS` itself.
 
 ## Install failures
 

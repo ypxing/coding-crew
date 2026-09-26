@@ -376,6 +376,24 @@ test("the worker prompt makes the sidecar file the result channel, not an option
   assert.match(p, /- \[ \] it exists/);
 });
 
+test("the worker prompt hands over this issue's deps outcome only when the deps step ran", () => {
+  // solve-issue's resolve-mode.sh turns a DEPS= fact into ACTION=none, skipping a second
+  // install per issue. With --no-deps nothing looked, so nothing may be claimed.
+  const base = {
+    mainRoot: "/nonexistent-main-root",
+    worktree: "/w",
+    issuePath: "/w/i.md",
+    slug: "x",
+    criteria: "",
+    resume: "",
+    reportPath: "/w/r.json",
+  };
+  assert.match(workerPrompt({ ...base, deps: "docker-present" }), /^DEPS=docker-present$/m);
+  assert.doesNotMatch(workerPrompt(base), /DEPS=/);
+  assert.match(fixPrompt({ ...base, branch: "b", deps: "present" }), /^DEPS=present$/m);
+  assert.match(fixPrompt({ ...base, branch: "b", kind: "conflict", deps: "present" }), /^DEPS=present$/m);
+});
+
 // ─── triage: parseTriageReport ────────────────────────────────────────────────
 
 test("a fixable triage sidecar parses category and detail", () => {

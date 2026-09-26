@@ -34,9 +34,10 @@ setup() {
 
 @test "solve-issue falls back to MAIN_ROOT/.scratch/FEATURE_SLUG/PRD.md" {
   # The fallback is what crew-coder used to provide: an issue with no Context
-  # Documents section must still find the feature's PRD.
-  grep -q 'MAIN_ROOT/\.scratch/\$FEATURE_SLUG/PRD\.md' "$SOLVE_ISSUE"
-  grep -q "sed 's|.*\\.scratch/||'" "$SOLVE_ISSUE"
+  # Documents section must still find the feature's PRD. The resolution itself is
+  # preflight.sh's (behaviour pinned in solve-issue-scripts.bats); the skill names it.
+  grep -q 'MAIN_ROOT/\.scratch/<feature-slug>/PRD\.md' "$SOLVE_ISSUE"
+  grep -q 'MAIN_ROOT/\.scratch/\$FEATURE_SLUG/PRD\.md' "$SCRIPT_DIR/skills/solve-issue/scripts/preflight.sh"
 }
 
 @test "solve-issue instructs keeping the PRD in memory for the run" {

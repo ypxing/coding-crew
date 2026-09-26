@@ -77,8 +77,11 @@ words_of() {
   # write-commands-cache.sh) instead of trusting a `$MAIN_ROOT` a prior step may have left
   # unset, which used to make the check wrongly conclude no cache existed and overwrite a
   # correct shared one. A real new branch, not a restatement of the existing cache check.
+  # Lowered to 2,050 when Steps 0/1/1.5/7's facts moved into preflight.sh, Step 2's mode check
+  # into resolve-mode.sh and Step 5's cache read and check runs into run-checks.sh: ~330 words
+  # of inline bash and "don't probe" warnings became three script calls (2,287 → 1,957).
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 2300 ] || { echo "solve-issue is $words words (budget 2300)" >&2; return 1; }
+  [ "$words" -lt 2050 ] || { echo "solve-issue is $words words (budget 2050)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {
@@ -86,7 +89,7 @@ words_of() {
   [ "$words" -lt 750 ] || { echo "tdd is $words words (budget 750)" >&2; return 1; }
 }
 
-@test "budget: the whole per-issue worker chain is under 4,450 words" {
+@test "budget: the whole per-issue worker chain is under 4,100 words" {
   # crew-coder + solve-issue + its verification reference + tdd. Read once per issue,
   # so this total is what a sprint multiplies by its issue count. It was 4,158 words
   # before the duplication below was cut; the ceiling leaves room for one genuinely new
@@ -103,13 +106,15 @@ words_of() {
   # solve-issue's 2,100 ceiling above — the same four real rules, not restated here.
   # Raised from 4,300 to 4,450 alongside solve-issue's 2,300 ceiling above — the same
   # `$MAIN_ROOT` fallback, not restated here.
+  # Lowered to 4,100 alongside solve-issue's 2,050 ceiling above, plus verification.md's
+  # run-all-three-in-one-call and docker-flag prose that run-checks.sh/run.sh now own.
   total=$(words_of "$(coder_variant pi)")
   for f in "$REPO_ROOT"/skills/solve-issue/SKILL.md \
            "$REPO_ROOT"/skills/solve-issue/references/verification.md \
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 4450 ] || { echo "worker chain is $total words (budget 4450)" >&2; return 1; }
+  [ "$total" -lt 4100 ] || { echo "worker chain is $total words (budget 4100)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────

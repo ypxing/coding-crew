@@ -13,31 +13,41 @@ import { join } from "node:path";
  * `install_mode`/`docker_service` are ensure-deps.sh's own verdict, already cached at
  * `.coding-crew/dev-commands.json` before any worktree or worker exists (Sprint.installDeps
  * runs at MAIN_ROOT, ahead of the per-issue dispatch loop). Handing the mode over as a fact —
- * the same way MAIN_ROOT itself is handed over rather than derived — removes the docker-mode
- * check a worker could otherwise skip: solve-issue's Step 2 guard is prose, and a worker has
- * been observed substituting its own node_modules/PATH probing for it despite the guard
- * saying not to. No cache yet (a direct, non-orchestrated /solve-issue run) means this
- * returns nothing and the worker's own detection step is still the source of truth.
+ * the same way MAIN_ROOT itself is handed over rather than derived — states up front what
+ * solve-issue's resolve-mode.sh will also read from that cache, so a worker has no reason to
+ * probe node_modules/PATH itself (one was observed doing so when Step 2 was still prose). No
+ * cache yet (a direct, non-orchestrated /solve-issue run) means no line, and resolve-mode.sh's
+ * own detection is the source of truth.
+ *
+ * `deps` is this issue's own ensure-deps.sh outcome (`present`, `docker-present`, …), handed
+ * over the same way: that install already ran in this worktree, so solve-issue's
+ * resolve-mode.sh turns it into ACTION=none instead of a second, fingerprint-skipped
+ * dep-install run per issue. Absent when the step did not run (--no-deps), so a worker is
+ * never told deps are in place when nothing looked.
  */
-function installModeLines(mainRoot) {
+function installModeLines(mainRoot, deps) {
+  const lines = [];
   const cacheFile = join(mainRoot, ".coding-crew", "dev-commands.json");
-  if (!existsSync(cacheFile)) return [];
-  let cache;
-  try {
-    cache = JSON.parse(readFileSync(cacheFile, "utf8"));
-  } catch {
-    return [];
+  let cache = null;
+  if (existsSync(cacheFile)) {
+    try {
+      cache = JSON.parse(readFileSync(cacheFile, "utf8"));
+    } catch {
+      cache = null;
+    }
   }
-  if (!cache.install_mode) return [];
-  const lines = [`INSTALL_MODE=${cache.install_mode}`];
-  if (cache.install_mode === "docker" && cache.docker_service) lines.push(`DOCKER_SERVICE=${cache.docker_service}`);
+  if (cache?.install_mode) {
+    lines.push(`INSTALL_MODE=${cache.install_mode}`);
+    if (cache.install_mode === "docker" && cache.docker_service) lines.push(`DOCKER_SERVICE=${cache.docker_service}`);
+  }
+  if (deps) lines.push(`DEPS=${deps}`);
   return lines;
 }
 
-export function workerPrompt({ mainRoot, worktree, issuePath, slug, criteria, resume, reportPath, featureBranch, conflictFiles = [] }) {
+export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criteria, resume, reportPath, featureBranch, conflictFiles = [] }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
-    ...installModeLines(mainRoot),
+    ...installModeLines(mainRoot, deps),
     `Working directory: ${worktree}`,
     `Issue path: ${issuePath}`,
     `Issue title: ${slug}`,
@@ -93,9 +103,9 @@ function resultBlock(worktree, reportPath) {
  * is already accepted — the only job is to make the stated problem go away with the
  * smallest change that does it.
  */
-export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify", featureBranch, conflictFiles = [] }) {
+export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify", featureBranch, conflictFiles = [] }) {
   if (kind === "conflict") {
-    return conflictPrompt({ mainRoot, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles });
+    return conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles });
   }
   const isReview = kind === "review";
   const judged = isReview
@@ -111,7 +121,7 @@ export function fixPrompt({ mainRoot, worktree, issuePath, slug, branch, context
     : `A prior, independent triage pass classified this failure as fixable: ${context || "(no detail given)"}`;
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
-    ...installModeLines(mainRoot),
+    ...installModeLines(mainRoot, deps),
     `Working directory: ${worktree}`,
     `Issue path: ${issuePath}`,
     `Issue title: ${slug}`,
@@ -152,10 +162,10 @@ function conflictLines(featureBranch, conflictFiles) {
 }
 
 /** A retry whose only job is the conflicted merge. */
-function conflictPrompt({ mainRoot, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles }) {
+function conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
-    ...installModeLines(mainRoot),
+    ...installModeLines(mainRoot, deps),
     `Working directory: ${worktree}`,
     `Issue path: ${issuePath}`,
     `Issue title: ${slug}`,

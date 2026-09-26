@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.29.143]
+
+### Changed
+
+- **solve-issue's mechanical steps are scripts now, not prose.** Four facts the skill used to
+  have a model work out in inline bash come from one `scripts/preflight.sh` call: the
+  default-branch guard, the `## Blocked by` check, the PRD path, and whether the run is
+  orchestrated. Step 5 is one `scripts/run-checks.sh` call. It runs every check
+  `dev-commands.json` names, in the verify gate's order, and prints `DISCOVER` when there is
+  no cache yet. The skill is 1,957 words, down from 2,287. Its budget is now 2,050, and the
+  per-issue worker chain's is 4,100.
+- **One install-mode verdict for the worker, dep-install and the verify gate.** The new
+  `dep-install/scripts/resolve-mode.sh` checks, in order, `agent.install-mode`, the cached
+  `install_mode`, an existing `docker-compose.override.yml`, then `detect-mode.sh`'s Makefile
+  dry-run. Before, solve-issue, dep-install and `verify-worktree.sh` each asked a different
+  question, so they could disagree about where `npm test` runs. It also prints an `ACTION`
+  (`none`, `install` or `on-failure`), so Step 2 is "run it and do what it says" instead of a
+  page of "do not probe" warnings.
+- **Every check runs through `dep-install/scripts/run.sh`.** It builds the docker invocation
+  a worker used to assemble by hand for each test, lint and typecheck run: both `-f` flags,
+  this worktree's git env, and the service. A command whose own recipe already runs docker
+  runs on the host instead. When docker mode cannot be resolved, it runs on the host with a
+  warning. `verify-worktree.sh` now uses it too, so the worker and the gate run a check the
+  same way.
+- **A sprint's coder no longer reinstalls deps that `ensure-deps.sh` just installed.** The
+  coder prompt now carries the issue's own `DEPS=` outcome. `present`, `installed`,
+  `docker-present` and `docker-installed` become `ACTION=none`. In a docker sprint this skips
+  one dep-install skill read per issue. The line is left out with `--no-deps`, so a coder is
+  never told deps are in place when nothing checked.
+
 ## [1.29.142]
 
 ### Fixed

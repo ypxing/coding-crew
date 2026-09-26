@@ -136,7 +136,7 @@ _main_root_of() {
 _vw_find_dep_scripts() {
   local main_root="$1"
   if [ -n "${CREW_DEP_INSTALL_SCRIPTS:-}" ]; then
-    [ -f "$CREW_DEP_INSTALL_SCRIPTS/gen-override.sh" ] && printf '%s' "$CREW_DEP_INSTALL_SCRIPTS"
+    [ -f "$CREW_DEP_INSTALL_SCRIPTS/run.sh" ] && printf '%s' "$CREW_DEP_INSTALL_SCRIPTS"
     return 0
   fi
   local root candidate
@@ -149,7 +149,7 @@ _vw_find_dep_scripts() {
       "$root/.agents/skills/dep-install/scripts" \
       "$root/.github/skills/dep-install/scripts" \
       "$root/skills/dep-install/scripts"; do
-      if [ -f "$candidate/gen-override.sh" ]; then
+      if [ -f "$candidate/run.sh" ]; then
         printf '%s' "$candidate"
         return 0
       fi
@@ -157,85 +157,30 @@ _vw_find_dep_scripts() {
   done
 }
 
+# Where a check runs — host, docker, or host because its own recipe runs docker — is
+# dep-install's run.sh's decision, the same one a worker's own check runs get: the two
+# must not disagree about where `npm test` runs. No run.sh found → host, as before docker
+# mode existed here. Every docker signal must resolve or run.sh itself falls back to host.
 DOCKER_MODE=0
 DOCKER_SERVICE=""
 DOCKER_CONTAINER_SRC=""
-DOCKER_COMPOSE_FILE=""
-DOCKER_OVERRIDE_FILE=""
-DEP_SCRIPTS_DIR=""
-# This worktree's own GIT_DIR/GIT_COMMON_DIR redirect — resolved fresh per
-# invocation via gen-override.sh's --query git-env, never baked into the shared override
-# file (see gen-override.sh's "Git metadata mount" header comment for why: that file is
-# shared across every worktree, but GIT_DIR is worktree-specific). Kept in two forms:
-# DOCKER_GIT_ENV_ARGS as `-e KEY=VALUE` flags for a `docker compose run` this script calls
-# directly, and DOCKER_GIT_ENV_LINES as bare `KEY=VALUE` for `env` to export ahead of a
-# docker-nesting command this script instead runs on the host (see gen-override.sh's
-# "Nested docker calls" header comment) — that command's own inner `docker compose run`
-# only picks the values up via the shared override's bare passthrough entries if they are
-# already in its caller's process env, which no `-e` flag reaches.
-DOCKER_GIT_ENV_ARGS=()
-DOCKER_GIT_ENV_LINES=()
-
-# _detect_docker_mode — populates the DOCKER_* globals when this worktree's checks must
-# run through `docker compose run` instead of directly on the host.
-_detect_docker_mode() {
-  local mode
-  mode=$(git -C "$WORKTREE_DIR" config --local agent.install-mode 2>/dev/null || true)
-  [ "$mode" = "docker" ] || return 1
-
-  local main_root="${MAIN_ROOT:-}"
-  [ -n "$main_root" ] || main_root=$(_main_root_of "$WORKTREE_DIR")
-  [ -n "$main_root" ] || return 1
-
-  local override_file="$main_root/docker-compose.override.yml"
-  [ -f "$override_file" ] || return 1
-
-  local compose_file="" name
-  for name in docker-compose.yml docker-compose.yaml compose.yml; do
-    if [ -f "$WORKTREE_DIR/$name" ]; then compose_file="$WORKTREE_DIR/$name"; break; fi
-  done
-  [ -n "$compose_file" ] || return 1
-
-  local scripts_dir
-  scripts_dir="$(_vw_find_dep_scripts "$main_root")"
-  [ -n "$scripts_dir" ] || return 1
-
-  local service
-  service=$(git -C "$WORKTREE_DIR" config --local agent.install-service 2>/dev/null || true)
-  if [ -z "$service" ] && [ -f "$main_root/.coding-crew/dev-commands.json" ]; then
-    service=$(grep -o '"docker_service"[[:space:]]*:[[:space:]]*"[^"]*"' "$main_root/.coding-crew/dev-commands.json" 2>/dev/null \
-      | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)"$/\1/' || true)
-  fi
-  if [ -z "$service" ]; then
-    service=$(bash "$scripts_dir/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "$main_root" --query services 2>/dev/null | head -1)
-  fi
-  [ -n "$service" ] || return 1
-
-  local container_src
-  container_src=$(bash "$scripts_dir/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "$main_root" --query container-src 2>/dev/null)
-  [ -n "$container_src" ] || return 1
-
-  DOCKER_GIT_ENV_ARGS=()
-  DOCKER_GIT_ENV_LINES=()
-  while IFS= read -r _git_env_line; do
-    if [ -n "$_git_env_line" ]; then
-      DOCKER_GIT_ENV_ARGS+=(-e "$_git_env_line")
-      DOCKER_GIT_ENV_LINES+=("$_git_env_line")
-    fi
-  done < <(bash "$scripts_dir/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "$main_root" --query git-env 2>/dev/null || true)
-
-  DOCKER_MODE=1
-  DOCKER_SERVICE="$service"
-  DOCKER_CONTAINER_SRC="$container_src"
-  DOCKER_COMPOSE_FILE="$compose_file"
-  DOCKER_OVERRIDE_FILE="$override_file"
-  DEP_SCRIPTS_DIR="$scripts_dir"
-}
+RUN_SCRIPT=""
+_VW_MAIN_ROOT="${MAIN_ROOT:-}"
+[ -n "$_VW_MAIN_ROOT" ] || _VW_MAIN_ROOT=$(_main_root_of "$WORKTREE_DIR")
+_vw_dep_scripts="$(_vw_find_dep_scripts "$_VW_MAIN_ROOT")"
+[ -n "$_vw_dep_scripts" ] && RUN_SCRIPT="$_vw_dep_scripts/run.sh"
+_VW_RUN_ARGS=(--project-root "$WORKTREE_DIR")
+[ -n "$_VW_MAIN_ROOT" ] && _VW_RUN_ARGS+=(--main-root "$_VW_MAIN_ROOT")
 
 # CREW_VERIFY_DOCKER=off is the rollback lever, independent of CREW_DEPS, back to the
 # always-host behaviour this gate had before docker mode was mechanized here.
-if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ]; then
-  _detect_docker_mode || true
+if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ] && [ -n "$RUN_SCRIPT" ]; then
+  _vw_describe="$(bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --describe 2>/dev/null || true)"
+  if printf '%s\n' "$_vw_describe" | grep -qx 'RUN=docker'; then
+    DOCKER_MODE=1
+    DOCKER_SERVICE="$(printf '%s\n' "$_vw_describe" | sed -n 's/^SERVICE=//p')"
+    DOCKER_CONTAINER_SRC="$(printf '%s\n' "$_vw_describe" | sed -n 's/^CONTAINER_SRC=//p')"
+  fi
 fi
 
 # ─── commands cache ────────────────────────────────────────────────────────────
@@ -677,27 +622,19 @@ _run_category() {
   fi
 
   if [ "$DOCKER_MODE" -eq 1 ]; then
-    # Docker-in-docker guard: if the discovered command already invokes docker itself
-    # — directly, or indirectly through a bare Makefile target ("make <target>" — the
-    # only shape _discover_*_command ever returns for one) whose recipe does, including
-    # through a variable `make -n` fully expands — wrapping it in an outer
-    # `docker compose run` would nest docker inside docker. Run it on the host instead,
-    # where the recipe's own docker calls resolve. Shared with docker-install.sh's
-    # --install-cmd guard via detect-docker-nesting.sh, so the two heuristics can't drift.
-    if [ -n "$DEP_SCRIPTS_DIR" ] && bash "$DEP_SCRIPTS_DIR/detect-docker-nesting.sh" --dir "$WORKTREE_DIR" --cmd "$cmd"; then
-      echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd"
-      # Exported (not `-e`, there is no outer `docker compose run` of ours here) so the
-      # recipe's own nested `docker compose run` still picks up GIT_DIR/GIT_COMMON_DIR
-      # via the shared override's bare passthrough entries — see gen-override.sh's
-      # "Nested docker calls" header comment.
-      _exec_and_report "$label" env "${DOCKER_GIT_ENV_LINES[@]}" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
-      return
-    fi
-
-    local full_cmd="cd \"$DOCKER_CONTAINER_SRC\" && $cmd"
-    echo "$label: running (docker: $DOCKER_SERVICE): $full_cmd"
-    _exec_and_report "$label" docker compose -f "$DOCKER_COMPOSE_FILE" -f "$DOCKER_OVERRIDE_FILE" run --rm "${DOCKER_GIT_ENV_ARGS[@]}" "$DOCKER_SERVICE" \
-      sh -c "$full_cmd"
+    # Docker-in-docker guard: a command that already invokes docker itself — directly, or
+    # through a Makefile recipe `make -n` expands — runs on the host, where its own docker
+    # calls resolve, instead of nested inside an outer `docker compose run`. run.sh decides
+    # (detect-docker-nesting.sh, shared with docker-install.sh's --install-cmd guard); it is
+    # asked first only so the line below can say where the check is about to run.
+    local via
+    via="$(bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --describe -- "$cmd" 2>/dev/null | sed -n 's/^VIA=//p')"
+    case "$via" in
+      nested) echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd" ;;
+      docker) echo "$label: running (docker: $DOCKER_SERVICE): cd \"$DOCKER_CONTAINER_SRC\" && $cmd" ;;
+      *) via=host; echo "$label: running: $cmd" ;;
+    esac
+    _exec_and_report "$label" bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --via "$via" -- "$cmd"
     return
   fi
 

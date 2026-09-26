@@ -301,6 +301,8 @@ export async function runWorker(ctx, issue, attempt) {
   // install stops the issue here: nothing after it — the coder, the verify gate — can do
   // useful work in an unprovisioned worktree, so letting them run only rediscovers it later.
   // Review alone needs no deps: skipped with the verify it would have fed.
+  // Its outcome goes into the coder's prompt, so the coder does not re-run the same install.
+  let depsOutcome = null;
   if (options.installDeps !== false && !skipVerify) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=deps`);
     const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug, "--stem", dispatchStem(issue)], {
@@ -308,6 +310,7 @@ export async function runWorker(ctx, issue, attempt) {
     });
     const line = depsLine(deps.stdout);
     ctx.log(`slug=${issue.slug} round=${attempt} ${line}`);
+    depsOutcome = line.replace(/^DEPS:\s*/, "") || null;
     if (/^DEPS: failed\b/.test(line)) {
       ctx.log(`[DEPS-FAILED] slug=${issue.slug} branch=${branch} — ${line}`);
       return {
@@ -369,6 +372,7 @@ export async function runWorker(ctx, issue, attempt) {
     resume.route === "fix"
       ? fixPrompt({
           mainRoot: effects.mainRoot,
+          deps: depsOutcome,
           worktree,
           issuePath: issueDescriptor(issue),
           slug: issue.slug,
@@ -381,6 +385,7 @@ export async function runWorker(ctx, issue, attempt) {
         })
       : workerPrompt({
           mainRoot: effects.mainRoot,
+          deps: depsOutcome,
           worktree,
           issuePath: issueDescriptor(issue),
           slug: issue.slug,

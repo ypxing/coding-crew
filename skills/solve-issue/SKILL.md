@@ -49,22 +49,26 @@ established and do not re-derive them.
 
 ### 0. Branch guard
 
-You must not be on the default branch. Check, and stop immediately if you are — do not proceed to any
-other step:
+Every fact the run needs before it reads code comes from one call — run it first:
 
 ```bash
-CURRENT_BRANCH=$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD)
-DEFAULT_BRANCH=$(git -C "$PROJECT_ROOT" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
-
-if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-  echo "BLOCKED: on default branch ($DEFAULT_BRANCH) — create or switch to a feature branch first"
-  exit 1
-fi
+bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
+  --issue "$ISSUE_PATH"   # omit --issue when the caller handed the issue over inline
 ```
 
-A caller that dispatches into a prepared worktree has already put you on the right branch, so this
-guard is the whole of step 0 — there is no branch to create.
+A `BLOCKED:` line (exit 1) — `BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else
+`main`), or `BLOCKED: depends on <file>` for a `## Blocked by` file not yet in the sibling `done/` —
+ends the run: report it verbatim and do not proceed to any other
+step. Otherwise it prints `OK` and four values; each bash call is a fresh shell, so carry them as
+literals for the rest of the run:
+
+- `ISSUE_SLUG` — the commit prefix (Steps 4 and 6)
+- `PRD` — the PRD path, or empty (Step 1.5)
+- `ORCHESTRATED` — who closes the issue (Step 7)
+- `DEP_SCRIPTS` — dep-install's scripts (Steps 2, 4 and 5)
+
+A caller that dispatches into a prepared worktree has already put you on the right branch, so there
+is no branch to create.
 
 ### 1. Understand the issue
 
@@ -72,71 +76,37 @@ Execute the `fetch` operation from `issue-tracker.md` using the path the caller 
 query GitHub (`gh`) or any remote issue tracker unless the caller explicitly says to. Extract the
 acceptance criteria and the files likely to change (confirmed in Step 3).
 
-**Blocked-by check:** if `## Blocked by` names a file that is not present in the sibling `done/`
-directory (`$(dirname "$ISSUE_PATH")/../done/<dep-filename>`), stop immediately with
-`BLOCKED: depends on <dep-filename> which is not yet done`. "None", or every listed file present →
-proceed. A caller that filters blocked issues before dispatch never reaches this, so it only fires on
-a direct invocation.
-
 ### 1.5. Read the PRD
 
-The PRD holds the architecture decisions and constraints the issue assumes. Read the first of these
-that exists and keep it in memory for the rest of the run:
-
-1. the path in the issue's `## Context Documents` section (a `- PRD: <path>` line), resolved against `$MAIN_ROOT`;
-2. `$MAIN_ROOT/.scratch/<feature-slug>/PRD.md`, where `<feature-slug>` is the segment after `.scratch/` in the issue path.
-
-```bash
-PRD_REL=$(grep -A3 '## Context Documents' "$ISSUE_PATH" | sed -n 's/.*PRD: *`\(.*\)`.*/\1/p')
-FEATURE_SLUG=$(echo "$ISSUE_PATH" | sed 's|.*\.scratch/||' | sed 's|/.*||')
-PRD="${PRD_REL:+$MAIN_ROOT/$PRD_REL}"
-[ -n "$PRD" ] && [ -f "$PRD" ] || PRD="$MAIN_ROOT/.scratch/$FEATURE_SLUG/PRD.md"
-[ -f "$PRD" ] && echo "$PRD" || echo "no PRD"
-```
-
-No PRD is normal — continue normally.
+If `PRD` is non-empty, read it and keep it in memory for the rest of the run: it holds the
+architecture decisions and constraints the issue assumes. `preflight.sh` resolved it from the
+issue's `## Context Documents` (`- PRD: <path>`, against `$MAIN_ROOT`), falling back to
+`$MAIN_ROOT/.scratch/<feature-slug>/PRD.md`. No PRD is normal — continue normally.
 
 ### 2. Dependencies — only when something is missing
 
-**If the caller's prompt already states `INSTALL_MODE=`** (an orchestrated dispatch resolves this
-once, sprint-wide, before any worktree exists — see `dep-install`'s own Step 0 fast path), trust it
-outright and skip straight to the paragraph below it: do not re-run the docker-mode check, and do
-not substitute your own `node_modules`/`.venv`/`PATH` probing for it either. A stated
-`INSTALL_MODE=docker` still means invoke `dep-install` now, unconditionally — receiving the mode as
-a fact does not make the install step optional.
-
-Otherwise: STOP. Run the docker-mode check below now, before any other exploration — including
-checking whether `node_modules`/`.venv` is already present, whether a package manager is on `PATH`,
-or anything else that looks like "is a dependency missing?" That question is `dep-install`'s to
-answer, not yours: substituting your own probing for the check below is the mistake this step
-exists to prevent, even when it feels like the cautious thing to do.
-
-Do **not** install pre-emptively otherwise: a crew worktree usually inherits `node_modules`/`.venv`
-through `.worktreeinclude`, and many repos have no dependency step at all. Invoke the `dep-install`
-skill in exactly two cases — up front if the project is in docker mode (never optional, never
-deferred to "if a command fails" — docker mode has no host-side fallback), and later if any command
-fails for a missing dependency (module-not-found, import error, test runner not found). Otherwise
-`INSTALL_MODE=host`, and you continue straight to Step 3. If the skill is not found, stop and
-report `BLOCKED: dep-install skill not installed`.
-
-Docker mode is: `$MAIN_ROOT/docker-compose.override.yml` exists, or `detect-mode.sh` says so — run
-the real script rather than re-deriving its verdict, since it also reads a Makefile `install`/`deps`
-target for a docker command, not just an explicit `agent.install-mode`. Run this now:
+If `DEP_SCRIPTS` is empty, stop and report `BLOCKED: dep-install skill not installed`. Otherwise
+run this — even when your prompt already states `INSTALL_MODE=` or `DEPS=`; it is what turns them
+into an action:
 
 ```bash
-if [ -f "$MAIN_ROOT/docker-compose.override.yml" ]; then
-  echo USE_DOCKER
-else
-  for d in "$PROJECT_ROOT/.coding-crew" "$PROJECT_ROOT"/.*/skills "$PROJECT_ROOT/skills"; do
-    [ -f "$d/dep-install/scripts/detect-mode.sh" ] && DETECT="$d/dep-install/scripts/detect-mode.sh" && break
-  done
-  [ -n "$DETECT" ] && bash "$DETECT" --project-root "$PROJECT_ROOT" || echo USE_HOST
-fi
+bash "$DEP_SCRIPTS/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
+  --deps "<the DEPS= value from your prompt, or empty>"
 ```
 
-`USE_DOCKER` → invoke `dep-install` now. `USE_HOST` (including when `detect-mode.sh` cannot be
-found) → `INSTALL_MODE=host`, continue to Step 3, and let the later module-not-found trigger recover
-if that guess was wrong.
+It prints `INSTALL_MODE` — the one verdict every later command uses; `git config --local
+agent.install-mode` is its documented override — and an `ACTION`:
+
+- `none` — the caller already installed into this directory. Continue to Step 3.
+- `install` — docker mode: invoke the `dep-install` skill now. Never optional, never deferred to
+  "if a command fails" — docker mode has no host-side fallback.
+- `on-failure` — `INSTALL_MODE=host`. Do **not** install pre-emptively: a crew worktree usually
+  inherits `node_modules`/`.venv` through `.worktreeinclude`, and many repos have no dependency
+  step at all. Continue to Step 3.
+
+Under every `ACTION`, a command that later fails for a missing dependency (module-not-found, import
+error, test runner not found) means invoke `dep-install` then — its own retry rule. Do not probe
+`node_modules`, `.venv` or `PATH` yourself instead: that question is the script's, and it answered.
 
 ### 3. Explore before coding
 
@@ -166,8 +136,14 @@ bullet above.
 
 ### 4. Implement with TDD
 
-**Use the INSTALL_MODE from Step 2 for all commands** — test runs, type checks, linting. If it is
-`docker`, every command runs inside docker, not on the host.
+**Run every project command through `run.sh`** — test runs, type checks, linting:
+
+```bash
+bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"
+```
+
+It runs the command where the INSTALL_MODE from Step 2 says: inside docker (both `-f` flags, this
+worktree's git env, the right service) or on the host. Never hand-build a `docker compose` command.
 
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
@@ -177,7 +153,6 @@ everything still staged, uncommitted, is indistinguishable from a run that never
 starting the next RED, checkpoint what just went green:
 
 ```bash
-ISSUE_SLUG=$(basename "$ISSUE_PATH" | sed 's/\.md$//')
 bash "<skill-dir>/scripts/commit-changes.sh" \
   --prefix "[$ISSUE_SLUG][WIP]" \
   --message "<behavior just made green>" \
@@ -209,46 +184,28 @@ Do not add documentation for things that are already self-evident from the code.
 
 ### 5. Verify
 
-**Use the same INSTALL_MODE from Step 2** — every check command runs inside docker or on the host,
-matching what was established then.
-
-**Cache fast path** — command discovery is a property of the repo, not of this issue. Resolve
-`$MAIN_ROOT` the same way `write-commands-cache.sh` does — via `--git-common-dir`, not a bare
-`git rev-parse --show-toplevel` — so a `$MAIN_ROOT` that is unset or wrong in this shell (a prior
-step may have cleared it for an unrelated reason) still lands on the *shared* main checkout's
-cache instead of concluding, wrongly, that no cache exists:
-
 ```bash
-_main_root_of() {
-  local dir="$1" common
-  common=$(cd "$dir" && git rev-parse --git-common-dir 2>/dev/null) || return 1
-  case "$common" in
-    /*) : ;;
-    *) common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")" ;;
-  esac
-  dirname "$common"
-}
-MAIN_ROOT_EFFECTIVE="${MAIN_ROOT:-}"
-[ -z "$MAIN_ROOT_EFFECTIVE" ] && MAIN_ROOT_EFFECTIVE="$(_main_root_of "$PROJECT_ROOT")"
-CACHE="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"
-if [ -f "$CACHE" ] && grep -q '"test"' "$CACHE"; then echo USE_CACHE; else echo DISCOVER; fi
+bash "<skill-dir>/scripts/run-checks.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
+  --dep-scripts "$DEP_SCRIPTS"
 ```
 
-`USE_CACHE` → run `test`/`lint`/`typecheck` from `$CACHE`, in order, then every other check key
-with a command (coverage, integration) — report each. An empty/`null` value is that
-discovery's own answer of "no local command" — report `NOT RUN: no command found`, do not
-re-check CLAUDE.md/Makefile instead.
+It runs every check `.coding-crew/dev-commands.json` names — `typecheck`, `lint`, `test`, then
+every other key with a command (coverage, integration) — each through `run.sh`, and reports each.
+A `NOT RUN: no command found` is the cache's own answer that no local command exists: report it,
+do not re-check CLAUDE.md/Makefile instead.
 
-`DISCOVER` → STOP. Read `references/verification.md` now and discover every check as it
-describes. Run every check listed. Do not skip any. Then, pass or fail, persist what you found
-(from the same directory you read this skill file from):
+- `CHECKS: pass` — continue.
+- `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
+- `DISCOVER` — no cache yet. STOP. Read `references/verification.md` now and discover every check
+  as it describes. Persist what you found, pass or fail (from the same directory you read this
+  skill file from), then re-run `run-checks.sh` — it runs what you just wrote:
 
-```bash
-cat > /tmp/discovered-commands.json <<'JSON'
-{"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
-JSON
-bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/discovered-commands.json
-```
+  ```bash
+  cat > /tmp/discovered-commands.json <<'JSON'
+  {"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
+  JSON
+  bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/discovered-commands.json
+  ```
 
 Do not proceed to commit if any check fails or any acceptance criterion from Step 1 is unmet.
 
@@ -261,10 +218,10 @@ check, and if so proceed to Step 7.
 
 **Commit with shared script:**
 
-Extract the issue slug and run `commit-changes.sh` from the same directory you read this skill file from:
+Run `commit-changes.sh` from the same directory you read this skill file from, with `ISSUE_SLUG`
+from Step 0:
 
 ```bash
-ISSUE_SLUG=$(basename "$ISSUE_PATH" | sed 's/\.md$//')
 ISSUE_TITLE="<extract title from issue file>"
 CHANGED_FILES="<space-separated list of files you modified>"
 DETAILS="- <key decision or tradeoff line 1>
@@ -310,11 +267,8 @@ Clean or absent → print nothing.
 
 ### 7. Mark done
 
-Who owns the close is a fact on disk — the same one `mark-done` checks:
-
-```bash
-ORCHESTRATED=$( { [ "${CREW_ORCHESTRATED:-}" = 1 ] || ls "$MAIN_ROOT"/.scratch/*/.orchestrated; } >/dev/null 2>&1 && echo 1 || echo 0 )
-```
+Who owns the close is a fact on disk, and `ORCHESTRATED` from Step 0 is it — the same one
+`mark-done` checks: `CREW_ORCHESTRATED=1`, or a `$MAIN_ROOT/.scratch/*/.orchestrated` marker.
 
 **`1` — write nothing to the issue file, in this step or the next:** no tick, no `mark-done`, no
 `Status:` rewrite, no move, no added section. Report every criterion and its state in your structured
