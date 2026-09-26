@@ -18,6 +18,12 @@ One branch, one failure: branch name, issue slug, issue file, the feature branch
 and the failing check output `verify-worktree.sh` captured in that branch's worktree (already capped —
 treat it as the evidence, not as everything that happened).
 
+When the coder stopped short (`partial`, or `blocked` on the environment), the prompt may also carry
+its own account: a `cause` and the command, exit code and output it says show it. That is a claim
+from the one party with a reason to call its failure environmental — weigh it like the failure text,
+against the diff. A command it names that the diff's own code could break (a host name, a port, a
+config value this branch wrote) is fixable, however environmental the coder called it.
+
 ## What You Do
 
 1. **Read the captured check output first.** It names which category failed (`TEST`/`LINT`/`TYPECHECK`)

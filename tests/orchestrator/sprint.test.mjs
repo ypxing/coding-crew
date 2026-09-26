@@ -379,6 +379,8 @@ test("a worker-reported partial carries its own unmet criteria into the Progress
       '```',
     ].join("\n"),
   );
+  // Nothing committed: a partial with commits is a claim the gates judge instead.
+  fake(root, "alpha.nocommit");
   const r = runSprint(root);
   const s = state(root);
   assert.equal(r.code, 2, "the issue spends both its retry attempts and stays blocked");
@@ -890,6 +892,98 @@ test("a verification-failed retry still redispatches the full worker, not just r
   );
 });
 
+// ─── a coder that stops short with commits: its report is a claim, the gates decide ───────
+
+function workerReport(obj) {
+  return ["## Issue", "", "```json", JSON.stringify(obj), "```"].join("\n");
+}
+
+function failingTests(root) {
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
+}
+
+function triageVerdict(fixable, category, detail) {
+  return ["```json", JSON.stringify({ fixable, category, detail }), "```"].join("\n");
+}
+
+const coderSpawns = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length;
+
+test("partial with commits, verify fails, triage not-fixable: no second coder, blocked after the recheck", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  failingTests(root);
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "fail" }, progress: "LocalStack license activation failed" }));
+  fake(root, "alpha.triage", triageVerdict("no", "missing credential", "LOCALSTACK_AUTH_TOKEN is unset"));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 1, "a not-fixable verdict must not re-dispatch the coder");
+  assert.match(traceLog(root), /\[CODER-CLAIM\] slug=alpha round=1 — the coder reported partial/);
+  assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=not-fixable-recheck/);
+  assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — verification-failed:not-fixable — missing credential/);
+});
+
+test("partial with commits, verify fails, triage fixable: the retry is a fix round told triage's detail", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  failingTests(root);
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "fail" }, progress: "tests red" }));
+  fake(root, "alpha.triage", triageVerdict("yes", "wrong host", "src/config.ts uses localhost:4566; the service is localstack:4566"));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 2);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
+  assert.match(prompt, /already judged acceptable — it only failed verification/);
+  assert.match(prompt, /classified this failure as fixable: wrong host: src\/config\.ts uses localhost:4566/);
+});
+
+test("partial with commits and a passing verify goes to review, and merges on all-met", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "pass", lint: "pass", typecheck: "pass" }, progress: "unsure about AC 2" }));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 1);
+  assert.ok(lines.some((l) => /^SPAWN .*--agent crew-reviewer/.test(l)), "review ran");
+  assert.deepEqual(state(root).merged_branches, ["crew/demo/alpha"]);
+});
+
+test("blocked on the environment with commits: verify, then triage, which is handed the coder's evidence", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  failingTests(root);
+  fake(
+    root,
+    "alpha.worker",
+    workerReport({
+      status: "blocked",
+      cause: "environment",
+      evidence: { command: "make test-integration", exit: 1, output: "License activation failed" },
+      notes: "LocalStack pro needs a token",
+    }),
+  );
+  fake(root, "alpha.triage", triageVerdict("no", "missing credential", "no token"));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.ok(lines.some((l) => /verify-worktree\.sh --dir/.test(l)), "verify ran");
+  assert.ok(lines.some((l) => /^SPAWN .*--agent crew-triage/.test(l)), "triage ran");
+  const triage = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.triage-prompt.md"), "utf8");
+  assert.match(triage, /its own claim — check\nit against the diff/);
+  assert.match(triage, /^cause: environment\ncommand: make test-integration\nexit: 1\noutput:\nLicense activation failed$/m);
+});
+
+test("blocked with no cause is a stop at once, with no verify, even with commits", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker", workerReport({ status: "blocked", notes: "the issue contradicts the PRD" }));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
+  assert.equal(coderSpawns(lines), 1);
+  assert.deepEqual(state(root).blocked_slugs, ["alpha"]);
+});
+
 test("an unparseable worker report is blocked, never complete", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -954,6 +1048,7 @@ test("--max-rounds caps attempts per issue, not the sprint's total dispatch coun
       `${n}.worker`,
       ['## Issue: ' + n, 'Status: partial', '', '```json', '{"status":"partial","checks":{"test":"pass","lint":"pass","typecheck":"pass"},"progress":"stuck"}', '```'].join("\n"),
     );
+    fake(root, `${n}.nocommit`);
   });
   const { r, lines } = commandLines(root, ["--max-rounds", "1"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
@@ -1002,6 +1097,7 @@ test("two dry rounds stall instead of looping forever", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "alpha.worker", '## Issue: alpha\nStatus: partial\n\n```json\n{"status":"partial","progress":"stuck"}\n```');
+  fake(root, "alpha.nocommit");
   const r = runSprint(root);
   assert.equal(r.code, 2, "stall exits 2");
   const s = state(root);
@@ -1064,13 +1160,17 @@ test("a retained branch survives cleanup, is named in the summary, and resumes n
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "alpha.worker", '## Issue: alpha\nStatus: partial\n\n```json\n{"status":"partial","progress":"stuck"}\n```');
+  // The partial's commits go to verify, which fails; triage leaves no verdict, so a restart.
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
   const r = runSprint(root);
   assert.equal(r.code, 2);
   // Cleanup deletes merged branches only; a retained one keeps its committed WIP.
   const branches = sh("git", ["-C", root, "branch", "--list", "crew/demo/alpha"]).stdout.trim();
   assert.match(branches, /crew\/demo\/alpha/, "cleanup deleted a retained branch");
   assert.match(r.stdout, /## Retained Branches/);
-  assert.match(r.stdout, /partial/);
+  assert.match(r.stdout, /crew\/demo\/alpha: retained \(.*verification-failed\)/);
   // Round 2 was told to resume on that branch rather than start over — and that the
   // notes are context alongside the preserved code, not a substitute for it.
   const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");

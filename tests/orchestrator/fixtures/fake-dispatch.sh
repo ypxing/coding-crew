@@ -31,6 +31,8 @@
 #   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
 #                         of resolving it, so the branch conflicts again at the merge gate.
 #   <slug>.exit           exit with this code instead of 0
+#   <slug>.triage         the triage report to emit (default: none at all — no sidecar, so the
+#                         pipeline's triage-failed fallback, `verification-failed`)
 #
 # Every fixture's own content — whatever this script writes to --out, whether from a default
 # above or a <slug>.worker/.review/... file a test dropped — is expected to carry the fenced
@@ -157,6 +159,12 @@ if [ "$AGENT" = "crew-reviewer" ]; then
   else
     printf '## Branch: crew/x/%s\n```json\n{"branch":"crew/x/%s","slug":"%s","verdict":"all-met","detail":"","findings":[]}\n```\n' "$SLUG" "$SLUG" "$SLUG" > "$OUT"
   fi
+  exit 0
+fi
+
+# Triage runs in the main checkout and never commits.
+if [ "$AGENT" = "crew-triage" ]; then
+  if [ -f "$FAKE_DIR/$SLUG.triage" ]; then cat "$FAKE_DIR/$SLUG.triage" > "$OUT"; else : > "$OUT"; fi
   exit 0
 fi
 

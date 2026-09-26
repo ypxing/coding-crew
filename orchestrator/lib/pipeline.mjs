@@ -511,7 +511,15 @@ export async function runHousekeeping(ctx, worker) {
   outcome.coverageGaps = pre.coverageGaps;
   if (pre.coverageGaps.length) sprint.coverageGap(issue.slug, pre.coverageGaps);
 
-  if (pre.status === "blocked") {
+  // A coder that stopped short but committed has made a claim about its branch, not a verdict:
+  // `partial`, or `blocked` on the environment. The gates decide — verify, then on a failure
+  // triage, which is handed the coder's own evidence to check against the diff (a code bug
+  // misread as the environment is caught there). Restarting the coder instead re-derived the
+  // same blocker from scratch. A plain `blocked`, or one with nothing committed, stays a stop.
+  const claim =
+    (pre.status === "partial" || (pre.status === "blocked" && worker.report.cause === "environment")) &&
+    branchHasCommits(effects, sprint.featureBranch, branch);
+  if (pre.status === "blocked" && !claim) {
     return finishBlocked(ctx, worker, outcome, pre.reason ?? worker.report.notes ?? "blocked");
   }
   // A review fix that committed nothing leaves the commit, and so the evidence, the last
@@ -528,12 +536,14 @@ export async function runHousekeeping(ctx, worker) {
     );
   }
   // A coder that called itself done but reported a failing or un-run check is overruled by
-  // the gate when it committed: verify runs every check itself, and its verdict, not the
-  // coder's, decides whether another coder round is needed — a narrow fix one, if so. A
-  // coder that itself said partial is taken at its word.
-  const overruled = pre.demoted && worker.report.status === "complete" && branchHasCommits(effects, sprint.featureBranch, branch);
-  if (overruled) {
+  // the gate the same way: verify runs every check itself, and its verdict, not the coder's,
+  // decides whether another coder round is needed — a narrow fix one, if so. With nothing
+  // committed there is nothing to verify, and the retry restarts.
+  if (claim && pre.demoted) {
     ctx.log(`[PREFILTER-OVERRULED] slug=${issue.slug} round=${worker.attempt} — the coder reported ${pre.reason}; the branch has commits, so verify decides`);
+  } else if (claim) {
+    const cause = worker.report.cause ? ` (cause: ${worker.report.cause})` : "";
+    ctx.log(`[CODER-CLAIM] slug=${issue.slug} round=${worker.attempt} — the coder reported ${worker.report.status}${cause}; the branch has commits, so verify decides`);
   } else if (pre.status !== "complete") {
     return finishRetryOrBlock(ctx, worker, outcome, pre.reason ?? "partial");
   }

@@ -95,6 +95,8 @@ function resultBlock(worktree, reportPath) {
         criteria: [{ text: "<criterion>", met: true }],
         progress: "<what remains — required for partial>",
         notes: "<anything a human needs>",
+        cause: "environment | code — required for blocked, optional for partial",
+        evidence: { command: "<the one command that shows why you stopped>", exit: 1, output: "<its verbatim output>" },
       },
       null,
       2,
@@ -295,7 +297,7 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
  * never to the coder that wrote the branch, for the same reason review isn't a self-grade.
  * Answers exactly one question: is this fixable by more code on this branch, or not.
  */
-export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutput, reportPath }) {
+export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutput, reportPath, coderEvidence }) {
   return [
     "A branch failed verification before it could be reviewed or merged. Decide whether the",
     "failure is fixable by writing more code on this branch, or whether it is an environment",
@@ -311,6 +313,7 @@ export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutp
     (checkOutput ?? "").trim() || "(no output captured)",
     "---",
     "",
+    ...coderEvidenceLines(coderEvidence),
     "Fixable means: a test assertion this diff's own code broke, a lint/type error in the",
     "diff, a dependency version this diff itself pinned that does not resolve, or anything",
     "else a worker could correct by editing files on this branch. Not fixable means: the",
@@ -338,6 +341,27 @@ export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutp
     ),
     "```",
   ].join("\n");
+}
+
+/**
+ * The coder's own account of why it stopped (report.mjs's `cause` + `evidence`), when it gave
+ * one. Framed as a claim: the coder has every incentive to call its own failure environmental,
+ * and one run's real fix was a wrong host name (`localhost:4566` for `localstack:4566`) its coder
+ * had put down to the environment.
+ */
+function coderEvidenceLines(e) {
+  if (!e || (!e.command && !e.output && !e.cause)) return [];
+  const lines = [
+    "The coder that wrote this branch stopped short, and says why. This is its own claim — check",
+    "it against the diff before believing it; it is not the pipeline's evidence:",
+    "---",
+  ];
+  if (e.cause) lines.push(`cause: ${e.cause}`);
+  if (e.command) lines.push(`command: ${e.command}`);
+  if (e.exit != null) lines.push(`exit: ${e.exit}`);
+  if (e.output && e.output.trim()) lines.push(`output${e.truncated ? " (tail)" : ""}:`, e.output.trim());
+  lines.push("---", "");
+  return lines;
 }
 
 /** One `- [ ]` line per promotable finding, each carrying its own citation. */

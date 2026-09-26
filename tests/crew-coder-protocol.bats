@@ -292,3 +292,15 @@ neutral_part_of() {
   done
   [ "$total" -lt 1200 ] || { echo "platform files total $total words (budget 1200)" >&2; return 1; }
 }
+
+@test "the report wire carries cause and evidence, required for blocked" {
+  # A coder's `partial` used to be taken at its word and restarted from scratch, re-deriving
+  # the same blocker. The orchestrator now routes a stopped-short report through verify and
+  # triage, and triage needs the one command the coder says shows why it stopped.
+  for p in "${CODER_VARIANTS[@]}"; do
+    body_of "$p" | grep -qF '"cause":"environment|code","evidence":{"command":' || {
+      echo "$p: the schema lacks cause/evidence" >&2; return 1; }
+    body_of "$p" | grep -qE '`blocked` requires `cause` and `evidence`' || {
+      echo "$p: cause/evidence not required for blocked" >&2; return 1; }
+  done
+}

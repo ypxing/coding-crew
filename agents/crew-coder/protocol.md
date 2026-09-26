@@ -52,7 +52,7 @@ That file is the only thing `report.mjs` reads; its absence, whatever you printe
 `blocked`. The field names are fixed:
 
 ```json
-{"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run","<category>":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>"}
+{"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run","<category>":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>","cause":"environment|code","evidence":{"command":"<the one command that shows it>","exit":1,"output":"<its verbatim output>"}}
 ```
 
 Still end your final message with one line reading `Status: complete`, `Status: partial`, or
@@ -66,7 +66,11 @@ Rules:
 3. One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
 4. One further `checks` entry for each other `dev-commands.json` check `solve-issue` Step 5 ran (`coverage`, `integration`), keyed by its `dev-commands.json` key.
 5. `progress` is required for `partial` and is where the remaining work goes — the orchestrator copies it into the issue file, which you never write to.
-6. The report file holds the JSON object alone.
+6. `blocked` requires `cause` and `evidence`; `partial` may carry them. `cause` is `environment`
+   when no file in this repo can provide what stopped you (a credential, license, daemon, external
+   service), else `code`; `evidence` is the one command showing it, its exit and verbatim output.
+   The orchestrator checks both against your diff — they route the report, they excuse nothing.
+7. The report file holds the JSON object alone.
 
 ## Issue Ownership
 
@@ -82,6 +86,12 @@ with every check passing would be `complete`, never `partial`.
 
 ```json
 {"status":"partial","branch":"crew/auth-flow/refactor-validation","working_directory":"/repo/.scratch/worktrees/crew/auth-flow/refactor-validation","checks":{"test":"fail","lint":"not_run","typecheck":"pass"},"criteria":[{"text":"Validation logic extracted to src/validation.ts","met":true},{"text":"All existing call sites migrated","met":false}],"progress":"Committed as [WIP]. Remaining: migrate src/api/orders.ts and reconcile the 2 failing order-validation tests.","notes":"none"}
+```
+
+A `blocked` on the environment carries its evidence:
+
+```json
+{"status":"blocked","branch":"crew/tier/bootstrap","working_directory":"/repo/.scratch/worktrees/crew/tier/bootstrap","checks":{"test":"fail","lint":"pass","typecheck":"pass"},"criteria":[{"text":"Integration specs run against LocalStack","met":false}],"notes":"LocalStack Pro needs LOCALSTACK_AUTH_TOKEN","cause":"environment","evidence":{"command":"make test-integration","exit":1,"output":"localstack | License activation failed"}}
 ```
 
 Your final message, for the human reading the transcript only, is just the `Status:` line and a

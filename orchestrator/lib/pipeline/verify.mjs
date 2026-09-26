@@ -62,6 +62,8 @@ export async function runTriage(ctx, worker, verifyStdout) {
       featureBranch: sprint.featureBranch,
       checkOutput: verifyStdout,
       reportPath: sidecarFile,
+      // Only a coder that stopped short gives one; a skipped-worker report carries none.
+      coderEvidence: worker.report.evidence || worker.report.cause ? { ...worker.report.evidence, cause: worker.report.cause } : null,
     }),
   );
 

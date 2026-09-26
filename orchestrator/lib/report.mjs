@@ -57,6 +57,32 @@ function allFencedJson(text, requiredField) {
   return out;
 }
 
+// The coder's own evidence rides to triage verbatim, so its size is capped here, once. The tail
+// is kept: a failing command's own error is almost always at the end.
+export const EVIDENCE_OUTPUT_MAX = 4096;
+
+/** `environment` | `code` | null — what a coder that stopped says stopped it. A claim, not a verdict. */
+function coderCause(value) {
+  const v = String(value ?? "").trim().toLowerCase();
+  return v === "environment" || v === "code" ? v : null;
+}
+
+/**
+ * `{ command, exit, output, truncated }` — the one command a coder ran that shows why it
+ * stopped, or null when it gave none. Only ever read as the coder's claim: triage weighs it
+ * against the diff.
+ */
+function coderEvidence(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+  const command = typeof obj.command === "string" ? obj.command.trim() : "";
+  const output = obj.output == null ? "" : String(obj.output);
+  if (!command && !output.trim()) return null;
+  const n = Number(obj.exit);
+  const exit = obj.exit != null && String(obj.exit).trim() !== "" && Number.isInteger(n) ? n : null;
+  const truncated = output.length > EVIDENCE_OUTPUT_MAX;
+  return { command, exit, output: truncated ? output.slice(-EVIDENCE_OUTPUT_MAX) : output, truncated };
+}
+
 function fromStructured(raw, obj) {
   const checks = {};
   // Any further dev-commands.json check the coder ran (coverage, integration) rides in `checks`
@@ -78,6 +104,8 @@ function fromStructured(raw, obj) {
     progress: obj.progress ?? null,
     notes: obj.notes ?? null,
     criteria: Array.isArray(obj.criteria) ? obj.criteria : [],
+    cause: coderCause(obj.cause),
+    evidence: coderEvidence(obj.evidence),
     raw,
   };
 }
@@ -97,6 +125,8 @@ function missingReport(raw, unparseable) {
     progress: null,
     notes: null,
     criteria: [],
+    cause: null,
+    evidence: null,
     unparseable,
     raw,
   };

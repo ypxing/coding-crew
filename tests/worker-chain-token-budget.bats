@@ -92,7 +92,7 @@ words_of() {
   [ "$words" -lt 750 ] || { echo "tdd is $words words (budget 750)" >&2; return 1; }
 }
 
-@test "budget: the whole per-issue worker chain is under 4,100 words" {
+@test "budget: the whole per-issue worker chain is under 4,250 words" {
   # crew-coder + solve-issue + its verification reference + tdd. Read once per issue,
   # so this total is what a sprint multiplies by its issue count. It was 4,158 words
   # before the duplication below was cut; the ceiling leaves room for one genuinely new
@@ -111,13 +111,16 @@ words_of() {
   # `$MAIN_ROOT` fallback, not restated here.
   # Lowered to 4,100 alongside solve-issue's 2,050 ceiling above, plus verification.md's
   # run-all-three-in-one-call and docker-flag prose that run-checks.sh/run.sh now own.
+  # Raised to 4,250 when crew-coder's report gained `cause` + `evidence` (rule 6 and one
+  # blocked example): a coder that stops short now hands triage the command that shows why,
+  # instead of the next attempt re-deriving the same blocker in ~45 calls.
   total=$(words_of "$(coder_variant pi)")
   for f in "$REPO_ROOT"/skills/solve-issue/SKILL.md \
            "$REPO_ROOT"/skills/solve-issue/references/verification.md \
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 4100 ] || { echo "worker chain is $total words (budget 4100)" >&2; return 1; }
+  [ "$total" -lt 4250 ] || { echo "worker chain is $total words (budget 4250)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   applySchemaPrefilter,
+  EVIDENCE_OUTPUT_MAX,
   findingsAtOrAbove,
   parsePrdAudit,
   parseReviewAggregate,
@@ -406,6 +407,50 @@ test("every coder prompt points at the project config the worktree lacks; the re
   const review = { branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r" };
   assert.match(reviewPrompt({ ...review, reviewAssets: "/home/u/.coding-crew/code-review" }), /^Review assets: \/home\/u\/\.coding-crew\/code-review$/m);
   assert.doesNotMatch(reviewPrompt(review), /Review assets:/);
+});
+
+// ─── the coder's own cause + evidence: a claim, carried to triage ─────────────────
+
+test("a coder report's cause and evidence are parsed when present", () => {
+  const r = parseWorkerReport(null, {
+    status: "blocked",
+    cause: "Environment",
+    evidence: { command: "make test-integration", exit: "1", output: "License activation failed" },
+  });
+  assert.equal(r.cause, "environment");
+  assert.deepEqual(r.evidence, { command: "make test-integration", exit: 1, output: "License activation failed", truncated: false });
+});
+
+test("an absent or unrecognised cause, and absent or empty evidence, are null", () => {
+  assert.equal(parseWorkerReport(null, { status: "partial" }).cause, null);
+  assert.equal(parseWorkerReport(null, { status: "partial" }).evidence, null);
+  assert.equal(parseWorkerReport(null, { status: "blocked", cause: "gremlins" }).cause, null);
+  assert.equal(parseWorkerReport(null, { status: "blocked", cause: "code" }).cause, "code");
+  assert.equal(parseWorkerReport(null, { status: "blocked", evidence: { command: "", output: "  " } }).evidence, null);
+  assert.equal(parseWorkerReport(null, { status: "blocked", evidence: "see notes" }).evidence, null);
+  assert.equal(parseWorkerReport(null, { status: "blocked", evidence: { command: "x", exit: "n/a" } }).evidence.exit, null);
+  // No sidecar at all: the blocked shape still has both fields.
+  const missing = parseWorkerReport("");
+  assert.equal(missing.cause, null);
+  assert.equal(missing.evidence, null);
+});
+
+test("oversized evidence output keeps only its tail", () => {
+  const output = `HEAD-${"x".repeat(EVIDENCE_OUTPUT_MAX)}-TAIL`;
+  const e = parseWorkerReport(null, { status: "blocked", evidence: { command: "c", exit: 2, output } }).evidence;
+  assert.equal(e.output.length, EVIDENCE_OUTPUT_MAX);
+  assert.ok(e.output.endsWith("-TAIL"));
+  assert.ok(!e.output.includes("HEAD-"));
+  assert.equal(e.truncated, true);
+});
+
+test("the triage prompt carries the coder's evidence only as its own claim, and only when given", () => {
+  const base = { branch: "b", slug: "x", issuePath: "p", featureBranch: "f", checkOutput: "TEST: fail", reportPath: "/r" };
+  const p = triagePrompt({ ...base, coderEvidence: { cause: "environment", command: "make it", exit: 1, output: "boom", truncated: true } });
+  assert.match(p, /This is its own claim — check\nit against the diff before believing it/);
+  assert.match(p, /^cause: environment\ncommand: make it\nexit: 1\noutput \(tail\):\nboom\n---$/m);
+  assert.doesNotMatch(triagePrompt(base), /its own claim/);
+  assert.doesNotMatch(triagePrompt({ ...base, coderEvidence: { cause: null } }), /its own claim/);
 });
 
 // ─── triage: parseTriageReport ────────────────────────────────────────────────
