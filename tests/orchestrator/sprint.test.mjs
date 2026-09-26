@@ -41,6 +41,11 @@ for (const f of ["feature-branch-setup.sh", "discover-commands.sh", "write-comma
   cpSync(join(REPO, "scripts/skill-utils/git-workflow", f), join(SCRIPTS, f));
 }
 after(() => rmSync(SCRIPTS_BASE, { recursive: true, force: true }));
+// The `.coding-crew/` an installed orchestrator would sit in (CREW_INSTALL_DIR): this source
+// tree's orchestrator/ has no installed assets beside it, so every run points here instead.
+const INSTALL_DIR = join(SCRIPTS_BASE, "install");
+cpSync(join(REPO, "agents/crew-reviewer/assets"), join(INSTALL_DIR, "code-review"), { recursive: true });
+cpSync(join(REPO, "skills/dep-install/scripts"), join(INSTALL_DIR, "dep-install/scripts"), { recursive: true });
 const FAKE = join(HERE, "fixtures/fake-dispatch.sh");
 
 // Every call site below spreads process.env into its own `env` (or omits `env` and gets
@@ -56,6 +61,7 @@ after(() => rmSync(EMPTY_HOME, { recursive: true, force: true }));
 function sh(cmd, args, opts = {}) {
   const env = { ...(opts.env ?? process.env) };
   if (env.HOME === process.env.HOME) env.HOME = EMPTY_HOME;
+  if (env.CREW_INSTALL_DIR === process.env.CREW_INSTALL_DIR) env.CREW_INSTALL_DIR = INSTALL_DIR;
   delete env.CREW_PANE_HOST;
   delete env.HERDR_ENV;
   delete env.HERDR_PANE_ID;
@@ -271,6 +277,25 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.review-prompt.md"), "utf8");
   assert.match(reviewPromptText, /Checks already run by the pipeline/);
   assert.match(reviewPromptText, /test=pass/);
+  // The install this run resolved, once — the reviewer never searches for its assets.
+  assert.ok(reviewPromptText.includes(`Review assets: ${join(INSTALL_DIR, "code-review")}\n`), reviewPromptText);
+  // Nor the coder for the project's config, which its worktree does not hold.
+  const coderPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
+  assert.ok(coderPromptText.includes(`Project config: ${join(root, ".coding-crew")} `), coderPromptText);
+});
+
+test("a run whose install is missing an asset stops before any dispatch, naming the path", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const partial = mkdtempSync(join(tmpdir(), "crew-install-"));
+  FIXTURE_ROOTS.push(partial);
+  cpSync(join(INSTALL_DIR, "dep-install"), join(partial, "dep-install"), { recursive: true });
+  const r = runSprint(root, [], { CREW_INSTALL_DIR: partial });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.ok(r.stderr.includes(`reviewer: ${join(partial, "code-review/scripts/review-context.sh")}`), r.stderr);
+  assert.match(r.stderr, /Re-run install\.sh/);
+  assert.doesNotMatch(r.stderr, /depInstall:/);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch")), false, "nothing was dispatched");
 });
 
 test("every cached check is run by the gate, whatever the worker reported, and stated to the reviewer with its log", () => {

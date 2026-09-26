@@ -118,6 +118,14 @@ stack_for() {
   grep -qiE 'read \*\*every\*\* file named by a `REFERENCE:`|read every file named by a' "$PROTOCOL"
 }
 
+@test "protocol reads its assets from the prompt's Review assets: path, never a guessed install path" {
+  # "$ROOT/.coding-crew/code-review" exists only in a project install; on a user-level one every
+  # reviewer hit a TOOL-ERROR on review-context.sh and then searched. The orchestrator knows
+  # the one path and states it.
+  grep -qF 'CR="<the Review assets: path from your prompt>"' "$PROTOCOL"
+  ! grep -qF '.coding-crew/code-review' "$PROTOCOL"
+}
+
 @test "protocol keeps a fallback for an install without the scripts" {
   grep -qiE 'if either script is missing|older install' "$PROTOCOL"
 }

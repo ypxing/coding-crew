@@ -394,6 +394,20 @@ test("the worker prompt hands over this issue's deps outcome only when the deps 
   assert.match(fixPrompt({ ...base, branch: "b", kind: "conflict", deps: "present" }), /^DEPS=present$/m);
 });
 
+test("every coder prompt points at the project config the worktree lacks; the review prompt at its assets", () => {
+  // Coders searched for dev-commands.json (git check-ignore, find /); reviewers for their
+  // review-context.sh under a project path a user-level install never has.
+  const base = { mainRoot: "/main", worktree: "/w", issuePath: "/w/i.md", slug: "x", criteria: "", resume: "", reportPath: "/w/r.json" };
+  const line = /^Project config: \/main\/\.coding-crew \(dev-commands\.json, docs\/test-conventions\.md\)/m;
+  assert.match(workerPrompt(base), line);
+  assert.match(fixPrompt({ ...base, branch: "b" }), line);
+  assert.match(fixPrompt({ ...base, branch: "b", kind: "review" }), line);
+  assert.match(fixPrompt({ ...base, branch: "b", kind: "conflict", conflictFiles: ["a"] }), line);
+  const review = { branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r" };
+  assert.match(reviewPrompt({ ...review, reviewAssets: "/home/u/.coding-crew/code-review" }), /^Review assets: \/home\/u\/\.coding-crew\/code-review$/m);
+  assert.doesNotMatch(reviewPrompt(review), /Review assets:/);
+});
+
 // ─── triage: parseTriageReport ────────────────────────────────────────────────
 
 test("a fixable triage sidecar parses category and detail", () => {

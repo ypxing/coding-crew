@@ -1,16 +1,44 @@
 /**
  * preflight.mjs — what must hold before the first dispatch, checked once per run.
  *
- * Both checks catch a problem every issue would otherwise hit only after paying for its
- * coder and review: a dirty main checkout refuses the merge at the very end, and a feature
- * branch whose own checks already fail makes every issue's verify gate fail on code no issue
- * wrote. Neither costs a token.
+ * Each check catches a problem every issue would otherwise hit only after paying for its
+ * coder and review: a missing installed asset sends every reviewer and coder hunting for it, a
+ * dirty main checkout refuses the merge at the very end, and a feature branch whose own checks
+ * already fail makes every issue's verify gate fail on code no issue wrote. None costs a token.
  */
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { ASSET_DIRS, assetDir } from "./install-dir.mjs";
 import { depsLine, readVerifyRecord } from "./report.mjs";
 import { applyWorktreeInclude, removeWorktree, worktreePath } from "./worktree.mjs";
+
+/** The file whose presence says an asset dir is really installed, not just created. */
+const ASSET_PROBES = {
+  reviewer: "scripts/review-context.sh",
+  depInstall: "run.sh",
+};
+
+/**
+ * Each asset dir under `installDir` (install-dir.mjs) whose probe file is absent: `[{ kind, file }]`.
+ * Every run uses both — the reviewer reads its scripts, and ensure-deps.sh / verify-worktree.sh
+ * run dep-install's — so a gap here is one every reviewer or coder would otherwise hunt for.
+ */
+export function missingAssets(installDir) {
+  return Object.keys(ASSET_DIRS)
+    .map((kind) => ({ kind, file: join(assetDir(installDir, kind), ASSET_PROBES[kind]) }))
+    .filter(({ file }) => !existsSync(file));
+}
+
+/** The stop message for a missing asset: the exact paths expected, and the one remedy. */
+export function missingAssetsMessage(installDir, missing) {
+  return [
+    `crew-afk: the install this run was launched from (${installDir}) is missing files its agents use:`,
+    ...missing.map(({ kind, file }) => `  ${kind}: ${file}`),
+    "Re-run install.sh for crew-afk at the scope it was installed at (the repo, or TARGET_REPO=$HOME), then re-run.",
+  ].join("\n");
+}
 
 /** Files crew-afk itself writes in the main checkout; the summary already reminds about them. */
 const CREW_OWNED = new Set([".coding-crew/dev-commands.json", ".worktreeinclude"]);

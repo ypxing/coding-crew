@@ -255,6 +255,8 @@ _script_roots() {
   # or this source repo's skills/crew-afk/scripts.
   printf '%s\n' "$(cd "$SELF_DIR/../../.." && pwd -P)"
   printf '%s\n' "$(cd "$SELF_DIR/../.." && pwd -P)"
+  # A user-level install (TARGET_REPO=$HOME), after every project candidate.
+  [ -n "${HOME:-}" ] && printf '%s\n' "$HOME"
 }
 
 _find_dep_scripts() {
@@ -262,6 +264,12 @@ _find_dep_scripts() {
     if [ -f "$CREW_DEP_INSTALL_SCRIPTS/detect-mode.sh" ]; then
       printf '%s' "$CREW_DEP_INSTALL_SCRIPTS"
     fi
+    return 0
+  fi
+  # A sprint resolved its install once (sprint.env's CREW_INSTALL_DIR): that copy, no search.
+  # The list below is only for a hand run with no sprint.env.
+  if [ -n "${CREW_INSTALL_DIR:-}" ] && [ -f "$CREW_INSTALL_DIR/dep-install/scripts/detect-mode.sh" ]; then
+    printf '%s' "$CREW_INSTALL_DIR/dep-install/scripts"
     return 0
   fi
   local root candidate

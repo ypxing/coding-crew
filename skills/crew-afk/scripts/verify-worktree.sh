@@ -139,8 +139,14 @@ _vw_find_dep_scripts() {
     [ -f "$CREW_DEP_INSTALL_SCRIPTS/run.sh" ] && printf '%s' "$CREW_DEP_INSTALL_SCRIPTS"
     return 0
   fi
+  # A sprint resolved its install once (sprint.env's CREW_INSTALL_DIR): that copy, no search.
+  # The list below is only for a hand run with no sprint.env.
+  if [ -n "${CREW_INSTALL_DIR:-}" ] && [ -f "$CREW_INSTALL_DIR/dep-install/scripts/run.sh" ]; then
+    printf '%s' "$CREW_INSTALL_DIR/dep-install/scripts"
+    return 0
+  fi
   local root candidate
-  for root in "$main_root" "$(cd "$SELF_DIR/../../.." && pwd -P)" "$(cd "$SELF_DIR/../.." && pwd -P)"; do
+  for root in "$main_root" "$(cd "$SELF_DIR/../../.." && pwd -P)" "$(cd "$SELF_DIR/../.." && pwd -P)" "${HOME:-}"; do
     [ -n "$root" ] || continue
     for candidate in \
       "$root/.coding-crew/dep-install/scripts" \

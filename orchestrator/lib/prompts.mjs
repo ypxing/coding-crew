@@ -44,10 +44,20 @@ function installModeLines(mainRoot, deps) {
   return lines;
 }
 
+/**
+ * Where the project's own crew config lives. A worktree does not contain it (`.coding-crew/`
+ * is untracked or gitignored in most repos), and without this line coders were seen spending
+ * several calls — `git check-ignore`, filesystem searches — finding dev-commands.json.
+ */
+function projectConfigLine(mainRoot) {
+  return `Project config: ${join(mainRoot, ".coding-crew")} (dev-commands.json, docs/test-conventions.md) — not in the worktree`;
+}
+
 export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criteria, resume, reportPath, featureBranch, conflictFiles = [] }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
     ...installModeLines(mainRoot, deps),
+    projectConfigLine(mainRoot),
     `Working directory: ${worktree}`,
     `Issue path: ${issuePath}`,
     `Issue title: ${slug}`,
@@ -122,6 +132,7 @@ export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, c
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
     ...installModeLines(mainRoot, deps),
+    projectConfigLine(mainRoot),
     `Working directory: ${worktree}`,
     `Issue path: ${issuePath}`,
     `Issue title: ${slug}`,
@@ -166,6 +177,7 @@ function conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, con
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
     ...installModeLines(mainRoot, deps),
+    projectConfigLine(mainRoot),
     `Working directory: ${worktree}`,
     `Issue path: ${issuePath}`,
     `Issue title: ${slug}`,
@@ -202,7 +214,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, reportPath }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, reportPath, reviewAssets }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
   // A size tells the reviewer to search the file for its figure rather than read it whole.
@@ -212,6 +224,9 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     .join(", ");
   return [
     "Review this branch before it merges.",
+    // crew-reviewer's protocol reads its scripts and references from here, and only here:
+    // the orchestrator resolved the install once (install-dir.mjs), so the reviewer never searches.
+    ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
     `Branch: ${branch}`,
     `Slug: ${slug}`,
     `Issue file: ${issuePath}`,

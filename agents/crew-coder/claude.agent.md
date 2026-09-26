@@ -21,5 +21,5 @@ Dispatched as `claude -p --agent crew-coder`, which loads this definition and en
 **Tool naming:** `Read`, `Edit`, `Write`, `Bash`, `Grep`. Absolute paths are not a preference here —
 the `Read` tool rejects relative ones.
 
-**Skill resolution:** the `skills:` list above loads `solve-issue` for you — there is no path to
-resolve. `$MAIN_ROOT` holds `.claude/`.
+**Skill resolution:** invoke `solve-issue` with the `Skill` tool; its `Base directory for this skill:`
+line is `<skill-dir>` — never search the filesystem for it. `$MAIN_ROOT` holds `.claude/`.

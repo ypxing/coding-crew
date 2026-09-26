@@ -58,7 +58,8 @@
  *                                           still blocks that issue, as main-tree-dirty)
  *
  * CREW_VERBOSE=1 also puts each dispatch's throttled [TOOL] heartbeat and the effects log on
- * stderr; the trace log has both either way.
+ * stderr; the trace log has both either way. CREW_INSTALL_DIR overrides the `.coding-crew/`
+ * this run's assets are read from (default: the one holding this crew-afk/; lib/install-dir.mjs).
  *
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
@@ -91,7 +92,15 @@ import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorksp
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktreeInclude, worktreeRoot } from "./lib/worktree.mjs";
-import { baselineFailureMessage, dirtyTrackedFiles, dockerDepsFailureMessage, runBaseline } from "./lib/preflight.mjs";
+import { resolveInstallDir } from "./lib/install-dir.mjs";
+import {
+  baselineFailureMessage,
+  dirtyTrackedFiles,
+  dockerDepsFailureMessage,
+  missingAssets,
+  missingAssetsMessage,
+  runBaseline,
+} from "./lib/preflight.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -434,6 +443,10 @@ async function main() {
   }
 
   const scriptsDir = resolveScriptsDir(mainRoot, options.platform);
+  // Once per run; every child inherits it (session-init.sh also records it in sprint.env), and
+  // each asset is a fixed sub-path of it — see install-dir.mjs.
+  const installDir = resolveInstallDir(process.env, HERE);
+  process.env.CREW_INSTALL_DIR = installDir;
   const logLines = [];
   const effects = new Effects({
     scriptsDir,
@@ -542,6 +555,8 @@ async function main() {
     console.log(`pane host: ${options.paneHost ?? "none"}${tag("paneHost")}`);
     console.log(`worktrees: ${options.worktreeRoot}${tag("worktreeRoot")}`);
     console.log(`scripts:   ${scriptsDir}`);
+    const missing = missingAssets(installDir);
+    console.log(`install:   ${installDir}${missing.length ? ` — run would stop, missing: ${missing.map((m) => m.file).join(", ")}` : ""}`);
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);
     console.log(`dispatchable now (${issues.length}):`);
     // github issues have no `.path`, only `.number`.
@@ -615,6 +630,15 @@ async function main() {
         exitCode = 1;
         return exitCode;
       }
+    }
+
+    // Before anything touches disk, like the dirty check: a reviewer without its assets
+    // spends turns searching for them, and a coder without dep-install cannot run a check.
+    const missing = missingAssets(installDir);
+    if (missing.length) {
+      console.error(missingAssetsMessage(installDir, missing));
+      exitCode = 1;
+      return exitCode;
     }
 
     if (movesLegacy) console.error(`crew-afk: ${loaded.legacyMove.apply()}`);

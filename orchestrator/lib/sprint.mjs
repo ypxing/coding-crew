@@ -30,6 +30,7 @@ const ENV_KEYS = [
   "DISPATCH_DIR",
   "REVIEW_DIR",
   "CREW_SCRIPTS",
+  "CREW_INSTALL_DIR",
   "CREW_PRD_AUDIT",
   "CREW_FIX_FINDINGS",
 ];
@@ -164,6 +165,10 @@ export class Sprint {
   }
   get traceLog() {
     return this.env.TRACE_LOG;
+  }
+  /** The `.coding-crew/` this run's assets are read from (install-dir.mjs); null on a hand-made sprint.env. */
+  get installDir() {
+    return this.env.CREW_INSTALL_DIR || null;
   }
   /** "off" | "report" | "fix" — see crew-config.mjs's PRD_AUDIT. */
   get PRDAudit() {

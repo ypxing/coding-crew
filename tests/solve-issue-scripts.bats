@@ -18,7 +18,7 @@ setup() {
   git -C "$WORK" commit -q --allow-empty -m init
   git -C "$WORK" checkout -q -b feature
   ISSUE="$WORK/.scratch/feat/issues/open/02-second.md"
-  unset CREW_ORCHESTRATED MAIN_ROOT
+  unset CREW_ORCHESTRATED MAIN_ROOT CREW_INSTALL_DIR
 }
 
 teardown() {
@@ -93,6 +93,15 @@ _preflight() {
   _preflight
   [[ "$output" == *"ISSUE_SLUG=02-second"* ]]
   [[ "$output" == *"DEP_SCRIPTS=$DEP_SCRIPTS"* ]]
+}
+
+@test "preflight: a sprint's CREW_INSTALL_DIR is used before any other copy" {
+  # The orchestrator resolved the install once; the coder uses that copy, not whichever it finds.
+  mkdir -p "$TEMP_DIR/install/dep-install"
+  cp -R "$DEP_SCRIPTS" "$TEMP_DIR/install/dep-install/scripts"
+  _issue "" "None"
+  CREW_INSTALL_DIR="$TEMP_DIR/install" _preflight
+  [[ "$output" == *"DEP_SCRIPTS=$(cd "$TEMP_DIR/install/dep-install/scripts" && pwd)"* ]]
 }
 
 # ─── run-checks.sh ───────────────────────────────────────────────────────────

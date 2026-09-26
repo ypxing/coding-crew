@@ -265,6 +265,11 @@ export CREW_SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
 export CREW_PRD_AUDIT="$PRD_AUDIT_OPT"
 export CREW_FIX_FINDINGS="$FIX_FINDINGS_OPT"
 ENV
+# The .coding-crew/ this run's assets are read from — resolved once by the orchestrator, which
+# exports it before calling this script. A hand run has none, and every script falls back.
+if [ -n "${CREW_INSTALL_DIR:-}" ]; then
+  echo "export CREW_INSTALL_DIR=\"$CREW_INSTALL_DIR\"" >> "$SPRINT_ENV"
+fi
 
 # Stable entry point: one path the orchestrator can source without knowing the slug.
 cat > "$MAIN_ROOT/.scratch/sprint.env" <<ENV

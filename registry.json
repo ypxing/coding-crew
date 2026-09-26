@@ -19,7 +19,7 @@
   },
   "agents": {
     "crew-reviewer": {
-      "version": "1.7.9",
+      "version": "1.7.10",
       "source-dir": "crew-reviewer",
       "replaces": [
         "crew-code-reviewer"
@@ -58,7 +58,7 @@
       }
     },
     "crew-coder": {
-      "version": "1.10.5",
+      "version": "1.10.6",
       "source-dir": "crew-coder",
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
@@ -79,7 +79,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.3.55",
+      "version": "2.3.56",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -133,7 +133,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.10.1",
+      "version": "1.10.2",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",

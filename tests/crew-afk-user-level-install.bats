@@ -178,3 +178,45 @@ work_repo_with_issue() {
     grep -q 'HOME/.coding-crew/crew-afk/main.mjs' "$(afk_variant "$p")"
   done
 }
+
+# ─── one install dir per run (CREW_INSTALL_DIR) ───────────────────────────────
+# The reviewer's assets used to be read from "$ROOT/.coding-crew/code-review" — a path only a
+# project install has. Every reviewer on a user-level install hit a TOOL-ERROR on
+# review-context.sh, then spent calls hunting. The orchestrator now names the path it was
+# itself launched beside, in the review prompt.
+
+# sprint_with_fake_dispatch <main.mjs> — one issue through the whole pipeline, every dispatch faked
+sprint_with_fake_dispatch() {
+  printf 'test:\n\t@echo ok\n' > "$WORK_REPO/Makefile"
+  printf '.scratch/\n.claude/\n.coding-crew/\n' > "$WORK_REPO/.gitignore"
+  git -C "$WORK_REPO" add -A && git -C "$WORK_REPO" commit -qm checks
+  mkdir -p "$BATS_TEST_TMPDIR/fake"
+  cd "$WORK_REPO"
+  run env -u CREW_INSTALL_DIR -u CREW_SCRIPTS -u CREW_PANE_HOST -u HERDR_ENV -u ORCA_ENV HOME="$FAKE_HOME" \
+    CREW_FAKE_DISPATCH="$REPO_ROOT/tests/orchestrator/fixtures/fake-dispatch.sh" CREW_FAKE_DIR="$BATS_TEST_TMPDIR/fake" \
+    node "$1" run --platform claude --feature-slug demo --no-baseline --no-commands
+}
+
+@test "user-level install: the reviewer is pointed at \$HOME's review assets" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  user_install claude
+  work_repo_with_issue
+  sprint_with_fake_dispatch "$FAKE_HOME/.coding-crew/crew-afk/main.mjs"
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  local expected
+  expected="$(FAKE_HOME="$FAKE_HOME" node -e 'console.log(require("path").resolve(process.env.FAKE_HOME, ".coding-crew/code-review"))')"
+  grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget.review-prompt.md" || {
+    cat "$WORK_REPO/.scratch/demo/dispatch/01-widget.review-prompt.md" >&2; return 1; }
+}
+
+@test "project-level install: the reviewer is pointed at the repo's review assets" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  work_repo_with_issue
+  env HOME="$FAKE_HOME" TARGET_REPO="$WORK_REPO" bash "$REPO_ROOT/install.sh" claude --skill crew-afk >/dev/null
+  sprint_with_fake_dispatch "$WORK_REPO/.coding-crew/crew-afk/main.mjs"
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  local expected
+  expected="$(cd "$WORK_REPO" && node -e 'console.log(require("path").resolve(".coding-crew/code-review"))')"
+  grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget.review-prompt.md" || {
+    cat "$WORK_REPO/.scratch/demo/dispatch/01-widget.review-prompt.md" >&2; return 1; }
+}

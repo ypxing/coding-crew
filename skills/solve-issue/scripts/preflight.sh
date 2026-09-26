@@ -100,12 +100,15 @@ if [ "${CREW_ORCHESTRATED:-}" = 1 ] || ls "$MAIN_ROOT"/.scratch/*/.orchestrated 
 fi
 
 # ─── dep-install's scripts ───────────────────────────────────────────────────
-# Installed as a sibling skill on every platform; the platform-neutral asset copy covers a
-# user-level install whose skills live somewhere else.
+# A sprint resolved its install once and exports it as CREW_INSTALL_DIR: that copy first.
+# Otherwise installed as a sibling skill on every platform; the platform-neutral asset copies
+# cover an install whose skills live somewhere else — the project's first, then $HOME's.
 DEP_SCRIPTS=""
-for d in "$SELF_DIR/../../dep-install/scripts" \
+for d in ${CREW_INSTALL_DIR:+"$CREW_INSTALL_DIR/dep-install/scripts"} \
+         "$SELF_DIR/../../dep-install/scripts" \
          "$MAIN_ROOT/.coding-crew/dep-install/scripts" \
-         "$PROJECT_ROOT/.coding-crew/dep-install/scripts"; do
+         "$PROJECT_ROOT/.coding-crew/dep-install/scripts" \
+         ${HOME:+"$HOME/.coding-crew/dep-install/scripts"}; do
   if [ -f "$d/resolve-mode.sh" ] && [ -f "$d/run.sh" ]; then
     DEP_SCRIPTS="$(cd "$d" && pwd)"
     break

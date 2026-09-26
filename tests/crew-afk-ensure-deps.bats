@@ -30,7 +30,7 @@ setup() {
   git -C "$WORK" config user.email t@test
   git -C "$WORK" config user.name T
   # No sprint unless a test opts in.
-  unset TRACE_LOG SPRINT_DIR MAIN_ROOT CREW_DEPS CREW_DEP_INSTALL_SCRIPTS CREW_DOCKER_INSTALL
+  unset TRACE_LOG SPRINT_DIR MAIN_ROOT CREW_DEPS CREW_DEP_INSTALL_SCRIPTS CREW_DOCKER_INSTALL CREW_INSTALL_DIR
 }
 
 teardown() {
@@ -736,6 +736,17 @@ npm ERR! boom"
   run bash "$SCRIPT" --dir "$WORK"
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: none" ]
+}
+
+@test "a sprint's CREW_INSTALL_DIR supplies dep-install's scripts, with no search" {
+  printf '{}\n' > "$WORK/package.json"
+  stub_scripts USE_HOST 0 "Running: from-install-dir"
+  mkdir -p "$TEMP_DIR/install/dep-install"
+  mv "$CREW_DEP_INSTALL_SCRIPTS" "$TEMP_DIR/install/dep-install/scripts"
+  unset CREW_DEP_INSTALL_SCRIPTS
+  CREW_INSTALL_DIR="$TEMP_DIR/install" run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: installed from-install-dir" ] || { echo "$output"; return 1; }
 }
 
 # ─── idempotence and the escape hatch ────────────────────────────────────────

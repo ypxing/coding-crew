@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
+import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { findingsAtOrAbove, parseReviewReport } from "../report.mjs";
 import { dispatchStem, issueDescriptor, issueRef, readSidecar, roleBinding } from "./shared.mjs";
@@ -62,6 +63,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       verifyFile: file,
       testOnly: changed.length > 0 && changed.every(isTestPath),
       reportPath: sidecarFile,
+      reviewAssets: sprint.installDir ? assetDir(sprint.installDir, "reviewer") : null,
     }),
   );
 
