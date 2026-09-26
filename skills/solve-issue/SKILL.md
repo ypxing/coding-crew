@@ -19,17 +19,20 @@ the words, not the wire format:
 - **`partial`** — meaningful progress, but a check fails or a criterion is unmet. Commit the work with
   a `[WIP]` marker so the branch preserves it, and say what remains. A later round resumes here.
 - **`blocked`** — cannot proceed without human input or an environment fix. Not a way to avoid
-  reporting `partial`. This includes a criterion that needs something the project's own commands
-  do not provide — a service its tests need is unreachable and its start command fails, or a
-  credential is missing, so the tests proving the criterion skip or cannot run. Report that, rather
-  than standing the service up by hand: whatever you start is gone before anyone else re-runs the
-  checks, so a pass that depended on it proves nothing.
+  reporting `partial`. A failure that names something **no file in this repo can provide** — a
+  credential, a license, a daemon, a registry, an external service — is `blocked`: run the
+  project's documented command for it **once**, keep that command, its exit code and its verbatim
+  output as the evidence, and stop. Do not start services by hand, search for tokens, or edit
+  compose files or the Makefile to get around it: whatever you start is gone before anyone re-runs
+  the checks, so a pass that depended on it proves nothing. Setup *inside* the repo that the issue
+  asks for (helpers, wiring, config) is still coding, and in scope.
 
 When you stop on a blocker, always output:
 
 ```
 BLOCKED: <reason>
-<verbatim error or dependency name>
+$ <command> (exit <N>)
+<verbatim output, or the dependency name>
 ```
 
 Do not attempt workarounds. Do not proceed.
@@ -200,8 +203,8 @@ do not re-check CLAUDE.md/Makefile instead.
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
-  Except `<key>: modified files:` — the check itself rewrites files (project config): report
-  `blocked` with its output; never revert and re-run.
+  Except `<key>: modified files:` — the check itself rewrites files (project config) — and a
+  failure naming what no repo file can provide (§ Outcome): report `blocked` with that output.
 - `DISCOVER` — no cache yet. STOP. Read `references/verification.md` now and discover every check
   as it describes. Persist what you found, pass or fail (from the same directory you read this
   skill file from), then re-run `run-checks.sh` — it runs what you just wrote:

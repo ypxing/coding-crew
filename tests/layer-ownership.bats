@@ -48,6 +48,19 @@ defines_term() {
   echo "$section" | grep -q 'BLOCKED:'
 }
 
+@test "solve-issue stops on what no repo file can provide, once, with the command as evidence" {
+  # A coder hit "License activation failed" six minutes in, then spent 21 more hand-starting
+  # compose services, and reported partial. The rule is the procedure's, so a direct
+  # /solve-issue run gets it too — and it names no caller.
+  section=$(awk '/^## Outcome/{f=1;next} /^## /{f=0} f' "$SOLVE_ISSUE")
+  echo "$section" | grep -q 'no file in this repo can provide'
+  echo "$section" | grep -q '\*\*once\*\*'
+  echo "$section" | grep -q 'its exit code and its verbatim'
+  echo "$section" | grep -q 'Do not start services by hand, search for tokens'
+  echo "$section" | grep -qF '$ <command> (exit <N>)'
+  ! echo "$section" | grep -qiE 'crew-afk|triage|orchestrat'
+}
+
 @test "solve-issue is the only place the three outcome words are defined" {
   # crew-coder used to define them, so a direct invocation ran with an undefined
   # vocabulary while the sprint path got two copies.
