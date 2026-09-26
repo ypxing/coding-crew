@@ -472,7 +472,11 @@ if [ "$MODE" = "USE_DOCKER" ]; then
 
   DOCKER_OUT="$(mktemp)"
   trap 'rm -f "$DOCKER_OUT"' EXIT
-  DOCKER_ARGS=(--project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" --timeout "$TIMEOUT")
+  # --force: past docker-install.sh's manifest-fingerprint fast path. That skip suits a repeat
+  # dep-install run; here it is the sprint's one install into a volume every worktree shares,
+  # and a FRESH fingerprint proves only that the lockfiles are unchanged — not that the
+  # volume still holds what they describe.
+  DOCKER_ARGS=(--project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" --timeout "$TIMEOUT" --force)
   # Forward the same discovered override step 5 would otherwise use on the host path —
   # without this, docker-install.sh falls back to its own lockfile table and silently runs
   # a different command than the one a CLAUDE.md/AGENTS.md/Makefile documents.

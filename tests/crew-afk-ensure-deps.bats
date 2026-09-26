@@ -329,6 +329,20 @@ STUBEOF
   [ -f "$WORK/.scratch/docker-install.done" ]
 }
 
+@test "the MAIN_ROOT call forces docker-install.sh past its manifest-fingerprint fast path" {
+  # A FRESH fingerprint proves the lockfiles are unchanged, not that the shared volume is
+  # still intact — a sprint installs once, so that one install must actually run.
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+  printf '#!/usr/bin/env bash\necho "$@" > "%s/args"\necho "Running: npm ci"\n' "$TEMP_DIR" \
+    > "$CREW_DEP_INSTALL_SCRIPTS/docker-install.sh"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [[ " $(cat "$TEMP_DIR/args") " == *" --force "* ]]
+}
+
 @test "the MAIN_ROOT call generates the override even when docker-install.sh exits 2 for unrelated reasons" {
   # docker-install.sh can exit 2 for reasons that have nothing to do with whether an
   # override CAN be generated (no lockfile it recognises in a manifest dir, an --install-cmd
