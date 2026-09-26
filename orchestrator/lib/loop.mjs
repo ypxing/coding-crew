@@ -195,17 +195,24 @@ function unfinishedIssues(tracker, mainRoot, featureSlug) {
  * The PRD audit (prdAuditor, afk.PRDAudit): what no per-branch review can see — a PRD
  * requirement no issue carried, a flow across issues. In `fix` mode its ✗ missing
  * requirements become one parked fix issue, which the caller's flush sends into Phase 2.
- * Gaps are not queued while a Phase 1 issue is still open: its requirements would read as
- * missing, and queuing them would duplicate that issue. Returns `{report, queuedReady, unqueued, failed}`:
- * the report's path (or null); whether an issue was created already ready-for-agent (github —
- * local parks it for the flush instead); in fix mode, why gaps were left unqueued; and why an
- * audit that ran did not finish. The last two are for the summary — the trace log alone is
- * too easy to miss.
+ * It does not run while a Phase 1 issue is still open (blocked, retained, stalled): that
+ * issue's requirements would read as missing, so the report is noise and its gaps would
+ * duplicate the issue — and the re-run that finishes it audits anyway. Returns
+ * `{report, queuedReady, unqueued, failed, skipped}`: the report's path (or null); whether an
+ * issue was created already ready-for-agent (github — local parks it for the flush instead);
+ * in fix mode, why gaps were left unqueued; why an audit that ran did not finish; and why it
+ * did not run. The last three are for the summary — the trace log alone is too easy to miss.
  */
 async function runPrdAudit(ctx, tracker) {
   const { sprint, effects, options } = ctx;
   const mode = sprint.PRDAudit;
   if (mode === "off") return { report: null, queuedReady: false };
+  const unfinished = unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug);
+  if (unfinished.length) {
+    const skipped = `${unfinished.length} Phase 1 issue(s) still open (${unfinished.map((i) => i.slug).join(", ")}) — resolve them and re-run.`;
+    ctx.log(`PRD audit: skipped — ${skipped}`);
+    return { report: null, queuedReady: false, skipped };
+  }
   const audit = effects.exec("bash", [effects.script("prd-audit.sh"), "--mode", mode], {
     env: sprint.childEnv(),
     mutating: false,
@@ -236,14 +243,6 @@ async function runPrdAudit(ctx, tracker) {
   ctx.log(`PRD audit report: ${outFile}`);
   if (mode !== "fix" || r.dryRun) return { report: outFile, queuedReady: false };
 
-  const unfinished = unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug);
-  if (unfinished.length) {
-    ctx.log(
-      `PRD audit: gaps not queued — ${unfinished.length} Phase 1 issue(s) still open (${unfinished.map((i) => i.slug).join(", ")}), ` +
-        "whose requirements would read as missing. Resolve them and re-run.",
-    );
-    return { report: outFile, queuedReady: false, unqueued: `${unfinished.length} Phase 1 issue(s) still open — resolve them and re-run.` };
-  }
   const parsed = parsePrdAudit(r.text);
   if (!parsed.ok) {
     ctx.log("PRD audit: no closing json block in the report — nothing queued; read it by hand.");
@@ -308,7 +307,9 @@ async function wrapUp(ctx, { stalled, prdAudit }) {
   if (stalled) summaryArgs.push("--stalled");
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
   ctx.out(summary.stdout);
-  if (prdAudit.failed) {
+  if (prdAudit.skipped) {
+    ctx.out(`\n## PRD Audit\n\n**Not run:** ${prdAudit.skipped}\n`);
+  } else if (prdAudit.failed) {
     ctx.out(`\n## PRD Audit\n\n**Failed:** ${prdAudit.failed}\n`);
   } else if (prdAudit.report && existsSync(prdAudit.report)) {
     ctx.out(`\n## PRD Audit\n\n(see ${prdAudit.report})\n`);

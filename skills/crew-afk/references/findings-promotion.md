@@ -31,8 +31,9 @@ merging. The squash runs after both phases, so fixes are included.
 `fix`) runs once, before the flush. Its ✗ missing requirements — ones no issue carried, so no
 review ever checked — become one parked fix issue (`promote-findings.sh defer-gaps`), which
 Phase 2 implements alongside the findings fixes. Its `Source:` line is the same depth bound, and
-nothing after Phase 2 is audited again. While a Phase 1 issue is still open, gaps are not queued:
-that issue's requirements would read as missing.
+nothing after Phase 2 is audited again. While a Phase 1 issue is still open (blocked, retained),
+the audit does not run at all: that issue's requirements would read as missing. The re-run that
+finishes it audits then.
 
 Findings are **not** promoted the moment they are raised. A fix branch running alongside
 still-open Phase 1 issues would edit the same files as its siblings; `merge-branches.sh` aborts
@@ -138,7 +139,7 @@ bash "<skill-dir>/scripts/promote-findings.sh" defer \
   --criteria-file "<tmp criteria file>"
 # → "defer: .scratch/<slug>/issues/open/<NN>-fix-findings-<issue-slug>.md"
 
-# The PRD audit's missing requirements → one parked fix issue (skipped while one is still open)
+# The PRD audit's missing requirements → one parked fix issue (no audit while one is still open)
 bash "<skill-dir>/scripts/promote-findings.sh" defer-gaps \
   --feature-slug "$FEATURE_SLUG" --report ".scratch/$FEATURE_SLUG/prd-audit.md" \
   --criteria-file "<tmp criteria file>"

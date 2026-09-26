@@ -1205,7 +1205,7 @@ test("a PRD audit that fails is named in the summary, not only the trace", () =>
   assert.match(r.stdout, /## PRD Audit\n\n\*\*Failed:\*\* the audit did not complete \(exit 1\)/);
 });
 
-test("PRDAudit fix queues nothing while a Phase 1 issue is still open", () => {
+test("the PRD audit does not run while a Phase 1 issue is still open", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   addIssue(root, "02-beta.md");
@@ -1214,8 +1214,11 @@ test("PRDAudit fix queues nothing while a Phase 1 issue is still open", () => {
   fake(root, "beta.exit", "1");
   const r = runSprint(root);
   assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
-  assert.match(traceLog(root), /PRD audit: gaps not queued — 1 Phase 1 issue\(s\) still open \(beta\)/);
-  assert.match(r.stdout, /\*\*Gaps not queued:\*\* 1 Phase 1 issue\(s\) still open/, "the summary says so, not only the trace");
+  const log = traceLog(root);
+  assert.match(log, /PRD audit: skipped — 1 Phase 1 issue\(s\) still open \(beta\)/);
+  assert.equal(log.includes("step=prd-audit"), false, "no auditor is dispatched");
+  assert.equal(existsSync(join(root, ".scratch/demo/prd-audit.md")), false);
+  assert.match(r.stdout, /\*\*Not run:\*\* 1 Phase 1 issue\(s\) still open \(beta\)/, "the summary says so, not only the trace");
   assert.equal(readdirSync(join(root, ".scratch/demo/issues/open")).some((f) => /fix-prd-gaps/.test(f)), false);
 });
 
