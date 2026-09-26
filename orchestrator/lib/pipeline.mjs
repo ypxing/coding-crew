@@ -34,6 +34,7 @@ import {
   MERGE_CONFLICT_TAG,
   issueDescriptor,
   NOT_FIXABLE_TAG,
+  REVIEW_NOT_RUN_TAG,
   notifyMilestone,
   readSidecar,
   roleBinding,
@@ -58,7 +59,7 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
  *   merge   `merge-failed`, `close-refused …` — verify, review and the AC receipt already
  *           passed; only merge/close runs again. Safe because merge-branches.sh and
  *           close-issue.sh re-check the SHA-bound receipts themselves on every run.
- *   verify  `review-not-run` — the branch is done; only the review dispatch failed.
+ *   verify  `review-not-run …` — the branch is done; only the review dispatch failed.
  *           `verification-failed:not-fixable` — triage ruled out recoding, so skip the
  *           coder and re-run deps + verify once, in case the failure was transient.
  *           `ac-receipt-failed …` — review was all-met; only the receipt write failed. The
@@ -88,7 +89,7 @@ export function resumeRoute(reason) {
     return { route: "fix", kind: "conflict", context: stripReasonTag(unblocked, MERGE_CONFLICT_TAG) };
   }
   if (reason === "merge-failed" || reason.startsWith("close-refused")) return { route: "merge" };
-  if (reason === "review-not-run") return { route: "verify", label: "review-not-run" };
+  if (reason.startsWith(REVIEW_NOT_RUN_TAG)) return { route: "verify", label: "review-not-run" };
   if (reason.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };
   if (reason.startsWith(FIXABLE_TAG)) return { route: "fix", kind: "verify", context: stripReasonTag(reason, FIXABLE_TAG) };
   if (reason.startsWith(CRITERIA_UNMET_TAG)) {
@@ -376,6 +377,8 @@ export async function runWorker(ctx, issue, attempt) {
     },
   );
 
+  sprint.recordDispatchCost(result);
+
   const sidecar = readSidecar(sidecarFile);
 
   const report = parseWorkerReport(result.text, sidecar);
@@ -397,14 +400,6 @@ export async function runHousekeeping(ctx, worker) {
   if (worker.resumeAtMerge) {
     return mergeAndClose(ctx, worker, outcome);
   }
-
-  // Counted whatever the outcome: a timed-out dispatch still spent tokens. Claude-only
-  // fields for now; 0 elsewhere.
-  sprint.recordDispatchCost({
-    costUsd: worker.dispatch.costUsd,
-    durationMs: worker.dispatch.durationMs,
-    numTurns: worker.dispatch.numTurns,
-  });
 
   // --- dispatch health -------------------------------------------------------
   // A dead dispatch (timeout, crash) with commits on the branch is resumed, not discarded;
@@ -461,7 +456,15 @@ export async function runHousekeeping(ctx, worker) {
   // verdict sends the coder back to fix this branch.
   // The gate's own record, not its stdout: the reviewer is pointed at the same file.
   const verifyFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.verify.json`);
-  const review = await runReview(ctx, worker, { ...readVerifyRecord(verifyFile), file: verifyFile });
+  const verifyRecord = { ...readVerifyRecord(verifyFile), file: verifyFile };
+  let review = await runReview(ctx, worker, verifyRecord);
+  // A reviewer that ended without a verdict gets one more dispatch in this round: cheaper
+  // than a retry round, which would rebuild the worktree and re-verify an unchanged branch.
+  // Not after a timeout — a second would double an already-long wait.
+  if (!review.completed && !review.timedOut) {
+    ctx.log(`[REVIEW-RETRY] slug=${issue.slug} round=${worker.attempt} — ${review.reason}`);
+    review = await runReview(ctx, worker, verifyRecord);
+  }
   outcome.reviewReport = review.reportFile;
   if (!review.completed) {
     effects.bash("promote-findings.sh", [
@@ -472,7 +475,7 @@ export async function runHousekeeping(ctx, worker) {
       "--report", review.reportFile,
       "--reason", review.reason,
     ], { env: sprint.childEnv() });
-    return finishRetryOrBlock(ctx, worker, outcome, "review-not-run");
+    return finishRetryOrBlock(ctx, worker, outcome, taggedReason(REVIEW_NOT_RUN_TAG, review.reason));
   }
   outcome.findings = review.parsed.findings;
 

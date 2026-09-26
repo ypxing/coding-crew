@@ -66,6 +66,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   );
+  sprint.recordDispatchCost(result);
 
   const sidecar = readSidecar(sidecarFile);
 
@@ -76,6 +77,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
     const stderrHint = (result.stderr ?? "").trim().slice(0, 300).replace(/\s+/g, " ");
     return {
       completed: false,
+      timedOut: result.timedOut,
       reportFile,
       reason: result.timedOut ? "review dispatch timed out" : `${parsed.detail}${stderrHint ? ` — ${stderrHint}` : ""}`,
       parsed,

@@ -93,6 +93,7 @@ export async function runTriage(ctx, worker, verifyStdout) {
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   );
+  sprint.recordDispatchCost(result);
 
   const sidecar = readSidecar(sidecarFile);
 

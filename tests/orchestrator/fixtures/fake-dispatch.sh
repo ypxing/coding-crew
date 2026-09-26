@@ -4,9 +4,10 @@
 # Behaviour is driven by files in $CREW_FAKE_DIR:
 #   <slug>.worker         the worker report to emit (default: a clean `complete`)
 #   <slug>.review         the review report to emit (default: verdict all-met, no findings)
-#   <slug>.review-once    the review report is empty (review-not-run) on the *first* call
-#                         for this slug, then verdict all-met on every call after — simulates a
-#                         review dispatch that failed transiently and succeeds on retry.
+#   <slug>.review-once    the review report is empty (review-not-run) on the first N calls
+#                         for this slug — N is the file's content, 1 when empty — then verdict
+#                         all-met on every call after: a review dispatch that failed
+#                         transiently and succeeds on retry.
 #                         Mutually exclusive with <slug>.review; a per-slug call counter is
 #                         kept at <slug>.review-once.calls next to it.
 #   <slug>.review-once-garbled   same shape as <slug>.review-once, except the first call's
@@ -17,6 +18,8 @@
 #                         behaviour this fixture exists to pin down.
 #                         Mutually exclusive with <slug>.review and <slug>.review-once; shares
 #                         the same <slug>.review-once.calls counter file.
+#   <slug>.review-sleep   the reviewer sleeps this many seconds before answering — with a
+#                         fractional --reviewer-timeout, a review dispatch that times out.
 #   <slug>.nocommit       do not create a commit in the worktree
 #   <slug>.shared         write src/shared.txt (one line, the slug) instead of src/<slug>.txt,
 #                         so two such issues conflict when the second one merges. A worker
@@ -127,13 +130,15 @@ if [ "$AGENT" = "commands-discovery" ]; then
 fi
 
 if [ "$AGENT" = "crew-reviewer" ]; then
+  [ -f "$FAKE_DIR/$SLUG.review-sleep" ] && sleep "$(cat "$FAKE_DIR/$SLUG.review-sleep")"
   if [ -f "$FAKE_DIR/$SLUG.review-once" ] || [ -f "$FAKE_DIR/$SLUG.review-once-garbled" ]; then
     COUNT_FILE="$FAKE_DIR/$SLUG.review-once.calls"
     COUNT=0
     [ -f "$COUNT_FILE" ] && COUNT=$(cat "$COUNT_FILE")
     COUNT=$((COUNT + 1))
     echo "$COUNT" > "$COUNT_FILE"
-    if [ "$COUNT" -eq 1 ]; then
+    FAILS=$(cat "$FAKE_DIR/$SLUG.review-once" 2>/dev/null)
+    if [ "$COUNT" -le "${FAILS:-1}" ]; then
       if [ -f "$FAKE_DIR/$SLUG.review-once-garbled" ]; then
         printf 'Looks fine to me.\n' > "$OUT" # non-empty, no AC: line, no findings — a truncated capture
       else

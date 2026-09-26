@@ -20,6 +20,9 @@ export const AC_RECEIPT_FAILED_TAG = "ac-receipt-failed";
 // merge-branches.sh hit a conflict: the feature branch moved on under this branch. Only a
 // coder can reconcile that; retrying the merge alone would conflict again.
 export const MERGE_CONFLICT_TAG = "merge-conflict";
+// The reviewer left no valid verdict, even after its in-round retry. Carries why (a timeout,
+// no report.json, no verdict field) — the branch itself is done, so no route recodes it.
+export const REVIEW_NOT_RUN_TAG = "review-not-run";
 const REASON_SEP = " — ";
 
 export function taggedReason(tag, summary) {

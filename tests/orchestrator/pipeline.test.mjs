@@ -23,6 +23,7 @@ const CASES = [
   ["merge-conflict — 'feature/x' gained commits that conflict with 'crew/x/a'", { route: "fix", kind: "conflict", context: "'feature/x' gained commits that conflict with 'crew/x/a'" }],
   ["close-refused — issue already closed", { route: "merge" }],
   ["review-not-run", { route: "verify", label: "review-not-run" }],
+  ["review-not-run — review dispatch timed out", { route: "verify", label: "review-not-run" }],
   ["verification-failed:not-fixable — registry 503", { route: "verify", label: "not-fixable-recheck" }],
   ["verification-failed:fixable — lint: unused import", { route: "fix", kind: "verify", context: "lint: unused import" }],
   ["criteria-unmet — AC 2 has no test", { route: "fix", kind: "review", context: "AC 2 has no test" }],

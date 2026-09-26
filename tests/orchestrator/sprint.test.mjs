@@ -367,22 +367,51 @@ test("a review that produced nothing is a gap, not a clean pass", () => {
   fake(root, "alpha.review", ""); // empty review report, every round — never recovers
   const r = runSprint(root);
   const s = state(root);
-  // The first attempt's failure is a plain review-not-run retry (see the next test for that
+  // The first attempt's failure is a review-not-run retry (see the next tests for that
   // shape in isolation, via .review-once). This fixture keeps failing every attempt, so the
   // second attempt spends this issue's retry cap and it blocks instead of retrying forever —
-  // never a bare "review-not-run" once blocked.
-  assert.match(s.retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — review-not-run$/);
+  // naming why the review never ran, not only that it didn't.
+  assert.match(s.retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — review-not-run — no report\.json — the reviewer never wrote its verdict file$/);
   assert.deepEqual(s.merged_branches ?? [], []);
   assert.match(r.stdout, /Unreviewed Branches|review/i);
 });
 
-test("a review-not-run retry skips the coder dispatch and succeeds on the second review", () => {
+test("a review that ended without a verdict is retried once in the same round", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  // The review fails to produce a usable report on its first attempt (empty report, the
-  // same shape a timeout or a dispatch crash leaves behind), then succeeds on the retry
-  // — the worker itself never runs a second time.
-  fake(root, "alpha.review-once", "");
+  // The first review leaves no report (the shape a reviewer that stopped short leaves
+  // behind); the in-round retry succeeds — no second round, no second verify.
+  fake(root, "alpha.review-once", "1");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const s = state(root);
+  assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
+  assert.equal(s.rounds, 1);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 2);
+  const log = traceLog(root);
+  assert.match(log, /\[REVIEW-RETRY\] slug=alpha round=1 — no report\.json/);
+  assert.equal((log.match(/step=verify/g) ?? []).length, 1);
+  assert.doesNotMatch(log, /\[SKIP-WORKER\]/);
+});
+
+test("a timed-out review is not retried in the same round", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review-sleep", "3");
+  const { r, lines } = commandLines(root, ["--max-rounds", "1", "--reviewer-timeout", "0.02"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 1);
+  assert.doesNotMatch(traceLog(root), /\[REVIEW-RETRY\]/);
+  assert.equal(state(root).retention.alpha.reason, "review-not-run — review dispatch timed out");
+});
+
+test("a review-not-run retry round skips the coder dispatch and succeeds on its review", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Both round-1 reviews (the first and its in-round retry) leave no report; round 2
+  // retries only the review — the worker itself never runs a second time.
+  fake(root, "alpha.review-once", "2");
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const s = state(root);
@@ -390,7 +419,6 @@ test("a review-not-run retry skips the coder dispatch and succeeds on the second
   assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
   assert.equal(s.retention?.alpha, undefined, "the issue should have completed, not stayed retained");
   assert.ok(s.rounds >= 2, `expected at least 2 rounds, got ${s.rounds}`);
-  // The coder ran exactly once — round 2 retried only the review, not the worker.
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
   assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=review-not-run/);
 });
@@ -410,11 +438,21 @@ test("a non-empty review report with no verdict line and no findings is review-n
   assert.deepEqual(s.completed_slugs, ["alpha"]);
   assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
   assert.equal(s.retention?.alpha, undefined, "the issue should have completed, not stayed retained");
-  // The coder ran exactly once — round 2 retried only the review, not the worker, and did
-  // not take the fixPrompt/criteria-unmet path either.
+  // The coder ran exactly once — only the review was retried, and the fixPrompt /
+  // criteria-unmet path was never taken.
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
-  assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=review-not-run/);
+  assert.match(traceLog(root), /\[REVIEW-RETRY\] slug=alpha /);
   assert.doesNotMatch(traceLog(root), /criteria-unmet/);
+});
+
+test("every agent dispatch's cost is recorded, not only the coder's", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review-once", "1");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  // One coder and two reviewer dispatches.
+  assert.equal(lines.filter((l) => /^RUN .*state\.sh.* dispatch-cost /.test(l)).length, 3);
 });
 
 test("a merge-failed retry skips the worker, verify, and review, and succeeds on a retried merge", () => {
@@ -542,7 +580,7 @@ test("a rerun after a merge conflict spent the retry cap resolves it through the
 // merges an edit to the same file before alpha's retry syncs.
 for (const [label, retained, setup] of [
   ["a criteria-unmet retry", /criteria-unmet/, (root) => fake(root, "alpha.review", `\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "AC 1 has no test", findings: [] })}\n\`\`\`\n`)],
-  ["a review-only retry", /^review-not-run$/, (root) => fake(root, "alpha.review-once")],
+  ["a review-only retry", /^review-not-run — /, (root) => fake(root, "alpha.review-once", "2")],
 ]) {
   test(`${label} whose sync conflicts hands the conflict to the coder instead of blocking`, () => {
     const root = fixtureRepo();
@@ -1399,7 +1437,7 @@ test("a review that never ran is named in the summary, not just counted in the s
   const r = runSprint(root);
   assert.match(r.stdout, /## Unreviewed Branches/);
   assert.match(r.stdout, /crew\/demo\/alpha/);
-  assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — review-not-run$/);
+  assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — review-not-run — no report\.json — the reviewer never wrote its verdict file$/);
 });
 
 // ─── GitHub tracker backend wiring ────────────────────────────────────────────

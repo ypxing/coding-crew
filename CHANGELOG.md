@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.29.138]
+
+### Fixed
+
+- **A review that ends without a verdict is retried once in the same round.** Before, a
+  `review-not-run` used up one of the issue's two attempts, and its retry round rebuilt the
+  worktree and re-ran deps and verify on a branch that hadn't changed. Two reviewer misses in
+  a row blocked the issue. The reviewer is now dispatched a second time straight away, unless
+  the first one timed out. The retry round is still the fallback.
+- **`review-not-run` says why.** The reason is now tagged with the reviewer's failure, e.g.
+  `review-not-run — no report.json — the reviewer never wrote its verdict file` or
+  `review-not-run — review dispatch timed out`, so a blocked issue's summary line names it.
+- **Reviewer and triage dispatches are counted in the sprint's cost totals.** Only the coder's
+  dispatch was, although `state.sh dispatch-cost` documents summing every dispatch.
+- **The PRD audit does not run while a Phase 1 issue is still open.** That issue's
+  requirements read as missing, so the report was noise. The summary now says "Not run" and
+  names the open issues; the re-run that finishes them audits then.
+
 ## [1.29.137]
 
 ### Changed
