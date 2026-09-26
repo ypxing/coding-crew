@@ -72,6 +72,9 @@ export class Sprint {
     // has already given up on (see markBlockedThisRun) — what loop.mjs's claimNext() checks
     // instead of the persisted `blocked_slugs`, for the same cross-invocation reason above.
     this._blockedThisRun = new Set();
+    // `<branch>@<commit>` set, in-memory only: the commits verify-worktree.sh passed during
+    // this invocation (see markVerifiedThisRun). A pass from an earlier run is not reused.
+    this._verifiedThisRun = new Set();
   }
 
   static async init(effects, { featureSlug, fixFindings, PRDAudit, passthrough = [], deps = true, log = () => {} }) {
@@ -253,6 +256,21 @@ export class Sprint {
    */
   isBlockedThisRun(slug) {
     return this._blockedThisRun.has(slug);
+  }
+
+  /** Recorded once verify-worktree.sh passes `branch` at `commit` — see gatesAtTip. */
+  markVerifiedThisRun(branch, commit) {
+    this._verifiedThisRun.add(`${branch}@${commit}`);
+  }
+
+  /**
+   * Whether this invocation itself verified `branch` at `commit`. A receipt from an earlier
+   * run is bound to the commit but not to the environment it ran in: a human re-runs after
+   * fixing that environment (a service started), and a check that passed without it — its
+   * tests skipped — must run again, or the reviewer reads the old logs.
+   */
+  verifiedThisRun(branch, commit) {
+    return this._verifiedThisRun.has(`${branch}@${commit}`);
   }
   complete(slug, branch) {
     return this.state(["complete", "--slug", slug, "--branch", branch]);

@@ -19,7 +19,11 @@ the words, not the wire format:
 - **`partial`** — meaningful progress, but a check fails or a criterion is unmet. Commit the work with
   a `[WIP]` marker so the branch preserves it, and say what remains. A later round resumes here.
 - **`blocked`** — cannot proceed without human input or an environment fix. Not a way to avoid
-  reporting `partial`.
+  reporting `partial`. This includes a criterion that needs something the project's own commands
+  do not provide — a service its tests need is unreachable and its start command fails, or a
+  credential is missing, so the tests proving the criterion skip or cannot run. Report that, rather
+  than standing the service up by hand: whatever you start is gone before anyone else re-runs the
+  checks, so a pass that depended on it proves nothing.
 
 When you stop on a blocker, always output:
 

@@ -241,6 +241,10 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "progress notes, commit messages and the issue's `## Progress` section are claims, not",
     "evidence, however specific.",
     "",
+    "On `unmet`, `cause` is `environment` only when the diff would meet the criterion but the",
+    "run lacked a precondition (a service unreachable, a credential absent, so its tests",
+    "skipped): that stops the issue for a human, since no code change can help. Else `code`.",
+    "",
     // Same policy as the worker's resultBlock: the file is the only thing read. No fallback
     // fenced block in the final message — see report.mjs's parseReviewReport. The "##
     // Branch:" heading below shapes only the transcript a human reads, never the merge gate.
@@ -256,6 +260,7 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
         slug,
         verdict: "all-met | unmet",
         detail: "<which criterion, and why — required on unmet>",
+        cause: "code | environment — on unmet only",
         findings: [{ severity: "CRITICAL | HIGH | MEDIUM | LOW", location: "<file:line>", criterion: "<one verifiable fix criterion>" }],
       },
       null,

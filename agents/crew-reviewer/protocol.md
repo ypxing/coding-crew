@@ -163,6 +163,7 @@ Still start each branch's message with `## Branch: <branch-name> (<slug>)`, then
   "slug": "<slug>",
   "verdict": "all-met",
   "detail": "",
+  "cause": "code",
   "findings": [
     {"severity": "CRITICAL", "location": "<path>:<line>", "criterion": "<one verifiable fix criterion>"}
   ]
@@ -171,7 +172,8 @@ Still start each branch's message with `## Branch: <branch-name> (<slug>)`, then
 
 `verdict` is required, exactly `"all-met"` or `"unmet"` — never omitted, reworded, or restructured; the
 caller reads it to decide whether the branch merges. On `unmet`, `detail` names which criterion and why,
-and findings are still reported — the branch returns to a worker with them. `findings` is `[]` when
+and findings are still reported — the branch returns to a worker with them, unless `cause` is
+`"environment"` (the dispatch says when). `findings` is `[]` when
 there are none; never omit the block itself for a clean branch.
 
 Every finding needs `severity`, `location` (`file:line`), and **one verifiable fix criterion** — the

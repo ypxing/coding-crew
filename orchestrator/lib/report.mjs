@@ -206,7 +206,7 @@ function findingsFromStructured(list) {
 
 /**
  * One branch's structured verdict, out of a fenced ```json block: `{branch, slug,
- * verdict, detail, findings}`. Both `code_review_summary()` and `promote-findings.sh
+ * verdict, detail, cause, findings}`. Both `code_review_summary()` and `promote-findings.sh
  * remind` used to re-derive this from the same raw text with their own line-anchored
  * awk, and drifted out of sync — this is the one parser both now call through instead
  * (see orchestrator/review-rollup.mjs).
@@ -219,6 +219,9 @@ function reviewFromStructured(raw, obj) {
     slug: obj.slug ? String(obj.slug) : null,
     verdict: VERDICTS.has(String(obj.verdict).toLowerCase()) ? String(obj.verdict).toLowerCase() : "unmet",
     detail: obj.detail ? String(obj.detail).trim() : "",
+    // Only `environment` means anything: an unmet criterion whose precondition the run's
+    // environment did not provide. Anything else, or absent, is the code's to fix.
+    cause: String(obj.cause ?? "").trim().toLowerCase() === "environment" ? "environment" : null,
     findings: findingsFromStructured(obj.findings),
     raw,
   };

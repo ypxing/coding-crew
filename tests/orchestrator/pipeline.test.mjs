@@ -31,6 +31,8 @@ const CASES = [
   ["verification-failed:not-fixable — registry 503", { route: "verify", label: "not-fixable-recheck" }],
   ["verification-failed:fixable — lint: unused import", { route: "fix", kind: "verify", context: "lint: unused import" }],
   ["criteria-unmet — AC 2 has no test", { route: "fix", kind: "review", context: "AC 2 has no test" }],
+  // The reviewer blamed the environment: blocked at once; a human's re-run re-checks, no coder.
+  ["blocked — criteria-unmet:environment — LocalStack unreachable, specs skipped", { route: "verify", label: "environment-recheck" }],
   ["ac-receipt-failed — ERROR: cannot write ac receipt", { route: "verify", label: "ac-receipt-retry" }],
   // A human reran crew-afk after fixing what blocked it: the branch itself was fine, so
   // this one reason resumes at verify rather than restarting the coder.

@@ -14,6 +14,9 @@ export const FIXABLE_TAG = "verification-failed:fixable";
 export const NOT_FIXABLE_TAG = "verification-failed:not-fixable";
 // An `AC: unmet` review verdict. No triage: the reviewer's detail is already actionable.
 export const CRITERIA_UNMET_TAG = "criteria-unmet";
+// An `AC: unmet` verdict the reviewer put down to the environment (`cause: "environment"`):
+// a precondition of a criterion did not hold, so no recoding can meet it. Blocks at once.
+export const CRITERIA_ENVIRONMENT_TAG = "criteria-unmet:environment";
 // `receipts.sh write ac` failed after an all-met review. Never the branch's fault: the
 // branch is fine, so no route for it re-runs the coder.
 export const AC_RECEIPT_FAILED_TAG = "ac-receipt-failed";
@@ -65,8 +68,11 @@ export function notifyMilestone(ctx, issue, message) {
 /**
  * Which gates `branch`'s current tip already passed, read from the receipts (receipts.sh
  * owns both): `verified` — a `pass` verify record for this exact commit; `reviewed` — also an
- * all-met AC receipt for it. A retry skips what these say is done: re-running a gate on an
- * unchanged commit can only repeat its answer. Matched on the positive line, so
+ * all-met AC receipt for it; `verifiedThisRun` — that verify pass was this invocation's own.
+ * A retry skips what these say is done: re-running a gate on an unchanged commit can only
+ * repeat its answer — within one run. Across runs only `reviewed` is reused: an all-met
+ * branch has nothing left to learn from its checks, but one still under review may have
+ * failed on an environment a human has since fixed. Matched on the positive line, so
  * CREW_RECEIPTS=off (whose `check` passes everything) never skips a gate.
  */
 export function gatesAtTip(ctx, branch) {
@@ -74,10 +80,14 @@ export function gatesAtTip(ctx, branch) {
   const check = (args) =>
     effects.exec("bash", [effects.script("receipts.sh"), "check", ...args], { env: sprint.childEnv(), mutating: false });
   const v = check(["verify", "--branch", branch]);
-  const verified = v.code === 0 && /verified at [0-9a-f]+/.test(v.stdout);
-  if (!verified) return { verified: false, reviewed: false };
+  const commit = v.code === 0 ? v.stdout.match(/verified at ([0-9a-f]+)/)?.[1] : null;
+  if (!commit) return { verified: false, reviewed: false, verifiedThisRun: false };
   const a = check(["ac", "--branch", branch, "--at-tip"]);
-  return { verified, reviewed: a.code === 0 && /criteria-verified at [0-9a-f]+/.test(a.stdout) };
+  return {
+    verified: true,
+    reviewed: a.code === 0 && /criteria-verified at [0-9a-f]+/.test(a.stdout),
+    verifiedThisRun: sprint.verifiedThisRun(branch, commit),
+  };
 }
 
 /** close-issue.sh / promote-findings.sh's issue argument: a file path (local) or number (github). */

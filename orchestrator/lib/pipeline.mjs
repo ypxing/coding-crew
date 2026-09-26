@@ -28,6 +28,7 @@ import { mergeAndClose } from "./pipeline/merge.mjs";
 import { promote, runReview } from "./pipeline/review.mjs";
 import {
   AC_RECEIPT_FAILED_TAG,
+  CRITERIA_ENVIRONMENT_TAG,
   CRITERIA_UNMET_TAG,
   dispatchStem,
   FIXABLE_TAG,
@@ -84,6 +85,9 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
  *           `main-tree-dirty` — blocked at once (no retry could clean the main checkout);
  *           the route once a human has committed or stashed the files and re-run.
  *   verify  `review-not-run …` — the branch is done; only the review dispatch failed.
+ *           `criteria-unmet:environment …` — the reviewer blamed the environment, which
+ *           blocked at once; the route once a human has fixed it and re-run. Verify and
+ *           review re-run on the unchanged branch, with no coder.
  *           `verification-failed:not-fixable` — triage ruled out recoding, so skip the
  *           coder and re-run deps + verify once, in case the failure was transient.
  *           `ac-receipt-failed …` — review was all-met; only the receipt write failed. The
@@ -115,6 +119,7 @@ export function resumeRoute(reason) {
   }
   if (reason === "merge-failed" || reason.startsWith("close-refused")) return { route: "merge" };
   if (reason.startsWith(REVIEW_NOT_RUN_TAG)) return { route: "verify", label: "review-not-run" };
+  if (unblocked.startsWith(CRITERIA_ENVIRONMENT_TAG)) return { route: "verify", label: "environment-recheck" };
   if (reason.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };
   if (reason.startsWith(FIXABLE_TAG)) return { route: "fix", kind: "verify", context: stripReasonTag(reason, FIXABLE_TAG) };
   if (reason.startsWith(CRITERIA_UNMET_TAG)) {
@@ -135,6 +140,11 @@ const SKIPPED_WORKER = {
     progress: "not-fixable recheck — coder and triage both skipped; only deps + verify re-run",
     notes:
       "not-fixable recheck: a prior triage pass judged this verification failure not fixable by recoding; re-checking once, cheaply, in case it was transient",
+  },
+  "environment-recheck": {
+    what: "re-running verify + review on the unchanged branch, no coder dispatch, now the environment may be fixed",
+    progress: "environment recheck — coder dispatch skipped; verify + review re-run",
+    notes: "environment recheck: the prior review found a criterion's precondition unmet by the environment, not the code",
   },
   "conflict-merged-clean": {
     what: "the feature branch now merges cleanly, so re-running verify + review only, no coder dispatch",
@@ -239,6 +249,7 @@ export async function runWorker(ctx, issue, attempt) {
   // A reused branch may predate other issues' merges: sync it now, so the gap surfaces
   // here rather than as a conflict at the merge gate. A conflict is left in the worktree
   // for the coder, whatever this retry was for: a sibling can merge while any retry waits.
+  let synced = false;
   if (wt.reusedBranch) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=sync-feature-branch`);
     const conflictRetry = resume.kind === "conflict";
@@ -276,6 +287,7 @@ export async function runWorker(ctx, issue, attempt) {
       };
     }
     if (sync.merged) ctx.log(`slug=${issue.slug} round=${attempt} SYNC: merged ${sprint.featureBranch} into ${branch}`);
+    synced = Boolean(sync.merged || sync.kept);
   }
 
   // A coder-free retry re-runs only the gates this commit has not already passed: their
@@ -290,7 +302,7 @@ export async function runWorker(ctx, issue, attempt) {
       removeWorktree(effects, { mainRoot: effects.mainRoot, path: worktree });
       return mergeOnlyWorker(issue, branch, attempt, `${resume.label}: verify and review receipts already match this commit`);
     }
-    skipVerify = gates.verified;
+    skipVerify = gates.verifiedThisRun;
   }
 
   applyWorktreeInclude(effects.mainRoot, worktree);
@@ -402,6 +414,14 @@ export async function runWorker(ctx, issue, attempt) {
         }),
   );
 
+  // A review fix starts from the very commit this run's previous attempt judged unmet —
+  // unless the sync just moved it. runHousekeeping compares the coder's tip with it: no new
+  // commit, same verdict. Not across runs: the environment that review saw may have changed.
+  const reviewedTip =
+    attempt > 1 && resume.route === "fix" && resume.kind === "review" && !synced
+      ? effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim() || null
+      : null;
+
   const coder = roleBinding(ctx, "coder");
   // Opt-in (afk.resumeCoderSession): a fix round continues the session that wrote the branch
   // instead of re-exploring it, when that session is small and the branch has not moved.
@@ -451,7 +471,7 @@ export async function runWorker(ctx, issue, attempt) {
   const sidecar = readSidecar(sidecarFile);
 
   const report = parseWorkerReport(result.text, sidecar);
-  return { issue, branch, attempt, worktree, dispatch: result, report };
+  return { issue, branch, attempt, worktree, dispatch: result, report, head, reviewedTip, priorVerdict: reviewedTip ? resume.context : null };
 }
 
 /**
@@ -494,6 +514,19 @@ export async function runHousekeeping(ctx, worker) {
   if (pre.status === "blocked") {
     return finishBlocked(ctx, worker, outcome, pre.reason ?? worker.report.notes ?? "blocked");
   }
+  // A review fix that committed nothing leaves the commit, and so the evidence, the last
+  // review judged unmet: another review could only repeat that verdict.
+  if (worker.reviewedTip && worker.head === worker.reviewedTip) {
+    return finishBlocked(
+      ctx,
+      worker,
+      outcome,
+      taggedReason(
+        CRITERIA_UNMET_TAG,
+        `the fix round made no commit, so ${branch} is still at ${worker.head.slice(0, 12)}, already judged unmet: ${worker.priorVerdict || "see review"}`,
+      ),
+    );
+  }
   // A coder that called itself done but reported a failing or un-run check is overruled by
   // the gate when it committed: verify runs every check itself, and its verdict, not the
   // coder's, decides whether another coder round is needed — a narrow fix one, if so. A
@@ -511,8 +544,8 @@ export async function runHousekeeping(ctx, worker) {
   // --- gate 1: independent verification in the worktree ----------------------
   // Skipped when this exact commit already has a passing record — a retry whose coder made
   // no commit, or a coder-free one runWorker already checked.
-  if (worker.skipVerify || gatesAtTip(ctx, branch).verified) {
-    ctx.log(`[SKIP-VERIFY] slug=${issue.slug} round=${worker.attempt} branch=${branch} — verification already passed at this commit`);
+  if (worker.skipVerify || gatesAtTip(ctx, branch).verifiedThisRun) {
+    ctx.log(`[SKIP-VERIFY] slug=${issue.slug} round=${worker.attempt} branch=${branch} — verification already passed at this commit, in this run`);
   } else {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
     const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
@@ -522,6 +555,7 @@ export async function runHousekeeping(ctx, worker) {
     if (verify.code !== 0) {
       return await handleVerificationFailure(ctx, worker, outcome, verify);
     }
+    sprint.markVerifiedThisRun(branch, effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim());
     if (/coverage gap/i.test(verify.stdout)) {
       const cats = [...verify.stdout.matchAll(/not_run:\s*([\w, ]+)/gi)]
         .flatMap((m) => m[1].split(",").map((s) => s.trim()))
@@ -561,6 +595,10 @@ export async function runHousekeeping(ctx, worker) {
   }
   outcome.findings = review.parsed.findings;
 
+  // Not the code's fault: no coder round can start a service or supply a credential.
+  if (review.parsed.verdict !== "all-met" && review.parsed.cause === "environment") {
+    return finishBlocked(ctx, worker, outcome, taggedReason(CRITERIA_ENVIRONMENT_TAG, review.parsed.detail || "see review"));
+  }
   if (review.parsed.verdict !== "all-met") {
     return finishRetryOrBlock(
       ctx,

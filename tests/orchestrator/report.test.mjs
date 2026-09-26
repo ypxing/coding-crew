@@ -510,3 +510,12 @@ test("a coder-admitted extra-check failure stops the issue before any gate runs"
   );
   assert.equal(passed.status, "complete");
 });
+
+test("a review's cause is `environment` only when it says so; anything else is the code's", () => {
+  const verdict = (cause) => parseReviewReport("", { branch: "b", slug: "s", verdict: "unmet", detail: "d", cause, findings: [] }).cause;
+  assert.equal(verdict("environment"), "environment");
+  assert.equal(verdict(" Environment "), "environment");
+  assert.equal(verdict("code"), null);
+  assert.equal(verdict(undefined), null);
+  assert.equal(verdict("infra"), null);
+});

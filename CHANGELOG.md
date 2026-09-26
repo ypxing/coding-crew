@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.29.144]
+
+### Changed
+
+- **A reviewer can say an unmet criterion is the environment's fault.** The review sidecar takes
+  an optional `cause`. `"environment"` means the diff would meet the criterion, but the run
+  lacked a precondition: a service was unreachable or a credential was absent, so the tests
+  that prove the criterion were skipped. The issue then blocks at once as
+  `criteria-unmet:environment` instead of sending the coder back. A re-run re-verifies and
+  re-reviews the unchanged branch, with no coder.
+- **A review fix round that commits nothing blocks instead of being reviewed again.** The
+  commit and its evidence are the ones the last review already judged unmet.
+- **A verify pass is reused only within the run that recorded it.** A re-run, often made
+  because a human fixed the environment, verifies the same commit again, so the reviewer
+  never reads logs from checks that ran without that fix. An all-met branch still goes
+  straight to merge.
+- **solve-issue's `blocked` covers a service or credential its checks need but cannot get.**
+  A coder reports it instead of starting the service by hand, which proved nothing once the
+  service was gone.
+- **The sprint summary is also written to the trace log** under `[SUMMARY]`, so the cost line
+  survives a launcher that retells stdout.
+
 ## [1.29.143]
 
 ### Changed

@@ -36,6 +36,7 @@ import { join } from "node:path";
 import { resumeRoute, runHousekeeping, runWorker } from "./pipeline.mjs";
 import { getTracker } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
+import { appendLine } from "./effects.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit } from "./report.mjs";
 
@@ -307,6 +308,9 @@ async function wrapUp(ctx, { stalled, prdAudit }) {
   if (stalled) summaryArgs.push("--stalled");
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
   ctx.out(summary.stdout);
+  // Also kept with the run's trace: stdout goes to whoever launched the run, and a launcher
+  // that retells it can drop a line (the cost) nobody can then recover.
+  if (sprint.traceLog && summary.stdout.trim()) appendLine(sprint.traceLog, `[SUMMARY]\n${summary.stdout.trimEnd()}`);
   if (prdAudit.skipped) {
     ctx.out(`\n## PRD Audit\n\n**Not run:** ${prdAudit.skipped}\n`);
   } else if (prdAudit.failed) {

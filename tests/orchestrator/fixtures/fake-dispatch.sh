@@ -21,6 +21,9 @@
 #   <slug>.review-sleep   the reviewer sleeps this many seconds before answering — with a
 #                         fractional --reviewer-timeout, a review dispatch that times out.
 #   <slug>.nocommit       do not create a commit in the worktree
+#   <slug>.commit-once    commit only on this slug's first N worker calls (N is the file's
+#                         content, 1 when empty), none after: a fix round that changed nothing.
+#                         Keeps a counter at <slug>.commit-once.calls next to it.
 #   <slug>.shared         write src/shared.txt (one line, the slug) instead of src/<slug>.txt,
 #                         so two such issues conflict when the second one merges. A worker
 #                         dispatched into a worktree with a merge in progress resolves it
@@ -158,7 +161,15 @@ if [ "$AGENT" = "crew-reviewer" ]; then
 fi
 
 # Worker: make a real commit so the branch has content to verify and merge.
-if [ ! -f "$FAKE_DIR/$SLUG.nocommit" ]; then
+NOCOMMIT=0
+[ -f "$FAKE_DIR/$SLUG.nocommit" ] && NOCOMMIT=1
+if [ -f "$FAKE_DIR/$SLUG.commit-once" ]; then
+  CALLS=$(( $(cat "$FAKE_DIR/$SLUG.commit-once.calls" 2>/dev/null || echo 0) + 1 ))
+  echo "$CALLS" > "$FAKE_DIR/$SLUG.commit-once.calls"
+  LIMIT=$(cat "$FAKE_DIR/$SLUG.commit-once")
+  [ "$CALLS" -gt "${LIMIT:-1}" ] && NOCOMMIT=1
+fi
+if [ "$NOCOMMIT" -eq 0 ]; then
   (
     cd "$DIR" || exit 1
     if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then

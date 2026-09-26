@@ -791,6 +791,54 @@ test("a criteria-unmet retry still redispatches the full worker, not just review
   );
 });
 
+const unmetReview = (extra = {}) =>
+  `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "no test covers the criterion", findings: [], ...extra })}\n\`\`\`\n`;
+
+test("a review fix round that commits nothing blocks without a second review", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", unmetReview());
+  fake(root, "alpha.commit-once", "1");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 2);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 1, "the unchanged commit is not reviewed again");
+  assert.match(state(root).retention.alpha.reason, /^blocked — criteria-unmet — the fix round made no commit, so crew\/demo\/alpha is still at [0-9a-f]{12}, already judged unmet: no test covers the criterion$/);
+});
+
+test("an unmet verdict the reviewer puts down to the environment blocks at once, and a re-run re-checks without the coder", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", unmetReview({ cause: "environment", detail: "LocalStack unreachable, specs skipped" }));
+  const first = commandLines(root);
+  assert.equal(first.r.code, 2);
+  assert.equal(first.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1, "no coder round can fix the environment");
+  assert.equal(state(root).retention.alpha.reason, "blocked — criteria-unmet:environment — LocalStack unreachable, specs skipped");
+
+  // The human fixes the environment and re-runs: verify runs again (its pass was another
+  // run's), review passes, and the branch merges — with no coder.
+  unlinkSync(join(root, ".scratch/fake/alpha.review"));
+  const second = commandLines(root);
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 0);
+  assert.equal(second.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1);
+  assert.deepEqual(state(root).merged_branches, ["crew/demo/alpha"]);
+});
+
+test("a verify pass from an earlier run is not reused: a re-run verifies the same commit again", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Both round-1 reviews leave no report, and --max-rounds 1 ends the run there.
+  fake(root, "alpha.review-once", "2");
+  const first = commandLines(root, ["--max-rounds", "1"]);
+  assert.match(state(root).retention.alpha.reason, /^review-not-run/, `${first.r.stdout}\n${first.r.stderr}`);
+  const second = commandLines(root);
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 0);
+  assert.equal(second.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1);
+  assert.doesNotMatch(traceLog(root), /verify already passed at this commit/);
+});
+
 test("a verification-failed retry still redispatches the full worker, not just review", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -1012,6 +1060,14 @@ test("a merged branch's worktree and ref are both gone after cleanup", () => {
   runSprint(root);
   assert.equal(existsSync(join(root, ".scratch/worktrees/crew/demo/alpha")), false);
   assert.equal(sh("git", ["-C", root, "branch", "--list", "crew/demo/alpha"]).stdout.trim(), "");
+});
+
+test("the summary is kept in the trace log too, not only printed", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[SUMMARY\]\nRounds: \d+\nModel: /);
 });
 
 test("the summary names the resolved model, rendered from disk", () => {
