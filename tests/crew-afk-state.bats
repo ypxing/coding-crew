@@ -258,7 +258,57 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   grep -q '\[MODEL\] resolved=opus' .scratch/calc/traces/orchestrator.log
 }
 
+@test "state.sh dispatch-cost files a tagged dispatch in this run's ledger; the totals span every run" {
+  init_sprint calc
+  state dispatch-cost --cost 1.5 --duration-ms 60000 --turns 10 >/dev/null   # an earlier run, untagged
+  state run-start --id run-2 >/dev/null
+  state dispatch-cost --cost 0.5 --duration-ms 1000 --turns 3 --slug a --role coder --attempt 1 \
+    --session-id s1 --context-tokens 42000 --head abc123 >/dev/null
+  f=.scratch/calc/sprint-state.json
+  [ "$(jq -r '.total_cost_usd' "$f")" = "2" ]
+  [ "$(jq -r '.dispatches | length' "$f")" = "1" ]
+  [ "$(jq -c '.dispatches[0] | [.run, .slug, .role, .attempt, .session_id, .context_tokens, .head]' "$f")" = '["run-2","a","coder",1,"s1",42000,"abc123"]' ]
+  grep -q 'dispatch-cost slug=a role=coder attempt=1 cost=0.5' .scratch/calc/traces/orchestrator.log
+}
+
+@test "state.sh baseline records one verdict per commit and rejects anything but pass or fail" {
+  init_sprint calc
+  state baseline --commit abc --verdict pass >/dev/null
+  [ "$(jq -c '.baseline | [.commit, .verdict]' .scratch/calc/sprint-state.json)" = '["abc","pass"]' ]
+  run state baseline --commit abc --verdict maybe
+  [ "$status" -ne 0 ]
+}
+
 # ─── crew-summary.sh ─────────────────────────────────────────────────────────
+
+@test "crew-summary prints this run's cost by role and retry, beside the feature total" {
+  init_sprint calc
+  state dispatch-cost --cost 10 --turns 100 >/dev/null   # earlier runs of the feature
+  state run-start --id now >/dev/null
+  state dispatch-cost --cost 0.6 --duration-ms 120000 --turns 40 --slug a --role coder --attempt 1 >/dev/null
+  state dispatch-cost --cost 0.3 --duration-ms 60000 --turns 20 --slug a --role reviewer --attempt 1 >/dev/null
+  state dispatch-cost --cost 0.1 --duration-ms 30000 --turns 5 --slug a --role triage --attempt 2 >/dev/null
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Cost:   this run $1.00 · 3 dispatches · 3.5m agent time · 65 turns — feature total $11.00'* ]]
+  [[ "$output" == *'by role: coder $0.60 · reviewer $0.30 · triage $0.10 — first attempts $0.90 · retries $0.10'* ]]
+}
+
+@test "crew-summary falls back to the feature total when this run has no ledger" {
+  init_sprint calc
+  state dispatch-cost --cost 2.5 --duration-ms 60000 --turns 7 >/dev/null
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *'Cost:   $2.50 · agent time: 1.0m across 7 turns (every run of this feature)'* ]]
+}
+
+@test "crew-summary names a main-tree-dirty block as a human's job, with the files" {
+  init_sprint calc
+  state blocked --slug b --branch crew/calc/b --reason "main-tree-dirty — uncommitted changes in /r would be overwritten: a.ts — commit or stash them in the main checkout, then re-run" >/dev/null
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *"## Main Checkout Not Clean (need a human)"* ]]
+  [[ "$output" == *"- crew/calc/b: uncommitted changes in /r would be overwritten: a.ts"* ]]
+}
 
 @test "crew-summary renders the rollup from state, not from a print template" {
   init_sprint calc

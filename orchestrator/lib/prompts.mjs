@@ -192,11 +192,13 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, notConfigured, verifyFile, reportPath }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, reportPath }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
+  // A size tells the reviewer to search the file for its figure rather than read it whole.
+  const size = (k) => (logLines?.[k] ? `, ${logLines[k]} lines` : "");
   const stated = Object.entries(c)
-    .map(([k, v]) => `${k}=${v}` + (l[k] ? ` (full output: ${l[k]})` : ""))
+    .map(([k, v]) => `${k}=${v}` + (l[k] ? ` (full output: ${l[k]}${size(k)})` : ""))
     .join(", ");
   return [
     "Review this branch before it merges.",
@@ -209,6 +211,7 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "---",
     "",
     `Gather the diff: git diff $(git merge-base ${featureBranch} ${branch})..${branch}`,
+    ...(testOnly ? ["Diff scope: test-only — every changed file is a test, spec or fixture file."] : []),
     "",
     // Execution evidence, stated once. You cannot run commands, and a criterion that
     // ends "…and the tests pass" is unprovable from a diff — so without this every such

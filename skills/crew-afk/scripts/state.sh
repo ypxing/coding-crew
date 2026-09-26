@@ -18,6 +18,10 @@ set -euo pipefail
 #   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>]
 #   state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
 #   state.sh dispatch-cost [--cost <usd>] [--duration-ms <ms>] [--turns <n>]
+#                          [--slug <slug> --role <role> --attempt <n>]
+#                          [--session-id <id>] [--context-tokens <n>] [--head <sha>]
+#   state.sh run-start --id <run-id>
+#   state.sh baseline --commit <sha> --verdict <pass|fail>
 #   state.sh resume --slug <slug>
 #   state.sh retention --slug <slug>
 #   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|state-file>
@@ -194,13 +198,53 @@ case "$CMD" in
     # makes (coder, reviewer, triage, every retry), not one issue's own latest attempt.
     # Claude-only for now (see extractResultMeta in dispatch.mjs); 0 for every other
     # platform, which this is a no-op for.
+    #
+    # With --slug/--role it is also one entry in `.dispatches`, tagged with the run it
+    # belongs to (run-start), so the summary can say what *this* run cost, by role and by
+    # first attempt vs retry — the totals above span every run of the feature. The coder's
+    # entry also keeps its session id, context size and the branch tip it left, which is
+    # what a later fix round needs to decide whether that session can be resumed.
     cost=$(flag cost "0" "$@"); duration_ms=$(flag duration-ms "0" "$@"); turns=$(flag turns "0" "$@")
-    edit_state --argjson c "$cost" --argjson d "$duration_ms" --argjson t "$turns" '
+    slug=$(flag slug "" "$@"); role=$(flag role "" "$@"); attempt=$(flag attempt "0" "$@")
+    session_id=$(flag session-id "" "$@"); context_tokens=$(flag context-tokens "0" "$@"); head=$(flag head "" "$@")
+    edit_state --argjson c "$cost" --argjson d "$duration_ms" --argjson t "$turns" \
+      --arg slug "$slug" --arg role "$role" --argjson attempt "$attempt" \
+      --arg sid "$session_id" --argjson ctx "$context_tokens" --arg head "$head" '
       .total_cost_usd = ((.total_cost_usd // 0) + $c)
       | .total_dispatch_duration_ms = ((.total_dispatch_duration_ms // 0) + $d)
-      | .total_dispatch_turns = ((.total_dispatch_turns // 0) + $t)'
-    trace STATE "dispatch-cost cost=$cost duration_ms=$duration_ms turns=$turns"
-    echo "STATE: dispatch-cost cost=$cost duration_ms=$duration_ms turns=$turns"
+      | .total_dispatch_turns = ((.total_dispatch_turns // 0) + $t)
+      | if $slug != "" and $role != "" then
+          .dispatches = ((.dispatches // []) + [{
+            run: (.current_run // null), slug: $slug, role: $role, attempt: $attempt,
+            cost_usd: $c, duration_ms: $d, turns: $t,
+            session_id: (if $sid == "" then null else $sid end),
+            context_tokens: $ctx, head: (if $head == "" then null else $head end)
+          }])
+        else . end'
+    trace STATE "dispatch-cost${slug:+ slug=$slug}${role:+ role=$role}${slug:+ attempt=$attempt} cost=$cost duration_ms=$duration_ms turns=$turns"
+    echo "STATE: dispatch-cost${slug:+ slug=$slug}${role:+ role=$role}${slug:+ attempt=$attempt} cost=$cost duration_ms=$duration_ms turns=$turns"
+    ;;
+
+  run-start)
+    # Marks the start of one crew-afk invocation: every dispatch-cost entry after this is
+    # tagged with it. The feature-wide totals keep accumulating across runs.
+    run_id=$(flag id "" "$@")
+    [ -n "$run_id" ] || die "run-start requires --id"
+    edit_state --arg r "$run_id" '.current_run = $r'
+    trace STATE "run-start id=$run_id"
+    echo "STATE: run-start id=$run_id"
+    ;;
+
+  baseline)
+    # The feature branch's own checks, run once before any dispatch (preflight.mjs). Only a
+    # pass is ever reused, and only for the same commit.
+    commit=$(flag commit "" "$@"); verdict=$(flag verdict "" "$@")
+    [ -n "$commit" ] || die "baseline requires --commit"
+    case "$verdict" in pass|fail) : ;; *) die "baseline requires --verdict pass|fail" ;; esac
+    edit_state --arg c "$commit" --arg v "$verdict" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '.baseline = {commit: $c, verdict: $v, at: $at}'
+    trace STATE "baseline commit=$commit verdict=$verdict"
+    echo "STATE: baseline commit=$commit verdict=$verdict"
     ;;
 
   resume)

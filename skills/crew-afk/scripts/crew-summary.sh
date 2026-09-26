@@ -131,10 +131,29 @@ echo "Model:  $(state get model)"
 # Claude-only for now (see extractResultMeta in dispatch.mjs) — omitted rather than
 # printed as $0.00 when nothing was recorded, since a pi/codex/copilot-only sprint has
 # no cost data at all, not genuinely zero cost.
+#
+# The totals span every run of this feature (state persists across re-runs); `.dispatches`
+# entries tagged with `.current_run` are this run alone, so both are printed, and this run
+# is split by role and by first attempt vs retry — where a stalled feature's money goes.
 TOTAL_COST_USD=$(state get total-cost-usd)
 if awk -v c="$TOTAL_COST_USD" 'BEGIN { exit !(c > 0) }'; then
-  TOTAL_TURNS=$(state get total-dispatch-turns)
-  echo "Cost:   $(awk -v c="$TOTAL_COST_USD" 'BEGIN { printf "$%.2f", c }') · agent time: $(awk -v ms="$(state get total-dispatch-duration-ms)" 'BEGIN { printf "%.1fm", ms / 60000 }') across $TOTAL_TURNS turns"
+  RUN_ROW=$(jq -r '(.current_run) as $r
+    | [(.dispatches // [])[] | select($r != null and .run == $r)] as $d
+    | def sum(f): ($d | map(f // 0) | add // 0);
+      def by(p): ($d | map(select(p) | .cost_usd // 0) | add // 0);
+    if ($d | length) == 0 then empty else
+      [($d | length), sum(.cost_usd), sum(.duration_ms), sum(.turns),
+       by(.role == "coder"), by(.role == "reviewer"), by(.role == "triage"),
+       by((.attempt // 0) <= 1), by((.attempt // 0) > 1)] | @tsv end' "$SF" 2>/dev/null || true)
+  if [ -n "$RUN_ROW" ]; then
+    printf '%s\t%s\n' "$RUN_ROW" "$TOTAL_COST_USD" | awk -F'\t' '{
+      printf "Cost:   this run $%.2f · %d dispatches · %.1fm agent time · %d turns — feature total $%.2f\n", $2, $1, $3 / 60000, $4, $10
+      printf "        by role: coder $%.2f · reviewer $%.2f · triage $%.2f — first attempts $%.2f · retries $%.2f\n", $5, $6, $7, $8, $9
+    }'
+  else
+    TOTAL_TURNS=$(state get total-dispatch-turns)
+    echo "Cost:   $(awk -v c="$TOTAL_COST_USD" 'BEGIN { printf "$%.2f", c }') · agent time: $(awk -v ms="$(state get total-dispatch-duration-ms)" 'BEGIN { printf "%.1fm", ms / 60000 }') across $TOTAL_TURNS turns (every run of this feature)"
+  fi
 fi
 echo "Merged  ($(count_csv "$MERGED_SLUGS")): $(or_none "$MERGED_SLUGS")"
 echo "Partial ($(count_csv "$PARTIAL_SLUGS")): $(or_none "$PARTIAL_SLUGS")"
@@ -187,6 +206,18 @@ if [ -n "$MERGE_CONFLICTS" ]; then
   echo "  2. Resolve the conflicts by hand, then: git add -A && git commit"
   echo "  3. Re-run crew-afk — merge-branches.sh sees the branch as already merged and closes the issue normally."
   printf '%s\n' "$MERGE_CONFLICTS" | sed 's/^/- /'
+fi
+
+# --- A dirty main checkout (merge-branches.sh's main-tree-dirty) -----------------
+# Like merge-failed, not the branch's content: verify, review and the AC receipt passed, and
+# git refused the merge because uncommitted changes in the main checkout would be overwritten.
+# Re-running resumes straight at the merge once they are committed or stashed.
+DIRTY_BLOCKED=$(jq -r '(.retention // {}) | to_entries[] | select(.value.reason | test("main-tree-dirty")) | "- \(.value.branch): \(.value.reason | sub("^.*main-tree-dirty — "; ""))"' "$SF" 2>/dev/null || true)
+if [ -n "$DIRTY_BLOCKED" ]; then
+  echo ""
+  echo "## Main Checkout Not Clean (need a human)"
+  echo "These branches passed every gate; only the merge was refused. Commit or stash the files, then re-run (/crew-afk) — they resume at the merge."
+  printf '%s\n' "$DIRTY_BLOCKED"
 fi
 
 # --- Environment blockers (triage said not-fixable, twice — see handleVerificationFailure

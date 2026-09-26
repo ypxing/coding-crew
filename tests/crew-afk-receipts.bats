@@ -218,6 +218,51 @@ EOF
 
 # ─── merge gate ──────────────────────────────────────────────────────────────
 
+@test "receipts: check ac --at-tip passes only for a receipt of the branch's current tip" {
+  wt=$(_make_worktree "task-a")
+  cd "$MAIN_ROOT"
+  bash "$RECEIPTS_SCRIPT" write ac --branch "crew/my-feature/task-a" >/dev/null
+
+  run bash "$RECEIPTS_SCRIPT" check ac --branch "crew/my-feature/task-a" --at-tip
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"criteria-verified at $(git rev-parse crew/my-feature/task-a)"* ]]
+
+  # A commit after the review: the receipt still exists, but no longer vouches for the tip.
+  echo more > "$wt/more.txt"; git -C "$wt" add -A; git -C "$wt" commit -q -m more
+  run bash "$RECEIPTS_SCRIPT" check ac --branch "crew/my-feature/task-a" --at-tip
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not at its tip"* ]]
+  # Existence-only (the close gate's question) is unchanged.
+  run bash "$RECEIPTS_SCRIPT" check ac --branch "crew/my-feature/task-a"
+  [ "$status" -eq 0 ]
+}
+
+@test "receipts: check ac --at-tip rejects a receipt that names no commit" {
+  _make_worktree "task-a" >/dev/null
+  mkdir -p "$DISPATCH_DIR"; echo ok > "$DISPATCH_DIR/task-a.ac.ok"
+  cd "$MAIN_ROOT"
+  run bash "$RECEIPTS_SCRIPT" check ac --branch "crew/my-feature/task-a" --at-tip
+  [ "$status" -ne 0 ]
+}
+
+@test "merge gate: uncommitted changes the merge would overwrite are main-tree-dirty, not a conflict" {
+  echo base > "$MAIN_ROOT/shared.txt"; git -C "$MAIN_ROOT" add -A; git -C "$MAIN_ROOT" commit -q -m base
+  wt=$(_make_worktree "task-a")
+  echo branch > "$wt/shared.txt"; git -C "$wt" commit -q -am "edit shared"
+  _write_record "$wt"
+  echo local > "$MAIN_ROOT/shared.txt"
+
+  cd "$MAIN_ROOT"
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" "crew/my-feature/task-a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"failed (main-tree-dirty — uncommitted changes in $MAIN_ROOT would be overwritten: shared.txt)"* ]]
+  [[ "$output" != *"conflict — aborted"* ]]
+  # Nothing was touched: the local edit is still there, and nothing merged.
+  [ "$(cat "$MAIN_ROOT/shared.txt")" = "local" ]
+  run git -C "$MAIN_ROOT" log "$FEATURE_BRANCH" --oneline
+  [[ "$output" != *"edit shared"* ]]
+}
+
 @test "merge gate: crew branch without a verify receipt is not merged" {
   _make_worktree "task-a" >/dev/null
 

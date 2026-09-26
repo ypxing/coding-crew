@@ -7,7 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
+import { RESUME_MAX_CONTEXT_TOKENS, resumableSession, resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
+import { isTestPath } from "../../orchestrator/lib/pipeline/review.mjs";
 import { resumeNote } from "../../orchestrator/lib/prompts.mjs";
 
 // Every retention reason runHousekeeping and its gates hand to finishRetryOrBlock.
@@ -22,6 +23,9 @@ const CASES = [
   // A conflict needs code, not another merge attempt.
   ["merge-conflict — 'feature/x' gained commits that conflict with 'crew/x/a'", { route: "fix", kind: "conflict", context: "'feature/x' gained commits that conflict with 'crew/x/a'" }],
   ["close-refused — issue already closed", { route: "merge" }],
+  // Blocked at once, never retried in-run; a human's re-run goes straight back to the merge.
+  ["blocked — main-tree-dirty — uncommitted changes in /r would be overwritten: a.ts — commit or stash them", { route: "merge" }],
+  ["main-tree-dirty — x", { route: "merge" }],
   ["review-not-run", { route: "verify", label: "review-not-run" }],
   ["review-not-run — review dispatch timed out", { route: "verify", label: "review-not-run" }],
   ["verification-failed:not-fixable — registry 503", { route: "verify", label: "not-fixable-recheck" }],
@@ -56,4 +60,28 @@ test("the blocked note names no branch when none was retained, or when ## Progre
   assert.doesNotMatch(resumeNote({ priorBranch: null, hasProgress: false, hasBlocked: true }), /branch/);
   const both = resumeNote({ priorBranch: "crew/demo/alpha", hasProgress: true, hasBlocked: true });
   assert.equal((both.match(/crew\/demo\/alpha/g) ?? []).length, 1);
+});
+
+// ─── resumableSession: when a fix round may continue the coder's own session ───────────
+
+test("a fix round resumes the session that left the branch exactly where it is", () => {
+  assert.deepEqual(resumableSession({ session_id: "s1", head: "abc", context_tokens: 40_000 }, "abc"), { sessionId: "s1" });
+});
+
+test("a session is not resumed once the branch has moved, when it is too big, or when there is none", () => {
+  assert.match(resumableSession({ session_id: "s1", head: "abc", context_tokens: 10 }, "def").reason, /moved/);
+  assert.match(resumableSession({ session_id: "s1", head: "abc", context_tokens: RESUME_MAX_CONTEXT_TOKENS + 1 }, "abc").reason, /over 100k/);
+  assert.match(resumableSession(null, "abc").reason, /no earlier coder session/);
+  assert.match(resumableSession({ session_id: null, head: "abc" }, "abc").reason, /no earlier coder session/);
+});
+
+// ─── isTestPath: what makes a diff test-only for the reviewer ─────────────────────────
+
+test("isTestPath recognises test files by name and by directory", () => {
+  for (const p of ["src/a.spec.ts", "src/a.test.js", "test/integration/x.ts", "pkg/__tests__/y.tsx", "x_test.go", "tests/test_a.py", "spec/b_spec.rb", "tests/a.bats", "test/fixtures/data.json"]) {
+    assert.equal(isTestPath(p), true, p);
+  }
+  for (const p of ["src/a.ts", "src/latest.ts", "src/contest/x.ts", "README.md", "package.json"]) {
+    assert.equal(isTestPath(p), false, p);
+  }
 });

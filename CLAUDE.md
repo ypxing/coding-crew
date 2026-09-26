@@ -73,7 +73,12 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
 
 Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
 AC receipt → promote → merge → close. Deps sit there because that one position is before both
-consumers of them — the worker and the verify gate. `--no-deps` removes it.
+consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any
+gate whose receipt already matches the branch tip (`gatesAtTip`).
+
+Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the main checkout must have
+no uncommitted tracked changes (`--allow-dirty`), and the feature branch must pass its own checks
+in a throwaway `crew/<feature>/_baseline` worktree (`--no-baseline`).
 
 ## Adding a new agent
 

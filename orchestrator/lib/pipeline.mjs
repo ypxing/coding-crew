@@ -31,6 +31,8 @@ import {
   CRITERIA_UNMET_TAG,
   dispatchStem,
   FIXABLE_TAG,
+  gatesAtTip,
+  MAIN_TREE_DIRTY_TAG,
   MERGE_CONFLICT_TAG,
   issueDescriptor,
   NOT_FIXABLE_TAG,
@@ -49,6 +51,26 @@ function branchHasCommits(effects, featureBranch, branch) {
   return r.code === 0 && parseInt(r.stdout.trim(), 10) > 0;
 }
 
+/**
+ * The largest coder context a fix round resumes rather than starting fresh. Past this, every
+ * resumed turn re-sends more history than a fresh, narrow fix dispatch would ever build up.
+ */
+export const RESUME_MAX_CONTEXT_TOKENS = 100_000;
+
+/**
+ * The coder session a fix round may continue, or why not (`{ sessionId }` | `{ reason }`).
+ * Only the session that left the branch exactly where it is: once the tip has moved (a sync
+ * merged the feature branch in, another session committed), its picture of the code is stale.
+ */
+export function resumableSession(prior, tip) {
+  if (!prior?.session_id) return { reason: "no earlier coder session recorded" };
+  if (!prior.head || prior.head !== tip) return { reason: "the branch moved since that session" };
+  if ((prior.context_tokens ?? 0) > RESUME_MAX_CONTEXT_TOKENS) {
+    return { reason: `its context is ${Math.round(prior.context_tokens / 1000)}k tokens, over ${RESUME_MAX_CONTEXT_TOKENS / 1000}k` };
+  }
+  return { sessionId: prior.session_id };
+}
+
 /** How state.sh records a block (`blocked — <reason>`), and finishRetryOrBlock a capped retry. */
 const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )?/;
 
@@ -59,6 +81,8 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
  *   merge   `merge-failed`, `close-refused …` — verify, review and the AC receipt already
  *           passed; only merge/close runs again. Safe because merge-branches.sh and
  *           close-issue.sh re-check the SHA-bound receipts themselves on every run.
+ *           `main-tree-dirty` — blocked at once (no retry could clean the main checkout);
+ *           the route once a human has committed or stashed the files and re-run.
  *   verify  `review-not-run …` — the branch is done; only the review dispatch failed.
  *           `verification-failed:not-fixable` — triage ruled out recoding, so skip the
  *           coder and re-run deps + verify once, in case the failure was transient.
@@ -85,6 +109,7 @@ export function resumeRoute(reason) {
   if (reason == null) return { route: "restart" };
   const unblocked = reason.replace(BLOCKED_PREFIX, "");
   if (unblocked.startsWith(AC_RECEIPT_FAILED_TAG)) return { route: "verify", label: "ac-receipt-retry" };
+  if (unblocked.startsWith(MAIN_TREE_DIRTY_TAG)) return { route: "merge" };
   if (unblocked.startsWith(MERGE_CONFLICT_TAG)) {
     return { route: "fix", kind: "conflict", context: stripReasonTag(unblocked, MERGE_CONFLICT_TAG) };
   }
@@ -123,6 +148,29 @@ const SKIPPED_WORKER = {
   },
 };
 
+/** The worker a merge-only retry hands runHousekeeping: no dispatch, no verify, no review. */
+function mergeOnlyWorker(issue, branch, attempt, notes) {
+  return {
+    issue,
+    branch,
+    attempt,
+    worktree: null,
+    dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
+    report: {
+      parsedFrom: "skipped-worker",
+      status: "complete",
+      checks: { test: "pass", lint: "pass", typecheck: "pass" },
+      branch,
+      workingDirectory: null,
+      progress: `Round ${attempt}: merge/close retry — coder dispatch, verify, and review all skipped`,
+      notes,
+      criteria: [],
+      raw: "",
+    },
+    resumeAtMerge: true,
+  };
+}
+
 /**
  * Phase 1 of an issue: worktree + worker dispatch. Runs concurrently across issues.
  * `attempt` is this issue's own 1-based attempt number (sprint.attemptCount in loop.mjs).
@@ -147,25 +195,7 @@ export async function runWorker(ctx, issue, attempt) {
     ctx.log(
       `[SKIP-TO-MERGE] slug=${issue.slug} reason=${retentionReason} branch=${branch} — retrying merge/close only, no coder dispatch, no verify, no review`,
     );
-    return {
-      issue,
-      branch,
-      attempt,
-      worktree: null,
-      dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
-      report: {
-        parsedFrom: "skipped-worker",
-        status: "complete",
-        checks: { test: "pass", lint: "pass", typecheck: "pass" },
-        branch,
-        workingDirectory: null,
-        progress: `Round ${attempt}: merge/close retry — coder dispatch, verify, and review all skipped`,
-        notes: "merge/close retry: the prior round's only failure was the merge or close step itself",
-        criteria: [],
-        raw: "",
-      },
-      resumeAtMerge: true,
-    };
+    return mergeOnlyWorker(issue, branch, attempt, "merge/close retry: the prior round's only failure was the merge or close step itself");
   }
 
   // expectReuse only for a branch this issue's own earlier attempt retained: any other
@@ -248,6 +278,21 @@ export async function runWorker(ctx, issue, attempt) {
     if (sync.merged) ctx.log(`slug=${issue.slug} round=${attempt} SYNC: merged ${sprint.featureBranch} into ${branch}`);
   }
 
+  // A coder-free retry re-runs only the gates this commit has not already passed: their
+  // receipts are bound to the commit, so a gate re-run on it could only repeat its answer.
+  let skipVerify = false;
+  if (resume.route === "verify") {
+    const gates = gatesAtTip(ctx, branch);
+    if (gates.reviewed) {
+      ctx.log(
+        `[SKIP-TO-MERGE] slug=${issue.slug} reason=${resume.label} branch=${branch} — verify and review already passed at this commit; retrying merge/close only`,
+      );
+      removeWorktree(effects, { mainRoot: effects.mainRoot, path: worktree });
+      return mergeOnlyWorker(issue, branch, attempt, `${resume.label}: verify and review receipts already match this commit`);
+    }
+    skipVerify = gates.verified;
+  }
+
   applyWorktreeInclude(effects.mainRoot, worktree);
 
   // Deps sit after the include (an inherited node_modules costs nothing) and before both
@@ -255,7 +300,8 @@ export async function runWorker(ctx, issue, attempt) {
   // The skipped-worker path needs them too — its worktree is recreated bare. A failed
   // install stops the issue here: nothing after it — the coder, the verify gate — can do
   // useful work in an unprovisioned worktree, so letting them run only rediscovers it later.
-  if (options.installDeps !== false) {
+  // Review alone needs no deps: skipped with the verify it would have fed.
+  if (options.installDeps !== false && !skipVerify) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=deps`);
     const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug, "--stem", dispatchStem(issue)], {
       env: sprint.childEnv(),
@@ -287,7 +333,8 @@ export async function runWorker(ctx, issue, attempt) {
 
   if (resume.route === "verify") {
     const skip = SKIPPED_WORKER[resume.label];
-    ctx.log(`[SKIP-WORKER] slug=${issue.slug} reason=${resume.label} branch=${branch} — ${skip.what}`);
+    const verifyNote = skipVerify ? " (verify already passed at this commit — review only)" : "";
+    ctx.log(`[SKIP-WORKER] slug=${issue.slug} reason=${resume.label} branch=${branch} — ${skip.what}${verifyNote}`);
     return {
       issue,
       branch,
@@ -306,6 +353,7 @@ export async function runWorker(ctx, issue, attempt) {
         raw: "",
       },
       skippedWorker: true,
+      skipVerify,
     };
   }
 
@@ -350,6 +398,20 @@ export async function runWorker(ctx, issue, attempt) {
   );
 
   const coder = roleBinding(ctx, "coder");
+  // Opt-in (afk.resumeCoderSession): a fix round continues the session that wrote the branch
+  // instead of re-exploring it, when that session is small and the branch has not moved.
+  // Not for a conflict fix: the kept merge changed files that session never saw.
+  let resumeSessionId = null;
+  if (options.resumeCoderSession && resume.route === "fix" && resume.kind !== "conflict" && coder.runtime === "claude") {
+    const tip = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
+    const pick = resumableSession(sprint.lastDispatch(issue.slug, "coder"), tip);
+    if (pick.sessionId) {
+      resumeSessionId = pick.sessionId;
+      ctx.log(`[RESUME-SESSION] slug=${issue.slug} round=${attempt} session=${pick.sessionId}`);
+    } else {
+      ctx.log(`[FRESH-SESSION] slug=${issue.slug} round=${attempt} — ${pick.reason}`);
+    }
+  }
   ctx.log(
     `[STEP] slug=${dispatchStem(issue)} round=${attempt} step=dispatch-coder model=${coder.model ?? "inherit"} runtime=${coder.runtime}`,
   );
@@ -370,6 +432,7 @@ export async function runWorker(ctx, issue, attempt) {
       issueNumber: issue.number,
       round: attempt,
       reportPath: sidecarFile,
+      resumeSessionId,
     },
     {
       timeoutMs: options.timeoutMs.coder,
@@ -377,7 +440,8 @@ export async function runWorker(ctx, issue, attempt) {
     },
   );
 
-  sprint.recordDispatchCost(result);
+  const head = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
+  sprint.recordDispatchCost(result, { slug: issue.slug, role: "coder", attempt, head });
 
   const sidecar = readSidecar(sidecarFile);
 
@@ -425,7 +489,14 @@ export async function runHousekeeping(ctx, worker) {
   if (pre.status === "blocked") {
     return finishBlocked(ctx, worker, outcome, pre.reason ?? worker.report.notes ?? "blocked");
   }
-  if (pre.status !== "complete") {
+  // A coder that called itself done but reported a failing or un-run check is overruled by
+  // the gate when it committed: verify runs every check itself, and its verdict, not the
+  // coder's, decides whether another coder round is needed — a narrow fix one, if so. A
+  // coder that itself said partial is taken at its word.
+  const overruled = pre.demoted && worker.report.status === "complete" && branchHasCommits(effects, sprint.featureBranch, branch);
+  if (overruled) {
+    ctx.log(`[PREFILTER-OVERRULED] slug=${issue.slug} round=${worker.attempt} — the coder reported ${pre.reason}; the branch has commits, so verify decides`);
+  } else if (pre.status !== "complete") {
     return finishRetryOrBlock(ctx, worker, outcome, pre.reason ?? "partial");
   }
 
@@ -433,21 +504,27 @@ export async function runHousekeeping(ctx, worker) {
   notifyMilestone(ctx, issue, `coder finished (round ${worker.attempt}) — verifying`);
 
   // --- gate 1: independent verification in the worktree ----------------------
-  ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
-  const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
-    env: sprint.childEnv(),
-  });
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${verify.stdout.trim()}`);
-  if (verify.code !== 0) {
-    return await handleVerificationFailure(ctx, worker, outcome, verify);
-  }
-  if (/coverage gap/i.test(verify.stdout)) {
-    const cats = [...verify.stdout.matchAll(/not_run:\s*([\w, ]+)/gi)]
-      .flatMap((m) => m[1].split(",").map((s) => s.trim()))
-      .filter(Boolean);
-    if (cats.length) {
-      sprint.coverageGap(issue.slug, cats);
-      outcome.coverageGaps = [...new Set([...outcome.coverageGaps, ...cats])];
+  // Skipped when this exact commit already has a passing record — a retry whose coder made
+  // no commit, or a coder-free one runWorker already checked.
+  if (worker.skipVerify || gatesAtTip(ctx, branch).verified) {
+    ctx.log(`[SKIP-VERIFY] slug=${issue.slug} round=${worker.attempt} branch=${branch} — verification already passed at this commit`);
+  } else {
+    ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
+    const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
+      env: sprint.childEnv(),
+    });
+    ctx.log(`slug=${issue.slug} round=${worker.attempt} ${verify.stdout.trim()}`);
+    if (verify.code !== 0) {
+      return await handleVerificationFailure(ctx, worker, outcome, verify);
+    }
+    if (/coverage gap/i.test(verify.stdout)) {
+      const cats = [...verify.stdout.matchAll(/not_run:\s*([\w, ]+)/gi)]
+        .flatMap((m) => m[1].split(",").map((s) => s.trim()))
+        .filter(Boolean);
+      if (cats.length) {
+        sprint.coverageGap(issue.slug, cats);
+        outcome.coverageGaps = [...new Set([...outcome.coverageGaps, ...cats])];
+      }
     }
   }
 

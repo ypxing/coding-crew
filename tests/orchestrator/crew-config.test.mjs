@@ -341,6 +341,8 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
         maxParallel: 0,
         installDeps: "no",
         squashCommits: 1,
+        baselineCheck: "yes",
+        resumeCoderSession: 0,
         timeouts: { coder: -1, worker: 5 },
       },
     },
@@ -355,6 +357,8 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
         /"afk\.maxParallel" must be a positive integer/,
         /"afk\.installDeps" must be true or false/,
         /"afk\.squashCommits" must be true or false/,
+        /"afk\.baselineCheck" must be true or false/,
+        /"afk\.resumeCoderSession" must be true or false/,
         /"afk\.timeouts\.coder" must be a positive number of minutes/,
         /unknown key "afk\.timeouts\.worker"/,
       ].every((re) => re.test(err.message)),
@@ -394,6 +398,8 @@ test("resolveSettings: defaults, then config.json, then flags — and a flag is 
   assert.equal(defaults.PRDAudit, "fix");
   assert.equal(defaults.installDeps, true);
   assert.equal(defaults.squashCommits, true);
+  assert.equal(defaults.baselineCheck, true, "the baseline runs unless turned off");
+  assert.equal(defaults.resumeCoderSession, false, "session resume is opt-in until measured");
   assert.equal(defaults.maxParallel, null);
   assert.deepEqual(defaults.timeouts, { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 });
 

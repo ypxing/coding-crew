@@ -40,12 +40,22 @@
  *                                           (spawnSync), so a hang would freeze the sprint
  *   --no-deps                              [installDeps: false] skip both ensure-deps.sh call sites
  *   --no-squash                            [squashCommits: false] skip the end-of-sprint squash
+ *   --no-baseline                          [baselineCheck: false] skip running the checks once on
+ *                                           the feature branch before any dispatch (a red one
+ *                                           otherwise stops the run: every issue would fail it)
+ *   --resume-coder-session                 [resumeCoderSession, default false] a fix round
+ *                                           continues the claude coder session that wrote the
+ *                                           branch, when that session is small and the branch
+ *                                           has not moved since
  *
  *   --max-rounds <n>                       cap on attempts per issue this invocation. Each issue
  *                                           already blocks after 2, so only `1` (no retry) changes
  *                                           anything: stop every issue after one attempt
  *   --no-commands                          skip one-time command discovery (verify-worktree.sh
  *                                           falls back to its own CLAUDE.md/Makefile heuristics)
+ *   --allow-dirty                          run even though tracked files in the main checkout
+ *                                           have uncommitted changes (a merge that touches one
+ *                                           still blocks that issue, as main-tree-dirty)
  *
  * CREW_VERBOSE=1 also puts each dispatch's throttled [TOOL] heartbeat and the effects log on
  * stderr; the trace log has both either way.
@@ -81,6 +91,7 @@ import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorksp
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktreeInclude, worktreeRoot } from "./lib/worktree.mjs";
+import { baselineFailureMessage, dirtyTrackedFiles, runBaseline } from "./lib/preflight.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -96,6 +107,7 @@ function parseArgs(argv) {
     flagOf: {}, // setting → the flag that set it, when more than one can (for error text)
     maxRounds: null,
     commands: true,
+    allowDirty: false,
     dryRun: false,
     passthrough: [],
     unknown: [],
@@ -142,6 +154,9 @@ function parseArgs(argv) {
       case "--no-deps": o.cli.installDeps = false; break;
       case "--no-commands": o.commands = false; break;
       case "--no-squash": o.cli.squashCommits = false; break;
+      case "--no-baseline": o.cli.baselineCheck = false; break;
+      case "--resume-coder-session": o.cli.resumeCoderSession = true; break;
+      case "--allow-dirty": o.allowDirty = true; break;
       case "--dry-run": o.dryRun = true; break;
       case "--jira": o.passthrough.push("--jira", args.shift()); break;
       case "-h": case "--help": o.command = "help"; break;
@@ -394,7 +409,8 @@ async function main() {
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--fix-findings critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
-        "  [--max-rounds N] [--no-deps] [--no-commands] [--no-squash] [--pane-host orca|herdr|auto|none]\n" +
+        "  [--max-rounds N] [--no-deps] [--no-commands] [--no-squash] [--no-baseline] [--allow-dirty]\n" +
+        "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
         "  .coding-crew/config.json names one. Per role (coder, reviewer, triage,\n" +
         "  commandFinder, prdAuditor):\n" +
@@ -402,6 +418,7 @@ async function main() {
         '               "models":  { "claude": { "triage": "opus" } } } }\n' +
         "  The other flags override config.json's afk settings for one run: fixFindings (high),\n" +
         "  PRDAudit (fix), maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits,\n" +
+        "  baselineCheck (true), resumeCoderSession (false),\n" +
         "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).",
     );
     return 0;
@@ -536,6 +553,10 @@ async function main() {
     const offBy = (k, flag) => `disabled (${loaded.origin[k] === "flag" ? flag : `${k}: false`})`;
     console.log(`deps:      ${options.installDeps ? "ensure-deps.sh, once per sprint and once per worktree, using a discovered install command when one was cached" : offBy("installDeps", "--no-deps")}`);
     console.log(`squash:    ${options.squashCommits ? "at the end of the sprint" : offBy("squashCommits", "--no-squash")}`);
+    console.log(`baseline:  ${options.baselineCheck ? "the checks run once on the feature branch before any dispatch; red stops the run" : offBy("baselineCheck", "--no-baseline")}`);
+    console.log(`resume:    ${options.resumeCoderSession ? "a fix round continues the coder's own session when it is small and the branch has not moved" : "fix rounds start a fresh coder session"}`);
+    const dirty = dirtyTrackedFiles(effects);
+    console.log(`main tree: ${dirty.length ? `${dirty.length} tracked file(s) with uncommitted changes — run would stop (--allow-dirty to override): ${dirty.join(", ")}` : "clean"}`);
     return issues.length ? 0 : 3;
   }
 
@@ -579,6 +600,23 @@ async function main() {
       lockPath = lock.lockPath;
     }
 
+    // Before anything touches disk: every issue's merge lands in this checkout, and git
+    // refuses one that would overwrite an uncommitted change — after its coder and review ran.
+    if (!options.allowDirty && !options.dryRun) {
+      const dirty = dirtyTrackedFiles(effects);
+      if (dirty.length) {
+        console.error(
+          [
+            `crew-afk: the main checkout (${mainRoot}) has uncommitted changes to tracked files. Every issue merges into this checkout, and git refuses a merge that would overwrite one — after that issue's coder and review have already run:`,
+            ...dirty.map((f) => `  ${f}`),
+            "Commit or stash them, then re-run (or --allow-dirty, if you know no issue touches them).",
+          ].join("\n"),
+        );
+        exitCode = 1;
+        return exitCode;
+      }
+    }
+
     if (movesLegacy) console.error(`crew-afk: ${loaded.legacyMove.apply()}`);
 
     // Before any worktree exists, so every one gets the included files at creation.
@@ -594,6 +632,7 @@ async function main() {
       log: (line) => console.error(line),
     });
     sprint.setModel(options.model ?? "agent default");
+    sprint.startRun();
 
     // Best-effort: the log file, not this tab, is the run's durable output.
     if (options.paneHost && !options.dryRun) {
@@ -637,6 +676,19 @@ async function main() {
       },
       out: (text) => console.log(text),
     };
+
+    // Once, before any dispatch, and only when there is something to dispatch.
+    if (options.baselineCheck && !options.dryRun) {
+      const tracker = await getTracker(mainRoot);
+      if (tracker.selectDispatchable(mainRoot, { featureSlug: sprint.featureSlug }).length) {
+        const baseline = runBaseline(ctx);
+        if (baseline.status === "fail") {
+          console.error(baselineFailureMessage(sprint.featureBranch, baseline));
+          exitCode = 1;
+          return exitCode;
+        }
+      }
+    }
 
     ({ stalled } = await runSprint(ctx));
     exitCode = stalled ? 2 : 0;

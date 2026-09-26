@@ -272,10 +272,11 @@ export class Sprint {
    * called unconditionally, since cost is incurred even on a blocked/timed-out dispatch.
    * Claude-only for now (see extractResultMeta in dispatch.mjs); a dispatch with no metadata
    * (pi/codex/copilot, or a dry run) passes 0s, which the additive state.sh command is a
-   * no-op for.
+   * no-op for. `slug`/`role`/`attempt` also file it in this run's per-dispatch ledger;
+   * `head` (the branch tip a coder left) goes with the session, for a later resume.
    */
-  recordDispatchCost({ costUsd, durationMs, numTurns }) {
-    return this.state([
+  recordDispatchCost({ costUsd, durationMs, numTurns, sessionId, contextTokens }, { slug, role, attempt, head } = {}) {
+    const args = [
       "dispatch-cost",
       "--cost",
       String(costUsd ?? 0),
@@ -283,7 +284,25 @@ export class Sprint {
       String(durationMs ?? 0),
       "--turns",
       String(numTurns ?? 0),
-    ]);
+    ];
+    if (slug && role) args.push("--slug", slug, "--role", role, "--attempt", String(attempt ?? 0));
+    if (sessionId) args.push("--session-id", sessionId, "--context-tokens", String(contextTokens ?? 0));
+    if (head) args.push("--head", head);
+    return this.state(args);
+  }
+
+  /** Tag every later dispatch-cost entry with this run, so the summary can tell it from earlier runs. */
+  startRun(id = new Date().toISOString()) {
+    return this.state(["run-start", "--id", id]);
+  }
+
+  /** The latest ledger entry for `slug` in `role` (any run), or null. */
+  lastDispatch(slug, role) {
+    const list = this.readState().dispatches ?? [];
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i]?.slug === slug && list[i]?.role === role) return list[i];
+    }
+    return null;
   }
 
   /** `resume: <branch>` | `no prior branch` — a recorded name plus a live ref check. */

@@ -10,6 +10,29 @@ import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { findingsAtOrAbove, parseReviewReport } from "../report.mjs";
 import { dispatchStem, issueDescriptor, issueRef, readSidecar, roleBinding } from "./shared.mjs";
 
+/** A path that only tests: a test/spec file by name, or anything under a test or fixture dir. */
+export function isTestPath(path) {
+  return (
+    /(^|\/)(__tests__|__mocks__|__snapshots__|tests?|specs?|fixtures?|testdata)\//.test(path) ||
+    /\.(test|spec)\.[^/]+$/.test(path) ||
+    /(_test\.go|_spec\.rb|\.bats)$/.test(path) ||
+    /(^|\/)test_[^/]+\.py$/.test(path)
+  );
+}
+
+/** Line count of each log that exists, for the prompt's size hint. */
+function countLines(logs = {}) {
+  const out = {};
+  for (const [k, f] of Object.entries(logs)) {
+    try {
+      out[k] = readFileSync(f, "utf8").split("\n").length;
+    } catch {
+      /* no size, no hint */
+    }
+  }
+  return out;
+}
+
 export async function runReview(ctx, worker, { checks, logs, notConfigured, file } = {}) {
   const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
@@ -21,6 +44,9 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   // A stale sidecar at this fixed path must not be read back as this round's verdict.
   rmSync(sidecarFile, { force: true });
 
+  const base = effects.gitRead(["merge-base", sprint.featureBranch, branch]).stdout.trim();
+  const changed = base ? effects.gitRead(["diff", "--name-only", `${base}..${branch}`]).stdout.split("\n").filter(Boolean) : [];
+
   writeFileSync(
     promptFile,
     reviewPrompt({
@@ -31,8 +57,10 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       featureBranch: sprint.featureBranch,
       checks,
       logs,
+      logLines: countLines(logs),
       notConfigured,
       verifyFile: file,
+      testOnly: changed.length > 0 && changed.every(isTestPath),
       reportPath: sidecarFile,
     }),
   );
@@ -66,7 +94,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   );
-  sprint.recordDispatchCost(result);
+  sprint.recordDispatchCost(result, { slug: issue.slug, role: "reviewer", attempt: worker.attempt });
 
   const sidecar = readSidecar(sidecarFile);
 

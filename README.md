@@ -140,6 +140,13 @@ Two knobs worth knowing about:
   | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
   | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
   | `squashCommits` | `true` | `--no-squash` | Squash the sprint's commits at the end |
+  | `baselineCheck` | `true` | `--no-baseline` | Run the checks once on the feature branch before any dispatch; stop if they fail, since every issue's verify would too |
+  | `resumeCoderSession` | `false` | `--resume-coder-session` | On a fix round, continue the claude coder session that wrote the branch, if that session is under 100k tokens and the branch hasn't moved |
+
+  A run also stops before any dispatch if tracked files in the main checkout have uncommitted
+  changes, because git refuses a merge that would overwrite them. `--allow-dirty` skips that
+  check for one run. A merge it then refuses blocks that issue as `main-tree-dirty`, and a
+  re-run after you commit or stash resumes at the merge.
 - **Gitignored files in worktrees** — each coder runs in an isolated worktree, so `.env` and similar
   files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
   them over.

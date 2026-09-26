@@ -122,7 +122,7 @@ stack_for() {
   grep -qiE 'if either script is missing|older install' "$PROTOCOL"
 }
 
-@test "protocol body stays under the 1660-word budget" {
+@test "protocol body stays under the 1760-word budget" {
   # Raised from 1,500 by the two *machine* contracts the protocol now owns, both of which
   # replace an inference the caller used to make: the execution-evidence rule (a read-only
   # reviewer cannot run `npm test`, so a criterion ending "…and the tests pass" was
@@ -140,9 +140,13 @@ stack_for() {
   # 1,660 → 1,700: moved, not added. The `ROOT=$(pwd)` / read-only preamble used to sit in each
   # platform shim, outside this count; it now lives here once, and every shim dropped its copy,
   # so what the reviewer reads per dispatch went down on every platform.
+  #
+  # 1,700 → 1,760: search a verify log for the figure instead of reading all of it, and skip
+  # call-site tracing on a diff the dispatch marks test-only — each saves more per review than
+  # its words cost (coverage/integration logs run to 500+ lines).
   local words
   words=$(wc -w < "$PROTOCOL")
-  [ "$words" -lt 1700 ] || { echo "protocol.md is $words words"; return 1; }
+  [ "$words" -lt 1760 ] || { echo "protocol.md is $words words"; return 1; }
 }
 
 @test "no single reference is larger than the protocol that conditions it" {

@@ -735,7 +735,15 @@ test("extractResultMeta pulls cost/error/turns/session out of claude's terminal 
     numTurns: 1,
     permissionDenials: [],
     sessionId: "abc123",
+    contextTokens: null,
   });
+});
+
+test("extractResultMeta's contextTokens is the last assistant turn's prompt size, not the session total", () => {
+  const turn = (input, read, created) =>
+    JSON.stringify({ type: "assistant", message: { usage: { input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: created, output_tokens: 50 } } });
+  const lines = [turn(10, 1000, 200), turn(5, 30_000, 400), JSON.stringify({ type: "result", session_id: "s1", total_cost_usd: 0.5 })];
+  assert.equal(extractResultMeta("claude", lines).contextTokens, 30_405);
 });
 
 test("extractResultMeta returns the all-null/empty shape when no result event is found", () => {
@@ -746,6 +754,7 @@ test("extractResultMeta returns the all-null/empty shape when no result event is
     numTurns: null,
     permissionDenials: [],
     sessionId: null,
+    contextTokens: null,
   });
 });
 
@@ -758,6 +767,7 @@ test("extractResultMeta returns the empty shape for non-claude platforms — no 
     numTurns: null,
     permissionDenials: [],
     sessionId: null,
+    contextTokens: null,
   });
 });
 
@@ -766,4 +776,31 @@ test("extractResultMeta skips unparseable lines instead of throwing", () => {
   const meta = extractResultMeta("claude", lines);
   assert.equal(meta.isError, true);
   assert.equal(meta.permissionDenials.length, 1);
+});
+
+test("buildDispatch(claude) continues a session with --resume, before the prompt", () => {
+  const { root, promptFile } = fixture();
+  const args = buildDispatch("claude", spec(root, promptFile, { resumeSessionId: "sess-1" })).args;
+  const i = args.indexOf("--resume");
+  assert.notEqual(i, -1);
+  assert.equal(args[i + 1], "sess-1");
+  assert.equal(args.at(-1), readFileSync(promptFile, "utf8"), "the prompt stays last");
+  assert.doesNotMatch(buildDispatch("claude", spec(root, promptFile)).args.join(" "), /--resume/);
+});
+
+test("dispatch() keeps an earlier attempt's event stream instead of overwriting it", async () => {
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const run = (cost) => {
+    const stream = JSON.stringify({ type: "result", result: "ok", total_cost_usd: cost }) + "\n";
+    const fakeEffects = { spawnWithTimeout: async (cmd, args, { onLine }) => (onLine(stream), { code: 0, stdout: "", stderr: "" }) };
+    return dispatch(fakeEffects, "claude", { agent: "crew-coder", cwd: root, promptFile, outFile, mainRoot: root, scriptsDir: SCRIPTS }, {});
+  };
+  await run(0.1);
+  await run(0.2);
+  await run(0.3);
+  const cost = (f) => JSON.parse(readFileSync(f, "utf8").trim()).total_cost_usd;
+  assert.equal(cost(`${outFile}.events.jsonl`), 0.3, "the latest stays at the canonical path");
+  assert.equal(cost(join(root, "dispatch", "alpha.report.md.events.1.jsonl")), 0.1);
+  assert.equal(cost(join(root, "dispatch", "alpha.report.md.events.2.jsonl")), 0.2);
 });

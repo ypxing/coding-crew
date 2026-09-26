@@ -108,8 +108,12 @@ function addIssue(root, name, { status = "ready-for-agent", body = "", blockedBy
   return slug;
 }
 
-function runSprint(root, extra = [], env = {}) {
-  return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...extra], {
+// The baseline (preflight.mjs) runs the checks once more before any dispatch; the per-issue
+// tests below count those calls, so the helpers leave it out unless a test asks for it.
+const NO_BASELINE = ["--no-baseline"];
+
+function runSprint(root, extra = [], env = {}, { baseline = false } = {}) {
+  return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...extra], {
     cwd: root,
     env: {
       ...process.env,
@@ -289,20 +293,37 @@ test("every cached check is run by the gate, whatever the worker reported, and s
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.review-prompt.md"), "utf8");
-  assert.match(reviewPromptText, /coverage=pass \(full output: [^)]*verify-coverage\.log\)/);
+  assert.match(reviewPromptText, /coverage=pass \(full output: [^)]*verify-coverage\.log, \d+ lines\)/);
   // The worker never mentioned coverage; the gate ran it from the cache anyway. integration is
   // `null` there, and the reviewer is told so rather than left to infer it from what is absent.
   assert.doesNotMatch(reviewPromptText, /integration=/);
   assert.match(reviewPromptText, /Not run by the pipeline, no command configured: integration/);
   assert.match(reviewPromptText, /The gate's own record of that run: \S+\/01-alpha\.verify\.json/);
   // The logs live beside the record, so they outlive the worktree.
-  assert.match(reviewPromptText, /coverage=pass \(full output: \S+\/dispatch\/01-alpha\.verify-coverage\.log\)/);
+  assert.match(reviewPromptText, /coverage=pass \(full output: \S+\/dispatch\/01-alpha\.verify-coverage\.log, \d+ lines\)/);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha.verify-coverage.log")), true);
 });
 
-test("a worker-reported failing check is demoted and never merges", () => {
+test("a worker-reported failing check with commits is overruled by verify, not retried", () => {
+  // verify-worktree.sh runs every check itself; the coder's own report is a claim.
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
+  fake(
+    root,
+    "alpha.worker",
+    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"fail","lint":"pass","typecheck":"pass"},"progress":"tests red"}', '```'].join("\n"),
+  );
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  assert.match(traceLog(root), /\[PREFILTER-OVERRULED\] slug=alpha round=1 — the coder reported reported checks failed: test/);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1, "one coder dispatch — verify decided");
+});
+
+test("a worker-reported failing check with no commits is demoted and never merges", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.nocommit");
   fake(
     root,
     "alpha.worker",
@@ -420,7 +441,9 @@ test("a review-not-run retry round skips the coder dispatch and succeeds on its 
   assert.equal(s.retention?.alpha, undefined, "the issue should have completed, not stayed retained");
   assert.ok(s.rounds >= 2, `expected at least 2 rounds, got ${s.rounds}`);
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
-  assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=review-not-run/);
+  assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=review-not-run branch=\S+ — .*verify already passed at this commit — review only/);
+  // The commit round 2 reviews is the one round 1 verified: its receipt stands.
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1);
 });
 
 test("a non-empty review report with no verdict line and no findings is review-not-run, not criteria-unmet", () => {
@@ -956,11 +979,9 @@ test("a branch that fails verification is never reviewed, and no report is writt
   // no report. The code equivalent is that nothing is dispatched and no file appears.
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  fake(
-    root,
-    "alpha.worker",
-    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"fail","lint":"pass","typecheck":"pass"},"progress":"red"}', '```'].join("\n"),
-  );
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
   runSprint(root);
   assert.deepEqual(reviewReports(root), []);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha.review.md")), false);
@@ -1681,8 +1702,8 @@ test("a gaps issue that could not be created is named in the summary, not only t
 // order. Only a per-issue `DEPS: failed` changes a round's status: it stops that issue.
 
 /** The effects log — one line per subprocess, in order. CREW_VERBOSE puts it on stderr. */
-function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi" } = {}) {
-  const r = sh("node", [MAIN, "run", "--platform", platform, "--feature-slug", "demo", ...extra], {
+function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi", baseline = false } = {}) {
+  const r = sh("node", [MAIN, "run", "--platform", platform, "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...extra], {
     cwd: root,
     env: {
       ...process.env,
@@ -1876,7 +1897,7 @@ test("a DEPS: failed outcome blocks the issue at that step, without crashing the
   sh("git", ["-C", root, "add", "package.json"]);
   sh("git", ["-C", root, "commit", "-q", "-m", "add package.json"]);
 
-  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline"], {
     cwd: root,
     env: {
       ...process.env,
@@ -2126,7 +2147,7 @@ test("command discovery is skipped, at zero cost, when there is nothing to read"
   // so this isolates the discovery step from the rest of the pipeline.
   unlinkSync(join(root, "Makefile"));
 
-  const r = runSprint(root);
+  const r = runSprint(root, ["--allow-dirty"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(existsSync(join(root, ".coding-crew/dev-commands.json")), false);
   assert.match(r.stderr, /Command discovery: skipped/);
@@ -2144,7 +2165,7 @@ test("a second sprint reuses the cached commands instead of discovering again (b
   writeFileSync(join(root, "Makefile"), "test:\n\t@echo totally-different-now\n");
 
   addIssue(root, "02-beta.md");
-  const second = runSprint(root);
+  const second = runSprint(root, ["--allow-dirty"]);
   assert.equal(second.code, 0, `${second.stdout}\n${second.stderr}`);
   assert.match(second.stderr, /already cached/);
   assert.equal(readFileSync(join(root, ".coding-crew/dev-commands.json"), "utf8"), cacheAfterFirst);
@@ -2259,4 +2280,147 @@ test("a legitimate --jira value is not treated as an unrecognized argument", () 
     env: { ...process.env, MAIN_ROOT: root },
   });
   assert.doesNotMatch(r.stderr, /unrecognized argument/);
+});
+
+// ─── preflight: a clean main checkout, and a green feature branch ─────────────────────
+
+test("uncommitted changes to a tracked file stop the run before anything is dispatched", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo edited\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /the main checkout \(\S+\) has uncommitted changes to tracked files/);
+  assert.match(r.stderr, /^  Makefile$/m);
+  assert.equal(lines.filter((l) => /^SPAWN /.test(l)).length, 0);
+  assert.equal(existsSync(join(root, ".scratch/demo/sprint-state.json")), false, "stopped before session-init");
+});
+
+test("--allow-dirty runs anyway, and crew-afk's own files never count as dirty", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/dev-commands.json"), '{"test": "make test"}');
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "cache"]);
+  writeFileSync(join(root, ".coding-crew/dev-commands.json"), '{"test": "make test", "lint": "make lint"}');
+  assert.equal(runSprint(root).code, 0, "a rewritten commands cache is crew-afk's own write");
+
+  // Unstaged, and in a file no branch touches. (A *staged* change would refuse every merge:
+  // git will not record index changes unrelated to the merge in its commit.)
+  const other = fixtureRepo();
+  addIssue(other, "01-alpha.md");
+  writeFileSync(join(other, "README.md"), "x\n");
+  sh("git", ["-C", other, "add", "README.md"]);
+  sh("git", ["-C", other, "commit", "-q", "-m", "readme"]);
+  writeFileSync(join(other, "README.md"), "local edit\n");
+  const r = runSprint(other, ["--allow-dirty"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+});
+
+test("plan names a dirty main checkout", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo edited\n");
+  const r = sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo"], { cwd: root, env: { ...process.env, MAIN_ROOT: root } });
+  assert.match(r.stdout, /main tree: 1 tracked file\(s\) with uncommitted changes .*Makefile/);
+});
+
+test("a feature branch that fails its own checks stops the run before any coder is dispatched", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red"]);
+  const { r, lines } = commandLines(root, [], { baseline: true });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /feature\/demo fails its own checks before any issue has touched it/);
+  assert.match(r.stderr, /^  test: fail — \S+\/dispatch\/_baseline\.verify-test\.log$/m);
+  assert.match(r.stderr, /--no-baseline/);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "no coder, no reviewer");
+  assert.equal(state(root).baseline.verdict, "fail");
+  // The throwaway worktree and its branch are gone.
+  assert.equal(sh("git", ["-C", root, "branch", "--list", "crew/demo/_baseline"]).stdout.trim(), "");
+  assert.equal(existsSync(join(root, ".scratch/worktrees/crew/demo/_baseline")), false);
+});
+
+test("a green baseline is run once per feature-branch commit, then reused", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const tip = sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim();
+  const first = commandLines(root, ["--max-rounds", "1"], { baseline: true });
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  assert.equal(first.lines.filter((l) => /verify-worktree\.sh --dir \S+\/_baseline --stem _baseline/.test(l)).length, 1);
+  assert.deepEqual({ commit: state(root).baseline.commit, verdict: state(root).baseline.verdict }, { commit: tip, verdict: "pass" });
+
+  // Same tip, a second run (alpha's merge moved it, so pin the cache to the new tip first).
+  addIssue(root, "02-beta.md");
+  const again = sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim();
+  const sf = join(root, ".scratch/demo/sprint-state.json");
+  writeFileSync(sf, JSON.stringify({ ...state(root), baseline: { commit: again, verdict: "pass" } }));
+  const second = commandLines(root, [], { baseline: true });
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  assert.equal(second.lines.filter((l) => /--stem _baseline/.test(l)).length, 0);
+  assert.match(second.r.stderr, /BASELINE: pass \(cached/);
+});
+
+test("--no-baseline skips the baseline", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(lines.filter((l) => /_baseline/.test(l)).length, 0);
+});
+
+// ─── a dirty main checkout at merge time ──────────────────────────────────────────────
+
+test("a merge refused by uncommitted changes in the main checkout blocks at once, then resumes at merge", () => {
+  const root = fixtureRepo();
+  mkdirSync(join(root, "src"), { recursive: true });
+  writeFileSync(join(root, "src/alpha.txt"), "// base\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "seed"]);
+  addIssue(root, "01-alpha.md");
+  // The fake coder appends to src/alpha.txt; the same file edited, uncommitted, here.
+  writeFileSync(join(root, "src/alpha.txt"), "// someone's local edit\n");
+
+  const first = commandLines(root, ["--allow-dirty"]);
+  assert.equal(first.r.code, 2, `${first.r.stdout}\n${first.r.stderr}`);
+  const s = state(root);
+  assert.match(s.retention.alpha.reason, /^blocked — main-tree-dirty — uncommitted changes in \S+ would be overwritten: src\/alpha\.txt — commit or stash/);
+  assert.equal(s.attempts.alpha, 1, "no retry: nothing a dispatch does can clean the checkout");
+  assert.equal(first.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
+  assert.match(first.r.stdout, /## Main Checkout Not Clean \(need a human\)/);
+  assert.match(first.r.stdout, /- crew\/demo\/alpha: uncommitted changes in \S+ would be overwritten: src\/alpha\.txt/);
+
+  // The human stashes the edit and re-runs: straight to merge, nothing re-dispatched.
+  sh("git", ["-C", root, "checkout", "--", "src/alpha.txt"]);
+  const second = commandLines(root);
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0);
+  assert.equal(second.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
+  assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=blocked — main-tree-dirty/);
+});
+
+// ─── the per-dispatch cost ledger ─────────────────────────────────────────────────────
+
+test("every dispatch is filed in this run's ledger with its slug, role and attempt", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review-once", "2");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const s = state(root);
+  assert.ok(s.current_run, "run-start tagged the run");
+  const rows = s.dispatches.map((d) => [d.role, d.attempt, d.run === s.current_run]);
+  assert.deepEqual(rows, [
+    ["coder", 1, true],
+    ["reviewer", 1, true],
+    ["reviewer", 1, true],
+    ["reviewer", 2, true],
+  ]);
+  // The coder's entry keeps the tip it left: the commit verify then checked.
+  const verified = JSON.parse(readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.verify.json"), "utf8")).commit;
+  assert.equal(s.dispatches[0].head, verified);
 });

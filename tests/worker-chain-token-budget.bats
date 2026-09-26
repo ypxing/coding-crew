@@ -147,7 +147,7 @@ words_of() {
   echo "$section" | grep -qi 'do NOT stage or commit'
 }
 
-@test "budget: the per-branch reviewer chain is under 2,360 words" {
+@test "budget: the per-branch reviewer chain is under 2,400 words" {
   # Read once per branch, like the worker chain is read once per issue. The reviewer now also
   # carries the acceptance-criteria verdict, which used to be a separate agent over the same
   # diff: 2,040 words here plus a second full-diff read became 2,1xx words and one read. Worst
@@ -169,11 +169,15 @@ words_of() {
   #
   # 2,320 → 2,360: the shims' `ROOT=$(pwd)` / read-only preamble moved into the protocol, where
   # this count sees it — moved, not added (see the protocol's own budget).
+  #
+  # 2,360 → 2,400: two rules that make each review cheaper than the words cost — search a
+  # verify log for the figure instead of reading all of it (coverage/integration logs run to
+  # 500+ lines each), and skip call-site tracing on a diff the dispatch marks test-only.
   local protocol="$REPO_ROOT/agents/crew-reviewer/protocol.md"
   local refs="$REPO_ROOT/agents/crew-reviewer/assets/references"
   local total=$(( $(words_of "$protocol") + $(words_of "$refs/quality.md") \
                   + $(words_of "$refs/web-security.md") + $(words_of "$refs/react.md") ))
-  [ "$total" -lt 2360 ] || { echo "reviewer chain is $total words (budget 2360)" >&2; return 1; }
+  [ "$total" -lt 2400 ] || { echo "reviewer chain is $total words (budget 2400)" >&2; return 1; }
 }
 
 @test "dependency install is failure-triggered, not a step every issue pays for" {

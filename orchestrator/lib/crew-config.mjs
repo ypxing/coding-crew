@@ -13,7 +13,8 @@
  *       "runtime": { "reviewer": "codex" },
  *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
  *       "fixFindings": "high", "PRDAudit": "fix",
- *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": true } }
+ *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": true,
+ *       "baselineCheck": true, "resumeCoderSession": false } }
  *
  * Every setting but runtime/models has a flag that wins for one run (resolveSettings).
  *
@@ -65,7 +66,14 @@ const timeoutProblem = (min) =>
     ? null
     : `must be a positive number of minutes, at most ${MAX_TIMEOUT_MINUTES}`;
 export const PANE_HOSTS = ["orca", "herdr", "auto", "none"];
-export const DEFAULT_SETTINGS = { fixFindings: "high", PRDAudit: "fix", installDeps: true, squashCommits: true };
+export const DEFAULT_SETTINGS = {
+  fixFindings: "high",
+  PRDAudit: "fix",
+  installDeps: true,
+  squashCommits: true,
+  baselineCheck: true,
+  resumeCoderSession: false,
+};
 
 // Settings that are one value each, merged by replacement; `check` returns a problem or null.
 const SCALARS = {
@@ -74,6 +82,8 @@ const SCALARS = {
   maxParallel: (v) => (Number.isInteger(v) && v > 0 ? null : "must be a positive integer"),
   installDeps: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   squashCommits: (v) => (typeof v === "boolean" ? null : "must be true or false"),
+  baselineCheck: (v) => (typeof v === "boolean" ? null : "must be true or false"),
+  resumeCoderSession: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   paneHost: (v) => (PANE_HOSTS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PANE_HOSTS.join(", ")})`),
   worktreeRoot: (v) => (typeof v === "string" && v.trim() ? null : "must be a non-empty path"),
 };
@@ -387,7 +397,8 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
  * The sprint's settings: each flag (`cli`, undefined when not given) over config.json's
  * afk section over the defaults. `origin` gains "--flag" for each setting a flag decided,
  * so `plan` credits the right source.
- * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, maxParallel: number|null,
+ * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, baselineCheck, resumeCoderSession,
+ *   maxParallel: number|null,
  *   timeouts: Record<string, number>}}  timeouts in minutes
  */
 export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
@@ -408,6 +419,8 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     PRDAudit: pick("PRDAudit"),
     installDeps: pick("installDeps"),
     squashCommits: pick("squashCommits"),
+    baselineCheck: pick("baselineCheck"),
+    resumeCoderSession: pick("resumeCoderSession"),
     maxParallel: pick("maxParallel"),
     timeouts,
   };

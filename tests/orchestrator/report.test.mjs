@@ -281,6 +281,19 @@ test("the review prompt states every check that ran, with its full-output file",
   assert.match(p, /`pass` alone does not prove the figure/);
 });
 
+test("the review prompt sizes each log and marks a test-only diff", () => {
+  const p = reviewPrompt({
+    branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/s.json",
+    checks: { test: "pass", coverage: "pass" },
+    logs: { coverage: "/d/s.verify-coverage.log" },
+    logLines: { coverage: 593 },
+    testOnly: true,
+  });
+  assert.match(p, /coverage=pass \(full output: \/d\/s\.verify-coverage\.log, 593 lines\)/);
+  assert.match(p, /^Diff scope: test-only/m);
+  assert.doesNotMatch(reviewPrompt({ branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r" }), /Diff scope/);
+});
+
 test("the review prompt names the gate's record, what it never ran, and what counts as a claim", () => {
   const p = reviewPrompt({
     branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/s.json",

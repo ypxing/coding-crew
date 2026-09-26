@@ -20,6 +20,10 @@ export const AC_RECEIPT_FAILED_TAG = "ac-receipt-failed";
 // merge-branches.sh hit a conflict: the feature branch moved on under this branch. Only a
 // coder can reconcile that; retrying the merge alone would conflict again.
 export const MERGE_CONFLICT_TAG = "merge-conflict";
+// merge-branches.sh refused because uncommitted changes in the main checkout would be
+// overwritten. Not the branch's fault and not fixable by any dispatch, so it blocks at once;
+// a re-run resumes at merge, since verify, review and the AC receipt already passed.
+export const MAIN_TREE_DIRTY_TAG = "main-tree-dirty";
 // The reviewer left no valid verdict, even after its in-round retry. Carries why (a timeout,
 // no report.json, no verdict field) — the branch itself is done, so no route recodes it.
 export const REVIEW_NOT_RUN_TAG = "review-not-run";
@@ -56,6 +60,24 @@ export function notifyMilestone(ctx, issue, message) {
   queuePaneNotice(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`, (result) => {
     if (!result.sent) ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: ${result.reason}`);
   });
+}
+
+/**
+ * Which gates `branch`'s current tip already passed, read from the receipts (receipts.sh
+ * owns both): `verified` — a `pass` verify record for this exact commit; `reviewed` — also an
+ * all-met AC receipt for it. A retry skips what these say is done: re-running a gate on an
+ * unchanged commit can only repeat its answer. Matched on the positive line, so
+ * CREW_RECEIPTS=off (whose `check` passes everything) never skips a gate.
+ */
+export function gatesAtTip(ctx, branch) {
+  const { sprint, effects } = ctx;
+  const check = (args) =>
+    effects.exec("bash", [effects.script("receipts.sh"), "check", ...args], { env: sprint.childEnv(), mutating: false });
+  const v = check(["verify", "--branch", branch]);
+  const verified = v.code === 0 && /verified at [0-9a-f]+/.test(v.stdout);
+  if (!verified) return { verified: false, reviewed: false };
+  const a = check(["ac", "--branch", branch, "--at-tip"]);
+  return { verified, reviewed: a.code === 0 && /criteria-verified at [0-9a-f]+/.test(a.stdout) };
 }
 
 /** close-issue.sh / promote-findings.sh's issue argument: a file path (local) or number (github). */

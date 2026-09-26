@@ -2,8 +2,8 @@
  * The last gate: merge, then close.
  */
 
-import { finishRetryOrBlock } from "./finish.mjs";
-import { MERGE_CONFLICT_TAG, dispatchStem, issueRef, notifyMilestone, taggedReason } from "./shared.mjs";
+import { finishBlocked, finishRetryOrBlock } from "./finish.mjs";
+import { MAIN_TREE_DIRTY_TAG, MERGE_CONFLICT_TAG, dispatchStem, issueRef, notifyMilestone, taggedReason } from "./shared.mjs";
 
 /**
  * Merge, then close only on the merge's success. Also the merge route's entry point: a
@@ -25,6 +25,12 @@ export async function mergeAndClose(ctx, worker, outcome) {
   if (merge.code !== 0) {
     if (merge.code === 124) {
       effects.git(["merge", "--abort"]);
+    }
+    // A retry would re-run the same merge into the same dirty checkout: block for a human.
+    const dirty = /failed \(main-tree-dirty — ([^)]*)\)/.exec(merge.stderr);
+    if (dirty) {
+      const summary = `${dirty[1]} — commit or stash them in the main checkout, then re-run`;
+      return finishBlocked(ctx, worker, outcome, taggedReason(MAIN_TREE_DIRTY_TAG, summary));
     }
     // merge-branches.sh's own conflict line; it has already aborted the merge.
     if (/failed \(conflict/.test(merge.stderr)) {

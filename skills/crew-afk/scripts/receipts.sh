@@ -11,6 +11,7 @@ set -uo pipefail
 #   receipts.sh check verify       --branch <branch>            # cwd: main root
 #   receipts.sh check ac           --issue  <issue-file-path>   # local backend
 #   receipts.sh check ac           --branch <branch>            # github backend, cwd: main root
+#   receipts.sh check ac           --branch <branch> --at-tip   # cwd: main root
 #
 #   --branch is the form to use once the worktree is gone: some variants remove a
 #   worktree straight after its checks, then verify acceptance criteria from the
@@ -35,9 +36,10 @@ set -uo pipefail
 #   ride in on an earlier pass. `check verify --branch` knows only the slug, so it
 #   finds the record by `<digits>-<slug>` or bare `<slug>`.
 #
-#   ac: <slug>.ac.ok, written here once review returned all-met. Only its existence
-#   is checked — by close time the branch may already be merged and deleted, so
-#   there is no tip to compare.
+#   ac: <slug>.ac.ok, written here once review returned all-met, holding the reviewed
+#   commit. `check ac` tests only its existence — by close time the branch may already be
+#   merged and deleted, so there is no tip to compare. `--at-tip` also requires that commit
+#   to be the branch's tip: what a retry asks before skipping a review it already passed.
 #
 #   Writing an `ac` receipt also emits the ACVERIFY trace line, because the receipt
 #   is the only evidence that gate ran. Verify receipts are traced by
@@ -57,7 +59,7 @@ Usage:
   receipts.sh path  <verify|ac>  --dir    <worktree-path> [--stem <n>-<slug>]
   receipts.sh check verify       --branch <branch>
   receipts.sh check ac           --issue  <issue-file-path>
-  receipts.sh check ac           --branch <branch>
+  receipts.sh check ac           --branch <branch> [--at-tip]
 EOF
 }
 
@@ -152,8 +154,10 @@ DIR=""
 BRANCH=""
 ISSUE=""
 STEM=""
+AT_TIP=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --at-tip) AT_TIP=1; shift ;;
     --dir|--branch|--issue|--stem)
       # Guard before reading $2: under `set -u` a bare flag would abort with an
       # unbound-variable error instead of the usage message.
@@ -324,6 +328,18 @@ case "$ACTION" in
           echo "  A receipt is written only for the branch crew/<feature>/$slug after its own" >&2
           echo "  acceptance-criteria check returns 'AC: all-met'. Another issue's receipt will not do." >&2
           exit 1
+        fi
+        if [ "$AT_TIP" -eq 1 ]; then
+          [ -n "$BRANCH" ] || { echo "ERROR: --at-tip requires --branch <branch>" >&2; exit 1; }
+          recorded=$(head -n 1 "$file" 2>/dev/null | tr -d '[:space:]')
+          actual=$(git rev-parse "${BRANCH}^{commit}" 2>/dev/null) || {
+            echo "ERROR: cannot resolve branch: $BRANCH" >&2; exit 1; }
+          if [ "$recorded" != "$actual" ]; then
+            echo "RECEIPT: $BRANCH was reviewed at ${recorded:-an unknown commit}, not at its tip $actual." >&2
+            exit 1
+          fi
+          echo "RECEIPT: $label criteria-verified at $recorded"
+          exit 0
         fi
         echo "RECEIPT: $label criteria-verified"
         ;;

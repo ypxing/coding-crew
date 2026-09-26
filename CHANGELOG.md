@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.29.140]
+
+### Added
+
+- **crew-afk stops before any dispatch when a merge could not land.** A run now refuses to
+  start while tracked files in the main checkout have uncommitted changes. Every issue merges
+  there, and git refuses a merge that would overwrite one, but only after that issue's coder
+  and review have run. `--allow-dirty` overrides. crew-afk's own `dev-commands.json` and
+  `.worktreeinclude` don't count.
+- **A baseline run of the checks on the feature branch, before any coder.** A branch that
+  already fails a check makes every issue's verify fail on code no issue wrote. The checks
+  now run once in a throwaway `crew/<feature>/_baseline` worktree, set up the way an issue's
+  is. A failure stops the run and names each failing check and its log. A pass is cached by
+  commit. `--no-baseline` / `afk.baselineCheck: false` turn it off.
+- **This run's cost, split by role and by retry.** Every dispatch is now recorded in
+  `sprint-state.json`'s `.dispatches`, tagged with the run, issue, role and attempt. The
+  summary prints this run's cost next to the feature total (which spans every run), then
+  coder / reviewer / triage and first attempts / retries. An earlier dispatch's
+  `.events.jsonl` is kept as `.events.<n>.jsonl` rather than overwritten.
+- **Opt-in: a fix round can continue the coder's own session**
+  (`--resume-coder-session` / `afk.resumeCoderSession`, claude only). It resumes only the
+  session that left the branch at its current tip, and only while that session's context is
+  under 100k tokens. A conflict fix always starts fresh.
+
+### Changed
+
+- **A merge refused by a dirty main checkout is `main-tree-dirty`, not `merge-conflict`.**
+  It blocks at once, since no retry can clean the checkout. The summary lists the files
+  under "Main Checkout Not Clean". A re-run goes straight to the merge, because verify, review
+  and the AC receipt already passed.
+- **The coder's own check report no longer restarts it.** When a coder says `complete` but
+  reports a failing or un-run check, and the branch has commits, verify runs anyway and its
+  verdict decides. A verify failure then gets triage and a narrow fix prompt, not a full
+  restart.
+- **A retry skips gates that already passed at the branch's tip.** `.ac.ok` already held the
+  reviewed commit; `receipts.sh check ac --at-tip` now checks it. A coder-free retry on an
+  unchanged commit goes straight to review (verify receipt matches) or to the merge (both
+  match). Any round skips verify when the tip already has a passing record.
+- **The reviewer reads less.** The review prompt gives each verify log's line count, and the
+  protocol says to `grep`/`tail` a log for a figure instead of reading it whole. A diff where
+  every file is a test, spec or fixture is marked test-only, and the reviewer skips
+  call-site tracing on it.
+
 ## [1.29.139]
 
 ### Added

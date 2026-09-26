@@ -26,7 +26,7 @@
  * tool-permission prompt never finishes.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { appendLine } from "./effects.mjs";
@@ -80,7 +80,7 @@ export function resolveAgentFile(platform, mainRoot, agent) {
  * @returns {{cmd: string, args: string[], cwd: string, env: object, capture: "stdout"|"file"}}
  */
 export function buildDispatch(platform, spec) {
-  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug, reportPath } = spec;
+  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug, reportPath, resumeSessionId } = spec;
   const shared = { cwd, env: { MAIN_ROOT: mainRoot, CREW_ORCHESTRATED: "1" } };
 
   // Test/CI seam: one script stands in for every model dispatch, so the whole state
@@ -98,6 +98,7 @@ export function buildDispatch(platform, spec) {
         ...(model ? ["--model", model] : []),
         ...(slug ? ["--slug", slug] : []),
         ...(reportPath ? ["--report-path", reportPath] : []),
+        ...(resumeSessionId ? ["--resume", resumeSessionId] : []),
       ],
       ...shared,
       cwd: mainRoot,
@@ -148,6 +149,8 @@ export function buildDispatch(platform, spec) {
       "--verbose",
     ];
     if (model) args.push("--model", model);
+    // A fix round continuing the coder's own earlier session (pipeline.mjs decides when).
+    if (resumeSessionId) args.push("--resume", resumeSessionId);
     args.push(prompt);
     // Cleared so a child launched from inside a Claude Code session starts its own session
     // instead of attaching to the parent's hook chain, which can mutate or swallow the prompt.
@@ -306,14 +309,36 @@ export function extractFinalText(platform, lines) {
   return "";
 }
 
-const EMPTY_RESULT_META = { isError: null, costUsd: null, durationMs: null, numTurns: null, permissionDenials: [], sessionId: null };
+const EMPTY_RESULT_META = {
+  isError: null,
+  costUsd: null,
+  durationMs: null,
+  numTurns: null,
+  permissionDenials: [],
+  sessionId: null,
+  contextTokens: null,
+};
 
 /**
  * Cost, error and timing from claude's terminal `result` event (2.1.280). Claude only:
  * copilot has no equivalent event. Anything unrecognised returns the all-null shape.
+ * `contextTokens` is the last assistant turn's prompt size — what a resumed session would
+ * start from — not the session's cumulative usage.
  */
 export function extractResultMeta(platform, lines) {
   if (platform !== "claude") return EMPTY_RESULT_META;
+  let contextTokens = null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const evt = JSON.parse(lines[i]);
+      const u = evt.type === "assistant" ? evt.message?.usage : null;
+      if (u && contextTokens == null) {
+        contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+      }
+    } catch {
+      /* skip an unparseable line */
+    }
+  }
   for (let i = lines.length - 1; i >= 0; i--) {
     try {
       const evt = JSON.parse(lines[i]);
@@ -325,6 +350,7 @@ export function extractResultMeta(platform, lines) {
           numTurns: evt.num_turns ?? null,
           permissionDenials: evt.permission_denials ?? [],
           sessionId: evt.session_id ?? null,
+          contextTokens,
         };
       }
     } catch {
@@ -332,6 +358,23 @@ export function extractResultMeta(platform, lines) {
     }
   }
   return EMPTY_RESULT_META;
+}
+
+/**
+ * Move an earlier dispatch's event stream at `file` aside, to the first free
+ * `<stem>.events.<n>.jsonl`, so every attempt's stream (and its cost) outlives the retry
+ * that reuses the path. The latest stays at `file`.
+ */
+function keepPriorEvents(file) {
+  if (!existsSync(file)) return;
+  const stem = file.replace(/\.events\.jsonl$/, "");
+  let n = 1;
+  while (existsSync(`${stem}.events.${n}.jsonl`)) n++;
+  try {
+    renameSync(file, `${stem}.events.${n}.jsonl`);
+  } catch {
+    /* overwritten below instead — the stream is debugging output, not state */
+  }
 }
 
 /**
@@ -398,6 +441,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
 
   let meta = EMPTY_RESULT_META;
   if (built.jsonEvents && !r.dryRun) {
+    keepPriorEvents(`${spec.outFile}.events.jsonl`);
     writeFileSync(`${spec.outFile}.events.jsonl`, lines.length ? `${lines.join("\n")}\n` : "");
     writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines));
     meta = extractResultMeta(built.jsonEvents, lines);
@@ -432,6 +476,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     numTurns: meta.numTurns,
     permissionDenials: meta.permissionDenials,
     sessionId: meta.sessionId,
+    contextTokens: meta.contextTokens,
   };
 }
 

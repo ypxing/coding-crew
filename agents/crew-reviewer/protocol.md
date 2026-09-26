@@ -58,10 +58,12 @@ downgraded or dropped.
    reading it `unmet` would strand the branch forever. When the dispatch states checks already run,
    treat a stated `pass` as the evidence for that half.
    A check stated `not_run`, or not stated at all, is evidence of nothing.
-   Cite a figure from its check's full-output file.
+   Cite a figure from its check's full-output file — `grep -n` or `tail` it for that figure;
+   these logs run to hundreds of lines.
    Never run the checks yourself; the code half is still judged from the diff.
 3. **Read surrounding code** — never review a hunk in isolation; read the full file, its imports, and
-   its call sites.
+   its call sites. When the dispatch marks the diff test-only, read each test and the code it
+   exercises, and skip call-site tracing: tests have no callers.
 4. **Apply Step 3 plus every loaded reference**, CRITICAL to LOW, then report in the format below.
 
 ### Step 3 — Always-on classes

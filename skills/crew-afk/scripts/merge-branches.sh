@@ -13,6 +13,9 @@ set -uo pipefail
 #   - If already merged (git log HEAD..<branch> is empty), reports success with no action.
 #   - Otherwise performs a no-fast-forward merge.
 #   - On conflict: aborts cleanly and reports failure; NEVER attempts resolution.
+#   - When git refuses before merging because uncommitted changes in this checkout (tracked,
+#     or untracked files in the way) would be overwritten, reports `main-tree-dirty` with the
+#     files instead of `conflict`: no change to the branch can fix it, only a human can.
 #   - A failed branch does not abort processing of remaining branches.
 #
 # Exit code: 0 if every branch succeeded, non-zero if any branch failed.
@@ -87,9 +90,19 @@ for BRANCH in "${BRANCHES[@]}"; do
   fi
 
   # Attempt merge
-  if _do_merge "$BRANCH" "Merge branch '$BRANCH'"; then
+  MERGE_OUT=$(_do_merge "$BRANCH" "Merge branch '$BRANCH'")
+  MERGE_RC=$?
+  [ -n "$MERGE_OUT" ] && printf '%s\n' "$MERGE_OUT"
+  if [ "$MERGE_RC" -eq 0 ]; then
     echo "MERGE: $BRANCH success"
     _trace MERGE "branch=$BRANCH success=true"
+  elif printf '%s' "$MERGE_OUT" | grep -qE 'would be overwritten by (merge|checkout)'; then
+    # git refused before touching anything, so there is no merge to abort. The files it
+    # names are its indented lines.
+    DIRTY=$(printf '%s\n' "$MERGE_OUT" | sed -n 's/^[[:space:]]\{1,\}//p' | paste -sd, - | sed 's/,/, /g')
+    echo "MERGE: $BRANCH failed (main-tree-dirty — uncommitted changes in $(pwd) would be overwritten: ${DIRTY:-see git output above})" >&2
+    _trace MERGE "branch=$BRANCH success=false reason=main-tree-dirty"
+    FAILED=1
   else
     # Abort the failed merge to leave a clean state
     git merge --abort 2>/dev/null || true
