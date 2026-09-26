@@ -144,9 +144,11 @@ Two knobs worth knowing about:
   files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
   them over.
 - **Worktree location** — worktrees live under `.scratch/worktrees/` by default. Set
-  `CREW_WORKTREE_ROOT` (absolute, or relative to the repo root) to put them elsewhere — e.g. off the
-  main checkout's disk/volume. Whatever you set won't be covered by the default `.scratch/` gitignore
-  entry, so add it to `.gitignore` yourself if it lands inside the repo.
+  `afk.worktreeRoot` in either `config.json` (absolute, or relative to the repo root) to put them
+  elsewhere, or `CREW_WORKTREE_ROOT`, which wins over both. A path outside the repo, such as
+  `../<repo>-worktrees`, keeps tools that search parent directories (Node's `node_modules`
+  resolution, CLAUDE.md loading) from falling back to the main checkout. A path inside the repo
+  isn't covered by the default `.scratch/` gitignore entry; `crew-afk` warns until you add it.
 
 ## 3. Address the review findings
 

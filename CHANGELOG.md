@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.29.139]
+
+### Added
+
+- **`afk.worktreeRoot` in `.coding-crew/config.json` sets where crew-afk creates worktrees.**
+  Before, only the `CREW_WORKTREE_ROOT` env var could move them off `.scratch/worktrees`. The
+  setting is accepted from the repo's or the user's file, and the env var still wins over both.
+  `crew-afk plan` prints the resolved root and its source. When the root is inside the repo and
+  not gitignored, `plan` and `run` warn.
+
+### Fixed
+
+- **crew-afk's docker dependency install always runs.** `ensure-deps.sh` now passes `--force`
+  to `docker-install.sh`. Its lockfile-fingerprint fast path could skip the sprint's one
+  install into the shared volume, but an unchanged fingerprint only proves the lockfiles are
+  unchanged, not that the volume still has what they describe.
+
 ## [1.29.138]
 
 ### Fixed

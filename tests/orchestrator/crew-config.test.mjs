@@ -13,6 +13,7 @@ import {
   resolveCrew,
   resolvePaneHost,
   resolveSettings,
+  resolveWorktreeRoot,
   validateFlags,
 } from "../../orchestrator/lib/crew-config.mjs";
 
@@ -482,4 +483,28 @@ test("validateFlags: a bad --pane-host or CREW_PANE_HOST is named", () => {
   assert.match(validateFlags({ paneHost: "tmux" }, {}, {})[0], /^--pane-host is "tmux"/);
   assert.match(validateFlags({}, {}, { CREW_PANE_HOST: "tmux" })[0], /^CREW_PANE_HOST is "tmux"/);
   assert.deepEqual(validateFlags({ paneHost: "auto" }, {}, { CREW_PANE_HOST: "none" }), []);
+});
+
+test("loadConfig: afk.worktreeRoot is accepted from either file, the repo's winning", () => {
+  const home = tmpRoot({ "config.json": { afk: { worktreeRoot: "/mnt/fast/wt" } } });
+  const root = tmpRoot();
+  assert.equal(loadConfig(root, { home }).config.afk.worktreeRoot, "/mnt/fast/wt");
+  const repo = tmpRoot({ "config.json": { afk: { worktreeRoot: "../wt" } } });
+  const { config, origin } = loadConfig(repo, { home });
+  assert.equal(config.afk.worktreeRoot, "../wt");
+  assert.equal(origin.worktreeRoot, "project");
+  for (const bad of ["", "  ", 3]) {
+    const r = tmpRoot({ "config.json": { afk: { worktreeRoot: bad } } });
+    assert.throws(() => loadConfig(r, { home: EMPTY_HOME }), /"afk\.worktreeRoot" must be a non-empty path/);
+    rmSync(r, { recursive: true, force: true });
+  }
+  for (const d of [home, root, repo]) rmSync(d, { recursive: true, force: true });
+});
+
+test("resolveWorktreeRoot: CREW_WORKTREE_ROOT, then the file, else null (the default)", () => {
+  assert.equal(resolveWorktreeRoot({ env: {} }), null);
+  assert.equal(resolveWorktreeRoot({ afk: { worktreeRoot: "../wt" }, env: {} }), "../wt");
+  const origin = { worktreeRoot: "project" };
+  assert.equal(resolveWorktreeRoot({ afk: { worktreeRoot: "../wt" }, env: { CREW_WORKTREE_ROOT: "/wt" }, origin }), "/wt");
+  assert.equal(origin.worktreeRoot, "CREW_WORKTREE_ROOT");
 });

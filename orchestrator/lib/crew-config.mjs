@@ -21,6 +21,10 @@
  * ~/.coding-crew/config.json may set it; the repo's file is rejected for it. It also has an env
  * layer between flag and file (resolvePaneHost).
  *
+ * `worktreeRoot` (absolute, or relative to the repo root) is where per-issue worktrees are
+ * created; unset keeps `.scratch/worktrees`. Either file may set it, and CREW_WORKTREE_ROOT
+ * wins over both (resolveWorktreeRoot). No flag: it is a standing choice, not a per-run one.
+ *
  * A model string belongs to one runtime, so it's filed under it and never passed to another
  * runtime's CLI. A role that moves to another runtime therefore does not inherit the coder's
  * model: with nothing named under its own runtime, it gets that runtime's default, or no
@@ -71,6 +75,7 @@ const SCALARS = {
   installDeps: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   squashCommits: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   paneHost: (v) => (PANE_HOSTS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PANE_HOSTS.join(", ")})`),
+  worktreeRoot: (v) => (typeof v === "string" && v.trim() ? null : "must be a non-empty path"),
 };
 // Per-machine settings: accepted from ~/.coding-crew/config.json only.
 const USER_ONLY = ["paneHost"];
@@ -438,6 +443,20 @@ export function resolvePaneHost({ afk = {}, cli = {}, env = process.env, origin 
     choice = env.ORCA_TERMINAL_HANDLE ? "orca" : env.HERDR_PANE_ID ? "herdr" : "none";
   }
   return { paneHost: choice === "none" ? null : choice, notices };
+}
+
+/**
+ * The worktree root as the user wrote it: CREW_WORKTREE_ROOT, else config.json's
+ * afk.worktreeRoot, else null for worktree.mjs's default. `origin.worktreeRoot` names the
+ * source for `plan`.
+ * @returns {string|null}
+ */
+export function resolveWorktreeRoot({ afk = {}, env = process.env, origin = {} }) {
+  if (env.CREW_WORKTREE_ROOT) {
+    origin.worktreeRoot = "CREW_WORKTREE_ROOT";
+    return env.CREW_WORKTREE_ROOT;
+  }
+  return afk.worktreeRoot ?? null;
 }
 
 /**

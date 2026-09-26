@@ -55,7 +55,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -74,12 +74,13 @@ import {
   resolveCrew,
   resolvePaneHost,
   resolveSettings,
+  resolveWorktreeRoot,
   validateFlags,
 } from "./lib/crew-config.mjs";
 import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
-import { ensureWorktreeInclude } from "./lib/worktree.mjs";
+import { ensureWorktreeInclude, worktreeRoot } from "./lib/worktree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -470,6 +471,18 @@ async function main() {
   options.paneHost = pane.paneHost;
   // Read by pane-host/, which keeps its run-scoped state on effects too.
   effects.paneHost = options.paneHost;
+  const worktreeSetting = resolveWorktreeRoot({ afk: loaded.config.afk, origin: loaded.origin });
+  // worktree.mjs and the child scripts all read the location from CREW_WORKTREE_ROOT, so a
+  // config.json value travels the same way rather than as a second channel.
+  if (worktreeSetting) process.env.CREW_WORKTREE_ROOT = worktreeSetting;
+  options.worktreeRoot = worktreeRoot(mainRoot);
+  if (worktreeSetting) {
+    const rel = relative(mainRoot, options.worktreeRoot);
+    const inside = rel && !rel.startsWith("..") && !isAbsolute(rel);
+    if (inside && spawnSync("git", ["-C", mainRoot, "check-ignore", "-q", `${rel}/`]).status !== 0) {
+      console.error(`crew-afk: WARNING: worktree root ${rel} is inside the repo but not gitignored — add "${rel}/" to .gitignore.`);
+    }
+  }
   options.parallel = settings.maxParallel ?? DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
   options.timeoutMs = Object.fromEntries(Object.entries(settings.timeouts).map(([k, min]) => [k, min * 60 * 1000]));
   options.dispatcherDirs = Object.fromEntries(
@@ -510,6 +523,7 @@ async function main() {
     console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
     console.log(`pane host: ${options.paneHost ?? "none"}${tag("paneHost")}`);
+    console.log(`worktrees: ${options.worktreeRoot}${tag("worktreeRoot")}`);
     console.log(`scripts:   ${scriptsDir}`);
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);
     console.log(`dispatchable now (${issues.length}):`);

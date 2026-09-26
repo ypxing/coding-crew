@@ -1401,6 +1401,29 @@ test("`plan` shows each setting and which file or flag set it", () => {
   assert.match(r.stdout, /timeouts: +coder 60m \[project\], reviewer 20m, triage 20m, commandFinder 5m, prdAuditor 20m, merge 5m/);
 });
 
+test("`plan` shows the worktree root and which file set it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { worktreeRoot: "../wt" } }));
+  const env = { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, MAIN_ROOT: root };
+  delete env.CREW_WORKTREE_ROOT;
+  const r = sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo"], { cwd: root, env });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.ok(r.stdout.includes(`worktrees: ${join(root, "../wt")}  [project]`), r.stdout);
+  assert.doesNotMatch(r.stderr, /not gitignored/);
+});
+
+test("`plan` warns when a configured worktree root inside the repo is not gitignored", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const env = { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, MAIN_ROOT: root, CREW_WORKTREE_ROOT: "wt" };
+  const r = sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo"], { cwd: root, env });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /worktrees: .*\/wt  \[CREW_WORKTREE_ROOT\]/);
+  assert.match(r.stderr, /WARNING: worktree root wt is inside the repo but not gitignored/);
+});
+
 test("the sprint reports once, from disk, and the summary is the last thing printed", () => {
   // Three copies of the same content used to reach one context window: a per-round rollup
   // (`crew-summary.sh --no-reminder`), a verbatim echo of every worker report, and the

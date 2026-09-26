@@ -10,9 +10,9 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSy
 import { dirname, isAbsolute, join } from "node:path";
 
 /**
- * Base directory worktrees are created under, overridable via `CREW_WORKTREE_ROOT`
- * (absolute, or relative to `mainRoot`) for repos that need worktrees off the main
- * checkout's disk/volume. Defaults to today's `.scratch/worktrees`.
+ * Base directory worktrees are created under: `CREW_WORKTREE_ROOT` (absolute, or relative to
+ * `mainRoot`), which main.mjs also sets from config.json's afk.worktreeRoot, else
+ * `.scratch/worktrees`.
  */
 export function worktreeRoot(mainRoot) {
   const override = process.env.CREW_WORKTREE_ROOT;
