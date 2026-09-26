@@ -550,7 +550,7 @@ if [ -n "$CACHED_INSTALL" ]; then
   # $CACHED_INSTALL is a documented override (step 1b) — it can itself be a Makefile
   # target whose recipe invokes `docker compose run` (this is host mode overall, so
   # nothing here nests it inside another container, but the recipe's own nested call
-  # still needs $DIR's GIT_DIR/GIT_COMMON_DIR/hooksPath redirect). Exported, not `-e`,
+  # still needs $DIR's GIT_DIR/GIT_COMMON_DIR redirect). Exported, not `-e`,
   # since there is no `docker compose run` of ours here to attach flags to — the shared
   # override's bare passthrough entries pick these up from process env instead. See
   # gen-override.sh's "Nested docker calls" header comment.

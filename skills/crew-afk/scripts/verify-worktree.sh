@@ -163,7 +163,7 @@ DOCKER_CONTAINER_SRC=""
 DOCKER_COMPOSE_FILE=""
 DOCKER_OVERRIDE_FILE=""
 DEP_SCRIPTS_DIR=""
-# This worktree's own GIT_DIR/GIT_COMMON_DIR/hooksPath redirect — resolved fresh per
+# This worktree's own GIT_DIR/GIT_COMMON_DIR redirect — resolved fresh per
 # invocation via gen-override.sh's --query git-env, never baked into the shared override
 # file (see gen-override.sh's "Git metadata mount" header comment for why: that file is
 # shared across every worktree, but GIT_DIR is worktree-specific). Kept in two forms:
@@ -687,8 +687,8 @@ _run_category() {
     if [ -n "$DEP_SCRIPTS_DIR" ] && bash "$DEP_SCRIPTS_DIR/detect-docker-nesting.sh" --dir "$WORKTREE_DIR" --cmd "$cmd"; then
       echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd"
       # Exported (not `-e`, there is no outer `docker compose run` of ours here) so the
-      # recipe's own nested `docker compose run` still picks up GIT_DIR/GIT_COMMON_DIR/
-      # hooksPath via the shared override's bare passthrough entries — see gen-override.sh's
+      # recipe's own nested `docker compose run` still picks up GIT_DIR/GIT_COMMON_DIR
+      # via the shared override's bare passthrough entries — see gen-override.sh's
       # "Nested docker calls" header comment.
       _exec_and_report "$label" env "${DOCKER_GIT_ENV_LINES[@]}" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
       return

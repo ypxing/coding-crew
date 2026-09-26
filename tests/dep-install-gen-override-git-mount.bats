@@ -7,11 +7,11 @@
 # commonly a package manager's postinstall hook (lefthook/husky/simple-git-hooks) — fails
 # with `fatal: not a git repository`. gen-override.sh fixes this in two parts:
 #   - the shared override file always mounts MAIN_ROOT's real `.git` dir read-only at
-#     /git-common (plus a writable info/ overlay), regardless of which worktree's own
+#     /git-common (plus writable hooks/ and info/ overlays), regardless of which worktree's own
 #     gen-override.sh call happens to (re)generate that shared file — the mount itself is
 #     identical for every worktree, since it only ever depends on MAIN_ROOT.
 #   - the env vars that point a *specific* worktree's container at its own subdirectory under
-#     that mount (GIT_DIR, plus the hooksPath redirect) never have their *values* written to
+#     that mount (GIT_DIR, GIT_COMMON_DIR) never have their *values* written to
 #     the shared file — a caller resolves them per invocation via `--query git-env` and passes
 #     them as `docker compose run -e KEY=VALUE` flags instead. Baking one worktree's GIT_DIR
 #     value into the file every worktree shares would be wrong for every other worktree reading
@@ -79,13 +79,15 @@ teardown() {
   local git_common_dir_abs
   git_common_dir_abs="$(git -C "$MAIN" rev-parse --path-format=absolute --git-common-dir)"
   [[ "$output" == *"${git_common_dir_abs}:/git-common:ro"* ]]
+  [[ "$output" =~ wt_[A-Za-z0-9_]+_git_hooks:/git-common/hooks ]]
   [[ "$output" =~ wt_[A-Za-z0-9_]+_git_info:/git-common/info ]]
   # bare passthrough names are expected (see header comment); no worktree-specific
   # value is ever written to the shared file
   [[ "$output" == *"- GIT_COMMON_DIR"* ]]
   [[ "$output" == *"- GIT_DIR"* ]]
   [[ "$output" != *"GIT_DIR=/git-common"* ]]
-  [[ "$output" != *"GIT_CONFIG_KEY_0=core.hooksPath"* ]]
+  # GIT_CONFIG_* is a numbered list the host may have set to any length — never passed through
+  [[ "$output" != *"GIT_CONFIG"* ]]
 }
 
 @test "the shared override's mount content is identical whether generated from MAIN_ROOT or from a worktree" {
@@ -111,7 +113,7 @@ teardown() {
   [ "$from_main" = "$from_worktree" ]
 }
 
-@test "the git-info overlay volume is declared once as a service mount and once at top level" {
+@test "the git-info and git-hooks overlay volumes are each declared once as a service mount and once at top level" {
   MAIN=$(mktemp -d)
   git -C "$MAIN" init -q -b main
   git -C "$MAIN" config user.email t@test
@@ -122,9 +124,27 @@ teardown() {
 
   run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN" --dry-run
   [ "$status" -eq 0 ]
-  volume_name=$(echo "$output" | grep -oE 'wt_[A-Za-z0-9_]+_git_info' | head -1)
-  [ -n "$volume_name" ]
-  [ "$(echo "$output" | grep -c "$volume_name")" -eq 2 ]
+  for suffix in git_info git_hooks; do
+    volume_name=$(echo "$output" | grep -oE "wt_[A-Za-z0-9_]+_${suffix}" | head -1)
+    [ -n "$volume_name" ]
+    [ "$(echo "$output" | grep -c "$volume_name")" -eq 2 ]
+  done
+}
+
+@test "writing the override creates the overlay mount points in MAIN_ROOT's .git when missing" {
+  MAIN=$(mktemp -d)
+  git -C "$MAIN" init -q -b main
+  git -C "$MAIN" config user.email t@test
+  git -C "$MAIN" config user.name T
+  fixture_compose "$MAIN"
+  git -C "$MAIN" add -A
+  git -C "$MAIN" commit -q -m init
+  rm -r "$MAIN/.git/hooks" "$MAIN/.git/info"
+
+  run bash "$SCRIPT" --project-root "$MAIN" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [ -d "$MAIN/.git/hooks" ]
+  [ -d "$MAIN/.git/info" ]
 }
 
 @test "CREW_GIT_MOUNT=off skips the mount in the shared file" {
@@ -184,7 +204,7 @@ teardown() {
   [[ "$output" == *"git:       not mounted (no git checkout detected at MAIN_ROOT)"* ]]
 }
 
-@test "--query git-env prints GIT_DIR/GIT_COMMON_DIR/hooksPath vars for a real worktree" {
+@test "--query git-env prints GIT_DIR/GIT_COMMON_DIR, and no GIT_CONFIG_* vars, for a real worktree" {
   MAIN=$(mktemp -d)
   git -C "$MAIN" init -q -b main
   git -C "$MAIN" config user.email t@test
@@ -200,9 +220,7 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"GIT_COMMON_DIR=/git-common"* ]]
   [[ "$output" == *"GIT_DIR=/git-common/worktrees/$(basename "$WORK")"* ]]
-  [[ "$output" == *"GIT_CONFIG_COUNT=1"* ]]
-  [[ "$output" == *"GIT_CONFIG_KEY_0=core.hooksPath"* ]]
-  [[ "$output" == *"GIT_CONFIG_VALUE_0=/tmp/git-hooks-container"* ]]
+  [[ "$output" != *"GIT_CONFIG"* ]]
 }
 
 @test "--query git-env prints nothing for PROJECT_ROOT equal to MAIN_ROOT (no worktree)" {

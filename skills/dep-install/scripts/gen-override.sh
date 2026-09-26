@@ -67,6 +67,12 @@
 # `fatal: not a git repository: <path>`, which then fails the whole install step it was
 # incidental to. Fixed by mounting MAIN_ROOT's real `.git` dir read-only at a fixed container
 # path (`/git-common`), so git never needs to resolve the unmountable absolute host path at all.
+# The two subdirectories a hook installer writes to get a writable named volume each on top of
+# that read-only mount: `hooks/` (the hook scripts themselves) and `info/` (lefthook's
+# config-checksum file). Hooks never need to *run* inside the container, only install without
+# erroring, so an empty per-project volume is all either needs — and the host's real
+# `.git/hooks` is never touched. Both dirs are created on the host first when missing: docker
+# cannot create a mount point inside a read-only mount.
 #
 # Split in two, deliberately, because this override file is generated once and *shared* across
 # every worktree of MAIN_ROOT (see "Worktree symlink" above) while the mount target a specific
@@ -74,7 +80,7 @@
 # Baking one worktree's `GIT_DIR` into the shared file would be wrong for every other worktree
 # reading the same file, and racy besides: concurrent worktrees regenerating it would clobber
 # each other's value.
-#   - The mount itself (read-only `MAIN_ROOT/.git` bind + writable `info/` overlay, below) is
+#   - The mount itself (read-only `MAIN_ROOT/.git` bind + writable `hooks/`/`info/` overlays) is
 #     the same for every worktree, since it only ever depends on MAIN_ROOT — safe to bake into
 #     the shared file unconditionally.
 #   - The env vars that point a specific container at a specific worktree's subdirectory under
@@ -93,16 +99,11 @@
 # already worked), or when `CREW_GIT_MOUNT=off`:
 #   GIT_COMMON_DIR=/git-common
 #   GIT_DIR=/git-common/worktrees/<name>
-#   GIT_CONFIG_COUNT=1
-#   GIT_CONFIG_KEY_0=core.hooksPath
-#   GIT_CONFIG_VALUE_0=/tmp/git-hooks-container
-# The last three redirect `core.hooksPath` to a writable scratch dir: hooks live in commondir,
-# which the mount above makes read-only, so a hook installer's write there would otherwise fail
-# with "read-only file system". Git's own env-config always outranks file-based config, and no
-# hooks actually need to *run* inside the container, only install without erroring. lefthook
-# specifically also writes a config-checksum file under commondir's `info/` (no config override
-# exists for that path the way `core.hooksPath` covers hooks) — that one write is covered by the
-# writable `info/` overlay baked into the shared file instead, not by an env var.
+# Never GIT_CONFIG_COUNT/GIT_CONFIG_KEY_<n>/GIT_CONFIG_VALUE_<n>: that is a numbered list, and a
+# bare passthrough can only name a fixed set of its indices. A host shell with GIT_CONFIG_COUNT=2
+# (credential wrappers, IDE terminals and CI runners set these) would hand the container a count
+# with no matching KEY_1, and every git command in it aborts with "missing config key". The host's
+# git config points at host helpers and paths anyway, so none of it belongs in a container.
 #   CREW_GIT_MOUNT=on   (default) mount in the shared file; --query git-env resolves per-worktree
 #   CREW_GIT_MOUNT=off  never mount, and --query git-env always prints nothing
 #
@@ -237,9 +238,6 @@ if [[ "$QUERY" == "git-env" ]]; then
         "$_common"/worktrees/*)
           echo "GIT_COMMON_DIR=/git-common"
           echo "GIT_DIR=/git-common/${_gitdir#"$_common"/}"
-          echo "GIT_CONFIG_COUNT=1"
-          echo "GIT_CONFIG_KEY_0=core.hooksPath"
-          echo "GIT_CONFIG_VALUE_0=/tmp/git-hooks-container"
           ;;
       esac
     fi
@@ -406,6 +404,10 @@ if [[ "$GIT_MOUNT" == "on" ]]; then
   GIT_COMMON_DIR_ABS="$(git -C "$MAIN_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
   [[ -n "$GIT_COMMON_DIR_ABS" && -d "$GIT_COMMON_DIR_ABS" ]] || GIT_COMMON_DIR_ABS=""
 fi
+# Mount points for the writable overlays — see "Git metadata mount".
+if [[ -n "$GIT_COMMON_DIR_ABS" && "$DRY_RUN" -eq 0 ]]; then
+  mkdir -p "$GIT_COMMON_DIR_ABS/hooks" "$GIT_COMMON_DIR_ABS/info" 2>/dev/null || true
+fi
 
 # Worktrees may be sparse or freshly branched — fall back to MAIN_ROOT for detection and manifest scan.
 if [[ -z "$ECO_NAME" ]] && [[ "$PROJECT_ROOT" != "$MAIN_ROOT" ]]; then
@@ -518,9 +520,6 @@ generate_yaml() {
         # project's own nested one (which only gets them if its caller exported them first).
         echo "      - GIT_COMMON_DIR"
         echo "      - GIT_DIR"
-        echo "      - GIT_CONFIG_COUNT"
-        echo "      - GIT_CONFIG_KEY_0"
-        echo "      - GIT_CONFIG_VALUE_0"
       fi
     fi
     echo "    volumes:"
@@ -529,6 +528,7 @@ generate_yaml() {
     done
     if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
       echo "      - ${GIT_COMMON_DIR_ABS}:/git-common:ro"
+      echo "      - wt_${PROJ_SLUG}_git_hooks:/git-common/hooks"
       echo "      - wt_${PROJ_SLUG}_git_info:/git-common/info"
     fi
     if [[ "$SANDBOX" == "1" ]]; then
@@ -540,6 +540,7 @@ generate_yaml() {
     echo "  ${vol}:"
   done
   if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
+    echo "  wt_${PROJ_SLUG}_git_hooks:"
     echo "  wt_${PROJ_SLUG}_git_info:"
   fi
 }
@@ -559,7 +560,7 @@ else
   echo "  sandbox:   $([[ "$SANDBOX" == "1" ]] && echo true || echo false)"
   echo "  platform:  ${RESOLVED_PLATFORM:-unset, project pin unchanged}"
   if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
-    echo "  git:       MAIN_ROOT's .git mounted read-only at /git-common (info/ writable via wt_${PROJ_SLUG}_git_info) — a caller in a linked worktree still needs its own 'gen-override.sh --query git-env' for the per-worktree GIT_DIR/hooksPath env vars"
+    echo "  git:       MAIN_ROOT's .git mounted read-only at /git-common (hooks/ and info/ writable via wt_${PROJ_SLUG}_git_hooks and wt_${PROJ_SLUG}_git_info) — a caller in a linked worktree still needs its own 'gen-override.sh --query git-env' for the per-worktree GIT_DIR/GIT_COMMON_DIR env vars"
   elif [[ "$GIT_MOUNT" == "off" ]]; then
     echo "  git:       not mounted (CREW_GIT_MOUNT=off)"
   else

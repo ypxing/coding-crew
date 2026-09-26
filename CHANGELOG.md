@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.142]
+
+### Fixed
+
+- **Docker installs no longer fail when the host shell sets git config through the
+  environment.** The generated `docker-compose.override.yml` passed `GIT_CONFIG_COUNT`,
+  `GIT_CONFIG_KEY_0` and `GIT_CONFIG_VALUE_0` through by name. A host with
+  `GIT_CONFIG_COUNT=2`, as set by credential wrappers, IDE terminals or CI runners, gave the
+  container a count without `GIT_CONFIG_KEY_1`, so every git command in it failed with
+  `missing config key GIT_CONFIG_KEY_1`, including a `lefthook install` postinstall. The
+  override no longer passes any `GIT_CONFIG_*` through. A linked worktree's hook installs now
+  write to a writable `wt_<slug>_git_hooks` volume over the read-only `.git` mount, instead of
+  going through a `core.hooksPath` redirect. Existing overrides are regenerated on the next
+  run.
+
 ## [1.29.141]
 
 ### Fixed
