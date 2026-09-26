@@ -386,7 +386,7 @@ test("ensurePaneWorkspace (orca) never creates a terminal when no logFile is giv
 });
 
 // Orca has no workspace create to fail loudly, so without this a failed log terminal (e.g.
-// ORCA_ENV=1 in a checkout orca doesn't manage) left no tab and no word of why. Rejecting is
+// orca as pane host in a checkout orca doesn't manage) left no tab and no word of why. Rejecting is
 // still not fatal: main.mjs catches it, prints it, and continues without a log tab.
 test("ensurePaneWorkspace (orca) rejects with the reason when the log terminal create fails", async () => {
   const { root } = fixture();
@@ -616,14 +616,14 @@ test("preflightPaneHost (orca) fails for a checkout orca doesn't manage, instead
   const reachable = ok(JSON.stringify({ result: { runtime: { reachable: true } } }));
   const effects = { ...fakeExecEffects([ok("/usr/bin/orca\n"), reachable, { code: 1, stdout: '{"ok":false,"error":{"code":"selector_not_found"}}', stderr: "" }]), mainRoot: "/repo" };
   assert.deepEqual(preflightPaneHost(effects, "orca"), [
-    "ORCA_ENV=1 but orca does not manage /repo — add it as a repo in the orca app (on the host this runs on), or unset ORCA_ENV",
+    "pane host orca, but orca does not manage /repo — add it as a repo in the orca app (on the host this runs on), or pick another pane host (CREW_PANE_HOST=none)",
   ]);
   assert.deepEqual(effects._calls[2], ["orca", "worktree", "show", "--worktree", "path:/repo", "--json"]);
 });
 
 test("preflightPaneHost (orca) names a missing CLI", () => {
   const effects = fakeExecEffects([{ code: 1, stdout: "", stderr: "" }]);
-  assert.deepEqual(preflightPaneHost(effects, "orca"), ["ORCA_ENV=1 but the orca CLI was not found on PATH"]);
+  assert.deepEqual(preflightPaneHost(effects, "orca"), ["pane host orca, but the orca CLI was not found on PATH"]);
 });
 
 test("preflightPaneHost bounds each host's status call, and names a timeout as one", () => {

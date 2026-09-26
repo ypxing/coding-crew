@@ -11,6 +11,7 @@ import {
   describeModel,
   loadConfig,
   resolveCrew,
+  resolvePaneHost,
   resolveSettings,
   validateFlags,
 } from "../../orchestrator/lib/crew-config.mjs";
@@ -433,4 +434,52 @@ test("loadConfig: a legacy afk-models.json's old role names move under the new o
   const { config } = loadConfig(root, { home: EMPTY_HOME });
   assert.deepEqual(config.afk.models.claude, { commandFinder: "haiku", prdAuditor: "opus" });
   rmSync(root, { recursive: true, force: true });
+});
+
+// ─── paneHost: per-machine, with an env layer ────────────────────────────────
+
+test("loadConfig: afk.paneHost is accepted from the user's config only", () => {
+  const home = tmpRoot({ "config.json": { afk: { paneHost: "orca" } } });
+  const root = tmpRoot();
+  const { config, origin } = loadConfig(root, { home });
+  assert.equal(config.afk.paneHost, "orca");
+  assert.equal(origin.paneHost, "user");
+  const repo = tmpRoot({ "config.json": { afk: { paneHost: "orca" } } });
+  assert.throws(() => loadConfig(repo, { home: EMPTY_HOME }), /"afk\.paneHost" is per-machine — set it in ~\/\.coding-crew\/config\.json/);
+  // A repo at $HOME: its one file is also the user's.
+  assert.equal(loadConfig(home, { home }).config.afk.paneHost, "orca");
+  assert.throws(() => loadConfig(root, { home: tmpRoot({ "config.json": { afk: { paneHost: "tmux" } } }) }), /"afk\.paneHost" is "tmux"/);
+  for (const d of [home, root, repo]) rmSync(d, { recursive: true, force: true });
+});
+
+test("resolvePaneHost: flag, then CREW_PANE_HOST, then ORCA_ENV/HERDR_ENV, then the file, else none", () => {
+  const host = (args) => resolvePaneHost({ env: {}, ...args }).paneHost;
+  assert.equal(host({}), null);
+  assert.equal(host({ afk: { paneHost: "herdr" } }), "herdr");
+  assert.equal(host({ afk: { paneHost: "herdr" }, env: { HERDR_ENV: "1" } }), "herdr");
+  assert.equal(host({ afk: { paneHost: "herdr" }, env: { ORCA_ENV: "1" } }), "orca");
+  assert.equal(host({ env: { ORCA_ENV: "1", CREW_PANE_HOST: "none" } }), null);
+  assert.equal(host({ env: { CREW_PANE_HOST: "orca" }, cli: { paneHost: "herdr" } }), "herdr");
+  const origin = {};
+  resolvePaneHost({ env: { CREW_PANE_HOST: "orca" }, origin });
+  assert.equal(origin.paneHost, "CREW_PANE_HOST");
+});
+
+test("resolvePaneHost: both legacy vars set is orca with a notice, not an error", () => {
+  const r = resolvePaneHost({ env: { ORCA_ENV: "1", HERDR_ENV: "1" } });
+  assert.equal(r.paneHost, "orca");
+  assert.match(r.notices[0], /both set — using orca/);
+});
+
+test("resolvePaneHost: auto picks the host whose terminal id is ambient, orca first", () => {
+  const auto = (env) => resolvePaneHost({ afk: { paneHost: "auto" }, env }).paneHost;
+  assert.equal(auto({}), null);
+  assert.equal(auto({ HERDR_PANE_ID: "p1" }), "herdr");
+  assert.equal(auto({ ORCA_TERMINAL_HANDLE: "t1", HERDR_PANE_ID: "p1" }), "orca");
+});
+
+test("validateFlags: a bad --pane-host or CREW_PANE_HOST is named", () => {
+  assert.match(validateFlags({ paneHost: "tmux" }, {}, {})[0], /^--pane-host is "tmux"/);
+  assert.match(validateFlags({}, {}, { CREW_PANE_HOST: "tmux" })[0], /^CREW_PANE_HOST is "tmux"/);
+  assert.deepEqual(validateFlags({ paneHost: "auto" }, {}, { CREW_PANE_HOST: "none" }), []);
 });

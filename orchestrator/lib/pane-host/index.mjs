@@ -1,6 +1,6 @@
 /**
  * pane-host — the ambient integration with a terminal multiplexer, selected by
- * `effects.paneHost` ("herdr" | "orca" | null; HERDR_ENV=1 / ORCA_ENV=1, see main.mjs).
+ * `effects.paneHost` ("herdr" | "orca" | null; resolvePaneHost in crew-config.mjs).
  *
  * Every coder/reviewer/triage dispatch is headless regardless of host. A host is asked for
  * one tab/terminal tailing the sprint's trace log, and one best-effort outcome push into the

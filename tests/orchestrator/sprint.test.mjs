@@ -44,7 +44,7 @@ after(() => rmSync(SCRIPTS_BASE, { recursive: true, force: true }));
 const FAKE = join(HERE, "fixtures/fake-dispatch.sh");
 
 // Every call site below spreads process.env into its own `env` (or omits `env` and gets
-// it by default); this test's own process inherits HERDR_ENV/HERDR_PANE_ID (or
+// it by default); this test's own process inherits CREW_PANE_HOST, HERDR_ENV/HERDR_PANE_ID (or
 // ORCA_ENV/ORCA_TERMINAL_HANDLE) whenever it runs inside a real herdr/orca pane, and
 // main.mjs's notifyTriggeringPane sends the fixture sprint's outcome straight to that real
 // pane if those leak through — stripped here, once, so no call site has to remember to.
@@ -56,6 +56,7 @@ after(() => rmSync(EMPTY_HOME, { recursive: true, force: true }));
 function sh(cmd, args, opts = {}) {
   const env = { ...(opts.env ?? process.env) };
   if (env.HOME === process.env.HOME) env.HOME = EMPTY_HOME;
+  delete env.CREW_PANE_HOST;
   delete env.HERDR_ENV;
   delete env.HERDR_PANE_ID;
   delete env.ORCA_ENV;
@@ -194,18 +195,23 @@ function failFirstCall(scriptsDir, scriptName, marker, message) {
 }
 
 // Spawned directly, not through sh(): sh() strips both vars, which is exactly what this
-// test needs set.
-test("run refuses to start when HERDR_ENV and ORCA_ENV are both set", () => {
+// test needs set. `plan`, so no orca is ever called.
+test("HERDR_ENV and ORCA_ENV both set: orca, with a notice", () => {
   const root = fixtureRepo();
-  const r = spawnSync("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+  const env = { ...process.env, HOME: EMPTY_HOME, HERDR_ENV: "1", ORCA_ENV: "1", HERDR_PANE_ID: "", ORCA_TERMINAL_HANDLE: "", CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE };
+  delete env.CREW_PANE_HOST;
+  const r = spawnSync("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo"], { cwd: root, encoding: "utf8", env });
+  assert.match(r.stderr, /ORCA_ENV=1 and HERDR_ENV=1 are both set — using orca/);
+  assert.match(r.stdout, /pane host: orca {2}\[ORCA_ENV\]/);
+});
+
+test("run names the resolved pane host before anything else it does", () => {
+  const root = fixtureRepo();
+  const r = sh("node", [MAIN, "run", "--dry-run", "--platform", "pi", "--feature-slug", "demo"], {
     cwd: root,
-    encoding: "utf8",
-    env: { ...process.env, HERDR_ENV: "1", ORCA_ENV: "1", HERDR_PANE_ID: "", ORCA_TERMINAL_HANDLE: "", CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE },
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE },
   });
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /HERDR_ENV=1 and ORCA_ENV=1 are both set/);
-  assert.match(r.stderr, /unset HERDR_ENV to use Orca .*unset ORCA_ENV to use herdr/);
-  assert.equal(existsSync(join(root, ".scratch/demo/sprint-state.json")), false);
+  assert.match(r.stderr, /^PANE-HOST: none$/m);
 });
 
 // A repo can hold installs for several platforms, but only its own has pi's or codex's

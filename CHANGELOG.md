@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.29.136]
+
+### Changed
+
+- **The pane host is one setting, `CREW_PANE_HOST=orca|herdr|auto|none`.** `ORCA_ENV` and
+  `HERDR_ENV` sit in the `ORCA_*`/`HERDR_*` namespaces those tools inject into their own
+  terminals, and needed a both-set error. They still work, below `CREW_PANE_HOST`. Setting both
+  now picks orca with a notice instead of stopping the run. `--pane-host` sets it for one run,
+  and `afk.paneHost` in `~/.coding-crew/config.json` sets it for the machine. A repo's
+  config.json is rejected for it, since a committed `orca` would fail preflight for everyone
+  without orca. `auto` picks orca when `ORCA_TERMINAL_HANDLE` is set, else herdr when
+  `HERDR_PANE_ID` is. `run` prints `PANE-HOST: <host|none>` before any sprint output, and the
+  four launcher skills stop polling on `PANE-HOST: orca` instead of reading env themselves.
+  `plan` shows the host and where it came from.
+
 ## [1.29.135]
 
 ### Fixed

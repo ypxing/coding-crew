@@ -16,24 +16,24 @@ const SEND_TIMEOUT_MS = 20000;
 
 export function preflight(effects) {
   const which = effects.exec("sh", ["-c", "command -v orca"], { mutating: false });
-  if (which.code !== 0) return ["ORCA_ENV=1 but the orca CLI was not found on PATH"];
+  if (which.code !== 0) return ["pane host orca, but the orca CLI was not found on PATH"];
   const status = effects.exec("orca", ["status", "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS });
-  if (status.code === 124) return [`ORCA_ENV=1 but \`orca status\` timed out after ${CALL_TIMEOUT_MS / 1000}s — is orca responding?`];
-  if (status.code !== 0) return ["ORCA_ENV=1 but `orca status` failed — start it with: orca open"];
+  if (status.code === 124) return [`pane host orca, but \`orca status\` timed out after ${CALL_TIMEOUT_MS / 1000}s — is orca responding?`];
+  if (status.code !== 0) return ["pane host orca, but `orca status` failed — start it with: orca open"];
   try {
     const parsed = JSON.parse(status.stdout || "{}");
     if (!parsed?.result?.runtime?.reachable) {
-      return ["ORCA_ENV=1 but the orca runtime is not reachable — start it with: orca open"];
+      return ["pane host orca, but the orca runtime is not reachable — start it with: orca open"];
     }
   } catch {
-    return ["ORCA_ENV=1 but `orca status --json` returned unparseable output"];
+    return ["pane host orca, but `orca status --json` returned unparseable output"];
   }
   // Every terminal is scoped to mainRoot. In a checkout orca doesn't manage, each create
   // fails and every dispatch quietly falls back to headless, so no tab ever appears.
   const show = effects.exec("orca", ["worktree", "show", "--worktree", `path:${effects.mainRoot}`, "--json"], { mutating: false, timeoutMs: CALL_TIMEOUT_MS });
-  if (show.code === 124) return [`ORCA_ENV=1 but \`orca worktree show\` timed out after ${CALL_TIMEOUT_MS / 1000}s — is orca responding?`];
+  if (show.code === 124) return [`pane host orca, but \`orca worktree show\` timed out after ${CALL_TIMEOUT_MS / 1000}s — is orca responding?`];
   if (show.code !== 0) {
-    return [`ORCA_ENV=1 but orca does not manage ${effects.mainRoot} — add it as a repo in the orca app (on the host this runs on), or unset ORCA_ENV`];
+    return [`pane host orca, but orca does not manage ${effects.mainRoot} — add it as a repo in the orca app (on the host this runs on), or pick another pane host (CREW_PANE_HOST=none)`];
   }
   return [];
 }

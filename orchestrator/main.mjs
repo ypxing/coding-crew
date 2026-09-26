@@ -10,12 +10,15 @@
  *
  * Options:
  *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
- *   $HERDR_ENV=1 / $ORCA_ENV=1              mutually exclusive; pick one pane host (neither:
- *                                           none). Opens one tab tailing the trace log and
+ *   --pane-host <orca|herdr|auto|none>     [paneHost, ~/.coding-crew/config.json only; default
+ *                                           none] or $CREW_PANE_HOST, which beats the file, as
+ *                                           do the legacy $ORCA_ENV=1 / $HERDR_ENV=1 (orca
+ *                                           first). Opens one tab tailing the trace log and
  *                                           pushes the outcome to the launching pane at the
  *                                           end; nothing load-bearing runs through it. Needs
- *                                           `herdr server` / `orca open` running. See
- *                                           lib/pane-host/index.mjs and docs/orca-support.md.
+ *                                           `herdr server` / `orca open` running. `run` prints
+ *                                           `PANE-HOST: <host|none>` first, for the launcher.
+ *                                           See lib/pane-host/index.mjs, docs/orca-support.md.
  *   --model <alias|inherit>                coder model; every role on the same runtime
  *                                           matches it unless .coding-crew/config.json's
  *                                           afk.models names one (see lib/crew-config.mjs,
@@ -66,6 +69,7 @@ import {
   describeModel,
   loadConfig,
   resolveCrew,
+  resolvePaneHost,
   resolveSettings,
   validateFlags,
 } from "./lib/crew-config.mjs";
@@ -80,7 +84,7 @@ function parseArgs(argv) {
   const o = {
     command: "run",
     platform: process.env.CREW_PLATFORM || "pi",
-    paneHost: process.env.ORCA_ENV === "1" ? "orca" : process.env.HERDR_ENV === "1" ? "herdr" : null,
+    paneHost: null, // resolved with the config (resolvePaneHost)
     model: null,
     featureSlug: null,
     // Flags that override a config.json setting; undefined = not given (resolveSettings).
@@ -112,6 +116,7 @@ function parseArgs(argv) {
       case "--prd-audit": o.cli.PRDAudit = value(); break;
       case "--coverage": o.cli.PRDAudit = "report"; break;
       case "--max-parallel": o.cli.maxParallel = Number(args.shift()); break;
+      case "--pane-host": o.cli.paneHost = value(); break;
       case "--coder-timeout": case "--worker-timeout":
         o.cli.timeouts.coder = Number(args.shift());
         o.flagOf["timeouts.coder"] = a;
@@ -385,14 +390,15 @@ async function main() {
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--fix-findings critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
-        "  [--max-rounds N] [--no-deps] [--no-commands] [--no-squash]\n" +
+        "  [--max-rounds N] [--no-deps] [--no-commands] [--no-squash] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
         "  .coding-crew/config.json names one. Per role (coder, reviewer, triage,\n" +
         "  commandFinder, prdAuditor):\n" +
         '    { "afk": { "runtime": { "reviewer": "codex" },\n' +
         '               "models":  { "claude": { "triage": "opus" } } } }\n' +
         "  The other flags override config.json's afk settings for one run: fixFindings (high),\n" +
-        "  PRDAudit (fix), maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits.",
+        "  PRDAudit (fix), maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits,\n" +
+        "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).",
     );
     return 0;
   }
@@ -400,14 +406,6 @@ async function main() {
     console.error(`crew-afk: unknown --platform ${options.platform} (expected ${PLATFORMS.join(", ")})`);
     return 1;
   }
-  if (process.env.HERDR_ENV === "1" && process.env.ORCA_ENV === "1") {
-    console.error(
-      "crew-afk: HERDR_ENV=1 and ORCA_ENV=1 are both set — pick one pane host: unset HERDR_ENV to use Orca " +
-        "(e.g. `env -u HERDR_ENV ORCA_ENV=1 <command>`), or unset ORCA_ENV to use herdr.",
-    );
-    return 1;
-  }
-
   const mainRoot = gitRoot();
   if (options.unknown.length) {
     reportUnknownArgs(options.unknown, mainRoot);
@@ -425,9 +423,6 @@ async function main() {
       if (process.env.CREW_VERBOSE) console.error(line);
     },
   });
-  // Read by pane-host/, which keeps its run-scoped state on effects too.
-  effects.paneHost = options.paneHost;
-
   if (options.command === "status") {
     const sprint = Sprint.attach(effects);
     if (!sprint) {
@@ -467,6 +462,11 @@ async function main() {
   options.model = crew.roles.coder.model;
   const settings = resolveSettings({ afk: loaded.config.afk, cli: options.cli, origin: loaded.origin });
   Object.assign(options, settings);
+  const pane = resolvePaneHost({ afk: loaded.config.afk, cli: options.cli, origin: loaded.origin });
+  for (const n of pane.notices) console.error(`crew-afk: ${n}`);
+  options.paneHost = pane.paneHost;
+  // Read by pane-host/, which keeps its run-scoped state on effects too.
+  effects.paneHost = options.paneHost;
   options.parallel = settings.maxParallel ?? DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
   options.timeoutMs = Object.fromEntries(Object.entries(settings.timeouts).map(([k, min]) => [k, min * 60 * 1000]));
   options.dispatcherDirs = Object.fromEntries(
@@ -506,6 +506,7 @@ async function main() {
     console.log(`findings:  fix ${options.fixFindings === "none" ? "none" : `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
     console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
+    console.log(`pane host: ${options.paneHost ?? "none"}${tag("paneHost")}`);
     console.log(`scripts:   ${scriptsDir}`);
     console.log(`preflight: ${problems.length ? problems.join("; ") : "ok"}`);
     console.log(`dispatchable now (${issues.length}):`);
@@ -532,6 +533,9 @@ async function main() {
   let runError;
   let lockPath;
   try {
+    // Before any sprint output, so a launcher knows the resolved host without re-deriving it
+    // from env and config.
+    console.error(`PANE-HOST: ${options.paneHost ?? "none"}`);
     const problems = preflightCrew();
     if (problems.length) {
       console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));

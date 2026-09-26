@@ -17,6 +17,10 @@
  *
  * Every setting but runtime/models has a flag that wins for one run (resolveSettings).
  *
+ * `paneHost` ("orca" | "herdr" | "auto" | "none") describes this machine, not the team, so only
+ * ~/.coding-crew/config.json may set it; the repo's file is rejected for it. It also has an env
+ * layer between flag and file (resolvePaneHost).
+ *
  * A model string belongs to one runtime, so it's filed under it and never passed to another
  * runtime's CLI. A role that moves to another runtime therefore does not inherit the coder's
  * model: with nothing named under its own runtime, it gets that runtime's default, or no
@@ -56,6 +60,7 @@ const timeoutProblem = (min) =>
   typeof min === "number" && min > 0 && min <= MAX_TIMEOUT_MINUTES
     ? null
     : `must be a positive number of minutes, at most ${MAX_TIMEOUT_MINUTES}`;
+export const PANE_HOSTS = ["orca", "herdr", "auto", "none"];
 export const DEFAULT_SETTINGS = { fixFindings: "high", PRDAudit: "fix", installDeps: true, squashCommits: true };
 
 // Settings that are one value each, merged by replacement; `check` returns a problem or null.
@@ -65,7 +70,10 @@ const SCALARS = {
   maxParallel: (v) => (Number.isInteger(v) && v > 0 ? null : "must be a positive integer"),
   installDeps: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   squashCommits: (v) => (typeof v === "boolean" ? null : "must be true or false"),
+  paneHost: (v) => (PANE_HOSTS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PANE_HOSTS.join(", ")})`),
 };
+// Per-machine settings: accepted from ~/.coding-crew/config.json only.
+const USER_ONLY = ["paneHost"];
 const AFK_KEYS = ["runtime", "models", "timeouts", ...Object.keys(SCALARS)];
 
 // afk-models.json's role names, before the plain-dispatch roles were renamed.
@@ -95,8 +103,11 @@ function readJson(path, rel) {
   }
 }
 
-/** Every problem in one message, so a user fixes the file once rather than once per run. */
-export function validateConfig(config, label = CONFIG_REL) {
+/**
+ * Every problem in one message, so a user fixes the file once rather than once per run.
+ * `userLevel`: the file is ~/.coding-crew/config.json, so USER_ONLY settings are allowed.
+ */
+export function validateConfig(config, label = CONFIG_REL, { userLevel = label === USER_CONFIG_LABEL } = {}) {
   const problems = [];
   const oneOf = (list) => list.join(", ");
   if (!isObject(config)) throw new ConfigError(`${label} must be a JSON object`);
@@ -122,6 +133,9 @@ export function validateConfig(config, label = CONFIG_REL) {
       for (const [k, check] of Object.entries(SCALARS)) {
         const problem = afk[k] === undefined ? null : check(afk[k]);
         if (problem) problems.push(`"afk.${k}" ${problem}`);
+        else if (afk[k] !== undefined && !userLevel && USER_ONLY.includes(k)) {
+          problems.push(`"afk.${k}" is per-machine — set it in ${USER_CONFIG_LABEL}, not the repo's config`);
+        }
       }
       if (afk.timeouts !== undefined) {
         if (!isObject(afk.timeouts)) problems.push(`"afk.timeouts" must be an object of role → minutes`);
@@ -190,7 +204,7 @@ function mergeAfk(base = {}, over = {}) {
  * Read the repo's config.json, moving a legacy afk-models.json into it in memory. The move on
  * disk is `legacyMove.apply()`, left to the caller so a run can do it only once setup has passed.
  */
-function loadProjectConfig(mainRoot, notices) {
+function loadProjectConfig(mainRoot, notices, { userLevel = false } = {}) {
   let legacyMove = null;
   const path = join(mainRoot, CONFIG_REL);
   const legacyPath = join(mainRoot, LEGACY_REL);
@@ -230,7 +244,7 @@ function loadProjectConfig(mainRoot, notices) {
     }
   }
 
-  validateConfig(config);
+  validateConfig(config, CONFIG_REL, { userLevel });
   return { config, legacyMove };
 }
 
@@ -248,11 +262,12 @@ export function loadConfig(mainRoot, { write = false, home = process.env.HOME ||
   // Read first: an invalid user file must fail the run before the legacy move writes anything.
   const userPath = join(home, CONFIG_REL);
   let user = {};
-  if (resolve(userPath) !== resolve(join(mainRoot, CONFIG_REL)) && existsSync(userPath)) {
+  const atHome = resolve(userPath) === resolve(join(mainRoot, CONFIG_REL));
+  if (!atHome && existsSync(userPath)) {
     user = readJson(userPath, USER_CONFIG_LABEL);
     validateConfig(user, USER_CONFIG_LABEL);
   }
-  const { config: project, legacyMove } = loadProjectConfig(mainRoot, notices);
+  const { config: project, legacyMove } = loadProjectConfig(mainRoot, notices, { userLevel: atHome });
   if (legacyMove && write) notices.push(legacyMove.apply());
 
   const origin = {};
@@ -335,14 +350,22 @@ const FLAG_FOR = {
   fixFindings: "--fix-findings",
   PRDAudit: "--prd-audit",
   maxParallel: "--max-parallel",
+  paneHost: "--pane-host",
   "timeouts.coder": "--coder-timeout",
   "timeouts.reviewer": "--reviewer-timeout",
   "timeouts.merge": "--merge-timeout",
 };
 
-/** A bad flag value, checked by the same rules as its config.json setting. */
-export function validateFlags(cli = {}, flagOf = {}) {
+/**
+ * A bad flag value, checked by the same rules as its config.json setting — and a bad
+ * CREW_PANE_HOST, the one setting with an env layer.
+ */
+export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
   const problems = [];
+  if (env.CREW_PANE_HOST) {
+    const problem = SCALARS.paneHost(env.CREW_PANE_HOST);
+    if (problem) problems.push(`CREW_PANE_HOST ${problem}`);
+  }
   const name = (k) => flagOf[k] ?? FLAG_FOR[k] ?? "--review-timeout";
   for (const [k, check] of Object.entries(SCALARS)) {
     const problem = cli[k] === undefined ? null : check(cli[k]);
@@ -383,6 +406,38 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     maxParallel: pick("maxParallel"),
     timeouts,
   };
+}
+
+/**
+ * The pane host: --pane-host, else CREW_PANE_HOST, else the legacy ORCA_ENV=1 / HERDR_ENV=1
+ * (orca first), else ~/.coding-crew/config.json's afk.paneHost. "auto" picks the host whose
+ * ambient terminal id is in env — opt-in, since running inside a herdr pane is not asking for
+ * herdr. `origin.paneHost` names the source for `plan`.
+ * @returns {{paneHost: "orca"|"herdr"|null, notices: string[]}}
+ */
+export function resolvePaneHost({ afk = {}, cli = {}, env = process.env, origin = {} }) {
+  const notices = [];
+  let choice;
+  if (cli.paneHost !== undefined) {
+    choice = cli.paneHost;
+    origin.paneHost = "flag";
+  } else if (env.CREW_PANE_HOST) {
+    choice = env.CREW_PANE_HOST;
+    origin.paneHost = "CREW_PANE_HOST";
+  } else if (env.ORCA_ENV === "1") {
+    choice = "orca";
+    origin.paneHost = "ORCA_ENV";
+    if (env.HERDR_ENV === "1") notices.push("ORCA_ENV=1 and HERDR_ENV=1 are both set — using orca (set CREW_PANE_HOST to choose).");
+  } else if (env.HERDR_ENV === "1") {
+    choice = "herdr";
+    origin.paneHost = "HERDR_ENV";
+  } else {
+    choice = afk.paneHost ?? "none";
+  }
+  if (choice === "auto") {
+    choice = env.ORCA_TERMINAL_HANDLE ? "orca" : env.HERDR_PANE_ID ? "herdr" : "none";
+  }
+  return { paneHost: choice === "none" ? null : choice, notices };
 }
 
 /**

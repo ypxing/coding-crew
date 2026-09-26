@@ -2,9 +2,19 @@
 
 [orca](https://www.onorca.dev/docs/cli/overview) is a second, interchangeable backend for
 the ambient pane-host integration in `orchestrator/lib/pane-host/` — the same narration
-role herdr (https://herdr.dev) already played. `ORCA_ENV=1` selects it, `HERDR_ENV=1` selects
-herdr, neither selects neither (today's default, unchanged); the two are mutually exclusive
-(`main.mjs` fails fast if both are set). Nothing else in the pipeline needs to know which
+role herdr (https://herdr.dev) already played. The pane host is one setting, resolved by
+`resolvePaneHost` (`lib/crew-config.mjs`), first match wins:
+
+1. `--pane-host orca|herdr|auto|none`
+2. `CREW_PANE_HOST=orca|herdr|auto|none`
+3. the legacy `ORCA_ENV=1`, then `HERDR_ENV=1` (both set: orca, with a notice)
+4. `afk.paneHost` in `~/.coding-crew/config.json` — per-machine, so the repo's config.json
+   is rejected for it
+5. none
+
+`auto` picks orca when `ORCA_TERMINAL_HANDLE` is set, else herdr when `HERDR_PANE_ID` is,
+else none. `run` prints `PANE-HOST: <host|none>` before any sprint output, which is what the
+launcher skills read. Nothing else in the pipeline needs to know which
 backend is active — `effects.paneHost` is the one seam, consistent with this repo's
 control-flow ownership rule for `orchestrator/`.
 
@@ -59,7 +69,7 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 
 ## Worker terminals
 
-Under `ORCA_ENV=1`, each coder/reviewer/triage dispatch runs in its own orca terminal,
+With orca as the pane host, each coder/reviewer/triage dispatch runs in its own orca terminal,
 titled `<slug> <agent>` and scoped to the main checkout, so every worker is a tab you can
 watch. Without it, dispatch is the plain headless spawn, unchanged. herdr keeps the plain
 spawn too: its per-worker panes (`dispatchViaHerdr`) were removed for driving an
@@ -126,10 +136,10 @@ agent definition.
   and codex panes, each launching a sprint through its crew-afk skill. pi reports
   `agentIdentity` only once its first prompt has fired orca's status extension
   (`~/.pi/agent/extensions/orca-agent-status.ts`), which a skill invocation already is.
-  copilot pane detection is untested. All four skills skip polling under `ORCA_ENV=1`. If
+  copilot pane detection is untested. All four skills stop polling on `PANE-HOST: orca`. If
   orca doesn't identify a pane, the push is skipped rather than typed in blind.
-- `ORCA_ENV=1` must be set by hand: orca injects `ORCA_WORKTREE_ID`/`ORCA_TAB_ID`/
-  `ORCA_TERMINAL_HANDLE` into its terminals, but not `ORCA_ENV` itself.
+- orca must be chosen, not detected by default: orca injects `ORCA_WORKTREE_ID`/`ORCA_TAB_ID`/
+  `ORCA_TERMINAL_HANDLE` into its terminals, which `auto` uses, but no opt-in of its own.
 - `terminal send` into a live claude pane takes ~8s to return (it watches for turn start),
   so the orca push gets a 20s timeout. With 5s it exited 124 after the message had already
   been delivered. Per-issue milestone pushes (coder finished, merged, partial, blocked) are
