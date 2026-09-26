@@ -37,6 +37,9 @@ set -uo pipefail
 # A check category with no discoverable command is reported explicitly as
 # not_run — never silently treated as passing.
 #
+# A check that leaves the worktree modified (an auto-fixing lint) fails, whatever its exit code,
+# with `<LABEL>: modified files: <list>` — see _vw_tree_state.
+#
 # A failing run records a `fail` verdict over any earlier pass, so a branch that once
 # passed cannot merge on stale evidence.
 #
@@ -569,6 +572,24 @@ _run_capped() {
   tail -n "$VERIFY_OUTPUT_LINES" "$out_file"
 }
 
+# ─── a check must leave the tree as it found it ──────────────────────────────
+# A check that rewrites files (a lint that auto-fixes, a formatter) passes on code it changed
+# itself, and leaves the drift for whoever runs next — a sprint once had every coder revert the
+# same 17 files a `make lint` rewrote, while the baseline and every verify passed. So a check's
+# verdict includes whether the tree is unchanged: `git status --porcelain` before and after it,
+# and any line that differs names a file it touched. Dirt already there is in the before
+# snapshot, so it is never blamed on the check; an ignored file (a coverage report) never shows.
+_vw_tree_state() {
+  git -C "$WORKTREE_DIR" status --porcelain 2>/dev/null | LC_ALL=C sort
+}
+
+# _vw_changed_files <before> <after> — the paths whose status line differs, comma-separated.
+_vw_changed_files() {
+  LC_ALL=C comm -3 <(printf '%s\n' "$1") <(printf '%s\n' "$2") \
+    | sed -E 's/^\t//; s/^...//' \
+    | awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
+}
+
 # _exec_and_report <label> -- <argv...>
 # Runs <argv...> (already fully assembled by the caller — a host `bash -c` wrapper, or
 # a docker compose invocation), captures its combined stdout/stderr to a temp file,
@@ -578,10 +599,14 @@ _run_capped() {
 _exec_and_report() {
   local label="$1"
   shift
-  local out_file
+  local out_file before changed=""
   out_file="$(mktemp)"
+  before="$(_vw_tree_state)"
   "$@" >"$out_file" 2>&1
   local rc=$?
+  local after
+  after="$(_vw_tree_state)"
+  [ "$before" = "$after" ] || changed="$(_vw_changed_files "$before" "$after")"
   _run_capped "$label" "$out_file" "$rc"
   # Evidence keeps every check's full output; outside it, a cached extra check's still is.
   local log=""
@@ -591,7 +616,14 @@ _exec_and_report() {
     if cp "$out_file" "$log" 2>/dev/null; then echo "$label: log: $log"; else log=""; fi
   fi
   rm -f "$out_file"
-  if [ "$rc" -eq 0 ]; then
+  if [ -n "$changed" ]; then
+    # Whatever its exit code: its pass was on files it rewrote. solve-issue's run-checks.sh
+    # prints the same line, so a coder sees the verdict this gate will reach.
+    echo "$label: modified files: $changed — configure a non-mutating command in .coding-crew/dev-commands.json (e.g. \`biome check\`, not \`biome check --write\`)"
+    echo "$label: fail"
+    _record "$label" "$_VW_CMD" fail "$rc" "$log"
+    OVERALL_EXIT=1
+  elif [ "$rc" -eq 0 ]; then
     echo "$label: pass"
     _record "$label" "$_VW_CMD" pass "$rc" "$log"
   else

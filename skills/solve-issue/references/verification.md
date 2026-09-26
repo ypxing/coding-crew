@@ -19,6 +19,9 @@ them: `run-checks.sh` runs whatever you persist, in this order.
 2. **Lint** — check Makefile for an `eslint`, `lint`, or `check` target; fall back to `npx eslint .` / `golangci-lint run` / etc.
 3. **Tests** — unit tests covering changed code, plus integration tests if relevant.
 
+Persist a command that reports rather than rewrites (`eslint .`, not `eslint --fix`): a check that
+leaves the tree modified fails.
+
 If you cannot find a command for a check category, persist it as `null` — `run-checks.sh` then
 reports it as `NOT RUN: no command found`, explicitly. Do not invent one to fill the slot.
 

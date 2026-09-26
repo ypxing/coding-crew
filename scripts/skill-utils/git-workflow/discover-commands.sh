@@ -232,7 +232,9 @@ _in_ask test && cat <<'PROMPT'
 - test
 PROMPT
 _in_ask lint && cat <<'PROMPT'
-- lint
+- lint (one that reports, not one that rewrites files: every check fails when it leaves the
+  tree modified, so when the documented lint auto-fixes and the source also documents a
+  non-fixing form — a `lint:check` script, a `make lint-check` target — report that one)
 PROMPT
 _in_ask typecheck && cat <<'PROMPT'
 - typecheck (a static/type-checking pass — not the test suite)

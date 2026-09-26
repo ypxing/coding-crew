@@ -142,3 +142,29 @@ _cache() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"$(cd "$TEMP_DIR/wt" && pwd -P)"* ]]
 }
+
+# The same rule, and the same line, as crew-afk's verify gate — so a coder sees its verdict.
+_committed_src() {
+  mkdir -p "$WORK/src"
+  printf 'a = 1\n' > "$WORK/src/app.py"
+  printf 'coverage/\n.coding-crew/\n' > "$WORK/.gitignore"
+  git -C "$WORK" add -A && git -C "$WORK" commit -q -m src
+}
+
+@test "run-checks: a check that edits a tracked file fails, naming the file" {
+  _committed_src
+  _cache '{"test": "true", "lint": "echo fixed >> src/app.py", "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"lint: modified files: src/app.py — configure a non-mutating command in .coding-crew/dev-commands.json"* ]]
+  [[ "$output" == *"lint: fail"*"test: pass"*"CHECKS: fail" ]]
+}
+
+@test "run-checks: an ignored file written by a check, or dirt already there, is not a modification" {
+  _committed_src
+  printf 'b = 2\n' >> "$WORK/src/app.py"
+  _cache '{"test": "mkdir -p coverage && echo 90 > coverage/lcov.info", "lint": "true", "typecheck": null}'
+  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"modified files"* ]]
+}

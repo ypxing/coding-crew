@@ -582,3 +582,40 @@ EOF
   [ ! -e "$TEMP_DIR/decoy.log" ]
   grep -q '\[VERIFY\] .*result=pass' "$TEMP_DIR/own.log"
 }
+
+# ─── a check must not modify the tree ────────────────────────────────────────
+# A lint that auto-fixes passed on files it rewrote, on every branch and the baseline alike,
+# while every coder reverted the same drift by hand. The gate now fails such a check.
+
+_committed_src() {
+  mkdir -p "$TEMP_DIR/.coding-crew" "$TEMP_DIR/src"
+  printf 'a = 1\n' > "$TEMP_DIR/src/app.py"
+  printf 'coverage/\n' > "$TEMP_DIR/.gitignore"
+  printf '%s\n' "$1" > "$TEMP_DIR/.coding-crew/dev-commands.json"
+  git add -A && git commit -qm src
+}
+
+@test "verify-worktree: a check that edits a tracked file fails, naming the file and the fix" {
+  _committed_src '{"test": "true", "lint": "echo fixed >> src/app.py", "typecheck": null}'
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"LINT: modified files: src/app.py — configure a non-mutating command in .coding-crew/dev-commands.json"* ]]
+  [[ "$output" == *"LINT: fail"* ]]
+  [[ "$output" == *"TEST: pass"* ]]
+}
+
+@test "verify-worktree: a check that writes only an ignored file passes" {
+  _committed_src '{"test": "mkdir -p coverage && echo 90 > coverage/lcov.info", "lint": null, "typecheck": null}'
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"modified files"* ]]
+}
+
+@test "verify-worktree: a file already dirty before the check is not blamed on it" {
+  _committed_src '{"test": "true", "lint": "true", "typecheck": null}'
+  printf 'b = 2\n' >> "$TEMP_DIR/src/app.py"
+  printf 'x\n' > "$TEMP_DIR/scratch-note.txt"
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"modified files"* ]]
+}

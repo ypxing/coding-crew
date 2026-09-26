@@ -33,6 +33,9 @@ setup() {
 
   DOCKER_LOG="$TEMP_DIR/.docker.args"
   export DOCKER_LOG
+  # The stub's own files are not the project's: verify-worktree.sh fails a check that leaves
+  # the tree modified, and the stub writes $DOCKER_LOG during every check.
+  printf '.stub/\n.docker.args\n' >> "$TEMP_DIR/.git/info/exclude"
 
   unset MAIN_ROOT CREW_VERIFY_DOCKER CREW_DEP_INSTALL_SCRIPTS
 

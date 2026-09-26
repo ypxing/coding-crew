@@ -12,6 +12,9 @@
 # Prints per check:
 #   <key>: pass | <key>: fail (exit N)     then the tail of its output; the full log path
 #   <key>: NOT RUN: no command found       the cache's `null` — its own answer, not a gap to fill
+#   <key>: modified files: <list> — …      then `<key>: fail (…)`: the check rewrote tracked or
+#                                          untracked files (an auto-fixing lint) — a project
+#                                          config problem, not something to revert and re-run
 # and last, one of:
 #   CHECKS: pass                           exit 0
 #   CHECKS: fail                           exit 1
@@ -94,6 +97,18 @@ while IFS= read -r key; do
 done < <(grep -oE '"[a-z][a-z0-9_]*"[[:space:]]*:[[:space:]]*("|null)' "$CACHE" 2>/dev/null \
   | sed -E 's/^"([a-z0-9_]+)".*/\1/' | awk '!seen[$0]++')
 
+# A check must leave the tree as it found it — the same rule, and the same line, as crew-afk's
+# verify gate: `git status --porcelain` before and after, and a differing line names a file the
+# check touched. Dirt already there is in the before snapshot, so it is not blamed on the check.
+_tree_state() {
+  git -C "$PROJECT_ROOT" status --porcelain 2>/dev/null | LC_ALL=C sort
+}
+_changed_files() {
+  LC_ALL=C comm -3 <(printf '%s\n' "$1") <(printf '%s\n' "$2") \
+    | sed -E 's/^\t//; s/^...//' \
+    | awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
+}
+
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/solve-issue-checks.XXXXXX")"
 OVERALL=0
 for key in "${KEYS[@]}"; do
@@ -104,12 +119,20 @@ for key in "${KEYS[@]}"; do
   fi
   log="$LOG_DIR/$key.log"
   echo "=== $key: $cmd"
+  before="$(_tree_state)"
   # stdin from /dev/null: a `docker compose run` would otherwise read the rest of this loop.
   bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" ${MAIN_ROOT:+--main-root "$MAIN_ROOT"} -- "$cmd" \
     </dev/null >"$log" 2>&1
   rc=$?
+  after="$(_tree_state)"
+  changed=""
+  [ "$before" = "$after" ] || changed="$(_changed_files "$before" "$after")"
   tail -n "$TAIL_LINES" "$log"
-  if [ "$rc" -eq 0 ]; then
+  if [ -n "$changed" ]; then
+    echo "$key: modified files: $changed — configure a non-mutating command in .coding-crew/dev-commands.json (e.g. \`biome check\`, not \`biome check --write\`)"
+    echo "$key: fail (exit $rc, modified files)"
+    OVERALL=1
+  elif [ "$rc" -eq 0 ]; then
     echo "$key: pass"
   else
     echo "$key: fail (exit $rc)"

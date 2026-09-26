@@ -80,8 +80,11 @@ words_of() {
   # Lowered to 2,050 when Steps 0/1/1.5/7's facts moved into preflight.sh, Step 2's mode check
   # into resolve-mode.sh and Step 5's cache read and check runs into run-checks.sh: ~330 words
   # of inline bash and "don't probe" warnings became three script calls (2,287 → 1,957).
+  # Raised to 2,100 when run-checks.sh started failing a check that modifies the tree: §5 now
+  # says that verdict is project config to report, not code to revert and re-run — a real new
+  # branch, which four coders in one sprint each handled by reverting the same 17 files.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 2050 ] || { echo "solve-issue is $words words (budget 2050)" >&2; return 1; }
+  [ "$words" -lt 2100 ] || { echo "solve-issue is $words words (budget 2100)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {
