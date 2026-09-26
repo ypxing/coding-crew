@@ -47,6 +47,9 @@
  *   --no-commands                          skip one-time command discovery (verify-worktree.sh
  *                                           falls back to its own CLAUDE.md/Makefile heuristics)
  *
+ * CREW_VERBOSE=1 also puts each dispatch's throttled [TOOL] heartbeat and the effects log on
+ * stderr; the trace log has both either way.
+ *
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
 
@@ -612,6 +615,11 @@ async function main() {
         if (!line) return;
         console.error(line);
         if (sprint.traceLog) appendLine(sprint.traceLog, line);
+      },
+      // A dispatch's [TOOL] heartbeat. The dispatch already wrote it to the trace log, and a
+      // launcher agent pays tokens for every stderr line it reads, so it is opt-in here.
+      heartbeat: (line) => {
+        if (process.env.CREW_VERBOSE) console.error(line);
       },
       out: (text) => console.log(text),
     };

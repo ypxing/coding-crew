@@ -63,7 +63,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
     },
     {
       timeoutMs: options.timeoutMs.reviewer,
-      onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
+      onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   );
 

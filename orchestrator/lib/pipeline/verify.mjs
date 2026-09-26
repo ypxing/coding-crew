@@ -90,7 +90,7 @@ export async function runTriage(ctx, worker, verifyStdout) {
     },
     {
       timeoutMs: options.timeoutMs.triage,
-      onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
+      onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   );
 

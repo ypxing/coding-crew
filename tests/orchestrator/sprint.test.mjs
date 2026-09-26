@@ -108,7 +108,7 @@ function addIssue(root, name, { status = "ready-for-agent", body = "", blockedBy
   return slug;
 }
 
-function runSprint(root, extra = []) {
+function runSprint(root, extra = [], env = {}) {
   return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...extra], {
     cwd: root,
     env: {
@@ -117,6 +117,7 @@ function runSprint(root, extra = []) {
       CREW_FAKE_DISPATCH: FAKE,
       CREW_FAKE_DIR: join(root, ".scratch/fake"),
       MAIN_ROOT: root,
+      ...env,
     },
   });
 }
@@ -1863,11 +1864,22 @@ test("the orchestrator prints a [STEP] marker before each gate, slug/round-tagge
   for (const l of steps) assert.match(l, /^\[STEP\] slug=01-alpha round=1 step=[\w-]+( model=\S+ runtime=\S+)?$/, l);
 });
 
-test("PR 2: a throttled [TOOL] heartbeat from the bash dispatcher reaches the live stream via onTrace, slug/round-tagged", () => {
+test("a dispatch's throttled [TOOL] heartbeat stays off stderr unless CREW_VERBOSE, and is never re-logged", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "alpha.heartbeat", "");
-  const r = runSprint(root);
+  const r = runSprint(root, [], { CREW_VERBOSE: "" });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /fake-heartbeat/, "a launcher agent reading stderr pays for every heartbeat");
+  // The dispatcher already wrote its own lines to the trace log; the orchestrator adds none.
+  assert.doesNotMatch(traceLog(root), /slug=01-alpha round=1 \[TOOL\]/);
+});
+
+test("CREW_VERBOSE puts the heartbeat on stderr, slug/round-tagged", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.heartbeat", "");
+  const r = runSprint(root, [], { CREW_VERBOSE: "1" });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const heartbeats = r.stderr.split("\n").filter((l) => l.includes("fake-heartbeat"));
   assert.ok(heartbeats.length >= 1, `expected a heartbeat line reaching stderr:\n${r.stderr}`);

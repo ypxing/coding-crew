@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.137]
+
+### Changed
+
+- **crew-afk's launcher agent no longer reads or relays the sprint's progress.** The four
+  launcher skills told the agent to poll the background run and relay every new line. Each
+  line cost input tokens to read and output tokens to echo, and the human already sees it in
+  the pane host or `orchestrator.log`. The launchers now wait for the completion notification
+  and print the stdout summary. If asked for progress, they answer in one sentence from the
+  latest `[STEP]` lines. A dispatch's `[TOOL]` heartbeats now reach stderr only under
+  `CREW_VERBOSE=1`, and the orchestrator no longer writes each one to `orchestrator.log` a
+  second time: the dispatch has already logged it with a timestamp.
+
 ## [1.29.136]
 
 ### Changed

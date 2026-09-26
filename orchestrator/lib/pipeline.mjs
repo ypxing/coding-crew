@@ -372,7 +372,7 @@ export async function runWorker(ctx, issue, attempt) {
     },
     {
       timeoutMs: options.timeoutMs.coder,
-      onTrace: (line) => ctx.log(`slug=${dispatchStem(issue)} round=${attempt} ${line}`),
+      onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${attempt} ${line}`),
     },
   );
 

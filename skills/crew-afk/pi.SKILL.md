@@ -50,11 +50,13 @@ remain or every remaining one is blocked (its retries spent, or a dependency of 
    Use your tool's own background-process tracking, not a manual shell `&`/`disown` with
    redirected output — that bypasses the completion notification and no summary reaches
    you when the sprint finishes.
-2. Poll and relay each new line; `[STEP]` lines and a throttled heartbeat go to
-   **stderr**, so read that too. **If its first stderr line is `PANE-HOST: orca`, stop
-   polling** — this pane is prompted directly once the sprint finishes or stalls. Under any
-   other host, keep polling. The
-   printed summary is the report — don't rewrite it.
+2. **Don't poll and don't relay.** Every line you read or echo costs tokens; the human
+   watches the pane host or `orchestrator.log`. Read stderr once, for its first line
+   (`PANE-HOST: …`), then wait for the completion notification. If asked for progress,
+   answer in one sentence from the latest `[STEP]` lines on **stderr** — never echo them.
+   No notification yet? Check at most every few minutes — not at all under
+   `PANE-HOST: orca`, which also prompts this pane once the sprint finishes or stalls. On
+   exit, print the stdout summary as-is — it is the report; don't rewrite it.
 3. Mention `.scratch/<feature-slug>/traces/orchestrator.log` if asked.
 4. Report the exit code and stop: `0` finished, `2` stalled (blockers need a human), `3`
    no ready issues, `1` setup problem — print its stderr verbatim.
