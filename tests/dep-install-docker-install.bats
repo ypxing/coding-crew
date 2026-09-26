@@ -87,6 +87,14 @@ stub_docker() {
   [ ! -f "$MAIN/docker-compose.override.yml" ]
 }
 
+@test "gen-override.sh --query vendor-paths prints each dep volume's container path" {
+  mkdir -p "$WORK/packages/web"
+  printf '{"name":"web"}\n' > "$WORK/packages/web/package.json"
+  run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --query vendor-paths
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '/opt/app/node_modules\n/opt/app/packages/web/node_modules')" ]
+}
+
 @test "gen-override.sh --query rejects an unknown field" {
   run bash "$SCRIPTS_DIR/gen-override.sh" --project-root "$WORK" --main-root "$MAIN" --query bogus
   [ "$status" -ne 0 ]
@@ -315,21 +323,96 @@ YML
   [[ "$output" == *"make deps"* ]]
 }
 
-@test "--install-cmd that itself names docker compose/run/exec is rejected, not nested" {
-  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" \
-    --install-cmd "docker compose run --rm other-service make deps"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"already invokes docker"* ]]
+# ─── an --install-cmd that runs docker itself ────────────────────────────────
+#
+# Run on the host, never nested inside the service (whose container has no docker CLI) — and,
+# because its own docker call then reaches the shared volumes only by loading the override,
+# refused when it visibly would not, and probed from the service when it has run.
+
+# stub_logging_docker [probe-exit] — a fake `docker` that appends each call's argv to
+# $TEMP_DIR/docker.calls, exits 0, and exits <probe-exit> (default 0) for the volume probe.
+stub_logging_docker() {
+  local probe_rc="${1:-0}"
+  cat > "$STUB/docker" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$TEMP_DIR/docker.calls"
+case " \$* " in *" --entrypoint sh "*) exit $probe_rc ;; esac
+exit 0
+SH
+  chmod +x "$STUB/docker"
 }
 
-@test "--install-cmd running a make target whose own recipe shells out to docker is rejected, not nested" {
+@test "--install-cmd naming docker compose itself runs on the host, not nested in the service" {
+  stub_logging_docker
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" \
+    --install-cmd "docker compose run --rm other-service npm ci"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Running: docker compose run --rm other-service npm ci (on the host"* ]]
+  # The command's own call, as typed — not wrapped in `docker compose ... run app sh -c`.
+  grep -qx "compose run --rm other-service npm ci" "$TEMP_DIR/docker.calls"
+  ! grep -q "sh -c cd /opt/app" "$TEMP_DIR/docker.calls"
+}
+
+@test "a make target whose recipe runs plain docker compose runs on the host, then the volumes are probed" {
   cat > "$WORK/Makefile" <<'MAKE'
 deps:
-	docker compose run --rm node npm ci
+	docker compose run --rm app npm ci
 MAKE
+  stub_logging_docker
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"already invokes docker"* ]]
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Running: make deps (on the host"* ]]
+  grep -qx "compose run --rm app npm ci" "$TEMP_DIR/docker.calls"
+  # The probe goes through the override, like the checks, at the volume's container path.
+  grep -q -- "-f $MAIN/docker-compose.override.yml run --rm --no-deps --entrypoint sh app .*/opt/app/node_modules" "$TEMP_DIR/docker.calls"
+  [ -f "$MAIN/.scratch/docker-install.fingerprint" ]
+}
+
+@test "a recipe whose docker call skips the override is refused before anything runs (exit 5)" {
+  cat > "$WORK/Makefile" <<'MAKE'
+deps:
+	docker compose -f docker-compose.yml run --rm app npm ci
+MAKE
+  stub_logging_docker
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
+  [ "$status" -eq 5 ]
+  [[ "$output" == *"not through docker-compose.override.yml"* ]]
+  [[ "$output" == *"-f docker-compose.yml"* ]]
+  [ ! -f "$TEMP_DIR/docker.calls" ]
+  [ ! -d "$MAIN/.scratch/.docker-install.lock" ]
+}
+
+@test "a host-run install that leaves every volume empty is exit 5, with no fingerprint stamp" {
+  cat > "$WORK/Makefile" <<'MAKE'
+deps:
+	docker compose run --rm app npm ci
+MAKE
+  stub_logging_docker 7
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
+  [ "$status" -eq 5 ]
+  [[ "$output" == *"volumes the checks run against are still empty"* ]]
+  [[ "$output" == *"/opt/app/node_modules"* ]]
+  [ ! -f "$MAIN/.scratch/docker-install.fingerprint" ]
+  [ ! -d "$MAIN/.scratch/.docker-install.lock" ]
+}
+
+@test "a probe that itself fails is exit 5 naming the probe, not an empty volume" {
+  cat > "$WORK/Makefile" <<'MAKE'
+deps:
+	docker compose run --rm app npm ci
+MAKE
+  stub_logging_docker 1
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
+  [ "$status" -eq 5 ]
+  [[ "$output" == *"checking that it reached the dependency volumes failed (exit 1)"* ]]
+  [[ "$output" != *"still empty"* ]]
+}
+
+@test "an install that runs inside the service is not probed" {
+  stub_logging_docker 7
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  ! grep -q -- "--entrypoint" "$TEMP_DIR/docker.calls"
 }
 
 @test "no compose file is exit 2, not a failure" {

@@ -100,6 +100,21 @@ export function runBaseline(ctx) {
   }
 }
 
+/**
+ * The stop message for a failed install into the shared docker volume. Unlike a host install,
+ * no worktree installs again — each only checks that this one happened — so every coder and
+ * every verify gate would run without deps. The reason is already on the run's output above:
+ * docker-install.sh's own stderr, streamed through ensure-deps.sh.
+ */
+export function dockerDepsFailureMessage(line) {
+  return [
+    "crew-afk: dependencies could not be installed into the docker volume every issue's checks run against — every coder would start without them.",
+    `  ${line.replace(/^DEPS:\s*/, "")}`,
+    "Fix the install (its output is above), then re-run.",
+    "To run anyway, with each coder's own dep-install as the only install: --no-deps.",
+  ].join("\n");
+}
+
 /** The stop message for a red baseline: which checks, where their output is, and the two ways on. */
 export function baselineFailureMessage(featureBranch, result) {
   const lines = [

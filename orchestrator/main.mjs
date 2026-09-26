@@ -91,7 +91,7 @@ import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorksp
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { ensureWorktreeInclude, worktreeRoot } from "./lib/worktree.mjs";
-import { baselineFailureMessage, dirtyTrackedFiles, runBaseline } from "./lib/preflight.mjs";
+import { baselineFailureMessage, dirtyTrackedFiles, dockerDepsFailureMessage, runBaseline } from "./lib/preflight.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -657,7 +657,14 @@ async function main() {
     }
 
     // After command discovery: ensure-deps.sh reads the install command it cached.
-    if (options.installDeps) await sprint.installDeps((line) => console.error(line));
+    if (options.installDeps) {
+      const deps = await sprint.installDeps((line) => console.error(line));
+      if (/^DEPS: docker-failed\b/.test(deps ?? "")) {
+        console.error(dockerDepsFailureMessage(deps));
+        exitCode = 1;
+        return exitCode;
+      }
+    }
 
     const ctx = {
       sprint,

@@ -596,6 +596,18 @@ STUBEOF
   [ "$(deps_line)" = "DEPS: docker" ]
 }
 
+@test "docker-install.sh exit 5 (install cannot reach the shared volumes) is DEPS: docker-failed with its reasons, no marker" {
+  printf '{}\n' > "$WORK/package.json"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts 5 "\`-f docker-compose.yml\` replaces compose's file discovery"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [[ "$(deps_line)" == "DEPS: docker-failed"*"(exit 5)"* ]]
+  [[ "$output" == *"replaces compose's file discovery"* ]]
+  [ ! -f "$WORK/.scratch/docker-install.done" ]
+}
+
 @test "a failed docker install is advisory: DEPS: docker-failed with the tail, still exit 0" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"

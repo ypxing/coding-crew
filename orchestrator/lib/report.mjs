@@ -181,7 +181,8 @@ export function readVerifyRecord(file) {
  * command and produces no output).
  *
  * Extracting the line is all this does; pipeline.mjs stops an issue on a per-issue
- * `DEPS: failed`, and nothing else in the line changes a round's status.
+ * `DEPS: failed`, main.mjs stops the run on a sprint-level `DEPS: docker-failed`, and nothing
+ * else in the line changes a round's status.
  */
 export function depsLine(stdout) {
   const m = /^DEPS:.*$/m.exec(stdout ?? "");

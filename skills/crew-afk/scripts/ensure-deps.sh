@@ -14,6 +14,9 @@ set -uo pipefail
 #   DEPS: installed <cmd>
 #   DEPS: none               no manifest / no install method found — not a failure
 #   DEPS: docker             detect-mode.sh says USE_DOCKER → deferred to the worker's dep-install
+#   DEPS: docker-present     USE_DOCKER, and this sprint's one shared-volume install already ran
+#   DEPS: docker-installed <cmd>
+#   DEPS: docker-failed <cmd> (exit N)   the shared-volume install failed — no worktree installs
 #   DEPS: failed <cmd> (exit N)
 #   DEPS: skipped            CREW_DEPS=off
 #
@@ -39,7 +42,8 @@ set -uo pipefail
 #   A repo with no dependency step must not stall a sprint, and what a failed install
 #   means is not this script's decision: it reports `DEPS: failed` and the orchestrator
 #   acts on it — a per-issue failure stops that issue before its coder is dispatched; the
-#   sprint-level warm-up's failure stops nothing, since every issue installs again on its own.
+#   sprint-level warm-up's host failure stops nothing, since every issue installs again on its
+#   own, but its `docker-failed` stops the run: that volume is the only install there is.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

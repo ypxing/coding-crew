@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.29.141]
+
+### Fixed
+
+- **crew-afk installs dependencies when the install command runs docker itself.** A
+  discovered install such as `make deps`, whose recipe calls `docker compose run`, was refused
+  by `docker-install.sh`'s docker-in-docker guard. `ensure-deps.sh` recorded that as deferred,
+  so nothing was installed, and every coder and the baseline ran against an empty shared
+  volume. Such a command now runs on the host, where its own docker call puts the install in a
+  container.
+- **An install that would miss the shared volume is refused, with the reason.** The new
+  `detect-compose-bypass.sh` reads the expanded recipe first. It refuses a docker call that
+  would not load `docker-compose.override.yml`: `-f` without it, `-p`, `COMPOSE_FILE` or
+  `COMPOSE_PROJECT_NAME` (in the command, the environment or `.env`), or `docker run`/`exec`.
+  After a host-run install, one container run through the override checks that a dependency
+  volume is non-empty. Either failure is `docker-install.sh` exit 5.
+- **A failed sprint-level docker install stops the run before any dispatch.** Worktrees only
+  check that this one install happened, so carrying on would give every coder empty
+  dependencies. The stop message names the failure and `--no-deps` as the way to run anyway.
+  A failed host install still stops nothing, since each worktree installs again.
+
 ## [1.29.140]
 
 ### Added

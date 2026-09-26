@@ -102,8 +102,10 @@ export class Sprint {
    * Deps, once, serially, against `effects.mainRoot` — before any worker or worktree
    * exists. N parallel workers provisioning N fresh worktrees would otherwise be N cold
    * downloads of the same packages; this warms whatever cache the package manager keeps
-   * so the per-worktree installs are local copies. Advisory: the outcome is logged and
-   * never acted on, because the gate that can act on it is verify-worktree.sh.
+   * so the per-worktree installs are local copies. On the host this is advisory — every
+   * worktree installs again, and verify-worktree.sh is the gate — so the outcome is only
+   * logged. In docker mode it is the one install into the volume every worktree shares, so
+   * the caller stops the run on `DEPS: docker-failed`; hence the returned DEPS: line.
    *
    * Call this after one-time command discovery (see commands.mjs), not before: discovery
    * may cache a documented install override at `.coding-crew/dev-commands.json`, and
@@ -136,6 +138,7 @@ export class Sprint {
     emit(lineBuffer);
     const line = depsLine(d.stdout);
     if (line) log(line);
+    return line;
   }
 
   /** Attach to an already-initialised sprint (resume, status, dry-run planning). */

@@ -1781,6 +1781,51 @@ test("a failed per-issue install stops the issue before the coder or verify runs
   assert.deepEqual(state(root).completed_slugs ?? [], []);
 });
 
+test("a failed sprint-level docker install stops the run before any worktree or dispatch, even with the baseline on", () => {
+  // In docker mode the sprint-level call is the only install: every worktree call only
+  // checks it happened. Carrying on would send every coder, and the baseline, to an empty volume.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const scripts = privateScripts();
+  const real = join(scripts, "_real-ensure-deps.sh");
+  cpSync(join(scripts, "ensure-deps.sh"), real);
+  writeFileSync(
+    join(scripts, "ensure-deps.sh"),
+    [
+      "#!/usr/bin/env bash",
+      'case " $* " in *" --slug "*) exec bash ' + JSON.stringify(real) + ' "$@" ;; esac',
+      'echo "make deps runs docker itself, but not through docker-compose.override.yml"',
+      'echo "DEPS: docker-failed make deps (exit 5) (see .scratch/docker-install.log)"',
+      "",
+    ].join("\n"),
+  );
+
+  const { r, lines } = commandLines(root, [], { scripts, baseline: true });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /not through docker-compose\.override\.yml/);
+  assert.match(r.stderr, /dependencies could not be installed into the docker volume/);
+  assert.match(r.stderr, /^  docker-failed make deps \(exit 5\)/m);
+  assert.match(r.stderr, /--no-deps/);
+  assert.equal(lines.filter((l) => /worktree add/.test(l)).length, 0, "a worktree was created");
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "an agent was dispatched");
+});
+
+test("a failed sprint-level host install still stops nothing: every worktree installs again", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const scripts = privateScripts();
+  const real = join(scripts, "_real-ensure-deps.sh");
+  cpSync(join(scripts, "ensure-deps.sh"), real);
+  writeFileSync(
+    join(scripts, "ensure-deps.sh"),
+    ["#!/usr/bin/env bash", 'case " $* " in *" --slug "*) exec bash ' + JSON.stringify(real) + ' "$@" ;; esac', 'echo "DEPS: failed npm ci (exit 1)"', ""].join("\n"),
+  );
+
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
+});
+
 test("command discovery precedes the sprint-level deps call, so a discovered install override is on disk before ensure-deps.sh's first read", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

@@ -116,8 +116,9 @@ RAW=""
 **Then run `scripts/docker-install.sh`** — the one mechanism every docker install goes through,
 whether this is a fresh worktree's own call or the sprint's own MAIN_ROOT warm-up
 (`ensure-deps.sh`'s docker path). It generates the override, checks the fingerprint stamp
-(skipping a no-op reinstall when nothing changed), dry-runs a Makefile `--install-cmd` for
-docker-in-docker nesting before wrapping it, and — the reason to call it here instead of
+(skipping a no-op reinstall when nothing changed), runs an `--install-cmd` that invokes docker
+itself on the host rather than nesting it — after checking its docker call loads the override,
+and probing the shared volumes afterwards — and — the reason to call it here instead of
 hand-running `docker compose` yourself — takes a lock shared across every worktree of this
 `MAIN_ROOT` before actually installing, so this call and any other install already in flight
 (the sprint's own warm-up, or a sibling worktree's own dep-install session) can never run at the
@@ -142,8 +143,7 @@ Handle its exit code:
 - **0** — installed (or skipped: manifests unchanged since the last successful install into
   this shared volume). Continue to step 2.
 - **2** — nothing this mechanism could do here (no compose file, no service, no supported
-  ecosystem, or an `--install-cmd` that itself invokes docker — nesting it would just repeat the
-  same docker-in-docker failure). Report this plainly rather than guessing a workaround.
+  ecosystem). Report this plainly rather than guessing a workaround.
 - **3** — the install command failed *inside* the container. Report `BLOCKED` with the tail of
   output the script prints to stderr.
 - **4** — could not acquire the lock within `--lock-timeout`: another install (the sprint's own
@@ -154,6 +154,10 @@ Handle its exit code:
   lockfile, or dpkg/apt), not just a herdr-UI nuisance. If this repeats, the sprint's own
   warm-up may itself be stuck — that is a sprint-level problem to surface, not something this
   session should retry around.
+- **5** — the `--install-cmd` runs docker itself, but not through the override, so it cannot
+  reach the shared volumes (refused before running), or it ran and they are still empty. Report
+  `BLOCKED` with the reasons it prints to stderr — the fix is in the project's recipe or in
+  `.coding-crew/dev-commands.json`'s `install`, not in this session.
 
 ### 2. All subsequent `docker compose` commands must pass both `-f` flags and this worktree's git-env args
 

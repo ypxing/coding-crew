@@ -26,7 +26,12 @@
 # --install-cmd is a documented project override (e.g. dev-commands.json's discovered
 # "install" field, forwarded by ensure-deps.sh) — it takes priority over the per-manifest
 # lockfile table below, the same way host-install.sh's own Makefile check already takes
-# priority over its signal-file fallback on the host path.
+# priority over its signal-file fallback on the host path. One that runs docker itself
+# (detect-docker-nesting.sh) runs on the host instead of inside the service: nesting it would
+# need a docker CLI the container does not have. Its own docker call still runs the install in
+# a container, but reaches the shared volumes only if it loads the generated override, so it is
+# refused up front when detect-compose-bypass.sh sees it would not (exit 5), and the volumes are
+# probed from the service afterwards (exit 5 again when every one is still empty).
 #
 # --credential-target is the same kind of forwarded override for dev-commands.json's
 # "credential_target" field — a full command (e.g. "make _registry"), passed straight through
@@ -38,13 +43,13 @@
 # Exit codes:
 #   0  install ran successfully ("Running: docker compose run --rm <service> ..." on stdout)
 #   1  argument or filesystem error
-#   2  nothing to do here: no compose file, no service, no supported ecosystem, or
-#      --install-cmd already invokes docker itself (nesting it would just run the same
-#      docker-less-inside-docker failure)
+#   2  nothing to do here: no compose file, no service, or no supported ecosystem
 #   3  install command failed inside the container
 #   4  could not acquire the install lock within --lock-timeout — another install (this
 #      script or a worker's own dep-install invocation) is already in flight; the caller
 #      should treat this the same as "docker, deferred" rather than block on it
+#   5  --install-cmd runs docker itself in a way that would not reach the shared volumes the
+#      checks read — refused before running, or still empty after it ran (reasons on stderr)
 
 set -uo pipefail
 
@@ -141,11 +146,20 @@ fi
 
 CONTAINER_SRC="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query container-src 2>/dev/null)"
 
-if [[ -n "$INSTALL_CMD_OVERRIDE" ]]; then
-  if bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$INSTALL_CMD_OVERRIDE"; then
-    echo "Install command '$INSTALL_CMD_OVERRIDE' already invokes docker — running it inside another container would nest docker-in-docker with no docker CLI there. Install on the host instead." >&2
-    exit 2
+HOST_CMD=""
+if [[ -n "$INSTALL_CMD_OVERRIDE" ]] &&
+   bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$INSTALL_CMD_OVERRIDE"; then
+  if BYPASS="$(bash "$SELF_DIR/detect-compose-bypass.sh" --dir "$PROJECT_ROOT" --cmd "$INSTALL_CMD_OVERRIDE")"; then
+    {
+      echo "Install command '$INSTALL_CMD_OVERRIDE' runs docker itself, but not through docker-compose.override.yml — the file that mounts the shared dependency volumes the checks run against — so it would install where they never look:"
+      printf '  %s\n' "$BYPASS"
+      echo "Make its docker call a plain 'docker compose' (no -f, -p, COMPOSE_FILE or COMPOSE_PROJECT_NAME), or name a container-side install command (e.g. 'pnpm install') as \"install\" in .coding-crew/dev-commands.json."
+    } >&2
+    exit 5
   fi
+  # Run on the host, where its own docker call resolves — see --install-cmd above.
+  HOST_CMD="$INSTALL_CMD_OVERRIDE"
+elif [[ -n "$INSTALL_CMD_OVERRIDE" ]]; then
   # The documented override runs once, at the container-side project root — it is a
   # project's own answer to "how do I install", not a per-manifest-dir heuristic, so the
   # lockfile table and its manifest-dirs requirement below are skipped entirely.
@@ -245,19 +259,30 @@ fi
 # invocation, and passed as -e flags instead so a lefthook/husky postinstall hook run by
 # $CONTAINER_CMD can still resolve git without touching the shared file.
 GIT_ENV_ARGS=()
+GIT_ENV_LINES=()
 while IFS= read -r _line; do
-  [[ -n "$_line" ]] && GIT_ENV_ARGS+=(-e "$_line")
+  [[ -n "$_line" ]] && { GIT_ENV_ARGS+=(-e "$_line"); GIT_ENV_LINES+=("$_line"); }
 done < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query git-env 2>/dev/null || true)
 
-RUN_CMD=(docker compose
-  -f "$COMPOSE_FILE"
-  -f "$MAIN_ROOT/docker-compose.override.yml"
-  run --rm "${GIT_ENV_ARGS[@]}" "$SERVICE" sh -c "$CONTAINER_CMD")
+COMPOSE_RUN=(docker compose -f "$COMPOSE_FILE" -f "$MAIN_ROOT/docker-compose.override.yml" run --rm)
+
+if [[ -n "$HOST_CMD" ]]; then
+  # Exported, not `-e` — there is no compose call of ours to attach flags to; the override's
+  # bare passthrough entries hand these to the recipe's own container (gen-override.sh's
+  # "Nested docker calls").
+  RUN_CMD=(env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$PROJECT_ROOT" "$HOST_CMD")
+else
+  RUN_CMD=("${COMPOSE_RUN[@]}" "${GIT_ENV_ARGS[@]+"${GIT_ENV_ARGS[@]}"}" "$SERVICE" sh -c "$CONTAINER_CMD")
+fi
 
 OUT_FILE="$(mktemp)"
 trap 'rmdir "$LOCK_DIR" 2>/dev/null || true; rm -f "$OUT_FILE"' EXIT
 
-echo "Running: docker compose run --rm $SERVICE sh -c '$CONTAINER_CMD'"
+if [[ -n "$HOST_CMD" ]]; then
+  echo "Running: $HOST_CMD (on the host — it runs docker itself)"
+else
+  echo "Running: docker compose run --rm $SERVICE sh -c '$CONTAINER_CMD'"
+fi
 # Streamed live via tee, not just captured to $OUT_FILE — a caller running this in the
 # foreground (a human watching a herdr pane, or ensure-deps.sh's own MAIN_ROOT call once it
 # streams through too) otherwise sees nothing at all for however long the install takes.
@@ -275,6 +300,34 @@ if [[ "$RC" -ne 0 ]]; then
   tail -n 20 "$OUT_FILE" >&2
   echo "--- end ---" >&2
   exit 3
+fi
+
+# ─── 4. a host-run install: prove it reached the volumes ─────────────────────
+# detect-compose-bypass.sh only sees what `make -n` can expand. Whatever it missed, this looks
+# where the checks will: from the service, through the override, at each dep volume's path.
+# One non-empty volume is enough — a workspace's sub-packages may legitimately have none.
+if [[ -n "$HOST_CMD" ]]; then
+  mapfile -t VENDOR_PATHS < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query vendor-paths 2>/dev/null)
+  if ((${#VENDOR_PATHS[@]})); then
+    # Exit 7 is the probe's own "all empty", so a compose or daemon failure is not read as one.
+    "${COMPOSE_RUN[@]}" --no-deps --entrypoint sh "$SERVICE" \
+      -c 'for d in "$@"; do [ -n "$(ls -A "$d" 2>/dev/null)" ] && exit 0; done; exit 7' _ "${VENDOR_PATHS[@]}" \
+      >"$OUT_FILE" 2>&1
+    PROBE_RC=$?
+    if [[ "$PROBE_RC" -ne 0 ]]; then
+      {
+        if [[ "$PROBE_RC" -eq 7 ]]; then
+          echo "Install command '$HOST_CMD' succeeded, but the dependency volumes the checks run against are still empty, seen from service $SERVICE:"
+          printf '  %s\n' "${VENDOR_PATHS[@]}"
+          echo "Its docker call installed somewhere else. Make it a plain 'docker compose' call that loads docker-compose.override.yml, or name a container-side install command (e.g. 'pnpm install') as \"install\" in .coding-crew/dev-commands.json."
+        else
+          echo "Install command '$HOST_CMD' succeeded, but checking that it reached the dependency volumes failed (exit $PROBE_RC):"
+          tail -n 20 "$OUT_FILE"
+        fi
+      } >&2
+      exit 5
+    fi
+  fi
 fi
 
 [[ -f "$FINGERPRINT" ]] && bash "$FINGERPRINT" write --project-root "$PROJECT_ROOT" --stamp "$DOCKER_STAMP" >/dev/null 2>&1 || true

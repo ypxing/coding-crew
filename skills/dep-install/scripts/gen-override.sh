@@ -11,12 +11,14 @@
 #   --dry-run        Print generated YAML to stdout instead of writing the file.
 #   --query <field>  Print one detected fact and exit, instead of writing the override.
 #                    <field> is one of: services | ecosystem | container-src | manifest-dirs |
-#                    platform | project-name | git-env
+#                    platform | project-name | git-env | vendor-paths
 #                    Lets a caller that needs to *run* an install (not just generate the
 #                    override) reuse this script's own detection instead of re-parsing the
 #                    compose file and manifests a second time. `git-env` is resolved from
 #                    --project-root, every other field from the shared file's own MAIN_ROOT
 #                    content — see "Git metadata mount" below for why that one is different.
+#                    `vendor-paths` is the container path of each named dep volume, one per line
+#                    — where an install must have written for the checks to see it.
 #   --link-only      Skip detection and generation entirely; just (re)point
 #                    PROJECT_ROOT/docker-compose.override.yml at the override MAIN_ROOT
 #                    already has. For a caller that knows the shared file was already
@@ -160,9 +162,9 @@ if [[ -z "$PROJECT_ROOT" || -z "$MAIN_ROOT" ]]; then
 fi
 
 case "$QUERY" in
-  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name|git-env) ;;
+  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name|git-env|vendor-paths) ;;
   *)
-    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name, git-env" >&2
+    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name, git-env, vendor-paths" >&2
     exit 1
     ;;
 esac
@@ -486,6 +488,7 @@ if [[ -n "$QUERY" ]]; then
     manifest-dirs) printf '%s\n' "${MANIFEST_DIRS[@]}" ;;
     platform)      echo "$RESOLVED_PLATFORM" ;;
     project-name)  echo "$PROJECT_NAME" ;;
+    vendor-paths)  printf '%s\n' "${VOL_PATHS[@]}" ;;
   esac
   exit 0
 fi
