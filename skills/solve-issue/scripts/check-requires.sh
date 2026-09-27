@@ -65,7 +65,9 @@ _requires() {
 }
 
 # _run <cmd> <log> — exit code of <cmd> in PROJECT_ROOT, or 124 once TIMEOUT passes. `timeout`
-# where the host has one; otherwise a poll that kills the command's process group.
+# where the host has one (it signals the command's whole process group); otherwise a poll
+# that does the same: under `set -m` the background job leads its own group, so a child the
+# command started (a `docker compose up` it backgrounded) is stopped with it, not orphaned.
 _run() {
   local cmd="$1" log="$2" tbin=""
   command -v timeout >/dev/null 2>&1 && tbin=timeout
@@ -74,13 +76,15 @@ _run() {
     (cd "$PROJECT_ROOT" && "$tbin" -k 5 "$TIMEOUT" bash -c "$cmd") </dev/null >"$log" 2>&1
     return $?
   fi
+  set -m
   (cd "$PROJECT_ROOT" && exec bash -c "$cmd") </dev/null >"$log" 2>&1 &
   local pid=$! waited=0
+  set +m
   while kill -0 "$pid" 2>/dev/null; do
     if [ "$waited" -ge "$TIMEOUT" ]; then
-      kill -TERM "$pid" 2>/dev/null
+      kill -TERM -- "-$pid" 2>/dev/null
       sleep 1
-      kill -KILL "$pid" 2>/dev/null
+      kill -KILL -- "-$pid" 2>/dev/null
       wait "$pid" 2>/dev/null
       return 124
     fi

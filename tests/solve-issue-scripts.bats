@@ -223,6 +223,33 @@ _requires_issue() {  # <file> <command>...
   [[ "$output" == *"REQUIRE: fail $TEMP_DIR/a.md sleep 30"*"timed out after 1s"* ]]
 }
 
+# A PATH with every command but timeout/gtimeout: the fallback stock macOS takes.
+_path_without_timeout() {
+  local bin="$TEMP_DIR/no-timeout-bin" dir f
+  mkdir -p "$bin"
+  IFS=: read -ra dirs <<< "$PATH"
+  for dir in "${dirs[@]}"; do
+    for f in "$dir"/*; do
+      case "${f##*/}" in timeout|gtimeout) continue ;; esac
+      [ -x "$f" ] && [ ! -e "$bin/${f##*/}" ] && ln -s "$f" "$bin/${f##*/}"
+    done
+  done
+  printf '%s' "$bin"
+}
+
+@test "check-requires: a timeout stops the command's own children too, with or without timeout(1)" {
+  local path
+  for path in "$PATH" "$(_path_without_timeout)"; do
+    rm -f "$TEMP_DIR/pid"
+    _requires_issue "$TEMP_DIR/a.md" "sleep 31 & echo \$! > $TEMP_DIR/pid; wait"
+    PATH="$path" run bash "$CHECK_REQUIRES" --project-root "$WORK" --issue "$TEMP_DIR/a.md" --timeout 1
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"timed out after 1s"* ]]
+    sleep 1
+    ! kill -0 "$(cat "$TEMP_DIR/pid")" 2>/dev/null
+  done
+}
+
 @test "preflight: a failing Requires command blocks a direct run" {
   { printf '# Second\n\n## Requires\n\n- `echo no token; exit 1`\n\n## Blocked by\n\nNone\n'; } > "$ISSUE"
   _preflight
