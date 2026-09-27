@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.29.149]
+
+### Fixed
+
+- **`install.sh --update` works on Windows again.** jq in Git Bash ends each line with a
+  CR, and the wrapper meant to strip it never switched on, so every installed agent and
+  skill was reported "removed from registry — skipping" and nothing updated. The same fix
+  applies to `uninstall.sh` and `scripts/render-skill.sh`.
+- **crew-afk's squash commit is title-cased on macOS.** The feature label was built with
+  GNU-only `sed` escapes, so on macOS the subject read `demo: …` instead of `Demo: …`.
+
 ## [1.29.148]
 
 ### Changed
