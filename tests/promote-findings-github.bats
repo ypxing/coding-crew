@@ -124,6 +124,11 @@ esac
 esac
 SH
   chmod +x "$STUB/gh"
+  # github.mjs shells out via Node's execFileSync, which on Windows resolves bare names
+  # through PATHEXT via native CreateProcess — it never parses a shebang line, so the bash
+  # stub above is invisible to it there. A .cmd beside it re-enters through bash, which
+  # Windows' PATHEXT-based search does find.
+  printf '@echo off\r\nbash "%%~dp0gh" %%*\r\n' > "$STUB/gh.cmd"
 }
 
 # ─── defer: github path ───────────────────────────────────────────────────────

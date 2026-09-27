@@ -10,7 +10,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,14 @@ import { Sprint } from "../../orchestrator/lib/sprint.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "../..");
 const MAIN = join(REPO, "orchestrator/main.mjs");
+
+// Resolved once: on macOS (and some Windows runners) os.tmpdir() is a symlink/short-name
+// path (/var/folders/... -> /private/var/folders/...), but a child process's cwd is
+// reported back canonicalized — `git rev-parse --show-toplevel` (main.mjs's gitRoot())
+// returns the OS's resolved getcwd(), not the string a test passed as `cwd`. Building every
+// fixture root from the already-resolved base keeps test-side path strings identical to
+// what the orchestrator prints, instead of only matching on Linux where /tmp isn't a symlink.
+const TMPDIR = realpathSync(tmpdir());
 
 // Mirrors what install.sh actually produces for a real crew-afk install: its own
 // skills/crew-afk/scripts/ merged with the shared scripts its registry.json entry declares
@@ -57,7 +65,7 @@ const FAKE = join(HERE, "fixtures/fake-dispatch.sh");
 //
 // HOME likewise: a real ~/.coding-crew/config.json would retarget every fixture sprint's roles,
 // so an inherited HOME is swapped for an empty one. A test that sets its own HOME keeps it.
-const EMPTY_HOME = mkdtempSync(join(tmpdir(), "crew-sprint-home-"));
+const EMPTY_HOME = mkdtempSync(join(TMPDIR, "crew-sprint-home-"));
 after(() => rmSync(EMPTY_HOME, { recursive: true, force: true }));
 function sh(cmd, args, opts = {}) {
   const env = { ...(opts.env ?? process.env) };
@@ -77,7 +85,7 @@ const FIXTURE_ROOTS = [];
 after(() => FIXTURE_ROOTS.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
 function fixtureRepo() {
-  const root = mkdtempSync(join(tmpdir(), "crew-sprint-"));
+  const root = mkdtempSync(join(TMPDIR, "crew-sprint-"));
   FIXTURE_ROOTS.push(root);
   const git = (...args) => sh("git", ["-C", root, ...args]);
   git("init", "-q", "-b", "main");
@@ -234,7 +242,7 @@ test("the running platform's own install supplies the scripts dir, not whichever
   addIssue(root, "01-alpha.md");
   const dirs = { pi: ".pi/skills", codex: ".agents/skills", claude: ".claude/skills", copilot: ".github/skills" };
   for (const d of Object.values(dirs)) cpSync(SCRIPTS, join(root, d, "crew-afk/scripts"), { recursive: true });
-  const home = mkdtempSync(join(tmpdir(), "crew-home-"));
+  const home = mkdtempSync(join(TMPDIR, "crew-home-"));
   for (const [platform, d] of Object.entries(dirs)) {
     const r = sh("node", [MAIN, "plan", "--platform", platform], { cwd: root, env: { ...process.env, HOME: home, CREW_SCRIPTS: "" } });
     assert.equal(r.code, 0, r.stderr);
@@ -288,7 +296,7 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
 test("a run whose install is missing an asset stops before any dispatch, naming the path", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  const partial = mkdtempSync(join(tmpdir(), "crew-install-"));
+  const partial = mkdtempSync(join(TMPDIR, "crew-install-"));
   FIXTURE_ROOTS.push(partial);
   cpSync(join(INSTALL_DIR, "dep-install"), join(partial, "dep-install"), { recursive: true });
   cpSync(join(INSTALL_DIR, "solve-issue"), join(partial, "solve-issue"), { recursive: true });
@@ -1381,7 +1389,7 @@ test("`plan` does not move a legacy afk-models.json, only says it would", () => 
 
 test("`plan` shows which config file set each role's runtime and model", () => {
   const root = fixtureRepo();
-  const home = mkdtempSync(join(tmpdir(), "crew-sprint-userhome-"));
+  const home = mkdtempSync(join(TMPDIR, "crew-sprint-userhome-"));
   mkdirSync(join(home, ".coding-crew"), { recursive: true });
   mkdirSync(join(root, ".coding-crew"), { recursive: true });
   writeFileSync(join(home, ".coding-crew/config.json"), JSON.stringify({ afk: { runtime: { reviewer: "codex" } } }));
@@ -1575,7 +1583,7 @@ test("a feature slug containing 'skipped' does not silently cancel the PRD audit
   // for a feature about skip logic — made that regex match and cancelled a validation the
   // user explicitly asked for. The same bug as command discovery's, just
   // triggered through the slug instead of a quoted file's content.
-  const root = mkdtempSync(join(tmpdir(), "crew-sprint-"));
+  const root = mkdtempSync(join(TMPDIR, "crew-sprint-"));
   const git = (...args) => sh("git", ["-C", root, ...args]);
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@test");
@@ -1791,7 +1799,7 @@ test("a review that never ran is named in the summary, not just counted in the s
 // tracker-github.test.mjs).
 
 function githubFixtureRepo() {
-  const root = mkdtempSync(join(tmpdir(), "crew-sprint-gh-"));
+  const root = mkdtempSync(join(TMPDIR, "crew-sprint-gh-"));
   FIXTURE_ROOTS.push(root);
   const git = (...args) => sh("git", ["-C", root, ...args]);
   git("init", "-q", "-b", "main");
@@ -1977,7 +1985,7 @@ test("a gaps issue that could not be created is named in the summary, not only t
       CREW_FAKE_DISPATCH: FAKE,
       CREW_FAKE_DIR: join(root, ".scratch/fake"),
       MAIN_ROOT: root,
-      HOME: mkdtempSync(join(tmpdir(), "crew-home-")),
+      HOME: mkdtempSync(join(TMPDIR, "crew-home-")),
       CREW_GITHUB_TRACKER_CLI: "",
       PATH: `${stub}:${process.env.PATH}`,
     },
