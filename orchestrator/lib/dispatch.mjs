@@ -360,6 +360,12 @@ export function extractResultMeta(platform, lines) {
   return EMPTY_RESULT_META;
 }
 
+/** The distinct tool names in claude's `permission_denials` (`tool_name`), comma-joined; `?` when unnamed. */
+function deniedTools(denials) {
+  const names = [...new Set(denials.map((d) => d?.tool_name ?? d?.tool ?? "?"))];
+  return names.join(",");
+}
+
 /**
  * Move an earlier dispatch's event stream at `file` aside, to the first free
  * `<stem>.events.<n>.jsonl`, so every attempt's stream (and its cost) outlives the retry
@@ -451,17 +457,22 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   const text = existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
 
   // A failure before a bash dispatcher traces anything (an early die(), ENOENT, a killed
-  // child) otherwise leaves its reason only in stderr. Also fires on isError/permission
-  // denials, which claude can report while still exiting 0 with text.
-  if (spec.logFile && !r.dryRun && (r.code !== 0 || r.timedOut || !text.trim() || meta.isError || meta.permissionDenials.length)) {
+  // child) otherwise leaves its reason only in stderr. claude can also report isError while
+  // still exiting 0 with text. Permission denials on an otherwise normal dispatch are not a
+  // failure — the agent went on without that call — so they get their own label, naming the
+  // tools denied, which a FAIL line with only a count left to guesswork.
+  const failed = r.code !== 0 || r.timedOut || !text.trim() || meta.isError;
+  const denials = meta.permissionDenials.length
+    ? ` permissionDenials=${meta.permissionDenials.length} tools=${deniedTools(meta.permissionDenials)}`
+    : "";
+  if (spec.logFile && !r.dryRun && failed) {
     const stderrSnippet = (r.stderr ?? "").trim().slice(0, 500).replace(/\s+/g, " ");
-    const metaTag = meta.isError || meta.permissionDenials.length
-      ? ` isError=${!!meta.isError} permissionDenials=${meta.permissionDenials.length}`
-      : "";
     appendLine(
       spec.logFile,
-      `[DISPATCH-FAIL] agent=${spec.agent} slug=${spec.slug ?? "?"} code=${r.code} timedOut=${!!r.timedOut} outEmpty=${!text.trim()}${metaTag} stderr=${JSON.stringify(stderrSnippet || "(none)")}`,
+      `[DISPATCH-FAIL] agent=${spec.agent} slug=${spec.slug ?? "?"} code=${r.code} timedOut=${!!r.timedOut} outEmpty=${!text.trim()} isError=${!!meta.isError}${denials} stderr=${JSON.stringify(stderrSnippet || "(none)")}`,
     );
+  } else if (spec.logFile && !r.dryRun && denials) {
+    appendLine(spec.logFile, `[DISPATCH-WARN] agent=${spec.agent} slug=${spec.slug ?? "?"} code=${r.code}${denials}`);
   }
 
   return {

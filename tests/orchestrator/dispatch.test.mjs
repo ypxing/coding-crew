@@ -804,3 +804,32 @@ test("dispatch() keeps an earlier attempt's event stream instead of overwriting 
   assert.equal(cost(join(root, "dispatch", "alpha.report.md.events.1.jsonl")), 0.1);
   assert.equal(cost(join(root, "dispatch", "alpha.report.md.events.2.jsonl")), 0.2);
 });
+
+// A normal dispatch that had a tool call denied used to log [DISPATCH-FAIL] with a bare count,
+// which read as a failed dispatch and said nothing about what was denied.
+async function dispatchLogging(result, { code = 0 } = {}) {
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const logFile = join(root, "trace.log");
+  const stream = `${JSON.stringify({ type: "result", ...result })}\n`;
+  const fakeEffects = { spawnWithTimeout: async (cmd, args, { onLine }) => (onLine(stream), { code, stdout: "", stderr: "" }) };
+  await dispatch(fakeEffects, "claude", { agent: "crew-coder", cwd: root, promptFile, outFile, mainRoot: root, logFile, scriptsDir: SCRIPTS, slug: "alpha" }, {});
+  return existsSync(logFile) ? readFileSync(logFile, "utf8") : "";
+}
+
+test("dispatch() logs permission denials on a normal dispatch as a warning naming the tools", async () => {
+  const denials = [{ tool_name: "Bash", tool_use_id: "t1" }, { tool_name: "WebFetch", tool_use_id: "t2" }, { tool_name: "Bash", tool_use_id: "t3" }];
+  const log = await dispatchLogging({ result: "done", is_error: false, permission_denials: denials });
+  assert.match(log, /^\[DISPATCH-WARN\] agent=crew-coder slug=alpha code=0 permissionDenials=3 tools=Bash,WebFetch$/m);
+  assert.doesNotMatch(log, /DISPATCH-FAIL/);
+});
+
+test("dispatch() still logs a real failure as DISPATCH-FAIL, denials included", async () => {
+  const log = await dispatchLogging({ result: "", is_error: true, permission_denials: [{ tool_name: "Edit" }] }, { code: 1 });
+  assert.match(log, /\[DISPATCH-FAIL\] agent=crew-coder slug=alpha code=1 .*isError=true permissionDenials=1 tools=Edit/);
+  assert.doesNotMatch(log, /DISPATCH-WARN/);
+});
+
+test("dispatch() logs nothing for a clean dispatch", async () => {
+  assert.equal(await dispatchLogging({ result: "done", is_error: false, permission_denials: [] }), "");
+});
