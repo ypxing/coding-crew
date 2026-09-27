@@ -63,7 +63,11 @@ done
 # an assignment is jq's own status. Probed once so a jq that already writes LF calls
 # the binary directly. Defined after the dependency check so `command -v jq` still
 # reports a missing binary.
-if [[ "$(command jq -rn '"probe"' 2>/dev/null)" == *$'\r' ]]; then
+# The probe reads through `read`, not `$(…)`: Git Bash's command substitution drops the CR
+# itself, so a `$(jq …)` probe never saw one and left every `< <(jq …)` loop unwrapped.
+_jq_probe=""
+IFS= read -r _jq_probe < <(command jq -rn '"probe"' 2>/dev/null) || true
+if [[ "$_jq_probe" == *$'\r' ]]; then
   jq() {
     local _jq_out _jq_rc
     _jq_out=$(command jq "$@")

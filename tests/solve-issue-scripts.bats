@@ -238,8 +238,11 @@ _path_without_timeout() {
 }
 
 @test "check-requires: a timeout stops the command's own children too, with or without timeout(1)" {
-  local path
-  for path in "$PATH" "$(_path_without_timeout)"; do
+  local path paths=("$PATH")
+  # Not on Git Bash: it always ships timeout(1), and its `ln -s` copies each file, so mirroring
+  # a PATH that includes System32 never finishes — that is what hung the Windows shard.
+  case "$OSTYPE" in msys*|cygwin*) ;; *) paths+=("$(_path_without_timeout)") ;; esac
+  for path in "${paths[@]}"; do
     rm -f "$TEMP_DIR/pid"
     _requires_issue "$TEMP_DIR/a.md" "sleep 31 & echo \$! > $TEMP_DIR/pid; wait"
     PATH="$path" run bash "$CHECK_REQUIRES" --project-root "$WORK" --issue "$TEMP_DIR/a.md" --timeout 1

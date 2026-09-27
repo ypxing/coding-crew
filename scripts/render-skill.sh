@@ -40,7 +40,11 @@ OUTFILE="${3:-}"
 # jq read once, here. Command substitution, not a `| tr` pipeline: render-skill.sh runs
 # once per installed SKILL.md, and on Git Bash every avoided spawn is ~5-50ms. Probed,
 # so a jq that already writes LF is called directly with no wrapper at all.
-if [[ "$(command jq -rn '"probe"' 2>/dev/null)" == *$'\r' ]]; then
+# The probe reads through `read`, not `$(…)`: Git Bash's command substitution drops the CR
+# itself, so a `$(jq …)` probe never saw one and left every `< <(jq …)` loop unwrapped.
+_jq_probe=""
+IFS= read -r _jq_probe < <(command jq -rn '"probe"' 2>/dev/null) || true
+if [[ "$_jq_probe" == *$'\r' ]]; then
   jq() {
     local _jq_out _jq_rc
     _jq_out=$(command jq "$@")

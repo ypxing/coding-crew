@@ -119,7 +119,8 @@ for slug in "${COMPLETED_SLUGS[@]}"; do
 done
 
 # Summary: "Feature Name: first issue title (+N more)"
-FEATURE_LABEL=$(echo "$FEATURE_SLUG" | tr '-' ' ' | sed 's/\b\(.\)/\u\1/g')
+# awk, not sed's \b/\u: those are GNU-only, and BSD sed (macOS) left the label lowercase.
+FEATURE_LABEL=$(printf '%s\n' "$FEATURE_SLUG" | awk -F- '{ for (i = 1; i <= NF; i++) $i = toupper(substr($i, 1, 1)) substr($i, 2) } 1' OFS=' ')
 ISSUE_COUNT=${#ISSUE_TITLES[@]}
 if [ $ISSUE_COUNT -eq 1 ]; then
   SUMMARY_LINE="$FEATURE_LABEL: ${ISSUE_TITLES[0]}"

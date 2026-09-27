@@ -329,6 +329,14 @@ YML
 # because its own docker call then reaches the shared volumes only by loading the override,
 # refused when it visibly would not, and probed from the service when it has run.
 
+# _skip_unless_make_sees_stubs — Windows' native make finds a recipe's `docker` by searching the
+# whole PATH for docker.exe before any other name, so the bash stub never runs and the recipe
+# reaches the real daemon. What these tests pin is docker-install.sh's own logic, which the
+# other platforms cover.
+_skip_unless_make_sees_stubs() {
+  case "$OSTYPE" in msys*|cygwin*) skip "native Windows make bypasses the PATH docker stub" ;; esac
+}
+
 # stub_logging_docker [probe-exit] — a fake `docker` that appends each call's argv to
 # $TEMP_DIR/docker.calls, exits 0, and exits <probe-exit> (default 0) for the volume probe.
 stub_logging_docker() {
@@ -354,6 +362,7 @@ SH
 }
 
 @test "a make target whose recipe runs plain docker compose runs on the host, then the volumes are probed" {
+  _skip_unless_make_sees_stubs
   cat > "$WORK/Makefile" <<'MAKE'
 deps:
 	docker compose run --rm app npm ci
@@ -383,6 +392,7 @@ MAKE
 }
 
 @test "a host-run install that leaves every volume empty is exit 5, with no fingerprint stamp" {
+  _skip_unless_make_sees_stubs
   cat > "$WORK/Makefile" <<'MAKE'
 deps:
 	docker compose run --rm app npm ci
@@ -397,6 +407,7 @@ MAKE
 }
 
 @test "a probe that itself fails is exit 5 naming the probe, not an empty volume" {
+  _skip_unless_make_sees_stubs
   cat > "$WORK/Makefile" <<'MAKE'
 deps:
 	docker compose run --rm app npm ci

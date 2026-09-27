@@ -204,7 +204,9 @@ sprint_with_fake_dispatch() {
   sprint_with_fake_dispatch "$FAKE_HOME/.coding-crew/crew-afk/main.mjs"
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   local expected
-  expected="$(FAKE_HOME="$FAKE_HOME" node -e 'console.log(require("path").resolve(process.env.FAKE_HOME, ".coding-crew/code-review"))')"
+  # realpath, not resolve: Node canonicalizes the main module's path, so the orchestrator
+  # names the install dir behind macOS's /var -> /private/var symlink.
+  expected="$(FAKE_HOME="$FAKE_HOME" node -e 'const {realpathSync} = require("fs"); console.log(require("path").join(realpathSync(process.env.FAKE_HOME), ".coding-crew/code-review"))')"
   grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" || {
     cat "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" >&2; return 1; }
 }

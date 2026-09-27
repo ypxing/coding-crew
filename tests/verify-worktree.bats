@@ -8,7 +8,9 @@
 VERIFY_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/verify-worktree.sh"
 
 setup() {
-  export TEMP_DIR=$(mktemp -d)
+  # Canonical, the way verify-worktree.sh prints it (`pwd -P`): macOS's tmpdir sits behind the
+  # /var -> /private/var symlink, and Git Bash's /tmp is a mount of a Windows directory.
+  export TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
   cd "$TEMP_DIR"
 
   git init -q

@@ -71,6 +71,25 @@ EOF
   [[ "$output" == *"My issue title"* ]]
 }
 
+# The label was built with GNU sed's \b and \u, which BSD sed (macOS) ignores — the
+# subject came out as "test feature: …" there.
+@test "squash-commits title-cases the feature slug on every platform" {
+  local base_sha
+  base_sha=$(git rev-parse HEAD)
+
+  git checkout -q -b "feature/$FEATURE_SLUG"
+  echo "change1" > work.txt && git add work.txt && git commit -q -m "work commit"
+
+  _write_state "feature/$FEATURE_SLUG" "$base_sha"
+  _add_slug_to_state "my-issue"
+  _write_issue "my-issue" "My issue title"
+
+  run bash "$SQUASH_SCRIPT" --platform claude
+  [ "$status" -eq 0 ]
+
+  [ "$(git log -1 --format=%s)" = "Test Feature: My issue title" ]
+}
+
 @test "squash-commits produces non-empty commit body with two slugs" {
   local base_sha
   base_sha=$(git rev-parse HEAD)

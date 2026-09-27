@@ -142,11 +142,9 @@ github_fixture() {
   # `gh issue list` answers with $TEMP_DIR/issues.json, whatever the flags.
   printf '#!/usr/bin/env bash\ncat "%s/issues.json"\n' "$TEMP_DIR" > .stub/gh
   chmod +x .stub/gh
-  # github.mjs shells out via Node's execFileSync, which on Windows resolves bare names
-  # through PATHEXT via native CreateProcess — it never parses a shebang line, so the bash
-  # stub above is invisible to it there. A .cmd beside it re-enters through bash, which
-  # Windows' PATHEXT-based search does find.
-  printf '@echo off\r\nbash "%%~dp0gh" %%*\r\n' > .stub/gh.cmd
+  # github.mjs spawns gh from Node, which on Windows never reads a shebang and won't run a
+  # .cmd, so the stub on PATH loses to the real gh.exe there; CREW_FAKE_GH hands it over.
+  export CREW_FAKE_GH="$TEMP_DIR/.stub/gh"
   export PATH="$TEMP_DIR/.stub:$PATH"
 }
 

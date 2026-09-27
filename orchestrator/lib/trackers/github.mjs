@@ -47,6 +47,11 @@ export const READY_STATUS = "ready-for-agent";
 /** Real `gh` invocation: argv array, no shell. Normalizes a thrown non-zero exit the same
  * shape as a clean one, so callers only ever branch on `.code`. */
 function shellOut(cmd, args) {
+  // Test/CI seam, like CREW_FAKE_DISPATCH: a bash script stands in for `gh`. Run through bash
+  // explicitly — on Windows execFileSync never reads a shebang and refuses a .cmd, so a stub
+  // found by PATH alone loses to the real gh.exe.
+  const fake = cmd === "gh" ? process.env.CREW_FAKE_GH : "";
+  if (fake) [cmd, args] = ["bash", [fake, ...args]];
   try {
     const stdout = execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
     return { code: 0, stdout, stderr: "" };
