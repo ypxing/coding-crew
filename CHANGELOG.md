@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.29.148]
+
+### Changed
+
+- **Each issue's dispatch files live in their own folder.** A sprint's prompts, reports,
+  triage and review output, verify record and logs, deps markers and AC receipt were
+  written flat to `.scratch/<feature>/dispatch/` as `<n>-<slug>.<kind>`. They now sit
+  together in `dispatch/<n>-<slug>/` (e.g. `01-alpha/verify.json`, `01-alpha/ac.ok`).
+  Receipts from a sprint started on an earlier version are not found under the new paths,
+  so a retry of such a branch re-runs its gates.
+
+### Fixed
+
+- **A re-run no longer redispatches the coder for an issue triage ruled not fixable.**
+  Once the retry cap blocked a `verification-failed:not-fixable` branch, the next
+  `/crew-afk` missed the verdict under the `blocked — retry limit reached …` prefix and
+  started a full coder attempt that could only reach the same environment failure. It now
+  skips the coder and triage and re-runs only deps + verify, as the in-run retry does, and
+  keeps doing so on every later re-run.
+
 ## [1.29.147]
 
 ### Changed
