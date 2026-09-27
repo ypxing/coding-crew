@@ -1005,6 +1005,22 @@ test("an issue whose ## Requires fails is blocked before any dispatch, with the 
   assert.match(text, /License activation failed\n```/);
 });
 
+test("an issue waiting on a blocker has its ## Requires probed when it unblocks, not in preflight", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Holds only once alpha has landed: what a blocker that adds the target the command runs looks like.
+  addIssue(root, "02-beta.md", {
+    blockedBy: ["01-alpha.md"],
+    body: "## Requires\n\n- `test -f .scratch/demo/issues/done/01-alpha.md`",
+  });
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(lines.filter((l) => /check-requires\.sh/.test(l)).length, 1, "probed once, at claim");
+  const s = state(root);
+  assert.deepEqual(s.blocked_slugs ?? [], []);
+  assert.deepEqual(s.merged_branches, ["crew/demo/alpha", "crew/demo/beta"]);
+});
+
 test("a ## Requires that holds on a re-run lets the issue dispatch", () => {
   const root = fixtureRepo();
   const flag = join(root, ".scratch/token-present");

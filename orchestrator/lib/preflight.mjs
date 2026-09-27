@@ -135,15 +135,19 @@ export function runBaseline(ctx) {
 }
 
 /**
- * Probe every ready issue's `## Requires` once, through solve-issue's check-requires.sh (which
- * dedupes a command issues share), and block each issue whose requirement fails before any
- * coder is dispatched for it, with the command and its output in `## Blocked`. Not cached: a
- * re-run probes again, so an issue restarts (resumeRoute) only once its requirement holds.
- * Returns the slugs blocked.
+ * Probe `## Requires` through solve-issue's check-requires.sh (which dedupes a command issues
+ * share), and block each issue whose requirement fails before any coder is dispatched for it,
+ * with the command and its output in `## Blocked`. Called once in preflight for every issue
+ * dispatchable then, and by loop.mjs for each other issue when it is first claimed: an issue
+ * still waiting on a blocker may need what that blocker lands. Each issue is probed once per
+ * run (sprint.claimRequiresProbe); not cached across runs, so a re-run probes again and the
+ * issue is dispatched once its requirement holds. Returns the slugs blocked.
  */
 export async function checkRequires(ctx, issues) {
-  const { sprint, effects } = ctx;
-  const declaring = issues.filter((i) => sectionBody(i.text ?? "", "Requires") !== null);
+  const { sprint, effects, options } = ctx;
+  if (options?.dryRun) return [];
+  const fresh = new Set(sprint.claimRequiresProbe(issues.map((i) => i.slug)));
+  const declaring = issues.filter((i) => fresh.has(i.slug) && sectionBody(i.text ?? "", "Requires") !== null);
   if (!declaring.length || !sprint.installDir) return [];
   // check-requires.sh reads files; a github issue has only a body, so it is written out.
   const byFile = new Map();

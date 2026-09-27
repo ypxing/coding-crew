@@ -148,7 +148,7 @@ Two knobs worth knowing about:
   `.coding-crew/dev-commands.json` at a non-mutating command (`biome check`, not `biome check
   --write`). An issue can list what its checks need that the install doesn't guarantee under
   `## Requires`, one backticked command per bullet (exit 0 = satisfied); each runs once before
-  any dispatch, and a failing one blocks that issue with the command's output instead of paying
+  that issue's first dispatch, and a failing one blocks that issue with the command's output instead of paying
   for its coder.
 
   A run also stops before any dispatch if tracked files in the main checkout have uncommitted

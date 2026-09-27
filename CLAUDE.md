@@ -80,8 +80,9 @@ Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the assets
 `CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
 `orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked
 changes (`--allow-dirty`), the feature branch must pass its own checks in a throwaway
-`crew/<feature>/_baseline` worktree (`--no-baseline`), and each ready issue's `## Requires` runs
-once through solve-issue's `check-requires.sh` — a failure blocks that issue, not the run. A check
+`crew/<feature>/_baseline` worktree (`--no-baseline`), and each ready, unblocked issue's `## Requires`
+runs once through solve-issue's `check-requires.sh` — a failure blocks that issue, not the run
+(an issue waiting on a blocker is probed when `loop.mjs` first claims it). A check
 that modifies the tree fails, in the baseline and every verify.
 
 ## Adding a new agent

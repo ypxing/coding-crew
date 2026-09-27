@@ -37,6 +37,7 @@ import { resumeRoute, runHousekeeping, runWorker } from "./pipeline.mjs";
 import { getTracker } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
 import { appendLine } from "./effects.mjs";
+import { checkRequires } from "./preflight.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit } from "./report.mjs";
 
@@ -108,6 +109,13 @@ export async function runSprint(ctx) {
 
   async function runOne(issue) {
     inFlight.add(issue.slug);
+    // An issue preflight did not probe (it was waiting on a blocker then): its ## Requires runs
+    // now, before its first dispatch. A no-op for any issue already probed this run.
+    if ((await checkRequires(ctx, [issue])).length) {
+      inFlight.delete(issue.slug);
+      notifyAll();
+      return;
+    }
     const conflictRetry = isConflictRetry(issue.slug);
     if (conflictRetry) conflictRetryInFlight = issue.slug;
     const attempt = sprint.bumpAttempt(issue.slug);

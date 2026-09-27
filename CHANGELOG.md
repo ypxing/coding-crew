@@ -17,7 +17,9 @@
 - **Issues can declare what their checks need: `## Requires`.** One backticked shell command
   per bullet, where exit 0 means satisfied, for a service, credential or tool the install
   doesn't guarantee. crew-afk runs every ready issue's commands once before any dispatch,
-  with a command shared by several issues run only once. Each issue whose requirement fails
+  with a command shared by several issues run only once. An issue still waiting on a
+  blocker is probed when it is first claimed instead, since its blocker may land what it
+  needs. Each issue whose requirement fails
   is blocked as `requires-failed` with the command's output in `## Blocked`, so no coder is
   paid to find the missing credential. The check is not cached: a re-run probes again and
   dispatches the issue once its requirement holds. A direct `/solve-issue` run checks its

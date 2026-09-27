@@ -76,6 +76,9 @@ export class Sprint {
     // `<branch>@<commit>` set, in-memory only: the commits verify-worktree.sh passed during
     // this invocation (see markVerifiedThisRun). A pass from an earlier run is not reused.
     this._verifiedThisRun = new Set();
+    // slug set, in-memory only: the issues whose `## Requires` this invocation already ran
+    // (preflight.mjs's checkRequires). Each is probed once per run; a re-run probes again.
+    this._requiresProbed = new Set();
   }
 
   static async init(effects, { featureSlug, fixFindings, PRDAudit, passthrough = [], deps = true, log = () => {} }) {
@@ -261,6 +264,13 @@ export class Sprint {
    */
   isBlockedThisRun(slug) {
     return this._blockedThisRun.has(slug);
+  }
+
+  /** Records `slugs` as probed; returns those that were not yet — see checkRequires. */
+  claimRequiresProbe(slugs) {
+    const fresh = slugs.filter((s) => !this._requiresProbed.has(s));
+    for (const s of fresh) this._requiresProbed.add(s);
+    return fresh;
   }
 
   /** Recorded once verify-worktree.sh passes `branch` at `commit` — see gatesAtTip. */

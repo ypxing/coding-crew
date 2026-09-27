@@ -578,7 +578,7 @@ async function main() {
     console.log(`squash:    ${options.squashCommits ? "at the end of the sprint" : offBy("squashCommits", "--no-squash")}`);
     console.log(`baseline:  ${options.baselineCheck ? "the checks run once on the feature branch before any dispatch; red stops the run" : offBy("baselineCheck", "--no-baseline")}`);
     const requiring = tracker.selectDispatchable(mainRoot, { featureSlug: resolved.slug, includeBlocked: true }).filter((i) => /^## Requires\s*$/m.test(i.text ?? ""));
-    console.log(`requires:  ${requiring.length ? `${requiring.map((i) => i.slug).join(", ")} — each ## Requires runs once before any dispatch; a failing one blocks its issue` : "no issue declares ## Requires"}`);
+    console.log(`requires:  ${requiring.length ? `${requiring.map((i) => i.slug).join(", ")} — each ## Requires runs once before that issue's first dispatch; a failing one blocks it` : "no issue declares ## Requires"}`);
     console.log(`resume:    ${options.resumeCoderSession ? "a fix round continues the coder's own session when it is small and the branch has not moved" : "fix rounds start a fresh coder session"}`);
     const dirty = dirtyTrackedFiles(effects);
     console.log(`main tree: ${dirty.length ? `${dirty.length} tracked file(s) with uncommitted changes — run would stop (--allow-dirty to override): ${dirty.join(", ")}` : "clean"}`);
@@ -732,12 +732,13 @@ async function main() {
       }
     }
 
-    // Once, before any dispatch: what each ready issue says it needs (## Requires). A failing
-    // one is blocked here, so no coder is paid to rediscover a missing credential. Issues still
-    // waiting on a blocker are probed too — nothing checks them again when they unblock.
+    // Once, before any dispatch: what each dispatchable issue says it needs (## Requires). A
+    // failing one is blocked here, so no coder is paid to rediscover a missing credential. An
+    // issue still waiting on a blocker is probed when it is first claimed (loop.mjs) instead:
+    // its requirement may be what the blocker lands.
     if (!options.dryRun) {
       const tracker = await getTracker(mainRoot);
-      await checkRequires(ctx, tracker.selectDispatchable(mainRoot, { featureSlug: sprint.featureSlug, includeBlocked: true }));
+      await checkRequires(ctx, tracker.selectDispatchable(mainRoot, { featureSlug: sprint.featureSlug }));
     }
 
     ({ stalled } = await runSprint(ctx));
