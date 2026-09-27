@@ -6,6 +6,7 @@ import {
   EVIDENCE_OUTPUT_MAX,
   findingsAtOrAbove,
   parsePrdAudit,
+  parseRequiresFailures,
   parseReviewAggregate,
   parseReviewReport,
   parseTriageReport,
@@ -451,6 +452,23 @@ test("the triage prompt carries the coder's evidence only as its own claim, and 
   assert.match(p, /^cause: environment\ncommand: make it\nexit: 1\noutput \(tail\):\nboom\n---$/m);
   assert.doesNotMatch(triagePrompt(base), /its own claim/);
   assert.doesNotMatch(triagePrompt({ ...base, coderEvidence: { cause: null } }), /its own claim/);
+});
+
+test("check-requires.sh failures are read per issue file, matched on the paths given", () => {
+  const out = [
+    "REQUIRE: pass /r/my issues/01-a.md true",
+    "REQUIRE: fail /r/my issues/01-a.md test -n \"$TOKEN\"",
+    "  exit 1",
+    "REQUIRE: fail /r/my issues/02-b.md make start svc",
+    "  timed out after 300s",
+    "  | starting svc",
+    "  | ",
+    "  | still waiting",
+  ].join("\n");
+  const m = parseRequiresFailures(out, ["/r/my issues/01-a.md", "/r/my issues/02-b.md"]);
+  assert.deepEqual(m.get("/r/my issues/01-a.md"), [{ command: 'test -n "$TOKEN"', status: "exit 1", output: "" }]);
+  assert.deepEqual(m.get("/r/my issues/02-b.md"), [{ command: "make start svc", status: "timed out after 300s", output: "starting svc\n\nstill waiting" }]);
+  assert.equal(parseRequiresFailures("REQUIRE: pass /x.md true", ["/x.md"]).size, 0);
 });
 
 // ─── triage: parseTriageReport ────────────────────────────────────────────────

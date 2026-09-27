@@ -141,6 +141,8 @@ Look in `PRD.md` for descriptions of end-to-end operations that span multiple ve
 
 For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
 
+**`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root, before any coder is dispatched, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` with the failing command and its output as the reason, instead of `ready-for-agent`: no coder can supply what it lacks.
+
 Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field. Work the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, publish all currently unblocked issues before their dependents.
 
 **Under a configured `github` tracker**, `publish` (per `github.md`'s `Operation: publish`) creates one GitHub issue per slice via `gh issue create --body-file <file> --label ready-for-agent --milestone <feature-slug>`, where `<file>` is the issue-template body below rendered to text — the body itself, not a sidecar, carries the dependency graph for this backend. Write `## Blocked by` entries as `Issue #<n>`, citing the number `gh issue create` returned for each already-created blocker (the same numeric convention `body-format.mjs`'s `extractBlockedByNumbers` parses) — this is why blockers must still be created before their dependents under this backend too. When step 2 found a PRD, cite it in `## Context Documents` as `PRD: #<n>` using its issue number. The local-only re-run handling above does not apply: a milestone accumulates issues across runs with no local directory to inspect, so re-running against an existing milestone always adds new issues rather than overwriting; confirm with the user first if this doesn't look like a re-run they intended.
@@ -191,6 +193,12 @@ This issue implements [step description] of the [flow name] flow.
 **Full flow:** [brief description or reference to PRD.md section]
 **Upstream:** [previous step/issue or "none"]
 **Downstream:** [next step/issue or "none"]
+
+## Requires
+
+> **Optional — only include this section when the issue's checks need a service, credential or tool the project's own install does not guarantee. Omit entirely otherwise.**
+
+- `<one shell command per requirement, exit 0 = satisfied — e.g. make start-localstack, test -n "$LOCALSTACK_AUTH_TOKEN">`
 
 ## Blocked by
 

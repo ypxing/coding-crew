@@ -92,3 +92,10 @@ setup() {
   grep -q 'ready-for-agent' "$GITHUB_TEMPLATE"
   grep -q 'ready-for-human' "$GITHUB_TEMPLATE"
 }
+
+@test "both tracker templates document the ## Requires section" {
+  grep -q '## Requires' "$TEMPLATE"
+  grep -q 'Exit 0 means satisfied' "$TEMPLATE"
+  grep -q '## Requires' "$GITHUB_TEMPLATE"
+  grep -q 'exit 0 = satisfied' "$GITHUB_TEMPLATE"
+}

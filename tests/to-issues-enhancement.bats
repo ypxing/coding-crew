@@ -55,3 +55,13 @@ setup() {
   grep -qi 'upstream\|downstream' "$SKILL_FILE" || grep -qi 'flow' "$SKILL_FILE"
 }
 
+
+@test "to-issues/SKILL.md template includes an optional Requires section, one command per bullet" {
+  grep -q '^## Requires$' "$SKILL_FILE"
+  grep -q 'exit 0 = satisfied' "$SKILL_FILE"
+}
+
+@test "to-issues runs each Requires command while authoring, and a failure makes the issue ready-for-human" {
+  grep -q 'Run each one while authoring' "$SKILL_FILE"
+  grep -qE 'fails, publish the issue as `Status: ready-for-human`' "$SKILL_FILE"
+}

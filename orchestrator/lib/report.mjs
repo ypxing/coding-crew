@@ -219,6 +219,36 @@ export function depsLine(stdout) {
   return m ? m[0].trim() : "";
 }
 
+/**
+ * check-requires.sh's failures, per issue file: `Map<file, [{ command, status, output }]>`.
+ * `files` are the paths it was given — a `REQUIRE: fail <file> <cmd>` line is matched on them,
+ * not split on a space, since a path or a command may contain one. `status` is its `exit N` /
+ * `timed out after Ns` line; `output` the `| `-prefixed tail below it.
+ */
+export function parseRequiresFailures(stdout, files) {
+  const byFile = new Map();
+  const known = [...files].sort((a, b) => b.length - a.length);
+  let current = null;
+  for (const line of String(stdout ?? "").split("\n")) {
+    if (line.startsWith("REQUIRE: ")) {
+      current = null;
+      const rest = line.slice("REQUIRE: fail ".length);
+      if (!line.startsWith("REQUIRE: fail ")) continue;
+      const file = known.find((f) => rest.startsWith(`${f} `));
+      if (!file) continue;
+      current = { command: rest.slice(file.length + 1), status: "", output: [] };
+      if (!byFile.has(file)) byFile.set(file, []);
+      byFile.get(file).push(current);
+    } else if (current && line.startsWith("  | ")) {
+      current.output.push(line.slice(4));
+    } else if (current && line.startsWith("  ")) {
+      current.status = line.trim();
+    }
+  }
+  for (const list of byFile.values()) for (const f of list) f.output = f.output.join("\n");
+  return byFile;
+}
+
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const VERDICTS = new Set(["all-met", "unmet", "not_run"]);
 

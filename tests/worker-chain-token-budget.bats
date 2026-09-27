@@ -83,8 +83,10 @@ words_of() {
   # Raised to 2,100 when run-checks.sh started failing a check that modifies the tree: §5 now
   # says that verdict is project config to report, not code to revert and re-run — a real new
   # branch, which four coders in one sprint each handled by reverting the same 17 files.
+  # Raised to 2,150 when preflight.sh started running the issue's `## Requires` commands: Step 0
+  # names the one new BLOCKED: line it can print (§Outcome's stop-once rule had used the rest).
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 2100 ] || { echo "solve-issue is $words words (budget 2100)" >&2; return 1; }
+  [ "$words" -lt 2150 ] || { echo "solve-issue is $words words (budget 2150)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {

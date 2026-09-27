@@ -137,6 +137,10 @@
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
+      "assets": {
+        "source": "skills/solve-issue/scripts",
+        "dest": ".coding-crew/solve-issue/scripts"
+      },
       "scripts": [
         "commit-changes.sh",
         "write-commands-cache.sh"
@@ -175,7 +179,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.4.2",
+      "version": "1.4.3",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",

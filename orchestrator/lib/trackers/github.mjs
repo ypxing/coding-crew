@@ -138,15 +138,16 @@ export function listOpen(mainRoot, { featureSlug, exec = shellOut } = {}) {
  * `number → status` map reused to resolve every candidate's blockers — mirrors how local's
  * `doneFiles()` is one directory read reused across every issue in the same call. A blocker
  * counts as resolved once its own status is `done` (closed); anything else, including a
- * blocker number absent from this milestone entirely, still blocks.
+ * blocker number absent from this milestone entirely, still blocks. `includeBlocked` keeps the
+ * ready issues still waiting on one, as local's does.
  */
-export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug, exec } = {}) {
+export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug, exec, includeBlocked = false } = {}) {
   const issues = listOpen(mainRoot, { featureSlug, exec });
   const statusByNumber = new Map(issues.map((i) => [i.number, i.status]));
   const ready = issues.filter((i) => i.status === status);
   return ready
     .map((i) => ({ ...i, blockers: i.blockedBy.filter((n) => statusByNumber.get(n) !== "done") }))
-    .filter((i) => i.blockers.length === 0);
+    .filter((i) => includeBlocked || i.blockers.length === 0);
 }
 
 /** `repos/{owner}/{repo}/milestones` when `repo` is unset, letting `gh` resolve the

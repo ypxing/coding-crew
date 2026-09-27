@@ -46,6 +46,7 @@ after(() => rmSync(SCRIPTS_BASE, { recursive: true, force: true }));
 const INSTALL_DIR = join(SCRIPTS_BASE, "install");
 cpSync(join(REPO, "agents/crew-reviewer/assets"), join(INSTALL_DIR, "code-review"), { recursive: true });
 cpSync(join(REPO, "skills/dep-install/scripts"), join(INSTALL_DIR, "dep-install/scripts"), { recursive: true });
+cpSync(join(REPO, "skills/solve-issue/scripts"), join(INSTALL_DIR, "solve-issue/scripts"), { recursive: true });
 const FAKE = join(HERE, "fixtures/fake-dispatch.sh");
 
 // Every call site below spreads process.env into its own `env` (or omits `env` and gets
@@ -290,11 +291,12 @@ test("a run whose install is missing an asset stops before any dispatch, naming 
   const partial = mkdtempSync(join(tmpdir(), "crew-install-"));
   FIXTURE_ROOTS.push(partial);
   cpSync(join(INSTALL_DIR, "dep-install"), join(partial, "dep-install"), { recursive: true });
+  cpSync(join(INSTALL_DIR, "solve-issue"), join(partial, "solve-issue"), { recursive: true });
   const r = runSprint(root, [], { CREW_INSTALL_DIR: partial });
   assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
   assert.ok(r.stderr.includes(`reviewer: ${join(partial, "code-review/scripts/review-context.sh")}`), r.stderr);
   assert.match(r.stderr, /Re-run install\.sh/);
-  assert.doesNotMatch(r.stderr, /depInstall:/);
+  assert.doesNotMatch(r.stderr, /depInstall:|solveIssue:/);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch")), false, "nothing was dispatched");
 });
 
@@ -982,6 +984,38 @@ test("blocked with no cause is a stop at once, with no verify, even with commits
   assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
   assert.equal(coderSpawns(lines), 1);
   assert.deepEqual(state(root).blocked_slugs, ["alpha"]);
+});
+
+// ─── ## Requires: probed once in preflight, before any dispatch ───────────────────────
+
+test("an issue whose ## Requires fails is blocked before any dispatch, with the command and its output", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md", { body: "## Requires\n\n- `echo License activation failed; exit 1`" });
+  addIssue(root, "02-beta.md", { body: "## Requires\n\n- `true`" });
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(lines.filter((l) => /check-requires\.sh/.test(l)).length, 1, "one probe for every issue");
+  assert.ok(!lines.some((l) => /^SPAWN .*--agent crew-coder.*--slug 01-alpha/.test(l)), "alpha's coder never ran");
+  assert.ok(lines.some((l) => /^SPAWN .*--agent crew-coder.*--slug 02-beta/.test(l)), "beta's requirement holds, so it runs");
+  const s = state(root);
+  assert.deepEqual(s.blocked_slugs, ["alpha"]);
+  assert.deepEqual(s.merged_branches, ["crew/demo/beta"]);
+  const text = readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8");
+  assert.match(text, /## Blocked\n\nPreflight: requires-failed — `echo License activation failed; exit 1` exit 1/);
+  assert.match(text, /License activation failed\n```/);
+});
+
+test("a ## Requires that holds on a re-run lets the issue dispatch", () => {
+  const root = fixtureRepo();
+  const flag = join(root, ".scratch/token-present");
+  addIssue(root, "01-alpha.md", { body: `## Requires\n\n- \`test -f ${flag}\`` });
+  const first = commandLines(root);
+  assert.equal(coderSpawns(first.lines), 0);
+  writeFileSync(flag, "");
+  const second = commandLines(root);
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  assert.equal(coderSpawns(second.lines), 1);
+  assert.deepEqual(state(root).merged_branches, ["crew/demo/alpha"]);
 });
 
 test("an unparseable worker report is blocked, never complete", () => {

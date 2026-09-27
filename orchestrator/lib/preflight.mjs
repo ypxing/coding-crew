@@ -4,26 +4,32 @@
  * Each check catches a problem every issue would otherwise hit only after paying for its
  * coder and review: a missing installed asset sends every reviewer and coder hunting for it, a
  * dirty main checkout refuses the merge at the very end, and a feature branch whose own checks
- * already fail makes every issue's verify gate fail on code no issue wrote. None costs a token.
+ * already fail makes every issue's verify gate fail on code no issue wrote. An issue whose own
+ * `## Requires` does not hold (a credential unset, a service that will not start) would pay for
+ * a coder that can only rediscover it. None costs a token.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ASSET_DIRS, assetDir } from "./install-dir.mjs";
-import { depsLine, readVerifyRecord } from "./report.mjs";
+import { depsLine, parseRequiresFailures, readVerifyRecord } from "./report.mjs";
+import { sectionBody } from "./trackers/body-format.mjs";
+import { dispatchStem, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
 import { applyWorktreeInclude, removeWorktree, worktreePath } from "./worktree.mjs";
 
 /** The file whose presence says an asset dir is really installed, not just created. */
 const ASSET_PROBES = {
   reviewer: "scripts/review-context.sh",
   depInstall: "run.sh",
+  solveIssue: "check-requires.sh",
 };
 
 /**
  * Each asset dir under `installDir` (install-dir.mjs) whose probe file is absent: `[{ kind, file }]`.
- * Every run uses both — the reviewer reads its scripts, and ensure-deps.sh / verify-worktree.sh
- * run dep-install's — so a gap here is one every reviewer or coder would otherwise hunt for.
+ * Every run uses each — the reviewer reads its scripts, ensure-deps.sh / verify-worktree.sh run
+ * dep-install's, and preflight runs check-requires.sh — so a gap here is one every reviewer or
+ * coder would otherwise hunt for.
  */
 export function missingAssets(installDir) {
   return Object.keys(ASSET_DIRS)
@@ -126,6 +132,52 @@ export function runBaseline(ctx) {
     removeWorktree(effects, { mainRoot: effects.mainRoot, path });
     effects.git(["branch", "-D", branch]);
   }
+}
+
+/**
+ * Probe every ready issue's `## Requires` once, through solve-issue's check-requires.sh (which
+ * dedupes a command issues share), and block each issue whose requirement fails before any
+ * coder is dispatched for it, with the command and its output in `## Blocked`. Not cached: a
+ * re-run probes again, so an issue restarts (resumeRoute) only once its requirement holds.
+ * Returns the slugs blocked.
+ */
+export async function checkRequires(ctx, issues) {
+  const { sprint, effects } = ctx;
+  const declaring = issues.filter((i) => sectionBody(i.text ?? "", "Requires") !== null);
+  if (!declaring.length || !sprint.installDir) return [];
+  // check-requires.sh reads files; a github issue has only a body, so it is written out.
+  const byFile = new Map();
+  for (const issue of declaring) {
+    let file = issue.path;
+    if (!file) {
+      mkdirSync(sprint.dispatchDir, { recursive: true });
+      file = join(sprint.dispatchDir, `${dispatchStem(issue)}.requires.md`);
+      writeFileSync(file, issue.text);
+    }
+    byFile.set(file, issue);
+  }
+  ctx.log(`[STEP] step=requires issues=${declaring.map((i) => i.slug).join(",")}`);
+  const script = join(assetDir(sprint.installDir, "solveIssue"), "check-requires.sh");
+  const r = effects.exec(
+    "bash",
+    [script, "--project-root", effects.mainRoot, ...[...byFile.keys()].flatMap((f) => ["--issue", f])],
+    { env: sprint.childEnv() },
+  );
+  const blocked = [];
+  for (const [file, failures] of parseRequiresFailures(r.stdout, byFile.keys())) {
+    const issue = byFile.get(file);
+    const reason = taggedReason(REQUIRES_FAILED_TAG, failures.map((f) => `\`${f.command}\` ${f.status || "failed"}`).join("; "));
+    const evidence = failures
+      .map((f) => [`$ ${f.command}  (${f.status || "failed"})`, f.output].filter(Boolean).join("\n"))
+      .join("\n\n");
+    ctx.log(`[REQUIRES-FAILED] slug=${issue.slug} — ${reason.slice(REQUIRES_FAILED_TAG.length + 3)}`);
+    await writeTrackerSection(effects, issue, "Blocked", `Preflight: ${reason}\n\n\`\`\`\n${evidence}\n\`\`\``, { append: true });
+    sprint.blocked(issue.slug, null, reason);
+    sprint.markBlockedThisRun(issue.slug);
+    blocked.push(issue.slug);
+  }
+  if (r.code !== 0 && !blocked.length) ctx.log(`REQUIRES: check-requires.sh exited ${r.code} with no failure named — ${(r.stderr || r.stdout).trim()}`);
+  return blocked;
 }
 
 /**

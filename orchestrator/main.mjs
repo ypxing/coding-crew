@@ -97,6 +97,7 @@ import {
   baselineFailureMessage,
   dirtyTrackedFiles,
   dockerDepsFailureMessage,
+  checkRequires,
   missingAssets,
   missingAssetsMessage,
   runBaseline,
@@ -569,6 +570,8 @@ async function main() {
     console.log(`deps:      ${options.installDeps ? "ensure-deps.sh, once per sprint and once per worktree, using a discovered install command when one was cached" : offBy("installDeps", "--no-deps")}`);
     console.log(`squash:    ${options.squashCommits ? "at the end of the sprint" : offBy("squashCommits", "--no-squash")}`);
     console.log(`baseline:  ${options.baselineCheck ? "the checks run once on the feature branch before any dispatch; red stops the run" : offBy("baselineCheck", "--no-baseline")}`);
+    const requiring = tracker.selectDispatchable(mainRoot, { featureSlug: resolved.slug, includeBlocked: true }).filter((i) => /^## Requires\s*$/m.test(i.text ?? ""));
+    console.log(`requires:  ${requiring.length ? `${requiring.map((i) => i.slug).join(", ")} — each ## Requires runs once before any dispatch; a failing one blocks its issue` : "no issue declares ## Requires"}`);
     console.log(`resume:    ${options.resumeCoderSession ? "a fix round continues the coder's own session when it is small and the branch has not moved" : "fix rounds start a fresh coder session"}`);
     const dirty = dirtyTrackedFiles(effects);
     console.log(`main tree: ${dirty.length ? `${dirty.length} tracked file(s) with uncommitted changes — run would stop (--allow-dirty to override): ${dirty.join(", ")}` : "clean"}`);
@@ -719,6 +722,14 @@ async function main() {
           return exitCode;
         }
       }
+    }
+
+    // Once, before any dispatch: what each ready issue says it needs (## Requires). A failing
+    // one is blocked here, so no coder is paid to rediscover a missing credential. Issues still
+    // waiting on a blocker are probed too — nothing checks them again when they unblock.
+    if (!options.dryRun) {
+      const tracker = await getTracker(mainRoot);
+      await checkRequires(ctx, tracker.selectDispatchable(mainRoot, { featureSlug: sprint.featureSlug, includeBlocked: true }));
     }
 
     ({ stalled } = await runSprint(ctx));

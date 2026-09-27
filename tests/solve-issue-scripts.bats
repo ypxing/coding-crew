@@ -168,3 +168,72 @@ _committed_src() {
   [ "$status" -eq 0 ]
   [[ "$output" != *"modified files"* ]]
 }
+
+# ─── check-requires.sh ───────────────────────────────────────────────────────
+# An issue's `## Requires`: what its checks need that the install does not guarantee, as one
+# command per bullet. A sprint once paid two coders $6 to rediscover an unset license token.
+
+CHECK_REQUIRES="$REPO_ROOT/skills/solve-issue/scripts/check-requires.sh"
+
+_requires_issue() {  # <file> <command>...
+  local f="$1"; shift
+  { printf '# X\n\n## Requires\n\n'; for c in "$@"; do printf -- '- `%s`\n' "$c"; done
+    printf '\n## Acceptance criteria\n\n- [ ] `false` is not a requirement\n'; } > "$f"
+}
+
+@test "check-requires: every command passing is a pass per command, exit 0" {
+  _requires_issue "$TEMP_DIR/a.md" "true" "test -d ."
+  run bash "$CHECK_REQUIRES" --project-root "$WORK" --issue "$TEMP_DIR/a.md"
+  [ "$status" -eq 0 ]
+  [ "$output" = "REQUIRE: pass $TEMP_DIR/a.md true"$'\n'"REQUIRE: pass $TEMP_DIR/a.md test -d ." ]
+}
+
+@test "check-requires: a failing command fails with its exit and output tail, from the project root" {
+  _requires_issue "$TEMP_DIR/a.md" 'pwd -P; echo License activation failed; exit 3'
+  run bash "$CHECK_REQUIRES" --project-root "$WORK" --issue "$TEMP_DIR/a.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REQUIRE: fail $TEMP_DIR/a.md pwd -P; echo License activation failed; exit 3"* ]]
+  [[ "$output" == *"  exit 3"* ]]
+  [[ "$output" == *"  | $(cd "$WORK" && pwd -P)"* ]]
+  [[ "$output" == *"  | License activation failed"* ]]
+}
+
+@test "check-requires: an issue with no Requires section passes silently" {
+  printf '# X\n\n## Acceptance criteria\n\n- [ ] `false`\n' > "$TEMP_DIR/a.md"
+  run bash "$CHECK_REQUIRES" --project-root "$WORK" --issue "$TEMP_DIR/a.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "check-requires: a command two issues share runs once, and both get its verdict" {
+  _requires_issue "$TEMP_DIR/a.md" "echo x >> $TEMP_DIR/ran; exit 1"
+  _requires_issue "$TEMP_DIR/b.md" "echo x >> $TEMP_DIR/ran; exit 1" "true"
+  run bash "$CHECK_REQUIRES" --project-root "$WORK" --issue "$TEMP_DIR/a.md" --issue "$TEMP_DIR/b.md"
+  [ "$status" -eq 1 ]
+  [ "$(wc -l < "$TEMP_DIR/ran" | tr -d ' ')" = 1 ]
+  [[ "$output" == *"REQUIRE: fail $TEMP_DIR/a.md echo x"* ]]
+  [[ "$output" == *"REQUIRE: fail $TEMP_DIR/b.md echo x"* ]]
+  [[ "$output" == *"REQUIRE: pass $TEMP_DIR/b.md true"* ]]
+}
+
+@test "check-requires: a command past --timeout fails as timed out" {
+  _requires_issue "$TEMP_DIR/a.md" "sleep 30"
+  run bash "$CHECK_REQUIRES" --project-root "$WORK" --issue "$TEMP_DIR/a.md" --timeout 1
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REQUIRE: fail $TEMP_DIR/a.md sleep 30"*"timed out after 1s"* ]]
+}
+
+@test "preflight: a failing Requires command blocks a direct run" {
+  { printf '# Second\n\n## Requires\n\n- `echo no token; exit 1`\n\n## Blocked by\n\nNone\n'; } > "$ISSUE"
+  _preflight
+  [ "$status" -eq 1 ]
+  [[ "${lines[0]}" == "BLOCKED: requires: echo no token; exit 1" ]]
+  [[ "$output" == *"  | no token"* ]]
+}
+
+@test "preflight: Requires is not run again when orchestrated — the orchestrator already did" {
+  { printf '# Second\n\n## Requires\n\n- `touch %s/ran; exit 1`\n\n## Blocked by\n\nNone\n' "$TEMP_DIR"; } > "$ISSUE"
+  CREW_ORCHESTRATED=1 _preflight
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/ran" ]
+}

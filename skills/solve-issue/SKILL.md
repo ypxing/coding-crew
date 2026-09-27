@@ -64,8 +64,8 @@ bash "<skill-dir>/scripts/preflight.sh" --project-root "$PROJECT_ROOT" --main-ro
 ```
 
 A `BLOCKED:` line (exit 1) — `BLOCKED: on default branch` (`DEFAULT_BRANCH`: `origin/HEAD`, else
-`main`), or `BLOCKED: depends on <file>` for a `## Blocked by` file not yet in the sibling `done/` —
-ends the run: report it verbatim and do not proceed to any other
+`main`), `BLOCKED: depends on <file>` for a `## Blocked by` file not yet in the sibling `done/`, or
+`BLOCKED: requires: <cmd>` for a failing `## Requires` command — ends the run: report it verbatim and do not proceed to any other
 step. Otherwise it prints `OK` and four values; each bash call is a fresh shell, so carry them as
 literals for the rest of the run:
 

@@ -124,7 +124,10 @@ isn't already a repo label.
 A feature maps to a GitHub **Milestone** named for the feature slug. The feature's PRD is an
 issue inside that milestone, identified by title convention (`PRD: <feature title>`), not a
 local file. Work issues are regular issues in the same milestone, using the same markdown body
-conventions as local issues (`## Blocked by`, `## Acceptance criteria`, `Source:`).
+conventions as local issues (`## Blocked by`, `## Acceptance criteria`, `## Requires`, `Source:`).
+`## Requires` is one backticked shell command per bullet, exit 0 = satisfied, naming what the
+issue's checks need that the install does not guarantee; crew-afk runs each once, from the
+project root, before any dispatch, and a failing one blocks the issue.
 
 No filename exists to derive a slug or branch from, so both are derived deterministically from
 the issue every time: kebab-case the title for the slug, and include the issue number in the

@@ -25,3 +25,15 @@ setup() {
 @test "add-tests SKILL.md references test-conventions.md" {
   grep -q 'test-conventions\.md' "$SCRIPT_DIR/skills/add-tests/SKILL.md"
 }
+
+@test "add-tests records each real-tier finding's requirements as commands, probed while authoring" {
+  local f="$SCRIPT_DIR/skills/add-tests/SKILL.md"
+  grep -q '## Requires' "$f"
+  grep -q 'Run each now' "$f"
+  grep -q 'ready-for-human' "$f"
+}
+
+@test "add-tests names a working example spec and import line per helper kind" {
+  grep -q 'A working example per helper kind' "$SCRIPT_DIR/skills/add-tests/SKILL.md"
+  grep -q 'its import line' "$SCRIPT_DIR/skills/add-tests/SKILL.md"
+}

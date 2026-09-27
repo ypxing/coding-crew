@@ -30,6 +30,10 @@ export const MAIN_TREE_DIRTY_TAG = "main-tree-dirty";
 // The reviewer left no valid verdict, even after its in-round retry. Carries why (a timeout,
 // no report.json, no verdict field) — the branch itself is done, so no route recodes it.
 export const REVIEW_NOT_RUN_TAG = "review-not-run";
+// An issue's own `## Requires` command failed in preflight (check-requires.sh), so it was
+// blocked before any dispatch. Re-probed on every run, so a re-run restarts it only once the
+// requirement holds.
+export const REQUIRES_FAILED_TAG = "requires-failed";
 const REASON_SEP = " — ";
 
 export function taggedReason(tag, summary) {

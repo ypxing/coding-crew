@@ -47,6 +47,8 @@ Create the directory if it does not exist. Set a `Status:` line near the top of 
 
 When issues come from `to-issues`, it also writes `.scratch/<feature-slug>/issues/issues-deps.json` — a flat filename → blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what the orchestrator reads to decide whether an issue is ready to dispatch.
 
+An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root — once per run, before any dispatch, under crew-afk; in `solve-issue`'s preflight on a direct run — and a failing one blocks the issue.
+
 ## Operation: mark-done
 
 Delegate to the tracker's close script — do not hand-run `sed` or `mv`:

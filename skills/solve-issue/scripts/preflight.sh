@@ -14,6 +14,9 @@
 # Or one line and exit 1 — stop, report it verbatim:
 #   BLOCKED: on default branch (<name>) — create or switch to a feature branch first
 #   BLOCKED: depends on <file> which is not yet done
+#   BLOCKED: requires: <cmd>          then check-requires.sh's exit and output tail — a command
+#                                     under the issue's `## Requires` failed. Not run when
+#                                     ORCHESTRATED=1: the orchestrator already probed it.
 #
 # --issue is optional because a caller may hand the issue over inline: with no file there is
 # no Blocked-by section to check and no Context Documents line to read the PRD from, so only
@@ -97,6 +100,19 @@ fi
 ORCHESTRATED=0
 if [ "${CREW_ORCHESTRATED:-}" = 1 ] || ls "$MAIN_ROOT"/.scratch/*/.orchestrated >/dev/null 2>&1; then
   ORCHESTRATED=1
+fi
+
+# ─── what the issue says it needs: its ## Requires ──────────────────────────
+# One owner per run: an orchestrator probes every issue's requirements before dispatching any,
+# so an orchestrated worker never runs them a second time.
+if [ "$ORCHESTRATED" = 0 ] && [ -n "$ISSUE" ] && [ -f "$ISSUE" ]; then
+  REQ_OUT=$(bash "$SELF_DIR/check-requires.sh" --project-root "$PROJECT_ROOT" --issue "$ISSUE")
+  if [ $? -ne 0 ]; then
+    REQ_FAIL=$(printf '%s\n' "$REQ_OUT" | sed -n "s|^REQUIRE: fail $ISSUE ||p" | head -1)
+    echo "BLOCKED: requires: ${REQ_FAIL:-see below}"
+    printf '%s\n' "$REQ_OUT" | grep -v '^REQUIRE: pass '
+    exit 1
+  fi
 fi
 
 # ─── dep-install's scripts ───────────────────────────────────────────────────

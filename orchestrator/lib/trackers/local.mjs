@@ -160,14 +160,15 @@ export function blockers(issue, done = doneFiles(issue.path)) {
  * Ready and unblocked, in filename order. Everything else is skipped.
  *
  * `featureSlug` is forwarded to `listOpenIssueFiles` unchanged — see its docstring for
- * why a running sprint must always pass its own slug here.
+ * why a running sprint must always pass its own slug here. `includeBlocked` keeps the ready
+ * issues still waiting on a blocker: preflight probes their `## Requires` before any dispatch.
  */
-export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug = null } = {}) {
+export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug = null, includeBlocked = false } = {}) {
   const issues = listOpenIssueFiles(mainRoot, { featureSlug }).map((p) => parseIssue(p));
   const ready = issues.filter((i) => i.status === status);
   return ready
     .map((i) => ({ ...i, blockers: blockers(i) }))
-    .filter((i) => i.blockers.length === 0);
+    .filter((i) => includeBlocked || i.blockers.length === 0);
 }
 
 export function writeIssueSection(path, heading, body, { append = false } = {}) {

@@ -27,6 +27,12 @@ asset_dir() {
   [ "$(asset_dir depInstall)" = "${dest#.coding-crew/}" ]
 }
 
+@test "install-dir: solve-issue's scripts are where install.sh puts solve-issue's" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  dest="$(jq -r '.skills["solve-issue"].assets.dest' "$REPO_ROOT/registry.json")"
+  [ "$(asset_dir solveIssue)" = "${dest#.coding-crew/}" ]
+}
+
 @test "install-dir: crew-afk's orchestrator sits one level under the same .coding-crew/" {
   # CREW_INSTALL_DIR defaults to the parent of main.mjs's own dir.
   dest="$(jq -r '.skills["crew-afk"].assets.dest' "$REPO_ROOT/registry.json")"
