@@ -9,6 +9,7 @@ import {
   activeRoles,
   crewPreflight,
   describeModel,
+  ignoredLimitsNotice,
   loadConfig,
   resolveCrew,
   resolvePaneHost,
@@ -513,4 +514,46 @@ test("resolveWorktreeRoot: CREW_WORKTREE_ROOT, then the file, else null (the def
   const origin = { worktreeRoot: "project" };
   assert.equal(resolveWorktreeRoot({ afk: { worktreeRoot: "../wt" }, env: { CREW_WORKTREE_ROOT: "/wt" }, origin }), "/wt");
   assert.equal(origin.worktreeRoot, "CREW_WORKTREE_ROOT");
+});
+
+// ─── afk.limits.<role>.usd ───────────────────────────────────────────────────
+
+test("loadConfig: afk.limits is validated per role, all problems at once", () => {
+  const root = tmpRoot({
+    "config.json": { afk: { limits: { coder: { usd: 0 }, reviewer: { usd: "5" }, worker: { usd: 1 }, triage: 3, prdAuditor: { usd: 1, turns: 9 } } } },
+  });
+  assert.throws(
+    () => loadConfig(root, { home: EMPTY_HOME }),
+    (err) =>
+      err instanceof ConfigError &&
+      [
+        /"afk\.limits\.coder\.usd" must be a positive number of dollars/,
+        /"afk\.limits\.reviewer\.usd" must be a positive number of dollars/,
+        /unknown role "afk\.limits\.worker"/,
+        /"afk\.limits\.triage" must be an object like \{ "usd": 5 \}/,
+        /unknown key "afk\.limits\.prdAuditor\.turns" \(expected usd\)/,
+      ].every((re) => re.test(err.message)),
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("afk.limits merges one role at a time and is off by default", () => {
+  const root = tmpRoot({ "config.json": { afk: { limits: { coder: { usd: 4 } } } } });
+  const home = tmpRoot({ "config.json": { afk: { limits: { coder: { usd: 9 }, reviewer: { usd: 1.5 } } } } });
+  const { config, origin } = loadConfig(root, { home });
+  assert.deepEqual(resolveSettings({ afk: config.afk }).limitsUsd, { coder: 4, reviewer: 1.5 });
+  assert.equal(origin["limits.coder.usd"], "project");
+  assert.equal(origin["limits.reviewer.usd"], "user");
+  assert.deepEqual(resolveSettings({}).limitsUsd, {});
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+});
+
+test("ignoredLimitsNotice names each capped role not on claude, in one line", () => {
+  const crew = { coder: { runtime: "claude" }, reviewer: { runtime: "codex" }, triage: { runtime: "pi" } };
+  assert.equal(ignoredLimitsNotice({ coder: 5 }, crew), null);
+  assert.equal(ignoredLimitsNotice({}, crew), null);
+  const notice = ignoredLimitsNotice({ coder: 5, reviewer: 1, triage: 1 }, crew);
+  assert.match(notice, /^afk\.limits ignored for reviewer \(codex\), triage \(pi\) — /);
+  assert.doesNotMatch(notice, /coder/);
 });

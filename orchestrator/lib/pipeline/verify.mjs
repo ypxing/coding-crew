@@ -9,8 +9,8 @@ import { join } from "node:path";
 import { dispatch } from "../dispatch.mjs";
 import { triagePrompt } from "../prompts.mjs";
 import { parseTriageReport } from "../report.mjs";
-import { finishRetryOrBlock } from "./finish.mjs";
-import { dispatchStem, FIXABLE_TAG, issueDescriptor, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason } from "./shared.mjs";
+import { finishBlocked, finishRetryOrBlock } from "./finish.mjs";
+import { dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason } from "./shared.mjs";
 
 /**
  * verify-worktree.sh already failed: triage it, and tag the retention reason with the
@@ -26,6 +26,7 @@ export async function handleVerificationFailure(ctx, worker, outcome, verify) {
   }
 
   const triage = await runTriage(ctx, worker, verify.stdout);
+  if (triage.limitExceeded) return finishBlocked(ctx, worker, outcome, triage.limitExceeded);
   if (!triage.completed) {
     // Triage itself failed: fall back to the plain reason (a full coder retry) rather than
     // let a helper's failure stall the branch.
@@ -89,6 +90,7 @@ export async function runTriage(ctx, worker, verifyStdout) {
       issueNumber: issue.number,
       round: worker.attempt,
       reportPath: sidecarFile,
+      maxBudgetUsd: triage.maxBudgetUsd,
     },
     {
       timeoutMs: options.timeoutMs.triage,
@@ -101,5 +103,5 @@ export async function runTriage(ctx, worker, verifyStdout) {
 
   const parsed = parseTriageReport(result.text, sidecar);
   const completed = !result.timedOut && parsed.ok;
-  return { completed, parsed };
+  return { completed, parsed, limitExceeded: limitExceeded(result, "triage", triage) };
 }

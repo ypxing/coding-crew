@@ -80,7 +80,7 @@ export function resolveAgentFile(platform, mainRoot, agent) {
  * @returns {{cmd: string, args: string[], cwd: string, env: object, capture: "stdout"|"file"}}
  */
 export function buildDispatch(platform, spec) {
-  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug, reportPath, resumeSessionId } = spec;
+  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec;
   const shared = { cwd, env: { MAIN_ROOT: mainRoot, CREW_ORCHESTRATED: "1" } };
 
   // Test/CI seam: one script stands in for every model dispatch, so the whole state
@@ -99,6 +99,7 @@ export function buildDispatch(platform, spec) {
         ...(slug ? ["--slug", slug] : []),
         ...(reportPath ? ["--report-path", reportPath] : []),
         ...(resumeSessionId ? ["--resume", resumeSessionId] : []),
+        ...(maxBudgetUsd ? ["--max-budget-usd", String(maxBudgetUsd)] : []),
       ],
       ...shared,
       cwd: mainRoot,
@@ -151,6 +152,9 @@ export function buildDispatch(platform, spec) {
     if (model) args.push("--model", model);
     // A fix round continuing the coder's own earlier session (pipeline.mjs decides when).
     if (resumeSessionId) args.push("--resume", resumeSessionId);
+    // afk.limits.<role>.usd: claude ends the session with `subtype: error_max_budget_usd`
+    // (exit 1, is_error, no result; checked after each turn, so it can overshoot one turn).
+    if (maxBudgetUsd) args.push("--max-budget-usd", String(maxBudgetUsd));
     args.push(prompt);
     // Cleared so a child launched from inside a Claude Code session starts its own session
     // instead of attaching to the parent's hook chain, which can mutate or swallow the prompt.
@@ -311,6 +315,7 @@ export function extractFinalText(platform, lines) {
 
 const EMPTY_RESULT_META = {
   isError: null,
+  subtype: null,
   costUsd: null,
   durationMs: null,
   numTurns: null,
@@ -345,6 +350,7 @@ export function extractResultMeta(platform, lines) {
       if (evt.type === "result") {
         return {
           isError: evt.is_error ?? null,
+          subtype: evt.subtype ?? null,
           costUsd: evt.total_cost_usd ?? null,
           durationMs: evt.duration_ms ?? null,
           numTurns: evt.num_turns ?? null,
@@ -482,6 +488,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     stderr: r.stderr ?? "",
     text,
     isError: meta.isError,
+    subtype: meta.subtype,
     costUsd: meta.costUsd,
     durationMs: meta.durationMs,
     numTurns: meta.numTurns,
@@ -505,7 +512,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
 export async function dispatchPlain(
   effects,
   platform,
-  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "prd-audit" },
+  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "prd-audit", maxBudgetUsd = null },
 ) {
   const env = {
     MAIN_ROOT: mainRoot,
@@ -561,6 +568,7 @@ export async function dispatchPlain(
         "--add-dir",
         mainRoot,
         ...(model ? ["--model", model] : []),
+        ...(maxBudgetUsd ? ["--max-budget-usd", String(maxBudgetUsd)] : []),
       ];
       break;
     case "copilot":

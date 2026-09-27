@@ -719,6 +719,7 @@ test("extractResultMeta pulls cost/error/turns/session out of claude's terminal 
     JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "hi" }] } }),
     JSON.stringify({
       type: "result",
+      subtype: "success",
       is_error: false,
       total_cost_usd: 0.08,
       duration_ms: 2500,
@@ -730,6 +731,7 @@ test("extractResultMeta pulls cost/error/turns/session out of claude's terminal 
   ];
   assert.deepEqual(extractResultMeta("claude", lines), {
     isError: false,
+    subtype: "success",
     costUsd: 0.08,
     durationMs: 2500,
     numTurns: 1,
@@ -749,6 +751,7 @@ test("extractResultMeta's contextTokens is the last assistant turn's prompt size
 test("extractResultMeta returns the all-null/empty shape when no result event is found", () => {
   assert.deepEqual(extractResultMeta("claude", [JSON.stringify({ type: "assistant" })]), {
     isError: null,
+    subtype: null,
     costUsd: null,
     durationMs: null,
     numTurns: null,
@@ -762,6 +765,7 @@ test("extractResultMeta returns the empty shape for non-claude platforms — no 
   const lines = [JSON.stringify({ type: "result", is_error: true, total_cost_usd: 1 })];
   assert.deepEqual(extractResultMeta("copilot", lines), {
     isError: null,
+    subtype: null,
     costUsd: null,
     durationMs: null,
     numTurns: null,
@@ -832,4 +836,23 @@ test("dispatch() still logs a real failure as DISPATCH-FAIL, denials included", 
 
 test("dispatch() logs nothing for a clean dispatch", async () => {
   assert.equal(await dispatchLogging({ result: "done", is_error: false, permission_denials: [] }), "");
+});
+
+// afk.limits.<role>.usd. The result shape below is what claude 2.1.283 printed for
+// `claude -p --max-budget-usd 0.01 --output-format stream-json`: exit 1, and no result text.
+test("buildDispatch(claude) caps a dispatch with --max-budget-usd only when a cap is set, before the prompt", () => {
+  const { root, promptFile } = fixture();
+  const capped = buildDispatch("claude", { ...spec(root, promptFile), maxBudgetUsd: 2.5 }).args;
+  const i = capped.indexOf("--max-budget-usd");
+  assert.notEqual(i, -1);
+  assert.equal(capped[i + 1], "2.5");
+  assert.equal(capped.at(-1), readFileSync(promptFile, "utf8"), "the prompt stays last");
+  assert.doesNotMatch(buildDispatch("claude", spec(root, promptFile)).args.join(" "), /--max-budget-usd/);
+});
+
+test("extractResultMeta carries claude's budget-cap subtype", () => {
+  const lines = [JSON.stringify({ type: "result", subtype: "error_max_budget_usd", is_error: true, terminal_reason: "budget_exhausted", total_cost_usd: 0.09, result: null, errors: ["Reached maximum budget ($0.01)"] })];
+  const meta = extractResultMeta("claude", lines);
+  assert.equal(meta.subtype, "error_max_budget_usd");
+  assert.equal(meta.isError, true);
 });

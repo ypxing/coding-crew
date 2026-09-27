@@ -18,7 +18,7 @@
 import { join } from "node:path";
 import { dispatchPlain } from "./dispatch.mjs";
 
-export async function discoverCommands(effects, { platform, model, timeoutMs, log = () => {} }) {
+export async function discoverCommands(effects, { platform, model, timeoutMs, maxBudgetUsd = null, log = () => {} }) {
   // Read-only — safe (and informative) to actually run under --dry-run/plan, unlike the
   // model dispatch and cache write below.
   const d = effects.bash("discover-commands.sh", [], { mutating: false });
@@ -54,6 +54,7 @@ export async function discoverCommands(effects, { platform, model, timeoutMs, lo
       model,
       outFile,
       timeoutMs,
+      maxBudgetUsd,
       // Distinguishes this agent-less dispatch from the PRD audit's under the
       // CREW_FAKE_DISPATCH test seam — see fake-dispatch.sh's "commands-discovery" branch.
       fakeAgent: "commands-discovery",

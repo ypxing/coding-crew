@@ -34,6 +34,9 @@ export const REVIEW_NOT_RUN_TAG = "review-not-run";
 // blocked before any dispatch. Re-probed on every run, so a re-run restarts it only once the
 // requirement holds.
 export const REQUIRES_FAILED_TAG = "requires-failed";
+// A dispatch stopped at its role's afk.limits.<role>.usd cap (claude's error_max_budget_usd).
+// Blocks at once; a human raises the cap or narrows the issue.
+export const LIMIT_EXCEEDED_TAG = "limit-exceeded";
 const REASON_SEP = " — ";
 
 export function taggedReason(tag, summary) {
@@ -46,7 +49,19 @@ export function taggedReason(tag, summary) {
  */
 export function roleBinding(ctx, role) {
   const { runtime, model } = ctx.options.crew[role];
-  return { runtime, model, scriptsDir: ctx.options.dispatcherDirs?.[runtime] ?? ctx.effects.scriptsDir };
+  // afk.limits.<role>.usd — claude's flag, so no other runtime is handed one.
+  const maxBudgetUsd = runtime === "claude" ? (ctx.options.limitsUsd?.[role] ?? null) : null;
+  return { runtime, model, maxBudgetUsd, scriptsDir: ctx.options.dispatcherDirs?.[runtime] ?? ctx.effects.scriptsDir };
+}
+
+/**
+ * The dispatch stopped at its role's afk.limits dollar cap: the reason to block on, or null.
+ * Never a retry — the cap is the human's statement of what one attempt may cost, and a retry
+ * would spend it again.
+ */
+export function limitExceeded(result, role, binding) {
+  if (result?.subtype !== "error_max_budget_usd") return null;
+  return `${LIMIT_EXCEEDED_TAG} ($${binding?.maxBudgetUsd ?? "?"}) — the ${role} dispatch hit afk.limits.${role}.usd after $${(result.costUsd ?? 0).toFixed(2)}`;
 }
 
 /** Dispatch filename stem: `NN-<slug>`, sorting like the tracker's files; bare slug if unnumbered. */

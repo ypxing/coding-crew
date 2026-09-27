@@ -9,7 +9,7 @@ import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { findingsAtOrAbove, parseReviewReport } from "../report.mjs";
-import { dispatchStem, issueDescriptor, issueRef, readSidecar, roleBinding } from "./shared.mjs";
+import { dispatchStem, issueDescriptor, issueRef, limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
 
 /** A path that only tests: a test/spec file by name, or anything under a test or fixture dir. */
 export function isTestPath(path) {
@@ -90,6 +90,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       issueNumber: issue.number,
       round: worker.attempt,
       reportPath: sidecarFile,
+      maxBudgetUsd: reviewer.maxBudgetUsd,
     },
     {
       timeoutMs: options.timeoutMs.reviewer,
@@ -101,6 +102,8 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   const sidecar = readSidecar(sidecarFile);
 
   const parsed = parseReviewReport(result.text, sidecar);
+  const capped = limitExceeded(result, "reviewer", reviewer);
+  if (capped) return { completed: false, limitExceeded: capped, reportFile, reason: capped, parsed };
   // Sidecar-only, fail-closed: no valid sidecar verdict means not run, whatever the text says.
   if (result.timedOut || !parsed.ok) {
     // stderr holds dispatch-level failures (a dispatcher `die()`, a spawn error).

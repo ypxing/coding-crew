@@ -36,6 +36,7 @@ import {
   MAIN_TREE_DIRTY_TAG,
   MERGE_CONFLICT_TAG,
   issueDescriptor,
+  limitExceeded,
   NOT_FIXABLE_TAG,
   REQUIRES_FAILED_TAG,
   REVIEW_NOT_RUN_TAG,
@@ -462,6 +463,7 @@ export async function runWorker(ctx, issue, attempt) {
       round: attempt,
       reportPath: sidecarFile,
       resumeSessionId,
+      maxBudgetUsd: coder.maxBudgetUsd,
     },
     {
       timeoutMs: options.timeoutMs.coder,
@@ -495,6 +497,10 @@ export async function runHousekeeping(ctx, worker) {
   }
 
   // --- dispatch health -------------------------------------------------------
+  // The coder's dollar cap ends the attempt for a human, whatever it committed: a retry would
+  // spend the same cap again.
+  const capped = limitExceeded(worker.dispatch, "coder", roleBinding(ctx, "coder"));
+  if (capped) return finishBlocked(ctx, worker, outcome, capped);
   // A dead dispatch (timeout, crash) with commits on the branch is resumed, not discarded;
   // with none, there is nothing to resume and it blocks.
   if (worker.dispatch.timedOut) {
@@ -588,12 +594,14 @@ export async function runHousekeeping(ctx, worker) {
   const verifyFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.verify.json`);
   const verifyRecord = { ...readVerifyRecord(verifyFile), file: verifyFile };
   let review = await runReview(ctx, worker, verifyRecord);
+  if (review.limitExceeded) return finishBlocked(ctx, worker, outcome, review.limitExceeded);
   // A reviewer that ended without a verdict gets one more dispatch in this round: cheaper
   // than a retry round, which would rebuild the worktree and re-verify an unchanged branch.
   // Not after a timeout — a second would double an already-long wait.
   if (!review.completed && !review.timedOut) {
     ctx.log(`[REVIEW-RETRY] slug=${issue.slug} round=${worker.attempt} — ${review.reason}`);
     review = await runReview(ctx, worker, verifyRecord);
+    if (review.limitExceeded) return finishBlocked(ctx, worker, outcome, review.limitExceeded);
   }
   outcome.reviewReport = review.reportFile;
   if (!review.completed) {

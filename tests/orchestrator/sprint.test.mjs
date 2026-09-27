@@ -1018,6 +1018,45 @@ test("a ## Requires that holds on a re-run lets the issue dispatch", () => {
   assert.deepEqual(state(root).merged_branches, ["crew/demo/alpha"]);
 });
 
+// ─── afk.limits.<role>.usd: a dispatch that hits its dollar cap blocks, never retries ────
+
+test("a coder that hits afk.limits.coder.usd is blocked at once, not retried", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  for (const a of ["crew-coder", "crew-reviewer", "crew-triage"]) {
+    mkdirSync(join(root, ".claude/agents"), { recursive: true });
+    writeFileSync(join(root, ".claude/agents", `${a}.md`), `---\nname: ${a}\n---\n`);
+  }
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { limits: { coder: { usd: 0.5 } } } }));
+  // What claude 2.1.283 prints when --max-budget-usd is reached: exit 1, no result text.
+  const stub = join(root, ".stub");
+  mkdirSync(stub, { recursive: true });
+  const argsLog = join(root, ".scratch/claude.args");
+  writeFileSync(
+    join(stub, "claude"),
+    [
+      "#!/usr/bin/env bash",
+      `printf '%s\\n' "$*" >> ${JSON.stringify(argsLog)}`,
+      `echo '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"terminal_reason":"budget_exhausted","total_cost_usd":0.61,"result":null}'`,
+      "exit 1",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(stub, "claude"), 0o755);
+  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--no-baseline", "--no-commands"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: "", MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
+  });
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  const calls = readFileSync(argsLog, "utf8").trim().split("\n").filter((l) => l.includes("--agent crew-coder"));
+  assert.equal(calls.length, 1, "a capped coder is never dispatched again");
+  assert.match(calls[0], /--max-budget-usd 0\.5 /);
+  const s = state(root);
+  assert.deepEqual(s.blocked_slugs, ["alpha"]);
+  assert.match(s.retention.alpha.reason, /^blocked — limit-exceeded \(\$0\.5\) — the coder dispatch hit afk\.limits\.coder\.usd after \$0\.61$/);
+});
+
 test("an unparseable worker report is blocked, never complete", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

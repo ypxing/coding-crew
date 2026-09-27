@@ -81,6 +81,7 @@ import {
   activeRoles,
   crewPreflight,
   describeModel,
+  ignoredLimitsNotice,
   loadConfig,
   resolveCrew,
   resolvePaneHost,
@@ -429,7 +430,8 @@ async function main() {
         "  The other flags override config.json's afk settings for one run: fixFindings (high),\n" +
         "  PRDAudit (fix), maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits,\n" +
         "  baselineCheck (true), resumeCoderSession (false),\n" +
-        "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).",
+        "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).\n" +
+        "  No flag: limits.<role>.usd caps one claude dispatch of that role in dollars (off).",
     );
     return 0;
   }
@@ -497,6 +499,9 @@ async function main() {
   options.model = crew.roles.coder.model;
   const settings = resolveSettings({ afk: loaded.config.afk, cli: options.cli, origin: loaded.origin });
   Object.assign(options, settings);
+  // Once per run: a cap a role's runtime cannot apply runs that role uncapped.
+  const ignoredLimits = ignoredLimitsNotice(settings.limitsUsd, crew.roles);
+  if (ignoredLimits) console.error(`crew-afk: ${ignoredLimits}`);
   const pane = resolvePaneHost({ afk: loaded.config.afk, cli: options.cli, origin: loaded.origin });
   for (const n of pane.notices) console.error(`crew-afk: ${n}`);
   options.paneHost = pane.paneHost;
@@ -553,6 +558,8 @@ async function main() {
     console.log(`findings:  fix ${options.fixFindings === "none" ? "none" : `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
     console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
+    const caps = Object.entries(options.limitsUsd ?? {});
+    console.log(`limits:    ${caps.length ? caps.map(([r, usd]) => `${r} $${usd}${options.crew[r]?.runtime === "claude" ? "" : " (ignored: not claude)"}`).join(", ") : "none (afk.limits.<role>.usd caps one dispatch)"}`);
     console.log(`pane host: ${options.paneHost ?? "none"}${tag("paneHost")}`);
     console.log(`worktrees: ${options.worktreeRoot}${tag("worktreeRoot")}`);
     console.log(`scripts:   ${scriptsDir}`);
@@ -675,6 +682,7 @@ async function main() {
         platform: options.crew.commandFinder.runtime,
         model: options.crew.commandFinder.model,
         timeoutMs: options.timeoutMs.commandFinder,
+        maxBudgetUsd: options.limitsUsd?.commandFinder,
         // Persisted too: this runs unattended, and a failure must outlive the scrollback.
         log: (line) => {
           console.error(line);

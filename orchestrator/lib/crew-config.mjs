@@ -14,9 +14,14 @@
  *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
  *       "fixFindings": "high", "PRDAudit": "fix",
  *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": true,
- *       "baselineCheck": true, "resumeCoderSession": false } }
+ *       "baselineCheck": true, "resumeCoderSession": false,
+ *       "limits": { "coder": { "usd": 5 } } } }
  *
- * Every setting but runtime/models has a flag that wins for one run (resolveSettings).
+ * Every setting but runtime/models/limits has a flag that wins for one run (resolveSettings).
+ *
+ * `limits.<role>.usd` caps one dispatch of that role in dollars — claude's --max-budget-usd, a
+ * backstop, off by default. Only claude has the flag; a role on another runtime ignores it, and
+ * main.mjs says so once per run. A dispatch that hits it blocks its issue as `limit-exceeded`.
  *
  * `paneHost` ("orca" | "herdr" | "auto" | "none") describes this machine, not the team, so only
  * ~/.coding-crew/config.json may set it; the repo's file is rejected for it. It also has an env
@@ -89,7 +94,7 @@ const SCALARS = {
 };
 // Per-machine settings: accepted from ~/.coding-crew/config.json only.
 const USER_ONLY = ["paneHost"];
-const AFK_KEYS = ["runtime", "models", "timeouts", ...Object.keys(SCALARS)];
+const AFK_KEYS = ["runtime", "models", "timeouts", "limits", ...Object.keys(SCALARS)];
 
 // afk-models.json's role names, before the plain-dispatch roles were renamed.
 const LEGACY_ROLE_NAMES = { commandsDiscovery: "commandFinder", coverageValidation: "prdAuditor" };
@@ -162,6 +167,24 @@ export function validateConfig(config, label = CONFIG_REL, { userLevel = label =
           }
         }
       }
+      if (afk.limits !== undefined) {
+        if (!isObject(afk.limits)) problems.push(`"afk.limits" must be an object of role → { "usd": <dollars> }`);
+        else {
+          for (const [role, limit] of Object.entries(afk.limits)) {
+            if (!ROLES.includes(role)) problems.push(`unknown role "afk.limits.${role}" (expected ${oneOf(ROLES)})`);
+            if (!isObject(limit)) {
+              problems.push(`"afk.limits.${role}" must be an object like { "usd": 5 }`);
+              continue;
+            }
+            for (const k of Object.keys(limit)) {
+              if (k !== "usd") problems.push(`unknown key "afk.limits.${role}.${k}" (expected usd)`);
+            }
+            if (!(typeof limit.usd === "number" && Number.isFinite(limit.usd) && limit.usd > 0)) {
+              problems.push(`"afk.limits.${role}.usd" must be a positive number of dollars`);
+            }
+          }
+        }
+      }
       if (afk.models !== undefined) {
         if (!isObject(afk.models)) problems.push(`"afk.models" must be an object of runtime → { role: model }`);
         else {
@@ -183,13 +206,14 @@ export function validateConfig(config, label = CONFIG_REL, { userLevel = label =
   if (problems.length) throw new ConfigError(`${label}: ${problems.join("; ")}`);
 }
 
-/** Every afk leaf a file sets: "runtime.<role>", "models.<runtime>.<role>", "timeouts.<k>", "<scalar>". */
+/** Every afk leaf a file sets: "runtime.<role>", "models.<runtime>.<role>", "timeouts.<k>", "limits.<role>.usd", "<scalar>". */
 function afkLeaves(afk = {}) {
   const leaves = Object.keys(afk.runtime ?? {}).map((role) => `runtime.${role}`);
   for (const [rt, byRole] of Object.entries(afk.models ?? {})) {
     for (const role of Object.keys(byRole)) leaves.push(`models.${rt}.${role}`);
   }
   for (const k of Object.keys(afk.timeouts ?? {})) leaves.push(`timeouts.${k}`);
+  for (const role of Object.keys(afk.limits ?? {})) leaves.push(`limits.${role}.usd`);
   for (const k of Object.keys(SCALARS)) if (afk[k] !== undefined) leaves.push(k);
   return leaves;
 }
@@ -198,6 +222,7 @@ function afkLeaves(afk = {}) {
 function mergeAfk(base = {}, over = {}) {
   const runtime = { ...base.runtime, ...over.runtime };
   const timeouts = { ...base.timeouts, ...over.timeouts };
+  const limits = { ...base.limits, ...over.limits };
   const models = {};
   for (const rt of new Set([...Object.keys(base.models ?? {}), ...Object.keys(over.models ?? {})])) {
     models[rt] = { ...base.models?.[rt], ...over.models?.[rt] };
@@ -211,6 +236,7 @@ function mergeAfk(base = {}, over = {}) {
     ...(Object.keys(runtime).length ? { runtime } : {}),
     ...(Object.keys(models).length ? { models } : {}),
     ...(Object.keys(timeouts).length ? { timeouts } : {}),
+    ...(Object.keys(limits).length ? { limits } : {}),
     ...scalars,
   };
 }
@@ -399,7 +425,8 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
  * so `plan` credits the right source.
  * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, baselineCheck, resumeCoderSession,
  *   maxParallel: number|null,
- *   timeouts: Record<string, number>}}  timeouts in minutes
+ *   timeouts: Record<string, number>,  timeouts in minutes
+ *   limitsUsd: Record<string, number>}}  each capped role's dollar cap; no key, no cap
  */
 export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
   const pick = (k) => {
@@ -423,7 +450,19 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     resumeCoderSession: pick("resumeCoderSession"),
     maxParallel: pick("maxParallel"),
     timeouts,
+    limitsUsd: Object.fromEntries(Object.entries(afk.limits ?? {}).map(([role, l]) => [role, l.usd])),
   };
+}
+
+/**
+ * The one line a run prints for the dollar caps it cannot apply: `--max-budget-usd` is claude's
+ * alone, so a capped role on any other runtime runs uncapped. Null when every cap applies.
+ */
+export function ignoredLimitsNotice(limitsUsd = {}, crew) {
+  const ignored = Object.keys(limitsUsd).filter((role) => crew[role] && crew[role].runtime !== "claude");
+  if (!ignored.length) return null;
+  const which = ignored.map((role) => `${role} (${crew[role].runtime})`).join(", ");
+  return `afk.limits ignored for ${which} — a dollar cap is claude's --max-budget-usd, and no other runtime has one.`;
 }
 
 /**

@@ -235,6 +235,7 @@ async function runPrdAudit(ctx, tracker) {
     model,
     outFile,
     timeoutMs: options.timeoutMs.prdAuditor,
+    maxBudgetUsd: options.limitsUsd?.prdAuditor,
   });
   if (r.code !== 0 || r.timedOut) {
     const failed = `the audit did not complete (${r.timedOut ? "timed out" : `exit ${r.code}`}) — no report, nothing queued.`;
