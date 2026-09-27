@@ -1219,6 +1219,21 @@ test("the gates run in order: verify → AC receipt → merge → close, and squ
   assert.ok(close < squash, "the squash ran before the pipeline finished");
 });
 
+test("a squash refused by a hook is reported in the summary, and the merged commits stay committed", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Refuses only the squash's own message, so the worker's commits and the merge still land.
+  const hook = join(root, ".git/hooks/commit-msg");
+  writeFileSync(hook, "#!/bin/sh\ngrep -q '^Demo:' \"$1\" && { echo 'commit-msg: rejected' >&2; exit 1; }\nexit 0\n");
+  chmodSync(hook, 0o755);
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /## Squash\n\n\*\*Failed:\*\* [\s\S]*commit-msg: rejected/);
+  const git = (...args) => sh("git", ["-C", root, ...args]).stdout.trim();
+  assert.equal(git("status", "--porcelain", "--untracked-files=no"), "");
+  assert.match(git("log", "--format=%s", "main..HEAD"), /Merge/);
+});
+
 test("the review is written to the sprint's reviews dir, before the squash", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

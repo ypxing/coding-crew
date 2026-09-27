@@ -297,7 +297,10 @@ async function wrapUp(ctx, { stalled, prdAudit }) {
   // --platform picks the co-author trailer: the coder's runtime wrote the commits.
   const squashArgs = ["--platform", options.crew.coder.runtime];
   if (!options.squashCommits) squashArgs.push("--no-squash");
-  ctx.log(effects.bash("squash-commits.sh", squashArgs, { env: sprint.childEnv() }).stdout.trim());
+  const squash = effects.bash("squash-commits.sh", squashArgs, { env: sprint.childEnv() });
+  ctx.log(squash.stdout.trim());
+  const squashFailed = squash.code !== 0 ? (squash.stderr.trim() || `exit ${squash.code}`) : null;
+  if (squashFailed) ctx.log(`Squash failed: ${squashFailed}`);
 
   // --- worktree cleanup (mechanical, idempotent) ----------------------------
   const cleanupArgs = [
@@ -328,6 +331,7 @@ async function wrapUp(ctx, { stalled, prdAudit }) {
     ctx.out(`\n## PRD Audit\n\n(see ${prdAudit.report})\n`);
     if (prdAudit.unqueued) ctx.out(`\n**Gaps not queued:** ${prdAudit.unqueued}\n`);
   }
+  if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
   ctx.out("NO MORE TASKS");
 }
 

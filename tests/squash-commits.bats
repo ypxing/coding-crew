@@ -122,3 +122,28 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"Skipping squash"* ]]
 }
+
+@test "a squash commit refused by a hook restores the branch tip instead of leaving the work staged" {
+  local base_sha orig_tip
+  base_sha=$(git rev-parse HEAD)
+
+  git checkout -q -b "feature/$FEATURE_SLUG"
+  echo "change1" > work.txt && git add work.txt && git commit -q -m "work commit"
+  orig_tip=$(git rev-parse HEAD)
+
+  _write_state "feature/$FEATURE_SLUG" "$base_sha"
+  _add_slug_to_state "my-issue"
+  _write_issue "my-issue" "My issue title"
+
+  printf '#!/bin/sh\necho "commit-msg: rejected" >&2\nexit 1\n' > .git/hooks/commit-msg
+  chmod +x .git/hooks/commit-msg
+
+  run bash "$SQUASH_SCRIPT" --platform claude
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"branch restored to $orig_tip"* ]]
+
+  [ "$(git rev-parse HEAD)" = "$orig_tip" ]
+  [ -z "$(git status --porcelain --untracked-files=no)" ]
+  # The state's base is untouched, so a re-run squashes the same range.
+  [ "$(jq -r --arg b "feature/$FEATURE_SLUG" '.branches[$b].base_sha' ".scratch/$FEATURE_SLUG/sprint-state.json")" = "$base_sha" ]
+}

@@ -153,17 +153,25 @@ if ! git merge-base --is-ancestor "$BASE_SHA" HEAD 2>/dev/null; then
   exit 1
 fi
 
-# Perform squash using reset + commit
+# Perform squash using reset + commit. The two steps are not atomic: a commit refused by
+# a hook (commit-msg, pre-commit) or by signing would otherwise leave the branch reset to
+# BASE_SHA with every merged issue's work only staged, so a failed commit puts the tip back.
+ORIG_TIP=$(git rev-parse HEAD)
 git reset --soft "$BASE_SHA"
 
 # Create squashed commit with safe message handling
 # Use git commit -F with here-doc for safe literal interpolation
-git commit -F - << EOF
+if ! git commit -F - << EOF
 $SUMMARY_LINE
 
 $ISSUE_BULLETS
 $COAUTHOR_TRAILER
 EOF
+then
+  git reset --soft "$ORIG_TIP"
+  echo "ERROR: squash commit failed; branch restored to $ORIG_TIP, unsquashed." >&2
+  exit 1
+fi
 
 # Update state file with new HEAD SHA
 NEW_HEAD=$(git rev-parse HEAD)
