@@ -13,8 +13,8 @@
 #   <key>: pass | <key>: fail (exit N)     then the tail of its output; the full log path
 #   <key>: NOT RUN: no command found       the cache's `null` — its own answer, not a gap to fill
 #   <key>: modified files: <list> — …      then `<key>: fail (…)`: the check rewrote tracked or
-#                                          untracked files (an auto-fixing lint) — a project
-#                                          config problem, not something to revert and re-run
+#                                          untracked files (an auto-fixing lint) — the human
+#                                          commits the rewrite; not something to revert and re-run
 # and last, one of:
 #   CHECKS: pass                           exit 0
 #   CHECKS: fail                           exit 1
@@ -129,7 +129,7 @@ for key in "${KEYS[@]}"; do
   [ "$before" = "$after" ] || changed="$(_changed_files "$before" "$after")"
   tail -n "$TAIL_LINES" "$log"
   if [ -n "$changed" ]; then
-    echo "$key: modified files: $changed — configure a non-mutating command in .coding-crew/dev-commands.json (e.g. \`biome check\`, not \`biome check --write\`)"
+    echo "$key: modified files: $changed — the check rewrote them: run it, commit the result, and re-run (a check that rewrites files on every run needs a non-mutating command in .coding-crew/dev-commands.json)"
     echo "$key: fail (exit $rc, modified files)"
     OVERALL=1
   elif [ "$rc" -eq 0 ]; then

@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.29.147]
+
+### Changed
+
+- **An auto-fixing lint no longer has to be replaced.** A check that rewrites files still
+  fails, but its message now names the simple fix: `<CHECK>: modified files: <list> — the
+  check rewrote them: run it, commit the result, and re-run`. Once the feature branch is clean,
+  a `make lint` that runs `--write` passes the baseline, and in a coder's worktree it only
+  reformats files the coder already changed, which is never flagged. A non-mutating command
+  in `dev-commands.json` is needed only for a check that rewrites files on every run.
+
 ## [1.29.146]
 
 ### Changed

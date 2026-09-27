@@ -144,9 +144,10 @@ Two knobs worth knowing about:
   | `resumeCoderSession` | `false` | `--resume-coder-session` | On a fix round, continue the claude coder session that wrote the branch, if that session is under 100k tokens and the branch hasn't moved |
   | `limits` | off | — | `{ "coder": { "usd": 5 } }`: a dollar cap on one dispatch of that role (claude's `--max-budget-usd`; other runtimes ignore it, with one notice per run). A dispatch that hits it blocks its issue as `limit-exceeded`, never retried |
 
-  A check that leaves the tree modified fails, in the baseline and every verify alike: point
-  `.coding-crew/dev-commands.json` at a non-mutating command (`biome check`, not `biome check
-  --write`). An issue can list what its checks need that the install doesn't guarantee under
+  A check that leaves the tree modified fails, in the baseline and every verify alike. An
+  auto-fixing lint (`make lint` running `--write`) can stay configured: run it once on the
+  feature branch, commit what it rewrote, and re-run. Only a check that rewrites files on every
+  run needs a non-mutating command in `.coding-crew/dev-commands.json`. An issue can list what its checks need that the install doesn't guarantee under
   `## Requires`, one backticked command per bullet (exit 0 = satisfied); each runs once before
   that issue's first dispatch, and a failing one blocks that issue with the command's output instead of paying
   for its coder.

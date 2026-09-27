@@ -619,7 +619,7 @@ _exec_and_report() {
   if [ -n "$changed" ]; then
     # Whatever its exit code: its pass was on files it rewrote. solve-issue's run-checks.sh
     # prints the same line, so a coder sees the verdict this gate will reach.
-    echo "$label: modified files: $changed — configure a non-mutating command in .coding-crew/dev-commands.json (e.g. \`biome check\`, not \`biome check --write\`)"
+    echo "$label: modified files: $changed — the check rewrote them: run it, commit the result, and re-run (a check that rewrites files on every run needs a non-mutating command in .coding-crew/dev-commands.json)"
     echo "$label: fail"
     _record "$label" "$_VW_CMD" fail "$rc" "$log"
     OVERALL_EXIT=1

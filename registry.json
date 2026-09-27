@@ -79,7 +79,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.3.57",
+      "version": "2.3.58",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -133,7 +133,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.10.2",
+      "version": "1.10.3",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",

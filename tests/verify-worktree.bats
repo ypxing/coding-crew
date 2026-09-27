@@ -599,7 +599,7 @@ _committed_src() {
   _committed_src '{"test": "true", "lint": "echo fixed >> src/app.py", "typecheck": null}'
   run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"LINT: modified files: src/app.py — configure a non-mutating command in .coding-crew/dev-commands.json"* ]]
+  [[ "$output" == *"LINT: modified files: src/app.py — the check rewrote them: run it, commit the result, and re-run"* ]]
   [[ "$output" == *"LINT: fail"* ]]
   [[ "$output" == *"TEST: pass"* ]]
 }

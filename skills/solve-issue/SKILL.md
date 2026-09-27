@@ -203,8 +203,9 @@ do not re-check CLAUDE.md/Makefile instead.
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
-  Except `<key>: modified files:` — the check itself rewrites files (project config) — and a
-  failure naming what no repo file can provide (§ Outcome): report `blocked` with that output.
+  Except `<key>: modified files:` — the check rewrote files this change didn't touch, which a
+  human commits — and a failure naming what no repo file can provide (§ Outcome): report
+  `blocked` with that output.
 - `DISCOVER` — no cache yet. STOP. Read `references/verification.md` now and discover every check
   as it describes. Persist what you found, pass or fail (from the same directory you read this
   skill file from), then re-run `run-checks.sh` — it runs what you just wrote:

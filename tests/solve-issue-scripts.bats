@@ -156,7 +156,7 @@ _committed_src() {
   _cache '{"test": "true", "lint": "echo fixed >> src/app.py", "typecheck": null}'
   run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"lint: modified files: src/app.py — configure a non-mutating command in .coding-crew/dev-commands.json"* ]]
+  [[ "$output" == *"lint: modified files: src/app.py — the check rewrote them: run it, commit the result, and re-run"* ]]
   [[ "$output" == *"lint: fail"*"test: pass"*"CHECKS: fail" ]]
 }
 
