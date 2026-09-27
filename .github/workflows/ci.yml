@@ -10,7 +10,9 @@ jobs:
   test:
     name: Test on ${{ matrix.os }} ${{ matrix.shard }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # A passing Windows shard already takes 14-19 minutes, and the orchestrator's node suite
+    # alone runs ~5 minutes on macOS; 20 cancelled shards that were still making progress.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       # The suite's cost is process spawning, not computation: ~550 bats tests, ~84 full
