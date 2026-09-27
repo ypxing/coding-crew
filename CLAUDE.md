@@ -76,9 +76,13 @@ AC receipt → promote → merge → close. Deps sit there because that one posi
 consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any
 gate whose receipt already matches the branch tip (`gatesAtTip`).
 
-Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the main checkout must have
-no uncommitted tracked changes (`--allow-dirty`), and the feature branch must pass its own checks
-in a throwaway `crew/<feature>/_baseline` worktree (`--no-baseline`).
+Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the assets under
+`CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
+`orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked
+changes (`--allow-dirty`), the feature branch must pass its own checks in a throwaway
+`crew/<feature>/_baseline` worktree (`--no-baseline`), and each ready issue's `## Requires` runs
+once through solve-issue's `check-requires.sh` — a failure blocks that issue, not the run. A check
+that modifies the tree fails, in the baseline and every verify.
 
 ## Adding a new agent
 

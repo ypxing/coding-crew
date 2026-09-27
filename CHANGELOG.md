@@ -1,5 +1,63 @@
 # Changelog
 
+## [1.29.145]
+
+### Changed
+
+- **A check that modifies the tree now fails, in the baseline and every verify.**
+  `verify-worktree.sh` and solve-issue's `run-checks.sh` compare `git status --porcelain`
+  before and after each check. A difference fails that check with `<CHECK>: modified files:
+  <list> — configure a non-mutating command in .coding-crew/dev-commands.json`. Changes
+  already in the tree are not blamed on the check, and ignored files never count. **A repo
+  whose lint command auto-fixes (a `make lint` that runs `--fix` or `--write`) now fails the
+  baseline, and stops the run, until `dev-commands.json` names a non-mutating command**
+  (`biome check`, not `biome check --write`). That is intended: the baseline was passing on
+  files the lint had just rewritten, and every coder was reverting the same drift by hand.
+  solve-issue reports such a check as `blocked` instead of reverting and re-running it.
+- **Issues can declare what their checks need: `## Requires`.** One backticked shell command
+  per bullet, where exit 0 means satisfied, for a service, credential or tool the install
+  doesn't guarantee. crew-afk runs every ready issue's commands once before any dispatch,
+  with a command shared by several issues run only once. Each issue whose requirement fails
+  is blocked as `requires-failed` with the command's output in `## Blocked`, so no coder is
+  paid to find the missing credential. The check is not cached: a re-run probes again and
+  dispatches the issue once its requirement holds. A direct `/solve-issue` run checks its
+  one issue in `preflight.sh` (`BLOCKED: requires: <cmd>`). `to-issues` and `add-tests`
+  write the section and run each command while authoring. An issue whose command fails
+  there is published as `ready-for-human`.
+- **A coder's `partial`, or environment `blocked`, with commits now goes through the
+  gates.** Before, a coder that said `partial` was taken at its word, and the retry started
+  from scratch, working out the same blocker again. Now verify runs. If it fails, triage
+  decides: a narrow fix round, or a cheap recheck and then blocked. If it passes, review
+  decides. The coder's report gains `cause` (`environment` | `code`) and `evidence` (the
+  command, its exit code and output, capped at the last 4 KB). Both are required for
+  `blocked`. Triage receives them as the coder's own claim, to check against the diff. A
+  plain `blocked`, or a report with nothing committed, stops as before.
+- **solve-issue stops once on anything no file in the repo can provide.** For a credential,
+  license, daemon, registry or external service, the coder runs the documented command once,
+  keeps the command, exit code and output, and reports `blocked`. It no longer starts
+  services by hand, searches for tokens, or edits compose files.
+- **Optional dollar cap per role: `afk.limits.<role>.usd`.** Off by default. On claude it
+  passes `--max-budget-usd` to each dispatch of that role. Other runtimes ignore it, with
+  one notice per run. A dispatch that hits the cap (claude's `error_max_budget_usd`) blocks
+  its issue as `limit-exceeded`. It is never retried.
+
+### Fixed
+
+- **A user-level install no longer sends every reviewer searching for its assets.** crew-afk
+  now resolves `CREW_INSTALL_DIR` once per run. That is the `.coding-crew/` it was launched
+  from, or `$CREW_INSTALL_DIR` when set. It records the path in `sprint.env`, and every
+  asset is a fixed sub-path of it. The review prompt states `Review assets: <path>`, and
+  crew-reviewer reads it instead of a hardcoded project path. Coder prompts state where the
+  project's `.coding-crew/` config is, since worktrees don't contain it. A run whose install
+  is missing `code-review/`, `dep-install/scripts/` or `solve-issue/scripts/` stops before
+  any dispatch and names the exact path.
+- **crew-coder on claude invokes `solve-issue` through the Skill tool.** Under
+  `claude -p --agent`, the `skills:` frontmatter only lists a skill. Coders never got its
+  base directory, and some searched `/` for it.
+- **A permission denial on a normal dispatch is logged as `[DISPATCH-WARN]`, naming the
+  denied tools.** Before, it was logged as `[DISPATCH-FAIL]` with only a count.
+  `[DISPATCH-FAIL]` now means a non-zero exit, a timeout, empty output or `is_error`.
+
 ## [1.29.144]
 
 ### Changed
