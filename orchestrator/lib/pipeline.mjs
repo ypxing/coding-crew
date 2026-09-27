@@ -45,6 +45,7 @@ import {
   roleBinding,
   stripReasonTag,
   taggedReason,
+  unblockedReason,
 } from "./pipeline/shared.mjs";
 import { handleVerificationFailure } from "./pipeline/verify.mjs";
 
@@ -74,9 +75,6 @@ export function resumableSession(prior, tip) {
   return { sessionId: prior.session_id };
 }
 
-/** How state.sh records a block (`blocked — <reason>`), and finishRetryOrBlock a capped retry. */
-const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )?/;
-
 /**
  * Where a retry re-enters the pipeline, by the reason the prior attempt retained its branch
  * (finishRetryOrBlock writes it; state.sh records it). The one table of resume targets:
@@ -91,7 +89,9 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
  *           blocked at once; the route once a human has fixed it and re-run. Verify and
  *           review re-run on the unchanged branch, with no coder.
  *           `verification-failed:not-fixable` — triage ruled out recoding, so skip the
- *           coder and re-run deps + verify once, in case the failure was transient.
+ *           coder and re-run deps + verify once, in case the failure was transient. Also
+ *           the route once a human reruns after the retry cap blocked it: no coder can
+ *           fix what triage already ruled environmental.
  *           `ac-receipt-failed …` — review was all-met; only the receipt write failed. The
  *           receipt is rewritten only after a fresh all-met review, never on this note's
  *           word. Also the route once a human reruns after the retry cap blocked it.
@@ -115,7 +115,7 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
  */
 export function resumeRoute(reason) {
   if (reason == null) return { route: "restart" };
-  const unblocked = reason.replace(BLOCKED_PREFIX, "");
+  const unblocked = unblockedReason(reason);
   if (unblocked.startsWith(AC_RECEIPT_FAILED_TAG)) return { route: "verify", label: "ac-receipt-retry" };
   if (unblocked.startsWith(MAIN_TREE_DIRTY_TAG)) return { route: "merge" };
   if (unblocked.startsWith(MERGE_CONFLICT_TAG)) {
@@ -124,7 +124,7 @@ export function resumeRoute(reason) {
   if (reason === "merge-failed" || reason.startsWith("close-refused")) return { route: "merge" };
   if (reason.startsWith(REVIEW_NOT_RUN_TAG)) return { route: "verify", label: "review-not-run" };
   if (unblocked.startsWith(CRITERIA_ENVIRONMENT_TAG)) return { route: "verify", label: "environment-recheck" };
-  if (reason.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };
+  if (unblocked.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };
   if (reason.startsWith(FIXABLE_TAG)) return { route: "fix", kind: "verify", context: stripReasonTag(reason, FIXABLE_TAG) };
   if (reason.startsWith(CRITERIA_UNMET_TAG)) {
     return { route: "fix", kind: "review", context: stripReasonTag(reason, CRITERIA_UNMET_TAG) };

@@ -10,7 +10,7 @@ import { dispatch } from "../dispatch.mjs";
 import { triagePrompt } from "../prompts.mjs";
 import { parseTriageReport } from "../report.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./finish.mjs";
-import { dispatchIssueDir, dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason } from "./shared.mjs";
+import { dispatchIssueDir, dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason, unblockedReason } from "./shared.mjs";
 
 /**
  * verify-worktree.sh already failed: triage it, and tag the retention reason with the
@@ -21,7 +21,9 @@ export async function handleVerificationFailure(ctx, worker, outcome, verify) {
   const { sprint } = ctx;
 
   if (worker.skippedWorker) {
-    const priorReason = sprint.retentionReason(worker.issue.slug) ?? "verification-failed";
+    // Unwrapped: a re-run after a block would otherwise nest a second block prefix, which
+    // resumeRoute cannot see past, and the run after that would restart the coder.
+    const priorReason = unblockedReason(sprint.retentionReason(worker.issue.slug) ?? "verification-failed");
     return finishRetryOrBlock(ctx, worker, outcome, priorReason);
   }
 

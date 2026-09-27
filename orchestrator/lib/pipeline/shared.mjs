@@ -130,6 +130,14 @@ export function stripReasonTag(reason, tag) {
   return reason.startsWith(tag + REASON_SEP) ? reason.slice(tag.length + REASON_SEP.length) : reason;
 }
 
+/** How state.sh records a block (`blocked — <reason>`), and finishRetryOrBlock a capped retry. */
+const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )?/;
+
+/** A retained reason without the block wrapping, so its gate's tag leads again. */
+export function unblockedReason(reason) {
+  return reason.replace(BLOCKED_PREFIX, "");
+}
+
 /**
  * Write a `## <heading>` note against `issue`: local splices the file in place, github
  * posts a new comment. The one place that branches on which the tracker exposes.

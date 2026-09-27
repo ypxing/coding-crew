@@ -934,6 +934,26 @@ test("partial with commits, verify fails, triage not-fixable: no second coder, b
   assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — verification-failed:not-fixable — missing credential/);
 });
 
+test("blocked as not-fixable: every later re-run only re-checks, with no coder or triage", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  failingTests(root);
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "fail" }, progress: "LocalStack license activation failed" }));
+  fake(root, "alpha.triage", triageVerdict("no", "missing credential", "LOCALSTACK_AUTH_TOKEN is unset"));
+  commandLines(root);
+  // Two re-runs: the second catches a reason that nested the block prefix on the first.
+  for (const run of [2, 3]) {
+    const { r, lines } = commandLines(root);
+    assert.equal(r.code, 2, `run ${run}:\n${r.stdout}\n${r.stderr}`);
+    assert.equal(coderSpawns(lines), 0, `run ${run} must not re-dispatch the coder`);
+    assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-triage/.test(l)).length, 0, `run ${run} must not re-triage`);
+    assert.match(
+      state(root).retention.alpha.reason,
+      /^blocked — retry limit reached \(2 attempts\) — verification-failed:not-fixable — missing credential/,
+    );
+  }
+});
+
 test("partial with commits, verify fails, triage fixable: the retry is a fix round told triage's detail", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
