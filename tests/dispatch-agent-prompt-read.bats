@@ -86,11 +86,13 @@ teardown() {
 # The stub pi drains stdin, as a pi reading a piped prompt would. With the caller's stdin
 # held open (a backgrounded shell, a pipe), that used to hang the dispatch.
 # perl's alarm is the watchdog, not timeout(1): macOS ships no GNU coreutils.
+# The sleeper keeps only the stdin pipe open: holding bats' own stderr/fd 3 too made bats
+# wait out all 30s after the test had already passed.
 @test "pi gets a closed stdin, so an open one on the caller can't hang the dispatch" {
   echo "implement issue 01" > "$TEMP_DIR/prompt.md"
 
   run perl -e 'alarm shift; exec @ARGV or die "exec: $!"' 10 env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
-    bash "$PI_DISPATCH" --agent worker --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md" < <(sleep 30)
+    bash "$PI_DISPATCH" --agent worker --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md" < <(exec sleep 30 2>/dev/null 3>&-)
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"PI-INVOKED"* ]]

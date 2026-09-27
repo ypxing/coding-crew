@@ -7,9 +7,14 @@
 # `--jobs` needs GNU parallel, which is not on the Windows runner, so the parallelism
 # has to come from the job matrix instead.
 #
-# Balancing is longest-processing-time-first: files are ordered by test count descending
-# and each is handed to the shard with the least load so far. Deterministic, so every
-# shard of a given (index, total) always gets the same files.
+# Balancing is longest-processing-time-first: files are ordered by weight descending and
+# each is handed to the shard with the least load so far. Deterministic, so every shard of
+# a given (index, total) always gets the same files.
+#
+# Weight is the file's measured Windows seconds from tests/ci-shard-weights.tsv, not its
+# @test count: counts put a 6-test file that runs for minutes (orchestrator.bats) on a par
+# with a 6-test grep, and left one shard at 3x another's time. An unlisted file is
+# weighted 5s per @test, so a new file still lands somewhere sensible.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,11 +32,22 @@ shopt -s nullglob
 files=("$REPO_ROOT"/tests/*.bats)
 (( ${#files[@]} > 0 )) || { echo "Error: no test files found under tests/" >&2; exit 1; }
 
-# A file with zero @test lines still counts as work (setup_file, harness), so floor at 1.
+WEIGHTS="$REPO_ROOT/tests/ci-shard-weights.tsv"
+[[ -f "$WEIGHTS" ]] || WEIGHTS=/dev/null
+
+# <@test count>\t<path> per file, then the weights file's value replaces the count-based
+# estimate where it has one. A file with zero @test lines still counts as work
+# (setup_file, harness), so floor at 1.
 for f in "${files[@]}"; do
-  n=$(grep -c '^@test' "$f" || true)
-  printf '%s\t%s\n' "$(( n > 0 ? n : 1 ))" "$f"
-done | sort -rn -k1,1 -k2,2 | awk -F'\t' -v idx="$INDEX" -v total="$TOTAL" '
+  printf '%s\t%s\n' "$(grep -c '^@test' "$f" || true)" "$f"
+done | awk -F'\t' '
+  NR == FNR { sub(/\r$/, ""); if ($1 ~ /^[0-9]+$/ && $2 != "") w[$2] = $1; next }
+  {
+    n = split($2, parts, "/"); base = parts[n]
+    weight = (base in w) ? w[base] : $1 * 5
+    printf "%d\t%s\n", (weight > 0 ? weight : 1), $2
+  }
+' "$WEIGHTS" - | sort -rn -k1,1 -k2,2 | awk -F'\t' -v idx="$INDEX" -v total="$TOTAL" '
 {
   best = 1
   for (i = 2; i <= total; i++) if (load[i] < load[best]) best = i

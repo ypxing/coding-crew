@@ -91,5 +91,5 @@ frontmatter() {
 # dispatch", "include it in the summary"). Every platform is a launcher now, so they are
 # code: orchestrator/main.mjs calls sprint.setModel(), which writes the MODEL trace line, and
 # crew-summary.sh renders `Model:` from sprint-state.json. Asserted in
-# tests/orchestrator/sprint.test.mjs — "the summary names the resolved model, rendered
+# tests/orchestrator/sprint.suite.mjs — "the summary names the resolved model, rendered
 # from disk". The copilot-body versions of those two greps went with the body.

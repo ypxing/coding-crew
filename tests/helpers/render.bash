@@ -45,7 +45,10 @@ rendered_skill() {
   local out="$cache/$skill.$platform.SKILL.md"
   if [ ! -f "$out" ]; then
     mkdir -p "$cache"
-    bash "$RENDER_HELPER_REPO_ROOT/scripts/render-skill.sh" "$skill" "$platform" "$out" || return 1
+    # Rendered beside and renamed into place: CI runs bats files concurrently, and a
+    # reader must never see a half-written body.
+    bash "$RENDER_HELPER_REPO_ROOT/scripts/render-skill.sh" "$skill" "$platform" "$out.$$" || return 1
+    mv -f "$out.$$" "$out"
   fi
   printf '%s\n' "$out"
 }
@@ -67,11 +70,18 @@ afk_variant() {
 
 # installed_agents_root — prints a dir containing one full install of every platform
 installed_agents_root() {
-  local cache="$(_render_cache_root)/installed-agents"
-  if [ ! -d "$cache/.claude/agents" ]; then
-    mkdir -p "$cache"
-    git -C "$cache" init -q 2>/dev/null || true
-    ( cd "$RENDER_HELPER_REPO_ROOT" && TARGET_REPO="$cache" ./install.sh >/dev/null ) || return 1
+  local cache="$(_render_cache_root)/installed-agents" tmp
+  if [ ! -d "$cache" ]; then
+    # Installed beside and renamed into place: CI runs bats files concurrently, so a
+    # reader must never see a partial install. A concurrent run that renamed first wins,
+    # and this one's copy is discarded (in the rare race where both pass the check, the
+    # loser lands inside the winner as an unread subdirectory).
+    tmp="$cache.$$"
+    mkdir -p "$tmp"
+    git -C "$tmp" init -q 2>/dev/null || true
+    ( cd "$RENDER_HELPER_REPO_ROOT" && TARGET_REPO="$tmp" ./install.sh >/dev/null ) || return 1
+    [ -d "$cache" ] || mv "$tmp" "$cache"
+    rm -rf "$tmp"
   fi
   printf '%s\n' "$cache"
 }

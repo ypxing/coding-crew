@@ -496,7 +496,7 @@ EOF
 # pipeline is `orchestrator/` now, so those promises are asserted where they are kept:
 #
 #   - the slug is derived once by session-init.sh and read back through sprint.env by
-#     orchestrator/lib/sprint.mjs, never re-globbed  → tests/orchestrator/sprint.test.mjs
+#     orchestrator/lib/sprint.mjs, never re-globbed  → tests/orchestrator/sprint.suite.mjs
 #   - every trace marker is written by the script that performs the step               → ditto
 #   - cleanup's `--merged` / `--retain` lists come from `state.sh get` in
 #     orchestrator/lib/loop.mjs                                                        → ditto

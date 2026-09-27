@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.29.150]
+
+### Fixed
+
+- **pi and codex dispatches no longer spawn `jq` for every line a worker streams.** The
+  live `[TOOL]` trace parsed each event line with `jq` before deciding it was not a tool
+  call, so every message delta cost a process — around 100ms each under Git Bash. Lines
+  that cannot be a tool event are now skipped in bash first.
+
 ## [1.29.149]
 
 ### Fixed

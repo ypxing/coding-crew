@@ -227,6 +227,9 @@ maybe_heartbeat() {
 # it must never be why a worker's run comes back `blocked`.
 trace_event() {
   local line="$1" type
+  # Only tool_execution_* events produce a line, so every other line (message deltas,
+  # non-JSON output) is dropped here without a fork — a jq per line costs ~100ms under Git Bash.
+  [[ "$line" == *'"tool_execution_'* ]] || return 0
   type=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || return 0
   case "$type" in
     tool_execution_start)

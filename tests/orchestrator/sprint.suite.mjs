@@ -1,13 +1,17 @@
 /**
- * sprint.test.mjs — the state machine end to end, with every model dispatch faked.
+ * sprint.suite.mjs — the state machine end to end, with every model dispatch faked.
  *
  * These are the assertions the deleted prose used to make about itself: a clean issue
  * merges and closes, a failing check never merges, an unmet criteria verdict never
  * merges, a review that did not happen is a gap rather than a clean pass, and two dry
  * rounds stall instead of looping forever.
+ *
+ * Run through the sprint-<k>.test.mjs entry files, each of which runs every Nth test: these
+ * tests are synchronous and each drives a whole faked sprint, so one file ran them one at a
+ * time — 80s on Linux, ~20 minutes under Git Bash. `node --test` runs files in parallel.
  */
 
-import { test, after } from "node:test";
+import { test as nodeTest, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
@@ -56,6 +60,14 @@ cpSync(join(REPO, "agents/crew-reviewer/assets"), join(INSTALL_DIR, "code-review
 cpSync(join(REPO, "skills/dep-install/scripts"), join(INSTALL_DIR, "dep-install/scripts"), { recursive: true });
 cpSync(join(REPO, "skills/solve-issue/scripts"), join(INSTALL_DIR, "solve-issue/scripts"), { recursive: true });
 const FAKE = join(HERE, "fixtures/fake-dispatch.sh");
+
+// The slice this process runs, set by the entry file that imported this module; no slice
+// runs everything. Round-robin, so neighbouring (similarly sized) tests spread out.
+const [SLICE, SLICES] = (globalThis.SPRINT_SLICE ?? "1/1").split("/").map(Number);
+let testSeq = 0;
+function test(...args) {
+  if (testSeq++ % SLICES === SLICE - 1) nodeTest(...args);
+}
 
 // Every call site below spreads process.env into its own `env` (or omits `env` and gets
 // it by default); this test's own process inherits CREW_PANE_HOST, HERDR_ENV/HERDR_PANE_ID (or

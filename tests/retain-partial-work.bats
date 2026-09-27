@@ -21,7 +21,7 @@ setup() {
 
 # Every orchestrator-body version of these assertions was deleted with the body that carried
 # it (claude's, then copilot's). Each has a code equivalent that runs the behaviour instead of
-# grepping for it, in tests/orchestrator/sprint.test.mjs: retention survives cleanup, the
+# grepping for it, in tests/orchestrator/sprint.suite.mjs: retention survives cleanup, the
 # branch is named in the summary with its reason, the next round's worker prompt says "Resume
 # on that existing branch" and that the notes are "not a substitute for it", a demoted branch
 # never merges, and a merged branch loses both its worktree and its ref. What stays here is
@@ -93,7 +93,7 @@ MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scr
 #
 # The resume dispatch reads .retained_branches; if nothing ever writes it the lookup
 # silently returns empty and every partial restarts from scratch. Who calls it is
-# orchestrator/lib/pipeline.mjs (asserted in tests/orchestrator/sprint.test.mjs); that the
+# orchestrator/lib/pipeline.mjs (asserted in tests/orchestrator/sprint.suite.mjs); that the
 # script still does what the call assumes is asserted here.
 @test "state.sh implements the retained_branches write and clear the prose used to spell out" {
   grep -q 'retained_branches\[\$s\] = \$b' "$SCRIPT_DIR/skills/crew-afk/scripts/state.sh"

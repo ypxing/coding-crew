@@ -57,7 +57,7 @@ frontmatter() {
 #
 # Every platform is a launcher now, so the position of the review is not prose anywhere:
 # it is the pipeline chain in orchestrator/lib/pipeline.mjs, asserted on a real
-# (faked-dispatch) run in tests/orchestrator/sprint.test.mjs — "the gates run in order:
+# (faked-dispatch) run in tests/orchestrator/sprint.suite.mjs — "the gates run in order:
 # verify → AC receipt → merge → close, and squash last" and "the review is written to the
 # sprint's reviews dir, before the squash". The body versions of five tests lived here
 # (review before merge, review before squash, no post-squash review, the no-branch skip,

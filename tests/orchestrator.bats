@@ -22,15 +22,23 @@ setup_file() {
 @test "orchestrator: unit and integration suite passes" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$REPO_ROOT"
-  run node --test tests/orchestrator/tracker.test.mjs tests/orchestrator/tracker-config.test.mjs \
-    tests/orchestrator/report.test.mjs \
-    tests/orchestrator/dispatch.test.mjs tests/orchestrator/pane-host.test.mjs \
-    tests/orchestrator/pipeline.test.mjs tests/orchestrator/contract.test.mjs \
-    tests/orchestrator/sprint.test.mjs
+  # A glob, not a list: a hand-kept list had silently dropped seven of the suite's files.
+  run node --test tests/orchestrator/*.test.mjs
   if [ "$status" -ne 0 ]; then
     echo "$output" >&3
   fi
   [ "$status" -eq 0 ]
+}
+
+@test "orchestrator: every slice of sprint.suite.mjs has an entry file, so no test goes unrun" {
+  cd "$REPO_ROOT"
+  local total k
+  total=$(grep -oE 'SPRINT_SLICE = "[0-9]+/[0-9]+"' tests/orchestrator/sprint-1.test.mjs | grep -oE '[0-9]+"$' | tr -d '"')
+  [ -n "$total" ]
+  for k in $(seq 1 "$total"); do
+    grep -q "SPRINT_SLICE = \"$k/$total\"" "tests/orchestrator/sprint-$k.test.mjs"
+  done
+  [ "$(ls tests/orchestrator/sprint-*.test.mjs | wc -l | tr -d ' ')" -eq "$total" ]
 }
 
 @test "orchestrator: plan is read-only and needs no model" {

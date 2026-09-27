@@ -19,9 +19,10 @@ jobs:
       # install.sh runs, each spawning ~1,500 jq calls. Git Bash has no fork() (it
       # emulates it), so Windows was taking 27+ minutes for a suite that runs in 2 on
       # Linux. bats' own --jobs needs GNU parallel, which the Windows runner does not
-      # have, so Windows is parallelised across the matrix instead — scripts/ci-test-shard.sh
-      # partitions tests/ deterministically and tests/ci-test-shard.bats proves the
-      # partition is complete, so a dropped file cannot go unnoticed.
+      # have, so Windows is parallelised across the matrix — scripts/ci-test-shard.sh
+      # partitions tests/ deterministically by measured time (tests/ci-shard-weights.tsv)
+      # and tests/ci-test-shard.bats proves the partition is complete, so a dropped file
+      # cannot go unnoticed — and within each job by scripts/ci-run-bats.sh.
       matrix:
         include:
           - os: ubuntu-latest
@@ -96,7 +97,9 @@ jobs:
           [ "${#files[@]}" -gt 0 ] || { echo "::error::shard $SHARD selected no test files"; exit 1; }
           echo "Shard $SHARD: ${#files[@]} test files"
 
-          "$BATS" --print-output-on-failure "${files[@]}" 2>&1 | tee bats.log && exit 0
+          # One bats process per file, CPU-count at a time: bats alone runs files serially
+          # and left three of the Windows runner's four cores idle.
+          bash scripts/ci-run-bats.sh "$RUNNER_TEMP/bats-logs" "${files[@]}" 2>&1 | tee bats.log && exit 0
           echo "::group::Failure summary"
           if grep -q "^not ok" bats.log; then
             grep -n -A 20 "^not ok" bats.log
@@ -112,7 +115,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bats-log-${{ matrix.os }}-${{ strategy.job-index }}
-          path: bats.log
+          path: |
+            bats.log
+            ${{ runner.temp }}/bats-logs/
           if-no-files-found: ignore
 
   release-parity:

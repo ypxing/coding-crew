@@ -30,7 +30,7 @@ PROTOCOL="$REPO_ROOT/agents/crew-reviewer/protocol.md"
 # `verify → review (acceptance criteria + findings) → merge → close` order stated verbatim.
 # They policed bodies that are launchers now. The fold is structural in
 # orchestrator/lib/pipeline.mjs (one `runReview()` call, whose parsed verdict is the gate)
-# and asserted end to end in tests/orchestrator/sprint.test.mjs: the gate order from the
+# and asserted end to end in tests/orchestrator/sprint.suite.mjs: the gate order from the
 # trace log, an `AC: unmet` verdict retaining the branch and writing no receipt, and an
 # empty review report reading as a gap rather than a pass. `tests/crew-afk-launcher.bats`
 # keeps a launcher from naming the pipeline again.

@@ -282,6 +282,9 @@ maybe_heartbeat() {
 # silently skipped: trace output is observability, it must never be why a dispatch fails.
 trace_event() {
   local line="$1" type
+  # A non-JSON line can match no case below, so it is dropped here without a fork — a jq
+  # per line costs ~100ms under Git Bash.
+  [[ "$line" == *'{'* ]] || return 0
   type=$(printf '%s' "$line" | jq -r '.type // empty' 2>/dev/null) || return 0
   case "$type" in
     item.started)
