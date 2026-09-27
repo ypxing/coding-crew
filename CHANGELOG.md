@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.29.146]
+
+### Changed
+
+- **crew-afk no longer squashes the sprint by default.** `afk.squashCommits` now defaults to
+  `false`: each issue's merge stays its own commit on the feature branch. Opt in with
+  `"squashCommits": true` in `.coding-crew/config.json` or `--squash` for one run
+  (`--no-squash` still turns it off). **A repo that relied on the squash must now set it.**
+
+### Fixed
+
+- **A squash commit refused by a hook no longer leaves the sprint's work uncommitted.**
+  `squash-commits.sh` reset `--soft` to the sprint's base and then committed; a
+  `commit-msg`/`pre-commit` hook (or signing) refusing that commit left the branch at the
+  base with every merged issue's changes only staged. It now puts the branch back on its
+  original tip and exits 1, and the run summary reports `## Squash — Failed:` with the
+  hook's message instead of carrying on silently.
+
 ## [1.29.145]
 
 ### Changed

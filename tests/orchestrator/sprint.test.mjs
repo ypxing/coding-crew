@@ -1205,7 +1205,7 @@ test("two dry rounds stall instead of looping forever", () => {
 test("the gates run in order: verify → AC receipt → merge → close, and squash last", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  const r = runSprint(root);
+  const r = runSprint(root, ["--squash"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const log = traceLog(root);
   const verify = markerAt(log, "VERIFY");
@@ -1226,7 +1226,7 @@ test("a squash refused by a hook is reported in the summary, and the merged comm
   const hook = join(root, ".git/hooks/commit-msg");
   writeFileSync(hook, "#!/bin/sh\ngrep -q '^Demo:' \"$1\" && { echo 'commit-msg: rejected' >&2; exit 1; }\nexit 0\n");
   chmodSync(hook, 0o755);
-  const r = runSprint(root);
+  const r = runSprint(root, ["--squash"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stdout, /## Squash\n\n\*\*Failed:\*\* [\s\S]*commit-msg: rejected/);
   const git = (...args) => sh("git", ["-C", root, ...args]).stdout.trim();
@@ -1237,7 +1237,7 @@ test("a squash refused by a hook is reported in the summary, and the merged comm
 test("the review is written to the sprint's reviews dir, before the squash", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  runSprint(root);
+  runSprint(root, ["--squash"]);
   const reports = reviewReports(root);
   assert.equal(reports.length, 1, `expected one sprint-review file, got ${JSON.stringify(reports)}`);
   const text = readFileSync(join(root, ".scratch/demo/reviews", reports[0]), "utf8");
@@ -1480,7 +1480,7 @@ test("the PRD audit runs by default after Phase 1, before the flush and the squa
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
-  const r = runSprint(root);
+  const r = runSprint(root, ["--squash"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(existsSync(join(root, ".scratch/demo/prd-audit.md")), true);
   assert.match(r.stdout, /## PRD Audit/);
@@ -1678,6 +1678,16 @@ test("a bad flag value is a setup error naming the flag", () => {
   const bare = runSprint(root, ["--prd-audit"]);
   assert.equal(bare.code, 1);
   assert.match(bare.stderr, /--prd-audit is ""/);
+});
+
+test("by default the sprint is not squashed: each issue's merge stays its own commit", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(traceLog(root), /\[SQUASH\]/);
+  const log = sh("git", ["-C", root, "log", "--format=%s", "main..HEAD"]).stdout;
+  assert.match(log, /Merge/);
 });
 
 test("config.json's squashCommits and installDeps turn those steps off, as their flags do", () => {

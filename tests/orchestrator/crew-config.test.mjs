@@ -398,7 +398,7 @@ test("resolveSettings: defaults, then config.json, then flags — and a flag is 
   assert.equal(defaults.fixFindings, "high");
   assert.equal(defaults.PRDAudit, "fix");
   assert.equal(defaults.installDeps, true);
-  assert.equal(defaults.squashCommits, true);
+  assert.equal(defaults.squashCommits, false, "squashing rewrites history, so it is opt-in");
   assert.equal(defaults.baselineCheck, true, "the baseline runs unless turned off");
   assert.equal(defaults.resumeCoderSession, false, "session resume is opt-in until measured");
   assert.equal(defaults.maxParallel, null);
@@ -406,12 +406,12 @@ test("resolveSettings: defaults, then config.json, then flags — and a flag is 
 
   const origin = {};
   const s = resolveSettings({
-    afk: { fixFindings: "medium", squashCommits: false, timeouts: { coder: 60, merge: 8 } },
+    afk: { fixFindings: "medium", squashCommits: true, timeouts: { coder: 60, merge: 8 } },
     cli: { fixFindings: "none", timeouts: { merge: 2 } },
     origin,
   });
   assert.equal(s.fixFindings, "none");
-  assert.equal(s.squashCommits, false);
+  assert.equal(s.squashCommits, true);
   assert.equal(s.timeouts.coder, 60);
   assert.equal(s.timeouts.merge, 2);
   assert.equal(origin.fixFindings, "flag");

@@ -13,7 +13,7 @@
  *       "runtime": { "reviewer": "codex" },
  *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
  *       "fixFindings": "high", "PRDAudit": "fix",
- *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": true,
+ *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": false,
  *       "baselineCheck": true, "resumeCoderSession": false,
  *       "limits": { "coder": { "usd": 5 } } } }
  *
@@ -75,7 +75,7 @@ export const DEFAULT_SETTINGS = {
   fixFindings: "high",
   PRDAudit: "fix",
   installDeps: true,
-  squashCommits: true,
+  squashCommits: false,
   baselineCheck: true,
   resumeCoderSession: false,
 };
