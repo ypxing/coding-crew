@@ -38,7 +38,6 @@ import {
   issueDescriptor,
   limitExceeded,
   NOT_FIXABLE_TAG,
-  REQUIRES_FAILED_TAG,
   REVIEW_NOT_RUN_TAG,
   notifyMilestone,
   readSidecar,
@@ -103,9 +102,9 @@ const BLOCKED_PREFIX = /^blocked — (retry limit reached \(\d+ attempts\) — )
  *           all, the coder is skipped and only verify + review re-run.
  *           Also the route once a human reruns after the retry cap blocked it: a restart
  *           would only hit the same conflict at the sync step.
- *   restart `requires-failed …` — blocked in preflight before any dispatch; the next run's
- *           preflight re-probes first, so it only gets here once the requirement holds.
- *           Anything else, including no reason — the coder runs on workerPrompt.
+ *   restart anything else, including no reason — the coder runs on workerPrompt. An issue
+ *           blocked as `requires-failed` retains no branch, so it has no reason here and
+ *           restarts once check-requires.sh passes it.
  *
  * Whatever the route, a retry whose sync with the feature branch conflicts keeps that
  * conflict in the worktree: a coder-dispatching route adds it to its prompt, and a verify
@@ -122,7 +121,6 @@ export function resumeRoute(reason) {
     return { route: "fix", kind: "conflict", context: stripReasonTag(unblocked, MERGE_CONFLICT_TAG) };
   }
   if (reason === "merge-failed" || reason.startsWith("close-refused")) return { route: "merge" };
-  if (unblocked.startsWith(REQUIRES_FAILED_TAG)) return { route: "restart" };
   if (reason.startsWith(REVIEW_NOT_RUN_TAG)) return { route: "verify", label: "review-not-run" };
   if (unblocked.startsWith(CRITERIA_ENVIRONMENT_TAG)) return { route: "verify", label: "environment-recheck" };
   if (reason.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };

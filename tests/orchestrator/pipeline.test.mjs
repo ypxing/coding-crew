@@ -40,7 +40,6 @@ const CASES = [
   // So does a conflict: a restart would only hit the same conflict at the sync step.
   ["blocked — retry limit reached (2 attempts) — merge-conflict — x", { route: "fix", kind: "conflict", context: "x" }],
   // Blocked in preflight on a failing ## Requires: re-probed first, then a fresh start.
-  ["blocked — requires-failed — `make start-localstack` exit 1", { route: "restart" }],
   // Every other blocked reason still restarts, as before.
   ["blocked — retry limit reached (2 attempts) — merge-failed", { route: "restart" }],
   ["blocked — retry limit reached (2 attempts) — review-not-run", { route: "restart" }],
