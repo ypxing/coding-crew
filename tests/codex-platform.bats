@@ -204,9 +204,9 @@ assert len(d['developer_instructions']) > 200
   run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
     bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
       --agent crew-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md" \
-      --out "$TEMP_DIR/.scratch/demo/dispatch/01-a.review.md"
+      --out "$TEMP_DIR/.scratch/demo/dispatch/01-a/review.md"
   [ "$status" -eq 0 ]
-  dispatch=$(cd "$TEMP_DIR/.scratch/demo/dispatch" && pwd)
+  dispatch=$(cd "$TEMP_DIR/.scratch/demo/dispatch/01-a" && pwd)
   [[ "$output" == *"--cd $dispatch --sandbox workspace-write"* ]] || { echo "$output" >&2; return 1; }
   [[ "$output" == *"exclude_slash_tmp=true"* && "$output" == *"exclude_tmpdir_env_var=true"* ]]
   [[ "$output" != *"writable_roots"* && "$output" != *"network_access"* && "$output" != *"--add-dir"* ]]

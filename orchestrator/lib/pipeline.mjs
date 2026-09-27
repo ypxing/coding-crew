@@ -30,6 +30,7 @@ import {
   AC_RECEIPT_FAILED_TAG,
   CRITERIA_ENVIRONMENT_TAG,
   CRITERIA_UNMET_TAG,
+  dispatchIssueDir,
   dispatchStem,
   FIXABLE_TAG,
   gatesAtTip,
@@ -375,9 +376,11 @@ export async function runWorker(ctx, issue, attempt) {
     };
   }
 
-  const promptFile = join(dispatchDir, `${dispatchStem(issue)}.prompt.md`);
-  const outFile = join(dispatchDir, `${dispatchStem(issue)}.report.md`);
-  const sidecarFile = join(dispatchDir, `${dispatchStem(issue)}.report.json`);
+  const issueDir = dispatchIssueDir(dispatchDir, issue);
+  mkdirSync(issueDir, { recursive: true });
+  const promptFile = join(issueDir, "prompt.md");
+  const outFile = join(issueDir, "report.md");
+  const sidecarFile = join(issueDir, "report.json");
 
   // A stale sidecar at this fixed path must not be read back as this round's verdict.
   rmSync(sidecarFile, { force: true });
@@ -589,7 +592,7 @@ export async function runHousekeeping(ctx, worker) {
   // The worktree stays alive across review (which needs none of it): an `AC: unmet`
   // verdict sends the coder back to fix this branch.
   // The gate's own record, not its stdout: the reviewer is pointed at the same file.
-  const verifyFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.verify.json`);
+  const verifyFile = join(dispatchIssueDir(sprint.dispatchDir, issue), "verify.json");
   const verifyRecord = { ...readVerifyRecord(verifyFile), file: verifyFile };
   let review = await runReview(ctx, worker, verifyRecord);
   if (review.limitExceeded) return finishBlocked(ctx, worker, outcome, review.limitExceeded);

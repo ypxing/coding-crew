@@ -689,7 +689,7 @@ npm ERR! boom"
 
   run bash "$SCRIPT" --dir "$WORK" --slug widget
   [ "$status" -eq 0 ]
-  local log="$SPRINT_DIR/dispatch/widget.deps.log"
+  local log="$SPRINT_DIR/dispatch/widget/deps.log"
   [ -f "$log" ]
   grep -q 'npm ERR! boom' "$log"
   [[ "$(deps_line)" == *"$log"* ]] || { echo "$output" >&2; return 1; }
@@ -799,7 +799,7 @@ line two"
 
   run bash "$SCRIPT" --dir "$WORK" --slug widget
   [ "$status" -eq 0 ]
-  [ -f "$SPRINT_DIR/dispatch/widget.deps.skip" ]
+  [ -f "$SPRINT_DIR/dispatch/widget/deps.skip" ]
 
   # Second round: the probe is not repeated, and the cached outcome is reported.
   stub_scripts USE_HOST 0 "SHOULD NOT RUN"
@@ -817,15 +817,15 @@ line two"
 
   run bash "$SCRIPT" --dir "$WORK" --slug widget
   [ "$status" -eq 0 ]
-  [ -f "$SPRINT_DIR/dispatch/widget.deps.ok" ]
-  [ ! -f "$SPRINT_DIR/dispatch/widget.deps.skip" ]
+  [ -f "$SPRINT_DIR/dispatch/widget/deps.ok" ]
+  [ ! -f "$SPRINT_DIR/dispatch/widget/deps.skip" ]
 }
 
 @test "the marker is a cache, never the guard: a present dep dir wins over a skip marker" {
   printf '{}\n' > "$WORK/package.json"
   export SPRINT_DIR="$TEMP_DIR/sprint"
-  mkdir -p "$SPRINT_DIR/dispatch"
-  printf 'none\n' > "$SPRINT_DIR/dispatch/widget.deps.skip"
+  mkdir -p "$SPRINT_DIR/dispatch/widget"
+  printf 'none\n' > "$SPRINT_DIR/dispatch/widget/deps.skip"
   mkdir -p "$WORK/node_modules"
 
   run bash "$SCRIPT" --dir "$WORK" --slug widget

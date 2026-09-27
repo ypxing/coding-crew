@@ -26,20 +26,22 @@ set -uo pipefail
 #   mechanical steps downstream can require.
 #
 # What a receipt is
-#   Both live in <main-root>/.scratch/<feature-slug>/dispatch/, beside the worker
-#   reports, so a sprint's evidence stays in one place.
+#   Both live in <main-root>/.scratch/<feature-slug>/dispatch/<n>-<slug>/ (or bare
+#   <slug>/ when unnumbered) — the issue's own subdirectory, beside its worker reports,
+#   so a sprint's evidence stays grouped one issue to a folder instead of piled flat.
 #
-#   verify: <n>-<slug>.verify.json, verify-worktree.sh's own record of the run (the
-#   bare <slug>.verify.json when no --stem was given). It is written by that script,
-#   never here, pass or fail; `check verify` accepts it only with a `pass` verdict and
-#   a `commit` equal to the branch's tip, so commits pushed after verification cannot
-#   ride in on an earlier pass. `check verify --branch` knows only the slug, so it
-#   finds the record by `<digits>-<slug>` or bare `<slug>`.
+#   verify: verify.json, verify-worktree.sh's own record of the run, in the issue's
+#   subdirectory named by --stem. It is written by that script, never here, pass or
+#   fail; `check verify` accepts it only with a `pass` verdict and a `commit` equal to
+#   the branch's tip, so commits pushed after verification cannot ride in on an earlier
+#   pass. `check verify --branch` knows only the slug, so it finds the subdirectory by
+#   `<digits>-<slug>` or bare `<slug>` (_dispatch_issue_dir).
 #
-#   ac: <slug>.ac.ok, written here once review returned all-met, holding the reviewed
-#   commit. `check ac` tests only its existence — by close time the branch may already be
-#   merged and deleted, so there is no tip to compare. `--at-tip` also requires that commit
-#   to be the branch's tip: what a retry asks before skipping a review it already passed.
+#   ac: ac.ok in that same subdirectory, written here once review returned all-met,
+#   holding the reviewed commit. `check ac` tests only its existence — by close time the
+#   branch may already be merged and deleted, so there is no tip to compare. `--at-tip`
+#   also requires that commit to be the branch's tip: what a retry asks before skipping
+#   a review it already passed.
 #
 #   Writing an `ac` receipt also emits the ACVERIFY trace line, because the receipt
 #   is the only evidence that gate ran. Verify receipts are traced by
@@ -110,21 +112,32 @@ _split_crew_branch() {
   esac
 }
 
-# _receipt_file <main-root> <feature-slug> <issue-slug> <kind> [<stem>]
-# A verify record with no stem is looked up: the `<digits>-<slug>` one the
-# orchestrator wrote if there is one, else the bare-slug name.
-_receipt_file() {
-  local dispatch="$1/.scratch/$2/dispatch"
-  if [ "$4" = "ac" ]; then echo "$dispatch/$3.ac.ok"; return; fi
-  if [ -n "${5:-}" ]; then echo "$dispatch/$5.verify.json"; return; fi
-  local f
-  for f in "$dispatch"/[0-9]*-"$3".verify.json; do
-    [ -f "$f" ] || continue
-    if basename "$f" | grep -qE "^[0-9]+-$(printf '%s' "$3" | sed 's/[.[\*^$]/\\&/g')\.verify\.json$"; then
-      echo "$f"; return
+# _dispatch_issue_dir <dispatch-dir> <issue-slug> [<stem>]
+# An issue's own subdirectory under dispatch/. A fresh write already knows its
+# --stem and is given it directly; a lookup that only has the bare slug (derived
+# from a branch, which never carries the issue number for the local tracker) finds
+# whichever of `<digits>-<slug>` or bare `<slug>` the writer actually created,
+# numbered taking priority since that is what a numbered issue's own writes used.
+_dispatch_issue_dir() {
+  local dispatch="$1" slug="$2" stem="${3:-}"
+  if [ -n "$stem" ]; then echo "$dispatch/$stem"; return; fi
+  local d
+  for d in "$dispatch"/[0-9]*-"$slug"; do
+    [ -d "$d" ] || continue
+    if basename "$d" | grep -qE "^[0-9]+-$(printf '%s' "$slug" | sed 's/[.[\*^$]/\\&/g')$"; then
+      echo "$d"; return
     fi
   done
-  echo "$dispatch/$3.verify.json"
+  echo "$dispatch/$slug"
+}
+
+# _receipt_file <main-root> <feature-slug> <issue-slug> <kind> [<stem>]
+_receipt_file() {
+  local dispatch="$1/.scratch/$2/dispatch"
+  local dir
+  dir=$(_dispatch_issue_dir "$dispatch" "$3" "${5:-}")
+  if [ "$4" = "ac" ]; then echo "$dir/ac.ok"; return; fi
+  echo "$dir/verify.json"
 }
 
 # issue_slug_of <issue-file-path> — filename minus leading digits and extension,
@@ -318,7 +331,7 @@ case "$ACTION" in
           state_dir=$(dirname "$ISSUE")
           feature_dir=$(dirname "$(dirname "$state_dir")")
           slug=$(issue_slug_of "$ISSUE")
-          file="$feature_dir/dispatch/$slug.ac.ok"
+          file="$(_dispatch_issue_dir "$feature_dir/dispatch" "$slug")/ac.ok"
           label=$(basename "$ISSUE")
         fi
 

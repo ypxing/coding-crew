@@ -6,7 +6,7 @@ set -uo pipefail
 # Usage:
 #   ensure-deps.sh --dir <path> [--slug <issue-slug>] [--stem <n>-<slug>] [--timeout <sec, default 1800>]
 #
-#   --stem names this issue's marker/log files like its other dispatch files (the slug when absent).
+#   --stem names this issue's own dispatch subdirectory, like its other dispatch files (the slug when absent).
 #
 # Output — exactly one `DEPS:` line, always exit 0:
 #
@@ -101,7 +101,7 @@ MARKER_DIR=""
 MARKER=""
 if [ -n "$SLUG" ]; then
   MARKER_DIR="$(_sprint_dir)"
-  [ -n "$MARKER_DIR" ] && MARKER="$MARKER_DIR/dispatch/${STEM:-$SLUG}.deps"
+  [ -n "$MARKER_DIR" ] && MARKER="$MARKER_DIR/dispatch/${STEM:-$SLUG}/deps"
 fi
 
 # _report <outcome-line> <marker-suffix> — the single exit point.

@@ -4,6 +4,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { getTracker } from "../tracker.mjs";
 import { queuePaneNotice } from "../pane-host/index.mjs";
@@ -67,6 +68,11 @@ export function limitExceeded(result, role, binding) {
 /** Dispatch filename stem: `NN-<slug>`, sorting like the tracker's files; bare slug if unnumbered. */
 export function dispatchStem(issue) {
   return issue.number ? `${issue.number}-${issue.slug}` : issue.slug;
+}
+
+/** This issue's own subdirectory under dispatch/ — every prompt, report and receipt of its lives together. */
+export function dispatchIssueDir(dispatchDir, issue) {
+  return join(dispatchDir, dispatchStem(issue));
 }
 
 /**

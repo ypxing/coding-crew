@@ -2,7 +2,8 @@
  * report.mjs — parse what the models return, and apply the schema pre-filter.
  *
  * One file, one schema, one parser, fail closed: every role (coder/triage/review) writes
- * its result to a `<slug>.<role>.report.json` sidecar as its own last action, and that file
+ * its result to a `report.json` (or `triage.report.json` / `review.report.json`) sidecar
+ * in the issue's own dispatch subdirectory as its own last action, and that file
  * is the *only* thing read here — never the dispatch's captured text. There is no fallback
  * to a fenced ```json block in the final message or to markdown headings; a missing or
  * invalid sidecar is read as the failure state (`blocked` / `unmet` / `fixable`, per role),
@@ -135,7 +136,7 @@ function missingReport(raw, unparseable) {
 /**
  * @param {string|null} text  the worker's captured dispatch text — kept only as `raw` for a
  *   human reading a blocked report; never parsed
- * @param {object|null} sidecar  parsed <slug>.report.json, when the worker wrote one
+ * @param {object|null} sidecar  parsed report.json, when the worker wrote one
  */
 export function parseWorkerReport(text, sidecar = null) {
   const raw = text ?? "";
@@ -174,7 +175,7 @@ export function applySchemaPrefilter(report) {
 }
 
 /**
- * verify-worktree.sh's own record (`<stem>.verify.json`), read back as the check evidence the
+ * verify-worktree.sh's own record (`verify.json`, in the issue's dispatch subdirectory), read back as the check evidence the
  * reviewer is given.
  *
  * The reviewer cannot run commands, so a criterion phrased "…and the tests pass" is
@@ -288,11 +289,11 @@ function reviewFromStructured(raw, obj) {
 }
 
 /**
- * Reviewer output for one branch. The `<slug>.review.report.json` sidecar (see
+ * Reviewer output for one branch. The `review.report.json` sidecar (see
  * parseWorkerReport's own sidecar policy) is the only thing read — never the captured text.
  *
  * @param {string|null} text  the reviewer's captured dispatch text — kept only as `raw`
- * @param {object|null} sidecar  parsed <slug>.review.report.json, when the reviewer wrote one
+ * @param {object|null} sidecar  parsed review.report.json, when the reviewer wrote one
  */
 export function parseReviewReport(text, sidecar = null) {
   const raw = text ?? "";
@@ -366,11 +367,11 @@ function triageFromStructured(raw, obj) {
  * recoding touches? Fails closed toward `fixable` — an unparseable or missing verdict
  * must not silently strand an issue that a normal retry could still fix.
  *
- * The `<slug>.triage.report.json` sidecar (see parseWorkerReport's own sidecar policy) is
+ * The `triage.report.json` sidecar (see parseWorkerReport's own sidecar policy) is
  * the only thing read — never the captured text.
  *
  * @param {string|null} text  the triage agent's captured dispatch text — kept only as `raw`
- * @param {object|null} sidecar  parsed <slug>.triage.report.json, when it wrote one
+ * @param {object|null} sidecar  parsed triage.report.json, when it wrote one
  */
 export function parseTriageReport(text, sidecar = null) {
   const raw = text ?? "";

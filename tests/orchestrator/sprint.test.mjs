@@ -278,18 +278,18 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), false);
   // The gate receipts both exist and the sprint ends cleanly.
-  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha.verify.json")), true);
-  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.ac.ok")), true);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json")), true);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/ac.ok")), true);
   assert.match(r.stdout, /NO MORE TASKS/);
   // The reviewer was handed the verification result, so a criterion that ends "and the
   // tests pass" is answerable by the read-only reviewer instead of stalling the branch.
-  const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.review-prompt.md"), "utf8");
+  const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8");
   assert.match(reviewPromptText, /Checks already run by the pipeline/);
   assert.match(reviewPromptText, /test=pass/);
   // The install this run resolved, once — the reviewer never searches for its assets.
   assert.ok(reviewPromptText.includes(`Review assets: ${join(INSTALL_DIR, "code-review")}\n`), reviewPromptText);
   // Nor the coder for the project's config, which its worktree does not hold.
-  const coderPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
+  const coderPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
   assert.ok(coderPromptText.includes(`Project config: ${join(root, ".coding-crew")} `), coderPromptText);
 });
 
@@ -327,16 +327,16 @@ test("every cached check is run by the gate, whatever the worker reported, and s
   );
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.review-prompt.md"), "utf8");
+  const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8");
   assert.match(reviewPromptText, /coverage=pass \(full output: [^)]*verify-coverage\.log, \d+ lines\)/);
   // The worker never mentioned coverage; the gate ran it from the cache anyway. integration is
   // `null` there, and the reviewer is told so rather than left to infer it from what is absent.
   assert.doesNotMatch(reviewPromptText, /integration=/);
   assert.match(reviewPromptText, /Not run by the pipeline, no command configured: integration/);
-  assert.match(reviewPromptText, /The gate's own record of that run: \S+\/01-alpha\.verify\.json/);
+  assert.match(reviewPromptText, /The gate's own record of that run: \S+\/01-alpha\/verify\.json/);
   // The logs live beside the record, so they outlive the worktree.
-  assert.match(reviewPromptText, /coverage=pass \(full output: \S+\/dispatch\/01-alpha\.verify-coverage\.log, \d+ lines\)/);
-  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha.verify-coverage.log")), true);
+  assert.match(reviewPromptText, /coverage=pass \(full output: \S+\/dispatch\/01-alpha\/verify-coverage\.log, \d+ lines\)/);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/verify-coverage.log")), true);
 });
 
 test("a worker-reported failing check with commits is overruled by verify, not retried", () => {
@@ -415,7 +415,7 @@ test("an unmet acceptance-criteria verdict retains the branch and closes nothing
   assert.equal(r.code, 2);
   assert.deepEqual(s.merged_branches ?? [], []);
   assert.match(s.retention.alpha.reason, /criteria-unmet/);
-  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.ac.ok")), false);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/ac.ok")), false);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true);
 });
 
@@ -579,7 +579,7 @@ test("a merge conflict is retried through the coder, resolved, re-verified, re-r
   const loser = kept[1];
   assert.match(log, new RegExp(`MERGE\\] branch=crew/demo/${loser} success=false reason=conflict`));
   assert.doesNotMatch(log, /\[SKIP-TO-MERGE\]/, "a conflict must not take the merge-only route");
-  const prompt = readFileSync(join(root, `.scratch/demo/dispatch/${loser === "alpha" ? "01" : "02"}-${loser}.prompt.md`), "utf8");
+  const prompt = readFileSync(join(root, `.scratch/demo/dispatch/${loser === "alpha" ? "01" : "02"}-${loser}/prompt.md`), "utf8");
   assert.match(prompt, /A merge of `feature\/demo` into this branch is in progress/);
   assert.match(prompt, /^- src\/shared\.txt$/m);
 
@@ -660,7 +660,7 @@ for (const [label, retained, setup] of [
     assert.deepEqual([...s.completed_slugs].sort(), ["alpha", "beta"], traceLog(root));
     assert.match(traceLog(root), /\[SYNC-CONFLICT-KEPT\] slug=alpha /);
     assert.doesNotMatch(traceLog(root), /\[SYNC-CONFLICT\] slug=alpha/);
-    const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
+    const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
     assert.match(prompt, /A merge of `feature\/demo` into this branch is in progress/);
     if (label.startsWith("a criteria")) assert.match(prompt, /AC 1 has no test/, "the review fix is still asked for");
     const shared = sh("git", ["-C", root, "show", "feature/demo:src/shared.txt"]).stdout;
@@ -943,7 +943,7 @@ test("partial with commits, verify fails, triage fixable: the retry is a fix rou
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
   assert.equal(coderSpawns(lines), 2);
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
   assert.match(prompt, /already judged acceptable — it only failed verification/);
   assert.match(prompt, /classified this failure as fixable: wrong host: src\/config\.ts uses localhost:4566/);
 });
@@ -978,7 +978,7 @@ test("blocked on the environment with commits: verify, then triage, which is han
   assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
   assert.ok(lines.some((l) => /verify-worktree\.sh --dir/.test(l)), "verify ran");
   assert.ok(lines.some((l) => /^SPAWN .*--agent crew-triage/.test(l)), "triage ran");
-  const triage = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.triage-prompt.md"), "utf8");
+  const triage = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/triage-prompt.md"), "utf8");
   assert.match(triage, /its own claim — check\nit against the diff/);
   assert.match(triage, /^cause: environment\ncommand: make test-integration\nexit: 1\noutput:\nLicense activation failed$/m);
 });
@@ -1112,7 +1112,7 @@ test("a rerun after a block with no commits is not told commits are preserved", 
   rmSync(join(root, ".scratch/fake/alpha.exit"));
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
   assert.match(prompt, /## Blocked/);
   assert.doesNotMatch(prompt, /preserved on branch/);
 });
@@ -1265,7 +1265,7 @@ test("a branch that fails verification is never reviewed, and no report is writt
   sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
   runSprint(root);
   assert.deepEqual(reviewReports(root), []);
-  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha.review.md")), false);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/review.md")), false);
 });
 
 test("a retained branch survives cleanup, is named in the summary, and resumes next round", () => {
@@ -1285,7 +1285,7 @@ test("a retained branch survives cleanup, is named in the summary, and resumes n
   assert.match(r.stdout, /crew\/demo\/alpha: retained \(.*verification-failed\)/);
   // Round 2 was told to resume on that branch rather than start over — and that the
   // notes are context alongside the preserved code, not a substitute for it.
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
   assert.match(prompt, /Resume on that existing branch/);
   assert.match(prompt, /crew\/demo\/alpha/);
   assert.match(prompt, /not a substitute for it/);
@@ -2353,8 +2353,8 @@ test("a dry run records both call sites without running either", () => {
   assert.equal(dry.filter((l) => SPRINT_LEVEL_DEPS.test(l)).length, 1, r.stderr);
   assert.equal(dry.filter((l) => worktreeDepsFor("alpha").test(l)).length, 1, r.stderr);
   // Recorded only: no install ran, so no marker and no dep dir appeared anywhere.
-  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.deps.ok")), false);
-  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/alpha.deps.skip")), false);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/deps.ok")), false);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/deps.skip")), false);
 });
 
 test("a worktree that starts with no node_modules is verified and merged, with no worker recovery", () => {
@@ -2683,7 +2683,7 @@ test("a feature branch that fails its own checks stops the run before any coder 
   const { r, lines } = commandLines(root, [], { baseline: true });
   assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /feature\/demo fails its own checks before any issue has touched it/);
-  assert.match(r.stderr, /^  test: fail — \S+\/dispatch\/_baseline\.verify-test\.log$/m);
+  assert.match(r.stderr, /^  test: fail — \S+\/dispatch\/_baseline\/verify-test\.log$/m);
   assert.match(r.stderr, /--no-baseline/);
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "no coder, no reviewer");
   assert.equal(state(root).baseline.verdict, "fail");
@@ -2769,6 +2769,6 @@ test("every dispatch is filed in this run's ledger with its slug, role and attem
     ["reviewer", 2, true],
   ]);
   // The coder's entry keeps the tip it left: the commit verify then checked.
-  const verified = JSON.parse(readFileSync(join(root, ".scratch/demo/dispatch/01-alpha.verify.json"), "utf8")).commit;
+  const verified = JSON.parse(readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json"), "utf8")).commit;
   assert.equal(s.dispatches[0].head, verified);
 });

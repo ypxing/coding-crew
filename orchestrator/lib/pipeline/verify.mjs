@@ -3,14 +3,14 @@
  * verdict is tagged into the retention reason for resumeRoute to read next attempt.
  */
 
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { triagePrompt } from "../prompts.mjs";
 import { parseTriageReport } from "../report.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./finish.mjs";
-import { dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason } from "./shared.mjs";
+import { dispatchIssueDir, dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason } from "./shared.mjs";
 
 /**
  * verify-worktree.sh already failed: triage it, and tag the retention reason with the
@@ -47,9 +47,11 @@ export async function handleVerificationFailure(ctx, worker, outcome, verify) {
 export async function runTriage(ctx, worker, verifyStdout) {
   const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
-  const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage-prompt.md`);
-  const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.md`);
-  const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.triage.report.json`);
+  const issueDir = dispatchIssueDir(sprint.dispatchDir, issue);
+  mkdirSync(issueDir, { recursive: true });
+  const promptFile = join(issueDir, "triage-prompt.md");
+  const outFile = join(issueDir, "triage.md");
+  const sidecarFile = join(issueDir, "triage.report.json");
 
   // A stale sidecar at this fixed path must not be read back as this round's verdict.
   rmSync(sidecarFile, { force: true });

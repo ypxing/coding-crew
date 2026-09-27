@@ -205,8 +205,8 @@ sprint_with_fake_dispatch() {
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   local expected
   expected="$(FAKE_HOME="$FAKE_HOME" node -e 'console.log(require("path").resolve(process.env.FAKE_HOME, ".coding-crew/code-review"))')"
-  grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget.review-prompt.md" || {
-    cat "$WORK_REPO/.scratch/demo/dispatch/01-widget.review-prompt.md" >&2; return 1; }
+  grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" || {
+    cat "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" >&2; return 1; }
 }
 
 @test "project-level install: the reviewer is pointed at the repo's review assets" {
@@ -217,6 +217,6 @@ sprint_with_fake_dispatch() {
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
   local expected
   expected="$(cd "$WORK_REPO" && node -e 'console.log(require("path").resolve(".coding-crew/code-review"))')"
-  grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget.review-prompt.md" || {
-    cat "$WORK_REPO/.scratch/demo/dispatch/01-widget.review-prompt.md" >&2; return 1; }
+  grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" || {
+    cat "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" >&2; return 1; }
 }

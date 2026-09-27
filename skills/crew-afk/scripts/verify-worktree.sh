@@ -13,11 +13,12 @@ set -uo pipefail
 # `<LABEL>: log: <path>`, so a reviewer can read a figure (a coverage percentage) that
 # pass/fail alone cannot carry.
 #
-# In a crew worktree the run's evidence is written to the sprint's dispatch directory, next to
-# the issue's other dispatch files and named with the same `<n>-<slug>` stem (--stem; the bare
-# slug when absent): `<stem>.verify.json` — branch, commit, verdict, and per check its
-# category, command, result, exit code and log, and the cached categories set to `null` — plus `<stem>.verify-<check>.log`, every check's
-# full output. The JSON is also the merge receipt (see receipts.sh): merge-branches.sh accepts
+# In a crew worktree the run's evidence is written into the sprint's dispatch directory, in
+# the issue's own subdirectory (--stem, `<n>-<slug>`; the bare slug when absent), beside its
+# other dispatch files: `verify.json` — branch, commit, verdict, and per check its category,
+# command, result, exit code and log, and the cached categories set to `null` — plus
+# `verify-<check>.log`, every check's full output. The JSON is also the merge receipt (see
+# receipts.sh): merge-branches.sh accepts
 # only a `pass` verdict recorded for the branch's current tip. It outlives the worktree, so what
 # the gate did can be read after the fact. Outside a crew worktree nothing is recorded, and full
 # output is kept under <worktree>/.scratch/ only when it was capped.
@@ -535,7 +536,7 @@ _verify_log_path() {
   local check
   check="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   if [ -n "$EVIDENCE_FILE" ]; then
-    printf '%s.verify-%s.log' "${EVIDENCE_FILE%.verify.json}" "$check"
+    printf '%s/verify-%s.log' "$(dirname "$EVIDENCE_FILE")" "$check"
   else
     printf '%s/.scratch/verify-%s.log' "$WORKTREE_DIR" "$check"
   fi

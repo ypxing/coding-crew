@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { ASSET_DIRS, assetDir } from "./install-dir.mjs";
 import { depsLine, parseRequiresFailures, readVerifyRecord } from "./report.mjs";
 import { sectionBody } from "./trackers/body-format.mjs";
-import { dispatchStem, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
+import { dispatchIssueDir, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
 import { applyWorktreeInclude, removeWorktree, worktreePath } from "./worktree.mjs";
 
 /** The file whose presence says an asset dir is really installed, not just created. */
@@ -122,7 +122,7 @@ export function runBaseline(ctx) {
     const verdict = verify.code === 0 ? "pass" : "fail";
     sprint.state(["baseline", "--commit", commit, "--verdict", verdict]);
     if (verdict === "pass") return { status: "pass", commit, failed: [] };
-    const recordFile = join(sprint.dispatchDir, `${BASELINE_STEM}.verify.json`);
+    const recordFile = join(sprint.dispatchDir, BASELINE_STEM, "verify.json");
     const record = readVerifyRecord(recordFile);
     const failed = Object.entries(record.checks)
       .filter(([, result]) => result === "fail")
@@ -154,8 +154,9 @@ export async function checkRequires(ctx, issues) {
   for (const issue of declaring) {
     let file = issue.path;
     if (!file) {
-      mkdirSync(sprint.dispatchDir, { recursive: true });
-      file = join(sprint.dispatchDir, `${dispatchStem(issue)}.requires.md`);
+      const issueDir = dispatchIssueDir(sprint.dispatchDir, issue);
+      mkdirSync(issueDir, { recursive: true });
+      file = join(issueDir, "requires.md");
       writeFileSync(file, issue.text);
     }
     byFile.set(file, issue);

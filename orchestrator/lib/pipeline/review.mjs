@@ -9,7 +9,7 @@ import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { findingsAtOrAbove, parseReviewReport } from "../report.mjs";
-import { dispatchStem, issueDescriptor, issueRef, limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
+import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
 
 /** A path that only tests: a test/spec file by name, or anything under a test or fixture dir. */
 export function isTestPath(path) {
@@ -37,9 +37,11 @@ function countLines(logs = {}) {
 export async function runReview(ctx, worker, { checks, logs, notConfigured, file } = {}) {
   const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
-  const promptFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review-prompt.md`);
-  const outFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.md`);
-  const sidecarFile = join(sprint.dispatchDir, `${dispatchStem(issue)}.review.report.json`);
+  const issueDir = dispatchIssueDir(sprint.dispatchDir, issue);
+  mkdirSync(issueDir, { recursive: true });
+  const promptFile = join(issueDir, "review-prompt.md");
+  const outFile = join(issueDir, "review.md");
+  const sidecarFile = join(issueDir, "review.report.json");
   const reportFile = ctx.roundReviewFile();
 
   // A stale sidecar at this fixed path must not be read back as this round's verdict.

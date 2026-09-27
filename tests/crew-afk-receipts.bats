@@ -59,11 +59,12 @@ _make_worktree() {
 
 # _write_record <worktree> [verdict] [file-stem] — a verify-worktree.sh record by hand.
 _write_record() {
-  local wt="$1" verdict="${2:-pass}" slug
+  local wt="$1" verdict="${2:-pass}" slug stem
   slug=$(basename "$wt")
-  mkdir -p "$DISPATCH_DIR"
+  stem="${3:-$slug}"
+  mkdir -p "$DISPATCH_DIR/$stem"
   printf '{"branch": "crew/my-feature/%s", "commit": "%s", "verdict": "%s", "checks": [], "not_configured": []}\n' \
-    "$slug" "$(git -C "$wt" rev-parse HEAD)" "$verdict" > "$DISPATCH_DIR/${3:-$slug}.verify.json"
+    "$slug" "$(git -C "$wt" rev-parse HEAD)" "$verdict" > "$DISPATCH_DIR/$stem/verify.json"
 }
 
 _write_issue() {
@@ -95,9 +96,9 @@ EOF
   wt=$(_make_worktree "task-a")
 
   run bash "$RECEIPTS_SCRIPT" path verify --dir "$wt" --stem 03-task-a
-  [ "$output" = "$DISPATCH_DIR/03-task-a.verify.json" ]
+  [ "$output" = "$DISPATCH_DIR/03-task-a/verify.json" ]
   run bash "$RECEIPTS_SCRIPT" path verify --dir "$wt"
-  [ "$output" = "$DISPATCH_DIR/task-a.verify.json" ]
+  [ "$output" = "$DISPATCH_DIR/task-a/verify.json" ]
 }
 
 @test "receipts: write ac records a receipt for the branch's own slug" {
@@ -105,7 +106,7 @@ EOF
 
   run bash "$RECEIPTS_SCRIPT" write ac --dir "$wt"
   [ "$status" -eq 0 ]
-  [ -f "$DISPATCH_DIR/task-a.ac.ok" ]
+  [ -f "$DISPATCH_DIR/task-a/ac.ok" ]
 }
 
 @test "receipts: clear removes an existing receipt" {
@@ -114,7 +115,7 @@ EOF
 
   run bash "$RECEIPTS_SCRIPT" clear verify --dir "$wt"
   [ "$status" -eq 0 ]
-  [ ! -f "$DISPATCH_DIR/task-a.verify.json" ]
+  [ ! -f "$DISPATCH_DIR/task-a/verify.json" ]
 }
 
 @test "receipts: write ac works from the main checkout after the worktree is gone" {
@@ -125,7 +126,7 @@ EOF
   cd "$MAIN_ROOT"
   run bash "$RECEIPTS_SCRIPT" write ac --branch "crew/my-feature/task-a"
   [ "$status" -eq 0 ]
-  [ -f "$DISPATCH_DIR/task-a.ac.ok" ]
+  [ -f "$DISPATCH_DIR/task-a/ac.ok" ]
 }
 
 # A receipt that was never written must not be reported as written: the pipeline treats
@@ -134,7 +135,7 @@ EOF
 # write fail even as root, where a chmod would not.
 @test "receipts: write fails, and claims nothing, when the receipt file cannot be written" {
   wt=$(_make_worktree "task-a")
-  mkdir -p "$DISPATCH_DIR/task-a.ac.ok"
+  mkdir -p "$DISPATCH_DIR/task-a/ac.ok"
 
   run bash "$RECEIPTS_SCRIPT" write ac --dir "$wt"
   [ "$status" -ne 0 ]
@@ -159,13 +160,13 @@ EOF
 @test "receipts: a write that fails partway leaves no receipt the gate accepts" {
   [ -e /dev/full ] || skip "no /dev/full on this platform"
   wt=$(_make_worktree "task-a")
-  mkdir -p "$DISPATCH_DIR"
-  ln -s /dev/full "$DISPATCH_DIR/task-a.ac.ok"
+  mkdir -p "$DISPATCH_DIR/task-a"
+  ln -s /dev/full "$DISPATCH_DIR/task-a/ac.ok"
 
   run bash "$RECEIPTS_SCRIPT" write ac --dir "$wt"
   [ "$status" -ne 0 ]
   [[ "$output" == *"cannot write"* ]]
-  [ ! -e "$DISPATCH_DIR/task-a.ac.ok" ]
+  [ ! -e "$DISPATCH_DIR/task-a/ac.ok" ]
 }
 
 # ─── the ac receipt traces itself ────────────────────────────────────────────
@@ -194,7 +195,7 @@ EOF
   unset TRACE_LOG
   run env -u TRACE_LOG -u MAIN_ROOT bash "$RECEIPTS_SCRIPT" write ac --dir "$wt"
   [ "$status" -eq 0 ]
-  [ -f "$DISPATCH_DIR/task-a.ac.ok" ]
+  [ -f "$DISPATCH_DIR/task-a/ac.ok" ]
 }
 
 @test "parity: nothing outside receipts.sh writes the ACVERIFY trace marker" {
@@ -239,7 +240,7 @@ EOF
 
 @test "receipts: check ac --at-tip rejects a receipt that names no commit" {
   _make_worktree "task-a" >/dev/null
-  mkdir -p "$DISPATCH_DIR"; echo ok > "$DISPATCH_DIR/task-a.ac.ok"
+  mkdir -p "$DISPATCH_DIR/task-a"; echo ok > "$DISPATCH_DIR/task-a/ac.ok"
   cd "$MAIN_ROOT"
   run bash "$RECEIPTS_SCRIPT" check ac --branch "crew/my-feature/task-a" --at-tip
   [ "$status" -ne 0 ]
@@ -369,14 +370,14 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$wt" --stem 01-task-a
   [ "$status" -eq 0 ]
-  rec="$DISPATCH_DIR/01-task-a.verify.json"
+  rec="$DISPATCH_DIR/01-task-a/verify.json"
   [ -f "$rec" ]
   grep -q "\"commit\": \"$(git -C "$wt" rev-parse HEAD)\"" "$rec"
   grep -q '"verdict": "pass"' "$rec"
   grep -q '"category": "test", "command": "make test", "result": "pass", "exit": 0' "$rec"
   # Every check's full output outlives the worktree, beside the record.
-  grep -q "\"log\": \"$DISPATCH_DIR/01-task-a.verify-test.log\"" "$rec"
-  [ -f "$DISPATCH_DIR/01-task-a.verify-test.log" ]
+  grep -q "\"log\": \"$DISPATCH_DIR/01-task-a/verify-test.log\"" "$rec"
+  [ -f "$DISPATCH_DIR/01-task-a/verify-test.log" ]
   [ ! -e "$wt/.scratch/verify-test.log" ]
   node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$rec"
 
@@ -393,7 +394,7 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$wt" --stem 01-task-a
   [ "$status" -eq 0 ]
-  rec="$DISPATCH_DIR/01-task-a.verify.json"
+  rec="$DISPATCH_DIR/01-task-a/verify.json"
   grep -q '"category": "coverage", "command": "echo c", "result": "pass"' "$rec"
   grep -q '"not_configured": \["integration"\]' "$rec"
   node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$rec"
@@ -409,8 +410,8 @@ EOF
 
   run bash "$VERIFY_SCRIPT" --dir "$wt"
   [ "$status" -ne 0 ]
-  grep -q '"verdict": "fail"' "$DISPATCH_DIR/task-a.verify.json"
-  grep -q '"result": "fail", "exit": 2' "$DISPATCH_DIR/task-a.verify.json"
+  grep -q '"verdict": "fail"' "$DISPATCH_DIR/task-a/verify.json"
+  grep -q '"result": "fail", "exit": 2' "$DISPATCH_DIR/task-a/verify.json"
 }
 
 @test "verify-worktree: a failing run revokes a receipt from an earlier pass" {
@@ -444,8 +445,8 @@ EOF
 
 @test "close gate: issue with an ac receipt for its own slug is closed" {
   issue=$(_write_issue "01-task-a.md")
-  mkdir -p "$DISPATCH_DIR"
-  echo "ok" > "$DISPATCH_DIR/task-a.ac.ok"
+  mkdir -p "$DISPATCH_DIR/task-a"
+  echo "ok" > "$DISPATCH_DIR/task-a/ac.ok"
 
   run bash "$CLOSE_SCRIPT" "$issue"
   [ "$status" -eq 0 ]
@@ -457,8 +458,8 @@ EOF
   # The exact bug: issue 02 closed off issue 01's verified branch.
   _write_issue "01-task-a.md" >/dev/null
   issue_b=$(_write_issue "02-task-b.md")
-  mkdir -p "$DISPATCH_DIR"
-  echo "ok" > "$DISPATCH_DIR/task-a.ac.ok"
+  mkdir -p "$DISPATCH_DIR/task-a"
+  echo "ok" > "$DISPATCH_DIR/task-a/ac.ok"
 
   run bash "$CLOSE_SCRIPT" "$issue_b"
   [ "$status" -ne 0 ]
