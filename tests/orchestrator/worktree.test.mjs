@@ -306,6 +306,64 @@ test("ensureWorktree creates a fresh worktree when no branch exists yet", () => 
   assert.ok(existsSync(result.path));
 });
 
+// A worktree for the branch left somewhere other than worktreePath() — by a crashed run or
+// another tool (e.g. a Claude session's scratchpad) — makes `git worktree add` fatal.
+
+test("ensureWorktree prunes a registration for the branch whose directory is gone", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/a";
+  const elsewhere = join(tmpRoot(), "a");
+  git("worktree", "add", "-q", "-b", branch, elsewhere);
+  rmSync(elsewhere, { recursive: true, force: true });
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "HEAD", expectReuse: false });
+
+  assert.equal(result.stale, undefined);
+  assert.equal(result.path, worktreePath(mainRoot, branch));
+  assert.ok(existsSync(result.path));
+});
+
+test("ensureWorktree removes a clean worktree for the branch at another path and takes the branch over", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/a";
+  const elsewhere = join(tmpRoot(), "a");
+  git("worktree", "add", "-q", "-b", branch, elsewhere);
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "HEAD", expectReuse: false });
+
+  assert.equal(result.stale, undefined);
+  assert.ok(existsSync(result.path));
+  assert.ok(!existsSync(elsewhere));
+  assert.ok(!git("worktree", "list", "--porcelain").includes(`worktree ${elsewhere}\n`));
+});
+
+test("ensureWorktree leaves a dirty worktree for the branch at another path alone and reports stale", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/a";
+  const elsewhere = join(tmpRoot(), "a");
+  git("worktree", "add", "-q", "-b", branch, elsewhere);
+  writeFileSync(join(elsewhere, "uncommitted.txt"), "wip\n");
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "HEAD", expectReuse: true });
+
+  assert.equal(result.stale, true);
+  assert.equal(result.path, null);
+  assert.match(result.reason, /uncommitted/);
+  assert.ok(result.reason.includes(elsewhere));
+  assert.equal(readFileSync(join(elsewhere, "uncommitted.txt"), "utf8"), "wip\n");
+});
+
+test("ensureWorktree never removes the main checkout when it has the branch checked out", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const branch = "crew/feat/a";
+  git("checkout", "-q", "-b", branch);
+
+  const result = ensureWorktree(effects, { mainRoot, branch, base: "main", expectReuse: true });
+
+  assert.equal(result.stale, true);
+  assert.ok(existsSync(join(mainRoot, "README.md")));
+});
+
 test("ensureWorktree reuses an existing branch without a staleness check when expectReuse is true", () => {
   const { mainRoot, git, effects } = gitRoot();
   const branch = "crew/feat/a";

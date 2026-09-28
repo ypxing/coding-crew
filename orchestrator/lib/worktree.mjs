@@ -87,6 +87,9 @@ export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expec
   const listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   if (listed.includes(`worktree ${path}\n`) && existsSync(path)) return { path, created: false, reusedBranch: true };
 
+  const blocker = releaseBranch(effects, listed, branch);
+  if (blocker) return { path: null, created: false, stale: true, reason: blocker };
+
   let exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
 
   if (exists && !expectReuse) {
@@ -119,6 +122,41 @@ export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expec
   const r = effects.git(args);
   if (r.code !== 0) throw new Error(`git worktree add failed for ${branch}: ${r.stderr.trim()}`);
   return { path, created: true, reusedBranch: exists };
+}
+
+/**
+ * Free `branch` from any other worktree holding it, so `git worktree add` can check it out.
+ * A registration whose directory is gone is pruned; a clean checkout is removed (its commits
+ * live on the branch, not in the worktree). Returns a reason string when the holder must be
+ * kept — the main checkout, or uncommitted changes — else null.
+ */
+function releaseBranch(effects, listed, branch) {
+  const entries = listed.split("\n\n").map((block) => {
+    const lines = block.split("\n");
+    return {
+      path: lines.find((l) => l.startsWith("worktree "))?.slice("worktree ".length),
+      branch: lines.find((l) => l.startsWith("branch "))?.slice("branch ".length),
+    };
+  });
+  const index = entries.findIndex((e) => e.branch === `refs/heads/${branch}`);
+  if (index === -1) return null;
+  const holder = entries[index].path;
+
+  if (index === 0) return `branch '${branch}' is checked out in the main checkout at '${holder}'; switch it to another branch before retrying`;
+  if (!existsSync(holder)) {
+    effects.git(["worktree", "prune"]);
+    return null;
+  }
+  const status = effects.gitRead(["status", "--porcelain"], { cwd: holder });
+  if (status.code !== 0 || status.stdout.trim()) {
+    return (
+      `branch '${branch}' is checked out by another worktree at '${holder}' with uncommitted ` +
+      `changes; commit or discard them, then 'git worktree remove ${holder}' before retrying`
+    );
+  }
+  const removed = effects.git(["worktree", "remove", holder]);
+  if (removed.code !== 0) return `branch '${branch}' is held by worktree '${holder}', which git would not remove: ${removed.stderr.trim()}`;
+  return null;
 }
 
 /**
