@@ -44,6 +44,13 @@ import {
 
 export const READY_STATUS = "ready-for-agent";
 
+/** POSIX single-quoting for the CREW_FAKE_GH command string below — same convention as
+ * pane-host's shellQuote, kept local rather than imported so this tracker has no dependency
+ * on the pane-host feature. */
+function shQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 /** Real `gh` invocation: argv array, no shell. Normalizes a thrown non-zero exit the same
  * shape as a clean one, so callers only ever branch on `.code`. */
 function shellOut(cmd, args) {
@@ -51,9 +58,22 @@ function shellOut(cmd, args) {
   // explicitly — on Windows execFileSync never reads a shebang and refuses a .cmd, so a stub
   // found by PATH alone loses to the real gh.exe.
   const fake = cmd === "gh" ? process.env.CREW_FAKE_GH : "";
-  if (fake) [cmd, args] = ["bash", [fake, ...args]];
+  let env;
+  if (fake) {
+    // A single quoted `-c` string, not an argv array: `gh api`'s own `{owner}`/`{repo}`
+    // placeholders (see milestonesPath below) are literal argv content that must survive
+    // Windows' two-step translation into this MSYS-linked child — Node re-encodes the argv
+    // array as one Win32 command-line string, then bash's MSYS runtime re-parses that string
+    // into argv before bash itself starts, and that second parse has been observed to drop
+    // an unquoted brace pair (`{owner}` -> `owner`) even though bash's own parser never would.
+    // Quoting each word ourselves, and MSYS2_ARG_CONV_EXCL="*" turning off that runtime's own
+    // argument conversion for this child, keeps the content intact end to end.
+    cmd = "bash";
+    args = ["-c", [shQuote(fake), ...args.map(shQuote)].join(" ")];
+    env = { ...process.env, MSYS2_ARG_CONV_EXCL: "*" };
+  }
   try {
-    const stdout = execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const stdout = execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(env ? { env } : {}) });
     return { code: 0, stdout, stderr: "" };
   } catch (err) {
     return {

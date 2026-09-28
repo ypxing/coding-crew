@@ -82,8 +82,12 @@ export async function spawnInWorkerTerminal(
     }
     const pid = readInt(f("pid"));
     const now = Date.now();
-    if (timeoutMs && now - started >= timeoutMs) {
-      if (pid) kill(pid);
+    // A timeout with no pid yet doesn't mean there's nothing to kill — run.sh may just not
+    // have written it yet under load. Falling through here instead of returning keeps polling
+    // (still bounded by startTimeoutMs below) so the kill fires the moment the pid shows up,
+    // rather than being skipped because it wasn't there on this exact tick.
+    if (timeoutMs && now - started >= timeoutMs && pid) {
+      kill(pid);
       result = { code: 124, timedOut: true };
       break;
     }

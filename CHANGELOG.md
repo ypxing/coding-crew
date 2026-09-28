@@ -8,6 +8,32 @@
   live `[TOOL]` trace parsed each event line with `jq` before deciding it was not a tool
   call, so every message delta cost a process — around 100ms each under Git Bash. Lines
   that cannot be a tool event are now skipped in bash first.
+- **The generated `docker-compose.override.yml` uses the compose project name compose
+  itself would.** Its `name:` turned dashes into underscores, so a checkout named
+  `product-services` got a `product_services_default` network next to the project's own
+  `product-services_default`, and services on one could not reach the other. The name is
+  now the project's own top-level `name:` when it has one, else the directory name
+  normalised the way compose does. Named dependency volumes live under the project name,
+  so the first docker install after upgrading reinstalls them once.
+- **The github tracker's `CREW_FAKE_GH` test seam dropped `{owner}`/`{repo}` on Windows.**
+  `github.mjs` ran the stub through `bash <script> <args...>` so Node's argv-to-Windows-
+  command-line translation and the MSYS runtime's own re-parse of that line each got a turn
+  at the same arguments; the milestone-bootstrap call's `{owner}`/`{repo}` placeholders came
+  out with the braces stripped, so `defer`'s milestone-create tests failed only on Windows.
+  The stub is now run as one POSIX-quoted `bash -c` string, with `MSYS2_ARG_CONV_EXCL=*` set
+  so MSYS's own argument conversion leaves it alone. Production's real `gh` calls never took
+  this path and were unaffected.
+- **A worker-terminal dispatch that times out before its pid is known was never killed.**
+  `spawnInWorkerTerminal`'s poll loop checked the timeout before checking whether `run.sh`
+  had written its pid file yet; if the timeout landed on a tick where the pid was still
+  unknown, the kill was silently skipped and the loop still gave up and returned `124`,
+  leaving the real process running for its full duration with `out`/`err` held open under
+  it. Caught via a flaky local repro of `worker-terminal.test.mjs`'s timeout test, not CI
+  directly — but this is the leading suspect for shard hangs that show zero output for their
+  full budget (`ci-run-bats.sh` buffers a shard's output until every file in it finishes, so
+  a leaked process there hangs the whole shard, not just its own test). The loop now keeps
+  polling for the pid past the timeout, bounded by the existing "never started" ceiling, so
+  the kill fires the moment the pid appears instead of being skipped.
 
 ## [1.29.149]
 

@@ -428,12 +428,18 @@ fi
 PROJ_SLUG=$(basename "$MAIN_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')
 
 # PROJECT_NAME — the compose top-level `name:` value (see the "Project name" header comment
-# above). Compose project names allow only lowercase letters, digits, dashes and underscores,
-# and must start with a lowercase letter or digit — stricter than PROJ_SLUG's own volume-name
-# rules, so this is derived separately rather than reusing PROJ_SLUG as-is.
-PROJECT_NAME=$(echo "$PROJ_SLUG" | tr 'A-Z' 'a-z')
-if [[ ! "$PROJECT_NAME" =~ ^[a-z0-9] ]]; then
-  PROJECT_NAME="proj_${PROJECT_NAME}"
+# above). It must be the name compose itself picks for the main checkout without our override,
+# or the project's own `docker compose up` and ours create two `<name>_default` networks whose
+# services cannot reach each other. So: the project's own top-level `name:` when it has a
+# literal one, else MAIN_ROOT's basename normalised as compose does — lowercased, characters
+# outside [a-z0-9_-] dropped, leading `_`/`-` trimmed. Not PROJ_SLUG: that turns `-` into `_`.
+PROJECT_NAME=$(sed -nE 's/^name:[[:space:]]*["'\'']?([^"'\''#[:space:]]+)["'\'']?[[:space:]]*(#.*)?$/\1/p' \
+  "$COMPOSE_FILE" | head -1)
+if [[ -z "$PROJECT_NAME" || "$PROJECT_NAME" == *'$'* ]]; then
+  PROJECT_NAME=$(basename "$MAIN_ROOT" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9_-' | sed 's/^[_-]*//')
+fi
+if [[ -z "$PROJECT_NAME" ]]; then
+  PROJECT_NAME="proj_$(echo "$PROJ_SLUG" | tr 'A-Z' 'a-z')"
 fi
 
 MANIFEST_DIRS=()

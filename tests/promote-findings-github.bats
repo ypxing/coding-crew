@@ -201,10 +201,6 @@ SH
   bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
-  # TEMP DEBUG — see if this survives review; remove before merge.
-  echo "DEBUG GH_CALLS_LOG bytes:" >&2
-  od -c "$GH_CALLS_LOG" >&2 || true
-
   grep -q -- 'api repos/{owner}/{repo}/milestones' "$GH_CALLS_LOG"
   grep -q -- 'api repos/{owner}/{repo}/milestones -f title=feat' "$GH_CALLS_LOG"
   jq -e '.[0].title == "feat"' "$GH_MILESTONES_FILE" >/dev/null
@@ -216,10 +212,6 @@ SH
 
   bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-
-  # TEMP DEBUG — see if this survives review; remove before merge.
-  echo "DEBUG GH_CALLS_LOG bytes:" >&2
-  od -c "$GH_CALLS_LOG" >&2 || true
 
   grep -q -- 'api repos/{owner}/{repo}/milestones$' "$GH_CALLS_LOG"
   ! grep -q -- '-f title=feat' "$GH_CALLS_LOG"

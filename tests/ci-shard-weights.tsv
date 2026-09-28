@@ -39,6 +39,7 @@
 112	dep-install-docker-install.bats
 18	dep-install-ensure-env.bats
 15	dep-install-gen-override-git-mount.bats
+8	dep-install-gen-override-project-name.bats
 21	dep-install-host-install.bats
 9	dep-install-manifest-fingerprint.bats
 10	dep-install-resolve-mode.bats
