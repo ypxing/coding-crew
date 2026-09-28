@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.29.152]
+
+### Fixed
+
+- **A worktree left elsewhere for an issue's branch no longer ends the sprint.** When the
+  branch was already checked out at another path (a crashed earlier run, or another tool's
+  worktree in a Claude session scratchpad), `git worktree add` failed with "is already used
+  by worktree" and the whole run errored on its first dispatch. Before creating an issue's
+  worktree, crew-afk now prunes a registration whose directory is gone and removes a holder
+  with no uncommitted changes (its commits stay on the branch). A holder with uncommitted
+  changes, or the main checkout, is left untouched and blocks only that issue, with the path
+  and the steps to free it.
+
 ## [1.29.151]
 
 ### Fixed
