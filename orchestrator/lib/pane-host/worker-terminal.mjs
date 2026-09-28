@@ -149,7 +149,7 @@ function runScript({ f, cwd, cmd, args, jsonEvents, agent }) {
   return [
     "#!/usr/bin/env bash",
     `. ${p("env.sh")}; rm -f ${p("env.sh")}`,
-    `cd ${q(cwd)} || { echo 127 > ${p("rc")}; exit; }`,
+    `cd -P ${q(cwd)} || { echo 127 > ${p("rc")}; exit; }`,
     `: > ${p("out")}; : > ${p("err")}`,
     `${q(process.execPath)} ${q(FOLLOWER)} ${p(jsonEvents ? "out" : "err")} ${p("rc")} ${q(jsonEvents ?? "")} ${q(agent ?? "")} &`,
     `sh -c 'echo $$ > "$0.tmp" && mv "$0.tmp" "$0" && exec "$@"' ${p("pid")} ${[cmd, ...args].map(q).join(" ")} > ${p("out")} 2> ${p("err")} < /dev/null`,

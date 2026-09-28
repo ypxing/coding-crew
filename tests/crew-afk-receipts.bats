@@ -84,7 +84,7 @@ EOF
 
 # ─── receipts.sh ─────────────────────────────────────────────────────────────
 
-@test "receipts: write verify is refused — the record is verify-worktree.sh's own" {
+@test "receipts: write verify is refused - the record is verify-worktree.sh's own" {
   wt=$(_make_worktree "task-a")
 
   run bash "$RECEIPTS_SCRIPT" write verify --dir "$wt"

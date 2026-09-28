@@ -261,7 +261,7 @@ _path_without_timeout() {
   [[ "$output" == *"  | no token"* ]]
 }
 
-@test "preflight: Requires is not run again when orchestrated — the orchestrator already did" {
+@test "preflight: Requires is not run again when orchestrated - the orchestrator already did" {
   { printf '# Second\n\n## Requires\n\n- `touch %s/ran; exit 1`\n\n## Blocked by\n\nNone\n' "$TEMP_DIR"; } > "$ISSUE"
   CREW_ORCHESTRATED=1 _preflight
   [ "$status" -eq 0 ]
