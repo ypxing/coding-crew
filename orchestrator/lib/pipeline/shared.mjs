@@ -3,8 +3,8 @@
  * milestone push and tracker writes.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 
 import { getTracker } from "../tracker.mjs";
 import { queuePaneNotice } from "../pane-host/index.mjs";
@@ -76,13 +76,31 @@ export function dispatchIssueDir(dispatchDir, issue) {
 }
 
 /**
+ * A verify-worktree.sh transcript, kept in its own file (one per round) instead of the trace
+ * log, which gets one [VERIFY-OUTPUT] line naming it: debug on a pass, error on a fail, so
+ * a level grep for what went wrong also finds where to read why. `who` is the line's fields.
+ */
+export function logVerifyOutput(ctx, dir, who, round, verify) {
+  if (verify.dryRun) return;
+  const file = resolve(ctx.effects.mainRoot, dir, round != null ? `verify-r${round}.out` : "verify.out");
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, verify.stdout ?? "");
+  const result = verify.code === 0 ? "pass" : "fail";
+  ctx.log(
+    `[VERIFY-OUTPUT] ${who}${round != null ? ` round=${round}` : ""} result=${result} file=${relative(ctx.effects.mainRoot, file)}`,
+    result === "pass" ? "debug" : "error",
+  );
+}
+
+/**
  * A milestone: always logged (the only signal without a pane host), then queued for the
  * pane. Not awaited: the push is advisory and must not hold the issue's pipeline.
  */
 export function notifyMilestone(ctx, issue, message) {
   ctx.log(`[MILESTONE] ${dispatchStem(issue)}: ${message}`);
   if (!ctx.effects.paneHost) {
-    ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: no pane host`);
+    // None was configured: nothing degraded, so not a warning.
+    ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: no pane host`, "debug");
     return;
   }
   queuePaneNotice(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`, (result) => {

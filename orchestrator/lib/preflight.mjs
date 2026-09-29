@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { ASSET_DIRS, assetDir } from "./install-dir.mjs";
 import { depsLine, parseRequiresFailures, readVerifyRecord } from "./report.mjs";
 import { sectionBody } from "./trackers/body-format.mjs";
-import { dispatchIssueDir, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
+import { dispatchIssueDir, logVerifyOutput, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
 import { applyWorktreeInclude, removeWorktree, worktreePath } from "./worktree.mjs";
 
 /** The file whose presence says an asset dir is really installed, not just created. */
@@ -118,7 +118,7 @@ export function runBaseline(ctx) {
       }
     }
     const verify = effects.bash("verify-worktree.sh", ["--dir", path, "--stem", BASELINE_STEM], { env: sprint.childEnv() });
-    ctx.log(`baseline ${verify.stdout.trim()}`, "debug"); // verify-worktree.sh traced [VERIFY]
+    logVerifyOutput(ctx, join(sprint.dispatchDir, BASELINE_STEM), "step=baseline", null, verify);
     const verdict = verify.code === 0 ? "pass" : "fail";
     sprint.state(["baseline", "--commit", commit, "--verdict", verdict]);
     if (verdict === "pass") return { status: "pass", commit, failed: [] };

@@ -119,12 +119,11 @@ export async function runSprint(ctx) {
     const conflictRetry = isConflictRetry(issue.slug);
     if (conflictRetry) conflictRetryInFlight = issue.slug;
     const attempt = sprint.bumpAttempt(issue.slug);
-    ctx.log(`\n=== slug=${issue.slug} attempt=${attempt} — dispatching`);
     const worker = await runWorker(ctx, issue, attempt);
     const outcome = await runHousekeeping(ctx, worker);
     history.push(outcome);
     ctx.log(
-      `--- slug=${issue.slug} attempt=${attempt} status=${outcome.status}${outcome.reason ? ` reason=${outcome.reason}` : ""}`,
+      `[ATTEMPT-END] slug=${issue.slug} attempt=${attempt} status=${outcome.status}${outcome.reason ? ` reason=${outcome.reason}` : ""}`,
     );
     inFlight.delete(issue.slug);
     if (conflictRetry) conflictRetryInFlight = null;
@@ -283,7 +282,7 @@ function flush(ctx) {
     env: sprint.childEnv(),
   });
   const text = r.stdout.trim();
-  ctx.log(text);
+  ctx.log(text, "debug"); // promote-findings.sh traced [FLUSH]
   const m = /FLUSH:\s*promoted=(\d+)/.exec(text);
   const promoted = m ? Number(m[1]) : 0;
   if (promoted > 0) ctx.log(`Phase 2: ${promoted} fix issue(s) re-entered the loop.`);
@@ -313,7 +312,7 @@ async function wrapUp(ctx, { stalled, prdAudit }) {
   if (retained) cleanupArgs.push("--retain", retained);
   const cleanup = effects.bash("cleanup-worktrees.sh", cleanupArgs, { env: sprint.childEnv() });
   const lastLine = cleanup.stdout.trim().split("\n").filter(Boolean).pop() ?? "";
-  ctx.log(lastLine);
+  ctx.log(lastLine, "debug"); // cleanup-worktrees.sh traced [CLEANUP]
 
   // --- summary (rendered from disk, never from recollection) -----------------
   const summaryArgs = [];

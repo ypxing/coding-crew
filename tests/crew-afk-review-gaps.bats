@@ -48,6 +48,13 @@ teardown() {
   grep -q 'reviewer dispatch timed out' "$REPORT"
 }
 
+@test "mark-not-run traces the gap as a WARN" {
+  TRACE_LOG="$TEMP_DIR/trace.log" run bash "$SCRIPT" mark-not-run --feature-slug "$SLUG" \
+    --branch "crew/my-feature/alpha" --slug alpha --report "$REPORT" --reason "timed out"
+  [ "$status" -eq 0 ]
+  grep -qE 'Z WARN  \[REVIEW\] branch=crew/my-feature/alpha result=not_run$' "$TEMP_DIR/trace.log"
+}
+
 @test "mark-not-run appends to a report that already has reviewed branches" {
   cat > "$REPORT" <<'EOF'
 ## Branch: crew/my-feature/alpha (alpha)

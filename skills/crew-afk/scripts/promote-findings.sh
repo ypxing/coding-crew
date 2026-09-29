@@ -551,7 +551,7 @@ cmd_mark_not_run() {
     echo "findings. Review it manually, or re-run the reviewer against the merged range."
   } >> "$report"
 
-  _trace REVIEW "branch=$branch result=not_run"
+  _trace --level warn REVIEW "branch=$branch result=not_run"
   echo "mark-not-run: not_run recorded — $branch ($reason)"
 }
 

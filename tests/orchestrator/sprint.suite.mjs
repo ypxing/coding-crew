@@ -2449,6 +2449,47 @@ test("an unknown CREW_LOG_LEVEL warns once on stderr and runs at info", () => {
   assert.match(r.stderr, /^\[STEP\] /m);
 });
 
+test("an attempt ends in one [ATTEMPT-END] line; no === / --- banners", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const log = traceLog(root);
+  // state.sh's own [ATTEMPT] line is the start; the orchestrator adds no second one.
+  assert.equal(log.split("\n").filter((l) => /\[ATTEMPT\] slug=alpha n=1/.test(l)).length, 1, log);
+  assert.match(log, /^\S+Z INFO  \[ATTEMPT-END\] slug=alpha attempt=1 status=complete$/m);
+  assert.match(r.stderr, /^\[ATTEMPT-END\] slug=alpha attempt=1 status=complete$/m);
+  assert.doesNotMatch(`${log}\n${r.stderr}`, /^(=== |--- )slug=/m);
+});
+
+test("a verify transcript goes to its own file; the log gets one line pointing at it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const log = traceLog(root);
+  const m = /^\S+Z DEBUG \[VERIFY-OUTPUT\] slug=alpha round=1 result=pass file=(\S+)$/m.exec(log);
+  assert.ok(m, `no [VERIFY-OUTPUT] line:\n${log}`);
+  assert.match(readFileSync(join(root, m[1]), "utf8"), /TEST: pass/);
+  assert.doesNotMatch(log, /TEST: pass/, "the transcript itself stays out of the log");
+});
+
+test("a failed verify's pointer is an ERROR, next to the [VERIFY] result it explains", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
+  const r = runSprint(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  const log = traceLog(root);
+  const m = /^\S+Z ERROR \[VERIFY-OUTPUT\] slug=alpha round=1 result=fail file=(\S+)$/m.exec(log);
+  assert.ok(m, `no failing [VERIFY-OUTPUT] line:\n${log}`);
+  assert.match(readFileSync(join(root, m[1]), "utf8"), /TEST: fail/);
+  // Each round keeps its own transcript.
+  assert.match(log, /\[VERIFY-OUTPUT\] slug=alpha round=2 result=fail file=/);
+});
+
 test("--no-deps and the help text are declared together, so the flag is discoverable", () => {
   const help = sh("node", [MAIN, "--help"], { cwd: REPO });
   assert.equal(help.code, 0, help.stderr);
@@ -2615,6 +2656,32 @@ test("command discovery's own log lines survive in the trace log, not just the l
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /Command discovery:/);
   assert.match(traceLog(root), /Command discovery:/);
+});
+
+test("command discovery's prompt goes to its own file; the log and stderr get one line naming it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const log = traceLog(root);
+  assert.doesNotMatch(`${log}\n${r.stderr}`, /command discovery prompt/);
+  assert.match(log, /^\S+Z INFO  Command discovery: \d+ source file/m);
+  const m = /^\S+Z DEBUG Command discovery: prompt kept at (\S+)$/m.exec(log);
+  assert.ok(m, log);
+  assert.match(readFileSync(join(root, m[1]), "utf8"), /command discovery prompt/);
+});
+
+test("a script's summary line echoed after its own trace line is debug; no pane host is not a warning", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const log = traceLog(root);
+  assert.match(log, /^\S+Z DEBUG FLUSH: /m);
+  assert.match(log, /^\S+Z DEBUG CLEANUP: /m);
+  assert.doesNotMatch(r.stderr, /^(FLUSH|CLEANUP): /m);
+  assert.match(log, /^\S+Z DEBUG \[MILESTONE-PUSH-SKIPPED\] 01-alpha: no pane host$/m);
+  assert.doesNotMatch(r.stderr, /MILESTONE-PUSH-SKIPPED/);
 });
 
 test("command discovery is skipped, at zero cost, when there is nothing to read", () => {
@@ -2814,6 +2881,7 @@ test("a feature branch that fails its own checks stops the run before any coder 
   assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /feature\/demo fails its own checks before any issue has touched it/);
   assert.match(traceLog(root), /^\S+Z FATAL \[ABORT\] .*feature\/demo fails its own checks/m);
+  assert.match(traceLog(root), /^\S+Z ERROR \[VERIFY-OUTPUT\] step=baseline result=fail file=\S+\/_baseline\/verify\.out$/m);
   assert.match(r.stderr, /^  test: fail — \S+\/dispatch\/_baseline\/verify-test\.log$/m);
   assert.match(r.stderr, /--no-baseline/);
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "no coder, no reviewer");

@@ -15,14 +15,25 @@
  * the model dispatch and the cache write are skipped outright.
  */
 
-import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { dispatchPlain } from "./dispatch.mjs";
 
 export async function discoverCommands(effects, { platform, model, timeoutMs, maxBudgetUsd = null, log = () => {} }) {
   // Read-only — safe (and informative) to actually run under --dry-run/plan, unlike the
   // model dispatch and cache write below.
   const d = effects.bash("discover-commands.sh", [], { mutating: false });
-  if (d.stdout.trim()) log(d.stdout.trim());
+  // Its first line says what it decided; any lines after it are the prompt, kept in a file of
+  // its own (the dispatch below reads d.stdout, not the file) rather than in the trace log.
+  const [head, ...prompt] = d.stdout.trim() ? d.stdout.trim().split("\n") : [];
+  if (head) log(head);
+  if (prompt.length && effects.dryRun) log(prompt.join("\n"), "debug");
+  else if (prompt.length) {
+    const promptFile = join(effects.mainRoot, ".scratch", "commands-prompt.md");
+    mkdirSync(dirname(promptFile), { recursive: true });
+    writeFileSync(promptFile, d.stdout);
+    log("Command discovery: prompt kept at .scratch/commands-prompt.md", "debug");
+  }
 
   // A non-zero exit here (a candidate file vanishing mid-read, an unreadable manifest, …)
   // must not fall through to dispatching stderr's leftovers or a half-built prompt as if it

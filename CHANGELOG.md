@@ -22,6 +22,17 @@
   `DEBUG`, so a failed verify's transcript stays in the log and off a launcher's stderr.
   `[STEP]` is `INFO`, since a launcher reports progress from those lines. `CREW_VERBOSE=1`
   still works, as `debug`. An unknown value warns once and runs at `info`.
+- **A verify transcript is its own file, not a block in the log.** Each round's
+  verify-worktree.sh output goes to `dispatch/<issue>/verify-r<N>.out` (the baseline's to
+  `dispatch/_baseline/verify.out`), and the log gets one `[VERIFY-OUTPUT] … file=` line:
+  `DEBUG` on a pass, `ERROR` on a fail, so grepping for errors also finds where to read why.
+- **An attempt is `[ATTEMPT]` … `[ATTEMPT-END] status=…`.** The `=== slug=… — dispatching`
+  and `--- slug=… status=…` banners are gone; the start was already logged by state.sh.
+- **Command discovery's prompt is kept in `.scratch/commands-prompt.md`**, not written into
+  the log (about 80 lines on a run with no command cache); the log names the file.
+- **Fewer false alarms:** `[MILESTONE-PUSH-SKIPPED] … no pane host` is `DEBUG` (none was
+  configured, so nothing degraded), `FLUSH:`/`CLEANUP:` echoes of an already-traced result
+  are `DEBUG`, and a review that never ran (`[REVIEW] result=not_run`) is `WARN`.
 
 - **A worker's test suite no longer writes into the live sprint's `orchestrator.log`.** A
   dispatched agent inherits `MAIN_ROOT`, and `trace.sh` fell back to

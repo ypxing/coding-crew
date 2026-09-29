@@ -707,7 +707,7 @@ async function main() {
         timeoutMs: options.timeoutMs.commandFinder,
         maxBudgetUsd: options.limitsUsd?.commandFinder,
         // Persisted too: this runs unattended, and a failure must outlive the scrollback.
-        log: (line) => emit(line),
+        log: emit,
       });
     }
 

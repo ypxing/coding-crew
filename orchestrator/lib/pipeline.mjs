@@ -31,6 +31,7 @@ import {
   CRITERIA_ENVIRONMENT_TAG,
   CRITERIA_UNMET_TAG,
   dispatchIssueDir,
+  logVerifyOutput,
   dispatchStem,
   FIXABLE_TAG,
   gatesAtTip,
@@ -581,7 +582,7 @@ export async function runHousekeeping(ctx, worker) {
     const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
       env: sprint.childEnv(),
     });
-    ctx.log(`slug=${issue.slug} round=${worker.attempt} ${verify.stdout.trim()}`, "debug"); // verify-worktree.sh traced [VERIFY]
+    logVerifyOutput(ctx, dispatchIssueDir(sprint.dispatchDir, issue), `slug=${issue.slug}`, worker.attempt, verify);
     if (verify.code !== 0) {
       return await handleVerificationFailure(ctx, worker, outcome, verify);
     }
