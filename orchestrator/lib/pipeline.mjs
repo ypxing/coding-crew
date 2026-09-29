@@ -476,6 +476,15 @@ export async function runWorker(ctx, issue, attempt) {
   sprint.recordDispatchCost(result, { slug: issue.slug, role: "coder", attempt, head });
 
   const sidecar = readSidecar(sidecarFile);
+  // A worker that ran to completion (no timeout, non-empty output) but left no sidecar is
+  // otherwise silent until the pipeline reports "blocked" several steps later — by then
+  // result.stderr, the only clue why the Write never happened, is gone. Surface it now.
+  if (!sidecar && !result.timedOut && result.text.trim()) {
+    const stderrSnippet = (result.stderr ?? "").trim().slice(0, 500).replace(/\s+/g, " ");
+    ctx.log(
+      `[SIDECAR-MISSING] slug=${dispatchStem(issue)} round=${attempt} reportPath=${sidecarFile} outBytes=${result.text.length} code=${result.code} stderr=${JSON.stringify(stderrSnippet || "(none)")}`,
+    );
+  }
 
   const report = parseWorkerReport(result.text, sidecar);
   return { issue, branch, attempt, worktree, dispatch: result, report, head, reviewedTip, priorVerdict: reviewedTip ? resume.context : null };

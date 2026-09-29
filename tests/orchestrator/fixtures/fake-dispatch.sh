@@ -80,13 +80,25 @@ fi
 mirror_sidecar() {
   [ -n "$REPORT_PATH" ] || return 0
   local body
+  # sub(/\r$/, "") first: a CRLF-checked-out $OUT (or a CRLF written by a tool running
+  # under Git Bash on Windows) otherwise leaves a trailing \r that the anchored `$` in the
+  # fence pattern below does not match as trailing space/tab, so the fence is never
+  # recognised and body silently stays empty.
   body=$(awk '
+    { sub(/\r$/, "") }
     /^[ \t]*```(json)?[ \t]*$/ { if (inside) { inside=0 } else { inside=1; buf=""; next } }
     inside { buf = buf $0 "\n" }
     END { if (found) printf "%s", buf }
     /^[ \t]*```(json)?[ \t]*$/ { found=1 }
   ' "$OUT" 2>/dev/null)
-  [ -n "$body" ] && printf '%s' "$body" > "$REPORT_PATH"
+  if [ -n "$body" ]; then
+    printf '%s' "$body" > "$REPORT_PATH"
+  elif [ -s "$OUT" ]; then
+    # $OUT has content but no fenced json was found in it — not necessarily a bug (some
+    # fixtures write prose on purpose), but silent otherwise; report.mjs's caller now
+    # surfaces this stderr when it sees a missing sidecar next to non-empty output.
+    echo "fake-dispatch: mirror_sidecar found no fenced json block in $OUT ($(wc -c < "$OUT") bytes)" >&2
+  fi
 }
 trap mirror_sidecar EXIT
 

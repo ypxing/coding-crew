@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.29.154]
+
+### Fixed
+
+- **A worker that ran but wrote no sidecar report no longer fails silently.** A coder or
+  reviewer dispatch that completed (no timeout, non-empty output) but left no sidecar file
+  surfaced nothing until the pipeline reported `blocked` several steps later, by which point
+  `result.stderr` — the only clue why the report was never written — was already gone.
+  `runWorker` now logs a `[SIDECAR-MISSING]` line with the slug, round, expected report path,
+  output size, exit code, and a stderr snippet at the moment the gap is detected.
+
 ## [1.29.153]
 
 ### Changed
