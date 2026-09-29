@@ -8,7 +8,6 @@ import { execFileSync } from "node:child_process";
 import {
   applyWorktreeInclude,
   ensureWorktree,
-  ensureWorktreeInclude,
   mergeFeatureBranch,
   worktreePath,
 } from "../../orchestrator/lib/worktree.mjs";
@@ -223,66 +222,55 @@ test("worktreePath resolves a relative CREW_WORKTREE_ROOT override against mainR
   });
 });
 
-// --- ensureWorktreeInclude: docker-compose.override.yml and .env before any worktree exists ----
+// --- applyWorktreeInclude: built-in entries, without writing a manifest ------
+//
+// docker-compose.override.yml and .env can be generated in mainRoot after round 1's worktrees
+// exist, so they are provisioned whether or not the repo lists them — but crew-afk never writes
+// a `.worktreeinclude` into the user's repo to get there.
 
-test("ensureWorktreeInclude creates .worktreeinclude with both entries when it does not exist yet", () => {
+test("provisions .env and docker-compose.override.yml with no .worktreeinclude at all", () => {
   const mainRoot = tmpRoot();
+  const worktree = tmpRoot();
+  writeFileSync(join(mainRoot, ".env"), "SECRET=1\n");
+  writeFileSync(join(mainRoot, "docker-compose.override.yml"), "services: {}\n");
 
-  const changed = ensureWorktreeInclude(mainRoot);
+  const linked = applyWorktreeInclude(mainRoot, worktree);
 
-  assert.equal(changed, true);
-  assert.equal(
-    readFileSync(join(mainRoot, ".worktreeinclude"), "utf8"),
-    "docker-compose.override.yml\n.env\n",
-  );
+  assert.deepEqual(linked.sort(), [".env", "docker-compose.override.yml"]);
+  assert.ok(!lstatSync(join(worktree, ".env")).isSymbolicLink());
+  assert.ok(lstatSync(join(worktree, "docker-compose.override.yml")).isSymbolicLink());
 });
 
-test("ensureWorktreeInclude appends both missing entries to an existing manifest that lacks them", () => {
+test("provisions the built-in entries alongside a repo's own .worktreeinclude entries", () => {
   const mainRoot = tmpRoot();
+  const worktree = tmpRoot();
   writeFileSync(join(mainRoot, ".worktreeinclude"), "node_modules\n");
+  writeFileSync(join(mainRoot, "node_modules"), "x\n");
+  writeFileSync(join(mainRoot, ".env"), "SECRET=1\n");
 
-  const changed = ensureWorktreeInclude(mainRoot);
+  const linked = applyWorktreeInclude(mainRoot, worktree);
 
-  assert.equal(changed, true);
-  assert.equal(
-    readFileSync(join(mainRoot, ".worktreeinclude"), "utf8"),
-    "node_modules\ndocker-compose.override.yml\n.env\n",
-  );
+  assert.deepEqual(linked.sort(), [".env", "node_modules"]);
 });
 
-test("ensureWorktreeInclude appends only the entry still missing when the other is already listed", () => {
+test("a built-in entry the repo also lists is provisioned once", () => {
   const mainRoot = tmpRoot();
-  writeFileSync(join(mainRoot, ".worktreeinclude"), ".env\nnode_modules\n");
+  const worktree = tmpRoot();
+  writeFileSync(join(mainRoot, ".worktreeinclude"), ".env\n");
+  writeFileSync(join(mainRoot, ".env"), "SECRET=1\n");
 
-  const changed = ensureWorktreeInclude(mainRoot);
-
-  assert.equal(changed, true);
-  assert.equal(
-    readFileSync(join(mainRoot, ".worktreeinclude"), "utf8"),
-    ".env\nnode_modules\ndocker-compose.override.yml\n",
-  );
+  assert.deepEqual(applyWorktreeInclude(mainRoot, worktree), [".env"]);
 });
 
-test("ensureWorktreeInclude appends onto a manifest missing its trailing newline", () => {
-  const mainRoot = tmpRoot();
-  writeFileSync(join(mainRoot, ".worktreeinclude"), "node_modules");
+test("never creates or changes the repo's .worktreeinclude", () => {
+  const bare = tmpRoot();
+  applyWorktreeInclude(bare, tmpRoot());
+  assert.ok(!existsSync(join(bare, ".worktreeinclude")));
 
-  ensureWorktreeInclude(mainRoot);
-
-  assert.equal(
-    readFileSync(join(mainRoot, ".worktreeinclude"), "utf8"),
-    "node_modules\ndocker-compose.override.yml\n.env\n",
-  );
-});
-
-test("ensureWorktreeInclude is a no-op when both entries are already present", () => {
-  const mainRoot = tmpRoot();
-  writeFileSync(join(mainRoot, ".worktreeinclude"), "docker-compose.override.yml\n.env\n");
-
-  const changed = ensureWorktreeInclude(mainRoot);
-
-  assert.equal(changed, false);
-  assert.equal(readFileSync(join(mainRoot, ".worktreeinclude"), "utf8"), "docker-compose.override.yml\n.env\n");
+  const listed = tmpRoot();
+  writeFileSync(join(listed, ".worktreeinclude"), "node_modules");
+  applyWorktreeInclude(listed, tmpRoot());
+  assert.equal(readFileSync(join(listed, ".worktreeinclude"), "utf8"), "node_modules");
 });
 
 // --- ensureWorktree: stale-branch detection ---------------------------------

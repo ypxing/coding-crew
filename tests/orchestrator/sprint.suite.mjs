@@ -2942,6 +2942,13 @@ test("--allow-dirty runs anyway, and crew-afk's own files never count as dirty",
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
 });
 
+test("a run leaves no .worktreeinclude behind in a repo that had none", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  assert.equal(runSprint(root).code, 0);
+  assert.equal(existsSync(join(root, ".worktreeinclude")), false);
+});
+
 test("plan names a dirty main checkout", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

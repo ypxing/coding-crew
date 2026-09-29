@@ -6,7 +6,7 @@
  * or on a Copilot worker obeying a "Working directory:" line in its prompt.
  */
 
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
 /**
@@ -24,7 +24,13 @@ export function worktreePath(mainRoot, branch) {
   return join(worktreeRoot(mainRoot), branch);
 }
 
-const AUTO_INCLUDE_ENTRIES = ["docker-compose.override.yml", ".env"];
+/**
+ * Provisioned into every worktree as if `.worktreeinclude` listed them, without writing that
+ * file into the user's repo. Each can be generated in mainRoot after round 1's worktrees exist
+ * (the override by ensure-deps.sh, .env by dep-install's ensure-env.sh), so a "does it exist
+ * yet" check at creation time would race; an entry whose source is missing is skipped.
+ */
+const BUILTIN_ENTRIES = ["docker-compose.override.yml", ".env"];
 
 /**
  * Entries provisioned as a real copy instead of a symlink. `.env` is the one case where
@@ -35,30 +41,6 @@ const AUTO_INCLUDE_ENTRIES = ["docker-compose.override.yml", ".env"];
  * view. A copy has no such target to lose.
  */
 const COPY_ENTRIES = new Set([".env"]);
-
-/**
- * Make sure `.worktreeinclude` at mainRoot lists docker-compose.override.yml and .env, before
- * any worktree exists. Without this, each only reaches a worktree via its own script's fast
- * path — docker-compose.override.yml via gen-override.sh's docker-present check inside
- * ensure-deps.sh (which requires DOCKER_MARKER to already be on disk, a race the first round's
- * concurrently-created worktrees can lose), .env via dep-install's ensure-env.sh (which
- * requires a worker to have actually reached that step first). Listing both entries here means
- * every worktree's own applyWorktreeInclude() provisions them in deterministically at creation
- * time instead, before any of that has had a chance to run.
- *
- * Safe to call unconditionally, even when the project has neither file yet:
- * applyWorktreeInclude() already skips any entry whose source is missing from mainRoot.
- */
-export function ensureWorktreeInclude(mainRoot) {
-  const manifest = join(mainRoot, ".worktreeinclude");
-  let existing = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";
-  const lines = existing.split("\n").map((raw) => raw.trim());
-  const missing = AUTO_INCLUDE_ENTRIES.filter((entry) => !lines.includes(entry));
-  if (!missing.length) return false;
-  const sep = existing && !existing.endsWith("\n") ? "\n" : "";
-  writeFileSync(manifest, `${existing}${sep}${missing.join("\n")}\n`);
-  return true;
-}
 
 /**
  * Create (or reuse) the worktree for a branch.
@@ -160,7 +142,7 @@ function releaseBranch(effects, listed, branch) {
 }
 
 /**
- * Provision each `.worktreeinclude` entry into the worktree: a symlink for most entries
+ * Provision each `.worktreeinclude` entry, plus `BUILTIN_ENTRIES`, into the worktree: a symlink for most entries
  * (node_modules, .venv, …), a real copy for `COPY_ENTRIES` (see `.env` above). Blank lines
  * and `#` comments are skipped. A missing source is skipped, not fatal.
  *
@@ -180,11 +162,10 @@ function releaseBranch(effects, listed, branch) {
  */
 export function applyWorktreeInclude(mainRoot, worktree) {
   const manifest = join(mainRoot, ".worktreeinclude");
-  if (!existsSync(manifest)) return [];
+  const listed = existsSync(manifest) ? readFileSync(manifest, "utf8").split("\n").map((raw) => raw.trim()) : [];
+  const entries = new Set([...listed.filter((entry) => entry && !entry.startsWith("#")), ...BUILTIN_ENTRIES]);
   const linked = [];
-  for (const raw of readFileSync(manifest, "utf8").split("\n")) {
-    const entry = raw.trim();
-    if (!entry || entry.startsWith("#")) continue;
+  for (const entry of entries) {
     const src = join(mainRoot, entry);
     const dest = join(worktree, entry);
     if (!existsSync(src)) continue;

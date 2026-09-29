@@ -158,7 +158,8 @@ Two knobs worth knowing about:
   re-run after you commit or stash resumes at the merge.
 - **Gitignored files in worktrees** — each coder runs in an isolated worktree, so `.env` and similar
   files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
-  them over.
+  them over. `.env` and `docker-compose.override.yml` are always carried over when they exist,
+  without being listed; crew-afk never writes `.worktreeinclude` itself.
 - **Worktree location** — worktrees live under `.scratch/worktrees/` by default. Set
   `afk.worktreeRoot` in either `config.json` (absolute, or relative to the repo root) to put them
   elsewhere, or `CREW_WORKTREE_ROOT`, which wins over both. A path outside the repo, such as
