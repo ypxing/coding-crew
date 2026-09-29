@@ -90,16 +90,24 @@ resume_feature_branch() {
 # location (registry.json's docs.scripts entry), not a path relative to this script,
 # since it ships independently of any one skill. An in-between install state (this
 # script updated, tracker-config.sh not yet installed) must not break the local
-# path, so a missing file fails safe to the same "local" defaults the reader itself
-# returns when the doc is absent.
+# path, so a missing file falls back to the same "local" defaults the reader itself
+# returns when the doc is absent — unless the doc declares `tracker: github`, where
+# "local" would be a wrong answer, not a default: it scans .scratch/ for issues that
+# live on GitHub and blames their absence on the user.
 MAIN_ROOT_FOR_TRACKER=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 TRACKER_CONFIG_TRACKER="local"
 TRACKER_CONFIG_REPO=""
 TRACKER_CONFIG_SCRIPT="$MAIN_ROOT_FOR_TRACKER/.coding-crew/scripts/tracker-config.sh"
+TRACKER_CONFIG_DOC="$MAIN_ROOT_FOR_TRACKER/.coding-crew/docs/issue-tracker.md"
 if [ -f "$TRACKER_CONFIG_SCRIPT" ]; then
   # shellcheck source=/dev/null
   source "$TRACKER_CONFIG_SCRIPT"
   read_tracker_config "$MAIN_ROOT_FOR_TRACKER"
+elif [ -f "$TRACKER_CONFIG_DOC" ] &&
+  awk 'NR == 1 && $0 != "---" { exit 1 } NR > 1 && $0 == "---" { exit 1 } NR > 1 && /^tracker:[[:space:]]*["'"'"']?github/ { found = 1; exit 0 } END { exit !found }' "$TRACKER_CONFIG_DOC"; then
+  echo "ERROR: $TRACKER_CONFIG_DOC declares tracker: github, but $TRACKER_CONFIG_SCRIPT is not installed to read it." >&2
+  echo "Re-install coding-crew into this repo (install.sh) so the tracker config is honoured." >&2
+  exit 1
 fi
 
 # Under tracker: github there is nothing local to scan (issues live on GitHub, not

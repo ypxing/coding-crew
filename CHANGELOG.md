@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.156]
+
+### Fixed
+
+- **A `tracker: github` config no longer silently runs as `local` when its reader is missing.**
+  `session-init.sh` reads the tracker through `.coding-crew/scripts/tracker-config.sh`, and a
+  missing reader fell back to `local` — so a repo whose `issue-tracker.md` declared
+  `tracker: github` but lacked that script (an install from before the reader shipped) scanned
+  `.scratch/` for issues that live on GitHub and failed with "No issues found. Create issues in
+  .scratch/…". It now exits 1 naming the doc and the missing script, and says to re-install.
+  A missing reader with no config, or `tracker: local`, still falls back to `local`.
+
 ## [1.29.155]
 
 ### Changed

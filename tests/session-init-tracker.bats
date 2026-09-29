@@ -100,6 +100,28 @@ write_tracker_config() {
   [ "$(git rev-parse --abbrev-ref HEAD)" = "some-other-branch" ]
 }
 
+@test "github tracker declared but tracker-config.sh not installed: hard error, no silent local fallback" {
+  write_tracker_config github
+  rm "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
+  mkdir -p .scratch/some-slug/issues/open
+  echo "Status: ready-for-agent" > .scratch/some-slug/issues/open/01-first.md
+
+  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"tracker-config.sh"* ]]
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]
+}
+
+@test "local tracker declared and tracker-config.sh not installed: still behaves like local" {
+  write_tracker_config local
+  rm "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
+  git checkout -q -b some-other-branch
+
+  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
+  [ "$status" -eq 0 ]
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "some-other-branch" ]
+}
+
 @test "absent tracker config (no .coding-crew doc at all): behaves like local, unchanged" {
   git checkout -q -b some-other-branch
 
