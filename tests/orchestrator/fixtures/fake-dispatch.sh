@@ -218,12 +218,17 @@ fi
 if [ -f "$FAKE_DIR/$SLUG.worker" ]; then
   cat "$FAKE_DIR/$SLUG.worker" > "$OUT"
 else
+  # $DIR is a native path (backslashes on Windows) — escape it for JSON before embedding,
+  # the same way a real agent's own JSON-emitting tool call would. Unescaped, a Windows
+  # worktree path like C:\Users\...\work produces invalid \U/\A escapes that JSON.parse
+  # silently rejects, which report.mjs reads as no sidecar at all.
+  DIR_JSON=$(printf '%s' "$DIR" | sed 's/\\/\\\\/g; s/"/\\"/g')
   cat > "$OUT" <<EOF
 ## Issue: $SLUG
 Status: complete
 
 \`\`\`json
-{"status":"complete","branch":"$(cd "$DIR" && git rev-parse --abbrev-ref HEAD)","working_directory":"$DIR","checks":{"test":"pass","lint":"pass","typecheck":"pass"},"progress":"","notes":"done"}
+{"status":"complete","branch":"$(cd "$DIR" && git rev-parse --abbrev-ref HEAD)","working_directory":"$DIR_JSON","checks":{"test":"pass","lint":"pass","typecheck":"pass"},"progress":"","notes":"done"}
 \`\`\`
 EOF
 fi
