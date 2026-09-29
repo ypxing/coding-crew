@@ -71,6 +71,19 @@ function effects(extra = {}) {
 
 const alive = (pid) => spawnSync("kill", ["-0", String(pid)]).status === 0;
 
+// A SIGKILLed pid can sit as a zombie — `kill -0` still succeeds — until its parent shell
+// reaps it, which happens after this function returns (closeWorkerTerminal SIGKILLs that
+// shell too, orphaning the zombie to init). That reap is unbounded by design, so a single
+// point-in-time check is racy under CI load; poll instead of asserting on the first sample.
+async function waitUntilDead(pid, timeoutMs = 2000) {
+  const start = Date.now();
+  while (alive(pid)) {
+    if (Date.now() - start >= timeoutMs) return false;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return true;
+}
+
 test("returns the child's exit code, stdout and stderr, streams stdout to onLine, and cleans up on success", async () => {
   const { root, stem } = fixture();
   const term = fakeTerminal();
@@ -133,7 +146,7 @@ test("a timeout SIGKILLs the child and reports 124, as spawnWithTimeout does", a
   assert.equal(r.code, 124);
   assert.equal(r.timedOut, true);
   const pid = Number(readFileSync(join(`${stem}.term`, "pid"), "utf8"));
-  assert.equal(alive(pid), false);
+  assert.equal(await waitUntilDead(pid), true);
 });
 
 test("a terminal closed under a running worker is a failure, not a hang", async () => {
