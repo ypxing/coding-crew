@@ -431,6 +431,13 @@ export async function runWorker(ctx, issue, attempt) {
       ? effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim() || null
       : null;
 
+  // The same for a verify fix: the tip the last verify failed at. A fix round that commits
+  // nothing leaves that commit, so re-running verify (and triage) could only repeat the failure.
+  const verifyFailedTip =
+    attempt > 1 && resume.route === "fix" && resume.kind === "verify" && !synced
+      ? effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim() || null
+      : null;
+
   const coder = roleBinding(ctx, "coder");
   // Opt-in (afk.resumeCoderSession): a fix round continues the session that wrote the branch
   // instead of re-exploring it, when that session is small and the branch has not moved.
@@ -490,7 +497,7 @@ export async function runWorker(ctx, issue, attempt) {
   }
 
   const report = parseWorkerReport(result.text, sidecar);
-  return { issue, branch, attempt, worktree, dispatch: result, report, head, reviewedTip, priorVerdict: reviewedTip ? resume.context : null };
+  return { issue, branch, attempt, worktree, dispatch: result, report, head, reviewedTip, verifyFailedTip, priorVerdict: reviewedTip || verifyFailedTip ? resume.context : null };
 }
 
 /**
@@ -555,6 +562,17 @@ export async function runHousekeeping(ctx, worker) {
       taggedReason(
         CRITERIA_UNMET_TAG,
         `the fix round made no commit, so ${branch} is still at ${worker.head.slice(0, 12)}, already judged unmet: ${worker.priorVerdict || "see review"}`,
+      ),
+    );
+  }
+  if (worker.verifyFailedTip && worker.head === worker.verifyFailedTip) {
+    return finishBlocked(
+      ctx,
+      worker,
+      outcome,
+      taggedReason(
+        FIXABLE_TAG,
+        `the fix round made no commit, so ${branch} is still at ${worker.head.slice(0, 12)}, where verify last failed; triage's unaddressed detail: ${worker.priorVerdict || "see verify output"}`,
       ),
     );
   }
