@@ -15,7 +15,13 @@
   `[STATE]`). A multi-line entry keeps one header line with the rest indented beneath it, and
   a run that stops — a red baseline, a failed docker install, a crash — now leaves a `FATAL`
   line in the log, not only on stderr. A dispatch's `[TOOL]` line puts `slug=`/`round=`
-  after its marker, where every other line keeps its fields. stderr is unchanged.
+  after its marker, where every other line keeps its fields.
+- **`CREW_LOG_LEVEL` sets what reaches stderr; the log still keeps everything.** stderr shows
+  `INFO` and above by default. The raw stdout of deps, verify, merge and close, which the
+  orchestrator echoed after each script had already logged its own result line, is now
+  `DEBUG`, so a failed verify's transcript stays in the log and off a launcher's stderr.
+  `[STEP]` is `INFO`, since a launcher reports progress from those lines. `CREW_VERBOSE=1`
+  still works, as `debug`. An unknown value warns once and runs at `info`.
 
 - **A worker's test suite no longer writes into the live sprint's `orchestrator.log`.** A
   dispatched agent inherits `MAIN_ROOT`, and `trace.sh` fell back to

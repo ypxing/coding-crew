@@ -21,7 +21,7 @@ export async function mergeAndClose(ctx, worker, outcome) {
     env: sprint.childEnv(),
     timeoutMs: options.timeoutMs.merge,
   });
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${merge.stdout.trim()}`);
+  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${merge.stdout.trim()}`, "debug"); // merge-branches.sh traced [MERGE]
   if (merge.code !== 0) {
     if (merge.code === 124) {
       effects.git(["merge", "--abort"]);
@@ -46,7 +46,7 @@ export async function mergeAndClose(ctx, worker, outcome) {
     env: sprint.childEnv(),
     timeoutMs: options.timeoutMs.merge,
   });
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${close.stdout.trim()}`);
+  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${close.stdout.trim()}`, "debug"); // close-issue.sh traced [CLOSE]
   if (close.code !== 0) {
     return finishRetryOrBlock(ctx, worker, outcome, `close-refused — ${close.stderr.trim() || close.stdout.trim()}`);
   }

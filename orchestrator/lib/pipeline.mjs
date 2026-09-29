@@ -325,7 +325,7 @@ export async function runWorker(ctx, issue, attempt) {
       env: sprint.childEnv(),
     });
     const line = depsLine(deps.stdout);
-    ctx.log(`slug=${issue.slug} round=${attempt} ${line}`);
+    ctx.log(`slug=${issue.slug} round=${attempt} ${line}`, "debug"); // ensure-deps.sh traced [DEPS]
     depsOutcome = line.replace(/^DEPS:\s*/, "") || null;
     if (/^DEPS: failed\b/.test(line)) {
       ctx.log(`[DEPS-FAILED] slug=${issue.slug} branch=${branch} — ${line}`);
@@ -581,7 +581,7 @@ export async function runHousekeeping(ctx, worker) {
     const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
       env: sprint.childEnv(),
     });
-    ctx.log(`slug=${issue.slug} round=${worker.attempt} ${verify.stdout.trim()}`);
+    ctx.log(`slug=${issue.slug} round=${worker.attempt} ${verify.stdout.trim()}`, "debug"); // verify-worktree.sh traced [VERIFY]
     if (verify.code !== 0) {
       return await handleVerificationFailure(ctx, worker, outcome, verify);
     }

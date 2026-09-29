@@ -111,14 +111,14 @@ export function runBaseline(ctx) {
         env: sprint.childEnv(),
       });
       const line = depsLine(deps.stdout);
-      if (line) ctx.log(`baseline ${line}`);
+      if (line) ctx.log(`baseline ${line}`, "debug"); // ensure-deps.sh traced [DEPS]
       if (/^DEPS: failed\b/.test(line)) {
         sprint.state(["baseline", "--commit", commit, "--verdict", "fail"]);
         return { status: "fail", commit, failed: [], reason: `dependency install failed — ${line.replace(/^DEPS:\s*/, "")}` };
       }
     }
     const verify = effects.bash("verify-worktree.sh", ["--dir", path, "--stem", BASELINE_STEM], { env: sprint.childEnv() });
-    ctx.log(`baseline ${verify.stdout.trim()}`);
+    ctx.log(`baseline ${verify.stdout.trim()}`, "debug"); // verify-worktree.sh traced [VERIFY]
     const verdict = verify.code === 0 ? "pass" : "fail";
     sprint.state(["baseline", "--commit", commit, "--verdict", verdict]);
     if (verdict === "pass") return { status: "pass", commit, failed: [] };

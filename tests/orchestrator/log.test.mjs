@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { LINE_RE, formatLine, levelFor, writeLog } from "../../orchestrator/lib/log.mjs";
+import { LINE_RE, atLeast, formatLine, levelFor, stderrThreshold, writeLog } from "../../orchestrator/lib/log.mjs";
 
 const AT = new Date("2026-09-22T04:28:54.123Z");
 
@@ -20,7 +20,8 @@ test("a multi-line message keeps one header line; the rest are indented and blan
 });
 
 test("the level comes from the first marker, whatever precedes it", () => {
-  assert.equal(levelFor("[STEP] slug=a round=1 step=deps"), "debug");
+  // [STEP] is info: the launcher answers "how far along is it?" from these on stderr.
+  assert.equal(levelFor("[STEP] slug=a round=1 step=deps"), "info");
   assert.equal(levelFor("[TOOL] agent=crew-coder tool=Bash"), "debug");
   assert.equal(levelFor("[TOOL-ERROR] agent=crew-coder tool=Bash"), "warn");
   assert.equal(levelFor("[STALE-BRANCH] slug=a"), "warn");
@@ -40,14 +41,42 @@ test("an unmarked or unknown line is info", () => {
 
 test("writeLog appends one formatted line, with the level derived unless given", () => {
   const f = join(mkdtempSync(join(tmpdir(), "log-")), "traces", "orchestrator.log");
-  writeLog(f, "[STEP] slug=a step=deps");
+  writeLog(f, "[TOOL] slug=a tool=Bash");
   writeLog(f, "[BASELINE] red", "fatal");
   const lines = readFileSync(f, "utf8").trimEnd().split("\n");
   assert.equal(lines.length, 2);
-  assert.match(lines[0], /^\S+Z DEBUG \[STEP\] slug=a step=deps$/);
+  assert.match(lines[0], /^\S+Z DEBUG \[TOOL\] slug=a tool=Bash$/);
   assert.match(lines[1], /^\S+Z FATAL \[BASELINE\] red$/);
 });
 
 test("an unknown level is refused, not written as garbage", () => {
   assert.throws(() => formatLine("verbose", "x", AT), /unknown log level/);
+});
+
+test("stderr shows info and above by default", () => {
+  assert.deepEqual(stderrThreshold({}), { level: "info", warning: null });
+});
+
+test("CREW_LOG_LEVEL picks the stderr threshold, case-insensitively", () => {
+  assert.equal(stderrThreshold({ CREW_LOG_LEVEL: "warn" }).level, "warn");
+  assert.equal(stderrThreshold({ CREW_LOG_LEVEL: "DEBUG" }).level, "debug");
+});
+
+test("CREW_VERBOSE=1 means debug, unless CREW_LOG_LEVEL says otherwise", () => {
+  assert.equal(stderrThreshold({ CREW_VERBOSE: "1" }).level, "debug");
+  assert.equal(stderrThreshold({ CREW_VERBOSE: "" }).level, "info");
+  assert.equal(stderrThreshold({ CREW_VERBOSE: "1", CREW_LOG_LEVEL: "error" }).level, "error");
+});
+
+test("an unknown CREW_LOG_LEVEL falls back to info and says so", () => {
+  const t = stderrThreshold({ CREW_LOG_LEVEL: "loud" });
+  assert.equal(t.level, "info");
+  assert.match(t.warning, /CREW_LOG_LEVEL=loud.*debug\|info\|warn\|error\|fatal/);
+});
+
+test("atLeast orders the levels", () => {
+  assert.equal(atLeast("warn", "info"), true);
+  assert.equal(atLeast("info", "info"), true);
+  assert.equal(atLeast("debug", "info"), false);
+  assert.equal(atLeast("fatal", "error"), true);
 });

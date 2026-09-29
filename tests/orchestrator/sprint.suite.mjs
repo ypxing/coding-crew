@@ -2408,6 +2408,47 @@ test("CREW_VERBOSE puts the heartbeat on stderr, slug/round-tagged", () => {
   for (const l of heartbeats) assert.match(l, /^slug=01-alpha round=1 \[TOOL\] agent=\S+ tool=fake-heartbeat/, l);
 });
 
+test("stderr leaves out DEBUG lines by default; the trace log keeps them", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root, [], { CREW_VERBOSE: "", CREW_LOG_LEVEL: "" });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  // A script's own stdout, echoed after the script already traced its result line, is debug.
+  const echo = /^slug=alpha round=1 DEPS: /m;
+  assert.doesNotMatch(r.stderr, echo);
+  assert.match(traceLog(root), /^\S+Z DEBUG slug=alpha round=1 DEPS: /m);
+  // Progress stays: a launcher answers "how far along?" from [STEP] on stderr.
+  assert.match(r.stderr, /^\[STEP\] slug=01-alpha round=1 step=verify$/m);
+});
+
+test("CREW_LOG_LEVEL=warn quiets stderr to what went wrong; the trace log is unchanged", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root, [], { CREW_LOG_LEVEL: "warn" });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /\[STEP\]/);
+  assert.match(traceLog(root), /^\S+Z INFO  \[STEP\] slug=01-alpha round=1 step=verify$/m);
+});
+
+test("CREW_LOG_LEVEL=debug puts the echoes and the heartbeat on stderr, like CREW_VERBOSE", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.heartbeat", "");
+  const r = runSprint(root, [], { CREW_VERBOSE: "", CREW_LOG_LEVEL: "debug" });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /^slug=alpha round=1 DEPS: /m);
+  assert.match(r.stderr, /fake-heartbeat/);
+});
+
+test("an unknown CREW_LOG_LEVEL warns once on stderr and runs at info", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root, [], { CREW_LOG_LEVEL: "loud" });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.stderr.split("\n").filter((l) => /CREW_LOG_LEVEL=loud/.test(l)).length, 1, r.stderr);
+  assert.match(r.stderr, /^\[STEP\] /m);
+});
+
 test("--no-deps and the help text are declared together, so the flag is discoverable", () => {
   const help = sh("node", [MAIN, "--help"], { cwd: REPO });
   assert.equal(help.code, 0, help.stderr);

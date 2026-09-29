@@ -58,8 +58,10 @@
  *                                           have uncommitted changes (a merge that touches one
  *                                           still blocks that issue, as main-tree-dirty)
  *
- * CREW_VERBOSE=1 also puts each dispatch's throttled [TOOL] heartbeat and the effects log on
- * stderr; the trace log has both either way. CREW_INSTALL_DIR overrides the `.coding-crew/`
+ * CREW_LOG_LEVEL=debug|info|warn|error|fatal sets the lowest level stderr shows (default
+ * info); the trace log keeps every level either way. debug adds each dispatch's throttled
+ * [TOOL] heartbeat, the effects log, and a script's stdout echoed after its own trace line.
+ * CREW_VERBOSE=1 is the older spelling of debug. CREW_INSTALL_DIR overrides the `.coding-crew/`
  * this run's assets are read from (default: the one holding this crew-afk/; lib/install-dir.mjs).
  *
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
@@ -72,7 +74,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { Effects } from "./lib/effects.mjs";
-import { writeLog } from "./lib/log.mjs";
+import { atLeast, levelFor, stderrThreshold, writeLog } from "./lib/log.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
 import { DEFAULT_PARALLEL, PLATFORMS } from "./lib/dispatch.mjs";
@@ -453,6 +455,8 @@ async function main() {
   // each asset is a fixed sub-path of it — see install-dir.mjs.
   const installDir = resolveInstallDir(process.env, HERE);
   process.env.CREW_INSTALL_DIR = installDir;
+  const stderrLevel = stderrThreshold();
+  const shows = (level) => atLeast(level, stderrLevel.level);
   const logLines = [];
   const effects = new Effects({
     scriptsDir,
@@ -460,7 +464,7 @@ async function main() {
     dryRun: options.dryRun,
     log: (line) => {
       logLines.push(line);
-      if (process.env.CREW_VERBOSE) console.error(line);
+      if (shows("debug")) console.error(line);
     },
   });
   if (options.command === "status") {
@@ -599,6 +603,12 @@ async function main() {
     console.error(message);
     if (sprint?.traceLog) writeLog(sprint.traceLog, `[ABORT] ${message}`, "fatal");
   };
+  // Every other sprint line: the trace log always, stderr at or above CREW_LOG_LEVEL.
+  const emit = (line, level = levelFor(line)) => {
+    if (!line) return;
+    if (shows(level)) console.error(line);
+    if (sprint?.traceLog) writeLog(sprint.traceLog, line, level);
+  };
   let resolved;
   let stalled;
   let exitCode = 0;
@@ -608,6 +618,8 @@ async function main() {
     // Before any sprint output, so a launcher knows the resolved host without re-deriving it
     // from env and config.
     console.error(`PANE-HOST: ${options.paneHost ?? "none"}`);
+    // After PANE-HOST, which a launcher reads as stderr's first line.
+    if (stderrLevel.warning) console.error(`crew-afk: ${stderrLevel.warning}`);
     const problems = preflightCrew();
     if (problems.length) {
       console.error(problems.map((p) => `crew-afk: ${p}`).join("\n"));
@@ -672,7 +684,9 @@ async function main() {
       passthrough: options.passthrough,
       // Installed below, after command discovery has cached any install override.
       deps: false,
-      log: (line) => console.error(line),
+      log: (line) => {
+        if (shows("info")) console.error(line);
+      },
     });
     sprint.setModel(options.model ?? "agent default");
     sprint.startRun();
@@ -693,16 +707,16 @@ async function main() {
         timeoutMs: options.timeoutMs.commandFinder,
         maxBudgetUsd: options.limitsUsd?.commandFinder,
         // Persisted too: this runs unattended, and a failure must outlive the scrollback.
-        log: (line) => {
-          console.error(line);
-          if (sprint.traceLog) writeLog(sprint.traceLog, line);
-        },
+        log: (line) => emit(line),
       });
     }
 
     // After command discovery: ensure-deps.sh reads the install command it cached.
     if (options.installDeps) {
-      const deps = await sprint.installDeps((line) => console.error(line));
+      // Stderr only, as before: the install's own output is debug, its DEPS: outcome info.
+      const deps = await sprint.installDeps((line) => {
+        if (shows(/^DEPS:/.test(line) ? "info" : "debug")) console.error(line);
+      });
       if (/^DEPS: docker-failed\b/.test(deps ?? "")) {
         fatal(dockerDepsFailureMessage(deps));
         exitCode = 1;
@@ -715,15 +729,11 @@ async function main() {
       effects,
       options,
       roundReviewFile: makeRoundReviewFile(sprint),
-      log: (line) => {
-        if (!line) return;
-        console.error(line);
-        if (sprint.traceLog) writeLog(sprint.traceLog, line);
-      },
+      log: emit,
       // A dispatch's [TOOL] heartbeat. The dispatch already wrote it to the trace log, and a
-      // launcher agent pays tokens for every stderr line it reads, so it is opt-in here.
+      // launcher agent pays tokens for every stderr line it reads, so it is debug here.
       heartbeat: (line) => {
-        if (process.env.CREW_VERBOSE) console.error(line);
+        if (shows("debug")) console.error(line);
       },
       out: (text) => console.log(text),
     };

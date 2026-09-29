@@ -449,6 +449,11 @@ The level is the second column:
 `grep -E ' (WARN|ERROR|FATAL) ' orchestrator.log` lists what went wrong. A multi-line entry
 (the end-of-run `[SUMMARY]`, a verify transcript) continues on indented lines below its header.
 
+The log always keeps every level. stderr shows `INFO` and above by default; set
+`CREW_LOG_LEVEL=debug|info|warn|error|fatal` to change that. `debug` adds each worker's tool
+calls and the raw output of deps/verify/merge/close (each script also logs its own one-line
+result), and `warn` hides the `[STEP]` progress lines. `CREW_VERBOSE=1` still means `debug`.
+
 ---
 
 ### Troubleshooting
