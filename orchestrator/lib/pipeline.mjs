@@ -97,7 +97,8 @@ export function resumableSession(prior, tip) {
  *           receipt is rewritten only after a fresh all-met review, never on this note's
  *           word. Also the route once a human reruns after the retry cap blocked it.
  *   fix     `verification-failed:fixable`, `criteria-unmet` — the coder runs on fixPrompt,
- *           told exactly what failed, instead of re-reading the whole issue.
+ *           told exactly what failed, instead of re-reading the whole issue. Also the
+ *           route once a human reruns after the retry cap blocked it.
  *           `merge-conflict` — the feature branch moved on under this one. The sync step
  *           leaves the conflicted merge in the worktree and the coder resolves it; verify
  *           and review then re-run on the new commit. If the sync merges cleanly after
@@ -126,9 +127,9 @@ export function resumeRoute(reason) {
   if (reason.startsWith(REVIEW_NOT_RUN_TAG)) return { route: "verify", label: "review-not-run" };
   if (unblocked.startsWith(CRITERIA_ENVIRONMENT_TAG)) return { route: "verify", label: "environment-recheck" };
   if (unblocked.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };
-  if (reason.startsWith(FIXABLE_TAG)) return { route: "fix", kind: "verify", context: stripReasonTag(reason, FIXABLE_TAG) };
-  if (reason.startsWith(CRITERIA_UNMET_TAG)) {
-    return { route: "fix", kind: "review", context: stripReasonTag(reason, CRITERIA_UNMET_TAG) };
+  if (unblocked.startsWith(FIXABLE_TAG)) return { route: "fix", kind: "verify", context: stripReasonTag(unblocked, FIXABLE_TAG) };
+  if (unblocked.startsWith(CRITERIA_UNMET_TAG)) {
+    return { route: "fix", kind: "review", context: stripReasonTag(unblocked, CRITERIA_UNMET_TAG) };
   }
   return { route: "restart" };
 }
@@ -200,9 +201,10 @@ export async function runWorker(ctx, issue, attempt) {
   const dispatchDir = sprint.dispatchDir;
   mkdirSync(dispatchDir, { recursive: true });
 
-  // A recorded Progress or Blocked section means a prior attempt left a branch on purpose;
-  // resumeBranch then says whether state still retains it and the ref still exists.
-  const priorBranch = issue.hasProgress || issue.hasBlocked ? sprint.resumeBranch(issue.slug) : null;
+  // State says whether a prior attempt retained a branch (and the ref still exists). Not
+  // gated on the issue's Progress/Blocked sections: under tracker: github those live in
+  // comments the issue body does not carry, so the flags would hide a retained branch.
+  const priorBranch = sprint.resumeBranch(issue.slug);
   const retentionReason = priorBranch != null ? sprint.retentionReason(issue.slug) : null;
   let resume = resumeRoute(retentionReason);
 
