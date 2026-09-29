@@ -1026,6 +1026,61 @@ test("blocked with no cause is a stop at once, with no verify, even with commits
   assert.deepEqual(state(root).blocked_slugs, ["alpha"]);
 });
 
+test("a premise stop (blocked, cause code, nothing committed) reaches the issue's ## Blocked, with no retry", () => {
+  // solve-issue §3's premise check: the issue contradicts the code, so the coder stops before
+  // writing any. A human must see the contradiction itself, and no second coder may re-derive it.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const notes = "BLOCKED: premise: issue assumes parseToken() in src/auth.ts — no such function; auth is in src/session.ts:42 verifySession()";
+  fake(
+    root,
+    "alpha.worker",
+    workerReport({
+      status: "blocked",
+      cause: "code",
+      evidence: { command: "grep -rn parseToken src", exit: 1, output: "" },
+      notes,
+    }),
+  );
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 1, "a premise stop is not retried");
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0, "nothing to verify");
+  assert.ok(!lines.some((l) => /^SPAWN .*--agent crew-triage/.test(l)), "no triage on a premise stop");
+  assert.deepEqual(state(root).blocked_slugs, ["alpha"]);
+  const issue = readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8");
+  assert.match(issue, /## Blocked[\s\S]*BLOCKED: premise: issue assumes parseToken\(\)/, "the human sees the contradiction");
+});
+
+test("an issue the code already satisfies closes with no commits, and its dependent runs", () => {
+  // solve-issue §3's "already met": nothing to build and nothing to add, so the branch has no
+  // commits. The reviewer judges the criteria against the tree instead of an (empty) diff, and
+  // the issue closes like any other — a dependent is not stranded behind a finished issue.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md", { blockedBy: ["01-alpha.md"] });
+  fake(root, "alpha.nocommit");
+  fake(
+    root,
+    "alpha.worker",
+    workerReport({
+      status: "complete",
+      checks: { test: "pass", lint: "pass", typecheck: "pass" },
+      criteria: [{ text: "alpha exists", met: true }],
+      notes: "already met: alpha exists at src/alpha.ts:1, pinned by src/alpha.test.ts:3",
+    }),
+  );
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 2, "one coder for alpha, one for beta — no retry");
+  assert.ok(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), "alpha closed");
+  assert.ok(existsSync(join(root, ".scratch/demo/issues/done/02-beta.md")), "beta ran and closed");
+  const review = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8");
+  assert.match(review, /^Diff scope: empty/m, "the reviewer is told to judge the tree, not the diff");
+  const betaReview = readFileSync(join(root, ".scratch/demo/dispatch/02-beta/review-prompt.md"), "utf8");
+  assert.doesNotMatch(betaReview, /^Diff scope: empty/m);
+});
+
 // ─── ## Requires: probed once in preflight, before any dispatch ───────────────────────
 
 test("an issue whose ## Requires fails is blocked before any dispatch, with the command and its output", () => {

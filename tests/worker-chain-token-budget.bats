@@ -40,7 +40,7 @@ words_of() {
   done
 }
 
-@test "budget: solve-issue is under 2,300 words" {
+@test "budget: solve-issue is under 2,450 words" {
   # Raised from 1,300 by the one-writer-per-issue-file fix: §7/§8 became a real branch on
   # "who owns the issue file", so the skill now carries two close paths where it carried
   # one. That is a new rule, not a re-explained one — the worker used to be told both to
@@ -85,8 +85,12 @@ words_of() {
   # branch, which four coders in one sprint each handled by reverting the same 17 files.
   # Raised to 2,150 when preflight.sh started running the issue's `## Requires` commands: Step 0
   # names the one new BLOCKED: line it can print (§Outcome's stop-once rule had used the rest).
+  # Raised to 2,450 when §3 gained its premise check (and §4 the RED-that-never-fails pointer to
+  # it): an issue written before anyone read the code could name a missing function or an
+  # already-fixed bug, and the coder built to the wording anyway. Three real new branches — adapt
+  # to drift, pin what is already met instead of rebuilding it, stop on a wrong assumption.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 2150 ] || { echo "solve-issue is $words words (budget 2150)" >&2; return 1; }
+  [ "$words" -lt 2450 ] || { echo "solve-issue is $words words (budget 2450)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {
@@ -94,7 +98,7 @@ words_of() {
   [ "$words" -lt 750 ] || { echo "tdd is $words words (budget 750)" >&2; return 1; }
 }
 
-@test "budget: the whole per-issue worker chain is under 4,250 words" {
+@test "budget: the whole per-issue worker chain is under 4,600 words" {
   # crew-coder + solve-issue + its verification reference + tdd. Read once per issue,
   # so this total is what a sprint multiplies by its issue count. It was 4,158 words
   # before the duplication below was cut; the ceiling leaves room for one genuinely new
@@ -116,13 +120,15 @@ words_of() {
   # Raised to 4,250 when crew-coder's report gained `cause` + `evidence` (rule 6 and one
   # blocked example): a coder that stops short now hands triage the command that shows why,
   # instead of the next attempt re-deriving the same blocker in ~45 calls.
+  # Raised to 4,600 alongside solve-issue's 2,450 ceiling above — the same premise check,
+  # not restated here.
   total=$(words_of "$(coder_variant pi)")
   for f in "$REPO_ROOT"/skills/solve-issue/SKILL.md \
            "$REPO_ROOT"/skills/solve-issue/references/verification.md \
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 4250 ] || { echo "worker chain is $total words (budget 4250)" >&2; return 1; }
+  [ "$total" -lt 4600 ] || { echo "worker chain is $total words (budget 4600)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────
@@ -160,7 +166,7 @@ words_of() {
   echo "$section" | grep -qi 'do NOT stage or commit'
 }
 
-@test "budget: the per-branch reviewer chain is under 2,400 words" {
+@test "budget: the per-branch reviewer chain is under 2,450 words" {
   # Read once per branch, like the worker chain is read once per issue. The reviewer now also
   # carries the acceptance-criteria verdict, which used to be a separate agent over the same
   # diff: 2,040 words here plus a second full-diff read became 2,1xx words and one read. Worst
@@ -186,11 +192,14 @@ words_of() {
   # 2,360 → 2,400: two rules that make each review cheaper than the words cost — search a
   # verify log for the figure instead of reading all of it (coverage/integration logs run to
   # 500+ lines each), and skip call-site tracing on a diff the dispatch marks test-only.
+  #
+  # 2,400 → 2,450: the empty-diff and mapped-location rules (see the protocol's own budget in
+  # tests/crew-reviewer-references.bats).
   local protocol="$REPO_ROOT/agents/crew-reviewer/protocol.md"
   local refs="$REPO_ROOT/agents/crew-reviewer/assets/references"
   local total=$(( $(words_of "$protocol") + $(words_of "$refs/quality.md") \
                   + $(words_of "$refs/web-security.md") + $(words_of "$refs/react.md") ))
-  [ "$total" -lt 2400 ] || { echo "reviewer chain is $total words (budget 2400)" >&2; return 1; }
+  [ "$total" -lt 2450 ] || { echo "reviewer chain is $total words (budget 2450)" >&2; return 1; }
 }
 
 @test "dependency install is failure-triggered, not a step every issue pays for" {

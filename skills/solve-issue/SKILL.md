@@ -15,7 +15,8 @@ Implement a single issue. One issue in, committed code out.
 Every run ends as exactly one of these. Report it in whatever form your caller asked for — these are
 the words, not the wire format:
 
-- **`complete`** — every acceptance criterion is met, every check passes, and the work is committed.
+- **`complete`** — every acceptance criterion is met, every check passes, and the work is committed
+  (or there was none: Step 3's already met).
 - **`partial`** — meaningful progress, but a check fails or a criterion is unmet. Commit the work with
   a `[WIP]` marker so the branch preserves it, and say what remains. A later round resumes here.
 - **`blocked`** — cannot proceed without human input or an environment fix. Not a way to avoid
@@ -135,6 +136,24 @@ sibling still broken.
 
 Expand the file list if exploration reveals additional files. Do not guess. Confirm the current state before writing anything.
 
+**Premise check — last, before Step 4.** For each acceptance criterion and each file, symbol or
+behavior the issue names, find the `file:line` that confirms or contradicts it. Then, per finding:
+
+- **Drift, same intent** (a renamed file, a moved function): build against what exists; record
+  `<issue's name> → <file:line>` in Step 6's `DETAILS`.
+- **Already met** — the code satisfies a criterion before this branch touches it (a bug already
+  fixed is this case; `[$ISSUE_SLUG]` commits on this branch are a resumed run, not this): write no
+  code for it. Pin it with a test if none exists — for a bug, the regression test — and report it
+  met with its `file:line`. Every criterion already met and already tested leaves nothing to
+  commit: that is still `complete`.
+- **Wrong assumption** — the issue's picture of the code is wrong in a way reading cannot recover:
+  a named thing has no counterpart, the described bug's code path does not exist, or a criterion
+  conflicts with the PRD, an ADR or another criterion. Report `blocked` before writing code, with
+  the search as evidence — `BLOCKED: premise: <issue assumes> — <code/PRD shows>`. A guess would be
+  reviewed against the same wrong criteria, and merged.
+
+Not for what more reading would settle, or a design you merely prefer.
+
 **Batch these calls.** Each exploration tool call re-bills your entire accumulated context, so five
 small calls cost far more in aggregate than one or two larger ones covering the same ground. Combine
 multiple grep patterns into a single call (`grep -rn -E 'patternA|patternB'` instead of two separate
@@ -153,6 +172,10 @@ It runs the command where the INSTALL_MODE from Step 2 says: inside docker (both
 worktree's git env, the right service) or on the host. Never hand-build a `docker compose` command.
 
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
+
+A bug-fix test that passes on its first run, through the path the issue names, means the bug is
+already fixed: keep it as the regression test (Step 3's already met), not a test to rewrite until
+it fails.
 
 **Commit after every GREEN, not only once at the end.** A dispatcher-imposed timeout can kill this
 run mid-loop; only a branch that already has a commit on it is resumable next round — one with

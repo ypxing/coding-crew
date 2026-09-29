@@ -65,3 +65,28 @@ setup() {
   grep -q 'Run each one while authoring' "$SKILL_FILE"
   grep -qE 'fails, publish the issue as `Status: ready-for-human`' "$SKILL_FILE"
 }
+
+@test "to-issues: codebase exploration is required, not optional" {
+  # Issues drafted from the PRD alone named functions that did not exist and bugs already fixed;
+  # the coder's premise check (solve-issue §3) is the backstop, this is the prevention.
+  ! grep -q '^### 3\. Explore the codebase (optional)' "$SKILL_FILE"
+  grep -q '^### 3\. Explore the codebase$' "$SKILL_FILE"
+}
+
+@test "to-issues: every assumption about current code is grounded at file:line, new things say so" {
+  section=$(awk '/^### 3\. Explore/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$section" | grep -q 'Ground every assumption'
+  echo "$section" | grep -qF 'confirm it at a `file:line`'
+  echo "$section" | grep -q 'the code path that produces it'
+  echo "$section" | grep -q 'its issue says so'
+}
+
+@test "to-issues: a contradicted assumption goes to the quiz, never silently into an issue" {
+  section=$(awk '/^### 3\. Explore/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$section" | grep -q 'never silently into an issue'
+  echo "$section" | grep -q 'Already there'
+  echo "$section" | grep -q 'test-only slice'
+  echo "$section" | grep -q 'Wrong assumption'
+  quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$quiz" | grep -q 'If step 3 contradicted any assumption'
+}

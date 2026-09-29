@@ -130,7 +130,7 @@ stack_for() {
   grep -qiE 'if either script is missing|older install' "$PROTOCOL"
 }
 
-@test "protocol body stays under the 1760-word budget" {
+@test "protocol body stays under the 1810-word budget" {
   # Raised from 1,500 by the two *machine* contracts the protocol now owns, both of which
   # replace an inference the caller used to make: the execution-evidence rule (a read-only
   # reviewer cannot run `npm test`, so a criterion ending "…and the tests pass" was
@@ -152,9 +152,14 @@ stack_for() {
   # 1,700 → 1,760: search a verify log for the figure instead of reading all of it, and skip
   # call-site tracing on a diff the dispatch marks test-only — each saves more per review than
   # its words cost (coverage/integration logs run to 500+ lines).
+  #
+  # 1,760 → 1,810: an empty diff is judged against the tree instead of read as `unmet` (a coder
+  # that found every criterion already met commits nothing, and used to strand the issue and its
+  # dependents), and a criterion is met at a location a branch commit maps it to (a coder that
+  # adapted to a renamed file used to fail review on the issue's stale path).
   local words
   words=$(wc -w < "$PROTOCOL")
-  [ "$words" -lt 1760 ] || { echo "protocol.md is $words words"; return 1; }
+  [ "$words" -lt 1810 ] || { echo "protocol.md is $words words"; return 1; }
 }
 
 @test "no single reference is larger than the protocol that conditions it" {

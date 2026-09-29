@@ -64,6 +64,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       notConfigured,
       verifyFile: file,
       testOnly: changed.length > 0 && changed.every(isTestPath),
+      emptyDiff: changed.length === 0,
       reportPath: sidecarFile,
       reviewAssets: sprint.installDir ? assetDir(sprint.installDir, "reviewer") : null,
     }),

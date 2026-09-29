@@ -19,7 +19,7 @@
   },
   "agents": {
     "crew-reviewer": {
-      "version": "1.7.10",
+      "version": "1.7.11",
       "source-dir": "crew-reviewer",
       "replaces": [
         "crew-code-reviewer"
@@ -79,7 +79,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.3.63",
+      "version": "2.3.64",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -133,7 +133,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.10.3",
+      "version": "1.10.4",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
@@ -179,7 +179,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.4.3",
+      "version": "1.4.4",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",

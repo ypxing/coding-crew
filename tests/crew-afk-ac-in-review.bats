@@ -45,7 +45,8 @@ PROTOCOL="$REPO_ROOT/agents/crew-reviewer/protocol.md"
 }
 
 @test "the reviewer answers unmet for a branch it could not review" {
-  # An empty diff, an unscopable diff, or a failed dispatch must not read as a pass.
+  # An unscopable diff or a failed dispatch must not read as a pass. (An empty diff is judged
+  # against the tree instead: see crew-reviewer-structure.bats.)
   section=$(awk '/not verified/{f=1} f' "$PROTOCOL")
   [ -n "$section" ]
   echo "$section" | grep -qi 'must not merge on an absent check'

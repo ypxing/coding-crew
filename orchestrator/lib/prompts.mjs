@@ -216,7 +216,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, reportPath, reviewAssets }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
   // A size tells the reviewer to search the file for its figure rather than read it whole.
@@ -239,6 +239,11 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "",
     `Gather the diff: git diff $(git merge-base ${featureBranch} ${branch})..${branch}`,
     ...(testOnly ? ["Diff scope: test-only — every changed file is a test, spec or fixture file."] : []),
+    // A coder that found every criterion already met, and already tested, commits nothing
+    // (solve-issue §3). An empty diff is then the claim, not a skipped review.
+    ...(emptyDiff
+      ? ["Diff scope: empty — the coder reports every criterion already met by existing code. Judge each against the files at the branch tip instead: the same file-and-line evidence, from the tree rather than the diff."]
+      : []),
     "",
     // Execution evidence, stated once. You cannot run commands, and a criterion that
     // ends "…and the tests pass" is unprovable from a diff — so without this every such

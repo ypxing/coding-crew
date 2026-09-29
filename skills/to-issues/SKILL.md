@@ -34,9 +34,14 @@ If no PRD exists, ask the user:
 If the user chooses to run `/to-prd`, invoke it (using the same feature slug), then continue with the resulting PRD. If the user declines, proceed with conversation context as before.
 
 
-### 3. Explore the codebase (optional)
+### 3. Explore the codebase
 
-If you have not already explored the codebase, do so to understand the current state of the code. Issue titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
+Not optional. If you have not already explored the code each slice will touch, do so now. Issue titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
+
+**Ground every assumption.** An issue drafted from the PRD alone can name a function that does not exist or a bug already fixed, and the coder reads the code only after the issue is written. For each thing a slice assumes about the *current* code — an existing module, function, schema or behavior, and for a bug the code path that produces it — confirm it at a `file:line`. Something the slice creates is new, and its issue says so ("adds …"). What exploration contradicts goes to the quiz below, never silently into an issue:
+
+- **Already there** — the behavior exists, or the bug is already fixed: drop the slice, or keep it as a test-only slice if nothing pins the behavior.
+- **Wrong assumption** — the PRD or plan assumes something the code rules out (a missing counterpart, a decision an ADR or the code contradicts): ask how to resolve it before drafting.
 
 While exploring, look for **prefactoring opportunities** — changes that would make the feature implementation significantly easier. "Make the change easy, then make the easy change." Prefactoring issues must be sliced and sequenced first so downstream feature issues can build on a clean foundation.
 
@@ -72,6 +77,8 @@ Present the proposed breakdown as a numbered list. For each slice, show:
 - **Type**: HITL / AFK
 - **Blocked by**: which other slices (if any) must complete first
 - **What it delivers**: the end-to-end behaviour this slice makes work, from the user's perspective
+
+If step 3 contradicted any assumption, list each first — what the plan assumes, what the code shows at `file:line`, and the slice it affects — and resolve it before the rest of the quiz.
 
 If step 3 turned up any shared surfaces, list them separately — one line per surface, naming the slices that touch it — and ask about each one explicitly: is the overlap additive (safe to leave parallel), or does it need a `Blocked by` edge (or a merge)? Don't add the edge yourself; this is exactly the call a file-overlap heuristic gets wrong, because it can't tell "two slices editing the same file in unrelated ways" from "two slices that will conflict."
 

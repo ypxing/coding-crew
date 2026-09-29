@@ -27,3 +27,23 @@ setup() {
 @test "crew-reviewer agent files contain no stale crew-plan reference" {
   ! grep -r 'crew-plan' "$AGENT_DIR/"
 }
+
+@test "an empty diff is judged against the tree, not skipped as unmet" {
+  # A coder that finds every criterion already met and already tested commits nothing
+  # (solve-issue §3). Reading that as `unmet` retried the issue to a block and stranded every
+  # issue behind it — for work that was already done.
+  grep -qF 'Diff scope: empty' "$AGENT_DIR/protocol.md"
+  grep -q 'against the files at the branch tip' "$AGENT_DIR/protocol.md"
+  ! grep -qE 'SKIPPED: <reason — empty diff' "$AGENT_DIR/protocol.md"
+}
+
+@test "a criterion is met at a location a branch commit maps it to, still with a cited line" {
+  # A coder that adapts to a renamed file records the mapping (solve-issue §3's drift); a
+  # reviewer holding the issue's stale path would otherwise fail a correct branch.
+  grep -qF "<issue's name> → <file:line>" "$AGENT_DIR/protocol.md"
+  grep -q 'cite that line, which is still the evidence' "$AGENT_DIR/protocol.md"
+}
+
+@test "the drift mapping format is the one solve-issue tells the coder to record" {
+  grep -qF "<issue's name> → <file:line>" "$SCRIPT_DIR/skills/solve-issue/SKILL.md"
+}
