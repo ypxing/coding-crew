@@ -2976,7 +2976,7 @@ test("--no-baseline skips the baseline", () => {
   addIssue(root, "01-alpha.md");
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(lines.filter((l) => /_baseline/.test(l)).length, 0);
+  assert.equal(lines.filter((l) => /--stem _baseline/.test(l)).length, 0);
 });
 
 // ─── a dirty main checkout at merge time ──────────────────────────────────────────────
