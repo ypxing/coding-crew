@@ -980,6 +980,27 @@ test("partial with commits, verify fails, triage fixable: the retry is a fix rou
   assert.match(prompt, /classified this failure as fixable: wrong host: src\/config\.ts uses localhost:4566/);
 });
 
+test("github tracker: a re-run after a fixable failure gets fixPrompt though Progress lives only in a comment", () => {
+  // The issue body carries no ## Progress (writeProgress posts a comment), so hasProgress
+  // and hasBlocked are false on every fetch; the retained branch is known from state alone.
+  const root = githubFixtureRepo();
+  failingTests(root); // before the stub: its gh.log must not be committed as a tracked file
+  const { stub } = stubGh(root, [GH_ALPHA]);
+  const env = { PATH: `${stub}:${process.env.PATH}` };
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "fail" }, progress: "tests red" }));
+  fake(root, "alpha.triage", triageVerdict("yes", "wrong host", "src/config.ts uses localhost:4566; the service is localstack:4566"));
+  commandLines(root, [], { env });
+  assert.match(state(root).retention.alpha.reason, /verification-failed:fixable/);
+  const promptFile = join(root, ".scratch/demo/dispatch/1-alpha/prompt.md");
+  rmSync(promptFile);
+  // Triage now rules it out, so the re-run cannot reach a fix prompt through its own gate:
+  // the only fixPrompt possible is the one the retained reason routed to.
+  fake(root, "alpha.triage", triageVerdict("no", "x", "y"));
+  const { lines } = commandLines(root, [], { env });
+  const prompt = readFileSync(promptFile, "utf8");
+  assert.match(prompt, /classified this failure as fixable: wrong host: src\/config\.ts uses localhost:4566/);
+});
+
 test("a verify fix round that commits nothing blocks without re-verifying or re-triaging", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
