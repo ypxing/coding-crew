@@ -61,9 +61,16 @@ export async function closePaneWorkspace(effects) {
  * workspace it lives in is not. Swallows failures (an already-closed tab, for one).
  */
 export async function closePaneLogTab(effects) {
-  if (!effects._paneLogTabId) return;
+  if (effects._paneLogTabId) {
+    try {
+      await adapterFor(effects).closeLogTab(effects, effects._paneLogTabId);
+    } catch {
+      /* cosmetic */
+    }
+  }
+  // Sweep: any terminal this run opened that a close never confirmed gone.
   try {
-    await adapterFor(effects).closeLogTab(effects, effects._paneLogTabId);
+    await adapterFor(effects)?.closeTerminals?.(effects);
   } catch {
     /* cosmetic */
   }
