@@ -187,24 +187,27 @@ export function applySchemaPrefilter(report) {
  *
  * `logs` maps each check to its full-output file, so a reviewer can read a figure (a coverage
  * percentage) pass/fail cannot carry; `notConfigured` names the cached checks set to `null`,
- * which the gate never runs, so a criterion resting on one visibly has no evidence.
+ * which the gate never runs, so a criterion resting on one visibly has no evidence; `missing`
+ * maps each check that failed on a command not installed (exit 127) to that command.
  */
 export function readVerifyRecord(file) {
   const checks = Object.fromEntries(CHECK_CATEGORIES.map((c) => [c, "not_run"]));
   const logs = {};
+  const missing = {};
   let rec = null;
   try {
     rec = JSON.parse(readFileSync(file, "utf8"));
   } catch {
-    return { checks, logs, notConfigured: [] };
+    return { checks, logs, missing, notConfigured: [] };
   }
   for (const c of Array.isArray(rec?.checks) ? rec.checks : []) {
     if (!c || typeof c.category !== "string") continue;
     checks[c.category] = normaliseCheck(c.result);
     if (typeof c.log === "string" && c.log) logs[c.category] = c.log;
+    if (typeof c.missing === "string" && c.missing) missing[c.category] = c.missing;
   }
   const notConfigured = Array.isArray(rec?.not_configured) ? rec.not_configured.filter((c) => typeof c === "string") : [];
-  return { checks, logs, notConfigured };
+  return { checks, logs, missing, notConfigured };
 }
 
 /**

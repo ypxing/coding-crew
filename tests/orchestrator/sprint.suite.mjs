@@ -2931,6 +2931,48 @@ test("a feature branch that fails its own checks stops the run before any coder 
   assert.equal(existsSync(join(root, ".scratch/worktrees/crew/demo/_baseline")), false);
 });
 
+// A check command that is not installed exits 127: an environment problem, never the branch's.
+function missingTool(root) {
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/dev-commands.json"),
+    JSON.stringify({ test: "crew-no-such-tool tests/*.bats", lint: "make lint", typecheck: "make typecheck", coverage: null, integration: null }),
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "cache"]);
+  fake(root, "commands.response", '{"install": null, "env": null, "credential_target": null}');
+}
+
+test("a baseline check whose command is not installed is reported as the environment, not a red branch", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  missingTool(root);
+  const { r, lines } = commandLines(root, [], { baseline: true });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /feature\/demo's checks cannot run here: `crew-no-such-tool` is not installed — an environment problem, not a red branch/);
+  assert.match(r.stderr, /^  test: fail — command not found: crew-no-such-tool — \S+\/dispatch\/_baseline\/verify-test\.log$/m);
+  assert.match(r.stderr, /Install it where the checks run \(or give \.coding-crew\/dev-commands\.json an `install` command that does\), then re-run\./);
+  assert.doesNotMatch(r.stderr, /Fix it on the feature branch/);
+  assert.match(r.stderr, /--no-baseline/);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "no coder, no reviewer");
+});
+
+test("an issue's verify failing on a command that is not installed skips triage and never re-dispatches the coder", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  missingTool(root);
+  fake(root, "alpha.worker", workerReport({ status: "complete", checks: { test: "pass", lint: "pass", typecheck: "pass" }, progress: "" }));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 1, "a missing command is not fixable by more code");
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-triage/.test(l)).length, 0, "nothing for triage to judge");
+  assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=not-fixable-recheck/);
+  assert.match(
+    state(root).retention.alpha.reason,
+    /^blocked — retry limit reached \(2 attempts\) — verification-failed:not-fixable — missing command: crew-no-such-tool is not installed \(test\)/,
+  );
+});
+
 test("a green baseline is run once per feature-branch commit, then reused", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

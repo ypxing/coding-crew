@@ -80,7 +80,7 @@ const BASELINE_STEM = "_baseline";
  * would repeat. A pass is cached by the tip's commit; a failure never is, since an
  * environment the human fixed (a service started) should be re-checked on the next run.
  *
- * Returns `{ status: "pass" | "cached" | "fail", commit, failed: [{check, log}], reason }`.
+ * Returns `{ status: "pass" | "cached" | "fail", commit, failed: [{check, log, missing}], reason }`.
  */
 export function runBaseline(ctx) {
   const { sprint, effects, options } = ctx;
@@ -126,7 +126,7 @@ export function runBaseline(ctx) {
     const record = readVerifyRecord(recordFile);
     const failed = Object.entries(record.checks)
       .filter(([, result]) => result === "fail")
-      .map(([check]) => ({ check, log: record.logs[check] ?? null }));
+      .map(([check]) => ({ check, log: record.logs[check] ?? null, missing: record.missing[check] ?? null }));
     return { status: "fail", commit, failed, reason: `verify-worktree.sh failed — see ${recordFile}` };
   } finally {
     removeWorktree(effects, { mainRoot: effects.mainRoot, path });
@@ -200,17 +200,32 @@ export function dockerDepsFailureMessage(line) {
   ].join("\n");
 }
 
-/** The stop message for a red baseline: which checks, where their output is, and the two ways on. */
+/**
+ * The stop message for a red baseline: which checks, where their output is, and the two ways on.
+ * When every failed check failed on a command that is not installed, the branch was never
+ * judged, so the message names the environment instead of asking for a fix on the branch.
+ */
 export function baselineFailureMessage(featureBranch, result) {
+  const at = result.commit.slice(0, 12);
+  const missing = [...new Set(result.failed.map((f) => f.missing).filter(Boolean))];
+  const envOnly = result.failed.length > 0 && missing.length > 0 && result.failed.every((f) => f.missing);
   const lines = [
-    `crew-afk: ${featureBranch} fails its own checks before any issue has touched it (${result.commit.slice(0, 12)}) — every issue's verify gate would fail the same way, after paying for its coder.`,
+    envOnly
+      ? `crew-afk: ${featureBranch}'s checks cannot run here: ${missing.map((m) => `\`${m}\``).join(", ")} ${missing.length > 1 ? "are" : "is"} not installed — an environment problem, not a red branch (${at}). Every issue's verify gate would fail the same way, after paying for its coder.`
+      : `crew-afk: ${featureBranch} fails its own checks before any issue has touched it (${at}) — every issue's verify gate would fail the same way, after paying for its coder.`,
   ];
   if (result.failed.length) {
-    for (const f of result.failed) lines.push(`  ${f.check}: fail${f.log ? ` — ${f.log}` : ""}`);
+    for (const f of result.failed) {
+      lines.push(`  ${f.check}: fail${f.missing ? ` — command not found: ${f.missing}` : ""}${f.log ? ` — ${f.log}` : ""}`);
+    }
   } else {
     lines.push(`  ${result.reason}`);
   }
-  lines.push("Fix it on the feature branch (or start the service the checks need), then re-run.");
+  if (envOnly) {
+    lines.push("Install it where the checks run (or give .coding-crew/dev-commands.json an `install` command that does), then re-run.");
+  } else {
+    lines.push("Fix it on the feature branch (or start the service the checks need), then re-run.");
+  }
   lines.push("To run anyway, knowing every issue will be judged against a red branch: --no-baseline.");
   return lines.join("\n");
 }

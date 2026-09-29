@@ -400,6 +400,32 @@ EOF
   node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$rec"
 }
 
+@test "verify-worktree: a check whose command is not installed fails, and the record names the command" {
+  wt=$(_make_worktree "task-a")
+  mkdir -p "$MAIN_ROOT/.coding-crew"
+  echo '{"test": "crew-no-such-tool tests/*.bats", "lint": null, "typecheck": null}' \
+    > "$MAIN_ROOT/.coding-crew/dev-commands.json"
+
+  run bash "$VERIFY_SCRIPT" --dir "$wt" --stem 01-task-a
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"TEST: fail — command not found: crew-no-such-tool (not installed where the check runs — an environment problem, not the code)"* ]]
+  rec="$DISPATCH_DIR/01-task-a/verify.json"
+  grep -q '"category": "test", "command": "crew-no-such-tool tests/\*.bats", "result": "fail", "exit": 127' "$rec"
+  grep -q '"missing": "crew-no-such-tool"' "$rec"
+  node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$rec"
+}
+
+@test "verify-worktree: an ordinary failing check names no missing command" {
+  wt=$(_make_worktree "task-a")
+  mkdir -p "$MAIN_ROOT/.coding-crew"
+  echo '{"test": "exit 1", "lint": null, "typecheck": null}' > "$MAIN_ROOT/.coding-crew/dev-commands.json"
+
+  run bash "$VERIFY_SCRIPT" --dir "$wt" --stem 01-task-a
+  [ "$status" -ne 0 ]
+  [[ "$output" != *"command not found"* ]]
+  ! grep -q '"missing"' "$DISPATCH_DIR/01-task-a/verify.json"
+}
+
 @test "verify-worktree: writes no receipt when a check fails" {
   wt=$(_make_worktree "task-a")
   cat > "$wt/Makefile" <<'EOF'
