@@ -1020,6 +1020,45 @@ test("partial with commits, verify fails, triage fixable: the retry is a fix rou
   assert.match(prompt, /classified this failure as fixable: wrong host: src\/config\.ts uses localhost:4566/);
 });
 
+test("github tracker: a re-run after a fixable failure gets fixPrompt though Progress lives only in a comment", () => {
+  // The issue body carries no ## Progress (writeProgress posts a comment), so hasProgress
+  // and hasBlocked are false on every fetch; the retained branch is known from state alone.
+  const root = githubFixtureRepo();
+  failingTests(root); // before the stub: its gh.log must not be committed as a tracked file
+  const { stub } = stubGh(root, [GH_ALPHA]);
+  const env = { PATH: `${stub}:${process.env.PATH}` };
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "fail" }, progress: "tests red" }));
+  fake(root, "alpha.triage", triageVerdict("yes", "wrong host", "src/config.ts uses localhost:4566; the service is localstack:4566"));
+  commandLines(root, [], { env });
+  assert.match(state(root).retention.alpha.reason, /verification-failed:fixable/);
+  const promptFile = join(root, ".scratch/demo/dispatch/1-alpha/prompt.md");
+  rmSync(promptFile);
+  // Triage now rules it out, so the re-run cannot reach a fix prompt through its own gate:
+  // the only fixPrompt possible is the one the retained reason routed to.
+  fake(root, "alpha.triage", triageVerdict("no", "x", "y"));
+  const { lines } = commandLines(root, [], { env });
+  const prompt = readFileSync(promptFile, "utf8");
+  assert.match(prompt, /classified this failure as fixable: wrong host: src\/config\.ts uses localhost:4566/);
+});
+
+test("a verify fix round that commits nothing blocks without re-verifying or re-triaging", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  failingTests(root);
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "fail" }, progress: "tests red" }));
+  fake(root, "alpha.triage", triageVerdict("yes", "wrong host", "src/config.ts uses localhost:4566"));
+  fake(root, "alpha.commit-once", "1");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 2);
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1, "the unchanged commit is not verified again");
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-triage/.test(l)).length, 1, "nor triaged again");
+  assert.match(
+    state(root).retention.alpha.reason,
+    /^blocked — verification-failed:fixable — the fix round made no commit, so crew\/demo\/alpha is still at [0-9a-f]{12}, where verify last failed; triage's unaddressed detail: wrong host: src\/config\.ts uses localhost:4566$/,
+  );
+});
+
 test("partial with commits and a passing verify goes to review, and merges on all-met", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -2998,7 +3037,7 @@ test("--no-baseline skips the baseline", () => {
   addIssue(root, "01-alpha.md");
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(lines.filter((l) => /_baseline/.test(l)).length, 0);
+  assert.equal(lines.filter((l) => /--stem _baseline/.test(l)).length, 0);
 });
 
 // ─── a dirty main checkout at merge time ──────────────────────────────────────────────

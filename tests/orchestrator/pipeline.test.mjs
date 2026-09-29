@@ -41,6 +41,9 @@ const CASES = [
   ["blocked — retry limit reached (2 attempts) — merge-conflict — x", { route: "fix", kind: "conflict", context: "x" }],
   // So does a not-fixable verdict: triage already ruled out recoding, so only re-check.
   ["blocked — retry limit reached (2 attempts) — verification-failed:not-fixable — LocalStack unreachable", { route: "verify", label: "not-fixable-recheck" }],
+  // So do the two fix reasons: a restart would throw away what the gate told the coder.
+  ["blocked — retry limit reached (2 attempts) — verification-failed:fixable — lint: x", { route: "fix", kind: "verify", context: "lint: x" }],
+  ["blocked — retry limit reached (2 attempts) — criteria-unmet — AC 2", { route: "fix", kind: "review", context: "AC 2" }],
   // Blocked in preflight on a failing ## Requires: re-probed first, then a fresh start.
   // Every other blocked reason still restarts, as before.
   ["blocked — retry limit reached (2 attempts) — merge-failed", { route: "restart" }],
