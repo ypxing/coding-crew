@@ -4,14 +4,14 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createIssue, listOpen, markDone, parseIssue, selectDispatchable, writeProgress } from "../../orchestrator/lib/trackers/github.mjs";
+import { closingRefs, createIssue, listOpen, parseIssue, selectDispatchable, writeProgress } from "../../orchestrator/lib/trackers/github.mjs";
 
 // github.mjs's read path (issue 04): listOpen/parseIssue/selectDispatchable, all `gh`
 // calls stubbed via an injected fake exec — no real network access, no PATH stubbing.
 // See tests/orchestrator/tracker.test.mjs for the equivalent local-backend coverage and
 // tests/orchestrator/body-format.test.mjs for the shared markdown-body helpers this reuses.
 //
-// The write path (issue 05) — createIssue/markDone/writeProgress — is covered further
+// The write path (issue 05) — createIssue/writeProgress — is covered further
 // down this same file, same stubbing approach.
 
 function repo() {
@@ -125,6 +125,12 @@ test("parseIssue maps a closed issue's status to done regardless of any label st
   assert.equal(i.status, "done");
 });
 
+test("parseIssue maps an open awaiting-merge issue to done, even with ready-for-agent still attached", () => {
+  const labels = [{ name: "ready-for-agent" }, { name: "awaiting-merge" }];
+  const i = parseIssue({ number: 9, title: "Merged thing", body: "", labels, state: "OPEN" });
+  assert.equal(i.status, "done");
+});
+
 test("parseIssue derives slug deterministically (kebab-case) from the title, not a filename", () => {
   const i = parseIssue({ number: 1, title: "Add the Widget!", body: "", labels: [], state: "OPEN" });
   assert.equal(i.slug, "add-the-widget");
@@ -169,6 +175,22 @@ test("selectDispatchable includes a ready issue whose blocker is closed", () => 
   assert.deepEqual(picked, [2]);
 });
 
+test("selectDispatchable includes a ready issue whose blocker is open but awaiting-merge", () => {
+  const root = repo();
+  const exec = fakeExec([
+    { number: 1, title: "Blocker", body: "", labels: [{ name: "awaiting-merge" }], state: "OPEN" },
+    {
+      number: 2,
+      title: "Second",
+      body: "## Blocked by\n\n- Issue 1\n",
+      labels: [{ name: "ready-for-agent" }],
+      state: "OPEN",
+    },
+  ]);
+  const picked = selectDispatchable(root, { featureSlug: "feat", exec }).map((i) => i.number);
+  assert.deepEqual(picked, [2]);
+});
+
 test("selectDispatchable calls gh exactly once regardless of issue or blocker count (the N+1 this avoids)", () => {
   const root = repo();
   const issues = Array.from({ length: 5 }, (_, idx) => ({
@@ -191,7 +213,7 @@ test("selectDispatchable skips a non-ready status", () => {
 
 // ─────────────────────────────── write path (issue 05) ───────────────────────────────
 //
-// createIssue/markDone/writeProgress, all `gh` calls stubbed via an injected fake exec.
+// createIssue/writeProgress, all `gh` calls stubbed via an injected fake exec.
 
 /**
  * A stateful fake `exec` that models just enough of `gh api .../milestones` and
@@ -221,7 +243,7 @@ function fakeGhWrite({ milestoneTitles = [], viewBody = "" } = {}) {
     if (args[0] === "issue" && args[1] === "view") {
       return { code: 0, stdout: `${viewBody}\n`, stderr: "" };
     }
-    if (args[0] === "issue" && (args[1] === "close" || args[1] === "comment")) {
+    if ((args[0] === "issue" && ["close", "comment", "edit"].includes(args[1])) || (args[0] === "label" && args[1] === "create")) {
       return { code: 0, stdout: "", stderr: "" };
     }
     return { code: 0, stdout: "", stderr: "" };
@@ -293,46 +315,6 @@ test("createIssue surfaces a gh issue create failure rather than swallowing it",
   );
 });
 
-test("markDone issues a gh issue view call before gh issue close, and closes with --reason completed", () => {
-  const root = repo();
-  const exec = fakeGhWrite({ viewBody: "## Acceptance criteria\n\n- [x] done already\n" });
-  const issue = { number: 7, text: "## Acceptance criteria\n\n- [ ] not actually done\n" };
-  markDone(issue, { mainRoot: root, exec });
-  const relevant = exec.calls.filter((c) => c[1] === "issue");
-  assert.equal(relevant[0][2], "view");
-  assert.equal(relevant[1][2], "close");
-  assert.equal(relevant[0][1], "issue");
-  const closeCall = relevant[1];
-  assert.match(closeCall.join(" "), /--reason completed/);
-  assert.doesNotMatch(closeCall.join(" "), /--label|--add-label|--remove-label/);
-});
-
-test("markDone checks criteria against the fresh gh issue view fetch, not any cached issue.text", () => {
-  const root = repo();
-  // issue.text (stale/cached, as if held from an earlier listOpen) has every box
-  // checked — closing off that alone would wrongly succeed. The freshly-fetched body
-  // (what the stubbed `gh issue view` returns) still has an unchecked box, so the
-  // re-fetch, not the cache, must be what decides — and it must fail.
-  const staleText = "## Acceptance criteria\n\n- [x] a\n";
-  const freshBody = "## Acceptance criteria\n\n- [ ] a\n";
-  const exec = fakeGhWrite({ viewBody: freshBody });
-  const issue = { number: 9, text: staleText };
-  assert.throws(() => markDone(issue, { mainRoot: root, exec }), /unchecked/i);
-  // And, having refused, it must never have reached the close call.
-  assert.ok(!exec.calls.some((c) => c[1] === "issue" && c[2] === "close"));
-});
-
-test("markDone surfaces a gh issue close failure rather than swallowing it", () => {
-  const root = repo();
-  const exec = (cmd, args) => {
-    if (args[0] === "issue" && args[1] === "view") return { code: 0, stdout: "## Acceptance criteria\n\n- [x] a\n", stderr: "" };
-    if (args[0] === "issue" && args[1] === "close") return { code: 1, stdout: "", stderr: "gh: close failed" };
-    return { code: 0, stdout: "", stderr: "" };
-  };
-  const issue = { number: 9, text: "" };
-  assert.throws(() => markDone(issue, { mainRoot: root, exec }), /gh issue close failed/);
-});
-
 test("writeProgress always calls gh issue comment, never gh issue edit", () => {
   const root = repo();
   const exec = fakeGhWrite();
@@ -352,4 +334,17 @@ test("a `## Blocked` write goes through the same writeProgress/comment path, wit
   // The comment body legitimately says "## Blocked" — what must never appear is a
   // `--label` flag: there is no `blocked` *label* anywhere in this module.
   assert.ok(!commentCall.includes("--label"));
+});
+
+test("closingRefs lists the milestone's open awaiting-merge issues as Closes lines, in number order", () => {
+  const root = repo();
+  const exec = fakeExec([{ number: 12 }, { number: 3 }]);
+  assert.deepEqual(closingRefs(root, { featureSlug: "feat", exec }), ["Closes #3", "Closes #12"]);
+  const argv = exec.calls[0].join(" ");
+  assert.match(argv, /issue list --milestone feat --label awaiting-merge --state open --json number/);
+});
+
+test("closingRefs surfaces a gh failure rather than reporting nothing to close", () => {
+  const root = repo();
+  assert.throws(() => closingRefs(root, { featureSlug: "feat", exec: failingExec("boom") }), /gh issue list failed/);
 });

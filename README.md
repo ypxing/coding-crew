@@ -140,6 +140,7 @@ Two knobs worth knowing about:
   | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
   | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
   | `squashCommits` | `false` | `--squash` (`--no-squash` turns it off) | Squash the sprint's commits into one at the end. Each issue is merged as its own commit either way |
+  | `openPr` | `false` | `--open-pr` (`--no-open-pr` turns it off) | At the end, push the feature branch and create or update its PR. The PR body closes the issues the sprint merged (under `tracker: github`); a re-run rewrites only crew-afk's own block of the body |
   | `baselineCheck` | `true` | `--no-baseline` | Run the checks once on the feature branch before any dispatch; stop if they fail, since every issue's verify would too |
   | `resumeCoderSession` | `false` | `--resume-coder-session` | On a fix round, continue the claude coder session that wrote the branch, if that session is under 100k tokens and the branch hasn't moved |
   | `limits` | off | — | `{ "coder": { "usd": 5 } }`: a dollar cap on one dispatch of that role (claude's `--max-budget-usd`; other runtimes ignore it, with one notice per run). A dispatch that hits it blocks its issue as `limit-exceeded`, never retried |

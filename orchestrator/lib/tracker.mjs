@@ -15,6 +15,17 @@
  * this module keeps loading, and the local backend keeps running, even before
  * `github.mjs` exists on disk. Later issues wire callers through `getTracker()` itself as
  * the github backend gains real implementations.
+ *
+ * Backend contract — what every tracker means by an issue's `status`, whatever it stores:
+ *   - `ready-for-agent`: dispatchable. `selectDispatchable` returns these, minus any whose
+ *     `## Blocked by` names an issue not yet `done`.
+ *   - `done`: implemented and merged into the feature branch — *not* shipped. It resolves
+ *     blockers and takes the issue out of the queue. mark-issue-done.sh sets it (close-issue.sh
+ *     calls it); local moves the file to done/, github labels the issue `awaiting-merge`.
+ *   - Shipped is a separate, optional capability: `closingRefs(mainRoot, {featureSlug})`
+ *     returns the lines (`Closes #n`) that close the `done` issues when the feature PR merges.
+ *     Provide it only for a tracker other people read whose host closes issues on merge;
+ *     local omits it, since nobody else reads .scratch/.
  */
 
 import { readTrackerConfig } from "./tracker-config.mjs";

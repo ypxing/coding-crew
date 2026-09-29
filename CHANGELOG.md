@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **Under `tracker: github`, an issue is closed by its PR, not by the sprint.** crew-afk closed
+  each issue as `completed` the moment its branch merged into the local feature branch, so
+  GitHub showed work as shipped that had never been pushed and could still be dropped in
+  review. The issue now stays open: `ready-for-agent` is swapped for a new `awaiting-merge`
+  label, which dispatch and `## Blocked by` resolution read as done, and the feature PR's
+  `Closes #n` lines close it when that PR merges into the default branch. The end-of-sprint
+  summary prints those lines under `## Pull Request`. `mark-issue-done.sh` (a direct
+  `/solve-issue` run) does the same swap. `configure-tracker` creates the label, and marking an
+  issue done creates it on demand in repos configured before this release.
+
 - **A check whose command is not installed is reported as the environment, not a red branch.**
   A check that exits 127 ("command not found") failed the baseline with "fails its own checks
   … Fix it on the feature branch", and in an issue's verify it went to triage and could
@@ -19,6 +29,14 @@
   untracked file in repos that use neither. Both are now provisioned into every worktree
   without being listed, as before when they exist. A tracked `.worktreeinclude` with
   uncommitted changes now counts as dirty in the preflight check, like any other file you own.
+
+### Added
+
+- **`openPr` (`--open-pr`): crew-afk opens the feature PR.** Off by default. At the end of the
+  sprint it pushes the feature branch (never forced — a rejected push is reported) and creates
+  the PR against the default branch, or updates the open one. Its body carries the `Closes #n`
+  lines, so merging the PR closes every issue the feature merged. A re-run rewrites only
+  crew-afk's own marked block of the body; anything written around it is kept.
 
 ## [1.29.156]
 

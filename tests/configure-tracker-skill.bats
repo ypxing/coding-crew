@@ -78,7 +78,8 @@ teardown() {
   grep -qi 'blank' "$SKILL_FILE"
 }
 
-@test "configure-tracker/SKILL.md idempotently creates the 4 canonical github labels" {
+@test "configure-tracker/SKILL.md idempotently creates the 5 github labels" {
+  grep -q 'awaiting-merge'  "$SKILL_FILE"
   grep -q 'needs-triage'    "$SKILL_FILE"
   grep -q 'needs-info'      "$SKILL_FILE"
   grep -q 'ready-for-agent' "$SKILL_FILE"

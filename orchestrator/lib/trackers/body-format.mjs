@@ -97,7 +97,7 @@ const CRITERIA_HEADING_RE = /^#{1,6}\s+(?:Acceptance Criteria|Cross-cutting Requ
 /**
  * Every still-unchecked `- [ ]` line found under either criteria heading in `text` — the
  * same close-time guard `mark-issue-done.sh`'s awk runs for both backends, shared here so
- * a Node caller (`github.mjs`'s `markDone`) does not reimplement the scan a third time.
+ * a Node caller does not reimplement the scan.
  */
 export function uncheckedCriteria(text) {
   let inside = false;

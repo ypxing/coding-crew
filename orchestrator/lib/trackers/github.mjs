@@ -14,13 +14,12 @@
  * with the local backend so both backends' output shape is identical without duplicating
  * the parsing.
  *
- * Write path (issue 05): `createIssue`, `markDone`, `writeProgress`. `createIssue` lazily
+ * Write path (issue 05): `createIssue`, `writeProgress`. `createIssue` lazily
  * bootstraps the feature's milestone (list-first, idempotent) and passes the caller's
  * `body` through to `gh issue create --body-file` unmodified — the producer side of the
  * `## Blocked by`/`Source:` prose flow issues 07/08 write and issue 04's `parseIssue` reads
- * back. `markDone` re-fetches the issue body live before checking criteria, mirroring
- * `scripts/tracker/mark-issue-done.sh`'s github branch (never trusting a cached
- * `issue.text` a caller might be holding from an earlier `listOpen`). `writeProgress`
+ * back. Marking an issue done is `scripts/tracker/mark-issue-done.sh`'s alone (close-issue.sh
+ * calls it too), so there is one implementation of the label swap. `writeProgress`
  * always posts a new `gh issue comment` — a GitHub comment thread is a timeline, not an
  * in-place-edited section, so every call is a new comment, deliberately, including for a
  * `## Blocked` write (there is no `blocked` label anywhere in this module).
@@ -39,10 +38,13 @@ import {
   extractBlockedByNumbers,
   isSourceGuarded,
   sectionBody,
-  uncheckedCriteria,
 } from "./body-format.mjs";
 
 export const READY_STATUS = "ready-for-agent";
+
+/** "Done" short of shipped: implemented and merged into the feature branch, closed only by the
+ * `Closes #n` in the feature's PR once that merges. An open issue carrying it reads as `done`. */
+export const AWAITING_MERGE_LABEL = "awaiting-merge";
 
 /** POSIX single-quoting for the CREW_FAKE_GH command string below — same convention as
  * pane-host's shellQuote, kept local rather than imported so this tracker has no dependency
@@ -84,8 +86,8 @@ function shellOut(cmd, args) {
   }
 }
 
-/** Only the 4 pre-created triage labels are real GitHub labels (see PRD Labels decision);
- * `done`/`wontfix` are close-states, not labels, and are resolved from `state` instead. */
+/** The 4 pre-created triage labels. `done` is `awaiting-merge` or the closed state, and
+ * `wontfix` a close-state, so neither is a triage label (see statusOf). */
 const TRIAGE_LABELS = ["needs-triage", "needs-info", "ready-for-agent", "ready-for-human"];
 
 /** Deterministic kebab-case slug derived from an issue title — GitHub has no filename to
@@ -97,11 +99,13 @@ function titleSlug(title) {
     .replace(/^-+|-+$/g, "");
 }
 
-/** `done` is GitHub's native closed state, not a label; open issues take their status from
- * whichever triage label is present, or "" when none is (matches local's untriaged issues). */
+/** `done` is a closed issue or an open one labelled `awaiting-merge`; other open issues take
+ * their status from whichever triage label is present, or "" when none is (matches local's
+ * untriaged issues). */
 function statusOf({ state, labels = [] }) {
   if (String(state).toUpperCase() === "CLOSED") return "done";
   const names = new Set((labels ?? []).map((l) => (typeof l === "string" ? l : l.name)));
+  if (names.has(AWAITING_MERGE_LABEL)) return "done";
   return TRIAGE_LABELS.find((name) => names.has(name)) ?? "";
 }
 
@@ -135,8 +139,8 @@ export function parseIssue(json) {
 }
 
 /**
- * Every issue in the feature's milestone, `--state all` (open and closed — closed states
- * are how a blocker resolves), fetched and parsed via exactly one `gh issue list` call.
+ * Every issue in the feature's milestone, `--state all` (open and closed — a closed or
+ * `awaiting-merge` issue is how a blocker resolves), fetched and parsed via exactly one `gh issue list` call.
  * `--repo` is passed only when `readTrackerConfig` names one; omitted, `gh` infers it from
  * the git remote. A milestone that does not exist yet is an empty sprint, not an error.
  */
@@ -241,33 +245,20 @@ export function createIssue({ title, body, labels = [], featureSlug }, { mainRoo
 }
 
 /**
- * Close an issue as done — `gh issue close --reason completed`, no label added or
- * removed (the closed state itself is "done"; see the PRD's Labels decision). Before
- * closing, re-fetches the issue body live (`gh issue view --json body`) and checks
- * criteria against *that* fetch, never against `issue.text`/any other field the caller
- * might be holding from an earlier `listOpen` — a human may have edited the issue since.
- * Refuses (throws, without closing) while any criterion is still unchecked.
+ * The feature PR's closing lines, `Closes #n`, one per issue in the milestone still open and
+ * labelled `awaiting-merge` — every issue a sprint of this feature merged, whichever run did.
+ * Merging the PR into the default branch closes them. Optional per backend: a tracker without
+ * one has nothing for a PR to close.
  */
-export function markDone(issue, { mainRoot, exec = shellOut } = {}) {
+export function closingRefs(mainRoot, { featureSlug, exec = shellOut } = {}) {
   const { repo } = readTrackerConfig(mainRoot);
-  const repoArgs = repo ? ["--repo", repo] : [];
-
-  const view = exec("gh", ["issue", "view", String(issue.number), ...repoArgs, "--json", "body", "--jq", ".body"]);
-  if (view.code !== 0) {
-    throw new Error(`gh issue view failed (exit ${view.code}): ${view.stderr || view.stdout}`);
-  }
-  const freshBody = view.stdout.replace(/\n$/, "");
-
-  const unchecked = uncheckedCriteria(freshBody);
-  if (unchecked.length > 0) {
-    throw new Error(`markDone: issue #${issue.number} still has unchecked criteria:\n${unchecked.join("\n")}`);
-  }
-
-  const close = exec("gh", ["issue", "close", String(issue.number), ...repoArgs, "--reason", "completed"]);
-  if (close.code !== 0) {
-    throw new Error(`gh issue close failed (exit ${close.code}): ${close.stderr || close.stdout}`);
-  }
-  return close;
+  const args = ["issue", "list"];
+  if (repo) args.push("--repo", repo);
+  args.push("--milestone", featureSlug, "--label", AWAITING_MERGE_LABEL, "--state", "open", "--json", "number");
+  const r = exec("gh", args);
+  if (r.code !== 0) throw new Error(`gh issue list failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  const raw = r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : [];
+  return raw.map((i) => i.number).sort((a, b) => a - b).map((n) => `Closes #${n}`);
 }
 
 /**

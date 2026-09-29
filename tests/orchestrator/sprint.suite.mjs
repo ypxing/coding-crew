@@ -1985,6 +1985,8 @@ function githubFixtureRepo() {
   // very test this fixture exists for.
   mkdirSync(join(root, ".coding-crew/scripts"), { recursive: true });
   cpSync(join(REPO, "scripts/tracker/tracker-config.sh"), join(root, ".coding-crew/scripts/tracker-config.sh"));
+  // close-issue.sh's github close is mark-issue-done.sh's label swap, installed beside it.
+  cpSync(join(REPO, "scripts/tracker/mark-issue-done.sh"), join(root, ".coding-crew/scripts/mark-issue-done.sh"));
   git("add", "-A");
   git("commit", "-q", "-m", "init");
   git("checkout", "-q", "-b", "feature/demo");
@@ -1996,10 +1998,10 @@ function githubFixtureRepo() {
  * A fake `gh` on its own PATH-prepended dir: logs every invocation (one line per call) to
  * `gh.log` and answers just enough of the CLI surface a live sprint's dispatch loop and
  * close-issue.sh's github branch actually call — `issue list` from the fixture's own
- * `gh-issues.json` (mutated to `state: CLOSED` by `issue close`, so a second `listOpen`
- * fetch sees the closed state the same way a real re-fetch would), `issue view --json
- * body --jq .body` echoing that same issue's body, `issue close`/`issue comment` as
- * plain no-ops. Everything else exits 0 — this pins the wiring, not the full `gh` surface
+ * `gh-issues.json` (mutated by `issue edit --add-label/--remove-label` and by `issue close`,
+ * so a second `listOpen` fetch sees the new labels/state the same way a real re-fetch
+ * would), `issue view --json body --jq .body` echoing that same issue's body, `issue
+ * comment`/`label create` as plain no-ops. Everything else exits 0 — this pins the wiring, not the full `gh` surface
  * (already covered by tracker-github.test.mjs / tracker-mark-done-github.bats).
  */
 function stubGh(root, issues) {
@@ -2021,6 +2023,18 @@ function stubGh(root, issues) {
   const closeJs = "const fs=require('fs');const p=process.argv[1];const n=Number(process.argv[2]);" +
     "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const i=issues.find(x=>x.number===n);" +
     "if(i)i.state='CLOSED';fs.writeFileSync(p,JSON.stringify(issues))";
+  // `issue list [--label L] [--state open|closed|all]`: filtered as gh would.
+  const listJs = "const fs=require('fs');const [p,...a]=process.argv.slice(1);const v=(k)=>a.includes(k)?a[a.indexOf(k)+1]:null;" +
+    "let issues=JSON.parse(fs.readFileSync(p,'utf8'));const label=v('--label'),st=v('--state');" +
+    "if(label)issues=issues.filter(i=>(i.labels||[]).some(l=>l.name===label));" +
+    "if(st&&st!=='all')issues=issues.filter(i=>i.state===st.toUpperCase());" +
+    "process.stdout.write(JSON.stringify(issues))";
+  // `issue edit N [--add-label L] [--remove-label L]…`: the label swap close-issue.sh makes.
+  const editJs = "const fs=require('fs');const [p,n,...a]=process.argv.slice(1);" +
+    "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const i=issues.find(x=>x.number===Number(n));" +
+    "if(i){const names=new Set((i.labels||[]).map(l=>l.name));" +
+    "a.forEach((x,k)=>{if(x==='--add-label')names.add(a[k+1]);if(x==='--remove-label')names.delete(a[k+1]);});" +
+    "i.labels=[...names].map(name=>({name}));}fs.writeFileSync(p,JSON.stringify(issues))";
   // `issue create --title T --body-file F [--label L]…`: appended open, so the next list sees it.
   const createJs = "const fs=require('fs');const [p,...a]=process.argv.slice(1);" +
     "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const v=(k)=>a[a.indexOf(k)+1];" +
@@ -2034,7 +2048,7 @@ function stubGh(root, issues) {
       "#!/usr/bin/env bash",
       `echo "$@" >> ${JSON.stringify(log)}`,
       'if [ "$1" = "issue" ] && [ "$2" = "list" ]; then',
-      `  cat ${JSON.stringify(issuesFile)}`,
+      `  node -e ${JSON.stringify(listJs)} ${JSON.stringify(issuesFile)} "\${@:3}"`,
       "  exit 0",
       "fi",
       'if [ "$1" = "issue" ] && [ "$2" = "view" ]; then',
@@ -2043,6 +2057,17 @@ function stubGh(root, issues) {
       "fi",
       'if [ "$1" = "issue" ] && [ "$2" = "create" ]; then',
       `  node -e ${JSON.stringify(createJs)} ${JSON.stringify(issuesFile)} "\${@:3}"`,
+      "  exit 0",
+      "fi",
+      // open-pr.sh: no PR yet; `pr create` keeps the body it was given, for the test to read.
+      'if [ "$1" = "pr" ] && [ "$2" = "view" ]; then exit 1; fi',
+      'if [ "$1" = "pr" ] && [ "$2" = "create" ]; then',
+      '  while [ $# -gt 0 ]; do [ "$1" = "--body-file" ] && cp "$2" ' + JSON.stringify(join(root, "pr-body.md")) + '; shift; done',
+      '  echo https://github.com/o/r/pull/7',
+      "  exit 0",
+      "fi",
+      'if [ "$1" = "issue" ] && [ "$2" = "edit" ]; then',
+      `  node -e ${JSON.stringify(editJs)} ${JSON.stringify(issuesFile)} "\${@:3}"`,
       "  exit 0",
       "fi",
       'if [ "$1" = "issue" ] && [ "$2" = "close" ]; then',
@@ -2087,9 +2112,9 @@ test("plan resolves the github backend and lists a milestone issue instead of si
   assert.match(calls, /issue list .*--milestone demo/, "plan never called gh issue list at all");
 });
 
-test("a github-configured sprint dispatches, closes via gh, and stops finding work — the same live loop local runs through", () => {
+test("a github-configured sprint dispatches, marks the issue awaiting-merge without closing it, and stops finding work", () => {
   const root = githubFixtureRepo();
-  const { stub, log } = stubGh(root, [GH_ALPHA]);
+  const { stub, log, issuesFile } = stubGh(root, [GH_ALPHA]);
   const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
     cwd: root,
     env: {
@@ -2104,8 +2129,36 @@ test("a github-configured sprint dispatches, closes via gh, and stops finding wo
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const calls = readFileSync(log, "utf8");
   assert.match(calls, /issue list .*--milestone demo/, "the dispatch loop never listed github issues");
-  assert.match(calls, /issue close 1 /, "the issue was never closed via gh");
+  assert.match(calls, /issue edit 1 --add-label awaiting-merge --remove-label ready-for-agent/, "the issue was never marked done via gh");
+  assert.doesNotMatch(calls, /issue close/, "merged into the feature branch is not shipped — only the PR closes it");
+  const alpha = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.number === 1);
+  assert.equal(alpha.state, "OPEN");
   assert.match(r.stdout, /NO MORE TASKS/);
+  assert.match(r.stdout, /## Pull Request[\s\S]*Closes #1/, "the summary never gave the PR its closing line");
+});
+
+test("github --open-pr: the sprint pushes the feature branch and opens a PR whose body closes the issue", () => {
+  const root = githubFixtureRepo();
+  const { stub, log } = stubGh(root, [GH_ALPHA]);
+  const remote = join(root, ".scratch/remote.git");
+  sh("git", ["init", "-q", "--bare", remote]);
+  sh("git", ["-C", root, "remote", "add", "origin", remote]);
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--open-pr"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(readFileSync(log, "utf8"), /pr create --head feature\/demo/);
+  assert.match(readFileSync(join(root, "pr-body.md"), "utf8"), /^Closes #1$/m);
+  assert.equal(sh("git", ["-C", remote, "rev-parse", "feature/demo"]).stdout.trim(), sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim());
+  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7/);
 });
 
 test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implemented in Phase 2", () => {
@@ -2130,7 +2183,7 @@ test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implement
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const gaps = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.title === "Fix PRD gaps: demo");
   assert.ok(gaps, `defer-gaps never created the issue\n${traceLog(root)}`);
-  assert.equal(gaps.state, "CLOSED", "the gaps issue was never implemented");
+  assert.ok(gaps.labels.some((l) => l.name === "awaiting-merge"), "the gaps issue was never implemented");
   assert.equal(traceLog(root).split("step=prd-audit").length - 1, 1, "one audit per sprint");
   assert.match(readFileSync(join(root, ".scratch/demo/prd-issue.md"), "utf8"), /Export to CSV/);
   assert.doesNotMatch(r.stdout, /Gaps not queued/);

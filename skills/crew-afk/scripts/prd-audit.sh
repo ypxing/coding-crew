@@ -93,7 +93,7 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ] && [ ! -f ".scratch/$FEATURE_SLUG/PR
     echo "PRD audit: skipped (could not fetch the PRD issue: ${prd_err:+$(printf "%s" "$prd_err" | tr "\n" " ")}exit $prd_rc)"
     exit 0
   fi
-  DONE_ISSUES="the closed issues in GitHub milestone '$FEATURE_SLUG' (gh issue list --milestone '$FEATURE_SLUG' --state closed)"
+  DONE_ISSUES="the done issues in GitHub milestone '$FEATURE_SLUG' — labelled awaiting-merge or closed (gh issue list --milestone '$FEATURE_SLUG' --state all, then keep those two)"
 else
   PRD_PATH=".scratch/$FEATURE_SLUG/PRD.md"
   if [ ! -f "$PRD_PATH" ]; then
@@ -102,7 +102,7 @@ else
   fi
   DONE_ISSUES=".scratch/$FEATURE_SLUG/issues/done/"
   [ "$TRACKER_CONFIG_TRACKER" = "github" ] &&
-    DONE_ISSUES="the closed issues in GitHub milestone '$FEATURE_SLUG' (gh issue list --milestone '$FEATURE_SLUG' --state closed)"
+    DONE_ISSUES="the done issues in GitHub milestone '$FEATURE_SLUG' — labelled awaiting-merge or closed (gh issue list --milestone '$FEATURE_SLUG' --state all, then keep those two)"
 fi
 
 echo "PRD audit: PRD found at $PRD_PATH (mode: $MODE)"
