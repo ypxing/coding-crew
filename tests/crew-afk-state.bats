@@ -116,6 +116,21 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   grep -q '\[ROUND\] round=2 issues=3' .scratch/calc/traces/orchestrator.log
 }
 
+@test "trace.sh inside a dispatched agent does not find the sprint through sprint.env" {
+  # A worker inherits MAIN_ROOT, so without this every trace.sh call its test suite makes
+  # would land in the live sprint's orchestrator.log.
+  init_sprint calc
+  CREW_ORCHESTRATED=1 run bash "$AFK_SCRIPTS/trace.sh" ROUND "round=9 leaked"
+  [ "$status" -eq 0 ]
+  ! grep -q 'leaked' .scratch/calc/traces/orchestrator.log
+}
+
+@test "trace.sh inside a dispatched agent still honours an explicit log" {
+  CREW_ORCHESTRATED=1 TRACE_LOG="$TEMP_DIR/own.log" run bash "$AFK_SCRIPTS/trace.sh" ROUND "round=1"
+  [ "$status" -eq 0 ]
+  grep -q '\[ROUND\] round=1' "$TEMP_DIR/own.log"
+}
+
 @test "trace.sh is a silent no-op when there is no sprint to trace to" {
   # Tracing is observability: it must never fail the caller that is making progress.
   run bash "$AFK_SCRIPTS/trace.sh" ROUND "round=1"

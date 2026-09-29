@@ -859,6 +859,19 @@ line two"
   [ "$(echo "$output" | tr -d ' ')" = "0" ]
 }
 
+@test "inside a dispatched agent, an inherited MAIN_ROOT's sprint gets no trace and no marker" {
+  printf '{}\n' > "$WORK/package.json"
+  stub_scripts USE_HOST 0 "Running: npm ci"
+  local live="$TEMP_DIR/live"
+  mkdir -p "$live/.scratch"
+  git -C "$live" init -q
+  printf 'export TRACE_LOG="%s/live.log"\nexport SPRINT_DIR="%s/sprint"\n' "$TEMP_DIR" "$TEMP_DIR" > "$live/.scratch/sprint.env"
+  MAIN_ROOT="$live" CREW_ORCHESTRATED=1 run bash "$SCRIPT" --dir "$WORK" --slug widget
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/live.log" ]
+  [ ! -e "$TEMP_DIR/sprint" ]
+}
+
 @test "the trace follows --dir's sprint, not the caller's working directory" {
   # Run from inside another repo with a live sprint: its trace log must not get this
   # script's DEPS line — the marker lookup already resolves the sprint from --dir.

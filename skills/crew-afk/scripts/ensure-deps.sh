@@ -85,9 +85,10 @@ TRACE_SCRIPT="$SELF_DIR/trace.sh"
 
 # _sprint_dir — where this sprint's dispatch markers live, or empty outside a sprint.
 # Resolved the same way trace.sh resolves its log, so the two agree about whether a
-# sprint exists at all.
+# sprint exists at all — including trace.sh's CREW_ORCHESTRATED=1 rule.
 _sprint_dir() {
   if [ -n "${SPRINT_DIR:-}" ]; then printf '%s' "$SPRINT_DIR"; return; fi
+  [ "${CREW_ORCHESTRATED:-}" != 1 ] || return 0
   local root="${MAIN_ROOT:-}"
   if [ -z "$root" ]; then
     root=$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || true)

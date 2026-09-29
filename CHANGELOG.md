@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.29.155]
+
+### Fixed
+
+- **A worker's test suite no longer writes into the live sprint's `orchestrator.log`.** A
+  dispatched agent inherits `MAIN_ROOT`, and `trace.sh` fell back to
+  `$MAIN_ROOT/.scratch/sprint.env` for its log, so every crew-afk script a worker's tests
+  ran (`verify-worktree.sh`, `ensure-deps.sh`, ...) traced into the real sprint — in one
+  real log, ~4,000 of 4,219 lines were test fixtures (`[DEPS] dir=/tmp/...`,
+  `[VERIFY] branch=main`, `[MERGE] branch=crew/my-feature/alpha`). Under
+  `CREW_ORCHESTRATED=1`, which every dispatch sets, `trace.sh` and `ensure-deps.sh`'s marker
+  lookup no longer discover the sprint through sprint.env; an explicit `TRACE_LOG` or
+  `SPRINT_DIR` still wins, and the orchestrator hands its own scripts both. The bats suite's
+  new `tests/setup_suite.bash` unsets the inherited sprint env, so its own sprint fixtures
+  behave the same whether a human or a worker runs them.
+
 ## [1.29.154]
 
 ### Fixed

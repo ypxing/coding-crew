@@ -19,6 +19,10 @@ set -uo pipefail
 #   2. $TRACE_LOG
 #   3. $MAIN_ROOT/.scratch/sprint.env (or the enclosing repo's) → its TRACE_LOG
 #
+# Step 3 is skipped under CREW_ORCHESTRATED=1, which every dispatched agent (and so every
+# test suite it runs) inherits along with the live sprint's MAIN_ROOT. The orchestrator
+# hands its own scripts TRACE_LOG explicitly, so only a dispatch's stray calls lose it.
+#
 # If none of those resolve, this exits 0 without writing. Tracing is observability:
 # it must never fail the caller that is trying to make progress.
 
@@ -36,7 +40,7 @@ if [ -z "$LOG" ]; then
   LOG="${TRACE_LOG:-}"
 fi
 
-if [ -z "$LOG" ]; then
+if [ -z "$LOG" ] && [ "${CREW_ORCHESTRATED:-}" != 1 ]; then
   root="${MAIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
   if [ -n "$root" ] && [ -f "$root/.scratch/sprint.env" ]; then
     # shellcheck disable=SC1091
