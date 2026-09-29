@@ -19,17 +19,22 @@ over it. Given several branches, review each, then end with a session summary.
 
 ```bash
 CR="<the Review assets: path from your prompt>"
-bash "$CR/scripts/review-context.sh" --root "$ROOT"     # prints STACK: and REFERENCE: lines
 ```
+
+**Sprint path:** a `Review context` block in your prompt is the `review-context.sh` result: the
+`STACK:` line and the full text of every checklist that applies (or, when it says the script was
+missing or failed, every file in `$CR/references/`). Use it; do not run the script or re-read those files.
+
+**Manual / multi-branch path:** with no such block, run
+`bash "$CR/scripts/review-context.sh" --root "$ROOT"` (prints `STACK:` and `REFERENCE:` lines) and
+read **every** file named by a `REFERENCE:` line — part of this protocol, not optional background. If either
+script is missing (an older install), read every file in `$CR/references/`; with neither, review on the
+Step 3 classes alone.
 
 Run `bash "$CR/scripts/dependency-audit.sh" --root "$ROOT"` **only** for a multi-branch review, or a
 diff that touches a manifest or lockfile (`package.json`, `go.mod`, `requirements.txt`, `Gemfile`,
 `Cargo.toml`, `*.lock`) — its only consumer is the multi-branch summary's `### Dependency Audit`
 block, so anywhere else it is generated and discarded.
-
-Read **every** file named by a `REFERENCE:` line: those checklists apply to this repo's stack and are
-part of this protocol, not optional background. If either script is missing (an older install), read
-every file in `$CR/references/` instead; with neither, review on the Step 3 classes alone.
 
 Also read, when present and not already in your context, `CLAUDE.md` (or `AGENTS.md`), and always
 `.scratch/<feature-slug>/PRD.md` (`<feature-slug>` from the

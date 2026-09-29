@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
+import { sprintReviewContext } from "../review-context.mjs";
 import { findingsAtOrAbove, parseReviewReport } from "../report.mjs";
 import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
 
@@ -50,6 +51,9 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   const base = effects.gitRead(["merge-base", sprint.featureBranch, branch]).stdout.trim();
   const changed = base ? effects.gitRead(["diff", "--name-only", `${base}..${branch}`]).stdout.split("\n").filter(Boolean) : [];
 
+  const reviewAssets = sprint.installDir ? assetDir(sprint.installDir, "reviewer") : null;
+  const reviewContext = reviewAssets ? sprintReviewContext(sprint, effects, reviewAssets, effects.mainRoot) : null;
+
   writeFileSync(
     promptFile,
     reviewPrompt({
@@ -66,7 +70,8 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       testOnly: changed.length > 0 && changed.every(isTestPath),
       emptyDiff: changed.length === 0,
       reportPath: sidecarFile,
-      reviewAssets: sprint.installDir ? assetDir(sprint.installDir, "reviewer") : null,
+      reviewAssets,
+      reviewContext,
     }),
   );
 
