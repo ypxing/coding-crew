@@ -303,6 +303,11 @@ export class Sprint {
     return this.state(["coverage-gap", "--slug", slug, "--categories", categories.join(",")]);
   }
 
+  /** Drops a slug's recorded gap: the latest verify reported none. */
+  coverageClear(slug) {
+    return this.state(["coverage-clear", "--slug", slug]);
+  }
+
   /**
    * Accumulates one dispatch's cost/duration/turns into the sprint's running totals —
    * called unconditionally, since cost is incurred even on a blocked/timed-out dispatch.

@@ -351,6 +351,46 @@ test("every cached check is run by the gate, whatever the worker reported, and s
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/verify-coverage.log")), true);
 });
 
+const WORKER_LINT_NOT_RUN = [
+  "## Issue: alpha", "Status: complete", "", "```json",
+  '{"status":"complete","checks":{"test":"pass","lint":"not_run","typecheck":"pass"},"progress":""}', "```",
+].join("\n");
+
+test("a coder's own not_run is no coverage gap when verify ran every check clean", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker", WORKER_LINT_NOT_RUN);
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(state(root).coverage_gaps?.alpha, undefined);
+});
+
+test("a gap verify itself reports is recorded", () => {
+  const root = fixtureRepo();
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/dev-commands.json"),
+    JSON.stringify({ test: "make test", lint: null, typecheck: "make typecheck", coverage: null, integration: null }),
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "cache"]);
+  fake(root, "commands.response", '{"install": null, "env": null, "credential_target": null}');
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(state(root).coverage_gaps?.alpha, "LINT");
+});
+
+test("a clean verify clears a gap an earlier round recorded", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".scratch/demo"), { recursive: true });
+  writeFileSync(join(root, ".scratch/demo/sprint-state.json"), JSON.stringify({ coverage_gaps: { alpha: "lint" } }));
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(state(root).coverage_gaps?.alpha, undefined);
+});
+
 test("a worker-reported failing check with commits is overruled by verify, not retried", () => {
   // verify-worktree.sh runs every check itself; the coder's own report is a claim.
   const root = fixtureRepo();

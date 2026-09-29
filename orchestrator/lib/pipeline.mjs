@@ -529,8 +529,7 @@ export async function runHousekeeping(ctx, worker) {
 
   // --- schema pre-filter -----------------------------------------------------
   const pre = applySchemaPrefilter(worker.report);
-  outcome.coverageGaps = pre.coverageGaps;
-  if (pre.coverageGaps.length) sprint.coverageGap(issue.slug, pre.coverageGaps);
+  // The coder's own `not_run` is a claim, not a fact: coverage gaps are what verify reports.
 
   // A coder that stopped short but committed has made a claim about its branch, not a verdict:
   // `partial`, or `blocked` on the environment. The gates decide — verify, then on a failure
@@ -587,14 +586,15 @@ export async function runHousekeeping(ctx, worker) {
       return await handleVerificationFailure(ctx, worker, outcome, verify);
     }
     sprint.markVerifiedThisRun(branch, effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim());
-    if (/coverage gap/i.test(verify.stdout)) {
-      const cats = [...verify.stdout.matchAll(/not_run:\s*([\w, ]+)/gi)]
-        .flatMap((m) => m[1].split(",").map((s) => s.trim()))
-        .filter(Boolean);
-      if (cats.length) {
-        sprint.coverageGap(issue.slug, cats);
-        outcome.coverageGaps = [...new Set([...outcome.coverageGaps, ...cats])];
-      }
+    // This verify's answer replaces any earlier round's; a skipped verify (above) keeps its own.
+    const cats = /coverage gap/i.test(verify.stdout)
+      ? [...verify.stdout.matchAll(/not_run:\s*([\w, ]+)/gi)].flatMap((m) => m[1].split(",").map((c) => c.trim())).filter(Boolean)
+      : [];
+    if (cats.length) {
+      sprint.coverageGap(issue.slug, cats);
+      outcome.coverageGaps = [...new Set(cats)];
+    } else {
+      sprint.coverageClear(issue.slug);
     }
   }
 
