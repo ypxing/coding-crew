@@ -158,7 +158,7 @@ github_fixture() {
   [ "$status" -eq 0 ]
   [[ "${lines[0]}" == "PRD audit: PRD found at .scratch/test-feature/prd-issue.md (mode: fix)" ]]
   grep -q "Export to CSV" .scratch/test-feature/prd-issue.md
-  [[ "$output" == *"closed issues in GitHub milestone 'test-feature'"* ]]
+  [[ "$output" == *"done issues in GitHub milestone 'test-feature' — labelled awaiting-merge or closed"* ]]
   [[ "$output" != *"issues/done/"* ]]
 }
 

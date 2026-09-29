@@ -70,6 +70,8 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
 - `promote-findings.sh` — findings → parked fix issues → Phase 2
 - `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
+- `open-pr.sh` — `openPr` only: pushes the feature branch, creates or updates its PR with the
+  tracker's closing lines (`closingRefs`) in crew-afk's own block of the body
 - `dispatch-agent.sh` (pi), `dispatch-codex-agent.sh` (codex)
 
 Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →

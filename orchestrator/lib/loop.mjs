@@ -180,7 +180,7 @@ export async function runSprint(ctx) {
       ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
       : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0);
 
-  await wrapUp(ctx, { stalled, prdAudit });
+  await wrapUp(ctx, { tracker, stalled, prdAudit });
   return { stalled, history };
 }
 
@@ -289,7 +289,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { stalled, prdAudit }) {
+async function wrapUp(ctx, { tracker, stalled, prdAudit }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -331,7 +331,46 @@ async function wrapUp(ctx, { stalled, prdAudit }) {
     if (prdAudit.unqueued) ctx.out(`\n**Gaps not queued:** ${prdAudit.unqueued}\n`);
   }
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
+  const pr = pullRequest(ctx, tracker);
+  if (pr) ctx.out(`\n## Pull Request\n\n${pr}\n`);
   ctx.out("NO MORE TASKS");
+}
+
+/**
+ * Last, after squash: the feature PR. `openPr` pushes the branch and creates or updates the PR
+ * with the tracker's closing lines in its body (open-pr.sh). Off, those lines are printed for
+ * the human's own PR — the tracker leaves each merged issue open until a PR closes it. Returns
+ * the section's text, or null when there is nothing to say.
+ */
+function pullRequest(ctx, tracker) {
+  const { sprint, effects, options } = ctx;
+  let refs = [];
+  let refsError = null;
+  try {
+    refs = tracker.closingRefs?.(effects.mainRoot, { featureSlug: sprint.featureSlug }) ?? [];
+  } catch (err) {
+    refsError = err.message;
+  }
+  if (refsError) ctx.log(`closing refs: ${refsError}`, "warn");
+
+  if (!options.openPr) {
+    if (!refs.length) return null;
+    return [
+      `Merged into ${sprint.featureBranch}, left open until a PR closes them. Put these in its body:`,
+      "",
+      ...refs,
+      "",
+      "(openPr: true, or --open-pr, has crew-afk push the branch and open the PR itself.)",
+    ].join("\n");
+  }
+  // A PR without its closing lines would ship the work and strand the issues open.
+  if (refsError) return `**Not opened:** could not list the issues it closes — ${refsError}`;
+  const closesFile = join(sprint.env.SPRINT_DIR, "pr-closes.txt");
+  writeFileSync(closesFile, refs.length ? `${refs.join("\n")}\n` : "");
+  const r = effects.bash("open-pr.sh", ["--closes-file", closesFile], { env: sprint.childEnv() });
+  if (r.dryRun) return null;
+  if (r.code !== 0) return `**Failed:** ${r.stderr.trim() || `exit ${r.code}`}`;
+  return r.stdout.trim().replace(/^PR: /, "");
 }
 
 /** Per-sprint review report file: one timestamped file, appended to across the whole run. */

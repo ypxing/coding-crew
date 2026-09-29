@@ -41,6 +41,9 @@
  *   --no-deps                              [installDeps: false] skip both ensure-deps.sh call sites
  *   --squash                               [squashCommits, default false] squash the sprint's
  *                                           commits into one at the end; --no-squash turns it off
+ *   --open-pr                              [openPr, default false] at the end, push the feature
+ *                                           branch and create or update its PR, whose body
+ *                                           closes the issues it merged; --no-open-pr turns it off
  *   --no-baseline                          [baselineCheck: false] skip running the checks once on
  *                                           the feature branch before any dispatch (a red one
  *                                           otherwise stops the run: every issue would fail it)
@@ -170,6 +173,8 @@ function parseArgs(argv) {
       case "--no-commands": o.commands = false; break;
       case "--squash": o.cli.squashCommits = true; break;
       case "--no-squash": o.cli.squashCommits = false; break;
+      case "--open-pr": o.cli.openPr = true; break;
+      case "--no-open-pr": o.cli.openPr = false; break;
       case "--no-baseline": o.cli.baselineCheck = false; break;
       case "--resume-coder-session": o.cli.resumeCoderSession = true; break;
       case "--allow-dirty": o.allowDirty = true; break;
@@ -425,7 +430,7 @@ async function main() {
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--fix-findings critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
-        "  [--max-rounds N] [--no-deps] [--no-commands] [--squash] [--no-baseline] [--allow-dirty]\n" +
+        "  [--max-rounds N] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--allow-dirty]\n" +
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
         "  .coding-crew/config.json names one. Per role (coder, reviewer, triage,\n" +
@@ -434,7 +439,7 @@ async function main() {
         '               "models":  { "claude": { "triage": "opus" } } } }\n' +
         "  The other flags override config.json's afk settings for one run: fixFindings (high),\n" +
         "  PRDAudit (fix), maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits\n" +
-        "  (false), baselineCheck (true), resumeCoderSession (false),\n" +
+        "  (false), openPr (false), baselineCheck (true), resumeCoderSession (false),\n" +
         "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).\n" +
         "  No flag: limits.<role>.usd caps one claude dispatch of that role in dollars (off).",
     );
@@ -583,6 +588,7 @@ async function main() {
     const offBy = (k, flag) => `disabled (${loaded.origin[k] === "flag" ? flag : `${k}: false`})`;
     console.log(`deps:      ${options.installDeps ? "ensure-deps.sh, once per sprint and once per worktree, using a discovered install command when one was cached" : offBy("installDeps", "--no-deps")}`);
     console.log(`squash:    ${options.squashCommits ? "at the end of the sprint" : loaded.origin.squashCommits ? offBy("squashCommits", "--no-squash") : "off (opt in: squashCommits: true, or --squash)"}`);
+    console.log(`open PR:   ${options.openPr ? "at the end: push the feature branch, create or update its PR (Closes lines for the issues it merged)" : loaded.origin.openPr ? offBy("openPr", "--no-open-pr") : "off (opt in: openPr: true, or --open-pr)"}`);
     console.log(`baseline:  ${options.baselineCheck ? "the checks run once on the feature branch before any dispatch; red stops the run" : offBy("baselineCheck", "--no-baseline")}`);
     const requiring = tracker.selectDispatchable(mainRoot, { featureSlug: resolved.slug, includeBlocked: true }).filter((i) => /^## Requires\s*$/m.test(i.text ?? ""));
     console.log(`requires:  ${requiring.length ? `${requiring.map((i) => i.slug).join(", ")} — each ## Requires runs once before that issue's first dispatch; a failing one blocks it` : "no issue declares ## Requires"}`);

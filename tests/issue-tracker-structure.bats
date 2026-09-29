@@ -77,16 +77,19 @@ setup() {
   grep -q 'gh api'   "$GITHUB_TEMPLATE"
 }
 
-@test "docs/templates/trackers/github.md Labels table maps done/wontfix to close-reasons, not labels" {
-  grep -q -- '--reason completed'    "$GITHUB_TEMPLATE"
-  grep -q -- '--reason not-planned'  "$GITHUB_TEMPLATE"
-  # The Labels section must explicitly say these two are not represented as labels.
-  local labels_content
-  labels_content=$(awk '/^## Labels/{found=1} found{print}' "$GITHUB_TEMPLATE")
-  echo "$labels_content" | grep -qi 'not a label'
+@test "docs/templates/trackers/github.md: done is the awaiting-merge label, wontfix a close-reason" {
+  grep -q 'mark-issue-done.sh" <number>'   "$GITHUB_TEMPLATE"
+  grep -q 'awaiting-merge'                 "$GITHUB_TEMPLATE"
+  grep -q -- '--reason not-planned'        "$GITHUB_TEMPLATE"
+  grep -q 'Closes #<number>'               "$GITHUB_TEMPLATE"
+  # mark-done must not close: the work is only on a branch until its PR merges.
+  local mark_done
+  mark_done=$(awk '/^## Operation: mark-done/{f=1;next} /^## /{f=0} f' "$GITHUB_TEMPLATE")
+  ! echo "$mark_done" | grep -q '^gh issue close'
 }
 
-@test "docs/templates/trackers/github.md Labels section still lists the four real GitHub labels" {
+@test "docs/templates/trackers/github.md Labels section lists the five real GitHub labels" {
+  grep -q 'awaiting-merge'  "$GITHUB_TEMPLATE"
   grep -q 'needs-triage'    "$GITHUB_TEMPLATE"
   grep -q 'needs-info'      "$GITHUB_TEMPLATE"
   grep -q 'ready-for-agent' "$GITHUB_TEMPLATE"

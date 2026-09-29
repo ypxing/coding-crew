@@ -76,11 +76,6 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
       exit 1 ;;
   esac
 
-  REPO_ARGS=()
-  if [ -n "$TRACKER_CONFIG_REPO" ]; then
-    REPO_ARGS=(--repo "$TRACKER_CONFIG_REPO")
-  fi
-
   RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
   _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
   # CREW_RECEIPTS=off is the same escape hatch receipts.sh's own receipts_enabled() grants
@@ -98,14 +93,16 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
     bash "$RECEIPTS_SCRIPT" check ac --branch "$BRANCH_ARG"
   fi
 
-  # No label is added or swapped — the closed state itself is "done". Acceptance
-  # criteria were already re-verified pre-merge (the receipt above is that fact);
-  # this script's job, same as local, is the close, not a second criteria check.
-  gh issue close "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --reason completed
+  # "Done" here is merged into the feature branch, not shipped, so the issue stays open,
+  # labelled awaiting-merge: the feature PR's `Closes #n` closes it on merge. That label
+  # swap is mark-issue-done.sh's, installed beside tracker-config.sh; --force because
+  # criteria were already re-verified pre-merge (the receipt above is that fact) and this
+  # sprint's own .orchestrated marker would otherwise refuse it.
+  bash "$(dirname "$_tc")/mark-issue-done.sh" "$ISSUE_NUMBER" --force >/dev/null
 
   _trace CLOSE "issue=$ISSUE_NUMBER"
 
-  echo "Closed: issue #$ISSUE_NUMBER (github)"
+  echo "Closed: issue #$ISSUE_NUMBER (github: awaiting-merge — the feature PR's Closes #$ISSUE_NUMBER closes it)"
   exit 0
 fi
 

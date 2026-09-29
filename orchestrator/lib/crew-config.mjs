@@ -14,6 +14,7 @@
  *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
  *       "fixFindings": "high", "PRDAudit": "fix",
  *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": false,
+ *       "openPr": false,
  *       "baselineCheck": true, "resumeCoderSession": false,
  *       "limits": { "coder": { "usd": 5 } } } }
  *
@@ -76,6 +77,7 @@ export const DEFAULT_SETTINGS = {
   PRDAudit: "fix",
   installDeps: true,
   squashCommits: false,
+  openPr: false,
   baselineCheck: true,
   resumeCoderSession: false,
 };
@@ -87,6 +89,7 @@ const SCALARS = {
   maxParallel: (v) => (Number.isInteger(v) && v > 0 ? null : "must be a positive integer"),
   installDeps: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   squashCommits: (v) => (typeof v === "boolean" ? null : "must be true or false"),
+  openPr: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   baselineCheck: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   resumeCoderSession: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   paneHost: (v) => (PANE_HOSTS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PANE_HOSTS.join(", ")})`),
@@ -423,7 +426,7 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
  * The sprint's settings: each flag (`cli`, undefined when not given) over config.json's
  * afk section over the defaults. `origin` gains "--flag" for each setting a flag decided,
  * so `plan` credits the right source.
- * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, baselineCheck, resumeCoderSession,
+ * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, openPr, baselineCheck, resumeCoderSession,
  *   maxParallel: number|null,
  *   timeouts: Record<string, number>,  timeouts in minutes
  *   limitsUsd: Record<string, number>}}  each capped role's dollar cap; no key, no cap
@@ -446,6 +449,7 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     PRDAudit: pick("PRDAudit"),
     installDeps: pick("installDeps"),
     squashCommits: pick("squashCommits"),
+    openPr: pick("openPr"),
     baselineCheck: pick("baselineCheck"),
     resumeCoderSession: pick("resumeCoderSession"),
     maxParallel: pick("maxParallel"),

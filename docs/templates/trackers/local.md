@@ -74,6 +74,9 @@ deliberately recorded as descoped.
 On success the script sets `Status: done` and moves the file to `issues/done/` (sibling of
 `issues/open/`). It is idempotent: an issue already in `done/` exits 0.
 
+`done` means implemented and merged into the feature branch, not shipped — for this tracker
+there is no later state: nothing outside `.scratch/` reads it, so no PR has anything to close.
+
 ## Operation: status-update
 
 Update the `Status:` line in an issue file:
