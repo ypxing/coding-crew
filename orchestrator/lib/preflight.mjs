@@ -47,7 +47,7 @@ export function missingAssetsMessage(installDir, missing) {
 }
 
 /** Files crew-afk itself writes in the main checkout; the summary already reminds about them. */
-const CREW_OWNED = new Set([".coding-crew/dev-commands.json", ".worktreeinclude"]);
+const CREW_OWNED = new Set([".coding-crew/dev-commands.json"]);
 
 /**
  * Tracked files with uncommitted changes in the main checkout, crew-afk's own excepted.

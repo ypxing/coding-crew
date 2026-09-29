@@ -96,7 +96,7 @@ import {
 import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
-import { ensureWorktreeInclude, worktreeRoot } from "./lib/worktree.mjs";
+import { worktreeRoot } from "./lib/worktree.mjs";
 import { resolveInstallDir } from "./lib/install-dir.mjs";
 import {
   baselineFailureMessage,
@@ -673,9 +673,6 @@ async function main() {
     }
 
     if (movesLegacy) console.error(`crew-afk: ${loaded.legacyMove.apply()}`);
-
-    // Before any worktree exists, so every one gets the included files at creation.
-    ensureWorktreeInclude(mainRoot);
 
     sprint = await Sprint.init(effects, {
       featureSlug: resolved.slug,

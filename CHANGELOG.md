@@ -14,6 +14,12 @@
   command); an issue's verify skips triage and is tagged
   `verification-failed:not-fixable — missing command: …`, so it is re-checked, never recoded.
 
+- **crew-afk no longer writes a `.worktreeinclude` into your repo.** Every run added
+  `docker-compose.override.yml` and `.env` to it, creating the file if needed, which left an
+  untracked file in repos that use neither. Both are now provisioned into every worktree
+  without being listed, as before when they exist. A tracked `.worktreeinclude` with
+  uncommitted changes now counts as dirty in the preflight check, like any other file you own.
+
 ## [1.29.156]
 
 ### Fixed
