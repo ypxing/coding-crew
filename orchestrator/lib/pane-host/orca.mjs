@@ -83,13 +83,49 @@ async function openLogTerminal(effects, label, logFile) {
     const handle = paneHostJson(create)?.result?.terminal?.handle;
     if (create.code !== 0 || !handle) return `exit=${create.code} ${failureDetail(create)}`;
     effects._paneLogTabId = handle;
+    track(effects, handle);
   } catch (err) {
     return err.message;
   }
 }
 
-export async function closeLogTab(effects, handle) {
-  await paneHostExec(effects, ["terminal", "close", "--terminal", handle, "--json"], CALL_TIMEOUT_MS);
+/** How many close attempts a terminal gets before it is logged as stuck. */
+export const CLOSE_ATTEMPTS = 3;
+
+const track = (effects, handle) => (effects._paneTerminals ??= new Set()).add(handle);
+
+/**
+ * `terminal close` can exit 0 and leave the tab listed (or orphaned), so each close is
+ * followed by a `terminal show`: a show that fails means the terminal is gone. Still listed
+ * → close again, up to CLOSE_ATTEMPTS. A terminal never confirmed gone stays in
+ * `effects._paneTerminals` for the end-of-run sweep (closePaneTerminals) and is logged WARN
+ * with the handle and orca's last output. Never throws.
+ */
+export async function closeTerminal(effects, handle) {
+  let last = "";
+  for (let attempt = 1; attempt <= CLOSE_ATTEMPTS; attempt++) {
+    try {
+      const close = await paneHostExec(effects, ["terminal", "close", "--terminal", handle, "--json"], CALL_TIMEOUT_MS);
+      if (close.code !== 0) last = `close exit=${close.code} ${failureDetail(close)}`;
+      const show = await paneHostExec(effects, ["terminal", "show", "--terminal", handle, "--json"], CALL_TIMEOUT_MS);
+      if (show.code !== 0) {
+        effects._paneTerminals?.delete(handle);
+        return true;
+      }
+      if (close.code === 0) last = `still listed after close: ${failureDetail(show)}`;
+    } catch (err) {
+      last = `threw: ${err.message}`;
+    }
+  }
+  effects.log?.(`WARN orca terminal ${handle} not closed after ${CLOSE_ATTEMPTS} attempts — ${last}`);
+  return false;
+}
+
+export const closeLogTab = closeTerminal;
+
+/** End of sprint: close every terminal this run opened that is still listed. */
+export async function closeTerminals(effects) {
+  for (const handle of [...(effects._paneTerminals ?? [])]) await closeTerminal(effects, handle);
 }
 
 /**
@@ -113,13 +149,14 @@ export async function openWorkerTerminal(effects, { title, command }) {
     ], CALL_TIMEOUT_MS);
     const handle = paneHostJson(create)?.result?.terminal?.handle;
     if (create.code !== 0 || !handle) return { failure: `orca terminal create exit=${create.code} ${failureDetail(create)}` };
+    track(effects, handle);
     return { handle };
   } catch (err) {
     return { failure: `orca terminal create threw: ${err.message}` };
   }
 }
 
-export const closeWorkerTerminal = closeLogTab;
+export const closeWorkerTerminal = closeTerminal;
 
 /**
  * `terminal send` types into any terminal, and in a plain shell the message plus Enter
