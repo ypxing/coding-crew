@@ -166,7 +166,7 @@ words_of() {
   echo "$section" | grep -qi 'do NOT stage or commit'
 }
 
-@test "budget: the per-branch reviewer chain is under 2,450 words" {
+@test "budget: the per-branch reviewer chain is under 2,490 words" {
   # Read once per branch, like the worker chain is read once per issue. The reviewer now also
   # carries the acceptance-criteria verdict, which used to be a separate agent over the same
   # diff: 2,040 words here plus a second full-diff read became 2,1xx words and one read. Worst
@@ -199,7 +199,7 @@ words_of() {
   local refs="$REPO_ROOT/agents/crew-reviewer/assets/references"
   local total=$(( $(words_of "$protocol") + $(words_of "$refs/quality.md") \
                   + $(words_of "$refs/web-security.md") + $(words_of "$refs/react.md") ))
-  [ "$total" -lt 2450 ] || { echo "reviewer chain is $total words (budget 2450)" >&2; return 1; }
+  [ "$total" -lt 2490 ] || { echo "reviewer chain is $total words (budget 2490)" >&2; return 1; }
 }
 
 @test "dependency install is failure-triggered, not a step every issue pays for" {

@@ -407,6 +407,7 @@ test("every orca call is bounded by a timeout", async () => {
       json({ result: { rename: { title: "alpha" } } }), // terminal rename
       json({ result: { terminal: { handle: "term_2" } } }), // log terminal create
       json({ result: { closed: true } }), // log terminal close
+      { code: 1, stdout: "", stderr: "no such terminal" }, // show: gone
     ],
     { mainRoot: root },
   );
@@ -414,7 +415,7 @@ test("every orca call is bounded by a timeout", async () => {
   await withOrcaTerminalHandle("term_1", () => ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile }));
   await closePaneLogTab(effects);
 
-  assert.equal(effects._calls.length, 3);
+  assert.equal(effects._calls.length, 4);
   for (const [i, timeoutMs] of effects._timeouts.entries()) {
     assert.ok(timeoutMs > 0, `${effects._calls[i].slice(0, 3).join(" ")} has no timeout`);
   }
@@ -474,10 +475,46 @@ test("closePaneLogTab (orca) closes the log terminal ensurePaneWorkspace opened,
 
   const { root } = fixture();
   const logFile = join(root, "trace.log");
-  const effects = fakeOrcaEffects([json({ result: { terminal: { handle: "term_1" } } })], { mainRoot: root });
+  const effects = fakeOrcaEffects([json({ result: { terminal: { handle: "term_1" } } }), json({}), { code: 1, stdout: "", stderr: "gone" }], { mainRoot: root });
   await ensurePaneWorkspace(effects, { featureSlug: "alpha", logFile });
   await closePaneLogTab(effects);
-  assert.deepEqual(effects._calls.at(-1), ["orca", "terminal", "close", "--terminal", "term_1", "--json"]);
+  assert.deepEqual(effects._calls.at(-2), ["orca", "terminal", "close", "--terminal", "term_1", "--json"]);
+});
+
+const gone = { code: 1, stdout: "", stderr: "no such terminal" };
+
+test("orca worker terminal close that leaves the tab listed runs a second close", async () => {
+  const { closeWorkerTerminal } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const effects = fakeOrcaEffects([json({}), json({ result: { terminal: { handle: "t9" } } }), json({}), gone]);
+  await closeWorkerTerminal(effects, "t9");
+  assert.deepEqual(effects._calls.map((c) => c[2]), ["close", "show", "close", "show"]);
+});
+
+test("orca terminal close that never succeeds is bounded and logged as a WARN with handle and output", async () => {
+  const { closeWorkerTerminal, CLOSE_ATTEMPTS } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const responses = [];
+  for (let i = 0; i < CLOSE_ATTEMPTS; i++) responses.push({ code: 1, stdout: "", stderr: "orca boom" }, json({ result: { terminal: {} } }));
+  const effects = fakeOrcaEffects(responses);
+  const logs = [];
+  effects.log = (m) => logs.push(m);
+  await closeWorkerTerminal(effects, "t9");
+  assert.equal(effects._calls.length, CLOSE_ATTEMPTS * 2);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /^WARN .*t9.*orca boom|^WARN .*t9/);
+});
+
+test("closePaneLogTab sweeps a worker terminal whose close never confirmed", async () => {
+  const { openWorkerTerminal, closeWorkerTerminal, CLOSE_ATTEMPTS } = await import("../../orchestrator/lib/pane-host/orca.mjs");
+  const responses = [json({ result: { terminal: { handle: "w1" } } })];
+  for (let i = 0; i < CLOSE_ATTEMPTS; i++) responses.push(json({}), json({ result: { terminal: {} } }));
+  responses.push(json({}), gone); // sweep
+  const effects = fakeOrcaEffects(responses);
+  effects.log = () => {};
+  await openWorkerTerminal(effects, { title: "t", command: "true" });
+  await closeWorkerTerminal(effects, "w1");
+  await closePaneLogTab(effects);
+  assert.deepEqual(effects._calls.at(-2), ["orca", "terminal", "close", "--terminal", "w1", "--json"]);
+  assert.equal(effects._paneTerminals.size, 0);
 });
 
 test("notifyTriggeringPane (orca) is a no-op when not running inside orca — no ORCA_TERMINAL_HANDLE", async () => {

@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { renderReviewContext } from "./review-context.mjs";
 
 /**
  * `install_mode`/`docker_service` are ensure-deps.sh's own verdict, already cached at
@@ -216,7 +217,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
   // A size tells the reviewer to search the file for its figure rather than read it whole.
@@ -229,6 +230,7 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     // crew-reviewer's protocol reads its scripts and references from here, and only here:
     // the orchestrator resolved the install once (install-dir.mjs), so the reviewer never searches.
     ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
+    ...renderReviewContext(reviewContext),
     `Branch: ${branch}`,
     `Slug: ${slug}`,
     `Issue file: ${issuePath}`,

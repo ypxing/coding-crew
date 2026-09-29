@@ -19,7 +19,7 @@
   },
   "agents": {
     "crew-reviewer": {
-      "version": "1.7.11",
+      "version": "1.7.12",
       "source-dir": "crew-reviewer",
       "replaces": [
         "crew-code-reviewer"
