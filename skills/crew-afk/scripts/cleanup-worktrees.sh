@@ -232,7 +232,7 @@ done
 [ "$DRY_RUN" -eq 1 ] || git -C "$MAIN_ROOT" worktree prune
 
 _TRACE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/trace.sh"
-[ -f "$_TRACE_SCRIPT" ] && bash "$_TRACE_SCRIPT" CLEANUP "removed=$REMOVED kept=$KEPT failed=$FAILED" 2>/dev/null
+[ -f "$_TRACE_SCRIPT" ] && bash "$_TRACE_SCRIPT" --level "$([ "$FAILED" -eq 0 ] && echo info || echo warn)" CLEANUP "removed=$REMOVED kept=$KEPT failed=$FAILED" 2>/dev/null
 echo "CLEANUP: removed=$REMOVED kept=$KEPT failed=$FAILED"
 
 [ "$FAILED" -eq 0 ] || exit 1

@@ -29,7 +29,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { appendLine } from "./effects.mjs";
+import { writeLog } from "./log.mjs";
 import { preflightPaneHost, spawnDispatch } from "./pane-host/index.mjs";
 
 export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
@@ -266,11 +266,6 @@ export function formatJsonTraceLine(platform, agent, line) {
   return null;
 }
 
-/** [HH:MM:SSZ], matching the two bash dispatchers' `date -u +%H:%M:%SZ` exactly. */
-function traceTimestamp() {
-  return `${new Date().toISOString().slice(11, 19)}Z`;
-}
-
 /**
  * onTrace heartbeat throttle: every Nth tool call or every INTERVAL_MS, whichever first, so
  * the live signal to the parent stays bounded over a long worker. The bash dispatchers'
@@ -420,9 +415,9 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
       const trace = formatJsonTraceLine(built.jsonEvents, spec.agent, line);
       if (trace) {
         if (spec.logFile) {
-          const slugTag = spec.slug ? ` slug=${spec.slug}` : "";
-          const roundTag = spec.round != null ? ` round=${spec.round}` : "";
-          appendLine(spec.logFile, `[${traceTimestamp()}]${slugTag}${roundTag} ${trace}`);
+          // Tags after the marker, the position every other line keeps its fields in.
+          const tags = `${spec.slug ? ` slug=${spec.slug}` : ""}${spec.round != null ? ` round=${spec.round}` : ""}`;
+          writeLog(spec.logFile, trace.replace(/^(\[[A-Z-]+\])/, `$1${tags}`));
         }
         maybeHeartbeat(trace);
       }
@@ -473,12 +468,12 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     : "";
   if (spec.logFile && !r.dryRun && failed) {
     const stderrSnippet = (r.stderr ?? "").trim().slice(0, 500).replace(/\s+/g, " ");
-    appendLine(
+    writeLog(
       spec.logFile,
       `[DISPATCH-FAIL] agent=${spec.agent} slug=${spec.slug ?? "?"} code=${r.code} timedOut=${!!r.timedOut} outEmpty=${!text.trim()} isError=${!!meta.isError}${denials} stderr=${JSON.stringify(stderrSnippet || "(none)")}`,
     );
   } else if (spec.logFile && !r.dryRun && denials) {
-    appendLine(spec.logFile, `[DISPATCH-WARN] agent=${spec.agent} slug=${spec.slug ?? "?"} code=${r.code}${denials}`);
+    writeLog(spec.logFile, `[DISPATCH-WARN] agent=${spec.agent} slug=${spec.slug ?? "?"} code=${r.code}${denials}`);
   }
 
   return {

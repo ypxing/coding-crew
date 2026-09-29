@@ -154,9 +154,15 @@ if [[ -n "$AGENT_TOOLS" ]]; then
 fi
 ARGS+=(--append-system-prompt "$SYSTEM_PROMPT")
 
+# log_line <LEVEL> <message> — one orchestrator.log line, in trace.sh's format.
+log_line() {
+  [[ -n "$LOG" ]] || return 0
+  printf '%s %-5s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" >> "$LOG"
+}
+
 if [[ -n "$LOG" ]]; then
   mkdir -p "$(dirname "$LOG")"
-  echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] agent=$AGENT${SLUG:+ slug=$SLUG} dir=$DIR model=${EFFECTIVE_MODEL:-inherit}" >> "$LOG"
+  log_line INFO "[DISPATCH] agent=$AGENT${SLUG:+ slug=$SLUG} dir=$DIR model=${EFFECTIVE_MODEL:-inherit}"
 fi
 
 # Every raw event line, kept for anyone who needs more than the one-line trace below.
@@ -239,7 +245,7 @@ trace_event() {
       detail=$(summarize_tool_args "$tool" "$args")
       [[ -n "$detail" ]] || detail="args=$(safe_preview "$args")"
       msg="[TOOL] agent=$AGENT${SLUG:+ slug=$SLUG} tool=$tool $detail"
-      [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
+      log_line "$([[ "$msg" == "[TOOL]"* ]] && echo DEBUG || echo WARN)" "$msg"
       echo "$msg" >&2
       maybe_heartbeat "$msg"
       ;;
@@ -249,7 +255,7 @@ trace_event() {
       [[ "$is_error" == "true" ]] || return 0
       tool=$(printf '%s' "$line" | jq -r '.toolName // "?"' 2>/dev/null)
       msg="[TOOL-ERROR] agent=$AGENT${SLUG:+ slug=$SLUG} tool=$tool"
-      [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
+      log_line "$([[ "$msg" == "[TOOL]"* ]] && echo DEBUG || echo WARN)" "$msg"
       echo "$msg" >&2
       maybe_heartbeat "$msg"
       ;;
@@ -290,8 +296,6 @@ if [[ -n "$OUT" ]]; then
   ' "$EVENTS_FILE" > "$OUT" 2>/dev/null || : > "$OUT"
 fi
 
-if [[ -n "$LOG" ]]; then
-  echo "[$(date -u +%H:%M:%SZ)] [DISPATCH-END] agent=$AGENT exit=$status" >> "$LOG"
-fi
+log_line "$([[ "$status" -eq 0 ]] && echo INFO || echo ERROR)" "[DISPATCH-END] agent=$AGENT exit=$status"
 
 exit "$status"

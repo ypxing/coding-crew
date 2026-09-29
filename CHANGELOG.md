@@ -2,7 +2,20 @@
 
 ## [1.29.155]
 
-### Fixed
+### Changed
+
+- **`orchestrator.log` has one line format, with a level.** Every writer — the orchestrator,
+  `trace.sh`, and the pi/codex dispatchers — now writes
+  `2026-09-22T04:28:54Z ERROR [MARKER] ...`: a full ISO date (a run can cross midnight) and
+  one of `DEBUG`/`INFO`/`WARN`/`ERROR`/`FATAL`, so `grep -E ' (WARN|ERROR|FATAL) '` answers
+  "what went wrong". Before, `trace.sh` lines carried `[HH:MM:SSZ]` and the orchestrator's
+  own (`[STEP]`, the attempt banners, a verify transcript) carried no time at all. Node-side
+  lines take their level from their marker (`orchestrator/lib/log.mjs`); a bash caller that
+  knows its outcome passes `trace.sh --level` (a failed `[VERIFY]` or `[MERGE]`, a `blocked`
+  `[STATE]`). A multi-line entry keeps one header line with the rest indented beneath it, and
+  a run that stops — a red baseline, a failed docker install, a crash — now leaves a `FATAL`
+  line in the log, not only on stderr. A dispatch's `[TOOL]` line puts `slug=`/`round=`
+  after its marker, where every other line keeps its fields. stderr is unchanged.
 
 - **A worker's test suite no longer writes into the live sprint's `orchestrator.log`.** A
   dispatched agent inherits `MAIN_ROOT`, and `trace.sh` fell back to

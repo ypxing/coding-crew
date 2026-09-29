@@ -276,7 +276,7 @@ if [ -n "$PROMOTED" ]; then
   printf '%s' "$PROMOTED"
 fi
 
-bash "$SCRIPT_DIR/trace.sh" EXIT \
+bash "$SCRIPT_DIR/trace.sh" --level "$([ "$(count_csv "$BLOCKED_SLUGS")" -eq 0 ] && echo info || echo warn)" EXIT \
   "merged=$(count_csv "$MERGED_SLUGS") partial=$(count_csv "$PARTIAL_SLUGS") blocked=$(count_csv "$BLOCKED_SLUGS")"
 
 [ "$REMINDER" -eq 1 ] || exit 0

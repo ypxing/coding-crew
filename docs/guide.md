@@ -428,6 +428,29 @@ Edit these files after install — they override the defaults on the next run:
 
 ---
 
+### Reading `orchestrator.log`
+
+Each sprint's `.scratch/<feature-slug>/traces/orchestrator.log` has one line per event:
+
+```
+2026-09-22T04:28:54Z ERROR [DISPATCH-FAIL] agent=crew-coder slug=alpha code=1 ...
+```
+
+The level is the second column:
+
+| Level   | Meaning                                                    |
+| ------- | ---------------------------------------------------------- |
+| `DEBUG` | Mechanics: pipeline steps, every tool call a worker makes  |
+| `INFO`  | Normal progress: attempts, passes, merges, closes          |
+| `WARN`  | Degraded, but the run carries on by itself                 |
+| `ERROR` | A step failed for one issue                                |
+| `FATAL` | The run stopped                                            |
+
+`grep -E ' (WARN|ERROR|FATAL) ' orchestrator.log` lists what went wrong. A multi-line entry
+(the end-of-run `[SUMMARY]`, a verify transcript) continues on indented lines below its header.
+
+---
+
 ### Troubleshooting
 
 | Symptom                                           | Likely cause                                     | Fix                                                                                 |

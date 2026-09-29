@@ -627,8 +627,8 @@ test("dispatch() writes only the final text to outFile, buffers a JSON line spli
   assert.equal(readFileSync(`${outFile}.events.jsonl`, "utf8").trim().split("\n").length, 2);
   const logged = readFileSync(logFile, "utf8");
   assert.match(logged, /\[TOOL\] agent=crew-coder tool=Bash/);
-  // PR 3: every trace line in the file carries a timestamp, unconditionally.
-  assert.match(logged, /^\[\d{2}:\d{2}:\d{2}Z\] /m);
+  // Every trace line in the file carries a date and a level, unconditionally.
+  assert.match(logged, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z DEBUG \[TOOL\] /m);
 });
 
 test("dispatch() tags every file-logged trace line with slug when the caller passes one", async () => {
@@ -654,7 +654,7 @@ test("dispatch() tags every file-logged trace line with slug when the caller pas
     { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root, logFile, scriptsDir: SCRIPTS, slug: "alpha" },
     {},
   );
-  assert.match(readFileSync(logFile, "utf8"), /^\[\d{2}:\d{2}:\d{2}Z\] slug=alpha \[TOOL\] agent=crew-coder tool=Bash/m);
+  assert.match(readFileSync(logFile, "utf8"), /^\S+Z DEBUG \[TOOL\] slug=alpha agent=crew-coder tool=Bash/m);
 });
 
 test("dispatch() throttles claude/copilot trace lines before calling onTrace, but writes every one to logFile", async () => {
@@ -824,7 +824,7 @@ async function dispatchLogging(result, { code = 0 } = {}) {
 test("dispatch() logs permission denials on a normal dispatch as a warning naming the tools", async () => {
   const denials = [{ tool_name: "Bash", tool_use_id: "t1" }, { tool_name: "WebFetch", tool_use_id: "t2" }, { tool_name: "Bash", tool_use_id: "t3" }];
   const log = await dispatchLogging({ result: "done", is_error: false, permission_denials: denials });
-  assert.match(log, /^\[DISPATCH-WARN\] agent=crew-coder slug=alpha code=0 permissionDenials=3 tools=Bash,WebFetch$/m);
+  assert.match(log, /^\S+Z WARN  \[DISPATCH-WARN\] agent=crew-coder slug=alpha code=0 permissionDenials=3 tools=Bash,WebFetch$/m);
   assert.doesNotMatch(log, /DISPATCH-FAIL/);
 });
 

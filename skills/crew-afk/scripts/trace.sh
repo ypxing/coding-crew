@@ -4,10 +4,13 @@ set -uo pipefail
 # trace.sh — append one line to the sprint's orchestrator trace log.
 #
 # Usage:
-#   trace.sh <MARKER> [text ...]
-#   trace.sh --log <file> <MARKER> [text ...]
+#   trace.sh [--log <file>] [--level debug|info|warn|error|fatal] <MARKER> [text ...]
 #
-# Writes: [HH:MM:SSZ] [MARKER] text
+# Writes: 2026-09-22T04:28:54Z INFO  [MARKER] text
+#
+# The format orchestrator/lib/log.mjs writes too: level second, padded to 5, so
+# `grep -E ' (WARN|ERROR|FATAL) '` finds what went wrong. The level defaults to info; a
+# caller that knows its outcome was a failure says so here.
 #
 # Every crew-afk script that performs a pipeline step calls this itself, so a trace
 # marker is emitted by the code that did the work rather than by a prose instruction
@@ -27,10 +30,18 @@ set -uo pipefail
 # it must never fail the caller that is trying to make progress.
 
 LOG=""
-if [ "${1:-}" = "--log" ]; then
-  LOG="${2:-}"
-  shift 2
-fi
+LEVEL=info
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --log) LOG="${2:-}"; shift 2 ;;
+    --level) LEVEL="${2:-}"; shift 2 ;;
+    *) break ;;
+  esac
+done
+case "$LEVEL" in
+  debug|info|warn|error|fatal) ;;
+  *) echo "trace.sh: unknown level: $LEVEL" >&2; exit 1 ;;
+esac
 
 MARKER="${1:-}"
 [ -n "$MARKER" ] || { echo "trace.sh: a marker is required" >&2; exit 1; }
@@ -52,5 +63,6 @@ fi
 [ -n "$LOG" ] || exit 0
 
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || exit 0
-printf '[%s] [%s]%s\n' "$(date -u +%H:%M:%SZ)" "$MARKER" "${*:+ $*}" >> "$LOG" 2>/dev/null || true
+printf '%s %-5s [%s]%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf '%s' "$LEVEL" | tr '[:lower:]' '[:upper:]')" \
+  "$MARKER" "${*:+ $*}" >> "$LOG" 2>/dev/null || true
 exit 0

@@ -216,9 +216,15 @@ trap 'rm -f "$COMBINED"' EXIT
   printf '%s\n' "$PROMPT_TEXT"
 } > "$COMBINED"
 
+# log_line <LEVEL> <message> — one orchestrator.log line, in trace.sh's format.
+log_line() {
+  [[ -n "$LOG" ]] || return 0
+  printf '%s %-5s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" >> "$LOG"
+}
+
 if [[ -n "$LOG" ]]; then
   mkdir -p "$(dirname "$LOG")"
-  echo "[$(date -u +%H:%M:%SZ)] [DISPATCH] agent=$AGENT${SLUG:+ slug=$SLUG} dir=$DIR model=${EFFECTIVE_MODEL:-inherit} sandbox=$SANDBOX${RESULT_DIR:+ writable=$RESULT_DIR}" >> "$LOG"
+  log_line INFO "[DISPATCH] agent=$AGENT${SLUG:+ slug=$SLUG} dir=$DIR model=${EFFECTIVE_MODEL:-inherit} sandbox=$SANDBOX${RESULT_DIR:+ writable=$RESULT_DIR}"
 fi
 
 # Every raw event line, kept for anyone who needs more than the one-line trace below.
@@ -299,7 +305,7 @@ trace_event() {
         detail="args=$(safe_preview "$itemjson")"
       fi
       msg="[TOOL] agent=$AGENT${SLUG:+ slug=$SLUG} item=$itemtype $detail"
-      [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
+      log_line "$([[ "$msg" == "[TOOL]"* ]] && echo DEBUG || echo WARN)" "$msg"
       echo "$msg" >&2
       maybe_heartbeat "$msg"
       ;;
@@ -309,13 +315,13 @@ trace_event() {
       exitcode=$(printf '%s' "$line" | jq -r '.item.exit_code // empty' 2>/dev/null)
       [[ -n "$exitcode" && "$exitcode" != "0" ]] || return 0
       msg="[TOOL-ERROR] agent=$AGENT${SLUG:+ slug=$SLUG} item=$itemtype exit=$exitcode"
-      [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
+      log_line "$([[ "$msg" == "[TOOL]"* ]] && echo DEBUG || echo WARN)" "$msg"
       echo "$msg" >&2
       maybe_heartbeat "$msg"
       ;;
     turn.failed|error)
       local msg="[TOOL-ERROR] agent=$AGENT${SLUG:+ slug=$SLUG} $type"
-      [[ -n "$LOG" ]] && printf '[%s] %s\n' "$(date -u +%H:%M:%SZ)" "$msg" >> "$LOG"
+      log_line "$([[ "$msg" == "[TOOL]"* ]] && echo DEBUG || echo WARN)" "$msg"
       echo "$msg" >&2
       maybe_heartbeat "$msg"
       ;;
@@ -339,8 +345,6 @@ stream_events() {
 MAIN_ROOT="$MAIN_ROOT" CREW_ORCHESTRATED=1 codex "${ARGS[@]}" - < "$COMBINED" 2>>"${LOG:-/dev/null}" | stream_events
 status=${PIPESTATUS[0]}
 
-if [[ -n "$LOG" ]]; then
-  echo "[$(date -u +%H:%M:%SZ)] [DISPATCH-END] agent=$AGENT exit=$status" >> "$LOG"
-fi
+log_line "$([[ "$status" -eq 0 ]] && echo INFO || echo ERROR)" "[DISPATCH-END] agent=$AGENT exit=$status"
 
 exit "$status"

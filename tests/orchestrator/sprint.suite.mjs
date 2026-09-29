@@ -1391,7 +1391,7 @@ test("the summary is kept in the trace log too, not only printed", () => {
   addIssue(root, "01-alpha.md");
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(traceLog(root), /\[SUMMARY\]\nRounds: \d+\nModel: /);
+  assert.match(traceLog(root), / INFO  \[SUMMARY\]\n  Rounds: \d+\n  Model: /);
 });
 
 test("the summary names the resolved model, rendered from disk", () => {
@@ -2196,6 +2196,8 @@ test("a failed sprint-level docker install stops the run before any worktree or 
   assert.match(r.stderr, /dependencies could not be installed into the docker volume/);
   assert.match(r.stderr, /^  docker-failed make deps \(exit 5\)/m);
   assert.match(r.stderr, /--no-deps/);
+  // The log outlives the scrollback: the stop is there too, as the one FATAL line.
+  assert.match(traceLog(root), /^\S+Z FATAL \[ABORT\] .*dependencies could not be installed/m);
   assert.equal(lines.filter((l) => /worktree add/.test(l)).length, 0, "a worktree was created");
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "an agent was dispatched");
 });
@@ -2770,6 +2772,7 @@ test("a feature branch that fails its own checks stops the run before any coder 
   const { r, lines } = commandLines(root, [], { baseline: true });
   assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /feature\/demo fails its own checks before any issue has touched it/);
+  assert.match(traceLog(root), /^\S+Z FATAL \[ABORT\] .*feature\/demo fails its own checks/m);
   assert.match(r.stderr, /^  test: fail — \S+\/dispatch\/_baseline\/verify-test\.log$/m);
   assert.match(r.stderr, /--no-baseline/);
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "no coder, no reviewer");

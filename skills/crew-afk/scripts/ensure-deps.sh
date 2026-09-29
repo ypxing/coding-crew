@@ -117,7 +117,9 @@ _report() {
   fi
   if [ -f "$TRACE_SCRIPT" ]; then
     # From $DIR: trace.sh falls back to its cwd's repo, which must be the one _sprint_dir read.
-    (cd "$DIR" && bash "$TRACE_SCRIPT" DEPS "dir=$DIR${SLUG:+ slug=$SLUG} $line") 2>/dev/null || true
+    local level=info
+    case "$line" in failed*|docker-failed*) level=error ;; esac
+    (cd "$DIR" && bash "$TRACE_SCRIPT" --level "$level" DEPS "dir=$DIR${SLUG:+ slug=$SLUG} $line") 2>/dev/null || true
   fi
   exit 0
 }

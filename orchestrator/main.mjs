@@ -71,7 +71,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { Effects, appendLine } from "./lib/effects.mjs";
+import { Effects } from "./lib/effects.mjs";
+import { writeLog } from "./lib/log.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
 import { DEFAULT_PARALLEL, PLATFORMS } from "./lib/dispatch.mjs";
@@ -592,6 +593,12 @@ async function main() {
   // end-of-run push in `finally` — the only nudge the triggering pane gets. State is
   // declared outside it so `finally` sees whatever got assigned.
   let sprint;
+  // A run-stopping failure once the sprint exists: stderr for the launcher, and the log,
+  // which outlives the scrollback.
+  const fatal = (message) => {
+    console.error(message);
+    if (sprint?.traceLog) writeLog(sprint.traceLog, `[ABORT] ${message}`, "fatal");
+  };
   let resolved;
   let stalled;
   let exitCode = 0;
@@ -688,7 +695,7 @@ async function main() {
         // Persisted too: this runs unattended, and a failure must outlive the scrollback.
         log: (line) => {
           console.error(line);
-          if (sprint.traceLog) appendLine(sprint.traceLog, line);
+          if (sprint.traceLog) writeLog(sprint.traceLog, line);
         },
       });
     }
@@ -697,7 +704,7 @@ async function main() {
     if (options.installDeps) {
       const deps = await sprint.installDeps((line) => console.error(line));
       if (/^DEPS: docker-failed\b/.test(deps ?? "")) {
-        console.error(dockerDepsFailureMessage(deps));
+        fatal(dockerDepsFailureMessage(deps));
         exitCode = 1;
         return exitCode;
       }
@@ -711,7 +718,7 @@ async function main() {
       log: (line) => {
         if (!line) return;
         console.error(line);
-        if (sprint.traceLog) appendLine(sprint.traceLog, line);
+        if (sprint.traceLog) writeLog(sprint.traceLog, line);
       },
       // A dispatch's [TOOL] heartbeat. The dispatch already wrote it to the trace log, and a
       // launcher agent pays tokens for every stderr line it reads, so it is opt-in here.
@@ -727,7 +734,7 @@ async function main() {
       if (tracker.selectDispatchable(mainRoot, { featureSlug: sprint.featureSlug }).length) {
         const baseline = runBaseline(ctx);
         if (baseline.status === "fail") {
-          console.error(baselineFailureMessage(sprint.featureBranch, baseline));
+          fatal(baselineFailureMessage(sprint.featureBranch, baseline));
           exitCode = 1;
           return exitCode;
         }
@@ -749,6 +756,7 @@ async function main() {
   } catch (err) {
     runError = err;
     exitCode = 1;
+    if (sprint?.traceLog) writeLog(sprint.traceLog, `[CRASH] ${err?.stack || err}`, "fatal");
     throw err;
   } finally {
     // No-ops unless opened above; here so a thrown error can't leave them dangling.

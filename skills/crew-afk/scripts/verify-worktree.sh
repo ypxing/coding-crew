@@ -769,7 +769,7 @@ if [ -f "$TRACE_SCRIPT" ]; then
   [ "${#NOT_RUN[@]}" -gt 0 ] && _vw_gap=" not_run=${NOT_RUN[*]}"
   # The checked worktree's sprint, not the caller's cwd's: trace.sh falls back to its cwd's repo.
   (cd "$WORKTREE_DIR" && MAIN_ROOT="${MAIN_ROOT:-$_CACHE_MAIN_ROOT}" \
-    bash "$TRACE_SCRIPT" VERIFY "branch=$_vw_branch result=$_vw_result$_vw_gap") 2>/dev/null || true
+    bash "$TRACE_SCRIPT" --level "$([ "$_vw_result" = pass ] && echo info || echo error)" VERIFY "branch=$_vw_branch result=$_vw_result$_vw_gap") 2>/dev/null || true
 fi
 
 exit "$OVERALL_EXIT"

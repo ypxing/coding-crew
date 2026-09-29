@@ -167,7 +167,7 @@ case "$CMD" in
       | .retention[$s] = {branch: $b, reason: $r}
       | .completed_slugs = ((.completed_slugs // []) - [$s])
       | .merged_branches = ((.merged_branches // []) - [$b])'
-    trace STATE "retain slug=$slug branch=$branch reason=$reason"
+    trace --level warn STATE "retain slug=$slug branch=$branch reason=$reason"
     echo "STATE: retain slug=$slug branch=$branch reason=$reason"
     ;;
 
@@ -179,7 +179,7 @@ case "$CMD" in
       edit_state --arg s "$slug" --arg b "$branch" --arg r "blocked — $reason" '
         .retained_branches[$s] = $b | .retention[$s] = {branch: $b, reason: $r}'
     fi
-    trace STATE "blocked slug=$slug${branch:+ branch=$branch}"
+    trace --level error STATE "blocked slug=$slug${branch:+ branch=$branch}"
     echo "STATE: blocked slug=$slug${branch:+ branch=$branch}"
     ;;
 
@@ -188,7 +188,7 @@ case "$CMD" in
     [ -n "$slug" ] || die "coverage-gap requires --slug"
     [ -n "$cats" ] || die "coverage-gap requires --categories"
     edit_state --arg s "$slug" --arg c "$cats" '.coverage_gaps[$s] = $c'
-    trace STATE "coverage-gap slug=$slug categories=$cats"
+    trace --level warn STATE "coverage-gap slug=$slug categories=$cats"
     echo "STATE: coverage-gap slug=$slug categories=$cats"
     ;;
 
@@ -221,7 +221,7 @@ case "$CMD" in
             context_tokens: $ctx, head: (if $head == "" then null else $head end)
           }])
         else . end'
-    trace STATE "dispatch-cost${slug:+ slug=$slug}${role:+ role=$role}${slug:+ attempt=$attempt} cost=$cost duration_ms=$duration_ms turns=$turns"
+    trace --level debug STATE "dispatch-cost${slug:+ slug=$slug}${role:+ role=$role}${slug:+ attempt=$attempt} cost=$cost duration_ms=$duration_ms turns=$turns"
     echo "STATE: dispatch-cost${slug:+ slug=$slug}${role:+ role=$role}${slug:+ attempt=$attempt} cost=$cost duration_ms=$duration_ms turns=$turns"
     ;;
 
@@ -243,7 +243,7 @@ case "$CMD" in
     case "$verdict" in pass|fail) : ;; *) die "baseline requires --verdict pass|fail" ;; esac
     edit_state --arg c "$commit" --arg v "$verdict" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       '.baseline = {commit: $c, verdict: $v, at: $at}'
-    trace STATE "baseline commit=$commit verdict=$verdict"
+    trace --level "$([ "$verdict" = pass ] && echo info || echo error)" STATE "baseline commit=$commit verdict=$verdict"
     echo "STATE: baseline commit=$commit verdict=$verdict"
     ;;
 

@@ -97,3 +97,27 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"PI-INVOKED"* ]]
 }
+
+@test "the dispatch's own log lines use orchestrator.log's date-and-level format" {
+  echo "implement issue 01" > "$TEMP_DIR/prompt.md"
+  mkdir -p "$TEMP_DIR/bin-events"
+  cat > "$TEMP_DIR/bin-events/pi" <<'PI'
+#!/usr/bin/env bash
+cat >/dev/null
+echo '{"type":"tool_execution_start","toolName":"bash","args":{"command":"ls"}}'
+echo '{"type":"tool_execution_end","toolName":"bash","isError":true}'
+PI
+  chmod +x "$TEMP_DIR/bin-events/pi"
+
+  run env PATH="$TEMP_DIR/bin-events:$PATH" MAIN_ROOT="$TEMP_DIR" \
+    bash "$PI_DISPATCH" --agent worker --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md" --log "$TEMP_DIR/trace.log"
+
+  [ "$status" -eq 0 ]
+  local ts='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z'
+  grep -qE "$ts INFO  \[DISPATCH\] agent=worker " "$TEMP_DIR/trace.log"
+  grep -qE "$ts DEBUG \[TOOL\] agent=worker tool=bash" "$TEMP_DIR/trace.log"
+  grep -qE "$ts WARN  \[TOOL-ERROR\] agent=worker tool=bash" "$TEMP_DIR/trace.log"
+  grep -qE "$ts INFO  \[DISPATCH-END\] agent=worker exit=0$" "$TEMP_DIR/trace.log"
+  # Every line is a header line: nothing written in the old `[HH:MM:SSZ]` shape.
+  ! grep -qvE "$ts (DEBUG|INFO |WARN |ERROR|FATAL) " "$TEMP_DIR/trace.log"
+}

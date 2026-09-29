@@ -64,7 +64,7 @@ for BRANCH in "${BRANCHES[@]}"; do
   # report success and be silently skipped.
   if ! git rev-parse --verify --quiet "${BRANCH}^{commit}" >/dev/null; then
     echo "MERGE: $BRANCH failed (no such branch)" >&2
-    _trace MERGE "branch=$BRANCH success=false reason=no-such-branch"
+    _trace --level error MERGE "branch=$BRANCH success=false reason=no-such-branch"
     FAILED=1
     continue
   fi
@@ -75,7 +75,7 @@ for BRANCH in "${BRANCHES[@]}"; do
   if [ -f "$RECEIPTS_SCRIPT" ]; then
     if ! bash "$RECEIPTS_SCRIPT" check verify --branch "$BRANCH"; then
       echo "MERGE: $BRANCH failed (unverified — see receipt error above)" >&2
-      _trace MERGE "branch=$BRANCH success=false reason=unverified"
+      _trace --level error MERGE "branch=$BRANCH success=false reason=unverified"
       FAILED=1
       continue
     fi
@@ -101,13 +101,13 @@ for BRANCH in "${BRANCHES[@]}"; do
     # names are its indented lines.
     DIRTY=$(printf '%s\n' "$MERGE_OUT" | sed -n 's/^[[:space:]]\{1,\}//p' | paste -sd, - | sed 's/,/, /g')
     echo "MERGE: $BRANCH failed (main-tree-dirty — uncommitted changes in $(pwd) would be overwritten: ${DIRTY:-see git output above})" >&2
-    _trace MERGE "branch=$BRANCH success=false reason=main-tree-dirty"
+    _trace --level error MERGE "branch=$BRANCH success=false reason=main-tree-dirty"
     FAILED=1
   else
     # Abort the failed merge to leave a clean state
     git merge --abort 2>/dev/null || true
     echo "MERGE: $BRANCH failed (conflict — aborted cleanly)" >&2
-    _trace MERGE "branch=$BRANCH success=false reason=conflict"
+    _trace --level error MERGE "branch=$BRANCH success=false reason=conflict"
     FAILED=1
     # Continue to next branch
   fi

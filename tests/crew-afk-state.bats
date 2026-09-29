@@ -116,6 +116,25 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   grep -q '\[ROUND\] round=2 issues=3' .scratch/calc/traces/orchestrator.log
 }
 
+@test "trace.sh writes an ISO date and a padded level ahead of the marker, info by default" {
+  TRACE_LOG="$TEMP_DIR/t.log" run bash "$AFK_SCRIPTS/trace.sh" ROUND "round=1"
+  [ "$status" -eq 0 ]
+  grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z INFO  \[ROUND\] round=1$' "$TEMP_DIR/t.log"
+}
+
+@test "trace.sh --level names the level, alongside --log in either order" {
+  bash "$AFK_SCRIPTS/trace.sh" --level error --log "$TEMP_DIR/t.log" MERGE "success=false"
+  bash "$AFK_SCRIPTS/trace.sh" --log "$TEMP_DIR/t.log" --level debug STEP "x"
+  grep -qE 'Z ERROR \[MERGE\] success=false$' "$TEMP_DIR/t.log"
+  grep -qE 'Z DEBUG \[STEP\] x$' "$TEMP_DIR/t.log"
+}
+
+@test "trace.sh refuses an unknown level and writes nothing" {
+  TRACE_LOG="$TEMP_DIR/t.log" run bash "$AFK_SCRIPTS/trace.sh" --level loud ROUND "x"
+  [ "$status" -ne 0 ]
+  [ ! -e "$TEMP_DIR/t.log" ]
+}
+
 @test "trace.sh inside a dispatched agent does not find the sprint through sprint.env" {
   # A worker inherits MAIN_ROOT, so without this every trace.sh call its test suite makes
   # would land in the live sprint's orchestrator.log.
