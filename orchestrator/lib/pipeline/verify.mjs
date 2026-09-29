@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { triagePrompt } from "../prompts.mjs";
-import { parseTriageReport } from "../report.mjs";
+import { parseTriageReport, readVerifyRecord } from "../report.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./finish.mjs";
 import { dispatchIssueDir, dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason, unblockedReason } from "./shared.mjs";
 
@@ -25,6 +25,15 @@ export async function handleVerificationFailure(ctx, worker, outcome, verify) {
     // resumeRoute cannot see past, and the run after that would restart the coder.
     const priorReason = unblockedReason(sprint.retentionReason(worker.issue.slug) ?? "verification-failed");
     return finishRetryOrBlock(ctx, worker, outcome, priorReason);
+  }
+
+  // A check whose command is not installed (exit 127) failed before judging the code: no
+  // coder could fix it, and there is nothing for triage to weigh.
+  const missing = Object.entries(readVerifyRecord(join(dispatchIssueDir(sprint.dispatchDir, worker.issue), "verify.json")).missing);
+  if (missing.length) {
+    const detail = missing.map(([check, cmd]) => `${cmd} is not installed (${check})`).join("; ");
+    ctx.log(`[MISSING-COMMAND] slug=${worker.issue.slug} — ${detail}; triage skipped`);
+    return finishRetryOrBlock(ctx, worker, outcome, taggedReason(NOT_FIXABLE_TAG, `missing command: ${detail}`));
   }
 
   const triage = await runTriage(ctx, worker, verify.stdout);

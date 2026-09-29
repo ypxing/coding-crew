@@ -258,10 +258,23 @@ test("the verifier's record is read back as the reviewer's check evidence", () =
 });
 
 test("a missing or unreadable record is never reported as evidence", () => {
-  const none = { checks: { test: "not_run", lint: "not_run", typecheck: "not_run" }, logs: {}, notConfigured: [] };
+  const none = { checks: { test: "not_run", lint: "not_run", typecheck: "not_run" }, logs: {}, missing: {}, notConfigured: [] };
   assert.deepEqual(readVerifyRecord("/nonexistent/01-x.verify.json"), none);
   assert.deepEqual(readVerifyRecord(verifyRecord("{not json")), none);
   assert.equal(readVerifyRecord(verifyRecord({ checks: [{ category: "test", result: "fail" }] })).checks.test, "fail");
+});
+
+test("a check that failed because its command is not installed is read back with that command", () => {
+  const f = verifyRecord({
+    verdict: "fail",
+    checks: [
+      { category: "test", command: "bats tests/*.bats", result: "fail", exit: 127, log: null, missing: "bats" },
+      { category: "lint", command: "make lint", result: "fail", exit: 2, log: null },
+    ],
+  });
+  const { checks, missing } = readVerifyRecord(f);
+  assert.deepEqual(checks, { test: "fail", lint: "fail", typecheck: "not_run" });
+  assert.deepEqual(missing, { test: "bats" });
 });
 
 test("a worker's further checks are kept by cache-key name only", () => {

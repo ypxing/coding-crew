@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.29.157]
+
+### Fixed
+
+- **A check whose command is not installed is reported as the environment, not a red branch.**
+  A check that exits 127 ("command not found") failed the baseline with "fails its own checks
+  … Fix it on the feature branch", and in an issue's verify it went to triage and could
+  re-dispatch the coder — though the branch was never judged. `verify-worktree.sh` now prints
+  `TEST: fail — command not found: <cmd>` and records `"missing": "<cmd>"` on that check in
+  `verify.json` (the gate still fails). A baseline whose only failures are missing commands
+  says which tool is not installed and to install it (or give `dev-commands.json` an `install`
+  command); an issue's verify skips triage and is tagged
+  `verification-failed:not-fixable — missing command: …`, so it is re-checked, never recoded.
+
 ## [1.29.156]
 
 ### Fixed
