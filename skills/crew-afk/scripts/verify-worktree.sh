@@ -505,12 +505,13 @@ _json_str() {
 
 # _record <label> <command> <result> <exit> <log> — empty command/exit/log are JSON null.
 _record() {
-  local cat cmd=null ex=null log=null
+  local cat cmd=null ex=null log=null missing=""
   cat="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   [ -n "$2" ] && cmd="$(_json_str "$2")"
   [ -n "$4" ] && ex="$4"
   [ -n "$5" ] && log="$(_json_str "$5")"
-  REC_JSON+=("{\"category\": $(_json_str "$cat"), \"command\": $cmd, \"result\": \"$3\", \"exit\": $ex, \"log\": $log}")
+  [ -n "${6:-}" ] && missing=", \"missing\": $(_json_str "$6")"
+  REC_JSON+=("{\"category\": $(_json_str "$cat"), \"command\": $cmd, \"result\": \"$3\", \"exit\": $ex, \"log\": $log$missing}")
 }
 
 # ─── output capping ──────────────────────────────────────────────────────────
@@ -616,6 +617,14 @@ _exec_and_report() {
     mkdir -p "$(dirname "$log")" 2>/dev/null || true
     if cp "$out_file" "$log" 2>/dev/null; then echo "$label: log: $log"; else log=""; fi
   fi
+  # Exit 127 is the shell's "command not found": the tool is not installed where the check
+  # runs, which no change to the branch can fix. Named in the record so the baseline and
+  # the per-issue gate report the environment instead of a red branch or a coder's bug.
+  local missing=""
+  if [ "$rc" -eq 127 ]; then
+    missing="$(sed -n -E 's/.*[: ]([^: ]+): (command )?not found$/\1/p' "$out_file" | head -n 1)"
+    [ -n "$missing" ] || missing="${_VW_CMD%% *}"
+  fi
   rm -f "$out_file"
   if [ -n "$changed" ]; then
     # Whatever its exit code: its pass was on files it rewrote. solve-issue's run-checks.sh
@@ -627,6 +636,10 @@ _exec_and_report() {
   elif [ "$rc" -eq 0 ]; then
     echo "$label: pass"
     _record "$label" "$_VW_CMD" pass "$rc" "$log"
+  elif [ -n "$missing" ]; then
+    echo "$label: fail — command not found: $missing (not installed where the check runs — an environment problem, not the code)"
+    _record "$label" "$_VW_CMD" fail "$rc" "$log" "$missing"
+    OVERALL_EXIT=1
   else
     echo "$label: fail"
     _record "$label" "$_VW_CMD" fail "$rc" "$log"
