@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.29.153]
+
+### Changed
+
+- **The coder checks the issue against the code before building it.** An issue written before
+  anyone read the code could name a function that does not exist or a bug already fixed, and
+  the coder built to the wording anyway. solve-issue now ends exploration with a premise check:
+  drift with the same intent (a renamed file, a moved function) is adapted to and recorded in
+  the commit; a criterion the code already meets, or a bug already fixed, gets a pinning test
+  instead of new code and still completes; only a wrong assumption — a named thing with no
+  counterpart, a bug whose code path does not exist, criteria that conflict with the PRD, an
+  ADR or each other — stops the issue as `blocked`, with `BLOCKED: premise: …` and the search
+  as evidence in its `## Blocked` section.
+- **An already-met issue closes instead of stranding its dependents.** The reviewer used to
+  read an empty diff as `unmet`, which retried the issue to a block. crew-afk now marks the
+  diff empty and the reviewer judges each criterion against the branch tip, still citing a
+  file and line. The reviewer also accepts a criterion met at the location a branch commit
+  maps it to (`<issue's name> → <file:line>`).
+- **to-issues grounds every issue in the code.** Codebase exploration is no longer optional:
+  each assumption a slice makes about the current code is confirmed at a `file:line`, new
+  things are labelled as new, and behavior already present or a PRD assumption the code
+  contradicts is raised in the quiz rather than written into an issue.
+
 ## [1.29.152]
 
 ### Fixed
