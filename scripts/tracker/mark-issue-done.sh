@@ -165,15 +165,25 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
 
   # ─── mark done ───────────────────────────────────────────────────────────
   # Not a close: the work is only on a branch. Swap ready-for-agent for awaiting-merge
-  # (read as done) and let the PR's `Closes #n` close the issue when it merges. The label
-  # is created first, idempotently: --add-label fails on a label the repo lacks.
+  # (read as done) and let the PR's `Closes #n` close the issue when it merges. crew-afk's
+  # display label `in-progress` comes off in the same edit. Both labels are created first,
+  # idempotently: --add-label and --remove-label fail on a label the repo lacks, and a repo
+  # configured before `in-progress` existed lacks it — removing it from an issue that never
+  # carried it is then still a no-op.
   if ! GH_OUT="$(gh label create awaiting-merge "${REPO_ARGS[@]}" --force \
       --description "Implemented on a feature branch; closes when its PR merges" 2>&1)"; then
     echo "ERROR: gh label create awaiting-merge failed:" >&2
     echo "$GH_OUT" >&2
     exit 1
   fi
-  if ! GH_OUT="$(gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --add-label awaiting-merge --remove-label ready-for-agent 2>&1)"; then
+  # A display label never fails a close: without it created the edit just leaves it alone.
+  IN_PROGRESS_ARGS=(--remove-label in-progress)
+  if ! GH_OUT="$(gh label create in-progress "${REPO_ARGS[@]}" --force \
+      --description "A crew-afk run is working this issue (display only)" 2>&1)"; then
+    echo "WARNING: gh label create in-progress failed; leaving it alone: $GH_OUT" >&2
+    IN_PROGRESS_ARGS=()
+  fi
+  if ! GH_OUT="$(gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --add-label awaiting-merge --remove-label ready-for-agent "${IN_PROGRESS_ARGS[@]}" 2>&1)"; then
     echo "ERROR: gh issue edit failed for #$ISSUE_NUMBER:" >&2
     echo "$GH_OUT" >&2
     exit 1

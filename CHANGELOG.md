@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.33.0]
+
+### Added
+
+- **`in-progress` display label under `tracker: github`.** The loop labels an issue `in-progress`
+  (via `issue-labels.sh claim`) when it claims it, before the worker is dispatched. A merge removes
+  it in the same `gh issue edit` that adds `awaiting-merge` (`mark-issue-done.sh`), a block swaps it
+  for `blocked` in one edit (`issue-labels.sh block`), and whatever the run still holds at its end —
+  partial, `--max-rounds` cap, stall — is released (`issue-labels.sh release`) before the summary.
+  Right after acquiring the feature lease the run sweeps `in-progress` from the whole milestone
+  (`issue-labels.sh sweep`), since only a dead run can have left one. Display only: dispatch never
+  reads it. A failed label write warns and the sprint continues; `requires-failed` issues are never
+  labelled; `tracker: local` is unchanged. `configure-tracker` creates the label and the github
+  template documents it.
+
 ## [1.32.0]
 
 ### Added

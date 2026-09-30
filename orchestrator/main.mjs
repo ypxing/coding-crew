@@ -107,6 +107,7 @@ import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { worktreeRoot } from "./lib/worktree.mjs";
 import { resolveInstallDir } from "./lib/install-dir.mjs";
 import { acquireLease, releaseLease } from "./lib/lease.mjs";
+import { sweepInProgress } from "./lib/labels.mjs";
 import { readTrackerConfig } from "./lib/tracker-config.mjs";
 import {
   baselineFailureMessage,
@@ -732,6 +733,15 @@ async function main() {
       };
       process.once("SIGINT", onSignal);
       process.once("SIGTERM", onSignal);
+      // Holding the lease means no other run is alive: any `in-progress` left in the milestone is a dead run's.
+      sweepInProgress({
+        effects,
+        sprint,
+        log: (line, level) => {
+          console.error(line);
+          if (sprint.traceLog) writeLog(sprint.traceLog, line, level);
+        },
+      });
     }
     sprint.startRun(runId);
 
