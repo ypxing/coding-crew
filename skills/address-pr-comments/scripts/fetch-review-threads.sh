@@ -28,11 +28,13 @@ reviews(first:100){nodes{id body createdAt author{login}}}
 reviewThreads(first:100){nodes{id isResolved isOutdated path line comments(first:100){nodes{body createdAt author{login}}}}}}}}'
 gh api graphql -f query="$QUERY" -F owner="$OWNER" -F repo="$REPO" -F number="$PR" > "$TMP/data.json"
 
-# One lookup per distinct login; failure (404, bot, no access) means untrusted.
+# One lookup per distinct login; failure (404, bot, no access) means untrusted. \r is
+# stripped because Windows' jq ends text lines with CRLF, and "alice\r" is no collaborator.
 : > "$TMP/trust.ndjson"
 jq -r '.data.repository.pullRequest | ([.reviewThreads.nodes[].comments.nodes[].author.login?] + [.reviews.nodes[].author.login?]) | map(select(. != null)) | unique[]' "$TMP/data.json" |
+tr -d '\r' |
 while IFS= read -r login; do
-  perm=$(gh api "repos/$OWNER/$REPO/collaborators/$login/permission" --jq .permission 2>/dev/null || true)
+  perm=$(gh api "repos/$OWNER/$REPO/collaborators/$login/permission" --jq .permission 2>/dev/null | tr -d '\r' || true)
   case "$perm" in write|maintain|admin) t=true ;; *) t=false ;; esac
   jq -n --arg l "$login" --argjson t "$t" '{($l): $t}' >> "$TMP/trust.ndjson"
 done

@@ -105,6 +105,19 @@ graphql() { # threads...
   echo "$output" | jq -e 'length==1 and .[0].id=="R1" and .[0].path==null and .[0].comments[0].body=="overall: rework"'
 }
 
+@test "fetch: a jq that ends lines with CRLF (Windows) still resolves trust per login" {
+  # Windows' jq writes text output with \r\n; an unstripped "alice\r" is no collaborator.
+  local real_jq
+  real_jq=$(command -v jq)
+  mkdir -p "$TEMP_DIR/crlf"
+  printf '#!/usr/bin/env bash\n"%s" "$@" | sed "s/\\$/\\r/"\nexit "${PIPESTATUS[0]}"\n' "$real_jq" > "$TEMP_DIR/crlf/jq"
+  chmod +x "$TEMP_DIR/crlf/jq"
+  graphql "$(thread T1 false false "$(cm alice 'fix this')")"
+  PATH="$TEMP_DIR/crlf:$PATH" run bash "$FETCH"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq -r '[.[].id] | join(",")')" = "T1" ]
+}
+
 # ---- push-rework ----
 
 pr_setup() {
@@ -112,6 +125,7 @@ pr_setup() {
   git init -q -b main "$TEMP_DIR/repo"
   cd "$TEMP_DIR/repo"
   git config user.email t@test; git config user.name T
+  git config core.autocrlf false  # Windows runners default to true; its warnings land in $output
   echo a > a.txt; git add a.txt; git commit -q -m init
   git remote add origin "$TEMP_DIR/remote.git"; git push -q origin main
   git checkout -q -b feature/x; git push -q origin feature/x
@@ -223,7 +237,7 @@ REPLY="$ROOT/skills/address-pr-comments/scripts/reply-thread.sh"
   ! grep -qi 'resolveReviewThread' "$GH_LOG"
 }
 
-@test "reply-thread: the body is a raw string — @path is never read as a file, 42 never coerced" {
+@test "reply-thread: the body is a raw string - @path is never read as a file, 42 never coerced" {
   run bash "$REPLY" PRRT_abc "@/etc/passwd"
   [ "$status" -eq 0 ]
   grep -q -- '-f body=@/etc/passwd' "$GH_LOG"

@@ -87,6 +87,20 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   [ "$(pr_body | grep -c 'crew-afk:begin')" -eq 1 ]
 }
 
+@test "open-pr: a CRLF body (edited in GitHub's web UI) still has its block replaced" {
+  bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" >/dev/null
+  jq --arg b "$(printf 'Human summary.\n\n%s\n\nReviewer notes.' "$(pr_body)" | sed 's/$/\r/')" \
+    '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR"
+  printf 'Closes #1\nCloses #2\nCloses #3\n' > "$TEMP_DIR/closes.txt"
+
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
+  [ "$status" -eq 0 ]
+  pr_body | tr -d '\r' | grep -qx 'Human summary.'
+  pr_body | tr -d '\r' | grep -qx 'Reviewer notes.'
+  pr_body | grep -qx 'Closes #3'
+  [ "$(pr_body | grep -c 'crew-afk:begin')" -eq 1 ]
+}
+
 @test "open-pr: an open PR without the block gets it appended" {
   jq -n '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: "Opened by hand."}' > "$GH_PR"
 
@@ -96,7 +110,7 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   pr_body | grep -qx 'Closes #1'
 }
 
-@test "open-pr: a merged PR for the branch is not edited — a new one is created" {
+@test "open-pr: a merged PR for the branch is not edited - a new one is created" {
   jq -n '{url: "https://github.com/o/r/pull/3", state: "MERGED", body: "old"}' > "$GH_PR"
 
   run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"

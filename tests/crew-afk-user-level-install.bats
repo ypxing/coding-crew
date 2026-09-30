@@ -217,8 +217,11 @@ sprint_with_fake_dispatch() {
   env HOME="$FAKE_HOME" TARGET_REPO="$WORK_REPO" bash "$REPO_ROOT/install.sh" claude --skill crew-afk >/dev/null
   sprint_with_fake_dispatch "$WORK_REPO/.coding-crew/crew-afk/main.mjs"
   [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
-  local expected
-  expected="$(cd "$WORK_REPO" && node -e 'console.log(require("path").resolve(".coding-crew/code-review"))')"
-  grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" || {
-    cat "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" >&2; return 1; }
+  local prompt="$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" actual
+  actual="$(sed -n 's/^Review assets: //p' "$prompt" | tr -d '\r')"
+  [ -n "$actual" ] || { cat "$prompt" >&2; return 1; }
+  # Compared canonically: on Windows the orchestrator may name the dir by its 8.3 short form
+  # (C:\Users\RUNNER~1\...) where the shell's cwd has the long one — the same directory.
+  canon() { node -e 'console.log(require("fs").realpathSync.native(process.argv[1]))' "$1"; }
+  [ "$(canon "$actual")" = "$(canon "$WORK_REPO/.coding-crew/code-review")" ] || { cat "$prompt" >&2; return 1; }
 }
