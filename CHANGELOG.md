@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.30.0]
+
+### Added
+
+- **Guarded scripts for `address-pr-comments --auto`.** `fetch-review-threads.sh` prints the
+  unresolved review threads whose latest comment is from a write/maintain/admin author, with every
+  untrusted comment stripped (permission looked up once per login). `push-rework.sh` commits and
+  pushes one rework round behind guards — a two-round cap under `CI=true` (reset by a trusted
+  `/crew-rework` comment), protected paths, and green checks — and on any refusal comments on the
+  PR and labels it `needs-human`. `address-pr-comments` now depends on `solve-issue`.
+
 ## [1.29.157]
 
 ### Fixed

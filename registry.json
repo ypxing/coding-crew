@@ -165,7 +165,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "install": ".claude/skills/address-pr-comments",
@@ -175,6 +175,7 @@
       ],
       "deps": [
         "dep-install",
+        "solve-issue",
         "tdd"
       ]
     },
