@@ -172,7 +172,7 @@ export async function runSprint(ctx) {
     if (!audited) {
       audited = true;
       prdAudit = await runPrdAudit(ctx, tracker);
-      queuedReady = prdAudit.queuedReady;
+      queuedReady = prdAudit.queuedReady && (await awaitListed(ctx, tracker, prdAudit));
     }
     if (flush(ctx) > 0 || queuedReady) continue;
     break;
@@ -217,8 +217,8 @@ function unfinishedIssues(tracker, mainRoot, featureSlug) {
  * It does not run while a Phase 1 issue is still open (blocked, retained, stalled): that
  * issue's requirements would read as missing, so the report is noise and its gaps would
  * duplicate the issue — and the re-run that finishes it audits anyway. Returns
- * `{report, queuedReady, unqueued, failed, skipped}`: the report's path (or null); whether an
- * issue was created already ready-for-agent (github — local parks it for the flush instead);
+ * `{report, queuedReady, queuedRef, unqueued, failed, skipped}`: the report's path (or null); whether an
+ * issue was created already ready-for-agent (github — local parks it for the flush instead), and its number;
  * in fix mode, why gaps were left unqueued; why an audit that ran did not finish; and why it
  * did not run. The last three are for the summary — the trace log alone is too easy to miss.
  */
@@ -283,7 +283,33 @@ async function runPrdAudit(ctx, tracker) {
   const queued = defer.code === 0 && /^defer-gaps: (?!skip)/m.test(defer.stdout);
   const unqueued = defer.code === 0 ? null
     : `${parsed.missing.length} missing requirement(s), but the fix issue was not created: ${defer.stderr.trim() || `exit ${defer.code}`}`;
-  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles, unqueued };
+  const queuedRef = Number(/\/issues\/(\d+)\s*$/m.exec(defer.stdout)?.[1]) || null;
+  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles, queuedRef, unqueued };
+}
+
+/** Polls of the milestone listing, and the wait before each, for awaitListed. */
+const LISTED_POLL = { tries: 15, delayMs: 2000 };
+
+/**
+ * github's issue listing lags a create by a few seconds, so the round the audit's word starts
+ * could list the milestone before the gaps issue is in it, claim nothing, and end the sprint
+ * with the issue open. Waits until the listing has it. False (and the summary says so) if it
+ * never shows up in the bounded wait — the loop then ends as it would have without it.
+ */
+async function awaitListed(ctx, tracker, prdAudit) {
+  const { effects, sprint } = ctx;
+  const ref = prdAudit.queuedRef;
+  if (!ref) return true;
+  for (let n = 0; n <= LISTED_POLL.tries; n++) {
+    if (tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug }).some((i) => i.number === ref)) {
+      if (n) ctx.log(`PRD audit: gaps issue #${ref} listed after ${n} poll(s)`);
+      return true;
+    }
+    if (n < LISTED_POLL.tries) await new Promise((resolve) => setTimeout(resolve, LISTED_POLL.delayMs));
+  }
+  prdAudit.unqueued = `gaps issue #${ref} was created but never appeared in the milestone listing — re-run to implement it.`;
+  ctx.log(`PRD audit: ${prdAudit.unqueued}`);
+  return false;
 }
 
 /** Phase 1 → Phase 2: flip parked fix issues to ready-for-agent. */

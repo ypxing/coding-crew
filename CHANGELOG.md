@@ -15,6 +15,14 @@
   labelled; `tracker: local` is unchanged. `configure-tracker` creates the label and the github
   template documents it.
 
+### Fixed
+
+- **A PRD-audit gaps issue is implemented in the same run under `tracker: github`.** GitHub's
+  issue listing lags a create by a few seconds, so the round `--prd-audit fix` started could list
+  the milestone before the new `Fix PRD gaps` issue was in it, claim nothing, and end the sprint
+  with the issue open and `ready-for-agent`. The loop now polls the listing (up to ~30s) until the
+  issue shows, and the summary names it under **Gaps not queued** if it never does.
+
 ## [1.32.0]
 
 ### Added
