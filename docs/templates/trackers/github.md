@@ -61,7 +61,13 @@ gh issue pin <number> [--repo owner/name] || true
 # local issues use; that prose is the dependency graph for this backend (no sidecar file):
 gh issue create [--repo owner/name] --title "<title>" --body-file <body-file> \
   --label <status> --milestone <feature-slug>
+# Then mirror its `## Blocked by` as native GitHub dependencies (best-effort; never fails publish):
+node "$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/lib/trackers/github.mjs" link-blockers --issue <number-just-created> [--main-root <dir>]
 ```
+
+After each `gh issue create` of a work issue, to-issues runs `link-blockers` with the new issue's
+number. It creates one native `blocked_by` relationship per `## Blocked by` number; a failed link
+warns on stderr. Dispatch still reads only the body's `## Blocked by`.
 
 Revising the PRD in place: `gh issue edit <n> --body-file <prd-file>`. Work issues cite the PRD
 as `PRD: #<n>` in their body.
@@ -123,9 +129,55 @@ maps to a close-reason.
 different facts, and only a PR merge establishes the second. Closing at the first would show
 issues as completed on GitHub while their code exists only in a local branch. Both read as
 `done` for dispatch and for `## Blocked by` resolution. `configure-tracker`'s github setup
-idempotently creates the five real labels before first publish, since `gh issue create --label x`
-fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` on
-demand, for repos configured before it existed.
+idempotently creates the real labels (including `blocked` and `in-progress`) before first publish, since `gh issue create --label x`
+fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` and
+`in-progress` on demand, for repos configured before they existed.
+
+## In-progress issues
+
+While a crew-afk run works an issue it carries the `in-progress` label, so a human on GitHub can
+see it. It is **display only**: the feature lease, not this label, decides what is dispatched, and
+a human adding or removing it changes nothing. The run adds it when it claims the issue (before the
+worker is dispatched) and removes it when the issue merges — in the same `gh issue edit` that adds
+`awaiting-merge` (`mark-done` does this; running it by hand on an issue without the label still
+succeeds) — or is blocked (swapped for `blocked`). An issue the run still holds at its end
+(partial, `--max-rounds` cap, stall) is released before the summary. A `## Requires` failure is
+never labelled. The new holder of a feature's lease also removes `in-progress` from every issue in
+the milestone right after acquiring it: only a dead run can have left one. A failed label write only
+warns.
+
+## Feature lease ref namespace
+
+The feature lease is a ref `refs/crew-lock/<feature-slug>` on `origin`, pointing at an annotated
+tag. **Verified live against github.com (2026-09-30):** GitHub accepts create, compare-and-swap
+reclaim and compare-and-swap delete of an annotated tag pushed to `refs/crew-lock/<slug>`, and
+rejects a stale-sha reclaim or delete, so no fallback is needed there. To re-check (it pushes and
+deletes a throwaway ref on `origin`, so it is opt-in):
+
+```bash
+CREW_LEASE_LIVE=1 scripts/verify-lease-live.sh     # or: CREW_LEASE_LIVE=1 bats tests/crew-afk-lease.bats
+```
+
+A host or ruleset that refuses the namespace makes `lease.sh` exit 4 and the acquire error says so
+and names the fallback: `export CREW_LEASE_NAMESPACE=refs/tags/crew-lock` (read by `lease.sh` and
+`lease.mjs` alike; the manual release command follows it).
+
+## Blocked issues
+
+When crew-afk stops on an issue that needs a human (retry limit, cost limit, not fixable, an
+environment criterion, a dirty main tree, a review that did not run), it posts a `## Blocked`
+comment and adds the `blocked` label **next to** `ready-for-agent` (creating the label if the
+repo lacks it). Every later run skips an issue labelled `blocked`, and issues whose
+`## Blocked by` names it keep waiting — `blocked` is not `done`. A failed label write only warns.
+A failed `## Requires` probe is not labelled; it is re-probed every run.
+
+To put a blocked issue back in the queue, once its cause is fixed:
+
+```bash
+gh issue edit <number> [--repo owner/name] --remove-label blocked
+```
+
+The sprint summary prints that command for each issue blocked in the run.
 
 ## Workspace
 

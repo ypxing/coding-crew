@@ -57,6 +57,11 @@
  *                                           anything: stop every issue after one attempt
  *   --no-commands                          skip one-time command discovery (verify-worktree.sh
  *                                           falls back to its own CLAUDE.md/Makefile heuristics)
+ *   --reclaim                              take over the feature lease (refs/crew-lock/<slug> on
+ *                                           origin, held under `tracker: github`) when its holder
+ *                                           is on another host or otherwise not provably dead. A
+ *                                           lease left by a dead pid on this host is reclaimed
+ *                                           without it. Use only when the holding run is gone
  *   --allow-dirty                          run even though tracked files in the main checkout
  *                                           have uncommitted changes (a merge that touches one
  *                                           still blocks that issue, as main-tree-dirty)
@@ -101,6 +106,9 @@ import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { worktreeRoot } from "./lib/worktree.mjs";
 import { resolveInstallDir } from "./lib/install-dir.mjs";
+import { acquireLease, releaseLease } from "./lib/lease.mjs";
+import { sweepInProgress } from "./lib/labels.mjs";
+import { readTrackerConfig } from "./lib/tracker-config.mjs";
 import {
   baselineFailureMessage,
   dirtyTrackedFiles,
@@ -126,6 +134,7 @@ function parseArgs(argv) {
     maxRounds: null,
     commands: true,
     allowDirty: false,
+    reclaim: false,
     dryRun: false,
     passthrough: [],
     unknown: [],
@@ -178,6 +187,7 @@ function parseArgs(argv) {
       case "--no-baseline": o.cli.baselineCheck = false; break;
       case "--resume-coder-session": o.cli.resumeCoderSession = true; break;
       case "--allow-dirty": o.allowDirty = true; break;
+      case "--reclaim": o.reclaim = true; break;
       case "--dry-run": o.dryRun = true; break;
       case "--jira": o.passthrough.push("--jira", args.shift()); break;
       case "-h": case "--help": o.command = "help"; break;
@@ -431,6 +441,7 @@ async function main() {
         "  [--feature-slug S] [--fix-findings critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
         "  [--max-rounds N] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--allow-dirty]\n" +
+        "  [--reclaim]  (take over a github-tracker feature lease held by a run that is dead)\n" +
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
         "  .coding-crew/config.json names one. Per role (coder, reviewer, triage,\n" +
@@ -620,6 +631,8 @@ async function main() {
   let exitCode = 0;
   let runError;
   let lockPath;
+  let lease;
+  let onSignal;
   try {
     // Before any sprint output, so a launcher knows the resolved host without re-deriving it
     // from env and config.
@@ -692,7 +705,45 @@ async function main() {
       },
     });
     sprint.setModel(options.model ?? "agent default");
-    sprint.startRun();
+    const runId = new Date().toISOString();
+
+    // Before the baseline and any dispatch: a second run on this feature would otherwise learn
+    // of the first only at push time, with its sprint stranded. Local trackers have no remote
+    // to hold a lease on, and --dry-run changes nothing.
+    if (!options.dryRun && readTrackerConfig(mainRoot).tracker === "github") {
+      const got = acquireLease(effects, {
+        slug: sprint.featureSlug,
+        runId,
+        reclaim: options.reclaim,
+        log: (line) => {
+          console.error(line);
+          if (sprint.traceLog) writeLog(sprint.traceLog, line, "warn");
+        },
+      });
+      if (got.error) {
+        fatal(got.error);
+        exitCode = 1;
+        return exitCode;
+      }
+      lease = got.lease;
+      // Best effort: SIGKILL cannot be caught, and the next run reclaims a dead pid.
+      onSignal = (signal) => {
+        releaseLease(effects, lease);
+        process.exit(signal === "SIGINT" ? 130 : 143);
+      };
+      process.once("SIGINT", onSignal);
+      process.once("SIGTERM", onSignal);
+      // Holding the lease means no other run is alive: any `in-progress` left in the milestone is a dead run's.
+      sweepInProgress({
+        effects,
+        sprint,
+        log: (line, level) => {
+          console.error(line);
+          if (sprint.traceLog) writeLog(sprint.traceLog, line, level);
+        },
+      });
+    }
+    sprint.startRun(runId);
 
     // Best-effort: the log file, not this tab, is the run's durable output.
     if (options.paneHost && !options.dryRun) {
@@ -782,6 +833,18 @@ async function main() {
       const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : stalled ? "stalled — blockers need a human" : "finished";
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
       await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);
+    }
+    if (lease) {
+      const r = releaseLease(effects, lease);
+      if (r.superseded) console.error(`crew-afk: feature lease ${lease.slug} is now held by another run — left alone.`);
+      if (r.failed) {
+        const text = `crew-afk: could not release the feature lease: ${r.failed}\nRelease it by hand: ${r.command}`;
+        console.error(text);
+        console.log(`\n## Feature lease\n\n**Not released:** ${r.failed}\n\nRelease it by hand: \`${r.command}\`\n`);
+        if (sprint?.traceLog) writeLog(sprint.traceLog, `[LEASE] ${text}`, "error");
+      }
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
     }
     // Last: released earlier, a second `run` could start while this one is still closing.
     releaseSprintLock(lockPath);

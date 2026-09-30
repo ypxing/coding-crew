@@ -37,6 +37,7 @@ import { resumeRoute, runHousekeeping, runWorker } from "./pipeline.mjs";
 import { getTracker } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
 import { writeLog } from "./log.mjs";
+import { labelIssue } from "./labels.mjs";
 import { checkRequires } from "./preflight.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit } from "./report.mjs";
@@ -58,6 +59,13 @@ export async function runSprint(ctx) {
   const conflictWaitsLogged = new Set();
   const history = [];
   let waiters = [];
+  // Issues this run labelled `in-progress` and has not seen leave it: a merge (mark-done) and a
+  // block (issue-labels.sh block) each remove it themselves; whatever is left is released at run end.
+  const held = new Map();
+  // github fix issues this run created already ready-for-agent (a review's findings, the PRD
+  // audit's gaps), not yet seen in the milestone listing — see awaitListed.
+  const unseen = new Set();
+  const unlisted = [];
 
   const notifyAll = () => {
     const pending = waiters;
@@ -116,12 +124,16 @@ export async function runSprint(ctx) {
       notifyAll();
       return;
     }
+    // After the requires probe: a requires-failed issue is never labelled. Display only.
+    if (!held.has(issue.slug) && labelIssue(ctx, "claim", issue)) held.set(issue.slug, issue);
     const conflictRetry = isConflictRetry(issue.slug);
     if (conflictRetry) conflictRetryInFlight = issue.slug;
     const attempt = sprint.bumpAttempt(issue.slug);
     const worker = await runWorker(ctx, issue, attempt);
     const outcome = await runHousekeeping(ctx, worker);
     history.push(outcome);
+    if (outcome.promotedRef && !tracker.listOpenIssueFiles) unseen.add(outcome.promotedRef);
+    if (outcome.status === "complete" || outcome.inProgressCleared) held.delete(issue.slug);
     ctx.log(
       `[ATTEMPT-END] slug=${issue.slug} attempt=${attempt} status=${outcome.status}${outcome.reason ? ` reason=${outcome.reason}` : ""}`,
     );
@@ -159,15 +171,27 @@ export async function runSprint(ctx) {
     }
     // Once, when Phase 1 has drained: its gaps join the findings in the one flush below,
     // so Phase 2 fixes both, and nothing after it is audited again.
-    // github creates the gaps issue ready-for-agent, so the flush has nothing to promote for
-    // it and the loop has to go round again on the audit's word.
-    let queuedReady = false;
+    // github creates the gaps issue — like a finding's fix issue — ready-for-agent, so the
+    // flush has nothing to promote for it and the loop goes round again once it is listed.
     if (!audited) {
       audited = true;
       prdAudit = await runPrdAudit(ctx, tracker);
-      queuedReady = prdAudit.queuedReady;
+      if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
     }
-    if (flush(ctx) > 0 || queuedReady) continue;
+    if (flush(ctx) > 0) continue;
+    if (unseen.size) {
+      const refs = [...unseen];
+      unseen.clear();
+      const missing = await awaitListed(ctx, tracker, refs);
+      for (const ref of missing) {
+        const what = ref === prdAudit.queuedRef ? "PRD gaps" : "review findings";
+        const line = `#${ref} (${what}) was created but never appeared in the milestone listing — re-run to implement it.`;
+        if (ref === prdAudit.queuedRef) prdAudit.unqueued = line;
+        else unlisted.push(line);
+        ctx.log(`[FIX-ISSUE-UNLISTED] ${line}`, "warn");
+      }
+      if (missing.length < refs.length) continue;
+    }
     break;
   }
 
@@ -180,7 +204,11 @@ export async function runSprint(ctx) {
       ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
       : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0);
 
-  await wrapUp(ctx, { tracker, stalled, prdAudit });
+  // Before the summary: drained, capped or stalled, no issue keeps a label saying it is being worked.
+  for (const issue of held.values()) labelIssue(ctx, "release", issue);
+  held.clear();
+
+  await wrapUp(ctx, { tracker, stalled, prdAudit, unlisted });
   return { stalled, history };
 }
 
@@ -206,8 +234,8 @@ function unfinishedIssues(tracker, mainRoot, featureSlug) {
  * It does not run while a Phase 1 issue is still open (blocked, retained, stalled): that
  * issue's requirements would read as missing, so the report is noise and its gaps would
  * duplicate the issue — and the re-run that finishes it audits anyway. Returns
- * `{report, queuedReady, unqueued, failed, skipped}`: the report's path (or null); whether an
- * issue was created already ready-for-agent (github — local parks it for the flush instead);
+ * `{report, queuedReady, queuedRef, unqueued, failed, skipped}`: the report's path (or null); whether an
+ * issue was created already ready-for-agent (github — local parks it for the flush instead), and its number;
  * in fix mode, why gaps were left unqueued; why an audit that ran did not finish; and why it
  * did not run. The last three are for the summary — the trace log alone is too easy to miss.
  */
@@ -272,7 +300,29 @@ async function runPrdAudit(ctx, tracker) {
   const queued = defer.code === 0 && /^defer-gaps: (?!skip)/m.test(defer.stdout);
   const unqueued = defer.code === 0 ? null
     : `${parsed.missing.length} missing requirement(s), but the fix issue was not created: ${defer.stderr.trim() || `exit ${defer.code}`}`;
-  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles, unqueued };
+  const queuedRef = Number(/\/issues\/(\d+)\s*$/m.exec(defer.stdout)?.[1]) || null;
+  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles, queuedRef, unqueued };
+}
+
+/** Polls of the milestone listing, and the wait before each, for awaitListed. */
+const LISTED_POLL = { tries: 15, delayMs: 2000 };
+
+/**
+ * github's issue listing lags a create by a few seconds, so a round started for a fix issue
+ * created just before the queue drained could list the milestone without it, claim nothing,
+ * and end the sprint with it open. Waits, bounded, until the listing has every ref in `refs`;
+ * returns those it never showed.
+ */
+async function awaitListed(ctx, tracker, refs) {
+  const { effects, sprint } = ctx;
+  let missing = refs;
+  for (let n = 0; ; n++) {
+    const listed = new Set(tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug }).map((i) => i.number));
+    missing = missing.filter((ref) => !listed.has(ref));
+    if (n && missing.length < refs.length) ctx.log(`fix issue(s) listed after ${n} poll(s)`);
+    if (!missing.length || n >= LISTED_POLL.tries) return missing;
+    await new Promise((resolve) => setTimeout(resolve, LISTED_POLL.delayMs));
+  }
 }
 
 /** Phase 1 → Phase 2: flip parked fix issues to ready-for-agent. */
@@ -289,7 +339,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, prdAudit }) {
+async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [] }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -333,6 +383,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit }) {
     ctx.out(`\n## PRD Audit\n\n(see ${prdAudit.report})\n`);
     if (prdAudit.unqueued) ctx.out(`\n**Gaps not queued:** ${prdAudit.unqueued}\n`);
   }
+  if (unlisted.length) ctx.out(`\n**Fix issues not implemented:**\n${unlisted.map((l) => `- ${l}`).join("\n")}\n`);
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
   if (pr) ctx.out(`\n## Pull Request\n\n${pr.text}\n`);
   ctx.out("NO MORE TASKS");

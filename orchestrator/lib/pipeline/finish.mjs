@@ -46,18 +46,36 @@ export async function finishPartial(ctx, worker, outcome, reason) {
   return outcome;
 }
 
+/**
+ * `tracker: github`: label the issue `blocked` so later runs skip it until a human removes it
+ * (issue-labels.sh is the only writer; a no-op under local). A failed write only warns.
+ * The same edit removes `in-progress`. True when the label is on the issue.
+ */
+function labelBlocked(ctx, issue) {
+  const { effects } = ctx;
+  if (effects.dryRun || issue.number == null) return false;
+  const r = effects.bash("issue-labels.sh", ["block", String(issue.number)], { env: ctx.sprint.childEnv() });
+  if (r.code !== 0) {
+    ctx.log(`[BLOCKED-LABEL-FAILED] slug=${issue.slug} — ${(r.stderr || r.stdout).trim()}`, "warn");
+    return false;
+  }
+  return /^LABELLED: blocked /m.test(r.stdout);
+}
+
 export async function finishBlocked(ctx, worker, outcome, reason) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
   await writeTrackerSection(effects, issue, "Blocked", `Round ${worker.attempt}: ${reason}`, { append: true });
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
+  const labelled = labelBlocked(ctx, issue);
   // A branch refused as stale is someone else's leftover, not this issue's: retaining it
   // would make the next run resume on it (runWorker's priorBranch) and skip the refusal.
-  sprint.blocked(issue.slug, worker.report.parsedFrom === "stale-branch" ? null : branch, reason);
+  sprint.blocked(issue.slug, worker.report.parsedFrom === "stale-branch" ? null : branch, reason, labelled ? issue.number : null);
   // In-memory only: persisted `blocked_slugs` feeds the summary, and must not stop a
   // future run retrying once a human has fixed the blocker.
   sprint.markBlockedThisRun(issue.slug);
   outcome.status = "blocked";
+  outcome.inProgressCleared = labelled;
   outcome.reason = reason;
   notifyMilestone(ctx, issue, `blocked — ${reason}`);
   return outcome;

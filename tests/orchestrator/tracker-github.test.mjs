@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { closingRefs, createIssue, listOpen, parseIssue, selectDispatchable, writeProgress } from "../../orchestrator/lib/trackers/github.mjs";
+import { closingRefs, createIssue, linkBlockers, listOpen, parseIssue, selectDispatchable, writeProgress } from "../../orchestrator/lib/trackers/github.mjs";
 
 // github.mjs's read path (issue 04): listOpen/parseIssue/selectDispatchable, all `gh`
 // calls stubbed via an injected fake exec — no real network access, no PATH stubbing.
@@ -99,6 +99,7 @@ test("parseIssue is a pure transform producing local.mjs's exact output shape", 
     "criteria",
     "hasBlocked",
     "hasProgress",
+    "labels",
     "number",
     "ref",
     "sourceGuarded",
@@ -118,6 +119,24 @@ test("parseIssue is a pure transform producing local.mjs's exact output shape", 
   assert.equal(i.hasProgress, false);
   assert.equal(i.hasBlocked, false);
   assert.equal(i.text, json.body);
+  assert.deepEqual(i.labels, ["ready-for-agent"]);
+});
+
+test("selectDispatchable skips a ready issue labelled blocked until the label is removed", () => {
+  const root = repo();
+  const blocked = { number: 1, title: "Stuck", body: "", labels: [{ name: "ready-for-agent" }, { name: "blocked" }], state: "OPEN" };
+  assert.deepEqual(selectDispatchable(root, { featureSlug: "feat", exec: fakeExec([blocked]) }), []);
+  const freed = { ...blocked, labels: [{ name: "ready-for-agent" }] };
+  assert.deepEqual(selectDispatchable(root, { featureSlug: "feat", exec: fakeExec([freed]) }).map((i) => i.number), [1]);
+});
+
+test("selectDispatchable holds back an issue whose blocker carries the blocked label", () => {
+  const root = repo();
+  const exec = fakeExec([
+    { number: 1, title: "Stuck", body: "", labels: [{ name: "ready-for-agent" }, { name: "blocked" }], state: "OPEN" },
+    { number: 2, title: "Waits", body: "## Blocked by\n\n- Issue 1\n", labels: [{ name: "ready-for-agent" }], state: "OPEN" },
+  ]);
+  assert.deepEqual(selectDispatchable(root, { featureSlug: "feat", exec }), []);
 });
 
 test("parseIssue maps a closed issue's status to done regardless of any label still attached", () => {
@@ -347,4 +366,69 @@ test("closingRefs lists the milestone's open awaiting-merge issues as Closes lin
 test("closingRefs surfaces a gh failure rather than reporting nothing to close", () => {
   const root = repo();
   assert.throws(() => closingRefs(root, { featureSlug: "feat", exec: failingExec("boom") }), /gh issue list failed/);
+});
+
+// link-blockers: native blocked_by relationships mirrored from the body's `## Blocked by`.
+function fakeLink({ body, failLink = "", noBlocker = false }) {
+  const calls = [];
+  const exec = (cmd, args) => {
+    calls.push([cmd, ...args]);
+    if (args[0] === "issue" && args[1] === "view") return { code: 0, stdout: body, stderr: "" };
+    if (args[0] === "api" && args.includes("--jq")) {
+      if (noBlocker) return { code: 1, stdout: "", stderr: "Not Found" };
+      const n = /issues\/(\d+)$/.exec(args[1])[1];
+      return { code: 0, stdout: `${n}000\n`, stderr: "" };
+    }
+    if (args[0] === "api" && args.includes("POST")) {
+      return failLink ? { code: 1, stdout: "", stderr: failLink } : { code: 0, stdout: "{}", stderr: "" };
+    }
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  exec.calls = calls;
+  return exec;
+}
+const posts = (exec) => exec.calls.filter((c) => c.includes("POST"));
+
+test("linkBlockers posts one blocked_by per ## Blocked by number, using numeric ids", () => {
+  const exec = fakeLink({ body: "## Blocked by\n\n- Issue #3\n- Issue #4\n\n## X\n" });
+  assert.equal(linkBlockers(9, { mainRoot: repo(), exec, warn: () => {} }), 2);
+  assert.deepEqual(posts(exec).map((c) => [c[4], c[6]]), [
+    ["repos/{owner}/{repo}/issues/9/dependencies/blocked_by", "issue_id=3000"],
+    ["repos/{owner}/{repo}/issues/9/dependencies/blocked_by", "issue_id=4000"],
+  ]);
+});
+
+test("linkBlockers makes no dependency calls without ## Blocked by", () => {
+  const exec = fakeLink({ body: "## What\nx\n" });
+  linkBlockers(9, { mainRoot: repo(), exec, warn: () => {} });
+  assert.equal(exec.calls.filter((c) => c[1] === "api").length, 0);
+});
+
+test("linkBlockers warns, never throws, on API error or missing blocker; already-linked is silent", () => {
+  const warns = [];
+  const warn = (m) => warns.push(m);
+  linkBlockers(9, { mainRoot: repo(), exec: fakeLink({ body: "## Blocked by\n- Issue #3\n", failLink: "boom" }), warn });
+  linkBlockers(9, { mainRoot: repo(), exec: fakeLink({ body: "## Blocked by\n- Issue #3\n", noBlocker: true }), warn });
+  assert.equal(warns.length, 2);
+  linkBlockers(9, { mainRoot: repo(), exec: fakeLink({ body: "## Blocked by\n- Issue #3\n", failLink: "Issue has already been taken" }), warn });
+  assert.equal(warns.length, 2);
+});
+
+test("linkBlockers honours the repo override", () => {
+  const root = repo();
+  writeTrackerConfig(root, "---\ntracker: github\nrepo: acme/widgets\n---\n");
+  const exec = fakeLink({ body: "## Blocked by\n- Issue #3\n" });
+  linkBlockers(9, { mainRoot: root, exec, warn: () => {} });
+  assert.ok(posts(exec)[0].includes("repos/acme/widgets/issues/9/dependencies/blocked_by"));
+});
+
+test("createIssue links blockers for the issue it created, and a link failure does not fail creation", () => {
+  const root = repo();
+  const inner = fakeGhWrite();
+  const exec = (cmd, args) => {
+    if (args[0] === "api" && args.includes("--jq")) return { code: 1, stdout: "", stderr: "nope" };
+    return inner(cmd, args);
+  };
+  const r = createIssue({ title: "T", body: "## Blocked by\n- Issue #3\n", featureSlug: "feat" }, { mainRoot: root, exec });
+  assert.equal(r.number, 42);
 });

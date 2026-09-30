@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK="$REPO_ROOT/skills/crew-afk/scripts"
 CALLERS=(
   "$AFK/session-init.sh" "$AFK/close-issue.sh" "$AFK/promote-findings.sh"
-  "$AFK/prd-audit.sh" "$REPO_ROOT/scripts/tracker/mark-issue-done.sh"
+  "$AFK/prd-audit.sh" "$AFK/issue-labels.sh" "$REPO_ROOT/scripts/tracker/mark-issue-done.sh"
 )
 
 setup() {
@@ -131,4 +131,86 @@ block() { awk '/# BEGIN tracker-lookup/{f=1} f{print} /# END tracker-lookup/{f=0
   echo "$output"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+}
+
+@test "issue-labels.sh block: adds blocked and removes in-progress in one edit, keeps ready-for-agent" {
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  run bash "$AFK/issue-labels.sh" block 7
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"LABELLED: blocked #7"* ]]
+  grep -q '^label create blocked .*--force' "$GH_LOG"
+  grep -q '^issue edit 7 --add-label blocked --remove-label in-progress$' "$GH_LOG"
+  [ "$(grep -c '^issue edit' "$GH_LOG")" -eq 1 ]
+  ! grep -q 'ready-for-agent' "$GH_LOG"
+}
+
+@test "issue-labels.sh claim: creates in-progress and adds it" {
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  run bash "$AFK/issue-labels.sh" claim 7
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"LABELLED: in-progress #7"* ]]
+  grep -q '^label create in-progress .*--force' "$GH_LOG"
+  grep -q '^issue edit 7 --add-label in-progress$' "$GH_LOG"
+}
+
+@test "issue-labels.sh release: removes in-progress and nothing else" {
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  run bash "$AFK/issue-labels.sh" release 7
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RELEASED: in-progress #7"* ]]
+  grep -q '^issue edit 7 --remove-label in-progress$' "$GH_LOG"
+}
+
+@test "issue-labels.sh sweep: removes in-progress from every milestone issue that carries it" {
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  cat > "$STUB/gh" <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GH_LOG"
+if [ "$1 $2" = "issue list" ]; then printf '3\n5\n'; fi
+exit 0
+GH
+  run bash "$AFK/issue-labels.sh" sweep demo
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SWEPT: 2"* ]]
+  grep -q '^issue list .*--milestone demo --label in-progress --state all' "$GH_LOG"
+  grep -q '^issue edit 3 --remove-label in-progress$' "$GH_LOG"
+  grep -q '^issue edit 5 --remove-label in-progress$' "$GH_LOG"
+}
+
+@test "issue-labels.sh sweep: a milestone that does not exist yet is nothing to sweep" {
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  printf '#!/usr/bin/env bash\necho "no milestone found" >&2; exit 1\n' > "$STUB/gh"
+  run bash "$AFK/issue-labels.sh" sweep demo
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SWEPT: 0"* ]]
+}
+
+@test "issue-labels.sh claim/release/sweep: tracker local touches nothing" {
+  printf -- '---\ntracker: local\n---\n' > .coding-crew/docs/issue-tracker.md
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  for c in "claim 7" "release 7" "sweep demo"; do
+    run bash "$AFK/issue-labels.sh" $c
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+  [ ! -s "$GH_LOG" ]
+}
+
+@test "issue-labels.sh block: tracker local touches nothing" {
+  printf -- '---\ntracker: local\n---\n' > .coding-crew/docs/issue-tracker.md
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  run bash "$AFK/issue-labels.sh" block 7
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -s "$GH_LOG" ]
+}
+
+@test "issue-labels.sh block: a failing gh exits 1" {
+  printf '#!/usr/bin/env bash\necho boom >&2; exit 1\n' > "$STUB/gh"
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  run bash "$AFK/issue-labels.sh" block 7
+  [ "$status" -eq 1 ]
 }

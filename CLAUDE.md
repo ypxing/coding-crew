@@ -70,6 +70,9 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
 - `promote-findings.sh` — findings → parked fix issues → Phase 2
 - `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
+- `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
+  `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
+  `sweep` (clears a dead run's `in-progress` once the lease is held). A failed write only warns
 - `open-pr.sh` — `openPr` only: pushes the feature branch, creates or updates its PR with the
   tracker's closing lines (`closingRefs`) in crew-afk's own block of the body
 - `dispatch-agent.sh` (pi), `dispatch-codex-agent.sh` (codex)

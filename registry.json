@@ -79,7 +79,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.3.76",
+      "version": "2.3.79",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -247,7 +247,7 @@
       ]
     },
     "configure-tracker": {
-      "version": "1.3.0",
+      "version": "1.3.3",
       "source-dir": "configure-tracker",
       "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level config path.",
       "install": ".claude/skills/configure-tracker",

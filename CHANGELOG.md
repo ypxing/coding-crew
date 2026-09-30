@@ -1,9 +1,70 @@
 # Changelog
 
+## [1.34.0]
+
+### Added
+
+- **The feature lease's ref namespace is verified against github.com, with a fallback.**
+  `CREW_LEASE_LIVE=1 scripts/verify-lease-live.sh` (also an opt-in bats test) pushes a throwaway
+  `refs/crew-lock/<slug>` to `origin` and exercises create, CAS-reclaim, stale-CAS rejection and
+  CAS-delete: GitHub accepted all of them (2026-09-30, recorded in the github tracker template).
+  A host that refuses the namespace now makes `lease.sh` exit 4 and the acquire error names the
+  fallback, `CREW_LEASE_NAMESPACE=refs/tags/crew-lock`, which `lease.sh` and `lease.mjs` both honour.
+
+## [1.33.0]
+
+### Added
+
+- **`in-progress` display label under `tracker: github`.** The loop labels an issue `in-progress`
+  (via `issue-labels.sh claim`) when it claims it, before the worker is dispatched. A merge removes
+  it in the same `gh issue edit` that adds `awaiting-merge` (`mark-issue-done.sh`), a block swaps it
+  for `blocked` in one edit (`issue-labels.sh block`), and whatever the run still holds at its end —
+  partial, `--max-rounds` cap, stall — is released (`issue-labels.sh release`) before the summary.
+  Right after acquiring the feature lease the run sweeps `in-progress` from the whole milestone
+  (`issue-labels.sh sweep`), since only a dead run can have left one. Display only: dispatch never
+  reads it. A failed label write warns and the sprint continues; `requires-failed` issues are never
+  labelled; `tracker: local` is unchanged. `configure-tracker` creates the label and the github
+  template documents it.
+
+### Fixed
+
+- **Fix issues created as the queue drains are implemented in the same run under `tracker: github`.**
+  GitHub's issue listing lags a create by a few seconds, so a `Fix PRD gaps` issue
+  (`--prd-audit fix`) or a `Fix review findings` issue promoted from the last branch could be
+  missing from the next listing: the loop claimed nothing and ended with it open and
+  `ready-for-agent`. Before ending, the loop now polls the listing (up to ~30s) for every fix
+  issue it created, and the summary names any that never showed.
+
+## [1.32.0]
+
+### Added
+
+- **Feature lease: one crew-afk run per feature.** Under `tracker: github`, `crew-afk` acquires
+  `refs/crew-lock/<feature-slug>` on `origin` in preflight (before the baseline and any dispatch),
+  with `--force-with-lease` compare-and-swap pushes via the new `lease.sh`. A second run on a held
+  feature stops naming the owner's run id, host and start time; a dead pid on the same host is
+  reclaimed automatically, and `--reclaim` takes over any other lease. Released on completion,
+  `--max-rounds`, stall, error and SIGINT/SIGTERM; a failed release is reported in the summary with
+  the manual `git push origin :refs/crew-lock/<f>`. `--dry-run` and `tracker: local` take no lease.
+
 ## [1.31.0]
 
 ### Added
 
+- **`blocked` label under `tracker: github`.** Every path through `finishBlocked` now adds
+  `blocked` (created if missing) next to `ready-for-agent` via the new `issue-labels.sh`; later
+  runs skip the issue until a human removes the label, and issues depending on it keep waiting.
+  `requires-failed` stays unlabelled and is re-probed. The summary prints
+  `gh issue edit <n> --remove-label blocked` per blocked issue; a failed label write only warns.
+  `tracker: local` is unchanged. `configure-tracker` creates the label; the github template
+  documents it.
+
+- **Native GitHub dependencies from `## Blocked by`.** `github.mjs link-blockers --issue <n>`
+  creates one native `blocked_by` relationship per `## Blocked by` number, by the blocker's numeric
+  id; `createIssue` runs it for the issue it creates and the github tracker template's publish
+  operation tells to-issues to run it after each `gh issue create`. Best-effort: a failed link warns
+  on stderr and never fails creation; an already-linked pair is not an error. Dispatch is unchanged
+  and still reads only the body.
 - **`address-pr-comments --auto` and the `crew-rework` GitHub Action.** `--auto` runs the skill
   with no confirmation or question, fetching through `fetch-review-threads.sh`, pushing through
   `push-rework.sh`, replying on every handled thread with the new `reply-thread.sh`, and never
