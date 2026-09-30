@@ -64,7 +64,9 @@ existing=$(gh pr view "$FEATURE_BRANCH" --json url,state,body 2>/dev/null || tru
 state=$(printf '%s' "$existing" | jq -r '.state // empty' 2>/dev/null || true)
 
 if [ "$state" = "OPEN" ]; then
-  printf '%s' "$existing" | jq -r '.body // ""' > "$TMP/old.md"
+  # CRLF → LF: GitHub keeps a body edited in its web UI with \r\n (and Windows' jq writes
+  # \r\n), and a marker line ending in \r never equals the marker, so the block would stay stale.
+  printf '%s' "$existing" | jq -r '.body // ""' | tr -d '\r' > "$TMP/old.md"
   if grep -qF "$BEGIN_MARK" "$TMP/old.md"; then
     awk -v begin="$BEGIN_MARK" -v end="$END_MARK" -v blockfile="$TMP/block.md" '
       $0 == begin { while ((getline line < blockfile) > 0) print line; skip = 1; next }

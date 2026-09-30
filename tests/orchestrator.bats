@@ -43,17 +43,34 @@ setup_file() {
 
 @test "orchestrator: plan is read-only and needs no model" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
-  cd "$REPO_ROOT"
-  run node orchestrator/main.mjs plan --platform pi
-  # 0 = issues found, 3 = nothing to do; both are read-only successes.
-  [ "$status" -eq 0 ] || [ "$status" -eq 3 ]
+  # A scratch repo on the local tracker, not this repo: this repo tracks its own issues on
+  # GitHub, so planning here would need `gh` auth (and the network) just to list issues.
+  local dir
+  dir="$(mktemp -d)"
+  cd "$dir"
+  git init -q
+  git config user.email t@test
+  git config user.name T
+  printf '.scratch/\n' > .gitignore
+  git add .gitignore
+  git commit -q -m init
+  mkdir -p .scratch/feat-a/issues/open
+  printf '# A\n\nStatus: ready-for-agent\n' > .scratch/feat-a/issues/open/01-a.md
+
+  run node "$REPO_ROOT/orchestrator/main.mjs" plan --platform pi --feature-slug feat-a
+  [ "$status" -eq 0 ]
   [[ "$output" == *"pipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close"* ]]
   # Provisioning is part of the pipeline plan, and its off switch is visible in it.
   [[ "$output" == *"deps:"* ]]
 
-  run node orchestrator/main.mjs plan --platform pi --no-deps
-  [ "$status" -eq 0 ] || [ "$status" -eq 3 ]
+  run node "$REPO_ROOT/orchestrator/main.mjs" plan --platform pi --feature-slug feat-a --no-deps
+  [ "$status" -eq 0 ]
   [[ "$output" == *"disabled (--no-deps)"* ]]
+  # Read-only: plan left the checkout exactly as it found it.
+  [ -z "$(git status --porcelain)" ]
+
+  cd /
+  rm -rf "$dir"
 }
 
 @test "orchestrator: plan (and run) refuse to guess between two feature dirs with ready issues" {

@@ -12,6 +12,16 @@
   API key, one run per PR at a time. `crew-afk`'s `open-pr.sh` now adds the `crew-rework` label to
   the PRs it opens or updates. README documents setup and the flow.
 
+### Fixed
+
+- **`open-pr.sh` replaces its block in a PR body with CRLF line endings.** GitHub keeps a body
+  edited in its web UI with `\r\n`, so the block's marker lines never matched: a re-run left the
+  old block in place and new `Closes #n` lines were silently dropped.
+- **`fetch-review-threads.sh` trusts collaborators on Windows.** Windows' `jq` ends lines with
+  CRLF, so every login was looked up as `alice\r` and every thread was dropped as untrusted.
+- **`reply-thread.sh` posts the reply text as written.** A reply starting with `@` was read by
+  `gh` as a file path, and one like `42` or `true` was sent as a number or boolean.
+
 ## [1.30.0]
 
 ### Added
