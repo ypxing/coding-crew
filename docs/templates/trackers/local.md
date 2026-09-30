@@ -54,7 +54,9 @@ An issue may carry a `## Requires` section: one backticked shell command per bul
 Delegate to the tracker's close script — do not hand-run `sed` or `mv`:
 
 ```bash
-bash "$(git rev-parse --show-toplevel)/.coding-crew/scripts/mark-issue-done.sh" "<issue-path>"
+MD="$(git rev-parse --show-toplevel)/.coding-crew/scripts/mark-issue-done.sh"
+[ -f "$MD" ] || MD="$HOME/.coding-crew/scripts/mark-issue-done.sh"   # user-level install
+bash "$MD" "<issue-path>"
 ```
 
 The script does not evaluate criteria for you — it only checks that you already did. Before

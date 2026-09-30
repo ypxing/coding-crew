@@ -58,10 +58,27 @@ fi
 # uses. Missing reader means local.
 TRACKER_CONFIG_TRACKER="local"
 TRACKER_CONFIG_REPO=""
-_tracker_config_sh="${CREW_TRACKER_CONFIG:-}"
-[ -f "$_tracker_config_sh" ] || _tracker_config_sh="$MAIN_ROOT/.coding-crew/scripts/tracker-config.sh"
-[ -f "$_tracker_config_sh" ] || _tracker_config_sh="$HOME/.coding-crew/scripts/tracker-config.sh"
-if [ -f "$_tracker_config_sh" ]; then
+# BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
+# Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
+# It cannot live in tracker-config.sh itself: that is the file being looked for.
+tracker_config_candidates() {
+  local main_root="$1" c
+  for c in "${CREW_TRACKER_CONFIG:-}" \
+    "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/scripts/tracker-config.sh}" \
+    "$main_root/.coding-crew/scripts/tracker-config.sh" \
+    "$main_root/scripts/tracker/tracker-config.sh" \
+    "${HOME:+$HOME/.coding-crew/scripts/tracker-config.sh}"; do
+    if [ -n "$c" ]; then printf '%s\n' "$c"; fi
+  done
+  return 0
+}
+# END tracker-lookup
+_tracker_config_sh=""
+_tracker_config_sh=""
+while IFS= read -r _tc; do
+  if [ -f "$_tc" ]; then _tracker_config_sh="$_tc"; break; fi
+done < <(tracker_config_candidates "$MAIN_ROOT")
+if [ -n "$_tracker_config_sh" ]; then
   # shellcheck disable=SC1090
   source "$_tracker_config_sh"
   read_tracker_config "$MAIN_ROOT"
