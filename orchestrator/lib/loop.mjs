@@ -319,7 +319,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit }) {
   const pr = pullRequest(ctx, tracker);
   const summaryArgs = [];
   if (stalled) summaryArgs.push("--stalled");
-  if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url, "--posted-count", String(pr.posted));
+  if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url);
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
   ctx.out(summary.stdout);
   // Also kept with the run's trace: stdout goes to whoever launched the run, and a launcher

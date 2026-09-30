@@ -22,7 +22,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STALLED=0
 REMINDER=1
 POSTED_TO=""
-POSTED_COUNT=""
 FEATURE_SLUG_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -30,7 +29,6 @@ while [ $# -gt 0 ]; do
     --stalled) STALLED=1; shift ;;
     --no-reminder) REMINDER=0; shift ;;
     --posted-to) POSTED_TO="${2:-}"; shift 2 ;;
-    --posted-count) POSTED_COUNT="${2:-}"; shift 2 ;;
     *) echo "crew-summary.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
 done

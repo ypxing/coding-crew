@@ -223,6 +223,16 @@ REPLY="$ROOT/skills/address-pr-comments/scripts/reply-thread.sh"
   ! grep -qi 'resolveReviewThread' "$GH_LOG"
 }
 
+@test "reply-thread: the body is a raw string — @path is never read as a file, 42 never coerced" {
+  run bash "$REPLY" PRRT_abc "@/etc/passwd"
+  [ "$status" -eq 0 ]
+  grep -q -- '-f body=@/etc/passwd' "$GH_LOG"
+  grep -q -- '-f thread=PRRT_abc' "$GH_LOG"
+  run bash "$REPLY" PRRT_abc 42
+  [ "$status" -eq 0 ]
+  grep -q -- '-f body=42' "$GH_LOG"
+}
+
 @test "reply-thread: missing arguments is a usage error" {
   run bash "$REPLY" PRRT_abc
   [ "$status" -eq 2 ]

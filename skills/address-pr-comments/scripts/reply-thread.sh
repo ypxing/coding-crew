@@ -12,4 +12,4 @@ THREAD="${1:-}"; BODY="${2:-}"
 
 # shellcheck disable=SC2016
 MUTATION='mutation($thread:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$thread,body:$body}){comment{id}}}'
-gh api graphql -f query="$MUTATION" -F thread="$THREAD" -F body="$BODY" >/dev/null
+gh api graphql -f query="$MUTATION" -f thread="$THREAD" -f body="$BODY" >/dev/null
