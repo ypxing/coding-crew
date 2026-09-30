@@ -382,6 +382,117 @@ Sprint runs until all issues are complete, or every remaining issue is blocked �
 
 ---
 
+### Configuring crew-afk
+
+**Model tier** — `/crew-afk --model opus|sonnet|haiku|inherit` (default `sonnet`). The reviewer and
+triage judge run on the same model as the coder unless you name another, so the review standard
+doesn't silently drop. Applies on every platform, including Copilot — each worker is its own
+`copilot -p` process, so the flag reaches the CLI.
+
+**Per-role runtime and model** — `.coding-crew/config.json` can put any role (`coder`, `reviewer`,
+`triage`, `commandFinder`, `prdAuditor`) on another installed runtime, and name models per runtime:
+
+```json
+{ "afk": { "runtime": { "reviewer": "codex" },
+           "models":  { "claude": { "triage": "opus" }, "codex": { "reviewer": "gpt-5.1-codex" } } } }
+```
+
+A model is only ever passed to its own runtime's CLI. A role moved to another runtime doesn't
+inherit the coder's model; with none named under that runtime, it takes `--model` if one was given
+and it's on the `--platform` runtime, else `sonnet` on claude, else the CLI's own default. Each
+runtime a role uses must be installed (`./install.sh codex --skill crew-afk`); `crew-afk doctor`
+checks. `config.json` holds only settings you write; an older `.coding-crew/afk-models.json` is
+moved into it on the next run.
+
+It's read at two levels: `~/.coding-crew/config.json` for this machine, under the repo's
+`.coding-crew/config.json` for the team. They merge per setting, the repo's winning, and
+`crew-afk plan` tags each value with the file it came from. Keep the repo's file to aliases, since
+it's committed. Provider-specific IDs belong at user level, or in env such as
+`ANTHROPIC_DEFAULT_SONNET_MODEL`, which every dispatch inherits.
+
+**Sprint settings** — the same `afk` section holds the rest of what stays the same run to run. A
+flag overrides each for one run:
+
+| Setting | Default | Flag | What it does |
+| --- | --- | --- | --- |
+| `fixFindings` | `high` | `--fix-findings` | Lowest review severity fixed automatically: `critical`, `high`, `medium` or `none` |
+| `PRDAudit` | `fix` | `--prd-audit` | `off`; `report` (audit, leave it for you); `fix` (also queue missing requirements) |
+| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` sets every non-coder role | Minutes, per role (at most 35791); name only the ones you change |
+| `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
+| `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
+| `squashCommits` | `false` | `--squash` (`--no-squash` turns it off) | Squash the sprint's commits into one at the end. Each issue is merged as its own commit either way |
+| `openPr` | `false` | `--open-pr` (`--no-open-pr` turns it off) | At the end, push the feature branch and create or update its PR. The PR body closes the issues the sprint merged (under `tracker: github`); a re-run rewrites only crew-afk's own block of the body |
+| `baselineCheck` | `true` | `--no-baseline` | Run the checks once on the feature branch before any dispatch; stop if they fail, since every issue's verify would too |
+| `resumeCoderSession` | `false` | `--resume-coder-session` | On a fix round, continue the claude coder session that wrote the branch, if that session is under 100k tokens and the branch hasn't moved |
+| `limits` | off | — | `{ "coder": { "usd": 5 } }`: a dollar cap on one dispatch of that role (claude's `--max-budget-usd`; other runtimes ignore it, with one notice per run). A dispatch that hits it blocks its issue as `limit-exceeded`, never retried |
+
+**Checks that modify files.** A check that leaves the tree modified fails, in the baseline and every
+verify alike. An auto-fixing lint (`make lint` running `--write`) can stay configured: run it once
+on the feature branch, commit what it rewrote, and re-run. Only a check that rewrites files on every
+run needs a non-mutating command in `.coding-crew/dev-commands.json`.
+
+**Per-issue requirements.** An issue can list what its checks need that the install doesn't
+guarantee under `## Requires`, one backticked command per bullet (exit 0 = satisfied); each runs
+once before that issue's first dispatch, and a failing one blocks that issue with the command's
+output instead of paying for its coder.
+
+**Uncommitted changes.** A run stops before any dispatch if tracked files in the main checkout have
+uncommitted changes, because git refuses a merge that would overwrite them. `--allow-dirty` skips
+that check for one run. A merge it then refuses blocks that issue as `main-tree-dirty`, and a
+re-run after you commit or stash resumes at the merge.
+
+**Gitignored files in worktrees.** Each coder runs in an isolated worktree, so `.env` and similar
+files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
+them over. `.env` and `docker-compose.override.yml` are always carried over when they exist,
+without being listed; crew-afk never writes `.worktreeinclude` itself.
+
+**Worktree location.** Worktrees live under `.scratch/worktrees/` by default. Set
+`afk.worktreeRoot` in either `config.json` (absolute, or relative to the repo root) to put them
+elsewhere, or `CREW_WORKTREE_ROOT`, which wins over both. A path outside the repo, such as
+`../<repo>-worktrees`, keeps tools that search parent directories (Node's `node_modules`
+resolution, CLAUDE.md loading) from falling back to the main checkout. A path inside the repo isn't
+covered by the default `.scratch/` gitignore entry; `crew-afk` warns until you add it.
+
+---
+
+### PR rework with GitHub Actions (optional)
+
+Not installed by default. Without it, run `/address-pr-comments` yourself on the PR.
+
+With it, reviewers comment on a PR labelled `crew-rework` as usual; the `crew-rework` GitHub
+Action runs `/address-pr-comments --auto`, which fixes what is sensible, pushes, and replies on
+every thread it handled. It never resolves a thread — you do.
+
+**Setup**
+
+1. Copy [`docs/templates/workflows/crew-rework.yml`](templates/workflows/crew-rework.yml) to
+   `.github/workflows/` in your repo.
+2. Install the skills per project and commit them (`./install.sh claude --project --skill
+   address-pr-comments`): the runner has no `$HOME` install.
+3. Add the repo secret `ANTHROPIC_API_KEY`.
+4. Make sure your CI workflow is `ci.yml` (or edit `--ci-workflow` in the template) and has
+   `workflow_dispatch:` if you want the re-trigger below.
+5. Add the `crew-rework` label to each PR it should work on; crew-afk does not add it.
+
+**Flow.** A review, review comment or `/crew-rework` PR comment triggers the workflow. Before any
+step that uses the API key it checks that the actor has write access, the PR's branch is in the
+same repo (no forks), and the PR carries the `crew-rework` label. Runs are serialised per PR.
+Only comments by write/maintain/admin authors ever reach the model.
+
+**Guards.** Unattended runs are capped at two rounds; comment `/crew-rework` to allow two more. A
+change to protected paths (`.github/`, CI configs, auth, deploy, `.env`), a failing check, or a
+rejected push stops the run: it comments on the PR and adds `needs-human`.
+
+**CI re-trigger.** Pushes made with the default `GITHUB_TOKEN` do not start other workflows. The
+skill therefore dispatches your CI workflow explicitly after pushing (`--ci-workflow`).
+Alternatively, provide the optional App token below and the push triggers CI natively.
+
+**Optional App token.** Create a GitHub App with contents/pull-requests write, install it, set the
+repo variable `CREW_APP_ID` and secret `CREW_APP_PRIVATE_KEY`. The workflow then checks out and
+pushes as the App.
+
+---
+
 ### Reviewing Code Review Findings
 
 ```

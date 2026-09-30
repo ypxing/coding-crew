@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.37.0]
+
+### Changed
+
+- **crew-rework is parked as an optional template.** The workflow moved from
+  `.github/workflows/` to `docs/templates/workflows/crew-rework.yml`, so it no longer runs on
+  this repo, and `--open-pr` no longer labels PRs `crew-rework`. To use it, copy the template,
+  commit the skills per project, add the secret, and label the PRs yourself — see the guide's
+  "PR rework with GitHub Actions (optional)". `/address-pr-comments --auto` is unchanged.
+- **README rewritten for adoption.** It leads with install and a 👤/🤖 flow of what you do and
+  what runs on its own; the full crew-afk settings reference moved to `docs/guide.md`
+  ("Configuring crew-afk").
+
 ## [1.36.0]
 
 ### Fixed

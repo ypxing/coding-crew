@@ -1,6 +1,13 @@
 # Coding Crew
 
-AI agents that take your ideas from planning to code.
+Turn an idea into merged, tested, reviewed code — while you're away from the keyboard.
+
+You describe a feature. Coding Crew interviews you until the plan is solid, splits it into issues,
+then runs a crew of AI coders in parallel — each in its own git worktree, test-first — and only
+merges a branch after its checks pass and a separate reviewer has read it.
+
+Works with **Claude Code**, **GitHub Copilot CLI**, **OpenAI Codex CLI** and
+[**pi**](https://github.com/badlogic/pi-mono).
 
 ## Install
 
@@ -8,277 +15,141 @@ AI agents that take your ideas from planning to code.
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash
 ```
 
-Installs for Claude Code, GitHub Copilot, [pi](https://github.com/badlogic/pi-mono), and OpenAI
-Codex into `$HOME` (works in any project). Requires `bash` 4.0+, `jq`, `git`, `curl`, `tar`
-(Windows: WSL2). See [Install options](#install-options) below for per-platform/per-project setup,
-version pinning, and updates.
+Installs for every supported platform into your home directory, so it works in any project.
+Needs `bash` 4+, `git`, `jq`, `curl` and `tar` (on Windows, use WSL2).
+For a single platform, a per-project install or updates, see [Install options](#install-options).
 
-## Quickstart
+## How it works
 
-1. **`/crew-grill`** — turn an idea into a PRD + issues (use `/crew-brainstorm` instead if the idea
-   is still forming)
-2. **`/crew-afk`** — unattended sprint: implements every issue in parallel, verifies, reviews, merges
-3. **`/crew-address-findings`** — triage and fix whatever the review flagged
-
-That's the whole loop. Details on each step below.
-
----
-
-## The flow
+👤 = you, 🤖 = runs on its own. Open your project in your AI coding tool:
 
 ```
-                      an idea or plan
-                             │
-              ┌──────────────┴──────────────┐
-              ▼                             ▼
-         /crew-grill                /crew-brainstorm
-         stress-test        OR       explore & build
-         every flaw                     a design
-              └─────────────┬───────────────┘
-                            │ PRD + issues
-                            │
-                            ▼
-  ┌─────────────────────────────────────────────────────┐
-  │  /crew-afk — runs unattended, you can walk away     │
-  │                                                     │
-  │          ┌───────────────┬───────────────┐          │
-  │          ▼               ▼               ▼          │
-  │        coder          coder           coder         │
-  │       issue 1        issue 2         issue 3        │
-  │              (TDD, isolated worktrees)              │
-  │          └───────────────┼───────────────┘          │
-  │                          │ parallel, committed      │
-  │                          ▼                          │
-  │             verify checks (per branch)              │
-  │        typecheck + lint + test, before merge        │
-  │                          │                          │
-  │                          ▼                          │
-  │              crew-reviewer (per branch)             │
-  │              before merge, findings advisory        │
-  │                          │                          │
-  │                          ▼                          │
-  │                   merge + squash                    │
-  └─────────────────────────────────────────────────────┘
-                             │
-                             ▼
-                   /crew-address-findings
+ 👤 /crew-grill            answer questions about your idea
+    │                      (still shaping it? /crew-brainstorm instead)
+    ▼
+ 🤖 PRD + issues
+    │
+    ▼
+ 👤 /crew-afk              then walk away
+    │
+    ▼
+ 🤖 preflight              clean tree · your checks pass on the feature branch
+    │
+    ▼
+ 🤖 per issue, in parallel, each in its own worktree:
+      coder → verify → review → merge
+        ▲       │ fail     │ criteria not met
+        └── fix ┴──────────┘   same branch, up to 2 tries
+    │ all issues done
+    ▼
+ 🤖 PRD audit + HIGH/CRITICAL review findings → new issues → per-issue loop again (once)
+    │
+    ▼
+ 🤖 summary                (+ push and open a PR with --open-pr)
+    │
+    ▼
+ 👤 /crew-address-findings pick which remaining findings to fix (optional)
+ 👤 review and merge
 ```
 
----
+What you can rely on:
 
-## 1. Plan and design
+- **The issue is checked before coding.** The coder confirms the issue still matches the code;
+  one that no longer does is blocked with evidence instead of guessed at.
+- **Coding is test-first.** Each coder works with TDD in its own git worktree.
+- **A failing branch is never merged.** Every branch must pass your project's own checks first.
+- **A separate agent reviews every branch.** Unmet acceptance criteria send it back to the coder;
+  other findings never block. They're written to `.scratch/<feature>/reviews/`.
+- **The PRD is checked.** Once the issues are merged, the code is audited against the PRD and any
+  requirement no issue covered becomes a new issue.
+- **Work is never thrown away.** A retry continues on the same branch, and unfinished work is kept
+  as `[WIP]` for the next run.
+- **Nothing is pushed unless you ask.** Add `--open-pr` to push the feature branch and open a PR.
 
-Two entry points — **pick one, not both.** They differ only in how they interrogate you; both end
-at the same PRD + issues.
+## Common options
 
-- **`/crew-grill`** — adversarial interrogation: challenges every assumption, resolves every
-  dependency, then produces a PRD and issues. Best when you have a plan and want it stress-tested
-  before a line of code is written.
-- **`/crew-brainstorm`** — collaborative dialogue: asks questions one at a time, proposes 2–3
-  approaches with trade-offs, builds a design doc, then hands off to PRD and issues. Best when the
-  idea is still forming.
-
-Add `with docs` to `/crew-grill` to also update `CONTEXT.md` and record ADRs. Run `/to-prd` or
-`/to-issues` standalone to jump into a single phase.
-
-## 2. Build, verify, review
-
-```
-/crew-afk
-```
-
-**AFK = Away From Keyboard.** It picks up every `ready-for-agent` issue, spawns crew-coder agents in
-parallel worktrees, verifies, reviews, merges, and loops until nothing is left. Come back to merged
-code and a review report.
-
-Before any branch merges: the project's own checks run in that worker's worktree, and a failing
-branch is never merged. A code reviewer then reviews the diff — findings land in
-`.scratch/<feature>/reviews/` and never block a merge. When the queue empties, CRITICAL and HIGH
-findings are fixed automatically in a second phase; the rest wait for `/crew-address-findings`.
-If the feature has a PRD (`PRD.md`, or under the github tracker the milestone's `PRD:` issue), it
-is audited against the merged code at the same point, and any requirement no issue carried is
-fixed in that same second phase.
-
-**Partial work is retained, not lost.** A worker that can't finish commits its work-in-progress with
-a `[WIP]` marker on its own branch instead of merging; the next round resumes from there.
-
-Two knobs worth knowing about:
-
-- **Model tier** — `/crew-afk --model opus|sonnet|haiku|inherit` (default `sonnet`). The reviewer
-  and triage judge run on the same model as the coder unless you name another, so the review
-  standard doesn't silently drop. Applies on every platform, including Copilot — each worker is
-  its own `copilot -p` process now, so the flag reaches the CLI.
-- **Per-role runtime and model** — `.coding-crew/config.json` can put any role (`coder`, `reviewer`,
-  `triage`, `commandFinder`, `prdAuditor`) on another installed runtime, and name models per
-  runtime:
-
-  ```json
-  { "afk": { "runtime": { "reviewer": "codex" },
-             "models":  { "claude": { "triage": "opus" }, "codex": { "reviewer": "gpt-5.1-codex" } } } }
-  ```
-
-  A model is only ever passed to its own runtime's CLI. A role moved to another runtime doesn't
-  inherit the coder's model; with none named under that runtime, it takes `--model` if one was
-  given and it's on the `--platform` runtime, else `sonnet` on claude, else the CLI's own default. Each
-  runtime a role uses must be installed (`./install.sh codex --skill crew-afk`); `crew-afk doctor`
-  checks. `config.json` holds only settings you write; an older `.coding-crew/afk-models.json` is
-  moved into it on the next run.
-
-  It's read at two levels: `~/.coding-crew/config.json` for this machine, under the repo's
-  `.coding-crew/config.json` for the team. They merge per setting, the repo's winning, and
-  `crew-afk plan` tags each value with the file it came from. Keep the repo's file to aliases,
-  since it's committed. Provider-specific IDs belong at user level, or in env such as
-  `ANTHROPIC_DEFAULT_SONNET_MODEL`, which every dispatch inherits.
-- **Sprint settings** — the same `afk` section holds the rest of what stays the same run to run.
-  A flag overrides each for one run:
-
-  | Setting | Default | Flag | What it does |
-  | --- | --- | --- | --- |
-  | `fixFindings` | `high` | `--fix-findings` | Lowest review severity fixed automatically: `critical`, `high`, `medium` or `none` |
-  | `PRDAudit` | `fix` | `--prd-audit` | `off`; `report` (audit, leave it for you); `fix` (also queue missing requirements) |
-  | `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` sets every non-coder role | Minutes, per role (at most 35791); name only the ones you change |
-  | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
-  | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
-  | `squashCommits` | `false` | `--squash` (`--no-squash` turns it off) | Squash the sprint's commits into one at the end. Each issue is merged as its own commit either way |
-  | `openPr` | `false` | `--open-pr` (`--no-open-pr` turns it off) | At the end, push the feature branch and create or update its PR. The PR body closes the issues the sprint merged (under `tracker: github`); a re-run rewrites only crew-afk's own block of the body |
-  | `baselineCheck` | `true` | `--no-baseline` | Run the checks once on the feature branch before any dispatch; stop if they fail, since every issue's verify would too |
-  | `resumeCoderSession` | `false` | `--resume-coder-session` | On a fix round, continue the claude coder session that wrote the branch, if that session is under 100k tokens and the branch hasn't moved |
-  | `limits` | off | — | `{ "coder": { "usd": 5 } }`: a dollar cap on one dispatch of that role (claude's `--max-budget-usd`; other runtimes ignore it, with one notice per run). A dispatch that hits it blocks its issue as `limit-exceeded`, never retried |
-
-  A check that leaves the tree modified fails, in the baseline and every verify alike. An
-  auto-fixing lint (`make lint` running `--write`) can stay configured: run it once on the
-  feature branch, commit what it rewrote, and re-run. Only a check that rewrites files on every
-  run needs a non-mutating command in `.coding-crew/dev-commands.json`. An issue can list what its checks need that the install doesn't guarantee under
-  `## Requires`, one backticked command per bullet (exit 0 = satisfied); each runs once before
-  that issue's first dispatch, and a failing one blocks that issue with the command's output instead of paying
-  for its coder.
-
-  A run also stops before any dispatch if tracked files in the main checkout have uncommitted
-  changes, because git refuses a merge that would overwrite them. `--allow-dirty` skips that
-  check for one run. A merge it then refuses blocks that issue as `main-tree-dirty`, and a
-  re-run after you commit or stash resumes at the merge.
-- **Gitignored files in worktrees** — each coder runs in an isolated worktree, so `.env` and similar
-  files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
-  them over. `.env` and `docker-compose.override.yml` are always carried over when they exist,
-  without being listed; crew-afk never writes `.worktreeinclude` itself.
-- **Worktree location** — worktrees live under `.scratch/worktrees/` by default. Set
-  `afk.worktreeRoot` in either `config.json` (absolute, or relative to the repo root) to put them
-  elsewhere, or `CREW_WORKTREE_ROOT`, which wins over both. A path outside the repo, such as
-  `../<repo>-worktrees`, keeps tools that search parent directories (Node's `node_modules`
-  resolution, CLAUDE.md loading) from falling back to the main checkout. A path inside the repo
-  isn't covered by the default `.scratch/` gitignore entry; `crew-afk` warns until you add it.
-
-## 3. Address the review findings
-
-```
-/crew-address-findings
+```bash
+/crew-afk --model opus          # coder model: opus | sonnet (default) | haiku | inherit
+/crew-afk --open-pr             # push the feature branch and open/update its PR at the end
+/crew-afk --fix-findings none   # don't auto-fix review findings (default: high)
+/crew-afk --max-parallel 2      # fewer concurrent coders
 ```
 
-Opens the review report, triages findings, implements fixes with TDD.
+To keep settings between runs, put them in `.coding-crew/config.json` (per repo) or
+`~/.coding-crew/config.json` (per machine):
 
-## 4. Rework from PR review comments (optional)
+```json
+{ "afk": { "openPr": true, "maxParallel": 2 } }
+```
 
-With `openPr` on, `crew-afk` opens the feature PR and labels it `crew-rework`. Reviewers then
-comment on it as usual; the `crew-rework` GitHub Action runs `/address-pr-comments --auto`, which
-fixes what is sensible, pushes, and replies on every thread it handled. It never resolves a
-thread — you do.
+Coders run in fresh worktrees, so gitignored files such as `.env` aren't there. `.env` and
+`docker-compose.override.yml` are copied automatically; list anything else in a
+`.worktreeinclude` file at the repo root.
 
-**Setup**
+Every setting — per-role models and runtimes, timeouts, budgets, worktree location — is in the
+[crew-afk configuration reference](docs/guide.md#configuring-crew-afk).
 
-1. Copy `.github/workflows/crew-rework.yml` into your repo.
-2. Add the repo secret `ANTHROPIC_API_KEY`.
-3. Make sure your CI workflow has `workflow_dispatch:` if you want the re-trigger below.
+## All commands
 
-**Flow.** A review, review comment or `/crew-rework` PR comment triggers the workflow. Before any
-step that uses the API key it checks that the actor has write access, the PR's branch is in the
-same repo (no forks), and the PR carries the `crew-rework` label. Runs are serialised per PR.
-Only comments by write/maintain/admin authors ever reach the model.
+| Command                  | Use it to                                                                               |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| `/crew-grill`            | Stress-test a plan → PRD + issues. Add `with docs` to also update `CONTEXT.md` and ADRs |
+| `/crew-brainstorm`       | Explore an unformed idea → design → PRD + issues                                        |
+| `/crew-afk`              | Run the unattended sprint over all `ready-for-agent` issues                             |
+| `/crew-address-findings` | Triage and fix the sprint's review findings                                             |
+| `/solve-issue`           | Implement one issue yourself, end to end                                                |
+| `/to-prd`, `/to-issues`  | Run just the PRD step or just the issue-splitting step                                  |
+| `/address-pr-comments`   | Fix sensible GitHub PR review comments and reply to them                                |
+| `/configure-tracker`     | Choose where issues live: local markdown files (default) or GitHub Issues               |
 
-**Guards.** Unattended runs are capped at two rounds; comment `/crew-rework` to allow two more. A
-change to protected paths (`.github/`, CI configs, auth, deploy, `.env`), a failing check, or a
-rejected push stops the run: it comments on the PR and adds `needs-human`.
-
-**CI re-trigger.** Pushes made with the default `GITHUB_TOKEN` do not start other workflows. The
-skill therefore dispatches your CI workflow explicitly after pushing (`--ci-workflow`).
-Alternatively, provide the optional App token below and the push triggers CI natively.
-
-**Optional App token.** Create a GitHub App with contents/pull-requests write, install it, set the
-repo variable `CREW_APP_ID` and secret `CREW_APP_PRIVATE_KEY`. The workflow then checks out and
-pushes as the App.
-
----
-
-## Skills
-
-**Main flow**
-
-| Step                       | Skill                    | What it does                                                          |
-| -------------------------- | ------------------------ | --------------------------------------------------------------------- |
-| 1. design                  | `/crew-grill`            | Concrete plan — stress-test every assumption → PRD + issues           |
-| 2. build + verify + review | `/crew-afk`              | Away From Keyboard — autonomous parallel sprint over all ready issues |
-| 3. address findings        | `/crew-address-findings` | Triage and fix the post-sprint code review report with TDD            |
-
-> **Step 1 alternative:** if the idea is still forming, use `/crew-brainstorm` instead of
-> `/crew-grill` — pick one or the other, never both.
-
-**Also available**
-
-| Skill                  | When                                                             |
-| ---------------------- | ---------------------------------------------------------------- |
-| `/solve-issue`         | Implement a single issue end-to-end                              |
-| `/address-pr-comments` | Fetch PR review comments from GitHub and implement sensible ones |
-| `/configure-tracker`   | Select and install an issue tracker template — local markdown files or GitHub Issues |
-
----
+Want PR review comments fixed automatically too? See the optional
+[PR rework with GitHub Actions](docs/guide.md#pr-rework-with-github-actions-optional).
 
 ## Install options
 
-| Flag                     | Effect                                                                                    |
-| ------------------------ | ----------------------------------------------------------------------------------------- |
-| `claude`                 | Claude only (default: all platforms)                                                      |
-| `copilot`                | Copilot only                                                                              |
-| `pi`                     | pi only                                                                                   |
-| `codex`                  | Codex only                                                                                |
-| `--project`              | Install into the current project instead of `$HOME`                                       |
-| `--update`               | Check for and apply updates, based on `.coding-crew/manifest.json`                        |
+`bootstrap.sh` takes the same arguments as `install.sh`:
 
-**Where things land:** Claude Code → `.claude/`; Copilot → `.github/agents/` + `.github/skills/`
-per project, `~/.copilot/` when installed user-level (Copilot does not read `.copilot/` inside a
-repo); pi → `.pi/` per project, `~/.pi/agent/` when installed user-level; Codex → skills in
-`.agents/skills/`, agents in `.codex/agents/*.toml`.
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude             # one platform
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude --project   # this project only
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --update           # update an install
+```
 
-A user-level install honors each platform's own config-dir override instead of assuming `$HOME`:
-`CLAUDE_CONFIG_DIR` (Claude Code), `COPILOT_HOME` (Copilot CLI), `PI_CODING_AGENT_DIR` (pi),
-`CODEX_HOME` (Codex). Set the one(s) you use before installing user-level and files land where
-that CLI actually looks; unset, each falls back to its own `$HOME`-relative default above.
+| Argument                              | Effect                                              |
+| ------------------------------------- | --------------------------------------------------- |
+| `claude` / `copilot` / `pi` / `codex` | Install for that platform only (default: all)       |
+| `--project`                           | Install into the current project instead of `$HOME` |
+| `--update`                            | Apply updates to an existing install                |
 
-On every platform, `/crew-afk` runs each coder as its own child process in its own git worktree —
-the matching CLI (`pi`, `codex`, `claude`, or `copilot`) must be on `PATH`. Two platform-specific
-requirements:
+Where files land:
 
-- **Copilot** resolves `--agent` from the worker's own directory, so agent definitions must be
-  either committed (`.github/agents/` is tracked) or installed user-level with `TARGET_REPO=$HOME`.
-  A sprint refuses to start otherwise and says which.
-- **pi and Codex support the local CLI only** — a sprint spawns background child processes against
-  a local git clone, which the hosted Codex surfaces (Codex in ChatGPT, the Codex cloud/web agent)
-  cannot support.
+| Platform    | Per project                          | User level (honors)                                    |
+| ----------- | ------------------------------------ | ------------------------------------------------------ |
+| Claude Code | `.claude/`                           | `~/.claude/` (`CLAUDE_CONFIG_DIR`)                     |
+| Copilot     | `.github/agents/`, `.github/skills/` | `~/.copilot/` (`COPILOT_HOME`)                         |
+| pi          | `.pi/`                               | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`)                 |
+| Codex       | `.agents/skills/`, `.codex/agents/`  | `~/.agents/skills/`, `~/.codex/agents/` (`CODEX_HOME`) |
 
-To uninstall:
+Requirements for `/crew-afk`:
+
+- The platform's **CLI must be on `PATH`** (`claude`, `copilot`, `codex` or `pi`) — each coder runs
+  as its own process. `crew-afk doctor` reports anything missing.
+- **Copilot:** agents must be committed (`.github/agents/`) or installed user-level; the sprint
+  tells you which if neither.
+- **Codex and pi:** local CLI only. Hosted surfaces (Codex in ChatGPT, Codex cloud) can't run a sprint.
+
+Uninstall:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
 ```
 
----
+## Learn more
 
-## Guides
-
-- [Consumer guide](docs/guide.md#part-2-using-this-repo-in-your-project) — full setup, issue
-  lifecycle, troubleshooting
-- [Contributor guide](docs/guide.md#part-1-contributing-to-this-repo) — adding agents/skills,
+- [User guide](docs/guide.md#part-2-using-this-repo-in-your-project) — writing issues, issue
+  lifecycle, configuration, reading the logs, troubleshooting
+- [Contributor guide](docs/guide.md#part-1-contributing-to-this-repo) — adding agents and skills,
   registry schema, security rules
-
----
 
 ## Acknowledgements
 

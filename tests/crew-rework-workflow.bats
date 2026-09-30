@@ -3,7 +3,7 @@
 # Structural checks on the crew-rework workflow: the gate precedes every use of the API key,
 # and runs are serialised per PR.
 
-WF="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/.github/workflows/crew-rework.yml"
+WF="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/templates/workflows/crew-rework.yml"
 
 line_of() { grep -n -m1 -E "$1" "$WF" | cut -d: -f1; }
 

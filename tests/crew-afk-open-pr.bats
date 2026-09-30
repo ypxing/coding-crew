@@ -130,16 +130,17 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   ! grep -q '^pr ' "$GH_LOG"
 }
 
-@test "open-pr: a new PR gets the crew-rework label" {
+# crew-rework is parked: an optional template a human installs and labels for, so open-pr
+# never arms it.
+@test "open-pr: a new PR gets no crew-rework label" {
   run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
   [ "$status" -eq 0 ]
-  grep -q '^label create crew-rework' "$GH_LOG"
-  grep -q '^pr edit feature/demo --add-label crew-rework' "$GH_LOG"
+  ! grep -q 'crew-rework' "$GH_LOG"
 }
 
-@test "open-pr: an updated PR gets the crew-rework label" {
+@test "open-pr: an updated PR gets no crew-rework label" {
   jq -n '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: "Opened by hand."}' > "$GH_PR"
   run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
   [ "$status" -eq 0 ]
-  grep -q '^pr edit feature/demo --add-label crew-rework' "$GH_LOG"
+  ! grep -q 'crew-rework' "$GH_LOG"
 }
