@@ -234,13 +234,52 @@ export function createIssue({ title, body, labels = [], featureSlug }, { mainRoo
     }
     const url = result.stdout.trim();
     const match = /\/(\d+)\s*$/.exec(url);
-    return { number: match ? Number(match[1]) : null, url };
+    const number = match ? Number(match[1]) : null;
+    if (number !== null) linkBlockers(number, { mainRoot, exec });
+    return { number, url };
   } finally {
     try {
       unlinkSync(bodyFile);
     } catch {
       // best-effort cleanup of a throwaway temp file — nothing depends on it surviving.
     }
+  }
+}
+
+/**
+ * Mirror issue `number`'s `## Blocked by` numbers as native GitHub `blocked_by` relationships,
+ * each by the blocker's numeric id. Best-effort and additive: dispatch still reads only the
+ * body prose, so a failed or already-existing link warns on stderr (or is silent) and never
+ * throws. An issue with no `## Blocked by` makes no dependency call. Returns the count linked.
+ */
+export function linkBlockers(number, { mainRoot, exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+  try {
+    const { repo } = readTrackerConfig(mainRoot ?? process.cwd());
+    const repoArgs = repo ? ["--repo", repo] : [];
+    const apiBase = repo ? `repos/${repo}` : "repos/{owner}/{repo}";
+    const view = exec("gh", ["issue", "view", String(number), ...repoArgs, "--json", "body", "-q", ".body"]);
+    if (view.code !== 0) {
+      warn(`link-blockers: could not read #${number} (exit ${view.code}): ${view.stderr || view.stdout}`);
+      return 0;
+    }
+    const blockers = extractBlockedByNumbers(sectionBody(view.stdout ?? "", "Blocked by") ?? "").map(Number);
+    let linked = 0;
+    for (const blocker of blockers) {
+      const idr = exec("gh", ["api", `${apiBase}/issues/${blocker}`, "--jq", ".id"]);
+      const id = String(idr.stdout ?? "").trim();
+      if (idr.code !== 0 || !/^\d+$/.test(id)) {
+        warn(`link-blockers: #${number}: blocker #${blocker} not found: ${idr.stderr || idr.stdout}`);
+        continue;
+      }
+      const r = exec("gh", ["api", "-X", "POST", `${apiBase}/issues/${number}/dependencies/blocked_by`, "-F", `issue_id=${id}`]);
+      if (r.code === 0) linked++;
+      else if (/already|duplicate/i.test(`${r.stderr}${r.stdout}`)) continue;
+      else warn(`link-blockers: #${number} blocked by #${blocker} failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+    }
+    return linked;
+  } catch (err) {
+    warn(`link-blockers: #${number}: ${err.message}`);
+    return 0;
   }
 }
 
@@ -351,8 +390,28 @@ function cliPrd(argv) {
   process.stdout.write(`<!-- PRD issue #${prd.number}: ${prd.title} -->\n${prd.text}\n`);
 }
 
+/** `link-blockers --issue <n> [--main-root <dir>]` — always exits 0; failures warn on stderr. */
+function cliLinkBlockers(argv) {
+  const opts = {};
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case "--issue":
+        opts.issue = argv[++i];
+        break;
+      case "--main-root":
+        opts.mainRoot = argv[++i];
+        break;
+      default:
+        throw new Error(`link-blockers: unknown argument: ${argv[i]}`);
+    }
+  }
+  if (!opts.issue) throw new Error("link-blockers requires --issue");
+  linkBlockers(opts.issue, { mainRoot: opts.mainRoot ?? process.cwd() });
+}
+
 function cliMain(argv) {
   const [command, ...rest] = argv;
+  if (command === "link-blockers") return cliLinkBlockers(rest);
   if (command === "create-issue") return cliCreateIssue(rest);
   if (command === "prd") return cliPrd(rest);
   throw new Error(`unknown command: ${command}`);

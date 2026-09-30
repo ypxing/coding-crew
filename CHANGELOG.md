@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Native GitHub dependencies from `## Blocked by`.** `github.mjs link-blockers --issue <n>`
+  creates one native `blocked_by` relationship per `## Blocked by` number, by the blocker's numeric
+  id; `createIssue` runs it for the issue it creates and the github tracker template's publish
+  operation tells to-issues to run it after each `gh issue create`. Best-effort: a failed link warns
+  on stderr and never fails creation; an already-linked pair is not an error. Dispatch is unchanged
+  and still reads only the body.
 - **`address-pr-comments --auto` and the `crew-rework` GitHub Action.** `--auto` runs the skill
   with no confirmation or question, fetching through `fetch-review-threads.sh`, pushing through
   `push-rework.sh`, replying on every handled thread with the new `reply-thread.sh`, and never
