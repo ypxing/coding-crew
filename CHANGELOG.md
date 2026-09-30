@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.34.0]
+
+### Added
+
+- **The feature lease's ref namespace is verified against github.com, with a fallback.**
+  `CREW_LEASE_LIVE=1 scripts/verify-lease-live.sh` (also an opt-in bats test) pushes a throwaway
+  `refs/crew-lock/<slug>` to `origin` and exercises create, CAS-reclaim, stale-CAS rejection and
+  CAS-delete: GitHub accepted all of them (2026-09-30, recorded in the github tracker template).
+  A host that refuses the namespace now makes `lease.sh` exit 4 and the acquire error names the
+  fallback, `CREW_LEASE_NAMESPACE=refs/tags/crew-lock`, which `lease.sh` and `lease.mjs` both honour.
+
 ## [1.33.0]
 
 ### Added
