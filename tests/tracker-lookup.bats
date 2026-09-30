@@ -118,3 +118,19 @@ block() { awk '/# BEGIN tracker-lookup/{f=1} f{print} /# END tracker-lookup/{f=0
     done
   done
 }
+
+@test "a caller stopping at the first hit never breaks the lookup's pipe" {
+  # Every caller reads the candidates through `< <(...)` and breaks on the first hit. Written
+  # line by line, the list can outlive that break; with SIGPIPE ignored (as on CI runners) the
+  # next printf then leaves "write error: Broken pipe" on stderr. A printf that pauses after
+  # each write makes the break land between writes every time, not once in a thousand runs.
+  export CREW_TRACKER_CONFIG="$REPO_ROOT/scripts/tracker/tracker-config.sh" CREW_INSTALL_DIR="$TEMP_DIR/i"
+  run bash -c "$(block "${CALLERS[0]}")"'
+    printf() { builtin printf "$@"; sleep 0.2; }
+    trap "" PIPE
+    while IFS= read -r c; do [ -e "$c" ] && break; done < <(tracker_config_candidates /r)
+    sleep 1'
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
