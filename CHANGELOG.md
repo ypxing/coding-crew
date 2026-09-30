@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.35.0]
+
+### Fixed
+
+- **Issues close when their feature PR merges, even when GitHub never linked them.** GitHub
+  closes an issue on merge only if it linked the PR's `Closes #n` line, and it can fail to: a
+  feature PR merged with all five of its lines unlinked, leaving the issues open with
+  `awaiting-merge`. Right after taking the feature lease, each run now runs `close-shipped.sh`
+  (under `tracker: github`), which reads the bodies of the feature branch's PRs merged into the
+  default branch itself and closes every open `awaiting-merge` issue in the milestone they name,
+  with a comment naming the PR. Once no open work issue is left it closes the `PRD:` issue too;
+  the milestone stays open. It can also be run by hand right after a merge. A failure warns and
+  the run goes on.
+
 ## [1.34.0]
 
 ### Added

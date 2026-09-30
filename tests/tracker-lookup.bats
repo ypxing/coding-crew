@@ -8,7 +8,8 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK="$REPO_ROOT/skills/crew-afk/scripts"
 CALLERS=(
   "$AFK/session-init.sh" "$AFK/close-issue.sh" "$AFK/promote-findings.sh"
-  "$AFK/prd-audit.sh" "$AFK/issue-labels.sh" "$REPO_ROOT/scripts/tracker/mark-issue-done.sh"
+  "$AFK/prd-audit.sh" "$AFK/issue-labels.sh" "$AFK/close-shipped.sh"
+  "$REPO_ROOT/scripts/tracker/mark-issue-done.sh"
 )
 
 setup() {

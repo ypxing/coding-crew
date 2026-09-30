@@ -96,6 +96,16 @@ PR itself, writing these lines for every `awaiting-merge` issue in the milestone
 the end-of-sprint summary prints them for you to paste. (A PR into any other branch does not
 trigger the keyword — close those by hand.)
 
+GitHub only closes an issue whose `Closes #n` line it linked when the PR was opened, and it can
+fail to link one. So crew-afk does not rely on it: right after taking the feature lease, each run
+runs `close-shipped.sh <feature-slug> <feature-branch>`, which reads the bodies of the feature
+branch's PRs merged into the default branch itself and closes (`completed`, with a comment naming
+the PR) every open `awaiting-merge` issue in the milestone that a closing keyword names — `#n`,
+`owner/repo#n` or the issue URL. Once no open work issue is left in the milestone it closes the
+`PRD:` issue too. The milestone stays open. Run it by hand from the repo root to close them right
+after a merge: `bash .claude/skills/crew-afk/scripts/close-shipped.sh <feature-slug> <feature-branch>`
+(the skill's install path varies by platform). A failure only warns.
+
 ## Operation: status-update
 
 Non-terminal statuses swap the label:
