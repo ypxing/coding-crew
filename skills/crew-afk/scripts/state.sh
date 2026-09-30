@@ -22,7 +22,7 @@ set -euo pipefail
 #                          [--slug <slug> --role <role> --attempt <n>]
 #                          [--session-id <id>] [--context-tokens <n>] [--head <sha>]
 #   state.sh run-start --id <run-id>
-#   state.sh baseline --commit <sha> --verdict <pass|fail>
+#   state.sh baseline [--slot baseline|integration] --commit <sha> --verdict <pass|fail>
 #   state.sh resume --slug <slug>
 #   state.sh retention --slug <slug>
 #   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|state-file>
@@ -250,15 +250,17 @@ case "$CMD" in
     ;;
 
   baseline)
-    # The feature branch's own checks, run once before any dispatch (preflight.mjs). Only a
-    # pass is ever reused, and only for the same commit.
-    commit=$(flag commit "" "$@"); verdict=$(flag verdict "" "$@")
+    # The feature branch's own checks, run once before any dispatch (preflight.mjs), and again
+    # on the merged branch at each drain (`--slot integration`). Only a pass is ever reused, and
+    # only for the same commit; each slot caches on its own.
+    commit=$(flag commit "" "$@"); verdict=$(flag verdict "" "$@"); slot=$(flag slot baseline "$@")
     [ -n "$commit" ] || die "baseline requires --commit"
     case "$verdict" in pass|fail) : ;; *) die "baseline requires --verdict pass|fail" ;; esac
-    edit_state --arg c "$commit" --arg v "$verdict" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      '.baseline = {commit: $c, verdict: $v, at: $at}'
-    trace --level "$([ "$verdict" = pass ] && echo info || echo error)" STATE "baseline commit=$commit verdict=$verdict"
-    echo "STATE: baseline commit=$commit verdict=$verdict"
+    case "$slot" in baseline|integration) : ;; *) die "baseline requires --slot baseline|integration" ;; esac
+    edit_state --arg k "$slot" --arg c "$commit" --arg v "$verdict" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '.[$k] = {commit: $c, verdict: $v, at: $at}'
+    trace --level "$([ "$verdict" = pass ] && echo info || echo error)" STATE "$slot commit=$commit verdict=$verdict"
+    echo "STATE: $slot commit=$commit verdict=$verdict"
     ;;
 
   resume)

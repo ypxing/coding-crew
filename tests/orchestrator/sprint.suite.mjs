@@ -138,9 +138,12 @@ function addIssue(root, name, { status = "ready-for-agent", body = "", blockedBy
 // The baseline (preflight.mjs) runs the checks once more before any dispatch; the per-issue
 // tests below count those calls, so the helpers leave it out unless a test asks for it.
 const NO_BASELINE = ["--no-baseline"];
+// Likewise the integration check (at each drain, on the merged feature branch) is one more set of
+// check runs; the helpers leave it out unless a test asks for it.
+const NO_INTEGRATION = ["--no-integration-check"];
 
-function runSprint(root, extra = [], env = {}, { baseline = false } = {}) {
-  return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...extra], {
+function runSprint(root, extra = [], env = {}, { baseline = false, integration = false } = {}) {
+  return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...(integration ? [] : NO_INTEGRATION), ...extra], {
     cwd: root,
     env: {
       ...process.env,
@@ -1238,7 +1241,7 @@ test("a coder that hits afk.limits.coder.usd is blocked at once, not retried", (
     ].join("\n"),
   );
   chmodSync(join(stub, "claude"), 0o755);
-  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--no-baseline", "--no-commands"], {
+  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--no-baseline", "--no-integration-check", "--no-commands"], {
     cwd: root,
     env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: "", MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
   });
@@ -2553,8 +2556,8 @@ test("a gaps issue that could not be created is named in the summary, not only t
 // order. Only a per-issue `DEPS: failed` changes a round's status: it stops that issue.
 
 /** The effects log — one line per subprocess, in order. CREW_VERBOSE puts it on stderr. */
-function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi", baseline = false } = {}) {
-  const r = sh("node", [MAIN, "run", "--platform", platform, "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...extra], {
+function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi", baseline = false, integration = false } = {}) {
+  const r = sh("node", [MAIN, "run", "--platform", platform, "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...(integration ? [] : NO_INTEGRATION), ...extra], {
     cwd: root,
     env: {
       ...process.env,
@@ -2795,7 +2798,7 @@ test("a DEPS: failed outcome blocks the issue at that step, without crashing the
   sh("git", ["-C", root, "add", "package.json"]);
   sh("git", ["-C", root, "commit", "-q", "-m", "add package.json"]);
 
-  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline"], {
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
     cwd: root,
     env: {
       ...process.env,
@@ -3480,4 +3483,128 @@ test("every dispatch is filed in this run's ledger with its slug, role and attem
   // The coder's entry keeps the tip it left: the commit verify then checked.
   const verified = JSON.parse(readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json"), "utf8")).commit;
   assert.equal(s.dispatches[0].head, verified);
+});
+
+// ─── the integration check: the merged feature branch, at every drain ─────────────────
+
+/** A `test` target that is red only when alpha's and beta's files are both present — so each
+ * branch is green alone and the merge of the two is not. Committed to the feature branch. */
+function redWhenMerged(root) {
+  writeFileSync(
+    join(root, "Makefile"),
+    "test:\n\t@if [ -f src/alpha.txt ] && [ -f src/beta.txt ]; then echo 'alpha and beta clash' >&2; exit 1; fi\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n",
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red when merged"]);
+}
+
+const integrationRuns = (lines) => lines.filter((l) => /verify-worktree\.sh --dir \S+\/_integration --stem _integration/.test(l)).length;
+
+test("two branches green alone and red merged: the summary reports a failed ## Integration check naming the check", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redWhenMerged(root);
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  for (const f of ["alpha", "beta"]) {
+    assert.equal(sh("git", ["-C", root, "cat-file", "-e", `feature/demo:src/${f}.txt`]).code, 0, `${f} passed its own verify and merged`);
+  }
+  assert.match(r.stdout, /## Integration check\s+\*\*Failed\*\* on feature\/demo at [0-9a-f]{12}/);
+  assert.match(r.stdout, /- `test`: fail/);
+  assert.match(r.stdout, /alpha and beta clash/, "the output tail is quoted");
+  assert.equal(integrationRuns(lines), 1);
+  assert.equal(state(root).integration.verdict, "fail");
+  const log = traceLog(root);
+  assert.match(log, /\[STEP\] step=integration branch=feature\/demo/);
+  assert.match(log, /^\S+Z ERROR \[VERIFY-OUTPUT\] step=integration result=fail file=\S+\/_integration\/verify\.out$/m);
+  assert.match(log, /^\S+Z ERROR INTEGRATION: fail — test \(feature\/demo at [0-9a-f]{12}\)$/m);
+  // The throwaway worktree and its branch are gone.
+  assert.equal(sh("git", ["-C", root, "branch", "--list", "crew/demo/_integration"]).stdout.trim(), "");
+  assert.equal(existsSync(join(root, ".scratch/worktrees/crew/demo/_integration")), false);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/_integration/verify.json")), true);
+});
+
+test("a green merged feature branch is reported passed, and a second drain at the same commit reuses the pass", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const first = commandLines(root, [], { integration: true });
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  assert.match(first.r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12}\./);
+  assert.equal(integrationRuns(first.lines), 1);
+  const tip = sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim();
+  assert.deepEqual({ commit: state(root).integration.commit, verdict: state(root).integration.verdict }, { commit: tip, verdict: "pass" });
+  assert.equal(state(root).baseline, undefined, "its cache is not the baseline's");
+
+  // Drained again with the branch untouched: nothing is re-run.
+  const second = commandLines(root, [], { integration: true });
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  assert.equal(integrationRuns(second.lines), 0);
+  assert.match(second.r.stderr, /INTEGRATION: pass \(cached/);
+  assert.match(second.r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12} \(cached/);
+});
+
+test("a drain with nothing merged runs no integration check", () => {
+  const root = fixtureRepo();
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(integrationRuns(lines), 0);
+  assert.doesNotMatch(r.stdout, /## Integration check/);
+});
+
+test("a red final integration check keeps --open-pr from opening the PR, and the summary says why", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redWhenMerged(root);
+  const { r, lines } = commandLines(root, ["--open-pr"], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(lines.filter((l) => /open-pr\.sh/.test(l)).length, 0, "nothing was pushed");
+  assert.match(r.stdout, /## Pull Request\s+\*\*Not opened:\*\* the integration check failed on feature\/demo — see ## Integration check above\./);
+});
+
+test("--no-integration-check and integrationCheck: false skip it; --no-baseline alone does not", () => {
+  const off = fixtureRepo();
+  addIssue(off, "01-alpha.md");
+  const flag = commandLines(off, [], {});
+  assert.equal(flag.r.code, 0, `${flag.r.stdout}\n${flag.r.stderr}`);
+  assert.equal(integrationRuns(flag.lines), 0);
+  assert.doesNotMatch(flag.r.stdout, /## Integration check/);
+
+  const configured = fixtureRepo();
+  addIssue(configured, "01-alpha.md");
+  mkdirSync(join(configured, ".coding-crew"), { recursive: true });
+  writeFileSync(join(configured, ".coding-crew/config.json"), JSON.stringify({ afk: { integrationCheck: false } }));
+  sh("git", ["-C", configured, "add", "-A"]);
+  sh("git", ["-C", configured, "commit", "-q", "-m", "config"]);
+  const viaConfig = commandLines(configured, [], { integration: true });
+  assert.equal(viaConfig.r.code, 0, `${viaConfig.r.stdout}\n${viaConfig.r.stderr}`);
+  assert.equal(integrationRuns(viaConfig.lines), 0);
+
+  const noBaseline = fixtureRepo();
+  addIssue(noBaseline, "01-alpha.md");
+  const r = commandLines(noBaseline, ["--no-baseline"], { integration: true });
+  assert.equal(r.r.code, 0, `${r.r.stdout}\n${r.r.stderr}`);
+  assert.equal(integrationRuns(r.lines), 1, "--no-baseline does not turn the integration check off");
+});
+
+test("a baseline check is unchanged by the integration check: same stem, same cache, same stop", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red"]);
+  const { r, lines } = commandLines(root, [], { baseline: true, integration: true });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.equal(integrationRuns(lines), 0, "the run stopped before any drain");
+  assert.equal(state(root).baseline.verdict, "fail");
+  assert.equal(state(root).integration, undefined);
+});
+
+test("plan shows the integration check", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const plan = (extra) => sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo", ...extra], { cwd: root, env: { ...process.env, MAIN_ROOT: root } }).stdout;
+  assert.match(plan([]), /^integration: the checks run on the merged feature branch each time the queue drains/m);
+  assert.match(plan(["--no-integration-check"]), /^integration: disabled \(--no-integration-check\)$/m);
 });

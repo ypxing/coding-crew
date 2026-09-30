@@ -343,6 +343,7 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
         installDeps: "no",
         squashCommits: 1,
         baselineCheck: "yes",
+        integrationCheck: "yes",
         resumeCoderSession: 0,
         timeouts: { coder: -1, worker: 5 },
       },
@@ -359,6 +360,7 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
         /"afk\.installDeps" must be true or false/,
         /"afk\.squashCommits" must be true or false/,
         /"afk\.baselineCheck" must be true or false/,
+        /"afk\.integrationCheck" must be true or false/,
         /"afk\.resumeCoderSession" must be true or false/,
         /"afk\.timeouts\.coder" must be a positive number of minutes/,
         /unknown key "afk\.timeouts\.worker"/,
@@ -400,6 +402,7 @@ test("resolveSettings: defaults, then config.json, then flags — and a flag is 
   assert.equal(defaults.installDeps, true);
   assert.equal(defaults.squashCommits, false, "squashing rewrites history, so it is opt-in");
   assert.equal(defaults.baselineCheck, true, "the baseline runs unless turned off");
+  assert.equal(defaults.integrationCheck, true, "the integration check runs unless turned off");
   assert.equal(defaults.resumeCoderSession, false, "session resume is opt-in until measured");
   assert.equal(defaults.maxParallel, null);
   assert.deepEqual(defaults.timeouts, { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 });
