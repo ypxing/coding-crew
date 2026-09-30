@@ -86,9 +86,8 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
   # ─────────────────────────── github backend ────────────────────────────
   #
   # The argument is a GitHub issue number here, not a file path — there is no
-  # local file for a github-tracked issue. Mirrors orchestrator/lib/trackers/
-  # github.mjs's markDone (issue 05) for the two directly-invoked scripts that
-  # don't go through that Node module.
+  # local file for a github-tracked issue. The one implementation of github's
+  # mark-done: close-issue.sh calls this too.
   ISSUE_NUMBER="$ISSUE_PATH"
   case "$ISSUE_NUMBER" in
     ''|*[!0-9]*)
@@ -154,15 +153,23 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
     fi
   fi
 
-  # ─── close ───────────────────────────────────────────────────────────────
-  # No label is added or swapped — the closed state itself is "done".
-  if ! CLOSE_OUT="$(gh issue close "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --reason completed 2>&1)"; then
-    echo "ERROR: gh issue close failed for #$ISSUE_NUMBER:" >&2
-    echo "$CLOSE_OUT" >&2
+  # ─── mark done ───────────────────────────────────────────────────────────
+  # Not a close: the work is only on a branch. Swap ready-for-agent for awaiting-merge
+  # (read as done) and let the PR's `Closes #n` close the issue when it merges. The label
+  # is created first, idempotently: --add-label fails on a label the repo lacks.
+  if ! GH_OUT="$(gh label create awaiting-merge "${REPO_ARGS[@]}" --force \
+      --description "Implemented on a feature branch; closes when its PR merges" 2>&1)"; then
+    echo "ERROR: gh label create awaiting-merge failed:" >&2
+    echo "$GH_OUT" >&2
+    exit 1
+  fi
+  if ! GH_OUT="$(gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --add-label awaiting-merge --remove-label ready-for-agent 2>&1)"; then
+    echo "ERROR: gh issue edit failed for #$ISSUE_NUMBER:" >&2
+    echo "$GH_OUT" >&2
     exit 1
   fi
 
-  echo "DONE: issue #$ISSUE_NUMBER closed"
+  echo "DONE: issue #$ISSUE_NUMBER labelled awaiting-merge — put 'Closes #$ISSUE_NUMBER' in the PR body so merging it closes the issue"
   exit 0
 fi
 

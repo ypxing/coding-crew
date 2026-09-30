@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- **`install.sh --update` now refreshes the tracker scripts.** `mark-issue-done.sh` and
+  `tracker-config.sh` are meant to be overwritten on every install, but `--update` skipped
+  them, so an updated install kept the old scripts and still closed GitHub issues that
+  should only be labelled `awaiting-merge`. Re-run `./install.sh --update` to pick them up.
+
 - **Under `tracker: github`, an issue is closed by its PR, not by the sprint.** crew-afk closed
   each issue as `completed` the moment its branch merged into the local feature branch, so
   GitHub showed work as shipped that had never been pushed and could still be dropped in

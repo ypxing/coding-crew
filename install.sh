@@ -1041,6 +1041,9 @@ echo "Target: $REPO_ROOT"
 
 if [[ "$UPDATE_MODE" == "true" ]]; then
   run_update
+  # Docs never overwrite an existing file, but the tracker scripts always do — and they carry
+  # no version of their own, so an update that skips this keeps a stale gate forever.
+  install_docs
   if [[ "${#MANIFEST_AGENT_ENTRIES[@]}" -gt 0 || "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
     write_manifest
   fi
