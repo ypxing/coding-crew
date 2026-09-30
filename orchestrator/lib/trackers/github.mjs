@@ -46,6 +46,10 @@ export const READY_STATUS = "ready-for-agent";
  * `Closes #n` in the feature's PR once that merges. An open issue carrying it reads as `done`. */
 export const AWAITING_MERGE_LABEL = "awaiting-merge";
 
+/** Added by crew-afk (issue-labels.sh) when a run stops on an issue that needs a human; the
+ * issue keeps `ready-for-agent`, but selectDispatchable skips it until a human removes this. */
+export const BLOCKED_LABEL = "blocked";
+
 /** POSIX single-quoting for the CREW_FAKE_GH command string below — same convention as
  * pane-host's shellQuote, kept local rather than imported so this tracker has no dependency
  * on the pane-host feature. */
@@ -134,6 +138,7 @@ export function parseIssue(json) {
     sourceGuarded: isSourceGuarded(text),
     hasProgress: sectionBody(text, "Progress") !== null,
     hasBlocked: sectionBody(text, "Blocked") !== null,
+    labels: (json.labels ?? []).map((l) => (typeof l === "string" ? l : l.name)),
     text,
   };
 }
@@ -173,7 +178,8 @@ export function listOpen(mainRoot, { featureSlug, exec = shellOut } = {}) {
 export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug, exec, includeBlocked = false } = {}) {
   const issues = listOpen(mainRoot, { featureSlug, exec });
   const statusByNumber = new Map(issues.map((i) => [i.number, i.status]));
-  const ready = issues.filter((i) => i.status === status);
+  // `blocked` is a human's to remove, so it also keeps the issue out of `includeBlocked` (plan/preflight).
+  const ready = issues.filter((i) => i.status === status && !i.labels.includes(BLOCKED_LABEL));
   return ready
     .map((i) => ({ ...i, blockers: i.blockedBy.filter((n) => statusByNumber.get(n) !== "done") }))
     .filter((i) => includeBlocked || i.blockers.length === 0);

@@ -293,8 +293,9 @@ export class Sprint {
   retain(slug, branch, reason) {
     return this.state(["retain", "--slug", slug, "--branch", branch, "--reason", reason]);
   }
-  blocked(slug, branch, reason) {
+  blocked(slug, branch, reason, number = null) {
     const args = ["blocked", "--slug", slug];
+    if (number != null) args.push("--number", String(number));
     if (branch) args.push("--branch", branch);
     if (reason) args.push("--reason", reason);
     return this.state(args);

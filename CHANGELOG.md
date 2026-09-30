@@ -4,6 +4,14 @@
 
 ### Added
 
+- **`blocked` label under `tracker: github`.** Every path through `finishBlocked` now adds
+  `blocked` (created if missing) next to `ready-for-agent` via the new `issue-labels.sh`; later
+  runs skip the issue until a human removes the label, and issues depending on it keep waiting.
+  `requires-failed` stays unlabelled and is re-probed. The summary prints
+  `gh issue edit <n> --remove-label blocked` per blocked issue; a failed label write only warns.
+  `tracker: local` is unchanged. `configure-tracker` creates the label; the github template
+  documents it.
+
 - **`address-pr-comments --auto` and the `crew-rework` GitHub Action.** `--auto` runs the skill
   with no confirmation or question, fetching through `fetch-review-threads.sh`, pushing through
   `push-rework.sh`, replying on every handled thread with the new `reply-thread.sh`, and never

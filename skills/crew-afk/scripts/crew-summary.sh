@@ -160,6 +160,12 @@ fi
 echo "Merged  ($(count_csv "$MERGED_SLUGS")): $(or_none "$MERGED_SLUGS")"
 echo "Partial ($(count_csv "$PARTIAL_SLUGS")): $(or_none "$PARTIAL_SLUGS")"
 echo "Blocked ($(count_csv "$BLOCKED_SLUGS")): $(or_none "$BLOCKED_SLUGS")"
+# Labelled `blocked` on GitHub: later runs skip these until the label comes off.
+UNBLOCK=$(jq -r '(.blocked_labelled // {}) | to_entries[] | "  gh issue edit \(.value) --remove-label blocked   # \(.key)"' "$SF" 2>/dev/null || true)
+if [ -n "$UNBLOCK" ]; then
+  echo "Labelled blocked — later runs skip these until a human puts them back in the queue:"
+  printf '%s\n' "$UNBLOCK"
+fi
 [ "$STALLED" -eq 1 ] && echo "STALLED: resolve blockers and re-run (/crew-afk)"
 
 echo ""
