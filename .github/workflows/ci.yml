@@ -10,7 +10,7 @@ jobs:
   test:
     name: Test on ${{ matrix.os }} ${{ matrix.shard }}
     runs-on: ${{ matrix.os }}
-    # The orchestrator's node suite alone runs ~5 minutes on macOS.
+    # The orchestrator's sprint suite is ~10 minutes of macOS CPU, split across six files.
     timeout-minutes: 20
     strategy:
       fail-fast: false

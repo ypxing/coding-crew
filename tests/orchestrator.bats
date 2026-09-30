@@ -1,15 +1,14 @@
 #!/usr/bin/env bats
 # orchestrator.bats — runs the Node orchestrator's own suite through the one test
-# entry point this repo has, so CI shards it like everything else and a broken state
-# machine cannot merge on a green bats run that never executed it.
+# entry point this repo has (bats), so CI shards it like everything else and a broken state
+# machine cannot merge on a green bats run that never executed it. The sprint suite's six
+# slices, most of its time, run from orchestrator-sprint-<k>.bats so they can land on
+# different shards; this file runs the rest.
 #
 # The suite is node:test only — no dependencies — and its integration half drives the
 # whole sprint state machine with every model dispatch faked, so it costs no tokens.
 
-setup_file() {
-  REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  export REPO_ROOT
-}
+load helpers/orchestrator-suite
 
 @test "orchestrator: node is available (the orchestrator's runtime)" {
   if ! command -v node >/dev/null 2>&1; then
@@ -19,15 +18,11 @@ setup_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "orchestrator: unit and integration suite passes" {
-  command -v node >/dev/null 2>&1 || skip "node not installed"
-  cd "$REPO_ROOT"
-  # A glob, not a list: a hand-kept list had silently dropped seven of the suite's files.
-  run node --test tests/orchestrator/*.test.mjs
-  if [ "$status" -ne 0 ]; then
-    echo "$output" >&3
-  fi
-  [ "$status" -eq 0 ]
+@test "orchestrator: unit suite passes (the sprint slices run from orchestrator-sprint-<k>.bats)" {
+  local files=() f
+  while IFS= read -r f; do files+=("$f"); done < <(orchestrator_unit_tests)
+  [ "${#files[@]}" -gt 0 ]
+  run_node_tests "${files[@]}"
 }
 
 @test "orchestrator: every slice of sprint.suite.mjs has an entry file, so no test goes unrun" {
@@ -39,6 +34,28 @@ setup_file() {
     grep -q "SPRINT_SLICE = \"$k/$total\"" "tests/orchestrator/sprint-$k.test.mjs"
   done
   [ "$(ls tests/orchestrator/sprint-*.test.mjs | wc -l | tr -d ' ')" -eq "$total" ]
+}
+
+@test "orchestrator: every node test file runs from exactly one bats file" {
+  # The sprint slices each have a bats file of their own so CI can shard them; the rest run
+  # from this file's glob. A slice with no bats file, or one also swept up by the glob, is a
+  # test that silently never runs or runs twice.
+  cd "$REPO_ROOT"
+  local f base k
+  for f in tests/orchestrator/*.test.mjs; do
+    base=$(basename "$f")
+    case "$base" in
+      sprint-*.test.mjs)
+        k=${base#sprint-}; k=${k%.test.mjs}
+        grep -q "tests/orchestrator/$base" "tests/orchestrator-sprint-$k.bats" ||
+          { echo "no bats file runs $base"; return 1; }
+        ;;
+    esac
+  done
+  [ "$(ls tests/orchestrator-sprint-*.bats | wc -l | tr -d ' ')" -eq "$(ls tests/orchestrator/sprint-*.test.mjs | wc -l | tr -d ' ')" ]
+  # This file's own share: every file the glob finds except the slices, and no slice.
+  [ "$( (orchestrator_unit_tests; ls tests/orchestrator/sprint-*.test.mjs) | sort)" = \
+    "$(ls tests/orchestrator/*.test.mjs | sort)" ]
 }
 
 @test "orchestrator: plan is read-only and needs no model" {
