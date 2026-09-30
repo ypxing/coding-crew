@@ -72,21 +72,25 @@ as `PRD: #<n>` in their body.
 
 ## Operation: mark-done
 
-Before checking criteria, re-fetch the issue body live — never trust an object the caller holds
-from an earlier `list` call, since a human may have edited it since:
+`done` means implemented and merged into the feature branch, not shipped. Delegate to the
+tracker's script — do not hand-run `gh issue edit` or `gh issue close`:
 
 ```bash
-gh issue view <number> [--repo owner/name] --json body --jq .body
+bash "$(git rev-parse --show-toplevel)/.coding-crew/scripts/mark-issue-done.sh" <number>
 ```
 
-Verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting Requirements`, if
-present) against the implemented code. Only once every box is checked:
+Before calling it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting
+Requirements`, if present) against the implemented code and check off the ones it satisfies. The
+script re-fetches the body live and refuses with exit `4` while one is unchecked, or exit `3`
+when an orchestrator owns the close — report your status and stop in either case.
 
-```bash
-gh issue close <number> [--repo owner/name] --reason completed
-```
-
-Closing *is* "done" for this backend — see Labels below for why there is no separate label.
+On success it swaps `ready-for-agent` for `awaiting-merge` (creating that label if the repo
+lacks it) and leaves the issue **open**. Put `Closes #<number>` in the body of the PR that
+carries the work: GitHub closes the issue when that PR merges into the default branch. With
+`afk.openPr: true` (or `--open-pr`) crew-afk pushes the feature branch and opens or updates that
+PR itself, writing these lines for every `awaiting-merge` issue in the milestone; without it,
+the end-of-sprint summary prints them for you to paste. (A PR into any other branch does not
+trigger the keyword — close those by hand.)
 
 ## Operation: status-update
 
@@ -96,17 +100,17 @@ Non-terminal statuses swap the label:
 gh issue edit <number> [--repo owner/name] --add-label <new-status> --remove-label <old-status>
 ```
 
-Terminal statuses (`done`, `wontfix`) close the issue with a reason instead of setting a label:
+`done` is the `mark-done` label swap above (`awaiting-merge`, issue left open for the PR to
+close). `wontfix` closes the issue with a reason instead of setting a label:
 
 ```bash
-gh issue close <number> [--repo owner/name] --reason completed     # done
 gh issue close <number> [--repo owner/name] --reason not-planned   # wontfix
 ```
 
 ## Labels
 
-The agents speak in terms of six canonical triage labels. Only four are real, pre-created
-GitHub labels; `done` and `wontfix` map to close-reasons, not labels.
+The agents speak in terms of six canonical triage labels. Five are real GitHub labels; `wontfix`
+maps to a close-reason.
 
 | Canonical label   | GitHub representation                                    | Meaning                                  |
 | ----------------- | --------------------------------------------------------- | ----------------------------------------- |
@@ -114,14 +118,16 @@ GitHub labels; `done` and `wontfix` map to close-reasons, not labels.
 | `needs-info`      | label `needs-info`                                         | Waiting on reporter for more information  |
 | `ready-for-agent` | label `ready-for-agent`                                     | Fully specified, ready for an AFK agent   |
 | `ready-for-human` | label `ready-for-human`                                     | Requires human implementation             |
-| `done`            | close-reason `completed` (`gh issue close --reason completed`) — **not a label** | Issue is complete and closed |
+| `done`            | label `awaiting-merge` while open; closed (`completed`) once its PR merges | Implemented; shipped once closed |
 | `wontfix`         | close-reason `not-planned` (`gh issue close --reason not-planned`) — **not a label** | Will not be actioned |
 
-Representing "done" as both a label and a close-reason would be two representations of one
-fact, and `gh issue list` already defaults to open issues, so a closed issue never needs a
-label to be excluded from dispatch. `configure-tracker`'s github setup idempotently creates the
-four real labels before first publish, since `gh issue create --label x` fails outright if `x`
-isn't already a repo label.
+`done` has two representations on purpose: "merged into the feature branch" and "shipped" are
+different facts, and only a PR merge establishes the second. Closing at the first would show
+issues as completed on GitHub while their code exists only in a local branch. Both read as
+`done` for dispatch and for `## Blocked by` resolution. `configure-tracker`'s github setup
+idempotently creates the five real labels before first publish, since `gh issue create --label x`
+fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` on
+demand, for repos configured before it existed.
 
 ## Workspace
 

@@ -2,6 +2,24 @@
 
 Issues and PRDs for this repo live as markdown files in `.scratch/`.
 
+## Tracker config (optional front matter)
+
+This file may open with YAML front matter declaring which tracker backend the whole
+pipeline should use:
+
+```yaml
+---
+tracker: local          # or "github"
+# repo: owner/name      # optional override — omit to let `gh` infer it from the git remote
+---
+```
+
+Omitting the front matter entirely — as this template does — means `tracker: local` with no
+`repo`. `orchestrator/lib/tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and
+`scripts/tracker/tracker-config.sh`'s `read_tracker_config` are the two readers of this front
+matter; both default to `{tracker: "local", repo: null}` when it, or this whole file, is absent,
+so existing local-tracker installs need no changes.
+
 ## Operation: list
 
 Find all open issues ready for an agent:
@@ -27,6 +45,10 @@ Create a new issue or PRD file under `.scratch/`:
 
 Create the directory if it does not exist. Set a `Status:` line near the top of the file.
 
+When issues come from `to-issues`, it also writes `.scratch/<feature-slug>/issues/issues-deps.json` — a flat filename → blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what the orchestrator reads to decide whether an issue is ready to dispatch.
+
+An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root — once per run, before the issue's first dispatch, under crew-afk; in `solve-issue`'s preflight on a direct run — and a failing one blocks the issue.
+
 ## Operation: mark-done
 
 Delegate to the tracker's close script — do not hand-run `sed` or `mv`:
@@ -51,6 +73,9 @@ deliberately recorded as descoped.
 
 On success the script sets `Status: done` and moves the file to `issues/done/` (sibling of
 `issues/open/`). It is idempotent: an issue already in `done/` exits 0.
+
+`done` means implemented and merged into the feature branch, not shipped — for this tracker
+there is no later state: nothing outside `.scratch/` reads it, so no PR has anything to close.
 
 ## Operation: status-update
 
@@ -86,6 +111,7 @@ Each feature slug maps to a directory under `.scratch/`:
 .scratch/<feature-slug>/
 ├── PRD.md                    ← optional product requirements doc
 └── issues/
+    ├── issues-deps.json      ← optional; filename → blocker-filenames map (written by to-issues)
     ├── open/                 ← active issues
     │   ├── 01-<slug>.md      ← implementation issues, numbered from 01
     │   └── 02-<slug>.md

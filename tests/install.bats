@@ -478,3 +478,15 @@ PROBE
   [[ "$output" != *$'\nrc=0'* ]]
   [[ "$output" == *"okrc=0"* ]]
 }
+
+@test "--update refreshes the tracker scripts even when every entry is up to date" {
+  # They are mechanism, overwritten on every install: a stale mark-issue-done.sh is a gate that
+  # no longer matches the tracker operation calling it (e.g. still closing a github issue that
+  # should only be labelled awaiting-merge).
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
+  echo "# stale" > "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
+  [ "$status" -eq 0 ]
+  cmp -s "$SCRIPT_DIR/scripts/tracker/mark-issue-done.sh" "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh"
+}
