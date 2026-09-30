@@ -16,8 +16,6 @@ set -euo pipefail
 # The push is a plain one. A rejected (non-fast-forward) push fails this script rather than
 # forcing over the remote; the caller reports it.
 #
-# Also adds the `crew-rework` label (created if missing) to the PR, new or updated.
-#
 # Prints `PR: <url>` on success.
 
 CLOSES_FILE=""
@@ -81,10 +79,6 @@ if [ "$state" = "OPEN" ]; then
 else
   url=$(gh pr create --head "$FEATURE_BRANCH" --title "$FEATURE_SLUG" --body-file "$TMP/block.md" | tail -1)
 fi
-
-# The label is what arms the crew-rework GitHub Action; failing to add it never fails the PR.
-gh label create crew-rework --force --description "Let the crew-rework workflow address review comments" >/dev/null 2>&1 || true
-gh pr edit "$FEATURE_BRANCH" --add-label crew-rework >/dev/null 2>&1 || true
 
 _trace PR "branch=$FEATURE_BRANCH url=$url"
 echo "PR: $url"

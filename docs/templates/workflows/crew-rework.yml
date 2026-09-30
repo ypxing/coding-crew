@@ -1,7 +1,8 @@
 name: crew-rework
 
-# Addresses review comments on PRs labelled `crew-rework` (crew-afk's open-pr.sh adds it).
-# Setup: repo secret ANTHROPIC_API_KEY; optional CREW_APP_ID / CREW_APP_PRIVATE_KEY (see README).
+# Addresses review comments on PRs labelled `crew-rework` (add the label by hand).
+# Optional template, not installed: copy to .github/workflows/ in your repo.
+# Setup: repo secret ANTHROPIC_API_KEY; optional CREW_APP_ID / CREW_APP_PRIVATE_KEY (see docs/guide.md).
 
 on:
   pull_request_review:

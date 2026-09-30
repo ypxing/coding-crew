@@ -455,18 +455,24 @@ covered by the default `.scratch/` gitignore entry; `crew-afk` warns until you a
 
 ---
 
-### PR rework with GitHub Actions
+### PR rework with GitHub Actions (optional)
 
-With `openPr` on, `crew-afk` opens the feature PR and labels it `crew-rework`. Reviewers then
-comment on it as usual; the `crew-rework` GitHub Action runs `/address-pr-comments --auto`, which
-fixes what is sensible, pushes, and replies on every thread it handled. It never resolves a
-thread — you do.
+Not installed by default. Without it, run `/address-pr-comments` yourself on the PR.
+
+With it, reviewers comment on a PR labelled `crew-rework` as usual; the `crew-rework` GitHub
+Action runs `/address-pr-comments --auto`, which fixes what is sensible, pushes, and replies on
+every thread it handled. It never resolves a thread — you do.
 
 **Setup**
 
-1. Copy `.github/workflows/crew-rework.yml` into your repo.
-2. Add the repo secret `ANTHROPIC_API_KEY`.
-3. Make sure your CI workflow has `workflow_dispatch:` if you want the re-trigger below.
+1. Copy [`docs/templates/workflows/crew-rework.yml`](templates/workflows/crew-rework.yml) to
+   `.github/workflows/` in your repo.
+2. Install the skills per project and commit them (`./install.sh claude --project --skill
+   address-pr-comments`): the runner has no `$HOME` install.
+3. Add the repo secret `ANTHROPIC_API_KEY`.
+4. Make sure your CI workflow is `ci.yml` (or edit `--ci-workflow` in the template) and has
+   `workflow_dispatch:` if you want the re-trigger below.
+5. Add the `crew-rework` label to each PR it should work on; crew-afk does not add it.
 
 **Flow.** A review, review comment or `/crew-rework` PR comment triggers the workflow. Before any
 step that uses the API key it checks that the actor has write access, the PR's branch is in the

@@ -102,8 +102,8 @@ Every setting — per-role models and runtimes, timeouts, budgets, worktree loca
 | `/address-pr-comments`   | Fix sensible GitHub PR review comments and reply to them                                |
 | `/configure-tracker`     | Choose where issues live: local markdown files (default) or GitHub Issues               |
 
-Want PR review comments fixed automatically too? See
-[PR rework with GitHub Actions](docs/guide.md#pr-rework-with-github-actions).
+Want PR review comments fixed automatically too? See the optional
+[PR rework with GitHub Actions](docs/guide.md#pr-rework-with-github-actions-optional).
 
 ## Install options
 
