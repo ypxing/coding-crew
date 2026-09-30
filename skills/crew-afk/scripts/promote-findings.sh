@@ -80,7 +80,6 @@ tracker_config_candidates() {
 }
 # END tracker-lookup
 _tracker_config_sh=""
-_tracker_config_sh=""
 while IFS= read -r _tc; do
   if [ -f "$_tc" ]; then _tracker_config_sh="$_tc"; break; fi
 done < <(tracker_config_candidates "$MAIN_ROOT")

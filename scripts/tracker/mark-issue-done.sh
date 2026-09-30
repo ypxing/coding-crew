@@ -59,13 +59,9 @@ fi
 # ─── tracker backend: local (file path) or github (issue number) ────────────
 #
 # tracker-config.sh (issue 01) is the single source of truth for which backend the
-# whole pipeline uses. It ships as a real sibling of this script both in the source
-# tree and once installed (registry.json bundles the two together), so the first
-# candidate below is the normal hit; the other two cover running this script
-# straight out of the repo checkout against an installed `.coding-crew/`. Finding
-# none of them is not an error — it means `tracker: local` with no front matter at
+# whole pipeline uses, found through the shared lookup block below. Finding none of
+# its candidates is not an error — it means `tracker: local` with no front matter at
 # all, the same zero-config default tracker-config.sh itself falls back to.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_ROOT="${MAIN_ROOT:-.}"
 # BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
 # Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
