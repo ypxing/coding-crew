@@ -315,8 +315,11 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit }) {
   ctx.log(lastLine, "debug"); // cleanup-worktrees.sh traced [CLEANUP]
 
   // --- summary (rendered from disk, never from recollection) -----------------
+  // The PR comes first: the summary points at it when the findings were posted there.
+  const pr = pullRequest(ctx, tracker);
   const summaryArgs = [];
   if (stalled) summaryArgs.push("--stalled");
+  if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url, "--posted-count", String(pr.posted));
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
   ctx.out(summary.stdout);
   // Also kept with the run's trace: stdout goes to whoever launched the run, and a launcher
@@ -331,8 +334,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit }) {
     if (prdAudit.unqueued) ctx.out(`\n**Gaps not queued:** ${prdAudit.unqueued}\n`);
   }
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
-  const pr = pullRequest(ctx, tracker);
-  if (pr) ctx.out(`\n## Pull Request\n\n${pr}\n`);
+  if (pr) ctx.out(`\n## Pull Request\n\n${pr.text}\n`);
   ctx.out("NO MORE TASKS");
 }
 
@@ -340,7 +342,9 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit }) {
  * Last, after squash: the feature PR. `openPr` pushes the branch and creates or updates the PR
  * with the tracker's closing lines in its body (open-pr.sh). Off, those lines are printed for
  * the human's own PR — the tracker leaves each merged issue open until a PR closes it. Returns
- * the section's text, or null when there is nothing to say.
+ * `{text, url?, posted?}` — the section's text, and when the findings were posted to the PR
+ * (post-findings.sh) its URL and their count — or null when there is nothing to say. A posting
+ * failure is reported in the text and never fails the sprint.
  */
 function pullRequest(ctx, tracker) {
   const { sprint, effects, options } = ctx;
@@ -355,22 +359,30 @@ function pullRequest(ctx, tracker) {
 
   if (!options.openPr) {
     if (!refs.length) return null;
-    return [
+    return { text: [
       `Merged into ${sprint.featureBranch}, left open until a PR closes them. Put these in its body:`,
       "",
       ...refs,
       "",
       "(openPr: true, or --open-pr, has crew-afk push the branch and open the PR itself.)",
-    ].join("\n");
+    ].join("\n") };
   }
   // A PR without its closing lines would ship the work and strand the issues open.
-  if (refsError) return `**Not opened:** could not list the issues it closes — ${refsError}`;
+  if (refsError) return { text: `**Not opened:** could not list the issues it closes — ${refsError}` };
   const closesFile = join(sprint.env.SPRINT_DIR, "pr-closes.txt");
   writeFileSync(closesFile, refs.length ? `${refs.join("\n")}\n` : "");
   const r = effects.bash("open-pr.sh", ["--closes-file", closesFile], { env: sprint.childEnv() });
   if (r.dryRun) return null;
-  if (r.code !== 0) return `**Failed:** ${r.stderr.trim() || `exit ${r.code}`}`;
-  return r.stdout.trim().replace(/^PR: /, "");
+  if (r.code !== 0) return { text: `**Failed:** ${r.stderr.trim() || `exit ${r.code}`}` };
+  const url = r.stdout.trim().replace(/^PR: /, "");
+  const post = effects.bash("post-findings.sh", [], { env: sprint.childEnv() });
+  const m = /^POSTED: (\d+) \((\d+) inline\)/m.exec(post.stdout ?? "");
+  if (post.code !== 0 || !m) {
+    const why = (post.stderr ?? "").trim() || `exit ${post.code}`;
+    ctx.log(`post-findings: ${why}`, "warn");
+    return { text: `${url}\n\n**Findings not posted:** ${why}` };
+  }
+  return { text: `${url}\n\n${m[1]} finding(s) posted (${m[2]} inline).`, url, posted: Number(m[1]) };
 }
 
 /** Per-sprint review report file: one timestamped file, appended to across the whole run. */
