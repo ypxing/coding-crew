@@ -11,10 +11,13 @@
 # each is handed to the shard with the least load so far. Deterministic, so every shard of
 # a given (index, total) always gets the same files.
 #
-# Weight is the file's measured Windows seconds from tests/ci-shard-weights.tsv, not its
-# @test count: counts put a 6-test file that runs for minutes (orchestrator.bats) on a par
-# with a 6-test grep, and left one shard at 3x another's time. An unlisted file is
-# weighted 5s per @test, so a new file still lands somewhere sensible.
+# Weight is the file's measured seconds on the slowest runner (macOS) from
+# tests/ci-shard-weights.tsv, not its @test count: counts put a 1-test file that runs for
+# minutes (an orchestrator-sprint slice) on a par with a 1-test grep, and left one shard at
+# 3x another's time. Files run CPU-count at a time within a shard (ci-run-bats.sh), so no
+# single file should outweigh a shard's fair share either: that is why the orchestrator's
+# sprint suite is six bats files, not one. An unlisted file is weighted 5s per @test, so a
+# new file still lands somewhere sensible.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
