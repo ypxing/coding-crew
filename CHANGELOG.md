@@ -11,6 +11,19 @@
   `/crew-rework` comment), protected paths, and green checks — and on any refusal comments on the
   PR and labels it `needs-human`. `address-pr-comments` now depends on `solve-issue`.
 
+## [1.29.158]
+
+### Added
+
+- **With `openPr` on, crew-afk posts the review findings no fix issue covered to the feature PR.**
+  `post-findings.sh` posts them as one PR review: `path:line` locations inside the diff become
+  inline comments, the rest are listed in the review body by severity. Each finding carries a
+  hidden marker, so a re-run posts only new ones. Posted findings wait for a human;
+  `fixFindings` still sets what is fixed automatically. `## Pull Request` reports the count (a
+  posting failure is reported there and does not fail the sprint), and the summary points at the
+  PR instead of `/crew-address-findings`. With `openPr` off nothing changes.
+  `promote-findings.sh open` prints the open findings as JSON; `remind` now counts from it.
+
 ## [1.29.157]
 
 ### Fixed

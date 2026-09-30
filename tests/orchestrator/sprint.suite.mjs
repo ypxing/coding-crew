@@ -2060,7 +2060,21 @@ function stubGh(root, issues) {
       "  exit 0",
       "fi",
       // open-pr.sh: no PR yet; `pr create` keeps the body it was given, for the test to read.
-      'if [ "$1" = "pr" ] && [ "$2" = "view" ]; then exit 1; fi',
+      // post-findings.sh runs after the create: the PR exists, its diff shows nothing (so every
+      // finding goes in the review body), and the review posted is kept for the test to read.
+      'if [ "$1" = "pr" ] && [ "$2" = "view" ]; then',
+      '  [ -f ' + JSON.stringify(join(root, "pr-body.md")) + ' ] || exit 1',
+      '  echo \'{"number":7,"url":"https://github.com/o/r/pull/7","state":"OPEN","body":""}\'; exit 0',
+      "fi",
+      'if [ "$1" = "repo" ] && [ "$2" = "view" ]; then echo o/r; exit 0; fi',
+      'if [ "$1" = "pr" ] && [ "$2" = "diff" ]; then exit 0; fi',
+      'if [ "$1" = "api" ]; then',
+      '  case " $* " in',
+      '    *" POST "*) while [ $# -gt 0 ]; do [ "$1" = "--input" ] && cp "$2" ' + JSON.stringify(join(root, "review-post.json")) + '; shift; done ;;',
+      '    *) echo "[]" ;;',
+      "  esac",
+      "  exit 0",
+      "fi",
       'if [ "$1" = "pr" ] && [ "$2" = "create" ]; then',
       '  while [ $# -gt 0 ]; do [ "$1" = "--body-file" ] && cp "$2" ' + JSON.stringify(join(root, "pr-body.md")) + '; shift; done',
       '  echo https://github.com/o/r/pull/7',
@@ -2143,6 +2157,11 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
   const remote = join(root, ".scratch/remote.git");
   sh("git", ["init", "-q", "--bare", remote]);
   sh("git", ["-C", root, "remote", "add", "origin", remote]);
+  fake(
+    root,
+    "alpha.review",
+    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "all-met", findings: [{ severity: "MEDIUM", location: "somewhere in alpha", criterion: "Rename the variable" }] })}\n\`\`\`\n`,
+  );
   const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--open-pr"], {
     cwd: root,
     env: {
@@ -2158,7 +2177,13 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
   assert.match(readFileSync(log, "utf8"), /pr create --head feature\/demo/);
   assert.match(readFileSync(join(root, "pr-body.md"), "utf8"), /^Closes #1$/m);
   assert.equal(sh("git", ["-C", remote, "rev-parse", "feature/demo"]).stdout.trim(), sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim());
-  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7/);
+  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+1 finding\(s\) posted \(0 inline\)/);
+  const review = JSON.parse(readFileSync(join(root, "review-post.json"), "utf8"));
+  assert.equal(review.event, "COMMENT");
+  assert.match(review.body, /### MEDIUM[\s\S]*Rename the variable[\s\S]*crew-finding:/);
+  // The findings are on the PR, so the summary points there, not at /crew-address-findings.
+  assert.match(r.stdout, /1 finding\(s\) posted to https:\/\/github.com\/o\/r\/pull\/7/);
+  assert.doesNotMatch(r.stdout, /\/crew-address-findings/);
 });
 
 test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implemented in Phase 2", () => {
