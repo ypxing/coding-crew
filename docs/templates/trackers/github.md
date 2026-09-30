@@ -129,9 +129,26 @@ maps to a close-reason.
 different facts, and only a PR merge establishes the second. Closing at the first would show
 issues as completed on GitHub while their code exists only in a local branch. Both read as
 `done` for dispatch and for `## Blocked by` resolution. `configure-tracker`'s github setup
-idempotently creates the five real labels before first publish, since `gh issue create --label x`
+idempotently creates the real labels (including `blocked`) before first publish, since `gh issue create --label x`
 fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` on
 demand, for repos configured before it existed.
+
+## Blocked issues
+
+When crew-afk stops on an issue that needs a human (retry limit, cost limit, not fixable, an
+environment criterion, a dirty main tree, a review that did not run), it posts a `## Blocked`
+comment and adds the `blocked` label **next to** `ready-for-agent` (creating the label if the
+repo lacks it). Every later run skips an issue labelled `blocked`, and issues whose
+`## Blocked by` names it keep waiting — `blocked` is not `done`. A failed label write only warns.
+A failed `## Requires` probe is not labelled; it is re-probed every run.
+
+To put a blocked issue back in the queue, once its cause is fixed:
+
+```bash
+gh issue edit <number> [--repo owner/name] --remove-label blocked
+```
+
+The sprint summary prints that command for each issue blocked in the run.
 
 ## Workspace
 

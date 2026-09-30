@@ -79,11 +79,11 @@ failure — surface it to the user with a clear message rather than swallowing i
    `owner/name` if issues are tracked elsewhere". A blank answer means the tracked repo is the
    current one — omit `repo:` from the front matter entirely. A non-blank answer becomes the
    `repo:` value below.
-3. **Create the 5 labels idempotently.** For each of `needs-triage`, `needs-info`,
-   `ready-for-agent`, `ready-for-human`, `awaiting-merge`: check whether it already exists (`gh
+3. **Create the 6 labels idempotently.** For each of `needs-triage`, `needs-info`,
+   `ready-for-agent`, `ready-for-human`, `awaiting-merge`, `blocked`: check whether it already exists (`gh
    label list [--repo owner/name]`); if missing, create it (`gh label create <name> [--repo
    owner/name]`). Skip labels that already exist — do not error or duplicate. `awaiting-merge`
-   is `done` before the PR merges; `wontfix` is a close reason, not a label (see the copied
+   is `done` before the PR merges; `blocked` marks an issue crew-afk stopped on (later runs skip it until a human removes the label); `wontfix` is a close reason, not a label (see the copied
    template's Labels table) — do not create `done` or `wontfix` as labels.
 4. **Write the tracker front matter.** Prepend this YAML block to the top of the destination
    file, using exactly the field names `readTrackerConfig` expects:

@@ -99,6 +99,7 @@ test("parseIssue is a pure transform producing local.mjs's exact output shape", 
     "criteria",
     "hasBlocked",
     "hasProgress",
+    "labels",
     "number",
     "ref",
     "sourceGuarded",
@@ -118,6 +119,24 @@ test("parseIssue is a pure transform producing local.mjs's exact output shape", 
   assert.equal(i.hasProgress, false);
   assert.equal(i.hasBlocked, false);
   assert.equal(i.text, json.body);
+  assert.deepEqual(i.labels, ["ready-for-agent"]);
+});
+
+test("selectDispatchable skips a ready issue labelled blocked until the label is removed", () => {
+  const root = repo();
+  const blocked = { number: 1, title: "Stuck", body: "", labels: [{ name: "ready-for-agent" }, { name: "blocked" }], state: "OPEN" };
+  assert.deepEqual(selectDispatchable(root, { featureSlug: "feat", exec: fakeExec([blocked]) }), []);
+  const freed = { ...blocked, labels: [{ name: "ready-for-agent" }] };
+  assert.deepEqual(selectDispatchable(root, { featureSlug: "feat", exec: fakeExec([freed]) }).map((i) => i.number), [1]);
+});
+
+test("selectDispatchable holds back an issue whose blocker carries the blocked label", () => {
+  const root = repo();
+  const exec = fakeExec([
+    { number: 1, title: "Stuck", body: "", labels: [{ name: "ready-for-agent" }, { name: "blocked" }], state: "OPEN" },
+    { number: 2, title: "Waits", body: "## Blocked by\n\n- Issue 1\n", labels: [{ name: "ready-for-agent" }], state: "OPEN" },
+  ]);
+  assert.deepEqual(selectDispatchable(root, { featureSlug: "feat", exec }), []);
 });
 
 test("parseIssue maps a closed issue's status to done regardless of any label still attached", () => {

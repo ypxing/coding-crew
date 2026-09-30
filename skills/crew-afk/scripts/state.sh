@@ -15,7 +15,7 @@ set -euo pipefail
 #   state.sh attempt --slug <slug> --n <n>
 #   state.sh complete --slug <slug> --branch <branch>
 #   state.sh retain   --slug <slug> --branch <branch> --reason <reason>
-#   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>]
+#   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>] [--number <n>]
 #   state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
 #   state.sh coverage-clear --slug <slug>
 #   state.sh dispatch-cost [--cost <usd>] [--duration-ms <ms>] [--turns <n>]
@@ -153,7 +153,8 @@ case "$CMD" in
       | .merged_branches = ((.merged_branches // []) + [$b] | unique)
       | .retained_branches = ((.retained_branches // {}) | del(.[$s]))
       | .retention = ((.retention // {}) | del(.[$s]))
-      | .blocked_slugs = ((.blocked_slugs // []) - [$s])'
+      | .blocked_slugs = ((.blocked_slugs // []) - [$s])
+      | .blocked_labelled = ((.blocked_labelled // {}) | del(.[$s]))'
     trace STATE "complete slug=$slug branch=$branch"
     echo "STATE: complete slug=$slug branch=$branch"
     ;;
@@ -174,8 +175,13 @@ case "$CMD" in
 
   blocked)
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@"); reason=$(flag reason "blocked" "$@")
+    number=$(flag number "" "$@")
     [ -n "$slug" ] || die "blocked requires --slug"
     edit_state --arg s "$slug" '.blocked_slugs = ((.blocked_slugs // []) + [$s] | unique)'
+    # --number: the issue got the `blocked` label; crew-summary prints how to remove it.
+    if [ -n "$number" ]; then
+      edit_state --arg s "$slug" --argjson n "$number" '.blocked_labelled = ((.blocked_labelled // {}) + {($s): $n})'
+    fi
     if [ -n "$branch" ]; then
       edit_state --arg s "$slug" --arg b "$branch" --arg r "blocked — $reason" '
         .retained_branches[$s] = $b | .retention[$s] = {branch: $b, reason: $r}'

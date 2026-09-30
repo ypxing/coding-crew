@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK="$REPO_ROOT/skills/crew-afk/scripts"
 CALLERS=(
   "$AFK/session-init.sh" "$AFK/close-issue.sh" "$AFK/promote-findings.sh"
-  "$AFK/prd-audit.sh" "$REPO_ROOT/scripts/tracker/mark-issue-done.sh"
+  "$AFK/prd-audit.sh" "$AFK/issue-labels.sh" "$REPO_ROOT/scripts/tracker/mark-issue-done.sh"
 )
 
 setup() {
@@ -131,4 +131,31 @@ block() { awk '/# BEGIN tracker-lookup/{f=1} f{print} /# END tracker-lookup/{f=0
   echo "$output"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+}
+
+@test "issue-labels.sh block: creates the label, adds it, keeps ready-for-agent" {
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  run bash "$AFK/issue-labels.sh" block 7
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"LABELLED: blocked #7"* ]]
+  grep -q '^label create blocked .*--force' "$GH_LOG"
+  grep -q '^issue edit 7 --add-label blocked$' "$GH_LOG"
+  ! grep -q 'remove-label' "$GH_LOG"
+}
+
+@test "issue-labels.sh block: tracker local touches nothing" {
+  printf -- '---\ntracker: local\n---\n' > .coding-crew/docs/issue-tracker.md
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  run bash "$AFK/issue-labels.sh" block 7
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -s "$GH_LOG" ]
+}
+
+@test "issue-labels.sh block: a failing gh exits 1" {
+  printf '#!/usr/bin/env bash\necho boom >&2; exit 1\n' > "$STUB/gh"
+  install_scripts "$TEMP_DIR/install/scripts"; export CREW_INSTALL_DIR="$TEMP_DIR/install"
+  run bash "$AFK/issue-labels.sh" block 7
+  [ "$status" -eq 1 ]
 }

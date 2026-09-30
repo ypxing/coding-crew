@@ -16,6 +16,14 @@
 
 ### Added
 
+- **`blocked` label under `tracker: github`.** Every path through `finishBlocked` now adds
+  `blocked` (created if missing) next to `ready-for-agent` via the new `issue-labels.sh`; later
+  runs skip the issue until a human removes the label, and issues depending on it keep waiting.
+  `requires-failed` stays unlabelled and is re-probed. The summary prints
+  `gh issue edit <n> --remove-label blocked` per blocked issue; a failed label write only warns.
+  `tracker: local` is unchanged. `configure-tracker` creates the label; the github template
+  documents it.
+
 - **Native GitHub dependencies from `## Blocked by`.** `github.mjs link-blockers --issue <n>`
   creates one native `blocked_by` relationship per `## Blocked by` number, by the blocker's numeric
   id; `createIssue` runs it for the issue it creates and the github tracker template's publish

@@ -1025,7 +1025,7 @@ test("github tracker: a re-run after a fixable failure gets fixPrompt though Pro
   // and hasBlocked are false on every fetch; the retained branch is known from state alone.
   const root = githubFixtureRepo();
   failingTests(root); // before the stub: its gh.log must not be committed as a tracked file
-  const { stub } = stubGh(root, [GH_ALPHA]);
+  const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
   const env = { PATH: `${stub}:${process.env.PATH}` };
   fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "fail" }, progress: "tests red" }));
   fake(root, "alpha.triage", triageVerdict("yes", "wrong host", "src/config.ts uses localhost:4566; the service is localstack:4566"));
@@ -1033,6 +1033,10 @@ test("github tracker: a re-run after a fixable failure gets fixPrompt though Pro
   assert.match(state(root).retention.alpha.reason, /verification-failed:fixable/);
   const promptFile = join(root, ".scratch/demo/dispatch/1-alpha/prompt.md");
   rmSync(promptFile);
+  // The block labelled the issue `blocked`; a human removes it to put the issue back in the queue.
+  const gh = JSON.parse(readFileSync(issuesFile, "utf8"));
+  gh[0].labels = gh[0].labels.filter((l) => l.name !== "blocked");
+  writeFileSync(issuesFile, JSON.stringify(gh));
   // Triage now rules it out, so the re-run cannot reach a fix prompt through its own gate:
   // the only fixPrompt possible is the one the retained reason routed to.
   fake(root, "alpha.triage", triageVerdict("no", "x", "y"));
@@ -2194,6 +2198,38 @@ test("a github-configured sprint dispatches, marks the issue awaiting-merge with
   assert.equal(alpha.state, "OPEN");
   assert.match(r.stdout, /NO MORE TASKS/);
   assert.match(r.stdout, /## Pull Request[\s\S]*Closes #1/, "the summary never gave the PR its closing line");
+});
+
+test("github: a blocked issue is labelled blocked, keeps ready-for-agent, the summary says how to unblock it, and the next run skips it", () => {
+  const root = githubFixtureRepo();
+  const { stub, log, issuesFile } = stubGh(root, [GH_ALPHA]);
+  fake(root, "alpha.nocommit");
+  fake(
+    root,
+    "alpha.worker",
+    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"fail","lint":"pass","typecheck":"pass"},"progress":"tests red"}', '```'].join("\n"),
+  );
+  const env = {
+    ...process.env,
+    CREW_SCRIPTS: SCRIPTS,
+    CREW_FAKE_DISPATCH: FAKE,
+    CREW_FAKE_DIR: join(root, ".scratch/fake"),
+    MAIN_ROOT: root,
+    PATH: `${stub}:${process.env.PATH}`,
+  };
+  const run = () => sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], { cwd: root, env });
+  const first = run();
+  const calls = readFileSync(log, "utf8");
+  assert.match(calls, /label create blocked .*--force/);
+  assert.match(calls, /issue edit 1 --add-label blocked/);
+  const labels = () => JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.number === 1).labels.map((l) => l.name);
+  assert.deepEqual(labels().sort(), ["blocked", "ready-for-agent"]);
+  assert.match(first.stdout, /gh issue edit 1 --remove-label blocked/);
+
+  const before = readFileSync(log, "utf8").split("\n").length;
+  run();
+  const after = readFileSync(log, "utf8").slice(readFileSync(log, "utf8").split("\n").slice(0, before - 1).join("\n").length);
+  assert.doesNotMatch(after, /issue edit 1 --add-label blocked/, "a labelled issue was dispatched again");
 });
 
 test("github --open-pr: the sprint pushes the feature branch and opens a PR whose body closes the issue", () => {
