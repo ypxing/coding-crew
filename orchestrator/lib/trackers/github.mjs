@@ -235,7 +235,7 @@ export function createIssue({ title, body, labels = [], featureSlug }, { mainRoo
     const url = result.stdout.trim();
     const match = /\/(\d+)\s*$/.exec(url);
     const number = match ? Number(match[1]) : null;
-    if (number !== null) linkBlockers(number, { mainRoot, exec });
+    if (number !== null) linkBlockers(number, { mainRoot, exec, body });
     return { number, url };
   } finally {
     try {
@@ -252,17 +252,21 @@ export function createIssue({ title, body, labels = [], featureSlug }, { mainRoo
  * body prose, so a failed or already-existing link warns on stderr (or is silent) and never
  * throws. An issue with no `## Blocked by` makes no dependency call. Returns the count linked.
  */
-export function linkBlockers(number, { mainRoot, exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+export function linkBlockers(number, { mainRoot, exec = shellOut, body, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   try {
     const { repo } = readTrackerConfig(mainRoot ?? process.cwd());
     const repoArgs = repo ? ["--repo", repo] : [];
     const apiBase = repo ? `repos/${repo}` : "repos/{owner}/{repo}";
-    const view = exec("gh", ["issue", "view", String(number), ...repoArgs, "--json", "body", "-q", ".body"]);
-    if (view.code !== 0) {
-      warn(`link-blockers: could not read #${number} (exit ${view.code}): ${view.stderr || view.stdout}`);
-      return 0;
+    let text = body;
+    if (text === undefined) {
+      const view = exec("gh", ["issue", "view", String(number), ...repoArgs, "--json", "body", "-q", ".body"]);
+      if (view.code !== 0) {
+        warn(`link-blockers: could not read #${number} (exit ${view.code}): ${view.stderr || view.stdout}`);
+        return 0;
+      }
+      text = view.stdout ?? "";
     }
-    const blockers = extractBlockedByNumbers(sectionBody(view.stdout ?? "", "Blocked by") ?? "").map(Number);
+    const blockers = extractBlockedByNumbers(sectionBody(text, "Blocked by") ?? "").map(Number);
     let linked = 0;
     for (const blocker of blockers) {
       const idr = exec("gh", ["api", `${apiBase}/issues/${blocker}`, "--jq", ".id"]);

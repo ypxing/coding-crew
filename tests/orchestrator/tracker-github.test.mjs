@@ -407,10 +407,9 @@ test("createIssue links blockers for the issue it created, and a link failure do
   const root = repo();
   const inner = fakeGhWrite();
   const exec = (cmd, args) => {
-    if (args[0] === "issue" && args[1] === "view") return { code: 0, stdout: "## Blocked by\n- Issue #3\n", stderr: "" };
     if (args[0] === "api" && args.includes("--jq")) return { code: 1, stdout: "", stderr: "nope" };
     return inner(cmd, args);
   };
-  const r = createIssue({ title: "T", body: "b", featureSlug: "feat" }, { mainRoot: root, exec });
+  const r = createIssue({ title: "T", body: "## Blocked by\n- Issue #3\n", featureSlug: "feat" }, { mainRoot: root, exec });
   assert.equal(r.number, 42);
 });
