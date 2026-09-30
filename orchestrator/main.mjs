@@ -108,6 +108,7 @@ import { worktreeRoot } from "./lib/worktree.mjs";
 import { resolveInstallDir } from "./lib/install-dir.mjs";
 import { acquireLease, releaseLease } from "./lib/lease.mjs";
 import { sweepInProgress } from "./lib/labels.mjs";
+import { closeShipped } from "./lib/shipped.mjs";
 import { readTrackerConfig } from "./lib/tracker-config.mjs";
 import {
   baselineFailureMessage,
@@ -733,15 +734,14 @@ async function main() {
       };
       process.once("SIGINT", onSignal);
       process.once("SIGTERM", onSignal);
+      const leaseLog = (line, level) => {
+        console.error(line);
+        if (sprint.traceLog) writeLog(sprint.traceLog, line, level);
+      };
       // Holding the lease means no other run is alive: any `in-progress` left in the milestone is a dead run's.
-      sweepInProgress({
-        effects,
-        sprint,
-        log: (line, level) => {
-          console.error(line);
-          if (sprint.traceLog) writeLog(sprint.traceLog, line, level);
-        },
-      });
+      sweepInProgress({ effects, sprint, log: leaseLog });
+      // …and every awaiting-merge issue is settled: those a merged PR names have shipped.
+      closeShipped({ effects, sprint, log: leaseLog });
     }
     sprint.startRun(runId);
 

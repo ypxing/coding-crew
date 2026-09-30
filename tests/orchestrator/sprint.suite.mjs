@@ -2087,7 +2087,11 @@ function stubGh(root, issues) {
       '  [ -f ' + JSON.stringify(join(root, "pr-body.md")) + ' ] || exit 1',
       '  echo \'{"number":7,"url":"https://github.com/o/r/pull/7","state":"OPEN","body":""}\'; exit 0',
       "fi",
-      'if [ "$1" = "repo" ] && [ "$2" = "view" ]; then echo o/r; exit 0; fi',
+      'if [ "$1" = "repo" ] && [ "$2" = "view" ]; then [[ " $* " == *"defaultBranchRef"* ]] && echo "o/r main" || echo o/r; exit 0; fi',
+      // close-shipped.sh: the feature branch's merged PRs, from gh-prs.json when a test writes one.
+      'if [ "$1" = "pr" ] && [ "$2" = "list" ]; then',
+      '  f=' + JSON.stringify(join(root, "gh-prs.json")) + '; [ -f "$f" ] && cat "$f" || echo "[]"; exit 0',
+      "fi",
       'if [ "$1" = "pr" ] && [ "$2" = "diff" ]; then exit 0; fi',
       'if [ "$1" = "api" ]; then',
       '  case " $* " in',
@@ -2320,6 +2324,34 @@ test("github: the new lease holder sweeps in-progress from the milestone before 
   const firstClaim = calls.indexOf("issue edit 1 --add-label in-progress");
   assert.ok(sweptStale >= 0 && firstClaim > sweptStale, "the sweep did not run before the first claim");
   assert.ok(lines.some((l) => /^SPAWN .*--agent crew-coder/.test(l)), "an issue carrying in-progress was not dispatched");
+  assert.deepEqual(issueLabels(issuesFile, 1), ["awaiting-merge"]);
+});
+
+test("github: the new lease holder closes the issues a merged PR names, before dispatching, and keeps the PRD open while work remains", () => {
+  const root = githubFixtureRepo();
+  const shipped = { number: 2, title: "shipped", body: "# shipped\n", labels: [{ name: "awaiting-merge" }], state: "OPEN" };
+  const prd = { number: 3, title: "PRD: demo", body: "# PRD\n", labels: [], state: "OPEN" };
+  const { stub, log, issuesFile } = stubGh(root, [GH_ALPHA, shipped, prd]);
+  writeFileSync(join(root, "gh-prs.json"), JSON.stringify([{ number: 9, baseRefName: "main", body: "Closes #2\n" }]));
+  const { r } = commandLines(root, [], { env: ghEnv(root, stub) });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const state = (n) => JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.number === n).state;
+  assert.equal(state(2), "CLOSED", "an issue its merged PR names was left open");
+  assert.equal(state(3), "OPEN", "the PRD closed while a work issue was still open");
+  const calls = ghLines(log);
+  const closed = calls.findIndex((l) => l.startsWith("issue close 2 "));
+  const firstClaim = calls.indexOf("issue edit 1 --add-label in-progress");
+  assert.ok(closed >= 0 && firstClaim > closed, "the shipped issues were not closed before the first claim");
+  assert.match(traceLog(root), /\[SHIPPED\] CLOSED: #2 \(PR #9\)/);
+});
+
+test("github: a failed close-shipped warns and the sprint goes on", () => {
+  const root = githubFixtureRepo();
+  const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
+  writeFileSync(join(root, "gh-prs.json"), "not json");
+  const { r } = commandLines(root, [], { env: ghEnv(root, stub) });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /WARN .*CLOSE-SHIPPED-FAILED/);
   assert.deepEqual(issueLabels(issuesFile, 1), ["awaiting-merge"]);
 });
 
