@@ -17,14 +17,19 @@ jobs:
       # No native Windows job: Windows is supported through WSL2 (README), which the
       # ubuntu job covers. Git Bash emulates fork(), so the suite took four 14-35 minute
       # shards there, and its failures were mostly Git Bash quirks, not user-facing bugs.
-      # The sharding (scripts/ci-test-shard.sh, tests/ci-shard-weights.tsv) stays, so a
-      # slow OS can be split across the matrix again by adding "k/n" entries here.
+      # scripts/ci-test-shard.sh splits tests/ by measured time (tests/ci-shard-weights.tsv)
+      # for any "k/n" shard below; tests/ci-test-shard.bats proves the split is complete.
       matrix:
         include:
           - os: ubuntu-latest
             shard: "1/1"
+          # macOS is ~2x ubuntu's wall time on one job; free for a public repo, so split it.
           - os: macos-latest
-            shard: "1/1"
+            shard: "1/3"
+          - os: macos-latest
+            shard: "2/3"
+          - os: macos-latest
+            shard: "3/3"
 
     steps:
       - name: Checkout repository
