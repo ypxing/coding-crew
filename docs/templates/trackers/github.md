@@ -146,6 +146,22 @@ never labelled. The new holder of a feature's lease also removes `in-progress` f
 the milestone right after acquiring it: only a dead run can have left one. A failed label write only
 warns.
 
+## Feature lease ref namespace
+
+The feature lease is a ref `refs/crew-lock/<feature-slug>` on `origin`, pointing at an annotated
+tag. **Verified live against github.com (2026-09-30):** GitHub accepts create, compare-and-swap
+reclaim and compare-and-swap delete of an annotated tag pushed to `refs/crew-lock/<slug>`, and
+rejects a stale-sha reclaim or delete, so no fallback is needed there. To re-check (it pushes and
+deletes a throwaway ref on `origin`, so it is opt-in):
+
+```bash
+CREW_LEASE_LIVE=1 scripts/verify-lease-live.sh     # or: CREW_LEASE_LIVE=1 bats tests/crew-afk-lease.bats
+```
+
+A host or ruleset that refuses the namespace makes `lease.sh` exit 4 and the acquire error says so
+and names the fallback: `export CREW_LEASE_NAMESPACE=refs/tags/crew-lock` (read by `lease.sh` and
+`lease.mjs` alike; the manual release command follows it).
+
 ## Blocked issues
 
 When crew-afk stops on an issue that needs a human (retry limit, cost limit, not fixable, an

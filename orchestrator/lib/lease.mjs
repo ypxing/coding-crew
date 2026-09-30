@@ -7,6 +7,9 @@
 
 import { hostname } from "node:os";
 
+/** The lease ref namespace; lease.sh reads the same variable. Default is verified on github.com. */
+export const leaseNamespace = (env = process.env) => (env.CREW_LEASE_NAMESPACE || "refs/crew-lock").replace(/\/+$/, "");
+
 const OWNER_RE = /run=(\S+) host=(\S+) pid=(\d+) at=(\S+)/;
 
 export function ownerMessage({ runId, host, pid, at }) {
@@ -67,7 +70,7 @@ function write(effects, verb, slug, message, expect) {
  */
 export function acquireLease(effects, { slug, runId, reclaim = false, log = () => {}, host = hostname(), pid = process.pid, now = () => Date.now(), pidAlive = isPidAlive }) {
   const message = ownerMessage({ runId, host, pid, at: new Date(now()).toISOString() });
-  const failure = (what, detail) => ({ error: `crew-afk: could not ${what} the feature lease refs/crew-lock/${slug} on origin: ${detail}` });
+  const failure = (what, detail) => ({ error: `crew-afk: could not ${what} the feature lease ${leaseNamespace()}/${slug} on origin: ${detail}` });
   try {
     for (let pass = 0; pass < 2; pass++) {
       const held = readOwner(effects, slug);
@@ -102,7 +105,7 @@ export function acquireLease(effects, { slug, runId, reclaim = false, log = () =
  */
 export function releaseLease(effects, lease) {
   if (!lease || lease.released) return { released: true };
-  const command = `git push origin :refs/crew-lock/${lease.slug}`;
+  const command = `git push origin :${leaseNamespace()}/${lease.slug}`;
   try {
     const r = effects.bash("lease.sh", ["release", "--slug", lease.slug, "--expect", lease.sha]);
     if (r.code === 0) {

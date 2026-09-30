@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { acquireLease, releaseLease, parseOwner, refusalMessage } from "../../orchestrator/lib/lease.mjs";
+import { acquireLease, releaseLease, parseOwner, refusalMessage, leaseNamespace } from "../../orchestrator/lib/lease.mjs";
 
 // A fake lease.sh: `held` is the one ref's { sha, message } or null.
 function fake(held, { rejectWrites = false } = {}) {
@@ -69,4 +69,20 @@ test("release: ok, superseded, and failed with the manual command", () => {
 test("parseOwner / refusalMessage tolerate an unparseable message", () => {
   assert.equal(parseOwner("junk"), null);
   assert.match(refusalMessage("f", null, "junk"), /unrecognised owner \(junk\).*--reclaim/);
+});
+
+test("the namespace follows CREW_LEASE_NAMESPACE, in the error and the manual release command", () => {
+  const prev = process.env.CREW_LEASE_NAMESPACE;
+  process.env.CREW_LEASE_NAMESPACE = "refs/tags/crew-lock/";
+  try {
+    const e = { bash: () => ({ code: 4, stdout: "", stderr: "origin rejected the lease ref; use CREW_LEASE_NAMESPACE" }) };
+    assert.match(acquireLease(e, base).error ?? "", /lease refs\/tags\/crew-lock\/f on origin: .*CREW_LEASE_NAMESPACE/);
+    assert.equal(releaseLease(e, { slug: "f", sha: "x" }).command, "git push origin :refs/tags/crew-lock/f");
+  } finally {
+    if (prev === undefined) delete process.env.CREW_LEASE_NAMESPACE; else process.env.CREW_LEASE_NAMESPACE = prev;
+  }
+});
+
+test("the default namespace is refs/crew-lock", () => {
+  assert.equal(leaseNamespace({}), "refs/crew-lock");
 });
