@@ -130,6 +130,22 @@ teardown() {
   [[ "$output" == *"PRD.md"* ]]
 }
 
+@test "prd-audit.sh asks for superseded requirements, checked against later decisions" {
+  # A PRD can be older than the ADRs and commits since. What a later decision replaced must
+  # come back as its own class, which the orchestrator never queues for a coder.
+  git checkout -q -b "feature/test-feature"
+  mkdir -p .scratch/test-feature
+  echo "# PRD" > .scratch/test-feature/PRD.md
+
+  run bash "$AUDIT_SCRIPT" --mode fix
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"⊘ superseded"* ]]
+  [[ "$output" == *"docs/adr/"* ]]
+  [[ "$output" == *"CONTEXT.md"* ]]
+  [[ "$output" == *'"superseded": [{"requirement":'* ]]
+}
+
 # --- tracker: github ---
 # to-prd publishes the PRD as the milestone's "PRD:" issue, with no local PRD.md.
 

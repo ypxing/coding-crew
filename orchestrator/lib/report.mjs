@@ -392,15 +392,21 @@ export function parseTriageReport(text, sidecar = null) {
 
 /**
  * The PRD audit's closing fenced json (prd-audit.sh's prompt): `{covered, partial, missing:
- * [{requirement, detail}]}`. The last such block wins, as the prose above it may quote one.
- * No block is `ok: false` — nothing is queued from prose.
+ * [{requirement, detail}], superseded: [{requirement, by}]}`. The last such block wins, as the
+ * prose above it may quote one. No block is `ok: false` — nothing is queued from prose. A
+ * requirement listed as both missing and superseded is superseded: a later decision replaced it,
+ * and queuing it would send a coder to build what was decided against.
  */
 export function parsePrdAudit(text) {
   const last = allFencedJson(text ?? "", "missing").at(-1);
-  if (!last || !Array.isArray(last.missing)) return { ok: false, missing: [] };
-  const missing = last.missing
-    .map((m) => (typeof m === "string" ? { requirement: m } : m))
-    .filter((m) => m && typeof m.requirement === "string" && m.requirement.trim())
-    .map((m) => ({ requirement: m.requirement.trim(), detail: typeof m.detail === "string" ? m.detail.trim() : "" }));
-  return { ok: true, missing };
+  if (!last || !Array.isArray(last.missing)) return { ok: false, missing: [], superseded: [] };
+  const entries = (list, field) =>
+    (Array.isArray(list) ? list : [])
+      .map((m) => (typeof m === "string" ? { requirement: m } : m))
+      .filter((m) => m && typeof m.requirement === "string" && m.requirement.trim())
+      .map((m) => ({ requirement: m.requirement.trim(), [field]: typeof m[field] === "string" ? m[field].trim() : "" }));
+  const superseded = entries(last.superseded, "by");
+  const replaced = new Set(superseded.map((m) => m.requirement));
+  const missing = entries(last.missing, "detail").filter((m) => !replaced.has(m.requirement));
+  return { ok: true, missing, superseded };
 }

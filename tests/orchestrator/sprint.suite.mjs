@@ -1717,6 +1717,34 @@ test("PRDAudit report: the audit runs, and its gaps are left for a human", () =>
   assert.match(readFileSync(join(root2, ".scratch/demo/sprint.env"), "utf8"), /CREW_PRD_AUDIT="report"/);
 });
 
+test("PRDAudit: a superseded requirement is named in the summary and never queued", () => {
+  const audit = [
+    "⊘ Sessions expire after 30 minutes: docs/adr/0007-no-session-expiry.md",
+    "```json",
+    JSON.stringify({
+      covered: 1,
+      partial: 0,
+      missing: [],
+      superseded: [{ requirement: "Sessions expire after 30 minutes", by: "docs/adr/0007-no-session-expiry.md" }],
+    }),
+    "```",
+  ].join("\n");
+  for (const mode of ["fix", "report"]) {
+    const root = fixtureRepo();
+    addIssue(root, "01-alpha.md");
+    writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Sessions expire after 30 minutes\n");
+    fake(root, "prd-audit.response", audit);
+    const r = runSprint(root, ["--prd-audit", mode]);
+    assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+    assert.deepEqual(state(root).completed_slugs, ["alpha"], `${mode}: nothing queued`);
+    assert.match(
+      r.stdout,
+      /\*\*Superseded — update the PRD, nothing queued:\*\*\n- Sessions expire after 30 minutes — docs\/adr\/0007-no-session-expiry\.md/,
+      mode,
+    );
+  }
+});
+
 test("a PRD audit that fails is named in the summary, not only the trace", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

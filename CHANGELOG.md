@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.36.0]
+
+### Fixed
+
+- **The PRD audit no longer queues requirements a later decision replaced.** A PRD records the
+  plan as of when it was written, so one left waiting can ask for what an ADR, a CONTEXT.md entry
+  or a commit has since decided against. The auditor read it only against the done issues and the
+  merged code, so such a requirement came back ✗ missing and, under the default
+  `--prd-audit fix`, became a fix issue a coder built. The auditor now checks later decisions
+  first and reports a fourth class, ⊘ superseded, naming the decision. Superseded requirements
+  are never queued, in either mode (one listed as both missing and superseded counts as
+  superseded), and the summary lists them under "Superseded — update the PRD, nothing queued".
+
 ## [1.35.0]
 
 ### Fixed

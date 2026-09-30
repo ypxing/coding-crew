@@ -234,10 +234,10 @@ function unfinishedIssues(tracker, mainRoot, featureSlug) {
  * It does not run while a Phase 1 issue is still open (blocked, retained, stalled): that
  * issue's requirements would read as missing, so the report is noise and its gaps would
  * duplicate the issue — and the re-run that finishes it audits anyway. Returns
- * `{report, queuedReady, queuedRef, unqueued, failed, skipped}`: the report's path (or null); whether an
+ * `{report, queuedReady, queuedRef, unqueued, superseded, failed, skipped}`: the report's path (or null); whether an
  * issue was created already ready-for-agent (github — local parks it for the flush instead), and its number;
  * in fix mode, why gaps were left unqueued; why an audit that ran did not finish; and why it
- * did not run. The last three are for the summary — the trace log alone is too easy to miss.
+ * did not run. `superseded` lists the PRD requirements a later decision replaced, in either mode. The last three are for the summary — the trace log alone is too easy to miss.
  */
 async function runPrdAudit(ctx, tracker) {
   const { sprint, effects, options } = ctx;
@@ -278,16 +278,21 @@ async function runPrdAudit(ctx, tracker) {
     return { report: null, queuedReady: false, failed };
   }
   ctx.log(`PRD audit report: ${outFile}`);
-  if (mode !== "fix" || r.dryRun) return { report: outFile, queuedReady: false };
+  if (r.dryRun) return { report: outFile, queuedReady: false };
 
+  // Superseded requirements are named in both modes and queued in neither: the PRD is older
+  // than the decision that replaced them, and only a human should rewrite the PRD.
   const parsed = parsePrdAudit(r.text);
+  const { superseded } = parsed;
+  if (superseded.length) ctx.log(`PRD audit: ${superseded.length} superseded requirement(s), not queued.`);
+  if (mode !== "fix") return { report: outFile, queuedReady: false, superseded };
   if (!parsed.ok) {
     ctx.log("PRD audit: no closing json block in the report — nothing queued; read it by hand.");
     return { report: outFile, queuedReady: false, unqueued: "the report has no closing json block — read it by hand." };
   }
   if (!parsed.missing.length) {
     ctx.log("PRD audit: no missing requirements.");
-    return { report: outFile, queuedReady: false };
+    return { report: outFile, queuedReady: false, superseded };
   }
   const criteriaPath = join(sprint.env.SPRINT_DIR, "prd-gaps.criteria.md");
   writeFileSync(criteriaPath, prdGapsCriteria(parsed.missing));
@@ -301,7 +306,7 @@ async function runPrdAudit(ctx, tracker) {
   const unqueued = defer.code === 0 ? null
     : `${parsed.missing.length} missing requirement(s), but the fix issue was not created: ${defer.stderr.trim() || `exit ${defer.code}`}`;
   const queuedRef = Number(/\/issues\/(\d+)\s*$/m.exec(defer.stdout)?.[1]) || null;
-  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles, queuedRef, unqueued };
+  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles, queuedRef, unqueued, superseded };
 }
 
 /** Polls of the milestone listing, and the wait before each, for awaitListed. */
@@ -382,6 +387,10 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [] }) {
   } else if (prdAudit.report && existsSync(prdAudit.report)) {
     ctx.out(`\n## PRD Audit\n\n(see ${prdAudit.report})\n`);
     if (prdAudit.unqueued) ctx.out(`\n**Gaps not queued:** ${prdAudit.unqueued}\n`);
+    if (prdAudit.superseded?.length) {
+      const lines = prdAudit.superseded.map((m) => `- ${m.requirement}${m.by ? ` — ${m.by}` : ""}`);
+      ctx.out(`\n**Superseded — update the PRD, nothing queued:**\n${lines.join("\n")}\n`);
+    }
   }
   if (unlisted.length) ctx.out(`\n**Fix issues not implemented:**\n${unlisted.map((l) => `- ${l}`).join("\n")}\n`);
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
