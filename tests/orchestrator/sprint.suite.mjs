@@ -1995,6 +1995,11 @@ function githubFixtureRepo() {
   git("commit", "-q", "-m", "init");
   git("checkout", "-q", "-b", "feature/demo");
   mkdirSync(join(root, ".scratch/fake"), { recursive: true });
+  // The feature lease lives on origin, so a github run needs one.
+  const origin = `${root}-origin.git`;
+  FIXTURE_ROOTS.push(origin);
+  sh("git", ["init", "-q", "--bare", origin]);
+  git("remote", "add", "origin", origin);
   return root;
 }
 
@@ -2130,6 +2135,46 @@ test("plan resolves the github backend and lists a milestone issue instead of si
   assert.match(calls, /issue list .*--milestone demo/, "plan never called gh issue list at all");
 });
 
+function leaseRun(root, stub, extra = []) {
+  return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...extra], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+}
+const lockRefs = (root) => sh("git", ["-C", root, "ls-remote", "origin", "refs/crew-lock/demo"]).stdout.trim();
+
+test("a github run holds no lease after it finishes, and a live one held by another run stops it in preflight", () => {
+  const root = githubFixtureRepo();
+  const { stub, log } = stubGh(root, [GH_ALPHA]);
+  const held = leaseRun(root, stub);
+  assert.equal(held.code, 0, `${held.stdout}\n${held.stderr}`);
+  assert.equal(lockRefs(root), "", "the lease was not released on completion");
+
+  // Another host's lease: never auto-reclaimed.
+  sh("bash", [join(SCRIPTS, "lease.sh"), "acquire", "--slug", "demo", "--owner", "run=other-run host=elsewhere pid=1 at=2026-01-01T00:00:00Z"], {
+    cwd: root,
+    env: { ...process.env, MAIN_ROOT: root },
+  });
+  const before = readFileSync(log, "utf8");
+  const r = leaseRun(root, stub);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /leased by run other-run on elsewhere since 2026-01-01T00:00:00Z.*--reclaim/);
+  assert.equal(readFileSync(log, "utf8"), before, "a refused run still touched the tracker");
+  assert.notEqual(lockRefs(root), "", "a refused run deleted someone else's lease");
+
+  const re = leaseRun(root, stub, ["--reclaim"]);
+  assert.equal(re.code, 0, `${re.stdout}\n${re.stderr}`);
+  assert.match(re.stderr, /LEASE: reclaimed demo from run other-run/);
+  assert.equal(lockRefs(root), "");
+});
+
 test("a github-configured sprint dispatches, marks the issue awaiting-merge without closing it, and stops finding work", () => {
   const root = githubFixtureRepo();
   const { stub, log, issuesFile } = stubGh(root, [GH_ALPHA]);
@@ -2192,7 +2237,7 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
   const { stub, log } = stubGh(root, [GH_ALPHA]);
   const remote = join(root, ".scratch/remote.git");
   sh("git", ["init", "-q", "--bare", remote]);
-  sh("git", ["-C", root, "remote", "add", "origin", remote]);
+  sh("git", ["-C", root, "remote", "set-url", "origin", remote]);
   fake(
     root,
     "alpha.review",

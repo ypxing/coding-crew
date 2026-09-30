@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.32.0]
+
+### Added
+
+- **Feature lease: one crew-afk run per feature.** Under `tracker: github`, `crew-afk` acquires
+  `refs/crew-lock/<feature-slug>` on `origin` in preflight (before the baseline and any dispatch),
+  with `--force-with-lease` compare-and-swap pushes via the new `lease.sh`. A second run on a held
+  feature stops naming the owner's run id, host and start time; a dead pid on the same host is
+  reclaimed automatically, and `--reclaim` takes over any other lease. Released on completion,
+  `--max-rounds`, stall, error and SIGINT/SIGTERM; a failed release is reported in the summary with
+  the manual `git push origin :refs/crew-lock/<f>`. `--dry-run` and `tracker: local` take no lease.
+
 ## [1.31.0]
 
 ### Added
