@@ -164,4 +164,6 @@ export async function promote(ctx, worker, review, outcome) {
   ], { env: sprint.childEnv() });
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${defer.stdout.trim()}`);
   outcome.promoted = promotable.length;
+  // github's fix issue, created ready-for-agent: the loop waits for the listing to show it.
+  outcome.promotedRef = Number(/\/issues\/(\d+)\s*$/m.exec(defer.stdout)?.[1]) || null;
 }

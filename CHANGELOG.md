@@ -17,11 +17,12 @@
 
 ### Fixed
 
-- **A PRD-audit gaps issue is implemented in the same run under `tracker: github`.** GitHub's
-  issue listing lags a create by a few seconds, so the round `--prd-audit fix` started could list
-  the milestone before the new `Fix PRD gaps` issue was in it, claim nothing, and end the sprint
-  with the issue open and `ready-for-agent`. The loop now polls the listing (up to ~30s) until the
-  issue shows, and the summary names it under **Gaps not queued** if it never does.
+- **Fix issues created as the queue drains are implemented in the same run under `tracker: github`.**
+  GitHub's issue listing lags a create by a few seconds, so a `Fix PRD gaps` issue
+  (`--prd-audit fix`) or a `Fix review findings` issue promoted from the last branch could be
+  missing from the next listing: the loop claimed nothing and ended with it open and
+  `ready-for-agent`. Before ending, the loop now polls the listing (up to ~30s) for every fix
+  issue it created, and the summary names any that never showed.
 
 ## [1.32.0]
 

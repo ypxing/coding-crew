@@ -2032,12 +2032,12 @@ function stubGh(root, issues) {
   const closeJs = "const fs=require('fs');const p=process.argv[1];const n=Number(process.argv[2]);" +
     "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const i=issues.find(x=>x.number===n);" +
     "if(i)i.state='CLOSED';fs.writeFileSync(p,JSON.stringify(issues))";
-  // `issue list [--label L] [--state open|closed|all]`: filtered as gh would. GH_LIST_LAG=N hides
-  // the newest created issue from the next N lists, as GitHub's listing lags a create.
+  // `issue list [--label L] [--state open|closed|all]`: filtered as gh would. GH_LIST_LAG_MS=N
+  // hides the newest created issue for N ms after its create, as GitHub's listing lags one.
   const listJs = "const fs=require('fs');const [p,...a]=process.argv.slice(1);const v=(k)=>a.includes(k)?a[a.indexOf(k)+1]:null;" +
     "let issues=JSON.parse(fs.readFileSync(p,'utf8'));const label=v('--label'),st=v('--state');" +
     "const lag=p+'.lag';if(fs.existsSync(lag)){const l=JSON.parse(fs.readFileSync(lag,'utf8'));" +
-    "if(l.hides>0){issues=issues.filter(i=>i.number!==l.number);l.hides--;fs.writeFileSync(lag,JSON.stringify(l));}}" +
+    "if(Date.now()<l.until)issues=issues.filter(i=>i.number!==l.number);}" +
     "if(label)issues=issues.filter(i=>(i.labels||[]).some(l=>l.name===label));" +
     "if(st&&st!=='all')issues=issues.filter(i=>i.state===st.toUpperCase());" +
     "process.stdout.write(a.includes('--jq')?issues.map(i=>i.number).join('\\n'):JSON.stringify(issues))";
@@ -2054,7 +2054,7 @@ function stubGh(root, issues) {
     "const number=Math.max(0,...issues.map(i=>i.number))+1;" +
     "issues.push({number,title:v('--title'),body:fs.readFileSync(v('--body-file'),'utf8'),labels,state:'OPEN'});" +
     "fs.writeFileSync(p,JSON.stringify(issues));process.stdout.write('https://github.com/o/r/issues/'+number+'\\n');" +
-    "const hides=Number(process.env.GH_LIST_LAG||0);if(hides)fs.writeFileSync(p+'.lag',JSON.stringify({number,hides}))";
+    "const ms=Number(process.env.GH_LIST_LAG_MS||0);if(ms)fs.writeFileSync(p+'.lag',JSON.stringify({number,until:Date.now()+ms}))";
   writeFileSync(
     join(stub, "gh"),
     [
@@ -2412,14 +2412,44 @@ test("github PRDAudit fix: a gaps issue the listing does not show yet is still i
       CREW_FAKE_DIR: join(root, ".scratch/fake"),
       MAIN_ROOT: root,
       CREW_GITHUB_TRACKER_CLI: join(REPO, "orchestrator/lib/trackers/github.mjs"),
-      GH_LIST_LAG: "1",
+      GH_LIST_LAG_MS: "3000",
       PATH: `${stub}:${process.env.PATH}`,
     },
   });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const gaps = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.title === "Fix PRD gaps: demo");
   assert.ok(gaps.labels.some((l) => l.name === "awaiting-merge"), `the gaps issue was never implemented\n${traceLog(root)}`);
-  assert.match(traceLog(root), /gaps issue #\d+ listed after 1 poll/);
+  assert.match(traceLog(root), /fix issue\(s\) listed after \d+ poll/);
+});
+
+test("github: a findings fix issue from the last branch, not listed yet, is still implemented", () => {
+  // The fix issue is created ready-for-agent as the queue drains; a listing that lags the
+  // create must not end the sprint with it open.
+  const root = githubFixtureRepo();
+  const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
+  fake(
+    root,
+    "alpha.review",
+    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "all-met", findings: [{ severity: "HIGH", location: "somewhere in alpha", criterion: "Check the boundary" }] })}\n\`\`\`\n`,
+  );
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_GITHUB_TRACKER_CLI: join(REPO, "orchestrator/lib/trackers/github.mjs"),
+      GH_LIST_LAG_MS: "3000",
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const fix = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.title === "Fix review findings: alpha");
+  assert.ok(fix, `the findings fix issue was never created\n${traceLog(root)}`);
+  assert.ok(fix.labels.some((l) => l.name === "awaiting-merge"), `the fix issue was never implemented\n${traceLog(root)}`);
+  assert.doesNotMatch(r.stdout, /Fix issues not implemented/);
 });
 
 test("a gaps issue that could not be created is named in the summary, not only the trace", () => {
