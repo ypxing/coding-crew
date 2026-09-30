@@ -49,7 +49,7 @@ export async function finishPartial(ctx, worker, outcome, reason) {
 /**
  * `tracker: github`: label the issue `blocked` so later runs skip it until a human removes it
  * (issue-labels.sh is the only writer; a no-op under local). A failed write only warns.
- * True when the label is on the issue.
+ * The same edit removes `in-progress`. True when the label is on the issue.
  */
 function labelBlocked(ctx, issue) {
   const { effects } = ctx;
@@ -75,6 +75,7 @@ export async function finishBlocked(ctx, worker, outcome, reason) {
   // future run retrying once a human has fixed the blocker.
   sprint.markBlockedThisRun(issue.slug);
   outcome.status = "blocked";
+  outcome.inProgressCleared = labelled;
   outcome.reason = reason;
   notifyMilestone(ctx, issue, `blocked — ${reason}`);
   return outcome;

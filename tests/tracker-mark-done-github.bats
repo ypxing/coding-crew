@@ -123,6 +123,17 @@ close_calls() {
   [ "$(done_calls)" -eq 0 ]
 }
 
+@test "mark-issue-done (github): in-progress comes off in the one edit that adds awaiting-merge, and is created first" {
+  stub_gh 0
+  write_body_met
+
+  run bash "$MARK_DONE" 42
+  [ "$status" -eq 0 ]
+  grep -q '^label create in-progress --force' "$GH_LOG"
+  [ "$(grep -c '^issue edit' "$GH_LOG")" -eq 1 ]
+  grep -q '^issue edit 42 .*--remove-label in-progress' "$GH_LOG"
+}
+
 @test "mark-issue-done (github): met criteria swaps ready-for-agent for awaiting-merge and never closes" {
   stub_gh 0
   write_body_met
@@ -131,7 +142,7 @@ close_calls() {
   [ "$status" -eq 0 ]
   [ "$(done_calls)" -eq 1 ]
   grep -q '^label create awaiting-merge --force' "$GH_LOG"
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent$' "$GH_LOG"
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label in-progress$' "$GH_LOG"
   [ "$(close_calls)" -eq 0 ]
   [[ "$output" == *"Closes #42"* ]]
 }
@@ -223,7 +234,7 @@ close_calls() {
   [ "$status" -eq 0 ]
   [ "$(done_calls)" -eq 1 ]
   grep -q '^label create awaiting-merge --force' "$GH_LOG"
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent$' "$GH_LOG"
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label in-progress$' "$GH_LOG"
   [ "$(close_calls)" -eq 0 ]
 }
 

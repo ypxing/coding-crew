@@ -129,9 +129,22 @@ maps to a close-reason.
 different facts, and only a PR merge establishes the second. Closing at the first would show
 issues as completed on GitHub while their code exists only in a local branch. Both read as
 `done` for dispatch and for `## Blocked by` resolution. `configure-tracker`'s github setup
-idempotently creates the real labels (including `blocked`) before first publish, since `gh issue create --label x`
-fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` on
-demand, for repos configured before it existed.
+idempotently creates the real labels (including `blocked` and `in-progress`) before first publish, since `gh issue create --label x`
+fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` and
+`in-progress` on demand, for repos configured before they existed.
+
+## In-progress issues
+
+While a crew-afk run works an issue it carries the `in-progress` label, so a human on GitHub can
+see it. It is **display only**: the feature lease, not this label, decides what is dispatched, and
+a human adding or removing it changes nothing. The run adds it when it claims the issue (before the
+worker is dispatched) and removes it when the issue merges — in the same `gh issue edit` that adds
+`awaiting-merge` (`mark-done` does this; running it by hand on an issue without the label still
+succeeds) — or is blocked (swapped for `blocked`). An issue the run still holds at its end
+(partial, `--max-rounds` cap, stall) is released before the summary. A `## Requires` failure is
+never labelled. The new holder of a feature's lease also removes `in-progress` from every issue in
+the milestone right after acquiring it: only a dead run can have left one. A failed label write only
+warns.
 
 ## Blocked issues
 

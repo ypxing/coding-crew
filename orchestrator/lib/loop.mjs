@@ -37,6 +37,7 @@ import { resumeRoute, runHousekeeping, runWorker } from "./pipeline.mjs";
 import { getTracker } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
 import { writeLog } from "./log.mjs";
+import { labelIssue } from "./labels.mjs";
 import { checkRequires } from "./preflight.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit } from "./report.mjs";
@@ -58,6 +59,9 @@ export async function runSprint(ctx) {
   const conflictWaitsLogged = new Set();
   const history = [];
   let waiters = [];
+  // Issues this run labelled `in-progress` and has not seen leave it: a merge (mark-done) and a
+  // block (issue-labels.sh block) each remove it themselves; whatever is left is released at run end.
+  const held = new Map();
 
   const notifyAll = () => {
     const pending = waiters;
@@ -116,12 +120,15 @@ export async function runSprint(ctx) {
       notifyAll();
       return;
     }
+    // After the requires probe: a requires-failed issue is never labelled. Display only.
+    if (!held.has(issue.slug) && labelIssue(ctx, "claim", issue)) held.set(issue.slug, issue);
     const conflictRetry = isConflictRetry(issue.slug);
     if (conflictRetry) conflictRetryInFlight = issue.slug;
     const attempt = sprint.bumpAttempt(issue.slug);
     const worker = await runWorker(ctx, issue, attempt);
     const outcome = await runHousekeeping(ctx, worker);
     history.push(outcome);
+    if (outcome.status === "complete" || outcome.inProgressCleared) held.delete(issue.slug);
     ctx.log(
       `[ATTEMPT-END] slug=${issue.slug} attempt=${attempt} status=${outcome.status}${outcome.reason ? ` reason=${outcome.reason}` : ""}`,
     );
@@ -179,6 +186,10 @@ export async function runSprint(ctx) {
     (tracker.listOpenIssueFiles
       ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
       : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0);
+
+  // Before the summary: drained, capped or stalled, no issue keeps a label saying it is being worked.
+  for (const issue of held.values()) labelIssue(ctx, "release", issue);
+  held.clear();
 
   await wrapUp(ctx, { tracker, stalled, prdAudit });
   return { stalled, history };

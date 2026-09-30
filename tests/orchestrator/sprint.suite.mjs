@@ -2037,7 +2037,7 @@ function stubGh(root, issues) {
     "let issues=JSON.parse(fs.readFileSync(p,'utf8'));const label=v('--label'),st=v('--state');" +
     "if(label)issues=issues.filter(i=>(i.labels||[]).some(l=>l.name===label));" +
     "if(st&&st!=='all')issues=issues.filter(i=>i.state===st.toUpperCase());" +
-    "process.stdout.write(JSON.stringify(issues))";
+    "process.stdout.write(a.includes('--jq')?issues.map(i=>i.number).join('\\n'):JSON.stringify(issues))";
   // `issue edit N [--add-label L] [--remove-label L]…`: the label swap close-issue.sh makes.
   const editJs = "const fs=require('fs');const [p,n,...a]=process.argv.slice(1);" +
     "const issues=JSON.parse(fs.readFileSync(p,'utf8'));const i=issues.find(x=>x.number===Number(n));" +
@@ -2056,6 +2056,8 @@ function stubGh(root, issues) {
     [
       "#!/usr/bin/env bash",
       `echo "$@" >> ${JSON.stringify(log)}`,
+      // GH_FAIL_CLAIM=1: the write that adds `in-progress` fails, as a revoked token or a rate limit would.
+      'if [ -n "${GH_FAIL_CLAIM:-}" ] && [ "$1 $2" = "issue edit" ] && [[ " $* " == *" --add-label in-progress "* ]]; then echo denied >&2; exit 1; fi',
       'if [ "$1" = "issue" ] && [ "$2" = "list" ]; then',
       `  node -e ${JSON.stringify(listJs)} ${JSON.stringify(issuesFile)} "\${@:3}"`,
       "  exit 0",
@@ -2230,6 +2232,102 @@ test("github: a blocked issue is labelled blocked, keeps ready-for-agent, the su
   run();
   const after = readFileSync(log, "utf8").slice(readFileSync(log, "utf8").split("\n").slice(0, before - 1).join("\n").length);
   assert.doesNotMatch(after, /issue edit 1 --add-label blocked/, "a labelled issue was dispatched again");
+});
+
+// ─── in-progress: the display label ──────────────────────────────────────────
+
+const ghEnv = (root, stub, extra = {}) => ({ PATH: `${stub}:${process.env.PATH}`, ...extra });
+const issueLabels = (issuesFile, n) =>
+  JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.number === n).labels.map((l) => l.name).sort();
+const ghLines = (log) => readFileSync(log, "utf8").split("\n").filter(Boolean);
+
+test("github: a claimed issue is labelled in-progress before its worker is dispatched, and the merge swaps it out in one edit", () => {
+  const root = githubFixtureRepo();
+  const { stub, log, issuesFile } = stubGh(root, [GH_ALPHA]);
+  const { r, lines } = commandLines(root, [], { env: ghEnv(root, stub) });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const claim = lines.findIndex((l) => /issue-labels\.sh claim 1$/.test(l));
+  const spawn = lines.findIndex((l) => /^SPAWN .*--agent crew-coder/.test(l));
+  assert.ok(claim >= 0, "the issue was never labelled in-progress");
+  assert.ok(spawn >= 0 && claim < spawn, "the label was written after the worker was dispatched");
+  const edits = ghLines(log).filter((l) => l.startsWith("issue edit 1 "));
+  assert.deepEqual(edits, [
+    "issue edit 1 --add-label in-progress",
+    "issue edit 1 --add-label awaiting-merge --remove-label ready-for-agent --remove-label in-progress",
+  ]);
+  assert.deepEqual(issueLabels(issuesFile, 1), ["awaiting-merge"]);
+});
+
+test("github: a blocked issue ends with blocked and without in-progress, in one edit", () => {
+  const root = githubFixtureRepo();
+  const { stub, log, issuesFile } = stubGh(root, [GH_ALPHA]);
+  fake(root, "alpha.nocommit");
+  fake(
+    root,
+    "alpha.worker",
+    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"fail","lint":"pass","typecheck":"pass"},"progress":"tests red"}', '```'].join("\n"),
+  );
+  commandLines(root, [], { env: ghEnv(root, stub) });
+  assert.deepEqual(issueLabels(issuesFile, 1), ["blocked", "ready-for-agent"]);
+  assert.ok(ghLines(log).includes("issue edit 1 --add-label blocked --remove-label in-progress"));
+  assert.ok(!ghLines(log).some((l) => l === "issue edit 1 --remove-label in-progress"), "a blocked issue was released a second time");
+});
+
+test("github: a partial issue still held at run end (--max-rounds cap) is released before the summary", () => {
+  const root = githubFixtureRepo();
+  const { stub, log, issuesFile } = stubGh(root, [GH_ALPHA]);
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "pass", lint: "pass", typecheck: "pass" }, progress: "half done" }));
+  fake(root, "alpha.nocommit");
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { env: ghEnv(root, stub) });
+  assert.match(r.stdout, /NO MORE TASKS/, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(issueLabels(issuesFile, 1), ["ready-for-agent"]);
+  const release = lines.findIndex((l) => /issue-labels\.sh release 1$/.test(l));
+  const summary = lines.findIndex((l) => /crew-summary\.sh/.test(l));
+  assert.ok(release >= 0 && release < summary, "the label was not released before the summary was written");
+  assert.equal(ghLines(log).filter((l) => l === "issue edit 1 --add-label in-progress").length, 1);
+});
+
+test("github: a requires-failed issue never carries in-progress or blocked", () => {
+  const root = githubFixtureRepo();
+  const { stub, log, issuesFile } = stubGh(root, [
+    { ...GH_ALPHA, body: `${GH_ALPHA.body}\n## Requires\n\n- \`exit 1\`\n` },
+  ]);
+  const { r } = commandLines(root, [], { env: ghEnv(root, stub) });
+  assert.match(r.stdout + r.stderr, /REQUIRES-FAILED/);
+  assert.deepEqual(issueLabels(issuesFile, 1), ["ready-for-agent"]);
+  assert.ok(!ghLines(log).some((l) => /in-progress/.test(l) && l.startsWith("issue edit 1")), "the issue was labelled in-progress");
+});
+
+test("github: the new lease holder sweeps in-progress from the milestone before dispatching, and the label gates nothing", () => {
+  const root = githubFixtureRepo();
+  const stale = { number: 2, title: "stale", body: "# stale\n", labels: [{ name: "in-progress" }], state: "CLOSED" };
+  const { stub, log, issuesFile } = stubGh(root, [{ ...GH_ALPHA, labels: [{ name: "ready-for-agent" }, { name: "in-progress" }] }, stale]);
+  const { r, lines } = commandLines(root, [], { env: ghEnv(root, stub) });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(issueLabels(issuesFile, 2), [], "a dead run's in-progress survived the sweep");
+  const calls = ghLines(log);
+  const sweptStale = calls.indexOf("issue edit 2 --remove-label in-progress");
+  const firstClaim = calls.indexOf("issue edit 1 --add-label in-progress");
+  assert.ok(sweptStale >= 0 && firstClaim > sweptStale, "the sweep did not run before the first claim");
+  assert.ok(lines.some((l) => /^SPAWN .*--agent crew-coder/.test(l)), "an issue carrying in-progress was not dispatched");
+  assert.deepEqual(issueLabels(issuesFile, 1), ["awaiting-merge"]);
+});
+
+test("github: a failed in-progress write warns and the sprint goes on", () => {
+  const root = githubFixtureRepo();
+  const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
+  const { r } = commandLines(root, [], { env: ghEnv(root, stub, { GH_FAIL_CLAIM: "1" }) });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /WARN .*IN-PROGRESS-LABEL-FAILED.*claim/);
+  assert.deepEqual(issueLabels(issuesFile, 1), ["awaiting-merge"]);
+});
+
+test("local tracker: no in-progress label is ever written", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.ok(!lines.some((l) => /issue-labels\.sh/.test(l)));
 });
 
 test("github --open-pr: the sprint pushes the feature branch and opens a PR whose body closes the issue", () => {
