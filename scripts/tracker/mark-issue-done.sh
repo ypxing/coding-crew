@@ -66,18 +66,18 @@ MAIN_ROOT="${MAIN_ROOT:-.}"
 # BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
 # Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
 # It cannot live in tracker-config.sh itself: that is the file being looked for.
-# The list goes out in one write: callers break on the first hit, and a later write into
-# the closed pipe would print "write error: Broken pipe" wherever SIGPIPE is ignored.
+# Callers break on the first hit, closing the pipe while this may still be writing; where
+# SIGPIPE is ignored that write fails with "Broken pipe", so it stops quietly instead.
 tracker_config_candidates() {
-  local main_root="$1" c list=""
+  local main_root="$1" c
   for c in "${CREW_TRACKER_CONFIG:-}" \
     "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/scripts/tracker-config.sh}" \
     "$main_root/.coding-crew/scripts/tracker-config.sh" \
     "$main_root/scripts/tracker/tracker-config.sh" \
     "${HOME:+$HOME/.coding-crew/scripts/tracker-config.sh}"; do
-    if [ -n "$c" ]; then list="$list$c"$'\n'; fi
+    if [ -n "$c" ]; then printf '%s\n' "$c" 2>/dev/null || return 0; fi
   done
-  printf '%s' "$list"
+  return 0
 }
 # END tracker-lookup
 TRACKER_CONFIG_TRACKER="local"
