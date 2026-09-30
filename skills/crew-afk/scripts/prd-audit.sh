@@ -13,6 +13,10 @@ set -euo pipefail
 #   report  audit, and leave the report for a human
 #   fix     audit, and the orchestrator queues each ✗ missing requirement for Phase 2
 #
+# A PRD can be older than the decisions made since it was written. A requirement a later ADR,
+# CONTEXT.md entry or commit replaced is ⊘ superseded: named in the summary for a human, never
+# queued in either mode.
+#
 # Responsibilities:
 #   1. Skip when the mode is off
 #   2. Locate the feature's PRD — .scratch/<slug>/PRD.md, or failing that under tracker:
@@ -146,23 +150,33 @@ re-grade them. Your job is what that per-issue review cannot see:
 
 Check the merged code for each (grep for relevant patterns, function names, config).
 
+The PRD records the plan as of when it was written, and may be older than decisions made
+since. Before calling a requirement missing, check whether a later decision replaced it: an
+ADR (any docs/adr/ directory), CONTEXT.md, or the git history of the code it names. A
+requirement a later decision deliberately contradicts is superseded, not missing — a coder
+must not be sent to build it. Name the decision; a requirement merely absent is not
+superseded.
+
 Classify each requirement as:
 ✓ covered - an issue's criteria carry it, or the merged code clearly implements it
 ⚠ partial - part of it is carried or implemented, part is not
 ✗ missing - no issue carries it and the merged code has no evidence of it
+⊘ superseded - a later ADR, CONTEXT.md entry or commit deliberately decided otherwise
 
 Report format:
-✓ N covered / ⚠ N partial / ✗ N missing
+✓ N covered / ⚠ N partial / ✗ N missing / ⊘ N superseded
 
 ✓ <requirement>: <brief evidence from issues/code>
 ⚠ <requirement>: <what's present and what's missing>
 ✗ <requirement>: <no evidence found>
+⊘ <requirement>: <the decision that replaced it, with its path or commit>
 
 End with exactly one fenced json block, the only part a program reads. Each ✗ missing entry
-is written as an acceptance criterion a coder could implement and a reviewer could check:
+is written as an acceptance criterion a coder could implement and a reviewer could check;
+each ⊘ superseded entry names what replaced it, for a human to update the PRD:
 
 \`\`\`json
-{"covered": N, "partial": N, "missing": [{"requirement": "<the criterion>", "detail": "<what the PRD asks, where you looked>"}]}
+{"covered": N, "partial": N, "missing": [{"requirement": "<the criterion>", "detail": "<what the PRD asks, where you looked>"}], "superseded": [{"requirement": "<the PRD's requirement>", "by": "<the ADR, CONTEXT.md entry or commit>"}]}
 \`\`\`
 --- end audit prompt ---
 PROMPT
