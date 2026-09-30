@@ -1,0 +1,81 @@
+name: crew-rework
+
+# Addresses review comments on PRs labelled `crew-rework` (crew-afk's open-pr.sh adds it).
+# Setup: repo secret ANTHROPIC_API_KEY; optional CREW_APP_ID / CREW_APP_PRIVATE_KEY (see README).
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created]   # `/crew-rework` on a PR
+
+# One run per PR at a time; a newer trigger waits rather than cancelling a push in flight.
+concurrency:
+  group: crew-rework-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  rework:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Cheap pre-filter: never our own bot, and issue_comment only on a PR's `/crew-rework`.
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name != 'issue_comment' ||
+       (github.event.issue.pull_request && startsWith(github.event.comment.body, '/crew-rework')))
+    steps:
+      # Gate: permission, same-repo and label are all checked here. Every later step is
+      # conditional on it, and nothing before it touches the API key.
+      - name: Gate (permission, same-repo, label)
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          ok=false
+          perm=$(gh api "repos/${{ github.repository }}/collaborators/$ACTOR/permission" --jq .permission 2>/dev/null || echo none)
+          case "$perm" in write|maintain|admin) ;; *) echo "actor $ACTOR has permission '$perm'"; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0 ;; esac
+          info=$(gh pr view "$PR" --repo "${{ github.repository }}" --json headRepository,headRepositoryOwner,labels,headRefName)
+          same=$(jq -r --arg r "${{ github.repository }}" '(.headRepositoryOwner.login + "/" + .headRepository.name) == $r' <<<"$info")
+          label=$(jq -r 'any(.labels[]; .name == "crew-rework")' <<<"$info")
+          [ "$same" = true ] && [ "$label" = true ] && ok=true
+          echo "same-repo=$same label=$label"
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          echo "branch=$(jq -r .headRefName <<<"$info")" >> "$GITHUB_OUTPUT"
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+
+      - name: App token (optional — lets the push trigger CI)
+        id: app
+        if: steps.gate.outputs.ok == 'true' && vars.CREW_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.CREW_APP_ID }}
+          private-key: ${{ secrets.CREW_APP_PRIVATE_KEY }}
+
+      - name: Checkout PR branch
+        if: steps.gate.outputs.ok == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.gate.outputs.branch }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token || github.token }}
+
+      - name: Address review comments
+        if: steps.gate.outputs.ok == 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          CI: "true"
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ steps.app.outputs.token || github.token }}
+          prompt: /address-pr-comments ${{ steps.gate.outputs.pr }} --auto (pass --ci-workflow ci.yml to push-rework.sh)

@@ -5,7 +5,7 @@ set -uo pipefail
 # sprint-state.json and the review reports.
 #
 # Usage:
-#   crew-summary.sh [--feature-slug <slug>] [--stalled] [--no-reminder]
+#   crew-summary.sh [--feature-slug <slug>] [--stalled] [--no-reminder] [--posted-to <pr-url>]
 #
 # The summary used to be ~430 words of print template that the orchestrator filled in
 # from lists it had been carrying in its context since round 1. That is the one part of
@@ -21,12 +21,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 STALLED=0
 REMINDER=1
+POSTED_TO=""
 FEATURE_SLUG_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --feature-slug) FEATURE_SLUG_ARG="${2:-}"; shift 2 ;;
     --stalled) STALLED=1; shift ;;
     --no-reminder) REMINDER=0; shift ;;
+    --posted-to) POSTED_TO="${2:-}"; shift 2 ;;
     *) echo "crew-summary.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -319,7 +321,12 @@ if [ -n "$OPEN_LINE" ]; then
   echo "## Next Step"
   echo "$total review finding(s) still need triage ($breakdown)."
   echo "Reports: $REPORTS"
-  echo "Run: /crew-address-findings"
+  if [ -n "$POSTED_TO" ]; then
+    # every open finding is on the PR now, whether this run or an earlier one posted it
+    echo "$total finding(s) posted to $POSTED_TO"
+  else
+    echo "Run: /crew-address-findings"
+  fi
   # A reduced promotion threshold is a real coverage reduction, so it is stated where the
   # consequence shows up: a HIGH the sprint did not fix must be visibly queued, never silent.
   case "$breakdown" in

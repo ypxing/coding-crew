@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.31.0]
+
+### Added
+
+- **`address-pr-comments --auto` and the `crew-rework` GitHub Action.** `--auto` runs the skill
+  with no confirmation or question, fetching through `fetch-review-threads.sh`, pushing through
+  `push-rework.sh`, replying on every handled thread with the new `reply-thread.sh`, and never
+  resolving one. `.github/workflows/crew-rework.yml` runs it on review activity for PRs labelled
+  `crew-rework`, gated on commenter permission, same-repo and label before any step that uses the
+  API key, one run per PR at a time. `crew-afk`'s `open-pr.sh` now adds the `crew-rework` label to
+  the PRs it opens or updates. README documents setup and the flow.
+
+## [1.30.0]
+
+### Added
+
+- **Guarded scripts for `address-pr-comments --auto`.** `fetch-review-threads.sh` prints the
+  unresolved review threads whose latest comment is from a write/maintain/admin author, with every
+  untrusted comment stripped (permission looked up once per login). `push-rework.sh` commits and
+  pushes one rework round behind guards — a two-round cap under `CI=true` (reset by a trusted
+  `/crew-rework` comment), protected paths, and green checks — and on any refusal comments on the
+  PR and labels it `needs-human`. `address-pr-comments` now depends on `solve-issue`.
+
+## [1.29.158]
+
+### Added
+
+- **With `openPr` on, crew-afk posts the review findings no fix issue covered to the feature PR.**
+  `post-findings.sh` posts them as one PR review: `path:line` locations inside the diff become
+  inline comments, the rest are listed in the review body by severity. Each finding carries a
+  hidden marker, so a re-run posts only new ones. Posted findings wait for a human;
+  `fixFindings` still sets what is fixed automatically. `## Pull Request` reports the count (a
+  posting failure is reported there and does not fail the sprint), and the summary points at the
+  PR instead of `/crew-address-findings`. With `openPr` off nothing changes.
+  `promote-findings.sh open` prints the open findings as JSON; `remind` now counts from it.
+
 ## [1.29.157]
 
 ### Fixed

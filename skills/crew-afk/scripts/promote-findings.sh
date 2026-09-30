@@ -16,6 +16,7 @@ set -euo pipefail
 #   defer-gaps — the same for the PRD audit's ✗ missing requirements: one parked issue
 #   flush   — flip every parked fix issue to ready-for-agent (Phase 1 → Phase 2 transition)
 #   list    — list parked fix issues without changing anything
+#   open    — the open findings as JSON (what remind counts)
 #   remind  — count findings still needing human triage, for the end-of-sprint reminder
 #   mark-not-run — record that a branch's review never completed, so the gap is visible
 #
@@ -113,6 +114,7 @@ Usage:
                             --criteria-file <file>
   promote-findings.sh flush --feature-slug <slug>
   promote-findings.sh list  --feature-slug <slug>
+  promote-findings.sh open  --feature-slug <slug>
   promote-findings.sh remind --feature-slug <slug>
   promote-findings.sh mark-not-run --feature-slug <slug> --branch <branch> --slug <issue-slug>
                             --report <review-report> --reason <text>
@@ -555,6 +557,49 @@ cmd_mark_not_run() {
   echo "mark-not-run: not_run recorded — $branch ($reason)"
 }
 
+# open_findings_json <rollup-json> <report>... — the one definition of "open": every finding in
+# the rollup minus the (branch, severity) pairs a fix issue already covers. Those are defer's own
+# bash-generated "## Promoted Findings" bullets ("- <branch>: SEV, SEV → <path>"), never the
+# reviewer's free text, so a plain regex capture reads them exactly. Prints a JSON array of
+# {branch, severity, location, criterion}.
+open_findings_json() {
+  local rollup="$1" promoted
+  shift
+  # grep's own "no lines matched" status must not reach the pipeline under `pipefail`.
+  promoted=$( (grep -h '^- .*:.*→' "$@" 2>/dev/null || true) | jq -R -s '
+    [splits("\n") | select(length > 0) |
+      (capture("^- *(?<b>[^:]+): *(?<sevs>[^→]+)→")?) |
+      select(. != null) |
+      {branch: (.b | rtrimstr(" ")), sevs: [.sevs | splits(", *") | gsub("^\\s+|\\s+$"; "") | select(length > 0)]}
+    ]
+  ' 2>/dev/null || echo '[]')
+  jq -n --argjson rollup "$rollup" --argjson promoted "$promoted" '
+    ($promoted | map(.branch as $b | .sevs[] as $s | {(($b + " " + $s)): true}) | add // {}) as $pset
+    | [$rollup.branches[] | .branch as $b | .findings[]
+       | select(($pset[$b + " " + .severity] // false) | not)
+       | {branch: $b, severity, location: (.location // ""), criterion: (.criterion // "")}]
+  '
+}
+
+# --- open ---------------------------------------------------------------------
+# The open findings as JSON, for post-findings.sh. `[]` when there is nothing.
+cmd_open() {
+  local slug=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --feature-slug) slug="${2:-}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$slug" ] || usage
+  local reports=() f
+  for f in ".scratch/$slug/reviews"/*.md; do
+    [ -f "$f" ] && reports+=("$f")
+  done
+  if [ "${#reports[@]}" -eq 0 ]; then echo '[]'; return 0; fi
+  open_findings_json "$(review_rollup "${reports[@]}")" "${reports[@]}"
+}
+
 # --- remind ------------------------------------------------------------------
 # Promotion only covers the threshold severities (CRITICAL by default) on Phase 1 branches.
 # Everything else — HIGH when the threshold is CRITICAL-only, MEDIUM/LOW always, plus any
@@ -590,36 +635,17 @@ cmd_remind() {
     return 0
   fi
 
-  local rollup
+  local rollup open_json
   rollup=$(review_rollup "${reports[@]}")
+  open_json=$(open_findings_json "$rollup" "${reports[@]}")
 
-  # (branch, severity) pairs already covered by a fix issue this sprint — defer's own
-  # bash-generated "## Promoted Findings" bullets ("- <branch>: SEV, SEV → <path>"),
-  # never the reviewer's free text, so a plain regex capture reads them exactly; no awk
-  # state machine needed for a shape this script itself wrote.
-  local promoted
-  # grep's own "no lines matched" exit status must not reach the pipeline under
-  # `pipefail` — `|| true` neutralises it before jq runs, so the `|| echo '[]'` fallback
-  # below only fires on an actual jq failure, never doubling jq's own (valid) output.
-  promoted=$( (grep -h '^- .*:.*→' "${reports[@]}" 2>/dev/null || true) | jq -R -s '
-    [splits("\n") | select(length > 0) |
-      (capture("^- *(?<b>[^:]+): *(?<sevs>[^→]+)→")?) |
-      select(. != null) |
-      {branch: (.b | rtrimstr(" ")), sevs: [.sevs | splits(", *") | gsub("^\\s+|\\s+$"; "") | select(length > 0)]}
-    ]
-  ' 2>/dev/null || echo '[]')
-
-  # Every open finding, once — there is exactly one representation now (the reviewer's
-  # own `findings` array), not a machine line and a prose block to reconcile.
   local totals crit high med low total breakdown
-  totals=$(jq -rn --argjson rollup "$rollup" --argjson promoted "$promoted" '
-    ($promoted | map(.branch as $b | .sevs[] as $s | {(($b + " " + $s)): true}) | add // {}) as $pset
-    | [$rollup.branches[] | .branch as $b | .findings[] | select(($pset[$b + " " + .severity] // false) | not) | .severity] as $open
-    | [($open | map(select(. == "CRITICAL")) | length),
-       ($open | map(select(. == "HIGH")) | length),
-       ($open | map(select(. == "MEDIUM")) | length),
-       ($open | map(select(. == "LOW")) | length)] | @tsv
-  ')
+  totals=$(jq -r '
+    [(map(select(.severity == "CRITICAL")) | length),
+     (map(select(.severity == "HIGH")) | length),
+     (map(select(.severity == "MEDIUM")) | length),
+     (map(select(.severity == "LOW")) | length)] | @tsv
+  ' <<< "$open_json")
   IFS=$'\t' read -r crit high med low <<< "$totals"
   total=$((crit + high + med + low))
   breakdown=""
@@ -668,6 +694,7 @@ case "$COMMAND" in
   defer-gaps) cmd_defer_gaps "$@" ;;
   flush) cmd_flush "$@" ;;
   list)  cmd_list "$@" ;;
+  open) cmd_open "$@" ;;
   remind) cmd_remind "$@" ;;
   mark-not-run) cmd_mark_not_run "$@" ;;
   *) usage ;;
