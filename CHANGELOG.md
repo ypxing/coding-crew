@@ -14,6 +14,14 @@
 
 ### Fixed
 
+- **One lookup order for the tracker scripts.** `session-init.sh`, `close-issue.sh`,
+  `mark-issue-done.sh`, `promote-findings.sh` and `prd-audit.sh` now find `tracker-config.sh` (and
+  `mark-issue-done.sh` beside it) in the same order: `$CREW_TRACKER_CONFIG`,
+  `$CREW_INSTALL_DIR/scripts/`, `<repo>/.coding-crew/scripts/`, `<repo>/scripts/tracker/`,
+  `~/.coding-crew/scripts/`. A repo relying on a user-level install works with `tracker: github`;
+  `session-init.sh`'s failure lists every path it checked. The tracker templates' mark-done step
+  falls back to `~/.coding-crew/scripts/`. A test fails if a caller's copy of the order drifts.
+
 - **`open-pr.sh` replaces its block in a PR body with CRLF line endings.** GitHub keeps a body
   edited in its web UI with `\r\n`, so the block's marker lines never matched: a re-run left the
   old block in place and new `Closes #n` lines were silently dropped.
