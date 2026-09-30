@@ -98,7 +98,7 @@ export async function notify(effects, message) {
     // unattended pane never receives the message. --wait makes a stall a nonzero exit.
     const result = await paneHostExec(
       effects,
-      ["agent", "prompt", paneId, message, "--wait", "--until", "working", "--timeout-ms", "2000"],
+      ["agent", "prompt", paneId, message, "--wait", "--until", "working", "--timeout", "2000"],
       5000,
     );
     // spawnWithTimeout resolves on a nonzero exit rather than rejecting.

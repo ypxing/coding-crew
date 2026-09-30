@@ -253,13 +253,13 @@ SH
 
 # ─── guard: github path ────────────────────────────────────────────────────────
 
-@test "guard live-fetches the body under github and is promotable with no Source: line" {
+@test "guard live-fetches the body under github and is eligible with no Source: line" {
   configure_github
   stub_gh
   printf 'Some body with no Source line.\n' > "$GH_VIEW_BODY_FILE"
 
   run bash "$PROMOTE" guard --issue 42
-  [[ "$output" == *"promotable — severities: CRITICAL"* ]]
+  [[ "$output" == *"eligible — threshold: CRITICAL"* ]]
   grep -q '^issue view 42' "$GH_CALLS_LOG"
 }
 

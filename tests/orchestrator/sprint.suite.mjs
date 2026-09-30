@@ -1821,11 +1821,17 @@ test("the promotion threshold has one source: fixFindings reaches findingsAtOrAb
   const criteria = readFileSync(join(high.root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
   assert.match(criteria, /\[HIGH\] Move the trust boundary check before the write/);
   assert.match(readFileSync(join(high.root, ".scratch/demo/sprint.env"), "utf8"), /CREW_FIX_FINDINGS="high"/);
+  assert.match(traceLog(high.root), /slug=alpha round=\d+ promote: 1 finding\(s\) — HIGH/);
 
   // A MEDIUM is reported, never promoted, at the default — left open and attributed.
   const medium = sprintWith("MEDIUM");
   assert.deepEqual(state(medium.root).completed_slugs, ["alpha"], "no fix issue for a MEDIUM at the default");
   assert.match(medium.r.stdout, /## Next Step/);
+  // The log states what was promoted, not the threshold: a MEDIUM-only review must never
+  // read as promotable at "CRITICAL, HIGH".
+  const mediumLog = traceLog(medium.root);
+  assert.doesNotMatch(mediumLog, /promotable/);
+  assert.match(mediumLog, /slug=alpha round=\d+ promote: none — findings \(MEDIUM\) are below the threshold \(CRITICAL, HIGH\)/);
 
   // config.json's afk.fixFindings: medium promotes it.
   const onMedium = sprintWith("MEDIUM", [], { fixFindings: "medium" });

@@ -128,7 +128,7 @@ bash "<skill-dir>/scripts/promote-findings.sh" policy
 
 # Depth bound: is this branch's issue itself a promoted fix issue?
 bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file>"
-# → "guard: promotable — severities: CRITICAL, HIGH" | "guard: skip — source-guarded ..."
+# → "guard: eligible — threshold: CRITICAL, HIGH" | "guard: skip — source-guarded ..."
 #   | "guard: skip — fixFindings is none"
 
 # Park a fix issue and annotate the report. Criteria file = one "- [ ] <finding>" line per finding.

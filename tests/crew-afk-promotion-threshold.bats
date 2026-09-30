@@ -85,10 +85,10 @@ teardown() {
 
 @test "guard names the severities to promote, so no caller carries the threshold in prose" {
   run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
-  [[ "$output" == "guard: promotable — severities: CRITICAL, HIGH" ]]
+  [[ "$output" == "guard: eligible — threshold: CRITICAL, HIGH" ]]
 
   CREW_FIX_FINDINGS=critical run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
-  [[ "$output" == "guard: promotable — severities: CRITICAL" ]]
+  [[ "$output" == "guard: eligible — threshold: CRITICAL" ]]
 }
 
 @test "guard skips every branch when fixFindings is none" {

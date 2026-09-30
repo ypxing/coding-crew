@@ -212,9 +212,9 @@ cmd_guard() {
   elif [ -z "$(promote_severities)" ]; then
     echo "guard: skip — fixFindings is none"
   else
-    # The severity list is printed with the verdict so no caller has to carry the threshold in
-    # prose: promote exactly the severities named here, and nothing else.
-    echo "guard: promotable — severities: $(promote_severities)"
+    # Eligible names the threshold, not what the review found: the branch is promoted only if
+    # a finding at one of these severities exists, which the caller decides from the review.
+    echo "guard: eligible — threshold: $(promote_severities)"
   fi
 }
 

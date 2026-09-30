@@ -75,6 +75,14 @@
 
 ### Fixed
 
+- **crew-afk's pane notifications reach herdr again.** Milestone updates were sent with
+  `--timeout-ms`, which `herdr agent prompt` rejects as an unknown option, so no progress update
+  reached the triggering pane. It now passes `--timeout`.
+- **crew-afk's log no longer calls a branch promotable from the threshold alone.** The guard printed
+  `guard: promotable — severities: CRITICAL, HIGH` whenever a branch was eligible, even when its
+  review found only LOW findings. It now prints `guard: eligible — threshold: …`, and the
+  orchestrator logs what it actually did: `promote: <n> finding(s) — <severities>` or
+  `promote: none — findings (<severities>) are below the threshold (…)`.
 - **One lookup order for the tracker scripts.** `session-init.sh`, `close-issue.sh`,
   `mark-issue-done.sh`, `promote-findings.sh` and `prd-audit.sh` now find `tracker-config.sh` (and
   `mark-issue-done.sh` beside it) in the same order: `$CREW_TRACKER_CONFIG`,
