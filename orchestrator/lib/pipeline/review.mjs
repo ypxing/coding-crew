@@ -144,10 +144,19 @@ export async function promote(ctx, worker, review, outcome) {
   });
   const guardText = guard.stdout.trim();
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${guardText}`);
-  if (!/promotable/.test(guardText)) return; // source-guarded: the depth bound
+  const eligible = /^guard: eligible — threshold: (.+)$/.exec(guardText);
+  if (!eligible) return; // source-guarded: the depth bound
 
-  const promotable = findingsAtOrAbove(review.parsed.findings, sprint.fixFindings);
-  if (!promotable.length) return;
+  const findings = review.parsed.findings ?? [];
+  const promotable = findingsAtOrAbove(findings, sprint.fixFindings);
+  if (!promotable.length) {
+    const found = [...new Set(findings.map((f) => f.severity))].join(", ");
+    const why = found ? `findings (${found}) are below the threshold (${eligible[1]})` : "no findings";
+    ctx.log(`slug=${issue.slug} round=${worker.attempt} promote: none — ${why}`);
+    return;
+  }
+  const severities = [...new Set(promotable.map((f) => f.severity))].join(", ");
+  ctx.log(`slug=${issue.slug} round=${worker.attempt} promote: ${promotable.length} finding(s) — ${severities}`);
 
   mkdirSync(sprint.reviewDir, { recursive: true });
   const criteriaPath = join(sprint.reviewDir, `${issue.slug}.criteria.md`);

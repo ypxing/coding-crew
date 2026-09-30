@@ -79,7 +79,7 @@ printf -- '- [ ] fix the CRITICAL race at src/b.ts:42\n' > crit-b.md
 
 echo "Test 1: guard allows promotion for an ordinary issue, naming the threshold"
 out=$(bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md)
-check "guard reports promotable at the pinned threshold" "guard: promotable — severities: CRITICAL" "$out"
+check "guard reports eligible at the pinned threshold" "guard: eligible — threshold: CRITICAL" "$out"
 
 echo
 echo "Test 2: defer numbers after the highest issue across open/ and done/"

@@ -314,7 +314,7 @@ test("notifyTriggeringPane (herdr) prompts the triggering pane directly by its i
   const effects = fakeHerdrEffects([json({ result: { type: "ok" } })], { mainRoot: "/root" });
   const result = await withHerdrPaneId("w1:p1", () => notifyTriggeringPane(effects, "crew-afk (alpha): sprint finished."));
   assert.deepEqual(effects._calls, [
-    ["herdr", "agent", "prompt", "w1:p1", "crew-afk (alpha): sprint finished.", "--wait", "--until", "working", "--timeout-ms", "2000"],
+    ["herdr", "agent", "prompt", "w1:p1", "crew-afk (alpha): sprint finished.", "--wait", "--until", "working", "--timeout", "2000"],
   ]);
   assert.deepEqual(result, { sent: true });
 });
