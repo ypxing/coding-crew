@@ -47,6 +47,8 @@ every remaining one is blocked (retries spent, or a dependency's).
 local clone; `codex` must be on `PATH` and authenticated, or stop rather than
 implementing issues yourself.
 
+A dead run's feature lease needs `--reclaim`.
+
 ## Your part
 
 1. Resolve the target first if needed, then launch **in the background** — a dispatch can

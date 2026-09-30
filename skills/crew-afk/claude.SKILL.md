@@ -47,6 +47,8 @@ every remaining one is blocked (retries spent, or a dependency's). Workers are
 `claude -p --agent crew-coder` processes, 3 at a time, not `Agent` calls, so a hung one
 times out without hanging the sprint.
 
+A dead run's feature lease needs `--reclaim`.
+
 ## Your part
 
 1. Resolve the target first if needed, then launch **in the background** — a dispatch can
