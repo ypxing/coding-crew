@@ -39,7 +39,9 @@ case "$1 $2" in
     jq -n --rawfile body "$(arg --body-file "$@")" \
       '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: $body}' > "$GH_PR"
     echo "https://github.com/o/r/pull/7" ;;
+  "label create") exit 0 ;;
   "pr edit")
+    [[ "$*" == *--body-file* ]] || exit 0
     jq --rawfile body "$(arg --body-file "$@")" '.body = $body' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR" ;;
   *) exit 1 ;;
 esac
@@ -100,7 +102,7 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
   [ "$status" -eq 0 ]
   grep -q '^pr create' "$GH_LOG"
-  ! grep -q '^pr edit' "$GH_LOG"
+  ! grep -q '^pr edit.*--body-file' "$GH_LOG"
 }
 
 @test "open-pr: a rejected push fails before any PR call, and never forces" {
@@ -112,4 +114,18 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   [ "$status" -ne 0 ]
   [[ "$output" == *"git push failed"* ]]
   ! grep -q '^pr ' "$GH_LOG"
+}
+
+@test "open-pr: a new PR gets the crew-rework label" {
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
+  [ "$status" -eq 0 ]
+  grep -q '^label create crew-rework' "$GH_LOG"
+  grep -q '^pr edit feature/demo --add-label crew-rework' "$GH_LOG"
+}
+
+@test "open-pr: an updated PR gets the crew-rework label" {
+  jq -n '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: "Opened by hand."}' > "$GH_PR"
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
+  [ "$status" -eq 0 ]
+  grep -q '^pr edit feature/demo --add-label crew-rework' "$GH_LOG"
 }

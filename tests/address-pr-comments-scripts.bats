@@ -210,3 +210,20 @@ refused_with_label() {
   [ "$status" -eq 0 ]
   grep -qx 'workflow run ci.yml --ref feature/x' "$GH_LOG"
 }
+
+# ---- reply-thread ----
+REPLY="$ROOT/skills/address-pr-comments/scripts/reply-thread.sh"
+
+@test "reply-thread: posts a reply to the thread by id through gh api graphql" {
+  run bash "$REPLY" PRRT_abc "Fixed in the last commit."
+  [ "$status" -eq 0 ]
+  grep -q '^api graphql .*addPullRequestReviewThreadReply' "$GH_LOG"
+  grep -q 'thread=PRRT_abc' "$GH_LOG"
+  grep -q 'body=Fixed in the last commit.' "$GH_LOG"
+  ! grep -qi 'resolveReviewThread' "$GH_LOG"
+}
+
+@test "reply-thread: missing arguments is a usage error" {
+  run bash "$REPLY" PRRT_abc
+  [ "$status" -eq 2 ]
+}

@@ -176,6 +176,36 @@ Two knobs worth knowing about:
 
 Opens the review report, triages findings, implements fixes with TDD.
 
+## 4. Rework from PR review comments (optional)
+
+With `openPr` on, `crew-afk` opens the feature PR and labels it `crew-rework`. Reviewers then
+comment on it as usual; the `crew-rework` GitHub Action runs `/address-pr-comments --auto`, which
+fixes what is sensible, pushes, and replies on every thread it handled. It never resolves a
+thread — you do.
+
+**Setup**
+
+1. Copy `.github/workflows/crew-rework.yml` into your repo.
+2. Add the repo secret `ANTHROPIC_API_KEY`.
+3. Make sure your CI workflow has `workflow_dispatch:` if you want the re-trigger below.
+
+**Flow.** A review, review comment or `/crew-rework` PR comment triggers the workflow. Before any
+step that uses the API key it checks that the actor has write access, the PR's branch is in the
+same repo (no forks), and the PR carries the `crew-rework` label. Runs are serialised per PR.
+Only comments by write/maintain/admin authors ever reach the model.
+
+**Guards.** Unattended runs are capped at two rounds; comment `/crew-rework` to allow two more. A
+change to protected paths (`.github/`, CI configs, auth, deploy, `.env`), a failing check, or a
+rejected push stops the run: it comments on the PR and adds `needs-human`.
+
+**CI re-trigger.** Pushes made with the default `GITHUB_TOKEN` do not start other workflows. The
+skill therefore dispatches your CI workflow explicitly after pushing (`--ci-workflow`).
+Alternatively, provide the optional App token below and the push triggers CI natively.
+
+**Optional App token.** Create a GitHub App with contents/pull-requests write, install it, set the
+repo variable `CREW_APP_ID` and secret `CREW_APP_PRIVATE_KEY`. The workflow then checks out and
+pushes as the App.
+
 ---
 
 ## Skills
