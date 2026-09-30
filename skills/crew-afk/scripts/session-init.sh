@@ -95,18 +95,41 @@ resume_feature_branch() {
 # "local" would be a wrong answer, not a default: it scans .scratch/ for issues that
 # live on GitHub and blames their absence on the user.
 MAIN_ROOT_FOR_TRACKER=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+# BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
+# Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
+# It cannot live in tracker-config.sh itself: that is the file being looked for.
+# Callers break on the first hit, closing the pipe while this may still be writing; where
+# SIGPIPE is ignored that write fails with "Broken pipe", so it stops quietly instead.
+tracker_config_candidates() {
+  local main_root="$1" c
+  for c in "${CREW_TRACKER_CONFIG:-}" \
+    "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/scripts/tracker-config.sh}" \
+    "$main_root/.coding-crew/scripts/tracker-config.sh" \
+    "$main_root/scripts/tracker/tracker-config.sh" \
+    "${HOME:+$HOME/.coding-crew/scripts/tracker-config.sh}"; do
+    if [ -n "$c" ]; then printf '%s\n' "$c" 2>/dev/null || return 0; fi
+  done
+  return 0
+}
+# END tracker-lookup
 TRACKER_CONFIG_TRACKER="local"
 TRACKER_CONFIG_REPO=""
-TRACKER_CONFIG_SCRIPT="$MAIN_ROOT_FOR_TRACKER/.coding-crew/scripts/tracker-config.sh"
 TRACKER_CONFIG_DOC="$MAIN_ROOT_FOR_TRACKER/.coding-crew/docs/issue-tracker.md"
-if [ -f "$TRACKER_CONFIG_SCRIPT" ]; then
+TRACKER_CONFIG_SCRIPT=""
+TRACKER_CONFIG_CHECKED=""
+while IFS= read -r _tc; do
+  TRACKER_CONFIG_CHECKED="$TRACKER_CONFIG_CHECKED  $_tc"$'\n'
+  if [ -f "$_tc" ]; then TRACKER_CONFIG_SCRIPT="$_tc"; break; fi
+done < <(tracker_config_candidates "$MAIN_ROOT_FOR_TRACKER")
+if [ -n "$TRACKER_CONFIG_SCRIPT" ]; then
   # shellcheck source=/dev/null
   source "$TRACKER_CONFIG_SCRIPT"
   read_tracker_config "$MAIN_ROOT_FOR_TRACKER"
 elif [ -f "$TRACKER_CONFIG_DOC" ] &&
   awk 'NR == 1 && $0 != "---" { exit 1 } NR > 1 && $0 == "---" { exit 1 } NR > 1 && /^tracker:[[:space:]]*["'"'"']?github/ { found = 1; exit 0 } END { exit !found }' "$TRACKER_CONFIG_DOC"; then
-  echo "ERROR: $TRACKER_CONFIG_DOC declares tracker: github, but $TRACKER_CONFIG_SCRIPT is not installed to read it." >&2
-  echo "Re-install coding-crew into this repo (install.sh) so the tracker config is honoured." >&2
+  echo "ERROR: $TRACKER_CONFIG_DOC declares tracker: github, but tracker-config.sh was not found in any of:" >&2
+  printf '%s' "$TRACKER_CONFIG_CHECKED" >&2
+  echo "Install coding-crew (install.sh) into this repo or your home directory so the tracker config is honoured." >&2
   exit 1
 fi
 

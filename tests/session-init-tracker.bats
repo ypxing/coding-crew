@@ -103,6 +103,9 @@ write_tracker_config() {
 @test "github tracker declared but tracker-config.sh not installed: hard error, no silent local fallback" {
   write_tracker_config github
   rm "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
+  export HOME="$TEMP_DIR/empty-home"   # no user-level install to find either
+  mkdir -p "$HOME"
+  unset CREW_INSTALL_DIR
   mkdir -p .scratch/some-slug/issues/open
   echo "Status: ready-for-agent" > .scratch/some-slug/issues/open/01-first.md
 

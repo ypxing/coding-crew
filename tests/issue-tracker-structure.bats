@@ -78,7 +78,7 @@ setup() {
 }
 
 @test "docs/templates/trackers/github.md: done is the awaiting-merge label, wontfix a close-reason" {
-  grep -q 'mark-issue-done.sh" <number>'   "$GITHUB_TEMPLATE"
+  grep -q 'bash "$MD" <number>'   "$GITHUB_TEMPLATE"
   grep -q 'awaiting-merge'                 "$GITHUB_TEMPLATE"
   grep -q -- '--reason not-planned'        "$GITHUB_TEMPLATE"
   grep -q 'Closes #<number>'               "$GITHUB_TEMPLATE"

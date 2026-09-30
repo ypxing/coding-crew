@@ -72,7 +72,9 @@ as `PRD: #<n>` in their body.
 tracker's script — do not hand-run `gh issue edit` or `gh issue close`:
 
 ```bash
-bash "$(git rev-parse --show-toplevel)/.coding-crew/scripts/mark-issue-done.sh" <number>
+MD="$(git rev-parse --show-toplevel)/.coding-crew/scripts/mark-issue-done.sh"
+[ -f "$MD" ] || MD="$HOME/.coding-crew/scripts/mark-issue-done.sh"   # user-level install
+bash "$MD" <number>
 ```
 
 Before calling it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting
