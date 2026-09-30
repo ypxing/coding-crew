@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.31.0]
+
+### Added
+
+- **`address-pr-comments --auto` and the `crew-rework` GitHub Action.** `--auto` runs the skill
+  with no confirmation or question, fetching through `fetch-review-threads.sh`, pushing through
+  `push-rework.sh`, replying on every handled thread with the new `reply-thread.sh`, and never
+  resolving one. `.github/workflows/crew-rework.yml` runs it on review activity for PRs labelled
+  `crew-rework`, gated on commenter permission, same-repo and label before any step that uses the
+  API key, one run per PR at a time. `crew-afk`'s `open-pr.sh` now adds the `crew-rework` label to
+  the PRs it opens or updates. README documents setup and the flow.
+
 ## [1.30.0]
 
 ### Added
