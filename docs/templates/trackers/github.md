@@ -61,7 +61,13 @@ gh issue pin <number> [--repo owner/name] || true
 # local issues use; that prose is the dependency graph for this backend (no sidecar file):
 gh issue create [--repo owner/name] --title "<title>" --body-file <body-file> \
   --label <status> --milestone <feature-slug>
+# Then mirror its `## Blocked by` as native GitHub dependencies (best-effort; never fails publish):
+node "$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/lib/trackers/github.mjs" link-blockers --issue <number-just-created> [--main-root <dir>]
 ```
+
+After each `gh issue create` of a work issue, to-issues runs `link-blockers` with the new issue's
+number. It creates one native `blocked_by` relationship per `## Blocked by` number; a failed link
+warns on stderr. Dispatch still reads only the body's `## Blocked by`.
 
 Revising the PRD in place: `gh issue edit <n> --body-file <prd-file>`. Work issues cite the PRD
 as `PRD: #<n>` in their body.
