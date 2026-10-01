@@ -10,6 +10,8 @@
 #   6. flush on a sprint with nothing parked reports FLUSH: none rather than failing
 #   7. remind counts only findings promotion did NOT cover, so the end-of-sprint reminder is honest
 #   8. the promotion threshold follows CREW_FIX_FINDINGS (pinned to critical below; high adds HIGH)
+#   9. under the default (actionable), a promoted branch's Actionable findings are handled whatever
+#      their severity; Debatable and Dismissed ones stay open, and remind leads with Debatable
 
 set -e
 
@@ -18,7 +20,7 @@ PROMOTE="$SCRIPT_DIR/promote-findings.sh"
 # remind reads reviews through review-rollup.mjs, which the lookup below the temp repo can't
 # find: point it at this source tree's copy (an install sets its own).
 export CREW_REVIEW_ROLLUP="${CREW_REVIEW_ROLLUP:-$SCRIPT_DIR/../../../orchestrator/review-rollup.mjs}"
-# Pinned: these cases were written against a CRITICAL-only threshold (the default is high).
+# Pinned: these cases were written against a CRITICAL-only threshold (the default is actionable).
 export CREW_FIX_FINDINGS=critical
 
 # review <header> <SEVERITY>... — one branch's block in the aggregate report's format: its
@@ -233,6 +235,38 @@ if bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" 
 else
     check "an empty criteria file is refused" "refused" "refused"
 fi
+
+echo
+echo "Test 16: actionable (the default) — verdicts beside each finding; Actionable handled, Debatable leads"
+mkdir -p .scratch/act/issues/open .scratch/act/reviews
+ACT=.scratch/act/reviews/sprint-review-1.md
+cat > "$ACT" <<'EOF'
+## Branch: crew/01-a (01-a)
+
+```json
+{"branch":"crew/01-a","verdict":"all-met","findings":[
+ {"severity":"HIGH","location":"src/api.ts:9","criterion":"Rename the exported helper","verdict":"debatable","rationale":"public contract change"},
+ {"severity":"LOW","location":"src/a.ts:1","criterion":"Name the constant","verdict":"actionable","rationale":"one local line"},
+ {"severity":"MEDIUM","location":"src/b.ts:2","criterion":"Extra guard","verdict":"dismiss","rationale":"already guarded"}]}
+```
+EOF
+printf -- '- [ ] [LOW] Name the constant (src/a.ts:1)\n' > act-crit.md
+printf '# a\n\nStatus: ready-for-agent\n' > .scratch/act/issues/open/01-a.md
+check "the default policy is actionable" "promote: actionable" "$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" policy)"
+check_contains "guard names it" "eligible — threshold: actionable" \
+      "$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" guard --issue .scratch/act/issues/open/01-a.md)"
+env -u CREW_FIX_FINDINGS bash "$PROMOTE" defer --feature-slug act --branch crew/01-a --slug a \
+    --title "Fix review findings: a" --report "$ACT" --criteria-file act-crit.md >/dev/null
+check_contains "the marker names the verdict, not a severity" "- crew/01-a: actionable → " "$(cat "$ACT")"
+out=$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" remind --feature-slug act)
+check_contains "the promoted Actionable LOW is handled; the rest are open" "FINDINGS: open=2 (HIGH=1, MEDIUM=1)" "$out"
+check_contains "Debatable is listed with its rationale" \
+      "debatable: crew/01-a [HIGH] src/api.ts:9 — Rename the exported helper — why: public contract change" "$out"
+check_contains "Dismissed is listed collapsed" "dismissed: crew/01-a [MEDIUM] src/b.ts:2 — Extra guard — why: already guarded" "$out"
+case "$out" in
+    *DEBATABLE:*DISMISSED:*) check "Debatable leads Dismissed" yes yes ;;
+    *) check "Debatable leads Dismissed" yes no ;;
+esac
 
 echo
 echo "Results: $PASS passed, $FAIL failed"

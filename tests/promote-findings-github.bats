@@ -262,7 +262,7 @@ SH
   configure_github
   stub_gh
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^## Promoted Findings' "$REPORT"
   grep -q -- '- crew/feat/a: CRITICAL, HIGH → https://github.com/acme/widgets/issues/42' "$REPORT"
@@ -276,7 +276,7 @@ SH
   printf 'Some body with no Source line.\n' > "$GH_VIEW_BODY_FILE"
 
   run bash "$PROMOTE" guard --issue 42
-  [[ "$output" == *"eligible — threshold: CRITICAL"* ]]
+  [[ "$output" == *"eligible — threshold: actionable"* ]]
   grep -q '^issue view 42' "$GH_CALLS_LOG"
 }
 

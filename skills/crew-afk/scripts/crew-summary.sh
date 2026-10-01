@@ -310,9 +310,9 @@ if [ -n "$DEV_COMMANDS_STATUS" ]; then
 fi
 
 # --- Findings reminder (last thing printed) -----------------------------------
-# Promotion only covered the sprint's threshold severities (CRITICAL and HIGH by default) on
-# Phase 1 branches. Everything else — MEDIUM unless fixFindings is medium, LOW always, and any
-# finding raised against a Phase 2 fix branch — still needs a human.
+# Promotion only covered what fixFindings selects (every Actionable finding by default) on Phase 1
+# branches. Everything else — Debatable and Dismissed findings, what a severity level leaves out,
+# and any finding raised against a Phase 2 fix branch — still needs a human.
 REMIND=$(cd "$MAIN_ROOT" && bash "$SCRIPT_DIR/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG" 2>/dev/null || true)
 PROMOTE_POLICY=$(bash "$SCRIPT_DIR/promote-findings.sh" policy 2>/dev/null | sed -n 's/^promote: //p')
 
@@ -333,11 +333,21 @@ if [ -n "$OPEN_LINE" ]; then
   else
     echo "Run: /crew-address-findings"
   fi
+  # Debatable findings lead: they are the ones triage would not let an unattended coder touch.
+  DEBATABLE_LINES=$(printf '%s\n' "$REMIND" | grep '^debatable: ' | sed 's/^debatable: /- /' || true)
+  if [ -n "$DEBATABLE_LINES" ]; then
+    echo "$(printf '%s\n' "$REMIND" | sed -n 's/^DEBATABLE: \([0-9]*\) .*/\1/p') Debatable — decide these first (triage judged them unsafe to fix unattended):"
+    printf '%s\n' "$DEBATABLE_LINES"
+  fi
   # A reduced promotion threshold is a real coverage reduction, so it is stated where the
   # consequence shows up: a HIGH the sprint did not fix must be visibly queued, never silent.
   case "$breakdown" in
     *CRITICAL*|*HIGH*)
-      echo "Includes CRITICAL/HIGH findings this sprint did not fix — promotion covered ${PROMOTE_POLICY:-no severity} on Phase 1 branches only, and findings on fix branches are report-only by design. Triage these first (config.json's afk.fixFindings, or --fix-findings, sets the lowest severity fixed; default high)." ;;
+      if [ "$PROMOTE_POLICY" = "actionable" ]; then
+        echo "Includes CRITICAL/HIGH findings this sprint did not fix — triage judged them Debatable or Dismissed, or they were raised against a fix branch (report-only by design), or triage failed and the high rule applied to a branch's findings. Triage these first (config.json's afk.fixFindings, or --fix-findings, sets what is fixed; default actionable)."
+      else
+        echo "Includes CRITICAL/HIGH findings this sprint did not fix — promotion covered ${PROMOTE_POLICY:-no severity} on Phase 1 branches only, and findings on fix branches are report-only by design. Triage these first (config.json's afk.fixFindings, or --fix-findings, sets the lowest severity fixed; default actionable)."
+      fi ;;
   esac
 elif [ -z "$GAP_LINE" ]; then
   echo "No open review findings."

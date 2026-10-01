@@ -26,8 +26,9 @@
  *   --feature-slug <slug>                  or derived from the first issue's dir
  *
  * Each flag below overrides the config.json setting in brackets for one run (lib/crew-config.mjs):
- *   --fix-findings <critical|high|medium|none>  [fixFindings, default high] lowest reviewer
- *                                           severity auto-fixed in Phase 2 (--promote: old name)
+ *   --fix-findings <actionable|critical|high|medium|none>  [fixFindings, default actionable]
+ *                                           what is auto-fixed in Phase 2: every finding triage
+ *                                           judges Actionable, or the lowest severity (--promote: old name)
  *   --prd-audit <off|report|fix>           [PRDAudit, default fix] audit the sprint against its
  *                                           PRD.md after Phase 1; `fix` queues ✗ missing gaps
  *                                           for Phase 2 (--coverage: old name, means `report`)
@@ -444,7 +445,7 @@ async function main() {
   if (options.command === "help") {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
-        "  [--feature-slug S] [--fix-findings critical|high|medium|none] [--prd-audit off|report|fix]\n" +
+        "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
         "  [--max-rounds N] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
         "  [--allow-dirty]\n" +
@@ -455,7 +456,7 @@ async function main() {
         "  commandFinder, prdAuditor):\n" +
         '    { "afk": { "runtime": { "reviewer": "codex" },\n' +
         '               "models":  { "claude": { "triage": "opus" } } } }\n' +
-        "  The other flags override config.json's afk settings for one run: fixFindings (high),\n" +
+        "  The other flags override config.json's afk settings for one run: fixFindings (actionable),\n" +
         "  PRDAudit (fix), maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits\n" +
         "  (false), openPr (false), baselineCheck (true), integrationCheck (true), resumeCoderSession (false),\n" +
         "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).\n" +
@@ -585,7 +586,7 @@ async function main() {
     for (const line of crewTable(options.crew, loaded.origin)) console.log(line);
     const tag = (k) => (loaded.origin[k] ? `  [${loaded.origin[k]}]` : "");
     console.log(`parallel:  ${options.parallel}${tag("maxParallel")}`);
-    console.log(`findings:  fix ${options.fixFindings === "none" ? "none" : `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
+    console.log(`findings:  fix ${{ none: "none", actionable: "every Actionable finding" }[options.fixFindings] ?? `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
     console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
     const caps = Object.entries(options.limitsUsd ?? {});

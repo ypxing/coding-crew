@@ -13,7 +13,10 @@
 #   {{FRAGMENT:<key>}}  → skills/<source-dir>/fragments/<platform>/<key>.md (whole line),
 #                          falling back to skills/_shared/fragments/<platform>/<key>.md when
 #                          no skill-local fragment of that key exists — one canonical source
-#                          for a fragment several skills share, instead of one copy each.
+#                          for a fragment several skills share, instead of one copy each; then
+#                          to skills/_shared/fragments/common/<key>.md, the one file of a fragment
+#                          that reads the same on every platform (install.sh expands the same
+#                          line inside an agent's protocol.md, so a skill and an agent can share it).
 #   {{PLATFORM}}        → the platform name
 #
 # A missing fragment, or any placeholder left unexpanded, is a hard error: a body
@@ -75,10 +78,11 @@ render() {
       key="${BASH_REMATCH[1]}"
       fragment="$SKILL_SRC/fragments/$PLATFORM/$key.md"
       [[ -f "$fragment" ]] || fragment="$SCRIPT_DIR/skills/_shared/fragments/$PLATFORM/$key.md"
+      [[ -f "$fragment" ]] || fragment="$SCRIPT_DIR/skills/_shared/fragments/common/$key.md"
       if [[ ! -f "$fragment" ]]; then
         echo "Error: $SKILL/$BODY needs fragment '$key' for platform '$PLATFORM'," \
              "but neither skills/$SOURCE_DIR/fragments/$PLATFORM/$key.md nor" \
-             "skills/_shared/fragments/$PLATFORM/$key.md exists" >&2
+             "skills/_shared/fragments/$PLATFORM/$key.md (or .../common/$key.md) exists" >&2
         exit 1
       fi
       # Fragments are stored with a trailing newline; strip it so the body's own

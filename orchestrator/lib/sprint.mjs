@@ -73,6 +73,9 @@ export class Sprint {
     // has already given up on (see markBlockedThisRun) — what loop.mjs's claimNext() checks
     // instead of the persisted `blocked_slugs`, for the same cross-invocation reason above.
     this._blockedThisRun = new Set();
+    // Findings triage that left no usable verdict (`actionable` fell back to the `high` rule):
+    // [{ scope, reason }], for the summary to say so.
+    this.triageFallbacks = [];
     // `<branch>@<commit>` set, in-memory only: the commits verify-worktree.sh passed during
     // this invocation (see markVerifiedThisRun). A pass from an earlier run is not reused.
     this._verifiedThisRun = new Set();
@@ -177,9 +180,9 @@ export class Sprint {
   get PRDAudit() {
     return this.env.CREW_PRD_AUDIT || "fix";
   }
-  /** The lowest severity auto-fixed: "critical" | "high" | "medium" | "none". */
+  /** What is auto-fixed: "actionable" (triage's verdict) | "critical" | "high" | "medium" (lowest severity) | "none". */
   get fixFindings() {
-    return this.env.CREW_FIX_FINDINGS || "high";
+    return this.env.CREW_FIX_FINDINGS || "actionable";
   }
 
   /** Sprint-scoped env for every child: MAIN_ROOT + STATE_FILE + TRACE_LOG. */
