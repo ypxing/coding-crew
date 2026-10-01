@@ -23,7 +23,7 @@ AFK_DIR="$REPO_ROOT/skills/crew-afk"
 # of the four prose variants declared `review → close → merge`, which is the bug this
 # section was written for; the order is one function body now
 # (orchestrator/lib/pipeline.mjs: merge, then close only on the merge's success), asserted
-# on a real faked-dispatch sprint in tests/orchestrator/sprint.suite.mjs — "the gates run in
+# on a real faked-dispatch sprint in tests/orchestrator/sprint-gates-config.test.mjs — "the gates run in
 # order: verify → AC receipt → merge → close, and squash last".
 
 # ─── P1.2 the verification policy is documented where it is enforced ───────────

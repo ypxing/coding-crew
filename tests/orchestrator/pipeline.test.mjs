@@ -1,7 +1,7 @@
 /**
  * pipeline.test.mjs — resumeRoute, the one table of where a retry re-enters the pipeline,
  * and the resume note a re-entering coder is given.
- * End-to-end behaviour of each route is asserted in sprint.suite.mjs; this pins the table.
+ * End-to-end behaviour of each route is asserted in the sprint-<topic>.test.mjs files; this pins the table.
  */
 
 import { test } from "node:test";
