@@ -125,5 +125,67 @@ setup() {
   echo "$section" | grep -q 'test-only slice'
   echo "$section" | grep -q 'Wrong assumption'
   quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
-  echo "$quiz" | grep -q 'If step 3 contradicted any assumption'
+  echo "$quiz" | grep -q 'Contradicted assumptions'
+}
+
+# --- Slicing, quiz, coverage trace, lint gate (rendered skill) ---
+
+@test "to-issues slice rules: a slice is one observable behaviour at the highest existing seam; first slice is the thinnest end-to-end path" {
+  grep -qF 'one externally observable behaviour' "$SKILL_FILE"
+  grep -qF 'highest existing seam' "$SKILL_FILE"
+  grep -qiE 'schema / API / UI.*(only )?(as )?an example|example.*schema / API / UI' "$SKILL_FILE"
+  grep -qiE 'first slice is the thinnest end-to-end path' "$SKILL_FILE"
+}
+
+@test "to-issues size rules: context-window ceiling kept, merge rule replaces 'many thin slices', 3-8 criteria soft target" {
+  grep -qF 'single fresh context window' "$SKILL_FILE"
+  ! grep -qF 'Prefer many thin slices' "$SKILL_FILE"
+  grep -qiE 'merge.*share a test seam|share a test seam.*merge' "$SKILL_FILE"
+  grep -qiE 'neither is reviewable or demoable alone' "$SKILL_FILE"
+  grep -qE '3(–|-)8 acceptance criteria' "$SKILL_FILE"
+}
+
+@test "to-issues quiz: ordered outlier list then one approve/adjust prompt; the five generic questions are gone" {
+  local a b c d e f
+  a=$(grep -n 'Contradicted assumptions' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  b=$(grep -n "PRD's \`## Assumptions\`" "$SKILL_FILE" | head -1 | cut -d: -f1)
+  c=$(grep -n 'PRD IDs no slice covers' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  d=$(grep -n 'Slices outside the criteria range' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  e=$(grep -n 'Shared surfaces' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  f=$(grep -n 'HITL choices' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  [ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ -n "$d" ] && [ -n "$e" ] && [ -n "$f" ]
+  [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && [ "$c" -lt "$d" ] && [ "$d" -lt "$e" ] && [ "$e" -lt "$f" ]
+  grep -qiE 'one approve/adjust prompt' "$SKILL_FILE"
+  ! grep -qF 'Does the granularity feel right' "$SKILL_FILE"
+  ! grep -qF 'Are the blocking edges correct' "$SKILL_FILE"
+  ! grep -qF 'Should any slices be merged or split further' "$SKILL_FILE"
+  ! grep -qF 'Are the correct slices marked as HITL and AFK' "$SKILL_FILE"
+  ! grep -qF 'For any shared surface listed above' "$SKILL_FILE"
+}
+
+@test "to-issues: a coverage table maps every D<n>/B<n> to its slices before the quiz; skipped with no IDs" {
+  grep -qiE 'coverage table' "$SKILL_FILE"
+  grep -qF 'D<n>' "$SKILL_FILE"
+  grep -qF 'B<n>' "$SKILL_FILE"
+  grep -qiE 'no IDs.*skipped' "$SKILL_FILE"
+  cov=$(grep -n -i 'coverage table' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  quiz=$(grep -n '^### .*Quiz' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  [ "$cov" -le "$quiz" ]
+}
+
+@test "to-issues: expand-contract sequencing comes from the PRD's Compatibility & Migration" {
+  grep -qF '## Compatibility & Migration' "$SKILL_FILE"
+  grep -qiE 'expand.contract' "$SKILL_FILE"
+}
+
+@test "to-issues: lint-issues.sh gates publish; ERROR publishes nothing and returns to the quiz; WARN continues" {
+  grep -qF '<skill-dir>/scripts/lint-issues.sh' "$SKILL_FILE"
+  grep -qF -- '--deps' "$SKILL_FILE"
+  grep -qF -- '--prd' "$SKILL_FILE"
+  grep -qiE 'exit 1.*publish(es)? nothing|publish(es)? nothing.*exit 1' "$SKILL_FILE"
+  grep -qF 'returns to the quiz' "$SKILL_FILE"
+  grep -qiE 'WARN.*publishing continues' "$SKILL_FILE"
+  lint=$(grep -n 'lint-issues.sh' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  pub=$(grep -n 'execute the `publish` operation' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  [ "$lint" -lt "$pub" ]
 }

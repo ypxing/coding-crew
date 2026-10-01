@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `to-issues`: slices are one externally observable behaviour verified at the highest existing test seam (first
+  slice = thinnest end-to-end path), merged when they share a seam and neither is reviewable or demoable alone,
+  with 3–8 acceptance criteria as the soft target. A coverage table traces every PRD `D<n>`/`B<n>` to its slices;
+  the quiz asks only about outliers (contradicted assumptions, PRD `## Assumptions`, uncovered IDs, criteria-range
+  outliers, shared surfaces, HITL choices) then one approve/adjust prompt; expand–contract sequencing comes from
+  `## Compatibility & Migration`; `lint-issues.sh` runs before any `publish` and an `ERROR` publishes nothing.
 - `crew-afk`: preflight runs `to-issues`' `lint-issues.sh` over the feature's open issues (and `issues-deps.json` /
   PRD when present) before command discovery or any worktree. An `ERROR` stops the run, quoting each line; `WARN`
   lines are logged; a linter that exits 2 or cannot run is logged without stopping. `--dry-run` reports without

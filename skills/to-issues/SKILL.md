@@ -54,14 +54,22 @@ Break the plan into **tracer bullet** issues. Each issue is a thin vertical slic
 Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an architectural decision or a design review. AFK slices can be implemented and merged without human interaction. Prefer AFK over HITL where possible.
 
 <vertical-slice-rules>
-- Each slice delivers a narrow but COMPLETE path through every layer (schema, API, UI, tests)
+- A slice is one externally observable behaviour, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a rendered output, a bats run). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviour needs
+- The first slice is the thinnest end-to-end path: the narrowest behaviour that proves the layers connect. Later slices widen it
 - A completed slice is demoable or verifiable on its own
 - Each slice is sized to fit in a single fresh context window — if a slice requires multiple agent sessions it must be split further
-- Prefer many thin slices over few thick ones
+- Merge rule: merge two slices when they share a test seam and neither is reviewable or demoable alone. Do not split below that floor — a fragment nobody can review or demo on its own is not a slice
+- Aim for 3–8 acceptance criteria per slice (a soft target, not a gate): fewer usually means a fragment to merge, more usually means two behaviours to split
 - Any prefactoring should be sequenced first
 </vertical-slice-rules>
 
 **Wide refactor?** One mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase, so no vertical slice can land green on its own: read `references/expand-contract.md` before slicing it.
+
+**Expand–contract sequencing** is drawn from the PRD's `## Compatibility & Migration` when it exists: each expand, migrate and contract step it names becomes a slice (or part of one) sequenced in that order, with the contract step blocked by every migrate step. Without that section, do not invent a migration sequence.
+
+### 4.5. Trace PRD IDs to slices
+
+Before the quiz, build a coverage table: one row per `D<n>` / `B<n>` ID in the PRD (lines starting `- **D<n>** — …` / `- **B<n>** — …`), with the slice(s) that implement it. An ID no slice covers is an empty row. With no IDs in the PRD (or no PRD), the table is skipped entirely. Each slice's `## Implements` in step 6 must then name the IDs the table gave it.
 
 ### 5. Quiz the user
 
@@ -72,19 +80,16 @@ Present the proposed breakdown as a numbered list. For each slice, show:
 - **Blocked by**: which other slices (if any) must complete first
 - **What it delivers**: the end-to-end behaviour this slice makes work, from the user's perspective
 
-If step 3 contradicted any assumption, list each first — what the plan assumes, what the code shows at `file:line`, and the slice it affects — and resolve it before the rest of the quiz.
+Show the coverage table from step 4.5 (when there is one), then ask only what needs a decision. Walk these in order and omit any that is empty:
 
-If step 3 turned up any shared surfaces, list them separately — one line per surface, naming the slices that touch it — and ask about each one explicitly: is the overlap additive (safe to leave parallel), or does it need a `Blocked by` edge (or a merge)? Don't add the edge yourself; this is exactly the call a file-overlap heuristic gets wrong, because it can't tell "two slices editing the same file in unrelated ways" from "two slices that will conflict."
+1. **Contradicted assumptions** — what the plan assumes, what the code shows at `file:line`, and the slice it affects; resolve each before the rest.
+2. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct.
+3. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
+4. **Slices outside the criteria range** — any slice that would carry fewer than 3 or more than 8 acceptance criteria: merge it, split it, or keep it as is.
+5. **Shared surfaces** — one line per surface from step 3, naming the slices that touch it: is the overlap additive (safe to leave parallel), or does it need a `Blocked by` edge (or a merge)? Don't add the edge yourself; this is exactly the call a file-overlap heuristic gets wrong, because it can't tell "two slices editing the same file in unrelated ways" from "two slices that will conflict."
+6. **HITL choices** — each slice marked HITL, and why a human is needed; the rest are AFK.
 
-Ask the user:
-
-- Does the granularity feel right? (too coarse / too fine)
-- Are the blocking edges correct — does each issue only depend on issues that genuinely gate it?
-- Should any slices be merged or split further?
-- Are the correct slices marked as HITL and AFK?
-- For any shared surface listed above: sequence it, merge the slices, or leave it parallel?
-
-Iterate until the user approves the breakdown.
+Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, merging or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
 
 ### 5.5. Cross-cutting rules from the PRD
 
@@ -93,6 +98,15 @@ Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` 
 ### 6. Write the issues
 
 **Local tracker, issues directory non-empty?** If `.scratch/<feature-slug>/issues/` already contains issue files, read `references/rerun.md` before writing anything. Otherwise proceed.
+
+**Lint before any `publish`.** Render every issue body (the template below) first — under `local`, write them to their final `.scratch/<feature-slug>/issues/` paths; under `github`, write them as files under `.scratch/<feature-slug>/.lint/` and delete that directory afterwards — and run, from the project root:
+
+```bash
+bash <skill-dir>/scripts/lint-issues.sh --issue <body-file> [--issue <body-file> …] \
+  [--deps .scratch/<feature-slug>/issues/issues-deps.json] [--prd <PRD file>]
+```
+
+Add `--deps` under `local` only (write the step 7 map first, so the linter can compare it with the `## Blocked by` prose), and `--prd` only when a PRD exists (a local path; under `github` save the PRD body to a file under `.scratch/<feature-slug>/.lint/` first). Exit 1 means publish nothing: show the `ERROR` lines; the skill returns to the quiz (step 5) to fix them, then render and lint again. Exit 0 prints at most `WARN` lines: show them and continue — publishing continues. Exit 2 is a usage error in how you called it: fix the call.
 
 For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
 
