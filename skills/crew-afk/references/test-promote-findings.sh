@@ -202,6 +202,39 @@ check_contains "bare header still matches its promotion marker" "FINDINGS: open=
       "$(CREW_FIX_FINDINGS=high bash "$PROMOTE" remind --feature-slug bare)"
 
 echo
+echo "Test 15: defer-integration parks one source-guarded fix issue for a fixable red integration check"
+mkdir -p .scratch/integ/issues/open .scratch/integ/issues/done
+touch .scratch/integ/issues/done/03-old.md
+INTEG_OUT=.scratch/integ/dispatch/_integration/verify.out
+mkdir -p "$(dirname "$INTEG_OUT")"
+echo "alpha and beta clash" > "$INTEG_OUT"
+printf -- '- [ ] The project'"'"'s checks pass on the merged feature branch\n' > integ-crit.md
+out=$(bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" --criteria-file integ-crit.md)
+check "numbered after the highest existing issue (open + done)" \
+      "defer-integration: .scratch/integ/issues/open/04-fix-integration-1.md" "$out"
+f=.scratch/integ/issues/open/04-fix-integration-1.md
+check_contains "parked, so Phase 1 never sees it" "Status: deferred-findings" "$(cat "$f")"
+check_contains "Source: names the report and the integration kind" "Source: $INTEG_OUT (integration)" "$(cat "$f")"
+check_contains "criteria carried verbatim" "- [ ] The project's checks pass on the merged feature branch" "$(cat "$f")"
+check_contains "guard treats it as a fix issue: never promoted again" "skip — source-guarded" \
+      "$(bash "$PROMOTE" guard --issue "$f")"
+out=$(bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" --criteria-file integ-crit.md)
+check "a second is refused while one is open" "defer-integration: skip — already queued: $f" "$out"
+check_contains "flush sends it into Phase 2" "FLUSH: promoted=1" "$(bash "$PROMOTE" flush --feature-slug integ)"
+check_contains "flushed to ready-for-agent" "Status: ready-for-agent" "$(cat "$f")"
+mv "$f" .scratch/integ/issues/done/
+out=$(bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" --criteria-file integ-crit.md --at abc123)
+check_contains "the second names the tip it was raised at" "# Fix integration check: integ (at abc123)" "$(cat .scratch/integ/issues/open/05-fix-integration-2.md)"
+check "once the first is closed a later red drain can park another with a slug of its own (the caller caps the run)" \
+      "defer-integration: .scratch/integ/issues/open/05-fix-integration-2.md" "$out"
+: > integ-empty.md
+if bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" --criteria-file integ-empty.md >/dev/null 2>&1; then
+    check "an empty criteria file is refused" "refused" "accepted"
+else
+    check "an empty criteria file is refused" "refused" "refused"
+fi
+
+echo
 echo "Results: $PASS passed, $FAIL failed"
 cd /
 rm -rf "$TEST_DIR"

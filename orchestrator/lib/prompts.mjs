@@ -299,6 +299,82 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
   ].join("\n");
 }
 
+/** The verdict file every triage prompt ends on — the file is the only thing read (parseTriageReport). */
+function triageVerdictLines(reportPath) {
+  return [
+    // Same policy as the worker's resultBlock and the reviewer's verdict block: the file is
+    // the only thing read — see report.mjs's parseTriageReport.
+    `Write your structured verdict to ${reportPath} as your last action. This file is the`,
+    "only thing the orchestrator reads — nothing you print in your final message is parsed:",
+    "",
+    "```json",
+    JSON.stringify(
+      {
+        fixable: "yes | no",
+        category: 'one short phrase, e.g. "failing test assertion", "wrong dependency version", "registry unreachable"',
+        detail: "one or two sentences a worker or a human can act on directly, citing the specific test, file, package, or command the failure names",
+      },
+      null,
+      2,
+    ),
+    "```",
+  ];
+}
+
+/**
+ * The same triage question asked of the merged feature branch, when the drain-time integration
+ * check is red: every branch passed its own verify, so the failure is in how they combine.
+ * Dispatched to `crew-triage`, never a coder. No issue and no worker diff exist here: the
+ * feature branch's own history is the evidence.
+ */
+export function integrationTriagePrompt({ featureBranch, commit, checkOutput, reportPath }) {
+  return [
+    "The project's checks failed on a merged feature branch, though every branch merged into it",
+    "passed those same checks on its own. Decide whether the failure is fixable by writing more",
+    "code on the feature branch, or whether it is an environment or infrastructure problem that",
+    "no code change can fix.",
+    `Feature branch: ${featureBranch} (at ${commit})`,
+    "",
+    `Gather the evidence yourself: git log --oneline -30 ${featureBranch}, then git show on the`,
+    "merges and commits that touch the file, test or package the failure names.",
+    "",
+    "The failing check output, captured by the pipeline in a throwaway worktree of that branch:",
+    "---",
+    (checkOutput ?? "").trim() || "(no output captured)",
+    "---",
+    "",
+    "Fixable means: two merged changes that clash (a duplicated definition, a test one branch",
+    "wrote that another branch's change breaks, an import or type one branch removed and another",
+    "uses), or anything else a worker could correct by editing files on the feature branch. Not",
+    "fixable means: the cause is outside the code — registry/network unreachable, Docker daemon",
+    "down, disk full, missing credentials, rate limiting, a service the checks need that is not",
+    "running. When genuinely unsure, answer yes — a wrong 'fixable' guess costs one extra fix",
+    "issue; a wrong 'not fixable' guess leaves a red feature branch for a human who may not be",
+    "watching.",
+    "",
+    ...triageVerdictLines(reportPath),
+  ].join("\n");
+}
+
+/**
+ * The integration fix issue's acceptance criteria: the one criterion that matters, then what
+ * triage and the failing checks said, so the coder starts from the failure instead of finding it.
+ * `tails` is `[{check, tail}]`; only the first line is a `- [ ]` criterion.
+ */
+export function integrationFixCriteria({ featureBranch, category, detail, tails }) {
+  const lines = [
+    "<!-- queued from a red integration check on the merged feature branch -->",
+    "",
+    `- [ ] The project's checks pass on the merged feature branch (\`${featureBranch}\`)`,
+    "",
+    `Triage: ${category || "unspecified"} — ${detail || "no detail given"}`,
+  ];
+  for (const { check, tail } of tails) {
+    lines.push("", `Failing \`${check}\`, output tail:`, "", "```", tail || "(no output)", "```");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 /**
  * Dispatched only after verify-worktree.sh already failed, and only to `crew-triage` —
  * never to the coder that wrote the branch, for the same reason review isn't a self-grade.
@@ -331,22 +407,7 @@ export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutp
     "'fixable' guess costs one extra round; a wrong 'not fixable' guess strands the issue for",
     "a human who may not be watching.",
     "",
-    // Same policy as the worker's resultBlock and the reviewer's verdict block: the file is
-    // the only thing read — see report.mjs's parseTriageReport.
-    `Write your structured verdict to ${reportPath} as your last action. This file is the`,
-    "only thing the orchestrator reads — nothing you print in your final message is parsed:",
-    "",
-    "```json",
-    JSON.stringify(
-      {
-        fixable: "yes | no",
-        category: 'one short phrase, e.g. "failing test assertion", "wrong dependency version", "registry unreachable"',
-        detail: "one or two sentences a worker or a human can act on directly, citing the specific test, file, package, or command the failure names",
-      },
-      null,
-      2,
-    ),
-    "```",
+    ...triageVerdictLines(reportPath),
   ].join("\n");
 }
 

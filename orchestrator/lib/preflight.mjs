@@ -169,31 +169,67 @@ export function runIntegrationCheck(ctx) {
 /** Lines of a failing check's output the summary quotes: enough to name the failure. */
 const TAIL_LINES = 20;
 
+/** The tail of one failing check's captured log, or null when it has none or it cannot be read. */
+function logTail(mainRoot, log) {
+  try {
+    return readFileSync(resolve(mainRoot, log), "utf8").trimEnd().split("\n").slice(-TAIL_LINES).join("\n");
+  } catch {
+    return null;
+  }
+}
+
+/** Each failing check of an integration result that has a log, with the tail of its output. */
+export function failureTails(mainRoot, result) {
+  return result.failed.filter((f) => f.log).map((f) => ({ check: f.check, tail: logTail(mainRoot, f.log) ?? "" }));
+}
+
 /**
  * The summary's `## Integration check` section for the last integration result: what passed,
  * or each failing check with the tail of its output. A check whose command is not installed is
- * named as the environment, since no change to the merged code would fix it.
+ * named as the environment, since no change to the merged code would fix it. `fix` (the
+ * integration-fix.mjs outcome for that result) says what the failure led to, and `fixes` (every
+ * outcome this run) names the fix issues an earlier red drain led to.
  */
-export function integrationSection(mainRoot, featureBranch, result) {
+export function integrationSection(mainRoot, featureBranch, result, fix = null, fixes = []) {
   const at = `${featureBranch} at ${result.commit.slice(0, 12)}`;
-  if (result.status === "cached") return `Passed on ${at} (cached — the same commit already passed).`;
+  const earlier = fixes.filter((f) => f.verdict === "queued" && f.commit !== result.commit);
+  const history = earlier.length
+    ? ["", `Fix issue(s) from earlier red drain(s) this run: ${earlier.map((f) => f.ref).join(", ")}.`]
+    : [];
+  if (result.status === "cached") return [`Passed on ${at} (cached — the same commit already passed).`, ...history].join("\n");
   if (result.status === "pass") {
-    return result.reason ? `**Not run:** ${result.reason}.` : `Passed on ${at}.`;
+    return [result.reason ? `**Not run:** ${result.reason}.` : `Passed on ${at}.`, ...history].join("\n");
   }
   const lines = [`**Failed** on ${at} — each branch passed its own checks, but the merged feature branch does not.`, ""];
   if (!result.failed.length) lines.push(`- ${result.reason}`);
   for (const f of result.failed) {
     lines.push(`- \`${f.check}\`: fail${f.missing ? ` — command not found: ${f.missing} (an environment problem, not the merged code)` : ""}`);
     if (!f.log) continue;
-    let tail = "";
-    try {
-      tail = readFileSync(resolve(mainRoot, f.log), "utf8").trimEnd().split("\n").slice(-TAIL_LINES).join("\n");
-    } catch {
-      // The log path is still named below.
-    }
+    const tail = logTail(mainRoot, f.log);
     lines.push("", `  Output tail (${f.log}):`, "", "  ```", ...(tail ? tail.split("\n").map((l) => `  ${l}`) : ["  (no output)"]), "  ```", "");
   }
+  if (fix) lines.push("", ...fixLines(fix));
+  lines.push(...history);
   return lines.join("\n").trimEnd();
+}
+
+/** What a red result led to, for the summary. */
+function fixLines(fix) {
+  const why = [fix.category, fix.detail].filter(Boolean).join(": ");
+  switch (fix.verdict) {
+    case "queued":
+      if (fix.repeat) return [`**Fix issue ${fix.ref} was queued for this commit and has not landed** — it is still open, so the branch is still red.`];
+      return [`**Fix issue queued:** ${fix.ref}${why ? ` — triage: ${why}` : ""}.${fix.triageFailed ? " (Triage did not complete, so it was treated as fixable.)" : ""}`];
+    case "pending":
+      return [`**No second fix issue:** ${fix.reason}.`];
+    case "limit":
+      return [`**Not fixed:** ${fix.reason}. The run ends stalled; read the failure above.`];
+    default:
+      return [
+        `**Not fixable by a code change, no fix issue queued:** ${fix.reason}.`,
+        ...(fix.skippedRest ? ["The rest of the drain-time checks (the PRD audit) were skipped."] : []),
+      ];
+  }
 }
 
 /**

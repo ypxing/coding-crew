@@ -147,6 +147,23 @@ SH
   [ -z "$(ls .scratch/feat/issues/open 2>/dev/null)" ]
 }
 
+@test "defer-integration creates a ready-for-agent issue in the milestone, with Source: naming it an integration fix" {
+  configure_github
+  stub_gh
+  printf -- "- [ ] The project's checks pass on the merged feature branch\n" > integ.md
+
+  run bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/dispatch/_integration/verify.out \
+    --criteria-file integ.md
+  [ "$status" -eq 0 ]
+  [[ "$output" == "defer-integration: https://github.com/acme/widgets/issues/42" ]]
+  grep -q -- '--title Fix integration check: feat' "$GH_CALLS_LOG"
+  grep -q -- '--label ready-for-agent' "$GH_CALLS_LOG"
+  grep -q -- '--milestone feat' "$GH_CALLS_LOG"
+  grep -q '^Source: .*verify.out (integration)$' "$GH_LAST_BODY"
+  grep -q "^- \[ \] The project's checks pass on the merged feature branch$" "$GH_LAST_BODY"
+  [ -z "$(ls .scratch/feat/issues/open 2>/dev/null)" ]
+}
+
 @test "defer passes --repo through when the tracker doc overrides it" {
   configure_github "owner/name"
   stub_gh

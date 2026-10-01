@@ -14,6 +14,7 @@ set -euo pipefail
 #   guard   — may findings from this issue's branch be promoted, or is it already a fix issue?
 #   defer   — write a parked fix issue (Status: deferred-findings) + annotate the review report
 #   defer-gaps — the same for the PRD audit's ✗ missing requirements: one parked issue
+#   defer-integration — the same for a fixable red integration check on the merged feature branch
 #   flush   — flip every parked fix issue to ready-for-agent (Phase 1 → Phase 2 transition)
 #   list    — list parked fix issues without changing anything
 #   open    — the open findings as JSON (what remind counts)
@@ -130,6 +131,8 @@ Usage:
                             [--severities CRITICAL,HIGH] [--blocked-by <issue-number>]
   promote-findings.sh defer-gaps --feature-slug <slug> --report <prd-audit-report>
                             --criteria-file <file>
+  promote-findings.sh defer-integration --feature-slug <slug> --report <integration-verify-output>
+                            --criteria-file <file> [--at <commit>]
   promote-findings.sh flush --feature-slug <slug>
   promote-findings.sh list  --feature-slug <slug>
   promote-findings.sh open  --feature-slug <slug>
@@ -371,33 +374,25 @@ cmd_defer() {
   echo "defer: $ref"
 }
 
-# --- defer-gaps ----------------------------------------------------------------
-# The PRD audit's ✗ missing requirements → one parked fix issue, flushed into Phase 2 with
-# the review findings. Its `Source:` line is the same depth bound: findings on its branch are
-# report-only. One per feature while it's open — a resumed sprint that audits again must not
-# queue the same gaps twice.
-cmd_defer_gaps() {
-  local slug="" report="" criteria_file=""
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --feature-slug) slug="${2:-}"; shift 2 ;;
-      --report) report="${2:-}"; shift 2 ;;
-      --criteria-file) criteria_file="${2:-}"; shift 2 ;;
-      *) usage ;;
-    esac
-  done
-  [ -n "$slug" ] && [ -n "$report" ] && [ -n "$criteria_file" ] || usage
-  [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to queue)"
-
-  local title="Fix PRD gaps: $slug" ref
-  local context="Auto-queued by crew-afk from the PRD audit's missing requirements. No issue carried
-these, so no review ever checked them. The audit's evidence for each is in the report named in
-\`Source:\`."
+# --- defer-gaps / defer-integration ---------------------------------------------
+# Two fix issues that come from no reviewed branch, each one per feature while open, each flushed
+# into Phase 2 with the review findings. Their `Source:` line is the same depth bound: findings on
+# their branches are report-only.
+#   defer-gaps        — the PRD audit's ✗ missing requirements. A resumed sprint that audits again
+#                       must not queue the same gaps twice.
+#   defer-integration — a drain-time integration check that triage judged fixable: the merged
+#                       feature branch's own checks fail. The caller (loop.mjs) bounds how many a
+#                       run may create; this only refuses a second while one is still open.
+# _defer_feature_issue <command> <feature-slug> <report> <criteria-file> <title> <source-tag>
+#                      <file-suffix> <trace-label> <context> [numbered]
+_defer_feature_issue() {
+  local command="$1" slug="$2" report="$3" criteria_file="$4" title="$5" source_tag="$6"
+  local suffix="$7" label="$8" context="$9" numbered="${10:-}" ref
 
   if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
     local body_file
     body_file="$(mktemp)"
-    printf 'Source: %s (prd-audit)\n\n## Context\n\n%s\n\n## Acceptance criteria\n\n' "$report" "$context" > "$body_file"
+    printf 'Source: %s (%s)\n\n## Context\n\n%s\n\n## Acceptance criteria\n\n' "$report" "$source_tag" "$context" > "$body_file"
     cat "$criteria_file" >> "$body_file"
     if ! ref=$(_github_tracker_cli create-issue --title "$title" --body-file "$body_file" \
         --feature-slug "$slug" --label "$READY_STATUS" --main-root "$MAIN_ROOT"); then
@@ -409,19 +404,31 @@ these, so no review ever checked them. The audit's evidence for each is in the r
     local open_dir existing f
     open_dir=$(issues_open_dir "$slug")
     mkdir -p "$open_dir"
-    for f in "$open_dir"/*-fix-prd-gaps.md; do
+    # A numbered kind (several per feature over time) gets a slug of its own each time: the slug
+    # is the issue's identity in the sprint's bookkeeping, and a reused one would read as the
+    # earlier, finished issue.
+    local pattern="*-$suffix.md" name="$suffix"
+    if [ -n "$numbered" ]; then
+      local k=1
+      for f in "$open_dir"/*-"$suffix"-[0-9]*.md ".scratch/$slug/issues/done"/*-"$suffix"-[0-9]*.md; do
+        [ -f "$f" ] && k=$((k + 1))
+      done
+      pattern="*-$suffix-[0-9]*.md"
+      name="$suffix-$k"
+    fi
+    for f in "$open_dir"/$pattern; do
       [ -f "$f" ] && existing="$f"
     done
     if [ -n "${existing:-}" ]; then
-      echo "defer-gaps: skip — already queued: $existing"
+      echo "$command: skip — already queued: $existing"
       return 0
     fi
-    ref="$open_dir/$(next_issue_number "$slug")-fix-prd-gaps.md"
+    ref="$open_dir/$(next_issue_number "$slug")-$name.md"
     {
       echo "# $title"
       echo ""
       echo "Status: $DEFERRED_STATUS"
-      echo "Source: $report (prd-audit)"
+      echo "Source: $report ($source_tag)"
       echo ""
       echo "## Context"
       echo ""
@@ -433,8 +440,52 @@ these, so no review ever checked them. The audit's evidence for each is in the r
     } > "$ref"
   fi
 
-  _trace PROMOTE "prd-gaps issue=$ref"
-  echo "defer-gaps: $ref"
+  _trace PROMOTE "$label issue=$ref"
+  echo "$command: $ref"
+}
+
+# _feature_issue_args <command> <args...> — the options both subcommands take; sets slug,
+# report and criteria_file in the caller (bash dynamic scope).
+_feature_issue_args() {
+  slug="" report="" criteria_file=""
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --feature-slug) slug="${2:-}"; shift 2 ;;
+      --report) report="${2:-}"; shift 2 ;;
+      --criteria-file) criteria_file="${2:-}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$slug" ] && [ -n "$report" ] && [ -n "$criteria_file" ] || usage
+  [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to queue)"
+}
+
+cmd_defer_gaps() {
+  local slug report criteria_file
+  _feature_issue_args defer-gaps "$@"
+  _defer_feature_issue defer-gaps "$slug" "$report" "$criteria_file" "Fix PRD gaps: $slug" prd-audit \
+    fix-prd-gaps prd-gaps "Auto-queued by crew-afk from the PRD audit's missing requirements. No issue carried
+these, so no review ever checked them. The audit's evidence for each is in the report named in
+\`Source:\`."
+}
+
+cmd_defer_integration() {
+  local slug report criteria_file at=""
+  # --at <commit> names the feature-branch tip that failed: it keeps each fix issue's title (and
+  # so, under github, its slug) unique across the run's drains.
+  local args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --at) at="${2:-}"; shift 2 ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  _feature_issue_args defer-integration "${args[@]}"
+  _defer_feature_issue defer-integration "$slug" "$report" "$criteria_file" \
+    "Fix integration check: $slug${at:+ (at $at)}" integration fix-integration integration "Auto-queued by crew-afk: every branch passed its own checks, but the project's checks fail
+on the merged feature branch, and triage judged the failure fixable by a code change. No review
+saw the branches together. The failing output is in the report named in \`Source:\`." numbered
 }
 
 # --- flush -------------------------------------------------------------------
@@ -710,6 +761,7 @@ case "$COMMAND" in
   guard) cmd_guard "$@" ;;
   defer) cmd_defer "$@" ;;
   defer-gaps) cmd_defer_gaps "$@" ;;
+  defer-integration) cmd_defer_integration "$@" ;;
   flush) cmd_flush "$@" ;;
   list)  cmd_list "$@" ;;
   open) cmd_open "$@" ;;
