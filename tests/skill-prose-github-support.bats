@@ -8,6 +8,7 @@
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export TO_ISSUES="$SCRIPT_DIR/skills/to-issues/SKILL.md"
+  export TO_ISSUES_GITHUB="$SCRIPT_DIR/skills/to-issues/references/github-publish.md"
   export TO_PRD="$SCRIPT_DIR/skills/to-prd/SKILL.md"
   export UPGRADE_DEPS="$SCRIPT_DIR/skills/upgrade-deps/SKILL.md"
   export ADDRESS_FINDINGS="$SCRIPT_DIR/skills/crew-address-findings/SKILL.md"
@@ -15,16 +16,16 @@ setup() {
 
 # ─── to-issues: publish under github ───────────────────────────────────────────
 
-@test "to-issues/SKILL.md's publish step describes creating a github issue via gh issue create" {
-  grep -q 'gh issue create' "$TO_ISSUES"
+@test "to-issues/references/github-publish.md describes creating a github issue via gh issue create" {
+  grep -q 'gh issue create' "$TO_ISSUES_GITHUB"
 }
 
-@test "to-issues/SKILL.md writes ## Blocked by entries as Issue #<n> under github" {
-  grep -q 'Issue #<n>' "$TO_ISSUES"
+@test "to-issues/references/github-publish.md writes ## Blocked by entries as Issue #<n> under github" {
+  grep -q 'Issue #<n>' "$TO_ISSUES_GITHUB"
 }
 
-@test "to-issues/SKILL.md cites the PRD issue as PRD: #<n> under github" {
-  grep -q 'PRD: #<n>' "$TO_ISSUES"
+@test "to-issues/references/github-publish.md cites the PRD issue as PRD: #<n> under github" {
+  grep -q 'PRD: #<n>' "$TO_ISSUES_GITHUB"
 }
 
 @test "to-issues/SKILL.md's github Blocked-by convention matches body-format.mjs's extractBlockedByNumbers regex" {
@@ -36,8 +37,26 @@ setup() {
   [ "${BASH_REMATCH[1]}" = "7" ]
 }
 
-@test "to-issues/SKILL.md milestones github issues to the feature slug" {
-  grep -q -- '--milestone' "$TO_ISSUES"
+@test "to-issues/references/github-publish.md milestones github issues to the feature slug" {
+  grep -q -- '--milestone' "$TO_ISSUES_GITHUB"
+}
+
+@test "to-issues/SKILL.md no longer holds the github publish prose and names the reference" {
+  ! grep -q 'gh issue create' "$TO_ISSUES"
+  ! grep -q -- '--milestone' "$TO_ISSUES"
+  grep -q 'references/github-publish.md' "$TO_ISSUES"
+}
+
+@test "to-issues/SKILL.md names rerun.md and expand-contract.md, and no longer holds their text" {
+  grep -q 'references/rerun.md' "$TO_ISSUES"
+  grep -q 'references/expand-contract.md' "$TO_ISSUES"
+  ! grep -q 'Please reconcile manually' "$TO_ISSUES"
+  ! grep -q 'Contract.* delete the old form' "$TO_ISSUES"
+}
+
+@test "to-issues references hold the rerun and expand-contract prose" {
+  grep -q 'Please reconcile manually' "$SCRIPT_DIR/skills/to-issues/references/rerun.md"
+  grep -q 'Contract.* delete the old form' "$SCRIPT_DIR/skills/to-issues/references/expand-contract.md"
 }
 
 @test "to-issues/SKILL.md's step 1 no longer blanket-forbids remote trackers" {
