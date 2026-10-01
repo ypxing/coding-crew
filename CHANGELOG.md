@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: preflight runs `to-issues`' `lint-issues.sh` over the feature's open issues (and `issues-deps.json` /
+  PRD when present) before command discovery or any worktree. An `ERROR` stops the run, quoting each line; `WARN`
+  lines are logged; a linter that exits 2 or cannot run is logged without stopping. `--dry-run` reports without
+  stopping. The `to-issues` assets are now a `crew-afk` dep, and a missing `lint-issues.sh` joins the
+  missing-assets stop.
 - `to-issues`: add `lint-issues.sh`, a read-only checker for an issue set (ERROR for cycles, unmatched
   `## Blocked by` refs, `--deps` drift and missing acceptance criteria; WARN for advisory problems).
   Installed at `.coding-crew/to-issues/scripts/`.
