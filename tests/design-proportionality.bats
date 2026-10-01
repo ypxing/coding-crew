@@ -60,3 +60,22 @@ setup() {
   summ=$(grep -n 'Summarize all implementation decisions' "$GRILL" | head -1 | cut -d: -f1)
   [ "$sub" -lt "$summ" ]
 }
+
+@test "P2: the do-least option is scoped to build-size questions, not fact questions" {
+  # A question like "which GitLab tier are you on?" has no do-least option.
+  grep -qi 'decides how much to build' "$GRILL"
+}
+
+@test "P4: crew-grill carries the cut list into the PRD's Out of Scope" {
+  grep -qi "cut list goes to Out of Scope" "$GRILL"
+}
+
+@test "P1: the root section sits before the rounds, and the gates keep their own heading" {
+  local root rounds
+  root=$(grep -n '^### Root' "$GRILL" | head -1 | cut -d: -f1)
+  rounds=$(grep -n '^### Rounds and gates' "$GRILL" | head -1 | cut -d: -f1)
+  [ -n "$rounds" ]
+  [ "$root" -lt "$rounds" ]
+  # The gates' intro paragraph belongs under the rounds heading, not under Root.
+  [ "$(awk '/^### Root/{f=1;next} /^### /{f=0} f' "$GRILL" | grep -c 'Every frontier node passes two gates')" -eq 0 ]
+}
