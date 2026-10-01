@@ -48,7 +48,7 @@ For a single platform, a per-project install or updates, see [Install options](#
  🤖 PRD audit + HIGH/CRITICAL review findings → new issues → per-issue loop again (once)
     │
     ▼
- 🤖 summary                (+ push and open a PR with --open-pr)
+ 🤖 summary                (opens the PR with --open-pr; otherwise says how to)
     │
     ▼
  👤 /crew-address-findings pick which remaining findings to fix (optional)
@@ -70,7 +70,9 @@ What you can rely on:
   requirement no issue covered becomes a new issue.
 - **Work is never thrown away.** A retry continues on the same branch, and unfinished work is kept
   as `[WIP]` for the next run.
-- **Nothing is pushed unless you ask.** Add `--open-pr` to push the feature branch and open a PR.
+- **Nothing is pushed unless you ask.** Add `--open-pr` to push the feature branch and open a PR;
+  without it, the summary ends with the `gh pr create` command for the branch (and the `Closes #n`
+  lines, on GitHub).
 
 ## Common options
 

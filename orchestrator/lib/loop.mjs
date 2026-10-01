@@ -403,7 +403,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
   if (integration) ctx.out(`\n## Integration check\n\n${integrationSection(effects.mainRoot, sprint.featureBranch, integration)}\n`);
   if (unlisted.length) ctx.out(`\n**Fix issues not implemented:**\n${unlisted.map((l) => `- ${l}`).join("\n")}\n`);
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
-  if (pr) ctx.out(`\n## Pull Request\n\n${pr.text}\n`);
+  if (pr) ctx.out(`\n## ${pr.heading ?? "Pull Request"}\n\n${pr.text}\n`);
   ctx.out("NO MORE TASKS");
 }
 
@@ -411,7 +411,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
  * Last, after squash: the feature PR. `openPr` pushes the branch and creates or updates the PR
  * with the tracker's closing lines in its body (open-pr.sh). Off, those lines are printed for
  * the human's own PR — the tracker leaves each merged issue open until a PR closes it. Returns
- * `{text, url?, posted?}` — the section's text, and when the findings were posted to the PR
+ * `{text, heading?, url?, posted?}` — the section's text (heading `Next` when off), and when the findings were posted to the PR
  * (post-findings.sh) its URL and their count — or null when there is nothing to say. A posting
  * failure is reported in the text and never fails the sprint.
  */
@@ -427,13 +427,21 @@ function pullRequest(ctx, tracker, integration) {
   if (refsError) ctx.log(`closing refs: ${refsError}`, "warn");
 
   if (!options.openPr) {
-    if (!refs.length) return null;
-    return { text: [
-      `Merged into ${sprint.featureBranch}, left open until a PR closes them. Put these in its body:`,
+    // Nothing merged → nothing to ship, so nothing to say. Otherwise the branch is local only:
+    // say how to turn it into a PR, and (github) which lines close the issues it merged.
+    if (!sprint.get("merged") && !refs.length) return null;
+    return { heading: "Next", text: [
+      `Merged into ${sprint.featureBranch}; nothing was pushed. To open the PR:`,
       "",
-      ...refs,
+      `  gh pr create --head ${sprint.featureBranch} --title ${sprint.featureSlug}`,
+      ...(refs.length ? [
+        "",
+        "The issues stay open until that PR closes them — put these in its body:",
+        "",
+        ...refs,
+      ] : []),
       "",
-      "(openPr: true, or --open-pr, has crew-afk push the branch and open the PR itself.)",
+      "Or have crew-afk push the branch and open the PR itself: re-run with --open-pr (config: afk.openPr: true).",
     ].join("\n") };
   }
   // A red merged branch is not shipped: the PR would ask a reviewer to merge what fails its checks.
