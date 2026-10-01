@@ -11,6 +11,10 @@
   otherwise complete branch. A criterion already true at the merge-base now counts as met, cited
   at the branch tip. `to-issues` also stops writing repo-wide hygiene a check already enforces
   (version bumps, changelog, lint) as per-issue acceptance criteria.
+- **A coder that times out mid-work no longer uses up the issue's retry.** A timeout that
+  committed during the attempt was making progress, not failing, but it spent one of the two
+  attempts, so any setback on the retry blocked the issue. Such a retry is now free, up to 3
+  coder dispatches per issue. A timeout with no new commit still spends its attempt.
 
 ### Changed
 

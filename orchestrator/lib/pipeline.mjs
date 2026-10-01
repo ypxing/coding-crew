@@ -113,7 +113,8 @@ export function resumableSession(prior, tip) {
  * conflict in the worktree: a coder-dispatching route adds it to its prompt, and a verify
  * route becomes a conflict fix.
  *
- * The retry cap (MAX_ATTEMPTS_PER_ISSUE, pipeline/finish.mjs) bounds every route alike.
+ * The retry cap (MAX_ATTEMPTS_PER_ISSUE, pipeline/finish.mjs) bounds every route alike;
+ * a coder that timed out after committing gets a free retry, up to MAX_DISPATCHES_PER_ISSUE.
  */
 export function resumeRoute(reason) {
   if (reason == null) return { route: "restart" };
@@ -453,6 +454,8 @@ export async function runWorker(ctx, issue, attempt) {
       ctx.log(`[FRESH-SESSION] slug=${issue.slug} round=${attempt} — ${pick.reason}`);
     }
   }
+  // The tip this dispatch starts from: a timed-out coder that moved it gets a free retry.
+  const startTip = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim() || null;
   ctx.log(
     `[STEP] slug=${dispatchStem(issue)} round=${attempt} step=dispatch-coder model=${coder.model ?? "inherit"} runtime=${coder.runtime}`,
   );
@@ -497,7 +500,7 @@ export async function runWorker(ctx, issue, attempt) {
   }
 
   const report = parseWorkerReport(result.text, sidecar);
-  return { issue, branch, attempt, worktree, dispatch: result, report, head, reviewedTip, verifyFailedTip, priorVerdict: reviewedTip || verifyFailedTip ? resume.context : null };
+  return { issue, branch, attempt, worktree, dispatch: result, report, head, startTip, reviewedTip, verifyFailedTip, priorVerdict: reviewedTip || verifyFailedTip ? resume.context : null };
 }
 
 /**
@@ -522,10 +525,12 @@ export async function runHousekeeping(ctx, worker) {
   const capped = limitExceeded(worker.dispatch, "coder", roleBinding(ctx, "coder"));
   if (capped) return finishBlocked(ctx, worker, outcome, capped);
   // A dead dispatch (timeout, crash) with commits on the branch is resumed, not discarded;
-  // with none, there is nothing to resume and it blocks.
+  // with none, there is nothing to resume and it blocks. A timeout that committed this
+  // attempt was still making progress, so its retry is free.
   if (worker.dispatch.timedOut) {
     const reason = `worker timed out after ${Math.round(options.timeoutMs.coder / 60000)}m`;
-    if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason);
+    const free = !!worker.head && worker.head !== worker.startTip;
+    if (branchHasCommits(effects, sprint.featureBranch, branch)) return finishRetryOrBlock(ctx, worker, outcome, reason, { free });
     return finishBlocked(ctx, worker, outcome, reason);
   }
   // A bad exit (or claude's `is_error`) counts only with no usable report: a worker that
