@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `to-issues`: add `lint-issues.sh`, a read-only checker for an issue set (ERROR for cycles, unmatched
+  `## Blocked by` refs, `--deps` drift and missing acceptance criteria; WARN for advisory problems).
+  Installed at `.coding-crew/to-issues/scripts/`.
+
 ## [2.0.0]
 
 First milestone release, with a new baseline. The 1.x line (v1.1.0–v1.29.157, plus untagged

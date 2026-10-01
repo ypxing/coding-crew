@@ -180,11 +180,15 @@
       ]
     },
     "to-issues": {
-      "version": "1.4.5",
+      "version": "1.5.0",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
-      "install": ".claude/skills/to-issues"
+      "install": ".claude/skills/to-issues",
+      "assets": {
+        "source": "skills/to-issues/scripts",
+        "dest": ".coding-crew/to-issues/scripts"
+      }
     },
     "to-prd": {
       "version": "1.2.3",
