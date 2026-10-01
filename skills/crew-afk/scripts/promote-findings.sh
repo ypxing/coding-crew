@@ -311,12 +311,15 @@ _scrub_paths() {
 # report (a retry's block overrides an earlier one, as review_rollup folds), minus its json.
 _review_branch_prose() {
   awk -v branch="$2" '
-    index($0, "Branch: " branch " (") && $0 ~ /^[ \t]*#+ / { inb = 1; buf = ""; skip = 0; next }
-    inb && $0 ~ /^## / { inb = 0 }
+    index($0, "Branch: " branch " (") && $0 ~ /^[ \t]*#+ / { inb = 1; buf = ""; skip = 0; fence = ""; next }
+    inb && fence == "" && $0 ~ /^## / { inb = 0 }
     !inb { next }
     skip { if ($0 ~ /^[ \t]*```[ \t]*$/) skip = 0; next }
-    $0 ~ /^[ \t]*```json/ { skip = 1; next }
-    { buf = buf $0 "\n" }
+    fence == "" && $0 ~ /^[ \t]*```json/ { skip = 1; next }
+    # A snippet fence can hold a column-0 `#`/`##` line (a shell or python comment): inside
+    # one, nothing is a heading, so the block is not cut short.
+    { if (match($0, /^[ \t]*(~~~|```)/)) { m = substr($0, RSTART, RLENGTH); gsub(/[ \t]/, "", m); if (fence == "") fence = m; else if (fence == m) fence = "" }
+      buf = buf $0 "\n" }
     END { printf "%s", buf }
   ' "$1"
 }
@@ -356,11 +359,13 @@ _review_findings_md() {
         if (total + length(entry) > maxb && emitted > 0) dropped++
         else { printf "%s", entry; total += length(entry); emitted++ }
       }
-      blk = ""
+      blk = ""; fence = ""
     }
+    # Lines inside a snippet fence belong to the block whatever they start with.
+    blk != "" && fence != "" { blk = blk $0 "\n"; if (match($0, /^[ \t]*(~~~|```)/)) { m = substr($0, RSTART, RLENGTH); gsub(/[ \t]/, "", m); if (m == fence) fence = "" } next }
     /^[ \t]*\[(CRITICAL|HIGH|MEDIUM|LOW)\]/ { flush(); sev = $0; sub(/^[ \t]*\[/, "", sev); sub(/\].*/, "", sev); blk = $0 "\n"; next }
     /^#+ / { flush(); next }
-    blk != "" { blk = blk $0 "\n" }
+    blk != "" { blk = blk $0 "\n"; if (match($0, /^[ \t]*(~~~|```)/)) { m = substr($0, RSTART, RLENGTH); gsub(/[ \t]/, "", m); fence = m } }
     END { flush(); if (dropped) printf "(%d more finding(s) trimmed to keep this issue within GitHub size limits)\n", dropped }
   ')"
 

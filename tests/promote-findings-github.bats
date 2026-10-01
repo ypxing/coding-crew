@@ -402,6 +402,46 @@ no_local_paths() {
   no_local_paths
 }
 
+@test "defer keeps a finding whose snippet fence has column-0 '#' and '##' lines whole" {
+  configure_github
+  stub_gh
+  json=$(jq -n '{branch: "crew/feat/a", slug: "a", verdict: "unmet",
+    findings: [{severity: "MEDIUM", location: "src/run.sh:9", criterion: "quote the var", verdict: "actionable"}]}')
+  cat > "$REPORT" <<EOF
+## Branch: crew/feat/a (a)
+
+\`\`\`json
+$json
+\`\`\`
+
+[MEDIUM] Unquoted variable
+File: src/run.sh:9
+Snippet:
+~~~
+# build the target
+cd $TARGET
+## second comment
+~~~
+Issue: an empty TARGET changes to the wrong directory
+Fix: quote and guard the variable
+
+## Branch: crew/feat/b (b)
+
+\`\`\`json
+{"branch": "crew/feat/b", "slug": "b", "verdict": "all-met", "findings": []}
+\`\`\`
+EOF
+
+  CREW_FIX_FINDINGS=medium bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^## Review findings$' "$GH_LAST_BODY"
+  grep -q '^# build the target$' "$GH_LAST_BODY"
+  grep -q '^## second comment$' "$GH_LAST_BODY"
+  grep -q '^Issue: an empty TARGET changes to the wrong directory$' "$GH_LAST_BODY"
+  grep -q '^Fix: quote and guard the variable$' "$GH_LAST_BODY"
+  absent -q 'crew/feat/b'
+}
+
 @test "defer under the actionable rule embeds only the findings triage judged actionable" {
   configure_github
   stub_gh
