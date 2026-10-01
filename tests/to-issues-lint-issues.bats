@@ -68,6 +68,14 @@ lint_clean() { # extra args
   [[ "$output" == *"ERROR "*"02-cli.md: "*"Issue #77"* ]]
 }
 
+@test "Blocked by filename containing issue-<n> is not also parsed as an Issue #<n> reference" {
+  cp "$W/issues/01-store.md" "$W/issues/fix-issue-3-thing.md"
+  printf '\n- fix-issue-3-thing.md\n' >> "$W/issues/02-cli.md"
+  lint_clean
+  [[ "$output" != *"Issue #3"* ]]
+  [[ "$output" != *"ERROR "*"02-cli.md"* ]]
+}
+
 @test "ERROR: --deps edges differ from Blocked by prose, naming issue and both lists" {
   cat > "$W/issues/issues-deps.json" <<'J'
 {"01-store.md": [], "02-cli.md": [], "03-docs.md": ["02-cli.md", "01-store.md"]}
