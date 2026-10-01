@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: a worker's `verify-worktree.sh` and per-worktree `ensure-deps.sh` now run asynchronously, so two branches
+  verify concurrently and a slow verify no longer stalls the other worker loops or a free slot's next dispatch. Merge
+  and close stay blocking, and so serialized; timeouts still map to exit 124.
 - `crew-afk`: a verify ended by a signal (not the call's own timeout) is *interrupted*, not failed — no triage, no
   coder, no failure logged, and the issue is verified again next round for free. Verify output that names no failing
   check is run a second time before triage; if still empty the issue is re-verified next round, never recoded.

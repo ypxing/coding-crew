@@ -84,6 +84,10 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
   tracker's closing lines (`closingRefs`) in crew-afk's own block of the body
 - `dispatch-agent.sh` (pi), `dispatch-codex-agent.sh` (codex)
 
+Effects that run for minutes — a worker's `verify-worktree.sh` and `ensure-deps.sh` — go through `Effects.bashAsync`, so each
+worker loop verifies its own branch concurrently; merge and close stay on the blocking `effects.bash`, which is what keeps
+merges into the feature branch serialized.
+
 A verify that gives no verdict — killed by a signal (`Effects.exec`'s `interrupted`; a real `timeoutMs` stays 124), or
 output naming no failing check even on a second run — is retained as `verify-interrupted` / `verify-inconclusive` and
 re-verified next round with no triage and no coder (`pipeline/verify.mjs`).
