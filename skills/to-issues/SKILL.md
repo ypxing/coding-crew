@@ -61,13 +61,7 @@ Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an
 - Any prefactoring should be sequenced first
 </vertical-slice-rules>
 
-**Wide refactors are the exception to vertical slicing.** A wide refactor is one mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase so no vertical slice can land green on its own. Don't force it into a tracer bullet; sequence it as **expand–contract**:
-
-1. **Expand** — add the new form beside the old so nothing breaks
-2. **Migrate** — move call sites over in batches (per package, per directory), each batch its own issue blocked by the expand, keeping CI green batch to batch because the old form still exists
-3. **Contract** — delete the old form once no caller remains, blocked by every migrate batch
-
-When even the batches can't stay green independently, let them share an integration branch and block a final integrate-and-verify issue — green is promised only there.
+**Wide refactor?** One mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase, so no vertical slice can land green on its own: read `references/expand-contract.md` before slicing it.
 
 ### 5. Quiz the user
 
@@ -140,11 +134,7 @@ Look in `PRD.md` for descriptions of end-to-end operations that span multiple ve
 
 ### 6. Write the issues
 
-**Re-run handling** (local tracker only — see the github paragraph below for that backend): Before writing, check if `.scratch/<feature-slug>/issues/` already contains issue files.
-
-- If it does and a `done/` subdirectory exists with files in it, **stop** — tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
-- If it does but no issues are done (no `done/` subdirectory or it's empty), list the existing files, warn the user they'll be overwritten, and ask for confirmation before proceeding.
-- If the directory doesn't exist or is empty, proceed normally.
+**Local tracker, issues directory non-empty?** If `.scratch/<feature-slug>/issues/` already contains issue files, read `references/rerun.md` before writing anything. Otherwise proceed.
 
 For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
 
@@ -154,7 +144,7 @@ For each approved slice, execute the `publish` operation from `issue-tracker.md`
 
 Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field. Work the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, publish all currently unblocked issues before their dependents.
 
-**Under a configured `github` tracker**, `publish` (per `github.md`'s `Operation: publish`) creates one GitHub issue per slice via `gh issue create --body-file <file> --label ready-for-agent --milestone <feature-slug>`, where `<file>` is the issue-template body below rendered to text — the body itself, not a sidecar, carries the dependency graph for this backend. Write `## Blocked by` entries as `Issue #<n>`, citing the number `gh issue create` returned for each already-created blocker (the same numeric convention `body-format.mjs`'s `extractBlockedByNumbers` parses) — this is why blockers must still be created before their dependents under this backend too. When step 2 found a PRD, cite it in `## Context Documents` as `PRD: #<n>` using its issue number. The local-only re-run handling above does not apply: a milestone accumulates issues across runs with no local directory to inspect, so re-running against an existing milestone always adds new issues rather than overwriting; confirm with the user first if this doesn't look like a re-run they intended.
+**Tracker is `github`?** Read `references/github-publish.md` for how `publish` creates the issues, writes `## Blocked by` and cites the PRD; the local-only re-run handling does not apply.
 
 <issue-template>
 Status: ready-for-agent
@@ -163,7 +153,7 @@ Status: ready-for-agent
 
 > **Optional — only include this section if a PRD exists for this feature. Omit entirely if no PRD exists.**
 
-- PRD: `.scratch/<feature-slug>/PRD.md` (local tracker) — or `PRD: #<n>` citing the feature's PRD issue number (github tracker)
+- PRD: `.scratch/<feature-slug>/PRD.md` (local tracker; the github form is in `references/github-publish.md`)
 
 Read this document before implementing. It contains architecture decisions, integration constraints, and technical context essential for this issue.
 
@@ -211,7 +201,7 @@ This issue implements [step description] of the [flow name] flow.
 
 ## Blocked by
 
-- A reference to the blocking ticket (if any) — the blocker's filename under `local`, or `Issue #<n>` under `github` (see step 6's github paragraph)
+- A reference to the blocking ticket (if any) — the blocker's filename under `local` (the github form is in `references/github-publish.md`)
 
 Or "None - can start immediately" if no blockers.
 
