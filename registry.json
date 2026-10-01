@@ -19,7 +19,7 @@
   },
   "agents": {
     "crew-reviewer": {
-      "version": "1.7.12",
+      "version": "1.7.13",
       "source-dir": "crew-reviewer",
       "replaces": [
         "crew-code-reviewer"
@@ -180,7 +180,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.4.4",
+      "version": "1.4.5",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",

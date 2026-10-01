@@ -2,6 +2,16 @@
 
 ## [1.37.0]
 
+### Fixed
+
+- **A criterion a sibling issue already satisfied no longer blocks the branch.** Two parallel
+  issues can make the same edit — both bump `crew-afk`'s version. Once the first merges, the
+  second's retry syncs the feature branch and its own copy of the edit merges away, so the
+  reviewer found nothing in the branch's diff, read the criterion `unmet`, and blocked an
+  otherwise complete branch. A criterion already true at the merge-base now counts as met, cited
+  at the branch tip. `to-issues` also stops writing repo-wide hygiene a check already enforces
+  (version bumps, changelog, lint) as per-issue acceptance criteria.
+
 ### Changed
 
 - **crew-rework is parked as an optional template.** The workflow moved from
