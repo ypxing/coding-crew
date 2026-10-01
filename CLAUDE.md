@@ -110,6 +110,13 @@ falls back to the `high` rule). Not re-run after Phase 2, nor when nothing
 merged; skipped (the summary says so) when the integration check is red; a dispatch that leaves no review is recorded
 not-run and never fails the sprint.
 
+## `to-issues`' linter (`skills/to-issues/scripts/lint-issues.sh`)
+
+Read-only checker for a feature's issue set, shipped as an asset at `.coding-crew/to-issues/scripts/` and
+runnable by hand: `lint-issues.sh --issue <file>... [--deps <issues-deps.json>] [--prd <file>]`. Prints
+`ERROR <file>: …` (cycle, unmatched `## Blocked by` ref, `--deps` drift, no `## Acceptance criteria`) or
+`WARN <file>: …` (advisory); exit 1 iff any `ERROR`, 2 on a usage error. Issue text is data — never evaluated.
+
 ## Adding a new agent
 
 1. `agents/<name>/protocol.md` (or `workflow.js`).
