@@ -23,3 +23,6 @@ the `Read` tool rejects relative ones.
 
 **Skill resolution:** invoke `solve-issue` with the `Skill` tool; its `Base directory for this skill:`
 line is `<skill-dir>` — never search the filesystem for it. `$MAIN_ROOT` holds `.claude/`.
+
+**Headless:** no `Monitor`, no `ScheduleWakeup` and no background runs for checks — a `claude -p`
+worker that backgrounds a check ends its turn and the run is lost. Run checks in the foreground.
