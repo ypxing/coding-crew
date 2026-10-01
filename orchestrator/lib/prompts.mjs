@@ -299,6 +299,127 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
   ].join("\n");
 }
 
+/** The name feature-mode findings are attributed to in the review report, and the review's slug. */
+export const FEATURE_REVIEW = "feature";
+
+/**
+ * Feature mode (crew-reviewer's protocol § Feature Mode): the whole feature diff, once, at the first
+ * drain. Same report object as a branch review, but no issue and no criteria — findings only.
+ */
+export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAssets, reviewContext }) {
+  return [
+    "Feature review: review the whole feature diff, once, before it ships.",
+    ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
+    ...renderReviewContext(reviewContext),
+    `Feature branch: ${featureBranch}`,
+    `Base: ${base}`,
+    `Branch: ${FEATURE_REVIEW}`,
+    `Slug: ${FEATURE_REVIEW}`,
+    "",
+    `Gather the diff: git diff ${base}..${featureBranch}`,
+    "",
+    "Every issue's branch was already reviewed on its own diff, and the checks passed on the merged",
+    "branch. Look for what only the whole diff shows (crew-reviewer's Feature Mode). There is no issue and",
+    "no acceptance criteria: give no AC verdict, only findings.",
+    "",
+    `Write your structured result to ${reportPath} as your last action. This file is the only thing`,
+    "counted — nothing you print in your final message is parsed:",
+    "",
+    "```json",
+    JSON.stringify(
+      {
+        branch: FEATURE_REVIEW,
+        slug: FEATURE_REVIEW,
+        verdict: "all-met",
+        detail: "",
+        findings: [{ severity: "CRITICAL | HIGH | MEDIUM | LOW", location: "<file:line>", criterion: "<one verifiable fix criterion>" }],
+      },
+      null,
+      2,
+    ),
+    "```",
+    "",
+    "`findings` is `[]` when there are none — never omit the block itself. Follow it with your usual",
+    "snippet-anchored explanation per finding, for the human reading the report.",
+  ].join("\n");
+}
+
+/** The verdict file every triage prompt ends on — the file is the only thing read (parseTriageReport). */
+function triageVerdictLines(reportPath) {
+  return [
+    // Same policy as the worker's resultBlock and the reviewer's verdict block: the file is
+    // the only thing read — see report.mjs's parseTriageReport.
+    `Write your structured verdict to ${reportPath} as your last action. This file is the`,
+    "only thing the orchestrator reads — nothing you print in your final message is parsed:",
+    "",
+    "```json",
+    JSON.stringify(
+      {
+        fixable: "yes | no",
+        category: 'one short phrase, e.g. "failing test assertion", "wrong dependency version", "registry unreachable"',
+        detail: "one or two sentences a worker or a human can act on directly, citing the specific test, file, package, or command the failure names",
+      },
+      null,
+      2,
+    ),
+    "```",
+  ];
+}
+
+/**
+ * The same triage question asked of the merged feature branch, when the drain-time integration
+ * check is red: every branch passed its own verify, so the failure is in how they combine.
+ * Dispatched to `crew-triage`, never a coder. No issue and no worker diff exist here: the
+ * feature branch's own history is the evidence.
+ */
+export function integrationTriagePrompt({ featureBranch, commit, checkOutput, reportPath }) {
+  return [
+    "The project's checks failed on a merged feature branch, though every branch merged into it",
+    "passed those same checks on its own. Decide whether the failure is fixable by writing more",
+    "code on the feature branch, or whether it is an environment or infrastructure problem that",
+    "no code change can fix.",
+    `Feature branch: ${featureBranch} (at ${commit})`,
+    "",
+    `Gather the evidence yourself: git log --oneline -30 ${featureBranch}, then git show on the`,
+    "merges and commits that touch the file, test or package the failure names.",
+    "",
+    "The failing check output, captured by the pipeline in a throwaway worktree of that branch:",
+    "---",
+    (checkOutput ?? "").trim() || "(no output captured)",
+    "---",
+    "",
+    "Fixable means: two merged changes that clash (a duplicated definition, a test one branch",
+    "wrote that another branch's change breaks, an import or type one branch removed and another",
+    "uses), or anything else a worker could correct by editing files on the feature branch. Not",
+    "fixable means: the cause is outside the code — registry/network unreachable, Docker daemon",
+    "down, disk full, missing credentials, rate limiting, a service the checks need that is not",
+    "running. When genuinely unsure, answer yes — a wrong 'fixable' guess costs one extra fix",
+    "issue; a wrong 'not fixable' guess leaves a red feature branch for a human who may not be",
+    "watching.",
+    "",
+    ...triageVerdictLines(reportPath),
+  ].join("\n");
+}
+
+/**
+ * The integration fix issue's acceptance criteria: the one criterion that matters, then what
+ * triage and the failing checks said, so the coder starts from the failure instead of finding it.
+ * `tails` is `[{check, tail}]`; only the first line is a `- [ ]` criterion.
+ */
+export function integrationFixCriteria({ featureBranch, category, detail, tails }) {
+  const lines = [
+    "<!-- queued from a red integration check on the merged feature branch -->",
+    "",
+    `- [ ] The project's checks pass on the merged feature branch (\`${featureBranch}\`)`,
+    "",
+    `Triage: ${category || "unspecified"} — ${detail || "no detail given"}`,
+  ];
+  for (const { check, tail } of tails) {
+    lines.push("", `Failing \`${check}\`, output tail:`, "", "```", tail || "(no output)", "```");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 /**
  * Dispatched only after verify-worktree.sh already failed, and only to `crew-triage` —
  * never to the coder that wrote the branch, for the same reason review isn't a self-grade.
@@ -331,22 +452,7 @@ export function triagePrompt({ branch, slug, issuePath, featureBranch, checkOutp
     "'fixable' guess costs one extra round; a wrong 'not fixable' guess strands the issue for",
     "a human who may not be watching.",
     "",
-    // Same policy as the worker's resultBlock and the reviewer's verdict block: the file is
-    // the only thing read — see report.mjs's parseTriageReport.
-    `Write your structured verdict to ${reportPath} as your last action. This file is the`,
-    "only thing the orchestrator reads — nothing you print in your final message is parsed:",
-    "",
-    "```json",
-    JSON.stringify(
-      {
-        fixable: "yes | no",
-        category: 'one short phrase, e.g. "failing test assertion", "wrong dependency version", "registry unreachable"',
-        detail: "one or two sentences a worker or a human can act on directly, citing the specific test, file, package, or command the failure names",
-      },
-      null,
-      2,
-    ),
-    "```",
+    ...triageVerdictLines(reportPath),
   ].join("\n");
 }
 
@@ -369,6 +475,49 @@ function coderEvidenceLines(e) {
   if (e.output && e.output.trim()) lines.push(`output${e.truncated ? " (tail)" : ""}:`, e.output.trim());
   lines.push("---", "");
   return lines;
+}
+
+/**
+ * crew-triage's findings mode: judge each review finding Actionable / Debatable / Dismiss, by the
+ * shared rubric (inlined in the agent from skills/_shared/fragments/common/findings-rubric.md).
+ * Dispatched apart from the reviewer that raised them — a review never grades its own findings.
+ * `scope` says where the findings came from; `findings` are report.mjs's normalised findings.
+ */
+export function findingsTriagePrompt({ scope, ref, featureBranch, findings, reportPath }) {
+  return [
+    "Findings mode: judge each code-review finding below by your Findings rubric, and answer",
+    "per finding. You are not fixing anything, and you are not the reviewer that raised them.",
+    scope,
+    `The code under review is on ${ref}, which the main checkout is not on: read it with`,
+    `git show ${ref}:<path>, and the change with git diff ${featureBranch}..${ref}.`,
+    "Read each cited location before you judge its finding, and CONTEXT.md and docs/adr/ (when",
+    "they exist) for any decision a fix would contradict.",
+    "",
+    "Findings (index — severity — location — what the reviewer wants):",
+    ...findings.map((f, i) => `${i} — ${f.severity} — ${f.location || "(no location)"} — ${f.criterion}`),
+    "",
+    `Write your structured verdicts to ${reportPath} as your last action. This file is the only`,
+    "thing the orchestrator reads — nothing you print in your final message is parsed. One entry",
+    "per finding, `index` as listed above:",
+    "",
+    "```json",
+    JSON.stringify(
+      {
+        findings: [
+          {
+            index: 0,
+            verdict: "actionable | debatable | dismiss",
+            rationale: "one line: why this verdict",
+            adr: "true when the fix would contradict an ADR or CONTEXT.md, else false",
+            protected: "true when the fix would touch CI config, auth, deploy or .env, else false",
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    "```",
+  ].join("\n");
 }
 
 /** One `- [ ]` line per promotable finding, each carrying its own citation. */

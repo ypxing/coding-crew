@@ -12,10 +12,10 @@
  *   { "afk": {
  *       "runtime": { "reviewer": "codex" },
  *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
- *       "fixFindings": "high", "PRDAudit": "fix",
+ *       "fixFindings": "actionable", "PRDAudit": "fix",
  *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": false,
  *       "openPr": false,
- *       "baselineCheck": true, "resumeCoderSession": false,
+ *       "baselineCheck": true, "integrationCheck": true, "resumeCoderSession": false,
  *       "limits": { "coder": { "usd": 5 } } } }
  *
  * Every setting but runtime/models/limits has a flag that wins for one run (resolveSettings).
@@ -60,8 +60,10 @@ export const LEGACY_REL = ".coding-crew/afk-models.json";
 export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prdAuditor"];
 const SECTIONS = ["afk"];
 
-// The lowest reviewer severity fixed automatically, and what the PRD audit does with its gaps.
-export const FIX_FINDINGS = ["critical", "high", "medium", "none"];
+// What review findings are fixed automatically — `actionable`: every finding crew-triage judges
+// Actionable, whatever its severity; the others: the lowest severity — and what the PRD audit does
+// with its gaps.
+export const FIX_FINDINGS = ["actionable", "critical", "high", "medium", "none"];
 export const PRD_AUDIT = ["off", "report", "fix"];
 /** Minutes. Every LLM role, plus the merge/close step, which blocks the event loop. */
 export const DEFAULT_TIMEOUTS = { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 };
@@ -73,12 +75,13 @@ const timeoutProblem = (min) =>
     : `must be a positive number of minutes, at most ${MAX_TIMEOUT_MINUTES}`;
 export const PANE_HOSTS = ["orca", "herdr", "auto", "none"];
 export const DEFAULT_SETTINGS = {
-  fixFindings: "high",
+  fixFindings: "actionable",
   PRDAudit: "fix",
   installDeps: true,
   squashCommits: false,
   openPr: false,
   baselineCheck: true,
+  integrationCheck: true,
   resumeCoderSession: false,
 };
 
@@ -91,6 +94,7 @@ const SCALARS = {
   squashCommits: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   openPr: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   baselineCheck: (v) => (typeof v === "boolean" ? null : "must be true or false"),
+  integrationCheck: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   resumeCoderSession: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   paneHost: (v) => (PANE_HOSTS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PANE_HOSTS.join(", ")})`),
   worktreeRoot: (v) => (typeof v === "string" && v.trim() ? null : "must be a non-empty path"),
@@ -426,7 +430,7 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
  * The sprint's settings: each flag (`cli`, undefined when not given) over config.json's
  * afk section over the defaults. `origin` gains "--flag" for each setting a flag decided,
  * so `plan` credits the right source.
- * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, openPr, baselineCheck, resumeCoderSession,
+ * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, openPr, baselineCheck, integrationCheck, resumeCoderSession,
  *   maxParallel: number|null,
  *   timeouts: Record<string, number>,  timeouts in minutes
  *   limitsUsd: Record<string, number>}}  each capped role's dollar cap; no key, no cap
@@ -451,6 +455,7 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     squashCommits: pick("squashCommits"),
     openPr: pick("openPr"),
     baselineCheck: pick("baselineCheck"),
+    integrationCheck: pick("integrationCheck"),
     resumeCoderSession: pick("resumeCoderSession"),
     maxParallel: pick("maxParallel"),
     timeouts,

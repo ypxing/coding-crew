@@ -26,8 +26,9 @@
  *   --feature-slug <slug>                  or derived from the first issue's dir
  *
  * Each flag below overrides the config.json setting in brackets for one run (lib/crew-config.mjs):
- *   --fix-findings <critical|high|medium|none>  [fixFindings, default high] lowest reviewer
- *                                           severity auto-fixed in Phase 2 (--promote: old name)
+ *   --fix-findings <actionable|critical|high|medium|none>  [fixFindings, default actionable]
+ *                                           what is auto-fixed in Phase 2: every finding triage
+ *                                           judges Actionable, or the lowest severity (--promote: old name)
  *   --prd-audit <off|report|fix>           [PRDAudit, default fix] audit the sprint against its
  *                                           PRD.md after Phase 1; `fix` queues ✗ missing gaps
  *                                           for Phase 2 (--coverage: old name, means `report`)
@@ -47,6 +48,10 @@
  *   --no-baseline                          [baselineCheck: false] skip running the checks once on
  *                                           the feature branch before any dispatch (a red one
  *                                           otherwise stops the run: every issue would fail it)
+ *   --no-integration-check                 [integrationCheck: false] skip running the checks on
+ *                                           the merged feature branch each time the queue drains
+ *                                           (a red one is reported, and no PR is opened). The
+ *                                           baseline flag does not turn it off
  *   --resume-coder-session                 [resumeCoderSession, default false] a fix round
  *                                           continues the claude coder session that wrote the
  *                                           branch, when that session is small and the branch
@@ -186,6 +191,7 @@ function parseArgs(argv) {
       case "--open-pr": o.cli.openPr = true; break;
       case "--no-open-pr": o.cli.openPr = false; break;
       case "--no-baseline": o.cli.baselineCheck = false; break;
+      case "--no-integration-check": o.cli.integrationCheck = false; break;
       case "--resume-coder-session": o.cli.resumeCoderSession = true; break;
       case "--allow-dirty": o.allowDirty = true; break;
       case "--reclaim": o.reclaim = true; break;
@@ -439,9 +445,10 @@ async function main() {
   if (options.command === "help") {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
-        "  [--feature-slug S] [--fix-findings critical|high|medium|none] [--prd-audit off|report|fix]\n" +
+        "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
-        "  [--max-rounds N] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--allow-dirty]\n" +
+        "  [--max-rounds N] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
+        "  [--allow-dirty]\n" +
         "  [--reclaim]  (take over a github-tracker feature lease held by a run that is dead)\n" +
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
@@ -449,9 +456,9 @@ async function main() {
         "  commandFinder, prdAuditor):\n" +
         '    { "afk": { "runtime": { "reviewer": "codex" },\n' +
         '               "models":  { "claude": { "triage": "opus" } } } }\n' +
-        "  The other flags override config.json's afk settings for one run: fixFindings (high),\n" +
+        "  The other flags override config.json's afk settings for one run: fixFindings (actionable),\n" +
         "  PRDAudit (fix), maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits\n" +
-        "  (false), openPr (false), baselineCheck (true), resumeCoderSession (false),\n" +
+        "  (false), openPr (false), baselineCheck (true), integrationCheck (true), resumeCoderSession (false),\n" +
         "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).\n" +
         "  No flag: limits.<role>.usd caps one claude dispatch of that role in dollars (off).",
     );
@@ -579,7 +586,7 @@ async function main() {
     for (const line of crewTable(options.crew, loaded.origin)) console.log(line);
     const tag = (k) => (loaded.origin[k] ? `  [${loaded.origin[k]}]` : "");
     console.log(`parallel:  ${options.parallel}${tag("maxParallel")}`);
-    console.log(`findings:  fix ${options.fixFindings === "none" ? "none" : `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
+    console.log(`findings:  fix ${{ none: "none", actionable: "every Actionable finding" }[options.fixFindings] ?? `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
     console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
     const caps = Object.entries(options.limitsUsd ?? {});
@@ -602,6 +609,7 @@ async function main() {
     console.log(`squash:    ${options.squashCommits ? "at the end of the sprint" : loaded.origin.squashCommits ? offBy("squashCommits", "--no-squash") : "off (opt in: squashCommits: true, or --squash)"}`);
     console.log(`open PR:   ${options.openPr ? "at the end: push the feature branch, create or update its PR (Closes lines for the issues it merged)" : loaded.origin.openPr ? offBy("openPr", "--no-open-pr") : "off (opt in: openPr: true, or --open-pr)"}`);
     console.log(`baseline:  ${options.baselineCheck ? "the checks run once on the feature branch before any dispatch; red stops the run" : offBy("baselineCheck", "--no-baseline")}`);
+    console.log(`integration: ${options.integrationCheck ? "the checks run on the merged feature branch each time the queue drains; red is reported and no PR is opened" : offBy("integrationCheck", "--no-integration-check")}`);
     const requiring = tracker.selectDispatchable(mainRoot, { featureSlug: resolved.slug, includeBlocked: true }).filter((i) => /^## Requires\s*$/m.test(i.text ?? ""));
     console.log(`requires:  ${requiring.length ? `${requiring.map((i) => i.slug).join(", ")} — each ## Requires runs once before that issue's first dispatch; a failing one blocks it` : "no issue declares ## Requires"}`);
     console.log(`resume:    ${options.resumeCoderSession ? "a fix round continues the coder's own session when it is small and the branch has not moved" : "fix rounds start a fresh coder session"}`);

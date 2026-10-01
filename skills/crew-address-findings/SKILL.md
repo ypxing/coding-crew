@@ -67,14 +67,21 @@ milestone's `PRD: <feature title>` issue and read its body (per `github.md`'s Wo
 the PRD is identified by title convention plus milestone scope, not a local file).
 
 Use this context during Step 3 triage: a finding whose proposed fix contradicts a documented
-architectural decision (e.g. a tracker abstraction rule, a naming invariant) should be classified
-**Dismiss** or **Debatable** rather than Actionable, even if the finding is technically correct.
+architectural decision (e.g. a tracker abstraction rule, a naming invariant) is **Debatable**
+under the rubric below, even if the finding is technically correct. Also read `CONTEXT.md` and
+`docs/adr/` when they exist.
 
 ## Step 2 — Parse all findings
 
 Read the report file. Extract every finding — each `[CRITICAL]`, `[HIGH]`, `[MEDIUM]`, and `[LOW]` block across all branches.
 
 Group findings by branch so related items are reviewed together.
+
+**Triage verdicts.** When crew-afk's own triage already judged a finding, the report's json block
+carries a `verdict` (`actionable` / `debatable` / `dismiss`) and a `rationale` beside it. Treat that
+as a starting classification, not a conclusion — Step 3 still re-checks it against the code. A
+finding with no verdict was never triaged (a fix branch's, or a run where triage failed): classify
+it from scratch.
 
 **Skip findings crew-afk already fixed.** If the report has a `## Promoted Findings` section, each
 line reads `<branch>: <severities> → <fix issue reference>` — a local file path under a `local`
@@ -83,8 +90,10 @@ writes whichever `issue-tracker.md` configures; see `to-issues`'s "Write the iss
 same backend branch, reused here rather than reinvented). Those findings were auto-promoted to fix
 issues and implemented in a later round of the same sprint, so exclude every finding matching a
 listed (branch, severity) pair from the triage table entirely — do not re-read, re-triage, or
-re-implement them. Findings from the same branch at *other* severities (typically MEDIUM/LOW) are
-still open and must be triaged normally. List the skipped pairs once under **Skipped** in Step 6 as
+re-implement them. A line whose severities slot reads `actionable` covers that branch's findings
+whose `verdict` is `actionable` (every Actionable finding of the sprint is fixed that way, whatever
+its severity). Everything else from that branch — Debatable and Dismissed findings, or other
+severities — is still open and must be triaged normally. List the skipped pairs once under **Skipped** in Step 6 as
 `already fixed in sprint (issue <reference>)`.
 
 ## Step 3 — Challenge each finding
@@ -98,17 +107,20 @@ For every finding, do the following **before** deciding whether to act on it:
    - Does the change fit the project's conventions and domain language?
    - Could addressing it introduce new bugs or regressions?
    - Has this already been fixed in a subsequent commit?
-3. Classify the finding as one of:
-   - **Actionable** — the concern is valid; a code change is warranted (possibly different from what the reviewer suggested).
-   - **Debatable** — the concern has merit but the proposed change is questionable; note your counter-argument.
-   - **Dismiss** — the concern is wrong, stylistic noise, or already handled elsewhere; explain why.
+3. Classify the finding by this rubric (crew-afk's own triage applies the same one):
 
-Show the user a triage table before making any changes:
+{{FRAGMENT:findings-rubric}}
+
+Show the user a triage table before making any changes. **Lead with Debatable** — those are the
+findings only a human can settle — then Actionable; collapse the Dismissed ones into a single
+trailing line each, with the rationale:
 
 | #   | Severity | File / Line | Summary | Classification | Rationale |
 | --- | -------- | ----------- | ------- | -------------- | --------- |
-| 1   | CRITICAL | …           | …       | Actionable     | …         |
-| 2   | HIGH     | …           | …       | Debatable      | …         |
+| 1   | HIGH     | …           | …       | Debatable      | …         |
+| 2   | CRITICAL | …           | …       | Actionable     | …         |
+
+Dismissed: <#, severity, file/line> — <rationale>
 
 Ask the user to confirm or override any **Debatable** or **Dismiss** entries before proceeding to Step 4.
 

@@ -343,6 +343,7 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
         installDeps: "no",
         squashCommits: 1,
         baselineCheck: "yes",
+        integrationCheck: "yes",
         resumeCoderSession: 0,
         timeouts: { coder: -1, worker: 5 },
       },
@@ -353,12 +354,13 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
     (err) =>
       err instanceof ConfigError &&
       [
-        /"afk\.fixFindings" is "critical-high" \(expected critical, high, medium, none\)/,
+        /"afk\.fixFindings" is "critical-high" \(expected actionable, critical, high, medium, none\)/,
         /"afk\.PRDAudit" is true \(expected off, report, fix\)/,
         /"afk\.maxParallel" must be a positive integer/,
         /"afk\.installDeps" must be true or false/,
         /"afk\.squashCommits" must be true or false/,
         /"afk\.baselineCheck" must be true or false/,
+        /"afk\.integrationCheck" must be true or false/,
         /"afk\.resumeCoderSession" must be true or false/,
         /"afk\.timeouts\.coder" must be a positive number of minutes/,
         /unknown key "afk\.timeouts\.worker"/,
@@ -395,11 +397,12 @@ test("loadConfig: settings merge per key, the repo's over the user's, timeouts o
 
 test("resolveSettings: defaults, then config.json, then flags — and a flag is credited", () => {
   const defaults = resolveSettings({});
-  assert.equal(defaults.fixFindings, "high");
+  assert.equal(defaults.fixFindings, "actionable", "every Actionable finding is fixed unless told otherwise");
   assert.equal(defaults.PRDAudit, "fix");
   assert.equal(defaults.installDeps, true);
   assert.equal(defaults.squashCommits, false, "squashing rewrites history, so it is opt-in");
   assert.equal(defaults.baselineCheck, true, "the baseline runs unless turned off");
+  assert.equal(defaults.integrationCheck, true, "the integration check runs unless turned off");
   assert.equal(defaults.resumeCoderSession, false, "session resume is opt-in until measured");
   assert.equal(defaults.maxParallel, null);
   assert.deepEqual(defaults.timeouts, { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 });
@@ -421,6 +424,7 @@ test("resolveSettings: defaults, then config.json, then flags — and a flag is 
 
 test("validateFlags: a bad flag names the flag the user typed", () => {
   assert.deepEqual(validateFlags({ fixFindings: "high" }), []);
+  assert.deepEqual(validateFlags({ fixFindings: "actionable" }), []);
   assert.match(validateFlags({ fixFindings: "severe" })[0], /^--fix-findings is "severe"/);
   assert.match(validateFlags({ fixFindings: "critical-medium" }, { fixFindings: "--promote" })[0], /^--promote is "critical-medium"/);
   assert.match(validateFlags({ timeouts: { coder: Number.NaN } })[0], /^--coder-timeout must be a positive number/);

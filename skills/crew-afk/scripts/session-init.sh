@@ -14,7 +14,7 @@ set -euo pipefail
 # names, still accepted from a hand run.
 FEATURE_SLUG_ARG=""
 PRD_AUDIT_OPT="fix"
-FIX_FINDINGS_OPT="high"
+FIX_FINDINGS_OPT="actionable"
 REMAINING_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,11 +35,11 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --fix-findings|--promote)
-      FIX_FINDINGS_OPT="${2:?$1 requires critical, high, medium or none}"
+      FIX_FINDINGS_OPT="${2:?$1 requires actionable, critical, high, medium or none}"
       [ "$FIX_FINDINGS_OPT" = "critical-high" ] && FIX_FINDINGS_OPT="high"
       case "$FIX_FINDINGS_OPT" in
-        critical|high|medium|none) ;;
-        *) echo "ERROR: $1 must be 'critical', 'high', 'medium' or 'none' (got '$FIX_FINDINGS_OPT')" >&2; exit 1 ;;
+        actionable|critical|high|medium|none) ;;
+        *) echo "ERROR: $1 must be 'actionable', 'critical', 'high', 'medium' or 'none' (got '$FIX_FINDINGS_OPT')" >&2; exit 1 ;;
       esac
       shift 2
       ;;

@@ -9,7 +9,8 @@ import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { findingsAtOrAbove, parseReviewReport } from "../report.mjs";
+import { parseReviewReport, severityNames } from "../report.mjs";
+import { promotedAs, selectPromotable } from "./findings-triage.mjs";
 import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
 
 /** A path that only tests: a test/spec file by name, or anything under a test or fixture dir. */
@@ -133,7 +134,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
-  return { completed: true, reportFile, parsed };
+  return { completed: true, reportFile, parsed, written: sidecar };
 }
 
 export async function promote(ctx, worker, review, outcome) {
@@ -148,10 +149,28 @@ export async function promote(ctx, worker, review, outcome) {
   if (!eligible) return; // source-guarded: the depth bound
 
   const findings = review.parsed.findings ?? [];
-  const promotable = findingsAtOrAbove(findings, sprint.fixFindings);
+  // Under `actionable` this is crew-triage's judgement (a dispatch of its own); a severity level
+  // is a filter. Either way the verdicts land beside each finding in the review report.
+  const selected = await selectPromotable(ctx, {
+    findings,
+    label: issue.slug,
+    scope: `Findings raised against branch ${branch} (issue ${issue.slug}), which has not merged yet.`,
+    ref: branch,
+    dir: dispatchIssueDir(sprint.dispatchDir, issue),
+    dispatchSlug: `${dispatchStem(issue)}-findings`,
+    round: worker.attempt,
+    ledgerSlug: issue.slug,
+    reportFile: review.reportFile,
+    written: review.written,
+  });
+  const { promotable } = selected;
   if (!promotable.length) {
-    const found = [...new Set(findings.map((f) => f.severity))].join(", ");
-    const why = found ? `findings (${found}) are below the threshold (${eligible[1]})` : "no findings";
+    let why = "no findings";
+    if (findings.length && selected.rule === "actionable") why = `none of the ${findings.length} finding(s) is Actionable`;
+    else if (findings.length) {
+      const found = [...new Set(findings.map((f) => f.severity))].join(", ");
+      why = `findings (${found}) are below the threshold (${selected.fallback ? severityNames(selected.rule) : eligible[1]})`;
+    }
     ctx.log(`slug=${issue.slug} round=${worker.attempt} promote: none — ${why}`);
     return;
   }
@@ -170,6 +189,8 @@ export async function promote(ctx, worker, review, outcome) {
     "--title", `Fix review findings: ${issue.slug}`,
     "--report", review.reportFile,
     "--criteria-file", criteriaPath,
+    // Names what was promoted: a verdict, or — when triage failed — the severities of the fallback rule.
+    ...(promotedAs(sprint.fixFindings, selected) ? ["--severities", promotedAs(sprint.fixFindings, selected)] : []),
   ], { env: sprint.childEnv() });
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${defer.stdout.trim()}`);
   outcome.promoted = promotable.length;

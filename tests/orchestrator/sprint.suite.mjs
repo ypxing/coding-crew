@@ -138,9 +138,15 @@ function addIssue(root, name, { status = "ready-for-agent", body = "", blockedBy
 // The baseline (preflight.mjs) runs the checks once more before any dispatch; the per-issue
 // tests below count those calls, so the helpers leave it out unless a test asks for it.
 const NO_BASELINE = ["--no-baseline"];
+// Likewise the integration check (at each drain, on the merged feature branch) is one more set of
+// check runs; the helpers leave it out unless a test asks for it.
+const NO_INTEGRATION = ["--no-integration-check"];
+// A per-branch review dispatch: the feature review (slug `feature`, once at the first drain) is
+// the same agent, counted by the feature-review tests alone.
+const BRANCH_REVIEW = /^SPAWN .*--agent crew-reviewer(?!.* --slug feature( |$))/;
 
-function runSprint(root, extra = [], env = {}, { baseline = false } = {}) {
-  return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...extra], {
+function runSprint(root, extra = [], env = {}, { baseline = false, integration = false } = {}) {
+  return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...(integration ? [] : NO_INTEGRATION), ...extra], {
     cwd: root,
     env: {
       ...process.env,
@@ -550,7 +556,7 @@ test("a review that ended without a verdict is retried once in the same round", 
   assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
   assert.equal(s.rounds, 1);
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 2);
+  assert.equal(lines.filter((l) => BRANCH_REVIEW.test(l)).length, 2);
   const log = traceLog(root);
   assert.match(log, /\[REVIEW-RETRY\] slug=alpha round=1 — no report\.json/);
   assert.equal((log.match(/step=verify/g) ?? []).length, 1);
@@ -563,7 +569,7 @@ test("a timed-out review is not retried in the same round", () => {
   fake(root, "alpha.review-sleep", "3");
   const { r, lines } = commandLines(root, ["--max-rounds", "1", "--reviewer-timeout", "0.02"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 1);
+  assert.equal(lines.filter((l) => BRANCH_REVIEW.test(l)).length, 1);
   assert.doesNotMatch(traceLog(root), /\[REVIEW-RETRY\]/);
   assert.equal(state(root).retention.alpha.reason, "review-not-run — review dispatch timed out");
 });
@@ -615,8 +621,8 @@ test("every agent dispatch's cost is recorded, not only the coder's", () => {
   fake(root, "alpha.review-once", "1");
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  // One coder and two reviewer dispatches.
-  assert.equal(lines.filter((l) => /^RUN .*state\.sh.* dispatch-cost /.test(l)).length, 3);
+  // One coder, two reviewer dispatches, and the feature review at the drain.
+  assert.equal(lines.filter((l) => /^RUN .*state\.sh.* dispatch-cost /.test(l)).length, 4);
 });
 
 test("a merge-failed retry skips the worker, verify, and review, and succeeds on a retried merge", () => {
@@ -633,7 +639,7 @@ test("a merge-failed retry skips the worker, verify, and review, and succeeds on
   assert.deepEqual(s.merged_branches ?? [], []);
   assert.deepEqual(s.completed_slugs ?? [], []);
   assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
-  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 1);
+  assert.equal(round1.lines.filter((l) => BRANCH_REVIEW.test(l)).length, 1);
   assert.equal(round1.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true);
   // Same mechanism finishPartial already uses for every other partial reason: the
@@ -652,7 +658,7 @@ test("a merge-failed retry skips the worker, verify, and review, and succeeds on
   assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
   // No worker, verify, or review ran in round 2 — only the merge (and then close) retried.
   assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 0);
-  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 0);
+  assert.equal(round2.lines.filter((l) => BRANCH_REVIEW.test(l)).length, 0);
   assert.equal(round2.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
   assert.equal(round2.lines.filter((l) => /merge-branches\.sh /.test(l)).length, 1);
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=merge-failed/);
@@ -689,7 +695,7 @@ test("a merge conflict is retried through the coder, resolved, re-verified, re-r
 
   // Three coder runs (two issues, plus the resolution), and verify + review re-ran on it.
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 3);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 3);
+  assert.equal(lines.filter((l) => BRANCH_REVIEW.test(l)).length, 3);
   assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 3);
 });
 
@@ -790,7 +796,7 @@ test("a close-refused retry skips the worker, verify, and review, no-ops the alr
   assert.deepEqual(s.completed_slugs ?? [], []);
   assert.match(traceLog(root), /\[MERGE\] branch=crew\/demo\/alpha success=true/);
   assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
-  assert.equal(round1.lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 1);
+  assert.equal(round1.lines.filter((l) => BRANCH_REVIEW.test(l)).length, 1);
   assert.equal(round1.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true, "close was refused, so the issue stays open");
   assert.match(
@@ -808,7 +814,7 @@ test("a close-refused retry skips the worker, verify, and review, no-ops the alr
   // branches.sh's own already-merged short-circuit is what makes that safe, not new
   // pipeline logic — and reported success with no action before close retried.
   assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 0);
-  assert.equal(round2.lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 0);
+  assert.equal(round2.lines.filter((l) => BRANCH_REVIEW.test(l)).length, 0);
   assert.equal(round2.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
   assert.match(round2.r.stderr, /already-merged/);
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=close-refused/);
@@ -844,7 +850,7 @@ test("an ac receipt that can't be written retries review without the coder, bloc
   assert.deepEqual(s.blocked_slugs, ["alpha"]);
   assert.match(s.retention?.alpha?.reason ?? "", /retry limit reached .* ac-receipt-failed — ERROR: forced ac receipt failure/);
   assert.equal(count(broken.lines, /^SPAWN .*--agent crew-coder/), 1, "the retry never re-ran the coder");
-  assert.equal(count(broken.lines, /^SPAWN .*--agent crew-reviewer/), 2, "the retry re-ran review before rewriting the receipt");
+  assert.equal(count(broken.lines, BRANCH_REVIEW), 2, "the retry re-ran review before rewriting the receipt");
   assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=ac-receipt-retry/);
   const issue = readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8");
   assert.match(issue, /## Blocked[\s\S]*ERROR: forced ac receipt failure/, "the human sees the real cause");
@@ -856,7 +862,7 @@ test("an ac receipt that can't be written retries review without the coder, bloc
   assert.deepEqual(s.completed_slugs, ["alpha"]);
   assert.deepEqual(s.merged_branches, ["crew/demo/alpha"]);
   assert.equal(count(fixed.lines, /^SPAWN .*--agent crew-coder/), 0, "resumed at verify, not a coder restart");
-  assert.equal(count(fixed.lines, /^SPAWN .*--agent crew-reviewer/), 1);
+  assert.equal(count(fixed.lines, BRANCH_REVIEW), 1);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/done/01-alpha.md")), true);
 });
 
@@ -943,7 +949,7 @@ test("a review fix round that commits nothing blocks without a second review", (
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 2);
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 2);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-reviewer/.test(l)).length, 1, "the unchanged commit is not reviewed again");
+  assert.equal(lines.filter((l) => BRANCH_REVIEW.test(l)).length, 1, "the unchanged commit is not reviewed again");
   assert.match(state(root).retention.alpha.reason, /^blocked — criteria-unmet — the fix round made no commit, so crew\/demo\/alpha is still at [0-9a-f]{12}, already judged unmet: no test covers the criterion$/);
 });
 
@@ -1122,7 +1128,7 @@ test("partial with commits and a passing verify goes to review, and merges on al
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(coderSpawns(lines), 1);
-  assert.ok(lines.some((l) => /^SPAWN .*--agent crew-reviewer/.test(l)), "review ran");
+  assert.ok(lines.some((l) => BRANCH_REVIEW.test(l)), "review ran");
   assert.deepEqual(state(root).merged_branches, ["crew/demo/alpha"]);
 });
 
@@ -1290,7 +1296,7 @@ test("a coder that hits afk.limits.coder.usd is blocked at once, not retried", (
     ].join("\n"),
   );
   chmodSync(join(stub, "claude"), 0o755);
-  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--no-baseline", "--no-commands"], {
+  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--no-baseline", "--no-integration-check", "--no-commands"], {
     cwd: root,
     env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: "", MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
   });
@@ -1553,7 +1559,7 @@ test(".coding-crew/config.json lets the reviewer diverge from the coder's model,
     `expected the coder dispatched with --model sonnet, got:\n${lines.join("\n")}`,
   );
   assert.ok(
-    lines.some((l) => /^SPAWN .*--agent crew-reviewer/.test(l) && / --model opus/.test(l)),
+    lines.some((l) => BRANCH_REVIEW.test(l) && / --model opus/.test(l)),
     `expected the reviewer dispatched with --model opus, got:\n${lines.join("\n")}`,
   );
 });
@@ -1894,14 +1900,19 @@ test("the promotion threshold has one source: fixFindings reaches findingsAtOrAb
     return { root, r };
   };
 
-  // Default: high. The HIGH becomes a Phase 2 fix issue; the threshold is read from
-  // sprint.env (CREW_FIX_FINDINGS), not restated anywhere.
+  // Default: actionable, and with no triage verdict (the fake leaves none) the `high` rule applies.
+  // The HIGH becomes a Phase 2 fix issue; the rule is read from sprint.env (CREW_FIX_FINDINGS),
+  // not restated anywhere. Explicitly `high` it is the same, with no triage dispatch at all.
   const high = sprintWith("HIGH");
   assert.equal(state(high.root).completed_slugs.length, 2, "the HIGH should have run as its own fix issue");
   const criteria = readFileSync(join(high.root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
   assert.match(criteria, /\[HIGH\] Move the trust boundary check before the write/);
-  assert.match(readFileSync(join(high.root, ".scratch/demo/sprint.env"), "utf8"), /CREW_FIX_FINDINGS="high"/);
+  assert.match(readFileSync(join(high.root, ".scratch/demo/sprint.env"), "utf8"), /CREW_FIX_FINDINGS="actionable"/);
   assert.match(traceLog(high.root), /slug=alpha round=\d+ promote: 1 finding\(s\) — HIGH/);
+  const explicit = sprintWith("HIGH", ["--fix-findings", "high"]);
+  assert.equal(state(explicit.root).completed_slugs.length, 2);
+  assert.match(readFileSync(join(explicit.root, ".scratch/demo/sprint.env"), "utf8"), /CREW_FIX_FINDINGS="high"/);
+  assert.doesNotMatch(traceLog(explicit.root), /FINDINGS-TRIAGE|dispatch-findings-triage/, "a severity level dispatches no triage");
 
   // A MEDIUM is reported, never promoted, at the default — left open and attributed.
   const medium = sprintWith("MEDIUM");
@@ -2608,8 +2619,8 @@ test("a gaps issue that could not be created is named in the summary, not only t
 // order. Only a per-issue `DEPS: failed` changes a round's status: it stops that issue.
 
 /** The effects log — one line per subprocess, in order. CREW_VERBOSE puts it on stderr. */
-function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi", baseline = false } = {}) {
-  const r = sh("node", [MAIN, "run", "--platform", platform, "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...extra], {
+function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi", baseline = false, integration = false } = {}) {
+  const r = sh("node", [MAIN, "run", "--platform", platform, "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...(integration ? [] : NO_INTEGRATION), ...extra], {
     cwd: root,
     env: {
       ...process.env,
@@ -2850,7 +2861,7 @@ test("a DEPS: failed outcome blocks the issue at that step, without crashing the
   sh("git", ["-C", root, "add", "package.json"]);
   sh("git", ["-C", root, "commit", "-q", "-m", "add package.json"]);
 
-  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline"], {
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
     cwd: root,
     env: {
       ...process.env,
@@ -3510,7 +3521,8 @@ test("a merge refused by uncommitted changes in the main checkout blocks at once
   const second = commandLines(root);
   assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
   assert.deepEqual(state(root).completed_slugs, ["alpha"]);
-  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0);
+  // Nothing of alpha's is re-dispatched; the merge it resumes at is a first drain's feature review.
+  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-/.test(l) && !/ --slug feature( |$)/.test(l)).length, 0);
   assert.equal(second.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=blocked — main-tree-dirty/);
 });
@@ -3531,8 +3543,634 @@ test("every dispatch is filed in this run's ledger with its slug, role and attem
     ["reviewer", 1, true],
     ["reviewer", 1, true],
     ["reviewer", 2, true],
+    ["reviewer", 1, true], // the feature review, once, at the drain
   ]);
   // The coder's entry keeps the tip it left: the commit verify then checked.
   const verified = JSON.parse(readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json"), "utf8")).commit;
   assert.equal(s.dispatches[0].head, verified);
+});
+
+// ─── the integration check: the merged feature branch, at every drain ─────────────────
+
+/** A `test` target that is red only when alpha's and beta's files are both present — so each
+ * branch is green alone and the merge of the two is not. Committed to the feature branch. */
+function redWhenMerged(root) {
+  writeFileSync(
+    join(root, "Makefile"),
+    "test:\n\t@if [ -f src/alpha.txt ] && [ -f src/beta.txt ]; then echo 'alpha and beta clash' >&2; exit 1; fi\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n",
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red when merged"]);
+}
+
+const integrationRuns = (lines) => lines.filter((l) => /verify-worktree\.sh --dir \S+\/_integration --stem _integration/.test(l)).length;
+
+test("two branches green alone and red merged: the summary reports a failed ## Integration check naming the check", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redWhenMerged(root);
+  // Triage calls it not fixable: this test is about the report, not the fix issue.
+  fake(root, "_integration.triage", triageVerdict("no", "clashing changes", "nothing a coder can do here"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  for (const f of ["alpha", "beta"]) {
+    assert.equal(sh("git", ["-C", root, "cat-file", "-e", `feature/demo:src/${f}.txt`]).code, 0, `${f} passed its own verify and merged`);
+  }
+  assert.match(r.stdout, /## Integration check\s+\*\*Failed\*\* on feature\/demo at [0-9a-f]{12}/);
+  assert.match(r.stdout, /- `test`: fail/);
+  assert.match(r.stdout, /alpha and beta clash/, "the output tail is quoted");
+  assert.equal(integrationRuns(lines), 1);
+  assert.equal(state(root).integration.verdict, "fail");
+  const log = traceLog(root);
+  assert.match(log, /\[STEP\] step=integration branch=feature\/demo/);
+  assert.match(log, /^\S+Z ERROR \[VERIFY-OUTPUT\] step=integration result=fail file=\S+\/_integration\/verify\.out$/m);
+  assert.match(log, /^\S+Z ERROR INTEGRATION: fail — test \(feature\/demo at [0-9a-f]{12}\)$/m);
+  // The throwaway worktree and its branch are gone.
+  assert.equal(sh("git", ["-C", root, "branch", "--list", "crew/demo/_integration"]).stdout.trim(), "");
+  assert.equal(existsSync(join(root, ".scratch/worktrees/crew/demo/_integration")), false);
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/_integration/verify.json")), true);
+});
+
+test("a green merged feature branch is reported passed, and a second drain at the same commit reuses the pass", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const first = commandLines(root, [], { integration: true });
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  assert.match(first.r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12}\./);
+  assert.equal(integrationRuns(first.lines), 1);
+  const tip = sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim();
+  assert.deepEqual({ commit: state(root).integration.commit, verdict: state(root).integration.verdict }, { commit: tip, verdict: "pass" });
+  assert.equal(state(root).baseline, undefined, "its cache is not the baseline's");
+
+  // Drained again with the branch untouched: nothing is re-run.
+  const second = commandLines(root, [], { integration: true });
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  assert.equal(integrationRuns(second.lines), 0);
+  assert.match(second.r.stderr, /INTEGRATION: pass \(cached/);
+  assert.match(second.r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12} \(cached/);
+});
+
+test("a drain with nothing merged runs no integration check", () => {
+  const root = fixtureRepo();
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(integrationRuns(lines), 0);
+  assert.doesNotMatch(r.stdout, /## Integration check/);
+});
+
+test("a red final integration check keeps --open-pr from opening the PR, and the summary says why", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redWhenMerged(root);
+  // Triage calls it not fixable: this test is about the report, not the fix issue.
+  fake(root, "_integration.triage", triageVerdict("no", "clashing changes", "nothing a coder can do here"));
+  const { r, lines } = commandLines(root, ["--open-pr"], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(lines.filter((l) => /open-pr\.sh/.test(l)).length, 0, "nothing was pushed");
+  assert.match(r.stdout, /## Pull Request\s+\*\*Not opened:\*\* the integration check failed on feature\/demo — see ## Integration check above\./);
+});
+
+test("--no-integration-check and integrationCheck: false skip it; --no-baseline alone does not", () => {
+  const off = fixtureRepo();
+  addIssue(off, "01-alpha.md");
+  const flag = commandLines(off, [], {});
+  assert.equal(flag.r.code, 0, `${flag.r.stdout}\n${flag.r.stderr}`);
+  assert.equal(integrationRuns(flag.lines), 0);
+  assert.doesNotMatch(flag.r.stdout, /## Integration check/);
+
+  const configured = fixtureRepo();
+  addIssue(configured, "01-alpha.md");
+  mkdirSync(join(configured, ".coding-crew"), { recursive: true });
+  writeFileSync(join(configured, ".coding-crew/config.json"), JSON.stringify({ afk: { integrationCheck: false } }));
+  sh("git", ["-C", configured, "add", "-A"]);
+  sh("git", ["-C", configured, "commit", "-q", "-m", "config"]);
+  const viaConfig = commandLines(configured, [], { integration: true });
+  assert.equal(viaConfig.r.code, 0, `${viaConfig.r.stdout}\n${viaConfig.r.stderr}`);
+  assert.equal(integrationRuns(viaConfig.lines), 0);
+
+  const noBaseline = fixtureRepo();
+  addIssue(noBaseline, "01-alpha.md");
+  const r = commandLines(noBaseline, ["--no-baseline"], { integration: true });
+  assert.equal(r.r.code, 0, `${r.r.stdout}\n${r.r.stderr}`);
+  assert.equal(integrationRuns(r.lines), 1, "--no-baseline does not turn the integration check off");
+});
+
+test("a baseline check is unchanged by the integration check: same stem, same cache, same stop", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red"]);
+  const { r, lines } = commandLines(root, [], { baseline: true, integration: true });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.equal(integrationRuns(lines), 0, "the run stopped before any drain");
+  assert.equal(state(root).baseline.verdict, "fail");
+  assert.equal(state(root).integration, undefined);
+});
+
+test("plan shows the integration check", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const plan = (extra) => sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo", ...extra], { cwd: root, env: { ...process.env, MAIN_ROOT: root } }).stdout;
+  assert.match(plan([]), /^integration: the checks run on the merged feature branch each time the queue drains/m);
+  assert.match(plan(["--no-integration-check"]), /^integration: disabled \(--no-integration-check\)$/m);
+});
+
+// ─── the feature review: crew-reviewer over the whole feature diff, once, at the first drain ──
+
+const featureReviews = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-reviewer.* --slug feature( |$)/.test(l)).length;
+const featureReviewFile = (findings) =>
+  `## Branch: feature (feature)\n\`\`\`json\n${JSON.stringify({ branch: "feature", slug: "feature", verdict: "all-met", detail: "", findings })}\n\`\`\`\n`;
+const crossIssue = (severity, criterion = "Share one retry helper between alpha and beta") => ({ severity, location: "src/alpha.txt:1", criterion });
+const sprintReport = (root) => {
+  const dir = join(root, ".scratch/demo/reviews");
+  return readdirSync(dir).filter((f) => f.startsWith("sprint-review-")).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
+};
+
+test("the queue's first drain runs one feature review over the whole feature diff, attributed to `feature`", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  const base = sh("git", ["-C", root, "rev-parse", "HEAD"]).stdout.trim();
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(featureReviews(lines), 1);
+  // The prompt: the whole diff from the base commit the sprint state recorded, and no criteria.
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature/review-prompt.md"), "utf8");
+  assert.ok(prompt.includes(`Gather the diff: git diff ${base}..feature/demo`), prompt);
+  assert.ok(prompt.includes(`Base: ${base}`));
+  assert.match(prompt, /^Feature review: /m);
+  assert.doesNotMatch(prompt, /Acceptance criteria:/);
+  // Its result is a block of the sprint review report, under `feature`.
+  assert.match(sprintReport(root), /^## Branch: feature \(feature\)$/m);
+  assert.match(r.stdout, /## Feature Review\s+The whole feature diff was reviewed once: 0 finding\(s\)/);
+  assert.match(r.stdout, /- feature: all-met \(C:0 H:0 M:0 L:0\)/);
+  assert.match(traceLog(root), /\[STEP\] step=feature-review /);
+});
+
+test("feature findings at or above fixFindings become a Phase 2 fix issue; the rest are counted by remind", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.review", featureReviewFile([crossIssue("HIGH"), crossIssue("LOW", "Name the two retry loops alike")]));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const files = readdirSync(join(root, ".scratch/demo/issues/done"));
+  assert.ok(files.some((f) => /fix-findings-feature\.md$/.test(f)), `the fix issue was implemented in Phase 2: ${files}`);
+  assert.equal(state(root).completed_slugs.length, 2);
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/feature.criteria.md"), "utf8");
+  assert.match(criteria, /\[HIGH\] Share one retry helper between alpha and beta \(src\/alpha\.txt:1\)/);
+  assert.doesNotMatch(criteria, /LOW/);
+  // Not re-run after Phase 2, whose own fix issue was reviewed on its own diff.
+  assert.equal(featureReviews(lines), 1);
+  // The LOW is below the threshold: still open, so remind counts it (the HIGH is covered by the fix issue).
+  const remind = sh("bash", [join(SCRIPTS, "promote-findings.sh"), "remind", "--feature-slug", "demo"], {
+    cwd: root,
+    env: { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") },
+  });
+  assert.match(remind.stdout, /^FINDINGS: open=1 \(LOW=1\)$/m);
+});
+
+test("a feature review with nothing at the threshold queues nothing, and --fix-findings none queues nothing at all", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.review", featureReviewFile([crossIssue("MEDIUM")]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  assert.match(r.stdout, /1 finding\(s\) \(see /);
+
+  const none = fixtureRepo();
+  addIssue(none, "01-alpha.md");
+  fake(none, "feature.review", featureReviewFile([crossIssue("CRITICAL")]));
+  const off = commandLines(none, ["--fix-findings", "none"]);
+  assert.equal(off.r.code, 0, `${off.r.stdout}\n${off.r.stderr}`);
+  assert.deepEqual(state(none).completed_slugs, ["alpha"]);
+});
+
+test("nothing merged: no feature review", () => {
+  const root = fixtureRepo();
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(featureReviews(lines), 0);
+  assert.doesNotMatch(r.stdout, /## Feature Review/);
+});
+
+test("a red integration check skips the feature review, and the summary says so", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redWhenMerged(root);
+  fake(root, "_integration.triage", triageVerdict("no", "clashing changes", "nothing a coder can do here"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(featureReviews(lines), 0);
+  assert.match(r.stdout, /## Feature Review\s+\*\*Not run:\*\* the integration check is red/);
+});
+
+test("a feature review that never reports is recorded as not run, and does not fail the sprint", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.review", ""); // no report.json: the dispatch left no verdict
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(featureReviews(lines), 1);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  assert.match(r.stdout, /## Feature Review\s+\*\*Not run:\*\* no report\.json/);
+  assert.match(sprintReport(root), /^## Branch: feature \(feature\)$/m);
+  assert.match(r.stdout, /- feature: not-reviewed/);
+  assert.match(traceLog(root), /FEATURE-REVIEW: not run — /);
+});
+
+test("a feature review that times out is not run, not a failure; the reviewer's own timeout applies", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.review-sleep", "3");
+  const { r } = commandLines(root, ["--reviewer-timeout", "0.02"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /## Feature Review\s+\*\*Not run:\*\* review dispatch timed out/);
+});
+
+// ─── a red integration check is triaged, and a fixable one becomes a Phase 2 fix issue ───
+
+/** Red while alpha's and beta's files are both present and no integration fix has landed (a fix
+ * issue's slug starts `fix-integration`, and the fake coder commits src/<slug>.txt). Each branch
+ * is green alone, and the fix branch — which has the fix file — is green too. */
+function redUntilFixed(root) {
+  writeFileSync(
+    join(root, "Makefile"),
+    "test:\n\t@if [ -f src/alpha.txt ] && [ -f src/beta.txt ] && ! ls src/fix-integration-* >/dev/null 2>&1; then echo 'alpha and beta clash' >&2; exit 1; fi\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n",
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red until fixed"]);
+}
+
+const triageSpawns = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-triage/.test(l)).length;
+const integrationFixFiles = (root, dir) => {
+  const d = join(root, ".scratch/demo/issues", dir);
+  return existsSync(d) ? readdirSync(d).filter((f) => /fix-integration/.test(f)) : [];
+};
+
+test("a fixable red integration check becomes a fix issue, implemented in Phase 2, and the next drain passes", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redUntilFixed(root);
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "alpha.txt and beta.txt cannot both exist without src/fix-integration-*"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `the run is not stalled\n${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 1);
+  assert.equal(integrationRuns(lines), 2, "red, then re-checked after the fix");
+  assert.deepEqual(integrationFixFiles(root, "open"), []);
+  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md"]);
+  assert.deepEqual(state(root).completed_slugs.sort(), ["alpha", "beta", "fix-integration-1"]);
+  assert.equal(state(root).integration.verdict, "pass");
+  assert.match(r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12}\./);
+  assert.match(r.stdout, /Fix issue\(s\) from earlier red drain\(s\) this run: \S+03-fix-integration-1\.md/);
+  assert.doesNotMatch(r.stdout, /STALLED/);
+  // The fix issue: a source-guarded issue whose criterion is the checks, with triage's detail and the output tail.
+  const issue = readFileSync(join(root, ".scratch/demo/issues/done/03-fix-integration-1.md"), "utf8");
+  assert.match(issue, /^Source: .*dispatch\/_integration\/verify\.out \(integration\)$/m);
+  assert.match(issue, /^- \[.\] The project's checks pass on the merged feature branch \(`feature\/demo`\)$/m);
+  assert.match(issue, /Triage: clashing changes — alpha\.txt and beta\.txt cannot both exist/);
+  assert.match(issue, /alpha and beta clash/);
+  // Triage was a dispatch of its own, given the failing output, and logged with its verdict.
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/_integration/triage-prompt.md"), "utf8");
+  assert.match(prompt, /merged feature branch/);
+  assert.match(prompt, /alpha and beta clash/);
+  assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} fixable=yes category=clashing changes/);
+  assert.match(traceLog(root), /\[STEP\] slug=_integration round=1 step=dispatch-triage/);
+  assert.ok(state(root).dispatches.some((d) => d.slug === "_integration" && d.role === "triage"), "its cost is in the ledger");
+  // Findings on the fix branch are never promoted again: it carries a Source: line.
+  assert.deepEqual(integrationFixFiles(root, "open"), []);
+});
+
+test("a missing command on a red integration check is not fixable: no triage, no fix issue, the summary says why", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  // The tool is only reached once both branches are merged, so each passes its own verify.
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/dev-commands.json"),
+    JSON.stringify({ test: "if [ -f src/alpha.txt ] && [ -f src/beta.txt ]; then crew-no-such-tool; fi", lint: "make lint", typecheck: "make typecheck", coverage: null, integration: null }),
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "cache"]);
+  fake(root, "commands.response", '{"install": null, "env": null, "credential_target": null}');
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 0);
+  assert.deepEqual([...integrationFixFiles(root, "open"), ...integrationFixFiles(root, "done")], []);
+  assert.match(r.stdout, /## Integration check\s+\*\*Failed\*\*/);
+  assert.match(r.stdout, /\*\*Not fixable by a code change, no fix issue queued:\*\* missing command: crew-no-such-tool is not installed \(test\)\./);
+  assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} verdict=not-fixable — missing command: crew-no-such-tool is not installed \(test\); triage skipped/);
+});
+
+test("triage calling a red integration check not fixable queues nothing, skips the PRD audit, and says so", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redUntilFixed(root);
+  fake(root, "_integration.triage", triageVerdict("no", "service down", "the database the integration tests use is not reachable"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 1);
+  assert.deepEqual([...integrationFixFiles(root, "open"), ...integrationFixFiles(root, "done")], []);
+  assert.match(r.stdout, /\*\*Not fixable by a code change, no fix issue queued:\*\* service down: the database the integration tests use is not reachable\./);
+  assert.match(r.stdout, /The rest of the drain-time checks \(the PRD audit\) were skipped\./);
+  assert.match(r.stdout, /## PRD Audit\s+\*\*Not run:\*\* the integration check failed/);
+  assert.equal(traceLog(root).split("step=prd-audit").length - 1, 0, "the audit never ran");
+  assert.match(traceLog(root), /fixable=no category=service down/);
+});
+
+test("a triage dispatch that fails is treated as fixable once: a fix issue, and a coder attempt on it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redUntilFixed(root);
+  // No _integration.triage fixture: the fake leaves no sidecar, as a dead triage dispatch would.
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 1);
+  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md"]);
+  assert.match(traceLog(root), /fixable=failed→yes category=triage did not complete/);
+  assert.match(r.stdout, /Fix issue\(s\) from earlier red drain\(s\) this run/);
+});
+
+test("the third red drain in a run is reported, ends the run stalled, and creates no third fix issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  // Red only in the integration worktree, whatever any fix does: each fix issue passes its own
+  // verify and merges, and the merged branch is red again.
+  writeFileSync(join(root, "Makefile"), "test:\n\t@case \"$$PWD\" in *_integration) echo 'alpha and beta clash' >&2; exit 1;; esac\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "always red when merged"]);
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "reconcile alpha and beta"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 2, `stalled\n${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 2, "no triage for the capped drain");
+  assert.equal(integrationRuns(lines), 3);
+  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md", "04-fix-integration-2.md"]);
+  assert.deepEqual(integrationFixFiles(root, "open"), []);
+  assert.match(r.stdout, /\*\*Not fixed:\*\* 2 integration fix issues were already implemented this run and the merged feature branch is still red — no further fix issue\./);
+  assert.match(r.stdout, /STALLED/);
+  assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} verdict=limit/);
+});
+
+test("a fix issue whose coder blocks leaves the same commit red: no second triage, no second fix issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redUntilFixed(root);
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "reconcile alpha and beta"));
+  fake(root, "fix-integration-1.exit", "1");
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 1);
+  assert.deepEqual(integrationFixFiles(root, "open"), ["03-fix-integration-1.md"]);
+  assert.match(r.stdout, /\*\*Fix issue \S+03-fix-integration-1\.md was queued for this commit and has not landed\*\*/);
+});
+
+test("github: a fixable red integration check creates the fix issue in the milestone, ready-for-agent, and implements it", () => {
+  const root = githubFixtureRepo();
+  const GH_BETA = { ...GH_ALPHA, number: 2, title: "beta", body: "# beta\n\n## Acceptance criteria\n\n- [x] beta exists\n" };
+  const { stub, issuesFile } = stubGh(root, [GH_ALPHA, GH_BETA]);
+  redUntilFixed(root);
+  // The stub's own files are untracked; keep the tree clean for the merge gate.
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "reconcile alpha and beta"));
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_GITHUB_TRACKER_CLI: join(REPO, "orchestrator/lib/trackers/github.mjs"),
+      GH_LIST_LAG_MS: "3000",
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const fix = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => /^Fix integration check: demo \(at [0-9a-f]{12}\)$/.test(i.title));
+  assert.ok(fix, `the integration fix issue was never created\n${traceLog(root)}`);
+  assert.match(fix.body, /^Source: .*verify\.out \(integration\)$/m);
+  assert.match(fix.body, /^- \[ \] The project's checks pass on the merged feature branch/m);
+  assert.ok(fix.labels.some((l) => l.name === "ready-for-agent" || l.name === "awaiting-merge"));
+  assert.ok(fix.labels.some((l) => l.name === "awaiting-merge"), `the fix issue was never implemented\n${traceLog(root)}`);
+  assert.match(traceLog(root), /fix issue\(s\) listed after \d+ poll/);
+  assert.match(r.stdout, /## Integration check\s+Passed/);
+  assert.doesNotMatch(r.stdout, /Fix issues not implemented/);
+});
+
+// ─── fixFindings actionable (the default): crew-triage judges each finding, whatever its severity ──
+
+const reviewOf = (findings, slug = "alpha") =>
+  `## Branch: crew/demo/${slug}\n\`\`\`json\n${JSON.stringify({ branch: `crew/demo/${slug}`, slug, verdict: "all-met", detail: "", findings })}\n\`\`\`\n`;
+const findingVerdicts = (list) => ["```json", JSON.stringify({ findings: list.map((f, index) => ({ index, ...f })) }), "```"].join("\n");
+const findingsTriageSpawns = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-triage.* --slug \S*-findings( |$)/.test(l)).length;
+const remindOf = (root) =>
+  sh("bash", [join(SCRIPTS, "promote-findings.sh"), "remind", "--feature-slug", "demo"], {
+    cwd: root,
+    env: { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") },
+  }).stdout;
+const retryHigh = { severity: "HIGH", location: "src/alpha.txt:1", criterion: "Redesign the retry contract" };
+const retryLow = { severity: "LOW", location: "src/alpha.txt:2", criterion: "Name the retry constant" };
+
+test("actionable: an Actionable LOW is fixed in Phase 2, a Debatable HIGH is not, and the verdicts are in the report", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh, retryLow]));
+  fake(
+    root,
+    "alpha-findings.triage",
+    findingVerdicts([
+      { verdict: "debatable", rationale: "the fix changes the public retry contract" },
+      { verdict: "actionable", rationale: "one local rename" },
+    ]),
+  );
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(state(root).completed_slugs.length, 2, "the LOW ran as a Phase 2 fix issue");
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
+  assert.match(criteria, /\[LOW\] Name the retry constant/);
+  assert.doesNotMatch(criteria, /HIGH/, "a Debatable HIGH is left for a human");
+  // A dispatch of its own, to crew-triage, over the whole review's findings; none for the fix issue.
+  assert.equal(findingsTriageSpawns(lines), 1);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/findings-triage-prompt.md"), "utf8");
+  assert.match(prompt, /^Findings mode: /m);
+  assert.match(prompt, /^0 — HIGH — src\/alpha\.txt:1 — Redesign the retry contract$/m);
+  assert.match(prompt, /^1 — LOW — src\/alpha\.txt:2 — Name the retry constant$/m);
+  assert.match(traceLog(root), /FINDINGS-TRIAGE: alpha: 1 actionable, 1 debatable, 0 dismissed/);
+  assert.ok(state(root).dispatches.some((d) => d.slug === "alpha" && d.role === "triage"), "its cost is in the ledger");
+  // Each finding carries its verdict and rationale in the review report.
+  const report = sprintReport(root);
+  assert.match(report, /"verdict":"debatable","rationale":"the fix changes the public retry contract"/);
+  assert.match(report, /"verdict":"actionable","rationale":"one local rename"/);
+  assert.match(report, /^- crew\/demo\/alpha: actionable → /m);
+  // remind: the promoted Actionable is handled; the Debatable leads what is left.
+  const remind = remindOf(root);
+  assert.match(remind, /^FINDINGS: open=1 \(HIGH=1\)$/m);
+  assert.match(remind, /^DEBATABLE: 1 \(decide these first\)$/m);
+  assert.match(remind, /^debatable: crew\/demo\/alpha \[HIGH\] src\/alpha\.txt:1 — Redesign the retry contract — why: the fix changes the public retry contract$/m);
+  assert.ok(remind.indexOf("DEBATABLE:") < remind.indexOf("report:"), "Debatable leads");
+  assert.match(r.stdout, /1 Debatable — decide these first/);
+});
+
+test("actionable: a Dismissed finding stays open but collapsed, with its rationale", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryLow]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "dismiss", rationale: "already guarded two lines above" }]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"], "nothing to fix");
+  const remind = remindOf(root);
+  assert.match(remind, /^DISMISSED: 1 /m);
+  assert.match(remind, /^dismissed: crew\/demo\/alpha \[LOW\] src\/alpha\.txt:2 — Name the retry constant — why: already guarded two lines above$/m);
+  assert.doesNotMatch(remind, /^DEBATABLE:/m);
+});
+
+test("actionable: a finding that contradicts an ADR, or whose fix touches a protected path, is Debatable whatever triage says", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(
+    root,
+    "alpha.review",
+    reviewOf([
+      { severity: "HIGH", location: "src/alpha.txt:1", criterion: "Replace the tracker abstraction with direct gh calls" },
+      { severity: "MEDIUM", location: ".github/workflows/ci.yml:12", criterion: "Pin the action to a commit" },
+      { severity: "LOW", location: "src/alpha.txt:3", criterion: "Name the retry constant" },
+    ]),
+  );
+  fake(
+    root,
+    "alpha-findings.triage",
+    findingVerdicts([
+      { verdict: "actionable", rationale: "simple", adr: true },
+      { verdict: "actionable", rationale: "one line" },
+      { verdict: "actionable", rationale: "one local rename" },
+    ]),
+  );
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
+  assert.doesNotMatch(criteria, /tracker abstraction|Pin the action/, "neither forced-Debatable finding is promoted");
+  assert.match(criteria, /\[LOW\] Name the retry constant/);
+  const report = sprintReport(root);
+  assert.match(report, /"rationale":"simple \[forced Debatable: contradicts a documented decision \(ADR \/ CONTEXT\.md\)\]"/);
+  assert.match(report, /"rationale":"one line \[forced Debatable: its fix touches a protected path/);
+  assert.match(remindOf(root), /^DEBATABLE: 2 /m);
+});
+
+test("actionable: the feature review's findings are triaged and promoted the same way", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.review", featureReviewFile([crossIssue("LOW", "Name the two retry loops alike"), crossIssue("HIGH", "Merge the retry helpers into a new public module")]));
+  fake(
+    root,
+    "feature-findings.triage",
+    findingVerdicts([
+      { verdict: "actionable", rationale: "a local rename" },
+      { verdict: "debatable", rationale: "adds a public module" },
+    ]),
+  );
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(findingsTriageSpawns(lines), 1);
+  const files = readdirSync(join(root, ".scratch/demo/issues/done"));
+  assert.ok(files.some((f) => /fix-findings-feature\.md$/.test(f)), `the feature fix issue ran in Phase 2: ${files}`);
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/feature.criteria.md"), "utf8");
+  assert.match(criteria, /\[LOW\] Name the two retry loops alike/);
+  assert.doesNotMatch(criteria, /public module/);
+  assert.match(sprintReport(root), /"verdict":"debatable","rationale":"adds a public module"/);
+  assert.match(r.stdout, /1 Actionable went to Phase 2/);
+  assert.match(remindOf(root), /^DEBATABLE: 1 /m);
+});
+
+test("actionable: a triage that leaves no usable verdict falls back to the high rule, and the summary says so", () => {
+  // No fixture, a verdict file that does not parse, and one that leaves a finding unjudged.
+  const cases = [
+    ["no verdict file", null],
+    ["not json", "I could not decide."],
+    ["a finding left unjudged", findingVerdicts([{ verdict: "actionable", rationale: "x" }])],
+  ];
+  for (const [what, body] of cases) {
+    const root = fixtureRepo();
+    addIssue(root, "01-alpha.md");
+    fake(root, "alpha.review", reviewOf([retryHigh, retryLow]));
+    if (body) fake(root, "alpha-findings.triage", body);
+    const { r } = commandLines(root);
+    assert.equal(r.code, 0, `${what}: ${r.stdout}\n${r.stderr}`);
+    assert.equal(state(root).completed_slugs.length, 2, `${what}: the HIGH was promoted by the high rule`);
+    const criteria = readFileSync(join(root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
+    assert.match(criteria, /\[HIGH\]/, what);
+    assert.doesNotMatch(criteria, /LOW/, what);
+    assert.match(traceLog(root), /FINDINGS-TRIAGE: alpha: no usable verdict — .*; the high rule applies/, what);
+    assert.match(r.stdout, /## Findings Triage\s+\*\*Triage left no usable verdict, so the `high` rule applied\*\*/, what);
+    assert.match(r.stdout, /- alpha: /, what);
+    // What it promoted is recorded as severities, so the HIGH is not read as an unjudged open finding.
+    assert.match(sprintReport(root), /^- crew\/demo\/alpha: CRITICAL, HIGH → /m, what);
+    assert.match(remindOf(root), /^FINDINGS: open=1 \(LOW=1\)$/m, what);
+  }
+});
+
+test("actionable: a feature review whose triage fails falls back to the high rule too", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.review", featureReviewFile([crossIssue("HIGH"), crossIssue("LOW", "Name the two retry loops alike")]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/feature.criteria.md"), "utf8");
+  assert.match(criteria, /\[HIGH\]/);
+  assert.doesNotMatch(criteria, /LOW/);
+  assert.match(r.stdout, /## Findings Triage[\s\S]*- feature: /);
+});
+
+test("actionable: findings on a fix issue's own branch are never promoted, and never triaged", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryLow]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "actionable", rationale: "one local rename" }]));
+  fake(root, "fix-findings-alpha.review", reviewOf([retryLow, retryHigh], "fix-findings-alpha"));
+  fake(
+    root,
+    "fix-findings-alpha-findings.triage",
+    findingVerdicts([
+      { verdict: "actionable", rationale: "x" },
+      { verdict: "actionable", rationale: "y" },
+    ]),
+  );
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(state(root).completed_slugs.length, 2, "one fix issue, and no fix of the fix");
+  assert.equal(findingsTriageSpawns(lines), 1, "the fix branch's findings are report-only: nothing to judge");
+  assert.match(traceLog(root), /slug=fix-findings-alpha round=\d+ guard: skip — source-guarded/);
+});
+
+test("a severity level triages nothing: --fix-findings high promotes by severity with no crew-triage dispatch", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh, retryLow]));
+  const { r, lines } = commandLines(root, ["--fix-findings", "high"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(findingsTriageSpawns(lines), 0);
+  assert.equal(lines.filter((l) => /--agent crew-triage/.test(l)).length, 0);
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
+  assert.match(criteria, /\[HIGH\]/);
+  assert.doesNotMatch(criteria, /LOW/);
+  assert.match(sprintReport(root), /^- crew\/demo\/alpha: CRITICAL, HIGH → /m);
+  assert.doesNotMatch(r.stdout, /## Findings Triage/);
+});
+
+test("actionable: a review with no findings dispatches no triage", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(findingsTriageSpawns(lines), 0);
+  assert.doesNotMatch(r.stdout, /## Findings Triage/);
 });

@@ -415,7 +415,7 @@ flag overrides each for one run:
 
 | Setting | Default | Flag | What it does |
 | --- | --- | --- | --- |
-| `fixFindings` | `high` | `--fix-findings` | Lowest review severity fixed automatically: `critical`, `high`, `medium` or `none` |
+| `fixFindings` | `actionable` | `--fix-findings` | What review findings are fixed automatically: `actionable` (every finding the triage agent judges Actionable, whatever its severity); or the lowest severity — `critical`, `high`, `medium`; or `none` |
 | `PRDAudit` | `fix` | `--prd-audit` | `off`; `report` (audit, leave it for you); `fix` (also queue missing requirements) |
 | `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` sets every non-coder role | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
 | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
@@ -423,11 +423,12 @@ flag overrides each for one run:
 | `squashCommits` | `false` | `--squash` (`--no-squash` turns it off) | Squash the sprint's commits into one at the end. Each issue is merged as its own commit either way |
 | `openPr` | `false` | `--open-pr` (`--no-open-pr` turns it off) | At the end, push the feature branch and create or update its PR. The PR body closes the issues the sprint merged (under `tracker: github`); a re-run rewrites only crew-afk's own block of the body |
 | `baselineCheck` | `true` | `--no-baseline` | Run the checks once on the feature branch before any dispatch; stop if they fail, since every issue's verify would too |
+| `integrationCheck` | `true` | `--no-integration-check` | Each time the queue drains (after the first pass and after the fix pass), run the checks once on the merged feature branch — two branches that pass alone can fail together. A red result gets an `## Integration check` section in the summary and keeps `openPr` from opening the PR; a pass is cached by commit. `--no-baseline` does not turn it off |
 | `resumeCoderSession` | `false` | `--resume-coder-session` | On a fix round, continue the claude coder session that wrote the branch, if that session is under 100k tokens and the branch hasn't moved |
 | `limits` | off | — | `{ "coder": { "usd": 5 } }`: a dollar cap on one dispatch of that role (claude's `--max-budget-usd`; other runtimes ignore it, with one notice per run). A dispatch that hits it blocks its issue as `limit-exceeded`, never retried |
 
 **Checks that modify files.** A check that leaves the tree modified fails, in the baseline and every
-verify alike. An auto-fixing lint (`make lint` running `--write`) can stay configured: run it once
+verify alike, and in the integration check. An auto-fixing lint (`make lint` running `--write`) can stay configured: run it once
 on the feature branch, commit what it rewrote, and re-run. Only a check that rewrites files on every
 run needs a non-mutating command in `.coding-crew/dev-commands.json`.
 

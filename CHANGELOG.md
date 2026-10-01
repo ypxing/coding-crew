@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.38.0]
+
+### Added
+
+- **crew-afk checks the merged feature branch, not just each branch.** Each branch passing its
+  own checks did not mean they pass together. Every time the issue queue drains, the project's
+  checks now run on the merged feature branch (`_integration`, cached per commit). A red result
+  keeps the PR from opening. Turn it off with `--no-integration-check` or
+  `afk.integrationCheck: false`.
+- **A fixable integration failure becomes a fix issue.** `crew-triage` judges a red integration
+  check. A failure code can fix goes back into the per-issue loop as a Phase 2 fix issue (at
+  most 2 per run); a third red drain ends the run stalled. A failure no code change can fix
+  (a missing command, a service down) is reported, with no fix issue, and skips the rest of
+  that drain's checks.
+- **One review of the whole feature diff.** Per-branch reviews never see how the branches fit
+  together, so `crew-reviewer` now also reviews the full feature diff once, at the first
+  drain. Its findings are triaged and promoted like per-branch ones.
+- **The summary says how to open the PR** when `--open-pr` is off: a `## Next` section with the
+  `gh pr create` command and, under a GitHub tracker, the `Closes #n` lines for its body.
+
+### Changed
+
+- **`fixFindings` defaults to `actionable`.** crew-afk used to auto-fix only CRITICAL and HIGH
+  findings. Now `crew-triage` classifies each finding, and every Actionable one becomes a fix
+  issue whatever its severity; Debatable and Dismissed ones are left for
+  `/crew-address-findings`, which lists Debatable first. If triage fails, the old `high` rule
+  applies and the summary says so. `--fix-findings critical|high|medium|none` still picks a
+  severity threshold instead.
+
 ## [1.37.0]
 
 ### Fixed

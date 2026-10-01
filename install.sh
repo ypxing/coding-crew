@@ -448,8 +448,26 @@ install_agent() {
     if [[ -f "$candidate" ]]; then protocol_file="$candidate"; break; fi
   done
 
+  # emit_protocol <platform> — the protocol file, each `{{FRAGMENT:<key>}}` line replaced by
+  # skills/_shared/fragments/<platform>/<key>.md, else .../common/<key>.md: the same files
+  # render-skill.sh inlines into a skill, so an agent and a skill can share one text.
+  emit_protocol() {
+    local plat="$1" line key frag
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" =~ ^[[:space:]]*\{\{FRAGMENT:([A-Za-z0-9_-]+)\}\}[[:space:]]*$ ]]; then
+        key="${BASH_REMATCH[1]}"
+        frag="$SCRIPT_DIR/skills/_shared/fragments/$plat/$key.md"
+        [[ -f "$frag" ]] || frag="$SCRIPT_DIR/skills/_shared/fragments/common/$key.md"
+        [[ -f "$frag" ]] || { echo "Error: $protocol_file needs fragment '$key' for platform '$plat' (skills/_shared/fragments/{$plat,common}/$key.md)" >&2; return 1; }
+        printf '%s\n' "$(cat "$frag")"
+      else
+        printf '%s\n' "$line"
+      fi
+    done < "$protocol_file"
+  }
+
   expand_shim() {
-    local src="$1" dest="$2"
+    local src="$1" dest="$2" plat="$3"
     if grep -q '{{PROTOCOL}}' "$src" && [[ -z "$protocol_file" ]]; then
       echo "Error: $src contains {{PROTOCOL}} but no protocol.md or workflow.js found for $agent_name" >&2
       exit 1
@@ -465,7 +483,7 @@ install_agent() {
       {
         while IFS= read -r line; do
           if [[ "$line" == *'{{PROTOCOL}}'* ]]; then
-            cat "$protocol_file"
+            emit_protocol "$plat"
           else
             printf '%s\n' "$line"
           fi
@@ -507,7 +525,7 @@ install_agent() {
       shim_dest=$(adjust_platform_path "$target_platform" "$shim_dest")
       prune_legacy_copilot_path "$target_platform" "$shim_dest_raw"
       resolve_dest "$target_platform" "$shim_dest"
-      expand_shim "$shim_src" "$_DEST_ROOT/$_DEST_REL"
+      expand_shim "$shim_src" "$_DEST_ROOT/$_DEST_REL" "$target_platform"
       prune_replaced_agent_shims "$agent_name" "$target_platform" "$shim_dest_raw"
     fi
   done

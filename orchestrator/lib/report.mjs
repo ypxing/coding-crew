@@ -255,6 +255,8 @@ export function parseRequiresFailures(stdout, files) {
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const VERDICTS = new Set(["all-met", "unmet", "not_run"]);
+/** Findings triage's answer per finding (the shared rubric: skills/_shared/fragments/common/findings-rubric.md). */
+export const FINDING_VERDICTS = ["actionable", "debatable", "dismiss"];
 
 function findingsFromStructured(list) {
   if (!Array.isArray(list)) return [];
@@ -265,6 +267,10 @@ function findingsFromStructured(list) {
       location: f.location ? String(f.location).trim() : "",
       criterion: f.criterion ? String(f.criterion).trim() : "",
       explicit: true,
+      // Written beside the finding once findings triage has judged it (annotateFindings below).
+      ...(FINDING_VERDICTS.includes(String(f.verdict).toLowerCase())
+        ? { verdict: String(f.verdict).toLowerCase(), rationale: f.rationale ? String(f.rationale).trim() : "" }
+        : {}),
     }));
 }
 
@@ -347,6 +353,11 @@ export function findingsAtOrAbove(findings, level) {
   });
 }
 
+/** The severities `level` promotes, as `defer` records them: "CRITICAL, HIGH" for `high`. */
+export function severityNames(level) {
+  return [...new Set(findingsAtOrAbove(SEVERITY_ORDER.map((severity) => ({ severity })), level).map((f) => f.severity))].join(", ");
+}
+
 /**
  * One triage sidecar or fenced-json object, normalised — shared by the sidecar branch and
  * the in-text fenced-json branch below so the two can never drift on field handling.
@@ -388,6 +399,108 @@ export function parseTriageReport(text, sidecar = null) {
       : "no report.json — triage never wrote its verdict file",
     raw,
   };
+}
+
+/** A flag a model wrote as a boolean, or as the word. */
+const isYes = (v) => v === true || ["true", "yes"].includes(String(v).trim().toLowerCase());
+
+/**
+ * Findings triage (crew-triage's findings mode): `{"findings": [{index, verdict, rationale, adr?,
+ * protected?}]}` — one entry per finding, `index` the 0-based position in the prompt's list. Only
+ * the sidecar is read. All-or-nothing: a missing, unknown or duplicate entry makes the whole
+ * answer `ok: false` — the caller falls back to the severity rule, as it does for no sidecar at
+ * all, rather than promoting on a half-read verdict.
+ *
+ * @param {object|null} sidecar  parsed findings-triage.report.json
+ * @param {number} count  how many findings were sent
+ * @returns {{ok: true, verdicts: {verdict, rationale, adr, protected}[]} | {ok: false, detail: string}}
+ */
+export function parseFindingsTriage(sidecar, count) {
+  if (!sidecar) return { ok: false, detail: "no report.json — triage never wrote its verdict file" };
+  if (!Array.isArray(sidecar.findings)) return { ok: false, detail: "the triage report.json has no findings array" };
+  const verdicts = new Array(count).fill(null);
+  for (const e of sidecar.findings) {
+    const i = Number(e?.index);
+    const verdict = String(e?.verdict ?? "").toLowerCase();
+    if (!Number.isInteger(i) || i < 0 || i >= count) return { ok: false, detail: `the triage report.json names finding ${JSON.stringify(e?.index)}, outside 0..${count - 1}` };
+    if (!FINDING_VERDICTS.includes(verdict)) return { ok: false, detail: `the triage report.json gives finding ${i} the verdict ${JSON.stringify(e?.verdict)}` };
+    if (verdicts[i]) return { ok: false, detail: `the triage report.json judges finding ${i} twice` };
+    verdicts[i] = {
+      verdict,
+      rationale: e.rationale ? String(e.rationale).trim() : "",
+      adr: isYes(e.adr),
+      protected: isYes(e.protected),
+    };
+  }
+  const missing = verdicts.findIndex((v) => !v);
+  if (missing >= 0) return { ok: false, detail: `the triage report.json leaves finding ${missing} unjudged` };
+  return { ok: true, verdicts };
+}
+
+/**
+ * Paths no unattended fix may touch: CI config, auth, deploy, secrets. The same list the shared
+ * rubric gives crew-triage and /crew-address-findings; here it is enforced in code, so a triage
+ * verdict of Actionable cannot send a coder at them.
+ */
+const PROTECTED_PATH = [
+  /(^|\/)\.github\/(workflows|actions)\//,
+  /(^|\/)\.gitlab-ci\.ya?ml$/,
+  /(^|\/)Jenkinsfile/,
+  /(^|\/)\.circleci\//,
+  /(^|\/)azure-pipelines\.ya?ml$/,
+  /(^|\/)\.env(\.|$)/,
+  /(^|\/)(auth|authn|authz|authentication|authorization|oauth|security|secrets?|credentials?)([\/._-]|$)/i,
+  /(^|\/)(deploy|deployment|deployments)([\/._-]|$)/i,
+  /(^|\/)(Dockerfile|docker-compose[^/]*\.ya?ml)$/,
+  /(^|\/)(terraform|k8s|helm)\//,
+];
+
+/** The file part of a finding's `location` ("src/a.ts:12" → "src/a.ts"). */
+function locationPath(location) {
+  return String(location ?? "").trim().replace(/:\d+(-\d+)?(:\d+)?$/, "").replace(/^\.\//, "");
+}
+
+/** Whether a finding's `location` names a protected path. */
+export function touchesProtectedPath(location) {
+  const path = locationPath(location);
+  return path !== "" && PROTECTED_PATH.some((re) => re.test(path));
+}
+
+/**
+ * Findings with triage's verdicts applied, the hard rules last: a finding that contradicts an
+ * ADR / CONTEXT.md (triage's `adr` flag), or whose fix touches a protected path (triage's
+ * `protected` flag, or the finding's own location), is Debatable whatever triage said.
+ * Returns the findings with `verdict` and `rationale` written beside them.
+ */
+export function applyFindingVerdicts(findings, verdicts) {
+  return findings.map((f, i) => {
+    const t = verdicts[i];
+    let { verdict, rationale } = t;
+    const forced = [];
+    if (t.adr) forced.push("contradicts a documented decision (ADR / CONTEXT.md)");
+    if (t.protected || touchesProtectedPath(f.location)) forced.push("its fix touches a protected path (CI config, auth, deploy, .env)");
+    if (forced.length && verdict !== "debatable") {
+      verdict = "debatable";
+      rationale = `${rationale ? `${rationale} ` : ""}[forced Debatable: ${forced.join("; ")}]`;
+    }
+    return { ...f, verdict, rationale };
+  });
+}
+
+/**
+ * The review's sidecar object with each finding's verdict and rationale written beside it, in
+ * the order the sidecar lists them. `findings` is the normalised, verdict-bearing list from
+ * applyFindingVerdicts, in the same order findingsFromStructured produced it (it drops entries
+ * with no valid severity, so the sidecar's own list is walked in step).
+ */
+export function annotateFindings(sidecar, findings) {
+  let k = 0;
+  const annotated = (Array.isArray(sidecar.findings) ? sidecar.findings : []).map((f) => {
+    if (!f || !SEVERITIES.includes(String(f.severity).toUpperCase())) return f;
+    const v = findings[k++];
+    return v ? { ...f, verdict: v.verdict, rationale: v.rationale } : f;
+  });
+  return { ...sidecar, findings: annotated };
 }
 
 /**

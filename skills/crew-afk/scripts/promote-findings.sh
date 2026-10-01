@@ -3,7 +3,7 @@ set -euo pipefail
 
 # promote-findings.sh — mechanical half of findings promotion for crew-afk
 #
-# Findings promotion turns CRITICAL/HIGH code-review findings into fix issues that the
+# Findings promotion turns actionable code-review findings into fix issues that the
 # existing sprint loop implements in a second phase. See references/findings-promotion.md
 # for the full policy (severity threshold, per-branch grouping, depth guard, phases).
 #
@@ -14,6 +14,7 @@ set -euo pipefail
 #   guard   — may findings from this issue's branch be promoted, or is it already a fix issue?
 #   defer   — write a parked fix issue (Status: deferred-findings) + annotate the review report
 #   defer-gaps — the same for the PRD audit's ✗ missing requirements: one parked issue
+#   defer-integration — the same for a fixable red integration check on the merged feature branch
 #   flush   — flip every parked fix issue to ready-for-agent (Phase 1 → Phase 2 transition)
 #   list    — list parked fix issues without changing anything
 #   open    — the open findings as JSON (what remind counts)
@@ -95,15 +96,17 @@ DEFERRED_STATUS="deferred-findings"
 READY_STATUS="ready-for-agent"
 
 # --- promotion threshold -----------------------------------------------------
-# The lowest severity fixed automatically: CREW_FIX_FINDINGS (config.json's afk.fixFindings,
-# recorded in sprint.env by session-init.sh), default high. Each promoted branch costs a full
-# coder + verify + review + merge cycle, which is why MEDIUM — no failure scenario required —
-# is opt-in. Nothing unpromoted is dropped: `remind` counts and names it for
+# What is fixed automatically: CREW_FIX_FINDINGS (config.json's afk.fixFindings, recorded in
+# sprint.env by session-init.sh), default actionable — every finding crew-triage judges Actionable,
+# whatever its severity. critical | high | medium name the lowest severity instead. Each promoted
+# branch costs a full coder + verify + review + merge cycle, which is why a severity level below
+# HIGH is opt-in. Nothing unpromoted is dropped: `remind` counts and names it for
 # /crew-address-findings. CREW_PROMOTE is the old name (critical | critical-high).
 fix_findings_level() {
   local level="${CREW_FIX_FINDINGS:-}"
   if [ -z "$level" ]; then
     case "${CREW_PROMOTE:-}" in
+      "") level="actionable" ;;
       critical) level="critical" ;;
       *) level="high" ;;
     esac
@@ -111,8 +114,12 @@ fix_findings_level() {
   echo "$level"
 }
 
+# What `defer` records as promoted: the severities, or `actionable` — the verdict triage wrote
+# beside each finding. The orchestrator passes --severities when triage failed and the high rule
+# applied, so the record always names what really decided.
 promote_severities() {
   case "$(fix_findings_level)" in
+    actionable) echo "actionable" ;;
     critical) echo "CRITICAL" ;;
     medium) echo "CRITICAL, HIGH, MEDIUM" ;;
     none) echo "" ;;
@@ -130,6 +137,8 @@ Usage:
                             [--severities CRITICAL,HIGH] [--blocked-by <issue-number>]
   promote-findings.sh defer-gaps --feature-slug <slug> --report <prd-audit-report>
                             --criteria-file <file>
+  promote-findings.sh defer-integration --feature-slug <slug> --report <integration-verify-output>
+                            --criteria-file <file> [--at <commit>]
   promote-findings.sh flush --feature-slug <slug>
   promote-findings.sh list  --feature-slug <slug>
   promote-findings.sh open  --feature-slug <slug>
@@ -213,7 +222,8 @@ cmd_guard() {
     echo "guard: skip — fixFindings is none"
   else
     # Eligible names the threshold, not what the review found: the branch is promoted only if
-    # a finding at one of these severities exists, which the caller decides from the review.
+    # a finding at one of these severities (or, under `actionable`, one triage judges Actionable)
+    # exists, which the caller decides from the review.
     echo "guard: eligible — threshold: $(promote_severities)"
   fi
 }
@@ -361,7 +371,8 @@ cmd_defer() {
       echo ""
       echo "Auto-promoted to fix issues by crew-afk and implemented later in this same sprint."
       echo "Skip these when triaging: every finding at the listed severities for the listed"
-      echo "branch is already addressed. Findings at other severities still need triage."
+      echo "branch is already addressed — or, where the line says 'actionable', every finding of"
+      echo "that branch whose verdict is actionable. Everything else still needs triage."
       echo ""
     } >> "$report"
   fi
@@ -371,33 +382,25 @@ cmd_defer() {
   echo "defer: $ref"
 }
 
-# --- defer-gaps ----------------------------------------------------------------
-# The PRD audit's ✗ missing requirements → one parked fix issue, flushed into Phase 2 with
-# the review findings. Its `Source:` line is the same depth bound: findings on its branch are
-# report-only. One per feature while it's open — a resumed sprint that audits again must not
-# queue the same gaps twice.
-cmd_defer_gaps() {
-  local slug="" report="" criteria_file=""
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --feature-slug) slug="${2:-}"; shift 2 ;;
-      --report) report="${2:-}"; shift 2 ;;
-      --criteria-file) criteria_file="${2:-}"; shift 2 ;;
-      *) usage ;;
-    esac
-  done
-  [ -n "$slug" ] && [ -n "$report" ] && [ -n "$criteria_file" ] || usage
-  [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to queue)"
-
-  local title="Fix PRD gaps: $slug" ref
-  local context="Auto-queued by crew-afk from the PRD audit's missing requirements. No issue carried
-these, so no review ever checked them. The audit's evidence for each is in the report named in
-\`Source:\`."
+# --- defer-gaps / defer-integration ---------------------------------------------
+# Two fix issues that come from no reviewed branch, each one per feature while open, each flushed
+# into Phase 2 with the review findings. Their `Source:` line is the same depth bound: findings on
+# their branches are report-only.
+#   defer-gaps        — the PRD audit's ✗ missing requirements. A resumed sprint that audits again
+#                       must not queue the same gaps twice.
+#   defer-integration — a drain-time integration check that triage judged fixable: the merged
+#                       feature branch's own checks fail. The caller (loop.mjs) bounds how many a
+#                       run may create; this only refuses a second while one is still open.
+# _defer_feature_issue <command> <feature-slug> <report> <criteria-file> <title> <source-tag>
+#                      <file-suffix> <trace-label> <context> [numbered]
+_defer_feature_issue() {
+  local command="$1" slug="$2" report="$3" criteria_file="$4" title="$5" source_tag="$6"
+  local suffix="$7" label="$8" context="$9" numbered="${10:-}" ref
 
   if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
     local body_file
     body_file="$(mktemp)"
-    printf 'Source: %s (prd-audit)\n\n## Context\n\n%s\n\n## Acceptance criteria\n\n' "$report" "$context" > "$body_file"
+    printf 'Source: %s (%s)\n\n## Context\n\n%s\n\n## Acceptance criteria\n\n' "$report" "$source_tag" "$context" > "$body_file"
     cat "$criteria_file" >> "$body_file"
     if ! ref=$(_github_tracker_cli create-issue --title "$title" --body-file "$body_file" \
         --feature-slug "$slug" --label "$READY_STATUS" --main-root "$MAIN_ROOT"); then
@@ -409,19 +412,31 @@ these, so no review ever checked them. The audit's evidence for each is in the r
     local open_dir existing f
     open_dir=$(issues_open_dir "$slug")
     mkdir -p "$open_dir"
-    for f in "$open_dir"/*-fix-prd-gaps.md; do
+    # A numbered kind (several per feature over time) gets a slug of its own each time: the slug
+    # is the issue's identity in the sprint's bookkeeping, and a reused one would read as the
+    # earlier, finished issue.
+    local pattern="*-$suffix.md" name="$suffix"
+    if [ -n "$numbered" ]; then
+      local k=1
+      for f in "$open_dir"/*-"$suffix"-[0-9]*.md ".scratch/$slug/issues/done"/*-"$suffix"-[0-9]*.md; do
+        [ -f "$f" ] && k=$((k + 1))
+      done
+      pattern="*-$suffix-[0-9]*.md"
+      name="$suffix-$k"
+    fi
+    for f in "$open_dir"/$pattern; do
       [ -f "$f" ] && existing="$f"
     done
     if [ -n "${existing:-}" ]; then
-      echo "defer-gaps: skip — already queued: $existing"
+      echo "$command: skip — already queued: $existing"
       return 0
     fi
-    ref="$open_dir/$(next_issue_number "$slug")-fix-prd-gaps.md"
+    ref="$open_dir/$(next_issue_number "$slug")-$name.md"
     {
       echo "# $title"
       echo ""
       echo "Status: $DEFERRED_STATUS"
-      echo "Source: $report (prd-audit)"
+      echo "Source: $report ($source_tag)"
       echo ""
       echo "## Context"
       echo ""
@@ -433,8 +448,52 @@ these, so no review ever checked them. The audit's evidence for each is in the r
     } > "$ref"
   fi
 
-  _trace PROMOTE "prd-gaps issue=$ref"
-  echo "defer-gaps: $ref"
+  _trace PROMOTE "$label issue=$ref"
+  echo "$command: $ref"
+}
+
+# _feature_issue_args <command> <args...> — the options both subcommands take; sets slug,
+# report and criteria_file in the caller (bash dynamic scope).
+_feature_issue_args() {
+  slug="" report="" criteria_file=""
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --feature-slug) slug="${2:-}"; shift 2 ;;
+      --report) report="${2:-}"; shift 2 ;;
+      --criteria-file) criteria_file="${2:-}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$slug" ] && [ -n "$report" ] && [ -n "$criteria_file" ] || usage
+  [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to queue)"
+}
+
+cmd_defer_gaps() {
+  local slug report criteria_file
+  _feature_issue_args defer-gaps "$@"
+  _defer_feature_issue defer-gaps "$slug" "$report" "$criteria_file" "Fix PRD gaps: $slug" prd-audit \
+    fix-prd-gaps prd-gaps "Auto-queued by crew-afk from the PRD audit's missing requirements. No issue carried
+these, so no review ever checked them. The audit's evidence for each is in the report named in
+\`Source:\`."
+}
+
+cmd_defer_integration() {
+  local slug report criteria_file at=""
+  # --at <commit> names the feature-branch tip that failed: it keeps each fix issue's title (and
+  # so, under github, its slug) unique across the run's drains.
+  local args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --at) at="${2:-}"; shift 2 ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  _feature_issue_args defer-integration "${args[@]}"
+  _defer_feature_issue defer-integration "$slug" "$report" "$criteria_file" \
+    "Fix integration check: $slug${at:+ (at $at)}" integration fix-integration integration "Auto-queued by crew-afk: every branch passed its own checks, but the project's checks fail
+on the merged feature branch, and triage judged the failure fixable by a code change. No review
+saw the branches together. The failing output is in the report named in \`Source:\`." numbered
 }
 
 # --- flush -------------------------------------------------------------------
@@ -576,10 +635,12 @@ cmd_mark_not_run() {
 }
 
 # open_findings_json <rollup-json> <report>... — the one definition of "open": every finding in
-# the rollup minus the (branch, severity) pairs a fix issue already covers. Those are defer's own
-# bash-generated "## Promoted Findings" bullets ("- <branch>: SEV, SEV → <path>"), never the
-# reviewer's free text, so a plain regex capture reads them exactly. Prints a JSON array of
-# {branch, severity, location, criterion}.
+# the rollup minus what a fix issue already covers: the (branch, severity) pairs, and — under
+# `actionable` — a branch's findings that triage judged Actionable (its bullet names `actionable`
+# where the severities go). Those are defer's own bash-generated "## Promoted Findings" bullets
+# ("- <branch>: SEV, SEV → <path>"), never the reviewer's free text, so a plain regex capture reads
+# them exactly. Prints a JSON array of {branch, severity, location, criterion, verdict, rationale};
+# verdict and rationale are "" for a finding triage never judged.
 open_findings_json() {
   local rollup="$1" promoted
   shift
@@ -594,8 +655,10 @@ open_findings_json() {
   jq -n --argjson rollup "$rollup" --argjson promoted "$promoted" '
     ($promoted | map(.branch as $b | .sevs[] as $s | {(($b + " " + $s)): true}) | add // {}) as $pset
     | [$rollup.branches[] | .branch as $b | .findings[]
-       | select(($pset[$b + " " + .severity] // false) | not)
-       | {branch: $b, severity, location: (.location // ""), criterion: (.criterion // "")}]
+       | select((($pset[$b + " " + .severity] // false)
+                 or ((.verdict // "") == "actionable" and ($pset[$b + " actionable"] // false))) | not)
+       | {branch: $b, severity, location: (.location // ""), criterion: (.criterion // ""),
+          verdict: (.verdict // ""), rationale: (.rationale // "")}]
   '
 }
 
@@ -618,11 +681,26 @@ cmd_open() {
   open_findings_json "$(review_rollup "${reports[@]}")" "${reports[@]}"
 }
 
+# verdict_lines <verdict> <HEADING> <note> — open findings (JSON on stdin) with that triage
+# verdict: "HEADING: n (note)" then one "<heading, lowercased>: <branch> [SEV] <location> — <what>
+# — why: <rationale>" line each. Prints nothing when there are none.
+verdict_lines() {
+  local verdict="$1" heading="$2" note="$3" json n
+  json=$(cat)
+  n=$(jq --arg v "$verdict" '[.[] | select(.verdict == $v)] | length' <<< "$json")
+  [ "${n:-0}" -gt 0 ] || return 0
+  echo "$heading: $n ($note)"
+  jq -r --arg v "$verdict" --arg h "$(printf '%s' "$heading" | tr '[:upper:]' '[:lower:]')" '
+    .[] | select(.verdict == $v)
+    | "\($h): \(.branch) [\(.severity)] \(.location) — \(.criterion)\(if .rationale != "" then " — why: " + .rationale else "" end)"
+  ' <<< "$json"
+}
+
 # --- remind ------------------------------------------------------------------
-# Promotion only covers the threshold severities (CRITICAL by default) on Phase 1 branches.
-# Everything else — HIGH when the threshold is CRITICAL-only, MEDIUM/LOW always, plus any
-# severity raised against a Phase 2 fix branch (report-only by the depth bound) — still needs
-# a human. This counts exactly those so the end-of-sprint reminder states a
+# Promotion only covers what the sprint's fixFindings rule selects (every Actionable finding by
+# default) on Phase 1 branches. Everything else — Debatable and Dismissed findings, the severities
+# a severity level leaves out, plus any finding raised against a Phase 2 fix branch (report-only
+# by the depth bound) — still needs a human. This counts exactly those so the end-of-sprint reminder states a
 # real number instead of nudging the user toward an empty queue, or worse, staying silent
 # when CRITICAL findings from a fix branch are sitting unread.
 #
@@ -676,6 +754,12 @@ cmd_remind() {
     echo "FINDINGS: none"
   else
     echo "FINDINGS: open=$total ($breakdown)"
+    # What a human decides first: the findings triage judged Debatable. An Actionable one still
+    # open here was not promoted (its fix issue failed to queue); Dismissed ones are collapsed to
+    # one line each with the reason. Nothing is printed for findings triage never judged.
+    verdict_lines debatable DEBATABLE "decide these first" <<< "$open_json"
+    verdict_lines actionable ACTIONABLE "not promoted" <<< "$open_json"
+    verdict_lines dismiss DISMISSED "triage's rationale, collapsed" <<< "$open_json"
     printf 'report: %s\n' "${reports[@]}"
   fi
 
@@ -710,6 +794,7 @@ case "$COMMAND" in
   guard) cmd_guard "$@" ;;
   defer) cmd_defer "$@" ;;
   defer-gaps) cmd_defer_gaps "$@" ;;
+  defer-integration) cmd_defer_integration "$@" ;;
   flush) cmd_flush "$@" ;;
   list)  cmd_list "$@" ;;
   open) cmd_open "$@" ;;

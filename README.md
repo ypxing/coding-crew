@@ -42,7 +42,14 @@ For a single platform, a per-project install or updates, see [Install options](#
         └── fix ┴──────────┘   same branch, up to 2 tries
     │ all issues done
     ▼
- 🤖 PRD audit + HIGH/CRITICAL review findings → new issues → per-issue loop again (once)
+ 🤖 integration check     your checks, on the merged feature branch
+    │ red + fixable          → a fix issue, back into the per-issue loop (max 2); re-checked
+    │ red + not fixable      → reported, no PR
+    ▼
+ 🤖 full-feature review   one reviewer pass over the whole feature diff (not re-run after the fixes)
+    │
+    ▼
+ 🤖 PRD audit + actionable review findings → new issues → per-issue loop again (once)
     │
     ▼
  🤖 summary                (opens the PR with --open-pr; otherwise says how to)
@@ -60,6 +67,21 @@ What you can rely on:
 - **A failing branch is never merged.** Every branch must pass your project's own checks first.
 - **A separate agent reviews every branch.** Unmet acceptance criteria send it back to the coder;
   other findings never block. They're written to `.scratch/<feature>/reviews/`.
+- **The merged feature is checked as a whole.** Two branches can each pass and still break each
+  other, so once the issues are done your checks run again on the merged feature branch. A red
+  result is reported in the summary, and no PR is opened over it.
+- **The whole feature diff is reviewed once.** A branch's review sees only its own diff, so when the
+  issues are done a reviewer reads everything they merged together, for what only shows across
+  issues (a helper written twice, error handling that differs between modules). Its findings are
+  attributed to `feature` and handled like any others; it is skipped, and the summary says so, when
+  the integration check is red.
+- **Every Actionable finding is fixed; only Debatable ones wait for you.** A separate triage agent
+  judges each review finding Actionable, Debatable or Dismiss, whatever its severity. Every
+  Actionable one — a local, unambiguous fix that changes no public contract — is fixed in the
+  second pass, a LOW included. Debatable ones (a questionable fix, a clash with an ADR, anything
+  touching CI config, auth, deploy or `.env`) are never auto-fixed: `/crew-address-findings` leads
+  with them. If triage fails, findings are fixed by severity (CRITICAL and HIGH) and the summary
+  says so.
 - **The PRD is checked.** Once the issues are merged, the code is audited against the PRD and any
   requirement no issue covered becomes a new issue.
 - **Work is never thrown away.** A retry continues on the same branch, and unfinished work is kept
@@ -73,8 +95,9 @@ What you can rely on:
 ```bash
 /crew-afk --model opus          # coder model: opus | sonnet (default) | haiku | inherit
 /crew-afk --open-pr             # push the feature branch and open/update its PR at the end
-/crew-afk --fix-findings none   # don't auto-fix review findings (default: high)
+/crew-afk --fix-findings none   # don't auto-fix review findings (default: actionable; or critical|high|medium)
 /crew-afk --max-parallel 2      # fewer concurrent coders
+/crew-afk --no-integration-check # skip the checks on the merged feature branch (--no-baseline skips the one before dispatch)
 ```
 
 To keep settings between runs, put them in `.coding-crew/config.json` (per repo) or

@@ -66,3 +66,20 @@ test("review-rollup keeps distinct branches from the same file separate", () => 
   const out = runRollup([f]);
   assert.deepEqual(out.branches.map((b) => b.branch), ["crew/f/a", "crew/f/b"]);
 });
+
+test("review-rollup keeps the feature review's findings under `feature`", () => {
+  const dir = mkdtempSync(join(tmpdir(), "review-rollup-"));
+  const f = join(dir, "sprint-review-1.md");
+  const finding = { severity: "MEDIUM", location: "src/a.js:3", criterion: "Name the two retry loops alike" };
+  writeFileSync(
+    f,
+    [
+      "```json", JSON.stringify({ branch: "crew/f/a", slug: "a", verdict: "all-met", findings: [] }), "```",
+      "## Branch: feature (feature)",
+      "```json", JSON.stringify({ branch: "feature", slug: "feature", verdict: "all-met", findings: [finding] }), "```",
+    ].join("\n"),
+  );
+  const out = runRollup([f]);
+  assert.deepEqual(out.branches.map((b) => b.branch), ["crew/f/a", "feature"]);
+  assert.deepEqual(out.branches[1].findings.map((f) => f.criterion), [finding.criterion]);
+});

@@ -1,6 +1,6 @@
 # Findings promotion (shared policy)
 
-How crew-afk gets CRITICAL code-review findings fixed inside the same sprint, without a
+How crew-afk gets actionable code-review findings fixed inside the same sprint, without a
 human in the loop and without looping forever. This file is the single source of truth for the
 policy; each platform variant of `SKILL.md` only wires it into its own dispatch mechanics.
 
@@ -10,7 +10,7 @@ behave identically.
 ## Why this exists
 
 Per-branch review runs before each merge, and its findings are **advisory** — the branch merges
-regardless. That leaves CRITICAL findings on already-merged code with no route back into the
+regardless. That leaves findings on already-merged code with no route back into the
 sprint: the report sits in `reviews/` until a human runs `/crew-address-findings`. Promotion
 gives those findings a route, using the machinery that already exists (issue → worktree → TDD →
 verify → review → merge) instead of a bespoke fix path.
@@ -18,7 +18,7 @@ verify → review → merge) instead of a bespoke fix path.
 ## Two phases
 
 **Phase 1 — normal sprint.** Unchanged. When a branch's review raises findings at or above the
-promotion threshold, write a *parked* fix issue with `Status: deferred-findings`. The loop's `list`
+promotion rule (below), write a *parked* fix issue with `Status: deferred-findings`. The loop's `list`
 operation selects on `ready-for-agent`, so parked issues are invisible and Phase 1 drains its
 original queue at its normal pace.
 
@@ -35,6 +35,21 @@ nothing after Phase 2 is audited again. While a Phase 1 issue is still open (blo
 the audit does not run at all: that issue's requirements would read as missing. The re-run that
 finishes it audits then.
 
+**A fixable integration failure joins the same flush.** At every drain of the queue the project's
+checks run on the merged feature branch (the integration check), which no per-branch verify saw. A
+red result is triaged by `crew-triage` — a dispatch of its own, never the coder — the same way a
+failed per-branch verify is. Fixable, it becomes one parked fix issue
+(`promote-findings.sh defer-integration`), which the flush sends into Phase 2 beside the findings
+and PRD-gaps fixes; its criterion is "the project's checks pass on the merged feature branch", with
+triage's detail and the failing output's tail. The next drain's check then runs on the fixed branch.
+Not fixable — a missing command (exit 127, no triage at all), a failed dependency install, or
+triage's own verdict — queues nothing: the summary's `## Integration check` section gives the
+reason, and the drain's remaining checks (the PRD audit, if it has not run) are skipped, with the
+summary saying so. A triage dispatch that itself fails counts as fixable, once. Its `Source:` line is
+the same depth bound. At most two integration fix issues are created per run: a third red drain is
+reported and the run ends stalled, with no third fix issue. The same commit red again (its fix
+issue blocked) is not a new drain — it is not re-triaged and gets no second fix issue.
+
 Findings are **not** promoted the moment they are raised. A fix branch running alongside
 still-open Phase 1 issues would edit the same files as its siblings; `merge-branches.sh` aborts
 on conflict, so early promotion manufactures retained branches out of nothing. Waiting until the
@@ -42,17 +57,34 @@ queue is empty removes that class of conflict entirely.
 
 ## Rules
 
-**Severity threshold: config.json's `afk.fixFindings`, default `high`** (`--fix-findings` for one
-run). It names the lowest severity fixed: `critical`, `high` (CRITICAL and HIGH), `medium`
-(adds MEDIUM) or `none`. LOW is never promoted. Unattended promotion has no triage step — it
-cannot dismiss a finding that is technically correct but contradicts a documented architecture
-decision (which `crew-address-findings` Step 1.5 explicitly requires a human to do). That risk
-is worth taking for a CRITICAL or a HIGH: the reviewer protocol requires each to name a concrete
-failure scenario and pass a pre-report gate, and verification and the Phase 2 review still catch
-a bad fix. It is not worth a full worktree + coder + verify + review cycle *by default* for a
-MEDIUM, which needs no failure scenario. The threshold is a fixed severity string printed by
-`promote-findings.sh guard`, so promotion needs no judgment call — the reviewer already assigned
-severity, and the orchestrator never has to remember which severities this sprint takes.
+**What is fixed: config.json's `afk.fixFindings`, default `actionable`** (`--fix-findings` for one
+run).
+
+- `actionable` (the default) fixes every finding `crew-triage` judges **Actionable**, whatever its
+  severity — a LOW included — and no Debatable or Dismissed one, however high its severity. Triage
+  is a dispatch of its own (findings mode, on the `triage` role's runtime and model, capped by
+  `afk.limits.triage`), never the reviewer's self-grade. One dispatch judges a whole review's
+  findings: Actionable (local, unambiguous, no public-contract change), Debatable, or Dismiss, each
+  with a one-line rationale, by the rubric `/crew-address-findings` also renders (one source:
+  `skills/_shared/fragments/common/findings-rubric.md`). Two hard rules are applied by the
+  orchestrator after triage answers, so no verdict overrides them: a finding that contradicts an
+  ADR / `CONTEXT.md`, or whose fix touches a protected path (CI config, auth, deploy, `.env`), is
+  Debatable. The verdict and rationale are written beside each finding in the review report. It
+  applies to the full-feature review's findings the same way.
+- `critical`, `high` (CRITICAL and HIGH), `medium` (adds MEDIUM) fix by severity alone, with no
+  triage dispatch; LOW is never promoted. Unattended, that has no way to dismiss a finding that is
+  technically correct but contradicts a documented decision — the risk the CRITICAL/HIGH bar
+  (the reviewer protocol requires a concrete failure scenario for each) was chosen to carry.
+- `none` fixes nothing.
+
+**A triage that fails falls back to the `high` rule.** A dead dispatch, a timeout, a spent
+`afk.limits.triage` cap, or a verdict file that does not parse (or leaves a finding unjudged)
+means no verdicts for that review: its CRITICAL and HIGH findings are promoted, the rest left
+open, and the summary's `## Findings Triage` section names which review fell back and why. The
+fallback is per review, so one failed triage never blocks the others.
+
+The threshold is a fixed string printed by `promote-findings.sh guard`; the verdicts are facts on
+disk in the review report, so the orchestrator never has to remember them.
 
 Anything below the threshold is paid for on the way out rather than hidden: nothing subtracts an
 unpromoted severity from `remind`, so every such finding is counted, named, and attributed to its
@@ -94,22 +126,26 @@ so the parked set is empty and flush is a no-op — no separate guard needed for
 
 After a sprint with promotion, `sprint-review-<TIMESTAMP>.md` distinguishes three groups:
 
-- **Promoted** — findings at the threshold severities, fixed in Phase 2, listed under the
-  `## Promoted Findings` section that `promote-findings.sh defer` appends
-  (`<branch>: CRITICAL → <issue path>`).
-- **Open, needs human triage** — everything the threshold did not cover on Phase 1 branches:
-  LOW always, and MEDIUM unless `fixFindings` is `medium`.
+- **Promoted** — the findings the rule selected (every Actionable one, or those at the threshold
+  severities), fixed in Phase 2, listed under the `## Promoted Findings` section that
+  `promote-findings.sh defer` appends (`<branch>: actionable → <issue path>` or
+  `<branch>: CRITICAL → <issue path>`).
+- **Open, needs human triage** — everything the rule did not cover on Phase 1 branches: Debatable
+  and Dismissed findings (each carries its verdict and rationale in the report), or under a
+  severity level LOW always, and MEDIUM unless `fixFindings` is `medium`.
 - **New, found reviewing the fixes** — findings of any severity raised against Phase 2 branches,
   report-only via the depth bound.
 
-`crew-address-findings` reads `## Promoted Findings` and skips the promoted (branch, severity)
-pairs, so a later human run starts with a queue of genuinely open findings.
+`crew-address-findings` reads `## Promoted Findings` and skips what it covers — the promoted
+(branch, severity) pairs, and a branch's `actionable`-verdict findings where the line says
+`actionable` — so a later human run starts with a queue of genuinely open findings, led by the
+Debatable ones.
 
 ## End-of-sprint reminder
 
-Promotion is deliberately partial — LOW is never promoted, MEDIUM is not promoted by default,
-and Phase 2 findings are report-only — so a sprint almost always ends with findings a human
-still has to look at. Every
+Promotion is deliberately partial — Debatable and Dismissed findings are never promoted (under a
+severity level, LOW never is and MEDIUM is not by default), and Phase 2 findings are report-only —
+so a sprint can end with findings a human still has to look at. Every
 variant therefore ends by running `promote-findings.sh remind`, which counts the findings **not**
 covered by a `## Promoted Findings` marker (attributing each finding to the `## Branch:` section it
 appears under) and prints either a real count or `FINDINGS: none`.
@@ -124,11 +160,11 @@ dismissed once a human reads them.
 ```bash
 # Which severities does this sprint promote? (CREW_FIX_FINDINGS, set by session-init.sh)
 bash "<skill-dir>/scripts/promote-findings.sh" policy
-# → "promote: CRITICAL" | "promote: CRITICAL, HIGH" | "promote: CRITICAL, HIGH, MEDIUM" | "promote: "
+# → "promote: actionable" | "promote: CRITICAL" | "promote: CRITICAL, HIGH" | "promote: CRITICAL, HIGH, MEDIUM" | "promote: "
 
 # Depth bound: is this branch's issue itself a promoted fix issue?
 bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file>"
-# → "guard: eligible — threshold: CRITICAL, HIGH" | "guard: skip — source-guarded ..."
+# → "guard: eligible — threshold: actionable" | "guard: eligible — threshold: CRITICAL, HIGH" | "guard: skip — source-guarded ..."
 #   | "guard: skip — fixFindings is none"
 
 # Park a fix issue and annotate the report. Criteria file = one "- [ ] <finding>" line per finding.
@@ -136,7 +172,7 @@ bash "<skill-dir>/scripts/promote-findings.sh" defer \
   --feature-slug "$FEATURE_SLUG" --branch "<reviewed-branch>" --slug "<issue-slug>" \
   --title "Fix review findings: <issue title>" \
   --report ".scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md" \
-  --criteria-file "<tmp criteria file>"
+  --criteria-file "<tmp criteria file>" [--severities "actionable" | "CRITICAL, HIGH"]
 # → "defer: .scratch/<slug>/issues/open/<NN>-fix-findings-<issue-slug>.md"
 
 # The PRD audit's missing requirements → one parked fix issue (no audit while one is still open)
@@ -144,6 +180,13 @@ bash "<skill-dir>/scripts/promote-findings.sh" defer-gaps \
   --feature-slug "$FEATURE_SLUG" --report ".scratch/$FEATURE_SLUG/prd-audit.md" \
   --criteria-file "<tmp criteria file>"
 # → "defer-gaps: .scratch/<slug>/issues/open/<NN>-fix-prd-gaps.md" | "defer-gaps: skip — already queued: <path>"
+
+# A fixable red integration check on the merged feature branch → one parked fix issue
+bash "<skill-dir>/scripts/promote-findings.sh" defer-integration \
+  --feature-slug "$FEATURE_SLUG" --report ".scratch/$FEATURE_SLUG/dispatch/_integration/verify.out" \
+  --criteria-file "<tmp criteria file>" --at "<failing commit>"
+# → "defer-integration: .scratch/<slug>/issues/open/<NN>-fix-integration-<k>.md"
+#   | "defer-integration: skip — already queued: <path>"   (one open at a time; the caller caps the run at two)
 
 # Phase 1 → Phase 2
 bash "<skill-dir>/scripts/promote-findings.sh" flush --feature-slug "$FEATURE_SLUG"
@@ -154,7 +197,10 @@ bash "<skill-dir>/scripts/promote-findings.sh" list --feature-slug "$FEATURE_SLU
 
 # End-of-sprint reminder: findings no promotion covered
 bash "<skill-dir>/scripts/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG"
-# → "FINDINGS: open=<N> (HIGH=1, MEDIUM=3, LOW=2)" + one "report: <path>" line each | "FINDINGS: none"
+# → "FINDINGS: open=<N> (HIGH=1, MEDIUM=3, LOW=2)", then — only for findings triage judged —
+#   "DEBATABLE: <n> (...)" + one "debatable: <branch> [SEV] <loc> — <what> — why: <rationale>" line
+#   each (leading), "ACTIONABLE: <n> (not promoted)" likewise, and "DISMISSED: <n> (...)" +
+#   "dismissed: ..." lines; then one "report: <path>" line each | "FINDINGS: none"
 # → plus "REVIEW-GAPS: branches=<N>" + one "gap: <branch> — <reason>" line, when a review
 #   never completed. Printed in addition to the findings line, never instead of it.
 

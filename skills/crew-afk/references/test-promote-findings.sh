@@ -10,6 +10,8 @@
 #   6. flush on a sprint with nothing parked reports FLUSH: none rather than failing
 #   7. remind counts only findings promotion did NOT cover, so the end-of-sprint reminder is honest
 #   8. the promotion threshold follows CREW_FIX_FINDINGS (pinned to critical below; high adds HIGH)
+#   9. under the default (actionable), a promoted branch's Actionable findings are handled whatever
+#      their severity; Debatable and Dismissed ones stay open, and remind leads with Debatable
 
 set -e
 
@@ -18,7 +20,7 @@ PROMOTE="$SCRIPT_DIR/promote-findings.sh"
 # remind reads reviews through review-rollup.mjs, which the lookup below the temp repo can't
 # find: point it at this source tree's copy (an install sets its own).
 export CREW_REVIEW_ROLLUP="${CREW_REVIEW_ROLLUP:-$SCRIPT_DIR/../../../orchestrator/review-rollup.mjs}"
-# Pinned: these cases were written against a CRITICAL-only threshold (the default is high).
+# Pinned: these cases were written against a CRITICAL-only threshold (the default is actionable).
 export CREW_FIX_FINDINGS=critical
 
 # review <header> <SEVERITY>... — one branch's block in the aggregate report's format: its
@@ -200,6 +202,71 @@ CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug bare --branch crew/0
     --title "Fix review findings: y" --report "$BARE" --criteria-file bare-crit.md >/dev/null
 check_contains "bare header still matches its promotion marker" "FINDINGS: open=1 (LOW=1)" \
       "$(CREW_FIX_FINDINGS=high bash "$PROMOTE" remind --feature-slug bare)"
+
+echo
+echo "Test 15: defer-integration parks one source-guarded fix issue for a fixable red integration check"
+mkdir -p .scratch/integ/issues/open .scratch/integ/issues/done
+touch .scratch/integ/issues/done/03-old.md
+INTEG_OUT=.scratch/integ/dispatch/_integration/verify.out
+mkdir -p "$(dirname "$INTEG_OUT")"
+echo "alpha and beta clash" > "$INTEG_OUT"
+printf -- '- [ ] The project'"'"'s checks pass on the merged feature branch\n' > integ-crit.md
+out=$(bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" --criteria-file integ-crit.md)
+check "numbered after the highest existing issue (open + done)" \
+      "defer-integration: .scratch/integ/issues/open/04-fix-integration-1.md" "$out"
+f=.scratch/integ/issues/open/04-fix-integration-1.md
+check_contains "parked, so Phase 1 never sees it" "Status: deferred-findings" "$(cat "$f")"
+check_contains "Source: names the report and the integration kind" "Source: $INTEG_OUT (integration)" "$(cat "$f")"
+check_contains "criteria carried verbatim" "- [ ] The project's checks pass on the merged feature branch" "$(cat "$f")"
+check_contains "guard treats it as a fix issue: never promoted again" "skip — source-guarded" \
+      "$(bash "$PROMOTE" guard --issue "$f")"
+out=$(bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" --criteria-file integ-crit.md)
+check "a second is refused while one is open" "defer-integration: skip — already queued: $f" "$out"
+check_contains "flush sends it into Phase 2" "FLUSH: promoted=1" "$(bash "$PROMOTE" flush --feature-slug integ)"
+check_contains "flushed to ready-for-agent" "Status: ready-for-agent" "$(cat "$f")"
+mv "$f" .scratch/integ/issues/done/
+out=$(bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" --criteria-file integ-crit.md --at abc123)
+check_contains "the second names the tip it was raised at" "# Fix integration check: integ (at abc123)" "$(cat .scratch/integ/issues/open/05-fix-integration-2.md)"
+check "once the first is closed a later red drain can park another with a slug of its own (the caller caps the run)" \
+      "defer-integration: .scratch/integ/issues/open/05-fix-integration-2.md" "$out"
+: > integ-empty.md
+if bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" --criteria-file integ-empty.md >/dev/null 2>&1; then
+    check "an empty criteria file is refused" "refused" "accepted"
+else
+    check "an empty criteria file is refused" "refused" "refused"
+fi
+
+echo
+echo "Test 16: actionable (the default) — verdicts beside each finding; Actionable handled, Debatable leads"
+mkdir -p .scratch/act/issues/open .scratch/act/reviews
+ACT=.scratch/act/reviews/sprint-review-1.md
+cat > "$ACT" <<'EOF'
+## Branch: crew/01-a (01-a)
+
+```json
+{"branch":"crew/01-a","verdict":"all-met","findings":[
+ {"severity":"HIGH","location":"src/api.ts:9","criterion":"Rename the exported helper","verdict":"debatable","rationale":"public contract change"},
+ {"severity":"LOW","location":"src/a.ts:1","criterion":"Name the constant","verdict":"actionable","rationale":"one local line"},
+ {"severity":"MEDIUM","location":"src/b.ts:2","criterion":"Extra guard","verdict":"dismiss","rationale":"already guarded"}]}
+```
+EOF
+printf -- '- [ ] [LOW] Name the constant (src/a.ts:1)\n' > act-crit.md
+printf '# a\n\nStatus: ready-for-agent\n' > .scratch/act/issues/open/01-a.md
+check "the default policy is actionable" "promote: actionable" "$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" policy)"
+check_contains "guard names it" "eligible — threshold: actionable" \
+      "$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" guard --issue .scratch/act/issues/open/01-a.md)"
+env -u CREW_FIX_FINDINGS bash "$PROMOTE" defer --feature-slug act --branch crew/01-a --slug a \
+    --title "Fix review findings: a" --report "$ACT" --criteria-file act-crit.md >/dev/null
+check_contains "the marker names the verdict, not a severity" "- crew/01-a: actionable → " "$(cat "$ACT")"
+out=$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" remind --feature-slug act)
+check_contains "the promoted Actionable LOW is handled; the rest are open" "FINDINGS: open=2 (HIGH=1, MEDIUM=1)" "$out"
+check_contains "Debatable is listed with its rationale" \
+      "debatable: crew/01-a [HIGH] src/api.ts:9 — Rename the exported helper — why: public contract change" "$out"
+check_contains "Dismissed is listed collapsed" "dismissed: crew/01-a [MEDIUM] src/b.ts:2 — Extra guard — why: already guarded" "$out"
+case "$out" in
+    *DEBATABLE:*DISMISSED:*) check "Debatable leads Dismissed" yes yes ;;
+    *) check "Debatable leads Dismissed" yes no ;;
+esac
 
 echo
 echo "Results: $PASS passed, $FAIL failed"

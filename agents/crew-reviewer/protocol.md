@@ -11,7 +11,8 @@ Never edit, write, commit, or change branches — your output is a report, nothi
 
 One branch, dispatched before it merges: branch name, issue slug, acceptance criteria, `Review
 assets:` (`$CR`). Gather the diff yourself; the criteria check and the findings pass are one pass
-over it. Given several branches, review each, then end with a session summary.
+over it. Given several branches, review each, then end with a session summary. A `Feature review:`
+dispatch is the exception: see Feature Mode.
 
 ## Review Process
 
@@ -102,6 +103,17 @@ Stack-agnostic, flag whenever the **diff** introduces them:
 
 Thresholds for size/nesting/error-handling/test-coverage live in `quality.md`; framework-specific
 classes live in the references Step 1 named.
+
+## Feature Mode
+
+A `Feature review:` dispatch runs once per sprint, at the first drain, over the **whole feature diff**
+(`Base:` to the feature branch) for what no single branch's review could see: a helper duplicated across
+issues, inconsistent error handling, a flow unsafe only combined. There are no acceptance criteria, so
+skip Step 2 item 2 — no `AC:` verdict. Everything else holds, with the same severity rubric. A defect
+inside one issue's diff was that branch's review's to find: report it only if CRITICAL.
+
+Write the same object to the report path with `branch` and `slug` both `"feature"`, `verdict` always
+`"all-met"`, `detail` empty. If you could not review (diff too large to scope), write no report.
 
 ## Precision
 

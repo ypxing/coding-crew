@@ -67,7 +67,7 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
   is a gate and cannot invoke a skill. Always exits 0
 - `verify-worktree.sh` — the checks, and the verification receipt
 - `receipts.sh` — the two gates as facts on disk
-- `promote-findings.sh` — findings → parked fix issues → Phase 2
+- `promote-findings.sh` — findings, PRD gaps and fixable integration failures → parked fix issues → Phase 2
 - `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
 - `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
@@ -93,6 +93,22 @@ changes (`--allow-dirty`), the feature branch must pass its own checks in a thro
 runs once through solve-issue's `check-requires.sh` — a failure blocks that issue, not the run
 (an issue waiting on a blocker is probed when `loop.mjs` first claims it). A check
 that modifies the tree fails, in the baseline and every verify.
+
+At every drain of the queue (after Phase 1 and after Phase 2) the same mechanism runs once more on the merged
+feature branch under its own `_integration` stem and cache (`--no-integration-check`; `--no-baseline` does not
+turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR. It is
+first triaged (`orchestrator/lib/integration-fix.mjs`, a `crew-triage` dispatch): a fixable failure becomes one parked
+fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, after which the next drain checks again
+— at most two per run, then the run ends stalled; exit 127 or a "not fixable" verdict queues nothing and the summary
+says why.
+
+At the first drain only (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
+runs in feature mode over `base_sha..<feature branch>`: no criteria, findings only, attributed to `feature` in the sprint
+review report and promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
+`crew-triage`'s findings mode judges Actionable, via `orchestrator/lib/pipeline/findings-triage.mjs`; a failed triage
+falls back to the `high` rule). Not re-run after Phase 2, nor when nothing
+merged; skipped (the summary says so) when the integration check is red; a dispatch that leaves no review is recorded
+not-run and never fails the sprint.
 
 ## Adding a new agent
 

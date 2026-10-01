@@ -9,8 +9,8 @@
  * a coder that can only rediscover it. None costs a token.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import { ASSET_DIRS, assetDir } from "./install-dir.mjs";
 import { depsLine, parseRequiresFailures, readVerifyRecord } from "./report.mjs";
@@ -73,56 +73,66 @@ export function baselineBranch(featureSlug) {
 }
 
 const BASELINE_STEM = "_baseline";
+/** The drain-time check of the merged feature branch (loop.mjs): same mechanism, its own stem. */
+export const INTEGRATION_STEM = "_integration";
+
+/** The feature branch's pass cache, per stem: a pass for one says nothing about the other. */
+const STATE_KEY = { [BASELINE_STEM]: "baseline", [INTEGRATION_STEM]: "integration" };
 
 /**
  * Run the project's checks once on the feature branch's tip, in a throwaway worktree set up
  * exactly as an issue's is (include, deps), so a failure here is the one every issue's verify
  * would repeat. A pass is cached by the tip's commit; a failure never is, since an
  * environment the human fixed (a service started) should be re-checked on the next run.
+ * `stem` names the worktree, the verify record and the cache: `_baseline` before any dispatch
+ * (runBaseline), `_integration` at each drain of the queue (runIntegrationCheck).
  *
  * Returns `{ status: "pass" | "cached" | "fail", commit, failed: [{check, log, missing}], reason }`.
  */
-export function runBaseline(ctx) {
+export function runFeatureChecks(ctx, { stem }) {
   const { sprint, effects, options } = ctx;
+  const step = stem.replace(/^_/, "");
+  const label = step.toUpperCase();
+  const stateKey = STATE_KEY[stem];
   const commit = effects.gitRead(["rev-parse", `${sprint.featureBranch}^{commit}`]).stdout.trim();
-  const cached = sprint.readState().baseline;
+  const cached = sprint.readState()[stateKey];
   if (commit && cached?.commit === commit && cached.verdict === "pass") {
-    ctx.log(`BASELINE: pass (cached — ${sprint.featureBranch} already passed at ${commit.slice(0, 12)})`);
+    ctx.log(`${label}: pass (cached — ${sprint.featureBranch} already passed at ${commit.slice(0, 12)})`);
     return { status: "cached", commit, failed: [] };
   }
 
-  const branch = baselineBranch(sprint.featureSlug);
+  const branch = `crew/${sprint.featureSlug}/${stem}`;
   const path = worktreePath(effects.mainRoot, branch);
   // A crashed earlier run may have left both behind.
   removeWorktree(effects, { mainRoot: effects.mainRoot, path });
   effects.git(["worktree", "prune"]);
-  ctx.log(`[STEP] step=baseline branch=${sprint.featureBranch} commit=${commit.slice(0, 12)}`);
+  ctx.log(`[STEP] step=${step} branch=${sprint.featureBranch} commit=${commit.slice(0, 12)}`);
   const add = effects.git(["worktree", "add", "-B", branch, path, sprint.featureBranch]);
   if (add.code !== 0) {
     // Not the project's fault: a baseline that could not run says nothing, so it does not stop the run.
-    ctx.log(`BASELINE: skipped — could not create its worktree: ${add.stderr.trim()}`);
+    ctx.log(`${label}: skipped — could not create its worktree: ${add.stderr.trim()}`);
     return { status: "pass", commit, failed: [], reason: "worktree add failed" };
   }
 
   try {
     applyWorktreeInclude(effects.mainRoot, path);
     if (options.installDeps !== false) {
-      const deps = effects.bash("ensure-deps.sh", ["--dir", path, "--slug", BASELINE_STEM, "--stem", BASELINE_STEM], {
+      const deps = effects.bash("ensure-deps.sh", ["--dir", path, "--slug", stem, "--stem", stem], {
         env: sprint.childEnv(),
       });
       const line = depsLine(deps.stdout);
-      if (line) ctx.log(`baseline ${line}`, "debug"); // ensure-deps.sh traced [DEPS]
+      if (line) ctx.log(`${step} ${line}`, "debug"); // ensure-deps.sh traced [DEPS]
       if (/^DEPS: failed\b/.test(line)) {
-        sprint.state(["baseline", "--commit", commit, "--verdict", "fail"]);
+        sprint.state(["baseline", "--slot", stateKey, "--commit", commit, "--verdict", "fail"]);
         return { status: "fail", commit, failed: [], reason: `dependency install failed — ${line.replace(/^DEPS:\s*/, "")}` };
       }
     }
-    const verify = effects.bash("verify-worktree.sh", ["--dir", path, "--stem", BASELINE_STEM], { env: sprint.childEnv() });
-    logVerifyOutput(ctx, join(sprint.dispatchDir, BASELINE_STEM), "step=baseline", null, verify);
+    const verify = effects.bash("verify-worktree.sh", ["--dir", path, "--stem", stem], { env: sprint.childEnv() });
+    logVerifyOutput(ctx, join(sprint.dispatchDir, stem), `step=${step}`, null, verify);
     const verdict = verify.code === 0 ? "pass" : "fail";
-    sprint.state(["baseline", "--commit", commit, "--verdict", verdict]);
+    sprint.state(["baseline", "--slot", stateKey, "--commit", commit, "--verdict", verdict]);
     if (verdict === "pass") return { status: "pass", commit, failed: [] };
-    const recordFile = join(sprint.dispatchDir, BASELINE_STEM, "verify.json");
+    const recordFile = join(sprint.dispatchDir, stem, "verify.json");
     const record = readVerifyRecord(recordFile);
     const failed = Object.entries(record.checks)
       .filter(([, result]) => result === "fail")
@@ -131,6 +141,94 @@ export function runBaseline(ctx) {
   } finally {
     removeWorktree(effects, { mainRoot: effects.mainRoot, path });
     effects.git(["branch", "-D", branch]);
+  }
+}
+
+/** Before any dispatch: the feature branch's own checks. */
+export function runBaseline(ctx) {
+  return runFeatureChecks(ctx, { stem: BASELINE_STEM });
+}
+
+/**
+ * At each drain of the queue: the checks on the merged feature branch, which no per-branch
+ * verify saw — two branches green alone can be red together. Same throwaway worktree, cache
+ * and modified-tree rule as the baseline, under its own stem; `--no-baseline` leaves it on.
+ */
+export function runIntegrationCheck(ctx) {
+  const result = runFeatureChecks(ctx, { stem: INTEGRATION_STEM });
+  const at = `${ctx.sprint.featureBranch} at ${result.commit.slice(0, 12)}`;
+  if (result.status === "fail") {
+    const what = result.failed.length ? result.failed.map((f) => f.check).join(", ") : result.reason;
+    ctx.log(`INTEGRATION: fail — ${what} (${at})`, "error");
+  } else if (result.status === "pass") {
+    ctx.log(`INTEGRATION: ${result.reason ? `not run — ${result.reason}` : "pass"} (${at})`);
+  }
+  return result;
+}
+
+/** Lines of a failing check's output the summary quotes: enough to name the failure. */
+const TAIL_LINES = 20;
+
+/** The tail of one failing check's captured log, or null when it has none or it cannot be read. */
+function logTail(mainRoot, log) {
+  try {
+    return readFileSync(resolve(mainRoot, log), "utf8").trimEnd().split("\n").slice(-TAIL_LINES).join("\n");
+  } catch {
+    return null;
+  }
+}
+
+/** Each failing check of an integration result that has a log, with the tail of its output. */
+export function failureTails(mainRoot, result) {
+  return result.failed.filter((f) => f.log).map((f) => ({ check: f.check, tail: logTail(mainRoot, f.log) ?? "" }));
+}
+
+/**
+ * The summary's `## Integration check` section for the last integration result: what passed,
+ * or each failing check with the tail of its output. A check whose command is not installed is
+ * named as the environment, since no change to the merged code would fix it. `fix` (the
+ * integration-fix.mjs outcome for that result) says what the failure led to, and `fixes` (every
+ * outcome this run) names the fix issues an earlier red drain led to.
+ */
+export function integrationSection(mainRoot, featureBranch, result, fix = null, fixes = []) {
+  const at = `${featureBranch} at ${result.commit.slice(0, 12)}`;
+  const earlier = fixes.filter((f) => f.verdict === "queued" && f.commit !== result.commit);
+  const history = earlier.length
+    ? ["", `Fix issue(s) from earlier red drain(s) this run: ${earlier.map((f) => f.ref).join(", ")}.`]
+    : [];
+  if (result.status === "cached") return [`Passed on ${at} (cached — the same commit already passed).`, ...history].join("\n");
+  if (result.status === "pass") {
+    return [result.reason ? `**Not run:** ${result.reason}.` : `Passed on ${at}.`, ...history].join("\n");
+  }
+  const lines = [`**Failed** on ${at} — each branch passed its own checks, but the merged feature branch does not.`, ""];
+  if (!result.failed.length) lines.push(`- ${result.reason}`);
+  for (const f of result.failed) {
+    lines.push(`- \`${f.check}\`: fail${f.missing ? ` — command not found: ${f.missing} (an environment problem, not the merged code)` : ""}`);
+    if (!f.log) continue;
+    const tail = logTail(mainRoot, f.log);
+    lines.push("", `  Output tail (${f.log}):`, "", "  ```", ...(tail ? tail.split("\n").map((l) => `  ${l}`) : ["  (no output)"]), "  ```", "");
+  }
+  if (fix) lines.push("", ...fixLines(fix));
+  lines.push(...history);
+  return lines.join("\n").trimEnd();
+}
+
+/** What a red result led to, for the summary. */
+function fixLines(fix) {
+  const why = [fix.category, fix.detail].filter(Boolean).join(": ");
+  switch (fix.verdict) {
+    case "queued":
+      if (fix.repeat) return [`**Fix issue ${fix.ref} was queued for this commit and has not landed** — it is still open, so the branch is still red.`];
+      return [`**Fix issue queued:** ${fix.ref}${why ? ` — triage: ${why}` : ""}.${fix.triageFailed ? " (Triage did not complete, so it was treated as fixable.)" : ""}`];
+    case "pending":
+      return [`**No second fix issue:** ${fix.reason}.`];
+    case "limit":
+      return [`**Not fixed:** ${fix.reason}. The run ends stalled; read the failure above.`];
+    default:
+      return [
+        `**Not fixable by a code change, no fix issue queued:** ${fix.reason}.`,
+        ...(fix.skippedRest ? ["The rest of the drain-time checks (the PRD audit) were skipped."] : []),
+      ];
   }
 }
 
