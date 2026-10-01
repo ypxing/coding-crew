@@ -29,6 +29,17 @@ Installs for every supported platform into your home directory, so it works in a
 Needs `bash` 4+, `git`, `jq`, `curl` and `tar` (on Windows, use WSL2).
 For a single platform, a per-project install or updates, see [Install options](#install-options).
 
+## Quick start
+
+In your project, inside your AI coding tool:
+
+```bash
+/crew-grill add rate limiting to the public API   # plan it → PRD + issues, filed under a feature name, e.g. rate-limit
+/crew-afk rate-limit --open-pr                    # build that feature unattended, then open the PR
+```
+
+Come back to a PR whose every branch passed your checks and a review.
+
 ## How it works
 
 ```mermaid
