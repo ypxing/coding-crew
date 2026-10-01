@@ -177,11 +177,15 @@ function runClaudeOnce(args, input, cwd) {
   });
 }
 
-async function pool(tasks, n) {
+// A usage/rate limit fails every later run the same way; recording them as per-run failures made a
+// 60-run matrix look finished. It stops the whole evaluation instead.
+export const LIMIT_RE = /(session|usage|rate) limit|limit reached|resets \d/i;
+
+async function pool(tasks, n, stop) {
   const results = [];
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(n, tasks.length) }, async () => {
-    while (next < tasks.length) { const i = next++; results[i] = await tasks[i](); }
+    while (next < tasks.length && !stop.hit) { const i = next++; results[i] = await tasks[i](); }
   }));
   return results;
 }
@@ -216,6 +220,7 @@ async function main() {
   const skills = {};
   for (const c of cases) for (const [v, ref] of Object.entries(versions)) skills[`${c.skill}@${v}`] ??= skillText(c.skill, ref);
 
+  const stop = { hit: false, why: "" };
   try {
     const runs = await pool(plan.map(({ c, v, i }) => async () => {
       const prompt = subjectPrompt(skills[`${c.skill}@${v}`], c);
@@ -224,9 +229,18 @@ async function main() {
       const r = await runClaude(["-p", "--model", o.model, "--output-format", "json", "--max-turns", "40",
         "--disallowedTools", "Edit,Write,NotebookEdit,Agent"], prompt, trees.get(c.repo_ref));
       fs.writeFileSync(path.join(outDir, `${id}.out.md`), r.ok ? r.text : `RUN FAILED: ${r.err}\n${r.text}`);
-      console.log(`  ${id}: ${r.ok ? "ok" : "FAILED"} $${r.cost.toFixed(2)}`);
-      return { case: c.name, version: v, run: i, ok: r.ok, text: r.text, cost: r.cost };
-    }), o.parallel);
+      const limited = !r.ok && LIMIT_RE.test(`${r.text}\n${r.err}`);
+      if (limited && !stop.hit) { stop.hit = true; stop.why = (r.text || r.err).trim().split("\n")[0]; }
+      console.log(`  ${id}: ${limited ? "LIMIT" : r.ok ? "ok" : "FAILED"} $${r.cost.toFixed(2)}`);
+      return { case: c.name, version: v, run: i, ok: r.ok, limited, text: r.text, cost: r.cost };
+    }), o.parallel, stop);
+    if (stop.hit) {
+      const done = runs.filter((r) => r?.ok).length;
+      console.error(`\nSTOPPED: "${stop.why}". ${done} of ${plan.length} runs finished before the limit; ` +
+        `nothing was judged. Outputs so far: ${path.relative(ROOT, outDir)}/. Re-run once the limit resets.`);
+      process.exitCode = 3;
+      return;
+    }
 
     const rows = [];
     for (const c of cases) {
@@ -238,6 +252,12 @@ async function main() {
         "--disallowedTools", "Bash,Edit,Write,NotebookEdit,Agent,Read,Grep,Glob"],
         judgePrompt(rubric, c, labelled), ROOT);
       let verdicts = [];
+      if (!j.ok && LIMIT_RE.test(`${j.text}\n${j.err}`)) {
+        console.error(`\nSTOPPED while judging ${c.name}: "${(j.text || j.err).trim().split("\n")[0]}". ` +
+          `Outputs are kept in ${path.relative(ROOT, outDir)}/; re-run once the limit resets.`);
+        process.exitCode = 3;
+        return;
+      }
       try { verdicts = parseJudge(j.text); } catch (e) { console.error(`judge failed for ${c.name}: ${e.message}`); }
       for (const l of labelled) {
         const vd = verdicts.find((x) => x.label === l.label);

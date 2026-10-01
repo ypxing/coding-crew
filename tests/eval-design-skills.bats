@@ -134,3 +134,23 @@ run_eval() {
   [[ "$output" == *"c1-head-1: FAILED"* ]]
   [ "$(git -C "$R" worktree list | wc -l)" -eq 1 ]
 }
+
+@test "a usage limit stops the evaluation: exit 3, later runs skipped, nothing judged" {
+  # Seen live: a session limit turned 45 of 60 runs into identical empty failures and the
+  # matrix "finished". It must stop and say what was done.
+  cat > "$T/limited" <<'EOS'
+#!/usr/bin/env bash
+cat >/dev/null
+echo '{"result":"You'"'"'ve hit your session limit · resets 1:50am (UTC)","total_cost_usd":0,"is_error":true}'
+exit 1
+EOS
+  chmod +x "$T/limited"
+  CLAUDE_BIN="$T/limited" run run_eval --runs 2 --parallel 1
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"STOPPED"* ]]
+  [[ "$output" == *"session limit"* ]]
+  [ ! -e "$T/judge-prompt.txt" ]
+  [ "$(git -C "$R" worktree list | wc -l)" -eq 1 ]
+  # --parallel 1: the first run hits the limit, the other three never start
+  [ "$(grep -c 'LIMIT' <<<"$output")" -eq 1 ]
+}
