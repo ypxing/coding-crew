@@ -317,48 +317,79 @@ const EMPTY_RESULT_META = {
   permissionDenials: [],
   sessionId: null,
   contextTokens: null,
+  costUnknown: false,
+  tokens: null,
 };
 
+/** One assistant event's whole token usage: prompt, cache and output. */
+function usageTokens(u) {
+  return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
+}
+
 /**
- * Cost, error and timing from claude's terminal `result` event (2.1.280). Claude only:
- * copilot has no equivalent event. Anything unrecognised returns the all-null shape.
+ * Cost, error and timing from claude's `result` events (2.1.280). Claude only: copilot has no
+ * equivalent event. Anything unrecognised returns the all-null shape.
+ *
+ * A session can emit several `result` events (a worker that used background tasks gets one per
+ * wake-up), so turns and agent time are the sum over all of them; `total_cost_usd` is cumulative
+ * for the session, so cost is the last one's. Error, subtype and session come from the last too.
+ * A stream with no `result` event (a dispatch killed on timeout) has no cost: `costUsd` is null,
+ * `costUnknown` is set, and what it did spend is read off its assistant events — `tokens` summed,
+ * `numTurns` the number of assistant messages.
  * `contextTokens` is the last assistant turn's prompt size — what a resumed session would
  * start from — not the session's cumulative usage.
  */
 export function extractResultMeta(platform, lines) {
   if (platform !== "claude") return EMPTY_RESULT_META;
   let contextTokens = null;
-  for (let i = lines.length - 1; i >= 0; i--) {
+  let tokens = 0;
+  let assistantTurns = 0;
+  let parsed = 0;
+  const seenMessages = new Set();
+  const results = [];
+  for (const line of lines) {
+    let evt;
     try {
-      const evt = JSON.parse(lines[i]);
-      const u = evt.type === "assistant" ? evt.message?.usage : null;
-      if (u && contextTokens == null) {
+      evt = JSON.parse(line);
+    } catch {
+      continue; // skip an unparseable line
+    }
+    parsed++;
+    if (evt?.type === "result") {
+      results.push(evt);
+    } else if (evt?.type === "assistant") {
+      // One message streams as several events (one per content block) sharing an id and usage.
+      const id = evt.message?.id;
+      if (id != null) {
+        if (seenMessages.has(id)) continue;
+        seenMessages.add(id);
+      }
+      assistantTurns++;
+      const u = evt.message?.usage;
+      if (u) {
+        tokens += usageTokens(u);
         contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
       }
-    } catch {
-      /* skip an unparseable line */
     }
   }
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try {
-      const evt = JSON.parse(lines[i]);
-      if (evt.type === "result") {
-        return {
-          isError: evt.is_error ?? null,
-          subtype: evt.subtype ?? null,
-          costUsd: evt.total_cost_usd ?? null,
-          durationMs: evt.duration_ms ?? null,
-          numTurns: evt.num_turns ?? null,
-          permissionDenials: evt.permission_denials ?? [],
-          sessionId: evt.session_id ?? null,
-          contextTokens,
-        };
-      }
-    } catch {
-      /* skip an unparseable line */
-    }
+  if (results.length) {
+    const last = results[results.length - 1];
+    const sum = (key) => (results.some((e) => e[key] != null) ? results.reduce((n, e) => n + (e[key] ?? 0), 0) : null);
+    return {
+      isError: last.is_error ?? null,
+      subtype: last.subtype ?? null,
+      costUsd: last.total_cost_usd ?? null,
+      durationMs: sum("duration_ms"),
+      numTurns: sum("num_turns"),
+      permissionDenials: last.permission_denials ?? [],
+      sessionId: last.session_id ?? null,
+      contextTokens,
+      costUnknown: false,
+      tokens: null,
+    };
   }
-  return EMPTY_RESULT_META;
+  if (!parsed) return EMPTY_RESULT_META;
+  return { ...EMPTY_RESULT_META, numTurns: assistantTurns, contextTokens, costUnknown: true, tokens };
 }
 
 /** The distinct tool names in claude's `permission_denials` (`tool_name`), comma-joined; `?` when unnamed. */
@@ -490,6 +521,10 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     permissionDenials: meta.permissionDenials,
     sessionId: meta.sessionId,
     contextTokens: meta.contextTokens,
+    // A claude dispatch killed on timeout leaves no `result` event, even when it also left no
+    // assistant event: either way its cost is unknown, not zero.
+    costUnknown: meta.costUnknown || (built.jsonEvents === "claude" && !r.dryRun && !!r.timedOut && meta.costUsd == null),
+    tokens: meta.tokens,
   };
 }
 

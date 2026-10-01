@@ -631,6 +631,30 @@ test("dispatch() writes only the final text to outFile, buffers a JSON line spli
   assert.match(logged, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z DEBUG \[TOOL\] /m);
 });
 
+test("dispatch() reports a claude dispatch killed on timeout as cost-unknown with its tokens", async () => {
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const stream =
+    JSON.stringify({ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "partial" }], usage: { input_tokens: 10, output_tokens: 5 } } }) + "\n";
+  const fakeEffects = {
+    spawnWithTimeout: async (cmd, args, { onLine }) => {
+      onLine(stream);
+      return { code: null, stdout: "", stderr: "", timedOut: true, dryRun: false };
+    },
+  };
+  const result = await dispatch(
+    fakeEffects,
+    "claude",
+    { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root, scriptsDir: SCRIPTS },
+    {},
+  );
+  assert.equal(result.timedOut, true);
+  assert.equal(result.costUnknown, true);
+  assert.equal(result.costUsd, null);
+  assert.equal(result.tokens, 15);
+  assert.equal(result.numTurns, 1);
+});
+
 test("dispatch() tags every file-logged trace line with slug when the caller passes one", async () => {
   const { root, promptFile } = fixture();
   const outFile = join(root, "dispatch", "alpha.report.md");
@@ -738,6 +762,8 @@ test("extractResultMeta pulls cost/error/turns/session out of claude's terminal 
     permissionDenials: [],
     sessionId: "abc123",
     contextTokens: null,
+    costUnknown: false,
+    tokens: null,
   });
 });
 
@@ -748,8 +774,31 @@ test("extractResultMeta's contextTokens is the last assistant turn's prompt size
   assert.equal(extractResultMeta("claude", lines).contextTokens, 30_405);
 });
 
-test("extractResultMeta returns the all-null/empty shape when no result event is found", () => {
-  assert.deepEqual(extractResultMeta("claude", [JSON.stringify({ type: "assistant" })]), {
+test("extractResultMeta sums turns and agent time over every result event and takes the last cost", () => {
+  const result = (cost, ms, turns, extra = {}) =>
+    JSON.stringify({ type: "result", subtype: "success", is_error: false, total_cost_usd: cost, duration_ms: ms, num_turns: turns, session_id: "s1", ...extra });
+  const meta = extractResultMeta("claude", [result(0.1, 1000, 3), result(0.35, 2500, 7), result(0.4, 500, 2)]);
+  assert.equal(meta.numTurns, 12);
+  assert.equal(meta.durationMs, 4000);
+  assert.equal(meta.costUsd, 0.4);
+  assert.equal(meta.costUnknown, false);
+  assert.equal(meta.sessionId, "s1");
+});
+
+test("extractResultMeta reports a stream with no result event as cost-unknown, with its tokens and assistant turns", () => {
+  const turn = (id, input, output) =>
+    JSON.stringify({ type: "assistant", message: { id, usage: { input_tokens: input, cache_read_input_tokens: 100, cache_creation_input_tokens: 0, output_tokens: output } } });
+  const lines = [turn("m1", 10, 20), turn("m1", 10, 20), turn("m2", 5, 7), JSON.stringify({ type: "user" })];
+  const meta = extractResultMeta("claude", lines);
+  assert.equal(meta.costUsd, null);
+  assert.equal(meta.costUnknown, true);
+  assert.equal(meta.tokens, 130 + 112);
+  assert.equal(meta.numTurns, 2);
+  assert.equal(meta.durationMs, null);
+});
+
+test("extractResultMeta returns the empty shape when the stream holds no events at all", () => {
+  assert.deepEqual(extractResultMeta("claude", []), {
     isError: null,
     subtype: null,
     costUsd: null,
@@ -758,6 +807,8 @@ test("extractResultMeta returns the all-null/empty shape when no result event is
     permissionDenials: [],
     sessionId: null,
     contextTokens: null,
+    costUnknown: false,
+    tokens: null,
   });
 });
 
@@ -772,6 +823,8 @@ test("extractResultMeta returns the empty shape for non-claude platforms — no 
     permissionDenials: [],
     sessionId: null,
     contextTokens: null,
+    costUnknown: false,
+    tokens: null,
   });
 });
 

@@ -21,6 +21,7 @@ set -euo pipefail
 #   state.sh dispatch-cost [--cost <usd>] [--duration-ms <ms>] [--turns <n>]
 #                          [--slug <slug> --role <role> --attempt <n>]
 #                          [--session-id <id>] [--context-tokens <n>] [--head <sha>]
+#                          [--cost-unknown --tokens <n>]
 #   state.sh run-start --id <run-id>
 #   state.sh baseline [--slot baseline|integration] --commit <sha> --verdict <pass|fail>
 #   state.sh resume --slug <slug>
@@ -218,10 +219,19 @@ case "$CMD" in
     # first attempt vs retry — the totals above span every run of the feature. The coder's
     # entry also keeps its session id, context size and the branch tip it left, which is
     # what a later fix round needs to decide whether that session can be resumed.
+    #
+    # --cost-unknown marks a dispatch that ended with no `result` event (killed on timeout):
+    # its cost is not zero, it is not known, so it adds nothing to the cost total and the
+    # summary counts it instead. --tokens is what its assistant events used.
     cost=$(flag cost "0" "$@"); duration_ms=$(flag duration-ms "0" "$@"); turns=$(flag turns "0" "$@")
     slug=$(flag slug "" "$@"); role=$(flag role "" "$@"); attempt=$(flag attempt "0" "$@")
     session_id=$(flag session-id "" "$@"); context_tokens=$(flag context-tokens "0" "$@"); head=$(flag head "" "$@")
+    cost_unknown=false; unknown_note=""; tokens=$(flag tokens "0" "$@")
+    for a in "$@"; do
+      if [ "$a" = "--cost-unknown" ]; then cost_unknown=true; cost=0; unknown_note=" cost_unknown=true tokens=$tokens"; fi
+    done
     edit_state --argjson c "$cost" --argjson d "$duration_ms" --argjson t "$turns" \
+      --argjson unknown "$cost_unknown" --argjson tokens "$tokens" \
       --arg slug "$slug" --arg role "$role" --argjson attempt "$attempt" \
       --arg sid "$session_id" --argjson ctx "$context_tokens" --arg head "$head" '
       .total_cost_usd = ((.total_cost_usd // 0) + $c)
@@ -231,12 +241,13 @@ case "$CMD" in
           .dispatches = ((.dispatches // []) + [{
             run: (.current_run // null), slug: $slug, role: $role, attempt: $attempt,
             cost_usd: $c, duration_ms: $d, turns: $t,
+            cost_unknown: $unknown, tokens: (if $unknown then $tokens else null end),
             session_id: (if $sid == "" then null else $sid end),
             context_tokens: $ctx, head: (if $head == "" then null else $head end)
           }])
         else . end'
-    trace --level debug STATE "dispatch-cost${slug:+ slug=$slug}${role:+ role=$role}${slug:+ attempt=$attempt} cost=$cost duration_ms=$duration_ms turns=$turns"
-    echo "STATE: dispatch-cost${slug:+ slug=$slug}${role:+ role=$role}${slug:+ attempt=$attempt} cost=$cost duration_ms=$duration_ms turns=$turns"
+    trace --level debug STATE "dispatch-cost${slug:+ slug=$slug}${role:+ role=$role}${slug:+ attempt=$attempt} cost=$cost duration_ms=$duration_ms turns=$turns$unknown_note"
+    echo "STATE: dispatch-cost${slug:+ slug=$slug}${role:+ role=$role}${slug:+ attempt=$attempt} cost=$cost duration_ms=$duration_ms turns=$turns$unknown_note"
     ;;
 
   run-start)
