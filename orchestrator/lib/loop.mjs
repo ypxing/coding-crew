@@ -26,10 +26,13 @@
  * because a sprint that stalled on unrelated issues may still have merged code carrying a
  * CRITICAL finding.
  *
- * The integration check (afk.integrationCheck) runs at every drain — after Phase 1 and again
- * after Phase 2: each branch passed its own verify, but the merged feature branch is checked
- * nowhere else, and Phase 2's fixes can break it again. A red final one is reported in the
- * summary and keeps the PR from being opened; fixing it is not this loop's job yet.
+ * The integration check (afk.integrationCheck) runs at every drain, first — after Phase 1 and
+ * again after every Phase 2: each branch passed its own verify, but the merged feature branch is
+ * checked nowhere else, and fixes can break it again. Red, it is triaged (integration-fix.mjs): a
+ * fixable failure becomes a parked fix issue the same flush sends into Phase 2, and the next
+ * drain checks again; at most INTEGRATION_FIX_LIMIT of them per run, and a red drain after that
+ * ends the run stalled. A failure no code can fix is reported, queues nothing, and skips the
+ * drain's remaining checks. A red final one keeps the PR from being opened.
  *
  * The PRD audit (runPrdAudit) runs once, the first time the queue drains: its gaps are parked
  * like findings, so the same flush sends both into Phase 2.
@@ -44,6 +47,7 @@ import { dispatchPlain } from "./dispatch.mjs";
 import { writeLog } from "./log.mjs";
 import { labelIssue } from "./labels.mjs";
 import { checkRequires, integrationSection, runIntegrationCheck } from "./preflight.mjs";
+import { fixIntegration } from "./integration-fix.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit } from "./report.mjs";
 
@@ -166,6 +170,10 @@ export async function runSprint(ctx) {
   let prdAudit = {};
   let audited = false;
   let integration = null;
+  // Every red drain's outcome (integration-fix.mjs), for the cap, the repeat check and the summary.
+  const integrationFixes = [];
+  const integrationRefs = new Set();
+  let integrationStalled = false;
   while (true) {
     await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
 
@@ -175,24 +183,48 @@ export async function runSprint(ctx) {
       ctx.log(`Round cap reached (--max-rounds ${options.maxRounds}).`);
       break;
     }
+    // First at every drain, with whatever has merged so far (nothing merged, nothing new to
+    // check): a red result that no code can fix skips the rest of this drain's checks.
+    let skipRest = null;
+    if (options.integrationCheck && !options.dryRun && sprint.get("merged")) {
+      integration = runIntegrationCheck(ctx);
+      integration.fix = null;
+      if (integration.status === "fail") {
+        const fix = await fixIntegration(ctx, tracker, integration, integrationFixes);
+        integration.fix = fix;
+        if (!fix.repeat) integrationFixes.push(fix);
+        if (fix.verdict === "queued" && !fix.repeat && fix.queuedReady && fix.number) {
+          unseen.add(fix.number);
+          integrationRefs.add(fix.number);
+        }
+        if (fix.verdict === "limit") integrationStalled = true;
+        if (fix.verdict === "not-fixable" || fix.verdict === "limit") {
+          skipRest = "the integration check failed and no code change is queued to fix it — see ## Integration check.";
+          fix.skippedRest = !audited;
+        }
+      }
+    }
     // Once, when Phase 1 has drained: its gaps join the findings in the one flush below,
     // so Phase 2 fixes both, and nothing after it is audited again.
     // github creates the gaps issue — like a finding's fix issue — ready-for-agent, so the
     // flush has nothing to promote for it and the loop goes round again once it is listed.
     if (!audited) {
       audited = true;
-      prdAudit = await runPrdAudit(ctx, tracker);
-      if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
+      if (skipRest) {
+        prdAudit = { report: null, queuedReady: false, skipped: skipRest };
+        ctx.log(`PRD audit: skipped — ${skipRest}`);
+      } else {
+        prdAudit = await runPrdAudit(ctx, tracker);
+        if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
+      }
     }
-    // Every drain, with whatever has merged so far: nothing merged, nothing new to check.
-    if (options.integrationCheck && !options.dryRun && sprint.get("merged")) integration = runIntegrationCheck(ctx);
     if (flush(ctx) > 0) continue;
     if (unseen.size) {
       const refs = [...unseen];
       unseen.clear();
       const missing = await awaitListed(ctx, tracker, refs);
       for (const ref of missing) {
-        const what = ref === prdAudit.queuedRef ? "PRD gaps" : "review findings";
+        const what = ref === prdAudit.queuedRef ? "PRD gaps" : integrationRefs.has(ref) ? "integration fix" : "review findings";
         const line = `#${ref} (${what}) was created but never appeared in the milestone listing — re-run to implement it.`;
         if (ref === prdAudit.queuedRef) prdAudit.unqueued = line;
         else unlisted.push(line);
@@ -208,15 +240,16 @@ export async function runSprint(ctx) {
   // requiring a second directory read to know which are still open.
   const stalled =
     !capped &&
-    (tracker.listOpenIssueFiles
-      ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
-      : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0);
+    (integrationStalled ||
+      (tracker.listOpenIssueFiles
+        ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
+        : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0));
 
   // Before the summary: drained, capped or stalled, no issue keeps a label saying it is being worked.
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, prdAudit, unlisted, integration });
+  await wrapUp(ctx, { tracker, stalled, prdAudit, unlisted, integration, integrationFixes });
   return { stalled, history };
 }
 
@@ -352,7 +385,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integration = null }) {
+async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integration = null, integrationFixes = [] }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -400,7 +433,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
       ctx.out(`\n**Superseded — update the PRD, nothing queued:**\n${lines.join("\n")}\n`);
     }
   }
-  if (integration) ctx.out(`\n## Integration check\n\n${integrationSection(effects.mainRoot, sprint.featureBranch, integration)}\n`);
+  if (integration) ctx.out(`\n## Integration check\n\n${integrationSection(effects.mainRoot, sprint.featureBranch, integration, integration.fix, integrationFixes)}\n`);
   if (unlisted.length) ctx.out(`\n**Fix issues not implemented:**\n${unlisted.map((l) => `- ${l}`).join("\n")}\n`);
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
   if (pr) ctx.out(`\n## ${pr.heading ?? "Pull Request"}\n\n${pr.text}\n`);

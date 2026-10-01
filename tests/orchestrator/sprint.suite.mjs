@@ -3538,6 +3538,8 @@ test("two branches green alone and red merged: the summary reports a failed ## I
   addIssue(root, "01-alpha.md");
   addIssue(root, "02-beta.md");
   redWhenMerged(root);
+  // Triage calls it not fixable: this test is about the report, not the fix issue.
+  fake(root, "_integration.triage", triageVerdict("no", "clashing changes", "nothing a coder can do here"));
   const { r, lines } = commandLines(root, [], { integration: true });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   for (const f of ["alpha", "beta"]) {
@@ -3590,6 +3592,8 @@ test("a red final integration check keeps --open-pr from opening the PR, and the
   addIssue(root, "01-alpha.md");
   addIssue(root, "02-beta.md");
   redWhenMerged(root);
+  // Triage calls it not fixable: this test is about the report, not the fix issue.
+  fake(root, "_integration.triage", triageVerdict("no", "clashing changes", "nothing a coder can do here"));
   const { r, lines } = commandLines(root, ["--open-pr"], { integration: true });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(lines.filter((l) => /open-pr\.sh/.test(l)).length, 0, "nothing was pushed");
@@ -3640,4 +3644,178 @@ test("plan shows the integration check", () => {
   const plan = (extra) => sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo", ...extra], { cwd: root, env: { ...process.env, MAIN_ROOT: root } }).stdout;
   assert.match(plan([]), /^integration: the checks run on the merged feature branch each time the queue drains/m);
   assert.match(plan(["--no-integration-check"]), /^integration: disabled \(--no-integration-check\)$/m);
+});
+
+// ─── a red integration check is triaged, and a fixable one becomes a Phase 2 fix issue ───
+
+/** Red while alpha's and beta's files are both present and no integration fix has landed (a fix
+ * issue's slug starts `fix-integration`, and the fake coder commits src/<slug>.txt). Each branch
+ * is green alone, and the fix branch — which has the fix file — is green too. */
+function redUntilFixed(root) {
+  writeFileSync(
+    join(root, "Makefile"),
+    "test:\n\t@if [ -f src/alpha.txt ] && [ -f src/beta.txt ] && ! ls src/fix-integration-* >/dev/null 2>&1; then echo 'alpha and beta clash' >&2; exit 1; fi\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n",
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red until fixed"]);
+}
+
+const triageSpawns = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-triage/.test(l)).length;
+const integrationFixFiles = (root, dir) => {
+  const d = join(root, ".scratch/demo/issues", dir);
+  return existsSync(d) ? readdirSync(d).filter((f) => /fix-integration/.test(f)) : [];
+};
+
+test("a fixable red integration check becomes a fix issue, implemented in Phase 2, and the next drain passes", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redUntilFixed(root);
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "alpha.txt and beta.txt cannot both exist without src/fix-integration-*"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `the run is not stalled\n${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 1);
+  assert.equal(integrationRuns(lines), 2, "red, then re-checked after the fix");
+  assert.deepEqual(integrationFixFiles(root, "open"), []);
+  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md"]);
+  assert.deepEqual(state(root).completed_slugs.sort(), ["alpha", "beta", "fix-integration-1"]);
+  assert.equal(state(root).integration.verdict, "pass");
+  assert.match(r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12}\./);
+  assert.match(r.stdout, /Fix issue\(s\) from earlier red drain\(s\) this run: \S+03-fix-integration-1\.md/);
+  assert.doesNotMatch(r.stdout, /STALLED/);
+  // The fix issue: a source-guarded issue whose criterion is the checks, with triage's detail and the output tail.
+  const issue = readFileSync(join(root, ".scratch/demo/issues/done/03-fix-integration-1.md"), "utf8");
+  assert.match(issue, /^Source: .*dispatch\/_integration\/verify\.out \(integration\)$/m);
+  assert.match(issue, /^- \[.\] The project's checks pass on the merged feature branch \(`feature\/demo`\)$/m);
+  assert.match(issue, /Triage: clashing changes — alpha\.txt and beta\.txt cannot both exist/);
+  assert.match(issue, /alpha and beta clash/);
+  // Triage was a dispatch of its own, given the failing output, and logged with its verdict.
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/_integration/triage-prompt.md"), "utf8");
+  assert.match(prompt, /merged feature branch/);
+  assert.match(prompt, /alpha and beta clash/);
+  assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} fixable=yes category=clashing changes/);
+  assert.match(traceLog(root), /\[STEP\] slug=_integration round=1 step=dispatch-triage/);
+  assert.ok(state(root).dispatches.some((d) => d.slug === "_integration" && d.role === "triage"), "its cost is in the ledger");
+  // Findings on the fix branch are never promoted again: it carries a Source: line.
+  assert.deepEqual(integrationFixFiles(root, "open"), []);
+});
+
+test("a missing command on a red integration check is not fixable: no triage, no fix issue, the summary says why", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  // The tool is only reached once both branches are merged, so each passes its own verify.
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(
+    join(root, ".coding-crew/dev-commands.json"),
+    JSON.stringify({ test: "if [ -f src/alpha.txt ] && [ -f src/beta.txt ]; then crew-no-such-tool; fi", lint: "make lint", typecheck: "make typecheck", coverage: null, integration: null }),
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "cache"]);
+  fake(root, "commands.response", '{"install": null, "env": null, "credential_target": null}');
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 0);
+  assert.deepEqual([...integrationFixFiles(root, "open"), ...integrationFixFiles(root, "done")], []);
+  assert.match(r.stdout, /## Integration check\s+\*\*Failed\*\*/);
+  assert.match(r.stdout, /\*\*Not fixable by a code change, no fix issue queued:\*\* missing command: crew-no-such-tool is not installed \(test\)\./);
+  assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} verdict=not-fixable — missing command: crew-no-such-tool is not installed \(test\); triage skipped/);
+});
+
+test("triage calling a red integration check not fixable queues nothing, skips the PRD audit, and says so", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redUntilFixed(root);
+  fake(root, "_integration.triage", triageVerdict("no", "service down", "the database the integration tests use is not reachable"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 1);
+  assert.deepEqual([...integrationFixFiles(root, "open"), ...integrationFixFiles(root, "done")], []);
+  assert.match(r.stdout, /\*\*Not fixable by a code change, no fix issue queued:\*\* service down: the database the integration tests use is not reachable\./);
+  assert.match(r.stdout, /The rest of the drain-time checks \(the PRD audit\) were skipped\./);
+  assert.match(r.stdout, /## PRD Audit\s+\*\*Not run:\*\* the integration check failed/);
+  assert.equal(traceLog(root).split("step=prd-audit").length - 1, 0, "the audit never ran");
+  assert.match(traceLog(root), /fixable=no category=service down/);
+});
+
+test("a triage dispatch that fails is treated as fixable once: a fix issue, and a coder attempt on it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redUntilFixed(root);
+  // No _integration.triage fixture: the fake leaves no sidecar, as a dead triage dispatch would.
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 1);
+  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md"]);
+  assert.match(traceLog(root), /fixable=failed→yes category=triage did not complete/);
+  assert.match(r.stdout, /Fix issue\(s\) from earlier red drain\(s\) this run/);
+});
+
+test("the third red drain in a run is reported, ends the run stalled, and creates no third fix issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  // Red only in the integration worktree, whatever any fix does: each fix issue passes its own
+  // verify and merges, and the merged branch is red again.
+  writeFileSync(join(root, "Makefile"), "test:\n\t@case \"$$PWD\" in *_integration) echo 'alpha and beta clash' >&2; exit 1;; esac\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "always red when merged"]);
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "reconcile alpha and beta"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 2, `stalled\n${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 2, "no triage for the capped drain");
+  assert.equal(integrationRuns(lines), 3);
+  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md", "04-fix-integration-2.md"]);
+  assert.deepEqual(integrationFixFiles(root, "open"), []);
+  assert.match(r.stdout, /\*\*Not fixed:\*\* 2 integration fix issues were already implemented this run and the merged feature branch is still red — no further fix issue\./);
+  assert.match(r.stdout, /STALLED/);
+  assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} verdict=limit/);
+});
+
+test("a fix issue whose coder blocks leaves the same commit red: no second triage, no second fix issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redUntilFixed(root);
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "reconcile alpha and beta"));
+  fake(root, "fix-integration-1.exit", "1");
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 1);
+  assert.deepEqual(integrationFixFiles(root, "open"), ["03-fix-integration-1.md"]);
+  assert.match(r.stdout, /\*\*Fix issue \S+03-fix-integration-1\.md was queued for this commit and has not landed\*\*/);
+});
+
+test("github: a fixable red integration check creates the fix issue in the milestone, ready-for-agent, and implements it", () => {
+  const root = githubFixtureRepo();
+  const GH_BETA = { ...GH_ALPHA, number: 2, title: "beta", body: "# beta\n\n## Acceptance criteria\n\n- [x] beta exists\n" };
+  const { stub, issuesFile } = stubGh(root, [GH_ALPHA, GH_BETA]);
+  redUntilFixed(root);
+  // The stub's own files are untracked; keep the tree clean for the merge gate.
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "reconcile alpha and beta"));
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_GITHUB_TRACKER_CLI: join(REPO, "orchestrator/lib/trackers/github.mjs"),
+      GH_LIST_LAG_MS: "3000",
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const fix = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => /^Fix integration check: demo \(at [0-9a-f]{12}\)$/.test(i.title));
+  assert.ok(fix, `the integration fix issue was never created\n${traceLog(root)}`);
+  assert.match(fix.body, /^Source: .*verify\.out \(integration\)$/m);
+  assert.match(fix.body, /^- \[ \] The project's checks pass on the merged feature branch/m);
+  assert.ok(fix.labels.some((l) => l.name === "ready-for-agent" || l.name === "awaiting-merge"));
+  assert.ok(fix.labels.some((l) => l.name === "awaiting-merge"), `the fix issue was never implemented\n${traceLog(root)}`);
+  assert.match(traceLog(root), /fix issue\(s\) listed after \d+ poll/);
+  assert.match(r.stdout, /## Integration check\s+Passed/);
+  assert.doesNotMatch(r.stdout, /Fix issues not implemented/);
 });
