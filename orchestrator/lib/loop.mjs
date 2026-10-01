@@ -181,7 +181,6 @@ export async function runSprint(ctx) {
   // Every red drain's outcome (integration-fix.mjs), for the cap, the repeat check and the summary.
   const integrationFixes = [];
   const integrationRefs = new Set();
-  let integrationStalled = false;
   while (true) {
     await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
 
@@ -205,7 +204,6 @@ export async function runSprint(ctx) {
           unseen.add(fix.number);
           integrationRefs.add(fix.number);
         }
-        if (fix.verdict === "limit") integrationStalled = true;
         if (fix.verdict === "not-fixable" || fix.verdict === "limit") {
           skipRest = "the integration check failed and no code change is queued to fix it — see ## Integration check.";
           fix.skippedRest = !audited;
@@ -256,7 +254,9 @@ export async function runSprint(ctx) {
   // requiring a second directory read to know which are still open.
   const stalled =
     !capped &&
-    (integrationStalled ||
+    // The last drain's check, not any earlier one: a drain red at the fix-issue limit stalls
+    // the run only if no later drain turned it green.
+    (integration?.fix?.verdict === "limit" ||
       (tracker.listOpenIssueFiles
         ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
         : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0));
