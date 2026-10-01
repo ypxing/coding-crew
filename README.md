@@ -46,6 +46,9 @@ For a single platform, a per-project install or updates, see [Install options](#
     │ red + fixable          → a fix issue, back into the per-issue loop (max 2); re-checked
     │ red + not fixable      → reported, no PR
     ▼
+ 🤖 full-feature review   one reviewer pass over the whole feature diff (not re-run after the fixes)
+    │
+    ▼
  🤖 PRD audit + HIGH/CRITICAL review findings → new issues → per-issue loop again (once)
     │
     ▼
@@ -67,6 +70,11 @@ What you can rely on:
 - **The merged feature is checked as a whole.** Two branches can each pass and still break each
   other, so once the issues are done your checks run again on the merged feature branch. A red
   result is reported in the summary, and no PR is opened over it.
+- **The whole feature diff is reviewed once.** A branch's review sees only its own diff, so when the
+  issues are done a reviewer reads everything they merged together, for what only shows across
+  issues (a helper written twice, error handling that differs between modules). Its findings are
+  attributed to `feature` and handled like any others; it is skipped, and the summary says so, when
+  the integration check is red.
 - **The PRD is checked.** Once the issues are merged, the code is audited against the PRD and any
   requirement no issue covered becomes a new issue.
 - **Work is never thrown away.** A retry continues on the same branch, and unfinished work is kept

@@ -36,6 +36,11 @@
  *
  * The PRD audit (runPrdAudit) runs once, the first time the queue drains: its gaps are parked
  * like findings, so the same flush sends both into Phase 2.
+ *
+ * The feature review (runFeatureReview) also runs once, at that first drain, after the integration
+ * check: crew-reviewer over the whole feature diff. Its findings are parked like a branch's, so the
+ * same flush sends them into Phase 2; it is not re-run after Phase 2, and it is skipped when nothing
+ * merged or when the integration check is red.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -50,6 +55,7 @@ import { checkRequires, integrationSection, runIntegrationCheck } from "./prefli
 import { fixIntegration } from "./integration-fix.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit } from "./report.mjs";
+import { runFeatureReview } from "./pipeline/feature-review.mjs";
 
 export async function runSprint(ctx) {
   const { sprint, effects, options } = ctx;
@@ -170,6 +176,8 @@ export async function runSprint(ctx) {
   let prdAudit = {};
   let audited = false;
   let integration = null;
+  let featureReview = {};
+  let featureReviewed = false;
   // Every red drain's outcome (integration-fix.mjs), for the cap, the repeat check and the summary.
   const integrationFixes = [];
   const integrationRefs = new Set();
@@ -218,6 +226,14 @@ export async function runSprint(ctx) {
         if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
       }
     }
+    // Once, at the first drain whatever it merged: Phase 2's fixes are not reviewed as a feature again.
+    if (!featureReviewed) {
+      featureReviewed = true;
+      if (!options.dryRun && sprint.get("merged")) {
+        featureReview = await runFeatureReview(ctx, { integration });
+        if (featureReview.promotedRef && !tracker.listOpenIssueFiles) unseen.add(featureReview.promotedRef);
+      }
+    }
     if (flush(ctx) > 0) continue;
     if (unseen.size) {
       const refs = [...unseen];
@@ -249,7 +265,7 @@ export async function runSprint(ctx) {
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, prdAudit, unlisted, integration, integrationFixes });
+  await wrapUp(ctx, { tracker, stalled, prdAudit, unlisted, integration, integrationFixes, featureReview });
   return { stalled, history };
 }
 
@@ -385,7 +401,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integration = null, integrationFixes = [] }) {
+async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReview = {} }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -434,6 +450,13 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
     }
   }
   if (integration) ctx.out(`\n## Integration check\n\n${integrationSection(effects.mainRoot, sprint.featureBranch, integration, integration.fix, integrationFixes)}\n`);
+  if (featureReview.skipped) ctx.out(`\n## Feature Review\n\n**Not run:** ${featureReview.skipped}\n`);
+  else if (featureReview.failed) ctx.out(`\n## Feature Review\n\n**Not run:** ${featureReview.failed}\n`);
+  else if (featureReview.report) {
+    const n = featureReview.findings?.length ?? 0;
+    const queued = featureReview.promoted ? `; ${featureReview.promoted} at or above the fix threshold went to Phase 2` : "";
+    ctx.out(`\n## Feature Review\n\nThe whole feature diff was reviewed once: ${n} finding(s)${queued} (see ${featureReview.report}, branch \`feature\`).\n`);
+  }
   if (unlisted.length) ctx.out(`\n**Fix issues not implemented:**\n${unlisted.map((l) => `- ${l}`).join("\n")}\n`);
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
   if (pr) ctx.out(`\n## ${pr.heading ?? "Pull Request"}\n\n${pr.text}\n`);

@@ -102,6 +102,12 @@ fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, aft
 — at most two per run, then the run ends stalled; exit 127 or a "not fixable" verdict queues nothing and the summary
 says why.
 
+At the first drain only (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
+runs in feature mode over `base_sha..<feature branch>`: no criteria, findings only, attributed to `feature` in the sprint
+review report and promoted into Phase 2 by the same `fixFindings` rule. Not re-run after Phase 2, nor when nothing
+merged; skipped (the summary says so) when the integration check is red; a dispatch that leaves no review is recorded
+not-run and never fails the sprint.
+
 ## Adding a new agent
 
 1. `agents/<name>/protocol.md` (or `workflow.js`).

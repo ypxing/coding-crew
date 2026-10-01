@@ -47,3 +47,23 @@ setup() {
 @test "the drift mapping format is the one solve-issue tells the coder to record" {
   grep -qF "<issue's name> → <file:line>" "$SCRIPT_DIR/skills/solve-issue/SKILL.md"
 }
+
+@test "feature mode is a section of the shared protocol: whole diff, no criteria, reported under feature" {
+  grep -q '^## Feature Mode$' "$AGENT_DIR/protocol.md"
+  grep -qF 'Feature review:' "$AGENT_DIR/protocol.md"
+  grep -qF 'whole feature diff' "$AGENT_DIR/protocol.md"
+  grep -q 'no `AC:` verdict' "$AGENT_DIR/protocol.md"
+  grep -qF '`branch` and `slug` both `"feature"`' "$AGENT_DIR/protocol.md"
+}
+
+@test "feature mode reaches every platform's rendered reviewer, and no platform file restates it" {
+  local plat
+  for plat in claude copilot pi codex; do
+    f=$(ls "$AGENT_DIR"/$plat.* | head -1)
+    grep -q '{{PROTOCOL}}' "$f"
+    ! grep -q 'Feature Mode' "$f"
+  done
+  TARGET_REPO="$BATS_TEST_TMPDIR/repo"; mkdir -p "$TARGET_REPO"; git -C "$TARGET_REPO" init -q
+  TARGET_REPO="$TARGET_REPO" "$SCRIPT_DIR/install.sh" claude crew-reviewer >/dev/null
+  grep -q '^## Feature Mode$' "$TARGET_REPO/.claude/agents/crew-reviewer.md"
+}

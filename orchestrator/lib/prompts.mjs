@@ -299,6 +299,51 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
   ].join("\n");
 }
 
+/** The name feature-mode findings are attributed to in the review report, and the review's slug. */
+export const FEATURE_REVIEW = "feature";
+
+/**
+ * Feature mode (crew-reviewer's protocol § Feature Mode): the whole feature diff, once, at the first
+ * drain. Same report object as a branch review, but no issue and no criteria — findings only.
+ */
+export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAssets, reviewContext }) {
+  return [
+    "Feature review: review the whole feature diff, once, before it ships.",
+    ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
+    ...renderReviewContext(reviewContext),
+    `Feature branch: ${featureBranch}`,
+    `Base: ${base}`,
+    `Branch: ${FEATURE_REVIEW}`,
+    `Slug: ${FEATURE_REVIEW}`,
+    "",
+    `Gather the diff: git diff ${base}..${featureBranch}`,
+    "",
+    "Every issue's branch was already reviewed on its own diff, and the checks passed on the merged",
+    "branch. Look for what only the whole diff shows (crew-reviewer's Feature Mode). There is no issue and",
+    "no acceptance criteria: give no AC verdict, only findings.",
+    "",
+    `Write your structured result to ${reportPath} as your last action. This file is the only thing`,
+    "counted — nothing you print in your final message is parsed:",
+    "",
+    "```json",
+    JSON.stringify(
+      {
+        branch: FEATURE_REVIEW,
+        slug: FEATURE_REVIEW,
+        verdict: "all-met",
+        detail: "",
+        findings: [{ severity: "CRITICAL | HIGH | MEDIUM | LOW", location: "<file:line>", criterion: "<one verifiable fix criterion>" }],
+      },
+      null,
+      2,
+    ),
+    "```",
+    "",
+    "`findings` is `[]` when there are none — never omit the block itself. Follow it with your usual",
+    "snippet-anchored explanation per finding, for the human reading the report.",
+  ].join("\n");
+}
+
 /** The verdict file every triage prompt ends on — the file is the only thing read (parseTriageReport). */
 function triageVerdictLines(reportPath) {
   return [

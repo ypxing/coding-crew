@@ -248,6 +248,25 @@ test("parseReviewAggregate keeps distinct branches separate and in first-seen or
   assert.deepEqual(records.map((r) => r.verdict), ["all-met", "unmet"]);
 });
 
+test("parseReviewAggregate attributes a feature-mode review to `feature`, apart from every branch", () => {
+  const branch = { branch: "crew/f/a", slug: "a", verdict: "all-met", findings: [] };
+  const feature = {
+    branch: "feature",
+    slug: "feature",
+    verdict: "all-met",
+    detail: "",
+    findings: [{ severity: "HIGH", location: "src/a.js:3", criterion: "Share one retry helper" }],
+  };
+  const text = ["## Branch: crew/f/a (a)", "```json", JSON.stringify(branch), "```", "", "## Branch: feature (feature)", "```json", JSON.stringify(feature), "```"].join("\n");
+  const records = parseReviewAggregate(text);
+  assert.deepEqual(records.map((r) => r.branch), ["crew/f/a", "feature"]);
+  assert.deepEqual(records[1].findings.map((f) => [f.severity, f.location, f.criterion]), [["HIGH", "src/a.js:3", "Share one retry helper"]]);
+  // A feature review that could not run is the same not_run stub a branch gets.
+  const stub = { branch: "feature", slug: "feature", verdict: "not_run", detail: "review dispatch timed out", findings: [] };
+  const folded = parseReviewAggregate(`${text}\n\n\`\`\`json\n${JSON.stringify(stub)}\n\`\`\`\n`);
+  assert.equal(folded.find((r) => r.branch === "feature").verdict, "not_run");
+});
+
 test("parseReviewAggregate on text with no json blocks returns no records", () => {
   assert.deepEqual(parseReviewAggregate("## Branch: crew/f/x\nAC: all-met\n"), []);
   assert.deepEqual(parseReviewAggregate(""), []);
