@@ -86,51 +86,9 @@ Ask the user:
 
 Iterate until the user approves the breakdown.
 
-### 5.5. Extract cross-cutting requirements
+### 5.5. Cross-cutting rules from the PRD
 
-After the user approves the breakdown and before writing issues, extract cross-cutting requirements from `PRD.md` (if it exists) to include in issue checklists.
-
-**Cross-cutting requirement categories** (10 total):
-
-1. Error Handling — how errors are caught, logged, propagated
-2. Logging — what to log, format, levels
-3. Security — auth checks, input validation, sensitive data handling
-4. Performance — response time targets, resource limits
-5. Testing — test coverage requirements, types of tests needed
-6. Architecture Constraints — patterns to follow, libraries to use, interfaces to respect
-7. Data Validation — schema constraints, input sanitization rules
-8. Observability — metrics, tracing, monitoring hooks
-9. Interfaces & Contracts — API contracts, function signatures, data structures shared across components
-10. Multi-Issue Flows — end-to-end operations spanning multiple vertical slices
-
-**Extraction from PRD.md:**
-
-Read `.scratch/<feature-slug>/PRD.md` if it exists. Scan for cross-cutting requirements across all sections — especially `## Decisions`, `## Testing Decisions`, and `## Further Notes`:
-
-- Explicit headings for any of the 10 categories above
-- Decision statements with "must", "should", "all", "every" (signals cross-cutting rules)
-  - Example: "All API endpoints must validate input using..."
-  - Example: "Every database call must include retry logic..."
-- Architecture rules: "Follow the repository pattern", "Use dependency injection for..."
-- Interface definitions: API contracts, function signatures, shared data structures
-- Flow descriptions: end-to-end operations spanning multiple components
-
-**Mapping requirements to issues:**
-
-For each vertical slice, determine which cross-cutting requirements apply based on what layers/components the issue touches:
-
-- **API layer issues** → apply API-related requirements, input validation, security
-- **User input handling** → apply security, validation, error handling
-- **Database access** → apply performance, error handling, retry logic
-- **Multi-component flows** → apply interface contracts, flow sequence requirements
-
-**Multi-issue flow detection:**
-
-Look in `PRD.md` for descriptions of end-to-end operations that span multiple vertical slices (e.g., auth flows, data pipelines, request/response cycles). For each issue that's part of such a flow, note:
-
-- Which upstream issues must complete first (dependencies)
-- Which downstream issues depend on this one
-- A brief description of this issue's role in the overall flow
+Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` for a rule that binds more than one slice ("every endpoint must …", "all calls retry …"). Each slice carries such a rule in `## Cross-cutting Requirements` only when its own acceptance criteria do not already cover it; otherwise the criterion is the home and the section is omitted. There is no category list to scan.
 
 ### 6. Write the issues
 
@@ -141,6 +99,14 @@ For each approved slice, execute the `publish` operation from `issue-tracker.md`
 **`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root, before any coder is dispatched, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` with the failing command and its output as the reason, instead of `ready-for-agent`: no coder can supply what it lacks. A command that can only hold once one of the issue's blockers lands (a Makefile target that blocker adds) is not run now — crew-afk probes it when the issue unblocks.
 
 **Acceptance criteria describe this slice's behaviour, not repo-wide hygiene.** A rule every change must follow that a check already enforces — a version bump, a changelog entry, lint — is not a criterion: the verify gate holds it, and as a per-issue criterion two parallel issues satisfy it with the same edit, which then merges away on one of them.
+
+**Acceptance-criteria rubric.** The reviewer gates on these, so each criterion is:
+
+- one observable behaviour or consumed contract (a signature, shape or output another issue relies on), checkable from the diff plus the checks — never "tests pass";
+- for a negative ("never writes outside X"), accompanied by the mechanism that prevents it — a negative with no named mechanism cannot be checked, so the criterion names the mechanism that prevents it;
+- free of internal design choices, which stay in the PRD's Decisions where the reviewer judges them as findings — unless the choice is itself the requirement (e.g. "one batched call" as a performance bound).
+
+A slice that takes input or calls something external must carry failure-behaviour criteria: invalid input, missing dependency, failing call — what the caller observes in each. This is how the PRD's `## Trust Boundaries & Risks` reaches the gated criteria.
 
 Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field. Work the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, publish all currently unblocked issues before their dependents.
 
@@ -163,9 +129,13 @@ A reference to the parent issue on the issue tracker (if the source was an exist
 
 ## What to build
 
-A concise description of this vertical slice. Describe the end-to-end behavior, not layer-by-layer implementation.
+A concise description of this vertical slice: the end-to-end behavior, not layer-by-layer implementation. Its first sentence is a one-line summary (`squash-commits.sh:109` takes the commit title from it).
 
-Avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it here and note briefly that it came from a prototype. Trim to the decision-rich parts — not the working demo, just the important bits.
+This section may cite grounded paths and signatures (confirmed in step 3). If a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it here and note briefly that it came from a prototype. Trim to the decision-rich parts — not the working demo, just the important bits.
+
+## Implements
+
+The PRD IDs this issue carries (e.g. `D3, B2`), plus the seam it is verified at (the highest existing test seam that exercises it).
 
 ## Acceptance criteria
 
@@ -175,23 +145,11 @@ Avoid specific file paths or code snippets — they go stale fast. Exception: if
 
 ## Cross-cutting Requirements
 
-> **Optional — only include this section if cross-cutting requirements from `PRD.md` apply to this issue. Omit entirely if no applicable requirements exist.**
+> **Optional — only include this section for a PRD rule that binds this issue and that its acceptance criteria do not already cover. Omit entirely otherwise.**
 
-Requirements from `PRD.md` that apply to this implementation:
+Rules from the PRD that apply to this implementation (a few items at most):
 
-- [ ] [Error handling requirement]
-- [ ] [Security requirement]
-- [ ] [Performance requirement]
-
-## Part of Flow
-
-> **Optional — only include this section if this issue is part of a multi-issue flow (an end-to-end operation spanning multiple vertical slices). Omit entirely for standalone issues.**
-
-This issue implements [step description] of the [flow name] flow.
-
-**Full flow:** [brief description or reference to PRD.md section]
-**Upstream:** [previous step/issue or "none"]
-**Downstream:** [next step/issue or "none"]
+- [ ] [PRD rule not already covered by an acceptance criterion]
 
 ## Requires
 
@@ -207,15 +165,15 @@ Or "None - can start immediately" if no blockers.
 
 ## Interfaces
 
-> **Optional — only include this section if `## Blocked by` is non-empty (i.e. this issue has upstream dependencies). Omit entirely for issues with no blockers.**
+> **Optional — only include this section if this issue consumes from or is consumed by another issue. Omit entirely otherwise.**
 
 ### Consumes:
 
-Exact signatures, types, or contracts expected from the blocking issues listed above. Be precise enough that a parallel agent implementing a blocker knows what shape to expose.
+Exact signatures, types, or contracts expected from the blocking issues listed above. Be precise enough that a parallel agent implementing a blocker knows what shape to expose. Omit when this issue consumes nothing.
 
 ### Exposes:
 
-Exact signatures, types, or contracts this issue produces for any downstream issues that depend on it.
+Exact signatures, types, or contracts this issue produces for any downstream issues that depend on it. A root issue (no blockers) that another issue consumes from has `### Exposes:`.
 
 </issue-template>
 
