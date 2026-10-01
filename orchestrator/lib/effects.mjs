@@ -13,6 +13,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
+import { constants as osConstants } from "node:os";
 import { dirname, join } from "node:path";
 
 export class Effects {
@@ -66,10 +67,15 @@ export class Effects {
       maxBuffer: 64 * 1024 * 1024,
       ...(timeoutMs ? { timeout: timeoutMs } : {}),
     });
-    const code = r.status === null ? 124 : r.status;
-    this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}`);
+    // status === null: killed by a signal. Our own `timeout` is the one signal that is a
+    // verdict (124, as always); any other was sent from outside — an interruption, not a
+    // result, so it gets the shell's 128+signal and `interrupted`, never the timeout's 124.
+    const timedOut = r.error?.code === "ETIMEDOUT";
+    const interrupted = r.status === null && !timedOut && Boolean(r.signal);
+    const code = interrupted ? 128 + (osConstants.signals[r.signal] ?? 0) : r.status === null ? 124 : r.status;
+    this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}${interrupted ? ` [${r.signal}]` : ""}`);
     if (r.error) this.log(`ERR  ${r.error.message}`);
-    return { code, stdout: r.stdout ?? "", stderr: r.stderr ?? "", error: r.error };
+    return { code, stdout: r.stdout ?? "", stderr: r.stderr ?? "", error: r.error, interrupted, signal: r.signal ?? null };
   }
 
   /**
@@ -91,14 +97,16 @@ export class Effects {
       let settled = false;
       let timedOut = false;
       let timer = null;
-      const finish = (status) => {
+      const finish = (status, signal = null) => {
         if (settled) return;
         settled = true;
         if (timer) clearTimeout(timer);
-        const code = timedOut || status === null || status === undefined ? 124 : status;
-        this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}`);
+        // As in exec: our own timeout is exit 124; a signal from outside is an interruption (128+signal).
+        const interrupted = !timedOut && (status === null || status === undefined) && Boolean(signal);
+        const code = interrupted ? 128 + (osConstants.signals[signal] ?? 0) : timedOut || status === null || status === undefined ? 124 : status;
+        this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}${interrupted ? ` [${signal}]` : ""}`);
         if (error) this.log(`ERR  ${error.message}`);
-        resolve({ code, stdout, stderr, error });
+        resolve({ code, stdout, stderr, error, interrupted, signal: signal ?? null });
       };
       const child = spawn(cmd, args, {
         cwd,
@@ -120,7 +128,7 @@ export class Effects {
         error = e;
         finish(null);
       });
-      child.on("close", (code) => finish(code));
+      child.on("close", (code, signal) => finish(code, signal));
     });
   }
 
