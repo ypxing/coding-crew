@@ -94,6 +94,10 @@ runs once through solve-issue's `check-requires.sh` — a failure blocks that is
 (an issue waiting on a blocker is probed when `loop.mjs` first claims it). A check
 that modifies the tree fails, in the baseline and every verify.
 
+At every drain of the queue (after Phase 1 and after Phase 2) the same mechanism runs once more on the merged
+feature branch under its own `_integration` stem and cache (`--no-integration-check`; `--no-baseline` does not
+turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR.
+
 ## Adding a new agent
 
 1. `agents/<name>/protocol.md` (or `workflow.js`).
