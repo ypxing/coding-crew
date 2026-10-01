@@ -9,14 +9,26 @@ import { notifyMilestone, writeTrackerSection } from "./shared.mjs";
 // Every non-complete outcome spends an attempt. One retry covers "might have been
 // transient"; a second failure is the answer, so the next demotion blocks instead.
 export const MAX_ATTEMPTS_PER_ISSUE = 2;
+// Except a coder that ran out of time after committing: it was working, not failing, so its
+// retry is free. Free retries still count here, so an issue whose coder keeps outgrowing the
+// timeout blocks after this many dispatches.
+export const MAX_DISPATCHES_PER_ISSUE = 3;
 
 /**
  * Every retryable demotion goes through here: the one place that decides, from the attempt
  * spent at claim time (sprint.bumpAttempt in loop.mjs), whether a retry is left. `reason`
- * passes through unchanged on a retry — resumeRoute reads it back.
+ * passes through unchanged on a retry — resumeRoute reads it back. `free`: this attempt
+ * timed out after committing, so it spends no attempt while a dispatch is left.
  */
-export function finishRetryOrBlock(ctx, worker, outcome, reason) {
-  if (worker.attempt >= MAX_ATTEMPTS_PER_ISSUE) {
+export function finishRetryOrBlock(ctx, worker, outcome, reason, { free = false } = {}) {
+  const { sprint } = ctx;
+  const slug = worker.issue.slug;
+  if (free && worker.attempt < MAX_DISPATCHES_PER_ISSUE) {
+    sprint.grantFreeAttempt(slug);
+    return finishPartial(ctx, worker, outcome, reason);
+  }
+  const spent = worker.attempt - sprint.freeAttempts(slug);
+  if (spent >= MAX_ATTEMPTS_PER_ISSUE || worker.attempt >= MAX_DISPATCHES_PER_ISSUE) {
     return finishBlocked(ctx, worker, outcome, `retry limit reached (${worker.attempt} attempts) — ${reason}`);
   }
   return finishPartial(ctx, worker, outcome, reason);

@@ -462,6 +462,28 @@ test("a worker-reported failing check with no commits is demoted and never merge
   assert.match(readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8"), /## Progress/);
 });
 
+test("a coder that times out after committing gets a free retry", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Rounds 1 and 2 commit, then outlast the timeout; round 3 completes. Under the plain
+  // two-attempt cap round 2 would have blocked it.
+  fake(root, "alpha.worker-sleep", "3 2");
+  const { r, lines } = commandLines(root, ["--coder-timeout", "0.02"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 3);
+});
+
+test("free retries stop at the dispatch cap", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker-sleep", "3");
+  const { r, lines } = commandLines(root, ["--coder-timeout", "0.02"]);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(3 attempts\) — worker timed out/);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 3);
+});
+
 test("a worker-reported partial carries its own unmet criteria into the Progress section", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
