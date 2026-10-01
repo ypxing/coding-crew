@@ -15,6 +15,9 @@ Gate and the Common False Positives list in the protocol before it becomes a fin
 - **Hollow tests** — an assertion that would pass even if the implementation were a no-op, or
   that only checks a mock was *called* rather than the resulting value or side effect
 - **Dead code** — commented-out code, unused imports, unreachable branches
+- **Second reader of the same input** — new code parsing or gating an input existing code already
+  reads (file format, heading, flag): compare the two by reading. An input the old reader accepts
+  that the new one rejects or reads differently is a finding citing both sides' `file:line`.
 
 ## Performance (MEDIUM)
 

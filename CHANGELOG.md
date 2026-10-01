@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-reviewer`: new HIGH class, *second reader of the same input* — when a diff adds code that parses, validates
+  or gates an input existing code already interprets, the reviewer compares the two by reading and reports any input
+  the existing reader accepts that the new one rejects or reads differently, citing both sides.
+- `to-issues`: a slice that adds a parser, validator or gate for an input the repo already holds examples of carries
+  one criterion that it accepts them, naming the examples to copy into committed fixtures (never a live or gitignored
+  directory); no examples, no criterion. `to-prd`'s `## Compatibility & Migration` names where that data lives.
 - `to-issues`: slices are one externally observable behaviour verified at the highest existing test seam (first
   slice = thinnest end-to-end path), merged when they share a seam and neither is reviewable or demoable alone,
   with 3–8 acceptance criteria as the soft target. A coverage table traces every PRD `D<n>`/`B<n>` to its slices;

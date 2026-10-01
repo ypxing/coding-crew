@@ -89,7 +89,9 @@ call fails.
 Write this section only when the feature changes a shipped contract (a CLI flag, config key, file
 format, API, install path); otherwise omit the heading entirely. State what breaks, what migrates
 and how, and whether the change is expand–contract (old and new both work first, the old is removed
-later).
+later). When the feature adds a reader, validator or gate for data the repo already holds (issue
+files, configs, fixtures, records), name where that data lives — `to-issues` turns it into a
+criterion that the new code accepts it.
 
 ## Testing Decisions
 

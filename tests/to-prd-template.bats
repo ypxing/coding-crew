@@ -79,3 +79,7 @@ Further Notes"
   [[ "$s" == *'one line per assumption'* ]]
   [[ "$s" == *'only'* ]]
 }
+
+@test "Compatibility & Migration names where existing data lives for a new reader or gate" {
+  printf '%s\n' "$TEMPLATE" | grep -qF 'name where that data lives'
+}

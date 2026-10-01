@@ -67,3 +67,10 @@ setup() {
   TARGET_REPO="$TARGET_REPO" "$SCRIPT_DIR/install.sh" claude crew-reviewer >/dev/null
   grep -q '^## Feature Mode$' "$TARGET_REPO/.claude/agents/crew-reviewer.md"
 }
+
+@test "crew-reviewer compares a new reader of an input with the existing one, by reading only" {
+  local q="$AGENT_DIR/assets/references/quality.md" # loaded for every review, both modes
+  grep -qF '**Second reader of the same input**' "$q"
+  grep -qF "citing both sides' \`file:line\`" "$q"
+  grep -qF 'compare the two by reading' "$q"
+}
