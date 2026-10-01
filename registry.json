@@ -79,7 +79,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.5.3",
+      "version": "2.6.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -112,6 +112,7 @@
         "tdd",
         "dep-install",
         "solve-issue",
+        "to-issues",
         "crew-address-findings"
       ]
     },

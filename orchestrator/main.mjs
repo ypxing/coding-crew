@@ -120,6 +120,8 @@ import {
   dirtyTrackedFiles,
   dockerDepsFailureMessage,
   checkRequires,
+  lintFailureMessage,
+  lintIssues,
   missingAssets,
   missingAssetsMessage,
   runBaseline,
@@ -760,6 +762,15 @@ async function main() {
       } catch (err) {
         console.error(`crew-afk: could not open the ${options.paneHost} log tab: ${err.message} — continuing without one.`);
       }
+    }
+
+    // Before command discovery (a model call) and any worktree: a cycle or an unmatched
+    // `## Blocked by` is cheaper to fix in the issue files than after a coder ran on them.
+    const lint = await lintIssues({ sprint, effects, options, log: emit });
+    if (lint.status === "fail" && !options.dryRun) {
+      fatal(lintFailureMessage(lint.errors));
+      exitCode = 1;
+      return exitCode;
     }
 
     if (options.commands) {
