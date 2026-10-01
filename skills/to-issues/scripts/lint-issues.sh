@@ -110,6 +110,18 @@ for f in "${ISSUES[@]}"; do
   PATHS+=("$f")
 done
 
+# strip_markup <token> — sets STRIPPED to the token minus every leading/trailing markup or
+# punctuation character (`**x.md**.` -> x.md). Pure parameter expansion: no subshell, no globbing.
+strip_markup() {
+  STRIPPED="$1"
+  local prev=""
+  while [[ "$STRIPPED" != "$prev" ]]; do
+    prev="$STRIPPED"
+    STRIPPED="${STRIPPED#[\`\*\(\[<\"\']}"
+    STRIPPED="${STRIPPED%[\`\*\)\]>\"\',;:.]}"
+  done
+}
+
 # Resolve `Issue #n` to the set member whose filename starts with the number.
 resolve_number() {
   local n="$1" name
@@ -158,8 +170,8 @@ for idx in "${!NAMES[@]}"; do
     read -r -a toks <<< "$entry"
     rest=""
     for tok in "${toks[@]+"${toks[@]}"}"; do
-      bare="${tok%[\`\*\)\]>\"\',;:.]}"
-      [[ "$bare" == *.md ]] || rest+="$tok "
+      strip_markup "$tok"
+      [[ "$STRIPPED" == *.md ]] || rest+="$tok "
     done
     while [[ "$rest" =~ [Ii][Ss][Ss][Uu][Ee][[:space:]-]*#?0*([0-9]+) ]]; do
       found=1
@@ -173,8 +185,8 @@ for idx in "${!NAMES[@]}"; do
     done
     # Filename references: whitespace-separated tokens, stripped of markup
     for tok in "${toks[@]+"${toks[@]}"}"; do
-      tok="${tok#[\`\*\(\[<\"\']}"; tok="${tok%[\`\*\)\]>\"\',;:.]}"
-      tok="${tok#[\`\*\(\[<\"\']}"; tok="${tok%[\`\*\)\]>\"\',;:.]}"
+      strip_markup "$tok"
+      tok="$STRIPPED"
       if [[ "$tok" == */* || "$tok" == *'$'* || "$tok" == *'`'* ]]; then
         # path-like or metacharacter-laden: data, an unmatched ref, never opened
         found=1

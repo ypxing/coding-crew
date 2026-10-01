@@ -76,6 +76,14 @@ lint_clean() { # extra args
   [[ "$output" != *"ERROR "*"02-cli.md"* ]]
 }
 
+@test "Blocked by filename wrapped in markup and followed by punctuation resolves and is not read as Issue #<n>" {
+  cp "$W/issues/01-store.md" "$W/issues/fix-issue-3-thing.md"
+  printf '\n- `fix-issue-3-thing.md`, then wait\n- **fix-issue-3-thing.md**.\n' >> "$W/issues/02-cli.md"
+  lint_clean
+  [[ "$output" != *"Issue #3"* ]]
+  [[ "$output" != *"ERROR "*"02-cli.md"* ]]
+}
+
 @test "ERROR: --deps edges differ from Blocked by prose, naming issue and both lists" {
   cat > "$W/issues/issues-deps.json" <<'J'
 {"01-store.md": [], "02-cli.md": [], "03-docs.md": ["02-cli.md", "01-store.md"]}
