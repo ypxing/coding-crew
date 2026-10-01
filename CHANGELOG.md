@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: a verify ended by a signal (not the call's own timeout) is *interrupted*, not failed — no triage, no
+  coder, no failure logged, and the issue is verified again next round for free. Verify output that names no failing
+  check is run a second time before triage; if still empty the issue is re-verified next round, never recoded.
 - `crew-reviewer`: new HIGH class, *second reader of the same input* — when a diff adds code that parses, validates
   or gates an input existing code already interprets, the reviewer compares the two by reading and reports any input
   the existing reader accepts that the new one rejects or reads differently, citing both sides.

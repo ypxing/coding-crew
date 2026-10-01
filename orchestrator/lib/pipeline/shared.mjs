@@ -38,6 +38,12 @@ export const REQUIRES_FAILED_TAG = "requires-failed";
 // A dispatch stopped at its role's afk.limits.<role>.usd cap (claude's error_max_budget_usd).
 // Blocks at once; a human raises the cap or narrows the issue.
 export const LIMIT_EXCEEDED_TAG = "limit-exceeded";
+// verify-worktree.sh ended without a verdict: killed from outside (INTERRUPTED), or its
+// output named no failing check (INCONCLUSIVE, even after a second run). Neither is
+// evidence against the branch, so no route for either dispatches a coder or triage —
+// the next round only verifies again.
+export const VERIFY_INTERRUPTED_TAG = "verify-interrupted";
+export const VERIFY_INCONCLUSIVE_TAG = "verify-inconclusive";
 const REASON_SEP = " — ";
 
 export function taggedReason(tag, summary) {
@@ -85,10 +91,10 @@ export function logVerifyOutput(ctx, dir, who, round, verify) {
   const file = resolve(ctx.effects.mainRoot, dir, round != null ? `verify-r${round}.out` : "verify.out");
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, verify.stdout ?? "");
-  const result = verify.code === 0 ? "pass" : "fail";
+  const result = verify.code === 0 ? "pass" : verify.interrupted ? "interrupted" : "fail";
   ctx.log(
     `[VERIFY-OUTPUT] ${who}${round != null ? ` round=${round}` : ""} result=${result} file=${relative(ctx.effects.mainRoot, file)}`,
-    result === "pass" ? "debug" : "error",
+    result === "pass" ? "debug" : result === "interrupted" ? "warn" : "error",
   );
 }
 
