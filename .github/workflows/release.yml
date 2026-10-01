@@ -2,11 +2,9 @@ name: Release
 
 # Publishes a GitHub Release whenever a vX.Y.Z tag is pushed.
 #
-# Why this exists: bootstrap.sh and install.sh resolve `--version latest` through
-# GitHub's /releases/latest redirect, which only sees Release *objects* — a bare
-# tag is invisible to it. Tags pushed without a matching Release silently pin
-# every consumer to the last released version (v1.15.0/v1.16.0/v1.17.0 each
-# stranded consumers on v1.14.1 this way). Automating it removes the manual step.
+# Releases are milestone markers only: users install from `main` (bootstrap.sh) and
+# `install.sh --update` follows registry.json's per-entry versions, not tags. Cut one with
+# scripts/cut-release.sh, which tags the version named by CHANGELOG.md's top `## [X.Y.Z]`.
 
 on:
   push:

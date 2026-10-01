@@ -13,7 +13,7 @@
 #
 # Preconditions this enforces (fails fast, does not guess):
 #   - working tree clean, HEAD's branch has an upstream to push to
-#   - CHANGELOG.md's first "## [X.Y.Z]" heading names the version this HEAD ships as — you still
+#   - CHANGELOG.md's first "## [X.Y.Z]" heading (after [Unreleased]) names the version this HEAD ships as — you still
 #     write that entry; this script only reads the version number back out of it, so there is
 #     exactly one place the version is decided, not two that can disagree
 #   - that version is greater than the nearest previous release tag
@@ -46,7 +46,7 @@ UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || t
 [[ -n "$UPSTREAM" ]] || { echo "Error: '$BRANCH' has no upstream to push to." >&2; exit 1; }
 REMOTE="${UPSTREAM%%/*}"
 
-NEXT=$(awk '/^## \[/{print; exit}' CHANGELOG.md | sed -E 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/')
+NEXT=$(awk '/^## \[[0-9]/{print; exit}' CHANGELOG.md | sed -E 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/')
 [[ "$NEXT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
   echo "Error: CHANGELOG.md's top heading isn't a '## [X.Y.Z]' version. Add this release's entry first." >&2
   exit 1
