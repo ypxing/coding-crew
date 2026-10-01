@@ -6,7 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
-- `crew-grill`, `crew-brainstorm`: keep the design proportionate to the problem. The problem is sized first (how often,
+- `crew-grill`, `crew-brainstorm`: keep the design proportionate to the problem — size must be justified, by the
+  problem or by the structure of what is built now (one owner per concern, no duplication, a needed test seam), never
+  by needs nobody has yet. The problem is sized first (how often,
   the manual workaround's cost, what breaks if nothing is done — looked up, not asked), and solutions the user brings
   are inputs, not the menu. Every question deciding how much to build includes the do-least option (down to "by hand" or "leave it"); a larger
   recommendation needs evidence it falls short, not completeness alone, and names the follow-on components it drags

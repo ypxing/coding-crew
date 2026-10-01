@@ -93,3 +93,14 @@ setup() {
   grep -qi '"Nothing breaks" is a claim of fact' "$GRILL"
   grep -qi '"Nothing breaks" is a claim to check' "$BRAINSTORM"
 }
+
+@test "P5: size is justified by the problem or by structure, not minimised for its own sake" {
+  # Intent: well-architected, not overengineered. A shared helper that removes
+  # duplication must survive the subtraction pass; a hypothetical need must not.
+  grep -qi 'unjustified\*\* size is not' "$GRILL"
+  grep -qi 'unjustified\*\* size is not' "$BRAINSTORM"
+  grep -qi 'no duplicated logic' "$GRILL"
+  grep -qi 'need nobody has yet' "$GRILL"
+  grep -qi 'structural property of what is built now' "$GRILL"
+  grep -qi 'structural property of what is built now' "$BRAINSTORM"
+}

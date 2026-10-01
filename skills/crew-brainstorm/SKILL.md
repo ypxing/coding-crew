@@ -79,7 +79,8 @@ digraph brainstorming {
 **Exploring approaches:**
 
 - Propose 2-3 different approaches with trade-offs. One is always the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in terms of the problem size
-- Recommending anything larger needs evidence that the do-least option falls short; "it doesn't cover every case" is not that evidence unless the uncovered case is costly
+- Size is fine; **unjustified** size is not. A component earns its place through the problem, or through the structure of what is built now (one owner per concern, no duplicated logic, a seam its tests need) — never through a need nobody has yet or completeness for its own sake
+- Recommending anything larger needs evidence that the do-least option falls short, on the problem or on structure; "it doesn't cover every case" is not that evidence unless the uncovered case is costly
 - Name the follow-on components each approach drags in, so its full price is visible when the user picks
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
@@ -91,7 +92,7 @@ digraph brainstorming {
 - Ask after each section whether it looks right so far
 - Cover: architecture, components, data flow, error handling, testing
 - Be ready to go back and clarify if something doesn't make sense
-- Before asking for final approval, run a **subtraction pass**: for each component, name the part of the problem that breaks if it is removed. "Another component needs it" is not an answer: follow the chain to its root and judge the root against the problem size, showing the chain's total price. "Nothing breaks" is a claim to check and cite, not assume. If nothing breaks, propose cutting it, and show what you cut
+- Before asking for final approval, run a **subtraction pass**: for each component, name the part of the problem, or the structural property of what is built now, that breaks if it is removed. "Another component needs it" is not an answer: follow the chain to its root and judge the root against the problem size, showing the chain's total price. "Nothing breaks" is a claim to check and cite, not assume. If nothing breaks, propose cutting it, and show what you cut
 
 **Design for isolation and clarity:**
 
@@ -116,7 +117,7 @@ Once the user approves the design, invoke `to-prd` using the same feature slug c
 
 - **One question at a time** - Don't overwhelm with multiple questions
 - **Multiple choice preferred** - Easier to answer than open-ended when possible
-- **YAGNI ruthlessly** - Remove unnecessary features from all designs: size the problem first, always offer the do-least option, and run the subtraction pass
+- **Justified size, not small size** - Well-architected, not overengineered: size the problem first, always offer the do-least option, keep what the problem or the structure of what is built now needs, and cut the rest (YAGNI)
 - **Explore alternatives** - Always propose 2-3 approaches before settling
 - **Incremental validation** - Present design, get approval before moving on
 - **Be flexible** - Go back and clarify when something doesn't make sense

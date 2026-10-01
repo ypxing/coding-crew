@@ -13,6 +13,8 @@ Interview the user relentlessly until you reach shared understanding. Map the pl
 
 The tree's root is the problem, not the solutions on offer. Before any solution node, establish the **problem size**: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. These are mostly facts (git history, the tracker, the code), so Gate 1 applies — look them up, cite them, and ask only what no source holds. Candidate solutions the user brings with them are inputs to this tree, not its frontier: the smallest change that removes the cost you measured is the baseline every larger option has to beat.
 
+Size is fine; **unjustified** size is not. Well-architected is a justification, overengineered is not: a component earns its place through the measured problem, or through the structure of what is being built *now* — one owner per concern, no duplicated logic, a seam its tests need, the repo's layer rules. A need nobody has yet, generality for a hypothetical caller, or completeness for its own sake earns nothing.
+
 ### Rounds and gates
 
 Work in **rounds**. The **frontier** is every decision whose prerequisites are already settled — what you can ask now without guessing at answers you haven't heard. A question that depends on another still-open question belongs to a later round, not this one.
@@ -72,7 +74,7 @@ Ask only the Ask lane, and only as many questions as the frontier genuinely bloc
 ➡️ <your recommended answer>
 ```
 
-Every question that decides how much to build — not a fact only the user holds — includes the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in the terms of the problem size. Recommending anything larger needs evidence that the do-least option falls short; "it doesn't cover every case" is not that evidence unless the uncovered case is costly. When an option drags in follow-on components or decisions, its body names them ("(b) brings a workflow, a selector and a label protocol"): the Silent decisions it spawns are part of its price, and the user never sees them one by one.
+Every question that decides how much to build — not a fact only the user holds — includes the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in the terms of the problem size. Recommending anything larger needs evidence that the do-least option falls short — on the measured problem, or because it would leave what is built worse structured (see the Root section); "it doesn't cover every case" is not that evidence unless the uncovered case is costly. When an option drags in follow-on components or decisions, its body names them ("(b) brings a workflow, a selector and a label protocol"): the Silent decisions it spawns are part of its price, and the user never sees them one by one.
 
 The `checked:` clause is Gate 1's receipt: it names what you consulted and, by implication, why that source didn't settle the question. If the clause would read "nothing," the node isn't ready to be asked — it's ready to be researched.
 
@@ -90,7 +92,7 @@ Phase 1 ends when the frontier is empty: every branch of the design tree visited
 
 If the user's invocation included "with docs" or "with documents", also invoke the `domain-modeling` skill inline as decisions crystallise: update `CONTEXT.md` when terms are resolved, and offer ADRs when decisions meet the ADR threshold (hard to reverse, surprising without context, result of a real trade-off).
 
-Before the summary, run a **subtraction pass** over what the design contains: for each decision and component, name the part of the measured problem that breaks if it is removed. "Another component needs it" is not an answer — follow the chain to its root and judge the root against the problem size; when a chain's root only saves what the do-least option covers cheaply, show the chain with its total price and ask once whether to keep it, even if the user approved the root earlier. "Nothing breaks" is a claim of fact: check it like one (Gate 1) and cite it, or keep the item. If nothing breaks, propose cutting it. Show the cut list in the summary, so the user can restore anything they want back; what stays cut goes to the PRD's Out of Scope, with the reason. Alternatives never proposed are not cuts — they go straight to Out of Scope.
+Before the summary, run a **subtraction pass** over what the design contains: for each decision and component, name the part of the measured problem, or the structural property of what is built now (see the Root section), that breaks if it is removed. "Another component needs it" is not an answer — follow the chain to its root and judge the root against the problem size; when a chain's root only saves what the do-least option covers cheaply, show the chain with its total price and ask once whether to keep it, even if the user approved the root earlier. "Nothing breaks" is a claim of fact: check it like one (Gate 1) and cite it, or keep the item. If nothing breaks, propose cutting it. Show the cut list in the summary, so the user can restore anything they want back; what stays cut goes to the PRD's Out of Scope, with the reason. Alternatives never proposed are not cuts — they go straight to Out of Scope.
 
 Then:
 
