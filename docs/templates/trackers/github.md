@@ -92,7 +92,8 @@ On success it swaps `ready-for-agent` for `awaiting-merge` (creating that label 
 lacks it) and leaves the issue **open**. Put `Closes #<number>` in the body of the PR that
 carries the work: GitHub closes the issue when that PR merges into the default branch. With
 `afk.openPr: true` (or `--open-pr`) crew-afk pushes the feature branch and opens or updates that
-PR itself, writing these lines for every `awaiting-merge` issue in the milestone; without it,
+PR itself, writing these lines for every `awaiting-merge` issue in the milestone, plus `Closes #<prd>` for the
+`PRD:` issue once no open work issue is left in it; without it,
 the end-of-sprint summary prints them for you to paste. (A PR into any other branch does not
 trigger the keyword — close those by hand.)
 

@@ -59,28 +59,38 @@ fi
 # ─── tracker backend: local (file path) or github (issue number) ────────────
 #
 # tracker-config.sh (issue 01) is the single source of truth for which backend the
-# whole pipeline uses. It ships as a real sibling of this script both in the source
-# tree and once installed (registry.json bundles the two together), so the first
-# candidate below is the normal hit; the other two cover running this script
-# straight out of the repo checkout against an installed `.coding-crew/`. Finding
-# none of them is not an error — it means `tracker: local` with no front matter at
+# whole pipeline uses, found through the shared lookup block below. Finding none of
+# its candidates is not an error — it means `tracker: local` with no front matter at
 # all, the same zero-config default tracker-config.sh itself falls back to.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_ROOT="${MAIN_ROOT:-.}"
+# BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
+# Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
+# It cannot live in tracker-config.sh itself: that is the file being looked for.
+# Callers break on the first hit, closing the pipe while this may still be writing; where
+# SIGPIPE is ignored that write fails with "Broken pipe", so it stops quietly instead.
+tracker_config_candidates() {
+  local main_root="$1" c
+  for c in "${CREW_TRACKER_CONFIG:-}" \
+    "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/scripts/tracker-config.sh}" \
+    "$main_root/.coding-crew/scripts/tracker-config.sh" \
+    "$main_root/scripts/tracker/tracker-config.sh" \
+    "${HOME:+$HOME/.coding-crew/scripts/tracker-config.sh}"; do
+    if [ -n "$c" ]; then printf '%s\n' "$c" 2>/dev/null || return 0; fi
+  done
+  return 0
+}
+# END tracker-lookup
 TRACKER_CONFIG_TRACKER="local"
 TRACKER_CONFIG_REPO=""
-for _tc in \
-  "$SCRIPT_DIR/tracker-config.sh" \
-  "$MAIN_ROOT/.coding-crew/scripts/tracker-config.sh" \
-  "$MAIN_ROOT/scripts/tracker/tracker-config.sh"
-do
-  if [ -f "$_tc" ]; then
-    # shellcheck source=./tracker-config.sh
-    . "$_tc"
-    read_tracker_config "$MAIN_ROOT"
-    break
-  fi
-done
+TRACKER_CONFIG_FOUND=""
+while IFS= read -r _tc; do
+  if [ -f "$_tc" ]; then TRACKER_CONFIG_FOUND="$_tc"; break; fi
+done < <(tracker_config_candidates "$MAIN_ROOT")
+if [ -n "$TRACKER_CONFIG_FOUND" ]; then
+  # shellcheck source=/dev/null
+  . "$TRACKER_CONFIG_FOUND"
+  read_tracker_config "$MAIN_ROOT"
+fi
 
 if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
   # ─────────────────────────── github backend ────────────────────────────
@@ -155,15 +165,25 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
 
   # ─── mark done ───────────────────────────────────────────────────────────
   # Not a close: the work is only on a branch. Swap ready-for-agent for awaiting-merge
-  # (read as done) and let the PR's `Closes #n` close the issue when it merges. The label
-  # is created first, idempotently: --add-label fails on a label the repo lacks.
+  # (read as done) and let the PR's `Closes #n` close the issue when it merges. crew-afk's
+  # display label `in-progress` comes off in the same edit. Both labels are created first,
+  # idempotently: --add-label and --remove-label fail on a label the repo lacks, and a repo
+  # configured before `in-progress` existed lacks it — removing it from an issue that never
+  # carried it is then still a no-op.
   if ! GH_OUT="$(gh label create awaiting-merge "${REPO_ARGS[@]}" --force \
       --description "Implemented on a feature branch; closes when its PR merges" 2>&1)"; then
     echo "ERROR: gh label create awaiting-merge failed:" >&2
     echo "$GH_OUT" >&2
     exit 1
   fi
-  if ! GH_OUT="$(gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --add-label awaiting-merge --remove-label ready-for-agent 2>&1)"; then
+  # A display label never fails a close: without it created the edit just leaves it alone.
+  IN_PROGRESS_ARGS=(--remove-label in-progress)
+  if ! GH_OUT="$(gh label create in-progress "${REPO_ARGS[@]}" --force \
+      --description "A crew-afk run is working this issue (display only)" 2>&1)"; then
+    echo "WARNING: gh label create in-progress failed; leaving it alone: $GH_OUT" >&2
+    IN_PROGRESS_ARGS=()
+  fi
+  if ! GH_OUT="$(gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --add-label awaiting-merge --remove-label ready-for-agent "${IN_PROGRESS_ARGS[@]}" 2>&1)"; then
     echo "ERROR: gh issue edit failed for #$ISSUE_NUMBER:" >&2
     echo "$GH_OUT" >&2
     exit 1
