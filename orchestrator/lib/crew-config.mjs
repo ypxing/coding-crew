@@ -15,7 +15,7 @@
  *       "fixFindings": "high", "PRDAudit": "fix",
  *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": false,
  *       "openPr": false,
- *       "baselineCheck": true, "resumeCoderSession": false,
+ *       "baselineCheck": true, "integrationCheck": true, "resumeCoderSession": false,
  *       "limits": { "coder": { "usd": 5 } } } }
  *
  * Every setting but runtime/models/limits has a flag that wins for one run (resolveSettings).
@@ -79,6 +79,7 @@ export const DEFAULT_SETTINGS = {
   squashCommits: false,
   openPr: false,
   baselineCheck: true,
+  integrationCheck: true,
   resumeCoderSession: false,
 };
 
@@ -91,6 +92,7 @@ const SCALARS = {
   squashCommits: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   openPr: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   baselineCheck: (v) => (typeof v === "boolean" ? null : "must be true or false"),
+  integrationCheck: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   resumeCoderSession: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   paneHost: (v) => (PANE_HOSTS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PANE_HOSTS.join(", ")})`),
   worktreeRoot: (v) => (typeof v === "string" && v.trim() ? null : "must be a non-empty path"),
@@ -426,7 +428,7 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
  * The sprint's settings: each flag (`cli`, undefined when not given) over config.json's
  * afk section over the defaults. `origin` gains "--flag" for each setting a flag decided,
  * so `plan` credits the right source.
- * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, openPr, baselineCheck, resumeCoderSession,
+ * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, openPr, baselineCheck, integrationCheck, resumeCoderSession,
  *   maxParallel: number|null,
  *   timeouts: Record<string, number>,  timeouts in minutes
  *   limitsUsd: Record<string, number>}}  each capped role's dollar cap; no key, no cap
@@ -451,6 +453,7 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     squashCommits: pick("squashCommits"),
     openPr: pick("openPr"),
     baselineCheck: pick("baselineCheck"),
+    integrationCheck: pick("integrationCheck"),
     resumeCoderSession: pick("resumeCoderSession"),
     maxParallel: pick("maxParallel"),
     timeouts,

@@ -42,6 +42,9 @@ For a single platform, a per-project install or updates, see [Install options](#
         └── fix ┴──────────┘   same branch, up to 2 tries
     │ all issues done
     ▼
+ 🤖 integration check     your checks, on the merged feature branch (red: reported, no PR)
+    │
+    ▼
  🤖 PRD audit + HIGH/CRITICAL review findings → new issues → per-issue loop again (once)
     │
     ▼
@@ -60,6 +63,9 @@ What you can rely on:
 - **A failing branch is never merged.** Every branch must pass your project's own checks first.
 - **A separate agent reviews every branch.** Unmet acceptance criteria send it back to the coder;
   other findings never block. They're written to `.scratch/<feature>/reviews/`.
+- **The merged feature is checked as a whole.** Two branches can each pass and still break each
+  other, so once the issues are done your checks run again on the merged feature branch. A red
+  result is reported in the summary, and no PR is opened over it.
 - **The PRD is checked.** Once the issues are merged, the code is audited against the PRD and any
   requirement no issue covered becomes a new issue.
 - **Work is never thrown away.** A retry continues on the same branch, and unfinished work is kept
@@ -75,6 +81,7 @@ What you can rely on:
 /crew-afk --open-pr             # push the feature branch and open/update its PR at the end
 /crew-afk --fix-findings none   # don't auto-fix review findings (default: high)
 /crew-afk --max-parallel 2      # fewer concurrent coders
+/crew-afk --no-integration-check # skip the checks on the merged feature branch (--no-baseline skips the one before dispatch)
 ```
 
 To keep settings between runs, put them in `.coding-crew/config.json` (per repo) or

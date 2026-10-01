@@ -26,6 +26,11 @@
  * because a sprint that stalled on unrelated issues may still have merged code carrying a
  * CRITICAL finding.
  *
+ * The integration check (afk.integrationCheck) runs at every drain — after Phase 1 and again
+ * after Phase 2: each branch passed its own verify, but the merged feature branch is checked
+ * nowhere else, and Phase 2's fixes can break it again. A red final one is reported in the
+ * summary and keeps the PR from being opened; fixing it is not this loop's job yet.
+ *
  * The PRD audit (runPrdAudit) runs once, the first time the queue drains: its gaps are parked
  * like findings, so the same flush sends both into Phase 2.
  */
@@ -38,7 +43,7 @@ import { getTracker } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
 import { writeLog } from "./log.mjs";
 import { labelIssue } from "./labels.mjs";
-import { checkRequires } from "./preflight.mjs";
+import { checkRequires, integrationSection, runIntegrationCheck } from "./preflight.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit } from "./report.mjs";
 
@@ -160,6 +165,7 @@ export async function runSprint(ctx) {
   let capped = false;
   let prdAudit = {};
   let audited = false;
+  let integration = null;
   while (true) {
     await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
 
@@ -178,6 +184,8 @@ export async function runSprint(ctx) {
       prdAudit = await runPrdAudit(ctx, tracker);
       if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
     }
+    // Every drain, with whatever has merged so far: nothing merged, nothing new to check.
+    if (options.integrationCheck && !options.dryRun && sprint.get("merged")) integration = runIntegrationCheck(ctx);
     if (flush(ctx) > 0) continue;
     if (unseen.size) {
       const refs = [...unseen];
@@ -208,7 +216,7 @@ export async function runSprint(ctx) {
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, prdAudit, unlisted });
+  await wrapUp(ctx, { tracker, stalled, prdAudit, unlisted, integration });
   return { stalled, history };
 }
 
@@ -344,7 +352,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [] }) {
+async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integration = null }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -371,7 +379,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [] }) {
 
   // --- summary (rendered from disk, never from recollection) -----------------
   // The PR comes first: the summary points at it when the findings were posted there.
-  const pr = pullRequest(ctx, tracker);
+  const pr = pullRequest(ctx, tracker, integration);
   const summaryArgs = [];
   if (stalled) summaryArgs.push("--stalled");
   if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url);
@@ -392,6 +400,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [] }) {
       ctx.out(`\n**Superseded — update the PRD, nothing queued:**\n${lines.join("\n")}\n`);
     }
   }
+  if (integration) ctx.out(`\n## Integration check\n\n${integrationSection(effects.mainRoot, sprint.featureBranch, integration)}\n`);
   if (unlisted.length) ctx.out(`\n**Fix issues not implemented:**\n${unlisted.map((l) => `- ${l}`).join("\n")}\n`);
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
   if (pr) ctx.out(`\n## ${pr.heading ?? "Pull Request"}\n\n${pr.text}\n`);
@@ -406,7 +415,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [] }) {
  * (post-findings.sh) its URL and their count — or null when there is nothing to say. A posting
  * failure is reported in the text and never fails the sprint.
  */
-function pullRequest(ctx, tracker) {
+function pullRequest(ctx, tracker, integration) {
   const { sprint, effects, options } = ctx;
   let refs = [];
   let refsError = null;
@@ -434,6 +443,10 @@ function pullRequest(ctx, tracker) {
       "",
       "Or have crew-afk push the branch and open the PR itself: re-run with --open-pr (config: afk.openPr: true).",
     ].join("\n") };
+  }
+  // A red merged branch is not shipped: the PR would ask a reviewer to merge what fails its checks.
+  if (integration?.status === "fail") {
+    return { text: `**Not opened:** the integration check failed on ${sprint.featureBranch} — see ## Integration check above.` };
   }
   // A PR without its closing lines would ship the work and strand the issues open.
   if (refsError) return { text: `**Not opened:** could not list the issues it closes — ${refsError}` };
