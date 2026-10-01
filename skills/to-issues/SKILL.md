@@ -54,20 +54,22 @@ Break the plan into **tracer bullet** issues. Each issue is a thin vertical slic
 Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an architectural decision or a design review. AFK slices can be implemented and merged without human interaction. Prefer AFK over HITL where possible.
 
 <vertical-slice-rules>
-- Each slice delivers a narrow but COMPLETE path through every layer (schema, API, UI, tests)
+- A slice is one externally observable behaviour, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a rendered output, a bats run). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviour needs
+- The first slice is the thinnest end-to-end path: the narrowest behaviour that proves the layers connect. Later slices widen it
 - A completed slice is demoable or verifiable on its own
 - Each slice is sized to fit in a single fresh context window — if a slice requires multiple agent sessions it must be split further
-- Prefer many thin slices over few thick ones
+- Merge rule: merge two slices when they share a test seam and neither is reviewable or demoable alone. Do not split below that floor — a fragment nobody can review or demo on its own is not a slice
+- Aim for 3–8 acceptance criteria per slice (a soft target, not a gate): fewer usually means a fragment to merge, more usually means two behaviours to split
 - Any prefactoring should be sequenced first
 </vertical-slice-rules>
 
-**Wide refactors are the exception to vertical slicing.** A wide refactor is one mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase so no vertical slice can land green on its own. Don't force it into a tracer bullet; sequence it as **expand–contract**:
+**Wide refactor?** One mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase, so no vertical slice can land green on its own: read `references/expand-contract.md` before slicing it.
 
-1. **Expand** — add the new form beside the old so nothing breaks
-2. **Migrate** — move call sites over in batches (per package, per directory), each batch its own issue blocked by the expand, keeping CI green batch to batch because the old form still exists
-3. **Contract** — delete the old form once no caller remains, blocked by every migrate batch
+**Expand–contract sequencing** is drawn from the PRD's `## Compatibility & Migration` when it exists: each expand, migrate and contract step it names becomes a slice (or part of one) sequenced in that order, with the contract step blocked by every migrate step. Without that section, do not invent a migration sequence.
 
-When even the batches can't stay green independently, let them share an integration branch and block a final integrate-and-verify issue — green is promised only there.
+### 4.5. Trace PRD IDs to slices
+
+Before the quiz, build a coverage table: one row per `D<n>` / `B<n>` ID in the PRD (lines starting `- **D<n>** — …` / `- **B<n>** — …`), with the slice(s) that implement it. An ID no slice covers is an empty row. With no IDs in the PRD (or no PRD), the table is skipped entirely. Each slice's `## Implements` in step 6 must then name the IDs the table gave it.
 
 ### 5. Quiz the user
 
@@ -78,73 +80,35 @@ Present the proposed breakdown as a numbered list. For each slice, show:
 - **Blocked by**: which other slices (if any) must complete first
 - **What it delivers**: the end-to-end behaviour this slice makes work, from the user's perspective
 
-If step 3 contradicted any assumption, list each first — what the plan assumes, what the code shows at `file:line`, and the slice it affects — and resolve it before the rest of the quiz.
+Show the coverage table from step 4.5 (when there is one), then ask only what needs a decision. Walk these in order and omit any that is empty:
 
-If step 3 turned up any shared surfaces, list them separately — one line per surface, naming the slices that touch it — and ask about each one explicitly: is the overlap additive (safe to leave parallel), or does it need a `Blocked by` edge (or a merge)? Don't add the edge yourself; this is exactly the call a file-overlap heuristic gets wrong, because it can't tell "two slices editing the same file in unrelated ways" from "two slices that will conflict."
+1. **Contradicted assumptions** — what the plan assumes, what the code shows at `file:line`, and the slice it affects; resolve each before the rest.
+2. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct.
+3. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
+4. **Slices outside the criteria range** — any slice that would carry fewer than 3 or more than 8 acceptance criteria: merge it, split it, or keep it as is.
+5. **Shared surfaces** — one line per surface from step 3, naming the slices that touch it: is the overlap additive (safe to leave parallel), or does it need a `Blocked by` edge (or a merge)? Don't add the edge yourself; this is exactly the call a file-overlap heuristic gets wrong, because it can't tell "two slices editing the same file in unrelated ways" from "two slices that will conflict."
+6. **HITL choices** — each slice marked HITL, and why a human is needed; the rest are AFK.
 
-Ask the user:
+Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, merging or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
 
-- Does the granularity feel right? (too coarse / too fine)
-- Are the blocking edges correct — does each issue only depend on issues that genuinely gate it?
-- Should any slices be merged or split further?
-- Are the correct slices marked as HITL and AFK?
-- For any shared surface listed above: sequence it, merge the slices, or leave it parallel?
+### 5.5. Cross-cutting rules from the PRD
 
-Iterate until the user approves the breakdown.
-
-### 5.5. Extract cross-cutting requirements
-
-After the user approves the breakdown and before writing issues, extract cross-cutting requirements from `PRD.md` (if it exists) to include in issue checklists.
-
-**Cross-cutting requirement categories** (10 total):
-
-1. Error Handling — how errors are caught, logged, propagated
-2. Logging — what to log, format, levels
-3. Security — auth checks, input validation, sensitive data handling
-4. Performance — response time targets, resource limits
-5. Testing — test coverage requirements, types of tests needed
-6. Architecture Constraints — patterns to follow, libraries to use, interfaces to respect
-7. Data Validation — schema constraints, input sanitization rules
-8. Observability — metrics, tracing, monitoring hooks
-9. Interfaces & Contracts — API contracts, function signatures, data structures shared across components
-10. Multi-Issue Flows — end-to-end operations spanning multiple vertical slices
-
-**Extraction from PRD.md:**
-
-Read `.scratch/<feature-slug>/PRD.md` if it exists. Scan for cross-cutting requirements across all sections — especially `## Decisions`, `## Testing Decisions`, and `## Further Notes`:
-
-- Explicit headings for any of the 10 categories above
-- Decision statements with "must", "should", "all", "every" (signals cross-cutting rules)
-  - Example: "All API endpoints must validate input using..."
-  - Example: "Every database call must include retry logic..."
-- Architecture rules: "Follow the repository pattern", "Use dependency injection for..."
-- Interface definitions: API contracts, function signatures, shared data structures
-- Flow descriptions: end-to-end operations spanning multiple components
-
-**Mapping requirements to issues:**
-
-For each vertical slice, determine which cross-cutting requirements apply based on what layers/components the issue touches:
-
-- **API layer issues** → apply API-related requirements, input validation, security
-- **User input handling** → apply security, validation, error handling
-- **Database access** → apply performance, error handling, retry logic
-- **Multi-component flows** → apply interface contracts, flow sequence requirements
-
-**Multi-issue flow detection:**
-
-Look in `PRD.md` for descriptions of end-to-end operations that span multiple vertical slices (e.g., auth flows, data pipelines, request/response cycles). For each issue that's part of such a flow, note:
-
-- Which upstream issues must complete first (dependencies)
-- Which downstream issues depend on this one
-- A brief description of this issue's role in the overall flow
+Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` for a rule that binds more than one slice ("every endpoint must …", "all calls retry …"). Each slice carries such a rule in `## Cross-cutting Requirements` only when its own acceptance criteria do not already cover it; otherwise the criterion is the home and the section is omitted. There is no category list to scan.
 
 ### 6. Write the issues
 
-**Re-run handling** (local tracker only — see the github paragraph below for that backend): Before writing, check if `.scratch/<feature-slug>/issues/` already contains issue files.
+**Local tracker, issues directory non-empty?** If `.scratch/<feature-slug>/issues/` already contains issue files, read `references/rerun.md` before writing anything. Otherwise proceed.
 
-- If it does and a `done/` subdirectory exists with files in it, **stop** — tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
-- If it does but no issues are done (no `done/` subdirectory or it's empty), list the existing files, warn the user they'll be overwritten, and ask for confirmation before proceeding.
-- If the directory doesn't exist or is empty, proceed normally.
+**Lint before any `publish`.** Render every issue body (the template below) first — under `local`, write them to their final `.scratch/<feature-slug>/issues/` paths; under `github`, write them as files under `.scratch/<feature-slug>/.lint/` and delete that directory afterwards — and run, from the project root:
+
+```bash
+bash <skill-dir>/scripts/lint-issues.sh --issue <body-file> [--issue <body-file> …] \
+  [--deps .scratch/<feature-slug>/issues/issues-deps.json] [--prd <PRD file>]
+```
+
+Add `--deps` under `local` only (write the step 7 map first, so the linter can compare it with the `## Blocked by` prose), and `--prd` only when a PRD exists (a local path; under `github` save the PRD body to a file under `.scratch/<feature-slug>/.lint/` first). Exit 1 means publish nothing: show the `ERROR` lines; the skill returns to the quiz (step 5) to fix them, then render and lint again. Exit 0 prints at most `WARN` lines: show them and continue — publishing continues. Exit 2 is a usage error in how you called it: fix the call.
+
+**Under `github`** the blockers' issue numbers do not exist until `publish`, so for the lint run name each body file `<n>-<slug>.md` and write its `## Blocked by` refs as `Issue #<n>`, numbering the new slices from one past the repo's highest issue number (`gh issue list --state all --limit 1 --json number`); pass each issue already in the milestone that a new slice is blocked by as `--known <number>-<slug>.md` (a name only — never opened or linted). At `publish`, replace each `Issue #<n>` with the number `gh issue create` returned for that slice — the only edit after the lint.
 
 For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
 
@@ -152,9 +116,17 @@ For each approved slice, execute the `publish` operation from `issue-tracker.md`
 
 **Acceptance criteria describe this slice's behaviour, not repo-wide hygiene.** A rule every change must follow that a check already enforces — a version bump, a changelog entry, lint — is not a criterion: the verify gate holds it, and as a per-issue criterion two parallel issues satisfy it with the same edit, which then merges away on one of them.
 
+**Acceptance-criteria rubric.** The reviewer gates on these, so each criterion is:
+
+- one observable behaviour or consumed contract (a signature, shape or output another issue relies on), checkable from the diff plus the checks — never "tests pass";
+- for a negative ("never writes outside X"), accompanied by the mechanism that prevents it — a negative with no named mechanism cannot be checked, so the criterion names the mechanism that prevents it;
+- free of internal design choices, which stay in the PRD's Decisions where the reviewer judges them as findings — unless the choice is itself the requirement (e.g. "one batched call" as a performance bound).
+
+A slice that takes input or calls something external must carry failure-behaviour criteria: invalid input, missing dependency, failing call — what the caller observes in each. This is how the PRD's `## Trust Boundaries & Risks` reaches the gated criteria.
+
 Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field. Work the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, publish all currently unblocked issues before their dependents.
 
-**Under a configured `github` tracker**, `publish` (per `github.md`'s `Operation: publish`) creates one GitHub issue per slice via `gh issue create --body-file <file> --label ready-for-agent --milestone <feature-slug>`, where `<file>` is the issue-template body below rendered to text — the body itself, not a sidecar, carries the dependency graph for this backend. Write `## Blocked by` entries as `Issue #<n>`, citing the number `gh issue create` returned for each already-created blocker (the same numeric convention `body-format.mjs`'s `extractBlockedByNumbers` parses) — this is why blockers must still be created before their dependents under this backend too. When step 2 found a PRD, cite it in `## Context Documents` as `PRD: #<n>` using its issue number. The local-only re-run handling above does not apply: a milestone accumulates issues across runs with no local directory to inspect, so re-running against an existing milestone always adds new issues rather than overwriting; confirm with the user first if this doesn't look like a re-run they intended.
+**Tracker is `github`?** Read `references/github-publish.md` for how `publish` creates the issues, writes `## Blocked by` and cites the PRD; the local-only re-run handling does not apply.
 
 <issue-template>
 Status: ready-for-agent
@@ -163,7 +135,7 @@ Status: ready-for-agent
 
 > **Optional — only include this section if a PRD exists for this feature. Omit entirely if no PRD exists.**
 
-- PRD: `.scratch/<feature-slug>/PRD.md` (local tracker) — or `PRD: #<n>` citing the feature's PRD issue number (github tracker)
+- PRD: `.scratch/<feature-slug>/PRD.md` (local tracker; the github form is in `references/github-publish.md`)
 
 Read this document before implementing. It contains architecture decisions, integration constraints, and technical context essential for this issue.
 
@@ -173,9 +145,13 @@ A reference to the parent issue on the issue tracker (if the source was an exist
 
 ## What to build
 
-A concise description of this vertical slice. Describe the end-to-end behavior, not layer-by-layer implementation.
+A concise description of this vertical slice: the end-to-end behavior, not layer-by-layer implementation. Its first sentence is a one-line summary (`squash-commits.sh:109` takes the commit title from it).
 
-Avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it here and note briefly that it came from a prototype. Trim to the decision-rich parts — not the working demo, just the important bits.
+This section may cite grounded paths and signatures (confirmed in step 3). If a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it here and note briefly that it came from a prototype. Trim to the decision-rich parts — not the working demo, just the important bits.
+
+## Implements
+
+The PRD IDs this issue carries (e.g. `D3, B2`), plus the seam it is verified at (the highest existing test seam that exercises it).
 
 ## Acceptance criteria
 
@@ -185,23 +161,11 @@ Avoid specific file paths or code snippets — they go stale fast. Exception: if
 
 ## Cross-cutting Requirements
 
-> **Optional — only include this section if cross-cutting requirements from `PRD.md` apply to this issue. Omit entirely if no applicable requirements exist.**
+> **Optional — only include this section for a PRD rule that binds this issue and that its acceptance criteria do not already cover. Omit entirely otherwise.**
 
-Requirements from `PRD.md` that apply to this implementation:
+Rules from the PRD that apply to this implementation (a few items at most):
 
-- [ ] [Error handling requirement]
-- [ ] [Security requirement]
-- [ ] [Performance requirement]
-
-## Part of Flow
-
-> **Optional — only include this section if this issue is part of a multi-issue flow (an end-to-end operation spanning multiple vertical slices). Omit entirely for standalone issues.**
-
-This issue implements [step description] of the [flow name] flow.
-
-**Full flow:** [brief description or reference to PRD.md section]
-**Upstream:** [previous step/issue or "none"]
-**Downstream:** [next step/issue or "none"]
+- [ ] [PRD rule not already covered by an acceptance criterion]
 
 ## Requires
 
@@ -211,21 +175,21 @@ This issue implements [step description] of the [flow name] flow.
 
 ## Blocked by
 
-- A reference to the blocking ticket (if any) — the blocker's filename under `local`, or `Issue #<n>` under `github` (see step 6's github paragraph)
+- A reference to the blocking ticket (if any) — the blocker's filename under `local` (the github form is in `references/github-publish.md`)
 
 Or "None - can start immediately" if no blockers.
 
 ## Interfaces
 
-> **Optional — only include this section if `## Blocked by` is non-empty (i.e. this issue has upstream dependencies). Omit entirely for issues with no blockers.**
+> **Optional — only include this section if this issue consumes from or is consumed by another issue. Omit entirely otherwise.**
 
 ### Consumes:
 
-Exact signatures, types, or contracts expected from the blocking issues listed above. Be precise enough that a parallel agent implementing a blocker knows what shape to expose.
+Exact signatures, types, or contracts expected from the blocking issues listed above. Be precise enough that a parallel agent implementing a blocker knows what shape to expose. Omit when this issue consumes nothing.
 
 ### Exposes:
 
-Exact signatures, types, or contracts this issue produces for any downstream issues that depend on it.
+Exact signatures, types, or contracts this issue produces for any downstream issues that depend on it. A root issue (no blockers) that another issue consumes from has `### Exposes:`.
 
 </issue-template>
 
@@ -233,7 +197,7 @@ Exact signatures, types, or contracts this issue produces for any downstream iss
 
 **Local tracker only** — a `github`-tracked feature has no sidecar to write: a github issue number is already the blocker's ref, resolved directly from the numbers step 6's `## Blocked by` prose cites, so this step is skipped entirely under that backend.
 
-After publishing all issues, write `.scratch/<feature-slug>/issues/issues-deps.json` — a flat map from each issue's filename to the filenames of its blockers, e.g.:
+Write `.scratch/<feature-slug>/issues/issues-deps.json` before the step 6 lint run (the linter's `--deps` compares it with the `## Blocked by` prose) — a flat map from each issue's filename to the filenames of its blockers, e.g.:
 
 ```json
 {
@@ -243,7 +207,7 @@ After publishing all issues, write `.scratch/<feature-slug>/issues/issues-deps.j
 }
 ```
 
-Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. This file, not the prose, is what the orchestrator uses to decide whether an issue is ready to dispatch; the `## Blocked by` section stays in each issue purely for a human reading that file. Include every issue you just published, even ones with no blockers (`[]`), so the map is authoritative for the whole feature rather than partial.
+Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. This file, not the prose, is what the orchestrator uses to decide whether an issue is ready to dispatch; the `## Blocked by` section stays in each issue purely for a human reading that file. Include every issue you are about to publish, even ones with no blockers (`[]`), so the map is authoritative for the whole feature rather than partial.
 
 Do NOT close or modify any parent issue.
 

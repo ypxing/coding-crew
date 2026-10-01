@@ -18,6 +18,7 @@ export const ASSET_DIRS = {
   reviewer: "code-review", // agents.crew-reviewer.install.assets.dest
   depInstall: "dep-install/scripts", // skills.dep-install.assets.dest
   solveIssue: "solve-issue/scripts", // skills.solve-issue.assets.dest — check-requires.sh
+  toIssues: "to-issues/scripts", // skills.to-issues.assets.dest — lint-issues.sh
 };
 
 /** `$CREW_INSTALL_DIR`, else the parent of the dir holding main.mjs. */

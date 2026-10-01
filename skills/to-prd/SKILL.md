@@ -34,26 +34,32 @@ the user before writing the final document.
 
 ## Problem Statement
 
-The problem from the user's perspective.
+The problem from the user's perspective. Open with one actor line: `Actor: <who has the problem>`.
 
 ## Solution
 
 The solution from the user's perspective.
 
-## Key User Stories
+## Behaviours
 
-3–5 user stories that capture the most important behaviors. Format:
+3–8 items that capture the most important observable behaviours. Format, one per line:
 
-1. As an <actor>, I want <feature>, so that <benefit>
+- **B<n>** — given <state>, <what happens>, at <seam>
 
+`<seam>` is where a test observes it (a command, a function, an endpoint, a rendered file).
 Example:
-1. As a developer, I want to run a single command to implement all open issues in parallel, so that I can go AFK while the sprint completes.
 
-Do not exhaustively list every edge case — acceptance criteria on individual issues will cover those.
+- **B1** — given three ready issues, `/crew-afk` runs, all three are implemented in parallel worktrees, at the crew-afk CLI
+
+Do not list every edge case — acceptance criteria on individual issues cover those.
 
 ## Decisions
 
-Architectural and technical decisions made during design. May include:
+Architectural and technical decisions made during design. One per line:
+
+- **D<n>** — <the decision, and the reason when it is not obvious>
+
+May include:
 
 - Modules to build/modify and their interfaces
 - Schema changes and API contracts
@@ -63,15 +69,38 @@ Architectural and technical decisions made during design. May include:
   rather than reinvent — the exploration this skill already does once, so each issue's implementer
   does not have to re-grep for it
 
+Module design: prefer deep modules (a small interface over substantial behaviour), give each module
+one owner, and state the dependency direction (which module depends on which, never the reverse).
+
 Include file paths and short code snippets where they make the intent unambiguous — this PRD is
 consumed immediately by agents, not read months later. Keep snippets trimmed to decision-rich
-parts (a type shape, schema, signature) — not full implementations.
+parts (a type shape, schema, signature) — not full implementations. Keep the whole PRD lean:
+every coder and reviewer dispatch reads all of it.
+
+## Trust Boundaries & Risks
+
+Write this section only when the feature handles untrusted input, secrets, auth, shell/exec or
+network; otherwise omit the heading entirely. For each boundary, name what crosses it and the
+failure behaviour — what happens when the input is malformed, the credential is missing or the
+call fails.
+
+## Compatibility & Migration
+
+Write this section only when the feature changes a shipped contract (a CLI flag, config key, file
+format, API, install path); otherwise omit the heading entirely. State what breaks, what migrates
+and how, and whether the change is expand–contract (old and new both work first, the old is removed
+later).
 
 ## Testing Decisions
 
 - What makes a good test for this feature (test external behavior, not implementation details)
 - Which modules or seams will be tested
 - Prior art in the codebase (similar tests to follow as a pattern)
+
+## Assumptions
+
+Write this section only when you filled a gap yourself instead of taking it from a grilling session
+or the conversation; otherwise omit the heading entirely. List them one line per assumption.
 
 ## Out of Scope
 

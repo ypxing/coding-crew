@@ -134,7 +134,8 @@ cat <<PROMPT
 Extract all requirements from $PRD_PATH.
 
 Categories to extract:
-- Key User Stories
+- Behaviours (B-IDs when present)
+  (an older PRD has "## Key User Stories" instead — treat those as behaviours)
 - Technical decisions
 - Cross-cutting concerns (error handling, logging, security, performance, testing,
   architecture, validation, observability)

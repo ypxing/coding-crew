@@ -13,6 +13,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { ASSET_DIRS, assetDir } from "./install-dir.mjs";
+import * as local from "./trackers/local.mjs";
+import { readTrackerConfig } from "./tracker-config.mjs";
 import { depsLine, parseRequiresFailures, readVerifyRecord } from "./report.mjs";
 import { sectionBody } from "./trackers/body-format.mjs";
 import { dispatchIssueDir, logVerifyOutput, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
@@ -23,12 +25,13 @@ const ASSET_PROBES = {
   reviewer: "scripts/review-context.sh",
   depInstall: "run.sh",
   solveIssue: "check-requires.sh",
+  toIssues: "lint-issues.sh",
 };
 
 /**
  * Each asset dir under `installDir` (install-dir.mjs) whose probe file is absent: `[{ kind, file }]`.
  * Every run uses each — the reviewer reads its scripts, ensure-deps.sh / verify-worktree.sh run
- * dep-install's, and preflight runs check-requires.sh — so a gap here is one every reviewer or
+ * dep-install's, and preflight runs check-requires.sh and lint-issues.sh — so a gap here is one every reviewer or
  * coder would otherwise hunt for.
  */
 export function missingAssets(installDir) {
@@ -43,6 +46,97 @@ export function missingAssetsMessage(installDir, missing) {
     `crew-afk: the install this run was launched from (${installDir}) is missing files its agents use:`,
     ...missing.map(({ kind, file }) => `  ${kind}: ${file}`),
     "Re-run install.sh for crew-afk at the scope it was installed at (the repo, or TARGET_REPO=$HOME), then re-run.",
+  ].join("\n");
+}
+
+/**
+ * The set to lint, as the files lint-issues.sh takes: `{ issues, known, deps, prd }` (`deps` and
+ * `prd` null when absent). Under `local` that is every open issue file, the feature's
+ * `issues-deps.json` and `.scratch/<slug>/PRD.md`; under `github` each open (not done, not
+ * PRD) milestone issue's body written out as `<number>-<slug>.md` — the filename is how
+ * `Issue #<n>` refs resolve — and the milestone's PRD issue body, unless a local PRD.md exists.
+ * `known` names the done issues (`done/` files; done milestone issues as `<number>-<slug>.md`):
+ * a `## Blocked by` ref to one resolves, as it does for dispatch, but it is not linted.
+ */
+async function lintSet(sprint, mainRoot) {
+  const slug = sprint.featureSlug;
+  const localPrd = join(mainRoot, ".scratch", slug, "PRD.md");
+  const prdFile = existsSync(localPrd) ? localPrd : null;
+  if (readTrackerConfig(mainRoot).tracker !== "github") {
+    const issues = local.listOpenIssueFiles(mainRoot, { featureSlug: slug });
+    const deps = issues.length ? local.issueDepsPath(issues[0]) : null;
+    const known = issues.length ? [...local.doneFiles(issues[0])].filter((f) => f.endsWith(".md")) : [];
+    return { issues, known, deps: deps && existsSync(deps) ? deps : null, prd: prdFile };
+  }
+  const gh = await import("./trackers/github.mjs");
+  const all = gh.listOpen(mainRoot, { featureSlug: slug });
+  const dir = join(sprint.dispatchDir, "_lint");
+  mkdirSync(dir, { recursive: true });
+  const write = (name, text) => {
+    const file = join(dir, name);
+    writeFileSync(file, text);
+    return file;
+  };
+  const work = all.filter((i) => !gh.isPrdIssue(i));
+  const issues = work.filter((i) => i.status !== "done").map((i) => write(`${i.number}-${i.slug}.md`, i.text));
+  const known = work.filter((i) => i.status === "done").map((i) => `${i.number}-${i.slug}.md`);
+  const prdIssue = prdFile ? null : all.find((i) => gh.isPrdIssue(i));
+  return { issues, known, deps: null, prd: prdFile ?? (prdIssue ? write("PRD.md", prdIssue.text) : null) };
+}
+
+/**
+ * Once, before command discovery or any worktree: the feature's issue set through `to-issues`'
+ * lint-issues.sh. Exit 1 (a cycle, an unmatched `## Blocked by`, drift from issues-deps.json, no
+ * acceptance criteria) fails the run, carrying each ERROR line; WARN lines are logged. Exit 2,
+ * or a checker that could not run at all, is logged and never fails: a broken checker must not
+ * block a sprint the issues themselves would not. `--dry-run` runs it and reports without failing.
+ *
+ * Returns `{ status: "pass" | "fail" | "skipped", errors, warnings, reason }`.
+ */
+export async function lintIssues(ctx) {
+  const { sprint, effects, options } = ctx;
+  const skipped = (reason) => {
+    ctx.log(`LINT: skipped — ${reason}`, "warn");
+    return { status: "skipped", errors: [], warnings: [], reason };
+  };
+  let set;
+  try {
+    set = await lintSet(sprint, effects.mainRoot);
+  } catch (err) {
+    return skipped(`could not read the issue set: ${err.message}`);
+  }
+  if (!set.issues.length) return { status: "skipped", errors: [], warnings: [], reason: "no open issues" };
+  if (!sprint.installDir) return skipped("no install dir");
+  const script = join(assetDir(sprint.installDir, "toIssues"), "lint-issues.sh");
+  const args = [script, ...set.issues.flatMap((f) => ["--issue", f]), ...set.known.flatMap((f) => ["--known", f])];
+  if (set.deps) args.push("--deps", set.deps);
+  if (set.prd) args.push("--prd", set.prd);
+  ctx.log(`[STEP] step=lint issues=${set.issues.length}${set.deps ? " deps" : ""}${set.prd ? " prd" : ""}`);
+  const r = effects.exec("bash", args, { env: sprint.childEnv(), mutating: false });
+  if (r.code !== 0 && r.code !== 1) {
+    return skipped(`lint-issues.sh exited ${r.code ?? "without a status"} — ${(r.stderr || r.stdout || "").trim() || "no output"}`);
+  }
+  const lines = (r.stdout ?? "").split("\n").map((l) => l.trimEnd());
+  const errors = lines.filter((l) => /^ERROR /.test(l));
+  const warnings = lines.filter((l) => /^WARN /.test(l));
+  for (const w of warnings) ctx.log(`LINT: ${w}`, "warn");
+  if (r.code === 1) {
+    // Exit 1 with no ERROR line is still the checker's verdict; say so rather than pass silently.
+    const shown = errors.length ? errors : [(r.stderr || r.stdout || "exit 1 with no output").trim()];
+    for (const e of shown) ctx.log(`LINT: ${e}`, "error");
+    if (options.dryRun) ctx.log("LINT: fail — a real run would stop here");
+    return { status: "fail", errors: shown, warnings };
+  }
+  ctx.log(`LINT: pass${warnings.length ? ` (${warnings.length} warning${warnings.length > 1 ? "s" : ""})` : ""}`);
+  return { status: "pass", errors: [], warnings };
+}
+
+/** The stop message for a structurally broken issue set: each ERROR line verbatim. */
+export function lintFailureMessage(errors) {
+  return [
+    "crew-afk: the issue set has structural errors that would break dispatch or the gates — fix them before any coder is paid for:",
+    ...errors.map((e) => `  ${e}`),
+    "Re-run `lint-issues.sh` by hand (.coding-crew/to-issues/scripts/) to check, then re-run.",
   ].join("\n");
 }
 

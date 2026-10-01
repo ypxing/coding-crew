@@ -86,6 +86,22 @@ teardown() {
   [ -f "$TEMP_DIR/.claude/skills/solve-issue/references/verification.md" ]
 }
 
+@test "to-issues installs references/ beside SKILL.md for every platform" {
+  cd "$SCRIPT_DIR"
+  local platform skill_md dir count=0
+  for platform in claude copilot pi codex; do
+    TARGET_REPO="$TEMP_DIR" ./install.sh "$platform" --skill to-issues > /dev/null
+  done
+  while IFS= read -r skill_md; do
+    dir=$(dirname "$skill_md")
+    [ -f "$dir/references/github-publish.md" ]
+    [ -f "$dir/references/rerun.md" ]
+    [ -f "$dir/references/expand-contract.md" ]
+    count=$((count + 1))
+  done < <(find "$TEMP_DIR" -path '*/skills/to-issues/SKILL.md')
+  [ "$count" -eq 4 ]
+}
+
 @test "install sweeps retired files an earlier version left in the skill tree" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk

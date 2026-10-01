@@ -257,3 +257,14 @@ github_fixture() {
 # "copilot.SKILL.md includes a Coverage validation section" was parity between prose bodies.
 # The launcher forwards `--prd-audit` to the program (asserted above, for every launcher) and
 # the program owns the step, so there is no section left to have.
+
+@test "the extraction prompt lists Behaviours (B-IDs when present) and still reads Key User Stories" {
+  git checkout -q -b "feature/test-feature"
+  mkdir -p .scratch/test-feature
+  echo "# PRD" > .scratch/test-feature/PRD.md
+
+  run bash "$AUDIT_SCRIPT" --mode report
+  [[ "$output" == *"- Behaviours (B-IDs when present)"* ]]
+  [[ "$output" != *$'\n- Key User Stories'* ]]
+  [[ "$output" == *"## Key User Stories"* ]]
+}

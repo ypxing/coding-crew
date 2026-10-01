@@ -1,10 +1,13 @@
 #!/usr/bin/env bats
 
-# Tests for enhanced to-issues skill with cross-cutting requirements extraction
+# Tests for the to-issues skill body: issue template, criteria rubric, cross-cutting rules.
+# Asserted against the rendered skill, which is what a consuming repo receives.
+
+load helpers/render
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export SKILL_FILE="$SCRIPT_DIR/skills/to-issues/SKILL.md"
+  export SKILL_FILE="$(rendered_skill to-issues claude)"
 }
 
 # --- Template Sections ---
@@ -17,8 +20,51 @@ setup() {
   grep -q '## Cross-cutting Requirements' "$SKILL_FILE"
 }
 
-@test "to-issues/SKILL.md template includes Part of Flow section" {
-  grep -q '## Part of Flow' "$SKILL_FILE"
+@test "to-issues template has Implements after What to build, and no Part of Flow" {
+  grep -q '^## Implements$' "$SKILL_FILE"
+  ! grep -q 'Part of Flow' "$SKILL_FILE"
+  build=$(grep -n '^## What to build$' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  impl=$(grep -n '^## Implements$' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  ac=$(grep -n '^## Acceptance criteria$' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  [ "$build" -lt "$impl" ]
+  [ "$impl" -lt "$ac" ]
+  grep -qi 'PRD IDs' "$SKILL_FILE"
+  grep -qi 'verified at' "$SKILL_FILE"
+}
+
+@test "to-issues: Interfaces is included for consumers and consumed issues; a consumed root has Exposes" {
+  grep -qF 'consumes from or is consumed by another' "$SKILL_FILE"
+  ! grep -qF "only include this section if \`## Blocked by\` is non-empty" "$SKILL_FILE"
+  grep -q '^### Exposes:$' "$SKILL_FILE"
+  grep -qiE 'root issue.*(Exposes)' "$SKILL_FILE"
+}
+
+@test "to-issues: Cross-cutting Requirements carries only a PRD rule the criteria do not cover; ten-category scan is gone" {
+  grep -qF 'do not already cover' "$SKILL_FILE"
+  ! grep -q 'Extract cross-cutting requirements' "$SKILL_FILE"
+  ! grep -qE '\(10 total\)|10 categories' "$SKILL_FILE"
+  ! grep -q 'Multi-Issue Flows' "$SKILL_FILE"
+}
+
+@test "to-issues: acceptance-criteria rubric" {
+  grep -qF 'one observable behaviour or consumed contract' "$SKILL_FILE"
+  grep -qF 'checkable from the diff plus the checks' "$SKILL_FILE"
+  grep -qF 'never "tests pass"' "$SKILL_FILE"
+  grep -qF 'names the mechanism that prevents it' "$SKILL_FILE"
+  grep -qF 'stay in the PRD' "$SKILL_FILE"
+  grep -qF 'is itself the requirement' "$SKILL_FILE"
+}
+
+@test "to-issues: a slice taking input or calling something external carries failure-behaviour criteria" {
+  grep -qE 'takes input or calls something external' "$SKILL_FILE"
+  grep -qF 'invalid input, missing dependency, failing call' "$SKILL_FILE"
+}
+
+@test "to-issues: file-path ban is gone; What to build may cite grounded paths and opens with a one-line summary" {
+  ! grep -q 'Avoid specific file paths' "$SKILL_FILE"
+  grep -qF 'grounded paths and signatures' "$SKILL_FILE"
+  grep -qF 'first sentence is a one-line summary' "$SKILL_FILE"
+  grep -qF 'squash-commits.sh:109' "$SKILL_FILE"
 }
 
 # --- Extraction Logic References ---
@@ -27,11 +73,6 @@ setup() {
   # design.md was consolidated into PRD.md as the single context document.
   grep -q 'PRD\.md' "$SKILL_FILE"
   ! grep -q 'design\.md' "$SKILL_FILE"
-}
-
-@test "to-issues/SKILL.md mentions 10 requirement categories or cross-cutting concerns" {
-  # Should reference error handling, logging, security, performance, testing, architecture, validation, observability, interfaces, flows
-  grep -qi 'error handling' "$SKILL_FILE" || grep -qi 'error' "$SKILL_FILE"
 }
 
 @test "to-issues/SKILL.md mentions PRD.md fallback for requirements" {
@@ -50,10 +91,6 @@ setup() {
 }
 
 # --- Multi-issue Flow Annotations ---
-
-@test "to-issues/SKILL.md mentions upstream/downstream flow relationships" {
-  grep -qi 'upstream\|downstream' "$SKILL_FILE" || grep -qi 'flow' "$SKILL_FILE"
-}
 
 
 @test "to-issues/SKILL.md template includes an optional Requires section, one command per bullet" {
@@ -88,5 +125,72 @@ setup() {
   echo "$section" | grep -q 'test-only slice'
   echo "$section" | grep -q 'Wrong assumption'
   quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
-  echo "$quiz" | grep -q 'If step 3 contradicted any assumption'
+  echo "$quiz" | grep -q 'Contradicted assumptions'
+}
+
+# --- Slicing, quiz, coverage trace, lint gate (rendered skill) ---
+
+@test "to-issues slice rules: a slice is one observable behaviour at the highest existing seam; first slice is the thinnest end-to-end path" {
+  grep -qF 'one externally observable behaviour' "$SKILL_FILE"
+  grep -qF 'highest existing seam' "$SKILL_FILE"
+  grep -qiE 'schema / API / UI.*(only )?(as )?an example|example.*schema / API / UI' "$SKILL_FILE"
+  grep -qiE 'first slice is the thinnest end-to-end path' "$SKILL_FILE"
+}
+
+@test "to-issues size rules: context-window ceiling kept, merge rule replaces 'many thin slices', 3-8 criteria soft target" {
+  grep -qF 'single fresh context window' "$SKILL_FILE"
+  ! grep -qF 'Prefer many thin slices' "$SKILL_FILE"
+  grep -qiE 'merge.*share a test seam|share a test seam.*merge' "$SKILL_FILE"
+  grep -qiE 'neither is reviewable or demoable alone' "$SKILL_FILE"
+  grep -qE '3(–|-)8 acceptance criteria' "$SKILL_FILE"
+}
+
+@test "to-issues quiz: ordered outlier list then one approve/adjust prompt; the five generic questions are gone" {
+  local a b c d e f
+  a=$(grep -n 'Contradicted assumptions' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  b=$(grep -n "PRD's \`## Assumptions\`" "$SKILL_FILE" | head -1 | cut -d: -f1)
+  c=$(grep -n 'PRD IDs no slice covers' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  d=$(grep -n 'Slices outside the criteria range' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  e=$(grep -n 'Shared surfaces' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  f=$(grep -n 'HITL choices' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  [ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ -n "$d" ] && [ -n "$e" ] && [ -n "$f" ]
+  [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && [ "$c" -lt "$d" ] && [ "$d" -lt "$e" ] && [ "$e" -lt "$f" ]
+  grep -qiE 'one approve/adjust prompt' "$SKILL_FILE"
+  ! grep -qF 'Does the granularity feel right' "$SKILL_FILE"
+  ! grep -qF 'Are the blocking edges correct' "$SKILL_FILE"
+  ! grep -qF 'Should any slices be merged or split further' "$SKILL_FILE"
+  ! grep -qF 'Are the correct slices marked as HITL and AFK' "$SKILL_FILE"
+  ! grep -qF 'For any shared surface listed above' "$SKILL_FILE"
+}
+
+@test "to-issues: a coverage table maps every D<n>/B<n> to its slices before the quiz; skipped with no IDs" {
+  grep -qiE 'coverage table' "$SKILL_FILE"
+  grep -qF 'D<n>' "$SKILL_FILE"
+  grep -qF 'B<n>' "$SKILL_FILE"
+  grep -qiE 'no IDs.*skipped' "$SKILL_FILE"
+  cov=$(grep -n -i 'coverage table' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  quiz=$(grep -n '^### .*Quiz' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  [ "$cov" -le "$quiz" ]
+}
+
+@test "to-issues: expand-contract sequencing comes from the PRD's Compatibility & Migration" {
+  grep -qF '## Compatibility & Migration' "$SKILL_FILE"
+  grep -qiE 'expand.contract' "$SKILL_FILE"
+}
+
+@test "to-issues: lint-issues.sh gates publish; ERROR publishes nothing and returns to the quiz; WARN continues" {
+  grep -qF '<skill-dir>/scripts/lint-issues.sh' "$SKILL_FILE"
+  grep -qF -- '--deps' "$SKILL_FILE"
+  grep -qF -- '--prd' "$SKILL_FILE"
+  grep -qiE 'exit 1.*publish(es)? nothing|publish(es)? nothing.*exit 1' "$SKILL_FILE"
+  grep -qF 'returns to the quiz' "$SKILL_FILE"
+  grep -qiE 'WARN.*publishing continues' "$SKILL_FILE"
+  lint=$(grep -n 'lint-issues.sh' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  pub=$(grep -n 'execute the `publish` operation' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  [ "$lint" -lt "$pub" ]
+}
+
+@test "to-issues: under github the lint run uses provisional Issue #<n> numbers and --known for existing milestone issues" {
+  grep -qF -- '--known <number>-<slug>.md' "$SKILL_FILE"
+  grep -qiE 'replace each `Issue #<n>` with the number `gh issue create` returned' "$SKILL_FILE"
 }

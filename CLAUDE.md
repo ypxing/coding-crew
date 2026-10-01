@@ -89,7 +89,9 @@ Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the assets
 `CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
 `orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked
 changes (`--allow-dirty`), the feature branch must pass its own checks in a throwaway
-`crew/<feature>/_baseline` worktree (`--no-baseline`), and each ready, unblocked issue's `## Requires`
+`crew/<feature>/_baseline` worktree (`--no-baseline`), the feature's open issues must pass `to-issues`' `lint-issues.sh`
+(`preflight.mjs`'s `lintIssues`, before command discovery: an `ERROR` stops the run, `WARN` is logged, exit 2 or a
+failure to run it is logged and never stops; `--dry-run` reports only), and each ready, unblocked issue's `## Requires`
 runs once through solve-issue's `check-requires.sh` — a failure blocks that issue, not the run
 (an issue waiting on a blocker is probed when `loop.mjs` first claims it). A check
 that modifies the tree fails, in the baseline and every verify.
@@ -109,6 +111,15 @@ review report and promoted into Phase 2 by the same `fixFindings` rule (default 
 falls back to the `high` rule). Not re-run after Phase 2, nor when nothing
 merged; skipped (the summary says so) when the integration check is red; a dispatch that leaves no review is recorded
 not-run and never fails the sprint.
+
+## `to-issues`' linter (`skills/to-issues/scripts/lint-issues.sh`)
+
+Read-only checker for a feature's issue set, shipped as an asset at `.coding-crew/to-issues/scripts/` and
+runnable by hand: `lint-issues.sh --issue <file>... [--known <file>...] [--deps <issues-deps.json>] [--prd <file>]`.
+`--known` names issues outside the set (done ones; preflight passes them) that a `## Blocked by` ref may resolve to,
+by basename. Prints `ERROR <file>: …` (cycle, unmatched `## Blocked by` ref, `--deps` drift, no
+`## Acceptance criteria`) or `WARN <file>: …` (advisory); exit 1 iff any `ERROR`, 2 on a usage error. Issue text is
+data — never evaluated, and a path in a ref is never opened.
 
 ## Adding a new agent
 

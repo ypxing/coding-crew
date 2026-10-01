@@ -125,6 +125,7 @@ test("a run whose install is missing an asset stops before any dispatch, naming 
   FIXTURE_ROOTS.push(partial);
   cpSync(join(INSTALL_DIR, "dep-install"), join(partial, "dep-install"), { recursive: true });
   cpSync(join(INSTALL_DIR, "solve-issue"), join(partial, "solve-issue"), { recursive: true });
+  cpSync(join(INSTALL_DIR, "to-issues"), join(partial, "to-issues"), { recursive: true });
   const r = runSprint(root, [], { CREW_INSTALL_DIR: partial });
   assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
   assert.ok(r.stderr.includes(`reviewer: ${join(partial, "code-review/scripts/review-context.sh")}`), r.stderr);
