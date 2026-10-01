@@ -147,18 +147,30 @@ export function summarize(rows) {
   return lines.join("\n");
 }
 
-function runClaude(args, input, cwd) {
+// A spawn error (e.g. ENOENT while the claude binary is replaced by its auto-updater) is retried
+// once, then becomes a failed run; it must never take the whole matrix down.
+async function runClaude(args, input, cwd) {
+  const first = await runClaudeOnce(args, input, cwd);
+  if (!first.spawnError) return first;
+  await new Promise((r) => setTimeout(r, Number(process.env.EVAL_RETRY_MS ?? 5000)));
+  return runClaudeOnce(args, input, cwd);
+}
+
+function runClaudeOnce(args, input, cwd) {
   return new Promise((resolve) => {
     const p = spawn(CLAUDE, args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
-    let out = "", err = "";
+    let out = "", err = "", settled = false;
+    const done = (r) => { if (!settled) { settled = true; resolve(r); } };
+    p.on("error", (e) => done({ ok: false, text: "", cost: 0, err: `spawn failed: ${e.message}`, spawnError: true }));
+    p.stdin.on("error", () => {});
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (err += d));
     p.on("close", (code) => {
       try {
         const j = JSON.parse(out);
-        resolve({ ok: code === 0 && !j.is_error, text: j.result ?? "", cost: j.total_cost_usd ?? 0, err });
+        done({ ok: code === 0 && !j.is_error, text: j.result ?? "", cost: j.total_cost_usd ?? 0, err });
       } catch {
-        resolve({ ok: false, text: out, cost: 0, err: err || `exit ${code}` });
+        done({ ok: false, text: out, cost: 0, err: err || `exit ${code}` });
       }
     });
     p.stdin.end(input);

@@ -124,3 +124,13 @@ run_eval() {
   '
   [ "$status" -eq 0 ]
 }
+
+@test "a claude binary that cannot be spawned fails its runs, not the whole matrix" {
+  # Seen live: claude's auto-updater replaced the binary mid-run, spawn threw ENOENT, and the
+  # unhandled error killed the process and leaked the worktree.
+  CLAUDE_BIN="$T/no-such-claude" EVAL_RETRY_MS=0 run run_eval --runs 1
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"c1-base-1: FAILED"* ]]
+  [[ "$output" == *"c1-head-1: FAILED"* ]]
+  [ "$(git -C "$R" worktree list | wc -l)" -eq 1 ]
+}
