@@ -7,7 +7,7 @@
 # criteria. The check belongs to solve-issue, not crew-coder: a direct /solve-issue run needs it
 # too. The orchestrator side (a premise stop lands in ## Blocked, unretried; an already-met issue
 # closes with no commits and unblocks its dependents) is in
-# tests/orchestrator/sprint.suite.mjs.
+# tests/orchestrator/sprint-worker-outcomes.test.mjs.
 
 load helpers/render
 

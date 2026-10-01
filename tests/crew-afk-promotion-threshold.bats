@@ -211,7 +211,7 @@ EOF
   # it — in a launcher, or hard-coded in the pipeline — is a source that can disagree with the
   # script the moment the default changes again. The wiring end to end (the default promotes
   # a HIGH into a Phase 2 fix issue, `medium` a MEDIUM) is asserted in
-  # tests/orchestrator/sprint.suite.mjs.
+  # tests/orchestrator/sprint-settings.test.mjs.
   for f in "$REPO_ROOT"/skills/crew-afk/*.SKILL.md; do
     if grep -qiE 'Never promote MEDIUM or LOW|severities: CRITICAL' "$f"; then
       echo "$(basename "$f") states the threshold itself" >&2; return 1

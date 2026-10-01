@@ -1,11 +1,11 @@
-# Shared by orchestrator.bats and the orchestrator-sprint-<k>.bats slice files: how the Node
+# Shared by orchestrator.bats and the orchestrator-sprint-<topic>.bats wrappers: how the Node
 # orchestrator's node:test files are found and run.
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$BATS_TEST_DIRNAME/.." && pwd)}"
 
-# Every orchestrator test file except the sprint slices, which run from their own bats files
-# so CI's shard split can put each on a different runner. A glob, not a list: a hand-kept
-# list had silently dropped seven of the suite's files.
+# Every orchestrator test file except the sprint topic files, which run from their own bats
+# wrappers so CI's shard split can put each on a different runner. A glob, not a list: a
+# hand-kept list had silently dropped seven of the suite's files.
 orchestrator_unit_tests() {
   local f
   for f in "$REPO_ROOT"/tests/orchestrator/*.test.mjs; do

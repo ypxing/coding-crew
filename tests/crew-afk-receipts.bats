@@ -516,7 +516,7 @@ EOF
 # platform body made ("record an ac receipt after all-met", "the merge gate is mechanical")
 # and four promises are four things to drift; it is one call site now, in the pipeline every
 # platform runs, and the end-to-end assertion that it happens is
-# tests/orchestrator/sprint.suite.mjs ("the gates run in order: verify → AC receipt → merge →
+# tests/orchestrator/sprint-gates-config.test.mjs ("the gates run in order: verify → AC receipt → merge →
 # close") plus the ac.ok / verify.json existence checks in the clean-merge and criteria-unmet
 # cases.
 

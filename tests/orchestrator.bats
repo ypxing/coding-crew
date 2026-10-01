@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
 # orchestrator.bats — runs the Node orchestrator's own suite through the one test
 # entry point this repo has (bats), so CI shards it like everything else and a broken state
-# machine cannot merge on a green bats run that never executed it. The sprint suite's six
-# slices, most of its time, run from orchestrator-sprint-<k>.bats so they can land on
-# different shards; this file runs the rest.
+# machine cannot merge on a green bats run that never executed it. The sprint suite's topic
+# files (tests/orchestrator/sprint-<topic>.test.mjs), most of its time, each run from their own
+# orchestrator-sprint-<topic>.bats so they can land on different shards; this file runs the rest.
 #
 # The suite is node:test only — no dependencies — and its integration half drives the
 # whole sprint state machine with every model dispatch faked, so it costs no tokens.
@@ -18,44 +18,48 @@ load helpers/orchestrator-suite
   [ "$status" -eq 0 ]
 }
 
-@test "orchestrator: unit suite passes (the sprint slices run from orchestrator-sprint-<k>.bats)" {
+@test "orchestrator: unit suite passes (the sprint topic files run from orchestrator-sprint-<topic>.bats)" {
   local files=() f
   while IFS= read -r f; do files+=("$f"); done < <(orchestrator_unit_tests)
   [ "${#files[@]}" -gt 0 ]
   run_node_tests "${files[@]}"
 }
 
-@test "orchestrator: every slice of sprint.suite.mjs has an entry file, so no test goes unrun" {
-  cd "$REPO_ROOT"
-  local total k
-  total=$(grep -oE 'SPRINT_SLICE = "[0-9]+/[0-9]+"' tests/orchestrator/sprint-1.test.mjs | grep -oE '[0-9]+"$' | tr -d '"')
-  [ -n "$total" ]
-  for k in $(seq 1 "$total"); do
-    grep -q "SPRINT_SLICE = \"$k/$total\"" "tests/orchestrator/sprint-$k.test.mjs"
-  done
-  [ "$(ls tests/orchestrator/sprint-*.test.mjs | wc -l | tr -d ' ')" -eq "$total" ]
-}
-
 @test "orchestrator: every node test file runs from exactly one bats file" {
-  # The sprint slices each have a bats file of their own so CI can shard them; the rest run
-  # from this file's glob. A slice with no bats file, or one also swept up by the glob, is a
-  # test that silently never runs or runs twice.
+  # Each sprint topic file has a bats wrapper of its own so CI can shard it; the rest run from
+  # this file's glob. A topic file with no wrapper, or one also swept up by the glob, is a test
+  # that silently never runs or runs twice.
   cd "$REPO_ROOT"
-  local f base k
-  for f in tests/orchestrator/*.test.mjs; do
+  local f base topic w n
+  for f in tests/orchestrator/sprint-*.test.mjs; do
     base=$(basename "$f")
-    case "$base" in
-      sprint-*.test.mjs)
-        k=${base#sprint-}; k=${k%.test.mjs}
-        grep -q "tests/orchestrator/$base" "tests/orchestrator-sprint-$k.bats" ||
-          { echo "no bats file runs $base"; return 1; }
-        ;;
-    esac
+    topic=${base#sprint-}; topic=${topic%.test.mjs}
+    w="tests/orchestrator-sprint-$topic.bats"
+    [ -f "$w" ] || { echo "no bats wrapper for $base (expected $w)"; return 1; }
+    # Run by exactly one wrapper: no other bats file runs the topic file (comments may name it).
+    n=$(grep -l "run_node_tests .*tests/orchestrator/$base" tests/*.bats | tr '\n' ' ')
+    [ "$n" = "$w " ] || { echo "$base is run by: ${n:-no bats file} (want only $w)"; return 1; }
   done
-  [ "$(ls tests/orchestrator-sprint-*.bats | wc -l | tr -d ' ')" -eq "$(ls tests/orchestrator/sprint-*.test.mjs | wc -l | tr -d ' ')" ]
-  # This file's own share: every file the glob finds except the slices, and no slice.
+  # No wrapper without a topic file behind it.
+  for w in tests/orchestrator-sprint-*.bats; do
+    topic=${w#tests/orchestrator-sprint-}; topic=${topic%.bats}
+    [ -f "tests/orchestrator/sprint-$topic.test.mjs" ] || { echo "$w has no topic file"; return 1; }
+  done
+  # The unit glob runs none of the topic files, and nothing else is left unrun: what it finds
+  # plus the topic files is every *.test.mjs there is.
+  [ -z "$(orchestrator_unit_tests | grep '^tests/orchestrator/sprint-')" ]
   [ "$( (orchestrator_unit_tests; ls tests/orchestrator/sprint-*.test.mjs) | sort)" = \
     "$(ls tests/orchestrator/*.test.mjs | sort)" ]
+}
+
+@test "orchestrator: the sprint topic files share one helpers module, with no helper redefined" {
+  cd "$REPO_ROOT"
+  local f
+  [ -f tests/orchestrator/helpers/sprint.mjs ]
+  for f in tests/orchestrator/sprint-*.test.mjs; do
+    grep -q 'from "./helpers/sprint.mjs"' "$f" || { echo "$f does not import the shared helpers"; return 1; }
+    ! grep -qE '^(async )?function (fixtureRepo|addIssue|runSprint|sh)\(' "$f" || { echo "$f redefines a shared helper"; return 1; }
+  done
 }
 
 @test "orchestrator: plan is read-only and needs no model" {
