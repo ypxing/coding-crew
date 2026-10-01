@@ -195,7 +195,7 @@ Exact signatures, types, or contracts this issue produces for any downstream iss
 
 **Local tracker only** — a `github`-tracked feature has no sidecar to write: a github issue number is already the blocker's ref, resolved directly from the numbers step 6's `## Blocked by` prose cites, so this step is skipped entirely under that backend.
 
-After publishing all issues, write `.scratch/<feature-slug>/issues/issues-deps.json` — a flat map from each issue's filename to the filenames of its blockers, e.g.:
+Write `.scratch/<feature-slug>/issues/issues-deps.json` before the step 6 lint run (the linter's `--deps` compares it with the `## Blocked by` prose) — a flat map from each issue's filename to the filenames of its blockers, e.g.:
 
 ```json
 {
@@ -205,7 +205,7 @@ After publishing all issues, write `.scratch/<feature-slug>/issues/issues-deps.j
 }
 ```
 
-Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. This file, not the prose, is what the orchestrator uses to decide whether an issue is ready to dispatch; the `## Blocked by` section stays in each issue purely for a human reading that file. Include every issue you just published, even ones with no blockers (`[]`), so the map is authoritative for the whole feature rather than partial.
+Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. This file, not the prose, is what the orchestrator uses to decide whether an issue is ready to dispatch; the `## Blocked by` section stays in each issue purely for a human reading that file. Include every issue you are about to publish, even ones with no blockers (`[]`), so the map is authoritative for the whole feature rather than partial.
 
 Do NOT close or modify any parent issue.
 
