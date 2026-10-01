@@ -23,8 +23,8 @@ You MUST complete these items in order:
 
 1. **Capture feature slug** — get the `.scratch/<slug>/` directory name upfront
 2. **Explore project context** — check files, docs, recent commits
-3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
-4. **Propose 2-3 approaches** — with trade-offs and your recommendation
+3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria, and size the problem first
+4. **Propose 2-3 approaches** — with trade-offs and your recommendation; one is always the do-least option
 5. **Present design** — in sections scaled to their complexity, get user approval after each section
 6. **Transition to to-prd** — invoke `to-prd` using the same feature slug to complete the PRD
 7. **Transition to to-issues** — invoke `to-issues` using the same feature slug
@@ -74,10 +74,13 @@ digraph brainstorming {
 - Prefer multiple choice questions when possible, but open-ended is fine too
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
 - Focus on understanding: purpose, constraints, success criteria
+- Size the problem before any solution: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. Look these up (git history, the tracker, the code) before asking. Solutions the user arrives with are inputs, not the menu.
 
 **Exploring approaches:**
 
-- Propose 2-3 different approaches with trade-offs
+- Propose 2-3 different approaches with trade-offs. One is always the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in terms of the problem size
+- Recommending anything larger needs evidence that the do-least option falls short; "it doesn't cover every case" is not that evidence unless the uncovered case is costly
+- Name the follow-on components each approach drags in, so its full price is visible when the user picks
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
 
@@ -88,6 +91,7 @@ digraph brainstorming {
 - Ask after each section whether it looks right so far
 - Cover: architecture, components, data flow, error handling, testing
 - Be ready to go back and clarify if something doesn't make sense
+- Before asking for final approval, run a **subtraction pass**: for each component, name the behaviour or part of the problem that breaks if it is removed. If nothing does, propose cutting it, and show what you cut
 
 **Design for isolation and clarity:**
 
@@ -112,7 +116,7 @@ Once the user approves the design, invoke `to-prd` using the same feature slug c
 
 - **One question at a time** - Don't overwhelm with multiple questions
 - **Multiple choice preferred** - Easier to answer than open-ended when possible
-- **YAGNI ruthlessly** - Remove unnecessary features from all designs
+- **YAGNI ruthlessly** - Remove unnecessary features from all designs: size the problem first, always offer the do-least option, and run the subtraction pass
 - **Explore alternatives** - Always propose 2-3 approaches before settling
 - **Incremental validation** - Present design, get approval before moving on
 - **Be flexible** - Go back and clarify when something doesn't make sense

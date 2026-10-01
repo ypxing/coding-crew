@@ -11,6 +11,10 @@ Interview the user relentlessly until you reach shared understanding. Map the pl
 
 Work in **rounds**. The **frontier** is every decision whose prerequisites are already settled — what you can ask now without guessing at answers you haven't heard. A question that depends on another still-open question belongs to a later round, not this one.
 
+### Root: size the problem before any solution
+
+The tree's root is the problem, not the solutions on offer. Before any solution node, establish the **problem size**: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. These are mostly facts (git history, the tracker, the code), so Gate 1 applies — look them up, cite them, and ask only what no source holds. Candidate solutions the user brings with them are inputs to this tree, not its frontier: the smallest change that removes the cost you measured is the baseline every larger option has to beat.
+
 Every frontier node passes two gates, in order. Gate 1 asks whether the question deserves to exist at all; Gate 2 asks who owns it. Most bad questions die at Gate 1, and Gate 2 cannot catch them — routing decides who owns a genuine fork, it never asks whether the node is a fork at all.
 
 ### Gate 1 — Competence: does this question deserve to exist?
@@ -66,6 +70,8 @@ Ask only the Ask lane, and only as many questions as the frontier genuinely bloc
 ➡️ <your recommended answer>
 ```
 
+Every question's options include the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in the terms of the problem size. Recommending anything larger needs evidence that the do-least option falls short; "it doesn't cover every case" is not that evidence unless the uncovered case is costly. When an option drags in follow-on components or decisions, its body names them ("(b) brings a workflow, a selector and a label protocol"): the Silent decisions it spawns are part of its price, and the user never sees them one by one.
+
 The `checked:` clause is Gate 1's receipt: it names what you consulted and, by implication, why that source didn't settle the question. If the clause would read "nothing," the node isn't ready to be asked — it's ready to be researched.
 
 That ceiling is a budget, not a target. Trivia spends slots that consequential questions need — worse, a batch padded with trivia trains the user to skim, so they skim the one that mattered too. Before you send a round, drop its weakest question outright and spend the freed slot deepening the strongest: sub-questions on the consequential fork, and the assumption-probing below.
@@ -81,6 +87,8 @@ A round that produces zero questions while touching an _annoyed_ topic is worth 
 Phase 1 ends when the frontier is empty: every branch of the design tree visited, nothing left silently assumed.
 
 If the user's invocation included "with docs" or "with documents", also invoke the `domain-modeling` skill inline as decisions crystallise: update `CONTEXT.md` when terms are resolved, and offer ADRs when decisions meet the ADR threshold (hard to reverse, surprising without context, result of a real trade-off).
+
+Before the summary, run a **subtraction pass**: for each decision and component, name the behaviour or part of the measured problem that breaks if it is removed. If nothing does, propose cutting it. Show the cut list in the summary, so the user can restore anything they want back.
 
 Then:
 
