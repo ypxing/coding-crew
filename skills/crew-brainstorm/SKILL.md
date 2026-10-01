@@ -91,7 +91,7 @@ digraph brainstorming {
 - Ask after each section whether it looks right so far
 - Cover: architecture, components, data flow, error handling, testing
 - Be ready to go back and clarify if something doesn't make sense
-- Before asking for final approval, run a **subtraction pass**: for each component, name the behaviour or part of the problem that breaks if it is removed. If nothing does, propose cutting it, and show what you cut
+- Before asking for final approval, run a **subtraction pass**: for each component, name the part of the problem that breaks if it is removed. "Another component needs it" is not an answer: follow the chain to its root and judge the root against the problem size, showing the chain's total price. "Nothing breaks" is a claim to check and cite, not assume. If nothing breaks, propose cutting it, and show what you cut
 
 **Design for isolation and clarity:**
 

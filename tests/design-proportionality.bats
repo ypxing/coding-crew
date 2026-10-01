@@ -79,3 +79,17 @@ setup() {
   # The gates' intro paragraph belongs under the rounds heading, not under Root.
   [ "$(awk '/^### Root/{f=1;next} /^### /{f=0} f' "$GRILL" | grep -c 'Every frontier node passes two gates')" -eq 0 ]
 }
+
+@test "P4: the subtraction pass follows dependency chains to the problem, not to a parent component" {
+  # Eval: with a user-approved Action, every follow-on "broke" its parent, so the
+  # pass kept the whole chain. A dependency on another component is not a reason.
+  grep -qi '"Another component needs it" is not an answer' "$GRILL"
+  grep -qi '"Another component needs it" is not an answer' "$BRAINSTORM"
+  grep -qi 'total price' "$GRILL"
+}
+
+@test "P4: a cut's 'nothing breaks' is a checked, cited fact" {
+  # Eval: a run cut a needed re-bump on the false claim that an existing test caught it.
+  grep -qi '"Nothing breaks" is a claim of fact' "$GRILL"
+  grep -qi '"Nothing breaks" is a claim to check' "$BRAINSTORM"
+}
