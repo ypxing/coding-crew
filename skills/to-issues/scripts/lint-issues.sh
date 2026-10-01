@@ -153,8 +153,14 @@ for idx in "${!NAMES[@]}"; do
     case "$lower" in none* | n/a* | nothing*) continue ;; esac
 
     found=0
-    # Issue #n / Issue n references
-    rest="$entry"
+    # Issue #n / Issue n references — scanned over the entry minus its *.md filename tokens, so a
+    # filename like fix-issue-3-thing.md is not also read as "Issue #3"
+    read -r -a toks <<< "$entry"
+    rest=""
+    for tok in "${toks[@]+"${toks[@]}"}"; do
+      bare="${tok%[\`\*\)\]>\"\',;:.]}"
+      [[ "$bare" == *.md ]] || rest+="$tok "
+    done
     while [[ "$rest" =~ [Ii][Ss][Ss][Uu][Ee][[:space:]-]*#?0*([0-9]+) ]]; do
       found=1
       n="${BASH_REMATCH[1]}"
@@ -166,7 +172,6 @@ for idx in "${!NAMES[@]}"; do
       fi
     done
     # Filename references: whitespace-separated tokens, stripped of markup
-    read -r -a toks <<< "$entry"
     for tok in "${toks[@]+"${toks[@]}"}"; do
       tok="${tok#[\`\*\(\[<\"\']}"; tok="${tok%[\`\*\)\]>\"\',;:.]}"
       tok="${tok#[\`\*\(\[<\"\']}"; tok="${tok%[\`\*\)\]>\"\',;:.]}"
