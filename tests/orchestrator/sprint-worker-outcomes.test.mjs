@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, SCRIPTS, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, workerReport, triageVerdict, coderSpawns, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, test } from "./helpers/sprint.mjs";
+import { MAIN, SCRIPTS, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, workerReport, triageVerdict, coderSpawns, privateScripts, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, test } from "./helpers/sprint.mjs";
 
 // ─── a coder that stops short with commits: its report is a claim, the gates decide ───────
 
@@ -417,4 +417,69 @@ test("two dry rounds stall instead of looping forever", () => {
   const s = state(root);
   assert.equal(s.rounds, 2, "one dry round is a retry, two is a stall");
   assert.match(s.retention.alpha.reason, /partial/);
+});
+
+// ─── a verify with no verdict: killed from outside, or output that names no failing check ──
+
+/** Replaces verify-worktree.sh in a private scripts copy with `body`. */
+function shimVerify(body) {
+  const scripts = privateScripts();
+  writeFileSync(join(scripts, "verify-worktree.sh"), `#!/usr/bin/env bash\n${body}\n`);
+  return scripts;
+}
+
+const triageSpawns = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-triage/.test(l)).length;
+
+test("a verify killed by SIGTERM is interrupted, not failed: no triage, no coder, a free retry", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const scripts = shimVerify('echo "TYPECHECK: not_run"\necho "TEST: running: bats tests/*.bats"\nkill -TERM $$');
+  fake(root, "alpha.triage", triageVerdict("yes", "inconclusive", "no evidence"));
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 0, "an interrupted verify is not triaged");
+  assert.equal(coderSpawns(lines), 1, "and no coder is redispatched");
+  assert.match(traceLog(root), /\[VERIFY-INTERRUPTED\] slug=alpha round=1 — verify-worktree\.sh was killed by SIGTERM/);
+  assert.match(traceLog(root), /\[VERIFY-OUTPUT\] slug=alpha round=1 result=interrupted/);
+  assert.doesNotMatch(traceLog(root), /result=fail/);
+  assert.match(state(root).retention.alpha.reason, /^verify-interrupted — killed by SIGTERM$/);
+});
+
+test("an interrupted verify is verified again next round, still without a coder or triage", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const scripts = shimVerify(
+    'M="$(dirname "$0")/.killed"\nif [ ! -f "$M" ]; then touch "$M"; echo "TEST: running: x"; kill -TERM $$; fi\nexec bash "$(dirname "$0")/_real-verify-worktree.sh" "$@"',
+  );
+  // The real gate, kept next to the shim for its sibling-script lookups.
+  sh("cp", [join(SCRIPTS, "verify-worktree.sh"), join(scripts, "_real-verify-worktree.sh")]);
+  const { r, lines } = commandLines(root, [], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 1);
+  assert.equal(triageSpawns(lines), 0);
+  assert.match(traceLog(root), /\[SKIP-WORKER\] slug=alpha reason=verify-interrupted/);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+});
+
+test("verify output with no failing check is run a second time before anything is triaged or recoded", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const scripts = shimVerify('echo "TEST: running: bats tests/*.bats"\nexit 1');
+  fake(root, "alpha.triage", triageVerdict("yes", "inconclusive", "no evidence"));
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 2, "a second verify");
+  assert.equal(triageSpawns(lines), 0, "no triage on output with no assertion");
+  assert.equal(coderSpawns(lines), 1, "no coder redispatch");
+  assert.match(state(root).retention.alpha.reason, /^verify-inconclusive — exit 1 with no failing check in the output$/);
+});
+
+test("a verify that really fails still goes to triage", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  failingTests(root);
+  fake(root, "alpha.triage", triageVerdict("yes", "wrong host", "src/config.ts uses localhost:4566"));
+  const { lines } = commandLines(root, ["--max-rounds", "1"]);
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1, "a named failure is not re-run");
+  assert.equal(triageSpawns(lines), 1);
 });

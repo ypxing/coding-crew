@@ -47,8 +47,10 @@ import {
   stripReasonTag,
   taggedReason,
   unblockedReason,
+  VERIFY_INCONCLUSIVE_TAG,
+  VERIFY_INTERRUPTED_TAG,
 } from "./pipeline/shared.mjs";
-import { handleVerificationFailure } from "./pipeline/verify.mjs";
+import { handleVerificationFailure, hasVerifyFailure } from "./pipeline/verify.mjs";
 
 /** Whether `branch` has commits the feature branch lacks: a dead dispatch with commits is worth resuming. */
 function branchHasCommits(effects, featureBranch, branch) {
@@ -127,6 +129,8 @@ export function resumeRoute(reason) {
   if (reason === "merge-failed" || reason.startsWith("close-refused")) return { route: "merge" };
   if (reason.startsWith(REVIEW_NOT_RUN_TAG)) return { route: "verify", label: "review-not-run" };
   if (unblocked.startsWith(CRITERIA_ENVIRONMENT_TAG)) return { route: "verify", label: "environment-recheck" };
+  if (unblocked.startsWith(VERIFY_INTERRUPTED_TAG)) return { route: "verify", label: "verify-interrupted" };
+  if (unblocked.startsWith(VERIFY_INCONCLUSIVE_TAG)) return { route: "verify", label: "verify-inconclusive" };
   if (unblocked.startsWith(NOT_FIXABLE_TAG)) return { route: "verify", label: "not-fixable-recheck" };
   if (unblocked.startsWith(FIXABLE_TAG)) return { route: "fix", kind: "verify", context: stripReasonTag(unblocked, FIXABLE_TAG) };
   if (unblocked.startsWith(CRITERIA_UNMET_TAG)) {
@@ -141,6 +145,16 @@ const SKIPPED_WORKER = {
     what: "retrying review only, no coder dispatch",
     progress: "review-only retry — coder dispatch skipped, branch content unchanged",
     notes: "review-only retry: the prior round's only failure was the review dispatch itself",
+  },
+  "verify-interrupted": {
+    what: "re-running verify only, no triage and no coder dispatch: the prior verify was killed before it gave a verdict",
+    progress: "verify-interrupted retry — coder dispatch skipped; verify re-run",
+    notes: "verify-interrupted retry: the prior round's verify was ended by a signal, so there is no failure to fix",
+  },
+  "verify-inconclusive": {
+    what: "re-running verify only, no triage and no coder dispatch: the prior verify output named no failing check",
+    progress: "verify-inconclusive retry — coder dispatch skipped; verify re-run",
+    notes: "verify-inconclusive retry: the prior round's verify output named no failing check, so there is no failure to fix",
   },
   "not-fixable-recheck": {
     what: "rechecking deps + verify only, no triage and no coder dispatch, in case the failure was transient",
@@ -603,10 +617,20 @@ export async function runHousekeeping(ctx, worker) {
     ctx.log(`[SKIP-VERIFY] slug=${issue.slug} round=${worker.attempt} branch=${branch} — verification already passed at this commit, in this run`);
   } else {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
-    const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
-      env: sprint.childEnv(),
-    });
-    logVerifyOutput(ctx, dispatchIssueDir(sprint.dispatchDir, issue), `slug=${issue.slug}`, worker.attempt, verify);
+    const runVerify = () => {
+      const v = effects.bash("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
+        env: sprint.childEnv(),
+      });
+      logVerifyOutput(ctx, dispatchIssueDir(sprint.dispatchDir, issue), `slug=${issue.slug}`, worker.attempt, v);
+      return v;
+    };
+    let verify = runVerify();
+    // Output that names no failing check is no evidence against the branch: run the gate
+    // once more before triage can call it fixable and a coder is paid to chase it.
+    if (verify.code !== 0 && !verify.interrupted && !verify.dryRun && !hasVerifyFailure(verify.stdout)) {
+      ctx.log(`[VERIFY-INCONCLUSIVE] slug=${issue.slug} round=${worker.attempt} — exit ${verify.code} with no failing check in the output; verifying once more`, "warn");
+      verify = runVerify();
+    }
     if (verify.code !== 0) {
       return await handleVerificationFailure(ctx, worker, outcome, verify);
     }

@@ -10,7 +10,16 @@ import { dispatch } from "../dispatch.mjs";
 import { triagePrompt } from "../prompts.mjs";
 import { parseTriageReport, readVerifyRecord } from "../report.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./finish.mjs";
-import { dispatchIssueDir, dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason, unblockedReason } from "./shared.mjs";
+import { dispatchIssueDir, dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason, unblockedReason, VERIFY_INCONCLUSIVE_TAG, VERIFY_INTERRUPTED_TAG } from "./shared.mjs";
+
+/**
+ * Does verify-worktree.sh's output name a check that failed? Its own lines: `<CHECK>: fail…`
+ * or `<CHECK>: not_run is fatal` (a required check with no command). Output that stops at
+ * `TEST: running: …` — a gate killed mid-check — names none.
+ */
+export function hasVerifyFailure(stdout) {
+  return /^[A-Z_]+: (fail|not_run is fatal)/m.test(stdout ?? "");
+}
 
 /**
  * verify-worktree.sh already failed: triage it, and tag the retention reason with the
@@ -19,6 +28,19 @@ import { dispatchIssueDir, dispatchStem, FIXABLE_TAG, issueDescriptor, limitExce
  */
 export async function handleVerificationFailure(ctx, worker, outcome, verify) {
   const { sprint } = ctx;
+
+  // No verdict from the gate: killed from outside, or a second run that still named no failing
+  // check. Not the branch's fault, so no triage and no coder — the next round verifies again.
+  // An interruption spends no attempt; an inconclusive pair does, which bounds a gate that
+  // never gets as far as a verdict.
+  if (verify.interrupted) {
+    ctx.log(`[VERIFY-INTERRUPTED] slug=${worker.issue.slug} round=${worker.attempt} — verify-worktree.sh was killed by ${verify.signal}; no verdict, so no triage and no coder`, "warn");
+    return finishRetryOrBlock(ctx, worker, outcome, taggedReason(VERIFY_INTERRUPTED_TAG, `killed by ${verify.signal}`), { free: true });
+  }
+  if (!verify.dryRun && !hasVerifyFailure(verify.stdout)) {
+    ctx.log(`[VERIFY-INCONCLUSIVE] slug=${worker.issue.slug} round=${worker.attempt} — two verifies, neither named a failing check; no triage and no coder`, "warn");
+    return finishRetryOrBlock(ctx, worker, outcome, taggedReason(VERIFY_INCONCLUSIVE_TAG, `exit ${verify.code} with no failing check in the output`));
+  }
 
   if (worker.skippedWorker) {
     // Unwrapped: a re-run after a block would otherwise nest a second block prefix, which

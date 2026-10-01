@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: a verify ended by a signal (not the call's own timeout) is *interrupted*, not failed — no triage, no
+  coder, no failure logged, and the issue is verified again next round for free. Verify output that names no failing
+  check is run a second time before triage; if still empty the issue is re-verified next round, never recoded.
 - `crew-afk`: `merge-branches.sh` no longer fails a merge whose only conflicts are parallel issue branches bumping
   the same `registry.json` entry or appending to the same `CHANGELOG.md` heading. New
   `resolve-merge-conflicts.sh` keeps the higher semver per entry's `version` and both sides' appended entries

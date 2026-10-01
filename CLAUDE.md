@@ -84,6 +84,10 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
   tracker's closing lines (`closingRefs`) in crew-afk's own block of the body
 - `dispatch-agent.sh` (pi), `dispatch-codex-agent.sh` (codex)
 
+A verify that gives no verdict — killed by a signal (`Effects.exec`'s `interrupted`; a real `timeoutMs` stays 124), or
+output naming no failing check even on a second run — is retained as `verify-interrupted` / `verify-inconclusive` and
+re-verified next round with no triage and no coder (`pipeline/verify.mjs`).
+
 Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
 AC receipt → promote → merge → close. Deps sit there because that one position is before both
 consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any
