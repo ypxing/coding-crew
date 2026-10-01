@@ -35,6 +35,21 @@ nothing after Phase 2 is audited again. While a Phase 1 issue is still open (blo
 the audit does not run at all: that issue's requirements would read as missing. The re-run that
 finishes it audits then.
 
+**A fixable integration failure joins the same flush.** At every drain of the queue the project's
+checks run on the merged feature branch (the integration check), which no per-branch verify saw. A
+red result is triaged by `crew-triage` — a dispatch of its own, never the coder — the same way a
+failed per-branch verify is. Fixable, it becomes one parked fix issue
+(`promote-findings.sh defer-integration`), which the flush sends into Phase 2 beside the findings
+and PRD-gaps fixes; its criterion is "the project's checks pass on the merged feature branch", with
+triage's detail and the failing output's tail. The next drain's check then runs on the fixed branch.
+Not fixable — a missing command (exit 127, no triage at all), a failed dependency install, or
+triage's own verdict — queues nothing: the summary's `## Integration check` section gives the
+reason, and the drain's remaining checks (the PRD audit, if it has not run) are skipped, with the
+summary saying so. A triage dispatch that itself fails counts as fixable, once. Its `Source:` line is
+the same depth bound. At most two integration fix issues are created per run: a third red drain is
+reported and the run ends stalled, with no third fix issue. The same commit red again (its fix
+issue blocked) is not a new drain — it is not re-triaged and gets no second fix issue.
+
 Findings are **not** promoted the moment they are raised. A fix branch running alongside
 still-open Phase 1 issues would edit the same files as its siblings; `merge-branches.sh` aborts
 on conflict, so early promotion manufactures retained branches out of nothing. Waiting until the
@@ -144,6 +159,13 @@ bash "<skill-dir>/scripts/promote-findings.sh" defer-gaps \
   --feature-slug "$FEATURE_SLUG" --report ".scratch/$FEATURE_SLUG/prd-audit.md" \
   --criteria-file "<tmp criteria file>"
 # → "defer-gaps: .scratch/<slug>/issues/open/<NN>-fix-prd-gaps.md" | "defer-gaps: skip — already queued: <path>"
+
+# A fixable red integration check on the merged feature branch → one parked fix issue
+bash "<skill-dir>/scripts/promote-findings.sh" defer-integration \
+  --feature-slug "$FEATURE_SLUG" --report ".scratch/$FEATURE_SLUG/dispatch/_integration/verify.out" \
+  --criteria-file "<tmp criteria file>" --at "<failing commit>"
+# → "defer-integration: .scratch/<slug>/issues/open/<NN>-fix-integration-<k>.md"
+#   | "defer-integration: skip — already queued: <path>"   (one open at a time; the caller caps the run at two)
 
 # Phase 1 → Phase 2
 bash "<skill-dir>/scripts/promote-findings.sh" flush --feature-slug "$FEATURE_SLUG"

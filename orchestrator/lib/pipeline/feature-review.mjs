@@ -25,7 +25,7 @@ export async function runFeatureReview(ctx, { integration = null } = {}) {
   const { sprint, effects, options } = ctx;
 
   if (integration?.status === "fail") {
-    const skipped = "the integration check is red on the merged feature branch and not fixable here — a review of code that fails its checks would only restate that.";
+    const skipped = "the integration check is red on the merged feature branch — a review of code that fails its checks would only restate that.";
     ctx.log(`FEATURE-REVIEW: skipped — ${skipped}`);
     return { skipped };
   }

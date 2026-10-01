@@ -42,8 +42,9 @@ For a single platform, a per-project install or updates, see [Install options](#
         └── fix ┴──────────┘   same branch, up to 2 tries
     │ all issues done
     ▼
- 🤖 integration check     your checks, on the merged feature branch (red: reported, no PR)
-    │
+ 🤖 integration check     your checks, on the merged feature branch
+    │ red + fixable          → a fix issue, back into the per-issue loop (max 2); re-checked
+    │ red + not fixable      → reported, no PR
     ▼
  🤖 full-feature review   one reviewer pass over the whole feature diff (not re-run after the fixes)
     │

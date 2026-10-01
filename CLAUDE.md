@@ -67,7 +67,7 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
   is a gate and cannot invoke a skill. Always exits 0
 - `verify-worktree.sh` — the checks, and the verification receipt
 - `receipts.sh` — the two gates as facts on disk
-- `promote-findings.sh` — findings → parked fix issues → Phase 2
+- `promote-findings.sh` — findings, PRD gaps and fixable integration failures → parked fix issues → Phase 2
 - `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
 - `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
@@ -96,7 +96,11 @@ that modifies the tree fails, in the baseline and every verify.
 
 At every drain of the queue (after Phase 1 and after Phase 2) the same mechanism runs once more on the merged
 feature branch under its own `_integration` stem and cache (`--no-integration-check`; `--no-baseline` does not
-turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR.
+turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR. It is
+first triaged (`orchestrator/lib/integration-fix.mjs`, a `crew-triage` dispatch): a fixable failure becomes one parked
+fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, after which the next drain checks again
+— at most two per run, then the run ends stalled; exit 127 or a "not fixable" verdict queues nothing and the summary
+says why.
 
 At the first drain only (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
 runs in feature mode over `base_sha..<feature branch>`: no criteria, findings only, attributed to `feature` in the sprint
