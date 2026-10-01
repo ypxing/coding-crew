@@ -12,7 +12,11 @@ set -uo pipefail
 #     merge itself fails closed. Non-crew branches are not gated.
 #   - If already merged (git log HEAD..<branch> is empty), reports success with no action.
 #   - Otherwise performs a no-fast-forward merge.
-#   - On conflict: aborts cleanly and reports failure; NEVER attempts resolution.
+#   - On conflict: first lets resolve-merge-conflicts.sh finish the merge when the only conflicts
+#     are the registry.json `version` of an entry both sides bumped (higher semver wins) and
+#     CHANGELOG.md entries both sides appended (both kept) — mechanical, so no coder is
+#     redispatched for it. The decision is printed and traced. Any other conflict, including any
+#     other field of registry.json, aborts cleanly and reports failure; nothing else is resolved.
 #   - When git refuses before merging because uncommitted changes in this checkout (tracked,
 #     or untracked files in the way) would be overwritten, reports `main-tree-dirty` with the
 #     files instead of `conflict`: no change to the branch can fix it, only a human can.
@@ -31,6 +35,7 @@ BRANCHES=("$@")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
+RESOLVE_SCRIPT="$SCRIPT_DIR/resolve-merge-conflicts.sh"
 
 # Each script traces its own step, so a merge that happened is always in the trace and
 # a merge that was skipped can never be traced as if it had run.
@@ -103,6 +108,13 @@ for BRANCH in "${BRANCHES[@]}"; do
     echo "MERGE: $BRANCH failed (main-tree-dirty — uncommitted changes in $(pwd) would be overwritten: ${DIRTY:-see git output above})" >&2
     _trace --level error MERGE "branch=$BRANCH success=false reason=main-tree-dirty"
     FAILED=1
+  elif [ -f "$RESOLVE_SCRIPT" ] && RESOLVED=$(bash "$RESOLVE_SCRIPT") \
+       && git commit --no-verify -q -m "Merge branch '$BRANCH'" >/dev/null 2>&1; then
+    # Only version-bump / changelog-append conflicts: resolved mechanically, merge committed.
+    printf '%s\n' "$RESOLVED"
+    echo "MERGE: $BRANCH success (auto-resolved)"
+    _trace MERGE "branch=$BRANCH success=true auto-resolved=true"
+    while IFS= read -r line; do [ -n "$line" ] && _trace MERGE "branch=$BRANCH auto-resolved: $line"; done <<<"$RESOLVED"
   else
     # Abort the failed merge to leave a clean state
     git merge --abort 2>/dev/null || true

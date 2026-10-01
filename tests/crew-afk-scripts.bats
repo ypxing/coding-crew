@@ -129,6 +129,133 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
+# ─── merge-branches.sh: auto-resolved registry version / CHANGELOG conflicts ──
+
+# _registry <skill-a-version> <skill-b-version> [<skill-a-description>] — a registry.json in the
+# exact shape JSON.stringify(…, null, 2) writes.
+_registry() {
+  jq -n --arg a "$1" --arg b "$2" --arg d "${3:-desc}" \
+    '{skills: {a: {version: $a, description: $d}, b: {version: $b, description: "b"}}}' > registry.json
+}
+
+_commit_all() { git add -A && git commit -q -m "$1"; }
+
+_changelog() {  # _changelog <entry>... — header, then an [Unreleased] list of the entries
+  { printf '# Changelog\n\n## [Unreleased]\n\n'; for e in "$@"; do printf -- '- %s\n' "$e"; done; printf '\n## [1.0.0]\n\n- old\n'; } > CHANGELOG.md
+}
+
+@test "merge-branches: both branches bumping the same registry entry merge, higher version kept" {
+  _registry 1.0.0 1.0.0; _commit_all base
+  git checkout -q -b crew/my-feature/one;  _registry 1.1.0 1.0.0; _commit_all one
+  git checkout -q "$FEATURE_BRANCH"; git checkout -q -b crew/my-feature/two; _registry 1.0.1 1.0.0; _commit_all two
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" crew/my-feature/one crew/my-feature/two
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skills.a version 1.1.0 (feature) vs 1.0.1 (branch) -> 1.1.0"* ]]
+  [[ "$output" == *"crew/my-feature/two success (auto-resolved)"* ]]
+  [ "$(jq -r .skills.a.version registry.json)" = "1.1.0" ]
+  [ -z "$(git status --porcelain)" ]
+  git merge-base --is-ancestor crew/my-feature/two HEAD
+}
+
+@test "merge-branches: the higher version wins when the branch being merged is the higher one" {
+  _registry 1.0.0 1.0.0; _commit_all base
+  git checkout -q -b crew/my-feature/one;  _registry 1.0.1 1.0.0; _commit_all one
+  git checkout -q "$FEATURE_BRANCH"; git checkout -q -b crew/my-feature/two; _registry 1.2.0 1.0.0; _commit_all two
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" crew/my-feature/one crew/my-feature/two
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .skills.a.version registry.json)" = "1.2.0" ]
+}
+
+@test "merge-branches: version compare is numeric, not lexical" {
+  _registry 1.9.0 1.0.0; _commit_all base
+  git checkout -q -b crew/my-feature/one;  _registry 1.9.1 1.0.0; _commit_all one
+  git checkout -q "$FEATURE_BRANCH"; git checkout -q -b crew/my-feature/two; _registry 1.10.0 1.0.0; _commit_all two
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" crew/my-feature/one crew/my-feature/two
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .skills.a.version registry.json)" = "1.10.0" ]
+}
+
+@test "merge-branches: the auto-resolution is recorded in the trace" {
+  export TRACE_LOG="$TEMP_DIR/trace.log"
+  _registry 1.0.0 1.0.0; _commit_all base
+  git checkout -q -b crew/my-feature/one;  _registry 1.1.0 1.0.0; _commit_all one
+  git checkout -q "$FEATURE_BRANCH"; git checkout -q -b crew/my-feature/two; _registry 1.0.1 1.0.0; _commit_all two
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" crew/my-feature/one crew/my-feature/two
+  [ "$status" -eq 0 ]
+  grep -q '\[MERGE\] branch=crew/my-feature/two success=true auto-resolved=true' "$TRACE_LOG"
+  grep -q 'auto-resolved: registry.json: skills.a version 1.1.0 (feature) vs 1.0.1 (branch) -> 1.1.0' "$TRACE_LOG"
+}
+
+@test "merge-branches: two CHANGELOG entries appended under the same heading are both kept" {
+  _changelog; _commit_all base
+  git checkout -q -b crew/my-feature/one;  _changelog "entry one"; _commit_all one
+  git checkout -q "$FEATURE_BRANCH"; git checkout -q -b crew/my-feature/two; _changelog "entry two"; _commit_all two
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" crew/my-feature/one crew/my-feature/two
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CHANGELOG.md: kept 1 entry from the feature side and 1 from the branch side"* ]]
+  ! grep -q '<<<<<<<\|>>>>>>>' CHANGELOG.md
+  [ "$(grep -n 'entry one' CHANGELOG.md | cut -d: -f1)" -lt "$(grep -n 'entry two' CHANGELOG.md | cut -d: -f1)" ]
+  grep -q '^- old$' CHANGELOG.md
+}
+
+@test "merge-branches: registry version bumps and CHANGELOG appends resolve together" {
+  _registry 1.0.0 1.0.0; _changelog; _commit_all base
+  git checkout -q -b crew/my-feature/one;  _registry 1.1.0 1.0.0; _changelog "entry one"; _commit_all one
+  git checkout -q "$FEATURE_BRANCH"; git checkout -q -b crew/my-feature/two; _registry 1.0.1 1.0.0; _changelog "entry two"; _commit_all two
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" crew/my-feature/one crew/my-feature/two
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .skills.a.version registry.json)" = "1.1.0" ]
+  grep -q 'entry one' CHANGELOG.md && grep -q 'entry two' CHANGELOG.md
+}
+
+@test "merge-branches: another registry field changed on both sides still fails the merge" {
+  _registry 1.0.0 1.0.0 d0; _commit_all base
+  git checkout -q -b crew/my-feature/one;  _registry 1.1.0 1.0.0 "d one"; _commit_all one
+  git checkout -q "$FEATURE_BRANCH"; git checkout -q -b crew/my-feature/two; _registry 1.0.1 1.0.0 "d two"; _commit_all two
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" crew/my-feature/one crew/my-feature/two
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"crew/my-feature/two failed (conflict"* ]]
+  [ "$(jq -r .skills.a.version registry.json)" = "1.1.0" ]
+  [ -z "$(git status --porcelain)" ]
+}
+
+@test "merge-branches: a conflict in another file next to a version conflict still fails the merge" {
+  _registry 1.0.0 1.0.0; echo base > other.txt; _commit_all base
+  git checkout -q -b crew/my-feature/one;  _registry 1.1.0 1.0.0; echo one > other.txt; _commit_all one
+  git checkout -q "$FEATURE_BRANCH"; git checkout -q -b crew/my-feature/two; _registry 1.0.1 1.0.0; echo two > other.txt; _commit_all two
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" crew/my-feature/one crew/my-feature/two
+  [ "$status" -ne 0 ]
+  [ "$(jq -r .skills.a.version registry.json)" = "1.1.0" ]
+  [ -z "$(git status --porcelain)" ]
+}
+
+@test "merge-branches: edits to an existing CHANGELOG line on both sides still fail the merge" {
+  _changelog "shared"; _commit_all base
+  git checkout -q -b crew/my-feature/one;  _changelog "shared one"; _commit_all one
+  git checkout -q "$FEATURE_BRANCH"; git checkout -q -b crew/my-feature/two; _changelog "shared two"; _commit_all two
+  git checkout -q "$FEATURE_BRANCH"
+
+  run bash "$MERGE_SCRIPT" "$FEATURE_BRANCH" crew/my-feature/one crew/my-feature/two
+  [ "$status" -ne 0 ]
+  [ -z "$(git status --porcelain)" ]
+}
+
 # ─── close-issue.sh ──────────────────────────────────────────────────────────
 
 _make_issue() {
