@@ -13,10 +13,10 @@
 #
 # Weight is the file's measured seconds on the slowest runner (macOS) from
 # tests/ci-shard-weights.tsv, not its @test count: counts put a 1-test file that runs for
-# minutes (an orchestrator-sprint slice) on a par with a 1-test grep, and left one shard at
+# minutes (an orchestrator-sprint topic file) on a par with a 1-test grep, and left one shard at
 # 3x another's time. Files run CPU-count at a time within a shard (ci-run-bats.sh), so no
 # single file should outweigh a shard's fair share either: that is why the orchestrator's
-# sprint suite is six bats files, not one. An unlisted file is weighted 5s per @test, so a
+# sprint suite is ten bats files, not one. An unlisted file is weighted 5s per @test, so a
 # new file still lands somewhere sensible.
 set -euo pipefail
 

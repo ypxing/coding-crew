@@ -137,8 +137,18 @@ echo "Model:  $(state get model)"
 # The totals span every run of this feature (state persists across re-runs); `.dispatches`
 # entries tagged with `.current_run` are this run alone, so both are printed, and this run
 # is split by role and by first attempt vs retry — where a stalled feature's money goes.
+#
+# A dispatch killed on timeout has no cost to add (state.sh dispatch-cost --cost-unknown); it is
+# counted after the figures rather than silently priced at $0.
 TOTAL_COST_USD=$(state get total-cost-usd)
-if awk -v c="$TOTAL_COST_USD" 'BEGIN { exit !(c > 0) }'; then
+UNKNOWN_COST_N=$(jq -r '(.current_run) as $r
+  | [(.dispatches // [])[] | select($r != null and .run == $r and .cost_unknown == true)] | length' "$SF" 2>/dev/null || echo 0)
+UNKNOWN_COST_N=${UNKNOWN_COST_N:-0}
+UNKNOWN_NOTE=""
+if [ "$UNKNOWN_COST_N" -gt 0 ]; then
+  UNKNOWN_NOTE=" + $UNKNOWN_COST_N timed-out dispatch$([ "$UNKNOWN_COST_N" -eq 1 ] || echo es), cost unknown"
+fi
+if awk -v c="$TOTAL_COST_USD" 'BEGIN { exit !(c > 0) }' || [ "$UNKNOWN_COST_N" -gt 0 ]; then
   RUN_ROW=$(jq -r '(.current_run) as $r
     | [(.dispatches // [])[] | select($r != null and .run == $r)] as $d
     | def sum(f): ($d | map(f // 0) | add // 0);
@@ -148,8 +158,8 @@ if awk -v c="$TOTAL_COST_USD" 'BEGIN { exit !(c > 0) }'; then
        by(.role == "coder"), by(.role == "reviewer"), by(.role == "triage"),
        by((.attempt // 0) <= 1), by((.attempt // 0) > 1)] | @tsv end' "$SF" 2>/dev/null || true)
   if [ -n "$RUN_ROW" ]; then
-    printf '%s\t%s\n' "$RUN_ROW" "$TOTAL_COST_USD" | awk -F'\t' '{
-      printf "Cost:   this run $%.2f · %d dispatches · %.1fm agent time · %d turns — feature total $%.2f\n", $2, $1, $3 / 60000, $4, $10
+    printf '%s\t%s\n' "$RUN_ROW" "$TOTAL_COST_USD" | awk -F'\t' -v note="$UNKNOWN_NOTE" '{
+      printf "Cost:   this run $%.2f · %d dispatches · %.1fm agent time · %d turns — feature total $%.2f%s\n", $2, $1, $3 / 60000, $4, $10, note
       printf "        by role: coder $%.2f · reviewer $%.2f · triage $%.2f — first attempts $%.2f · retries $%.2f\n", $5, $6, $7, $8, $9
     }'
   else

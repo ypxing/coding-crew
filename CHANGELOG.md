@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **crew-afk's cost ledger tells the truth per dispatch.** A claude session that emitted several
+  `result` events (a worker using background tasks) is now recorded with the turns and agent time
+  of the whole session, not just its last event. A dispatch killed on timeout is recorded as
+  cost-unknown with the tokens it used, and the summary's Cost line ends with
+  `+ K timed-out dispatch(es), cost unknown` instead of counting it as $0.
+
 ## [1.38.0]
 
 ### Added

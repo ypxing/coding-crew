@@ -331,8 +331,9 @@ export class Sprint {
    * (pi/codex/copilot, or a dry run) passes 0s, which the additive state.sh command is a
    * no-op for. `slug`/`role`/`attempt` also file it in this run's per-dispatch ledger;
    * `head` (the branch tip a coder left) goes with the session, for a later resume.
+   * `costUnknown` (no `result` event — a timeout) files it as cost-unknown with its `tokens`.
    */
-  recordDispatchCost({ costUsd, durationMs, numTurns, sessionId, contextTokens }, { slug, role, attempt, head } = {}) {
+  recordDispatchCost({ costUsd, durationMs, numTurns, sessionId, contextTokens, costUnknown, tokens }, { slug, role, attempt, head } = {}) {
     const args = [
       "dispatch-cost",
       "--cost",
@@ -345,6 +346,8 @@ export class Sprint {
     if (slug && role) args.push("--slug", slug, "--role", role, "--attempt", String(attempt ?? 0));
     if (sessionId) args.push("--session-id", sessionId, "--context-tokens", String(contextTokens ?? 0));
     if (head) args.push("--head", head);
+    // A dispatch killed on timeout has no cost to add; what it spent is its tokens.
+    if (costUnknown) args.push("--cost-unknown", "--tokens", String(tokens ?? 0));
     return this.state(args);
   }
 

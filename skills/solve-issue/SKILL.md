@@ -171,6 +171,9 @@ bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROO
 It runs the command where the INSTALL_MODE from Step 2 says: inside docker (both `-f` flags, this
 worktree's git env, the right service) or on the host. Never hand-build a `docker compose` command.
 
+Run commands in the foreground and wait for them — never in the background. Between edits run only what your change touches (one test file, not the suite).
+Other workers share this machine: temp files go under `$PROJECT_ROOT`, never a shared path such as `/tmp/<name>`; never kill a process you did not start.
+
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
 
 A bug-fix test that passes on its first run, through the path the issue names, means the bug is
@@ -214,6 +217,8 @@ Do not add documentation for things that are already self-evident from the code.
 
 ### 5. Verify
 
+This is the one full-suite run: foreground, and wait for it.
+
 ```bash
 bash "<skill-dir>/scripts/run-checks.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" \
   --dep-scripts "$DEP_SCRIPTS"
@@ -234,10 +239,11 @@ do not re-check CLAUDE.md/Makefile instead.
   skill file from), then re-run `run-checks.sh` — it runs what you just wrote:
 
   ```bash
-  cat > /tmp/discovered-commands.json <<'JSON'
+  cat > "$PROJECT_ROOT/.discovered-commands.json" <<'JSON'
   {"test": "<command or null>", "lint": "<command or null>", "typecheck": "<command or null>"}
   JSON
-  bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file /tmp/discovered-commands.json
+  bash "<skill-dir>/scripts/write-commands-cache.sh" --response-file "$PROJECT_ROOT/.discovered-commands.json"
+  rm -f "$PROJECT_ROOT/.discovered-commands.json"
   ```
 
 Do not proceed to commit if any check fails or any acceptance criterion from Step 1 is unmet.

@@ -305,6 +305,34 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   grep -q 'dispatch-cost slug=a role=coder attempt=1 cost=0.5' .scratch/calc/traces/orchestrator.log
 }
 
+@test "state.sh dispatch-cost --cost-unknown files the tokens and adds nothing to the cost total" {
+  init_sprint calc
+  state run-start --id r1 >/dev/null
+  state dispatch-cost --cost 0.5 --duration-ms 1000 --turns 3 --slug a --role coder --attempt 1 >/dev/null
+  state dispatch-cost --cost-unknown --tokens 48000 --turns 9 --slug b --role coder --attempt 1 >/dev/null
+  f=.scratch/calc/sprint-state.json
+  [ "$(jq -r '.total_cost_usd' "$f")" = "0.5" ]
+  [ "$(jq -c '.dispatches[1] | [.slug, .cost_unknown, .tokens, .cost_usd, .turns]' "$f")" = '["b",true,48000,0,9]' ]
+  [ "$(jq -c '.dispatches[0] | [.cost_unknown, .tokens]' "$f")" = '[false,null]' ]
+}
+
+@test "crew-summary appends the timed-out dispatches to the Cost line, and only when there are some" {
+  init_sprint calc
+  state run-start --id now >/dev/null
+  state dispatch-cost --cost 0.6 --duration-ms 60000 --turns 4 --slug a --role coder --attempt 1 >/dev/null
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *'feature total $0.60'* ]]
+  [[ "$output" != *'timed-out'* ]]
+
+  state dispatch-cost --cost-unknown --tokens 900 --turns 2 --slug b --role coder --attempt 1 >/dev/null
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *'feature total $0.60 + 1 timed-out dispatch, cost unknown'* ]]
+
+  state dispatch-cost --cost-unknown --tokens 900 --slug c --role coder --attempt 1 >/dev/null
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *'feature total $0.60 + 2 timed-out dispatches, cost unknown'* ]]
+}
+
 @test "state.sh baseline records one verdict per commit and rejects anything but pass or fail" {
   init_sprint calc
   state baseline --commit abc --verdict pass >/dev/null
@@ -530,7 +558,7 @@ EOF
 # pipeline is `orchestrator/` now, so those promises are asserted where they are kept:
 #
 #   - the slug is derived once by session-init.sh and read back through sprint.env by
-#     orchestrator/lib/sprint.mjs, never re-globbed  → tests/orchestrator/sprint.suite.mjs
+#     orchestrator/lib/sprint.mjs, never re-globbed  → tests/orchestrator/sprint-gates-config.test.mjs
 #   - every trace marker is written by the script that performs the step               → ditto
 #   - cleanup's `--merged` / `--retain` lists come from `state.sh get` in
 #     orchestrator/lib/loop.mjs                                                        → ditto

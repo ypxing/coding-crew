@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AUDIT_SCRIPT="$SCRIPT_DIR/skills/crew-afk/scripts/prd-audit.sh"
 
 # Where the step runs (after Phase 1, before the flush and the squash) and what `fix` does
-# with its gaps is asserted by tests/orchestrator/sprint.suite.mjs, from the trace log. This
+# with its gaps is asserted by tests/orchestrator/sprint-gates-config.test.mjs, from the trace log. This
 # file covers the script alone: when it skips, and the prompt it prints.
 
 setup() {
@@ -223,7 +223,7 @@ github_fixture() {
 #
 # "The audit does not use haiku" policed a prose instruction to pick an agent tier. The step
 # is `dispatchPlain()` on the prdAuditor's configured model now, so there is no tier for a
-# body to get wrong — see tests/orchestrator/sprint.suite.mjs.
+# body to get wrong — see tests/orchestrator/sprint-gates-config.test.mjs.
 
 # --- Documentation Format Tests ---
 #

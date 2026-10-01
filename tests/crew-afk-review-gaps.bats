@@ -228,7 +228,7 @@ EOF
 # whose review never ran, and every variant delegates the end-of-sprint reminder to
 # crew-summary.sh (printed last, naming unreviewed branches). All three were prose
 # assertions about bodies that are launchers now. The behaviour is asserted on a real
-# faked-dispatch sprint in tests/orchestrator/sprint.suite.mjs: "a review that produced
+# faked-dispatch sprint in tests/orchestrator/sprint-lifecycle.test.mjs (a review that produced nothing) and tests/orchestrator/sprint-settings.test.mjs (the rest): "a review that produced
 # nothing is a gap, not a clean pass", "a review that never ran is named in the summary,
 # not just counted in the state" (which asserts the `## Unreviewed Branches` heading
 # reaches the output), and "the sprint reports once, from disk, and the summary is the last
