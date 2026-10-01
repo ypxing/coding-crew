@@ -244,3 +244,59 @@ close_calls() {
   run env CREW_RECEIPTS=off bash "$CLOSE_SCRIPT" 42
   [ "$status" -ne 0 ]
 }
+
+# The tick is bookkeeping about the close, so close-issue.sh owns it on github too —
+# a merged issue must not read as half-done on GitHub while the local backend ticks.
+@test "close-issue (github): ticks every remaining criterion in the issue body" {
+  stub_gh 0
+  cat > "$GH_BODY_FILE" <<'BODY'
+Status: ready-for-agent
+
+## What to build
+
+- [ ] a note, not a criterion
+
+## Acceptance criteria
+
+- [x] one
+- [ ] two
+
+## Cross-cutting Requirements
+
+* [ ] three
+BODY
+  # Capture the body the edit sends, so the assertion is on what reached GitHub.
+  cat > "$STUB/gh" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$GH_LOG"
+case "\$1 \$2" in
+  "issue view") cat "$GH_BODY_FILE" ;;
+  "issue edit")
+    while [ \$# -gt 0 ]; do
+      [ "\$1" = "--body-file" ] && cp "\$2" "$TEMP_DIR/sent-body.txt"
+      shift
+    done ;;
+esac
+exit 0
+STUBEOF
+  chmod +x "$STUB/gh"
+
+  run env CREW_RECEIPTS=off bash "$CLOSE_SCRIPT" 42
+  [ "$status" -eq 0 ]
+  grep -q '^issue edit 42 --body-file' "$GH_LOG"
+  grep -qx -- '- \[x\] two' "$TEMP_DIR/sent-body.txt"
+  grep -qx -- '\* \[x\] three' "$TEMP_DIR/sent-body.txt"
+  grep -qx -- '- \[ \] a note, not a criterion' "$TEMP_DIR/sent-body.txt"
+  grep -qx 'Status: ready-for-agent' "$TEMP_DIR/sent-body.txt"
+  [ "$(done_calls)" -eq 1 ]
+}
+
+@test "close-issue (github): no body edit when every criterion is already ticked" {
+  stub_gh 0
+  write_body_met
+
+  run env CREW_RECEIPTS=off bash "$CLOSE_SCRIPT" 42
+  [ "$status" -eq 0 ]
+  ! grep -q -- '--body-file' "$GH_LOG"
+  [ "$(done_calls)" -eq 1 ]
+}

@@ -15,7 +15,8 @@ set -euo pipefail
 #      an issue being closed off a sibling issue's verified branch — observed in
 #      a real sprint, where one dispatch produced two "merged" issues.
 #   3. Rewrites the `Status:` line to `Status: done` and ticks every remaining
-#      `- [ ]` under `## Acceptance criteria` / `## Cross-cutting Requirements`.
+#      `- [ ]` under `## Acceptance criteria` / `## Cross-cutting Requirements`
+#      (under tracker: github, ticks them in the issue body; status is a label there).
 #   4. Moves the file from .../issues/open/ to .../issues/done/.
 #
 # Why the check-off lives here
@@ -37,6 +38,25 @@ if [ -z "$ISSUE_PATH" ]; then
   echo "Usage: $0 <issue-file-path>" >&2
   exit 1
 fi
+
+# tick_criteria [status] — stdin → stdout: every `- [ ]` under `## Acceptance criteria` /
+# `## Cross-cutting Requirements` becomes `- [x]`; with a status, the `Status:` line is
+# rewritten to it too. Both backends tick through this one filter.
+#
+# Section scoping matches mark-issue-done.sh's guard exactly, so the two agree on
+# which boxes are criteria: only those under an acceptance-criteria or
+# cross-cutting-requirements heading. A `- [ ]` in `## What to build` or `## Notes`
+# is somebody's note, not a criterion, and is left alone.
+tick_criteria() {
+  awk -v status="${1:-}" '
+    status != "" && /^Status:[ 	]*/            { print "Status: " status; next }
+    /^##+[ 	]*[Aa]cceptance [Cc]riteria/       { inside = 1; print; next }
+    /^##+[ 	]*[Cc]ross-cutting [Rr]equirements/ { inside = 1; print; next }
+    /^##/                                       { inside = 0; print; next }
+    inside && /^[ 	]*[-*][ 	]+\[[ ]\]/ { sub(/\[[ ]\]/, "[x]"); print; next }
+    { print }
+  '
+}
 
 # ─── tracker backend: local (file path) or github (issue number) ────────────
 #
@@ -107,6 +127,24 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
     bash "$RECEIPTS_SCRIPT" check ac --branch "$BRANCH_ARG"
   fi
 
+  # Tick the criteria in the issue body, as the local backend ticks the file. Fetched
+  # live, so a human's edit since listOpen is kept. A failed fetch or edit only warns:
+  # the ticks are bookkeeping, and the label swap below is what marks the issue done.
+  REPO_ARGS=()
+  [ -n "$TRACKER_CONFIG_REPO" ] && REPO_ARGS=(--repo "$TRACKER_CONFIG_REPO")
+  if BODY="$(gh issue view "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --json body --jq .body)"; then
+    TICKED="$(printf '%s\n' "$BODY" | tick_criteria)"
+    if [ "$TICKED" != "$BODY" ]; then
+      BODY_FILE="$(mktemp)"
+      printf '%s\n' "$TICKED" > "$BODY_FILE"
+      gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --body-file "$BODY_FILE" >/dev/null \
+        || echo "WARNING: could not tick the criteria on issue #$ISSUE_NUMBER" >&2
+      rm -f "$BODY_FILE"
+    fi
+  else
+    echo "WARNING: could not fetch issue #$ISSUE_NUMBER to tick its criteria" >&2
+  fi
+
   # "Done" here is merged into the feature branch, not shipped, so the issue stays open,
   # labelled awaiting-merge: the feature PR's `Closes #n` closes it on merge. That label
   # swap is mark-issue-done.sh's, installed beside tracker-config.sh; --force because
@@ -128,23 +166,11 @@ fi
 # (GNU takes a bare -i, BSD/macOS reads the next argument as a backup suffix, and
 # `-i''` does not help — the shell strips the empty quotes), and one pass means the
 # file is never observable half-rewritten.
-#
-# Section scoping matches mark-issue-done.sh's guard exactly, so the two agree on
-# which boxes are criteria: only those under an acceptance-criteria or
-# cross-cutting-requirements heading. A `- [ ]` in `## What to build` or `## Notes`
-# is somebody's note, not a criterion, and is left alone.
 finalize_issue() {
   local file="$1"
   local tmp="${file}.tmp.$$"
 
-  awk '
-    /^Status:[ 	]*/ { print "Status: done"; next }
-    /^##+[ 	]*[Aa]cceptance [Cc]riteria/       { inside = 1; print; next }
-    /^##+[ 	]*[Cc]ross-cutting [Rr]equirements/ { inside = 1; print; next }
-    /^##/                                       { inside = 0; print; next }
-    inside && /^[ 	]*[-*][ 	]+\[[ ]\]/ { sub(/\[[ ]\]/, "[x]"); print; next }
-    { print }
-  ' "$file" > "$tmp" || {
+  tick_criteria done < "$file" > "$tmp" || {
     rm -f "$tmp"; echo "ERROR: could not rewrite $file" >&2; return 1; }
 
   mv "$tmp" "$file"
