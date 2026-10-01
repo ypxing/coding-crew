@@ -117,7 +117,7 @@ Once the user approves the design, invoke `to-prd` using the same feature slug c
 
 - **One question at a time** - Don't overwhelm with multiple questions
 - **Multiple choice preferred** - Easier to answer than open-ended when possible
-- **Justified size, not small size** - Well-architected, not overengineered: size the problem first, always offer the do-least option, keep what the problem or the structure of what is built now needs, and cut the rest (YAGNI)
+- **YAGNI for needs, not for structure** - Cut anything built for a need nobody has yet; keep what the current problem, or the structure of what is built now, requires
 - **Explore alternatives** - Always propose 2-3 approaches before settling
 - **Incremental validation** - Present design, get approval before moving on
 - **Be flexible** - Go back and clarify when something doesn't make sense
