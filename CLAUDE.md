@@ -98,6 +98,12 @@ At every drain of the queue (after Phase 1 and after Phase 2) the same mechanism
 feature branch under its own `_integration` stem and cache (`--no-integration-check`; `--no-baseline` does not
 turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR.
 
+At the first drain only (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
+runs in feature mode over `base_sha..<feature branch>`: no criteria, findings only, attributed to `feature` in the sprint
+review report and promoted into Phase 2 by the same `fixFindings` rule. Not re-run after Phase 2, nor when nothing
+merged; skipped (the summary says so) when the integration check is red; a dispatch that leaves no review is recorded
+not-run and never fails the sprint.
+
 ## Adding a new agent
 
 1. `agents/<name>/protocol.md` (or `workflow.js`).

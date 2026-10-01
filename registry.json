@@ -19,12 +19,12 @@
   },
   "agents": {
     "crew-reviewer": {
-      "version": "1.7.12",
+      "version": "1.8.0",
       "source-dir": "crew-reviewer",
       "replaces": [
         "crew-code-reviewer"
       ],
-      "description": "Reviews one branch per dispatch, before that branch merges and before any squash; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
+      "description": "Reviews one branch per dispatch, before that branch merges and before any squash, and (feature mode) the whole feature diff once at the first drain; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
       "deps": [],
       "skills": [],
       "docs": [],
@@ -79,7 +79,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.3.84",
+      "version": "2.4.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
