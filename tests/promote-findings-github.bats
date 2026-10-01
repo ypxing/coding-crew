@@ -159,7 +159,7 @@ SH
   grep -q -- '--title Fix integration check: feat' "$GH_CALLS_LOG"
   grep -q -- '--label ready-for-agent' "$GH_CALLS_LOG"
   grep -q -- '--milestone feat' "$GH_CALLS_LOG"
-  grep -q '^Source: .*verify.out (integration)$' "$GH_LAST_BODY"
+  grep -q '^Source: integration check (integration)$' "$GH_LAST_BODY"
   grep -q "^- \[ \] The project's checks pass on the merged feature branch$" "$GH_LAST_BODY"
   [ -z "$(ls .scratch/feat/issues/open 2>/dev/null)" ]
 }
@@ -182,13 +182,13 @@ SH
   ! grep -q -- '--repo' "$GH_CALLS_LOG"
 }
 
-@test "the created issue's body carries the Source: line in local's exact convention" {
+@test "the created issue's body carries a Source: line naming the review and branch, not a report path" {
   configure_github
   stub_gh
 
   bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-  grep -q '^Source: .*sprint-review-1.md (crew/feat/a)$' "$GH_LAST_BODY"
+  grep -q '^Source: review (crew/feat/a)$' "$GH_LAST_BODY"
 }
 
 @test "the created issue's body carries a ## Blocked by section when the finding is blocked" {
@@ -323,4 +323,186 @@ SH
   [[ "$output" == "defer: .scratch/feat/issues/open/01-fix-findings-a.md" ]]
   [ -f .scratch/feat/issues/open/01-fix-findings-a.md ]
   grep -q '^Status: deferred-findings' .scratch/feat/issues/open/01-fix-findings-a.md
+}
+
+# ─── github bodies embed their evidence, never a local path ──────────────────
+
+# A realistic review block: the json sidecar, then the reviewer's prose per finding.
+write_full_review() {
+  json=$(jq -n '{
+    branch: "crew/feat/a", slug: "a", verdict: "unmet",
+    findings: [
+      {severity: "CRITICAL", location: "src/x.ts:12", criterion: "validate input at src/x.ts:12", verdict: "actionable"},
+      {severity: "LOW", location: "src/y.ts:3", criterion: "rename tmp", verdict: "dismiss"}
+    ]
+  }')
+  cat > "$REPORT" <<EOF
+## Branch: crew/feat/a (a)
+
+\`\`\`json
+$json
+\`\`\`
+
+[CRITICAL] Unchecked input reaches the shell
+File: src/x.ts:12
+Snippet:
+~~~
+exec(req.body.cmd)
+~~~
+Issue: a request with cmd="rm -rf /" runs it
+Fix: validate cmd against an allow-list
+
+[LOW] Poor variable name
+File: src/y.ts:3
+Snippet:
+~~~
+const tmp = 1
+~~~
+Issue: unclear name
+Fix: rename it
+
+## Branch: crew/feat/b (b)
+
+\`\`\`json
+{"branch": "crew/feat/b", "slug": "b", "verdict": "all-met", "findings": []}
+\`\`\`
+EOF
+}
+
+# `! grep` mid-test never fails a bats test (set -e ignores negations), so absence is checked
+# by an explicit return.
+absent() { if grep "$@" "$GH_LAST_BODY"; then return 1; fi; }
+
+no_local_paths() {
+  absent -E '(^|[ (`"])/(Users|home|tmp|private|var|root)/'
+  absent -F '.scratch/'
+  absent -F "$TEMP_DIR"
+}
+
+@test "defer embeds each promoted finding's full reviewer text under ## Review findings" {
+  configure_github
+  stub_gh
+  write_full_review
+
+  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^## Review findings$' "$GH_LAST_BODY"
+  grep -q '^\[CRITICAL\] Unchecked input reaches the shell' "$GH_LAST_BODY"
+  grep -q '^File: src/x.ts:12$' "$GH_LAST_BODY"
+  grep -q '^exec(req.body.cmd)$' "$GH_LAST_BODY"
+  grep -q '^Issue: a request with cmd=' "$GH_LAST_BODY"
+  grep -q '^Fix: validate cmd against an allow-list$' "$GH_LAST_BODY"
+  # The criterion is still there, and findings below the threshold are not promoted.
+  grep -q '^- \[ \] validate input at src/x.ts:12$' "$GH_LAST_BODY"
+  absent -q 'Poor variable name'
+  # Another branch's block in the same report is not leaked in.
+  absent -q 'crew/feat/b'
+  # The json sidecar is not embedded.
+  absent -q '"severity"'
+  no_local_paths
+}
+
+@test "defer under the actionable rule embeds only the findings triage judged actionable" {
+  configure_github
+  stub_gh
+  write_full_review
+
+  CREW_FIX_FINDINGS=actionable bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q 'Unchecked input reaches the shell' "$GH_LAST_BODY"
+  absent -q 'Poor variable name'
+  no_local_paths
+}
+
+@test "defer lists the json findings when the review has no prose blocks" {
+  configure_github
+  stub_gh
+
+  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^## Review findings$' "$GH_LAST_BODY"
+  grep -q 'src/x.ts:12.* unchecked input' "$GH_LAST_BODY"
+  no_local_paths
+}
+
+@test "defer scrubs absolute and .scratch paths quoted in a finding" {
+  configure_github
+  stub_gh
+  write_full_review
+  sed -i.bak "s#^Issue: unclear name#Issue: unclear name#; s#^Fix: validate cmd against an allow-list#Fix: see /Users/alice/proj/src/x.ts and $TEMP_DIR/.scratch/feat/notes.md#" "$REPORT"
+
+  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^Fix: see .*x.ts' "$GH_LAST_BODY"
+  no_local_paths
+}
+
+@test "defer-gaps embeds the audit's evidence for each missing requirement, with no local path" {
+  configure_github
+  stub_gh
+  printf -- '- [ ] Users can export to CSV\n' > gaps.md
+  cat > .scratch/feat/prd-audit.md <<'EOF'
+Audit of the PRD against the merged work.
+
+```json
+{"covered": ["login"], "partial": [], "missing": [{"requirement": "CSV export", "detail": "No exporter exists under src/export/; grep for csv finds nothing"}], "superseded": []}
+```
+EOF
+
+  run bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md
+  [ "$status" -eq 0 ]
+  [[ "$output" == "defer-gaps: https://github.com/acme/widgets/issues/42" ]]
+  grep -q '^Source: PRD audit (prd-audit)$' "$GH_LAST_BODY"
+  grep -q '^## PRD audit evidence$' "$GH_LAST_BODY"
+  grep -q 'CSV export' "$GH_LAST_BODY"
+  grep -q 'No exporter exists under src/export/' "$GH_LAST_BODY"
+  grep -q '^- \[ \] Users can export to CSV$' "$GH_LAST_BODY"
+  no_local_paths
+}
+
+@test "defer-integration embeds the tail of the failing output, truncated, with no local path" {
+  configure_github
+  stub_gh
+  printf -- "- [ ] The project's checks pass on the merged feature branch\n" > integ.md
+  mkdir -p .scratch/feat/dispatch/_integration
+  {
+    for i in $(seq 1 2000); do echo "noise line $i padding padding padding padding"; done
+    echo "FAIL tests/foo.test.ts at $TEMP_DIR/.scratch/worktrees/x/tests/foo.test.ts:9"
+    echo "AssertionError: expected 1 to equal 2 in /Users/alice/proj/src/foo.ts"
+  } > .scratch/feat/dispatch/_integration/verify.out
+
+  run bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/dispatch/_integration/verify.out \
+    --criteria-file integ.md
+  [ "$status" -eq 0 ]
+  grep -q '^## Failing output (tail)$' "$GH_LAST_BODY"
+  grep -q 'AssertionError: expected 1 to equal 2' "$GH_LAST_BODY"
+  absent -q 'noise line 1 '
+  [ "$(wc -c < "$GH_LAST_BODY")" -lt 12000 ]
+  no_local_paths
+}
+
+@test "guard still treats every github body promote-findings.sh writes as source-guarded" {
+  configure_github
+  stub_gh
+  write_full_review
+  printf -- '- [ ] gap\n' > gaps.md
+  printf -- '- [ ] integ\n' > integ.md
+  : > .scratch/feat/prd-audit.md
+  : > .scratch/feat/verify.out
+
+  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
+  run bash "$PROMOTE" guard --issue 42
+  [[ "$output" == *"skip — source-guarded"* ]]
+
+  bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md >/dev/null
+  cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
+  run bash "$PROMOTE" guard --issue 42
+  [[ "$output" == *"skip — source-guarded"* ]]
+
+  bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/verify.out --criteria-file integ.md >/dev/null
+  cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
+  run bash "$PROMOTE" guard --issue 42
+  [[ "$output" == *"skip — source-guarded"* ]]
 }

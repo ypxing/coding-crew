@@ -408,7 +408,8 @@ test("github: a fixable red integration check creates the fix issue in the miles
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const fix = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => /^Fix integration check: demo \(at [0-9a-f]{12}\)$/.test(i.title));
   assert.ok(fix, `the integration fix issue was never created\n${traceLog(root)}`);
-  assert.match(fix.body, /^Source: .*verify\.out \(integration\)$/m);
+  assert.match(fix.body, /^Source: integration check \(integration\)$/m);
+  assert.doesNotMatch(fix.body, /\.scratch\//);
   assert.match(fix.body, /^- \[ \] The project's checks pass on the merged feature branch/m);
   assert.ok(fix.labels.some((l) => l.name === "ready-for-agent" || l.name === "awaiting-merge"));
   assert.ok(fix.labels.some((l) => l.name === "awaiting-merge"), `the fix issue was never implemented\n${traceLog(root)}`);

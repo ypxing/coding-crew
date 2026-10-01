@@ -286,21 +286,144 @@ _github_tracker_cli() {
   node "$node_cli" "$@"
 }
 
+# --- github bodies embed their evidence --------------------------------------
+# A github fix issue is read where the sprint's checkout does not exist, and the `.scratch/`
+# reports are gitignored runtime bookkeeping that is never pushed. So under github the body
+# carries the reviewer's / auditor's / verifier's content itself, and never a local path.
+# (Local issues sit in the same checkout as the report and keep naming it in `Source:`.)
+FINDINGS_MAX_BYTES=30000   # all embedded review findings; GitHub caps a body at 65536
+EVIDENCE_MAX_BYTES=8000    # the audit's evidence / the failing output's tail
+FINDING_MAX_LINES=60       # one finding's prose
+
+# _scrub_paths — stdin → stdout with absolute filesystem paths and `.scratch/` paths made
+# repo-relative or reduced to their last component. A body must not leak a username or a
+# directory layout, and an embedded snippet or failing output can quote either.
+_scrub_paths() {
+  local p='[^[:space:]:)"'"'"'`,;/]+'
+  sed -e "s#${MAIN_ROOT%/}/##g" -e "s#${PWD%/}/##g" \
+    | sed -E \
+      -e "s#(^|[^[:alnum:]_.~/-])/(Users|home|root|private|var|tmp|opt|mnt|srv|workspace|builds)(/$p)*/($p)#\\1<path>/\\4#g" \
+      -e "s#(^|[^[:alnum:]_.~/-])(\\.?[[:alnum:]_.-]+/)*\\.scratch(/$p)*/($p)#\\1<scratch>/\\4#g" \
+      -e 's#\.scratch/#scratch/#g'
+}
+
+# _review_branch_prose <report> <branch> — the prose of the branch's last block in the review
+# report (a retry's block overrides an earlier one, as review_rollup folds), minus its json.
+_review_branch_prose() {
+  awk -v branch="$2" '
+    index($0, "Branch: " branch " (") && $0 ~ /^[ \t]*#+ / { inb = 1; buf = ""; skip = 0; next }
+    inb && $0 ~ /^## / { inb = 0 }
+    !inb { next }
+    skip { if ($0 ~ /^[ \t]*```[ \t]*$/) skip = 0; next }
+    $0 ~ /^[ \t]*```json/ { skip = 1; next }
+    { buf = buf $0 "\n" }
+    END { printf "%s", buf }
+  ' "$1"
+}
+
+# _review_findings_md <report> <branch> <severities> — markdown for the findings `defer`
+# promotes: each one's full prose block (title, File:, Snippet:, Issue:, Fix:) in a <details>.
+# <severities> is a list such as "CRITICAL, HIGH", or `actionable`, which keeps the blocks whose
+# location the findings triage judged actionable (that verdict sits in the block's json, not its
+# prose). Where the prose has no block to keep, the json's one-line findings are listed instead,
+# so a promoted finding is never absent from the body.
+_review_findings_md() {
+  local report="$1" branch="$2" severities="$3" locs="" sevs="" rollup
+  rollup="$(review_rollup "$report")"
+  if [ "$severities" = "actionable" ]; then
+    locs="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.verdict == "actionable") | .location' <<< "$rollup" 2>/dev/null || true)"
+  else
+    sevs="$(printf '%s' "$severities" | tr -d ' ')"
+  fi
+
+  local out
+  out="$(_review_branch_prose "$report" "$branch" | awk -v sevs="$sevs" -v locs="$locs" \
+      -v maxb="$FINDINGS_MAX_BYTES" -v maxl="$FINDING_MAX_LINES" '
+    function flush(   i, n, lines, m, L, ok, title, body, fences, entry) {
+      if (blk == "") return
+      n = split(blk, lines, "\n")
+      if (sevs != "") ok = (index("," sevs ",", "," sev ",") > 0)
+      else if (locs != "") { ok = 0; m = split(locs, L, "\n"); for (i = 1; i <= m; i++) if (L[i] != "" && index(blk, L[i]) > 0) ok = 1 }
+      else ok = 1
+      if (ok) {
+        title = lines[1]; gsub(/^[ \t]+|[ \t]+$/, "", title)
+        gsub(/&/, "\\&amp;", title); gsub(/</, "\\&lt;", title); gsub(/>/, "\\&gt;", title)
+        body = ""; fences = 0
+        for (i = 1; i <= n && i <= maxl; i++) { body = body lines[i] "\n"; if (lines[i] ~ /^[ \t]*~~~/) fences++ }
+        if (n > maxl) body = body "(… " (n - maxl) " more lines trimmed)\n"
+        if (fences % 2) body = body "~~~\n"
+        entry = "<details>\n<summary>" title "</summary>\n\n" body "\n</details>\n\n"
+        if (total + length(entry) > maxb && emitted > 0) dropped++
+        else { printf "%s", entry; total += length(entry); emitted++ }
+      }
+      blk = ""
+    }
+    /^[ \t]*\[(CRITICAL|HIGH|MEDIUM|LOW)\]/ { flush(); sev = $0; sub(/^[ \t]*\[/, "", sev); sub(/\].*/, "", sev); blk = $0 "\n"; next }
+    /^#+ / { flush(); next }
+    blk != "" { blk = blk $0 "\n" }
+    END { flush(); if (dropped) printf "(%d more finding(s) trimmed to keep this issue within GitHub size limits)\n", dropped }
+  ')"
+
+  if [ -z "$out" ]; then
+    out="$(jq -r --arg b "$branch" --arg sevs "$sevs" --arg locs "$locs" '
+      ($locs | split("\n")) as $l
+      | .branches[] | select(.branch == $b) | .findings[]?
+      | select(if $sevs != "" then ((","+$sevs+",") | contains(","+.severity+","))
+               elif $locs != "" then (.location as $x | any($l[]; . != "" and . == $x))
+               else true end)
+      | "- **[\(.severity)]** `\(.location)` — \(.criterion)"' <<< "$rollup" 2>/dev/null || true)"
+  fi
+  printf '%s' "$out"
+}
+
+# _prd_gaps_md <report> — the audit's evidence for each missing requirement, from the audit's
+# closing fenced json (the last block naming `missing`, as parsePrdAudit reads it). An audit
+# without one falls back to the report's tail.
+_prd_gaps_md() {
+  local report="$1" json md=""
+  [ -f "$report" ] || return 0
+  json="$(awk '
+    /^[ \t]*```json/ { inj = 1; cur = ""; next }
+    inj && /^[ \t]*```[ \t]*$/ { inj = 0; if (cur ~ /"missing"/) last = cur; next }
+    inj { cur = cur $0 "\n" }
+    END { printf "%s", last }
+  ' "$report")"
+  if [ -n "$json" ]; then
+    md="$(printf '%s' "$json" | jq -r '.missing[]? | (if type == "string" then {requirement: .} else . end)
+      | "- **\(.requirement)**" + (if (.detail // "") != "" then "\n  " + (.detail | gsub("\n"; "\n  ")) else "" end)' 2>/dev/null || true)"
+  fi
+  if [ -z "$md" ]; then
+    md="$(_tail_fenced "$report")"
+  fi
+  printf '%s' "$md" | head -c "$EVIDENCE_MAX_BYTES"
+}
+
+# _tail_fenced <file> — the last lines of <file> (EVIDENCE_MAX_BYTES at most) in a fenced block.
+_tail_fenced() {
+  [ -f "$1" ] || return 0
+  local tail_text
+  tail_text="$(tail -c "$EVIDENCE_MAX_BYTES" "$1")"
+  [ -n "$tail_text" ] || return 0
+  printf '````\n%s\n````\n' "$tail_text"
+}
+
 # _defer_github <slug> <title> <branch> <report> <criteria-file> <severities> <blocked-by> —
 # github path: creates the issue via _github_tracker_cli, labeled ready-for-agent immediately
 # (github has no pre-created label to represent "parked", so there is no local-style
 # park/flush step for this backend — flush/list correctly report nothing to promote, see
-# cmd_flush/cmd_list). The body mirrors local's Source: convention exactly, plus a numeric
-# `## Blocked by` reference when the caller names one, so issue 04's parseIssue parses both
-# the same way. Prints the created issue's URL (github.mjs's own stdout, itself `gh issue
+# cmd_flush/cmd_list). The body keeps local's `Source:` line (naming the kind and branch, not
+# a local report path) so parseIssue and `guard` read both the same way, embeds the promoted
+# findings' full reviewer text, and adds a numeric `## Blocked by` reference when the caller
+# names one. Prints the created issue's URL (github.mjs's own stdout, itself `gh issue
 # create`'s stdout passed through).
 _defer_github() {
   local slug="$1" title="$2" branch="$3" report="$4" criteria_file="$5" severities="$6" blocked_by="$7"
 
-  local body_file
+  local body_file findings
   body_file="$(mktemp)"
+  findings="$(_review_findings_md "$report" "$branch" "$severities")"
   {
-    echo "Source: $report ($branch)"
+    echo "Source: review ($branch)"
     if [ -n "$blocked_by" ]; then
       echo ""
       echo "## Blocked by"
@@ -311,13 +434,20 @@ _defer_github() {
     echo "## Context"
     echo ""
     echo "Auto-promoted by crew-afk from the $severities findings raised against \`$branch\`."
-    echo "The branch already merged — these are follow-up fixes, not a revert. Full reviewer"
-    echo "notes, including the snippet citations, are in the review report named in \`Source:\`."
+    echo "The branch already merged — these are follow-up fixes, not a revert. The reviewer's"
+    echo "full notes for each finding, including the snippet citations, are under"
+    echo "\`## Review findings\` below."
     echo ""
     echo "## Acceptance criteria"
     echo ""
     cat "$criteria_file"
-  } > "$body_file"
+    if [ -n "$findings" ]; then
+      echo ""
+      echo "## Review findings"
+      echo ""
+      printf '%s\n' "$findings"
+    fi
+  } | _scrub_paths > "$body_file"
 
   local issue_ref
   if ! issue_ref=$(_github_tracker_cli create-issue --title "$title" --body-file "$body_file" \
@@ -392,16 +522,27 @@ cmd_defer() {
 #                       feature branch's own checks fail. The caller (loop.mjs) bounds how many a
 #                       run may create; this only refuses a second while one is still open.
 # _defer_feature_issue <command> <feature-slug> <report> <criteria-file> <title> <source-tag>
-#                      <file-suffix> <trace-label> <context> [numbered]
+#                      <file-suffix> <trace-label> <context> <github-context> [numbered]
+# The github body drops the report path for the evidence itself: <source-tag> `prd-audit` embeds
+# the audit's missing-requirement details, `integration` the tail of the failing output.
 _defer_feature_issue() {
   local command="$1" slug="$2" report="$3" criteria_file="$4" title="$5" source_tag="$6"
-  local suffix="$7" label="$8" context="$9" numbered="${10:-}" ref
+  local suffix="$7" label="$8" context="$9" github_context="${10}" numbered="${11:-}" ref
 
   if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
-    local body_file
+    local body_file evidence="" evidence_heading source_name
     body_file="$(mktemp)"
-    printf 'Source: %s (%s)\n\n## Context\n\n%s\n\n## Acceptance criteria\n\n' "$report" "$source_tag" "$context" > "$body_file"
-    cat "$criteria_file" >> "$body_file"
+    case "$source_tag" in
+      prd-audit) source_name="PRD audit"; evidence_heading="PRD audit evidence"; evidence="$(_prd_gaps_md "$report")" ;;
+      *) source_name="integration check"; evidence_heading="Failing output (tail)"; evidence="$(_tail_fenced "$report")" ;;
+    esac
+    {
+      printf 'Source: %s (%s)\n\n## Context\n\n%s\n\n## Acceptance criteria\n\n' "$source_name" "$source_tag" "$github_context"
+      cat "$criteria_file"
+      if [ -n "$evidence" ]; then
+        printf '\n## %s\n\n%s\n' "$evidence_heading" "$evidence"
+      fi
+    } | _scrub_paths > "$body_file"
     if ! ref=$(_github_tracker_cli create-issue --title "$title" --body-file "$body_file" \
         --feature-slug "$slug" --label "$READY_STATUS" --main-root "$MAIN_ROOT"); then
       rm -f "$body_file"
@@ -475,7 +616,9 @@ cmd_defer_gaps() {
   _defer_feature_issue defer-gaps "$slug" "$report" "$criteria_file" "Fix PRD gaps: $slug" prd-audit \
     fix-prd-gaps prd-gaps "Auto-queued by crew-afk from the PRD audit's missing requirements. No issue carried
 these, so no review ever checked them. The audit's evidence for each is in the report named in
-\`Source:\`."
+\`Source:\`." "Auto-queued by crew-afk from the PRD audit's missing requirements. No issue carried
+these, so no review ever checked them. The audit's evidence for each is under
+\`## PRD audit evidence\` below."
 }
 
 cmd_defer_integration() {
@@ -493,7 +636,10 @@ cmd_defer_integration() {
   _defer_feature_issue defer-integration "$slug" "$report" "$criteria_file" \
     "Fix integration check: $slug${at:+ (at $at)}" integration fix-integration integration "Auto-queued by crew-afk: every branch passed its own checks, but the project's checks fail
 on the merged feature branch, and triage judged the failure fixable by a code change. No review
-saw the branches together. The failing output is in the report named in \`Source:\`." numbered
+saw the branches together. The failing output is in the report named in \`Source:\`." "Auto-queued by crew-afk: every branch passed its own checks, but the project's checks fail
+on the merged feature branch, and triage judged the failure fixable by a code change. No review
+saw the branches together. The tail of the failing output is under \`## Failing output (tail)\`
+below." numbered
 }
 
 # --- flush -------------------------------------------------------------------
