@@ -6,6 +6,18 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: a worker's `verify-worktree.sh` and per-worktree `ensure-deps.sh` now run asynchronously, so two branches
+  verify concurrently and a slow verify no longer stalls the other worker loops or a free slot's next dispatch. Merge
+  and close stay blocking, and so serialized; timeouts still map to exit 124.
+- `crew-afk`: a verify ended by a signal (not the call's own timeout) is *interrupted*, not failed — no triage, no
+  coder, no failure logged, and the issue is verified again next round for free. Verify output that names no failing
+  check is run a second time before triage; if still empty the issue is re-verified next round, never recoded.
+- `crew-afk`: `merge-branches.sh` no longer fails a merge whose only conflicts are parallel issue branches bumping
+  the same `registry.json` entry or appending to the same `CHANGELOG.md` heading. New
+  `resolve-merge-conflicts.sh` keeps the higher semver per entry's `version` and both sides' appended entries
+  (feature side first), completes the merge commit, and prints and traces each decision (entries and versions
+  kept), so no coder is redispatched. Any other conflict, including any other `registry.json` field, still
+  aborts the merge as before.
 - `crew-reviewer`: new HIGH class, *second reader of the same input* — when a diff adds code that parses, validates
   or gates an input existing code already interprets, the reviewer compares the two by reading and reports any input
   the existing reader accepts that the new one rejects or reads differently, citing both sides.

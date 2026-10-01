@@ -11,12 +11,16 @@ import { MAIN_TREE_DIRTY_TAG, MERGE_CONFLICT_TAG, dispatchStem, issueRef, notify
  * both scripts re-check the SHA-bound receipts themselves.
  */
 export async function mergeAndClose(ctx, worker, outcome) {
+  // Deliberately synchronous end to end (effects.git/bash, no await): while verifies run
+  // concurrently, every merge into the feature branch still runs alone, because no other
+  // worker loop gets the event loop between the checkout and the close.
   const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
 
   effects.git(["checkout", sprint.featureBranch]);
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=merge`);
-  // Bounded: effects.bash is spawnSync, so a stalled merge would freeze the whole sprint.
+  // Bounded: effects.bash is spawnSync, so a stalled merge would freeze the whole sprint — and
+  // that blocking is what keeps merges serialized.
   const merge = effects.bash("merge-branches.sh", [sprint.featureBranch, branch], {
     env: sprint.childEnv(),
     timeoutMs: options.timeoutMs.merge,

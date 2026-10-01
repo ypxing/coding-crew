@@ -441,3 +441,108 @@ test("a merge-failed retry skips the worker, verify, and review, and succeeds on
   assert.equal(round2.lines.filter((l) => /merge-branches\.sh /.test(l)).length, 1);
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=merge-failed/);
 });
+
+// ─── verify runs asynchronously ───────────────────────────────────────────────
+//
+// verify-worktree.sh runs the project's whole test suite. Run through spawnSync it froze the
+// event loop: one verify at a time across every worker loop, and no coder dispatched meanwhile.
+
+/** A verify-worktree.sh that records start/end (ms) per stem to <log>, sleeps <slow[stem]> s, then runs the real one. */
+function timedVerify(scripts, log, secondsFor) {
+  const real = join(scripts, "_real-verify-worktree.sh");
+  cpSync(join(scripts, "verify-worktree.sh"), real);
+  const cases = Object.entries(secondsFor).map(([stem, s]) => `  *${stem}*) SLEEP=${s} ;;`).join("\n");
+  writeFileSync(
+    join(scripts, "verify-worktree.sh"),
+    [
+      "#!/usr/bin/env bash",
+      'now() { node -p "Date.now()"; }',
+      "SLEEP=0",
+      'case " $* " in',
+      cases,
+      "esac",
+      'STEM=$(echo "$*" | sed -E "s/.*--stem ([^ ]+).*/\\1/")',
+      `echo "verify-start $STEM $(now)" >> ${JSON.stringify(log)}`,
+      'sleep "$SLEEP"',
+      `echo "verify-end $STEM $(now)" >> ${JSON.stringify(log)}`,
+      `exec bash ${JSON.stringify(real)} "$@"`,
+      "",
+    ].join("\n"),
+  );
+}
+
+/** A dispatch wrapper that records when each coder is dispatched, then behaves as the fake. */
+function timedDispatch(dir, log) {
+  const f = join(dir, "timed-dispatch.sh");
+  writeFileSync(
+    f,
+    [
+      "#!/usr/bin/env bash",
+      'case " $* " in *" --agent crew-coder "*)',
+      '  SLUG=$(echo "$*" | sed -E "s/.*--slug ([^ ]+).*/\\1/")',
+      `  echo "coder-start $SLUG $(node -p "Date.now()")" >> ${JSON.stringify(log)} ;;`,
+      "esac",
+      `exec bash ${JSON.stringify(FAKE)} "$@"`,
+      "",
+    ].join("\n"),
+  );
+  return f;
+}
+
+const readTimes = (log) =>
+  Object.fromEntries(
+    readFileSync(log, "utf8").trim().split("\n").map((l) => {
+      const [what, stem, ms] = l.split(" ");
+      return [`${what} ${stem.replace(/^\d+-/, "")}`, Number(ms)];
+    }),
+  );
+
+test("two branches whose coders finish together are verified concurrently", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  const scripts = privateScripts();
+  const log = join(root, "times.log");
+  timedVerify(scripts, log, { alpha: 2, beta: 2 });
+  const { r } = commandLines(root, ["--max-parallel", "2"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs.sort(), ["alpha", "beta"]);
+  const t = readTimes(log);
+  assert.ok(t["verify-start beta"] < t["verify-end alpha"], "beta's verify only started after alpha's ended: the verifies were serialized");
+  assert.ok(t["verify-start alpha"] < t["verify-end beta"], "alpha's verify did not overlap beta's");
+});
+
+test("a slow verify does not delay dispatching another ready issue into a free slot", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  addIssue(root, "03-gamma.md");
+  const scripts = privateScripts();
+  const log = join(root, "times.log");
+  timedVerify(scripts, log, { alpha: 5 });
+  const dispatcher = timedDispatch(root, log);
+  const { r } = commandLines(root, ["--max-parallel", "2"], { scripts, env: { CREW_FAKE_DISPATCH: dispatcher } });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs.sort(), ["alpha", "beta", "gamma"]);
+  const t = readTimes(log);
+  assert.ok(t["coder-start gamma"] < t["verify-end alpha"], "gamma waited for alpha's slow verify before its coder was dispatched");
+});
+
+test("merges stay serialized while verifies overlap", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  const scripts = privateScripts();
+  timedVerify(scripts, join(root, "times.log"), { alpha: 1, beta: 1 });
+  const { r, lines } = commandLines(root, ["--max-parallel", "2"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  // Every merge is one blocking effect whose own RUN line follows its checkout directly: no
+  // other command is interleaved between a merge's checkout and its close.
+  const merges = lines.filter((l) => /merge-branches\.sh/.test(l));
+  assert.equal(merges.length, 2);
+  const at = (re) => lines.map((l, i) => (re.test(l) ? i : -1)).filter((i) => i >= 0);
+  const [m1, m2] = at(/merge-branches\.sh/);
+  const closes = at(/close-issue\.sh/);
+  assert.ok(m1 < closes[0] && closes[0] < m2, `merge/close pairs interleaved:\n${lines.join("\n")}`);
+  assert.deepEqual(state(root).merged_branches.sort(), ["crew/demo/alpha", "crew/demo/beta"]);
+});
