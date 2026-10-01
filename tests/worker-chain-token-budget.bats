@@ -166,7 +166,7 @@ words_of() {
   echo "$section" | grep -qi 'do NOT stage or commit'
 }
 
-@test "budget: the per-branch reviewer chain is under 2,640 words" {
+@test "budget: the per-branch reviewer chain is under 2,680 words" {
   # Read once per branch, like the worker chain is read once per issue. The reviewer now also
   # carries the acceptance-criteria verdict, which used to be a separate agent over the same
   # diff: 2,040 words here plus a second full-diff read became 2,1xx words and one read. Worst
@@ -198,11 +198,16 @@ words_of() {
   #
   # 2,490 → 2,640: the protocol's Feature Mode section (see its own budget in
   # tests/crew-reviewer-references.bats).
+  #
+  # 2,640 → 2,680: quality.md's "Second reader of the same input" class (~40 words). A new
+  # parser or gate that rejects inputs the existing reader accepts stops valid work, and no other
+  # class asks the reviewer to look outside the diff for that reader: a linter rejecting issue
+  # sets the orchestrator dispatches fine reached a merged PR past both review modes.
   local protocol="$REPO_ROOT/agents/crew-reviewer/protocol.md"
   local refs="$REPO_ROOT/agents/crew-reviewer/assets/references"
   local total=$(( $(words_of "$protocol") + $(words_of "$refs/quality.md") \
                   + $(words_of "$refs/web-security.md") + $(words_of "$refs/react.md") ))
-  [ "$total" -lt 2640 ] || { echo "reviewer chain is $total words (budget 2640)" >&2; return 1; }
+  [ "$total" -lt 2680 ] || { echo "reviewer chain is $total words (budget 2680)" >&2; return 1; }
 }
 
 @test "dependency install is failure-triggered, not a step every issue pays for" {

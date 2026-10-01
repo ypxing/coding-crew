@@ -194,3 +194,10 @@ setup() {
   grep -qF -- '--known <number>-<slug>.md' "$SKILL_FILE"
   grep -qiE 'replace each `Issue #<n>` with the number `gh issue create` returned' "$SKILL_FILE"
 }
+
+@test "to-issues: a new parser/validator/gate gets a criterion over the repo's existing examples, as committed fixtures" {
+  grep -qF 'already holds examples of' "$SKILL_FILE"
+  grep -qF 'copied into committed test fixtures' "$SKILL_FILE"
+  grep -qF 'never read from a live or gitignored directory' "$SKILL_FILE"
+  grep -qF 'no such examples (a new format) → no such criterion' "$SKILL_FILE"
+}
