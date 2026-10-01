@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
 
-# Findings promotion threshold: afk.fixFindings (CREW_FIX_FINDINGS in sprint.env) names the
-# lowest severity fixed automatically — critical | high (default) | medium | none.
+# Findings promotion rule: afk.fixFindings (CREW_FIX_FINDINGS in sprint.env) — actionable
+# (default: every finding triage judges Actionable), or the lowest severity fixed
+# automatically — critical | high | medium — or none.
 #
-# Every promoted branch costs a full coder + verify + review + merge cycle. HIGH carries a
-# named failure scenario and a pre-report gate, so it is fixed by default; MEDIUM needs
-# neither, so it is opt-in.
+# Every promoted branch costs a full coder + verify + review + merge cycle. A severity level
+# below HIGH is opt-in: MEDIUM needs no failure scenario or pre-report gate.
 #
 # These tests pin the compensating half too: a finding the sprint did not promote must still
 # be *counted and named* for /crew-address-findings, and the reminder must say which threshold
@@ -61,13 +61,15 @@ teardown() {
 
 # ─── the default ─────────────────────────────────────────────────────────────
 
-@test "policy defaults to CRITICAL and HIGH" {
+@test "policy defaults to actionable" {
   run bash "$PROMOTE" policy
   [ "$status" -eq 0 ]
-  [ "$output" = "promote: CRITICAL, HIGH" ]
+  [ "$output" = "promote: actionable" ]
 }
 
 @test "each fixFindings level names its severities" {
+  CREW_FIX_FINDINGS=high run bash "$PROMOTE" policy
+  [ "$output" = "promote: CRITICAL, HIGH" ]
   CREW_FIX_FINDINGS=critical run bash "$PROMOTE" policy
   [ "$output" = "promote: CRITICAL" ]
   CREW_FIX_FINDINGS=medium run bash "$PROMOTE" policy
@@ -85,6 +87,9 @@ teardown() {
 
 @test "guard names the severities to promote, so no caller carries the threshold in prose" {
   run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
+  [[ "$output" == "guard: eligible — threshold: actionable" ]]
+
+  CREW_FIX_FINDINGS=high run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
   [[ "$output" == "guard: eligible — threshold: CRITICAL, HIGH" ]]
 
   CREW_FIX_FINDINGS=critical run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
@@ -102,8 +107,13 @@ teardown() {
   [[ "$output" == *"skip — source-guarded"* ]]
 }
 
-@test "defer marks CRITICAL, HIGH by default, and CRITICAL alone at fixFindings critical" {
+@test "defer marks actionable by default, CRITICAL, HIGH at fixFindings high, and CRITICAL alone at critical" {
   bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^- crew/feat/a: actionable → ' "$REPORT"
+
+  rm .scratch/feat/issues/open/02-fix-findings-a.md
+  CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^- crew/feat/a: CRITICAL, HIGH → ' "$REPORT"
 
@@ -168,8 +178,8 @@ EOF
   [[ "$output" == *"FINDINGS: open=2 (CRITICAL=1, HIGH=1)"* ]]
 }
 
-@test "at the default, a promoted HIGH is subtracted again" {
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+@test "at fixFindings high, a promoted HIGH is subtracted again" {
+  CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
   run bash "$PROMOTE" remind --feature-slug feat
@@ -209,4 +219,80 @@ EOF
   done
   grep -q 'CREW_FIX_FINDINGS' "$REPO_ROOT/orchestrator/lib/sprint.mjs"
   ! grep -qE '"CRITICAL"\s*,\s*"HIGH"' "$REPO_ROOT/orchestrator/lib/pipeline.mjs" "$REPO_ROOT"/orchestrator/lib/pipeline/*.mjs
+}
+
+# ─── actionable: triage's verdicts sit beside each finding ───────────────────
+
+# A review whose findings carry the verdict and rationale crew-afk's triage wrote.
+verdict_report() {
+  jq -n '{
+    branch: "crew/feat/a", slug: "a", verdict: "all-met",
+    findings: [
+      {severity: "HIGH", location: "src/y.ts:40", criterion: "Rename the exported helper", verdict: "debatable", rationale: "public contract change"},
+      {severity: "LOW", location: "z.ts:1", criterion: "a nit", verdict: "actionable", rationale: "one local line"},
+      {severity: "MEDIUM", location: "w.ts:2", criterion: "extra guard", verdict: "dismiss", rationale: "already guarded"},
+      {severity: "LOW", location: "v.ts:3", criterion: "never triaged"}
+    ]
+  }' > verdicts.json
+  { printf '## Branch: crew/feat/a (a)\n\n```json\n'; cat verdicts.json; printf '\n```\n'; } > "$REPORT"
+}
+
+@test "remind leads with Debatable, then Dismissed collapsed with its rationale" {
+  verdict_report
+  run bash "$PROMOTE" remind --feature-slug feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"FINDINGS: open=4 (HIGH=1, MEDIUM=1, LOW=2)"* ]]
+  [[ "$output" == *"DEBATABLE: 1 (decide these first)"* ]]
+  [[ "$output" == *"debatable: crew/feat/a [HIGH] src/y.ts:40 — Rename the exported helper — why: public contract change"* ]]
+  [[ "$output" == *"ACTIONABLE: 1 (not promoted)"* ]]
+  [[ "$output" == *"DISMISSED: 1 (triage's rationale, collapsed)"* ]]
+  [[ "$output" == *"dismissed: crew/feat/a [MEDIUM] w.ts:2 — extra guard — why: already guarded"* ]]
+  # an untriaged finding is counted but listed under no verdict
+  [[ "$output" != *"never triaged"* ]]
+  # Debatable first, then the Actionable that was not promoted, then Dismissed, then the reports
+  d=${output%%DEBATABLE:*}; a=${output%%ACTIONABLE:*}; x=${output%%DISMISSED:*}; r=${output%%report:*}
+  [ ${#d} -lt ${#a} ]; [ ${#a} -lt ${#x} ]; [ ${#x} -lt ${#r} ]
+}
+
+@test "remind prints no verdict lines for findings triage never judged" {
+  run bash "$PROMOTE" remind --feature-slug feat
+  [[ "$output" == *"FINDINGS: open=3 (CRITICAL=1, HIGH=1, LOW=1)"* ]]
+  [[ "$output" != *"DEBATABLE"* && "$output" != *"DISMISSED"* && "$output" != *"ACTIONABLE"* ]]
+}
+
+@test "a promoted Actionable is handled; Debatable and Dismissed stay open" {
+  verdict_report
+  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a --severities actionable \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^- crew/feat/a: actionable → ' "$REPORT"
+  run bash "$PROMOTE" remind --feature-slug feat
+  [[ "$output" == *"FINDINGS: open=3 (HIGH=1, MEDIUM=1, LOW=1)"* ]]
+  [[ "$output" != *"ACTIONABLE"* ]]
+  [[ "$output" == *"DEBATABLE: 1"* && "$output" == *"DISMISSED: 1"* ]]
+  run bash "$PROMOTE" open --feature-slug feat
+  [ "$(jq 'length' <<< "$output")" -eq 3 ]
+  [ "$(jq -r '[.[].verdict] | sort | join(",")' <<< "$output")" = ",debatable,dismiss" ]
+}
+
+@test "a severity-level promotion still subtracts by (branch, severity), verdicts or not" {
+  verdict_report
+  CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  run bash "$PROMOTE" remind --feature-slug feat
+  [[ "$output" == *"FINDINGS: open=3 (MEDIUM=1, LOW=2)"* ]]
+}
+
+@test "the summary leads its next step with the Debatable findings" {
+  scripts="$TEMP_DIR/installed"
+  mkdir -p "$scripts"
+  cp "$AFK_SCRIPTS"/*.sh "$scripts/"
+  cp "$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$scripts/"
+  bash "$scripts/session-init.sh" --feature-slug feat >/dev/null
+  bash "$scripts/state.sh" complete --slug a --branch crew/feat/a --feature-slug feat >/dev/null
+  verdict_report
+  run bash "$scripts/crew-summary.sh" --feature-slug feat
+  [[ "$output" == *"## Next Step"* ]]
+  [[ "$output" == *"1 Debatable — decide these first"* ]]
+  [[ "$output" == *"- crew/feat/a [HIGH] src/y.ts:40 — Rename the exported helper — why: public contract change"* ]]
+  [[ "$output" == *"triage judged them Debatable or Dismissed"* ]]
 }

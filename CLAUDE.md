@@ -104,7 +104,9 @@ says why.
 
 At the first drain only (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
 runs in feature mode over `base_sha..<feature branch>`: no criteria, findings only, attributed to `feature` in the sprint
-review report and promoted into Phase 2 by the same `fixFindings` rule. Not re-run after Phase 2, nor when nothing
+review report and promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
+`crew-triage`'s findings mode judges Actionable, via `orchestrator/lib/pipeline/findings-triage.mjs`; a failed triage
+falls back to the `high` rule). Not re-run after Phase 2, nor when nothing
 merged; skipped (the summary says so) when the integration check is red; a dispatch that leaves no review is recorded
 not-run and never fails the sprint.
 

@@ -2,9 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  annotateFindings,
+  applyFindingVerdicts,
   applySchemaPrefilter,
   EVIDENCE_OUTPUT_MAX,
   findingsAtOrAbove,
+  parseFindingsTriage,
   parsePrdAudit,
   parseRequiresFailures,
   parseReviewAggregate,
@@ -12,6 +15,8 @@ import {
   parseTriageReport,
   parseWorkerReport,
   readVerifyRecord,
+  severityNames,
+  touchesProtectedPath,
 } from "../../orchestrator/lib/report.mjs";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -649,4 +654,83 @@ test("a review's cause is `environment` only when it says so; anything else is t
   assert.equal(verdict("code"), null);
   assert.equal(verdict(undefined), null);
   assert.equal(verdict("infra"), null);
+});
+
+// ─── findings triage (crew-triage's findings mode) ───────────────────────────
+
+test("parseFindingsTriage reads one verdict per finding, by index, in any order", () => {
+  const r = parseFindingsTriage(
+    { findings: [{ index: 1, verdict: "Dismiss", rationale: " noise " }, { index: 0, verdict: "actionable", rationale: "local", adr: "true" }] },
+    2,
+  );
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.verdicts[0], { verdict: "actionable", rationale: "local", adr: true, protected: false });
+  assert.deepEqual(r.verdicts[1], { verdict: "dismiss", rationale: "noise", adr: false, protected: false });
+});
+
+test("parseFindingsTriage is all-or-nothing: a missing, unknown, duplicate or stray entry is no verdict", () => {
+  const ok = { index: 0, verdict: "actionable" };
+  assert.match(parseFindingsTriage(null, 1).detail, /no report\.json/);
+  assert.match(parseFindingsTriage({}, 1).detail, /no findings array/);
+  assert.match(parseFindingsTriage({ findings: [ok] }, 2).detail, /leaves finding 1 unjudged/);
+  assert.match(parseFindingsTriage({ findings: [{ index: 0, verdict: "maybe" }] }, 1).detail, /the verdict "maybe"/);
+  assert.match(parseFindingsTriage({ findings: [ok, ok] }, 1).detail, /judges finding 0 twice/);
+  assert.match(parseFindingsTriage({ findings: [{ index: 3, verdict: "actionable" }] }, 1).detail, /outside 0\.\.0/);
+  for (const bad of [null, {}, { findings: [ok] }]) assert.equal(parseFindingsTriage(bad, 2).ok, false);
+});
+
+test("touchesProtectedPath: CI config, auth, deploy and .env, by the finding's location", () => {
+  for (const p of [".github/workflows/ci.yml:3", ".gitlab-ci.yml", "Jenkinsfile:1", "app/.env.production:2", "src/auth/login.ts:10", "src/auth.ts:1", "scripts/deploy.sh:4", "infra/deploy/prod.yml"]) {
+    assert.equal(touchesProtectedPath(p), true, p);
+  }
+  for (const p of ["src/alpha.txt:1", "src/author.ts:2", "src/oauthish.ts", "src/deployer.ts", "", undefined]) {
+    assert.equal(touchesProtectedPath(p), false, String(p));
+  }
+});
+
+test("applyFindingVerdicts: an ADR clash or a protected path forces Debatable over triage's verdict", () => {
+  const findings = [
+    { severity: "HIGH", location: "src/a.ts:1", criterion: "a" },
+    { severity: "LOW", location: ".github/workflows/ci.yml:9", criterion: "b" },
+    { severity: "LOW", location: "src/c.ts:3", criterion: "c" },
+    { severity: "LOW", location: "src/d.ts:3", criterion: "d" },
+  ];
+  const out = applyFindingVerdicts(findings, [
+    { verdict: "actionable", rationale: "ok", adr: true, protected: false },
+    { verdict: "actionable", rationale: "ok", adr: false, protected: false },
+    { verdict: "actionable", rationale: "ok", adr: false, protected: true },
+    { verdict: "dismiss", rationale: "noise", adr: false, protected: false },
+  ]);
+  assert.deepEqual(out.map((f) => f.verdict), ["debatable", "debatable", "debatable", "dismiss"]);
+  assert.match(out[0].rationale, /^ok \[forced Debatable: contradicts a documented decision/);
+  assert.match(out[1].rationale, /protected path/);
+  assert.equal(out[3].rationale, "noise", "a verdict no rule overrides is left alone");
+});
+
+test("annotateFindings writes verdicts beside the sidecar's findings, skipping entries the parser drops", () => {
+  const sidecar = { branch: "b", verdict: "all-met", findings: [{ severity: "bogus", criterion: "x" }, { severity: "HIGH", criterion: "y" }, { severity: "LOW", criterion: "z", extra: 1 }] };
+  const out = annotateFindings(sidecar, [
+    { severity: "HIGH", verdict: "debatable", rationale: "r1" },
+    { severity: "LOW", verdict: "actionable", rationale: "r2" },
+  ]);
+  assert.deepEqual(out.findings[0], sidecar.findings[0]);
+  assert.equal(out.findings[1].verdict, "debatable");
+  assert.equal(out.findings[2].rationale, "r2");
+  assert.equal(out.findings[2].extra, 1);
+  // And the aggregate parser hands them back: a review report round-trips its verdicts.
+  const [rec] = parseReviewAggregate(`## Branch: b\n\`\`\`json\n${JSON.stringify(out)}\n\`\`\`\n`);
+  assert.deepEqual(rec.findings.map((f) => [f.severity, f.verdict, f.rationale]), [["HIGH", "debatable", "r1"], ["LOW", "actionable", "r2"]]);
+});
+
+test("a finding with no (or an unknown) verdict carries none", () => {
+  const [rec] = parseReviewAggregate('## Branch: b\n```json\n{"branch":"b","verdict":"all-met","findings":[{"severity":"HIGH","criterion":"x","verdict":"nope"},{"severity":"LOW","criterion":"y"}]}\n```\n');
+  assert.ok(rec.findings.every((f) => !("verdict" in f)));
+});
+
+test("severityNames: the severities a level promotes, as defer records them", () => {
+  assert.equal(severityNames("high"), "CRITICAL, HIGH");
+  assert.equal(severityNames("critical"), "CRITICAL");
+  assert.equal(severityNames("medium"), "CRITICAL, HIGH, MEDIUM");
+  assert.equal(severityNames("none"), "");
+  assert.equal(severityNames("actionable"), "");
 });

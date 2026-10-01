@@ -12,7 +12,7 @@
  *   { "afk": {
  *       "runtime": { "reviewer": "codex" },
  *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
- *       "fixFindings": "high", "PRDAudit": "fix",
+ *       "fixFindings": "actionable", "PRDAudit": "fix",
  *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": false,
  *       "openPr": false,
  *       "baselineCheck": true, "integrationCheck": true, "resumeCoderSession": false,
@@ -60,8 +60,10 @@ export const LEGACY_REL = ".coding-crew/afk-models.json";
 export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prdAuditor"];
 const SECTIONS = ["afk"];
 
-// The lowest reviewer severity fixed automatically, and what the PRD audit does with its gaps.
-export const FIX_FINDINGS = ["critical", "high", "medium", "none"];
+// What review findings are fixed automatically — `actionable`: every finding crew-triage judges
+// Actionable, whatever its severity; the others: the lowest severity — and what the PRD audit does
+// with its gaps.
+export const FIX_FINDINGS = ["actionable", "critical", "high", "medium", "none"];
 export const PRD_AUDIT = ["off", "report", "fix"];
 /** Minutes. Every LLM role, plus the merge/close step, which blocks the event loop. */
 export const DEFAULT_TIMEOUTS = { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 };
@@ -73,7 +75,7 @@ const timeoutProblem = (min) =>
     : `must be a positive number of minutes, at most ${MAX_TIMEOUT_MINUTES}`;
 export const PANE_HOSTS = ["orca", "herdr", "auto", "none"];
 export const DEFAULT_SETTINGS = {
-  fixFindings: "high",
+  fixFindings: "actionable",
   PRDAudit: "fix",
   installDeps: true,
   squashCommits: false,

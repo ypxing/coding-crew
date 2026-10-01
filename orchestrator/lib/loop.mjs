@@ -454,8 +454,16 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
   else if (featureReview.failed) ctx.out(`\n## Feature Review\n\n**Not run:** ${featureReview.failed}\n`);
   else if (featureReview.report) {
     const n = featureReview.findings?.length ?? 0;
-    const queued = featureReview.promoted ? `; ${featureReview.promoted} at or above the fix threshold went to Phase 2` : "";
+    const queued = featureReview.promoted
+      ? `; ${featureReview.promoted} ${sprint.fixFindings === "actionable" ? "Actionable" : "at or above the fix threshold"} went to Phase 2`
+      : "";
     ctx.out(`\n## Feature Review\n\nThe whole feature diff was reviewed once: ${n} finding(s)${queued} (see ${featureReview.report}, branch \`feature\`).\n`);
+  }
+  if (sprint.triageFallbacks.length) {
+    const lines = sprint.triageFallbacks.map((f) => `- ${f.scope}: ${f.reason}`);
+    ctx.out(
+      `\n## Findings Triage\n\n**Triage left no usable verdict, so the \`high\` rule applied** (CRITICAL and HIGH findings were promoted, the rest left open) for:\n${lines.join("\n")}\n`,
+    );
   }
   if (unlisted.length) ctx.out(`\n**Fix issues not implemented:**\n${unlisted.map((l) => `- ${l}`).join("\n")}\n`);
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);

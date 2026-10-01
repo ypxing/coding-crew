@@ -354,7 +354,7 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
     (err) =>
       err instanceof ConfigError &&
       [
-        /"afk\.fixFindings" is "critical-high" \(expected critical, high, medium, none\)/,
+        /"afk\.fixFindings" is "critical-high" \(expected actionable, critical, high, medium, none\)/,
         /"afk\.PRDAudit" is true \(expected off, report, fix\)/,
         /"afk\.maxParallel" must be a positive integer/,
         /"afk\.installDeps" must be true or false/,
@@ -397,7 +397,7 @@ test("loadConfig: settings merge per key, the repo's over the user's, timeouts o
 
 test("resolveSettings: defaults, then config.json, then flags — and a flag is credited", () => {
   const defaults = resolveSettings({});
-  assert.equal(defaults.fixFindings, "high");
+  assert.equal(defaults.fixFindings, "actionable", "every Actionable finding is fixed unless told otherwise");
   assert.equal(defaults.PRDAudit, "fix");
   assert.equal(defaults.installDeps, true);
   assert.equal(defaults.squashCommits, false, "squashing rewrites history, so it is opt-in");
@@ -424,6 +424,7 @@ test("resolveSettings: defaults, then config.json, then flags — and a flag is 
 
 test("validateFlags: a bad flag names the flag the user typed", () => {
   assert.deepEqual(validateFlags({ fixFindings: "high" }), []);
+  assert.deepEqual(validateFlags({ fixFindings: "actionable" }), []);
   assert.match(validateFlags({ fixFindings: "severe" })[0], /^--fix-findings is "severe"/);
   assert.match(validateFlags({ fixFindings: "critical-medium" }, { fixFindings: "--promote" })[0], /^--promote is "critical-medium"/);
   assert.match(validateFlags({ timeouts: { coder: Number.NaN } })[0], /^--coder-timeout must be a positive number/);

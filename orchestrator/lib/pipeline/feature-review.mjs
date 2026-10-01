@@ -13,7 +13,8 @@ import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { FEATURE_REVIEW, criteriaFile, featureReviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { findingsAtOrAbove, parseReviewReport } from "../report.mjs";
+import { parseReviewReport } from "../report.mjs";
+import { promotedAs, selectPromotable } from "./findings-triage.mjs";
 import { limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
 
 /**
@@ -96,21 +97,34 @@ export async function runFeatureReview(ctx, { integration = null } = {}) {
 
   // Attributed to `feature` whatever the reviewer called itself: the aggregate keys on it.
   mkdirSync(sprint.reviewDir, { recursive: true });
-  const block = `## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})\n\n\`\`\`json\n${JSON.stringify({ ...sidecar, branch: FEATURE_REVIEW, slug: FEATURE_REVIEW })}\n\`\`\``;
+  const written = { ...sidecar, branch: FEATURE_REVIEW, slug: FEATURE_REVIEW };
+  const block = `## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
 
   const findings = parsed.findings ?? [];
   ctx.log(`FEATURE-REVIEW: ${findings.length} finding(s) (${base.slice(0, 12)}..${sprint.featureBranch})`);
-  return { report: reportFile, findings, ...promoteFeature(ctx, findings, reportFile) };
+  return { report: reportFile, findings, ...(await promoteFeature(ctx, { findings, reportFile, dir, written })) };
 }
 
 /** The same fixFindings rule as a branch's findings; the feature has no issue file, so no depth guard. */
-function promoteFeature(ctx, findings, reportFile) {
+async function promoteFeature(ctx, { findings, reportFile, dir, written }) {
   const { sprint, effects } = ctx;
-  const promotable = findingsAtOrAbove(findings, sprint.fixFindings);
+  const selected = await selectPromotable(ctx, {
+    findings,
+    label: FEATURE_REVIEW,
+    scope: `Findings raised against the whole feature diff (${sprint.featureBranch}), reviewed once across all its issues.`,
+    ref: sprint.featureBranch,
+    dir,
+    dispatchSlug: `${FEATURE_REVIEW}-findings`,
+    round: 1,
+    ledgerSlug: FEATURE_REVIEW,
+    reportFile,
+    written,
+  });
+  const { promotable } = selected;
   if (!promotable.length) {
-    ctx.log("FEATURE-REVIEW: promote: none — no findings at or above the threshold");
+    ctx.log(`FEATURE-REVIEW: promote: none — ${selected.rule === "actionable" ? "no Actionable finding" : "no findings at or above the threshold"}`);
     return {};
   }
   const criteriaPath = join(sprint.reviewDir, `${FEATURE_REVIEW}.criteria.md`);
@@ -123,6 +137,7 @@ function promoteFeature(ctx, findings, reportFile) {
     "--title", `Fix feature review findings: ${sprint.featureSlug}`,
     "--report", reportFile,
     "--criteria-file", criteriaPath,
+    ...(promotedAs(sprint.fixFindings, selected) ? ["--severities", promotedAs(sprint.fixFindings, selected)] : []),
   ], { env: sprint.childEnv() });
   ctx.log(`FEATURE-REVIEW: promote: ${promotable.length} finding(s) → ${defer.stdout.trim() || defer.stderr.trim()}`);
   if (defer.code !== 0 || !/^defer: /m.test(defer.stdout)) return {};

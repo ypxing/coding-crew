@@ -76,7 +76,7 @@ teardown() {
 
   bash "$scripts/session-init.sh" --feature-slug feat >/dev/null
   grep -q 'export CREW_PRD_AUDIT="fix"' .scratch/feat/sprint.env
-  grep -q 'export CREW_FIX_FINDINGS="high"' .scratch/feat/sprint.env
+  grep -q 'export CREW_FIX_FINDINGS="actionable"' .scratch/feat/sprint.env
 
   bash "$scripts/session-init.sh" --feature-slug feat --prd-audit off --fix-findings medium >/dev/null
   grep -q 'export CREW_PRD_AUDIT="off"' .scratch/feat/sprint.env

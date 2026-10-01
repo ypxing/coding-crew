@@ -42,7 +42,7 @@
       }
     },
     "crew-triage": {
-      "version": "1.0.4",
+      "version": "1.1.0",
       "source-dir": "crew-triage",
       "description": "Classifies a crew-afk branch's verification failure as fixable by more code on that branch, or as an environment/infrastructure problem no code change can fix. Dispatched only after verify-worktree.sh has already failed, and only before a coder would otherwise be redispatched for another full attempt. Independent of the coder that wrote the branch — the same reason review is a separate dispatch, not a self-grade.",
       "deps": [],
@@ -79,9 +79,9 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.4.1",
+      "version": "2.5.0",
       "source-dir": "crew-afk",
-      "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes CRITICAL/HIGH findings into a second fix phase, and loops until all ready-for-agent issues are done.",
+      "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
       "install-copilot": ".copilot/skills/crew-afk",
       "install-pi": ".pi/skills/crew-afk",
@@ -151,7 +151,7 @@
       ]
     },
     "crew-address-findings": {
-      "version": "1.3.1",
+      "version": "1.4.0",
       "source-dir": "crew-address-findings",
       "description": "Triage and fix findings from a crew-afk code review report using TDD.",
       "install": ".claude/skills/crew-address-findings",
