@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: a worker's `verify-worktree.sh` and per-worktree `ensure-deps.sh` now run asynchronously, so two branches
+  verify concurrently and a slow verify no longer stalls the other worker loops or a free slot's next dispatch. Merge
+  and close stay blocking, and so serialized; timeouts still map to exit 124.
 - `crew-reviewer`: new HIGH class, *second reader of the same input* — when a diff adds code that parses, validates
   or gates an input existing code already interprets, the reviewer compares the two by reading and reports any input
   the existing reader accepts that the new one rejects or reads differently, citing both sides.

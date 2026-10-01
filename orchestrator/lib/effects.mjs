@@ -42,6 +42,14 @@ export class Effects {
     return this.exec("bash", [this.script(name), ...args], opts);
   }
 
+  /**
+   * The non-blocking twin of `bash`, for effects that run for minutes (verify, deps): the event
+   * loop keeps serving the other worker loops while the child runs. Same contract as `bash`.
+   */
+  bashAsync(name, args = [], opts = {}) {
+    return this.execAsync("bash", [this.script(name), ...args], opts);
+  }
+
   exec(cmd, args, { cwd = this.mainRoot, env = {}, input, mutating = true, timeoutMs } = {}) {
     const argv = [cmd, ...args];
     if (this.dryRun && mutating) {
@@ -62,6 +70,58 @@ export class Effects {
     this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}`);
     if (r.error) this.log(`ERR  ${r.error.message}`);
     return { code, stdout: r.stdout ?? "", stderr: r.stderr ?? "", error: r.error };
+  }
+
+  /**
+   * `exec` without blocking the event loop. Resolves to the same `{ code, stdout, stderr }`;
+   * a timeout kills the child and maps to exit 124, exactly as `exec` does.
+   */
+  execAsync(cmd, args, { cwd = this.mainRoot, env = {}, input, mutating = true, timeoutMs } = {}) {
+    const argv = [cmd, ...args];
+    if (this.dryRun && mutating) {
+      this.recorded.push({ argv, cwd });
+      this.log(`DRY  ${argv.map(quote).join(" ")}`);
+      return Promise.resolve({ code: 0, stdout: "", stderr: "", dryRun: true });
+    }
+    this.recorded.push({ argv, cwd });
+    return new Promise((resolve) => {
+      let stdout = "";
+      let stderr = "";
+      let error;
+      let settled = false;
+      let timedOut = false;
+      let timer = null;
+      const finish = (status) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        const code = timedOut || status === null || status === undefined ? 124 : status;
+        this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}`);
+        if (error) this.log(`ERR  ${error.message}`);
+        resolve({ code, stdout, stderr, error });
+      };
+      const child = spawn(cmd, args, {
+        cwd,
+        env: { ...process.env, ...this.env, ...env },
+        stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+      });
+      if (timeoutMs) {
+        timer = setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGTERM");
+        }, timeoutMs);
+      }
+      child.stdout.setEncoding("utf8").on("data", (d) => (stdout += d));
+      child.stderr.setEncoding("utf8").on("data", (d) => (stderr += d));
+      child.stdin?.on("error", () => {});
+      if (input !== undefined) child.stdin.end(input);
+      // spawnSync reports a failed spawn as status null (exit 124 here) with `error` set.
+      child.on("error", (e) => {
+        error = e;
+        finish(null);
+      });
+      child.on("close", (code) => finish(code));
+    });
   }
 
   git(args, opts = {}) {

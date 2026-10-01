@@ -325,7 +325,7 @@ export async function runWorker(ctx, issue, attempt) {
   let depsOutcome = null;
   if (options.installDeps !== false && !skipVerify) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=deps`);
-    const deps = effects.bash("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug, "--stem", dispatchStem(issue)], {
+    const deps = await effects.bashAsync("ensure-deps.sh", ["--dir", worktree, "--slug", issue.slug, "--stem", dispatchStem(issue)], {
       env: sprint.childEnv(),
     });
     const line = depsLine(deps.stdout);
@@ -603,7 +603,9 @@ export async function runHousekeeping(ctx, worker) {
     ctx.log(`[SKIP-VERIFY] slug=${issue.slug} round=${worker.attempt} branch=${branch} — verification already passed at this commit, in this run`);
   } else {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
-    const verify = effects.bash("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
+    // Awaited, not spawnSync: a verify runs the project's whole test suite for minutes, and the
+    // other worker loops (their verifies, their coder dispatches) must keep running meanwhile.
+    const verify = await effects.bashAsync("verify-worktree.sh", ["--dir", worker.worktree, "--stem", dispatchStem(issue)], {
       env: sprint.childEnv(),
     });
     logVerifyOutput(ctx, dispatchIssueDir(sprint.dispatchDir, issue), `slug=${issue.slug}`, worker.attempt, verify);
