@@ -31,7 +31,7 @@ bash scripts/render-skill.sh crew-afk codex | less
 # Run tests
 bats tests/*.bats
 
-# Cut a release once CHANGELOG.md's top entry and any registry.json version bumps are committed
+# Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed
 scripts/cut-release.sh --dry-run   # verify, then re-run without --dry-run to tag and push
 ```
 
