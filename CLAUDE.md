@@ -69,6 +69,10 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
 - `receipts.sh` — the two gates as facts on disk
 - `promote-findings.sh` — findings, PRD gaps and fixable integration failures → parked fix issues → Phase 2
 - `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
+- `resolve-merge-conflicts.sh` — called by `merge-branches.sh` on a conflicted merge: when the only conflicts are
+  `registry.json` entry `version`s (higher semver kept) and `CHANGELOG.md` entries both sides appended (both kept,
+  feature side first) it stages the resolution, which `merge-branches.sh` commits, tracing each decision; anything else exits 1
+  and the merge is aborted as before
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
 - `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
   `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
