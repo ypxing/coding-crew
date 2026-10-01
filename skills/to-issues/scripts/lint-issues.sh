@@ -2,7 +2,10 @@
 # lint-issues.sh — read-only checker for a feature's issue set.
 #
 # Usage:
-#   bash lint-issues.sh --issue <file> [--issue <file> …] [--deps <issues-deps.json>] [--prd <file>]
+#   bash lint-issues.sh --issue <file> [--issue <file> …] [--known <file> …] [--deps <issues-deps.json>] [--prd <file>]
+#
+# --known names an issue outside the set being linted (already done, or published by an earlier
+# run) that a `## Blocked by` ref may resolve to. Only its basename is used: never opened, never linted.
 #
 # Prints one line per problem:
 #   ERROR <file>: <problem>   breaks dispatch or the gates
@@ -20,23 +23,25 @@
 # that has no such IDs) the coverage check is skipped silently.
 #
 # Issue files are data. Their text is only ever read by grep/awk/read — never evaluated — and a
-# `## Blocked by` entry is only compared with the basenames of the --issue files, never opened.
+# `## Blocked by` entry is only compared, by basename, with the --issue/--known files, never opened.
 
 set -uo pipefail
 set -f # no globbing of anything read from an issue file
 
 ISSUES=()
+KNOWN=()
 DEPS_FILE=""
 PRD_FILE=""
 
 usage() {
-  echo "usage: lint-issues.sh --issue <file> [--issue <file> …] [--deps <issues-deps.json>] [--prd <file>]" >&2
+  echo "usage: lint-issues.sh --issue <file> [--issue <file> …] [--known <file> …] [--deps <issues-deps.json>] [--prd <file>]" >&2
   exit 2
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --issue) [[ $# -ge 2 ]] || usage; ISSUES+=("$2"); shift 2 ;;
+    --known) [[ $# -ge 2 ]] || usage; KNOWN+=("${2##*/}"); shift 2 ;;
     --deps) [[ $# -ge 2 ]] || usage; DEPS_FILE="$2"; shift 2 ;;
     --prd) [[ $# -ge 2 ]] || usage; PRD_FILE="$2"; shift 2 ;;
     *) echo "lint-issues.sh: unknown argument: $1" >&2; usage ;;
@@ -110,6 +115,14 @@ for f in "${ISSUES[@]}"; do
   PATHS+=("$f")
 done
 
+# is_ref <name> — a filename a `## Blocked by` ref may resolve to: in the set, or --known.
+is_ref() {
+  local n
+  in_set "$1" && return 0
+  for n in "${KNOWN[@]+"${KNOWN[@]}"}"; do [[ "$n" == "$1" ]] && return 0; done
+  return 1
+}
+
 # strip_markup <token> — sets STRIPPED to the token minus every leading/trailing markup or
 # punctuation character (`**x.md**.` -> x.md). Pure parameter expansion: no subshell, no globbing.
 strip_markup() {
@@ -125,7 +138,7 @@ strip_markup() {
 # Resolve `Issue #n` to the set member whose filename starts with the number.
 resolve_number() {
   local n="$1" name
-  for name in "${NAMES[@]}"; do
+  for name in "${NAMES[@]}" "${KNOWN[@]+"${KNOWN[@]}"}"; do
     if [[ "$name" =~ ^0*${n}[-_.] ]]; then printf '%s' "$name"; return 0; fi
   done
   return 1
@@ -161,7 +174,11 @@ for idx in "${!NAMES[@]}"; do
     [[ -z "$trimmed" ]] && continue
     entry="${trimmed#[-*] }"
     entry="${entry#"${entry%%[![:space:]]*}"}"
+    # "None", "_None_", "**None** - can start", "—": no ref. Markup and dashes stripped first.
     lower=$(printf '%s' "$entry" | tr '[:upper:]' '[:lower:]')
+    lower="${lower//[_\*\`~]/}"
+    lower="${lower#"${lower%%[![:space:]]*}"}"
+    [[ -z "${lower//[[:space:]—–-]/}" ]] && continue
     case "$lower" in none* | n/a* | nothing*) continue ;; esac
 
     found=0
@@ -183,21 +200,19 @@ for idx in "${!NAMES[@]}"; do
         err "$file" "## Blocked by ref matches no issue in the set: Issue #$n"
       fi
     done
-    # Filename references: whitespace-separated tokens, stripped of markup
+    # Filename references: whitespace-separated *.md tokens, stripped of markup. A path or a
+    # markdown link (`[01-x.md](../open/01-x.md)`) resolves by its basename only — never opened.
+    # Any other token is prose (`schema/API`); an entry with no ref at all is reported below.
     for tok in "${toks[@]+"${toks[@]}"}"; do
       strip_markup "$tok"
       tok="$STRIPPED"
-      if [[ "$tok" == */* || "$tok" == *'$'* || "$tok" == *'`'* ]]; then
-        # path-like or metacharacter-laden: data, an unmatched ref, never opened
-        found=1
+      [[ "$tok" == *.md ]] || continue
+      found=1
+      base="${tok##*/}"
+      if [[ "$base" == *.md && "$base" != *'$'* && "$base" != *'`'* ]] && is_ref "$base"; then
+        resolved+="$base"$'\n'
+      else
         err "$file" "## Blocked by ref matches no issue in the set: $tok"
-      elif [[ "$tok" == *.md ]]; then
-        found=1
-        if in_set "$tok"; then
-          resolved+="$tok"$'\n'
-        else
-          err "$file" "## Blocked by ref matches no issue in the set: $tok"
-        fi
       fi
     done
     if ((found == 0)); then

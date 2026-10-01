@@ -50,11 +50,13 @@ export function missingAssetsMessage(installDir, missing) {
 }
 
 /**
- * The set to lint, as the files lint-issues.sh takes: `{ issues, deps, prd }` (`deps` and `prd`
- * null when absent). Under `local` that is every open issue file, the feature's
+ * The set to lint, as the files lint-issues.sh takes: `{ issues, known, deps, prd }` (`deps` and
+ * `prd` null when absent). Under `local` that is every open issue file, the feature's
  * `issues-deps.json` and `.scratch/<slug>/PRD.md`; under `github` each open (not done, not
  * PRD) milestone issue's body written out as `<number>-<slug>.md` — the filename is how
  * `Issue #<n>` refs resolve — and the milestone's PRD issue body, unless a local PRD.md exists.
+ * `known` names the done issues (`done/` files; done milestone issues as `<number>-<slug>.md`):
+ * a `## Blocked by` ref to one resolves, as it does for dispatch, but it is not linted.
  */
 async function lintSet(sprint, mainRoot) {
   const slug = sprint.featureSlug;
@@ -63,7 +65,8 @@ async function lintSet(sprint, mainRoot) {
   if (readTrackerConfig(mainRoot).tracker !== "github") {
     const issues = local.listOpenIssueFiles(mainRoot, { featureSlug: slug });
     const deps = issues.length ? local.issueDepsPath(issues[0]) : null;
-    return { issues, deps: deps && existsSync(deps) ? deps : null, prd: prdFile };
+    const known = issues.length ? [...local.doneFiles(issues[0])].filter((f) => f.endsWith(".md")) : [];
+    return { issues, known, deps: deps && existsSync(deps) ? deps : null, prd: prdFile };
   }
   const gh = await import("./trackers/github.mjs");
   const all = gh.listOpen(mainRoot, { featureSlug: slug });
@@ -74,9 +77,11 @@ async function lintSet(sprint, mainRoot) {
     writeFileSync(file, text);
     return file;
   };
-  const issues = all.filter((i) => !gh.isPrdIssue(i) && i.status !== "done").map((i) => write(`${i.number}-${i.slug}.md`, i.text));
+  const work = all.filter((i) => !gh.isPrdIssue(i));
+  const issues = work.filter((i) => i.status !== "done").map((i) => write(`${i.number}-${i.slug}.md`, i.text));
+  const known = work.filter((i) => i.status === "done").map((i) => `${i.number}-${i.slug}.md`);
   const prdIssue = prdFile ? null : all.find((i) => gh.isPrdIssue(i));
-  return { issues, deps: null, prd: prdFile ?? (prdIssue ? write("PRD.md", prdIssue.text) : null) };
+  return { issues, known, deps: null, prd: prdFile ?? (prdIssue ? write("PRD.md", prdIssue.text) : null) };
 }
 
 /**
@@ -103,7 +108,7 @@ export async function lintIssues(ctx) {
   if (!set.issues.length) return { status: "skipped", errors: [], warnings: [], reason: "no open issues" };
   if (!sprint.installDir) return skipped("no install dir");
   const script = join(assetDir(sprint.installDir, "toIssues"), "lint-issues.sh");
-  const args = [script, ...set.issues.flatMap((f) => ["--issue", f])];
+  const args = [script, ...set.issues.flatMap((f) => ["--issue", f]), ...set.known.flatMap((f) => ["--known", f])];
   if (set.deps) args.push("--deps", set.deps);
   if (set.prd) args.push("--prd", set.prd);
   ctx.log(`[STEP] step=lint issues=${set.issues.length}${set.deps ? " deps" : ""}${set.prd ? " prd" : ""}`);

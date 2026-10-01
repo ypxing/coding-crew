@@ -19,7 +19,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   missing-assets stop.
 - `to-issues`: add `lint-issues.sh`, a read-only checker for an issue set (ERROR for cycles, unmatched
   `## Blocked by` refs, `--deps` drift and missing acceptance criteria; WARN for advisory problems).
-  Installed at `.coding-crew/to-issues/scripts/`.
+  Installed at `.coding-crew/to-issues/scripts/`. `--known` names issues outside the set (preflight passes the
+  done ones) so a resumed sprint's refs to them resolve; a ref resolves by its basename (path citations and
+  markdown links included), prose like `schema/API` is not a ref, and `_None_` / `—` placeholders mean no blocker.
 
 ## [2.0.0]
 

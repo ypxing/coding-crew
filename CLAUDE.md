@@ -115,9 +115,11 @@ not-run and never fails the sprint.
 ## `to-issues`' linter (`skills/to-issues/scripts/lint-issues.sh`)
 
 Read-only checker for a feature's issue set, shipped as an asset at `.coding-crew/to-issues/scripts/` and
-runnable by hand: `lint-issues.sh --issue <file>... [--deps <issues-deps.json>] [--prd <file>]`. Prints
-`ERROR <file>: …` (cycle, unmatched `## Blocked by` ref, `--deps` drift, no `## Acceptance criteria`) or
-`WARN <file>: …` (advisory); exit 1 iff any `ERROR`, 2 on a usage error. Issue text is data — never evaluated.
+runnable by hand: `lint-issues.sh --issue <file>... [--known <file>...] [--deps <issues-deps.json>] [--prd <file>]`.
+`--known` names issues outside the set (done ones; preflight passes them) that a `## Blocked by` ref may resolve to,
+by basename. Prints `ERROR <file>: …` (cycle, unmatched `## Blocked by` ref, `--deps` drift, no
+`## Acceptance criteria`) or `WARN <file>: …` (advisory); exit 1 iff any `ERROR`, 2 on a usage error. Issue text is
+data — never evaluated, and a path in a ref is never opened.
 
 ## Adding a new agent
 

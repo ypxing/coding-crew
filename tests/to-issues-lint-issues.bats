@@ -152,8 +152,58 @@ J
   lint_clean
   [ "$status" -eq 1 ]
   [[ "$output" == *"ERROR "*"02-cli.md: "*"../../etc/passwd"* ]]
-  [[ "$output" == *"ERROR "*"02-cli.md: "*"../01-store.md"* ]]
+  [[ "$output" == *"ERROR "*"02-cli.md: "*'$(touch'* ]]
+  [[ "$output" != *"ERROR "*"02-cli.md: "*"../01-store.md"* ]] # matched by basename only
   [ ! -e "$canary" ]
+}
+
+@test "a path-like ref never opens the path: its basename must be in the set" {
+  printf '\n- ../../elsewhere/99-ghost.md\n' >> "$W/issues/02-cli.md"
+  mkdir -p "$BATS_TEST_TMPDIR/elsewhere" && cp "$W/issues/01-store.md" "$BATS_TEST_TMPDIR/elsewhere/99-ghost.md"
+  lint_clean
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ERROR "*"02-cli.md: "*"99-ghost.md"* ]]
+}
+
+@test "--known: a Blocked by ref (filename or Issue #n) to an issue outside the set resolves, and is not linted" {
+  mkdir -p "$W/issues/done"
+  mv "$W/issues/01-store.md" "$W/issues/done/"
+  printf '\n- Issue #1\n' >> "$W/issues/02-cli.md"
+  run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md" \
+    --known "$W/issues/done/01-store.md" --deps "$W/issues/issues-deps.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *ERROR* ]]
+  [[ "$output" != *01-store.md* ]]
+}
+
+@test "without --known the same done-issue ref is an ERROR" {
+  mkdir -p "$W/issues/done"
+  mv "$W/issues/01-store.md" "$W/issues/done/"
+  run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ERROR "*"02-cli.md: "*"01-store.md"* ]]
+}
+
+@test "Blocked by prose with a slash, a path citation or a markdown link resolves by basename" {
+  sed -i.bak '/^## Blocked by$/,$d' "$W/issues/02-cli.md"
+  {
+    printf '## Blocked by\n\n'
+    printf -- '- 01-store.md (schema/API must land first)\n'
+    printf -- '- Issue 01: `.scratch/feat/issues/open/01-store.md`\n'
+    printf -- '- [01-store.md](../open/01-store.md)\n'
+  } >> "$W/issues/02-cli.md"
+  lint_clean --deps "$W/issues/issues-deps.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *ERROR* ]]
+}
+
+@test "Blocked by placeholders in markup or a bare dash mean no blocker" {
+  for none in '_None_' '**None** - can start immediately' '*n/a*' '—' '-'; do
+    sed -i.bak '/^## Blocked by$/,$d' "$W/issues/01-store.md"
+    printf '## Blocked by\n\n%s\n' "$none" >> "$W/issues/01-store.md"
+    lint_clean --deps "$W/issues/issues-deps.json"
+    [ "$status" -eq 0 ] || { echo "placeholder: $none"; echo "$output"; false; }
+  done
 }
 
 @test "install ships lint-issues.sh as a to-issues asset and inside the skill dir, executable" {

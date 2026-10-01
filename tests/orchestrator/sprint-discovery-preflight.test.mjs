@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, FIXTURE_ROOTS, sh, fixtureRepo, githubFixtureRepo, stubGh, GH_ALPHA, addIssue, runSprint, traceLog, state, fake, workerReport, coderSpawns, commandLines, test } from "./helpers/sprint.mjs";
 
@@ -490,6 +490,19 @@ test("under local the linter gets every open issue, issues-deps.json and the PRD
   ]);
 });
 
+test("a resumed sprint: a Blocked by ref to a done issue resolves through --known, so the run goes on", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".scratch/demo/issues/done"), { recursive: true });
+  renameSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), join(root, ".scratch/demo/issues/done/01-alpha.md"));
+  addIssue(root, "02-beta.md", { blockedBy: ["01-alpha.md", "Issue #1"] });
+  writeFileSync(join(root, ".scratch/demo/issues/issues-deps.json"), '{"01-alpha.md": [], "02-beta.md": ["01-alpha.md"]}');
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(traceLog(root), /LINT: ERROR/);
+  assert.match(traceLog(root), /LINT: pass/);
+});
+
 test("without issues-deps.json or a PRD the linter is passed neither flag", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -498,7 +511,7 @@ test("without issues-deps.json or a PRD the linter is passed neither flag", () =
   assert.deepEqual(lintArgv(root), ["--issue", join(root, ".scratch/demo/issues/open/01-alpha.md")]);
 });
 
-test("under github the linter gets one written-out body file per open milestone issue, and the PRD issue", () => {
+test("under github the linter gets one written-out body file per open milestone issue, each done one as --known, and the PRD issue", () => {
   const root = githubFixtureRepo();
   const closed = { ...GH_ALPHA, number: 2, title: "beta", state: "CLOSED" };
   const prd = { number: 9, title: "PRD: Demo", body: "# PRD\n\n- **D1** thing\n", labels: [], state: "OPEN" };
@@ -511,11 +524,12 @@ test("under github the linter gets one written-out body file per open milestone 
   });
   assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`); // dry run: stalled past the lint
   const argv = lintArgv(root);
-  assert.equal(argv.length, 4, argv.join(" "));
+  assert.equal(argv.length, 6, argv.join(" "));
   assert.equal(argv[0], "--issue");
   assert.match(argv[1], /\/1-alpha\.md$/);
-  assert.equal(argv[2], "--prd");
-  assert.match(argv[3], /\/PRD\.md$/);
+  assert.deepEqual(argv.slice(2, 4), ["--known", "2-beta.md"]);
+  assert.equal(argv[4], "--prd");
+  assert.match(argv[5], /\/PRD\.md$/);
   assert.equal(readFileSync(join(root, "lint-body.txt"), "utf8"), GH_ALPHA.body);
 });
 

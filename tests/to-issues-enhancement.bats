@@ -189,3 +189,8 @@ setup() {
   pub=$(grep -n 'execute the `publish` operation' "$SKILL_FILE" | head -1 | cut -d: -f1)
   [ "$lint" -lt "$pub" ]
 }
+
+@test "to-issues: under github the lint run uses provisional Issue #<n> numbers and --known for existing milestone issues" {
+  grep -qF -- '--known <number>-<slug>.md' "$SKILL_FILE"
+  grep -qiE 'replace each `Issue #<n>` with the number `gh issue create` returned' "$SKILL_FILE"
+}
