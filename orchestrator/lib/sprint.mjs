@@ -69,6 +69,9 @@ export class Sprint {
     // to retry it. What's written to disk (`.attempts`, `.round`, `.rounds`) is a mirror
     // for reporting only, never read back to decide anything.
     this._attempts = new Map();
+    // slug -> attempts refunded to a coder that timed out after committing (grantFreeAttempt),
+    // in-memory for the same reason.
+    this._freeAttempts = new Map();
     // slug set, in-memory only, this invocation's own record of which issues finishBlocked
     // has already given up on (see markBlockedThisRun) — what loop.mjs's claimNext() checks
     // instead of the persisted `blocked_slugs`, for the same cross-invocation reason above.
@@ -249,6 +252,15 @@ export class Sprint {
    */
   attemptCount(slug) {
     return this._attempts.get(slug) ?? 0;
+  }
+
+  /** Refunds one attempt to `slug` — see finishRetryOrBlock in pipeline/finish.mjs. */
+  grantFreeAttempt(slug) {
+    this._freeAttempts.set(slug, this.freeAttempts(slug) + 1);
+  }
+
+  freeAttempts(slug) {
+    return this._freeAttempts.get(slug) ?? 0;
   }
 
   /** Recorded once finishBlocked gives up on `slug` — see claimNext() in loop.mjs. */

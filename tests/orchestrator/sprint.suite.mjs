@@ -305,6 +305,36 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.ok(coderPromptText.includes(`Project config: ${join(root, ".coding-crew")} `), coderPromptText);
 });
 
+test("openPr off, something merged, local tracker: the summary ends with ## Next naming gh pr create and --open-pr", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  const next = r.stdout.slice(r.stdout.lastIndexOf("\n## Next\n") + 1);
+  assert.match(next, /^## Next\n/);
+  assert.match(next, /gh pr create --head feature\/demo --title demo/);
+  assert.match(next, /--open-pr/);
+  assert.match(next, /afk\.openPr/);
+  assert.doesNotMatch(next, /Closes #/, "a local tracker has no closing lines");
+  assert.match(next, /NO MORE TASKS\s*$/);
+});
+
+test("openPr off and nothing merged: no ## Next section", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.nocommit");
+  fake(
+    root,
+    "alpha.worker",
+    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"fail","lint":"pass","typecheck":"pass"},"progress":"tests red"}', '```'].join("\n"),
+  );
+  const r = runSprint(root);
+  assert.equal(r.code, 2, "the issue spends its retries and stays blocked");
+  assert.deepEqual(state(root).merged_branches ?? [], []);
+  assert.doesNotMatch(r.stdout, /^## Next$/m);
+});
+
 test("a run whose install is missing an asset stops before any dispatch, naming the path", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -424,6 +454,28 @@ test("a worker-reported failing check with no commits is demoted and never merge
   assert.equal(s.retention.alpha.reason, "blocked — retry limit reached (2 attempts) — reported checks failed: test");
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true);
   assert.match(readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8"), /## Progress/);
+});
+
+test("a coder that times out after committing gets a free retry", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Rounds 1 and 2 commit, then outlast the timeout; round 3 completes. Under the plain
+  // two-attempt cap round 2 would have blocked it.
+  fake(root, "alpha.worker-sleep", "3 2");
+  const { r, lines } = commandLines(root, ["--coder-timeout", "0.02"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 3);
+});
+
+test("free retries stop at the dispatch cap", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker-sleep", "3");
+  const { r, lines } = commandLines(root, ["--coder-timeout", "0.02"]);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(3 attempts\) — worker timed out/);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 3);
 });
 
 test("a worker-reported partial carries its own unmet criteria into the Progress section", () => {
@@ -2241,7 +2293,9 @@ test("a github-configured sprint dispatches, marks the issue awaiting-merge with
   const alpha = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.number === 1);
   assert.equal(alpha.state, "OPEN");
   assert.match(r.stdout, /NO MORE TASKS/);
-  assert.match(r.stdout, /## Pull Request[\s\S]*Closes #1/, "the summary never gave the PR its closing line");
+  assert.match(r.stdout, /^## Next$[\s\S]*gh pr create --head [^\n]+[\s\S]*Closes #1[\s\S]*--open-pr[\s\S]*afk\.openPr/m, "the summary never told the human how to open the PR, closing line under it");
+  assert.doesNotMatch(r.stdout, /## Pull Request/);
+  assert.ok(r.stdout.lastIndexOf("\n## Next\n") > r.stdout.lastIndexOf("## Code Review"), "## Next is not the tail of the summary");
 });
 
 test("github: a blocked issue is labelled blocked, keeps ready-for-agent, the summary says how to unblock it, and the next run skips it", () => {
@@ -2427,6 +2481,7 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
   assert.match(readFileSync(join(root, "pr-body.md"), "utf8"), /^Closes #1$/m);
   assert.equal(sh("git", ["-C", remote, "rev-parse", "feature/demo"]).stdout.trim(), sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim());
   assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+1 finding\(s\) posted \(0 inline\)/);
+  assert.doesNotMatch(r.stdout, /^## Next$/m, "openPr on: the PR is opened, nothing is left to tell the human");
   const review = JSON.parse(readFileSync(join(root, "review-post.json"), "utf8"));
   assert.equal(review.event, "COMMENT");
   assert.match(review.body, /### MEDIUM[\s\S]*Rename the variable[\s\S]*crew-finding:/);

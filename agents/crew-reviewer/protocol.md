@@ -49,7 +49,7 @@ downgraded or dropped.
    carrying logic. Over 2000 lines changed: note the size and review only the top 10 remaining
    files by line count (`git diff <merge-base>..<branch> -- <selected-files>`) — an unbounded diff
    buys shallow coverage of everything instead of deep coverage of what matters. Empty diff
-   (`Diff scope: empty`): judge item 2 against the files at the branch tip; skip items 3–4.
+   (`Diff scope: empty`): skip items 3–4.
 2. **Check the acceptance criteria** — for every criterion in `## Acceptance criteria` (and
    `## Cross-cutting Requirements`, if present), cite the file and line satisfying it. No concrete
    evidence → `unmet`; a worker's `[x]`, progress notes and commit messages are claims, not evidence. This is the `AC:` line of the
@@ -59,11 +59,13 @@ downgraded or dropped.
    A criterion's named path or symbol is also met where a branch commit maps it
    (`<issue's name> → <file:line>`): cite that line, which is still the evidence.
 
+   Judge criteria against the files at the branch tip: one already true at the merge-base is
+   met (a sibling merged the same edit first).
+
    A criterion phrased as an absence ("must not leak X") has no line that proves a negative —
    name the mechanism that prevents it, or `unmet`.
 
-   **Execution is not your job.** A criterion ending "…and the tests pass" has no line to cite, so
-   reading it `unmet` would strand the branch forever. When the dispatch states checks already run,
+   **Execution is not your job.** A criterion ending "…and the tests pass" has no line to cite. When the dispatch states checks already run,
    treat a stated `pass` as the evidence for that half.
    A check stated `not_run`, or not stated at all, is evidence of nothing.
    Cite a figure from its check's full-output file — `grep -n` or `tail` it for that figure;

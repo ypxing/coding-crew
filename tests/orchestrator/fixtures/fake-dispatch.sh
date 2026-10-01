@@ -31,6 +31,10 @@
 #   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
 #                         of resolving it, so the branch conflicts again at the merge gate.
 #   <slug>.exit           exit with this code instead of 0
+#   <slug>.worker-sleep   "<seconds> [N]": the worker commits, then sleeps that long on its
+#                         first N calls (every call when N is absent) — with a fractional
+#                         --coder-timeout, a coder that times out after making progress.
+#                         Keeps a counter at <slug>.worker-sleep.calls next to it.
 #   <slug>.triage         the triage report to emit (default: none at all — no sidecar, so the
 #                         pipeline's triage-failed fallback, `verification-failed`)
 #
@@ -213,6 +217,13 @@ if [ "$NOCOMMIT" -eq 0 ]; then
     git add -A >/dev/null 2>&1
     git -c user.email=fake@test -c user.name=fake commit -q -m "feat: $SLUG" >/dev/null 2>&1
   )
+fi
+
+if [ -f "$FAKE_DIR/$SLUG.worker-sleep" ]; then
+  read -r SLEEP_S SLEEP_N < "$FAKE_DIR/$SLUG.worker-sleep"
+  CALLS=$(( $(cat "$FAKE_DIR/$SLUG.worker-sleep.calls" 2>/dev/null || echo 0) + 1 ))
+  echo "$CALLS" > "$FAKE_DIR/$SLUG.worker-sleep.calls"
+  [ -z "$SLEEP_N" ] || [ "$CALLS" -le "$SLEEP_N" ] && sleep "$SLEEP_S"
 fi
 
 if [ -f "$FAKE_DIR/$SLUG.worker" ]; then
