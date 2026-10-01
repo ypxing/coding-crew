@@ -1,10 +1,20 @@
+<div align="center">
+
 # Coding Crew
 
-Turn an idea into merged, tested, reviewed code — while you're away from the keyboard.
+**Turn an idea into merged, tested, reviewed code — while you're away from the keyboard.**
 
-You describe a feature. Coding Crew interviews you until the plan is solid, splits it into issues,
-then runs a crew of AI coders in parallel — each in its own git worktree, test-first — and only
-merges a branch after its checks pass and a separate reviewer has read it.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Claude Code](https://img.shields.io/badge/Claude_Code-supported-D97757)
+![Copilot CLI](https://img.shields.io/badge/Copilot_CLI-supported-24292e)
+![Codex CLI](https://img.shields.io/badge/Codex_CLI-supported-10a37f)
+![pi](https://img.shields.io/badge/pi-supported-6f42c1)
+
+</div>
+
+Describe a feature → get a PR. Coding Crew plans it with you, splits it into issues, and runs
+AI coders in parallel — test-first, each in its own git worktree — merging only what passes your
+checks and an independent review.
 
 Works with **Claude Code**, **GitHub Copilot CLI**, **OpenAI Codex CLI** and
 [**pi**](https://github.com/badlogic/pi-mono).
@@ -21,98 +31,51 @@ For a single platform, a per-project install or updates, see [Install options](#
 
 ## How it works
 
-👤 = you, 🤖 = runs on its own. Open your project in your AI coding tool:
+```mermaid
+flowchart LR
+    plan["👤 <b>/crew-grill</b><br/>plan it"] --> issues["🤖 PRD + issues"]
+    issues --> afk["👤 <b>/crew-afk</b><br/>walk away"]
 
-```
- 👤 /crew-grill            answer questions about your idea
-    │                      (still shaping it? /crew-brainstorm instead)
-    ▼
- 🤖 PRD + issues
-    │
-    ▼
- 👤 /crew-afk              then walk away
-    │
-    ▼
- 🤖 preflight              clean tree · your checks pass on the feature branch
-    │
-    ▼
- 🤖 per issue, in parallel, each in its own worktree:
-      coder → verify → review → merge
-        ▲       │ fail     │ criteria not met
-        └── fix ┴──────────┘   same branch, up to 2 tries
-    │ all issues done
-    ▼
- 🤖 integration check     your checks, on the merged feature branch
-    │ red + fixable          → a fix issue, back into the per-issue loop (max 2); re-checked
-    │ red + not fixable      → reported, no PR
-    ▼
- 🤖 full-feature review   one reviewer pass over the whole feature diff (not re-run after the fixes)
-    │
-    ▼
- 🤖 PRD audit + actionable review findings → new issues → per-issue loop again (once)
-    │
-    ▼
- 🤖 summary                (opens the PR with --open-pr; otherwise says how to)
-    │
-    ▼
- 👤 /crew-address-findings pick which remaining findings to fix (optional)
- 👤 review and merge
+    subgraph sprint["🤖 sprint"]
+        direction TB
+        build["code → verify → review → merge<br/><i>per issue, in parallel</i>"]
+        check["check + review<br/>the whole feature"]
+        fix["fix findings &<br/>PRD gaps"]
+        build --> check --> fix
+        fix -. "once" .-> build
+    end
+
+    afk --> sprint --> pr["👤 review the PR"]
+
+    classDef human fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    classDef bot fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    class plan,afk,pr human
+    class issues,build,check,fix bot
 ```
 
 What you can rely on:
 
-- **The issue is checked before coding.** The coder confirms the issue still matches the code;
-  one that no longer does is blocked with evidence instead of guessed at.
-- **Coding is test-first.** Each coder works with TDD in its own git worktree.
-- **A failing branch is never merged.** Every branch must pass your project's own checks first.
-- **A separate agent reviews every branch.** Unmet acceptance criteria send it back to the coder;
-  other findings never block. They're written to `.scratch/<feature>/reviews/`.
-- **The merged feature is checked as a whole.** Two branches can each pass and still break each
-  other, so once the issues are done your checks run again on the merged feature branch. A red
-  result is reported in the summary, and no PR is opened over it.
-- **The whole feature diff is reviewed once.** A branch's review sees only its own diff, so when the
-  issues are done a reviewer reads everything they merged together, for what only shows across
-  issues (a helper written twice, error handling that differs between modules). Its findings are
-  attributed to `feature` and handled like any others; it is skipped, and the summary says so, when
-  the integration check is red.
-- **Every Actionable finding is fixed; only Debatable ones wait for you.** A separate triage agent
-  judges each review finding Actionable, Debatable or Dismiss, whatever its severity. Every
-  Actionable one — a local, unambiguous fix that changes no public contract — is fixed in the
-  second pass, a LOW included. Debatable ones (a questionable fix, a clash with an ADR, anything
-  touching CI config, auth, deploy or `.env`) are never auto-fixed: `/crew-address-findings` leads
-  with them. If triage fails, findings are fixed by severity (CRITICAL and HIGH) and the summary
-  says so.
-- **The PRD is checked.** Once the issues are merged, the code is audited against the PRD and any
-  requirement no issue covered becomes a new issue.
-- **Work is never thrown away.** A retry continues on the same branch, and unfinished work is kept
-  as `[WIP]` for the next run.
-- **Nothing is pushed unless you ask.** Add `--open-pr` to push the feature branch and open a PR;
-  without it, the summary ends with the `gh pr create` command for the branch (and the `Closes #n`
-  lines, on GitHub).
+- ✅ **Test-first** — every coder uses TDD in its own worktree.
+- 🚦 **Nothing red merges** — each branch must pass your project's own checks.
+- 🔍 **Independent review** — a separate agent reviews every branch, then the whole feature.
+- 🔁 **Self-correcting** — failed checks, unmet criteria and actionable findings go back for a fix.
+- 📋 **PRD-audited** — requirements no issue covered become new issues.
+- 🔒 **Nothing pushed unless you ask** — `--open-pr` opens the PR; otherwise you get the command.
 
-## Common options
+Full pipeline, gates and retry rules: [user guide](docs/guide.md#system-overview).
+
+## Options
 
 ```bash
-/crew-afk --model opus          # coder model: opus | sonnet (default) | haiku | inherit
-/crew-afk --open-pr             # push the feature branch and open/update its PR at the end
-/crew-afk --fix-findings none   # don't auto-fix review findings (default: actionable; or critical|high|medium)
+/crew-afk --open-pr             # push and open the PR at the end
+/crew-afk --model opus          # coder model (default: sonnet)
 /crew-afk --max-parallel 2      # fewer concurrent coders
-/crew-afk --no-integration-check # skip the checks on the merged feature branch (--no-baseline skips the one before dispatch)
+/crew-afk --fix-findings none   # don't auto-fix review findings
 ```
 
-To keep settings between runs, put them in `.coding-crew/config.json` (per repo) or
-`~/.coding-crew/config.json` (per machine):
-
-```json
-{ "afk": { "openPr": true, "maxParallel": 2 } }
-```
-
-Coders run in fresh worktrees, so gitignored files such as `.env` aren't there. `.env` and
-`docker-compose.override.yml` are copied automatically; list anything else in a
-`.worktreeinclude` file at the repo root.
-
-Every setting — per-role models and runtimes, timeouts, budgets, worktree location — is in the
-[crew-afk configuration reference](docs/guide.md#configuring-crew-afk).
+Persist them in `.coding-crew/config.json` — e.g. `{ "afk": { "openPr": true } }`. Need `.env` in
+worktrees? It's copied automatically; list other gitignored files in `.worktreeinclude`.
+[All settings →](docs/guide.md#configuring-crew-afk)
 
 ## All commands
 
@@ -127,10 +90,12 @@ Every setting — per-role models and runtimes, timeouts, budgets, worktree loca
 | `/address-pr-comments`   | Fix sensible GitHub PR review comments and reply to them                                |
 | `/configure-tracker`     | Choose where issues live: local markdown files (default) or GitHub Issues               |
 
-Want PR review comments fixed automatically too? See the optional
-[PR rework with GitHub Actions](docs/guide.md#pr-rework-with-github-actions-optional).
+Optional: auto-fix PR review comments with [GitHub Actions](docs/guide.md#pr-rework-with-github-actions-optional).
 
 ## Install options
+
+<details>
+<summary>Single platform, per-project install, updates, uninstall</summary>
 
 `bootstrap.sh` takes the same arguments as `install.sh`:
 
@@ -168,6 +133,8 @@ Uninstall:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash
 ```
+
+</details>
 
 ## Learn more
 
