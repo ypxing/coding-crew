@@ -294,20 +294,27 @@ export function linkBlockers(number, { mainRoot, exec = shellOut, body, warn = (
 }
 
 /**
- * The feature PR's closing lines, `Closes #n`, one per issue in the milestone still open and
- * labelled `awaiting-merge` — every issue a sprint of this feature merged, whichever run did.
- * Merging the PR into the default branch closes them. Optional per backend: a tracker without
- * one has nothing for a PR to close.
+ * The feature PR's closing lines, `Closes #n`: one per issue in the milestone still open and
+ * labelled `awaiting-merge` — every issue a sprint of this feature merged, whichever run did —
+ * plus the milestone's open `PRD: …` issue once no open work issue is left (the rule
+ * `close-shipped.sh` applies), and only when something is awaiting merge: a PR that ships
+ * nothing closes nothing. Merging the PR into the default branch closes them. Optional per
+ * backend: a tracker without one has nothing for a PR to close.
  */
 export function closingRefs(mainRoot, { featureSlug, exec = shellOut } = {}) {
   const { repo } = readTrackerConfig(mainRoot);
   const args = ["issue", "list"];
   if (repo) args.push("--repo", repo);
-  args.push("--milestone", featureSlug, "--label", AWAITING_MERGE_LABEL, "--state", "open", "--json", "number");
+  args.push("--milestone", featureSlug, "--state", "open", "--limit", "500", "--json", "number,title,labels");
   const r = exec("gh", args);
   if (r.code !== 0) throw new Error(`gh issue list failed (exit ${r.code}): ${r.stderr || r.stdout}`);
   const raw = r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : [];
-  return raw.map((i) => i.number).sort((a, b) => a - b).map((n) => `Closes #${n}`);
+  const awaiting = (i) => (i.labels || []).some((l) => l.name === AWAITING_MERGE_LABEL);
+  const prds = raw.filter((i) => /^PRD:/.test(i.title || ""));
+  const work = raw.filter((i) => !prds.includes(i));
+  const ships = work.filter(awaiting);
+  const prdCloses = ships.length > 0 && ships.length === work.length ? prds : [];
+  return [...ships, ...prdCloses].map((i) => i.number).sort((a, b) => a - b).map((n) => `Closes #${n}`);
 }
 
 /**

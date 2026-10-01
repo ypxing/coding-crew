@@ -355,12 +355,46 @@ test("a `## Blocked` write goes through the same writeProgress/comment path, wit
   assert.ok(!commentCall.includes("--label"));
 });
 
+/** `gh issue list --state open` of a milestone: one payload of {number,title,labels}. */
+const issue = (number, label, title = `Work ${number}`) => ({ number, title, labels: label ? [{ name: label }] : [] });
+const prd = (number) => issue(number, "", "PRD: the feature");
+
 test("closingRefs lists the milestone's open awaiting-merge issues as Closes lines, in number order", () => {
   const root = repo();
-  const exec = fakeExec([{ number: 12 }, { number: 3 }]);
+  const exec = fakeExec([issue(12, "awaiting-merge"), issue(3, "awaiting-merge")]);
   assert.deepEqual(closingRefs(root, { featureSlug: "feat", exec }), ["Closes #3", "Closes #12"]);
   const argv = exec.calls[0].join(" ");
-  assert.match(argv, /issue list --milestone feat --label awaiting-merge --state open --json number/);
+  assert.match(argv, /issue list --milestone feat --state open .*--json number,title,labels/);
+});
+
+test("closingRefs adds the PRD's line when only awaiting-merge work issues are open, sorted by number", () => {
+  const exec = fakeExec([issue(12, "awaiting-merge"), prd(2), issue(3, "awaiting-merge")]);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #2", "Closes #3", "Closes #12"]);
+});
+
+test("closingRefs omits the PRD's line while any open work issue is not awaiting-merge", () => {
+  for (const label of ["ready-for-agent", "blocked", "ready-for-human", "needs-triage", ""]) {
+    const exec = fakeExec([prd(2), issue(3, "awaiting-merge"), issue(4, label)]);
+    assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #3"], `label: ${label || "none"}`);
+  }
+});
+
+test("closingRefs returns no lines when nothing is awaiting-merge, PRD or not", () => {
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: fakeExec([prd(2)]) }), []);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: fakeExec([prd(2), issue(4, "ready-for-agent")]) }), []);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: fakeExec([]) }), []);
+});
+
+test("closingRefs yields the work issues' lines alone for a milestone with no PRD issue", () => {
+  const exec = fakeExec([issue(5, "awaiting-merge"), issue(4, "awaiting-merge")]);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #4", "Closes #5"]);
+});
+
+test("closingRefs does not list a closed PRD issue", () => {
+  // `--state open` leaves a closed PRD out of the list; the query must say so.
+  const exec = fakeExec([issue(3, "awaiting-merge")]);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec }), ["Closes #3"]);
+  assert.ok(exec.calls[0].join(" ").includes("--state open"));
 });
 
 test("closingRefs surfaces a gh failure rather than reporting nothing to close", () => {

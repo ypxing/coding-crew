@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- **The feature PR's closing lines also close the PRD.** Under `tracker: github`, once every open
+  work issue in the milestone is `awaiting-merge` (and at least one is), the summary's `Closes`
+  lines and the `--open-pr` body now include `Closes #<prd>`, so a feature that ships in its last
+  run no longer leaves its PRD open. A later run that finds open work again drops the line.
 - **crew-afk's cost ledger tells the truth per dispatch.** A claude session that emitted several
   `result` events (a worker using background tasks) is now recorded with the turns and agent time
   of the whole session, not just its last event. A dispatch killed on timeout is recorded as
