@@ -70,7 +70,10 @@ export async function handleVerificationFailure(ctx, worker, outcome, verify) {
   const fixable = triage.parsed.fixable;
   const tag = fixable ? FIXABLE_TAG : NOT_FIXABLE_TAG;
 
-  return finishRetryOrBlock(ctx, worker, outcome, taggedReason(tag, summary));
+  // A coder that deferred its test run never saw the failure it is being retried for: the first
+  // fixable verify failure is the run it skipped, so that retry is free. Once per issue per run.
+  const free = !!fixable && worker.report?.checks?.test === "deferred" && sprint.claimDeferredRefund(worker.issue.slug);
+  return finishRetryOrBlock(ctx, worker, outcome, taggedReason(tag, summary), { free });
 }
 
 /**

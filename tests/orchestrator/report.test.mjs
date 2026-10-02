@@ -734,3 +734,11 @@ test("severityNames: the severities a level promotes, as defer records them", ()
   assert.equal(severityNames("none"), "");
   assert.equal(severityNames("actionable"), "");
 });
+
+test("a deferred test check parses and does not demote complete", () => {
+  const r = parseWorkerReport(null, { status: "complete", checks: { test: "deferred", lint: "pass", typecheck: "pass" } });
+  assert.equal(r.checks.test, "deferred");
+  const v = applySchemaPrefilter(r);
+  assert.equal(v.status, "complete");
+  assert.equal(v.demoted, false);
+});
