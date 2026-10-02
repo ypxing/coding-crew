@@ -422,3 +422,32 @@ export function baselineFailureMessage(featureBranch, result) {
   lines.push("To run anyway, knowing every issue will be judged against a red branch: --no-baseline.");
   return lines.join("\n");
 }
+
+/**
+ * Once, after the dirty-checkout check and before anything reads the feature branch: bring
+ * origin/<default> into a resumed branch that lacks it (sync-feature-branch.sh does the git).
+ * `--no-sync-main` skips; `--dry-run` only reports whether a merge would happen.
+ *
+ * Returns `{ status: "skipped" | "current" | "merged" | "would-merge" | "conflict", output }`.
+ */
+export function syncFeatureBranch(ctx) {
+  const { sprint, effects, options } = ctx;
+  if (options.syncMain === false) return { status: "skipped", output: "" };
+  const args = [...(options.dryRun ? ["--dry-run"] : []), sprint.featureBranch];
+  const r = effects.bash("sync-feature-branch.sh", args, { env: sprint.childEnv(), mutating: false });
+  const output = (r.stdout ?? "").trim();
+  if (r.code !== 0) return { status: "conflict", output: (r.stderr || output).trim() };
+  for (const line of output.split("\n").filter(Boolean)) ctx.log(line);
+  if (!output) return { status: "current", output };
+  return { status: options.dryRun ? "would-merge" : "merged", output };
+}
+
+/** The stop message for a feature branch that origin/<default> cannot be merged into cleanly. */
+export function syncConflictMessage(featureBranch, output) {
+  return [
+    `crew-afk: ${featureBranch} does not contain origin's default branch and merging it conflicts — the merge was aborted and ${featureBranch} is untouched:`,
+    `  ${output.replace(/^SYNC:\s*/, "")}`,
+    "Merge origin's default branch into it by hand (scripts/sync-pr-with-main.sh in the crew repo, or `git merge origin/<default>`), then re-run.",
+    "To run anyway, from the branch as it is: --no-sync-main.",
+  ].join("\n");
+}
