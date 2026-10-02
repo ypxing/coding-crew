@@ -219,3 +219,38 @@ setup() {
 @test "github tracker fetch operation is unchanged" {
   grep -q 'gh issue view <number> \[--repo owner/name\] --json number,title,body,labels,state$' "$SCRIPT_DIR/docs/templates/trackers/github.md"
 }
+
+# --- Edge rule, overhead, quiz items (B1-B3, D3), anchored on the skill's own headings ---
+
+@test "to-issues B1: edge rule has four rows in order, with 'at most 8' criteria and small-file merge" {
+  section=$(awk '/^### 4\. Draft vertical slices/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  rows=$(echo "$section" | awk '/^\*\*Edge rule\.\*\*/{f=1;next} f && /^[0-9]+\. /{print} f && /^$/ && n++>0{exit}')
+  [ "$(echo "$rows" | wc -l | tr -d ' ')" = 4 ]
+  echo "$rows" | sed -n 1p | grep -q '^1\. One slice consumes what the other produces.*`Blocked by`'
+  echo "$rows" | sed -n 2p | grep -q '^2\. The two change the same meaning.*`Blocked by`'
+  echo "$rows" | sed -n 3p | grep -q '^3\. They edit the same small file.*at most 8 acceptance criteria.*merge them into one slice'
+  echo "$rows" | sed -n 4p | grep -q '^4\. Anything else.*parallel'
+  echo "$section" | grep -q 'first match wins'
+}
+
+@test "to-issues D3: per-slice overhead sentence precedes the edge rule" {
+  section=$(awk '/^### 4\. Draft vertical slices/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$section" | grep -q 'Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge'
+  o=$(echo "$section" | grep -n 'Every slice costs fixed overhead' | cut -d: -f1)
+  e=$(echo "$section" | grep -n 'Edge rule\.' | cut -d: -f1)
+  [ "$o" -lt "$e" ]
+}
+
+@test "to-issues B2: quiz lists each edge/merge with its reason, not a question per shared surface" {
+  quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$quiz" | grep -q '^5\. \*\*Edges and merges the edge rule produced\*\* — one line per edge or merge'
+  echo "$quiz" | grep -q 'naming the slices and the rule row (reason)'
+  echo "$quiz" | grep -q "Don't ask whether an overlap needs an edge"
+}
+
+@test "to-issues B3: quiz asks whether slices can share a seam when more than two distinct seams are named" {
+  quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$quiz" | grep -q '^6\. \*\*Seam count\*\*'
+  echo "$quiz" | grep -q 'name more than two distinct seams'
+  echo "$quiz" | grep -q 'whether some slices can share one seam'
+}
