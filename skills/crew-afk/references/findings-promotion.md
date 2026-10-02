@@ -159,7 +159,10 @@ appears under) and prints either a real count or `FINDINGS: none`.
 
 The count matters in both directions: it stops the sprint from nudging the user toward an empty
 queue, and it stops a CRITICAL finding raised against a fix branch from ending the sprint in
-silence. Word the reminder as *still need triage*, not *unfixed* — some findings will be correctly
+silence. Findings triage **dismissed** are not in that count or its severity breakdown: the summary
+names them on a separate line (`n finding(s) dismissed by triage`) with the report holding each
+rationale, and `post-findings.sh` lists them under `### Dismissed by triage`, never a severity heading.
+A finding triage never judged (a failed triage, the `high` fallback) is still counted. Word the reminder as *still need triage*, not *unfixed* — some findings will be correctly
 dismissed once a human reads them.
 
 ## Script interface

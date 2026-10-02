@@ -241,7 +241,7 @@ verdict_report() {
   verdict_report
   run bash "$PROMOTE" remind --feature-slug feat
   [ "$status" -eq 0 ]
-  [[ "$output" == *"FINDINGS: open=4 (HIGH=1, MEDIUM=1, LOW=2)"* ]]
+  [[ "$output" == *"FINDINGS: open=3 (HIGH=1, LOW=2)"* ]]
   [[ "$output" == *"DEBATABLE: 1 (decide these first)"* ]]
   [[ "$output" == *"debatable: crew/feat/a [HIGH] src/y.ts:40 — Rename the exported helper — why: public contract change"* ]]
   [[ "$output" == *"ACTIONABLE: 1 (not promoted)"* ]]

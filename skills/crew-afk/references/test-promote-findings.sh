@@ -259,9 +259,10 @@ env -u CREW_FIX_FINDINGS bash "$PROMOTE" defer --feature-slug act --branch crew/
     --title "Fix review findings: a" --report "$ACT" --criteria-file act-crit.md >/dev/null
 check_contains "the marker names the verdict, not a severity" "- crew/01-a: actionable → " "$(cat "$ACT")"
 out=$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" remind --feature-slug act)
-check_contains "the promoted Actionable LOW is handled; the rest are open" "FINDINGS: open=2 (HIGH=1, MEDIUM=1)" "$out"
+check_contains "the promoted Actionable LOW is handled; the rest are open" "FINDINGS: open=1 (HIGH=1)" "$out"
 check_contains "Debatable is listed with its rationale" \
       "debatable: crew/01-a [HIGH] src/api.ts:9 — Rename the exported helper — why: public contract change" "$out"
+check_contains "Dismissed is counted apart" "DISMISSED: 1" "$out"
 check_contains "Dismissed is listed collapsed" "dismissed: crew/01-a [MEDIUM] src/b.ts:2 — Extra guard — why: already guarded" "$out"
 case "$out" in
     *DEBATABLE:*DISMISSED:*) check "Debatable leads Dismissed" yes yes ;;
