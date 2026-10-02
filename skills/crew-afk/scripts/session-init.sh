@@ -83,6 +83,26 @@ resume_feature_branch() {
   return 0
 }
 
+# A new feature branch forks from the local default branch; when that is behind origin the
+# sprint silently starts from stale code. Warn only (branch is still made from local), after
+# a best-effort fetch: no origin, an unreachable one, or any failure stays silent.
+warn_if_default_behind_origin() {
+  local default
+  default=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
+  [ -z "$default" ] && default="main"
+  git remote get-url origin >/dev/null 2>&1 || return 0
+  git rev-parse --verify -q "refs/heads/$default" >/dev/null || return 0
+  GIT_TERMINAL_PROMPT=0 git fetch -q origin "$default" >/dev/null 2>&1 || return 0
+  git rev-parse --verify -q "refs/remotes/origin/$default" >/dev/null || return 0
+  local behind
+  behind=$(git rev-list --count "refs/heads/$default..refs/remotes/origin/$default" 2>/dev/null || echo 0)
+  if [ "${behind:-0}" -gt 0 ] 2>/dev/null; then
+    echo "WARNING: local $default is $behind commit(s) behind origin/$default" >&2
+    echo "The new feature branch is created from local $default; update $default first to start from current code." >&2
+  fi
+  return 0
+}
+
 # --- tracker config (issue 01) --------------------------------------------------
 # Read once, this early, because it changes two things below: whether omitting
 # --feature-slug is even allowed, and whether an off-default-branch resume with no
@@ -158,6 +178,7 @@ if [ -n "$FEATURE_SLUG_ARG" ]; then
         echo "Switching to existing branch: $SUGGESTED_BRANCH"
         git checkout "$SUGGESTED_BRANCH"
       else
+        warn_if_default_behind_origin
         echo "Creating new feature branch: $SUGGESTED_BRANCH"
         git checkout -b "$SUGGESTED_BRANCH"
       fi
@@ -200,7 +221,11 @@ else
   else
     # Use shared feature branch setup script (handles branch creation/switching with JIRA support)
     # feature-branch-setup.sh is copied into this skill's scripts/ directory during install.sh
+    BRANCHES_BEFORE=$(git for-each-ref --format='%(refname:short)' refs/heads)
     bash "$(dirname "$0")/feature-branch-setup.sh" "$FIRST_ISSUE" "${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"}"
+    if ! printf '%s\n' "$BRANCHES_BEFORE" | grep -qxF -- "$(git rev-parse --abbrev-ref HEAD)"; then
+      warn_if_default_behind_origin
+    fi
   fi
 fi
 
