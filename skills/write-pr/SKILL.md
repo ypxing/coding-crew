@@ -6,8 +6,6 @@ argument-hint: "Optional base ref or PR number (defaults to the current branch a
 
 # Write PR
 
-Adapted from mattpocock/skills' `pr` skill (after Dex Horthy's `show-me`, humanlayer/skills).
-
 The reader is a reviewer deciding whether to merge. They have the diff; the body tells them what
 shape the change has, why they can believe it works, and what breaks if it is wrong.
 
