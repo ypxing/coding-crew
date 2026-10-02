@@ -94,6 +94,8 @@ fi
 MERGED_ANY="$(printf '%s' "$PRS" | jq -r --arg base "$DEFAULT_BRANCH" \
   '[.[] | select(.baseRefName == $base)] | length')"
 
+MERGED_PR="$(printf '%s' "$PRS" | jq -r --arg base "$DEFAULT_BRANCH" '[.[] | select(.baseRefName == $base)][0].number // ""')"
+
 if ! ISSUES="$(gh issue list "${REPO_ARGS[@]}" --milestone "$SLUG" --state open --limit 500 \
     --json number,title,labels 2>&1)"; then
   # A milestone not created yet has no issues, and so nothing to close.
@@ -128,6 +130,25 @@ done < <(printf '%s' "$ISSUES" | jq -r \
 
 if [ "$MERGED_ANY" -gt 0 ] && [ "$REMAINING" -eq 0 ]; then
   for N in "${PRDS[@]}"; do
+    BODY=""
+    if ! BODY="$(gh issue view "$N" "${REPO_ARGS[@]}" --json body --jq '.body // ""' 2>&1)"; then
+      echo "close-shipped.sh: gh issue view failed for PRD #$N: $BODY" >&2
+      FAILED=1
+      BODY=""
+    fi
+    # `Origin: #n[, #n…]` — tracker issues the PRD's design started from; they close with it.
+    while read -r O; do
+      [ -n "$O" ] || continue
+      STATE="$(gh issue view "$O" "${REPO_ARGS[@]}" --json state --jq .state 2>/dev/null)" || STATE="OPEN"
+      [ "$STATE" = "CLOSED" ] && continue
+      if OUT="$(gh issue close "$O" "${REPO_ARGS[@]}" --reason completed \
+          --comment "Closed with PRD #$N, shipped in PR #$MERGED_PR, merged into \`$DEFAULT_BRANCH\`." 2>&1)"; then
+        echo "CLOSED: origin #$O (PRD #$N)"
+      else
+        echo "close-shipped.sh: gh issue close failed for origin #$O: $OUT" >&2
+        FAILED=1
+      fi
+    done < <(printf '%s\n' "$BODY" | sed -n 's/^Origin:[[:space:]]*//p' | head -1 | grep -o '#[0-9]*' | tr -d '#')
     if OUT="$(gh issue close "$N" "${REPO_ARGS[@]}" --reason completed \
         --comment "Every issue in this feature has shipped." 2>&1)"; then
       echo "CLOSED: PRD #$N"

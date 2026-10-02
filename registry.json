@@ -79,7 +79,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.7.3",
+      "version": "2.7.4",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -192,7 +192,7 @@
       }
     },
     "to-prd": {
-      "version": "1.4.0",
+      "version": "1.4.1",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",
