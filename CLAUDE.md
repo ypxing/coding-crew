@@ -34,6 +34,9 @@ bats tests/*.bats
 # After editing crew-grill/crew-brainstorm: behavioural A/B (base ref vs worktree), judged blind; costs API money
 node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # drop --dry-run to run
 
+# Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolve registry version / CHANGELOG append conflicts, bump versions to sit above main's
+scripts/sync-pr-with-main.sh <branch>
+
 # Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed
 scripts/cut-release.sh --dry-run   # verify, then re-run without --dry-run to tag and push
 ```
