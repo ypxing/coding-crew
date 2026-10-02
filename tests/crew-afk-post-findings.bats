@@ -121,12 +121,17 @@ write_report() { # file branch findings-json
   [ ! -s "$GH_STORE" ]
 }
 
-@test "a Dismissed finding goes under 'Dismissed by triage' with its rationale, and is not re-posted" {
+@test "a triaged finding names its verdict and rationale inline and in the body; an untriaged one names neither" {
   write_report "$REPORT" crew/feat/a '[
-    {"severity":"CRITICAL","location":"src/x.ts:12","criterion":"dismissed one","verdict":"dismiss","rationale":"already guarded"}]'
+    {"severity":"HIGH","location":"src/x.ts:11","criterion":"inline one","verdict":"debatable","rationale":"renames an export"},
+    {"severity":"HIGH","location":"nowhere","criterion":"body one","verdict":"dismiss","rationale":"already guarded"},
+    {"severity":"LOW","location":"nowhere","criterion":"no-verdict one"}]'
   run bash "$POST"
-  [ "$output" = "POSTED: 1 (0 inline)" ]
-  jq -e '.body | contains("### Dismissed by triage") and contains("already guarded") and (contains("### CRITICAL") | not)' "$GH_STORE"
+  [ "$output" = "POSTED: 3 (1 inline)" ]
+  jq -e '.comments[0].body | contains("triage: debatable — renames an export")' "$GH_STORE"
+  jq -e '.body | contains("body one (`crew/feat/a`) — triage: dismiss — already guarded")' "$GH_STORE"
+  jq -e '.body | contains("Dismissed by triage") | not' "$GH_STORE"
+  jq -e '[.body | split("\n")[] | select(contains("no-verdict one"))] | length == 1 and (.[0] | contains("triage") | not)' "$GH_STORE"
   run bash "$POST"
   [ "$output" = "POSTED: 0 (0 inline)" ]
 }
