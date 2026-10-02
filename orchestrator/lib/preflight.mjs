@@ -10,7 +10,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import { ASSET_DIRS, assetDir } from "./install-dir.mjs";
 import * as local from "./trackers/local.mjs";
@@ -130,6 +130,35 @@ export async function lintIssues(ctx) {
   }
   ctx.log(`LINT: pass${warnings.length ? ` (${warnings.length} warning${warnings.length > 1 ? "s" : ""})` : ""}`);
   return { status: "pass", errors: [], warnings };
+}
+
+/**
+ * An issue that became ready mid-run (loop.mjs's idle-slot poll): lints the set and blocks, for this
+ * run only, each of `issues` that carries an ERROR — the same bar preflight holds the initial set to,
+ * except that one bad issue must not stop the run. Returns the slugs blocked. A checker that could
+ * not run blocks nothing (as in lintIssues).
+ */
+export async function lintMidRunIssues(ctx, issues) {
+  const { sprint, effects, options } = ctx;
+  if (options?.dryRun || !issues.length) return [];
+  const lint = await lintIssues(ctx);
+  if (lint.status !== "fail") return [];
+  const blocked = [];
+  for (const issue of issues) {
+    const name = issue.path ? basename(issue.path) : `${issue.number}-${issue.slug}.md`;
+    const mine = lint.errors.filter((e) => {
+      const file = /^ERROR (.+?):/.exec(e)?.[1];
+      return file && basename(file) === name;
+    });
+    if (!mine.length) continue;
+    const reason = `lint: ${mine.map((e) => e.replace(/^ERROR [^:]*:\s*/, "")).join("; ")}`;
+    ctx.log(`[LINT-BLOCKED] slug=${issue.slug} — ${reason}`, "warn");
+    await writeTrackerSection(effects, issue, "Blocked", `Mid-run lint: ${reason}`, { append: true });
+    sprint.blocked(issue.slug, null, reason);
+    sprint.markBlockedThisRun(issue.slug);
+    blocked.push(issue.slug);
+  }
+  return blocked;
 }
 
 /** The stop message for a structurally broken issue set: each ERROR line verbatim. */

@@ -105,6 +105,12 @@ AC receipt → promote → merge → close. Deps sit there because that one posi
 consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any
 gate whose receipt already matches the branch tip (`gatesAtTip`).
 
+Idle-slot polling (`--poll-interval <seconds>`, default 30, `0` = off): while work is in flight and a slot is idle,
+`loop.mjs` lists the tracker once per interval (one listing however many slots are idle) and starts any issue made
+ready mid-run. An issue not seen before is first linted (`lintMidRunIssues`, the same `lint-issues.sh`); an `ERROR`
+blocks it for this run only (named in the summary) and never stops the run or the others. Fix issues this run created
+are not re-linted. Polling stops when nothing is in flight; with `0`, a new issue is claimed only when an attempt ends.
+
 Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the assets under
 `CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
 `orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked

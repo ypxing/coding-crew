@@ -33,6 +33,10 @@
  *                                           PRD.md after Phase 1; `fix` queues ✗ missing gaps
  *                                           for Phase 2 (--coverage: old name, means `report`)
  *   --max-parallel <n>                     [maxParallel] concurrent coders (the coder runtime's default)
+ *   --poll-interval <seconds>              default 30; while work is in flight and a slot is idle, list
+ *                                           the tracker once per interval and start any issue made
+ *                                           ready mid-run (linted first; an ERROR blocks it for this
+ *                                           run only). 0 = claim new issues only when an attempt ends
  *   --coder-timeout <minutes>              [timeouts.coder, 45] a hung coder cannot hang the sprint
  *                                           (--worker-timeout: old name)
  *   --reviewer-timeout <minutes>           [timeouts.reviewer, 20] (--review-timeout, the old
@@ -140,6 +144,7 @@ function parseArgs(argv) {
     cli: { timeouts: {} },
     flagOf: {}, // setting → the flag that set it, when more than one can (for error text)
     maxRounds: null,
+    pollInterval: 30,
     commands: true,
     allowDirty: false,
     reclaim: false,
@@ -167,6 +172,7 @@ function parseArgs(argv) {
       case "--prd-audit": o.cli.PRDAudit = value(); break;
       case "--coverage": o.cli.PRDAudit = "report"; break;
       case "--max-parallel": o.cli.maxParallel = Number(args.shift()); break;
+      case "--poll-interval": o.pollInterval = Number(args.shift()); break;
       case "--pane-host": o.cli.paneHost = value(); break;
       case "--coder-timeout": case "--worker-timeout":
         o.cli.timeouts.coder = Number(args.shift());
@@ -449,7 +455,7 @@ async function main() {
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
-        "  [--max-rounds N] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
+        "  [--max-rounds N] [--poll-interval SEC] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
         "  [--allow-dirty]\n" +
         "  [--reclaim]  (take over a github-tracker feature lease held by a run that is dead)\n" +
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
@@ -588,6 +594,7 @@ async function main() {
     for (const line of crewTable(options.crew, loaded.origin)) console.log(line);
     const tag = (k) => (loaded.origin[k] ? `  [${loaded.origin[k]}]` : "");
     console.log(`parallel:  ${options.parallel}${tag("maxParallel")}`);
+    console.log(`poll:      ${options.pollInterval > 0 ? `every ${options.pollInterval}s while a slot is idle` : "off (--poll-interval 0)"}`);
     console.log(`findings:  fix ${{ none: "none", actionable: "every Actionable finding" }[options.fixFindings] ?? `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
     console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
