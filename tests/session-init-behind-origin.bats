@@ -40,7 +40,7 @@ installed_scripts() {
 
 # origin = local bare repo seeded from main; "other" is a second clone used to advance it.
 make_origin() {
-  git init -q --bare "$TEMP_DIR/origin.git"
+  git init -q --bare -b main "$TEMP_DIR/origin.git"
   git remote add origin "$TEMP_DIR/origin.git"
   git push -q origin HEAD:refs/heads/main
   git clone -q "$TEMP_DIR/origin.git" "$TEMP_DIR/other"
