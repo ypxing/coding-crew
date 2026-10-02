@@ -119,7 +119,7 @@ test("the reviewer protocol states the findings shape the parser promotes from",
   const parsed = parseReviewReport("## Branch: crew/f/x (x)", sidecar);
   assert.equal(parsed.verdict, "all-met");
   assert.deepEqual(parsed.findings, [
-    { severity: "CRITICAL", location: "src/db.ts:7", criterion: "Parameterise the query", explicit: true },
+    { severity: "CRITICAL", location: "src/db.ts:7", criterion: "Parameterise the query", issue: "", explicit: true },
   ]);
 });
 

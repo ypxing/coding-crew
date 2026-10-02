@@ -198,7 +198,7 @@ and findings are still reported — the branch returns to a worker with them, un
 `"environment"` (the dispatch says when). `findings` is `[]` when
 there are none; never omit the block itself for a clean branch.
 
-Every finding needs `severity`, `location` (`file:line`), `issue` (the problem, in one sentence a reader can act on without the criterion), and **one verifiable fix criterion** — the
+Every finding needs `severity`, `location` (`file:line`), `issue` (the problem, one sentence), and **one verifiable fix criterion** — the
 acceptance criterion a fix worker would be given, because that is what it becomes. After the json
 block, add your usual prose per finding, in severity order (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`):
 
