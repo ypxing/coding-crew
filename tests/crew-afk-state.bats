@@ -426,6 +426,24 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [[ "$output" == *"a: not_run lint,typecheck"* ]]
 }
 
+@test "crew-summary does not count a triage-dismissed finding as needing triage" {
+  init_sprint calc
+  mkdir -p .scratch/calc/reviews
+  write_verdict_report() {
+    jq -n --argjson f "$1" '{branch: "crew/calc/a", slug: "a", verdict: "all-met", findings: $f}' > v.json
+    { printf '## Branch: crew/calc/a (a)\n\n```json\n'; cat v.json; printf '\n```\n'; } > .scratch/calc/reviews/sprint-review-1.md
+  }
+  write_verdict_report '[{"severity":"HIGH","location":"a.py:1","criterion":"x","verdict":"dismiss","rationale":"guarded"}]'
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" != *"still need triage"* ]]
+  [[ "$output" == *"1 finding(s) dismissed by triage"*"sprint-review-1.md"* ]]
+
+  write_verdict_report '[{"severity":"HIGH","location":"a.py:1","criterion":"x","verdict":"dismiss","rationale":"guarded"},{"severity":"MEDIUM","location":"a.py:2","criterion":"y","verdict":"debatable","rationale":"api"}]'
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *"1 review finding(s) still need triage (MEDIUM=1)."* ]]
+  [[ "$output" == *"1 finding(s) dismissed by triage"* ]]
+}
+
 @test "crew-summary reports open findings with a real count" {
   init_sprint calc
   mkdir -p .scratch/calc/reviews

@@ -893,11 +893,14 @@ cmd_remind() {
   open_json=$(open_findings_json "$rollup" "${reports[@]}")
 
   local totals crit high med low total breakdown
+  # A finding triage dismissed is not "still needing triage": it is counted apart (DISMISSED) and
+  # left out of the total and its severity breakdown.
   totals=$(jq -r '
-    [(map(select(.severity == "CRITICAL")) | length),
-     (map(select(.severity == "HIGH")) | length),
-     (map(select(.severity == "MEDIUM")) | length),
-     (map(select(.severity == "LOW")) | length)] | @tsv
+    map(select(.verdict != "dismiss")) as $o
+    | [($o | map(select(.severity == "CRITICAL")) | length),
+       ($o | map(select(.severity == "HIGH")) | length),
+       ($o | map(select(.severity == "MEDIUM")) | length),
+       ($o | map(select(.severity == "LOW")) | length)] | @tsv
   ' <<< "$open_json")
   IFS=$'\t' read -r crit high med low <<< "$totals"
   total=$((crit + high + med + low))
@@ -907,8 +910,14 @@ cmd_remind() {
   [ "$med" -gt 0 ] && breakdown="${breakdown:+$breakdown, }MEDIUM=$med"
   [ "$low" -gt 0 ] && breakdown="${breakdown:+$breakdown, }LOW=$low"
 
+  local dismissed
+  dismissed=$(jq '[.[] | select(.verdict == "dismiss")] | length' <<< "$open_json")
   if [ "$total" -eq 0 ]; then
     echo "FINDINGS: none"
+    if [ "${dismissed:-0}" -gt 0 ]; then
+      verdict_lines dismiss DISMISSED "triage's rationale, collapsed" <<< "$open_json"
+      printf 'report: %s\n' "${reports[@]}"
+    fi
   else
     echo "FINDINGS: open=$total ($breakdown)"
     # What a human decides first: the findings triage judged Debatable. An Actionable one still
@@ -936,7 +945,7 @@ cmd_remind() {
     done
     # The report paths are printed with the findings line above; when there are no
     # findings, the gap lines are the only reason to name the report, so print them here.
-    if [ "$total" -eq 0 ]; then
+    if [ "$total" -eq 0 ] && [ "${dismissed:-0}" -eq 0 ]; then
       printf 'report: %s\n' "${reports[@]}"
     fi
   fi
