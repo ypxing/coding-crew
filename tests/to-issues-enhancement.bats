@@ -147,15 +147,29 @@ setup() {
 }
 
 @test "to-issues quiz: ordered outlier list then one approve/adjust prompt; the five generic questions are gone" {
-  local a b c d e f
+  local a b c d e f g
   a=$(grep -n 'Contradicted assumptions' "$SKILL_FILE" | head -1 | cut -d: -f1)
   b=$(grep -n "PRD's \`## Assumptions\`" "$SKILL_FILE" | head -1 | cut -d: -f1)
   c=$(grep -n 'PRD IDs no slice covers' "$SKILL_FILE" | head -1 | cut -d: -f1)
   d=$(grep -n 'Slices outside the criteria range' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  e=$(grep -n 'Shared surfaces' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  f=$(grep -n 'HITL choices' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  [ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ -n "$d" ] && [ -n "$e" ] && [ -n "$f" ]
-  [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && [ "$c" -lt "$d" ] && [ "$d" -lt "$e" ] && [ "$e" -lt "$f" ]
+  e=$(grep -n 'Edges and merges the edge rule produced' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  f=$(grep -n '\*\*Seam count\*\*' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  g=$(grep -n 'HITL choices' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  # One check per line: bats fails only on the last command of an && list, so a chained
+  # empty match here passed silently.
+  [ -n "$a" ]
+  [ -n "$b" ]
+  [ -n "$c" ]
+  [ -n "$d" ]
+  [ -n "$e" ]
+  [ -n "$f" ]
+  [ -n "$g" ]
+  [ "$a" -lt "$b" ]
+  [ "$b" -lt "$c" ]
+  [ "$c" -lt "$d" ]
+  [ "$d" -lt "$e" ]
+  [ "$e" -lt "$f" ]
+  [ "$f" -lt "$g" ]
   grep -qiE 'one approve/adjust prompt' "$SKILL_FILE"
   ! grep -qF 'Does the granularity feel right' "$SKILL_FILE"
   ! grep -qF 'Are the blocking edges correct' "$SKILL_FILE"
@@ -201,4 +215,56 @@ setup() {
   grep -qF 'copied into committed test fixtures' "$SKILL_FILE"
   grep -qF 'never read from a live or gitignored directory' "$SKILL_FILE"
   grep -qF 'no such examples (a new format) → no such criterion' "$SKILL_FILE"
+}
+
+@test "expand-contract reference has no integration branch and directs single issue or ready-for-human" {
+  f="$SCRIPT_DIR/skills/to-issues/references/expand-contract.md"
+  ! grep -qi 'integration branch\|integrate-and-verify' "$f"
+  grep -q 'one fresh context window' "$f"
+  grep -q 'Status: ready-for-human' "$f"
+  grep -q '### Why a person' "$f"
+  grep -q 'per-branch verify' "$f"
+}
+
+@test "to-issues step 1 reads a referenced issue's comments via gh issue view --comments" {
+  grep -q 'gh issue view <n> --comments' "$SKILL_FILE"
+}
+
+@test "github tracker fetch operation is unchanged" {
+  grep -q 'gh issue view <number> \[--repo owner/name\] --json number,title,body,labels,state$' "$SCRIPT_DIR/docs/templates/trackers/github.md"
+}
+
+# --- Edge rule, overhead, quiz items (B1-B3, D3), anchored on the skill's own headings ---
+
+@test "to-issues B1: edge rule has four rows in order, with 'at most 8' criteria and small-file merge" {
+  section=$(awk '/^### 4\. Draft vertical slices/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  rows=$(echo "$section" | awk '/^\*\*Edge rule\.\*\*/{f=1;next} f && /^[0-9]+\. /{print} f && /^$/ && n++>0{exit}')
+  [ "$(echo "$rows" | wc -l | tr -d ' ')" = 4 ]
+  echo "$rows" | sed -n 1p | grep -q '^1\. One slice consumes what the other produces.*`Blocked by`'
+  echo "$rows" | sed -n 2p | grep -q '^2\. The two change the same meaning.*`Blocked by`'
+  echo "$rows" | sed -n 3p | grep -q '^3\. They edit the same small file.*at most 8 acceptance criteria.*merge them into one slice'
+  echo "$rows" | sed -n 4p | grep -q '^4\. Anything else.*parallel'
+  echo "$section" | grep -q 'first match wins'
+}
+
+@test "to-issues D3: per-slice overhead sentence precedes the edge rule" {
+  section=$(awk '/^### 4\. Draft vertical slices/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$section" | grep -q 'Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge'
+  o=$(echo "$section" | grep -n 'Every slice costs fixed overhead' | cut -d: -f1)
+  e=$(echo "$section" | grep -n 'Edge rule\.' | cut -d: -f1)
+  [ "$o" -lt "$e" ]
+}
+
+@test "to-issues B2: quiz lists each edge/merge with its reason, not a question per shared surface" {
+  quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$quiz" | grep -q '^5\. \*\*Edges and merges the edge rule produced\*\* — one line per edge or merge'
+  echo "$quiz" | grep -q 'naming the slices and the rule row (reason)'
+  echo "$quiz" | grep -q "Don't ask whether an overlap needs an edge"
+}
+
+@test "to-issues B3: quiz asks whether slices can share a seam when more than two distinct seams are named" {
+  quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$quiz" | grep -q '^6\. \*\*Seam count\*\*'
+  echo "$quiz" | grep -q 'name more than two distinct seams'
+  echo "$quiz" | grep -q 'whether some slices can share one seam'
 }

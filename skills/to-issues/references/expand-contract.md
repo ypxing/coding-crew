@@ -8,4 +8,6 @@ Read this when step 4's slicing meets a wide refactor.
 2. **Migrate** — move call sites over in batches (per package, per directory), each batch its own issue blocked by the expand, keeping CI green batch to batch because the old form still exists
 3. **Contract** — delete the old form once no caller remains, blocked by every migrate batch
 
-When even the batches can't stay green independently, let them share an integration branch and block a final integrate-and-verify issue — green is promised only there.
+When migrate batches cannot each pass the checks alone, and together they fit one fresh context window, write them as one issue — a single landable slice.
+
+Otherwise write one `Status: ready-for-human` issue whose `### Why a person` says the batches cannot land green one at a time under crew-afk's per-branch verify. Never write an issue that only goes green after others merge.
