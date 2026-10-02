@@ -64,7 +64,8 @@ while IFS= read -r row; do
   grep -qF "$marker" "$TMP/existing.txt" && continue
   loc=$(jq -r '.location' <<< "$row")
   path=""; line=0
-  if [[ "$loc" =~ ^(.+):([0-9]+)$ ]] && grep -qxF "${BASH_REMATCH[1]}:${BASH_REMATCH[2]}" "$TMP/diff-lines.txt"; then
+  verdict=$(jq -r '.verdict // ""' <<< "$row")
+  if [ "$verdict" != "dismiss" ] && [[ "$loc" =~ ^(.+):([0-9]+)$ ]] && grep -qxF "${BASH_REMATCH[1]}:${BASH_REMATCH[2]}" "$TMP/diff-lines.txt"; then
     path="${BASH_REMATCH[1]}"; line="${BASH_REMATCH[2]}"
   fi
   jq -c --arg m "$marker" --arg p "$path" --argjson l "$line" '. + {marker: $m, path: $p, line: $l}' <<< "$row" >> "$TMP/annotated.jsonl"
@@ -78,14 +79,21 @@ fi
 jq -s '
   . as $all
   | ($all | map(select(.path != ""))) as $inline
-  | ($all | map(select(.path == ""))) as $rest
-  | ($rest | if length == 0 then "" else
+  | ($all | map(select(.path == "" and .verdict != "dismiss"))) as $rest
+  | ($all | map(select(.verdict == "dismiss"))) as $dis
+  | (($rest | if length == 0 then "" else
       "\n\n" + ([ "CRITICAL", "HIGH", "MEDIUM", "LOW" ]
         | map(. as $sev | $rest | map(select(.severity == $sev)) | select(length > 0)
             | "### \($sev)\n\n" + (map("- " + (if .location != "" then "`\(.location)` — " else "" end)
                 + .criterion + " (`\(.branch)`) <!-- \(.marker) -->") | join("\n")))
         | join("\n\n"))
-    end) as $list
+    end)
+    + ($dis | if length == 0 then "" else
+        "\n\n### Dismissed by triage\n\n" + (map("- " + (if .location != "" then "`\(.location)` — " else "" end)
+          + .criterion + " (`\(.branch)`, \(.severity))"
+          + (if (.rationale // "") != "" then " — why: " + .rationale else "" end)
+          + " <!-- \(.marker) -->") | join("\n"))
+      end)) as $list
   | {
       event: "COMMENT",
       body: ("crew-afk review findings. Nothing here is acted on until a human replies." + $list),

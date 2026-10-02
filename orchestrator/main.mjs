@@ -71,6 +71,9 @@
  *                                           is on another host or otherwise not provably dead. A
  *                                           lease left by a dead pid on this host is reclaimed
  *                                           without it. Use only when the holding run is gone
+ *   --no-sync-main                         skip merging origin's default branch into a resumed feature
+ *                                           branch that lacks it (done once, before the baseline;
+ *                                           a conflict there stops the run)
  *   --allow-dirty                          run even though tracked files in the main checkout
  *                                           have uncommitted changes (a merge that touches one
  *                                           still blocks that issue, as main-tree-dirty)
@@ -129,6 +132,8 @@ import {
   missingAssets,
   missingAssetsMessage,
   runBaseline,
+  syncConflictMessage,
+  syncFeatureBranch,
 } from "./lib/preflight.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -147,6 +152,7 @@ function parseArgs(argv) {
     pollInterval: 30,
     commands: true,
     allowDirty: false,
+    syncMain: true,
     reclaim: false,
     dryRun: false,
     passthrough: [],
@@ -202,6 +208,7 @@ function parseArgs(argv) {
       case "--no-integration-check": o.cli.integrationCheck = false; break;
       case "--resume-coder-session": o.cli.resumeCoderSession = true; break;
       case "--allow-dirty": o.allowDirty = true; break;
+      case "--no-sync-main": o.syncMain = false; break;
       case "--reclaim": o.reclaim = true; break;
       case "--dry-run": o.dryRun = true; break;
       case "--jira": o.passthrough.push("--jira", args.shift()); break;
@@ -456,7 +463,7 @@ async function main() {
         "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
         "  [--max-rounds N] [--poll-interval SEC] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
-        "  [--allow-dirty]\n" +
+        "  [--allow-dirty] [--no-sync-main]\n" +
         "  [--reclaim]  (take over a github-tracker feature lease held by a run that is dead)\n" +
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
@@ -769,6 +776,16 @@ async function main() {
       } catch (err) {
         console.error(`crew-afk: could not open the ${options.paneHost} log tab: ${err.message} — continuing without one.`);
       }
+    }
+
+    // Before anything reads the feature branch: a resumed branch whose earlier work was
+    // squash-merged lacks origin's default branch, so its baseline and version checks measure
+    // from a stale merge-base. A conflict stops the run; no origin or no fetch does not.
+    const sync = syncFeatureBranch({ sprint, effects, options, log: emit });
+    if (sync.status === "conflict") {
+      fatal(syncConflictMessage(sprint.featureBranch, sync.output));
+      exitCode = 1;
+      return exitCode;
     }
 
     // Before command discovery (a model call) and any worktree: a cycle or an unmatched

@@ -362,6 +362,11 @@ if [ -n "$OPEN_LINE" ]; then
 elif [ -z "$GAP_LINE" ]; then
   echo "No open review findings."
 fi
+# Findings triage dismissed are not "still need triage" — named here, with the report that holds the rationale.
+DISMISSED_N=$(printf '%s\n' "$REMIND" | sed -n 's/^DISMISSED: \([0-9]*\) .*/\1/p')
+if [ -n "$DISMISSED_N" ]; then
+  echo "$DISMISSED_N finding(s) dismissed by triage (rationale in the report): $REPORTS"
+fi
 
 if [ -n "$GAP_LINE" ]; then
   # A branch this sprint actually merged is proof its review completed with an all-met

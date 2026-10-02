@@ -241,7 +241,7 @@ verdict_report() {
   verdict_report
   run bash "$PROMOTE" remind --feature-slug feat
   [ "$status" -eq 0 ]
-  [[ "$output" == *"FINDINGS: open=4 (HIGH=1, MEDIUM=1, LOW=2)"* ]]
+  [[ "$output" == *"FINDINGS: open=3 (HIGH=1, LOW=2)"* ]]
   [[ "$output" == *"DEBATABLE: 1 (decide these first)"* ]]
   [[ "$output" == *"debatable: crew/feat/a [HIGH] src/y.ts:40 — Rename the exported helper — why: public contract change"* ]]
   [[ "$output" == *"ACTIONABLE: 1 (not promoted)"* ]]
@@ -266,7 +266,7 @@ verdict_report() {
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^- crew/feat/a: actionable → ' "$REPORT"
   run bash "$PROMOTE" remind --feature-slug feat
-  [[ "$output" == *"FINDINGS: open=3 (HIGH=1, MEDIUM=1, LOW=1)"* ]]
+  [[ "$output" == *"FINDINGS: open=2 (HIGH=1, LOW=1)"* ]]
   [[ "$output" != *"ACTIONABLE"* ]]
   [[ "$output" == *"DEBATABLE: 1"* && "$output" == *"DISMISSED: 1"* ]]
   run bash "$PROMOTE" open --feature-slug feat
@@ -279,7 +279,7 @@ verdict_report() {
   CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   run bash "$PROMOTE" remind --feature-slug feat
-  [[ "$output" == *"FINDINGS: open=3 (MEDIUM=1, LOW=2)"* ]]
+  [[ "$output" == *"FINDINGS: open=2 (LOW=2)"* ]]
 }
 
 @test "the summary leads its next step with the Debatable findings" {

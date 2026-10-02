@@ -7,6 +7,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 ## [Unreleased]
 
 - `crew-afk`: `--poll-interval <seconds>` (default 30, `0` = off) — idle slots poll the tracker for issues made ready mid-run (one listing per interval), lint them first and block a bad one for the run only.
+- `crew-afk`: a resumed feature branch that lacks `origin/<default>` (its earlier work was squash-merged) gets it merged in once per run, before the baseline, by `sync-feature-branch.sh`. Registry version / CHANGELOG-append conflicts are auto-resolved; any other conflict aborts the merge and stops the run. No `origin` or no fetch skips silently; `--no-sync-main` opts out and `--dry-run` only reports.
 - `to-issues`, `upgrade-deps`: a shared `human-issue` fragment defines the `## For a human` block, inlined where each writes a `ready-for-human` issue (Kind A / Kind B, `Check:` / `Undo:` per step).
 - `to-issues` lint: `lint-issues.sh` warns when a `Status: ready-for-human` issue lacks the `## For a human` block or any of its five `###` parts, and no longer asks such issues for `## What to build` / `## Implements`. Adds the rewritten #106 as the `human/` fixture.
 - `write-pr` (new skill): writes a PR title (what the change does, not a slug) and body for a human reviewer, adapted from mattpocock/skills' `pr`. It has three

@@ -79,6 +79,10 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
   `registry.json` entry `version`s (higher semver kept) and `CHANGELOG.md` entries both sides appended (both kept,
   feature side first) it stages the resolution, which `merge-branches.sh` commits, tracing each decision; anything else exits 1
   and the merge is aborted as before
+- `sync-feature-branch.sh` — `preflight.mjs`'s `syncFeatureBranch`, once per run: fetches `origin/<default>` and, when the
+  resumed feature branch lacks it (earlier work squash-merged), merges it in (`resolve-merge-conflicts.sh` for
+  registry versions / CHANGELOG appends; any other conflict aborts cleanly and exits 1). Never bumps versions, never
+  pushes; no `origin`/fetch/`origin/<default>` is a silent skip. `--dry-run` only reports
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
 - `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
   `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
@@ -111,7 +115,9 @@ ready mid-run. An issue not seen before is first linted (`lintMidRunIssues`, the
 blocks it for this run only (named in the summary) and never stops the run or the others. Fix issues this run created
 are not re-linted. Polling stops when nothing is in flight; with `0`, a new issue is claimed only when an attempt ends.
 
-Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the assets under
+Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the resumed feature branch gets `origin/<default>`
+merged in when it lacks it (`sync-feature-branch.sh`; a conflict beyond registry versions / CHANGELOG appends stops the
+run, `--no-sync-main` skips; runs after the dirty check, before lint and the baseline); the assets under
 `CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
 `orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked
 changes (`--allow-dirty`), the feature branch must pass its own checks in a throwaway
