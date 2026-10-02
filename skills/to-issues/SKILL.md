@@ -45,13 +45,24 @@ Not optional. If you have not already explored the code each slice will touch, d
 
 While exploring, look for **prefactoring opportunities** — changes that would make the feature implementation significantly easier. "Make the change easy, then make the easy change." Prefactoring issues must be sliced and sequenced first so downstream feature issues can build on a clean foundation.
 
-Also note any **shared surfaces**: a schema/table, a shared type, or an existing function/module that more than one slice would need to modify. This is a narrower thing than "touches the same file" — two slices adding independent, non-overlapping code to the same file is the normal shape of vertical slicing and merges cleanly; a shared surface is where two slices would plausibly change the *same specific behavior*. Carry any you find into the quiz step below; don't turn them into blocking edges yourself — whether a shared surface needs sequencing or is safe to leave parallel is a judgment call for the quiz, not something to guess silently here.
+Also note any **shared surfaces**: a schema/table, a shared type, or an existing function/module that more than one slice would need to modify. This is a narrower thing than "touches the same file": two slices adding code to separate parts of a file merge cleanly, while a shared surface is where two slices would plausibly change the *same specific behavior*. Carry any you find into step 4, and apply its edge rule to each one.
 
 ### 4. Draft vertical slices
 
 Break the plan into **tracer bullet** issues. Each issue is a thin vertical slice that cuts through ALL integration layers end-to-end, NOT a horizontal slice of one layer.
 
 Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an architectural decision or a design review. AFK slices can be implemented and merged without human interaction. Prefer AFK over HITL where possible.
+
+Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge. Many thin slices pay it many times, so do not split below the floor in the rules.
+
+**Edge rule.** For each pair of slices that share a surface or a file, take the first row that matches (first match wins):
+
+1. One slice consumes what the other produces (a signature, shape or output) → `Blocked by`.
+2. The two change the same meaning (the same behaviour, function or rule) → `Blocked by`.
+3. They edit the same small file and together carry at most 8 acceptance criteria → merge them into one slice.
+4. Anything else → leave them parallel.
+
+A small file is one a coder can read whole in a single pass alongside its tests, without scrolling or searching (no line count). Parallel is the default because edits to separate parts of a file merge cleanly, and a needless edge serializes work. Same-meaning edits are sequenced because a conflict is retried only for the conflict, run one at a time, and each retry is spent from the retry cap.
 
 <vertical-slice-rules>
 - A slice is one externally observable behaviour, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a rendered output, a bats run). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviour needs
@@ -86,8 +97,9 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 2. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct.
 3. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
 4. **Slices outside the criteria range** — any slice that would carry fewer than 3 or more than 8 acceptance criteria: merge it, split it, or keep it as is.
-5. **Shared surfaces** — one line per surface from step 3, naming the slices that touch it: is the overlap additive (safe to leave parallel), or does it need a `Blocked by` edge (or a merge)? Don't add the edge yourself; this is exactly the call a file-overlap heuristic gets wrong, because it can't tell "two slices editing the same file in unrelated ways" from "two slices that will conflict."
-6. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
+5. **Edges and merges the edge rule produced** — one line per edge or merge from step 4, naming the slices and the rule row (reason) that produced it, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
+6. **Seam count** — when the slices' `## Implements` name more than two distinct seams, ask whether some slices can share one seam (and so merge or share a test).
+7. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
 
 Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, merging or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
 

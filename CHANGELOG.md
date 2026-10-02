@@ -6,6 +6,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `to-issues`: step 4 states the per-slice overhead and a first-match-wins edge rule (consumes / same meaning → `Blocked by`; same small file within 8 criteria → merge; else parallel); step 3 applies it, and the quiz lists each edge/merge with its reason and asks about >2 distinct seams.
 - `to-issues`, `upgrade-deps`: a shared `human-issue` fragment defines the `## For a human` block, inlined where each writes a `ready-for-human` issue (Kind A / Kind B, `Check:` / `Undo:` per step).
 - `to-issues` lint: `lint-issues.sh` warns when a `Status: ready-for-human` issue lacks the `## For a human` block or any of its five `###` parts, and no longer asks such issues for `## What to build` / `## Implements`. Adds the rewritten #106 as the `human/` fixture.
 - `write-pr` (new skill): writes a PR title (what the change does, not a slug) and body for a human reviewer, adapted from mattpocock/skills' `pr`. It has three
