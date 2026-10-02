@@ -195,6 +195,10 @@ bash "<skill-dir>/scripts/commit-changes.sh" \
 Commit message quality doesn't matter here — these checkpoints get squashed away with the rest of
 the branch's history before merge. Getting one on disk before the next cycle does.
 
+Before committing, run the affected tests (the ones for the files you touched) with the project's
+test command, scoped to those files. When `CREW_DEFER_FULL_CHECKS=1` is set, Step 5 skips the full
+test run, so this scoped run is the only test run before the commit.
+
 ### 4.5. Update documentation
 
 After implementation, check whether the change affects anything user-facing. Ask:
@@ -229,7 +233,9 @@ every other key with a command (coverage, integration) — each through `run.sh`
 A `NOT RUN: no command found` is the cache's own answer that no local command exists: report it,
 do not re-check CLAUDE.md/Makefile instead.
 
-Report `<key>: deferred` as `deferred`.
+When `CREW_DEFER_FULL_CHECKS=1` is set, `run-checks.sh` prints `<key>: deferred — …` for every check
+except `typecheck` and `lint` (the full `test`, coverage, integration): it did not run, because the
+verify gate runs it on this branch. Report that key as `deferred`, not `pass`.
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
