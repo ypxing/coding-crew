@@ -1,0 +1,6 @@
+CHANGELOG.md
+registry.json
+skills/crew-afk/references/findings-promotion.md
+skills/crew-afk/scripts/promote-findings.sh
+tests/orchestrator/sprint-integration.test.mjs
+tests/promote-findings-github.bats

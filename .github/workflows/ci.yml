@@ -34,6 +34,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # macOS ships bash 3.2 at /bin/bash (Apple froze it there after the GPLv2 -> GPLv3
       # switch). install.sh's own re-exec guard and several scripts (declare -A, empty
