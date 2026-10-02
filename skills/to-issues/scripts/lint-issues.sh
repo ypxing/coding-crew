@@ -17,7 +17,10 @@
 #        the set; --deps edges that differ from the `## Blocked by` prose; no `## Acceptance criteria`.
 # WARN:  acceptance-criteria count outside 3-8; a **D<n>**/**B<n>** ID in --prd that no issue's
 #        `## Implements` names; an issue another issue blocks on with no `### Exposes:` under
-#        `## Interfaces`; no `## What to build`; no `## Implements`.
+#        `## Interfaces`; no `## What to build`; no `## Implements`. A `Status: ready-for-human`
+#        issue instead gets: no `## For a human` section, or that section missing one of its five
+#        `###` parts (Why a person, What changes, Steps, If skipped or done wrong, Done when); it is
+#        exempt from the `## What to build` / `## Implements` warnings.
 #
 # The PRD ID contract: a line starting `- **D<n>**` or `- **B<n>**`. Without --prd (or with a PRD
 # that has no such IDs) the coverage check is skipped silently.
@@ -163,8 +166,21 @@ for idx in "${!NAMES[@]}"; do
     err "$file" "no ## Acceptance criteria section"
   fi
 
-  has_section "$file" "What to build" || warn "$file" "no ## What to build section"
-  has_section "$file" "Implements" || warn "$file" "no ## Implements section"
+  if grep -q -E '^[Ss]tatus:[[:space:]]*ready-for-human[[:space:]]*$' "$file"; then
+    if has_section "$file" "For a human"; then
+      for part in "Why a person" "What changes" "Steps" "If skipped or done wrong" "Done when"; do
+        section "$file" "For a human" | PART="$part" awk '
+          /^[ \t]*```/ { fence = !fence }
+          !fence && /^###[ \t]+/ { h = $0; sub(/^###[ \t]+/, "", h); sub(/[ \t:]+$/, "", h); if (tolower(h) == tolower(ENVIRON["PART"])) found = 1 }
+          END { exit !found }' || warn "$file" "## For a human has no ### $part"
+      done
+    else
+      warn "$file" "ready-for-human issue has no ## For a human section"
+    fi
+  else
+    has_section "$file" "What to build" || warn "$file" "no ## What to build section"
+    has_section "$file" "Implements" || warn "$file" "no ## Implements section"
+  fi
 
   # Blocked by
   resolved=""

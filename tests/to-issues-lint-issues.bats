@@ -215,3 +215,63 @@ J
   [ -x "$target/.coding-crew/to-issues/scripts/lint-issues.sh" ]
   [ -x "$target/.claude/skills/to-issues/scripts/lint-issues.sh" ]
 }
+
+# --- ready-for-human issues ---
+
+H106="tests/fixtures/lint-issues/human/issues/106-enable-main-ruleset.md"
+
+@test "human fixture (#106 rewritten): no output, exit 0" {
+  run bash "$LINT" --issue "$REPO_ROOT/$H106"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "human fixture: ruleset.json block parses and holds all five rule types" {
+  json=$(sed -n '/^   ```json/,/^   ```$/p' "$REPO_ROOT/$H106" | sed '1d;$d')
+  run jq -r '[.rules[].type] | sort | join(",")' <<< "$json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "deletion,non_fast_forward,pull_request,required_linear_history,required_status_checks" ]
+}
+
+@test "ready-for-human without ## For a human: one WARN, no What to build / Implements WARN" {
+  f="$BATS_TEST_TMPDIR/h.md"
+  printf 'Status: ready-for-human\n\n## Acceptance criteria\n\n- [ ] a\n- [ ] b\n- [ ] c\n' > "$f"
+  run bash "$LINT" --issue "$f"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ready-for-human issue has no ## For a human section"* ]]
+  [[ "$output" != *"What to build"* ]]
+  [[ "$output" != *"Implements"* ]]
+}
+
+@test "ready-for-human missing a ### part: WARN names it" {
+  f="$BATS_TEST_TMPDIR/h.md"
+  grep -v '^### Done when' "$REPO_ROOT/$H106" > "$f"
+  run bash "$LINT" --issue "$f"
+  [ "$status" -eq 0 ]
+  [ "$output" = "WARN $f: ## For a human has no ### Done when" ]
+}
+
+@test "ready-for-human: a ### Steps heading inside a code fence does not count" {
+  f="$BATS_TEST_TMPDIR/h.md"
+  sed 's/^### Steps$/```\n### Steps\n```/' "$REPO_ROOT/$H106" > "$f"
+  run bash "$LINT" --issue "$f"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"## For a human has no ### Steps"* ]]
+}
+
+@test "ready-for-human without ## Acceptance criteria: still an ERROR, exit 1" {
+  f="$BATS_TEST_TMPDIR/h.md"
+  sed '/^## Acceptance criteria/,$d' "$REPO_ROOT/$H106" > "$f"
+  run bash "$LINT" --issue "$f"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ERROR $f: no ## Acceptance criteria section"* ]]
+}
+
+@test "ready-for-agent issue missing What to build / Implements still gets both WARNs" {
+  f="$BATS_TEST_TMPDIR/a.md"
+  printf 'Status: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] a\n- [ ] b\n- [ ] c\n' > "$f"
+  run bash "$LINT" --issue "$f"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no ## What to build section"* ]]
+  [[ "$output" == *"no ## Implements section"* ]]
+}
