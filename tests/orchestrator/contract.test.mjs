@@ -80,7 +80,7 @@ test("the JSON a launcher coder is told to emit round-trips through the parser",
   assert.ok(block, "pi coder has no ```json block");
   const template = block[1]
     .replace(/complete\|partial\|blocked/g, "complete")
-    .replace(/pass\|fail\|not_run/g, "pass")
+    .replace(/pass\|fail\|not_run\|deferred/g, "pass")
     .replace(/"<[^"]*>"/g, '"x"')
     .replace(/\$PROJECT_ROOT/g, "/wt/x")
     .replace(/<[^">]*>/g, "x");

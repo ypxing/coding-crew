@@ -81,7 +81,15 @@ export function resolveAgentFile(platform, mainRoot, agent) {
  */
 export function buildDispatch(platform, spec) {
   const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec;
-  const shared = { cwd, env: { MAIN_ROOT: mainRoot, CREW_ORCHESTRATED: "1" } };
+  const shared = {
+    cwd,
+    env: {
+    MAIN_ROOT: mainRoot,
+    CREW_ORCHESTRATED: "1",
+    // The coder defers the full suite to the verify gate; reviewer/triage never run checks.
+    ...(agent === "crew-coder" ? { CREW_DEFER_FULL_CHECKS: "1" } : {}),
+    },
+  };
 
   // Test/CI seam: one script stands in for every model dispatch, so the whole state
   // machine runs for zero tokens. --report-path lets it write the sidecar report.mjs reads.
