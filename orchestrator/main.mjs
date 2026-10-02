@@ -33,6 +33,10 @@
  *                                           PRD.md after Phase 1; `fix` queues ✗ missing gaps
  *                                           for Phase 2 (--coverage: old name, means `report`)
  *   --max-parallel <n>                     [maxParallel] concurrent coders (the coder runtime's default)
+ *   --poll-interval <seconds>              default 30; while work is in flight and a slot is idle, list
+ *                                           the tracker once per interval and start any issue made
+ *                                           ready mid-run (linted first; an ERROR blocks it for this
+ *                                           run only). 0 = claim new issues only when an attempt ends
  *   --coder-timeout <minutes>              [timeouts.coder, 45] a hung coder cannot hang the sprint
  *                                           (--worker-timeout: old name)
  *   --reviewer-timeout <minutes>           [timeouts.reviewer, 20] (--review-timeout, the old
@@ -67,6 +71,9 @@
  *                                           is on another host or otherwise not provably dead. A
  *                                           lease left by a dead pid on this host is reclaimed
  *                                           without it. Use only when the holding run is gone
+ *   --no-sync-main                         skip merging origin's default branch into a resumed feature
+ *                                           branch that lacks it (done once, before the baseline;
+ *                                           a conflict there stops the run)
  *   --allow-dirty                          run even though tracked files in the main checkout
  *                                           have uncommitted changes (a merge that touches one
  *                                           still blocks that issue, as main-tree-dirty)
@@ -125,6 +132,8 @@ import {
   missingAssets,
   missingAssetsMessage,
   runBaseline,
+  syncConflictMessage,
+  syncFeatureBranch,
 } from "./lib/preflight.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -140,8 +149,10 @@ function parseArgs(argv) {
     cli: { timeouts: {} },
     flagOf: {}, // setting → the flag that set it, when more than one can (for error text)
     maxRounds: null,
+    pollInterval: 30,
     commands: true,
     allowDirty: false,
+    syncMain: true,
     reclaim: false,
     dryRun: false,
     passthrough: [],
@@ -167,6 +178,7 @@ function parseArgs(argv) {
       case "--prd-audit": o.cli.PRDAudit = value(); break;
       case "--coverage": o.cli.PRDAudit = "report"; break;
       case "--max-parallel": o.cli.maxParallel = Number(args.shift()); break;
+      case "--poll-interval": o.pollInterval = Number(args.shift()); break;
       case "--pane-host": o.cli.paneHost = value(); break;
       case "--coder-timeout": case "--worker-timeout":
         o.cli.timeouts.coder = Number(args.shift());
@@ -196,6 +208,7 @@ function parseArgs(argv) {
       case "--no-integration-check": o.cli.integrationCheck = false; break;
       case "--resume-coder-session": o.cli.resumeCoderSession = true; break;
       case "--allow-dirty": o.allowDirty = true; break;
+      case "--no-sync-main": o.syncMain = false; break;
       case "--reclaim": o.reclaim = true; break;
       case "--dry-run": o.dryRun = true; break;
       case "--jira": o.passthrough.push("--jira", args.shift()); break;
@@ -449,8 +462,8 @@ async function main() {
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
-        "  [--max-rounds N] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
-        "  [--allow-dirty]\n" +
+        "  [--max-rounds N] [--poll-interval SEC] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
+        "  [--allow-dirty] [--no-sync-main]\n" +
         "  [--reclaim]  (take over a github-tracker feature lease held by a run that is dead)\n" +
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
@@ -588,6 +601,7 @@ async function main() {
     for (const line of crewTable(options.crew, loaded.origin)) console.log(line);
     const tag = (k) => (loaded.origin[k] ? `  [${loaded.origin[k]}]` : "");
     console.log(`parallel:  ${options.parallel}${tag("maxParallel")}`);
+    console.log(`poll:      ${options.pollInterval > 0 ? `every ${options.pollInterval}s while a slot is idle` : "off (--poll-interval 0)"}`);
     console.log(`findings:  fix ${{ none: "none", actionable: "every Actionable finding" }[options.fixFindings] ?? `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
     console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
@@ -762,6 +776,16 @@ async function main() {
       } catch (err) {
         console.error(`crew-afk: could not open the ${options.paneHost} log tab: ${err.message} — continuing without one.`);
       }
+    }
+
+    // Before anything reads the feature branch: a resumed branch whose earlier work was
+    // squash-merged lacks origin's default branch, so its baseline and version checks measure
+    // from a stale merge-base. A conflict stops the run; no origin or no fetch does not.
+    const sync = syncFeatureBranch({ sprint, effects, options, log: emit });
+    if (sync.status === "conflict") {
+      fatal(syncConflictMessage(sprint.featureBranch, sync.output));
+      exitCode = 1;
+      return exitCode;
     }
 
     // Before command discovery (a model call) and any worktree: a cycle or an unmatched

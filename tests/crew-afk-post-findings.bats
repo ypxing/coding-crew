@@ -120,3 +120,13 @@ write_report() { # file branch findings-json
   [ "$output" = "POSTED: 0 (0 inline)" ]
   [ ! -s "$GH_STORE" ]
 }
+
+@test "a Dismissed finding goes under 'Dismissed by triage' with its rationale, and is not re-posted" {
+  write_report "$REPORT" crew/feat/a '[
+    {"severity":"CRITICAL","location":"src/x.ts:12","criterion":"dismissed one","verdict":"dismiss","rationale":"already guarded"}]'
+  run bash "$POST"
+  [ "$output" = "POSTED: 1 (0 inline)" ]
+  jq -e '.body | contains("### Dismissed by triage") and contains("already guarded") and (contains("### CRITICAL") | not)' "$GH_STORE"
+  run bash "$POST"
+  [ "$output" = "POSTED: 0 (0 inline)" ]
+}

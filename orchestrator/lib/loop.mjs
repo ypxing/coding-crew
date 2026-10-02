@@ -51,7 +51,7 @@ import { getTracker } from "./tracker.mjs";
 import { dispatchPlain } from "./dispatch.mjs";
 import { writeLog } from "./log.mjs";
 import { labelIssue } from "./labels.mjs";
-import { checkRequires, integrationSection, runIntegrationCheck } from "./preflight.mjs";
+import { checkRequires, integrationSection, lintMidRunIssues, runIntegrationCheck } from "./preflight.mjs";
 import { fixIntegration } from "./integration-fix.mjs";
 import { writePrBody } from "./pipeline/pr-body.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
@@ -64,7 +64,9 @@ export async function runSprint(ctx) {
   // this loop dispatches against whichever backend `tracker-config.mjs` names, github or
   // local, instead of always the local file scan `tracker.mjs`'s static re-exports are
   // bound to.
-  const tracker = await getTracker(effects.mainRoot);
+  const tracker = ctx.tracker ?? (await getTracker(effects.mainRoot));
+  // Test seam: the per-issue pipeline stages, replaceable by a stub.
+  const stages = ctx.stages ?? { runWorker, runHousekeeping, checkRequires, lintMidRunIssues };
   const parallel = Math.max(1, options.parallel ?? 1);
   const inFlight = new Set();
   // At most one merge-conflict retry at a time: each resolves against the feature-branch
@@ -90,6 +92,52 @@ export async function runSprint(ctx) {
   };
   const waitForChange = () => new Promise((resolve) => waiters.push(resolve));
 
+  // Idle-slot polling (--poll-interval): while work is in flight and a slot is idle, one poller lists
+  // the tracker once per interval and hands what it found to that many idle workers. 0 = off.
+  const pollMs = Math.max(0, options.pollInterval ?? 0) * 1000;
+  const sleep = ctx.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms).unref?.()));
+  let pollerId = 0;
+  let pollerRunning = false;
+  let handoff = [];
+  // Slugs already seen (and linted, or exempt) — the baseline a mid-run newcomer is measured against.
+  const seen = new Set();
+  // Fix issues this run created (github numbers): never re-linted.
+  const ownRefs = new Set();
+  const seenNow = () => {
+    for (const i of tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug })) seen.add(i.slug);
+  };
+
+  async function pollOnce() {
+    const issues = tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug });
+    const fresh = issues.filter((i) => !seen.has(i.slug));
+    for (const i of issues) seen.add(i.slug);
+    const linted = fresh.filter((i) => !ownRefs.has(i.number));
+    if (linted.length) await stages.lintMidRunIssues(ctx, linted);
+    const claimable = issues.filter((i) => isClaimable(i));
+    handoff = claimable;
+    const n = Math.min(claimable.length, waiters.length);
+    const pending = waiters.splice(0, n);
+    for (const resolve of pending) resolve();
+  }
+
+  function startPoller() {
+    if (!pollMs || pollerRunning) return;
+    pollerRunning = true;
+    const id = ++pollerId;
+    (async () => {
+      try {
+        while (id === pollerId && inFlight.size > 0) {
+          await sleep(pollMs);
+          if (id !== pollerId || inFlight.size === 0) break;
+          if (waiters.length === 0) continue;
+          await pollOnce();
+        }
+      } finally {
+        if (id === pollerId) pollerRunning = false;
+      }
+    })();
+  }
+
   // Scoped to this sprint's own feature — see selectDispatchable()'s docstring. An
   // unscoped scan here would dispatch a ready-for-agent issue from an unrelated
   // .scratch/<other-feature>/ onto this sprint's feature branch. sprint.isBlockedThisRun
@@ -98,15 +146,23 @@ export async function runSprint(ctx) {
   // own `Status:` rewritten (only close-issue.sh writes that), so nothing on disk marks it
   // unavailable; if this checked the persisted list instead, a fresh `crew-afk` run could
   // never retry it, breaking crew-summary.sh's own "resolve blockers and re-run" advice.
+  function isClaimable(i) {
+    return (
+      !inFlight.has(i.slug) &&
+      !sprint.isBlockedThisRun(i.slug) &&
+      (!options.maxRounds || sprint.attemptCount(i.slug) < options.maxRounds) &&
+      !waitsForConflictRetry(i.slug)
+    );
+  }
+
   function claimNext() {
+    // What a poll just listed goes first, so N woken workers cost one listing, not N.
+    while (handoff.length) {
+      const i = handoff.shift();
+      if (isClaimable(i)) return i;
+    }
     const issues = tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug });
-    return issues.find(
-      (i) =>
-        !inFlight.has(i.slug) &&
-        !sprint.isBlockedThisRun(i.slug) &&
-        (!options.maxRounds || sprint.attemptCount(i.slug) < options.maxRounds) &&
-        !waitsForConflictRetry(i.slug),
-    ) ?? null;
+    return issues.find(isClaimable) ?? null;
   }
 
   function isConflictRetry(slug) {
@@ -135,7 +191,7 @@ export async function runSprint(ctx) {
     inFlight.add(issue.slug);
     // An issue preflight did not probe (it was waiting on a blocker then): its ## Requires runs
     // now, before its first dispatch. A no-op for any issue already probed this run.
-    if ((await checkRequires(ctx, [issue])).length) {
+    if ((await stages.checkRequires(ctx, [issue])).length) {
       inFlight.delete(issue.slug);
       notifyAll();
       return;
@@ -145,10 +201,11 @@ export async function runSprint(ctx) {
     const conflictRetry = isConflictRetry(issue.slug);
     if (conflictRetry) conflictRetryInFlight = issue.slug;
     const attempt = sprint.bumpAttempt(issue.slug);
-    const worker = await runWorker(ctx, issue, attempt);
-    const outcome = await runHousekeeping(ctx, worker);
+    const worker = await stages.runWorker(ctx, issue, attempt);
+    const outcome = await stages.runHousekeeping(ctx, worker);
     history.push(outcome);
     if (outcome.promotedRef && !tracker.listOpenIssueFiles) unseen.add(outcome.promotedRef);
+    if (outcome.promotedRef) ownRefs.add(outcome.promotedRef);
     if (outcome.status === "complete" || outcome.inProgressCleared) held.delete(issue.slug);
     ctx.log(
       `[ATTEMPT-END] slug=${issue.slug} attempt=${attempt} status=${outcome.status}${outcome.reason ? ` reason=${outcome.reason}` : ""}`,
@@ -169,6 +226,7 @@ export async function runSprint(ctx) {
         continue;
       }
       if (inFlight.size === 0) return;
+      startPoller();
       await waitForChange();
     }
   }
@@ -182,8 +240,10 @@ export async function runSprint(ctx) {
   // Every red drain's outcome (integration-fix.mjs), for the cap, the repeat check and the summary.
   const integrationFixes = [];
   const integrationRefs = new Set();
+  if (pollMs) seenNow();
   while (true) {
     await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
+    handoff = [];
 
     capped = cappedByMaxRounds();
     if (capped) {
@@ -201,6 +261,7 @@ export async function runSprint(ctx) {
         const fix = await fixIntegration(ctx, tracker, integration, integrationFixes);
         integration.fix = fix;
         if (!fix.repeat) integrationFixes.push(fix);
+        if (fix.number) ownRefs.add(fix.number);
         if (fix.verdict === "queued" && !fix.repeat && fix.queuedReady && fix.number) {
           unseen.add(fix.number);
           integrationRefs.add(fix.number);
@@ -222,6 +283,7 @@ export async function runSprint(ctx) {
         ctx.log(`PRD audit: skipped — ${skipRest}`);
       } else {
         prdAudit = await runPrdAudit(ctx, tracker);
+        if (prdAudit.queuedRef) ownRefs.add(prdAudit.queuedRef);
         if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
       }
     }
@@ -230,10 +292,15 @@ export async function runSprint(ctx) {
       featureReviewed = true;
       if (!options.dryRun && sprint.get("merged")) {
         featureReview = await runFeatureReview(ctx, { integration });
+        if (featureReview.promotedRef) ownRefs.add(featureReview.promotedRef);
         if (featureReview.promotedRef && !tracker.listOpenIssueFiles) unseen.add(featureReview.promotedRef);
       }
     }
-    if (flush(ctx) > 0) continue;
+    if (flush(ctx) > 0) {
+      // Promoted fix issues are this run's own: not newcomers to lint.
+      if (pollMs) seenNow();
+      continue;
+    }
     if (unseen.size) {
       const refs = [...unseen];
       unseen.clear();
