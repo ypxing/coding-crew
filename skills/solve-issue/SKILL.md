@@ -229,7 +229,7 @@ every other key with a command (coverage, integration) — each through `run.sh`
 A `NOT RUN: no command found` is the cache's own answer that no local command exists: report it,
 do not re-check CLAUDE.md/Makefile instead.
 
-Under `CREW_DEFER_FULL_CHECKS=1`, `<key>: deferred — …` means the verify gate runs it: report `deferred`, not `pass`.
+`<key>: deferred — …` means the verify gate runs it: report `deferred`.
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
