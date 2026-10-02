@@ -171,7 +171,7 @@ bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROO
 It runs the command where the INSTALL_MODE from Step 2 says: inside docker (both `-f` flags, this
 worktree's git env, the right service) or on the host. Never hand-build a `docker compose` command.
 
-Run commands in the foreground and wait for them — never in the background. Between edits run only what your change touches (one test file, not the suite). Before committing, run the tests your change affects.
+Run commands in the foreground and wait for them — never in the background. Between edits run only what your change touches (one test file, not the suite).
 Other workers share this machine: temp files go under `$PROJECT_ROOT`, never a shared path such as `/tmp/<name>`; never kill a process you did not start.
 
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
@@ -229,9 +229,8 @@ every other key with a command (coverage, integration) — each through `run.sh`
 A `NOT RUN: no command found` is the cache's own answer that no local command exists: report it,
 do not re-check CLAUDE.md/Makefile instead.
 
-When `CREW_DEFER_FULL_CHECKS=1` is set, only `typecheck` and `lint` run; `test` and every other
-check print `<key>: deferred …` and are not run (the verify gate runs them). Report such a check
-as `deferred`, not `pass`.
+Under `CREW_DEFER_FULL_CHECKS=1` only `typecheck` and `lint` run; the rest print
+`<key>: deferred …` (the verify gate runs them). Report those as `deferred`, not `pass`.
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
