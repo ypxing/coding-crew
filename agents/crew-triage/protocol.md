@@ -88,11 +88,11 @@ Examples:
 ## Findings Mode
 
 The prompt starts `Findings mode:` and lists code-review findings, each with an index, a severity,
-a location and what the reviewer wants. You are not the reviewer that raised them, and you fix
-nothing: you answer, per finding, whether an unattended coder may fix it. crew-afk promotes every
-finding you judge Actionable into a fix issue and leaves the rest for a human, so a wrong
-`actionable` costs a worker cycle on something that should have been discussed, and a wrong
-`debatable` costs a human one look.
+a location, what is wrong (`issue`) and what the fix must achieve (`criterion`). You are not the
+reviewer that raised them, and you fix nothing: you answer, per finding, whether an unattended
+coder may fix it. crew-afk promotes every finding you judge Actionable into a fix issue and leaves
+the rest for a human, so a wrong `actionable` costs a worker cycle on something that should have
+been discussed, and a wrong `debatable` costs a human one look.
 
 Answer only `actionable` or `debatable`. The rubric below also names Dismiss, but auto has no
 `dismiss`: a finding you doubt goes to the coder's premise check, which reads the code with the

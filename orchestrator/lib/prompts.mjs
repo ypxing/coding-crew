@@ -499,8 +499,9 @@ function coderEvidenceLines(e) {
 }
 
 /**
- * crew-triage's findings mode: judge each review finding Actionable / Debatable (never Dismiss: a doubted finding goes to the coder's premise check), by the
- * shared rubric (inlined in the agent from skills/_shared/fragments/common/findings-rubric.md).
+ * crew-triage's findings mode: judge each review finding Actionable / Debatable, by the shared
+ * rubric (inlined in the agent from skills/_shared/fragments/common/findings-rubric.md). Never
+ * Dismiss: a doubted finding goes to the coder's premise check.
  * Dispatched apart from the reviewer that raised them — a review never grades its own findings.
  * `scope` says where the findings came from; `findings` are report.mjs's normalised findings.
  */
