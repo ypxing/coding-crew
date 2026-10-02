@@ -304,6 +304,11 @@ Each range-edit issue must include:
   - Step 4 found a transitive/peer conflict with no clean resolution
   - Step 3 found a CVE fix whose exploitability check was inconclusive
 
+When the decision is `ready-for-human`, the issue opens with this block; `### Steps` is the bump
+itself and the review of the impacted call sites listed in the earlier steps:
+
+{{FRAGMENT:human-issue}}
+
 Either way, state the reasoning in the issue body — what was checked and what the finding
 was — so whoever picks it up (human or coder) knows what's already been verified. Use the
 same issue body template as `to-issues` (Context Documents / What to build / Acceptance
