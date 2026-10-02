@@ -84,7 +84,7 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
   `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
   `sweep` (clears a dead run's `in-progress` once the lease is held). A failed write only warns
 - `close-shipped.sh` — once per run, after the lease: closes the milestone's `awaiting-merge`
-  issues that a merged PR's body names (`Closes #n`), then the PRD once no work issue is left.
+  issues that a merged PR's body names (`Closes #n`), then the PRD once no work issue is left, and with it each open issue on the PRD's `Origin:` line.
   It reads the bodies itself, since GitHub can fail to link a `Closes` line. Runnable by hand
 - `open-pr.sh` — `openPr` only: pushes the feature branch, creates or updates its PR with the
   tracker's closing lines (`closingRefs`) in crew-afk's own block of the body

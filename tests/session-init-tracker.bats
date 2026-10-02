@@ -14,7 +14,10 @@
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_SCRIPTS="$REPO_ROOT/skills/crew-afk/scripts"
 
+load helpers/isolate-env
+
 setup() {
+  isolate_project_env
   export TEMP_DIR=$(mktemp -d)
   cd "$TEMP_DIR"
   git init -q -b main

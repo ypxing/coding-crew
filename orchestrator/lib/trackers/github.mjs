@@ -314,7 +314,23 @@ export function closingRefs(mainRoot, { featureSlug, exec = shellOut } = {}) {
   const work = raw.filter((i) => !prds.includes(i));
   const ships = work.filter(awaiting);
   const prdCloses = ships.length > 0 && ships.length === work.length ? prds : [];
-  return [...ships, ...prdCloses].map((i) => i.number).sort((a, b) => a - b).map((n) => `Closes #${n}`);
+  const origins = [];
+  for (const prd of prdCloses) {
+    const v = exec("gh", ["issue", "view", String(prd.number), ...(repo ? ["--repo", repo] : []), "--json", "body"]);
+    if (v.code !== 0) throw new Error(`gh issue view failed (exit ${v.code}): ${v.stderr || v.stdout}`);
+    let body = "";
+    try { body = JSON.parse(v.stdout || "{}").body || ""; } catch { body = ""; }
+    origins.push(...parseOrigins(body));
+  }
+  const nums = new Set([...ships, ...prdCloses].map((i) => i.number));
+  for (const n of origins) nums.add(n);
+  return [...nums].sort((a, b) => a - b).map((n) => `Closes #${n}`);
+}
+
+/** Issue numbers on a PRD body's `Origin: #n[, #n…]` line (column 0, one line). */
+export function parseOrigins(body) {
+  const m = /^Origin:[ \t]*(.*)$/m.exec(body || "");
+  return m ? [...m[1].matchAll(/#(\d+)/g)].map((x) => Number(x[1])) : [];
 }
 
 /**

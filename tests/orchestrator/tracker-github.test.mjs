@@ -466,3 +466,15 @@ test("createIssue links blockers for the issue it created, and a link failure do
   const r = createIssue({ title: "T", body: "## Blocked by\n- Issue #3\n", featureSlug: "feat" }, { mainRoot: root, exec });
   assert.equal(r.number, 42);
 });
+
+test("closingRefs adds Origin: issues exactly when the PRD's line is returned", () => {
+  const calls = [];
+  const mk = (issues) => (cmd, args) => {
+    calls.push(args);
+    if (args[1] === "view") return { code: 0, stdout: JSON.stringify({ body: "Actor: x\nOrigin: #7, #5\n" }), stderr: "" };
+    return { code: 0, stdout: JSON.stringify(issues), stderr: "" };
+  };
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: mk([prd(2), issue(3, "awaiting-merge")]) }),
+    ["Closes #2", "Closes #3", "Closes #5", "Closes #7"]);
+  assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: mk([prd(2), issue(3, "awaiting-merge"), issue(4, "blocked")]) }), ["Closes #3"]);
+});

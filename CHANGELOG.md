@@ -6,6 +6,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `to-prd` / `crew-afk`: a PRD may carry `Origin: #<n>[, #<n>…]` under its `Actor:` line; `closingRefs` adds `Closes #n` for each exactly when it adds the PRD's own, and `close-shipped.sh` closes each open origin issue (commenting the PRD and PR) in the run that closes the PRD.
 - `crew-afk`: under `tracker: github`, the fix issues `promote-findings.sh` creates carry their evidence instead of a
   pointer to a gitignored local report — `defer` embeds each promoted finding's full reviewer text under
   `## Review findings`, `defer-gaps` the audit's per-requirement evidence, `defer-integration` the tail of the failing

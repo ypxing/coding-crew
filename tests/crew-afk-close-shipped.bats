@@ -34,7 +34,12 @@ case "$1 $2" in
   "issue list")
     [ -n "${GH_NO_MILESTONE:-}" ] && { echo 'could not add to milestone: not found' >&2; exit 1; }
     cat "$GH_ISSUES" ;;
-  "issue close") [ -n "${GH_FAIL_CLOSE:-}" ] && { echo denied >&2; exit 1; }; exit 0 ;;
+  "issue view")
+    case "$*" in
+      *"--json body"*) [ -n "${GH_FAIL_VIEW:-}" ] && { echo nope >&2; exit 1; }; cat "$TEMP_DIR/body.$3" 2>/dev/null || true ;;
+      *"--json state"*) cat "$TEMP_DIR/state.$3" 2>/dev/null || echo OPEN ;;
+    esac ;;
+  "issue close") [ "${GH_FAIL_CLOSE_N:-}" = "$3" ] && { echo denied >&2; exit 1; }; [ -n "${GH_FAIL_CLOSE:-}" ] && { echo denied >&2; exit 1; }; exit 0 ;;
   *) exit 1 ;;
 esac
 EOF
@@ -154,4 +159,44 @@ merged_pr() { # <number> <base> <body>
   run bash "$CLOSE_SHIPPED" demo
   [ "$status" -eq 1 ]
   [[ "$output" == *"Usage:"* ]]
+}
+
+@test "close-shipped: closes Origin: issues with the PRD, skips a closed one, names PRD and PR" {
+  issues "$(issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)"
+  printf 'Actor: dev\nOrigin: #7, #8\n\nbody\n' > "$TEMP_DIR/body.48"
+  echo CLOSED > "$TEMP_DIR/state.8"
+  merged_pr 57 main 'Closes #49'
+  run bash "$CLOSE_SHIPPED" demo feature/demo
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CLOSED: origin #7 (PRD #48)"* ]]
+  [[ "$output" != *"origin #8"* ]]
+  grep -q '^issue close 7 --reason completed --comment Closed with PRD #48, shipped in PR #57' "$GH_LOG"
+  ! grep -q '^issue close 8 ' "$GH_LOG"
+}
+
+@test "close-shipped: Origin: issues stay open while the PRD stays open" {
+  issues "$(issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)" "$(issue 60 'later' awaiting-merge)"
+  printf 'Origin: #7\n' > "$TEMP_DIR/body.48"
+  merged_pr 57 main 'Closes #49'
+  run bash "$CLOSE_SHIPPED" demo feature/demo
+  ! grep -q '^issue close 7 ' "$GH_LOG"
+}
+
+@test "close-shipped: a failed Origin close still closes the PRD and exits 1" {
+  issues "$(issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)"
+  printf 'Origin: #7\n' > "$TEMP_DIR/body.48"
+  merged_pr 57 main 'Closes #49'
+  GH_FAIL_CLOSE_N=7 run bash "$CLOSE_SHIPPED" demo feature/demo
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"gh issue close failed for origin #7"* ]]
+  [[ "$output" == *"CLOSED: PRD #48"* ]]
+}
+
+@test "close-shipped: a failed PRD body read is reported, exit 1, PRD still closes" {
+  issues "$(issue 48 'PRD: lease')" "$(issue 49 'lease' awaiting-merge)"
+  merged_pr 57 main 'Closes #49'
+  GH_FAIL_VIEW=1 run bash "$CLOSE_SHIPPED" demo feature/demo
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"gh issue view failed for PRD #48"* ]]
+  [[ "$output" == *"CLOSED: PRD #48"* ]]
 }

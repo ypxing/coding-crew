@@ -34,7 +34,7 @@ the user before writing the final document.
 
 ## Problem Statement
 
-The problem from the user's perspective. Open with one actor line: `Actor: <who has the problem>`.
+The problem from the user's perspective. Open with one actor line: `Actor: <who has the problem>`. If the design started from tracker issues, put `Origin: #<n>[, #<n>…]` on the next line (column 0); otherwise omit it. Those issues close together with this PRD.
 
 ## Solution
 
