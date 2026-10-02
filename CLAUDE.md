@@ -15,7 +15,7 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-addr
 - `orchestrator/` — the crew-afk state machine (rounds, worktrees, deps → dispatch → verify → review → merge → close, receipts). One implementation, run by all four platform launchers via `orchestrator/lib/dispatch.mjs`.
 - `registry.json` — source of truth for install paths per agent/platform, `deps`, `agent-deps`, `install.assets`, and doc templates.
 - `install.sh` / `uninstall.sh` — installer; `PLATFORMS=(claude copilot pi codex)`.
-- `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`), skill-local runtime scripts (e.g. `skills/crew-afk/scripts/`), and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`).
+- `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`), skill-local runtime scripts (e.g. `skills/crew-afk/scripts/`), and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`, `eval-design-skills.mjs` with its `eval-design-skills/` cases and rubric).
 - `tests/` — bats tests, run against **rendered/installed** output via `tests/helpers/render.bash`, not source variants.
 - `docs/` — the dev team guide (`guide.md`) and issue-tracker templates.
 
@@ -30,6 +30,9 @@ bash scripts/render-skill.sh crew-afk codex | less
 
 # Run tests
 bats tests/*.bats
+
+# After editing crew-grill/crew-brainstorm: behavioural A/B (base ref vs worktree), judged blind; costs API money
+node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # drop --dry-run to run
 
 # Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed
 scripts/cut-release.sh --dry-run   # verify, then re-run without --dry-run to tag and push

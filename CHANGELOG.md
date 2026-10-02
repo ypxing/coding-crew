@@ -6,6 +6,16 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-grill`, `crew-brainstorm`: keep the design proportionate to the problem — size must be justified, by the
+  problem or by the structure of what is built now (one owner per concern, no duplication, a needed test seam), never
+  by needs nobody has yet. The problem is sized first (how often,
+  the manual workaround's cost, what breaks if nothing is done — looked up, not asked), and solutions the user brings
+  are inputs, not the menu. Every question deciding how much to build includes the do-least option (down to "by hand" or "leave it"); a larger
+  recommendation needs evidence it falls short, not completeness alone, and names the follow-on components it drags
+  in. A subtraction pass before the summary/approval proposes cutting any decision or component nothing depends on,
+  and shows the cut list; `crew-grill` carries what stays cut into the PRD's Out of Scope.
+  Sizing never replaces asking: good questions are kept, a requirement the user stated is priced and never relitigated,
+  logic that would be copied into several places gets one shared owner, and frequency/cost are looked up, not asked.
 - `crew-afk`: a worker's `verify-worktree.sh` and per-worktree `ensure-deps.sh` now run asynchronously, so two branches
   verify concurrently and a slow verify no longer stalls the other worker loops or a free slot's next dispatch. Merge
   and close stay blocking, and so serialized; timeouts still map to exit 124.
