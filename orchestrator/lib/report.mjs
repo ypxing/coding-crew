@@ -22,6 +22,7 @@ const STATUSES = new Set(["complete", "partial", "blocked"]);
 function normaliseCheck(value) {
   if (value == null) return "not_run";
   const v = String(value).trim().toLowerCase();
+  if (/(^|\b)deferred\b/.test(v)) return "deferred";
   if (/(^|\b)(pass|passed|passing|ok|green|success)\b/.test(v)) return "pass";
   if (/(^|\b)(fail|failed|failing|red|error)\b/.test(v)) return "fail";
   if (/(^|\b)(not_run|not run|none|n\/a|na|skipped|missing|absent)\b/.test(v)) return "not_run";
