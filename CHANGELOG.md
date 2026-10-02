@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `solve-issue`: with `CREW_DEFER_FULL_CHECKS=1`, `run-checks.sh` runs only `typecheck` and `lint`; `test` and the
+  other checks print `<key>: deferred …` and are left to the verify gate. Step 4 now says to run the affected tests
+  before committing; Step 5 says to report a deferred check as `deferred`.
+
 - `to-prd` / `crew-afk`: a PRD may carry `Origin: #<n>[, #<n>…]` under its `Actor:` line; `closingRefs` adds `Closes #n` for each exactly when it adds the PRD's own, and `close-shipped.sh` closes each open origin issue (commenting the PRD and PR) in the run that closes the PRD.
 - `crew-afk`: under `tracker: github`, the fix issues `promote-findings.sh` creates carry their evidence instead of a
   pointer to a gitignored local report — `defer` embeds each promoted finding's full reviewer text under
