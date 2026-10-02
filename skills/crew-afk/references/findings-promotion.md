@@ -22,6 +22,13 @@ promotion rule (below), write a *parked* fix issue with `Status: deferred-findin
 operation selects on `ready-for-agent`, so parked issues are invisible and Phase 1 drains its
 original queue at its normal pace.
 
+**Github bodies are self-contained.** Under `tracker: github` a fix issue is read where the sprint's
+`.scratch/` reports do not exist, so `defer` embeds each promoted finding's full reviewer text
+(`## Review findings`), `defer-gaps` the audit's evidence per missing requirement, and
+`defer-integration` the tail of the failing output — each truncated, with absolute and `.scratch/`
+paths scrubbed. `Source:` names the kind and branch rather than a report path; it is still the depth
+bound. The local tracker keeps naming the report path.
+
 **Phase 2 — fix round.** When the loop is about to exit, flush the parked issues to
 `ready-for-agent` and re-enter the loop instead of exiting. Fix issues are ordinary issues: they
 get a worktree, TDD, `verify-worktree.sh`, AC verification, and their own code review before

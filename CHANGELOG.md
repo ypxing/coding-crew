@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: under `tracker: github`, the fix issues `promote-findings.sh` creates carry their evidence instead of a
+  pointer to a gitignored local report — `defer` embeds each promoted finding's full reviewer text under
+  `## Review findings`, `defer-gaps` the audit's per-requirement evidence, `defer-integration` the tail of the failing
+  output. `Source:` now names the kind (`review (<branch>)`, `PRD audit (prd-audit)`, `integration check
+  (integration)`), `guard` reads it as before, and absolute and `.scratch/` paths are scrubbed from the body.
 - `crew-grill`, `crew-brainstorm`: keep the design proportionate to the problem — size must be justified, by the
   problem or by the structure of what is built now (one owner per concern, no duplication, a needed test seam), never
   by needs nobody has yet. The problem is sized first (how often,
