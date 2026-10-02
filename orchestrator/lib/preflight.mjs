@@ -26,13 +26,14 @@ const ASSET_PROBES = {
   depInstall: "run.sh",
   solveIssue: "check-requires.sh",
   toIssues: "lint-issues.sh",
+  writePr: "SKILL.md",
 };
 
 /**
  * Each asset dir under `installDir` (install-dir.mjs) whose probe file is absent: `[{ kind, file }]`.
  * Every run uses each — the reviewer reads its scripts, ensure-deps.sh / verify-worktree.sh run
  * dep-install's, and preflight runs check-requires.sh and lint-issues.sh — so a gap here is one every reviewer or
- * coder would otherwise hunt for.
+ * coder would otherwise hunt for. write-pr's SKILL.md is read only with openPr, but it ships with crew-afk.
  */
 export function missingAssets(installDir) {
   return Object.keys(ASSET_DIRS)

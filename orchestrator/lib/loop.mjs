@@ -53,6 +53,7 @@ import { writeLog } from "./log.mjs";
 import { labelIssue } from "./labels.mjs";
 import { checkRequires, integrationSection, runIntegrationCheck } from "./preflight.mjs";
 import { fixIntegration } from "./integration-fix.mjs";
+import { writePrBody } from "./pipeline/pr-body.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit } from "./report.mjs";
 import { runFeatureReview } from "./pipeline/feature-review.mjs";
@@ -428,7 +429,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
 
   // --- summary (rendered from disk, never from recollection) -----------------
   // The PR comes first: the summary points at it when the findings were posted there.
-  const pr = pullRequest(ctx, tracker, integration);
+  const pr = await pullRequest(ctx, tracker, integration);
   const summaryArgs = [];
   if (stalled) summaryArgs.push("--stalled");
   if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url);
@@ -473,13 +474,14 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
 
 /**
  * Last, after squash: the feature PR. `openPr` pushes the branch and creates or updates the PR
- * with the tracker's closing lines in its body (open-pr.sh). Off, those lines are printed for
+ * with the tracker's closing lines in its body (open-pr.sh), under the body the PR writer wrote
+ * for a reviewer (pipeline/pr-body.mjs). Off, those lines are printed for
  * the human's own PR — the tracker leaves each merged issue open until a PR closes it. Returns
  * `{text, heading?, url?, posted?}` — the section's text (heading `Next` when off), and when the findings were posted to the PR
  * (post-findings.sh) its URL and their count — or null when there is nothing to say. A posting
  * failure is reported in the text and never fails the sprint.
  */
-function pullRequest(ctx, tracker, integration) {
+async function pullRequest(ctx, tracker, integration) {
   const { sprint, effects, options } = ctx;
   let refs = [];
   let refsError = null;
@@ -516,18 +518,23 @@ function pullRequest(ctx, tracker, integration) {
   if (refsError) return { text: `**Not opened:** could not list the issues it closes — ${refsError}` };
   const closesFile = join(sprint.env.SPRINT_DIR, "pr-closes.txt");
   writeFileSync(closesFile, refs.length ? `${refs.join("\n")}\n` : "");
-  const r = effects.bash("open-pr.sh", ["--closes-file", closesFile], { env: sprint.childEnv() });
+  const body = await writePrBody(ctx, { integration });
+  const args = ["--closes-file", closesFile];
+  if (body) args.push("--body-file", body.file);
+  if (body?.title) args.push("--title", body.title);
+  const r = effects.bash("open-pr.sh", args, { env: sprint.childEnv() });
   if (r.dryRun) return null;
   if (r.code !== 0) return { text: `**Failed:** ${r.stderr.trim() || `exit ${r.code}`}` };
   const url = r.stdout.trim().replace(/^PR: /, "");
+  const opened = body?.failed ? `${url}\n\n**PR body has no summary:** ${body.failed}` : url;
   const post = effects.bash("post-findings.sh", [], { env: sprint.childEnv() });
   const m = /^POSTED: (\d+) \((\d+) inline\)/m.exec(post.stdout ?? "");
   if (post.code !== 0 || !m) {
     const why = (post.stderr ?? "").trim() || `exit ${post.code}`;
     ctx.log(`post-findings: ${why}`, "warn");
-    return { text: `${url}\n\n**Findings not posted:** ${why}` };
+    return { text: `${opened}\n\n**Findings not posted:** ${why}` };
   }
-  return { text: `${url}\n\n${m[1]} finding(s) posted (${m[2]} inline).`, url, posted: Number(m[1]) };
+  return { text: `${opened}\n\n${m[1]} finding(s) posted (${m[2]} inline).`, url, posted: Number(m[1]) };
 }
 
 /** Per-sprint review report file: one timestamped file, appended to across the whole run. */

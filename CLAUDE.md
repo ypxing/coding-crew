@@ -87,7 +87,9 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
   issues that a merged PR's body names (`Closes #n`), then the PRD once no work issue is left, and with it each open issue on the PRD's `Origin:` line.
   It reads the bodies itself, since GitHub can fail to link a `Closes` line. Runnable by hand
 - `open-pr.sh` — `openPr` only: pushes the feature branch, creates or updates its PR with the
-  tracker's closing lines (`closingRefs`) in crew-afk's own block of the body
+  tracker's closing lines (`closingRefs`) in crew-afk's own block of the body, under the body
+  `orchestrator/lib/pipeline/pr-body.mjs` had the `prWriter` role write by following `write-pr`'s
+  SKILL.md (installed as an asset at `.coding-crew/write-pr/`), plus the checks line
 - `dispatch-agent.sh` (pi), `dispatch-codex-agent.sh` (codex)
 
 Effects that run for minutes — a worker's `verify-worktree.sh` and `ensure-deps.sh` — go through `Effects.bashAsync`, so each

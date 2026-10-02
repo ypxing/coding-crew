@@ -344,6 +344,26 @@ export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAss
   ].join("\n");
 }
 
+/**
+ * The PR writer (role prWriter, a plain dispatch): write-pr's own SKILL.md is the procedure, so a
+ * human's /write-pr and the sprint's PR body follow one text. Its final message is the body; the
+ * caller keeps it from the first `## Summary` line, so a preamble costs nothing.
+ */
+export function prBodyPrompt({ skillFile, featureBranch, base, prd, reviewReport, checks }) {
+  return [
+    `Write the pull request body for ${featureBranch}. Read ${skillFile} first and follow it.`,
+    "",
+    `Range: ${base}..${featureBranch}`,
+    ...(prd ? [`PRD (the feature's intent): ${prd}`] : []),
+    ...(reviewReport ? [`Review report (the sprint's reviewer findings; Merge Danger may draw on it): ${reviewReport}`] : []),
+    `Checks on the merged branch: ${checks || "not run"}`,
+    "",
+    "Output: print the body as your final message — nothing before `## Summary`, no fence around",
+    "it. Do not write files, commit, push or call `gh`: the sprint adds the closing lines and opens",
+    "the PR itself.",
+  ].join("\n");
+}
+
 /** The verdict file every triage prompt ends on — the file is the only thing read (parseTriageReport). */
 function triageVerdictLines(reportPath) {
   return [

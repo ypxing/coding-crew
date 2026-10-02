@@ -79,7 +79,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.7.5",
+      "version": "2.8.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -113,7 +113,8 @@
         "dep-install",
         "solve-issue",
         "to-issues",
-        "crew-address-findings"
+        "crew-address-findings",
+        "write-pr"
       ]
     },
     "tdd": {
@@ -265,6 +266,17 @@
       "source-dir": "domain-modeling",
       "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise.",
       "install": ".claude/skills/domain-modeling"
+    },
+    "write-pr": {
+      "version": "1.0.0",
+      "source-dir": "write-pr",
+      "description": "Write a PR body for a human reviewer: Summary (smallest diagram or diff-sketch), Evidence (before/after), Merge Danger (door, blast radius).",
+      "source": "mattpocock/skills",
+      "install": ".claude/skills/write-pr",
+      "assets": {
+        "source": "skills/write-pr",
+        "dest": ".coding-crew/write-pr"
+      }
     }
   }
 }

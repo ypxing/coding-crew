@@ -144,3 +144,36 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   [ "$status" -eq 0 ]
   ! grep -q 'crew-rework' "$GH_LOG"
 }
+
+@test "open-pr: --body-file opens the block, above the sprint line and the closing lines" {
+  printf '## Summary\n\nWhat changed.\n' > "$TEMP_DIR/body.md"
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --body-file "$TEMP_DIR/body.md"
+  [ "$status" -eq 0 ]
+  [ "$(pr_body | sed -n 2p)" = "## Summary" ]
+  pr_body | grep -qx 'What changed.'
+  [ "$(pr_body | grep -n '^## Summary' | cut -d: -f1)" -lt "$(pr_body | grep -n '^Implemented by' | cut -d: -f1)" ]
+  [ "$(pr_body | grep -n '^Implemented by' | cut -d: -f1)" -lt "$(pr_body | grep -n '^Closes #1' | cut -d: -f1)" ]
+}
+
+@test "open-pr: a marker line inside --body-file is dropped, so a re-run still finds the block's end" {
+  printf '## Summary\n\n<!-- crew-afk:end -->\ntail\n' > "$TEMP_DIR/body.md"
+  bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --body-file "$TEMP_DIR/body.md" >/dev/null
+  [ "$(pr_body | grep -c 'crew-afk:end')" -eq 1 ]
+  jq --arg b "$(pr_body)
+
+Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR"
+
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --body-file "$TEMP_DIR/body.md"
+  [ "$status" -eq 0 ]
+  pr_body | grep -qx 'Reviewer notes.'
+  [ "$(pr_body | grep -c '^tail$')" -eq 1 ]
+}
+
+@test "open-pr: --title names a new PR; an open one keeps its title" {
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --title "Single full check"
+  [ "$status" -eq 0 ]
+  grep -q '^pr create --head feature/demo --title Single full check' "$GH_LOG"
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --title "Other"
+  [ "$status" -eq 0 ]
+  ! grep -q -- '--title Other' "$GH_LOG"
+}

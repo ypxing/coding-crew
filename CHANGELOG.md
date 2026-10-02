@@ -6,6 +6,16 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `write-pr` (new skill): writes a PR body for a human reviewer, adapted from mattpocock/skills' `pr`. It has three
+  sections: Summary (the smallest pseudocode, call tree, file tree, Mermaid diagram or diff-sketch that makes the
+  change clear), Evidence (before/after) and Merge Danger (one-way or two-way door, blast radius). Run it by hand as
+  `/write-pr`.
+- `crew-afk`: with `--open-pr`, a new `prWriter` role (plain dispatch; default timeout 10 min) follows `write-pr` over
+  `base..feature` with the PRD and the review report. Its body goes at the top of crew-afk's block in the PR, above a
+  checks line taken from the integration check's own record and the `Closes` lines. The PR is titled after the PRD.
+  If the writer leaves no `## Summary`, the PR still opens and the run summary says why.
+  `open-pr.sh` gains `--body-file` and `--title`.
+
 - `solve-issue`: with `CREW_DEFER_FULL_CHECKS=1`, `run-checks.sh` runs only `typecheck` and `lint`; `test` and the
   other checks print `<key>: deferred …` and are left to the verify gate. Step 4 now says to run the affected tests
   before committing; Step 5 says to report a deferred check as `deferred`.

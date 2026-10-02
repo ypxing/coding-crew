@@ -57,7 +57,7 @@ export const CONFIG_REL = ".coding-crew/config.json";
 export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
 export const LEGACY_REL = ".coding-crew/afk-models.json";
 
-export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prdAuditor"];
+export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prdAuditor", "prWriter"];
 const SECTIONS = ["afk"];
 
 // What review findings are fixed automatically — `actionable`: every finding crew-triage judges
@@ -66,7 +66,7 @@ const SECTIONS = ["afk"];
 export const FIX_FINDINGS = ["actionable", "critical", "high", "medium", "none"];
 export const PRD_AUDIT = ["off", "report", "fix"];
 /** Minutes. Every LLM role, plus the merge/close step, which blocks the event loop. */
-export const DEFAULT_TIMEOUTS = { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 };
+export const DEFAULT_TIMEOUTS = { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, prWriter: 10, merge: 5 };
 // setTimeout fires at once past 2^31-1 ms, so a longer timeout would kill every dispatch.
 export const MAX_TIMEOUT_MINUTES = Math.floor((2 ** 31 - 1) / 60_000);
 const timeoutProblem = (min) =>
@@ -388,9 +388,11 @@ export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", tri
 /** The bash dispatcher a runtime's agent dispatch needs; claude and copilot resolve their agent themselves. */
 export const DISPATCHER = { pi: "dispatch-agent.sh", codex: "dispatch-codex-agent.sh" };
 
-/** The roles a run dispatches: the command finder and the PRD audit are each optional. */
-export function activeRoles({ commands = true, PRDAudit = DEFAULT_SETTINGS.PRDAudit } = {}) {
-  return ROLES.filter((r) => (r !== "commandFinder" || commands) && (r !== "prdAuditor" || PRDAudit !== "off"));
+/** The roles a run dispatches: the command finder, the PRD audit and the PR writer are each optional. */
+export function activeRoles({ commands = true, PRDAudit = DEFAULT_SETTINGS.PRDAudit, openPr = DEFAULT_SETTINGS.openPr } = {}) {
+  return ROLES.filter(
+    (r) => (r !== "commandFinder" || commands) && (r !== "prdAuditor" || PRDAudit !== "off") && (r !== "prWriter" || openPr),
+  );
 }
 
 // The flag that overrides each setting, for error text.

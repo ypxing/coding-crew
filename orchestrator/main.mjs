@@ -36,7 +36,7 @@
  *   --coder-timeout <minutes>              [timeouts.coder, 45] a hung coder cannot hang the sprint
  *                                           (--worker-timeout: old name)
  *   --reviewer-timeout <minutes>           [timeouts.reviewer, 20] (--review-timeout, the old
- *                                           name, also sets triage, commandFinder and prdAuditor)
+ *                                           name, also sets triage, commandFinder, prdAuditor and prWriter)
  *   --merge-timeout <minutes>              [timeouts.merge, 5] merge/close block the event loop
  *                                           (spawnSync), so a hang would freeze the sprint
  *   --no-deps                              [installDeps: false] skip both ensure-deps.sh call sites
@@ -178,7 +178,7 @@ function parseArgs(argv) {
         break;
       case "--review-timeout": {
         const min = Number(args.shift());
-        for (const k of ["reviewer", "triage", "commandFinder", "prdAuditor"]) {
+        for (const k of ["reviewer", "triage", "commandFinder", "prdAuditor", "prWriter"]) {
           o.cli.timeouts[k] = min;
           o.flagOf[`timeouts.${k}`] = a;
         }
@@ -455,7 +455,7 @@ async function main() {
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
         "  .coding-crew/config.json names one. Per role (coder, reviewer, triage,\n" +
-        "  commandFinder, prdAuditor):\n" +
+        "  commandFinder, prdAuditor, prWriter):\n" +
         '    { "afk": { "runtime": { "reviewer": "codex" },\n' +
         '               "models":  { "claude": { "triage": "opus" } } } }\n' +
         "  The other flags override config.json's afk settings for one run: fixFindings (actionable),\n" +
