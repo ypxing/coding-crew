@@ -14,6 +14,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
   recommendation needs evidence it falls short, not completeness alone, and names the follow-on components it drags
   in. A subtraction pass before the summary/approval proposes cutting any decision or component nothing depends on,
   and shows the cut list; `crew-grill` carries what stays cut into the PRD's Out of Scope.
+  Sizing never replaces asking: good questions are kept, a requirement the user stated is priced and never relitigated,
+  logic that would be copied into several places gets one shared owner, and frequency/cost are looked up, not asked.
 - `crew-afk`: a worker's `verify-worktree.sh` and per-worktree `ensure-deps.sh` now run asynchronously, so two branches
   verify concurrently and a slow verify no longer stalls the other worker loops or a free slot's next dispatch. Merge
   and close stay blocking, and so serialized; timeouts still map to exit 124.

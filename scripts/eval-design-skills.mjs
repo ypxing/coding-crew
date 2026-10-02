@@ -34,9 +34,9 @@ const STAGE_INSTRUCTIONS = {
     "EVAL MODE (non-interactive): the frontier is empty. Output exactly what you would send the user to close Phase 1 (everything up to and including the 'Ready to write the PRD?' line). Then assume the user answered 'y' with no other change, and output ONLY the '## Decisions' and '## Out of Scope' sections the PRD would get. You may read the repo to check facts, but modify nothing.",
 };
 
-const METRICS = ["sized", "do_least", "overbuilt", "underbuilt", "false_cut", "chain_priced"];
+const METRICS = ["sized", "do_least", "asked_well", "overbuilt", "underbuilt", "false_cut", "chain_priced"];
 // Higher is better for these; lower is better for the rest.
-const GOOD_HIGH = new Set(["sized", "do_least", "chain_priced"]);
+const GOOD_HIGH = new Set(["sized", "do_least", "asked_well", "chain_priced"]);
 
 function parseArgs(argv) {
   const o = { skill: "all", base: "main", head: "worktree", cases: [], runs: 2, model: "sonnet",

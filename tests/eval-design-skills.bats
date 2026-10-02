@@ -40,7 +40,7 @@ if [[ " $* " == *" --max-turns 1 "* ]]; then
   printf '%s' "$input" > "$FAKE_DIR/judge-prompt.txt"
   labels=$(printf '%s\n' "$input" | sed -n 's/^### Output \([A-Z]\)$/\1/p')
   arr=""; for l in $labels; do
-    arr+="${arr:+,}{\"label\":\"$l\",\"scores\":{\"sized\":1,\"do_least\":null,\"overbuilt\":0,\"underbuilt\":0,\"false_cut\":null,\"chain_priced\":null},\"note\":\"ok\"}"
+    arr+="${arr:+,}{\"label\":\"$l\",\"scores\":{\"sized\":1,\"do_least\":null,\"asked_well\":1,\"overbuilt\":0,\"underbuilt\":0,\"false_cut\":null,\"chain_priced\":null},\"note\":\"ok\"}"
   done
   jq -n --arg r "[$arr]" '{result:$r,total_cost_usd:0.5,is_error:false}'
   exit 0
@@ -91,8 +91,8 @@ run_eval() {
 @test "summary scores each version, sums cost, and removes the worktree" {
   run run_eval --runs 2
   [ "$status" -eq 0 ]
-  [[ "$output" == *"| c1 | base | 2 | 2/2 | n/a | 0/2 | 0/2 | n/a | n/a | \$0.50 |"* ]]
-  [[ "$output" == *"| c1 | head | 2 | 2/2 | n/a | 0/2 | 0/2 | n/a | n/a | \$0.50 |"* ]]
+  [[ "$output" == *"| c1 | base | 2 | 2/2 | n/a | 2/2 | 0/2 | 0/2 | n/a | n/a | \$0.50 |"* ]]
+  [[ "$output" == *"| c1 | head | 2 | 2/2 | n/a | 2/2 | 0/2 | 0/2 | n/a | n/a | \$0.50 |"* ]]
   [[ "$output" == *'Total cost: $1.50'* ]]
   [ "$(git -C "$R" worktree list | wc -l)" -eq 1 ]
 }

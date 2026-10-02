@@ -23,7 +23,7 @@ You MUST complete these items in order:
 
 1. **Capture feature slug** — get the `.scratch/<slug>/` directory name upfront
 2. **Explore project context** — check files, docs, recent commits
-3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria, and size the problem first
+3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria, and size the problem first (look up how often it happens and what it costs in git history, merged PRs and the tracker; ask only what no source holds)
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation; one is always the do-least option
 5. **Present design** — in sections scaled to their complexity, get user approval after each section
 6. **Transition to to-prd** — invoke `to-prd` using the same feature slug to complete the PRD
@@ -79,9 +79,10 @@ digraph brainstorming {
 **Exploring approaches:**
 
 - Propose 2-3 different approaches with trade-offs. One is always the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in terms of the problem size
-- Size is fine; **unjustified** size is not. A component earns its place through the problem, or through the structure of what is built now (one owner per concern, no duplicated logic, a seam its tests need) — never through a need nobody has yet or completeness for its own sake
+- Size is fine; **unjustified** size is not. A component earns its place through the problem, or through the structure of what is built now (one owner per concern, no duplicated logic, a seam its tests need) — never through a need nobody has yet or completeness for its own sake. Logic that would otherwise be copied into several places gets one shared owner: that is structure, not a speculative layer, and dropping it to avoid "abstraction" leaves the design under-built
 - Recommending anything larger needs evidence that the do-least option falls short, on the problem or on structure; "it doesn't cover every case" is not that evidence unless the uncovered case is costly
 - Name the follow-on components each approach drags in, so its full price is visible when the user picks
+- The do-least option sits inside the question; it never replaces asking. Ask what only the user can answer, and treat what they stated as a requirement as a given: price it, never relitigate it, and challenge it only with a question
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
 

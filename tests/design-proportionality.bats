@@ -104,3 +104,18 @@ setup() {
   grep -qi 'structural property of what is built now' "$GRILL"
   grep -qi 'structural property of what is built now' "$BRAINSTORM"
 }
+
+@test "P6: sizing and the do-least option never replace asking; stated requirements are givens" {
+  # Intent: encourage good questions. The do-least option lives inside a question, and a stated
+  # requirement is priced, not relitigated or quietly overridden.
+  grep -qi 'never replace asking' "$GRILL"
+  grep -qi 'never relitigate it' "$GRILL"
+  grep -qi 'never replaces asking' "$BRAINSTORM"
+  grep -qi 'never relitigate it' "$BRAINSTORM"
+}
+
+@test "P7: shared logic gets one owner; frequency is looked up, not asked" {
+  grep -qi 'gets one shared owner' "$GRILL"
+  grep -qi 'gets one shared owner' "$BRAINSTORM"
+  grep -qi 'how often something happens when the history can count it' "$GRILL"
+}

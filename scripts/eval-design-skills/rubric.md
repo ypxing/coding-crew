@@ -14,6 +14,12 @@ random. Judge each output on its own against the case's reference judgement. Sco
   if nothing is done) with evidence or a stated source before or alongside its recommendation.
 - **do_least** — 1 if every choice about how much to build offers the smallest option (down to
   "by hand" or "leave it") with its cost. null when the output makes no build-size choice.
+- **asked_well** — stage `round1` only, else null. 1 if it asks the questions only the user can answer
+  and that change the design (scope, stakes, constraints, which live pattern wins), each with options
+  and a recommendation, and does not quietly decide those for them or relitigate what the request
+  states as a requirement. 0 if it skips a question the reference says is worth asking, asks
+  something it could have looked up, or decides a user-owned fork itself. A short round is fine when
+  few questions are genuinely the user's; padding with trivia is not asking well.
 - **overbuilt** — 1 (bad) if it recommends or keeps at least one component whose only
   justification is a hypothetical need, generality, or completeness — measured against the
   reference judgement. A component the user explicitly chose earlier in the transcript counts only
