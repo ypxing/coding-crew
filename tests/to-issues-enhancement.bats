@@ -202,3 +202,20 @@ setup() {
   grep -qF 'never read from a live or gitignored directory' "$SKILL_FILE"
   grep -qF 'no such examples (a new format) → no such criterion' "$SKILL_FILE"
 }
+
+@test "expand-contract reference has no integration branch and directs single issue or ready-for-human" {
+  f="$SCRIPT_DIR/skills/to-issues/references/expand-contract.md"
+  ! grep -qi 'integration branch\|integrate-and-verify' "$f"
+  grep -q 'one fresh context window' "$f"
+  grep -q 'Status: ready-for-human' "$f"
+  grep -q '### Why a person' "$f"
+  grep -q 'per-branch verify' "$f"
+}
+
+@test "to-issues step 1 reads a referenced issue's comments via gh issue view --comments" {
+  grep -q 'gh issue view <n> --comments' "$SKILL_FILE"
+}
+
+@test "github tracker fetch operation is unchanged" {
+  grep -q 'gh issue view <number> \[--repo owner/name\] --json number,title,body,labels,state$' "$SCRIPT_DIR/docs/templates/trackers/github.md"
+}

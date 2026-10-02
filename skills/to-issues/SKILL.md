@@ -15,6 +15,8 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 
 Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a local file path (e.g. `.scratch/feature/issues/01-slug.md`) or an issue number within `.scratch/` — or, under a configured `github` tracker, an issue number resolved via that tracker's `fetch` operation. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker; reads and writes through the *configured* tracker's own operations (as defined in `issue-tracker.md`) are permitted.
 
+When the plan references an issue, read its full body and its comments, not just the title: under `github`, run `gh issue view <n> --comments` (the `fetch` operation returns no comments); under `local`, read the file.
+
 Determine the **feature slug** (the directory name under `.scratch/`):
 
 1. If the user provided a path argument, extract the slug from it (e.g. `.scratch/auth-flow/...` → `auth-flow`).
