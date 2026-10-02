@@ -130,3 +130,22 @@ write_report() { # file branch findings-json
   run bash "$POST"
   [ "$output" = "POSTED: 0 (0 inline)" ]
 }
+
+@test "a finding's issue text precedes its criterion in the inline comment and the body" {
+  write_report .scratch/feat/reviews/sprint-review-3.md crew/feat/c '[
+    {"severity":"MEDIUM","location":"src/x.ts:11","issue":"PROBLEM-A","criterion":"FIX-A"},
+    {"severity":"MEDIUM","location":"nowhere","issue":"PROBLEM-B","criterion":"FIX-B"}]'
+  run bash "$POST"
+  [ "$status" -eq 0 ]
+  jq -e '.comments | map(select(.body | test("PROBLEM-A.*FIX-A"))) | length == 1' "$GH_STORE"
+  jq -e '.body | test("PROBLEM-B.*FIX-B")' "$GH_STORE"
+}
+
+@test "a finding already posted under the old body format is not posted again" {
+  key="crew/feat/a|CRITICAL|src/x.ts:12|unchecked input"
+  marker="crew-finding:$(printf '%s' "$key" | { if command -v sha1sum >/dev/null 2>&1; then sha1sum; else shasum -a 1; fi; } | cut -c1-12)"
+  jq -nc --arg b "- \`src/x.ts:12\` — unchecked input (\`crew/feat/a\`) <!-- $marker -->" '{event:"COMMENT",body:$b,comments:[]}' > "$GH_STORE"
+  write_report "$REPORT" crew/feat/a '[{"severity":"CRITICAL","location":"src/x.ts:12","issue":"new issue text","criterion":"unchecked input"}]'
+  run bash "$POST"
+  [ "$output" = "POSTED: 0 (0 inline)" ]
+}

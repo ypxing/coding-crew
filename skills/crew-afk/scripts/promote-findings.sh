@@ -814,7 +814,7 @@ open_findings_json() {
     | [$rollup.branches[] | .branch as $b | .findings[]
        | select((($pset[$b + " " + .severity] // false)
                  or ((.verdict // "") == "actionable" and ($pset[$b + " actionable"] // false))) | not)
-       | {branch: $b, severity, location: (.location // ""), criterion: (.criterion // ""),
+       | {branch: $b, severity, location: (.location // ""), issue: (.issue // ""), criterion: (.criterion // ""),
           verdict: (.verdict // ""), rationale: (.rationale // "")}]
   '
 }

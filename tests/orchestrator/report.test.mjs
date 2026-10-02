@@ -144,6 +144,7 @@ test("a review sidecar's findings parse into severity, location and criterion", 
   const r = parseReviewReport("", sidecar);
   assert.equal(r.findings.length, 2);
   assert.deepEqual(r.findings[0], {
+    issue: "",
     severity: "CRITICAL",
     location: "src/auth.ts:42",
     criterion: "Reject unsigned tokens before use",
@@ -741,4 +742,26 @@ test("a deferred test check parses and does not demote complete", () => {
   const v = applySchemaPrefilter(r);
   assert.equal(v.status, "complete");
   assert.equal(v.demoted, false);
+});
+
+test("review findings carry issue, or an empty string when absent", () => {
+  const r = parseReviewReport("", {
+    verdict: "unmet",
+    findings: [
+      { severity: "HIGH", location: "a.ts:1", issue: " leaks the handle ", criterion: "closes it" },
+      { severity: "LOW", location: "b.ts:2", criterion: "renames x" },
+    ],
+  });
+  assert.equal(r.findings[0].issue, "leaks the handle");
+  assert.equal(r.findings[1].issue, "");
+});
+
+test("findingsTriagePrompt lists issue before criterion", async () => {
+  const { findingsTriagePrompt } = await import("../../orchestrator/lib/prompts.mjs");
+  const out = findingsTriagePrompt({
+    scope: "s", ref: "r", featureBranch: "f", reportPath: "/p",
+    findings: [{ severity: "HIGH", location: "a.ts:1", issue: "PROBLEM-TEXT", criterion: "FIX-TEXT" }],
+  });
+  assert.ok(out.indexOf("PROBLEM-TEXT") > -1 && out.indexOf("PROBLEM-TEXT") < out.indexOf("FIX-TEXT"));
+  assert.ok(!out.includes("what the reviewer wants"));
 });

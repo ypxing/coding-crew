@@ -266,6 +266,7 @@ function findingsFromStructured(list) {
     .map((f) => ({
       severity: String(f.severity).toUpperCase(),
       location: f.location ? String(f.location).trim() : "",
+      issue: f.issue ? String(f.issue).trim() : "",
       criterion: f.criterion ? String(f.criterion).trim() : "",
       explicit: true,
       // Written beside the finding once findings triage has judged it (annotateFindings below).

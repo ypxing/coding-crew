@@ -77,6 +77,7 @@ if [ ! -s "$TMP/annotated.jsonl" ]; then
 fi
 
 jq -s '
+  def what: (if (.issue // "") != "" then .issue + " — Fix: " else "" end) + .criterion;
   . as $all
   | ($all | map(select(.path != ""))) as $inline
   | ($all | map(select(.path == "" and .verdict != "dismiss"))) as $rest
@@ -85,12 +86,12 @@ jq -s '
       "\n\n" + ([ "CRITICAL", "HIGH", "MEDIUM", "LOW" ]
         | map(. as $sev | $rest | map(select(.severity == $sev)) | select(length > 0)
             | "### \($sev)\n\n" + (map("- " + (if .location != "" then "`\(.location)` — " else "" end)
-                + .criterion + " (`\(.branch)`) <!-- \(.marker) -->") | join("\n")))
+                + what + " (`\(.branch)`) <!-- \(.marker) -->") | join("\n")))
         | join("\n\n"))
     end)
     + ($dis | if length == 0 then "" else
         "\n\n### Dismissed by triage\n\n" + (map("- " + (if .location != "" then "`\(.location)` — " else "" end)
-          + .criterion + " (`\(.branch)`, \(.severity))"
+          + what + " (`\(.branch)`, \(.severity))"
           + (if (.rationale // "") != "" then " — why: " + .rationale else "" end)
           + " <!-- \(.marker) -->") | join("\n"))
       end)) as $list
@@ -98,7 +99,7 @@ jq -s '
       event: "COMMENT",
       body: ("crew-afk review findings. Nothing here is acted on until a human replies." + $list),
       comments: ($inline | map({path, line, side: "RIGHT",
-        body: ("**\(.severity)** (`\(.branch)`) — \(.criterion)\n\n<!-- \(.marker) -->")}))
+        body: ("**\(.severity)** (`\(.branch)`) — \(what)\n\n<!-- \(.marker) -->")}))
     }
 ' "$TMP/annotated.jsonl" > "$TMP/payload.json"
 
