@@ -478,6 +478,11 @@ export function applyFindingVerdicts(findings, verdicts) {
   return findings.map((f, i) => {
     const t = verdicts[i];
     let { verdict, rationale } = t;
+    // Auto never dismisses: a doubted finding goes to the coder's premise check instead.
+    if (verdict === "dismiss") {
+      verdict = "actionable";
+      rationale = `${rationale ? `${rationale} ` : ""}[remapped dismiss → actionable: auto triage does not dismiss]`;
+    }
     const forced = [];
     if (t.adr) forced.push("contradicts a documented decision (ADR / CONTEXT.md)");
     if (t.protected || touchesProtectedPath(f.location)) forced.push("its fix touches a protected path (CI config, auth, deploy, .env)");

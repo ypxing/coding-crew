@@ -69,7 +69,7 @@ export async function selectPromotable(ctx, { findings, label, scope, ref, dir, 
   const judged = applyFindingVerdicts(findings, triage.verdicts);
   writeVerdicts(reportFile, written, annotateFindings(written, judged));
   const count = (v) => judged.filter((f) => f.verdict === v).length;
-  ctx.log(`FINDINGS-TRIAGE: ${label}: ${count("actionable")} actionable, ${count("debatable")} debatable, ${count("dismiss")} dismissed`);
+  ctx.log(`FINDINGS-TRIAGE: ${label}: ${count("actionable")} actionable, ${count("debatable")} debatable`);
   return { promotable: judged.filter((f) => f.verdict === "actionable"), findings: judged, rule: "actionable" };
 }
 

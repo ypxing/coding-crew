@@ -702,10 +702,24 @@ test("applyFindingVerdicts: an ADR clash or a protected path forces Debatable ov
     { verdict: "actionable", rationale: "ok", adr: false, protected: true },
     { verdict: "dismiss", rationale: "noise", adr: false, protected: false },
   ]);
-  assert.deepEqual(out.map((f) => f.verdict), ["debatable", "debatable", "debatable", "dismiss"]);
+  assert.deepEqual(out.map((f) => f.verdict), ["debatable", "debatable", "debatable", "actionable"]);
   assert.match(out[0].rationale, /^ok \[forced Debatable: contradicts a documented decision/);
   assert.match(out[1].rationale, /protected path/);
-  assert.equal(out[3].rationale, "noise", "a verdict no rule overrides is left alone");
+  assert.match(out[3].rationale, /^noise \[remapped dismiss → actionable/, "auto never dismisses");
+});
+
+test("applyFindingVerdicts: a dismiss on a protected path or with adr still ends up Debatable", () => {
+  const out = applyFindingVerdicts(
+    [
+      { severity: "LOW", location: ".github/workflows/ci.yml:9", criterion: "a" },
+      { severity: "LOW", location: "src/b.ts:1", criterion: "b" },
+    ],
+    [
+      { verdict: "dismiss", rationale: "noise", adr: false, protected: false },
+      { verdict: "dismiss", rationale: "noise", adr: true, protected: false },
+    ],
+  );
+  assert.deepEqual(out.map((f) => f.verdict), ["debatable", "debatable"]);
 });
 
 test("annotateFindings writes verdicts beside the sidecar's findings, skipping entries the parser drops", () => {
@@ -764,4 +778,11 @@ test("findingsTriagePrompt lists issue before criterion", async () => {
   });
   assert.ok(out.indexOf("PROBLEM-TEXT") > -1 && out.indexOf("PROBLEM-TEXT") < out.indexOf("FIX-TEXT"));
   assert.ok(!out.includes("what the reviewer wants"));
+});
+
+test("findingsTriagePrompt does not offer dismiss", async () => {
+  const { findingsTriagePrompt } = await import("../../orchestrator/lib/prompts.mjs");
+  const out = findingsTriagePrompt({ scope: "s", ref: "r", featureBranch: "f", findings: [{ severity: "LOW", location: "a:1", criterion: "x" }], reportPath: "/p" });
+  assert.match(out, /"actionable \| debatable"/);
+  assert.doesNotMatch(out, /dismiss \|?"|\| dismiss/);
 });

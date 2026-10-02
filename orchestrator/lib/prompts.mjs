@@ -499,7 +499,7 @@ function coderEvidenceLines(e) {
 }
 
 /**
- * crew-triage's findings mode: judge each review finding Actionable / Debatable / Dismiss, by the
+ * crew-triage's findings mode: judge each review finding Actionable / Debatable (never Dismiss: a doubted finding goes to the coder's premise check), by the
  * shared rubric (inlined in the agent from skills/_shared/fragments/common/findings-rubric.md).
  * Dispatched apart from the reviewer that raised them — a review never grades its own findings.
  * `scope` says where the findings came from; `findings` are report.mjs's normalised findings.
@@ -527,7 +527,7 @@ export function findingsTriagePrompt({ scope, ref, featureBranch, findings, repo
         findings: [
           {
             index: 0,
-            verdict: "actionable | debatable | dismiss",
+            verdict: "actionable | debatable",
             rationale: "one line: why this verdict",
             adr: "true when the fix would contradict an ADR or CONTEXT.md, else false",
             protected: "true when the fix would touch CI config, auth, deploy or .env, else false",

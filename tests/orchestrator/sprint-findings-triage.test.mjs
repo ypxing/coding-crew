@@ -46,7 +46,7 @@ test("actionable: an Actionable LOW is fixed in Phase 2, a Debatable HIGH is not
   assert.match(prompt, /^Findings mode: /m);
   assert.match(prompt, /^0 — HIGH — src\/alpha\.txt:1 — Redesign the retry contract$/m);
   assert.match(prompt, /^1 — LOW — src\/alpha\.txt:2 — Name the retry constant$/m);
-  assert.match(traceLog(root), /FINDINGS-TRIAGE: alpha: 1 actionable, 1 debatable, 0 dismissed/);
+  assert.match(traceLog(root), /FINDINGS-TRIAGE: alpha: 1 actionable, 1 debatable/);
   assert.ok(state(root).dispatches.some((d) => d.slug === "alpha" && d.role === "triage"), "its cost is in the ledger");
   // Each finding carries its verdict and rationale in the review report.
   const report = sprintReport(root);
@@ -62,18 +62,15 @@ test("actionable: an Actionable LOW is fixed in Phase 2, a Debatable HIGH is not
   assert.match(r.stdout, /1 Debatable — decide these first/);
 });
 
-test("actionable: a Dismissed finding stays open but collapsed, with its rationale", () => {
+test("actionable: a dismiss verdict is remapped to actionable and promoted to a fix issue", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "alpha.review", reviewOf([retryLow]));
   fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "dismiss", rationale: "already guarded two lines above" }]));
   const { r } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.deepEqual(state(root).completed_slugs, ["alpha"], "nothing to fix");
-  const remind = remindOf(root);
-  assert.match(remind, /^DISMISSED: 1 /m);
-  assert.match(remind, /^dismissed: crew\/demo\/alpha \[LOW\] src\/alpha\.txt:2 — Name the retry constant — why: already guarded two lines above$/m);
-  assert.doesNotMatch(remind, /^DEBATABLE:/m);
+  assert.doesNotMatch(remindOf(root), /^DISMISSED:/m);
+  assert.match(traceLog(root), /FINDINGS-TRIAGE: alpha: 1 actionable, 0 debatable/);
 });
 
 test("actionable: a finding that contradicts an ADR, or whose fix touches a protected path, is Debatable whatever triage says", () => {
