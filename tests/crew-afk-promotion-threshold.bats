@@ -296,3 +296,14 @@ verdict_report() {
   [[ "$output" == *"- crew/feat/a [HIGH] src/y.ts:40 — Rename the exported helper — why: public contract change"* ]]
   [[ "$output" == *"triage judged them Debatable or Dismissed"* ]]
 }
+
+# Fixture set shared with tests/orchestrator/body-format.test.mjs (isSourceGuarded).
+@test "guard counts Source: only at column 0 outside a code fence" {
+  g() { printf '%b' "$1" > .scratch/feat/issues/open/03-fx.md; bash "$PROMOTE" guard --issue .scratch/feat/issues/open/03-fx.md; }
+  run g '# t\n\nSource: r (b)\n';                       [[ "$output" == *"source-guarded"* ]]
+  run g '# t\n\n```\nSource: r (b)\n```\n';             [[ "$output" == *"eligible"* ]]
+  run g '# t\n\n~~~\nSource: r (b)\n~~~\n';             [[ "$output" == *"eligible"* ]]
+  run g '# t\n\n```\nx\n```\n\nSource: r (b)\n';        [[ "$output" == *"source-guarded"* ]]
+  run g '# t\n\n  Source: r (b)\n';                     [[ "$output" == *"eligible"* ]]
+  run g '# t\n\n**Source:** r (b)\n';                   [[ "$output" == *"eligible"* ]]
+}
