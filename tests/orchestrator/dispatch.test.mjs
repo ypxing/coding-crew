@@ -909,3 +909,13 @@ test("extractResultMeta carries claude's budget-cap subtype", () => {
   assert.equal(meta.subtype, "error_max_budget_usd");
   assert.equal(meta.isError, true);
 });
+
+test("only crew-coder dispatches set CREW_DEFER_FULL_CHECKS, on every runtime", () => {
+  const { root, promptFile } = fixture();
+  for (const platform of ["claude", "copilot", "pi", "codex"]) {
+    assert.equal(buildDispatch(platform, spec(root, promptFile)).env.CREW_DEFER_FULL_CHECKS, "1", platform);
+    for (const agent of ["crew-reviewer", "crew-triage"]) {
+      assert.equal("CREW_DEFER_FULL_CHECKS" in buildDispatch(platform, spec(root, promptFile, { agent })).env, false, `${platform} ${agent}`);
+    }
+  }
+});

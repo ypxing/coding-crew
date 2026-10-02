@@ -126,6 +126,21 @@ _cache() {
   [[ "$output" != *"=== install"* ]]
 }
 
+@test "run-checks: CREW_DEFER_FULL_CHECKS=1 runs typecheck and lint, defers test and coverage, keeps null NOT RUN" {
+  _cache '{"typecheck": "echo Y", "lint": "echo L", "test": "touch $PWD/ran-test", "coverage": "touch $PWD/ran-cov", "integration": null}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"typecheck: pass"*"lint: pass"*"test: deferred"*"coverage: deferred"*"integration: NOT RUN: no command found"*"CHECKS: pass" ]]
+  [ ! -e "$WORK/ran-test" ] && [ ! -e "$WORK/ran-cov" ]
+}
+
+@test "run-checks: CREW_DEFER_FULL_CHECKS=1 still fails when lint fails" {
+  _cache '{"typecheck": "echo Y", "lint": "exit 2", "test": "echo T"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"test: deferred"*"CHECKS: fail" ]]
+}
+
 @test "run-checks: one failing check fails the run and does not hide the rest" {
   _cache '{"typecheck": "exit 4", "lint": "echo L", "test": "echo T"}'
   run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"

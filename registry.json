@@ -58,7 +58,7 @@
       }
     },
     "crew-coder": {
-      "version": "1.10.7",
+      "version": "1.10.8",
       "source-dir": "crew-coder",
       "description": "Implements a single issue using TDD, verifies checks, commits.",
       "deps": [],
@@ -79,7 +79,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.7.3",
+      "version": "2.8.1",
       "source-dir": "crew-afk",
       "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -113,7 +113,8 @@
         "dep-install",
         "solve-issue",
         "to-issues",
-        "crew-address-findings"
+        "crew-address-findings",
+        "write-pr"
       ]
     },
     "tdd": {
@@ -134,7 +135,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.10.5",
+      "version": "1.11.0",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
@@ -181,7 +182,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.7.0",
+      "version": "1.9.0",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
@@ -192,7 +193,7 @@
       }
     },
     "to-prd": {
-      "version": "1.4.0",
+      "version": "1.4.1",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",
@@ -243,7 +244,7 @@
       ]
     },
     "upgrade-deps": {
-      "version": "1.1.2",
+      "version": "1.1.3",
       "source-dir": "upgrade-deps",
       "description": "Audit outdated npm/yarn/pnpm dependencies for exploitability, transitive conflicts, and usage, then publish issues (batched safe bumps, one per risky package or coupled group) with a safety checklist.",
       "install": ".claude/skills/upgrade-deps",
@@ -265,6 +266,17 @@
       "source-dir": "domain-modeling",
       "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise.",
       "install": ".claude/skills/domain-modeling"
+    },
+    "write-pr": {
+      "version": "1.0.0",
+      "source-dir": "write-pr",
+      "description": "Write a PR body for a human reviewer: Summary (smallest diagram or diff-sketch), Evidence (before/after), Merge Danger (door, blast radius).",
+      "source": "mattpocock/skills",
+      "install": ".claude/skills/write-pr",
+      "assets": {
+        "source": "skills/write-pr",
+        "dest": ".coding-crew/write-pr"
+      }
     }
   }
 }

@@ -52,7 +52,7 @@ That file is the only thing `report.mjs` reads; its absence, whatever you printe
 `blocked`. The field names are fixed:
 
 ```json
-{"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run","lint":"pass|fail|not_run","typecheck":"pass|fail|not_run","<category>":"pass|fail|not_run"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>","cause":"environment|code","evidence":{"command":"<the one command that shows it>","exit":1,"output":"<its verbatim output>"}}
+{"status":"complete|partial|blocked","branch":"<git rev-parse --abbrev-ref HEAD>","working_directory":"$PROJECT_ROOT","checks":{"test":"pass|fail|not_run|deferred","lint":"pass|fail|not_run|deferred","typecheck":"pass|fail|not_run|deferred","<category>":"pass|fail|not_run|deferred"},"criteria":[{"text":"<criterion>","met":true}],"progress":"<what remains — required for partial>","notes":"<anything a human needs>","cause":"environment|code","evidence":{"command":"<the one command that shows it>","exit":1,"output":"<its verbatim output>"}}
 ```
 
 Still end your final message with one line reading `Status: complete`, `Status: partial`, or
@@ -64,6 +64,7 @@ Rules:
 1. `status` is exactly one of `complete`, `partial`, `blocked`.
 2. `criteria` — one entry per criterion, including any under `## Cross-cutting Requirements` when the issue has one. `text` is the criterion verbatim; `met` is `true` only when it is fully satisfied.
 3. One `checks` entry per category, always all three: a category with no discoverable command is `not_run`, which is a recorded coverage gap — reporting it as `pass` claims a check that never ran.
+   When the environment sets `CREW_DEFER_FULL_CHECKS`, the full suite is left to the verify gate: report a check you did not run for that reason as `deferred` (not `not_run`); `deferred` is not a failure.
 4. One further `checks` entry for each other `dev-commands.json` check `solve-issue` Step 5 ran (`coverage`, `integration`), keyed by its `dev-commands.json` key.
 5. `progress` is required for `partial` and is where the remaining work goes — the orchestrator copies it into the issue file, which you never write to.
 6. `blocked` requires `cause` and `evidence`; `partial` may carry them. `cause` is `environment`

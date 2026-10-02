@@ -5,6 +5,7 @@
 # its corresponding fix.
 
 load helpers/render
+load helpers/isolate-env
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 BRANCH_SETUP="$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh"
@@ -14,6 +15,7 @@ DISPATCH_PI="$REPO_ROOT/skills/crew-afk/scripts/dispatch-agent.sh"
 VERIFY="$REPO_ROOT/skills/crew-afk/scripts/verify-worktree.sh"
 
 setup() {
+  isolate_project_env
   export TEMP_DIR=$(mktemp -d)
   cd "$TEMP_DIR"
   git init -q -b main

@@ -89,8 +89,11 @@ words_of() {
   # it): an issue written before anyone read the code could name a missing function or an
   # already-fixed bug, and the coder built to the wording anyway. Three real new branches — adapt
   # to drift, pin what is already met instead of rebuilding it, stop on a wrong assumption.
+  # Raised to 2,550 for the deferred full check (single-full-check, #112): run-checks.sh can
+  # print `<key>: deferred`, so Step 5 says what it means and how to report it, and Step 4 runs
+  # the affected tests before commit — the only tests a deferring coder runs.
   words=$(words_of "$REPO_ROOT/skills/solve-issue/SKILL.md")
-  [ "$words" -lt 2450 ] || { echo "solve-issue is $words words (budget 2450)" >&2; return 1; }
+  [ "$words" -lt 2550 ] || { echo "solve-issue is $words words (budget 2550)" >&2; return 1; }
 }
 
 @test "budget: tdd is under 750 words" {
@@ -122,13 +125,14 @@ words_of() {
   # instead of the next attempt re-deriving the same blocker in ~45 calls.
   # Raised to 4,600 alongside solve-issue's 2,450 ceiling above — the same premise check,
   # not restated here.
+  # Raised to 4,700 alongside solve-issue's 2,550 ceiling above — the deferred full check.
   total=$(words_of "$(coder_variant pi)")
   for f in "$REPO_ROOT"/skills/solve-issue/SKILL.md \
            "$REPO_ROOT"/skills/solve-issue/references/verification.md \
            "$REPO_ROOT"/skills/tdd/SKILL.md; do
     total=$((total + $(words_of "$f")))
   done
-  [ "$total" -lt 4600 ] || { echo "worker chain is $total words (budget 4600)" >&2; return 1; }
+  [ "$total" -lt 4700 ] || { echo "worker chain is $total words (budget 4700)" >&2; return 1; }
 }
 
 # ─── and the duplication that made it large stays gone ───────────────────────

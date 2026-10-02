@@ -6,6 +6,24 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `to-issues`, `upgrade-deps`: a shared `human-issue` fragment defines the `## For a human` block, inlined where each writes a `ready-for-human` issue (Kind A / Kind B, `Check:` / `Undo:` per step).
+- `to-issues` lint: `lint-issues.sh` warns when a `Status: ready-for-human` issue lacks the `## For a human` block or any of its five `###` parts, and no longer asks such issues for `## What to build` / `## Implements`. Adds the rewritten #106 as the `human/` fixture.
+- `write-pr` (new skill): writes a PR title (what the change does, not a slug) and body for a human reviewer, adapted from mattpocock/skills' `pr`. It has three
+  sections: Summary (the smallest pseudocode, call tree, file tree, Mermaid diagram or diff-sketch that makes the
+  change clear), Evidence (before/after) and Merge Danger (one-way or two-way door, blast radius). Run it by hand as
+  `/write-pr`.
+- `crew-afk`: with `--open-pr`, a new `prWriter` role (plain dispatch; default timeout 10 min) follows `write-pr` over
+  `base..feature` with the PRD and the review report. Its body goes at the top of crew-afk's block in the PR, above a
+  checks line taken from the integration check's own record and the `Closes` lines. The PR takes the writer's title
+  (else the PRD's, else the slug as before); an open PR still titled with the slug is renamed, a title a human set is kept.
+  If the writer leaves no `## Summary`, the PR still opens and the run summary says why.
+  `open-pr.sh` gains `--body-file` and `--title`.
+
+- `solve-issue`: with `CREW_DEFER_FULL_CHECKS=1`, `run-checks.sh` runs only `typecheck` and `lint`; `test` and the
+  other checks print `<key>: deferred …` and are left to the verify gate. Step 4 now says to run the affected tests
+  before committing; Step 5 says to report a deferred check as `deferred`.
+
+- `to-prd` / `crew-afk`: a PRD may carry `Origin: #<n>[, #<n>…]` under its `Actor:` line; `closingRefs` adds `Closes #n` for each exactly when it adds the PRD's own, and `close-shipped.sh` closes each open origin issue (commenting the PRD and PR) in the run that closes the PRD.
 - `crew-afk`: under `tracker: github`, the fix issues `promote-findings.sh` creates carry their evidence instead of a
   pointer to a gitignored local report — `defer` embeds each promoted finding's full reviewer text under
   `## Review findings`, `defer-gaps` the audit's per-requirement evidence, `defer-integration` the tail of the failing

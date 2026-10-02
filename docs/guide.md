@@ -390,7 +390,7 @@ doesn't silently drop. Applies on every platform, including Copilot — each wor
 `copilot -p` process, so the flag reaches the CLI.
 
 **Per-role runtime and model** — `.coding-crew/config.json` can put any role (`coder`, `reviewer`,
-`triage`, `commandFinder`, `prdAuditor`) on another installed runtime, and name models per runtime:
+`triage`, `commandFinder`, `prdAuditor`, `prWriter`) on another installed runtime, and name models per runtime:
 
 ```json
 { "afk": { "runtime": { "reviewer": "codex" },
@@ -417,11 +417,11 @@ flag overrides each for one run:
 | --- | --- | --- | --- |
 | `fixFindings` | `actionable` | `--fix-findings` | What review findings are fixed automatically: `actionable` (every finding the triage agent judges Actionable, whatever its severity); or the lowest severity — `critical`, `high`, `medium`; or `none` |
 | `PRDAudit` | `fix` | `--prd-audit` | `off`; `report` (audit, leave it for you); `fix` (also queue missing requirements) |
-| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` sets every non-coder role | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
+| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` sets every non-coder role | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
 | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
 | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
 | `squashCommits` | `false` | `--squash` (`--no-squash` turns it off) | Squash the sprint's commits into one at the end. Each issue is merged as its own commit either way |
-| `openPr` | `false` | `--open-pr` (`--no-open-pr` turns it off) | At the end, push the feature branch and create or update its PR. The PR body closes the issues the sprint merged (under `tracker: github`); a re-run rewrites only crew-afk's own block of the body |
+| `openPr` | `false` | `--open-pr` (`--no-open-pr` turns it off) | At the end, push the feature branch and create or update its PR. The `prWriter` role writes the title (else the PRD's; an open PR keeps a title you set) and the body by following `write-pr` (Summary, Evidence, Merge Danger), under which go the checks result on the merged branch and the lines closing the issues the sprint merged (under `tracker: github`). If the writer leaves no `## Summary`, the PR opens anyway and the run summary says why. A re-run rewrites only crew-afk's own block of the body |
 | `baselineCheck` | `true` | `--no-baseline` | Run the checks once on the feature branch before any dispatch; stop if they fail, since every issue's verify would too |
 | `integrationCheck` | `true` | `--no-integration-check` | Each time the queue drains (after the first pass and after the fix pass), run the checks once on the merged feature branch — two branches that pass alone can fail together. A red result gets an `## Integration check` section in the summary and keeps `openPr` from opening the PR; a pass is cached by commit. `--no-baseline` does not turn it off |
 | `resumeCoderSession` | `false` | `--resume-coder-session` | On a fix round, continue the claude coder session that wrote the branch, if that session is under 100k tokens and the branch hasn't moved |
@@ -514,6 +514,7 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 | Turn a feature idea into a PRD                     | `/to-prd`                        |
 | Break a PRD into issues                            | `/to-issues`                     |
 | Address GitHub PR review comments                  | `/address-pr-comments`           |
+| Write a PR body for human reviewers                | `/write-pr`                      |
 
 ---
 

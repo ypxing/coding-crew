@@ -301,8 +301,14 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
     },
   });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(readFileSync(log, "utf8"), /pr create --head feature\/demo/);
-  assert.match(readFileSync(join(root, "pr-body.md"), "utf8"), /^Closes #1$/m);
+  assert.match(readFileSync(log, "utf8"), /pr create --head feature\/demo --title Fake title for reviewers/);
+  const body = readFileSync(join(root, "pr-body.md"), "utf8");
+  assert.match(body, /^Closes #1$/m);
+  assert.doesNotMatch(body, /^# Fake title/m, "the title is the PR's title, not a line of its body");
+  // The PR writer's body opens the block, preamble dropped; the checks line is the sprint's own.
+  assert.match(body, /<!-- crew-afk:begin -->\n## Summary\n\nFake summary\.[\s\S]*## Merge Danger[\s\S]*\*\*Checks on the merged branch:\*\* [\s\S]*Implemented by a crew-afk sprint[\s\S]*Closes #1/);
+  assert.doesNotMatch(body, /Here is the body/);
+  assert.doesNotMatch(r.stdout, /PR body has no summary/);
   assert.equal(sh("git", ["-C", remote, "rev-parse", "feature/demo"]).stdout.trim(), sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim());
   assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+1 finding\(s\) posted \(0 inline\)/);
   assert.doesNotMatch(r.stdout, /^## Next$/m, "openPr on: the PR is opened, nothing is left to tell the human");
@@ -312,6 +318,32 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
   // The findings are on the PR, so the summary points there, not at /crew-address-findings.
   assert.match(r.stdout, /1 finding\(s\) posted to https:\/\/github.com\/o\/r\/pull\/7/);
   assert.doesNotMatch(r.stdout, /\/crew-address-findings/);
+});
+
+test("github --open-pr: a PR writer with no ## Summary still opens the PR, with the checks line, and the summary says why", () => {
+  const root = githubFixtureRepo();
+  const { stub, log } = stubGh(root, [GH_ALPHA]);
+  const remote = join(root, ".scratch/remote.git");
+  sh("git", ["init", "-q", "--bare", remote]);
+  sh("git", ["-C", root, "remote", "set-url", "origin", remote]);
+  fake(root, "pr-writer.response", "I could not read the diff.\n");
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--open-pr"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: SCRIPTS,
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(readFileSync(log, "utf8"), /pr create --head feature\/demo/);
+  const body = readFileSync(join(root, "pr-body.md"), "utf8");
+  assert.doesNotMatch(body, /## Summary|could not read/);
+  assert.match(body, /<!-- crew-afk:begin -->\n\*\*Checks on the merged branch:\*\* [\s\S]*Closes #1/);
+  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+\*\*PR body has no summary:\*\* the writer's answer has no `## Summary` section\./);
 });
 
 test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implemented in Phase 2", () => {

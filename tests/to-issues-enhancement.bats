@@ -23,9 +23,10 @@ setup() {
 @test "to-issues template has Implements after What to build, and no Part of Flow" {
   grep -q '^## Implements$' "$SKILL_FILE"
   ! grep -q 'Part of Flow' "$SKILL_FILE"
-  build=$(grep -n '^## What to build$' "$SKILL_FILE" | head -1 | cut -d: -f1)
   impl=$(grep -n '^## Implements$' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  ac=$(grep -n '^## Acceptance criteria$' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  # the inlined human-issue fragment has its own headings; anchor on the template around Implements
+  build=$(grep -n '^## What to build$' "$SKILL_FILE" | cut -d: -f1 | awk -v i="$impl" '$1<i{b=$1} END{print b}')
+  ac=$(grep -n '^## Acceptance criteria$' "$SKILL_FILE" | cut -d: -f1 | awk -v i="$impl" '$1>i{print; exit}')
   [ "$build" -lt "$impl" ]
   [ "$impl" -lt "$ac" ]
   grep -qi 'PRD IDs' "$SKILL_FILE"
