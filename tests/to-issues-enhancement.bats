@@ -147,15 +147,29 @@ setup() {
 }
 
 @test "to-issues quiz: ordered outlier list then one approve/adjust prompt; the five generic questions are gone" {
-  local a b c d e f
+  local a b c d e f g
   a=$(grep -n 'Contradicted assumptions' "$SKILL_FILE" | head -1 | cut -d: -f1)
   b=$(grep -n "PRD's \`## Assumptions\`" "$SKILL_FILE" | head -1 | cut -d: -f1)
   c=$(grep -n 'PRD IDs no slice covers' "$SKILL_FILE" | head -1 | cut -d: -f1)
   d=$(grep -n 'Slices outside the criteria range' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  e=$(grep -n 'Shared surfaces' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  f=$(grep -n 'HITL choices' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  [ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ -n "$d" ] && [ -n "$e" ] && [ -n "$f" ]
-  [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && [ "$c" -lt "$d" ] && [ "$d" -lt "$e" ] && [ "$e" -lt "$f" ]
+  e=$(grep -n 'Edges and merges the edge rule produced' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  f=$(grep -n '\*\*Seam count\*\*' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  g=$(grep -n 'HITL choices' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  # One check per line: bats fails only on the last command of an && list, so a chained
+  # empty match here passed silently.
+  [ -n "$a" ]
+  [ -n "$b" ]
+  [ -n "$c" ]
+  [ -n "$d" ]
+  [ -n "$e" ]
+  [ -n "$f" ]
+  [ -n "$g" ]
+  [ "$a" -lt "$b" ]
+  [ "$b" -lt "$c" ]
+  [ "$c" -lt "$d" ]
+  [ "$d" -lt "$e" ]
+  [ "$e" -lt "$f" ]
+  [ "$f" -lt "$g" ]
   grep -qiE 'one approve/adjust prompt' "$SKILL_FILE"
   ! grep -qF 'Does the granularity feel right' "$SKILL_FILE"
   ! grep -qF 'Are the blocking edges correct' "$SKILL_FILE"
