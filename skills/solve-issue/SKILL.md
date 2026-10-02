@@ -224,12 +224,12 @@ bash "<skill-dir>/scripts/run-checks.sh" --project-root "$PROJECT_ROOT" --main-r
   --dep-scripts "$DEP_SCRIPTS"
 ```
 
-It runs every check `.coding-crew/dev-commands.json` names — `typecheck`, `lint`, `test`, then
+It runs every `.coding-crew/dev-commands.json` check — `typecheck`, `lint`, `test`, then
 every other key with a command (coverage, integration) — each through `run.sh`, and reports each.
-A `NOT RUN: no command found` is the cache's own answer that no local command exists: report it,
-do not re-check CLAUDE.md/Makefile instead.
+`NOT RUN: no command found` means no local command exists: report it,
+do not re-check CLAUDE.md/Makefile.
 
-`<key>: deferred — …` means the verify gate runs it: report `deferred`.
+`<key>: deferred`: the verify gate runs it; report `deferred`.
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
