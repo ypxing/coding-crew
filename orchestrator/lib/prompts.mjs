@@ -346,8 +346,9 @@ export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAss
 
 /**
  * The PR writer (role prWriter, a plain dispatch): write-pr's own SKILL.md is the procedure, so a
- * human's /write-pr and the sprint's PR body follow one text. Its final message is the body; the
- * caller keeps it from the first `## Summary` line, so a preamble costs nothing.
+ * human's /write-pr and the sprint's PR follow one text. Its final message is the `# <title>` line
+ * and the body; the caller keeps the body from the first `## Summary` line and the title from the
+ * `# ` line before it, so a preamble costs nothing.
  */
 export function prBodyPrompt({ skillFile, featureBranch, base, prd, reviewReport, checks }) {
   return [
@@ -358,9 +359,9 @@ export function prBodyPrompt({ skillFile, featureBranch, base, prd, reviewReport
     ...(reviewReport ? [`Review report (the sprint's reviewer findings; Merge Danger may draw on it): ${reviewReport}`] : []),
     `Checks on the merged branch: ${checks || "not run"}`,
     "",
-    "Output: print the body as your final message — nothing before `## Summary`, no fence around",
-    "it. Do not write files, commit, push or call `gh`: the sprint adds the closing lines and opens",
-    "the PR itself.",
+    "Output: print the `# <title>` line and the body as your final message — nothing before the",
+    "title, no fence around them. Do not write files, commit, push or call `gh`: the sprint adds the",
+    "closing lines and opens the PR itself.",
   ].join("\n");
 }
 

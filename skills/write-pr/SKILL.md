@@ -1,6 +1,6 @@
 ---
 name: write-pr
-description: Write a pull request body a human reviewer can act on — Summary (the smallest diagram, diff-sketch or tree that makes the change clear), Evidence (before/after), Merge Danger (door and blast radius). Use when opening or updating a PR, or when asked to write or improve a PR description. Trigger with /write-pr.
+description: Write a pull request title and body a human reviewer can act on — Summary (the smallest diagram, diff-sketch or tree that makes the change clear), Evidence (before/after), Merge Danger (door and blast radius). Use when opening or updating a PR, or when asked to write or improve a PR description. Trigger with /write-pr.
 argument-hint: "Optional base ref or PR number (defaults to the current branch against the repo's default branch)"
 ---
 
@@ -30,6 +30,8 @@ Never invent evidence. A check you did not see run is not evidence.
 Use this template. Skip preambles; keep prose brief.
 
 ```markdown
+# <title>
+
 ## Summary
 
 <one or two sentences: what changes, and why>
@@ -51,6 +53,12 @@ Use this template. Skip preambles; keep prose brief.
 
 <optional: what a bad merge would break>
 ```
+
+### Title
+
+What the change does for its user, in their terms — not the branch name, a slug, or an issue
+number. Imperative, at most 72 characters: `Run the full test suite once per branch, not per issue`,
+not `single-full-check`.
 
 ### Summary
 
@@ -83,10 +91,12 @@ show the after alone. When there is no evidence, say so in one line rather than 
 
 ## 3. Deliver
 
-- **The caller named an output** (a file, or "print it"): write exactly the body there — no
-  fence around it, nothing before `## Summary` — and stop. Do not commit, push or call `gh`.
-- **Otherwise:** show the body, then offer to apply it with `gh pr create --body-file <file>` (no
-  PR for the branch yet) or `gh pr edit <pr> --body-file <file>`. Keep every `Closes #n` line the
+- **The caller named an output** (a file, or "print it"): write exactly the `# <title>` line
+  and the body there — no fence around them, nothing before the title — and stop. Do not
+  commit, push or call `gh`.
+- **Otherwise:** show the title and body, then offer to apply them with
+  `gh pr create --title <title> --body-file <file>` (no PR for the branch yet) or
+  `gh pr edit <pr> --title <title> --body-file <file>`, the body without its `# <title>` line. Keep every `Closes #n` line the
   current body has — they close the issues on merge. A `<!-- crew-afk:begin -->` …
   `<!-- crew-afk:end -->` block is crew-afk's and is rewritten on its next run: put your body
   in it, between the markers, above its `Closes` lines.

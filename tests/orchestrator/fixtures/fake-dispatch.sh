@@ -145,7 +145,7 @@ if [ "$AGENT" = "pr-writer" ]; then
   if [ -f "$FAKE_DIR/pr-writer.response" ]; then
     cat "$FAKE_DIR/pr-writer.response" > "$OUT"
   else
-    printf 'Here is the body.\n\n## Summary\n\nFake summary.\n\n## Evidence\n\n- **After:** checks pass\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** local\n' > "$OUT"
+    printf 'Here is the body.\n\n# Fake title for reviewers\n\n## Summary\n\nFake summary.\n\n## Evidence\n\n- **After:** checks pass\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** local\n' > "$OUT"
   fi
   exit 0
 fi

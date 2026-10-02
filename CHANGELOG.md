@@ -6,13 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
-- `write-pr` (new skill): writes a PR body for a human reviewer, adapted from mattpocock/skills' `pr`. It has three
+- `write-pr` (new skill): writes a PR title (what the change does, not a slug) and body for a human reviewer, adapted from mattpocock/skills' `pr`. It has three
   sections: Summary (the smallest pseudocode, call tree, file tree, Mermaid diagram or diff-sketch that makes the
   change clear), Evidence (before/after) and Merge Danger (one-way or two-way door, blast radius). Run it by hand as
   `/write-pr`.
 - `crew-afk`: with `--open-pr`, a new `prWriter` role (plain dispatch; default timeout 10 min) follows `write-pr` over
   `base..feature` with the PRD and the review report. Its body goes at the top of crew-afk's block in the PR, above a
-  checks line taken from the integration check's own record and the `Closes` lines. The PR is titled after the PRD.
+  checks line taken from the integration check's own record and the `Closes` lines. The PR takes the writer's title
+  (else the PRD's, else the slug as before); an open PR still titled with the slug is renamed, a title a human set is kept.
   If the writer leaves no `## Summary`, the PR still opens and the run summary says why.
   `open-pr.sh` gains `--body-file` and `--title`.
 

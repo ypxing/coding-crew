@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { extractBody, prdTitle } from "../../orchestrator/lib/pipeline/pr-body.mjs";
+import { extractBody, extractTitle, prdTitle } from "../../orchestrator/lib/pipeline/pr-body.mjs";
 import { prBodyPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("extractBody: keeps the answer from its first ## Summary line, dropping a preamble", () => {
@@ -55,4 +55,10 @@ test("prBodyPrompt: no PRD, no report, no checks — says not run and names neit
   assert.doesNotMatch(p, /PRD/);
   assert.doesNotMatch(p, /Review report/);
   assert.match(p, /^Checks on the merged branch: not run$/m);
+});
+
+test("extractTitle: the last # line before ## Summary; none without one", () => {
+  assert.equal(extractTitle("Sure.\n\n# Run the full suite once per branch\n\n## Summary\n\nX\n# not this"), "Run the full suite once per branch");
+  assert.equal(extractTitle("## Summary\n\nX"), null);
+  assert.equal(extractTitle("# A title\n\nno summary"), null);
 });

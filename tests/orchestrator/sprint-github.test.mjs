@@ -301,9 +301,10 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
     },
   });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(readFileSync(log, "utf8"), /pr create --head feature\/demo/);
+  assert.match(readFileSync(log, "utf8"), /pr create --head feature\/demo --title Fake title for reviewers/);
   const body = readFileSync(join(root, "pr-body.md"), "utf8");
   assert.match(body, /^Closes #1$/m);
+  assert.doesNotMatch(body, /^# Fake title/m, "the title is the PR's title, not a line of its body");
   // The PR writer's body opens the block, preamble dropped; the checks line is the sprint's own.
   assert.match(body, /<!-- crew-afk:begin -->\n## Summary\n\nFake summary\.[\s\S]*## Merge Danger[\s\S]*\*\*Checks on the merged branch:\*\* [\s\S]*Implemented by a crew-afk sprint[\s\S]*Closes #1/);
   assert.doesNotMatch(body, /Here is the body/);

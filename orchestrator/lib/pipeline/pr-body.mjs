@@ -34,6 +34,14 @@ export function extractBody(text) {
   return at < 0 ? null : `${text.slice(at).trimEnd()}\n`;
 }
 
+/** The writer's `# <title>` — the last `# ` line before its `## Summary` — or null. */
+export function extractTitle(text) {
+  const at = (text ?? "").search(/^## Summary\b/m);
+  if (at < 0) return null;
+  const titles = [...text.slice(0, at).matchAll(/^#\s+(.+)$/gm)].map((m) => m[1].trim()).filter(Boolean);
+  return titles.at(-1) ?? null;
+}
+
 /** The PRD's first `# ` heading, without a `PRD:` prefix — the PR's title — or null. */
 export function prdTitle(prdFile) {
   if (!prdFile) return null;
@@ -42,8 +50,8 @@ export function prdTitle(prdFile) {
 }
 
 /**
- * Writes `<SPRINT_DIR>/pr-body.md` and returns `{ file, title, failed }`: `title` the PRD's (or
- * null), `failed` why the body has no writer prose (null when it has), for the summary. Null on a
+ * Writes `<SPRINT_DIR>/pr-body.md` and returns `{ file, title, failed }`: `title` the writer's,
+ * else the PRD's, else null (open-pr.sh then uses the slug), `failed` why the body has no writer prose (null when it has), for the summary. Null on a
  * dry run.
  */
 export async function writePrBody(ctx, { integration = null } = {}) {
@@ -53,11 +61,10 @@ export async function writePrBody(ctx, { integration = null } = {}) {
   const facts = `**Checks on the merged branch:** ${checks ?? "not run"}\n`;
   const scratch = join(effects.mainRoot, ".scratch", sprint.featureSlug);
   const prd = ["PRD.md", "prd-issue.md"].map((f) => join(scratch, f)).find((p) => existsSync(p)) ?? null;
-  const title = prdTitle(prd);
-  const finish = (prose, failed) => {
+  const finish = (prose, failed, title = null) => {
     writeFileSync(file, prose ? `${prose}\n${facts}` : facts);
     if (failed) ctx.log(`PR body: ${failed}`, "warn");
-    return { file, title, failed };
+    return { file, title: title ?? prdTitle(prd), failed };
   };
 
   const base = sprint.readState().branches?.[sprint.featureBranch]?.base_sha;
@@ -90,5 +97,5 @@ export async function writePrBody(ctx, { integration = null } = {}) {
   if (r.dryRun) return null;
   if (r.code !== 0 || r.timedOut) return finish(null, `the writer did not complete (${r.timedOut ? "timed out" : `exit ${r.code}`}).`);
   const prose = extractBody(r.text);
-  return prose ? finish(prose, null) : finish(null, "the writer's answer has no `## Summary` section.");
+  return prose ? finish(prose, null, extractTitle(r.text)) : finish(null, "the writer's answer has no `## Summary` section.");
 }
