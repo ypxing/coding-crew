@@ -1,5 +1,5 @@
 {
   "afk": {
-    "models": { "claude": { "reviewer": "opus" } }
+    "models": { "claude": { "reviewer": "opus", "triage": "opus" } }
   }
 }
