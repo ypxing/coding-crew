@@ -57,6 +57,7 @@ cpSync(join(REPO, "agents/crew-reviewer/assets"), join(INSTALL_DIR, "code-review
 cpSync(join(REPO, "skills/dep-install/scripts"), join(INSTALL_DIR, "dep-install/scripts"), { recursive: true });
 cpSync(join(REPO, "skills/solve-issue/scripts"), join(INSTALL_DIR, "solve-issue/scripts"), { recursive: true });
 cpSync(join(REPO, "skills/to-issues/scripts"), join(INSTALL_DIR, "to-issues/scripts"), { recursive: true });
+cpSync(join(REPO, "skills/write-pr"), join(INSTALL_DIR, "write-pr"), { recursive: true });
 export const FAKE = join(HERE, "../fixtures/fake-dispatch.sh");
 
 

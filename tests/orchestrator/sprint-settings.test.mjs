@@ -130,7 +130,7 @@ test("`plan` shows each setting and which file or flag set it", () => {
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stdout, /findings: +fix medium and above in Phase 2 +\[project\]/);
   assert.match(r.stdout, /PRD audit: report +\[flag\]/);
-  assert.match(r.stdout, /timeouts: +coder 60m \[project\], reviewer 20m, triage 20m, commandFinder 5m, prdAuditor 20m, merge 5m/);
+  assert.match(r.stdout, /timeouts: +coder 60m \[project\], reviewer 20m, triage 20m, commandFinder 5m, prdAuditor 20m, prWriter 10m, merge 5m/);
 });
 
 test("`plan` shows the worktree root and which file set it", () => {

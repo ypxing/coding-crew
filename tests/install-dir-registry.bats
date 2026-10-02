@@ -39,6 +39,16 @@ asset_dir() {
   [ "$(asset_dir toIssues)" = "${dest#.coding-crew/}" ]
 }
 
+@test "install-dir: write-pr's SKILL.md is where install.sh puts write-pr's assets" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  dest="$(jq -r '.skills["write-pr"].assets.dest' "$REPO_ROOT/registry.json")"
+  [ "$(asset_dir writePr)" = "${dest#.coding-crew/}" ]
+}
+
+@test "install-dir: crew-afk installs write-pr, whose SKILL.md its PR writer follows" {
+  jq -e '.skills["crew-afk"].deps | index("write-pr")' "$REPO_ROOT/registry.json" >/dev/null
+}
+
 @test "install-dir: crew-afk installs to-issues, whose lint-issues.sh its preflight runs" {
   jq -e '.skills["crew-afk"].deps | index("to-issues")' "$REPO_ROOT/registry.json" >/dev/null
 }

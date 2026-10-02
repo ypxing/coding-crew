@@ -271,7 +271,7 @@ test("resolveCrew: a coder moved off the launcher's runtime ignores --model, and
   assert.deepEqual(r.roles.coder, { runtime: "codex", model: null });
   assert.equal(r.roles.reviewer.model, "opus", "--model still reaches the roles left on the launcher's runtime");
   assert.match(r.warnings[0], /--model opus is ignored for the coder: it runs on codex/);
-  assert.match(r.warnings[0], /still applies to reviewer, triage, commandFinder, prdAuditor, on claude/);
+  assert.match(r.warnings[0], /still applies to reviewer, triage, commandFinder, prdAuditor, prWriter, on claude/);
 });
 
 test("resolveCrew: no tier warning across runtimes, where there is nothing to compare", () => {
@@ -405,7 +405,7 @@ test("resolveSettings: defaults, then config.json, then flags — and a flag is 
   assert.equal(defaults.integrationCheck, true, "the integration check runs unless turned off");
   assert.equal(defaults.resumeCoderSession, false, "session resume is opt-in until measured");
   assert.equal(defaults.maxParallel, null);
-  assert.deepEqual(defaults.timeouts, { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, merge: 5 });
+  assert.deepEqual(defaults.timeouts, { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, prWriter: 10, merge: 5 });
 
   const origin = {};
   const s = resolveSettings({

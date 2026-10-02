@@ -36,13 +36,15 @@ case "$1 $2" in
     [ -f "$GH_PR" ] || { echo "no pull requests found" >&2; exit 1; }
     cat "$GH_PR" ;;
   "pr create")
-    jq -n --rawfile body "$(arg --body-file "$@")" \
-      '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: $body}' > "$GH_PR"
+    jq -n --rawfile body "$(arg --body-file "$@")" --arg title "$(arg --title "$@")" \
+      '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: $body, title: $title}' > "$GH_PR"
     echo "https://github.com/o/r/pull/7" ;;
   "label create") exit 0 ;;
   "pr edit")
     [[ "$*" == *--body-file* ]] || exit 0
-    jq --rawfile body "$(arg --body-file "$@")" '.body = $body' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR" ;;
+    jq --rawfile body "$(arg --body-file "$@")" '.body = $body' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR"
+    [[ "$*" == *--title* ]] || exit 0
+    jq --arg title "$(arg --title "$@")" '.title = $title' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR" ;;
   *) exit 1 ;;
 esac
 EOF
@@ -143,4 +145,52 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
   [ "$status" -eq 0 ]
   ! grep -q 'crew-rework' "$GH_LOG"
+}
+
+@test "open-pr: --body-file opens the block, above the sprint line and the closing lines" {
+  printf '## Summary\n\nWhat changed.\n' > "$TEMP_DIR/body.md"
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --body-file "$TEMP_DIR/body.md"
+  [ "$status" -eq 0 ]
+  [ "$(pr_body | sed -n 2p)" = "## Summary" ]
+  pr_body | grep -qx 'What changed.'
+  [ "$(pr_body | grep -n '^## Summary' | cut -d: -f1)" -lt "$(pr_body | grep -n '^Implemented by' | cut -d: -f1)" ]
+  [ "$(pr_body | grep -n '^Implemented by' | cut -d: -f1)" -lt "$(pr_body | grep -n '^Closes #1' | cut -d: -f1)" ]
+}
+
+@test "open-pr: a marker line inside --body-file is dropped, so a re-run still finds the block's end" {
+  printf '## Summary\n\n<!-- crew-afk:end -->\ntail\n' > "$TEMP_DIR/body.md"
+  bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --body-file "$TEMP_DIR/body.md" >/dev/null
+  [ "$(pr_body | grep -c 'crew-afk:end')" -eq 1 ]
+  jq --arg b "$(pr_body)
+
+Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR"
+
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --body-file "$TEMP_DIR/body.md"
+  [ "$status" -eq 0 ]
+  pr_body | grep -qx 'Reviewer notes.'
+  [ "$(pr_body | grep -c '^tail$')" -eq 1 ]
+}
+
+@test "open-pr: --title names a new PR; an open one keeps a title a human gave it" {
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --title "Single full check"
+  [ "$status" -eq 0 ]
+  grep -q '^pr create --head feature/demo --title Single full check' "$GH_LOG"
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --title "Other"
+  [ "$status" -eq 0 ]
+  ! grep -q -- '--title Other' "$GH_LOG"
+  [ "$(jq -r .title "$GH_PR")" = "Single full check" ]
+}
+
+@test "open-pr: an open PR still titled with the slug (the old default) gets --title" {
+  jq -n '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: "", title: "demo"}' > "$GH_PR"
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --title "Run the full suite once per branch"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .title "$GH_PR")" = "Run the full suite once per branch" ]
+}
+
+@test "open-pr: no --title leaves an open PR's title alone" {
+  jq -n '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: "", title: "demo"}' > "$GH_PR"
+  run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
+  [ "$status" -eq 0 ]
+  ! grep -q -- '--title' "$GH_LOG"
 }
