@@ -74,8 +74,8 @@ refs() { git -C "$W/origin.git" for-each-ref; }
 }
 
 @test "conflict in non-version registry field: non-zero, merge in progress" {
-  sed -i 's/"d"/"branch"/' registry.json; git commit -qam b
-  commit_main bash -c "sed -i 's/\"d\"/\"main\"/' registry.json"
+  sed -i.bak 's/"d"/"branch"/' registry.json; git commit -qam b
+  commit_main bash -c "sed -i.bak 's/\"d\"/\"main\"/' registry.json"
   run bash scripts/sync-pr-with-main.sh feat
   [ "$status" -ne 0 ]
   [[ "$output" == *"registry.json"* ]]
