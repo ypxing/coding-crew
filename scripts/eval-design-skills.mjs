@@ -147,13 +147,21 @@ export function summarize(rows) {
   return lines.join("\n");
 }
 
-// A spawn error (e.g. ENOENT while the claude binary is replaced by its auto-updater) is retried
-// once, then becomes a failed run; it must never take the whole matrix down.
+// Transient failures are retried with a growing pause, then become a failed run; they must never
+// take the whole matrix down. Transient = a spawn error (e.g. ENOENT while claude's auto-updater
+// replaces the binary) or an API throttle/overload ("Too many requests", 429, 529, overloaded).
+// A usage limit is not transient and is handled by the caller.
+export const TRANSIENT_RE = /too many requests|overloaded|\b(429|529)\b|ECONNRESET|ETIMEDOUT/i;
+
 async function runClaude(args, input, cwd) {
-  const first = await runClaudeOnce(args, input, cwd);
-  if (!first.spawnError) return first;
-  await new Promise((r) => setTimeout(r, Number(process.env.EVAL_RETRY_MS ?? 5000)));
-  return runClaudeOnce(args, input, cwd);
+  const base = Number(process.env.EVAL_RETRY_MS ?? 5000);
+  let r;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    r = await runClaudeOnce(args, input, cwd);
+    if (r.ok || !(r.spawnError || TRANSIENT_RE.test(`${r.text}\n${r.err}`)) || LIMIT_RE.test(`${r.text}\n${r.err}`)) return r;
+    await new Promise((res) => setTimeout(res, base * 2 ** attempt));
+  }
+  return r;
 }
 
 function runClaudeOnce(args, input, cwd) {

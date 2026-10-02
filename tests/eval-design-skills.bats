@@ -154,3 +154,25 @@ EOS
   # --parallel 1: the first run hits the limit, the other three never start
   [ "$(grep -c 'LIMIT' <<<"$output")" -eq 1 ]
 }
+
+@test "an API throttle is retried, then succeeds" {
+  # Seen live: parallel runs hit "Too many requests" and 9 of 60 runs failed for a reason that
+  # a pause fixes.
+  cat > "$T/flaky" <<'EOS'
+#!/usr/bin/env bash
+input=$(cat)
+if [[ " $* " == *" --max-turns 1 "* ]]; then
+  echo '{"result":"[]","total_cost_usd":0,"is_error":false}'; exit 0
+fi
+n=$(cat "$FAKE_DIR/count" 2>/dev/null || echo 0); echo $((n+1)) > "$FAKE_DIR/count"
+if [ "$n" -lt 2 ]; then
+  echo '{"result":"API Error: Too many requests sent to ApplyGuardrail","total_cost_usd":0,"is_error":true}'; exit 1
+fi
+echo '{"result":"fine","total_cost_usd":0.1,"is_error":false}'
+EOS
+  chmod +x "$T/flaky"
+  CLAUDE_BIN="$T/flaky" EVAL_RETRY_MS=0 run run_eval --runs 1 --parallel 1
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"c1-base-1: ok"* ]]
+  [ "$(cat "$T/count")" -ge 3 ]
+}
