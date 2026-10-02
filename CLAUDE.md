@@ -15,7 +15,7 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-addr
 - `orchestrator/` — the crew-afk state machine (rounds, worktrees, deps → dispatch → verify → review → merge → close, receipts). One implementation, run by all four platform launchers via `orchestrator/lib/dispatch.mjs`.
 - `registry.json` — source of truth for install paths per agent/platform, `deps`, `agent-deps`, `install.assets`, and doc templates.
 - `install.sh` / `uninstall.sh` — installer; `PLATFORMS=(claude copilot pi codex)`.
-- `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`), skill-local runtime scripts (e.g. `skills/crew-afk/scripts/`), and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`).
+- `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`), skill-local runtime scripts (e.g. `skills/crew-afk/scripts/`), and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`, `eval-design-skills.mjs` with its `eval-design-skills/` cases and rubric).
 - `tests/` — bats tests, run against **rendered/installed** output via `tests/helpers/render.bash`, not source variants.
 - `docs/` — the dev team guide (`guide.md`) and issue-tracker templates.
 
@@ -30,6 +30,9 @@ bash scripts/render-skill.sh crew-afk codex | less
 
 # Run tests
 bats tests/*.bats
+
+# After editing crew-grill/crew-brainstorm: behavioural A/B (base ref vs worktree), judged blind; costs API money
+node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # drop --dry-run to run
 
 # Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed
 scripts/cut-release.sh --dry-run   # verify, then re-run without --dry-run to tag and push
@@ -69,6 +72,10 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
 - `receipts.sh` — the two gates as facts on disk
 - `promote-findings.sh` — findings, PRD gaps and fixable integration failures → parked fix issues → Phase 2
 - `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
+- `resolve-merge-conflicts.sh` — called by `merge-branches.sh` on a conflicted merge: when the only conflicts are
+  `registry.json` entry `version`s (higher semver kept) and `CHANGELOG.md` entries both sides appended (both kept,
+  feature side first) it stages the resolution, which `merge-branches.sh` commits, tracing each decision; anything else exits 1
+  and the merge is aborted as before
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
 - `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
   `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
@@ -79,6 +86,14 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
 - `open-pr.sh` — `openPr` only: pushes the feature branch, creates or updates its PR with the
   tracker's closing lines (`closingRefs`) in crew-afk's own block of the body
 - `dispatch-agent.sh` (pi), `dispatch-codex-agent.sh` (codex)
+
+Effects that run for minutes — a worker's `verify-worktree.sh` and `ensure-deps.sh` — go through `Effects.bashAsync`, so each
+worker loop verifies its own branch concurrently; merge and close stay on the blocking `effects.bash`, which is what keeps
+merges into the feature branch serialized.
+
+A verify that gives no verdict — killed by a signal (`Effects.exec`'s `interrupted`; a real `timeoutMs` stays 124), or
+output naming no failing check even on a second run — is retained as `verify-interrupted` / `verify-inconclusive` and
+re-verified next round with no triage and no coder (`pipeline/verify.mjs`).
 
 Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
 AC receipt → promote → merge → close. Deps sit there because that one position is before both

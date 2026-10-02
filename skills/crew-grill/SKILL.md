@@ -9,6 +9,14 @@ Run the full design pipeline in three phases. Pause for user feedback within eac
 
 Interview the user relentlessly until you reach shared understanding. Map the plan as a **design tree**: every decision branches into the decisions that hang off it.
 
+### Root: size the problem before any solution
+
+The tree's root is the problem, not the solutions on offer. Before any solution node, establish the **problem size**: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. These are mostly facts (git history, the tracker, the code), so Gate 1 applies — look them up (`git log`, merged PRs, the issue list), cite them, and ask only what no source holds. Never ask the user how often something happens when the history can count it. Candidate solutions the user brings with them are inputs to this tree, not its frontier: the smallest change that removes the cost you measured is the baseline every larger option has to beat.
+
+Size is fine; **unjustified** size is not. Well-architected is a justification, overengineered is not: a component earns its place through the measured problem, or through the structure of what is being built *now* — one owner per concern, no duplicated logic, a seam its tests need, the repo's layer rules. A need nobody has yet, generality for a hypothetical caller, or completeness for its own sake earns nothing. Logic that would otherwise be copied into several places gets one shared owner: that is structure, not a speculative layer, and dropping it to avoid "abstraction" leaves the design under-built.
+
+### Rounds and gates
+
 Work in **rounds**. The **frontier** is every decision whose prerequisites are already settled — what you can ask now without guessing at answers you haven't heard. A question that depends on another still-open question belongs to a later round, not this one.
 
 Every frontier node passes two gates, in order. Gate 1 asks whether the question deserves to exist at all; Gate 2 asks who owns it. Most bad questions die at Gate 1, and Gate 2 cannot catch them — routing decides who owns a genuine fork, it never asks whether the node is a fork at all.
@@ -66,6 +74,10 @@ Ask only the Ask lane, and only as many questions as the frontier genuinely bloc
 ➡️ <your recommended answer>
 ```
 
+Every question that decides how much to build — not a fact only the user holds — includes the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in the terms of the problem size. Recommending anything larger needs evidence that the do-least option falls short — on the measured problem, or because it would leave what is built worse structured (see the Root section); "it doesn't cover every case" is not that evidence unless the uncovered case is costly. When an option drags in follow-on components or decisions, its body names them ("(b) brings a workflow, a selector and a label protocol"): the Silent decisions it spawns are part of its price, and the user never sees them one by one.
+
+**Sizing and the do-least option never replace asking.** Good questions are the point of the grill: ask every question only the user can answer and that would change the design — who it is for, what is at stake, which constraint is real, which of two live patterns wins. The do-least option is one choice *inside* a question, there to make the price of the larger options visible; it is not a reason to skip the question, and it is not a verdict. What the user stated as a requirement is a given: price it, never relitigate it, and do not recommend against it without new evidence from the repo. Challenge a stated requirement only with a question ("is X enough, or do you need Y?"), never by quietly deciding for them.
+
 The `checked:` clause is Gate 1's receipt: it names what you consulted and, by implication, why that source didn't settle the question. If the clause would read "nothing," the node isn't ready to be asked — it's ready to be researched.
 
 That ceiling is a budget, not a target. Trivia spends slots that consequential questions need — worse, a batch padded with trivia trains the user to skim, so they skim the one that mattered too. Before you send a round, drop its weakest question outright and spend the freed slot deepening the strongest: sub-questions on the consequential fork, and the assumption-probing below.
@@ -82,6 +94,8 @@ Phase 1 ends when the frontier is empty: every branch of the design tree visited
 
 If the user's invocation included "with docs" or "with documents", also invoke the `domain-modeling` skill inline as decisions crystallise: update `CONTEXT.md` when terms are resolved, and offer ADRs when decisions meet the ADR threshold (hard to reverse, surprising without context, result of a real trade-off).
 
+Before the summary, run a **subtraction pass** over what the design contains: for each decision and component, name the part of the measured problem, or the structural property of what is built now (see the Root section), that breaks if it is removed. "Another component needs it" is not an answer — follow the chain to its root and judge the root against the problem size; when a chain's root only saves what the do-least option covers cheaply, show the chain with its total price and ask once whether to keep it, even if the user approved the root earlier. "Nothing breaks" is a claim of fact: check it like one (Gate 1) and cite it, or keep the item. If nothing breaks, propose cutting it. Show the cut list in the summary, so the user can restore anything they want back; what stays cut goes to the PRD's Out of Scope, with the reason. Alternatives never proposed are not cuts — they go straight to Out of Scope.
+
 Then:
 
 1. Summarize all implementation decisions (not glossary terms) including the rationale for each — why that option was chosen over alternatives. Include the Silent and Notify decisions you made on the user's behalf, one compact line each, tagged `(auto)`. This is the audit point for everything you did not ask about.
@@ -90,7 +104,7 @@ Then:
 
 ## Phase 2 — PRD
 
-Run the `to-prd` skill. Pass the decisions summary from Phase 1 as input — the PRD must include an **Decisions** section capturing each decision and its rationale, so implementation agents can read `PRD.md` as the single source of truth for both requirements and architectural choices. Carry the `(auto)` decisions through into that section too: they were never put to the user, so the PRD is the only place a reviewer can catch them. Carry the established facts and their citations through as well — that section is where paths, signatures, and external contracts belong.
+Run the `to-prd` skill. Pass the decisions summary from Phase 1 as input — the PRD must include an **Decisions** section capturing each decision and its rationale, so implementation agents can read `PRD.md` as the single source of truth for both requirements and architectural choices. Carry the `(auto)` decisions through into that section too: they were never put to the user, so the PRD is the only place a reviewer can catch them. Carry the established facts and their citations through as well — that section is where paths, signatures, and external contracts belong. The Phase 1 cut list goes to Out of Scope, each item with why it was cut, so an implementer does not re-add it.
 
 At the end of writing `PRD.md`, ask once: **"Ready to break this into issues?"** If yes, continue to Phase 3. If no, stop.
 
