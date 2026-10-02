@@ -72,6 +72,8 @@ export class Sprint {
     // slug -> attempts refunded to a coder that timed out after committing (grantFreeAttempt),
     // in-memory for the same reason.
     this._freeAttempts = new Map();
+    // slug set: issues whose one deferred-run refund (claimDeferredRefund) is spent.
+    this._deferredRefunds = new Set();
     // slug set, in-memory only, this invocation's own record of which issues finishBlocked
     // has already given up on (see markBlockedThisRun) — what loop.mjs's claimNext() checks
     // instead of the persisted `blocked_slugs`, for the same cross-invocation reason above.
@@ -260,6 +262,13 @@ export class Sprint {
   /** Refunds one attempt to `slug` — see finishRetryOrBlock in pipeline/finish.mjs. */
   grantFreeAttempt(slug) {
     this._freeAttempts.set(slug, this.freeAttempts(slug) + 1);
+  }
+
+  /** True once per issue per run: the deferred-run refund for a first fixable verify failure. */
+  claimDeferredRefund(slug) {
+    if (this._deferredRefunds.has(slug)) return false;
+    this._deferredRefunds.add(slug);
+    return true;
   }
 
   freeAttempts(slug) {

@@ -67,6 +67,29 @@ test("partial with commits, verify fails, triage fixable: the retry is a fix rou
   assert.match(prompt, /classified this failure as fixable: wrong host: src\/config\.ts uses localhost:4566/);
 });
 
+test("a coder that deferred its tests gets one free fix round on a fixable verify failure, then blocks", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  failingTests(root);
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "deferred" }, progress: "tests deferred" }));
+  fake(root, "alpha.triage", triageVerdict("yes", "wrong host", "fix it"));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 3, "first failure refunded, second spends, limit reached on the third");
+  assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(3 attempts\)/);
+});
+
+test("a coder that did not defer its tests gets no refund on a fixable verify failure", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  failingTests(root);
+  fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "fail" }, progress: "tests red" }));
+  fake(root, "alpha.triage", triageVerdict("yes", "wrong host", "fix it"));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(coderSpawns(lines), 2);
+});
+
 test("github tracker: a re-run after a fixable failure gets fixPrompt though Progress lives only in a comment", () => {
   // The issue body carries no ## Progress (writeProgress posts a comment), so hasProgress
   // and hasBlocked are false on every fetch; the retained branch is known from state alone.
