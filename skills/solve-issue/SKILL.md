@@ -171,7 +171,7 @@ bash "$DEP_SCRIPTS/run.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROO
 It runs the command where the INSTALL_MODE from Step 2 says: inside docker (both `-f` flags, this
 worktree's git env, the right service) or on the host. Never hand-build a `docker compose` command.
 
-Run commands in the foreground and wait for them — never in the background. Between edits run only what your change touches (one test file, not the suite).
+Run commands in the foreground and wait for them — never in the background. Between edits run only what your change touches (one test file, not the suite). Before committing, run the tests your change affects.
 Other workers share this machine: temp files go under `$PROJECT_ROOT`, never a shared path such as `/tmp/<name>`; never kill a process you did not start.
 
 STOP. Read and invoke the `tdd` skill before writing a single line of implementation. Do not proceed until the red/green loop is complete. Honor the style contract from Step 3.
@@ -224,10 +224,12 @@ bash "<skill-dir>/scripts/run-checks.sh" --project-root "$PROJECT_ROOT" --main-r
   --dep-scripts "$DEP_SCRIPTS"
 ```
 
-It runs every check `.coding-crew/dev-commands.json` names — `typecheck`, `lint`, `test`, then
+It runs every `.coding-crew/dev-commands.json` check — `typecheck`, `lint`, `test`, then
 every other key with a command (coverage, integration) — each through `run.sh`, and reports each.
-A `NOT RUN: no command found` is the cache's own answer that no local command exists: report it,
-do not re-check CLAUDE.md/Makefile instead.
+`NOT RUN: no command found` means no local command exists: report it,
+do not re-check CLAUDE.md/Makefile.
+
+`<key>: deferred`: the verify gate runs it; report `deferred`.
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".

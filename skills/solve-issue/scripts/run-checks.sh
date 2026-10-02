@@ -15,6 +15,9 @@
 #   <key>: modified files: <list> — …      then `<key>: fail (…)`: the check rewrote tracked or
 #                                          untracked files (an auto-fixing lint) — the human
 #                                          commits the rewrite; not something to revert and re-run
+#   <key>: deferred …                      with CREW_DEFER_FULL_CHECKS=1 only: every check other than
+#                                          typecheck and lint (test, coverage, …) is not run here — the
+#                                          verify gate runs it; report the check as `deferred`
 # and last, one of:
 #   CHECKS: pass                           exit 0
 #   CHECKS: fail                           exit 1
@@ -115,6 +118,10 @@ for key in "${KEYS[@]}"; do
   cmd="$(_cached "$key")"
   if [ -z "$cmd" ]; then
     echo "$key: NOT RUN: no command found"
+    continue
+  fi
+  if [ "${CREW_DEFER_FULL_CHECKS:-}" = 1 ] && [ "$key" != typecheck ] && [ "$key" != lint ]; then
+    echo "$key: deferred — CREW_DEFER_FULL_CHECKS=1; the verify gate runs it on this branch"
     continue
   fi
   log="$LOG_DIR/$key.log"
