@@ -216,7 +216,13 @@ cmd_guard() {
     body="$(cat "$issue")"
   fi
 
-  if printf '%s\n' "$body" | grep -q '^Source:'; then
+  # Column-0 `Source:` outside a ``` / ~~~ fence only (same rule as body-format.mjs isSourceGuarded).
+  if printf '%s\n' "$body" | awk '
+      fence != "" { if (substr($0, 1, length(fence)) == fence && $0 ~ /^ {0,3}(```+|~~~+)[ \t]*$/) fence = ""; next }
+      /^ {0,3}```/ { fence = "```"; next }
+      /^ {0,3}~~~/ { fence = "~~~"; next }
+      /^Source:/ { found = 1 }
+      END { exit !found }'; then
     echo "guard: skip — source-guarded (this issue was itself promoted from a review)"
   elif [ -z "$(promote_severities)" ]; then
     echo "guard: skip — fixFindings is none"

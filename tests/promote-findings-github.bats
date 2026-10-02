@@ -546,3 +546,11 @@ EOF
   run bash "$PROMOTE" guard --issue 42
   [[ "$output" == *"skip — source-guarded"* ]]
 }
+
+@test "guard ignores a Source: line inside a code fence, under github" {
+  configure_github
+  stub_gh
+  printf '## Problem\n\n```\nSource: .scratch/x/sprint-review-1.md (b)\n```\n\n~~~\nSource: y\n~~~\n' > "$GH_VIEW_BODY_FILE"
+  run bash "$PROMOTE" guard --issue 42
+  [[ "$output" == *"eligible"* ]]
+}

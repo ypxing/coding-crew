@@ -86,7 +86,18 @@ export function criteriaSection(text) {
  * depth bound: findings raised against it are never promoted again.
  */
 export function isSourceGuarded(text) {
-  return /^\s*(?:\*\*)?Source(?:\*\*)?:/im.test(text);
+  // Only where promote-findings.sh writes it: column 0, outside a ``` / ~~~ fence. Mirrors cmd_guard.
+  let fence = "";
+  for (const line of String(text).split("\n")) {
+    if (fence) {
+      if (line.startsWith(fence) && /^ {0,3}(`{3,}|~{3,})\s*$/.test(line)) fence = "";
+      continue;
+    }
+    const m = /^ {0,3}(`{3}|~{3})/.exec(line);
+    if (m) fence = m[1];
+    else if (line.startsWith("Source:")) return true;
+  }
+  return false;
 }
 
 /** Matches an `## Acceptance criteria` / `## Cross-cutting Requirements` heading — the
