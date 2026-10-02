@@ -42,10 +42,19 @@ test("criteriaSection finds either heading case", () => {
   assert.equal(criteriaSection("no such section\n"), "");
 });
 
-test("isSourceGuarded detects a Source: line regardless of bold markup", () => {
-  assert.equal(isSourceGuarded("Source: crew/feat/thing review\n"), true);
-  assert.equal(isSourceGuarded("**Source:** crew/feat/thing review\n"), true);
-  assert.equal(isSourceGuarded("no source line here\n"), false);
+test("isSourceGuarded counts Source: only at column 0 outside a code fence", () => {
+  // Same fixtures as tests/crew-afk-promotion-threshold.bats.
+  const cases = [
+    ["# t\n\nSource: r (b)\n", true],
+    ["# t\n\n```\nSource: r (b)\n```\n", false],
+    ["# t\n\n~~~\nSource: r (b)\n~~~\n", false],
+    ["# t\n\n```\nx\n```\n\nSource: r (b)\n", true],
+    ["# t\n\n  Source: r (b)\n", false],
+    ["# t\n\n**Source:** r (b)\n", false],
+    ["no source line here\n", false],
+    ["Source: integration check (integration-check)\n\n## Context\n", true],
+  ];
+  for (const [body, want] of cases) assert.equal(isSourceGuarded(body), want, JSON.stringify(body));
 });
 
 test("uncheckedCriteria scans both the Acceptance criteria and Cross-cutting Requirements headings", () => {
