@@ -1,0 +1,14 @@
+CHANGELOG.md
+CLAUDE.md
+orchestrator/lib/effects.mjs
+orchestrator/lib/pipeline.mjs
+orchestrator/lib/pipeline/merge.mjs
+orchestrator/lib/pipeline/shared.mjs
+orchestrator/lib/pipeline/verify.mjs
+registry.json
+skills/crew-afk/scripts/merge-branches.sh
+skills/crew-afk/scripts/resolve-merge-conflicts.sh
+tests/crew-afk-scripts.bats
+tests/orchestrator/effects.test.mjs
+tests/orchestrator/sprint-lifecycle.test.mjs
+tests/orchestrator/sprint-worker-outcomes.test.mjs

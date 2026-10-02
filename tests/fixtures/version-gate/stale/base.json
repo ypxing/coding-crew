@@ -1,0 +1,270 @@
+{
+  "docs": {
+    "templates": {
+      "issue-tracker": {
+        "source": "docs/templates/trackers/local.md",
+        "dest": ".coding-crew/docs/issue-tracker.md"
+      }
+    },
+    "scripts": {
+      "mark-issue-done": {
+        "source": "scripts/tracker/mark-issue-done.sh",
+        "dest": ".coding-crew/scripts/mark-issue-done.sh"
+      },
+      "tracker-config": {
+        "source": "scripts/tracker/tracker-config.sh",
+        "dest": ".coding-crew/scripts/tracker-config.sh"
+      }
+    }
+  },
+  "agents": {
+    "crew-reviewer": {
+      "version": "1.9.0",
+      "source-dir": "crew-reviewer",
+      "replaces": [
+        "crew-code-reviewer"
+      ],
+      "description": "Reviews one branch per dispatch, before that branch merges and before any squash, and (feature mode) the whole feature diff once at the first drain; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
+      "deps": [],
+      "skills": [],
+      "docs": [],
+      "install": {
+        "shims": {
+          "claude": ".claude/agents/crew-reviewer.md",
+          "copilot": ".copilot/agents/crew-reviewer.agent.md",
+          "pi": ".pi/agents/crew-reviewer.md",
+          "codex": ".codex/agents/crew-reviewer.toml"
+        },
+        "assets": {
+          "source": "assets",
+          "dest": ".coding-crew/code-review"
+        }
+      }
+    },
+    "crew-triage": {
+      "version": "1.1.0",
+      "source-dir": "crew-triage",
+      "description": "Classifies a crew-afk branch's verification failure as fixable by more code on that branch, or as an environment/infrastructure problem no code change can fix. Dispatched only after verify-worktree.sh has already failed, and only before a coder would otherwise be redispatched for another full attempt. Independent of the coder that wrote the branch — the same reason review is a separate dispatch, not a self-grade.",
+      "deps": [],
+      "skills": [],
+      "docs": [],
+      "install": {
+        "shims": {
+          "claude": ".claude/agents/crew-triage.md",
+          "copilot": ".copilot/agents/crew-triage.agent.md",
+          "pi": ".pi/agents/crew-triage.md",
+          "codex": ".codex/agents/crew-triage.toml"
+        }
+      }
+    },
+    "crew-coder": {
+      "version": "1.10.7",
+      "source-dir": "crew-coder",
+      "description": "Implements a single issue using TDD, verifies checks, commits.",
+      "deps": [],
+      "skills": [
+        "tdd",
+        "dep-install",
+        "solve-issue"
+      ],
+      "install": {
+        "shims": {
+          "claude": ".claude/agents/crew-coder.md",
+          "copilot": ".copilot/agents/crew-coder.agent.md",
+          "pi": ".pi/agents/crew-coder.md",
+          "codex": ".codex/agents/crew-coder.toml"
+        }
+      }
+    }
+  },
+  "skills": {
+    "crew-afk": {
+      "version": "2.6.0",
+      "source-dir": "crew-afk",
+      "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
+      "install": ".claude/skills/crew-afk",
+      "install-copilot": ".copilot/skills/crew-afk",
+      "install-pi": ".pi/skills/crew-afk",
+      "install-codex": ".agents/skills/crew-afk",
+      "assets": {
+        "source": "orchestrator",
+        "dest": ".coding-crew/crew-afk"
+      },
+      "scripts": [
+        "feature-branch-setup.sh",
+        "discover-commands.sh",
+        "write-commands-cache.sh"
+      ],
+      "platform-files": {
+        "pi": [
+          "scripts/dispatch-agent.sh"
+        ],
+        "codex": [
+          "scripts/dispatch-codex-agent.sh"
+        ]
+      },
+      "agent-deps": [
+        "crew-coder",
+        "crew-reviewer",
+        "crew-triage"
+      ],
+      "deps": [
+        "tdd",
+        "dep-install",
+        "solve-issue",
+        "to-issues",
+        "crew-address-findings"
+      ]
+    },
+    "tdd": {
+      "version": "1.2.1",
+      "source-dir": "tdd",
+      "description": "Test-driven development with red-green-refactor loop, vertical slices.",
+      "source": "mattpocock/skills",
+      "install": ".claude/skills/tdd"
+    },
+    "dep-install": {
+      "version": "1.5.1",
+      "source-dir": "dep-install",
+      "description": "Detect install mode (host or docker) and install project dependencies once. Shared by solve-issue, crew-address-findings, and address-pr-comments.",
+      "install": ".claude/skills/dep-install",
+      "assets": {
+        "source": "skills/dep-install/scripts",
+        "dest": ".coding-crew/dep-install/scripts"
+      }
+    },
+    "solve-issue": {
+      "version": "1.10.5",
+      "source-dir": "solve-issue",
+      "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
+      "install": ".claude/skills/solve-issue",
+      "assets": {
+        "source": "skills/solve-issue/scripts",
+        "dest": ".coding-crew/solve-issue/scripts"
+      },
+      "scripts": [
+        "commit-changes.sh",
+        "write-commands-cache.sh"
+      ],
+      "deps": [
+        "dep-install",
+        "tdd"
+      ]
+    },
+    "crew-address-findings": {
+      "version": "1.4.0",
+      "source-dir": "crew-address-findings",
+      "description": "Triage and fix findings from a crew-afk code review report using TDD.",
+      "install": ".claude/skills/crew-address-findings",
+      "scripts": [
+        "branch-safety-check.sh",
+        "commit-changes.sh"
+      ],
+      "deps": [
+        "dep-install",
+        "tdd"
+      ]
+    },
+    "address-pr-comments": {
+      "version": "1.2.0",
+      "source-dir": "address-pr-comments",
+      "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
+      "install": ".claude/skills/address-pr-comments",
+      "scripts": [
+        "branch-safety-check.sh",
+        "commit-changes.sh"
+      ],
+      "deps": [
+        "dep-install",
+        "solve-issue",
+        "tdd"
+      ]
+    },
+    "to-issues": {
+      "version": "1.7.0",
+      "source-dir": "to-issues",
+      "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
+      "source": "mattpocock/skills",
+      "install": ".claude/skills/to-issues",
+      "assets": {
+        "source": "skills/to-issues/scripts",
+        "dest": ".coding-crew/to-issues/scripts"
+      }
+    },
+    "to-prd": {
+      "version": "1.4.0",
+      "source-dir": "to-prd",
+      "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
+      "source": "mattpocock/skills",
+      "install": ".claude/skills/to-prd"
+    },
+    "crew-brainstorm": {
+      "version": "1.1.2",
+      "source-dir": "crew-brainstorm",
+      "description": "Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to PRD and issues.",
+      "install": ".claude/skills/crew-brainstorm",
+      "install-copilot": ".copilot/skills/crew-brainstorm",
+      "install-pi": ".pi/skills/crew-brainstorm",
+      "install-codex": ".agents/skills/crew-brainstorm",
+      "deps": [
+        "to-prd",
+        "to-issues"
+      ]
+    },
+    "crew-grill": {
+      "version": "1.2.2",
+      "source-dir": "crew-grill",
+      "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then produce a PRD and issues.",
+      "install": ".claude/skills/crew-grill",
+      "install-copilot": ".copilot/skills/crew-grill",
+      "install-pi": ".pi/skills/crew-grill",
+      "install-codex": ".agents/skills/crew-grill",
+      "deps": [
+        "domain-modeling",
+        "to-prd",
+        "to-issues"
+      ]
+    },
+    "add-tests": {
+      "version": "1.1.3",
+      "source-dir": "add-tests",
+      "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
+      "install": ".claude/skills/add-tests",
+      "install-copilot": ".copilot/skills/add-tests",
+      "install-pi": ".pi/skills/add-tests",
+      "install-codex": ".agents/skills/add-tests",
+      "scripts": [
+        "discover-commands.sh",
+        "write-commands-cache.sh"
+      ],
+      "deps": [
+        "to-issues",
+        "dep-install"
+      ]
+    },
+    "upgrade-deps": {
+      "version": "1.1.2",
+      "source-dir": "upgrade-deps",
+      "description": "Audit outdated npm/yarn/pnpm dependencies for exploitability, transitive conflicts, and usage, then publish issues (batched safe bumps, one per risky package or coupled group) with a safety checklist.",
+      "install": ".claude/skills/upgrade-deps",
+      "deps": [
+        "dep-install"
+      ]
+    },
+    "configure-tracker": {
+      "version": "1.3.3",
+      "source-dir": "configure-tracker",
+      "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level config path.",
+      "install": ".claude/skills/configure-tracker",
+      "scripts": [
+        "configure-tracker-auto.sh"
+      ]
+    },
+    "domain-modeling": {
+      "version": "1.0.0",
+      "source-dir": "domain-modeling",
+      "description": "Updates CONTEXT.md glossary and creates ADRs inline as design decisions crystallise.",
+      "install": ".claude/skills/domain-modeling"
+    }
+  }
+}
