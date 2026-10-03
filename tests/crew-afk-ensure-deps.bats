@@ -932,7 +932,7 @@ line two"
   local repo="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   local p body words
   for p in pi codex claude copilot; do
-    body="$repo/skills/crew-afk/$p.SKILL.md"
+    body="$(afk_variant "$p")"
     ! grep -q 'ensure-deps' "$body" || {
       echo "$p launcher names ensure-deps.sh" >&2; return 1; }
     words=$(wc -w < "$body")

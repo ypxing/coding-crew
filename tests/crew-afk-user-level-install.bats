@@ -155,7 +155,7 @@ work_repo_with_issue() {
 
 @test "launcher: it falls back to the user-level orchestrator when the repo has no copy" {
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$REPO_ROOT/skills/crew-afk/$p.SKILL.md"
+    body="$(afk_variant "$p")"
     grep -q 'HOME/.coding-crew/crew-afk/main.mjs' "$body" || {
       echo "$p launcher cannot reach a user-level install" >&2; return 1; }
   done
@@ -164,7 +164,7 @@ work_repo_with_issue() {
 @test "launcher: the missing-scripts remedy names the install scope, not 'half-installed'" {
   # The old wording sent a user who had installed user-level back to the same install.
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$REPO_ROOT/skills/crew-afk/$p.SKILL.md"
+    body="$(afk_variant "$p")"
     ! grep -q 'half-installed' "$body" || {
       echo "$p still calls a scope problem a half-install" >&2; return 1; }
     grep -q 'TARGET_REPO=\$HOME' "$body" || {
