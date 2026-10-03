@@ -336,7 +336,13 @@ export async function runSprint(ctx) {
     if (!featureReviewed) {
       featureReviewed = true;
       if (!options.dryRun && sprint.get("merged")) {
-        featureReview = await runFeatureReview(ctx, { integration });
+        const unclaimed = wallElapsed()
+          ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i))
+          : [];
+        featureReview = await runFeatureReview(ctx, {
+          integration,
+          wallCap: unclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: unclaimed.length } : null,
+        });
         if (featureReview.promotedRef) ownRefs.add(featureReview.promotedRef);
         if (featureReview.promotedRef && !tracker.listOpenIssueFiles) unseen.add(featureReview.promotedRef);
       }

@@ -147,12 +147,18 @@ fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, aft
 says why.
 
 At the first drain only (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
-runs in feature mode over `base_sha..<feature branch>`: no criteria, findings only, attributed to `feature` in the sprint
+runs in feature mode: no criteria, findings only, attributed to `feature` in the sprint
 review report and promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
 `crew-triage`'s findings mode judges Actionable, via `orchestrator/lib/pipeline/findings-triage.mjs`; a failed triage
-falls back to the `high` rule). Not re-run after Phase 2, nor when nothing
-merged; skipped (the summary says so) when the integration check is red; a dispatch that leaves no review is recorded
-not-run and never fails the sprint.
+falls back to the `high` rule). The range (`featureReviewRange`) is the whole feature, from the merge-base with origin's default
+branch (else the local default branch; with neither the review is skipped, logged) — never this run's `base_sha`, which
+`session-init.sh` resets each run. After a review that wrote a report, `state.sh feature-reviewed` records
+`feature_review.reviewed_tip` in `sprint-state.json`; a later run whose tip equals it dispatches no reviewer ("nothing new
+since <sha>"), one whose tip descends from it reviews only `reviewed_tip..tip` minus commits on `origin/<default>` (what
+`sync-feature-branch.sh` merged in), and a `reviewed_tip` that is no ancestor (history rewritten) gives the whole-feature
+review again. Not re-run after Phase 2, nor when nothing merged; skipped (the summary says so) when the integration check
+is red, or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
+a dispatch that leaves no review is recorded not-run (and no `reviewed_tip`) and never fails the sprint.
 
 Reviewer, triage (verify, findings, integration) and feature-review dispatches are mechanically read-only
 (`pipeline/shared.mjs`'s `readOnlyDispatch`): every `crew/<feature>/*` ref, the feature branch, main `HEAD` (commit

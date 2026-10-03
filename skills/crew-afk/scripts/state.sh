@@ -26,6 +26,7 @@ set -euo pipefail
 #   state.sh run-start --id <run-id>
 #   state.sh baseline [--slot baseline|integration] --commit <sha> --verdict <pass|fail>
 #   state.sh verified-tree --tree <git tree sha>   (a per-issue verify passed this tree)
+#   state.sh feature-reviewed --tip <sha>          (a feature review wrote a report over the branch up to this tip)
 #   state.sh resume --slug <slug>
 #   state.sh retention --slug <slug>
 #   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|state-file>
@@ -295,6 +296,16 @@ case "$CMD" in
     edit_state --arg t "$tree" '.passing_trees = (((.passing_trees // []) + [$t]) | unique)'
     trace STATE "verified-tree tree=$tree"
     echo "STATE: verified-tree tree=$tree"
+    ;;
+
+  feature-reviewed)
+    # The feature branch tip a feature review that wrote a report covered: the next run reviews
+    # only what came after it. Survives runs, like passing_trees.
+    tip=$(flag tip "" "$@")
+    [ -n "$tip" ] || die "feature-reviewed requires --tip"
+    edit_state --arg t "$tip" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.feature_review = {reviewed_tip: $t, at: $at}'
+    trace STATE "feature-reviewed tip=$tip"
+    echo "STATE: feature-reviewed tip=$tip"
     ;;
 
   resume)
