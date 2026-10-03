@@ -20,6 +20,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { registerExternalPid, unregisterExternalPid } from "../effects.mjs";
 import { shellQuote } from "./shared.mjs";
 
 export const TIMING = { pollMs: 500, startTimeoutMs: 30000, exitGraceMs: 5000 };
@@ -72,6 +73,8 @@ export async function spawnInWorkerTerminal(
   const started = Date.now();
   let deadSince = null;
   let result;
+  let registered = null;
+  try {
   for (;;) {
     await sleep(timing.pollMs);
     out.drain();
@@ -81,6 +84,10 @@ export async function spawnInWorkerTerminal(
       break;
     }
     const pid = readInt(f("pid"));
+    if (pid && registered !== pid) {
+      registered = pid;
+      registerExternalPid(pid);
+    }
     const now = Date.now();
     // A timeout with no pid yet doesn't mean there's nothing to kill — run.sh may just not
     // have written it yet under load. Falling through here instead of returning keeps polling
@@ -105,6 +112,9 @@ export async function spawnInWorkerTerminal(
       result = { code: 1, timedOut: false, reason: `worker pid ${pid} exited without an exit code — its terminal closed under it` };
       break;
     }
+  }
+  } finally {
+    if (registered) unregisterExternalPid(registered);
   }
   out.drain();
   out.close();

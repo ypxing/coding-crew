@@ -20,7 +20,7 @@ orchestrator_unit_tests() {
 run_node_tests() {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$REPO_ROOT"
-  if [ "$#" -eq 1 ] && [ -z "${CI:-}" ] && [ "${ORCHESTRATOR_PREFETCH:-1}" != 0 ] && [ -n "${BATS_RUN_TMPDIR:-}" ]; then
+  if [ "$#" -eq 1 ] && [ -z "${CI:-}" ] && [ "${ORCHESTRATOR_PREFETCH:-}" = 1 ] && [ -n "${BATS_RUN_TMPDIR:-}" ]; then
     _run_node_test_prefetched "$1"
     return
   fi
@@ -35,7 +35,29 @@ run_node_tests() {
 # The first wrapper to ask starts every wrapper's file at once in the background (node --test per
 # file, xargs -P); each wrapper then waits for its own result. BATS_RUN_TMPDIR is shared by the
 # whole bats invocation, so the cache dies with it. Off in CI (CI is set), where the shard split
-# runs each wrapper in a process of its own, and with ORCHESTRATOR_PREFETCH=0.
+# runs each wrapper in a process of its own, and opt-in: only with ORCHESTRATOR_PREFETCH=1 (the
+# dev-commands.json `test`), so a run of one wrapper starts only that wrapper's file. The background
+# job stops, its node processes with it, once the bats run that started it is gone.
+
+# _kill_tree <pid> — SIGKILL a process and every descendant.
+_kill_tree() {
+  local c
+  kill -STOP "$1" 2>/dev/null || true # freeze it so it cannot start a replacement meanwhile
+  for c in $(pgrep -P "$1" 2>/dev/null); do _kill_tree "$c"; done
+  kill -9 "$1" 2>/dev/null || true
+}
+
+# _bats_main_pid — the bats process this test runs under (the nearest ancestor named bats), else empty.
+_bats_main_pid() {
+  local p=$$ args
+  while [ -n "$p" ] && [ "$p" -gt 1 ]; do
+    args=$(ps -o args= -p "$p" 2>/dev/null)
+    case "$args" in
+      bats|bats\ *|*/bats|*/bats\ *) echo "$p"; return ;;
+    esac
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+  done
+}
 _run_node_test_prefetched() {
   local file="$1" dir="$BATS_RUN_TMPDIR/orchestrator-prefetch" key
   key=$(printf '%s' "$file" | tr '/' '_')
@@ -45,8 +67,21 @@ _run_node_test_prefetched() {
     jobs=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
     ( cd "$REPO_ROOT" && grep -h '^  run_node_tests ' tests/orchestrator-*.bats | awk '{print $2}' ) > "$dir/list.tmp" 2>/dev/null || true
     mv "$dir/list.tmp" "$dir/list"
-    ( cd "$REPO_ROOT" && DIR="$dir" xargs -P "$jobs" -I{} bash -c         'k=$(printf %s "$1" | tr / _); node --test "$1" > "$DIR/out/$k.log" 2>&1; echo $? > "$DIR/out/$k.rc.tmp"; mv "$DIR/out/$k.rc.tmp" "$DIR/out/$k.rc"' _ {}         < "$dir/list"
-      touch "$dir/done" ) >/dev/null 2>&1 </dev/null &
+    local owner
+    owner=$(_bats_main_pid)
+    (
+      cd "$REPO_ROOT"
+      DIR="$dir" xargs -P "$jobs" -I{} bash -c 'k=$(printf %s "$1" | tr / _); node --test "$1" > "$DIR/out/$k.log" 2>&1; echo $? > "$DIR/out/$k.rc.tmp"; mv "$DIR/out/$k.rc.tmp" "$DIR/out/$k.rc"' _ {} < "$dir/list" &
+      runner=$!
+      # Watchdog: the bats run is over when its process is gone or its tmpdir has been removed.
+      while kill -0 "$runner" 2>/dev/null; do
+        if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then _kill_tree "$runner"; break; fi
+        if [ ! -d "$BATS_RUN_TMPDIR" ]; then _kill_tree "$runner"; break; fi
+        sleep 0.5
+      done
+      wait "$runner" 2>/dev/null
+      touch "$dir/done" 2>/dev/null
+    ) >/dev/null 2>&1 </dev/null &
     disown 2>/dev/null || true
   fi
   # The prefetch list is written by whichever wrapper asked first; give it a moment to appear.
