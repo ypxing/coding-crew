@@ -9,7 +9,7 @@
 #   5. flush flips parked issues to ready-for-agent and is idempotent (second run = no-op)
 #   6. flush on a sprint with nothing parked reports FLUSH: none rather than failing
 #   7. remind counts only findings promotion did NOT cover, so the end-of-sprint reminder is honest
-#   8. the promotion threshold follows CREW_FIX_FINDINGS (pinned to critical below; high adds HIGH)
+#   8. the promotion threshold is the explicit --severities list the caller passes
 #   9. under the default (actionable), a promoted branch's Actionable findings are handled whatever
 #      their severity; Debatable and Dismissed ones stay open, and remind leads with Debatable
 
@@ -20,8 +20,6 @@ PROMOTE="$SCRIPT_DIR/promote-findings.sh"
 # remind reads reviews through review-rollup.mjs, which the lookup below the temp repo can't
 # find: point it at this source tree's copy (an install sets its own).
 export CREW_REVIEW_ROLLUP="${CREW_REVIEW_ROLLUP:-$SCRIPT_DIR/../../../orchestrator/review-rollup.mjs}"
-# Pinned: these cases were written against a CRITICAL-only threshold (the default is actionable).
-export CREW_FIX_FINDINGS=critical
 
 # review <header> <SEVERITY>... — one branch's block in the aggregate report's format: its
 # header, then the reviewer's json, which names the branch (what review-rollup.mjs parses).
@@ -80,13 +78,13 @@ printf -- '- [ ] fix the CRITICAL null deref at src/a.ts:10\n' > crit-a.md
 printf -- '- [ ] fix the CRITICAL race at src/b.ts:42\n' > crit-b.md
 
 echo "Test 1: guard allows promotion for an ordinary issue, naming the threshold"
-out=$(bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md)
+out=$(bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md --severities CRITICAL)
 check "guard reports eligible at the pinned threshold" "guard: eligible — threshold: CRITICAL" "$out"
 
 echo
 echo "Test 2: defer numbers after the highest issue across open/ and done/"
 out=$(bash "$PROMOTE" defer --feature-slug feat --branch crew/01-a --slug a \
-        --title "Fix review findings: a" --report "$REPORT" --criteria-file crit-a.md)
+        --title "Fix review findings: a" --report "$REPORT" --criteria-file crit-a.md --severities CRITICAL)
 check "issue numbered 08 (done/07 is the max)" \
       "defer: .scratch/feat/issues/open/08-fix-findings-a.md" "$out"
 
@@ -106,7 +104,7 @@ check_contains "marker keys branch + severities + issue path" \
 echo
 echo "Test 5: second branch gets its own fix issue, one section header only"
 out=$(bash "$PROMOTE" defer --feature-slug feat --branch crew/02-b --slug b \
-        --title "Fix review findings: b" --report "$REPORT" --criteria-file crit-b.md)
+        --title "Fix review findings: b" --report "$REPORT" --criteria-file crit-b.md --severities CRITICAL)
 check "second issue numbered 09" \
       "defer: .scratch/feat/issues/open/09-fix-findings-b.md" "$out"
 check "Promoted Findings header written once" "1" "$(grep -c '^## Promoted Findings' "$REPORT")"
@@ -114,7 +112,7 @@ check "two markers present" "2" "$(grep -c '^- crew/' "$REPORT")"
 
 echo
 echo "Test 6: guard is the depth bound — a fix issue is never promoted again"
-out=$(bash "$PROMOTE" guard --issue .scratch/feat/issues/open/08-fix-findings-a.md)
+out=$(bash "$PROMOTE" guard --issue .scratch/feat/issues/open/08-fix-findings-a.md --severities CRITICAL)
 check_contains "guard skips source-guarded issue" "guard: skip" "$out"
 
 echo
@@ -143,7 +141,7 @@ echo
 echo "Test 10: defer refuses an empty criteria file (nothing to promote)"
 : > empty.md
 if bash "$PROMOTE" defer --feature-slug feat --branch crew/03-c --slug c \
-     --title "t" --report "$REPORT" --criteria-file empty.md >/dev/null 2>&1; then
+     --title "t" --report "$REPORT" --criteria-file empty.md --severities CRITICAL >/dev/null 2>&1; then
     echo "  FAIL: defer accepted an empty criteria file"
     FAIL=$((FAIL + 1))
 else
@@ -163,7 +161,7 @@ REM=.scratch/rem/reviews/sprint-review-1.md
 } > "$REM"
 printf -- '- [ ] fix it\n' > rem-crit.md
 bash "$PROMOTE" defer --feature-slug rem --branch crew/01-a --slug a \
-    --title "Fix review findings: a" --report "$REM" --criteria-file rem-crit.md >/dev/null
+    --title "Fix review findings: a" --report "$REM" --criteria-file rem-crit.md --severities CRITICAL >/dev/null
 out=$(bash "$PROMOTE" remind --feature-slug rem)
 check_contains "promoted CRITICAL excluded; HIGH/MEDIUM/LOW counted for a human" \
       "FINDINGS: open=4 (HIGH=1, MEDIUM=2, LOW=1)" "$out"
@@ -188,7 +186,7 @@ FULLY=.scratch/quiet/reviews/sprint-review-1.md
 review "crew/01-x (01-x)" CRITICAL > "$FULLY"
 printf -- '- [ ] fix it\n' > quiet-crit.md
 bash "$PROMOTE" defer --feature-slug quiet --branch crew/01-x --slug x \
-    --title "Fix review findings: x" --report "$FULLY" --criteria-file quiet-crit.md >/dev/null
+    --title "Fix review findings: x" --report "$FULLY" --criteria-file quiet-crit.md --severities CRITICAL >/dev/null
 check "fully-promoted report reports none" "FINDINGS: none" \
       "$(bash "$PROMOTE" remind --feature-slug quiet)"
 
@@ -198,10 +196,10 @@ mkdir -p .scratch/bare/reviews
 BARE=.scratch/bare/reviews/sprint-review-1.md
 review "crew/01-y" HIGH LOW > "$BARE"
 printf -- '- [ ] fix it\n' > bare-crit.md
-CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug bare --branch crew/01-y --slug y \
-    --title "Fix review findings: y" --report "$BARE" --criteria-file bare-crit.md >/dev/null
+bash "$PROMOTE" defer --feature-slug bare --branch crew/01-y --slug y \
+    --title "Fix review findings: y" --report "$BARE" --criteria-file bare-crit.md --severities HIGH >/dev/null
 check_contains "bare header still matches its promotion marker" "FINDINGS: open=1 (LOW=1)" \
-      "$(CREW_FIX_FINDINGS=high bash "$PROMOTE" remind --feature-slug bare)"
+      "$(bash "$PROMOTE" remind --feature-slug bare)"
 
 echo
 echo "Test 15: defer-integration parks one source-guarded fix issue for a fixable red integration check"
@@ -219,7 +217,7 @@ check_contains "parked, so Phase 1 never sees it" "Status: deferred-findings" "$
 check_contains "Source: names the report and the integration kind" "Source: $INTEG_OUT (integration)" "$(cat "$f")"
 check_contains "criteria carried verbatim" "- [ ] The project's checks pass on the merged feature branch" "$(cat "$f")"
 check_contains "guard treats it as a fix issue: never promoted again" "skip — source-guarded" \
-      "$(bash "$PROMOTE" guard --issue "$f")"
+      "$(bash "$PROMOTE" guard --issue "$f" --severities CRITICAL)"
 out=$(bash "$PROMOTE" defer-integration --feature-slug integ --report "$INTEG_OUT" --criteria-file integ-crit.md)
 check "a second is refused while one is open" "defer-integration: skip — already queued: $f" "$out"
 check_contains "flush sends it into Phase 2" "FLUSH: promoted=1" "$(bash "$PROMOTE" flush --feature-slug integ)"
@@ -252,13 +250,12 @@ cat > "$ACT" <<'EOF'
 EOF
 printf -- '- [ ] [LOW] Name the constant (src/a.ts:1)\n' > act-crit.md
 printf '# a\n\nStatus: ready-for-agent\n' > .scratch/act/issues/open/01-a.md
-check "the default policy is actionable" "promote: actionable" "$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" policy)"
 check_contains "guard names it" "eligible — threshold: actionable" \
-      "$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" guard --issue .scratch/act/issues/open/01-a.md)"
-env -u CREW_FIX_FINDINGS bash "$PROMOTE" defer --feature-slug act --branch crew/01-a --slug a \
-    --title "Fix review findings: a" --report "$ACT" --criteria-file act-crit.md >/dev/null
+      "$(bash "$PROMOTE" guard --issue .scratch/act/issues/open/01-a.md --severities actionable)"
+bash "$PROMOTE" defer --feature-slug act --branch crew/01-a --slug a \
+    --title "Fix review findings: a" --report "$ACT" --criteria-file act-crit.md --severities actionable >/dev/null
 check_contains "the marker names the verdict, not a severity" "- crew/01-a: actionable → " "$(cat "$ACT")"
-out=$(env -u CREW_FIX_FINDINGS bash "$PROMOTE" remind --feature-slug act)
+out=$(bash "$PROMOTE" remind --feature-slug act)
 check_contains "the promoted Actionable LOW is handled; the rest are open" "FINDINGS: open=1 (HIGH=1)" "$out"
 check_contains "Debatable is listed with its rationale" \
       "debatable: crew/01-a [HIGH] src/api.ts:9 — Rename the exported helper — why: public contract change" "$out"
