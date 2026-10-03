@@ -114,7 +114,7 @@ AC receipt → promote → merge → close. Deps sit there because that one posi
 consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any
 gate whose receipt already matches the branch tip (`gatesAtTip`).
 
-Soft wall-clock cap (`--max-wall <minutes>`, `afk.maxWallMinutes`, default 120, `0` = off): once elapsed `loop.mjs` claims nothing new, in-flight workers finish and merge, Phase 2 (`flush`) is skipped so fix issues stay parked, the integration check still runs; the summary names the cap and the unclaimed issues, the run exits 2 and an `--open-pr` PR is a draft.
+Soft wall-clock cap (`--max-wall <minutes>`, `afk.maxWallMinutes`, default 120, `0` = off): once elapsed `loop.mjs` claims and polls for nothing new, in-flight workers finish and merge, Phase 2 (`flush`) is skipped so fix issues stay parked, the integration check still runs; when that left an issue unclaimed or a fix issue parked, the summary names the cap and them, the run exits 2 and an `--open-pr` PR is a draft (a cap that cut nothing short is not a hit).
 
 Idle-slot polling (`--poll-interval <seconds>`, default 30, `0` = off): while work is in flight and a slot is idle,
 `loop.mjs` lists the tracker once per interval (one listing however many slots are idle) and starts any issue made
@@ -128,7 +128,7 @@ run, `--no-sync-main` skips; runs after the dirty check, before lint and the bas
 `CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
 `orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked
 changes (`--allow-dirty`), the feature branch must pass its own checks in a throwaway
-`crew/<feature>/_baseline` worktree (`--no-baseline`) — started alongside dispatch (up to `maxParallel` coders begin meanwhile), no verify starts before its verdict, and a red one stops further claims and the run (exit 1, started branches kept); a git tree that already passed (a per-issue verify, an earlier baseline or integration — `sprint-state.json`'s `passing_trees`) reads `cached` for the baseline and the integration check alike, the feature's open issues must pass `to-issues`' `lint-issues.sh`
+`crew/<feature>/_baseline` worktree (`--no-baseline`) — started alongside dispatch (up to `maxParallel` coders begin meanwhile), no verify starts before its verdict, and a red one stops further claims, kills the dispatches already running and stops the run (exit 1, started branches kept for the next run); a git tree that already passed (a per-issue verify, an earlier baseline or integration — `sprint-state.json`'s `passing_trees`) reads `cached` for the baseline and the integration check alike, the feature's open issues must pass `to-issues`' `lint-issues.sh`
 (`preflight.mjs`'s `lintIssues`, before command discovery: an `ERROR` stops the run, `WARN` is logged, exit 2 or a
 failure to run it is logged and never stops; `--dry-run` reports only), and each ready, unblocked issue's `## Requires`
 runs once through solve-issue's `check-requires.sh` — a failure blocks that issue, not the run

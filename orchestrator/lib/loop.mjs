@@ -126,9 +126,9 @@ export async function runSprint(ctx) {
     const id = ++pollerId;
     (async () => {
       try {
-        while (id === pollerId && inFlight.size > 0) {
+        while (id === pollerId && inFlight.size > 0 && !claimsStopped()) {
           await sleep(pollMs);
-          if (id !== pollerId || inFlight.size === 0) break;
+          if (id !== pollerId || inFlight.size === 0 || claimsStopped()) break;
           if (waiters.length === 0) continue;
           await pollOnce();
         }
@@ -155,11 +155,16 @@ export async function runSprint(ctx) {
     );
   }
 
-  // A red baseline (ctx.baseline, started by main.mjs alongside dispatch) ends further claims.
+  // A red baseline (ctx.baseline, started by main.mjs alongside dispatch) ends further claims and
+  // stops the dispatches already running: their work would not be verified this run anyway.
+  // ctx.baselineRed tells the pipeline to keep each stopped branch for the next run.
   let baselineFailed = null;
   ctx.baseline?.then((r) => {
     if (r?.status === "fail") {
       baselineFailed = r;
+      ctx.baselineRed = true;
+      const stopped = effects.interruptDispatches?.() ?? 0;
+      ctx.log(`[BASELINE-RED] the baseline failed — stopping ${stopped} running dispatch(es); their branches are kept`, "warn");
       notifyAll();
     }
   }).catch(() => {}); // a crashed baseline surfaces where it is awaited
@@ -174,15 +179,19 @@ export async function runSprint(ctx) {
   // The drain loop broke on the cap before Phase 2: parked fix issues wait for the next run.
   let flushSkipped = false;
 
-  function claimNext() {
-    if (baselineFailed) return null;
-    if (wallElapsed()) {
-      if (!wallLogged) {
-        wallLogged = true;
-        ctx.log(`[WALL-CAP] ${options.maxWallMinutes} minute cap elapsed — no new issue is claimed; running workers finish.`);
-      }
-      return null;
+  /** Nothing new is claimed (nor polled for) past a red baseline or the wall-clock cap. */
+  function claimsStopped() {
+    if (baselineFailed) return true;
+    if (!wallElapsed()) return false;
+    if (!wallLogged) {
+      wallLogged = true;
+      ctx.log(`[WALL-CAP] ${options.maxWallMinutes} minute cap elapsed — no new issue is claimed; running workers finish.`);
     }
+    return true;
+  }
+
+  function claimNext() {
+    if (claimsStopped()) return null;
     // What a poll just listed goes first, so N woken workers cost one listing, not N.
     while (handoff.length) {
       const i = handoff.shift();
@@ -331,9 +340,10 @@ export async function runSprint(ctx) {
         if (featureReview.promotedRef && !tracker.listOpenIssueFiles) unseen.add(featureReview.promotedRef);
       }
     }
-    // Past the cap Phase 2 stays parked: the fix issues wait for the next run.
+    // Past the cap Phase 2 stays parked: the fix issues wait for the next run. With none parked
+    // the cap cut nothing short here.
     if (wallElapsed()) {
-      flushSkipped = true;
+      flushSkipped = parkedCount(ctx) > 0;
       break;
     }
     if (flush(ctx) > 0) {
@@ -365,15 +375,16 @@ export async function runSprint(ctx) {
     ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i)).map((i) => i.slug)
     : [];
   const wallCap = wallUnclaimed.length || flushSkipped ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
+  // A cap hit stalls the run even when the attempt cap (CREW_MAX_ROUNDS) also ended it.
   const stalled =
-    !capped &&
-    (Boolean(wallCap) ||
-    // The last drain's check, not any earlier one: a drain red at the fix-issue limit stalls
-    // the run only if no later drain turned it green.
-    (integration?.fix?.verdict === "limit" ||
-      (tracker.listOpenIssueFiles
-        ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
-        : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0)));
+    Boolean(wallCap) ||
+    (!capped &&
+      // The last drain's check, not any earlier one: a drain red at the fix-issue limit stalls
+      // the run only if no later drain turned it green.
+      (integration?.fix?.verdict === "limit" ||
+        (tracker.listOpenIssueFiles
+          ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
+          : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0)));
 
   // Before the summary: drained, capped or stalled, no issue keeps a label saying it is being worked.
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
@@ -502,6 +513,14 @@ async function awaitListed(ctx, tracker, refs) {
 }
 
 /** Phase 1 → Phase 2: flip parked fix issues to ready-for-agent. */
+/** Parked fix issues (Phase 2's input) not yet flushed. */
+function parkedCount(ctx) {
+  const { sprint, effects } = ctx;
+  const r = effects.bash("promote-findings.sh", ["list", "--feature-slug", sprint.featureSlug], { env: sprint.childEnv(), mutating: false });
+  const m = /DEFERRED:\s*count=(\d+)/.exec(r.stdout ?? "");
+  return m ? Number(m[1]) : 0;
+}
+
 function flush(ctx) {
   const { sprint, effects } = ctx;
   const r = effects.bash("promote-findings.sh", ["flush", "--feature-slug", sprint.featureSlug], {

@@ -229,6 +229,13 @@ export class Effects {
     }
   }
 
+  /** Kill every running child's process group (a red baseline's stop). Returns how many. */
+  interruptDispatches() {
+    const n = liveGroups.size;
+    killAllGroups();
+    return n;
+  }
+
   /** A point to measure the orchestrator's own ref activity from (`refActivitySince`). */
   refActivityMark() {
     return { mainMoves: this.mainMoves, touched: this.touched.length, active: new Set(this.active.keys()) };

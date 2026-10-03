@@ -531,6 +531,13 @@ export async function runHousekeeping(ctx, worker) {
   const { issue, branch } = worker;
   const outcome = { slug: issue.slug, branch, status: null, reason: null, coverageGaps: [], findings: [], reviewReport: null };
 
+  // A red baseline stopped this attempt (loop.mjs): the branch is kept as it stands, to be
+  // verified by the next run, and the attempt is free.
+  if (ctx.baselineRed) {
+    ctx.log(`[BASELINE-RED] slug=${issue.slug} round=${worker.attempt} — the baseline failed; branch kept, not verified`, "warn");
+    return finishRetryOrBlock(ctx, worker, outcome, taggedReason(VERIFY_INTERRUPTED_TAG, "baseline failed"), { free: true });
+  }
+
   // The merge route (see resumeRoute): straight to merge/close, which re-checks both receipts.
   if (worker.resumeAtMerge) {
     return mergeAndClose(ctx, worker, outcome);

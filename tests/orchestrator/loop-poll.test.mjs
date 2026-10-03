@@ -174,6 +174,60 @@ test("wall-clock cap: once elapsed nothing new is claimed, the running worker fi
   assert.match(text, /- b\n- c/);
 });
 
+test("wall-clock cap elapsing after the last issue is done is not a cap hit", async () => {
+  // Nothing unclaimed and nothing parked: the cap cut nothing short, so the run is green.
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  const out = [];
+  h.ctx.out = (s) => out.push(s);
+  const run = runSprint(h.ctx);
+  await settle();
+  t = 10 * 60_000;
+  h.gates.get("a")();
+  const result = await run;
+  assert.equal(result.stalled, false);
+  assert.doesNotMatch(out.join("\n"), /Wall-clock cap/);
+});
+
+test("past the cap the poller lists the tracker no more", async () => {
+  const h = harness({ pollInterval: 5, parallel: 2 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  const run = runSprint(h.ctx);
+  await settle();
+  t = 10 * 60_000;
+  const before = h.listings.n;
+  for (let i = 0; i < 3 && h.sleeps.length; i++) { h.sleeps.shift()(); await settle(); }
+  assert.equal(h.listings.n, before);
+  h.gates.get("a")();
+  await run;
+});
+
+test("a red baseline stops the running dispatches and the poller, and claims nothing more", async () => {
+  const h = harness({ pollInterval: 5, parallel: 1 });
+  let red;
+  h.ctx.baseline = new Promise((r) => (red = r));
+  let interrupted = 0;
+  h.ctx.effects.interruptDispatches = () => { interrupted++; return 1; };
+  const run = runSprint(h.ctx);
+  await settle();
+  assert.deepEqual(h.started, ["a"]);
+  h.ready.push({ slug: "b", number: null });
+  red({ status: "fail" });
+  await settle();
+  assert.equal(interrupted, 1);
+  assert.equal(h.ctx.baselineRed, true);
+  const before = h.listings.n;
+  for (let i = 0; i < 3 && h.sleeps.length; i++) { h.sleeps.shift()(); await settle(); }
+  assert.equal(h.listings.n, before);
+  h.gates.get("a")();
+  await run;
+  assert.deepEqual(h.started, ["a"]);
+});
+
 test("wall-clock cap 0 disables it", async () => {
   const h = harness({ pollInterval: 0, parallel: 1, initial: ["a", "b"] });
   h.ctx.now = () => 1e12;
@@ -202,6 +256,7 @@ test("wall-clock cap elapsed with nothing ready: flush is skipped, integration s
   h.ctx.effects.bash = (name, args, o) => {
     calls.push({ name, args });
     if (name === "promote-findings.sh" && args[0] === "flush") return { code: 0, stdout: "FLUSH: promoted=1", stderr: "" };
+    if (name === "promote-findings.sh" && args[0] === "list") return { code: 0, stdout: "deferred: x.md\nDEFERRED: count=1", stderr: "" };
     return bash(name, args, o);
   };
   h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
@@ -243,6 +298,8 @@ test("wall-clock cap with --open-pr: open-pr.sh gets --draft and a note naming t
   const bash = h.ctx.effects.bash;
   h.ctx.effects.bash = (name, args, o) => {
     calls.push({ name, args });
+    // A parked fix issue the cap leaves for the next run.
+    if (name === "promote-findings.sh" && args[0] === "list") return { code: 0, stdout: "DEFERRED: count=1", stderr: "" };
     return name === "open-pr.sh" ? { code: 0, stdout: "PR: http://x/1\n", stderr: "" } : bash(name, args, o);
   };
   const run = runSprint(h.ctx);
