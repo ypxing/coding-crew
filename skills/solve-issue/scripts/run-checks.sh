@@ -124,6 +124,8 @@ _changed_files() {
     | awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
 }
 
+TEST_FILE_RE='(\.(bats)$|\.(test|spec)\.[A-Za-z0-9]+$|(^|/)test_[^/]*\.py$|_test\.[A-Za-z0-9]+$|(^|/)(tests?|__tests__)/.*\.[A-Za-z0-9]+$)'
+
 # _changed_tests — existing test files changed on this branch since its merge-base, plus
 # uncommitted and untracked ones, one per line.
 _changed_tests() {
@@ -139,22 +141,31 @@ _changed_tests() {
     [ -z "$base" ] || git -C "$PROJECT_ROOT" diff --name-only --diff-filter=d "$base" HEAD 2>/dev/null
     git -C "$PROJECT_ROOT" diff --name-only --diff-filter=d HEAD 2>/dev/null
     git -C "$PROJECT_ROOT" ls-files --others --exclude-standard 2>/dev/null
-  } | awk 'NF && !seen[$0]++' | grep -E '(\.(bats)$|\.(test|spec)\.[A-Za-z0-9]+$|(^|/)test_[^/]*\.py$|_test\.[A-Za-z0-9]+$|(^|/)(tests?|__tests__)/.*\.[A-Za-z0-9]+$)' | while IFS= read -r f; do
+  } | awk 'NF && !seen[$0]++' | grep -E "$TEST_FILE_RE" | while IFS= read -r f; do
     [ -f "$PROJECT_ROOT/$f" ] && printf '%s\n' "$f"
   done
 }
 
-# _targeted_command <cached test command> <files…> — the test command with its path/glob
-# arguments (a word with a glob character or naming an existing path) replaced by the files.
+# _targeted_command <cached test command> <files…> — the test command with only its suite
+# path/glob arguments replaced by the files. The runner's own words stay: the program, a `cd`
+# target, and a repo script it runs (`bash scripts/test.sh`). A word is a suite argument when it
+# has a glob character, or names an existing directory or test file (not in program position).
 _targeted_command() {
-  local cmd="$1" w out="" q; shift
+  local cmd="$1" w out="" q prev="" keep; shift
   set -f # the words are inspected, never expanded
   for w in $cmd; do
+    keep=1
     case "$w" in
-      *[\*\?\[]*) continue ;;
+      *[\*\?\[]*) keep=0 ;;
+      *)
+        if [ -e "$PROJECT_ROOT/$w" ]; then
+          if [ -d "$PROJECT_ROOT/$w" ] || printf '%s\n' "$w" | grep -qE "$TEST_FILE_RE"; then keep=0; fi
+        fi ;;
     esac
-    [ -e "$PROJECT_ROOT/$w" ] && continue
-    out="$out $w"
+    # program position, or the target of `cd`: always the runner's own
+    case "$prev" in ""|"&&"|";"|"||"|"|"|cd) keep=1 ;; esac
+    [ "$keep" = 1 ] && out="$out $w"
+    prev="$w"
   done
   set +f
   for q in "$@"; do out="$out $(printf '%q' "$q")"; done

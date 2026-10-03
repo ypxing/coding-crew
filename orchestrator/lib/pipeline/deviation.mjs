@@ -4,7 +4,7 @@
  * Under CREW_DEFER_FULL_CHECKS=1 the full suite is the verify gate's; a coder runs only the
  * tests it touched (`run-checks.sh --targeted`). Its tool calls are in the dispatch's
  * `<outFile>.events.jsonl`: a command that contains the `dev-commands.json` `test` command
- * verbatim (and is not run-checks.sh) is the suite run in full. Recorded and named in the
+ * verbatim with no test-file argument after it (and is not run-checks.sh) is the suite run in full. Recorded and named in the
  * summary; never fails the issue.
  */
 
@@ -33,6 +33,23 @@ export function cachedTestCommand(mainRoot) {
   }
 }
 
+/**
+ * True when `cmd` runs `testCommand` as the whole suite: the text after it, up to the next shell
+ * separator, holds no argument that is not a flag or redirection (`pytest tests/test_x.py` and
+ * `npm test -- a.test.js` name test files, so they are targeted runs).
+ */
+function runsWholeSuite(cmd, testCommand) {
+  let from = 0;
+  for (;;) {
+    const at = cmd.indexOf(testCommand, from);
+    if (at < 0) return false;
+    from = at + testCommand.length;
+    const rest = cmd.slice(from).split(/&&|\|\||[;|\n]/)[0];
+    const args = rest.split(/\s+/).filter(Boolean).filter((a) => a !== "--" && !/^\d*[<>]/.test(a));
+    if (!args.some((a) => !a.startsWith("-"))) return true;
+  }
+}
+
 /** Commands in an events file that ran `testCommand` in full; [] when none or unreadable. */
 export function fullSuiteRuns(eventsFile, testCommand) {
   if (!testCommand || !existsSync(eventsFile)) return [];
@@ -46,7 +63,7 @@ export function fullSuiteRuns(eventsFile, testCommand) {
       continue;
     }
     for (const cmd of commandsIn(evt)) {
-      if (cmd.includes(testCommand) && !cmd.includes("run-checks.sh")) runs.push(cmd);
+      if (runsWholeSuite(cmd, testCommand) && !cmd.includes("run-checks.sh")) runs.push(cmd);
     }
   }
   return runs;
