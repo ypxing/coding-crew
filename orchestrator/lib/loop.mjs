@@ -333,7 +333,7 @@ export async function runSprint(ctx) {
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, prdAudit, unlisted, integration, integrationFixes, featureReview });
+  await wrapUp(ctx, { tracker, stalled, capped, prdAudit, unlisted, integration, integrationFixes, featureReview });
   return { stalled, history };
 }
 
@@ -469,7 +469,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReview = {} }) {
+async function wrapUp(ctx, { tracker, stalled, capped = false, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReview = {} }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -496,7 +496,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
 
   // --- summary (rendered from disk, never from recollection) -----------------
   // The PR comes first: the summary points at it when the findings were posted there.
-  const pr = await pullRequest(ctx, tracker, integration);
+  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped });
   const summaryArgs = ["--promoted", promoteSeverities(sprint.fixFindings)];
   if (stalled) summaryArgs.push("--stalled");
   if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url);
@@ -540,6 +540,28 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
 }
 
 /**
+ * A run is green iff it exited 0 (not stalled), no issue is blocked, it was not cut short by
+ * --max-rounds, and the integration check passed or was cached. A check that could not run
+ * (`skipped`) is not green; one the user switched off (`enabled` false) is not held against it.
+ */
+export function isGreen({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true }) {
+  const integrationOk = integration ? ["pass", "cached"].includes(integration.status) : !integrationEnabled;
+  return exitCode === 0 && blocked.length === 0 && !capped && integrationOk;
+}
+
+/** Why a run is not green, one line per cause, for the PR block and the summary. */
+function notGreenReasons({ exitCode, blocked, integration, capped, integrationEnabled }) {
+  const reasons = [];
+  if (exitCode !== 0) reasons.push("the run stalled with issues unfinished");
+  if (blocked.length) reasons.push(`${blocked.length} issue(s) blocked`);
+  if (capped) reasons.push("the run stopped at --max-rounds");
+  if (integration?.status === "skipped") reasons.push(`the integration check was skipped (${integration.reason})`);
+  else if (!integration && integrationEnabled) reasons.push("the integration check did not run");
+  else if (integration && !["pass", "cached"].includes(integration.status)) reasons.push(`the integration check ${integration.status}`);
+  return reasons;
+}
+
+/**
  * Last, after squash: the feature PR. `openPr` pushes the branch and creates or updates the PR
  * with the tracker's closing lines in its body (open-pr.sh), under the body the PR writer wrote
  * for a reviewer (pipeline/pr-body.mjs). Off, those lines are printed for
@@ -548,7 +570,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
  * (post-findings.sh) its URL and their count — or null when there is nothing to say. A posting
  * failure is reported in the text and never fails the sprint.
  */
-async function pullRequest(ctx, tracker, integration) {
+async function pullRequest(ctx, tracker, integration, { stalled = false, capped = false } = {}) {
   const { sprint, effects, options } = ctx;
   let refs = [];
   let refsError = null;
@@ -586,14 +608,38 @@ async function pullRequest(ctx, tracker, integration) {
   const closesFile = join(sprint.env.SPRINT_DIR, "pr-closes.txt");
   writeFileSync(closesFile, refs.length ? `${refs.join("\n")}\n` : "");
   const body = await writePrBody(ctx, { integration });
+  const blockedSlugs = sprint.getList("blocked");
+  const retention = sprint.readState().retention ?? {};
+  const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, integrationEnabled: options.integrationCheck !== false };
+  const green = isGreen(state);
+  const reasons = green ? [] : notGreenReasons(state);
   const args = ["--closes-file", closesFile];
+  if (!green) {
+    const note = join(sprint.env.SPRINT_DIR, "pr-note.md");
+    const lines = [`**Not green:** ${reasons.join("; ")}. This PR is a draft.`];
+    if (blockedSlugs.length) {
+      lines.push("", "Blocked issues:", ...blockedSlugs.map((slug) => {
+        const why = retention[slug]?.reason;
+        return `- ${slug}${why ? ` — ${why}` : ""}`;
+      }));
+    }
+    writeFileSync(note, `${lines.join("\n")}\n`);
+    args.push("--draft", "--note-file", note);
+  }
   if (body) args.push("--body-file", body.file);
   if (body?.title) args.push("--title", body.title);
   const r = effects.bash("open-pr.sh", args, { env: sprint.childEnv() });
   if (r.dryRun) return null;
   if (r.code !== 0) return { text: `**Failed:** ${r.stderr.trim() || `exit ${r.code}`}` };
-  const url = r.stdout.trim().replace(/^PR: /, "");
-  const opened = body?.failed ? `${url}\n\n**PR body has no summary:** ${body.failed}` : url;
+  const url = /^PR: (.*)$/m.exec(r.stdout)?.[1]?.trim() ?? r.stdout.trim().split("\n")[0];
+  const stateFailed = /^PR-STATE-FAILED: (.*)$/m.exec(r.stdout)?.[1];
+  const actual = /^PR-STATE: (\w+)$/m.exec(r.stdout)?.[1] ?? (green ? "ready" : "draft");
+  const stateLine = green
+    ? `**Ready:** the run finished green.`
+    : `**Draft:** the run did not finish green — ${reasons.join("; ")}.`;
+  if (stateFailed) ctx.log(`PR state: ${stateFailed}`, "warn");
+  const opened0 = `${url}\n\n${stateLine}${stateFailed ? `\n\n**PR state not changed (now ${actual}):** ${stateFailed}` : ""}`;
+  const opened = body?.failed ? `${opened0}\n\n**PR body has no summary:** ${body.failed}` : opened0;
   const post = effects.bash("post-findings.sh", [], { env: sprint.childEnv() });
   const m = /^POSTED: (\d+) \((\d+) inline\)/m.exec(post.stdout ?? "");
   if (post.code !== 0 || !m) {

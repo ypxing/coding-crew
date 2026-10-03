@@ -234,8 +234,9 @@ export function runFeatureChecks(ctx, { stem }) {
   const add = effects.git(["worktree", "add", "-B", branch, path, sprint.featureBranch]);
   if (add.code !== 0) {
     // Not the project's fault: a baseline that could not run says nothing, so it does not stop the run.
+    // An integration check that could not run proved nothing either, so it reads `skipped`, not `pass`.
     ctx.log(`${label}: skipped — could not create its worktree: ${add.stderr.trim()}`);
-    return { status: "pass", commit, failed: [], reason: "worktree add failed" };
+    return { status: stem === INTEGRATION_STEM ? "skipped" : "pass", commit, failed: [], reason: "worktree add failed" };
   }
 
   try {
@@ -284,6 +285,8 @@ export function runIntegrationCheck(ctx) {
   if (result.status === "fail") {
     const what = result.failed.length ? result.failed.map((f) => f.check).join(", ") : result.reason;
     ctx.log(`INTEGRATION: fail — ${what} (${at})`, "error");
+  } else if (result.status === "skipped") {
+    ctx.log(`INTEGRATION: skipped — ${result.reason} (${at})`, "warn");
   } else if (result.status === "pass") {
     ctx.log(`INTEGRATION: ${result.reason ? `not run — ${result.reason}` : "pass"} (${at})`);
   }
@@ -321,6 +324,7 @@ export function integrationSection(mainRoot, featureBranch, result, fix = null, 
     ? ["", `Fix issue(s) from earlier red drain(s) this run: ${earlier.map((f) => f.ref).join(", ")}.`]
     : [];
   if (result.status === "cached") return [`Passed on ${at} (cached — the same commit already passed).`, ...history].join("\n");
+  if (result.status === "skipped") return `**Skipped:** ${result.reason}. Nothing checked the merged branch.`;
   if (result.status === "pass") {
     return [result.reason ? `**Not run:** ${result.reason}.` : `Passed on ${at}.`, ...history].join("\n");
   }
