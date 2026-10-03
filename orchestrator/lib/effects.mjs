@@ -32,6 +32,8 @@ export class Effects {
     this.env = env;
     /** @type {{argv: string[], cwd: string}[]} */
     this.recorded = [];
+    /** Counts effects that may change the repository (start and end of each): lets a read-only guard tell its dispatch from a concurrent merge. */
+    this.mutations = 0;
   }
 
   script(name) {
@@ -59,6 +61,7 @@ export class Effects {
       return { code: 0, stdout: "", stderr: "", dryRun: true };
     }
     this.recorded.push({ argv, cwd });
+    if (mutating) this.mutations++;
     const r = spawnSync(cmd, args, {
       cwd,
       input,
@@ -75,6 +78,7 @@ export class Effects {
     const code = interrupted ? 128 + (osConstants.signals[r.signal] ?? 0) : r.status === null ? 124 : r.status;
     this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}${interrupted ? ` [${r.signal}]` : ""}`);
     if (r.error) this.log(`ERR  ${r.error.message}`);
+    if (mutating) this.mutations++;
     return { code, stdout: r.stdout ?? "", stderr: r.stderr ?? "", error: r.error, interrupted, signal: r.signal ?? null };
   }
 
@@ -90,6 +94,7 @@ export class Effects {
       return Promise.resolve({ code: 0, stdout: "", stderr: "", dryRun: true });
     }
     this.recorded.push({ argv, cwd });
+    if (mutating) this.mutations++;
     return new Promise((resolve) => {
       let stdout = "";
       let stderr = "";
@@ -98,6 +103,7 @@ export class Effects {
       let timedOut = false;
       let timer = null;
       const finish = (status, signal = null) => {
+        if (mutating) this.mutations++;
         if (settled) return;
         settled = true;
         if (timer) clearTimeout(timer);

@@ -308,8 +308,21 @@ test("claude: only the coder carries --disallowedTools Agent", () => {
   const { root, promptFile } = fixture();
   const coder = buildDispatch("claude", spec(root, promptFile)).args;
   assert.equal(coder[coder.indexOf("--disallowedTools") + 1], "Agent");
-  const rev = buildDispatch("claude", spec(root, promptFile, { agent: "crew-reviewer" })).args;
-  assert.ok(!rev.includes("--disallowedTools"));
+  for (const agent of ["crew-reviewer", "crew-triage"]) {
+    const a = buildDispatch("claude", spec(root, promptFile, { agent })).args;
+    const denied = a.slice(a.indexOf("--disallowedTools") + 1, a.indexOf("--disallowedTools") + 4);
+    assert.deepEqual(denied, ["Edit", "Write", "NotebookEdit"], `${agent} denies file-editing tools`);
+    assert.ok(!a.includes("Agent"));
+  }
+});
+
+test("copilot: reviewer and triage deny write tools; the coder does not", () => {
+  const { root, promptFile } = fixture();
+  for (const agent of ["crew-reviewer", "crew-triage"]) {
+    const a = buildDispatch("copilot", spec(root, promptFile, { agent })).args;
+    assert.equal(a[a.indexOf("--deny-tool") + 1], "write", agent);
+  }
+  assert.ok(!buildDispatch("copilot", spec(root, promptFile)).args.includes("--deny-tool"));
 });
 
 test("claude and copilot: a plain role (no protocol) dispatches too", async () => {

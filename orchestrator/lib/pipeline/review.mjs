@@ -11,7 +11,7 @@ import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
 import { parseReviewReport, severityNames } from "../report.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
-import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
+import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /** A path that only tests: a test/spec file by name, or anything under a test or fixture dir. */
 export function isTestPath(path) {
@@ -49,6 +49,8 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   // A stale sidecar at this fixed path must not be read back as this round's verdict.
   rmSync(sidecarFile, { force: true });
 
+  // The commit the reviewer is given: the AC receipt is written for it, not for a later tip.
+  const reviewedSha = effects.gitRead(["rev-parse", "--verify", `refs/heads/${branch}`]).stdout.trim();
   const base = effects.gitRead(["merge-base", sprint.featureBranch, branch]).stdout.trim();
   const changed = base ? effects.gitRead(["diff", "--name-only", `${base}..${branch}`]).stdout.split("\n").filter(Boolean) : [];
 
@@ -80,7 +82,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   ctx.log(
     `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-review model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`,
   );
-  const result = await dispatch(
+  const guarded = await readOnlyDispatch(ctx, { label: `reviewer ${issue.slug}`, branches: [branch] }, () => dispatch(
     effects,
     reviewer.runtime,
     {
@@ -105,7 +107,9 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       timeoutMs: options.timeoutMs.reviewer,
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
-  );
+  ));
+  if (guarded.violation) return { completed: false, violation: true, reportFile, reason: guarded.violation, parsed: { ok: false } };
+  const result = guarded.result;
   sprint.recordDispatchCost(result, { slug: issue.slug, role: "reviewer", attempt: worker.attempt });
 
   const sidecar = readSidecar(sidecarFile);
@@ -134,7 +138,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
-  return { completed: true, reportFile, parsed, written: sidecar };
+  return { completed: true, reportFile, parsed, written: sidecar, reviewedSha };
 }
 
 export async function promote(ctx, worker, review, outcome) {
