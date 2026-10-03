@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
+import { decisionsFor } from "../prd-decisions.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
 import { parseReviewReport, promoteSeverities, severityNames } from "../report.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
@@ -34,6 +35,16 @@ function countLines(logs = {}) {
     }
   }
   return out;
+}
+
+/** A decisions lookup that fails must never fail the review. */
+function safeDecisions(ctx, issue) {
+  try {
+    return decisionsFor(ctx, issue.text, issue.slug);
+  } catch (err) {
+    ctx.log(`[WARN] PRD decisions: ${err.message} — review proceeds without them`, "warn");
+    return [];
+  }
 }
 
 export async function runReview(ctx, worker, { checks, logs, notConfigured, file } = {}) {
@@ -64,6 +75,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       slug: issue.slug,
       issuePath: issueDescriptor(issue),
       criteria: issue.criteria,
+      prdDecisions: safeDecisions(ctx, issue),
       featureBranch: sprint.featureBranch,
       checks,
       logs,

@@ -160,6 +160,12 @@ review again. Not re-run after Phase 2, nor when nothing merged; skipped (the su
 is red, or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
 a dispatch that leaves no review is recorded not-run (and no `reviewed_tip`) and never fails the sprint.
 
+The per-branch review also checks the PRD decisions an issue implements: `pipeline/review.mjs` reads the issue's `## Implements` IDs and
+`orchestrator/lib/prd-decisions.mjs` maps them to the PRD's `- **D<n>** — …` / `- **B<n>** — …` lines (PRD located once per run:
+`.scratch/<slug>/PRD.md`, else `prd-issue.md`, else under `tracker: github` fetched with `trackers/github.mjs prd`; a failed fetch warns and
+reviews proceed without). `reviewPrompt` renders them as a `PRD decisions this issue implements:` block, and the reviewer judges each like a
+criterion — a contradicted decision is `unmet`, `detail` naming its ID.
+
 Reviewer, triage (verify, findings, integration) and feature-review dispatches are mechanically read-only
 (`pipeline/shared.mjs`'s `readOnlyDispatch`): every `crew/<feature>/*` ref, the feature branch, main `HEAD` (commit
 and branch) and the main checkout's uncommitted changes are snapshotted around the dispatch; any change (or a
