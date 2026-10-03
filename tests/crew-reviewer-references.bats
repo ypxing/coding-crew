@@ -131,7 +131,7 @@ stack_for() {
   grep -qiE 'if either script is missing|older install' "$PROTOCOL"
 }
 
-@test "protocol body stays under the 2000-word budget" {
+@test "protocol body stays under the 2100-word budget" {
   # Raised from 1,500 by the two *machine* contracts the protocol now owns, both of which
   # replace an inference the caller used to make: the execution-evidence rule (a read-only
   # reviewer cannot run `npm test`, so a criterion ending "…and the tests pass" was
@@ -164,9 +164,12 @@ stack_for() {
   # 1,850 → 2,000: Feature Mode (~130 words, the one section a per-branch dispatch skips). It lives
   # in this protocol rather than a second agent so the severity rubric and report format cannot
   # drift between the two modes; ~130 words is what a mode switch costs, not a second protocol.
+  # 2,000 → 2,100: the "Leftover references" HIGH class (a deleted or renamed thing still named
+  # elsewhere), the search-every-instance rule in Precision, and Feature Mode reporting at any
+  # severity without the diff cap — each catches a defect class review used to miss.
   local words
   words=$(wc -w < "$PROTOCOL")
-  [ "$words" -lt 2000 ] || { echo "protocol.md is $words words"; return 1; }
+  [ "$words" -lt 2100 ] || { echo "protocol.md is $words words"; return 1; }
 }
 
 @test "no single reference is larger than the protocol that conditions it" {
