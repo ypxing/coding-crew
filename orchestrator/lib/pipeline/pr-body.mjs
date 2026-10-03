@@ -15,7 +15,7 @@ import { assetDir } from "../install-dir.mjs";
 import { INTEGRATION_STEM } from "../preflight.mjs";
 import { prBodyPrompt } from "../prompts.mjs";
 import { CHECK_CATEGORIES, readVerifyRecord } from "../report.mjs";
-import { roleBinding } from "./shared.mjs";
+import { prBase, roleBinding } from "./shared.mjs";
 
 /**
  * What the integration check proved, as one line (`test pass, lint pass`), or null when it did
@@ -48,23 +48,6 @@ export function prdTitle(prdFile) {
   if (!prdFile) return null;
   const m = /^#\s+(.+)$/m.exec(readFileSync(prdFile, "utf8"));
   return m ? m[1].replace(/^PRD:\s*/i, "").trim() || null : null;
-}
-
-/**
- * Where the PR's range starts: the merge-base of the feature branch with origin's default branch
- * (origin/HEAD, else origin/main, else origin/master), so the body describes every commit the PR
- * holds, whichever run made it. The recorded `base_sha` is this run's start (session-init.sh
- * resets it each run, squash-commits.sh moves it to the squash), so it is only the fallback when
- * there is no origin default branch to measure from; null when neither exists.
- */
-export function prBase(effects, featureBranch, recordedBase) {
-  const head = effects.gitRead(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]);
-  const defaults = head.code === 0 && head.stdout.trim() ? [head.stdout.trim().replace(/^refs\/remotes\//, "")] : [];
-  for (const ref of [...defaults, "origin/main", "origin/master"]) {
-    const mb = effects.gitRead(["merge-base", ref, featureBranch]);
-    if (mb.code === 0 && mb.stdout.trim()) return mb.stdout.trim();
-  }
-  return recordedBase || null;
 }
 
 /**
