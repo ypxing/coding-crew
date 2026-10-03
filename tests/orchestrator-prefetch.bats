@@ -64,7 +64,7 @@ nested() {
   local all=("$bp") q
   for q in "${all[@]}"; do all+=($(pgrep -P "$q")); done
   for q in "${all[@]}"; do
-    case "$(ps -o args= -p "$q" 2>/dev/null)" in *node*|*xargs*) ;; *) kill -9 "$q" 2>/dev/null || true ;; esac
+    case "$(ps -o comm= -p "$q" 2>/dev/null)" in node|xargs) ;; *) kill -9 "$q" 2>/dev/null || true ;; esac
   done
   for i in $(seq 1 60); do
     if ! kill -0 "$(cat "$FIX/pids/a")" 2>/dev/null && ! kill -0 "$(cat "$FIX/pids/b")" 2>/dev/null; then break; fi
