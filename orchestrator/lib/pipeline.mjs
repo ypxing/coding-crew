@@ -484,6 +484,7 @@ export async function runWorker(ctx, issue, attempt) {
       outFile,
       model: coder.model,
       mainRoot: effects.mainRoot,
+      baseRef: sprint.featureBranch,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
       scriptsDir: coder.scriptsDir,

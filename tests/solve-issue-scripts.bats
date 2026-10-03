@@ -210,6 +210,46 @@ _cache() {
   [ ! -e "$WORK/ran-test" ]
 }
 
+@test "run-checks: --targeted measures from CREW_BASE_REF, so a feature branch's own tests are not the issue's" {
+  mkdir -p "$WORK/tests"
+  # setup() left WORK on `feature`: main is cut here, the feature adds its own test.
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/feat.bats"; git -C "$WORK" add -A; git -C "$WORK" commit -q -m feat
+  git -C "$WORK" checkout -q -b issue
+  echo x > "$WORK/tests/mine.bats"; git -C "$WORK" add -A; git -C "$WORK" commit -q -m mine
+  _cache '{"typecheck": null, "lint": null, "test": "echo RAN tests/*.bats"}'
+  CREW_BASE_REF=feature CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RAN tests/mine.bats"* ]]
+  [[ "$output" != *"feat.bats"* ]]
+}
+
+@test "run-checks: --targeted passes test files only, never a helper or fixture under a test dir" {
+  mkdir -p "$WORK/tests/helpers" "$WORK/tests/fixtures" "$WORK/tests/orchestrator"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/helpers/h.bash"; echo x > "$WORK/tests/fixtures/f.jsonl"
+  echo x > "$WORK/tests/orchestrator/lib.mjs"; echo x > "$WORK/tests/orchestrator/x.test.mjs"
+  echo x > "$WORK/tests/fixtures/case.test.js"
+  _cache '{"typecheck": null, "lint": null, "test": "echo RAN tests/*.bats"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RAN tests/orchestrator/x.test.mjs"* ]]
+  [[ "$output" != *"h.bash"* && "$output" != *"f.jsonl"* && "$output" != *"lib.mjs"* && "$output" != *"case.test.js"* ]]
+}
+
+@test "run-checks: --targeted defers a runner that takes no test file arguments (make, go, cargo)" {
+  mkdir -p "$WORK/tests"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/new_test.go"
+  for runner in "make test" "go test ./..." "cargo test"; do
+    _cache "{\"typecheck\": null, \"lint\": null, \"test\": \"$runner\"}"
+    CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+    [ "$status" -eq 0 ] || { echo "$runner: $output"; return 1; }
+    [[ "$output" == *"test: deferred (the test command takes no test file arguments)"* ]] || { echo "$runner: $output"; return 1; }
+    [[ "$output" != *"=== test"* ]]
+  done
+}
+
 @test "run-checks: --targeted without CREW_DEFER_FULL_CHECKS still runs the full suite" {
   mkdir -p "$WORK/tests"; echo x > "$WORK/tests/new.bats"
   _cache '{"typecheck": null, "lint": null, "test": "echo FULL tests/*.bats"}'

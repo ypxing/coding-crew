@@ -25,6 +25,8 @@
 #                                          uncommitted ones) ran, as the cached test command with its
 #                                          path/glob arguments swapped for those files
 #   test: deferred (no changed test files) with --targeted and no changed test file: nothing ran
+#   test: deferred (the test command takes no test file arguments)
+#                                          with --targeted and a runner such as make, go or cargo
 #   <key>: deferred …                      with CREW_DEFER_FULL_CHECKS=1 only: every check other than
 #                                          typecheck and lint (test, coverage, …) is not run here — the
 #                                          verify gate runs it; report the check as `deferred`
@@ -124,7 +126,14 @@ _changed_files() {
     | awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
 }
 
-TEST_FILE_RE='(\.(bats)$|\.(test|spec)\.[A-Za-z0-9]+$|(^|/)test_[^/]*\.py$|_test\.[A-Za-z0-9]+$|(^|/)(tests?|__tests__)/.*\.[A-Za-z0-9]+$)'
+# A test file by its own name (a file under tests/ may be a helper or fixture): bats, *.test.* /
+# *.spec.*, pytest's test_*.py, *_test.* (go, python), *_spec.rb, and jest's __tests__/ sources.
+TEST_FILE_RE='(\.bats$|\.(test|spec)\.[A-Za-z0-9]+$|(^|/)test_[^/]*\.py$|_test\.[A-Za-z0-9]+$|_spec\.rb$|(^|/)__tests__/[^/]+\.[cm]?[jt]sx?$)'
+# Never a suite file, whatever its name: test data and helpers.
+NOT_TEST_RE='(^|/)(fixtures?|helpers?|__fixtures__|__snapshots__|testdata)/'
+# Runners that take no test file arguments (or treat them as something else): a targeted run
+# through them would not run the changed tests, so they are deferred to the verify gate.
+NO_FILE_ARGS_RE='^(make|gmake|go|cargo|gradle|gradlew|\./gradlew|mvn|mvnw|\./mvnw|dotnet|rake|ctest|tox|nox)$'
 
 # _changed_tests — existing test files changed on this branch since its merge-base, plus
 # uncommitted and untracked ones, one per line.
@@ -141,9 +150,24 @@ _changed_tests() {
     [ -z "$base" ] || git -C "$PROJECT_ROOT" diff --name-only --diff-filter=d "$base" HEAD 2>/dev/null
     git -C "$PROJECT_ROOT" diff --name-only --diff-filter=d HEAD 2>/dev/null
     git -C "$PROJECT_ROOT" ls-files --others --exclude-standard 2>/dev/null
-  } | awk 'NF && !seen[$0]++' | grep -E "$TEST_FILE_RE" | while IFS= read -r f; do
+  } | awk 'NF && !seen[$0]++' | grep -E "$TEST_FILE_RE" | grep -vE "$NOT_TEST_RE" | while IFS= read -r f; do
     [ -f "$PROJECT_ROOT/$f" ] && printf '%s\n' "$f"
   done
+}
+
+# _takes_test_files <cached test command> — false when a program the command runs (the first word
+# of each `&&`/`;`/`|` segment, `cd` segments aside) is a runner in NO_FILE_ARGS_RE.
+_takes_test_files() {
+  local w prev=""
+  set -f
+  for w in $1; do
+    case "$prev" in ""|"&&"|";"|"||"|"|")
+      if [ "$w" != cd ] && printf '%s\n' "$w" | grep -qE "$NO_FILE_ARGS_RE"; then set +f; return 1; fi ;;
+    esac
+    prev="$w"
+  done
+  set +f
+  return 0
 }
 
 # _targeted_command <cached test command> <files…> — the test command with only its suite
@@ -200,6 +224,10 @@ for key in "${KEYS[@]}"; do
   fi
   label=""
   if [ "${CREW_DEFER_FULL_CHECKS:-}" = 1 ] && [ "$TARGETED" = 1 ] && [ "$key" = test ]; then
+    if ! _takes_test_files "$cmd"; then
+      echo "test: deferred (the test command takes no test file arguments) — nothing ran; the verify gate runs the full suite"
+      continue
+    fi
     mapfile -t tfiles < <(_changed_tests)
     if [ "${#tfiles[@]}" -eq 0 ]; then
       echo "test: deferred (no changed test files) — nothing ran; the verify gate runs the full suite"

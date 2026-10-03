@@ -927,6 +927,14 @@ test("extractResultMeta carries claude's budget-cap subtype", () => {
   assert.equal(meta.isError, true);
 });
 
+test("a coder's targeted test run measures from the feature branch it was cut from", () => {
+  const { root, promptFile } = fixture();
+  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+    assert.equal(buildDispatch(platform, spec(root, promptFile, { baseRef: "feature/demo" })).env.CREW_BASE_REF, "feature/demo", platform);
+    assert.equal("CREW_BASE_REF" in buildDispatch(platform, spec(root, promptFile, { agent: "crew-reviewer", baseRef: "feature/demo" })).env, false, platform);
+  }
+});
+
 test("only crew-coder dispatches set CREW_DEFER_FULL_CHECKS, on every runtime", () => {
   const { root, promptFile } = fixture();
   for (const platform of ["claude", "copilot", "pi", "codex"]) {

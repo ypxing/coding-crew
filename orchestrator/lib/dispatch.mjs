@@ -51,8 +51,9 @@ export function buildDispatch(platform, spec) {
     env: {
     MAIN_ROOT: mainRoot,
     CREW_ORCHESTRATED: "1",
-    // The coder defers the full suite to the verify gate; reviewer/triage never run checks.
-    ...(agent === "crew-coder" ? { CREW_DEFER_FULL_CHECKS: "1" } : {}),
+    // The coder defers the full suite to the verify gate, and runs the tests it changed since
+    // the feature branch it was cut from (`run-checks.sh --targeted`); reviewer/triage run no checks.
+    ...(agent === "crew-coder" ? { CREW_DEFER_FULL_CHECKS: "1", ...(spec.baseRef ? { CREW_BASE_REF: spec.baseRef } : {}) } : {}),
     },
   };
 
