@@ -319,7 +319,8 @@ test("a red baseline with two issues: coders start alongside it, no issue is ver
   const { r, lines } = commandLines(root, ["--max-parallel", "2"], { baseline: true });
   assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /feature\/demo fails its own checks before any issue has touched it/);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length <= 2, true);
+  const coders = lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length;
+  assert.ok(coders >= 1 && coders <= 2, `coders start alongside the baseline, not behind it (${coders} spawned)`);
   assert.equal(lines.filter((l) => /verify-worktree\.sh --dir \S+ --stem (alpha|beta)/.test(l)).length, 0);
   assert.equal(state(root).baseline.verdict, "fail");
 });
