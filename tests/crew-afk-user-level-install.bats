@@ -106,6 +106,39 @@ work_repo_with_issue() {
   done
 }
 
+@test "user-level install: each platform's config-dir env var relocates where the scripts are found" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  work_repo_with_issue
+  cd "$WORK_REPO"
+
+  local p var home cfg
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    case "$p" in
+      claude)  var=CLAUDE_CONFIG_DIR ;;
+      copilot) var=COPILOT_HOME ;;
+      pi)      var=PI_CODING_AGENT_DIR ;;
+      codex)   var=CODEX_HOME ;;
+    esac
+    home="$BATS_TEST_TMPDIR/home-$p"; cfg="$BATS_TEST_TMPDIR/cfg-$p"
+    mkdir -p "$home"
+    env HOME="$home" TARGET_REPO="$home" "$var=$cfg" \
+      bash "$REPO_ROOT/install.sh" "$p" --skill crew-afk >/dev/null
+    if [ "$p" = codex ]; then
+      # install.sh puts codex skills under .agents/, never CODEX_HOME; move them to where a
+      # relocated CODEX_HOME would hold them so only the orchestrator's lookup is tested.
+      mkdir -p "$cfg/skills/crew-afk"
+      mv "$home/.agents/skills/crew-afk/scripts" "$cfg/skills/crew-afk/scripts"
+    fi
+    [ -f "$cfg/skills/crew-afk/scripts/state.sh" ] || {
+      echo "$p: scripts not under $var" >&2; return 1; }
+    run env HOME="$home" "$var=$cfg" \
+      node "$home/.coding-crew/crew-afk/main.mjs" plan --platform "$p"
+    [ "$status" -eq 0 ] || { echo "$p: $output" >&2; return 1; }
+    path_matches "$output" "cfg-$p/skills/crew-afk/scripts" || {
+      echo "$p: $var not used for scripts dir:" >&2; echo "$output" >&2; return 1; }
+  done
+}
+
 @test "user-level install: a project install still wins over the \$HOME copy" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   user_install pi
