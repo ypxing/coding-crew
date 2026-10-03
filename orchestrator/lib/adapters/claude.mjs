@@ -16,6 +16,10 @@ export default {
   defaultModel: "sonnet",
   // The CLI takes the system prompt from a file, and the prompt as its positional argument.
   promptVia: "argv",
+  // The protocol goes in as `--append-system-prompt-file`.
+  protocolVia: "file",
+  // Cost arrives in the final `result` event: a dispatch killed before it has an unknown cost.
+  reportsCost: true,
   // Flags the dispatch argv relies on for a full-permission headless run; `doctor` checks `--help` lists them.
   requiredFlags: ["--permission-mode", "--output-format", "--append-system-prompt-file", "--add-dir"],
 

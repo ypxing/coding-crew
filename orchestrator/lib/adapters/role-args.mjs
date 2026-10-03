@@ -1,6 +1,7 @@
 /** Per-platform, per-role extra CLI args: the settings that used to live in the agent files' frontmatter. */
-// The reviewer and triage are read-only (their removed agent files listed only read tools).
-const CLAUDE_READ_ONLY = ["--disallowedTools", "Edit", "Write", "NotebookEdit"];
+// The reviewer and triage are read-only (their removed agent files listed only read tools), and,
+// like the coder, spawn no sub-agents.
+const CLAUDE_READ_ONLY = ["--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent"];
 const COPILOT_READ_ONLY = ["--deny-tool", "write"];
 
 export const ROLE_ARGS = {

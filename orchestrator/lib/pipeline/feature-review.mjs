@@ -63,7 +63,6 @@ export async function runFeatureReview(ctx, { integration = null } = {}) {
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: reviewer.scriptsDir,
       slug: FEATURE_REVIEW,
       round: 1,
       reportPath: sidecarFile,

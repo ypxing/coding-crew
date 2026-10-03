@@ -123,7 +123,6 @@ export async function runTriage(ctx, worker, verifyStdout) {
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: triage.scriptsDir,
       slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: worker.attempt,

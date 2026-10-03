@@ -10,6 +10,8 @@ export default {
   defaultParallel: 2,
   defaultModel: undefined,
   promptVia: "argv",
+  // No system-prompt flag: the protocol is prepended to the prompt.
+  protocolVia: "prompt",
   requiredFlags: ["--allow-all-tools", "--output-format", "--add-dir"],
 
   /**

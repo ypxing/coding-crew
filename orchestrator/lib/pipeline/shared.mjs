@@ -57,7 +57,7 @@ export function roleBinding(ctx, role) {
   const { runtime, model } = ctx.options.crew[role];
   // afk.limits.<role>.usd — claude's flag, so no other runtime is handed one.
   const maxBudgetUsd = runtime === "claude" ? (ctx.options.limitsUsd?.[role] ?? null) : null;
-  return { runtime, model, maxBudgetUsd, scriptsDir: ctx.effects.scriptsDir };
+  return { runtime, model, maxBudgetUsd };
 }
 
 /**

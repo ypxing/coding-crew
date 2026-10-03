@@ -122,7 +122,6 @@ async function runIntegrationTriage(ctx, result, attempt) {
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: triage.scriptsDir,
       slug: INTEGRATION_STEM,
       round: attempt,
       reportPath: sidecarFile,

@@ -96,7 +96,6 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: reviewer.scriptsDir,
       slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: worker.attempt,

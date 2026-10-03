@@ -35,6 +35,16 @@ export function killGroup(pid, signal = "SIGKILL") {
   }
 }
 
+/**
+ * After a child's `close`: kill what is left of its group (a grandchild it left running), by group
+ * only — the leader is already reaped, so its bare pid may now be someone else's.
+ */
+function killLeftovers(pid) {
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {}
+}
+
 /** Kill every process group still running (interrupt path). */
 export function killAllGroups(signal = "SIGKILL") {
   for (const pid of liveGroups) killGroup(pid, signal);
@@ -133,8 +143,9 @@ export class Effects {
     // status === null: killed by a signal. Our own `timeout` is the one signal that is a
     // verdict (124, as always); any other was sent from outside — an interruption, not a
     // result, so it gets the shell's 128+signal and `interrupted`, never the timeout's 124.
+    // spawnSync's own timeout kills the child (it stays in our group, see liveGroups); a grandchild
+    // it started is not reachable from here.
     const timedOut = r.error?.code === "ETIMEDOUT";
-    if (timedOut) killGroup(r.pid);
     const interrupted = r.status === null && !timedOut && Boolean(r.signal);
     const code = interrupted ? 128 + (osConstants.signals[r.signal] ?? 0) : r.status === null ? 124 : r.status;
     this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}${interrupted ? ` [${r.signal}]` : ""}`);
@@ -170,7 +181,7 @@ export class Effects {
         if (timer) clearTimeout(timer);
         if (child.pid) {
           liveGroups.delete(child.pid);
-          if (timedOut) killGroup(child.pid);
+          killLeftovers(child.pid);
         }
         // As in exec: our own timeout is exit 124; a signal from outside is an interruption (128+signal).
         const interrupted = !timedOut && (status === null || status === undefined) && Boolean(signal);
@@ -312,7 +323,7 @@ export class Effects {
         if (timer) clearTimeout(timer);
         if (child.pid) {
           liveGroups.delete(child.pid);
-          if (timedOut) killGroup(child.pid);
+          killLeftovers(child.pid);
         }
         resolve({ code: timedOut ? 124 : (code ?? 1), stdout, stderr, timedOut });
       });

@@ -45,7 +45,7 @@ export const DEFAULT_PARALLEL = Object.fromEntries(PLATFORMS.map((p) => [p, ADAP
  * @returns {{cmd: string, args: string[], cwd: string, env: object, capture: "stdout"|"file"}}
  */
 export function buildDispatch(platform, spec) {
-  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec;
+  const { agent, cwd, promptFile, outFile, model, mainRoot, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec;
   const shared = {
     cwd,
     env: {
@@ -88,13 +88,13 @@ export function buildDispatch(platform, spec) {
   const protocol = role ? renderRolePrompt(role, platform, { mainRoot, rolesDir: spec.rolesDir }) : null;
   let prompt = readFileSync(promptFile, "utf8");
   let protocolFile = null;
-  // claude takes the protocol as a system-prompt file, pi and codex place it themselves, copilot has
-  // no system-prompt flag and gets it prepended.
-  if (protocol && platform === "claude") {
+  // Where the adapter takes the protocol: a system-prompt file, or prepended to the prompt; an
+  // adapter with neither places it itself (argv, stdin).
+  if (protocol && adapter.protocolVia === "file") {
     protocolFile = `${outFile}.protocol.md`;
     mkdirSync(dirname(protocolFile), { recursive: true });
     writeFileSync(protocolFile, protocol);
-  } else if (protocol && platform === "copilot") {
+  } else if (protocol && adapter.protocolVia === "prompt") {
     prompt = `${protocol}\n\n---\n\n${prompt}`;
   }
   const label = basename(promptFile, ".md").replace(/\.prompt$/, "");
@@ -308,9 +308,9 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     permissionDenials: meta.permissionDenials,
     sessionId: meta.sessionId,
     contextTokens: meta.contextTokens,
-    // A claude dispatch killed on timeout leaves no `result` event, even when it also left no
-    // assistant event: either way its cost is unknown, not zero.
-    costUnknown: meta.costUnknown || (built.jsonEvents === "claude" && !r.dryRun && !!r.timedOut && meta.costUsd == null),
+    // A CLI that reports cost in a final event (claude's `result`) leaves none when killed on
+    // timeout, even with no assistant event: either way its cost is unknown, not zero.
+    costUnknown: meta.costUnknown || (!!adapter?.reportsCost && !!built.jsonEvents && !r.dryRun && !!r.timedOut && meta.costUsd == null),
     tokens: meta.tokens,
   };
 }
