@@ -145,6 +145,13 @@ falls back to the `high` rule). Not re-run after Phase 2, nor when nothing
 merged; skipped (the summary says so) when the integration check is red; a dispatch that leaves no review is recorded
 not-run and never fails the sprint.
 
+Reviewer, triage (verify, findings, integration) and feature-review dispatches are mechanically read-only
+(`pipeline/shared.mjs`'s `readOnlyDispatch`): refs, main `HEAD` and the main checkout's uncommitted changes are
+snapshotted around the dispatch; any change (or a snapshot git cannot take) fails it closed as not-run and logs
+`[READONLY-VIOLATION]`. When another effect mutated the repo meanwhile (`Effects.mutations`), only the dispatch's own
+branch ref is compared. The AC receipt is written with `receipts.sh write ac --branch <b> --sha <reviewed sha>`, so a
+branch that moved during review fails `check ac --at-tip` as stale.
+
 ## `to-issues`' linter (`skills/to-issues/scripts/lint-issues.sh`)
 
 Read-only checker for a feature's issue set, shipped as an asset at `.coding-crew/to-issues/scripts/` and
