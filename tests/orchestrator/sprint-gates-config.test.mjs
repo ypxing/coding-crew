@@ -270,18 +270,6 @@ test("an invalid config.json is a setup error naming every problem", () => {
   assert.match(r.stderr, /"afk\.runtime\.triage" is "cursor"/);
 });
 
-test("doctor names the role when a runtime other than the launcher's is not installed", () => {
-  const root = fixtureRepo();
-  mkdirSync(join(root, ".coding-crew"), { recursive: true });
-  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { runtime: { reviewer: "codex" } } }));
-  const env = { ...process.env, CREW_SCRIPTS: SCRIPTS, MAIN_ROOT: root, HOME: root };
-  delete env.CREW_FAKE_DISPATCH;
-  const r = sh("node", [MAIN, "doctor", "--platform", "claude"], { cwd: root, env });
-  assert.equal(r.code, 1);
-  assert.match(r.stdout, /PROBLEM: reviewer → codex: crew-reviewer agent definition not installed for codex/);
-  assert.doesNotMatch(r.stdout, /→ codex: crew-coder/);
-});
-
 const lineOf = (log, text) => log.split("\n").findIndex((l) => l.includes(text));
 
 test("the PRD audit runs by default after Phase 1, before the flush and the squash", () => {
@@ -336,15 +324,6 @@ test("PRDAudit report: the audit runs, and its gaps are left for a human", () =>
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.deepEqual(state(root).completed_slugs, ["alpha"]);
   assert.match(r.stdout, /## PRD Audit/);
-  // --coverage, the old flag, is `report` too.
-  const root2 = fixtureRepo();
-  addIssue(root2, "01-alpha.md");
-  writeFileSync(join(root2, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
-  fake(root2, "prd-audit.response", AUDIT_WITH_GAP);
-  const old = runSprint(root2, ["--coverage"]);
-  assert.equal(old.code, 0, `${old.stdout}\n${old.stderr}`);
-  assert.deepEqual(state(root2).completed_slugs, ["alpha"]);
-  assert.match(readFileSync(join(root2, ".scratch/demo/sprint.env"), "utf8"), /CREW_PRD_AUDIT="report"/);
 });
 
 test("PRDAudit: a superseded requirement is named in the summary and never queued", () => {

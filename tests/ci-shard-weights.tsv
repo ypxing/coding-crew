@@ -4,8 +4,7 @@
 # Refresh when a shard runs far longer than the others — balance is all this affects.
 1	add-tests-skill-structure.bats
 10	address-pr-comments-scripts.bats
-24	agent-rename.bats
-10	agent-shim-consistency.bats
+24	retired-agents.bats
 6	ci-test-shard.bats
 62	codex-platform.bats
 2	configure-tracker-skill.bats
@@ -32,7 +31,6 @@
 12	crew-afk-write-commands-cache.bats
 20	crew-coder-context-reading.bats
 6	crew-coder-protocol.bats
-1	crew-coder-tool-inheritance.bats
 1	crew-grill-question-gates.bats
 7	crew-reviewer-references.bats
 1	crew-reviewer-structure.bats
@@ -49,9 +47,6 @@
 5	dep-install-manifest-fingerprint.bats
 3	dep-install-resolve-mode.bats
 2	dep-install-run.bats
-1	dispatch-agent-prompt-read.bats
-1	dispatch-blank-body-check.bats
-2	dispatch-prompt-read-race.bats
 1	implementation-skills-preamble.bats
 1	install-dir-registry.bats
 137	install.bats

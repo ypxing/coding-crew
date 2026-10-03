@@ -4,33 +4,33 @@
  * A dispatch is: run <agent> with <prompt> in <cwd>, capture its final message to
  * <outFile>, with a hard timeout. Every platform can do this headlessly:
  *
- *   pi       pi -p --mode json --append-system-prompt …   (via dispatch-agent.sh)
- *   codex    codex exec --cd … --json -o …                (via dispatch-codex-agent.sh)
- *   claude   claude -p --agent <name> --add-dir … --output-format stream-json --verbose
- *   copilot  copilot -p --agent <name> -C … --output-format json
+ *   pi       pi -p --mode json --append-system-prompt <protocol> …   (adapters/pi.mjs)
+ *   codex    codex exec --cd … --json <protocol + prompt>             (adapters/codex.mjs)
+ *   claude   claude -p <prompt> --append-system-prompt-file <protocol> …   (adapters/claude.mjs)
+ *   copilot  copilot -p <protocol + prompt> -C … --output-format json        (adapters/copilot.mjs)
  *
- * pi and codex run through bash dispatchers that resolve the agent definition and map its
- * frontmatter onto CLI flags; claude and copilot resolve their own agent by name.
+ * No platform needs an agent file or a bash dispatcher: each adapter gets the role's protocol
+ * rendered from orchestrator/roles/<role>.md (adapters/render.mjs) and role settings from
+ * adapters/role-args.mjs.
  *
  * All four emit a JSON event stream. Recognised tool calls become `[TOOL]`/`[TOOL-ERROR]`
  * lines in the trace log while the worker runs; the raw stream is kept as
  * `<outFile>.events.jsonl`, and only the final assistant text goes into outFile (the one
  * thing report.mjs parses).
  *
- * claude (2.1.221) and copilot (1.0.79): `--agent` loads the definition, binds its `tools:`
- * list, and exits 1 on an unknown name — so no body is re-sent. Copilot resolves
- * `.github/agents/` from its cwd without walking up, so a worker in a worktree only sees
- * definitions tracked in HEAD or under `~/.copilot/agents/`; preflight() checks that.
- *
  * Permissions are explicit per platform: an unattended sprint that stops on a
  * tool-permission prompt never finishes.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { writeLog } from "./log.mjs";
 import { preflightPaneHost, spawnDispatch } from "./pane-host/index.mjs";
+import { ADAPTERS } from "./adapters/index.mjs";
+import { ARGV_PROMPT_LIMIT_BYTES, EMPTY_RESULT_META, assertArgvFits } from "./adapters/common.mjs";
+import { renderRolePrompt, roleOfAgent } from "./adapters/render.mjs";
+
+export { ARGV_PROMPT_LIMIT_BYTES, renderRolePrompt };
 
 export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
 
@@ -38,56 +38,22 @@ export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
  * Default parallelism per platform. Copilot's is conservative because what binds is the
  * account's request rate, which the CLI does not expose; raise with `--max-parallel`.
  */
-export const DEFAULT_PARALLEL = { pi: 3, codex: 3, claude: 3, copilot: 2 };
-
-function agentFileCandidates(platform, mainRoot, agent) {
-  // $HOME first: os.homedir() ignores a $HOME override on Windows (reads USERPROFILE).
-  const home = process.env.HOME || homedir();
-  switch (platform) {
-    case "pi":
-      return [
-        join(mainRoot, ".pi/agents", `${agent}.md`),
-        join(home, ".pi/agent/agents", `${agent}.md`),
-      ];
-    case "codex":
-      return [
-        join(mainRoot, ".codex/agents", `${agent}.toml`),
-        join(home, ".codex/agents", `${agent}.toml`),
-      ];
-    case "claude":
-      return [
-        join(mainRoot, ".claude/agents", `${agent}.md`),
-        join(home, ".claude/agents", `${agent}.md`),
-      ];
-    case "copilot":
-      return [
-        join(mainRoot, ".github/agents", `${agent}.agent.md`),
-        join(mainRoot, ".github/agents", `${agent}.md`),
-        join(home, ".copilot/agents", `${agent}.agent.md`),
-        join(home, ".copilot/agents", `${agent}.md`),
-      ];
-    default:
-      return [];
-  }
-}
-
-export function resolveAgentFile(platform, mainRoot, agent) {
-  return agentFileCandidates(platform, mainRoot, agent).find((p) => existsSync(p)) ?? null;
-}
+export const DEFAULT_PARALLEL = Object.fromEntries(PLATFORMS.map((p) => [p, ADAPTERS[p].defaultParallel]));
 
 /**
  * Build the argv for one dispatch.
  * @returns {{cmd: string, args: string[], cwd: string, env: object, capture: "stdout"|"file"}}
  */
 export function buildDispatch(platform, spec) {
-  const { agent, cwd, promptFile, outFile, model, mainRoot, logFile, scriptsDir, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec;
+  const { agent, cwd, promptFile, outFile, model, mainRoot, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec;
   const shared = {
     cwd,
     env: {
     MAIN_ROOT: mainRoot,
     CREW_ORCHESTRATED: "1",
-    // The coder defers the full suite to the verify gate; reviewer/triage never run checks.
-    ...(agent === "crew-coder" ? { CREW_DEFER_FULL_CHECKS: "1" } : {}),
+    // The coder defers the full suite to the verify gate, and runs the tests it changed since
+    // the feature branch it was cut from (`run-checks.sh --targeted`); reviewer/triage run no checks.
+    ...(agent === "crew-coder" ? { CREW_DEFER_FULL_CHECKS: "1", ...(spec.baseRef ? { CREW_BASE_REF: spec.baseRef } : {}) } : {}),
     },
   };
 
@@ -115,117 +81,40 @@ export function buildDispatch(platform, spec) {
     };
   }
 
-  if (platform === "pi" || platform === "codex") {
-    const script = platform === "pi" ? "dispatch-agent.sh" : "dispatch-codex-agent.sh";
-    const args = [
-      join(scriptsDir, script),
-      "--agent",
-      agent,
-      "--dir",
-      cwd,
-      "--prompt-file",
-      promptFile,
-      "--out",
-      outFile,
-    ];
-    if (logFile) args.push("--log", logFile);
-    if (model) args.push("--model", model);
-    if (slug) args.push("--slug", slug);
-    // The bash dispatchers cd into --dir themselves; run them from the main root so
-    // their own git lookups resolve the main checkout.
-    return { cmd: "bash", args, ...shared, cwd: mainRoot, capture: "file" };
+  const adapter = ADAPTERS[platform];
+  if (!adapter) throw new Error(`unknown platform: ${platform}`);
+  const role = roleOfAgent(agent);
+  // Rendered here, before anything spawns: a missing protocol or fragment fails the dispatch.
+  const protocol = role ? renderRolePrompt(role, platform, { mainRoot, rolesDir: spec.rolesDir }) : null;
+  let prompt = readFileSync(promptFile, "utf8");
+  let protocolFile = null;
+  // Where the adapter takes the protocol: a system-prompt file, or prepended to the prompt; an
+  // adapter with neither places it itself (argv, stdin).
+  if (protocol && adapter.protocolVia === "file") {
+    protocolFile = `${outFile}.protocol.md`;
+    mkdirSync(dirname(protocolFile), { recursive: true });
+    writeFileSync(protocolFile, protocol);
+  } else if (protocol && adapter.protocolVia === "prompt") {
+    prompt = `${protocol}\n\n---\n\n${prompt}`;
   }
-
-  const prompt = readFileSync(promptFile, "utf8");
-
-  if (platform === "claude") {
-    // bypassPermissions removes the *prompt*, not the allowlist: the definition's `tools:`
-    // still applies. A narrower --allowedTools can't be written in advance — a worker runs
-    // the consuming project's own checks.
-    //
-    // stream-json requires --verbose, or claude refuses to start. Its final `result` line
-    // carries the agent's last answer in `.result`.
-    const args = [
-      "-p",
-      "--permission-mode",
-      "bypassPermissions",
-      "--add-dir",
-      mainRoot,
-      "--agent",
-      agent,
-      "--output-format",
-      "stream-json",
-      "--verbose",
-    ];
-    if (model) args.push("--model", model);
-    // A fix round continuing the coder's own earlier session (pipeline.mjs decides when).
-    if (resumeSessionId) args.push("--resume", resumeSessionId);
-    // afk.limits.<role>.usd: claude ends the session with `subtype: error_max_budget_usd`
-    // (exit 1, is_error, no result; checked after each turn, so it can overshoot one turn).
-    if (maxBudgetUsd) args.push("--max-budget-usd", String(maxBudgetUsd));
-    args.push(prompt);
-    // Cleared so a child launched from inside a Claude Code session starts its own session
-    // instead of attaching to the parent's hook chain, which can mutate or swallow the prompt.
-    return {
-      cmd: "claude",
-      args,
-      ...shared,
-      env: { ...shared.env, CLAUDE_CODE_SESSION_ID: "", CLAUDE_CODE_CHILD_SESSION: "" },
-      capture: "stdout",
-      jsonEvents: "claude",
-    };
-  }
-
-  if (platform === "copilot") {
-    // --allow-all-tools removes the confirmation prompt only; the definition's `tools:`
-    // still binds. --add-dir: the worker reads the issue and writes its report under
-    // .scratch/ in the main checkout, outside its worktree cwd. The json schema is
-    // copilot-sdk's session-events.d.ts.
-    const args = [
-      "-p",
-      prompt,
-      "--agent",
-      agent,
-      "-C",
-      cwd,
-      "--add-dir",
-      mainRoot,
-      "--allow-all-tools",
-      "--no-color",
-      "--output-format",
-      "json",
-    ];
-    if (model) args.push("--model", model);
-    return { cmd: "copilot", args, ...shared, capture: "stdout", jsonEvents: "copilot" };
-  }
-
-  throw new Error(`unknown platform: ${platform}`);
-}
-
-/** A capped JSON preview that says how much it cut, so truncation is never mistaken for the whole value. */
-function safePreview(value, max = 200) {
-  let text;
-  try {
-    text = JSON.stringify(value ?? {});
-  } catch {
-    text = "{}";
-  }
-  return text.length > max ? `${text.slice(0, max)}…(+${text.length - max} chars)` : text;
-}
-
-/**
- * `$ <command>` for a shell call, a bare path for a file tool; null for any other shape,
- * which formatArgs renders as a capped JSON preview instead.
- */
-function summarizeArgs(args) {
-  if (!args || typeof args !== "object") return null;
-  if (typeof args.command === "string") return `$ ${args.command}`;
-  const path = args.file_path ?? args.path;
-  return typeof path === "string" ? path : null;
-}
-
-function formatArgs(args) {
-  return summarizeArgs(args) ?? `args=${safePreview(args)}`;
+  const label = basename(promptFile, ".md").replace(/\.prompt$/, "");
+  const args = adapter.argv({ cwd, mainRoot, model, role, promptFile, outFile, protocolFile, protocol: protocol ?? null, prompt, label: `${spec.agent}: ${label}` });
+  // A CLI that reads its prompt on stdin carries no size limit; every argv string is capped.
+  const input = adapter.promptVia === "stdin" ? adapter.stdin({ cwd, role, protocol: protocol ?? null, prompt, outFile }) : undefined;
+  assertArgvFits(args, adapter.cmd);
+  // A fix round continuing the coder's own earlier session (pipeline.mjs decides when).
+  if (resumeSessionId && adapter.resume) args.push(...adapter.resume(resumeSessionId));
+  // afk.limits.<role>.usd: a backstop, checked after each turn, so it can overshoot one turn.
+  if (maxBudgetUsd && adapter.budget) args.push(...adapter.budget(maxBudgetUsd));
+  return {
+    cmd: adapter.cmd,
+    args,
+    input,
+    ...shared,
+    env: { ...shared.env, ...(adapter.env ?? {}) },
+    capture: "stdout",
+    jsonEvents: platform,
+  };
 }
 
 /**
@@ -234,170 +123,40 @@ function formatArgs(args) {
  * dispatch() adds both.
  */
 export function formatJsonTraceLine(platform, agent, line) {
+  const adapter = ADAPTERS[platform];
+  if (!adapter) return null;
   let evt;
   try {
     evt = JSON.parse(line);
   } catch {
     return null;
   }
-  if (platform === "claude") {
-    if (evt.type === "assistant") {
-      for (const block of evt.message?.content ?? []) {
-        if (block.type === "tool_use") {
-          return `[TOOL] agent=${agent} tool=${block.name} ${formatArgs(block.input)}`;
-        }
-      }
-    }
-    if (evt.type === "user") {
-      for (const block of evt.message?.content ?? []) {
-        if (block.type === "tool_result" && block.is_error) {
-          return `[TOOL-ERROR] agent=${agent} tool_use_id=${block.tool_use_id ?? "?"}`;
-        }
-      }
-    }
-    // A run that dies on an API error (auth, quota) says so only here.
-    if (evt.type === "result" && evt.is_error) return `[AGENT-ERROR] agent=${agent} error=${safePreview(evt.result)}`;
-    return null;
-  }
-  if (platform === "copilot") {
-    if (evt.type === "tool.execution_start") {
-      return `[TOOL] agent=${agent} tool=${evt.data?.toolName ?? "?"} ${formatArgs(evt.data?.arguments)}`;
-    }
-    if (evt.type === "tool.execution_complete" && evt.data?.success === false) {
-      return `[TOOL-ERROR] agent=${agent} toolCallId=${evt.data?.toolCallId ?? "?"} error=${safePreview(evt.data?.error?.message)}`;
-    }
-    if (evt.type === "session.error") {
-      return `[AGENT-ERROR] agent=${agent} type=${evt.data?.errorType ?? "?"} error=${safePreview(evt.data?.message)}`;
-    }
-    return null;
-  }
-  return null;
+  return adapter.traceLine(evt, agent);
 }
 
 /**
  * onTrace heartbeat throttle: every Nth tool call or every INTERVAL_MS, whichever first, so
- * the live signal to the parent stays bounded over a long worker. The bash dispatchers'
- * maybe_heartbeat applies the same rule for pi/codex.
+ * the live signal to the parent stays bounded over a long worker. The fake seam's
+ * dispatch-time throttle applies to every platform.
  */
 const HEARTBEAT_EVERY_N = 5;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
-/** pi's/codex's own already-throttled [TOOL]/[TOOL-ERROR] line, forwarded on their stdout. */
+/** The fake seam's own already-throttled [TOOL]/[TOOL-ERROR] line, forwarded on its stdout. */
 const BASH_HEARTBEAT = /^\[(?:TOOL|TOOL-ERROR)\] /;
 
 /**
- * The worker's final message from the raw event lines: claude's terminal `result.result`,
- * or copilot's last `assistant.message` (it has no terminal event). Returns "" when nothing
- * is found — an empty report is a handled state, and safer than leaking raw JSONL.
+ * The worker's final message from the raw event lines (the adapter knows the stream's shape).
+ * Returns "" when nothing is found — an empty report is a handled state, and safer than leaking
+ * raw JSONL.
  */
 export function extractFinalText(platform, lines) {
-  if (platform === "claude") {
-    for (let i = lines.length - 1; i >= 0; i--) {
-      try {
-        const evt = JSON.parse(lines[i]);
-        if (evt.type === "result") return evt.result ?? "";
-      } catch {
-        /* skip an unparseable line */
-      }
-    }
-    return "";
-  }
-  if (platform === "copilot") {
-    for (let i = lines.length - 1; i >= 0; i--) {
-      try {
-        const evt = JSON.parse(lines[i]);
-        if (evt.type === "assistant.message") return evt.data?.content ?? "";
-      } catch {
-        /* skip an unparseable line */
-      }
-    }
-    return "";
-  }
-  return "";
+  return ADAPTERS[platform]?.finalText(lines) ?? "";
 }
 
-const EMPTY_RESULT_META = {
-  isError: null,
-  subtype: null,
-  costUsd: null,
-  durationMs: null,
-  numTurns: null,
-  permissionDenials: [],
-  sessionId: null,
-  contextTokens: null,
-  costUnknown: false,
-  tokens: null,
-};
-
-/** One assistant event's whole token usage: prompt, cache and output. */
-function usageTokens(u) {
-  return (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
-}
-
-/**
- * Cost, error and timing from claude's `result` events (2.1.280). Claude only: copilot has no
- * equivalent event. Anything unrecognised returns the all-null shape.
- *
- * A session can emit several `result` events (a worker that used background tasks gets one per
- * wake-up), so turns and agent time are the sum over all of them; `total_cost_usd` is cumulative
- * for the session, so cost is the last one's. Error, subtype and session come from the last too.
- * A stream with no `result` event (a dispatch killed on timeout) has no cost: `costUsd` is null,
- * `costUnknown` is set, and what it did spend is read off its assistant events — `tokens` summed,
- * `numTurns` the number of assistant messages.
- * `contextTokens` is the last assistant turn's prompt size — what a resumed session would
- * start from — not the session's cumulative usage.
- */
+/** Cost, error, session and timing from the stream, per the adapter; all-null where it has none (copilot). */
 export function extractResultMeta(platform, lines) {
-  if (platform !== "claude") return EMPTY_RESULT_META;
-  let contextTokens = null;
-  let tokens = 0;
-  let assistantTurns = 0;
-  let parsed = 0;
-  const seenMessages = new Set();
-  const results = [];
-  for (const line of lines) {
-    let evt;
-    try {
-      evt = JSON.parse(line);
-    } catch {
-      continue; // skip an unparseable line
-    }
-    parsed++;
-    if (evt?.type === "result") {
-      results.push(evt);
-    } else if (evt?.type === "assistant") {
-      // One message streams as several events (one per content block) sharing an id and usage.
-      const id = evt.message?.id;
-      if (id != null) {
-        if (seenMessages.has(id)) continue;
-        seenMessages.add(id);
-      }
-      assistantTurns++;
-      const u = evt.message?.usage;
-      if (u) {
-        tokens += usageTokens(u);
-        contextTokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-      }
-    }
-  }
-  if (results.length) {
-    const last = results[results.length - 1];
-    const sum = (key) => (results.some((e) => e[key] != null) ? results.reduce((n, e) => n + (e[key] ?? 0), 0) : null);
-    return {
-      isError: last.is_error ?? null,
-      subtype: last.subtype ?? null,
-      costUsd: last.total_cost_usd ?? null,
-      durationMs: sum("duration_ms"),
-      numTurns: sum("num_turns"),
-      permissionDenials: last.permission_denials ?? [],
-      sessionId: last.session_id ?? null,
-      contextTokens,
-      costUnknown: false,
-      tokens: null,
-    };
-  }
-  if (!parsed) return EMPTY_RESULT_META;
-  return { ...EMPTY_RESULT_META, numTurns: assistantTurns, contextTokens, costUnknown: true, tokens };
+  return ADAPTERS[platform]?.resultMeta?.(lines) ?? EMPTY_RESULT_META;
 }
 
 /** The distinct tool names in claude's `permission_denials` (`tool_name`), comma-joined; `?` when unnamed. */
@@ -429,8 +188,17 @@ function keepPriorEvents(file) {
  * to read rather than infer.
  */
 export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } = {}) {
-  const built = buildDispatch(platform, spec);
   mkdirSync(dirname(spec.outFile), { recursive: true });
+  const adapter = ADAPTERS[platform];
+  let built;
+  try {
+    built = buildDispatch(platform, spec);
+  } catch (e) {
+    // Nothing was spawned: the failure is the answer, and no report is left to be misread.
+    writeFileSync(spec.outFile, "");
+    if (spec.logFile) writeLog(spec.logFile, `[DISPATCH-FAIL] agent=${spec.agent} slug=${spec.slug ?? "?"} code=1 before-spawn=true error=${JSON.stringify(e.message)}`);
+    return { ...EMPTY_RESULT_META, code: 1, timedOut: false, dryRun: false, stderr: e.message, text: "", costUnknown: false };
+  }
 
   // spawnWithTimeout's onLine hands back raw chunks, not lines — a long JSON line can span
   // two. lineBuffer holds the trailing partial line; the remainder is flushed after close.
@@ -462,7 +230,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
       }
       return;
     }
-    // pi/codex (and the fake seam): the bash dispatcher writes spec.logFile itself; of its
+    // The fake seam writes spec.logFile itself; of its
     // stdout, only its already-throttled [TOOL] lines are heartbeats — the raw stream is not.
     if (onTrace && BASH_HEARTBEAT.test(line)) onTrace(line);
   };
@@ -473,30 +241,41 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     for (const line of parts) consumeLine(line);
   };
 
-  const r = await spawnDispatch(effects, built.cmd, built.args, {
-    cwd: built.cwd,
-    env: built.env,
-    timeoutMs,
-    onLine,
-    stem: spec.outFile,
-    title: `${spec.slug ?? "crew-afk"} ${spec.agent}`,
-    jsonEvents: built.jsonEvents,
-    agent: spec.agent,
-  });
+  // A CLI that writes its own final message to outFile (codex `-o`): start from none, so a stale
+  // one from an earlier attempt is never read as this run's.
+  const ownsOut = !!adapter?.lastMessageFile && !!built.jsonEvents && !process.env.CREW_FAKE_DISPATCH;
+  if (ownsOut) writeFileSync(spec.outFile, "");
+
+  const spawned = () =>
+    spawnDispatch(effects, built.cmd, built.args, {
+      cwd: built.cwd,
+      env: built.env,
+      input: built.input,
+      timeoutMs,
+      onLine,
+      stem: spec.outFile,
+      title: `${spec.slug ?? "crew-afk"} ${spec.agent}`,
+      jsonEvents: built.jsonEvents,
+      agent: spec.agent,
+    });
+  // A worker commits to its worktree's branch while it runs: a read-only guard elsewhere must not
+  // blame that ref move on its own dispatch.
+  const r = spec.cwd && spec.cwd !== spec.mainRoot && effects.inWorktree ? await effects.inWorktree(spec.cwd, spawned) : await spawned();
   consumeLine(lineBuffer);
 
   let meta = EMPTY_RESULT_META;
   if (built.jsonEvents && !r.dryRun) {
     keepPriorEvents(`${spec.outFile}.events.jsonl`);
     writeFileSync(`${spec.outFile}.events.jsonl`, lines.length ? `${lines.join("\n")}\n` : "");
-    writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines));
+    const own = ownsOut && existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
+    writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines) || own);
     meta = extractResultMeta(built.jsonEvents, lines);
   } else if (built.capture === "stdout" && !r.dryRun) {
     writeFileSync(spec.outFile, r.stdout ?? "");
   }
   const text = existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
 
-  // A failure before a bash dispatcher traces anything (an early die(), ENOENT, a killed
+  // A failure before anything is traced (a missing CLI → ENOENT/127, a killed
   // child) otherwise leaves its reason only in stderr. claude can also report isError while
   // still exiting 0 with text. Permission denials on an otherwise normal dispatch are not a
   // failure — the agent went on without that call — so they get their own label, naming the
@@ -529,139 +308,55 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     permissionDenials: meta.permissionDenials,
     sessionId: meta.sessionId,
     contextTokens: meta.contextTokens,
-    // A claude dispatch killed on timeout leaves no `result` event, even when it also left no
-    // assistant event: either way its cost is unknown, not zero.
-    costUnknown: meta.costUnknown || (built.jsonEvents === "claude" && !r.dryRun && !!r.timedOut && meta.costUsd == null),
+    // A CLI that reports cost in a final event (claude's `result`) leaves none when killed on
+    // timeout, even with no assistant event: either way its cost is unknown, not zero.
+    costUnknown: meta.costUnknown || (!!adapter?.reportsCost && !!built.jsonEvents && !r.dryRun && !!r.timedOut && meta.costUsd == null),
     tokens: meta.tokens,
   };
 }
 
 /**
- * An agent-less dispatch: one reasoning pass with no agent definition, for the PRD audit
- * (loop.mjs) and one-time command discovery (commands.mjs).
- *
- * Tool access is not restricted: claude's `--tools` is variadic and swallows the prompt
- * when no flag separates them.
- *
- * claude's auto-memory is disabled: each call is stateless, and the memory directory is
- * shared across every worktree, so a note written here would leak into every later session
- * unreviewed.
+ * A role with no protocol (commandFinder, prdAuditor, prWriter): one reasoning pass through the
+ * platform's adapter like every other role, its prompt alone. `fakeAgent` names the role to the
+ * CREW_FAKE_DISPATCH seam (fake-dispatch.sh's canned answers) and in the trace.
  */
 export async function dispatchPlain(
   effects,
   platform,
-  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "prd-audit", maxBudgetUsd = null },
+  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "prd-audit", maxBudgetUsd = null, logFile },
 ) {
-  const env = {
-    MAIN_ROOT: mainRoot,
-    CREW_ORCHESTRATED: "1",
-    ...(platform === "claude"
-      ? {
-          CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-          // See buildDispatch's claude branch.
-          CLAUDE_CODE_SESSION_ID: "",
-          CLAUDE_CODE_CHILD_SESSION: "",
-        }
-      : {}),
-  };
-
-  // Same test/CI seam as buildDispatch. fakeAgent picks fake-dispatch.sh's canned answer.
-  if (process.env.CREW_FAKE_DISPATCH) {
-    const out = outFile ?? join(cwd, "plain-dispatch.out");
-    const r = await effects.spawnWithTimeout(
-      "bash",
-      [
-        process.env.CREW_FAKE_DISPATCH,
-        "--agent", fakeAgent,
-        "--runtime", platform,
-        ...(model ? ["--model", model] : []),
-        "--dir", cwd,
-        "--out", out,
-      ],
-      { cwd: mainRoot, env, timeoutMs },
-    );
-    const text = existsSync(out) ? readFileSync(out, "utf8") : "";
-    return { code: r.code, timedOut: !!r.timedOut, text, dryRun: !!r.dryRun };
-  }
-
-  let cmd;
-  let args;
-  switch (platform) {
-    case "pi":
-      cmd = "pi";
-      args = ["-p", ...(model ? ["--model", model] : []), prompt];
-      break;
-    case "codex":
-      cmd = "codex";
-      args = ["exec", "--cd", cwd, ...(model ? ["--model", model] : []), prompt];
-      break;
-    case "claude":
-      cmd = "claude";
-      // Prompt right after -p: --add-dir is variadic and would swallow a prompt following it.
-      args = [
-        "-p",
-        prompt,
-        "--permission-mode",
-        "bypassPermissions",
-        "--add-dir",
-        mainRoot,
-        ...(model ? ["--model", model] : []),
-        ...(maxBudgetUsd ? ["--max-budget-usd", String(maxBudgetUsd)] : []),
-      ];
-      break;
-    case "copilot":
-      cmd = "copilot";
-      args = ["-p", prompt, "-C", cwd, "--add-dir", mainRoot, "--allow-all-tools", "--no-color", "--silent", ...(model ? ["--model", model] : [])];
-      break;
-    default:
-      throw new Error(`unknown platform: ${platform}`);
-  }
-  const r = await effects.spawnWithTimeout(cmd, args, { cwd, env, timeoutMs });
-  if (outFile && !r.dryRun) {
-    mkdirSync(dirname(outFile), { recursive: true });
-    writeFileSync(outFile, r.stdout ?? "");
-  }
-  return { code: r.code, timedOut: !!r.timedOut, text: r.stdout ?? "", dryRun: !!r.dryRun };
+  mkdirSync(dirname(outFile), { recursive: true });
+  const promptFile = `${outFile}.prompt.md`;
+  writeFileSync(promptFile, prompt);
+  return dispatch(effects, platform, { agent: fakeAgent, cwd, mainRoot, model, promptFile, outFile, maxBudgetUsd, logFile }, { timeoutMs });
 }
 
 /**
- * Whether a worker in a worktree can see this copilot definition: tracked in HEAD, or
- * user-level. An untracked one in the main root is invisible (see the file header).
+ * Whether a `--help` text lists `flag`: as itself, or folded into a sibling's brackets
+ * (`--append-system-prompt[-file]` lists `--append-system-prompt-file`).
  */
-function copilotWorktreeVisible(effects, mainRoot, agent) {
-  // $HOME first — see agentFileCandidates.
-  const home = process.env.HOME || homedir();
-  for (const p of [
-    join(home, ".copilot/agents", `${agent}.agent.md`),
-    join(home, ".copilot/agents", `${agent}.md`),
-  ]) {
-    if (existsSync(p)) return true;
-  }
-  for (const rel of [`.github/agents/${agent}.agent.md`, `.github/agents/${agent}.md`]) {
-    if (effects.gitRead(["cat-file", "-e", `HEAD:${rel}`]).code === 0) return true;
-  }
-  return false;
+function helpLists(text, flag) {
+  const forms = [flag];
+  for (let i = flag.indexOf("-", 2); i > 2; i = flag.indexOf("-", i + 1)) forms.push(`${flag.slice(0, i)}[${flag.slice(i)}]`);
+  const esc = (f) => f.replace(/[[\]]/g, "\\$&");
+  return forms.some((f) => new RegExp(`(^|[^\\w-])${esc(f)}(?![\\w-])`).test(text));
 }
 
-/** Preflight: is this platform's CLI and agent definition actually present? */
-export function preflight(effects, platform, mainRoot, agents, { paneHost = null } = {}) {
+/** Preflight: is this platform's CLI actually present? */
+export function preflight(effects, platform, { paneHost = null, probeFlags = false } = {}) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
   const cli = { pi: "pi", codex: "codex", claude: "claude", copilot: "copilot" }[platform];
   const which = effects.exec("sh", ["-c", `command -v ${cli}`], { mutating: false });
   const problems = [];
   if (which.code !== 0) problems.push(`${cli} CLI not found on PATH`);
-  for (const a of agents) {
-    if (!resolveAgentFile(platform, mainRoot, a)) {
-      problems.push(`${a} agent definition not installed for ${platform} — run: ./install.sh ${platform} --skill crew-afk`);
-      continue;
-    }
-    if (platform === "copilot" && !copilotWorktreeVisible(effects, mainRoot, a)) {
-      problems.push(
-        `${a} agent definition is not visible from a worktree — copilot resolves --agent from the worker's cwd. ` +
-          `Commit .github/agents/${a}.agent.md, or install it user-level: TARGET_REPO=$HOME ./install.sh copilot --skill crew-afk`,
-      );
-    }
+  if (probeFlags && which.code === 0) {
+    const adapter = ADAPTERS[platform];
+    const help = effects.exec(cli, adapter.helpArgs ?? ["--help"], { mutating: false });
+    const text = `${help.stdout ?? ""}\n${help.stderr ?? ""}`;
+    const missing = (adapter.requiredFlags ?? []).filter((f) => !helpLists(text, f));
+    for (const f of missing) problems.push(`${cli} \`${(adapter.helpArgs ?? ["--help"]).join(" ")}\` does not list ${f}, which the ${platform} adapter needs for a full-permission headless run`);
   }
+  // Every platform is dispatched from the rendered protocol: no agent file to find.
   problems.push(...preflightPaneHost(effects, paneHost));
   return problems;
 }

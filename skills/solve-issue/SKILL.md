@@ -231,6 +231,12 @@ do not re-check CLAUDE.md/Makefile.
 
 `<key>: deferred`: the verify gate runs it; report `deferred`.
 
+**Under `CREW_DEFER_FULL_CHECKS=1`** the full suite is the verify gate's, never yours: do not run the
+`dev-commands.json` `test` command (or any whole-suite glob) yourself, at any point. To run tests,
+pass `--targeted` to `run-checks.sh`: it runs only the test files changed on the branch against its
+merge-base and reports `test: pass (targeted)` / `test: fail (targeted, exit N)`, or
+`test: deferred` when no test file changed (report `deferred`). Between edits run one test file by hand.
+
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
   Except `<key>: modified files:` — the check rewrote files this change didn't touch, which a

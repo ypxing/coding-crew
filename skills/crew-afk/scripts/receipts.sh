@@ -56,7 +56,7 @@ _usage() {
   cat >&2 <<'EOF'
 Usage:
   receipts.sh write ac           --dir    <worktree-path>
-  receipts.sh write ac           --branch <branch>
+  receipts.sh write ac           --branch <branch> [--sha <reviewed-commit>]
   receipts.sh clear <verify|ac>  --dir    <worktree-path> [--stem <n>-<slug>]
   receipts.sh path  <verify|ac>  --dir    <worktree-path> [--stem <n>-<slug>]
   receipts.sh check verify       --branch <branch>
@@ -167,11 +167,12 @@ DIR=""
 BRANCH=""
 ISSUE=""
 STEM=""
+SHA=""
 AT_TIP=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --at-tip) AT_TIP=1; shift ;;
-    --dir|--branch|--issue|--stem)
+    --dir|--branch|--issue|--stem|--sha)
       # Guard before reading $2: under `set -u` a bare flag would abort with an
       # unbound-variable error instead of the usage message.
       if [ $# -lt 2 ]; then echo "ERROR: $1 requires a value" >&2; exit 1; fi
@@ -180,6 +181,7 @@ while [ $# -gt 0 ]; do
         --branch) BRANCH="$2" ;;
         --issue) ISSUE="$2" ;;
         --stem) STEM="$2" ;;
+        --sha) SHA="$2" ;;
       esac
       shift 2
       ;;
@@ -234,6 +236,12 @@ case "$ACTION" in
           sha=$(cd "$sha_source" && git rev-parse HEAD 2>/dev/null)
         else
           sha=$(git rev-parse "${branch}^{commit}" 2>/dev/null)
+        fi
+        # --sha: the commit the reviewer was given, recorded instead of whatever the tip is now,
+        # so a branch that moved during review fails `check ac --at-tip` as stale.
+        if [ -n "$SHA" ]; then
+          sha=$(git rev-parse --verify --quiet "${SHA}^{commit}" 2>/dev/null) || {
+            echo "ERROR: no such commit: $SHA" >&2; exit 1; }
         fi
         [ -n "$sha" ] || { echo "ERROR: cannot record commit for $branch" >&2; exit 1; }
         # No `set -e` here: an unchecked failed write would still print "wrote" and exit 0.

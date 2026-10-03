@@ -18,7 +18,7 @@ setup() {
   git -C "$WORK" commit -q --allow-empty -m init
   git -C "$WORK" checkout -q -b feature
   ISSUE="$WORK/.scratch/feat/issues/open/02-second.md"
-  unset CREW_ORCHESTRATED MAIN_ROOT CREW_INSTALL_DIR
+  unset CREW_ORCHESTRATED MAIN_ROOT CREW_INSTALL_DIR CREW_DEFER_FULL_CHECKS
 }
 
 teardown() {
@@ -139,6 +139,144 @@ _cache() {
   CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
   [ "$status" -eq 1 ]
   [[ "$output" == *"test: deferred"*"CHECKS: fail" ]]
+}
+
+@test "run-checks: --targeted under deferral runs only the changed test files and says so" {
+  mkdir -p "$WORK/tests"
+  : > "$WORK/tests/old.bats"; : > "$WORK/tests/mine.bats"
+  git -C "$WORK" add -A && git -C "$WORK" commit -q -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/mine.bats"
+  _cache '{"typecheck": null, "lint": null, "test": "echo RAN tests/*.bats"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RAN tests/mine.bats"* ]]
+  [[ "$output" != *"old.bats"* ]]
+  [[ "$output" == *"test: pass (targeted)"* ]]
+}
+
+@test "run-checks: --targeted keeps a wrapper script and cd target, replacing only the suite paths" {
+  mkdir -p "$WORK/sub/tests" "$WORK/scripts"
+  : > "$WORK/sub/tests/old.bats"
+  printf 'for f; do [ -f "$f" ] || exit 9; done; echo WRAP "$@"\n' > "$WORK/scripts/test.sh"
+  git -C "$WORK" add -A; git -C "$WORK" commit -q -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/sub/tests/new.bats"
+  _cache '{"typecheck": null, "lint": null, "test": "cd sub && bash ../scripts/test.sh tests"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  # the files are passed relative to the cd target, so the runner finds them from there
+  [[ "$output" == *"cd sub && bash ../scripts/test.sh tests/new.bats"* ]]
+  [[ "$output" == *"WRAP tests/new.bats"* ]]
+}
+
+@test "run-checks: --targeted passes a changed test outside the cd target as an absolute path" {
+  mkdir -p "$WORK/sub" "$WORK/tests"
+  git -C "$WORK" add -A; git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/new.bats"
+  _cache '{"typecheck": null, "lint": null, "test": "cd sub && ls"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cd sub && ls $WORK/tests/new.bats"* ]]
+}
+
+@test "run-checks: --targeted keeps a wrapper script that lives under a test dir" {
+  mkdir -p "$WORK/tests"
+  printf 'echo WRAP "$@"\n' > "$WORK/tests/run.sh"
+  git -C "$WORK" add -A; git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/new.bats"
+  _cache '{"typecheck": null, "lint": null, "test": "bash tests/run.sh"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"bash tests/run.sh tests/new.bats"* ]]
+  [[ "$output" == *"WRAP tests/new.bats"* ]]
+}
+
+@test "run-checks: --targeted reports fail (targeted) when the changed tests fail" {
+  mkdir -p "$WORK/tests"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/new.bats"
+  _cache '{"typecheck": null, "lint": null, "test": "false"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"test: fail (targeted, exit 1)"* ]]
+}
+
+@test "run-checks: --targeted with no changed test file is deferred and runs nothing" {
+  git -C "$WORK" branch -f main
+  echo x > "$WORK/app.py"
+  _cache '{"typecheck": null, "lint": null, "test": "touch $PWD/ran-test"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"test: deferred"* ]]
+  [ ! -e "$WORK/ran-test" ]
+}
+
+@test "run-checks: --targeted measures from CREW_BASE_REF, so a feature branch's own tests are not the issue's" {
+  mkdir -p "$WORK/tests"
+  # setup() left WORK on `feature`: main is cut here, the feature adds its own test.
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/feat.bats"; git -C "$WORK" add -A; git -C "$WORK" commit -q -m feat
+  git -C "$WORK" checkout -q -b issue
+  echo x > "$WORK/tests/mine.bats"; git -C "$WORK" add -A; git -C "$WORK" commit -q -m mine
+  _cache '{"typecheck": null, "lint": null, "test": "echo RAN tests/*.bats"}'
+  CREW_BASE_REF=feature CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RAN tests/mine.bats"* ]]
+  [[ "$output" != *"feat.bats"* ]]
+}
+
+@test "run-checks: --targeted passes test files only, never a helper or fixture under a test dir" {
+  mkdir -p "$WORK/tests/helpers" "$WORK/tests/fixtures" "$WORK/tests/orchestrator"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/helpers/h.bash"; echo x > "$WORK/tests/fixtures/f.jsonl"
+  echo x > "$WORK/tests/orchestrator/lib.mjs"; echo x > "$WORK/tests/orchestrator/x.test.mjs"
+  echo x > "$WORK/tests/fixtures/case.test.js"
+  _cache '{"typecheck": null, "lint": null, "test": "echo RAN tests/*.bats"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RAN tests/orchestrator/x.test.mjs"* ]]
+  [[ "$output" != *"h.bash"* && "$output" != *"f.jsonl"* && "$output" != *"lib.mjs"* && "$output" != *"case.test.js"* ]]
+}
+
+@test "run-checks: --targeted recognises mocha, phpunit, nested jest and colocated tests outside a test tree" {
+  mkdir -p "$WORK/test" "$WORK/tests" "$WORK/src/__tests__/sub" "$WORK/src/helpers"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/test/app.js"; echo x > "$WORK/tests/FooTest.php"
+  echo x > "$WORK/src/__tests__/sub/b.js"; echo x > "$WORK/src/helpers/format.test.ts"
+  _cache '{"typecheck": null, "lint": null, "test": "echo RAN tests/*.bats"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  for f in test/app.js tests/FooTest.php src/__tests__/sub/b.js src/helpers/format.test.ts; do
+    [[ "$output" == *"$f"* ]] || { echo "missing $f: $output"; return 1; }
+  done
+}
+
+@test "run-checks: --targeted defers a runner that takes no test file arguments (make, go, cargo)" {
+  mkdir -p "$WORK/tests"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/new_test.go"
+  for runner in "make test" "go test ./..." "cargo test" "cd sub; make test" "env CI=1 cargo test" "bundle exec rake test"; do
+    _cache "{\"typecheck\": null, \"lint\": null, \"test\": \"$runner\"}"
+    CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+    [ "$status" -eq 0 ] || { echo "$runner: $output"; return 1; }
+    [[ "$output" == *"test: deferred (the test command takes no test file arguments)"* ]] || { echo "$runner: $output"; return 1; }
+    [[ "$output" != *"=== test"* ]]
+  done
+}
+
+@test "run-checks: --targeted without CREW_DEFER_FULL_CHECKS still runs the full suite" {
+  mkdir -p "$WORK/tests"; echo x > "$WORK/tests/new.bats"
+  _cache '{"typecheck": null, "lint": null, "test": "echo FULL tests/*.bats"}'
+  run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"FULL tests/*.bats"* ]]
+  [[ "$output" == *"test: pass"* && "$output" != *"(targeted)"* ]]
+}
+
+@test "solve-issue SKILL.md names the targeted mode and leaves the full suite to the verify gate" {
+  run grep -E -- '--targeted' "$REPO_ROOT/skills/solve-issue/SKILL.md"
+  [ "$status" -eq 0 ]
+  run grep -F "full suite is the verify gate's" "$REPO_ROOT/skills/solve-issue/SKILL.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "run-checks: one failing check fails the run and does not hide the rest" {

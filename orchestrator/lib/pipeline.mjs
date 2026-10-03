@@ -23,6 +23,7 @@ import { getTracker } from "./tracker.mjs";
 import { fixPrompt, resumeNote, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
 import { dispatch } from "./dispatch.mjs";
+import { flagFullSuiteRuns } from "./pipeline/deviation.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./pipeline/finish.mjs";
 import { mergeAndClose } from "./pipeline/merge.mjs";
 import { promote, runReview } from "./pipeline/review.mjs";
@@ -453,6 +454,19 @@ export async function runWorker(ctx, issue, attempt) {
       ? effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim() || null
       : null;
 
+  // A red baseline (loop.mjs) stopped this attempt before its coder started — during deps, whose
+  // kill leaves no DEPS line to stop on. runHousekeeping keeps the branch for the next run.
+  if (ctx.baselineRed) {
+    return {
+      issue,
+      branch,
+      attempt,
+      worktree,
+      dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
+      report: { parsedFrom: "baseline-red", status: "blocked", checks: {}, branch, workingDirectory: worktree, progress: null, notes: "baseline failed", criteria: [], raw: "" },
+    };
+  }
+
   const coder = roleBinding(ctx, "coder");
   // Opt-in (afk.resumeCoderSession): a fix round continues the session that wrote the branch
   // instead of re-exploring it, when that session is small and the branch has not moved.
@@ -483,9 +497,9 @@ export async function runWorker(ctx, issue, attempt) {
       outFile,
       model: coder.model,
       mainRoot: effects.mainRoot,
+      baseRef: sprint.featureBranch,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: coder.scriptsDir,
       slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: attempt,
@@ -501,6 +515,8 @@ export async function runWorker(ctx, issue, attempt) {
 
   const head = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
   sprint.recordDispatchCost(result, { slug: issue.slug, role: "coder", attempt, head });
+
+  flagFullSuiteRuns(ctx, { slug: dispatchStem(issue), attempt, outFile });
 
   const sidecar = readSidecar(sidecarFile);
   // A worker that ran to completion (no timeout, non-empty output) but left no sidecar is
@@ -527,6 +543,17 @@ export async function runHousekeeping(ctx, worker) {
   const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
   const outcome = { slug: issue.slug, branch, status: null, reason: null, coverageGaps: [], findings: [], reviewReport: null };
+
+  // A red baseline stopped this attempt (loop.mjs): the branch is kept as it stands and the
+  // attempt is free. A coder-free retry keeps the reason that routed it; an attempt whose coder
+  // was stopped (or never started) is a coder's job again next run, never a verify-only one.
+  if (ctx.baselineRed) {
+    ctx.log(`[BASELINE-RED] slug=${issue.slug} round=${worker.attempt} — the baseline failed; branch kept, not verified`, "warn");
+    const reason = worker.skippedWorker
+      ? (sprint.retentionReason(issue.slug) ?? taggedReason(VERIFY_INTERRUPTED_TAG, "baseline failed"))
+      : "baseline failed — the coder was stopped before its branch was verified";
+    return finishRetryOrBlock(ctx, worker, outcome, reason, { free: true });
+  }
 
   // The merge route (see resumeRoute): straight to merge/close, which re-checks both receipts.
   if (worker.resumeAtMerge) {
@@ -616,6 +643,13 @@ export async function runHousekeeping(ctx, worker) {
   if (worker.skipVerify || gatesAtTip(ctx, branch).verifiedThisRun) {
     ctx.log(`[SKIP-VERIFY] slug=${issue.slug} round=${worker.attempt} branch=${branch} — verification already passed at this commit, in this run`);
   } else {
+    // No verify starts before the baseline's verdict (it runs alongside the coders). A red one
+    // keeps this branch as it stands, to be verified by the next run.
+    const baseline = await ctx.baseline;
+    if (baseline?.status === "fail") {
+      ctx.log(`[BASELINE-RED] slug=${issue.slug} round=${worker.attempt} — the baseline failed; branch kept, not verified`, "warn");
+      return finishRetryOrBlock(ctx, worker, outcome, taggedReason(VERIFY_INTERRUPTED_TAG, "baseline failed"), { free: true });
+    }
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
     // Awaited, not spawnSync: a verify runs the project's whole test suite for minutes, and the
     // other worker loops (their verifies, their coder dispatches) must keep running meanwhile.
@@ -626,6 +660,9 @@ export async function runHousekeeping(ctx, worker) {
       logVerifyOutput(ctx, dispatchIssueDir(sprint.dispatchDir, issue), `slug=${issue.slug}`, worker.attempt, v);
       return v;
     };
+    // What verify ran on beyond the committed tree: an untracked or modified file the branch does
+    // not carry. A pass on such a worktree says nothing about the tree that merges.
+    const dirtyBefore = effects.gitRead(["status", "--porcelain"], { cwd: worker.worktree });
     let verify = await runVerify();
     // Output that names no failing check is no evidence against the branch: run the gate
     // once more before triage can call it fixable and a coder is paid to chase it.
@@ -637,6 +674,14 @@ export async function runHousekeeping(ctx, worker) {
       return await handleVerificationFailure(ctx, worker, outcome, verify);
     }
     sprint.markVerifiedThisRun(branch, effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim());
+    // Lets a feature branch of this exact tree skip its baseline / integration check — only when
+    // the worktree verify ran on was that tree and nothing else.
+    const passedTree = effects.gitRead(["rev-parse", `${branch}^{tree}`]).stdout.trim();
+    if (dirtyBefore.code !== 0 || dirtyBefore.stdout.trim()) {
+      ctx.log(`[TREE-NOT-CACHED] slug=${issue.slug} round=${worker.attempt} — verify ran with uncommitted files in the worktree; its pass does not stand for the committed tree`, "warn");
+    } else if (passedTree) {
+      sprint.state(["verified-tree", "--tree", passedTree]);
+    }
     // This verify's answer replaces any earlier round's; a skipped verify (above) keeps its own.
     const cats = /coverage gap/i.test(verify.stdout)
       ? [...verify.stdout.matchAll(/not_run:\s*([\w, ]+)/gi)].flatMap((m) => m[1].split(",").map((c) => c.trim())).filter(Boolean)
@@ -660,7 +705,7 @@ export async function runHousekeeping(ctx, worker) {
   // A reviewer that ended without a verdict gets one more dispatch in this round: cheaper
   // than a retry round, which would rebuild the worktree and re-verify an unchanged branch.
   // Not after a timeout — a second would double an already-long wait.
-  if (!review.completed && !review.timedOut) {
+  if (!review.completed && !review.timedOut && !review.violation) {
     ctx.log(`[REVIEW-RETRY] slug=${issue.slug} round=${worker.attempt} — ${review.reason}`);
     review = await runReview(ctx, worker, verifyRecord);
     if (review.limitExceeded) return finishBlocked(ctx, worker, outcome, review.limitExceeded);
@@ -696,7 +741,7 @@ export async function runHousekeeping(ctx, worker) {
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
 
   // The receipt close-issue.sh demands: only on all-met, only for this issue's branch.
-  const acReceipt = effects.bash("receipts.sh", ["write", "ac", "--branch", branch], {
+  const acReceipt = effects.bash("receipts.sh", ["write", "ac", "--branch", branch, ...(review.reviewedSha ? ["--sha", review.reviewedSha] : [])], {
     env: sprint.childEnv(),
   });
   if (acReceipt.code !== 0) {

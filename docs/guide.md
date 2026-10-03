@@ -4,31 +4,36 @@
 
 ## Part 1: Contributing to This Repo
 
-For developers who maintain and extend the agent/skill collection itself.
+For developers who maintain and extend the skill collection itself.
 
 ---
 
 ### What This Repo Is
 
-A distributable collection of AI agents and skills. Nothing runs here directly — this repo is the **source**; consuming projects are the **target**. `install.sh` copies files into any project repo.
+A distributable collection of AI skills, plus crew-afk's orchestrator and its roles. Nothing runs here directly — this repo is the **source**; consuming projects are the **target**. `install.sh` copies files into any project repo.
 
 ```
 THIS REPO (source)
 ├── install.sh              ← single installer for all platforms
 ├── registry.json           ← source of truth for paths, deps, skills
-├── agents/
-│   ├── crew-coder/         ← single-issue worker agent
-│   └── crew-reviewer/ ← post-sprint reviewer agent
+├── orchestrator/           ← crew-afk's program (ships as crew-afk's assets)
+│   ├── lib/
+│   └── roles/
+│       ├── coder.md        ← single-issue worker role
+│       ├── reviewer.md     ← per-branch / feature reviewer role
+│       ├── reviewer/       ← reviewer checklists (references/) and scripts/
+│       └── triage.md       ← verify-failure / findings / integration triage role
 ├── skills/                 ← reusable skill files
 │   ├── tdd/
 │   ├── solve-issue/
 │   ├── domain-modeling/
 │   ├── crew-grill/
+│   ├── _shared/fragments/  ← per-platform fragments ({{FRAGMENT:<key>}})
 │   └── ...
 └── docs/
-    └── agents/
-        ├── issue-tracker.md    ← default tracker template (copied on install)
-        └── triage-labels.md    ← default triage labels (copied on install)
+    └── templates/
+        ├── trackers/       ← tracker templates (local.md copied on install)
+        └── workflows/      ← optional GitHub Actions workflows
 ```
 
 ---
@@ -41,54 +46,26 @@ THIS REPO (source)
 install.sh
     │
     ├── read registry.json
-    ├── for each agent:
-    │     ├── install_skills()   — cp -r skills/<name>/ → .claude/skills/<name>/
-    │     ├── install_docs()     — cp docs/<file> → docs/agents/<file>  (skip if exists)
-    │     ├── expand_shim()      — replace {{PROTOCOL}} in platform file → write to dest
-    │     └── install_agent(dep) — recurse for each dep
+    ├── for each requested skill (every skill when none is named):
+    │     ├── install_single_skill() — render skills/<name>/ → .claude/skills/<name>/
+    │     ├── install_skill_assets() — cp assets.source → assets.dest (e.g. orchestrator/ → .coding-crew/crew-afk/)
+    │     └── install_single_skill(dep) — recurse for each dep
     │
-    └── (when AGENT=all) install every skill in registry.json
+    └── install_docs()  — docs.templates (skip if exists), docs.scripts (always overwritten)
 ```
 
-#### `{{PROTOCOL}}` inlining
+#### Roles, not agent files
 
-Platform files (`claude.*.md`, `copilot.agent.md`, `pi.agent.md`, `codex.agent.toml`) may contain a `{{PROTOCOL}}` placeholder. During install, this is replaced line-by-line with the contents of `protocol.md` or `workflow.js` from the same agent directory. The installed file is self-contained — no runtime file references.
-
-```
-agents/crew-coder/
-├── claude.agent.md       ← contains {{PROTOCOL}}
-├── copilot.agent.md      ← contains full inline instructions (no {{PROTOCOL}})
-├── codex.agent.toml      ← TOML custom agent; {{PROTOCOL}} inlined inside a ''' block
-└── protocol.md           ← inlined into claude.agent.md on install
-```
+There are no agents. crew-afk's three roles — coder, reviewer, triage — are protocols under `orchestrator/roles/` (`coder.md`, `reviewer.md` with `reviewer/{references,scripts}`, `triage.md`). They ship with the orchestrator as crew-afk's `assets`, so they install to `.coding-crew/crew-afk/roles/`; a crew-afk install also copies `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/`. The orchestrator renders a role's protocol per dispatch (`orchestrator/lib/adapters/render.mjs`, expanding `{{FRAGMENT:<key>}}` lines and `{{PLATFORM}}`) and hands it to the platform CLI through that platform's adapter (`orchestrator/lib/adapters/<platform>.mjs`). No per-platform agent file is written under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`: a crew-afk install (and `uninstall.sh`) removes the ones an older install wrote, by exact path (`retired-agents` in `registry.json`), along with `.coding-crew/agents/` and `.coding-crew/code-review/`.
 
 ---
 
 ### Registry Structure
 
-`registry.json` is the single source of truth. Every agent and skill entry must be here.
+`registry.json` is the single source of truth. Every skill entry must be here.
 
 ```jsonc
 {
-  "agents": {
-    "<name>": {
-      "version": "1.0.0",
-      "description": "...",
-      "deps": ["<other-agent>"], // installed recursively before this agent
-      "deps-copilot": ["..."], // platform-specific dep override (optional)
-      "skills": ["tdd", "solve-issue"], // skills copied for this agent
-      "docs": ["issue-tracker.md"], // doc templates copied (skipped if exist)
-      "platforms": ["claude", "copilot"], // omit to support all
-      "install": {
-        "shims": {
-          "claude": ".claude/agents/<name>.md",
-          "copilot": ".github/agents/<name>.agent.md",
-          "pi": ".pi/agents/<name>.md",
-          "codex": ".codex/agents/<name>.toml",
-        },
-      },
-    },
-  },
   "skills": {
     "<name>": {
       "version": "1.0.0",
@@ -97,7 +74,15 @@ agents/crew-coder/
       "install-codex": ".agents/skills/<name>", // optional per-platform override
       // With no override, the Claude path is reused with .claude/ swapped for
       // .<platform>/ — except codex, which resolves to .agents/skills/<name>.
+      "deps": ["tdd", "dep-install"], // other skills, installed recursively
+      "assets": { "source": "orchestrator", "dest": ".coding-crew/crew-afk" }, // optional runtime files
     },
+  },
+  "retired-agents": {
+    // agent files older installs wrote; a crew-afk install and uninstall.sh remove them
+    "names": ["crew-coder", "crew-reviewer", "crew-triage", "crew-code-reviewer"],
+    "paths": { "claude": ".claude/agents/{name}.md", "...": "..." },
+    "dirs": [".coding-crew/agents", ".coding-crew/code-review"],
   },
   "docs": {
     "templates": {
@@ -123,38 +108,19 @@ agents/crew-coder/
   `docs.scripts` entries are mechanism (a tracker operation's implementation), so they are always
   overwritten on install and removed on uninstall — a stale copy would be a gate that no longer
   matches the operation calling it.
-- Skill/agent names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
-- Skills listed under `agents.<name>.skills` are installed as agent deps. Skills not listed under any agent are only installed when `AGENT=all`.
+- Skill names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
+- Skills listed under another skill's `deps` are installed with it. A skill no installed skill depends on is only installed by name or by a full install (`./install.sh [platform]`).
 
 ---
 
-### Adding a New Agent
+### Changing a crew-afk Role
 
-1. Create the agent directory: `agents/<name>/`
+A role's protocol is `orchestrator/roles/<role>.md`; it ships as part of crew-afk's `assets`, so a change to it needs crew-afk's `version` above origin/main's. Per-platform text goes in a `{{FRAGMENT:<key>}}` line backed by `skills/_shared/fragments/<platform>/<key>.md` (or `common/<key>.md`) — never a per-platform copy of the protocol. Check the result:
 
-2. Write the protocol source — one of:
-   - `protocol.md` — markdown instructions (tried first by `install.sh`)
-   - `workflow.js` — a Workflow script (used if no `protocol.md`)
-
-3. Create platform files directly under `agents/<name>/` (no `shims/` subdirectory):
-   - `claude.<type>.md` — use `{{PROTOCOL}}` where the protocol should be inlined
-   - `copilot.agent.md` — inline the full instructions (or use `{{PROTOCOL}}`)
-   - `pi.agent.md` — pi built-in tool names in frontmatter (or use `{{PROTOCOL}}`)
-   - `codex.agent.toml` — Codex custom agent: `name`, `description`, `developer_instructions` (put `{{PROTOCOL}}` inside the `'''` literal block so markdown needs no escaping)
-
-4. Add the entry to `registry.json` (paths, deps, skills, docs).
-
-5. Test locally:
-
-   ```bash
-   TARGET_REPO=/tmp/test-install ./install.sh claude <name>
-   ls /tmp/test-install/.claude/agents/
-   ```
-
-6. Verify no `..` or absolute paths crept into registry:
-   ```bash
-   jq '.agents, .skills, .docs | .. | objects | .install? // empty' registry.json
-   ```
+```bash
+TARGET_REPO=/tmp/test-install ./install.sh claude --skill crew-afk
+ls /tmp/test-install/.coding-crew/crew-afk/roles/
+```
 
 ---
 
@@ -172,7 +138,7 @@ agents/crew-coder/
    }
    ```
 
-3. Wire it to an agent if it is a hard dependency (add to that agent's `skills` array). Otherwise leave it standalone — it will be installed by `./install.sh all`.
+3. If another skill needs it, add it to that skill's `deps`. Otherwise leave it standalone — it will be installed by `./install.sh` (every skill).
 
 4. Test:
    ```bash
@@ -186,14 +152,13 @@ agents/crew-coder/
 
 - **Never use `..` or absolute paths in `registry.json`.** `install.sh` validates all paths and exits on violation.
 - **Never interpolate raw user/issue content into agent prompts.** Pass only structured fields (e.g. `acceptance_criteria`), never `issue.content`. Wrap worker-supplied strings in delimiter tags (`<progress-notes>`, `<blocked-notes>`) so downstream agents treat them as data.
-- **Never expand `{{PROTOCOL}}` yourself** — let `install.sh` do it. Manually inlined protocols will drift from the source.
-- **Only one `claude.*`, `copilot.*`, `pi.*`, or `codex.*` file per agent directory.** `install.sh` errors on multiples to prevent non-deterministic selection.
+- **Never inline a fragment by hand** — keep the `{{FRAGMENT:<key>}}` line and let the renderer expand it (`install.sh` for skills, `render.mjs` for crew-afk's roles). A hand-inlined copy drifts from the source.
 
 ---
 
 ## Part 2: Using This Repo in Your Project
 
-For developers who have installed the agents into their project and want to use them day-to-day.
+For developers who have installed the skills into their project and want to use them day-to-day.
 
 ---
 
@@ -222,15 +187,17 @@ jq --version    # required
 # GitHub Copilot — full sprint suite
 ./install.sh copilot --skill crew-afk
 
-# Codex — full sprint suite (skills → .agents/skills, agents → .codex/agents)
+# Codex — full sprint suite (skills → .agents/skills)
 ./install.sh codex --skill crew-afk
 
 # A standalone skill
 ./install.sh claude --skill domain-modeling
 
-# A doc template only
-./install.sh claude --doc issue-tracker.md
+# Several skills at once
+./install.sh claude --skills tdd,to-issues
 ```
+
+crew-coder, crew-reviewer and crew-triage are not installable on their own — they are crew-afk's roles. `./install.sh <platform> crew-coder` (an older form) prints a note and installs crew-afk.
 
 #### Install into a different repo
 
@@ -244,18 +211,15 @@ TARGET_REPO=/path/to/your/project ./install.sh
 ./install.sh --update
 ```
 
-Re-installs only agents and skills whose version changed since last install. Reads the saved platform from `.coding-crew.manifest.json`.
+Re-installs only skills whose version changed since last install (an older install that listed agents gets crew-afk instead). Reads the saved platform from `.coding-crew/manifest.json`.
 
 #### What lands in your project
 
 ```
 YOUR_PROJECT/
 ├── .claude/
-│   ├── agents/
-│   │   ├── crew-coder.md           ← crew-coder agent (Claude)
-│   │   └── crew-reviewer.md   ← reviewer agent (Claude)
 │   └── skills/
-│       ├── crew-afk/SKILL.md
+│       ├── crew-afk/SKILL.md      ← launcher (rendered for the platform)
 │       ├── tdd/
 │       ├── dep-install/
 │       ├── solve-issue/
@@ -265,16 +229,16 @@ YOUR_PROJECT/
 │       ├── to-issues/         ← installed with "all"
 │       ├── to-prd/            ← installed with "all"
 │       └── crew-grill/              ← installed with "all"
-├── .github/
-│   └── agents/
-│       ├── crew-afk.agent.md
-│       ├── crew-coder.agent.md
-│       └── crew-reviewer.agent.md
-└── docs/
-    └── agents/
-        ├── issue-tracker.md        ← edit to match your tracker
-        └── triage-labels.md        ← edit to match your labels
+└── .coding-crew/
+    ├── crew-afk/                   ← the orchestrator crew-afk runs
+    │   └── roles/                  ← coder, reviewer, triage protocols
+    ├── skills/_shared/fragments/   ← fragments the roles render with
+    ├── docs/issue-tracker.md       ← edit to match your tracker
+    ├── scripts/                    ← tracker helper scripts
+    └── manifest.json
 ```
+
+Other platforms get the same skills under their own skill dir (see the README's install table); no agent files are written for any platform.
 
 ---
 
@@ -298,22 +262,22 @@ YOUR_PROJECT/
 ┌─────────────────────────────────────────────────────────────┐
 │  crew-afk orchestrator                                      │
 │  1. List "ready-for-agent" issues from .scratch/            │
-│  2. Spawn crew-coder workers — up to 8 in parallel          │
+│  2. Dispatch coder-role workers — up to 8 in parallel       │
 │  3. Validate output, merge complete branches                │
 │  4. Write progress / blocked notes, loop                    │
-│  5. Run crew-reviewer on exit                          │
+│  5. Run the reviewer role on exit                           │
 └────────────────────┬────────────────────────────────────────┘
                      │ isolated git worktrees
           ┌──────────┴──────────┐
           ▼                     ▼
     ┌───────────┐         ┌───────────┐
-    │ crew-coder│   ...   │ crew-coder│
+    │   coder   │   ...   │   coder   │
     │ (1 issue) │         │ (1 issue) │
     └───────────┘         └───────────┘
           │ branches merged
           ▼
     ┌──────────────────────┐
-    │  crew-reviewer  │  advisory findings → .scratch/reviews/
+    │  reviewer role       │  advisory findings → .scratch/reviews/
     └──────────────────────┘
           │
           ▼
@@ -325,7 +289,7 @@ YOUR_PROJECT/
 ### Issue Lifecycle
 
 ```
- needs-triage  →  ready-for-agent  →  crew-coder picks up
+ needs-triage  →  ready-for-agent  →  coder picks up
                                             │
                          ┌──────────────────┼──────────────┐
                          ▼                  ▼              ▼
@@ -370,7 +334,7 @@ Use `/to-prd` → `/to-issues` to generate these from a feature description auto
 /crew-afk
 ```
 
-**Copilot:** invoke `@crew-afk` from the chat panel.
+**Copilot:** run `/crew-afk` (the skill).
 
 **pi / Codex:** run `crew-afk` (workers are dispatched as separate `pi -p` / `codex exec` processes).
 Both require the respective **local CLI** on `PATH` — a sprint spawns background child processes
@@ -415,10 +379,11 @@ flag overrides each for one run:
 
 | Setting | Default | Flag | What it does |
 | --- | --- | --- | --- |
-| `fixFindings` | `actionable` | `--fix-findings` | What review findings are fixed automatically: `actionable` (every finding the triage agent judges Actionable, whatever its severity); or the lowest severity — `critical`, `high`, `medium`; or `none` |
+| `fixFindings` | `actionable` | `--fix-findings` | What review findings are fixed automatically: `actionable` (every finding the triage role judges Actionable, whatever its severity); or the lowest severity — `critical`, `high`, `medium`; or `none` |
 | `PRDAudit` | `fix` | `--prd-audit` | `off`; `report` (audit, leave it for you); `fix` (also queue missing requirements) |
-| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` sets every non-coder role | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
+| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout` | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
 | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
+| `maxWallMinutes` | `120` | `--max-wall` | Soft wall-clock cap in minutes, `0` = off. Once elapsed no issue is claimed, running workers finish and merge, Phase 2 fix issues stay parked, the integration check still runs; exit 2, PR (with `--open-pr`) is a draft |
 | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
 | `squashCommits` | `false` | `--squash` (`--no-squash` turns it off) | Squash the sprint's commits into one at the end. Each issue is merged as its own commit either way |
 | `openPr` | `false` | `--open-pr` (`--no-open-pr` turns it off) | At the end, push the feature branch and create or update its PR. The `prWriter` role writes the title (else the PRD's; an open PR keeps a title you set) and the body by following `write-pr` (Summary, Evidence, Merge Danger), under which go the checks result on the merged branch and the lines closing the issues the sprint merged (under `tracker: github`). If the writer leaves no `## Summary`, the PR opens anyway and the run summary says why. A re-run rewrites only crew-afk's own block of the body |
@@ -468,7 +433,7 @@ every thread it handled. It never resolves a thread — you do.
 
 1. Copy [`docs/templates/workflows/crew-rework.yml`](templates/workflows/crew-rework.yml) to
    `.github/workflows/` in your repo.
-2. Install the skills per project and commit them (`./install.sh claude --project --skill
+2. Install the skills per project and commit them (`./install.sh claude --skill
    address-pr-comments`): the runner has no `$HOME` install.
 3. Add the repo secret `ANTHROPIC_API_KEY`.
 4. Make sure your CI workflow is `ci.yml` (or edit `--ci-workflow` in the template) and has
@@ -525,7 +490,6 @@ Edit these files after install — they override the defaults on the next run:
 | File                                 | Purpose                                   |
 | ------------------------------------ | ----------------------------------------- |
 | `.coding-crew/docs/issue-tracker.md` | Where issues live, how to list/close them |
-| `docs/agents/triage-labels.md`       | Map canonical roles to your label strings |
 
 ---
 
@@ -579,7 +543,6 @@ result), and `warn` hides the `[STEP]` progress lines. `CREW_VERBOSE=1` still me
 | "No unblocked ready-for-agent issues" immediately | No `.md` files with correct `Status:` line       | Check `.scratch/*/issues/` — status must be exactly `ready-for-agent`               |
 | Worker returns `blocked` every round              | Ambiguous spec or missing dependency             | Read `## Blocked` in the issue file; resolve and re-trigger                         |
 | `install.sh`: "unsafe path in registry"           | `registry.json` path contains `..` or `/` prefix | Fix `registry.json`                                                                 |
-| `install.sh`: "multiple claude.\* files"          | Agent dir has more than one `claude.*`           | Remove the extra file                                                               |
 | Code review says "skipped (no commits)"           | No commits this session                          | Normal — nothing to review                                                          |
 | `dep-install` picks wrong mode                    | Makefile detection read parent project           | Run `git config --local agent.install-mode host` (or `docker`) in your project root |
 | `address-pr-comments` fails with opaque error     | `gh` CLI missing or not authenticated            | Run `gh auth login` first                                                           |
@@ -591,6 +554,6 @@ result), and `warn` hides the `[STEP]` progress lines. `CREW_VERBOSE=1` still me
 ### Security Notes
 
 - **Issue files are untrusted input.** Only structured fields (`acceptance_criteria`) are passed to workers — never raw file content. Keep issue files in version control so changes are reviewed.
-- **Workers cannot write outside their worktree.** The crew-coder agent enforces `PROJECT_ROOT` boundaries.
+- **Workers cannot write outside their worktree.** The coder role's protocol enforces `PROJECT_ROOT` boundaries.
 - **Code review findings are advisory.** Nothing is auto-blocked or re-queued — a human always decides.
 - **Never commit secrets to `.scratch/`.** Issue files are not secret-scanned by default.

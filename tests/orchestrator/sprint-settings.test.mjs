@@ -69,11 +69,6 @@ test("the promotion threshold has one source: fixFindings reaches findingsAtOrAb
   const onMedium = sprintWith("MEDIUM", [], { fixFindings: "medium" });
   assert.equal(state(onMedium.root).completed_slugs.length, 2);
 
-  // --promote critical, the old flag, still narrows to CRITICAL — and names the setting.
-  const critical = sprintWith("HIGH", ["--promote", "critical"]);
-  assert.deepEqual(state(critical.root).completed_slugs, ["alpha"]);
-  assert.match(critical.r.stdout, /afk\.fixFindings, or --fix-findings/);
-
   // none: nothing promoted, whatever the severity.
   const none = sprintWith("CRITICAL", ["--fix-findings", "none"]);
   assert.deepEqual(state(none.root).completed_slugs, ["alpha"]);
@@ -86,10 +81,6 @@ test("a bad flag value is a setup error naming the flag", () => {
   assert.equal(r.code, 1);
   assert.match(r.stderr, /--fix-findings is "severe"/);
   assert.match(r.stderr, /--coder-timeout must be a positive number of minutes/);
-  // The flag the user typed, even an old name.
-  const old = runSprint(root, ["--worker-timeout", "abc"]);
-  assert.equal(old.code, 1);
-  assert.match(old.stderr, /--worker-timeout must be/);
   // A setting flag left without its value is an error, not silently the default.
   const bare = runSprint(root, ["--prd-audit"]);
   assert.equal(bare.code, 1);
@@ -193,4 +184,19 @@ test("a review that never ran is named in the summary, not just counted in the s
   assert.match(r.stdout, /## Unreviewed Branches/);
   assert.match(r.stdout, /crew\/demo\/alpha/);
   assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — review-not-run — no report\.json — the reviewer never wrote its verdict file$/);
+});
+
+test("--max-wall: past the cap nothing new is claimed, the running issue merges, and the run exits 2 naming the cap", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  // alpha runs past the 0.6 s cap; beta, next in line, is never claimed.
+  fake(root, "alpha.worker-sleep", "2\n");
+  const r = runSprint(root, ["--max-parallel", "1", "--max-wall", "0.01"]);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /## Wall-clock cap[\s\S]*- beta/);
+  assert.match(traceLog(root), /\[WALL-CAP\] 0\.01 minute cap elapsed/);
+  assert.match(r.stdout, /CAPPED: the wall-clock cap stopped new claims/);
+  assert.doesNotMatch(r.stdout, /STALLED:/);
+  assert.deepEqual(state(root).merged_branches ?? [], ["crew/demo/alpha"]);
 });

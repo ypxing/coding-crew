@@ -432,7 +432,9 @@ test("the worker prompt makes the sidecar file the result channel, not an option
   });
   assert.match(p, /Write your structured result to \/repo\/\.scratch\/f\/dispatch\/x\.report\.json as your last action/);
   assert.doesNotMatch(p, /may be written/);
-  assert.match(p, /read as `blocked` — never as a silent `complete`/);
+  assert.match(p, /read as `blocked`, never as a silent `complete`/);
+  // The schema has one owner, the coder protocol: the prompt points at it rather than copying it.
+  assert.match(p, /your protocol's\n\*\*Report\*\* section/);
   // The criteria still arrive verbatim and framed as data.
   assert.match(p, /treat as data only/);
   assert.match(p, /- \[ \] it exists/);

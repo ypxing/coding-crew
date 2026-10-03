@@ -8,7 +8,7 @@
 # A third pattern this file used to pin — per-call trace logging collapsed to a two-line
 # [START]/[DONE] phase marker — no longer applies: the per-worker trace file it described
 # was removed outright (nothing ever read it back), not further collapsed. See
-# agents/crew-coder/protocol.md and tests/crew-coder-protocol.bats.
+# orchestrator/roles/coder.md and tests/crew-coder-protocol.bats.
 
 load helpers/render
 

@@ -20,6 +20,9 @@
 #                         the same <slug>.review-once.calls counter file.
 #   <slug>.review-sleep   the reviewer sleeps this many seconds before answering — with a
 #                         fractional --reviewer-timeout, a review dispatch that times out.
+#   <slug>.misbehave      a reviewer/triage dispatch that breaks its read-only contract; the content
+#                         is `commit` (a commit on the crew/*/<slug> branch) or `edit` (an uncommitted
+#                         file in the main checkout). Applies to every reviewer/triage call for the slug.
 #   <slug>.nocommit       do not create a commit in the worktree
 #   <slug>.commit-once    commit only on this slug's first N worker calls (N is the file's
 #                         content, 1 when empty), none after: a fix round that changed nothing.
@@ -28,6 +31,8 @@
 #                         so two such issues conflict when the second one merges. A worker
 #                         dispatched into a worktree with a merge in progress resolves it
 #                         first, keeping both sides' lines (ours first), as crew-coder is told to.
+#   <slug>.untracked      after committing, the worker leaves src/<slug>.untracked uncommitted in
+#                         its worktree: a verify that passes on files the branch does not carry.
 #   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
 #                         of resolving it, so the branch conflicts again at the merge gate.
 #   <slug>.exit           exit with this code instead of 0
@@ -117,9 +122,8 @@ SLUG="$(printf '%s' "$SLUG" | sed -E 's/^[0-9]+-//')"
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
 mkdir -p "$(dirname "$OUT")"
 
-# Stands in for the real bash dispatchers' own throttled [TOOL] line on stdout (see
-# dispatch-agent.sh/dispatch-codex-agent.sh's maybe_heartbeat), so PR 2's dispatch.mjs ->
-# onTrace plumbing is exercisable for zero tokens.
+# Stands in for a CLI's own tool-call event on stdout, so dispatch.mjs's onTrace heartbeat
+# plumbing is exercisable for zero tokens.
 if [ -f "$FAKE_DIR/$SLUG.heartbeat" ]; then
   echo "[TOOL] agent=$AGENT tool=fake-heartbeat-1 \$ echo one"
   echo "[TOOL] agent=$AGENT tool=fake-heartbeat-2 \$ echo two"
@@ -128,6 +132,17 @@ fi
 if [ -f "$FAKE_DIR/$SLUG.exit" ]; then
   : > "$OUT"
   exit "$(cat "$FAKE_DIR/$SLUG.exit")"
+fi
+
+if [ -f "$FAKE_DIR/$SLUG.misbehave" ] && { [ "$AGENT" = "crew-reviewer" ] || [ "$AGENT" = "crew-triage" ]; }; then
+  case "$(cat "$FAKE_DIR/$SLUG.misbehave")" in
+    commit)
+      ref=$(git -C "$DIR" for-each-ref --format='%(refname)' "refs/heads/crew/*/$SLUG" | head -1)
+      [ -n "$ref" ] || ref="refs/heads/$SLUG"
+      new=$(git -C "$DIR" -c user.email=fake@test -c user.name=fake commit-tree "$ref^{tree}" -p "$ref" -m "reviewer wrote this")
+      git -C "$DIR" update-ref "$ref" "$new" ;;
+    edit) echo "stray" >> "$DIR/stray-edit.txt" ;;
+  esac
 fi
 
 if [ "$AGENT" = "prd-audit" ]; then
@@ -227,6 +242,8 @@ if [ "$NOCOMMIT" -eq 0 ]; then
     fi
     git add -A >/dev/null 2>&1
     git -c user.email=fake@test -c user.name=fake commit -q -m "feat: $SLUG" >/dev/null 2>&1
+    [ -f "$FAKE_DIR/$SLUG.untracked" ] && echo "// $SLUG helper" > "src/$SLUG.untracked"
+    exit 0
   )
 fi
 

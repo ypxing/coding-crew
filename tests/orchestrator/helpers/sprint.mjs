@@ -53,7 +53,7 @@ after(() => rmSync(SCRIPTS_BASE, { recursive: true, force: true }));
 // The `.coding-crew/` an installed orchestrator would sit in (CREW_INSTALL_DIR): this source
 // tree's orchestrator/ has no installed assets beside it, so every run points here instead.
 export const INSTALL_DIR = join(SCRIPTS_BASE, "install");
-cpSync(join(REPO, "agents/crew-reviewer/assets"), join(INSTALL_DIR, "code-review"), { recursive: true });
+cpSync(join(REPO, "orchestrator/roles/reviewer"), join(INSTALL_DIR, "crew-afk/roles/reviewer"), { recursive: true });
 cpSync(join(REPO, "skills/dep-install/scripts"), join(INSTALL_DIR, "dep-install/scripts"), { recursive: true });
 cpSync(join(REPO, "skills/solve-issue/scripts"), join(INSTALL_DIR, "solve-issue/scripts"), { recursive: true });
 cpSync(join(REPO, "skills/to-issues/scripts"), join(INSTALL_DIR, "to-issues/scripts"), { recursive: true });
@@ -71,15 +71,21 @@ export const FAKE = join(HERE, "../fixtures/fake-dispatch.sh");
 // so an inherited HOME is swapped for an empty one. A test that sets its own HOME keeps it.
 export const EMPTY_HOME = mkdtempSync(join(TMPDIR, "crew-sprint-home-"));
 after(() => rmSync(EMPTY_HOME, { recursive: true, force: true }));
+/** `env` (default process.env) as a fixture sprint may see it: no real pane host, HOME or install. */
+export function sprintEnv(env = process.env) {
+  const out = { ...env };
+  if (out.HOME === process.env.HOME) out.HOME = EMPTY_HOME;
+  if (out.CREW_INSTALL_DIR === process.env.CREW_INSTALL_DIR) out.CREW_INSTALL_DIR = INSTALL_DIR;
+  delete out.CREW_PANE_HOST;
+  delete out.HERDR_ENV;
+  delete out.HERDR_PANE_ID;
+  delete out.ORCA_ENV;
+  delete out.ORCA_TERMINAL_HANDLE;
+  return out;
+}
+
 export function sh(cmd, args, opts = {}) {
-  const env = { ...(opts.env ?? process.env) };
-  if (env.HOME === process.env.HOME) env.HOME = EMPTY_HOME;
-  if (env.CREW_INSTALL_DIR === process.env.CREW_INSTALL_DIR) env.CREW_INSTALL_DIR = INSTALL_DIR;
-  delete env.CREW_PANE_HOST;
-  delete env.HERDR_ENV;
-  delete env.HERDR_PANE_ID;
-  delete env.ORCA_ENV;
-  delete env.ORCA_TERMINAL_HANDLE;
+  const env = sprintEnv(opts.env ?? process.env);
   const r = spawnSync(cmd, args, { encoding: "utf8", ...opts, env });
   return { code: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
@@ -137,7 +143,24 @@ export const NO_INTEGRATION = ["--no-integration-check"];
 // the same agent, counted by the feature-review tests alone.
 export const BRANCH_REVIEW = /^SPAWN .*--agent crew-reviewer(?!.* --slug feature( |$))/;
 
-export function runSprint(root, extra = [], env = {}, { baseline = false, integration = false } = {}) {
+/**
+ * `--max-rounds N` and `--no-commands` are no longer flags; the orchestrator keeps them as the
+ * test-only env seams CREW_MAX_ROUNDS / CREW_NO_COMMANDS. Tests still write them as flags.
+ */
+export function seamArgs(extra) {
+  const args = [];
+  const env = {};
+  for (let i = 0; i < extra.length; i++) {
+    if (extra[i] === "--max-rounds") env.CREW_MAX_ROUNDS = String(extra[++i]);
+    else if (extra[i] === "--no-commands") env.CREW_NO_COMMANDS = "1";
+    else args.push(extra[i]);
+  }
+  return { args, env };
+}
+
+export function runSprint(root, extraIn = [], envIn = {}, { baseline = false, integration = false } = {}) {
+  const { args: extra, env: seam } = seamArgs(extraIn);
+  const env = { ...seam, ...envIn };
   return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...(integration ? [] : NO_INTEGRATION), ...extra], {
     cwd: root,
     env: {
@@ -387,7 +410,9 @@ export const GH_ALPHA = {
   state: "OPEN",
 };
 
-export function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi", baseline = false, integration = false } = {}) {
+export function commandLines(root, extraIn = [], { scripts = SCRIPTS, env: envIn = {}, platform = "pi", baseline = false, integration = false } = {}) {
+  const { args: extra, env: seam } = seamArgs(extraIn);
+  const env = { ...seam, ...envIn };
   const r = sh("node", [MAIN, "run", "--platform", platform, "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...(integration ? [] : NO_INTEGRATION), ...extra], {
     cwd: root,
     env: {

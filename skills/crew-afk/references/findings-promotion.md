@@ -90,7 +90,7 @@ means no verdicts for that review: its CRITICAL and HIGH findings are promoted, 
 open, and the summary's `## Findings Triage` section names which review fell back and why. The
 fallback is per review, so one failed triage never blocks the others.
 
-The threshold is a fixed string printed by `promote-findings.sh guard`; the verdicts are facts on
+The threshold is resolved once in `orchestrator/lib/report.mjs` and echoed by `promote-findings.sh guard`; the verdicts are facts on
 disk in the review report, so the orchestrator never has to remember them.
 
 Anything below the threshold is paid for on the way out rather than hidden: nothing subtracts an
@@ -105,7 +105,7 @@ branches touch mostly disjoint code, so those fix issues still parallelize acros
 matches `crew-address-findings` Step 2, which groups findings by branch for the same reason.
 
 **Depth bound: one generation.** Every fix issue carries a `Source:` line. Before promoting, run
-`promote-findings.sh guard --issue <issue-file>`; if it prints `skip — source-guarded`, the
+`promote-findings.sh guard --issue <issue-file> --severities <list>`; if it prints `skip — source-guarded`, the
 findings go in the report and no issue is written. So Phase 2 reviews are report-only and there
 is never a Phase 3. This is the whole termination argument — no counters, no phase flag.
 
@@ -168,21 +168,19 @@ dismissed once a human reads them.
 ## Script interface
 
 ```bash
-# Which severities does this sprint promote? (CREW_FIX_FINDINGS, set by session-init.sh)
-bash "<skill-dir>/scripts/promote-findings.sh" policy
-# → "promote: actionable" | "promote: CRITICAL" | "promote: CRITICAL, HIGH" | "promote: CRITICAL, HIGH, MEDIUM" | "promote: "
-
-# Depth bound: is this branch's issue itself a promoted fix issue?
-bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file>"
-# → "guard: eligible — threshold: actionable" | "guard: eligible — threshold: CRITICAL, HIGH" | "guard: skip — source-guarded ..."
-#   | "guard: skip — fixFindings is none"
+# Depth bound: is this branch's issue itself a promoted fix issue? --severities is the list the
+# orchestrator resolved from afk.fixFindings (orchestrator/lib/report.mjs); the script keeps no
+# level table and exits 2 naming the argument when it is missing.
+bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file>" --severities "<list>"
+# → "guard: eligible — threshold: <list>" | "guard: skip — source-guarded ..."
+#   | "guard: skip — fixFindings is none" (empty list)
 
 # Park a fix issue and annotate the report. Criteria file = one "- [ ] <finding>" line per finding.
 bash "<skill-dir>/scripts/promote-findings.sh" defer \
   --feature-slug "$FEATURE_SLUG" --branch "<reviewed-branch>" --slug "<issue-slug>" \
   --title "Fix review findings: <issue title>" \
   --report ".scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md" \
-  --criteria-file "<tmp criteria file>" [--severities "actionable" | "CRITICAL, HIGH"]
+  --criteria-file "<tmp criteria file>" --severities "actionable" # or "CRITICAL, HIGH": the list report.mjs resolves
 # → "defer: .scratch/<slug>/issues/open/<NN>-fix-findings-<issue-slug>.md"
 
 # The PRD audit's missing requirements → one parked fix issue (no audit while one is still open)

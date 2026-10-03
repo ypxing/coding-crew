@@ -19,10 +19,8 @@ load helpers/orchestrator-suite
 }
 
 @test "orchestrator: unit suite passes (the sprint topic files run from orchestrator-sprint-<topic>.bats)" {
-  local files=() f
-  while IFS= read -r f; do files+=("$f"); done < <(orchestrator_unit_tests)
-  [ "${#files[@]}" -gt 0 ]
-  run_node_tests "${files[@]}"
+  [ -n "$(orchestrator_unit_tests)" ]
+  run_node_tests @unit
 }
 
 @test "orchestrator: every node test file runs from exactly one bats file" {
@@ -181,14 +179,42 @@ load helpers/orchestrator-suite
           model: null, mainRoot: dir, logFile: null, scriptsDir: "skills/crew-afk/scripts",
         });
         const argv = [b.cmd, ...b.args].join(" ");
-        if (!argv.includes("crew-coder")) throw new Error(platform + ": agent not named");
+        if (argv.includes("--agent ") || /dispatch-.*agent\.sh/.test(argv)) throw new Error(platform + ": agent file or bash dispatcher expected");
         console.log(platform + ": " + b.cmd + " (" + b.capture + ")");
       }
     }).catch((e) => { console.error(e.message); process.exit(1); });
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"pi: bash"* ]]
-  [[ "$output" == *"codex: bash"* ]]
+  [[ "$output" == *"pi: pi"* ]]
+  [[ "$output" == *"codex: codex"* ]]
   [[ "$output" == *"claude: claude"* ]]
   [[ "$output" == *"copilot: copilot"* ]]
+}
+
+@test "orchestrator CLI: the seven retired flags are rejected as unrecognized" {
+  for f in --promote --coverage --worker-timeout --review-timeout --max-rounds --merge-timeout --no-commands; do
+    run node orchestrator/main.mjs run "$f"
+    [ "$status" -ne 0 ] || { echo "$f accepted"; return 1; }
+    [[ "$output" == *"unrecognized argument"*"$f"* ]] || { echo "$f: $output"; return 1; }
+  done
+}
+
+@test "orchestrator CLI: --help lists --dry-run and none of the retired flags" {
+  run node orchestrator/main.mjs --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--dry-run"* ]]
+  for f in --promote --coverage --worker-timeout --review-timeout --max-rounds --merge-timeout --no-commands; do
+    [[ "$output" != *"$f"* ]] || { echo "help names $f"; return 1; }
+  done
+}
+
+@test "orchestrator: doctor reports a PROBLEM when the CLI's --help omits a required flag" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  local bin="$BATS_TEST_TMPDIR/bin"; mkdir -p "$bin"
+  printf '#!/bin/sh\necho "usage: claude [--output-format x] [--add-dir d]"\n' > "$bin/claude"
+  chmod +x "$bin/claude"
+  cd "$REPO_ROOT"
+  run env PATH="$bin:$PATH" CREW_PANE_HOST=none node "$REPO_ROOT/orchestrator/main.mjs" doctor --platform claude
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"PROBLEM:"*"--permission-mode"* ]]
 }

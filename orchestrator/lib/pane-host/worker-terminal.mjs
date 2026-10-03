@@ -20,6 +20,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { killGroup, registerExternalPid, unregisterExternalPid } from "../effects.mjs";
 import { shellQuote } from "./shared.mjs";
 
 export const TIMING = { pollMs: 500, startTimeoutMs: 30000, exitGraceMs: 5000 };
@@ -49,14 +50,15 @@ export async function spawnInWorkerTerminal(
   adapter,
   cmd,
   args,
-  { cwd, env = {}, timeoutMs, onLine, stem, title, jsonEvents, agent, timing = TIMING } = {},
+  { cwd, env = {}, timeoutMs, onLine, input, stem, title, jsonEvents, agent, timing = TIMING } = {},
 ) {
   const dir = `${stem}.term`;
   const f = (name) => join(dir, name);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   writeFileSync(f("env.sh"), envScript({ ...process.env, ...effects.env, ...env }), { mode: 0o600 });
-  writeFileSync(f("run.sh"), runScript({ f, cwd, cmd, args, jsonEvents, agent }));
+  if (input !== undefined) writeFileSync(f("in"), input, { mode: 0o600 });
+  writeFileSync(f("run.sh"), runScript({ f, cwd, cmd, args, jsonEvents, agent, stdin: input !== undefined }));
 
   effects.recorded?.push({ argv: [cmd, ...args], cwd, env });
   effects.log?.(`SPAWN-TERMINAL ${title} ${[cmd, ...args].map(shellQuote).join(" ")}`);
@@ -65,13 +67,15 @@ export async function spawnInWorkerTerminal(
   if (!opened.handle) {
     rmSync(dir, { recursive: true, force: true });
     effects.log?.(`SPAWN-TERMINAL-FALLBACK ${opened.failure} — running headless`);
-    return effects.spawnWithTimeout(cmd, args, { cwd, env, timeoutMs, onLine });
+    return effects.spawnWithTimeout(cmd, args, { cwd, env, timeoutMs, onLine, input });
   }
 
   const out = tailer(f("out"), onLine);
   const started = Date.now();
   let deadSince = null;
   let result;
+  let registered = null;
+  try {
   for (;;) {
     await sleep(timing.pollMs);
     out.drain();
@@ -81,13 +85,18 @@ export async function spawnInWorkerTerminal(
       break;
     }
     const pid = readInt(f("pid"));
+    if (pid && registered !== pid) {
+      registered = pid;
+      registerExternalPid(pid);
+    }
     const now = Date.now();
     // A timeout with no pid yet doesn't mean there's nothing to kill — run.sh may just not
     // have written it yet under load. Falling through here instead of returning keeps polling
     // (still bounded by startTimeoutMs below) so the kill fires the moment the pid shows up,
     // rather than being skipped because it wasn't there on this exact tick.
     if (timeoutMs && now - started >= timeoutMs && pid) {
-      kill(pid);
+      // run.sh's job control made the child its group's leader: the group goes with it.
+      killGroup(pid);
       result = { code: 124, timedOut: true };
       break;
     }
@@ -106,6 +115,9 @@ export async function spawnInWorkerTerminal(
       break;
     }
   }
+  } finally {
+    if (registered) unregisterExternalPid(registered);
+  }
   out.drain();
   out.close();
 
@@ -117,7 +129,7 @@ export async function spawnInWorkerTerminal(
   // A run.sh that started after startTimeoutMs gave up on it must not keep running.
   if (result.code === 127) {
     const latePid = readInt(f("pid"));
-    if (latePid) kill(latePid);
+    if (latePid) killGroup(latePid);
   }
 
   const stderr = [readText(f("err")), result.reason].filter(Boolean).join("\n");
@@ -143,11 +155,10 @@ function envScript(env) {
  * bash, whatever the terminal's login shell. `sh -c 'echo $$ …; exec'` records the pid the
  * child keeps (BASHPID is bash 4+; macOS ships 3.2). The child writes straight to `out`;
  * what the terminal shows is a separate follower process, so a display failure can never
- * reach the child. It follows `out` for an event stream it can parse (claude, copilot), and
- * `err` otherwise: pi and codex's bash dispatchers put raw events on stdout and their own
- * `[TOOL]` lines, plus the CLI's errors, on stderr.
+ * reach the child. It follows `out` for an event stream it can parse (every platform), and
+ * `err` otherwise (the fake test seam).
  */
-function runScript({ f, cwd, cmd, args, jsonEvents, agent }) {
+function runScript({ f, cwd, cmd, args, jsonEvents, agent, stdin = false }) {
   const q = shellQuote;
   const p = (name) => q(f(name));
   return [
@@ -156,7 +167,10 @@ function runScript({ f, cwd, cmd, args, jsonEvents, agent }) {
     `cd -P ${q(cwd)} || { echo 127 > ${p("rc")}; exit; }`,
     `: > ${p("out")}; : > ${p("err")}`,
     `${q(process.execPath)} ${q(FOLLOWER)} ${p(jsonEvents ? "out" : "err")} ${p("rc")} ${q(jsonEvents ?? "")} ${q(agent ?? "")} &`,
-    `sh -c 'echo $$ > "$0.tmp" && mv "$0.tmp" "$0" && exec "$@"' ${p("pid")} ${[cmd, ...args].map(q).join(" ")} > ${p("out")} 2> ${p("err")} < /dev/null`,
+    // Job control: the child runs as its own process group's leader, so killing the recorded pid's
+    // group (the interrupt path, a timeout) takes its children with it.
+    "set -m",
+    `sh -c 'echo $$ > "$0.tmp" && mv "$0.tmp" "$0" && exec "$@"' ${p("pid")} ${[cmd, ...args].map(q).join(" ")} > ${p("out")} 2> ${p("err")} < ${stdin ? p("in") : "/dev/null"}`,
     `echo $? > ${p("rc.tmp")} && mv ${p("rc.tmp")} ${p("rc")}`,
     "wait",
     "",
@@ -213,12 +227,5 @@ function alive(pid) {
   }
 }
 
-function kill(pid) {
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch {
-    /* already gone */
-  }
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

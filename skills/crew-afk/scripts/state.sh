@@ -18,12 +18,14 @@ set -euo pipefail
 #   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>] [--number <n>]
 #   state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
 #   state.sh coverage-clear --slug <slug>
+#   state.sh deviation --slug <slug> --reason <text>
 #   state.sh dispatch-cost [--cost <usd>] [--duration-ms <ms>] [--turns <n>]
 #                          [--slug <slug> --role <role> --attempt <n>]
 #                          [--session-id <id>] [--context-tokens <n>] [--head <sha>]
 #                          [--cost-unknown --tokens <n>]
 #   state.sh run-start --id <run-id>
 #   state.sh baseline [--slot baseline|integration] --commit <sha> --verdict <pass|fail>
+#   state.sh verified-tree --tree <git tree sha>   (a per-issue verify passed this tree)
 #   state.sh resume --slug <slug>
 #   state.sh retention --slug <slug>
 #   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|state-file>
@@ -178,7 +180,7 @@ case "$CMD" in
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@"); reason=$(flag reason "blocked" "$@")
     number=$(flag number "" "$@")
     [ -n "$slug" ] || die "blocked requires --slug"
-    edit_state --arg s "$slug" '.blocked_slugs = ((.blocked_slugs // []) + [$s] | unique)'
+    edit_state --arg s "$slug" --arg r "$reason" '.blocked_slugs = ((.blocked_slugs // []) + [$s] | unique) | .blocked_reasons[$s] = $r'
     # --number: the issue got the `blocked` label; crew-summary prints how to remove it.
     if [ -n "$number" ]; then
       edit_state --arg s "$slug" --argjson n "$number" '.blocked_labelled = ((.blocked_labelled // {}) + {($s): $n})'
@@ -198,6 +200,15 @@ case "$CMD" in
     edit_state --arg s "$slug" --arg c "$cats" '.coverage_gaps[$s] = $c'
     trace --level warn STATE "coverage-gap slug=$slug categories=$cats"
     echo "STATE: coverage-gap slug=$slug categories=$cats"
+    ;;
+
+  deviation)
+    slug=$(flag slug "" "$@"); reason=$(flag reason "" "$@")
+    [ -n "$slug" ] || die "deviation requires --slug"
+    [ -n "$reason" ] || die "deviation requires --reason"
+    edit_state --arg s "$slug" --arg r "$reason" '.deviations[$s] = ((.deviations[$s] // []) + [$r] | unique)'
+    trace --level warn DEVIATION "slug=$slug $reason"
+    echo "STATE: deviation slug=$slug"
     ;;
 
   coverage-clear)
@@ -265,13 +276,25 @@ case "$CMD" in
     # on the merged branch at each drain (`--slot integration`). Only a pass is ever reused, and
     # only for the same commit; each slot caches on its own.
     commit=$(flag commit "" "$@"); verdict=$(flag verdict "" "$@"); slot=$(flag slot baseline "$@")
+    tree=$(flag tree "" "$@")
     [ -n "$commit" ] || die "baseline requires --commit"
     case "$verdict" in pass|fail) : ;; *) die "baseline requires --verdict pass|fail" ;; esac
     case "$slot" in baseline|integration) : ;; *) die "baseline requires --slot baseline|integration" ;; esac
-    edit_state --arg k "$slot" --arg c "$commit" --arg v "$verdict" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      '.[$k] = {commit: $c, verdict: $v, at: $at}'
+    # A passing tree is also added to the run-independent `passing_trees` set: the same tree needs no second check.
+    edit_state --arg k "$slot" --arg c "$commit" --arg v "$verdict" --arg t "$tree" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '.[$k] = ({commit: $c, verdict: $v, at: $at} + (if $t == "" then {} else {tree: $t} end))
+       | if $v == "pass" and $t != "" then .passing_trees = (((.passing_trees // []) + [$t]) | unique) else . end'
     trace --level "$([ "$verdict" = pass ] && echo info || echo error)" STATE "$slot commit=$commit verdict=$verdict"
     echo "STATE: $slot commit=$commit verdict=$verdict"
+    ;;
+
+  verified-tree)
+    # A per-issue verify passed this git tree: runFeatureChecks reuses it for a feature branch of the same tree.
+    tree=$(flag tree "" "$@")
+    [ -n "$tree" ] || die "verified-tree requires --tree"
+    edit_state --arg t "$tree" '.passing_trees = (((.passing_trees // []) + [$t]) | unique)'
+    trace STATE "verified-tree tree=$tree"
+    echo "STATE: verified-tree tree=$tree"
     ;;
 
   resume)

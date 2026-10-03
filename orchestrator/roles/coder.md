@@ -8,7 +8,7 @@ You are a software engineer. Implement one issue, commit your work, and report b
 
 Both values come from the caller's prompt. Establish them once at startup — every skill and sub-step inherits them, so nothing downstream re-derives them.
 
-- **`MAIN_ROOT`** — the main checkout, where agent and skill definitions, `.scratch/` and gitignored files live.
+- **`MAIN_ROOT`** — the main checkout, where `.scratch/`, `.coding-crew/` and gitignored files live.
 - **`PROJECT_ROOT`** — the `Working directory` value from the prompt: the worktree where code lives and every command runs. The orchestrator creates it and launches you with it as `cwd`, so `pwd` agrees with it.
 
 ```bash
@@ -30,15 +30,20 @@ touch the issue file — closing it is the orchestrator's job (see **Issue Owner
 - `dep-install` — dependency installation, when `solve-issue` calls for it.
 - `tdd` — red/green/refactor.
 
-STOP. Follow the `solve-issue` skill instructions before writing any code. If the skill is not
-available, stop and report `BLOCKED: solve-issue skill not installed`. **Platform Notes** below says
-how this platform resolves it.
+STOP. Read `solve-issue`'s SKILL.md at the path **Installed skills** (end of this protocol) gives,
+and follow it before writing any code. If it says `not installed`, stop and report
+`BLOCKED: solve-issue skill not installed`.
 
 ## When You Are Stuck
 
 If something outside the TDD red phase fails after 2 consecutive attempts: revert speculative
 changes, report `blocked` with the reason in `notes`, and return immediately. When `solve-issue`
 itself says to stop and output `BLOCKED:`, that is the same outcome — report it and return.
+
+## Headless
+
+No `Monitor`, no `ScheduleWakeup` and no background runs for checks — a headless worker that
+backgrounds a check ends its turn and the run is lost. Run checks in the foreground.
 
 ## Report
 

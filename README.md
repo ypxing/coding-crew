@@ -68,7 +68,7 @@ What you can rely on:
 
 - ✅ **Test-first** — every coder uses TDD in its own worktree.
 - 🚦 **Nothing red merges** — each branch must pass your project's own checks.
-- 🔍 **Independent review** — a separate agent reviews every branch, then the whole feature.
+- 🔍 **Independent review** — a separate reviewer reviews every branch, then the whole feature.
 - 🔁 **Self-correcting** — failed checks, unmet criteria and actionable findings go back for a fix.
 - 📋 **PRD-audited** — requirements no issue covered become new issues.
 - 🔒 **Nothing pushed unless you ask** — `--open-pr` opens the PR; otherwise you get the command.
@@ -86,6 +86,8 @@ Full pipeline, gates and retry rules: [user guide](docs/guide.md#system-overview
 
 Persist them in `.coding-crew/config.json` — e.g. `{ "afk": { "openPr": true } }`. Need `.env` in
 worktrees? It's copied automatically; list other gitignored files in `.worktreeinclude`.
+Workers run with full permissions on the host, in per-issue worktrees — not in a sandbox.
+
 [All settings →](docs/guide.md#configuring-crew-afk)
 
 ## All commands
@@ -128,16 +130,14 @@ Where files land:
 | Platform    | Per project                          | User level (honors)                                    |
 | ----------- | ------------------------------------ | ------------------------------------------------------ |
 | Claude Code | `.claude/`                           | `~/.claude/` (`CLAUDE_CONFIG_DIR`)                     |
-| Copilot     | `.github/agents/`, `.github/skills/` | `~/.copilot/` (`COPILOT_HOME`)                         |
+| Copilot     | `.github/skills/`                    | `~/.copilot/` (`COPILOT_HOME`)                         |
 | pi          | `.pi/`                               | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`)                 |
-| Codex       | `.agents/skills/`, `.codex/agents/`  | `~/.agents/skills/`, `~/.codex/agents/` (`CODEX_HOME`) |
+| Codex       | `.agents/skills/`                    | `~/.agents/skills/` (`CODEX_HOME`)                     |
 
 Requirements for `/crew-afk`:
 
 - The platform's **CLI must be on `PATH`** (`claude`, `copilot`, `codex` or `pi`) — each coder runs
   as its own process. `crew-afk doctor` reports anything missing.
-- **Copilot:** agents must be committed (`.github/agents/`) or installed user-level; the sprint
-  tells you which if neither.
 - **Codex and pi:** local CLI only. Hosted surfaces (Codex in ChatGPT, Codex cloud) can't run a sprint.
 
 Uninstall:
@@ -152,7 +152,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 - [User guide](docs/guide.md#part-2-using-this-repo-in-your-project) — writing issues, issue
   lifecycle, configuration, reading the logs, troubleshooting
-- [Contributor guide](docs/guide.md#part-1-contributing-to-this-repo) — adding agents and skills,
+- [Contributor guide](docs/guide.md#part-1-contributing-to-this-repo) — adding skills, changing crew-afk's roles,
   registry schema, security rules
 
 ## Acknowledgements

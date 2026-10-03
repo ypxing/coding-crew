@@ -21,7 +21,7 @@ load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_DIR="$REPO_ROOT/skills/crew-afk"
-PROTOCOL="$REPO_ROOT/agents/crew-reviewer/protocol.md"
+PROTOCOL="$REPO_ROOT/orchestrator/roles/reviewer.md"
 
 # ─── the separate AC pass is gone ────────────────────────────────────────────
 #
@@ -85,7 +85,7 @@ PROTOCOL="$REPO_ROOT/agents/crew-reviewer/protocol.md"
   # re-acquire the job: a body that greps the verdict is a body back in the pipeline.
   grep -q "AC:" "$REPO_ROOT/orchestrator/lib/report.mjs"
   for v in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$AFK_DIR/$v.SKILL.md"
+    body="$(afk_variant "$v")"
     [ -f "$body" ]
     if grep -q 'review.md' "$body"; then
       echo "$v launcher reads the review report itself" >&2

@@ -151,3 +151,195 @@ test("a fix issue this run created is not linted", async () => {
   h.gates.get("a")(); h.gates.get("fix")();
   await run;
 });
+
+test("wall-clock cap: once elapsed nothing new is claimed, the running worker finishes, run is stalled and names the cap", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  const out = [];
+  h.ctx.out = (s) => out.push(s);
+  const run = runSprint(h.ctx);
+  await settle();
+  assert.deepEqual(h.started, ["a"]);
+  h.ready.push({ slug: "b", number: null }, { slug: "c", number: null });
+  t = 10 * 60_000;
+  h.gates.get("a")();
+  const result = await run;
+  assert.deepEqual(h.started, ["a"]);
+  assert.ok(h.done.has("a"));
+  assert.equal(result.stalled, true);
+  const text = out.join("\n");
+  assert.match(text, /10-minute cap/);
+  assert.match(text, /- b\n- c/);
+});
+
+test("wall-clock cap elapsing after the last issue is done is not a cap hit", async () => {
+  // Nothing unclaimed and nothing parked: the cap cut nothing short, so the run is green.
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  const out = [];
+  h.ctx.out = (s) => out.push(s);
+  const run = runSprint(h.ctx);
+  await settle();
+  t = 10 * 60_000;
+  h.gates.get("a")();
+  const result = await run;
+  assert.equal(result.stalled, false);
+  assert.doesNotMatch(out.join("\n"), /Wall-clock cap/);
+});
+
+test("past the cap the poller lists the tracker no more", async () => {
+  const h = harness({ pollInterval: 5, parallel: 2 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  const run = runSprint(h.ctx);
+  await settle();
+  t = 10 * 60_000;
+  const before = h.listings.n;
+  for (let i = 0; i < 3 && h.sleeps.length; i++) { h.sleeps.shift()(); await settle(); }
+  assert.equal(h.listings.n, before);
+  h.gates.get("a")();
+  await run;
+});
+
+test("a red baseline stops the running dispatches and the poller, and claims nothing more", async () => {
+  const h = harness({ pollInterval: 5, parallel: 1 });
+  let red;
+  h.ctx.baseline = new Promise((r) => (red = r));
+  let interrupted = 0;
+  h.ctx.effects.interruptDispatches = () => { interrupted++; return 1; };
+  const run = runSprint(h.ctx);
+  await settle();
+  assert.deepEqual(h.started, ["a"]);
+  h.ready.push({ slug: "b", number: null });
+  red({ status: "fail" });
+  await settle();
+  assert.equal(interrupted, 1);
+  assert.equal(h.ctx.baselineRed, true);
+  const before = h.listings.n;
+  for (let i = 0; i < 3 && h.sleeps.length; i++) { h.sleeps.shift()(); await settle(); }
+  assert.equal(h.listings.n, before);
+  h.gates.get("a")();
+  await run;
+  assert.deepEqual(h.started, ["a"]);
+});
+
+test("wall-clock cap 0 disables it", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1, initial: ["a", "b"] });
+  h.ctx.now = () => 1e12;
+  h.ctx.options.maxWallMinutes = 0;
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  await settle();
+  h.gates.get("b")();
+  const result = await run;
+  assert.deepEqual(h.started, ["a", "b"]);
+  assert.equal(result.stalled, false);
+});
+
+test("wall-clock cap elapsed with nothing ready: flush is skipped, integration still runs, summary and reason name the cap", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  h.ctx.options.integrationCheck = true;
+  const calls = [];
+  const out = [];
+  h.ctx.out = (s) => out.push(s);
+  const bash = h.ctx.effects.bash;
+  // A parked fix issue exists (flush would promote it), so skipping flush is the cap's doing.
+  h.ctx.effects.bash = (name, args, o) => {
+    calls.push({ name, args });
+    if (name === "promote-findings.sh" && args[0] === "flush") return { code: 0, stdout: "FLUSH: promoted=1", stderr: "" };
+    if (name === "promote-findings.sh" && args[0] === "list") return { code: 0, stdout: "deferred: x.md\nDEFERRED: count=1", stderr: "" };
+    return bash(name, args, o);
+  };
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  // Integration check answers from cache (tree already passed): proves it still runs past the cap.
+  Object.assign(h.ctx.sprint, { featureBranch: "crew/demo", readState: () => ({ passing_trees: ["T"] }), state: () => {} });
+  h.ctx.effects.gitRead = () => ({ stdout: "T\n", code: 0 });
+  const logs = [];
+  h.ctx.log = (m) => logs.push(m);
+  const run = runSprint(h.ctx);
+  await settle();
+  t = 10 * 60_000;
+  h.gates.get("a")();
+  const result = await run;
+  assert.ok(logs.some((m) => /INTEGRATION|cached/.test(String(m))), "integration check ran");
+  assert.equal(result.stalled, true);
+  assert.ok(!calls.some((c) => c.name === "promote-findings.sh" && c.args[0] === "flush"), "flush must not run past the cap");
+  assert.match(out.join("\n"), /## Wall-clock cap[\s\S]*Phase 2 fix issues stayed parked/);
+});
+
+test("wall-clock cap with --open-pr: open-pr.sh gets --draft and a note naming the cap", async () => {
+  const { mkdtempSync, readFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "wallcap-"));
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  h.ctx.options.openPr = true;
+  Object.assign(h.ctx.sprint, {
+    env: { SPRINT_DIR: dir },
+    featureBranch: "crew/demo",
+    readState: () => ({}),
+    getList: () => [],
+  });
+  h.ctx.effects.gitRead = () => ({ code: 1, stdout: "" }); // no origin: the PR body has no range
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  const calls = [];
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    calls.push({ name, args });
+    // A parked fix issue the cap leaves for the next run.
+    if (name === "promote-findings.sh" && args[0] === "list") return { code: 0, stdout: "DEFERRED: count=1", stderr: "" };
+    return name === "open-pr.sh" ? { code: 0, stdout: "PR: http://x/1\n", stderr: "" } : bash(name, args, o);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  t = 10 * 60_000;
+  h.gates.get("a")();
+  await run;
+  const pr = calls.find((c) => c.name === "open-pr.sh");
+  assert.ok(pr, "open-pr.sh called");
+  assert.ok(pr.args.includes("--draft"));
+  const note = pr.args[pr.args.indexOf("--note-file") + 1];
+  assert.match(readFileSync(note, "utf8"), /wall-clock cap was hit/);
+});
+
+test("--open-pr: an issue blocked with no branch (a failing ## Requires) is listed with its reason", async () => {
+  const { mkdtempSync, readFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "blocked-note-"));
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  h.ctx.options.openPr = true;
+  Object.assign(h.ctx.sprint, {
+    env: { SPRINT_DIR: dir },
+    featureBranch: "crew/demo",
+    readState: () => ({ blocked_reasons: { req: "requires failed: docker not running" } }),
+    getList: (k) => (k === "blocked" ? ["req"] : []),
+  });
+  h.ctx.effects.gitRead = () => ({ code: 1, stdout: "" });
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  const calls = [];
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    calls.push({ name, args });
+    return name === "open-pr.sh" ? { code: 0, stdout: "PR: http://x/1\n", stderr: "" } : bash(name, args, o);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  await run;
+  const pr = calls.find((c) => c.name === "open-pr.sh");
+  const note = pr.args[pr.args.indexOf("--note-file") + 1];
+  assert.match(readFileSync(note, "utf8"), /- req — requires failed: docker not running/);
+});

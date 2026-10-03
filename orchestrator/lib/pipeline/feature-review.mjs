@@ -15,7 +15,7 @@ import { FEATURE_REVIEW, criteriaFile, featureReviewPrompt } from "../prompts.mj
 import { sprintReviewContext } from "../review-context.mjs";
 import { parseReviewReport } from "../report.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
-import { limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
+import { limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /**
  * Returns `{ report?, skipped?, failed?, findings?, promoted?, promotedRef? }`: `skipped` is why it
@@ -51,7 +51,7 @@ export async function runFeatureReview(ctx, { integration = null } = {}) {
 
   const reviewer = roleBinding(ctx, "reviewer");
   ctx.log(`[STEP] step=feature-review model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`);
-  const result = await dispatch(
+  const guarded = await readOnlyDispatch(ctx, { label: "feature-review" }, () => dispatch(
     effects,
     reviewer.runtime,
     {
@@ -63,7 +63,6 @@ export async function runFeatureReview(ctx, { integration = null } = {}) {
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: reviewer.scriptsDir,
       slug: FEATURE_REVIEW,
       round: 1,
       reportPath: sidecarFile,
@@ -73,12 +72,13 @@ export async function runFeatureReview(ctx, { integration = null } = {}) {
       timeoutMs: options.timeoutMs.reviewer,
       onTrace: (line) => ctx.heartbeat(`step=feature-review ${line}`),
     },
-  );
-  sprint.recordDispatchCost(result, { slug: FEATURE_REVIEW, role: "reviewer", attempt: 1 });
+  ));
+  const result = guarded.result ?? { text: "", stderr: "", timedOut: false };
+  if (guarded.result) sprint.recordDispatchCost(result, { slug: FEATURE_REVIEW, role: "reviewer", attempt: 1 });
 
-  const sidecar = readSidecar(sidecarFile);
-  const parsed = parseReviewReport(result.text, sidecar);
-  const capped = limitExceeded(result, "reviewer", reviewer);
+  const sidecar = guarded.violation ? null : readSidecar(sidecarFile);
+  const parsed = guarded.violation ? { ok: false, detail: guarded.violation } : parseReviewReport(result.text, sidecar);
+  const capped = guarded.violation ? null : limitExceeded(result, "reviewer", reviewer);
   if (capped || result.timedOut || !parsed.ok) {
     const stderrHint = (result.stderr ?? "").trim().slice(0, 300).replace(/\s+/g, " ");
     const reason = capped ?? (result.timedOut ? "review dispatch timed out" : `${parsed.detail}${stderrHint ? ` — ${stderrHint}` : ""}`);
@@ -137,7 +137,7 @@ async function promoteFeature(ctx, { findings, reportFile, dir, written }) {
     "--title", `Fix feature review findings: ${sprint.featureSlug}`,
     "--report", reportFile,
     "--criteria-file", criteriaPath,
-    ...(promotedAs(sprint.fixFindings, selected) ? ["--severities", promotedAs(sprint.fixFindings, selected)] : []),
+    "--severities", promotedAs(sprint.fixFindings, selected),
   ], { env: sprint.childEnv() });
   ctx.log(`FEATURE-REVIEW: promote: ${promotable.length} finding(s) → ${defer.stdout.trim() || defer.stderr.trim()}`);
   if (defer.code !== 0 || !/^defer: /m.test(defer.stdout)) return {};

@@ -127,8 +127,8 @@ fi
 # MAIN_ROOT resolution — must land on the *shared* main checkout even when this script runs
 # from inside a crew-afk worktree (solve-issue's own DISCOVER fallback, Step 5, can invoke
 # this from a worker's worktree cwd when the sprint-level cache never got written): prefer
-# the $MAIN_ROOT env var the orchestrator/dispatcher already exports (dispatch.mjs,
-# dispatch-agent.sh), then fall back to _main_root_of's --git-common-dir trick (mirrors
+# the $MAIN_ROOT env var the orchestrator already exports to every dispatch (dispatch.mjs),
+# then fall back to _main_root_of's --git-common-dir trick (mirrors
 # verify-worktree.sh's own helper of the same name), which resolves the main worktree's root
 # from any linked worktree without needing an env var at all. `git rev-parse --show-toplevel`
 # alone — the prior behaviour — returns the *current* worktree's own root, which is wrong

@@ -37,20 +37,14 @@ function launcherPlatforms() {
   return m[1].split(/\s+/).filter(Boolean);
 }
 
-function coderDefinition(platform) {
-  const file = platform === "codex" ? "codex.agent.toml" : `${platform}.agent.md`;
-  const body = readFileSync(join(REPO, "agents/crew-coder", file), "utf8");
-  // crew-coder is one protocol with four platform bindings: install.sh substitutes
-  // {{PROTOCOL}} with agents/crew-coder/protocol.md, so the field list a worker is
-  // actually given exists only after that substitution.
-  if (!body.includes("{{PROTOCOL}}")) return body;
-  const protocol = readFileSync(join(REPO, "agents/crew-coder/protocol.md"), "utf8");
-  return body.replace("{{PROTOCOL}}", protocol);
+function coderDefinition() {
+  // No agent file: the protocol is the whole definition, rendered per dispatch.
+  return readFileSync(join(REPO, "orchestrator/roles/coder.md"), "utf8");
 }
 
 test("every launcher platform's coder declares the parser's exact field list", () => {
   for (const platform of launcherPlatforms()) {
-    const text = coderDefinition(platform);
+    const text = coderDefinition();
     for (const field of WORKER_FIELDS) {
       assert.match(text, new RegExp(`"${field}"`), `${platform} coder never names "${field}"`);
     }
@@ -75,7 +69,7 @@ test("every launcher platform's coder declares the parser's exact field list", (
 test("the JSON a launcher coder is told to emit round-trips through the parser", () => {
   // Lifted from the definition itself rather than retyped, so a drifted example fails here
   // instead of at 2am in a sprint.
-  const text = coderDefinition("pi");
+  const text = coderDefinition();
   const block = /```json\s*\n([\s\S]*?)\n```/.exec(text);
   assert.ok(block, "pi coder has no ```json block");
   const template = block[1]
@@ -103,7 +97,7 @@ test("there is no markdown fallback — an un-migrated coder that never writes t
 });
 
 test("the reviewer protocol states the findings shape the parser promotes from", () => {
-  const protocol = readFileSync(join(REPO, "agents/crew-reviewer/protocol.md"), "utf8");
+  const protocol = readFileSync(join(REPO, "orchestrator/roles/reviewer.md"), "utf8");
   assert.match(protocol, /"severity": "CRITICAL"/);
   assert.match(protocol, /verifiable fix criterion/);
   // The verdict field it is printed beneath is the other half of the same contract.
@@ -124,7 +118,7 @@ test("the reviewer protocol states the findings shape the parser promotes from",
 });
 
 test("the triage protocol states the json verdict the parser reads, and never trusts the coder's own diagnosis", () => {
-  const protocol = readFileSync(join(REPO, "agents/crew-triage/protocol.md"), "utf8");
+  const protocol = readFileSync(join(REPO, "orchestrator/roles/triage.md"), "utf8");
   assert.match(protocol, /"fixable": "yes \| no"/);
   assert.match(protocol, /"category":/);
   assert.match(protocol, /"detail":/);
@@ -141,13 +135,11 @@ test("the triage protocol states the json verdict the parser reads, and never tr
   assert.equal(parsed.category, "wrong dependency version");
 });
 
-test("every launcher platform installs a crew-triage agent definition distinct from the coder and reviewer", () => {
+test("every launcher platform has no agent file, and the triage protocol exists once", () => {
   for (const platform of launcherPlatforms()) {
-    const file = platform === "codex" ? "codex.agent.toml" : `${platform}.agent.md`;
-    const p = join(REPO, "agents/crew-triage", file);
-    assert.ok(existsSync(p), `agents/crew-triage/${file} is missing`);
-    const body = readFileSync(p, "utf8");
-    assert.match(body, /\{\{PROTOCOL\}\}/, `${platform} crew-triage shim never inlines the protocol`);
-    assert.match(body, /crew-triage/);
+    for (const file of [`${platform}.agent.md`, `${platform}.agent.toml`, `${platform}.md`]) {
+      assert.ok(!existsSync(join(REPO, "agents/crew-triage", file)), `agents/crew-triage/${file} should not exist`);
+    }
   }
+  assert.ok(existsSync(join(REPO, "orchestrator/roles/triage.md")));
 });

@@ -135,7 +135,7 @@ SH
   configure_github
   stub_gh
 
-  run bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  run bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md
   [ "$status" -eq 0 ]
   [[ "$output" == "defer: https://github.com/acme/widgets/issues/42" ]]
@@ -168,7 +168,7 @@ SH
   configure_github "owner/name"
   stub_gh
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q -- '--repo owner/name' "$GH_CALLS_LOG"
 }
@@ -177,7 +177,7 @@ SH
   configure_github
   stub_gh
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   ! grep -q -- '--repo' "$GH_CALLS_LOG"
 }
@@ -186,7 +186,7 @@ SH
   configure_github
   stub_gh
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^Source: review (crew/feat/a)$' "$GH_LAST_BODY"
 }
@@ -195,7 +195,7 @@ SH
   configure_github
   stub_gh
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md \
     --blocked-by 5 >/dev/null
   grep -q '^## Blocked by$' "$GH_LAST_BODY"
@@ -206,7 +206,7 @@ SH
   configure_github
   stub_gh
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   ! grep -q '## Blocked by' "$GH_LAST_BODY"
 }
@@ -215,7 +215,7 @@ SH
   configure_github
   stub_gh "[]"
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
   grep -q -- 'api repos/{owner}/{repo}/milestones' "$GH_CALLS_LOG"
@@ -227,7 +227,7 @@ SH
   configure_github
   stub_gh '[{"title": "feat"}]'
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
   grep -q -- 'api repos/{owner}/{repo}/milestones$' "$GH_CALLS_LOG"
@@ -238,7 +238,7 @@ SH
   configure_github "owner/name"
   stub_gh "[]"
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
   grep -q -- 'api repos/owner/name/milestones' "$GH_CALLS_LOG"
@@ -252,7 +252,7 @@ exit 1
 SH
   chmod +x "$STUB/gh"
 
-  run bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  run bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md
   [ "$status" -ne 0 ]
   [[ "$output" == *"gh api milestones list failed"* ]]
@@ -262,7 +262,7 @@ SH
   configure_github
   stub_gh
 
-  CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL, HIGH" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^## Promoted Findings' "$REPORT"
   grep -q -- '- crew/feat/a: CRITICAL, HIGH → https://github.com/acme/widgets/issues/42' "$REPORT"
@@ -275,7 +275,7 @@ SH
   stub_gh
   printf 'Some body with no Source line.\n' > "$GH_VIEW_BODY_FILE"
 
-  run bash "$PROMOTE" guard --issue 42
+  run bash "$PROMOTE" guard --issue 42 --severities actionable
   [[ "$output" == *"eligible — threshold: actionable"* ]]
   grep -q '^issue view 42' "$GH_CALLS_LOG"
 }
@@ -285,7 +285,7 @@ SH
   stub_gh
   printf 'Source: some-report (some-branch)\n' > "$GH_VIEW_BODY_FILE"
 
-  run bash "$PROMOTE" guard --issue 42
+  run bash "$PROMOTE" guard --issue 42 --severities actionable
   [[ "$output" == *"skip — source-guarded"* ]]
 }
 
@@ -297,7 +297,7 @@ exit 1
 SH
   chmod +x "$STUB/gh"
 
-  run bash "$PROMOTE" guard --issue 999
+  run bash "$PROMOTE" guard --issue 999 --severities actionable
   [[ "$output" == *"skip — issue not found: 999"* ]]
 }
 
@@ -318,7 +318,7 @@ SH
 # ─── the local path is unchanged ───────────────────────────────────────────────
 
 @test "with no tracker doc at all, defer still writes a local file exactly as before" {
-  run bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  run bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md
   [[ "$output" == "defer: .scratch/feat/issues/open/01-fix-findings-a.md" ]]
   [ -f .scratch/feat/issues/open/01-fix-findings-a.md ]
@@ -384,7 +384,7 @@ no_local_paths() {
   stub_gh
   write_full_review
 
-  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^## Review findings$' "$GH_LAST_BODY"
   grep -q '^\[CRITICAL\] Unchecked input reaches the shell' "$GH_LAST_BODY"
@@ -432,7 +432,7 @@ Fix: quote and guard the variable
 \`\`\`
 EOF
 
-  CREW_FIX_FINDINGS=medium bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL, HIGH, MEDIUM" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^## Review findings$' "$GH_LAST_BODY"
   grep -q '^# build the target$' "$GH_LAST_BODY"
@@ -447,7 +447,7 @@ EOF
   stub_gh
   write_full_review
 
-  CREW_FIX_FINDINGS=actionable bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q 'Unchecked input reaches the shell' "$GH_LAST_BODY"
   absent -q 'Poor variable name'
@@ -458,7 +458,7 @@ EOF
   configure_github
   stub_gh
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^## Review findings$' "$GH_LAST_BODY"
   grep -q 'src/x.ts:12.* unchecked input' "$GH_LAST_BODY"
@@ -471,7 +471,7 @@ EOF
   write_full_review
   sed -i.bak "s#^Issue: unclear name#Issue: unclear name#; s#^Fix: validate cmd against an allow-list#Fix: see /Users/alice/proj/src/x.ts and $TEMP_DIR/.scratch/feat/notes.md#" "$REPORT"
 
-  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^Fix: see .*x.ts' "$GH_LAST_BODY"
   no_local_paths
@@ -530,20 +530,20 @@ EOF
   : > .scratch/feat/prd-audit.md
   : > .scratch/feat/verify.out
 
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42
+  run bash "$PROMOTE" guard --issue 42 --severities actionable
   [[ "$output" == *"skip — source-guarded"* ]]
 
   bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md >/dev/null
   cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42
+  run bash "$PROMOTE" guard --issue 42 --severities actionable
   [[ "$output" == *"skip — source-guarded"* ]]
 
   bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/verify.out --criteria-file integ.md >/dev/null
   cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42
+  run bash "$PROMOTE" guard --issue 42 --severities actionable
   [[ "$output" == *"skip — source-guarded"* ]]
 }
 
@@ -551,6 +551,6 @@ EOF
   configure_github
   stub_gh
   printf '## Problem\n\n```\nSource: .scratch/x/sprint-review-1.md (b)\n```\n\n~~~\nSource: y\n~~~\n' > "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42
+  run bash "$PROMOTE" guard --issue 42 --severities actionable
   [[ "$output" == *"eligible"* ]]
 }

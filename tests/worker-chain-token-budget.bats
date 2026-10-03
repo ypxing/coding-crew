@@ -207,8 +207,8 @@ words_of() {
   # parser or gate that rejects inputs the existing reader accepts stops valid work, and no other
   # class asks the reviewer to look outside the diff for that reader: a linter rejecting issue
   # sets the orchestrator dispatches fine reached a merged PR past both review modes.
-  local protocol="$REPO_ROOT/agents/crew-reviewer/protocol.md"
-  local refs="$REPO_ROOT/agents/crew-reviewer/assets/references"
+  local protocol="$REPO_ROOT/orchestrator/roles/reviewer.md"
+  local refs="$REPO_ROOT/orchestrator/roles/reviewer/references"
   local total=$(( $(words_of "$protocol") + $(words_of "$refs/quality.md") \
                   + $(words_of "$refs/web-security.md") + $(words_of "$refs/react.md") ))
   [ "$total" -lt 2680 ] || { echo "reviewer chain is $total words (budget 2680)" >&2; return 1; }

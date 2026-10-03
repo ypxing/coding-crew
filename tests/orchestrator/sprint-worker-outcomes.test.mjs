@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, SCRIPTS, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, workerReport, triageVerdict, coderSpawns, privateScripts, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, test } from "./helpers/sprint.mjs";
+import { MAIN, SCRIPTS, FAKE, sprintEnv, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, workerReport, triageVerdict, coderSpawns, privateScripts, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, test } from "./helpers/sprint.mjs";
 
 // ─── a coder that stops short with commits: its report is a claim, the gates decide ───────
 
@@ -308,14 +308,14 @@ test("a coder that hits afk.limits.coder.usd is blocked at once, not retried", (
     ].join("\n"),
   );
   chmodSync(join(stub, "claude"), 0o755);
-  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--no-baseline", "--no-integration-check", "--no-commands"], {
+  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
     cwd: root,
-    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: "", MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
+    env: { ...process.env, CREW_NO_COMMANDS: "1", CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: "", MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
   });
   assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
-  const calls = readFileSync(argsLog, "utf8").trim().split("\n").filter((l) => l.includes("--agent crew-coder"));
+  const calls = readFileSync(argsLog, "utf8").trim().split("\n").filter((l) => l.includes("--disallowedTools Agent"));
   assert.equal(calls.length, 1, "a capped coder is never dispatched again");
-  assert.match(calls[0], /--max-budget-usd 0\.5 /);
+  assert.match(calls[0], /--max-budget-usd 0\.5/);
   const s = state(root);
   assert.deepEqual(s.blocked_slugs, ["alpha"]);
   assert.match(s.retention.alpha.reason, /^blocked — limit-exceeded \(\$0\.5\) — the coder dispatch hit afk\.limits\.coder\.usd after \$0\.61$/);
@@ -371,7 +371,7 @@ test("a blocked-by dependency is not dispatched until its blocker closes, and di
   assert.equal(s.rounds, 1, `expected exactly 1 attempt per issue, got ${s.rounds}`);
 });
 
-test("--max-rounds caps attempts per issue, not the sprint's total dispatch count", () => {
+test("CREW_MAX_ROUNDS caps attempts per issue, not the sprint's total dispatch count", () => {
   // A continuous pool has no round barrier serializing "everyone gets one attempt before
   // anyone gets a second" for free — --max-rounds has to enforce that itself, per issue,
   // or the first issue a worker claims could exhaust the whole budget while its siblings
@@ -505,4 +505,34 @@ test("a verify that really fails still goes to triage", () => {
   const { lines } = commandLines(root, ["--max-rounds", "1"]);
   assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1, "a named failure is not re-run");
   assert.equal(triageSpawns(lines), 1);
+});
+
+test("a hangup (terminal closed, SSH dropped) kills every worker the run started", async () => {
+  // Workers run in their own sessions, so the terminal's SIGHUP never reaches them: the run must.
+  const { spawn, spawnSync } = await import("node:child_process");
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const marker = "37.4142";
+  fake(root, "alpha.worker-sleep", `${marker}\n`);
+  // Anchored: an unanchored -f also matches any shell whose command line merely mentions it.
+  const exact = `^sleep ${marker.replace(".", "\\.")}$`;
+  const alive = () => spawnSync("pgrep", ["-f", exact]).status === 0;
+  const child = spawn("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
+    cwd: root,
+    env: sprintEnv({ ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root }),
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  try {
+    for (let i = 0; i < 200 && !alive(); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.ok(alive(), "the worker started");
+    const exited = new Promise((r) => child.on("exit", (code, signal) => r({ code, signal })));
+    child.kill("SIGHUP");
+    const { code } = await exited;
+    assert.equal(code, 129);
+    for (let i = 0; i < 40 && alive(); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(alive(), false, "the worker's process group is gone");
+  } finally {
+    spawnSync("pkill", ["-f", exact]);
+    child.kill("SIGKILL");
+  }
 });

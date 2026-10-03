@@ -206,7 +206,7 @@ const STATE_KEY = { [BASELINE_STEM]: "baseline", [INTEGRATION_STEM]: "integratio
 /**
  * Run the project's checks once on the feature branch's tip, in a throwaway worktree set up
  * exactly as an issue's is (include, deps), so a failure here is the one every issue's verify
- * would repeat. A pass is cached by the tip's commit; a failure never is, since an
+ * would repeat. A pass is cached by the tip's commit, and by its git tree (a tree any check already passed); a failure never is, since an
  * environment the human fixed (a service started) should be re-checked on the next run.
  * `stem` names the worktree, the verify record and the cache: `_baseline` before any dispatch
  * (runBaseline), `_integration` at each drain of the queue (runIntegrationCheck).
@@ -214,15 +214,63 @@ const STATE_KEY = { [BASELINE_STEM]: "baseline", [INTEGRATION_STEM]: "integratio
  * Returns `{ status: "pass" | "cached" | "fail", commit, failed: [{check, log, missing}], reason }`.
  */
 export function runFeatureChecks(ctx, { stem }) {
-  const { sprint, effects, options } = ctx;
+  const prep = prepareChecks(ctx, stem);
+  if (prep.result) return prep.result;
+  try {
+    if (ctx.options.installDeps !== false) {
+      const failed = installDeps(ctx, prep, prep.effects.bash("ensure-deps.sh", depsArgs(prep), { env: ctx.sprint.childEnv() }));
+      if (failed) return failed;
+    }
+    return concludeChecks(ctx, prep, prep.effects.bash("verify-worktree.sh", verifyArgs(prep), { env: ctx.sprint.childEnv() }));
+  } finally {
+    cleanupChecks(prep);
+  }
+}
+
+/** runFeatureChecks without blocking the event loop (the baseline, which runs alongside dispatch). */
+export async function runFeatureChecksAsync(ctx, { stem }) {
+  const prep = prepareChecks(ctx, stem);
+  if (prep.result) return prep.result;
+  try {
+    if (ctx.options.installDeps !== false) {
+      const deps = await prep.effects.bashAsync("ensure-deps.sh", depsArgs(prep), { env: ctx.sprint.childEnv() });
+      const failed = installDeps(ctx, prep, deps);
+      if (failed) return failed;
+    }
+    return concludeChecks(ctx, prep, await prep.effects.bashAsync("verify-worktree.sh", verifyArgs(prep), { env: ctx.sprint.childEnv() }));
+  } finally {
+    cleanupChecks(prep);
+  }
+}
+
+const depsArgs = (p) => ["--dir", p.path, "--slug", p.stem, "--stem", p.stem];
+const verifyArgs = (p) => ["--dir", p.path, "--stem", p.stem];
+
+/** Was this git tree already checked green — by a baseline, an integration check, or a per-issue verify? */
+function treePassed(state, tree) {
+  if (!tree) return false;
+  if (Array.isArray(state.passing_trees) && state.passing_trees.includes(tree)) return true;
+  return [state.baseline, state.integration].some((r) => r?.verdict === "pass" && r.tree === tree);
+}
+
+/** The commit, the cache lookup and the worktree: either an early `result` or what the rest needs. */
+function prepareChecks(ctx, stem) {
+  const { sprint, effects } = ctx;
   const step = stem.replace(/^_/, "");
   const label = step.toUpperCase();
   const stateKey = STATE_KEY[stem];
   const commit = effects.gitRead(["rev-parse", `${sprint.featureBranch}^{commit}`]).stdout.trim();
-  const cached = sprint.readState()[stateKey];
-  if (commit && cached?.commit === commit && cached.verdict === "pass") {
-    ctx.log(`${label}: pass (cached — ${sprint.featureBranch} already passed at ${commit.slice(0, 12)})`);
-    return { status: "cached", commit, failed: [] };
+  const tree = effects.gitRead(["rev-parse", `${sprint.featureBranch}^{tree}`]).stdout.trim();
+  const state = sprint.readState();
+  const cached = state[stateKey];
+  const commitHit = cached?.commit === commit && cached.verdict === "pass";
+  if (commit && (commitHit || treePassed(state, tree))) {
+    ctx.log(`${label}: pass (cached — ${commitHit ? `${sprint.featureBranch} already passed at ${commit.slice(0, 12)}` : `${sprint.featureBranch}'s tree already passed`})`);
+    // A hit by tree, not by this slot's own record: the slot now says pass for this commit too.
+    if (!commitHit) {
+      sprint.state(["baseline", "--slot", stateKey, "--commit", commit, "--verdict", "pass", ...(tree ? ["--tree", tree] : [])]);
+    }
+    return { result: { status: "cached", commit, failed: [] } };
   }
 
   const branch = `crew/${sprint.featureSlug}/${stem}`;
@@ -234,43 +282,55 @@ export function runFeatureChecks(ctx, { stem }) {
   const add = effects.git(["worktree", "add", "-B", branch, path, sprint.featureBranch]);
   if (add.code !== 0) {
     // Not the project's fault: a baseline that could not run says nothing, so it does not stop the run.
+    // An integration check that could not run proved nothing either, so it reads `skipped`, not `pass`.
     ctx.log(`${label}: skipped — could not create its worktree: ${add.stderr.trim()}`);
-    return { status: "pass", commit, failed: [], reason: "worktree add failed" };
+    return { result: { status: stem === INTEGRATION_STEM ? "skipped" : "pass", commit, failed: [], reason: "worktree add failed" } };
   }
+  applyWorktreeInclude(effects.mainRoot, path);
+  return { stem, step, stateKey, commit, tree, branch, path, effects };
+}
 
-  try {
-    applyWorktreeInclude(effects.mainRoot, path);
-    if (options.installDeps !== false) {
-      const deps = effects.bash("ensure-deps.sh", ["--dir", path, "--slug", stem, "--stem", stem], {
-        env: sprint.childEnv(),
-      });
-      const line = depsLine(deps.stdout);
-      if (line) ctx.log(`${step} ${line}`, "debug"); // ensure-deps.sh traced [DEPS]
-      if (/^DEPS: failed\b/.test(line)) {
-        sprint.state(["baseline", "--slot", stateKey, "--commit", commit, "--verdict", "fail"]);
-        return { status: "fail", commit, failed: [], reason: `dependency install failed — ${line.replace(/^DEPS:\s*/, "")}` };
-      }
-    }
-    const verify = effects.bash("verify-worktree.sh", ["--dir", path, "--stem", stem], { env: sprint.childEnv() });
-    logVerifyOutput(ctx, join(sprint.dispatchDir, stem), `step=${step}`, null, verify);
-    const verdict = verify.code === 0 ? "pass" : "fail";
-    sprint.state(["baseline", "--slot", stateKey, "--commit", commit, "--verdict", verdict]);
-    if (verdict === "pass") return { status: "pass", commit, failed: [] };
-    const recordFile = join(sprint.dispatchDir, stem, "verify.json");
-    const record = readVerifyRecord(recordFile);
-    const failed = Object.entries(record.checks)
-      .filter(([, result]) => result === "fail")
-      .map(([check]) => ({ check, log: record.logs[check] ?? null, missing: record.missing[check] ?? null }));
-    return { status: "fail", commit, failed, reason: `verify-worktree.sh failed — see ${recordFile}` };
-  } finally {
-    removeWorktree(effects, { mainRoot: effects.mainRoot, path });
-    effects.git(["branch", "-D", branch]);
+const recordVerdict = (ctx, p, verdict) =>
+  ctx.sprint.state(["baseline", "--slot", p.stateKey, "--commit", p.commit, "--verdict", verdict, ...(p.tree ? ["--tree", p.tree] : [])]);
+
+/** Logs the deps outcome; returns a failing result when the install failed. */
+function installDeps(ctx, p, deps) {
+  const line = depsLine(deps.stdout);
+  if (line) ctx.log(`${p.step} ${line}`, "debug"); // ensure-deps.sh traced [DEPS]
+  if (/^DEPS: failed\b/.test(line)) {
+    recordVerdict(ctx, p, "fail");
+    return { status: "fail", commit: p.commit, failed: [], reason: `dependency install failed — ${line.replace(/^DEPS:\s*/, "")}` };
   }
+  return null;
+}
+
+function concludeChecks(ctx, p, verify) {
+  const { sprint } = ctx;
+  logVerifyOutput(ctx, join(sprint.dispatchDir, p.stem), `step=${p.step}`, null, verify);
+  const verdict = verify.code === 0 ? "pass" : "fail";
+  recordVerdict(ctx, p, verdict);
+  if (verdict === "pass") return { status: "pass", commit: p.commit, failed: [] };
+  const recordFile = join(sprint.dispatchDir, p.stem, "verify.json");
+  const record = readVerifyRecord(recordFile);
+  const failed = Object.entries(record.checks)
+    .filter(([, result]) => result === "fail")
+    .map(([check]) => ({ check, log: record.logs[check] ?? null, missing: record.missing[check] ?? null }));
+  return { status: "fail", commit: p.commit, failed, reason: `verify-worktree.sh failed — see ${recordFile}` };
+}
+
+function cleanupChecks(p) {
+  removeWorktree(p.effects, { mainRoot: p.effects.mainRoot, path: p.path });
+  p.effects.git(["branch", "-D", p.branch]);
 }
 
 /** Before any dispatch: the feature branch's own checks. */
 export function runBaseline(ctx) {
   return runFeatureChecks(ctx, { stem: BASELINE_STEM });
+}
+
+/** The same, started alongside dispatch: resolves to the baseline's result. */
+export function runBaselineAsync(ctx) {
+  return runFeatureChecksAsync(ctx, { stem: BASELINE_STEM });
 }
 
 /**
@@ -284,6 +344,8 @@ export function runIntegrationCheck(ctx) {
   if (result.status === "fail") {
     const what = result.failed.length ? result.failed.map((f) => f.check).join(", ") : result.reason;
     ctx.log(`INTEGRATION: fail — ${what} (${at})`, "error");
+  } else if (result.status === "skipped") {
+    ctx.log(`INTEGRATION: skipped — ${result.reason} (${at})`, "warn");
   } else if (result.status === "pass") {
     ctx.log(`INTEGRATION: ${result.reason ? `not run — ${result.reason}` : "pass"} (${at})`);
   }
@@ -320,7 +382,8 @@ export function integrationSection(mainRoot, featureBranch, result, fix = null, 
   const history = earlier.length
     ? ["", `Fix issue(s) from earlier red drain(s) this run: ${earlier.map((f) => f.ref).join(", ")}.`]
     : [];
-  if (result.status === "cached") return [`Passed on ${at} (cached — the same commit already passed).`, ...history].join("\n");
+  if (result.status === "cached") return [`Passed on ${at} (cached — this tree already passed).`, ...history].join("\n");
+  if (result.status === "skipped") return `**Skipped:** ${result.reason}. Nothing checked the merged branch.`;
   if (result.status === "pass") {
     return [result.reason ? `**Not run:** ${result.reason}.` : `Passed on ${at}.`, ...history].join("\n");
   }

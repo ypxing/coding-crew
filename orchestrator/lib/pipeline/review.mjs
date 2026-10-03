@@ -9,9 +9,9 @@ import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { parseReviewReport, severityNames } from "../report.mjs";
+import { parseReviewReport, promoteSeverities, severityNames } from "../report.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
-import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
+import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /** A path that only tests: a test/spec file by name, or anything under a test or fixture dir. */
 export function isTestPath(path) {
@@ -49,6 +49,8 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   // A stale sidecar at this fixed path must not be read back as this round's verdict.
   rmSync(sidecarFile, { force: true });
 
+  // The commit the reviewer is given: the AC receipt is written for it, not for a later tip.
+  const reviewedSha = effects.gitRead(["rev-parse", "--verify", `refs/heads/${branch}`]).stdout.trim();
   const base = effects.gitRead(["merge-base", sprint.featureBranch, branch]).stdout.trim();
   const changed = base ? effects.gitRead(["diff", "--name-only", `${base}..${branch}`]).stdout.split("\n").filter(Boolean) : [];
 
@@ -80,7 +82,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   ctx.log(
     `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-review model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`,
   );
-  const result = await dispatch(
+  const guarded = await readOnlyDispatch(ctx, { label: `reviewer ${issue.slug}`, branches: [branch] }, () => dispatch(
     effects,
     reviewer.runtime,
     {
@@ -94,7 +96,6 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: reviewer.scriptsDir,
       slug: dispatchStem(issue),
       issueNumber: issue.number,
       round: worker.attempt,
@@ -105,8 +106,10 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       timeoutMs: options.timeoutMs.reviewer,
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
-  );
-  sprint.recordDispatchCost(result, { slug: issue.slug, role: "reviewer", attempt: worker.attempt });
+  ));
+  const result = guarded.result;
+  if (result) sprint.recordDispatchCost(result, { slug: issue.slug, role: "reviewer", attempt: worker.attempt });
+  if (guarded.violation) return { completed: false, violation: true, reportFile, reason: guarded.violation, parsed: { ok: false } };
 
   const sidecar = readSidecar(sidecarFile);
 
@@ -134,13 +137,13 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
-  return { completed: true, reportFile, parsed, written: sidecar };
+  return { completed: true, reportFile, parsed, written: sidecar, reviewedSha };
 }
 
 export async function promote(ctx, worker, review, outcome) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
-  const guard = effects.bash("promote-findings.sh", ["guard", "--issue", issueRef(issue)], {
+  const guard = effects.bash("promote-findings.sh", ["guard", "--issue", issueRef(issue), "--severities", promoteSeverities(sprint.fixFindings)], {
     env: sprint.childEnv(),
   });
   const guardText = guard.stdout.trim();
@@ -190,7 +193,7 @@ export async function promote(ctx, worker, review, outcome) {
     "--report", review.reportFile,
     "--criteria-file", criteriaPath,
     // Names what was promoted: a verdict, or — when triage failed — the severities of the fallback rule.
-    ...(promotedAs(sprint.fixFindings, selected) ? ["--severities", promotedAs(sprint.fixFindings, selected)] : []),
+    "--severities", promotedAs(sprint.fixFindings, selected),
   ], { env: sprint.childEnv() });
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${defer.stdout.trim()}`);
   outcome.promoted = promotable.length;

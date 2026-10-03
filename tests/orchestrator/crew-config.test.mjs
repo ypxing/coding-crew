@@ -294,32 +294,18 @@ test("describeModel shows a visible ANTHROPIC_DEFAULT_*_MODEL mapping for a clau
 
 // ─── crewPreflight ───────────────────────────────────────────────────────────
 
-// Every CLI on PATH, no agent definition anywhere: only dispatcher and agent problems remain.
+// Every CLI on PATH.
 const cliFound = { exec: () => ({ code: 0, stdout: "/usr/bin/x", stderr: "" }) };
 const onClaude = (over = {}) => Object.fromEntries(activeRoles().map((r) => [r, { runtime: over[r] ?? "claude", model: null }]));
 
-test("crewPreflight: a runtime only a plain dispatch uses needs its CLI, not its dispatcher", () => {
+test("crewPreflight: a pi/codex runtime needs its CLI and nothing else — no dispatcher, no agent file", () => {
   const prev = process.env.CREW_FAKE_DISPATCH;
   delete process.env.CREW_FAKE_DISPATCH;
   try {
-    const crew = onClaude({ commandFinder: "codex", prdAuditor: "pi" });
-    const problems = crewPreflight(cliFound, EMPTY_HOME, {
-      crew, roles: activeRoles(), launcher: "claude", dispatcherDirs: { codex: null, pi: null },
-    });
-    assert.deepEqual(problems.filter((p) => /→ (codex|pi)/.test(p)), [], problems.join("\n"));
-  } finally {
-    if (prev !== undefined) process.env.CREW_FAKE_DISPATCH = prev;
-  }
-});
-
-test("crewPreflight: an agent on a pi/codex runtime still needs that runtime's dispatcher", () => {
-  const prev = process.env.CREW_FAKE_DISPATCH;
-  delete process.env.CREW_FAKE_DISPATCH;
-  try {
-    const problems = crewPreflight(cliFound, EMPTY_HOME, {
-      crew: onClaude({ reviewer: "codex" }), roles: activeRoles(), launcher: "claude", dispatcherDirs: { codex: null },
-    });
-    assert.ok(problems.includes("reviewer → codex: dispatch-codex-agent.sh not found for codex — run: ./install.sh codex --skill crew-afk"), problems.join("\n"));
+    const crew = onClaude({ reviewer: "codex", prdAuditor: "pi" });
+    assert.deepEqual(crewPreflight(cliFound, EMPTY_HOME, { crew, roles: activeRoles(), launcher: "claude" }), []);
+    const noCli = { exec: (cmd, args) => ({ code: /codex/.test(args.join(" ")) ? 1 : 0, stdout: "", stderr: "" }) };
+    assert.deepEqual(crewPreflight(noCli, EMPTY_HOME, { crew, roles: activeRoles(), launcher: "claude" }), ["reviewer → codex: codex CLI not found on PATH"]);
   } finally {
     if (prev !== undefined) process.env.CREW_FAKE_DISPATCH = prev;
   }
@@ -426,7 +412,7 @@ test("validateFlags: a bad flag names the flag the user typed", () => {
   assert.deepEqual(validateFlags({ fixFindings: "high" }), []);
   assert.deepEqual(validateFlags({ fixFindings: "actionable" }), []);
   assert.match(validateFlags({ fixFindings: "severe" })[0], /^--fix-findings is "severe"/);
-  assert.match(validateFlags({ fixFindings: "critical-medium" }, { fixFindings: "--promote" })[0], /^--promote is "critical-medium"/);
+  assert.match(validateFlags({ fixFindings: "critical-medium" }, { fixFindings: "--fix-findings" })[0], /^--fix-findings is "critical-medium"/);
   assert.match(validateFlags({ timeouts: { coder: Number.NaN } })[0], /^--coder-timeout must be a positive number/);
   assert.match(validateFlags({ maxParallel: 0 })[0], /^--max-parallel must be a positive integer/);
   // setTimeout fires at once past 2^31-1 ms: a "no limit" timeout would kill every dispatch.
@@ -434,11 +420,11 @@ test("validateFlags: a bad flag names the flag the user typed", () => {
   assert.match(validateFlags({ timeouts: { coder: Infinity } })[0], /^--coder-timeout .* at most 35791/);
   assert.deepEqual(validateFlags({ timeouts: { coder: 35791 } }), []);
   // The flag the user typed, once, when more than one sets the same timeout.
-  assert.match(validateFlags({ timeouts: { coder: Number.NaN } }, { "timeouts.coder": "--worker-timeout" })[0], /^--worker-timeout /);
+  assert.match(validateFlags({ timeouts: { coder: Number.NaN } }, { "timeouts.coder": "--coder-timeout" })[0], /^--coder-timeout /);
   const review = { reviewer: 0, triage: 0, commandFinder: 0, prdAuditor: 0 };
-  const flagOf = Object.fromEntries(Object.keys(review).map((k) => [`timeouts.${k}`, "--review-timeout"]));
+  const flagOf = Object.fromEntries(Object.keys(review).map((k) => [`timeouts.${k}`, "--reviewer-timeout"]));
   assert.deepEqual(validateFlags({ timeouts: review }, flagOf).length, 1);
-  assert.match(validateFlags({ timeouts: review }, flagOf)[0], /^--review-timeout /);
+  assert.match(validateFlags({ timeouts: review }, flagOf)[0], /^--reviewer-timeout /);
 });
 
 test("loadConfig: a legacy afk-models.json's old role names move under the new ones", () => {
@@ -560,4 +546,14 @@ test("ignoredLimitsNotice names each capped role not on claude, in one line", ()
   const notice = ignoredLimitsNotice({ coder: 5, reviewer: 1, triage: 1 }, crew);
   assert.match(notice, /^afk\.limits ignored for reviewer \(codex\), triage \(pi\) — /);
   assert.doesNotMatch(notice, /coder/);
+});
+
+test("maxWallMinutes: default 120, flag over config, 0 allowed, non-number rejected", async () => {
+  const { resolveSettings, validateFlags, DEFAULT_SETTINGS } = await import("../../orchestrator/lib/crew-config.mjs");
+  assert.equal(resolveSettings({}).maxWallMinutes, 120);
+  assert.equal(DEFAULT_SETTINGS.maxWallMinutes, 120);
+  assert.equal(resolveSettings({ afk: { maxWallMinutes: 30 } }).maxWallMinutes, 30);
+  assert.equal(resolveSettings({ afk: { maxWallMinutes: 30 }, cli: { maxWallMinutes: 0 } }).maxWallMinutes, 0);
+  assert.deepEqual(validateFlags({ maxWallMinutes: 0 }), []);
+  assert.match(validateFlags({ maxWallMinutes: NaN })[0], /--max-wall/);
 });

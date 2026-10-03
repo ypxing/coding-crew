@@ -17,20 +17,20 @@ import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { findingsTriagePrompt } from "../prompts.mjs";
-import { annotateFindings, applyFindingVerdicts, findingsAtOrAbove, parseFindingsTriage, severityNames } from "../report.mjs";
-import { limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
+import { annotateFindings, applyFindingVerdicts, findingsAtOrAbove, parseFindingsTriage, promoteSeverities, severityNames } from "../report.mjs";
+import { limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /** The severity rule a failed triage falls back to. */
 export const FALLBACK_LEVEL = "high";
 
 /**
  * What `defer --severities` records for a promotion made under `selected` (selectPromotable's
- * result): the verdict `actionable`, or — triage having failed — the severities of the fallback.
- * Null for a severity level, where `defer` already names its own.
+ * result): the level's own severities, the verdict `actionable`, or — triage having failed — the
+ * severities of the fallback.
  */
 export function promotedAs(fixFindings, selected) {
-  if (fixFindings !== "actionable") return null;
-  return selected.fallback ? severityNames(FALLBACK_LEVEL) : "actionable";
+  if (fixFindings === "actionable" && selected.fallback) return severityNames(FALLBACK_LEVEL);
+  return promoteSeverities(fixFindings);
 }
 
 /**
@@ -86,7 +86,7 @@ async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug,
 
   const triage = roleBinding(ctx, "triage");
   ctx.log(`[STEP] slug=${dispatchSlug} round=${round} step=dispatch-findings-triage model=${triage.model ?? "inherit"} runtime=${triage.runtime}`);
-  const result = await dispatch(
+  const guarded = await readOnlyDispatch(ctx, { label: `findings-triage ${dispatchSlug}`, ...(ref === sprint.featureBranch ? {} : { branches: [ref] }) }, () => dispatch(
     effects,
     triage.runtime,
     {
@@ -98,7 +98,6 @@ async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: triage.scriptsDir,
       slug: dispatchSlug,
       round,
       reportPath: sidecarFile,
@@ -108,8 +107,10 @@ async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug,
       timeoutMs: options.timeoutMs.triage,
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchSlug} round=${round} ${line}`),
     },
-  );
-  sprint.recordDispatchCost(result, { slug: ledgerSlug, role: "triage", attempt: round });
+  ));
+  const result = guarded.result;
+  if (result) sprint.recordDispatchCost(result, { slug: ledgerSlug, role: "triage", attempt: round });
+  if (guarded.violation) return { failed: guarded.violation };
 
   const capped = limitExceeded(result, "triage", triage);
   if (capped) return { failed: capped };

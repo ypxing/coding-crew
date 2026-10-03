@@ -17,71 +17,29 @@
       }
     }
   },
-  "agents": {
-    "crew-reviewer": {
-      "version": "1.10.0",
-      "source-dir": "crew-reviewer",
-      "replaces": [
-        "crew-code-reviewer"
-      ],
-      "description": "Reviews one branch per dispatch, before that branch merges and before any squash, and (feature mode) the whole feature diff once at the first drain; reports CRITICAL/HIGH/MEDIUM/LOW findings with snippet-anchored citations. Findings are advisory — no branch is blocked or re-queued.",
-      "deps": [],
-      "skills": [],
-      "docs": [],
-      "install": {
-        "shims": {
-          "claude": ".claude/agents/crew-reviewer.md",
-          "copilot": ".copilot/agents/crew-reviewer.agent.md",
-          "pi": ".pi/agents/crew-reviewer.md",
-          "codex": ".codex/agents/crew-reviewer.toml"
-        },
-        "assets": {
-          "source": "assets",
-          "dest": ".coding-crew/code-review"
-        }
-      }
+  "retired-agents": {
+    "names": [
+      "crew-coder",
+      "crew-reviewer",
+      "crew-triage",
+      "crew-code-reviewer"
+    ],
+    "paths": {
+      "claude": ".claude/agents/{name}.md",
+      "copilot": ".copilot/agents/{name}.agent.md",
+      "pi": ".pi/agents/{name}.md",
+      "codex": ".codex/agents/{name}.toml"
     },
-    "crew-triage": {
-      "version": "1.2.0",
-      "source-dir": "crew-triage",
-      "description": "Classifies a crew-afk branch's verification failure as fixable by more code on that branch, or as an environment/infrastructure problem no code change can fix. Dispatched only after verify-worktree.sh has already failed, and only before a coder would otherwise be redispatched for another full attempt. Independent of the coder that wrote the branch — the same reason review is a separate dispatch, not a self-grade.",
-      "deps": [],
-      "skills": [],
-      "docs": [],
-      "install": {
-        "shims": {
-          "claude": ".claude/agents/crew-triage.md",
-          "copilot": ".copilot/agents/crew-triage.agent.md",
-          "pi": ".pi/agents/crew-triage.md",
-          "codex": ".codex/agents/crew-triage.toml"
-        }
-      }
-    },
-    "crew-coder": {
-      "version": "1.10.8",
-      "source-dir": "crew-coder",
-      "description": "Implements a single issue using TDD, verifies checks, commits.",
-      "deps": [],
-      "skills": [
-        "tdd",
-        "dep-install",
-        "solve-issue"
-      ],
-      "install": {
-        "shims": {
-          "claude": ".claude/agents/crew-coder.md",
-          "copilot": ".copilot/agents/crew-coder.agent.md",
-          "pi": ".pi/agents/crew-coder.md",
-          "codex": ".codex/agents/crew-coder.toml"
-        }
-      }
-    }
+    "dirs": [
+      ".coding-crew/agents",
+      ".coding-crew/code-review"
+    ]
   },
   "skills": {
     "crew-afk": {
-      "version": "2.10.0",
+      "version": "2.14.0",
       "source-dir": "crew-afk",
-      "description": "Orchestrator that spawns parallel crew-coder agents in isolated worktrees, merges completed branches, runs a crew-reviewer pass, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
+      "description": "Orchestrator that dispatches each ready-for-agent issue to a coder CLI process in its own worktree, reviews and merges every branch, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
       "install-copilot": ".copilot/skills/crew-afk",
       "install-pi": ".pi/skills/crew-afk",
@@ -90,23 +48,16 @@
         "source": "orchestrator",
         "dest": ".coding-crew/crew-afk"
       },
+      "more-assets": [
+        {
+          "source": "skills/_shared/fragments",
+          "dest": ".coding-crew/skills/_shared/fragments"
+        }
+      ],
       "scripts": [
         "feature-branch-setup.sh",
         "discover-commands.sh",
         "write-commands-cache.sh"
-      ],
-      "platform-files": {
-        "pi": [
-          "scripts/dispatch-agent.sh"
-        ],
-        "codex": [
-          "scripts/dispatch-codex-agent.sh"
-        ]
-      },
-      "agent-deps": [
-        "crew-coder",
-        "crew-reviewer",
-        "crew-triage"
       ],
       "deps": [
         "tdd",
@@ -135,7 +86,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.11.0",
+      "version": "1.12.1",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
@@ -227,7 +178,7 @@
       ]
     },
     "add-tests": {
-      "version": "1.1.3",
+      "version": "1.1.4",
       "source-dir": "add-tests",
       "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
       "install": ".claude/skills/add-tests",

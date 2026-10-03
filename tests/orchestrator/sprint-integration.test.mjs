@@ -52,7 +52,9 @@ test("two branches green alone and red merged: the summary reports a failed ## I
 
 test("a green merged feature branch is reported passed, and a second drain at the same commit reuses the pass", () => {
   const root = fixtureRepo();
+  // Two issues: a lone one merges to the very tree its verify passed, which reads cached.
   addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
   const first = commandLines(root, [], { integration: true });
   assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
   assert.match(first.r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12}\./);
@@ -67,6 +69,17 @@ test("a green merged feature branch is reported passed, and a second drain at th
   assert.equal(integrationRuns(second.lines), 0);
   assert.match(second.r.stderr, /INTEGRATION: pass \(cached/);
   assert.match(second.r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12} \(cached/);
+});
+
+test("a verify that passed on a worktree with uncommitted files does not stand in for the integration check", () => {
+  // The committed tree lacks what the worktree had on disk, so the pass says nothing about it.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.untracked", "");
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(integrationRuns(lines), 1, "the merged tree is checked, not read as cached");
+  assert.match(traceLog(root), /\[TREE-NOT-CACHED\] slug=alpha/);
 });
 
 test("a drain with nothing merged runs no integration check", () => {
@@ -86,7 +99,8 @@ test("a red final integration check keeps --open-pr from opening the PR, and the
   fake(root, "_integration.triage", triageVerdict("no", "clashing changes", "nothing a coder can do here"));
   const { r, lines } = commandLines(root, ["--open-pr"], { integration: true });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(lines.filter((l) => /open-pr\.sh/.test(l)).length, 0, "nothing was pushed");
+  // Only the no-push call that turns an already-open PR into a draft (there is none here).
+  assert.deepEqual(lines.filter((l) => /open-pr\.sh/.test(l)).map((l) => /--no-push/.test(l)), [true], "nothing was pushed");
   assert.match(r.stdout, /## Pull Request\s+\*\*Not opened:\*\* the integration check failed on feature\/demo — see ## Integration check above\./);
 });
 
@@ -110,6 +124,7 @@ test("--no-integration-check and integrationCheck: false skip it; --no-baseline 
 
   const noBaseline = fixtureRepo();
   addIssue(noBaseline, "01-alpha.md");
+  addIssue(noBaseline, "02-beta.md");
   const r = commandLines(noBaseline, ["--no-baseline"], { integration: true });
   assert.equal(r.r.code, 0, `${r.r.stdout}\n${r.r.stderr}`);
   assert.equal(integrationRuns(r.lines), 1, "--no-baseline does not turn the integration check off");
@@ -272,12 +287,13 @@ test("a fixable red integration check becomes a fix issue, implemented in Phase 
   const { r, lines } = commandLines(root, [], { integration: true });
   assert.equal(r.code, 0, `the run is not stalled\n${r.stdout}\n${r.stderr}`);
   assert.equal(triageSpawns(lines), 1);
-  assert.equal(integrationRuns(lines), 2, "red, then re-checked after the fix");
+  assert.equal(integrationRuns(lines), 1, "red once; the fix branch merges to the tree its own verify passed, so the re-check is cached");
+  assert.match(r.stderr, /INTEGRATION: pass \(cached/);
   assert.deepEqual(integrationFixFiles(root, "open"), []);
   assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md"]);
   assert.deepEqual(state(root).completed_slugs.sort(), ["alpha", "beta", "fix-integration-1"]);
   assert.equal(state(root).integration.verdict, "pass");
-  assert.match(r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12}\./);
+  assert.match(r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12} \(cached/);
   assert.match(r.stdout, /Fix issue\(s\) from earlier red drain\(s\) this run: \S+03-fix-integration-1\.md/);
   assert.doesNotMatch(r.stdout, /STALLED/);
   // The fix issue: a source-guarded issue whose criterion is the checks, with triage's detail and the output tail.
@@ -350,25 +366,22 @@ test("a triage dispatch that fails is treated as fixable once: a fix issue, and 
   assert.match(r.stdout, /Fix issue\(s\) from earlier red drain\(s\) this run/);
 });
 
-test("the third red drain in a run is reported, ends the run stalled, and creates no third fix issue", () => {
+test("a fix issue that passes its own verify makes the merged tree a passed tree: the next drain is cached, not re-run", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   addIssue(root, "02-beta.md");
-  // Red only in the integration worktree, whatever any fix does: each fix issue passes its own
-  // verify and merges, and the merged branch is red again.
+  // Red only in the integration worktree, whatever any fix does. The fix issue passes its own
+  // verify and merges to exactly that tree, so no second integration run is paid for.
   writeFileSync(join(root, "Makefile"), "test:\n\t@case \"$$PWD\" in *_integration) echo 'alpha and beta clash' >&2; exit 1;; esac\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
   sh("git", ["-C", root, "add", "-A"]);
   sh("git", ["-C", root, "commit", "-q", "-m", "always red when merged"]);
   fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "reconcile alpha and beta"));
   const { r, lines } = commandLines(root, [], { integration: true });
-  assert.equal(r.code, 2, `stalled\n${r.stdout}\n${r.stderr}`);
-  assert.equal(triageSpawns(lines), 2, "no triage for the capped drain");
-  assert.equal(integrationRuns(lines), 3);
-  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md", "04-fix-integration-2.md"]);
-  assert.deepEqual(integrationFixFiles(root, "open"), []);
-  assert.match(r.stdout, /\*\*Not fixed:\*\* 2 integration fix issues were already implemented this run and the merged feature branch is still red — no further fix issue\./);
-  assert.match(r.stdout, /STALLED/);
-  assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} verdict=limit/);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 1);
+  assert.equal(integrationRuns(lines), 1);
+  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md"]);
+  assert.match(r.stderr, /INTEGRATION: pass \(cached/);
 });
 
 test("a fix issue whose coder blocks leaves the same commit red: no second triage, no second fix issue", () => {
@@ -383,6 +396,37 @@ test("a fix issue whose coder blocks leaves the same commit red: no second triag
   assert.equal(triageSpawns(lines), 1);
   assert.deepEqual(integrationFixFiles(root, "open"), ["03-fix-integration-1.md"]);
   assert.match(r.stdout, /\*\*Fix issue \S+03-fix-integration-1\.md was queued for this commit and has not landed\*\*/);
+});
+
+test("fix issues whose merged tree differs from their verified tree stay red: the cap stalls the run with no further fix issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  // Red in the integration worktree whatever any fix does. While a fix issue is verified, the
+  // feature branch moves (a sibling commit), so the fix merges to a tree its verify never saw
+  // and the integration check must really run again instead of reading cached.
+  const bump = [
+    "m=$$(cd $$(git rev-parse --git-common-dir)/.. && pwd)",
+    "f=$$(basename $$PWD)",
+    "echo x > $$m/bump-$$f.txt",
+    "git -C $$m add bump-$$f.txt",
+    "git -C $$m commit -q -m bump-$$f",
+  ].join("; ");
+  writeFileSync(
+    join(root, "Makefile"),
+    `test:\n\t@case "$$PWD" in *_integration) echo 'alpha and beta clash' >&2; exit 1;; *fix-integration-*) ${bump};; esac\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n`,
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red when merged; fixes move the branch"]);
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "reconcile alpha and beta"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 2, "two fix issues were triaged; the third red drain is capped before triage");
+  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md", "04-fix-integration-2.md"]);
+  assert.deepEqual(integrationFixFiles(root, "open"), [], "no third fix issue");
+  assert.equal(integrationRuns(lines), 3, "every drain's merged tree was new, so none was cached");
+  assert.match(r.stdout, /2 integration fix issues were already implemented this run .* no further fix issue/);
+  assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} verdict=limit/);
 });
 
 test("github: a fixable red integration check creates the fix issue in the milestone, ready-for-agent, and implements it", () => {
@@ -416,4 +460,46 @@ test("github: a fixable red integration check creates the fix issue in the miles
   assert.match(traceLog(root), /fix issue\(s\) listed after \d+ poll/);
   assert.match(r.stdout, /## Integration check\s+Passed/);
   assert.doesNotMatch(r.stdout, /Fix issues not implemented/);
+});
+
+// ─── reviewer, triage and feature review are mechanically read-only ──
+
+test("a reviewer that commits to the issue branch is not-run, logged [READONLY-VIOLATION], and never merged", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.misbehave", "commit");
+  const { r } = commandLines(root, ["--max-rounds", "1"]);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] reviewer alpha: changed refs\/heads\/crew\/demo\/alpha/, `${r.stdout}\n${r.stderr}`);
+  assert.match(state(root).retention.alpha.reason, /^review-not-run/);
+  assert.deepEqual(state(root).merged_branches ?? [], []);
+});
+
+test("a feature review that leaves an uncommitted edit in the main checkout is recorded not-run", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.misbehave", "edit");
+  const { r } = commandLines(root);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] feature-review: changed uncommitted changes in the main checkout/, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /FEATURE-REVIEW: not run/);
+});
+
+test("a triage that edits the main checkout is not-run with the same log line", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // A real verify failure (the worker commits; the check is red) routes to triage.
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
+  fake(root, "alpha.misbehave", "edit");
+  const { r } = commandLines(root, ["--max-rounds", "1"]);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] triage alpha/, `${r.stdout}\n${r.stderr}`);
+});
+
+test("a reviewer that changes nothing proceeds as before, and the AC receipt names the reviewed sha", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(traceLog(root), /READONLY-VIOLATION/);
+  assert.deepEqual(state(root).merged_branches, ["crew/demo/alpha"]);
 });

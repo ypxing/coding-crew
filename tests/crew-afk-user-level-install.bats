@@ -106,6 +106,34 @@ work_repo_with_issue() {
   done
 }
 
+@test "user-level install: each platform's config-dir env var relocates where the scripts are found" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  work_repo_with_issue
+  cd "$WORK_REPO"
+
+  local p var home cfg
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    case "$p" in
+      claude)  var=CLAUDE_CONFIG_DIR ;;
+      copilot) var=COPILOT_HOME ;;
+      pi)      var=PI_CODING_AGENT_DIR ;;
+      # install.sh puts codex skills under .agents/skills at every scope, never CODEX_HOME.
+      codex)   continue ;;
+    esac
+    home="$BATS_TEST_TMPDIR/home-$p"; cfg="$BATS_TEST_TMPDIR/cfg-$p"
+    mkdir -p "$home"
+    env HOME="$home" TARGET_REPO="$home" "$var=$cfg" \
+      bash "$REPO_ROOT/install.sh" "$p" --skill crew-afk >/dev/null
+    [ -f "$cfg/skills/crew-afk/scripts/state.sh" ] || {
+      echo "$p: scripts not under $var" >&2; return 1; }
+    run env HOME="$home" "$var=$cfg" \
+      node "$home/.coding-crew/crew-afk/main.mjs" plan --platform "$p"
+    [ "$status" -eq 0 ] || { echo "$p: $output" >&2; return 1; }
+    path_matches "$output" "cfg-$p/skills/crew-afk/scripts" || {
+      echo "$p: $var not used for scripts dir:" >&2; echo "$output" >&2; return 1; }
+  done
+}
+
 @test "user-level install: a project install still wins over the \$HOME copy" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   user_install pi
@@ -155,7 +183,7 @@ work_repo_with_issue() {
 
 @test "launcher: it falls back to the user-level orchestrator when the repo has no copy" {
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$REPO_ROOT/skills/crew-afk/$p.SKILL.md"
+    body="$(afk_variant "$p")"
     grep -q 'HOME/.coding-crew/crew-afk/main.mjs' "$body" || {
       echo "$p launcher cannot reach a user-level install" >&2; return 1; }
   done
@@ -164,7 +192,7 @@ work_repo_with_issue() {
 @test "launcher: the missing-scripts remedy names the install scope, not 'half-installed'" {
   # The old wording sent a user who had installed user-level back to the same install.
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$REPO_ROOT/skills/crew-afk/$p.SKILL.md"
+    body="$(afk_variant "$p")"
     ! grep -q 'half-installed' "$body" || {
       echo "$p still calls a scope problem a half-install" >&2; return 1; }
     grep -q 'TARGET_REPO=\$HOME' "$body" || {
@@ -180,7 +208,7 @@ work_repo_with_issue() {
 }
 
 # ─── one install dir per run (CREW_INSTALL_DIR) ───────────────────────────────
-# The reviewer's assets used to be read from "$ROOT/.coding-crew/code-review" — a path only a
+# The reviewer's assets used to be read from "$ROOT/.coding-crew/crew-afk/roles/reviewer" — a path only a
 # project install has. Every reviewer on a user-level install hit a TOOL-ERROR on
 # review-context.sh, then spent calls hunting. The orchestrator now names the path it was
 # itself launched beside, in the review prompt.
@@ -192,9 +220,9 @@ sprint_with_fake_dispatch() {
   git -C "$WORK_REPO" add -A && git -C "$WORK_REPO" commit -qm checks
   mkdir -p "$BATS_TEST_TMPDIR/fake"
   cd "$WORK_REPO"
-  run env -u CREW_INSTALL_DIR -u CREW_SCRIPTS -u CREW_PANE_HOST -u HERDR_ENV -u ORCA_ENV HOME="$FAKE_HOME" \
+  run env -u CREW_INSTALL_DIR -u CREW_SCRIPTS -u CREW_PANE_HOST -u HERDR_ENV -u ORCA_ENV HOME="$FAKE_HOME" CREW_NO_COMMANDS=1 \
     CREW_FAKE_DISPATCH="$REPO_ROOT/tests/orchestrator/fixtures/fake-dispatch.sh" CREW_FAKE_DIR="$BATS_TEST_TMPDIR/fake" \
-    node "$1" run --platform claude --feature-slug demo --no-baseline --no-commands
+    node "$1" run --platform claude --feature-slug demo --no-baseline
 }
 
 @test "user-level install: the reviewer is pointed at \$HOME's review assets" {
@@ -206,7 +234,7 @@ sprint_with_fake_dispatch() {
   local expected
   # realpath, not resolve: Node canonicalizes the main module's path, so the orchestrator
   # names the install dir behind macOS's /var -> /private/var symlink.
-  expected="$(FAKE_HOME="$FAKE_HOME" node -e 'const {realpathSync} = require("fs"); console.log(require("path").join(realpathSync(process.env.FAKE_HOME), ".coding-crew/code-review"))')"
+  expected="$(FAKE_HOME="$FAKE_HOME" node -e 'const {realpathSync} = require("fs"); console.log(require("path").join(realpathSync(process.env.FAKE_HOME), ".coding-crew/crew-afk/roles/reviewer"))')"
   grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" || {
     cat "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" >&2; return 1; }
 }
@@ -223,5 +251,5 @@ sprint_with_fake_dispatch() {
   # Compared canonically: on Windows the orchestrator may name the dir by its 8.3 short form
   # (C:\Users\RUNNER~1\...) where the shell's cwd has the long one — the same directory.
   canon() { node -e 'console.log(require("fs").realpathSync.native(process.argv[1]))' "$1"; }
-  [ "$(canon "$actual")" = "$(canon "$WORK_REPO/.coding-crew/code-review")" ] || { cat "$prompt" >&2; return 1; }
+  [ "$(canon "$actual")" = "$(canon "$WORK_REPO/.coding-crew/crew-afk/roles/reviewer")" ] || { cat "$prompt" >&2; return 1; }
 }

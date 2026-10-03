@@ -1,6 +1,6 @@
 /**
  * The PR body: the prWriter role, a plain dispatch that follows write-pr's SKILL.md (installed
- * as an asset beside crew-afk) over the feature's whole range, once, just before open-pr.sh. It
+ * as an asset beside crew-afk) over the PR's whole range (`prBase`), once, just before open-pr.sh. It
  * gives a human reviewer the change's shape (Summary), why to believe it (Evidence) and what a
  * bad merge breaks (Merge Danger). The checks line is written here, from the integration check's
  * own record, so the body never states a result no check produced. Advisory: a writer that
@@ -22,6 +22,7 @@ import { roleBinding } from "./shared.mjs";
  * not run — off, a dry run, or a worktree it could not create. Only reached when it is not red.
  */
 export function checksLine(sprint, integration) {
+  if (integration?.status === "cached" && !integration.reason) return "pass (cached)";
   if (integration?.status !== "pass" || integration.reason) return null;
   const { checks } = readVerifyRecord(join(sprint.dispatchDir, INTEGRATION_STEM, "verify.json"));
   const ran = CHECK_CATEGORIES.filter((c) => checks[c] !== "not_run").map((c) => `${c} ${checks[c]}`);
@@ -50,6 +51,23 @@ export function prdTitle(prdFile) {
 }
 
 /**
+ * Where the PR's range starts: the merge-base of the feature branch with origin's default branch
+ * (origin/HEAD, else origin/main, else origin/master), so the body describes every commit the PR
+ * holds, whichever run made it. The recorded `base_sha` is this run's start (session-init.sh
+ * resets it each run, squash-commits.sh moves it to the squash), so it is only the fallback when
+ * there is no origin default branch to measure from; null when neither exists.
+ */
+export function prBase(effects, featureBranch, recordedBase) {
+  const head = effects.gitRead(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]);
+  const defaults = head.code === 0 && head.stdout.trim() ? [head.stdout.trim().replace(/^refs\/remotes\//, "")] : [];
+  for (const ref of [...defaults, "origin/main", "origin/master"]) {
+    const mb = effects.gitRead(["merge-base", ref, featureBranch]);
+    if (mb.code === 0 && mb.stdout.trim()) return mb.stdout.trim();
+  }
+  return recordedBase || null;
+}
+
+/**
  * Writes `<SPRINT_DIR>/pr-body.md` and returns `{ file, title, failed }`: `title` the writer's,
  * else the PRD's, else null (open-pr.sh then uses the slug), `failed` why the body has no writer prose (null when it has), for the summary. Null on a
  * dry run.
@@ -67,8 +85,8 @@ export async function writePrBody(ctx, { integration = null } = {}) {
     return { file, title: title ?? prdTitle(prd), failed };
   };
 
-  const base = sprint.readState().branches?.[sprint.featureBranch]?.base_sha;
-  if (!base) return finish(null, `no base commit recorded for ${sprint.featureBranch}, so there is no range to describe.`);
+  const base = prBase(effects, sprint.featureBranch, sprint.readState().branches?.[sprint.featureBranch]?.base_sha);
+  if (!base) return finish(null, `no base commit for ${sprint.featureBranch} (no origin default branch, none recorded), so there is no range to describe.`);
   const skillFile = sprint.installDir ? join(assetDir(sprint.installDir, "writePr"), "SKILL.md") : null;
   if (!skillFile || !existsSync(skillFile)) return finish(null, `write-pr's SKILL.md is not installed (${skillFile ?? "no install dir"}).`);
 
