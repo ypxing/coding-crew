@@ -39,12 +39,13 @@ teardown() {
   [ ! -d "$TEMP_DIR/.copilot" ]
 }
 
-@test "copilot project install still expands {{PROTOCOL}} at the new location" {
+@test "copilot project install renders crew-afk at .github/skills with no placeholder left" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
 
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.github/agents/crew-reviewer.agent.md"
-  ! grep -q '{{FRAGMENT' "$TEMP_DIR/.github/skills/crew-afk/SKILL.md"
+  [ -f "$TEMP_DIR/.github/skills/crew-afk/SKILL.md" ]
+  ! grep -q '{{' "$TEMP_DIR/.github/skills/crew-afk/SKILL.md"
+  [ ! -e "$TEMP_DIR/.github/agents" ]
 }
 
 @test "uninstall sweeps both the current and the legacy copilot locations" {

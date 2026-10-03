@@ -5,7 +5,6 @@
 1	add-tests-skill-structure.bats
 10	address-pr-comments-scripts.bats
 24	retired-agents.bats
-10	agent-shim-consistency.bats
 6	ci-test-shard.bats
 62	codex-platform.bats
 2	configure-tracker-skill.bats

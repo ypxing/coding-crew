@@ -105,7 +105,7 @@ branches touch mostly disjoint code, so those fix issues still parallelize acros
 matches `crew-address-findings` Step 2, which groups findings by branch for the same reason.
 
 **Depth bound: one generation.** Every fix issue carries a `Source:` line. Before promoting, run
-`promote-findings.sh guard --issue <issue-file>`; if it prints `skip — source-guarded`, the
+`promote-findings.sh guard --issue <issue-file> --severities <list>`; if it prints `skip — source-guarded`, the
 findings go in the report and no issue is written. So Phase 2 reviews are report-only and there
 is never a Phase 3. This is the whole termination argument — no counters, no phase flag.
 
@@ -180,7 +180,7 @@ bash "<skill-dir>/scripts/promote-findings.sh" defer \
   --feature-slug "$FEATURE_SLUG" --branch "<reviewed-branch>" --slug "<issue-slug>" \
   --title "Fix review findings: <issue title>" \
   --report ".scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md" \
-  --criteria-file "<tmp criteria file>" [--severities "actionable" | "CRITICAL, HIGH"]
+  --criteria-file "<tmp criteria file>" --severities "actionable" # or "CRITICAL, HIGH": the list report.mjs resolves
 # → "defer: .scratch/<slug>/issues/open/<NN>-fix-findings-<issue-slug>.md"
 
 # The PRD audit's missing requirements → one parked fix issue (no audit while one is still open)

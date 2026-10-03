@@ -122,9 +122,8 @@ SLUG="$(printf '%s' "$SLUG" | sed -E 's/^[0-9]+-//')"
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
 mkdir -p "$(dirname "$OUT")"
 
-# Stands in for the real bash dispatchers' own throttled [TOOL] line on stdout (see
-# dispatch-agent.sh/dispatch-codex-agent.sh's maybe_heartbeat), so PR 2's dispatch.mjs ->
-# onTrace plumbing is exercisable for zero tokens.
+# Stands in for a CLI's own tool-call event on stdout, so dispatch.mjs's onTrace heartbeat
+# plumbing is exercisable for zero tokens.
 if [ -f "$FAKE_DIR/$SLUG.heartbeat" ]; then
   echo "[TOOL] agent=$AGENT tool=fake-heartbeat-1 \$ echo one"
   echo "[TOOL] agent=$AGENT tool=fake-heartbeat-2 \$ echo two"
