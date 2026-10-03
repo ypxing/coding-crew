@@ -55,7 +55,7 @@ import { checkRequires, integrationSection, lintMidRunIssues, runIntegrationChec
 import { fixIntegration } from "./integration-fix.mjs";
 import { writePrBody } from "./pipeline/pr-body.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
-import { parsePrdAudit } from "./report.mjs";
+import { parsePrdAudit, promoteSeverities } from "./report.mjs";
 import { runFeatureReview } from "./pipeline/feature-review.mjs";
 
 export async function runSprint(ctx) {
@@ -497,7 +497,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
   // --- summary (rendered from disk, never from recollection) -----------------
   // The PR comes first: the summary points at it when the findings were posted there.
   const pr = await pullRequest(ctx, tracker, integration);
-  const summaryArgs = [];
+  const summaryArgs = ["--promoted", promoteSeverities(sprint.fixFindings)];
   if (stalled) summaryArgs.push("--stalled");
   if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url);
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
