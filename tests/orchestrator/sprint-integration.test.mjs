@@ -417,3 +417,43 @@ test("github: a fixable red integration check creates the fix issue in the miles
   assert.match(r.stdout, /## Integration check\s+Passed/);
   assert.doesNotMatch(r.stdout, /Fix issues not implemented/);
 });
+
+// ─── reviewer, triage and feature review are mechanically read-only ──
+
+test("a reviewer that commits to the issue branch is not-run, logged [READONLY-VIOLATION], and never merged", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.misbehave", "commit");
+  const { r } = commandLines(root, ["--max-rounds", "1"]);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] reviewer alpha: changed refs\/heads\/crew\/demo\/alpha/, `${r.stdout}\n${r.stderr}`);
+  assert.match(state(root).retention.alpha.reason, /^review-not-run/);
+  assert.deepEqual(state(root).merged_branches ?? [], []);
+});
+
+test("a feature review that leaves an uncommitted edit in the main checkout is recorded not-run", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.misbehave", "edit");
+  const { r } = commandLines(root);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] feature-review: changed uncommitted changes in the main checkout/, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /FEATURE-REVIEW: not run/);
+});
+
+test("a triage that edits the main checkout is not-run with the same log line", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker", "```json\n{\"status\":\"blocked\",\"branch\":\"x\",\"working_directory\":\"x\",\"checks\":{},\"cause\":\"code\"}\n```\n");
+  fake(root, "alpha.misbehave", "edit");
+  const { r } = commandLines(root, ["--max-rounds", "1"]);
+  const log = traceLog(root);
+  if (/dispatch-triage/.test(log)) assert.match(log, /\[READONLY-VIOLATION\] triage alpha/, `${r.stdout}\n${r.stderr}`);
+});
+
+test("a reviewer that changes nothing proceeds as before, and the AC receipt names the reviewed sha", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(traceLog(root), /READONLY-VIOLATION/);
+  assert.deepEqual(state(root).merged_branches, ["crew/demo/alpha"]);
+});

@@ -20,6 +20,9 @@
 #                         the same <slug>.review-once.calls counter file.
 #   <slug>.review-sleep   the reviewer sleeps this many seconds before answering — with a
 #                         fractional --reviewer-timeout, a review dispatch that times out.
+#   <slug>.misbehave      a reviewer/triage dispatch that breaks its read-only contract; the content
+#                         is `commit` (a commit on the crew/*/<slug> branch) or `edit` (an uncommitted
+#                         file in the main checkout). Applies to every reviewer/triage call for the slug.
 #   <slug>.nocommit       do not create a commit in the worktree
 #   <slug>.commit-once    commit only on this slug's first N worker calls (N is the file's
 #                         content, 1 when empty), none after: a fix round that changed nothing.
@@ -128,6 +131,17 @@ fi
 if [ -f "$FAKE_DIR/$SLUG.exit" ]; then
   : > "$OUT"
   exit "$(cat "$FAKE_DIR/$SLUG.exit")"
+fi
+
+if [ -f "$FAKE_DIR/$SLUG.misbehave" ] && { [ "$AGENT" = "crew-reviewer" ] || [ "$AGENT" = "crew-triage" ]; }; then
+  case "$(cat "$FAKE_DIR/$SLUG.misbehave")" in
+    commit)
+      ref=$(git -C "$DIR" for-each-ref --format='%(refname)' "refs/heads/crew/*/$SLUG" | head -1)
+      [ -n "$ref" ] || ref="refs/heads/$SLUG"
+      new=$(git -C "$DIR" -c user.email=fake@test -c user.name=fake commit-tree "$ref^{tree}" -p "$ref" -m "reviewer wrote this")
+      git -C "$DIR" update-ref "$ref" "$new" ;;
+    edit) echo "stray" >> "$DIR/stray-edit.txt" ;;
+  esac
 fi
 
 if [ "$AGENT" = "prd-audit" ]; then

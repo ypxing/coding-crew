@@ -660,7 +660,7 @@ export async function runHousekeeping(ctx, worker) {
   // A reviewer that ended without a verdict gets one more dispatch in this round: cheaper
   // than a retry round, which would rebuild the worktree and re-verify an unchanged branch.
   // Not after a timeout — a second would double an already-long wait.
-  if (!review.completed && !review.timedOut) {
+  if (!review.completed && !review.timedOut && !review.violation) {
     ctx.log(`[REVIEW-RETRY] slug=${issue.slug} round=${worker.attempt} — ${review.reason}`);
     review = await runReview(ctx, worker, verifyRecord);
     if (review.limitExceeded) return finishBlocked(ctx, worker, outcome, review.limitExceeded);
@@ -696,7 +696,7 @@ export async function runHousekeeping(ctx, worker) {
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
 
   // The receipt close-issue.sh demands: only on all-met, only for this issue's branch.
-  const acReceipt = effects.bash("receipts.sh", ["write", "ac", "--branch", branch], {
+  const acReceipt = effects.bash("receipts.sh", ["write", "ac", "--branch", branch, ...(review.reviewedSha ? ["--sha", review.reviewedSha] : [])], {
     env: sprint.childEnv(),
   });
   if (acReceipt.code !== 0) {
