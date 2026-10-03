@@ -100,7 +100,6 @@ import { discoverCommands } from "./lib/commands.mjs";
 import { DEFAULT_PARALLEL, PLATFORMS } from "./lib/dispatch.mjs";
 import {
   ConfigError,
-  DISPATCHER,
   ROLES,
   activeRoles,
   crewPreflight,
@@ -413,7 +412,7 @@ const USER_SKILL_DIRS = {
   copilot: ".copilot/skills/crew-afk/scripts",
 };
 
-/** `platform`'s own dir first: only its install carries its dispatcher (pi's, codex's). */
+/** `platform`'s own dir first. */
 const ownFirst = (dirs, platform) => [dirs[platform], ...Object.values(dirs).filter((d) => d !== dirs[platform])].filter(Boolean);
 
 function resolveScriptsDir(mainRoot, platform) {
@@ -434,25 +433,6 @@ function resolveScriptsDir(mainRoot, platform) {
       " CREW_SCRIPTS to its scripts/ dir.",
   );
   process.exit(1);
-}
-
-/**
- * The scripts dir holding `runtime`'s own dispatcher, or null. A role on another runtime than
- * the launcher's needs that runtime's install, not the launcher's: install.sh ships each
- * dispatcher only to its own platform.
- */
-function resolveDispatcherDir(mainRoot, runtime) {
-  const script = DISPATCHER[runtime];
-  if (!script) return null;
-  const home = process.env.HOME || homedir();
-  const candidates = [
-    process.env.CREW_SCRIPTS,
-    join(mainRoot, PROJECT_SKILL_DIRS[runtime]),
-    join(home, USER_SKILL_DIRS[runtime]),
-    join(HERE, "../skills/crew-afk/scripts"),
-  ].filter(Boolean);
-  const found = candidates.find((c) => existsSync(join(c, script)));
-  return found ? resolve(found) : null;
 }
 
 async function main() {
@@ -567,16 +547,12 @@ async function main() {
   }
   options.parallel = settings.maxParallel ?? DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
   options.timeoutMs = Object.fromEntries(Object.entries(settings.timeouts).map(([k, min]) => [k, min * 60 * 1000]));
-  options.dispatcherDirs = Object.fromEntries(
-    [...new Set(ROLES.map((r) => crew.roles[r].runtime))].map((rt) => [rt, resolveDispatcherDir(mainRoot, rt)]),
-  );
   const preflightCrew = () =>
     crewPreflight(effects, mainRoot, {
       crew: options.crew,
       roles: activeRoles(options),
       launcher: options.platform,
       paneHost: options.paneHost,
-      dispatcherDirs: options.dispatcherDirs,
     });
 
   if (options.command === "doctor") {

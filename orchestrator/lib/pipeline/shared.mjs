@@ -51,14 +51,13 @@ export function taggedReason(tag, summary) {
 }
 
 /**
- * The runtime and model `role` dispatches on (crew-config.mjs's resolveCrew), and the scripts
- * dir holding that runtime's own dispatcher — pi's and codex's ship only in their own install.
+ * The runtime and model `role` dispatches on (crew-config.mjs's resolveCrew).
  */
 export function roleBinding(ctx, role) {
   const { runtime, model } = ctx.options.crew[role];
   // afk.limits.<role>.usd — claude's flag, so no other runtime is handed one.
   const maxBudgetUsd = runtime === "claude" ? (ctx.options.limitsUsd?.[role] ?? null) : null;
-  return { runtime, model, maxBudgetUsd, scriptsDir: ctx.options.dispatcherDirs?.[runtime] ?? ctx.effects.scriptsDir };
+  return { runtime, model, maxBudgetUsd, scriptsDir: ctx.effects.scriptsDir };
 }
 
 /**

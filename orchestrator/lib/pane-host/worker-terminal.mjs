@@ -143,9 +143,8 @@ function envScript(env) {
  * bash, whatever the terminal's login shell. `sh -c 'echo $$ …; exec'` records the pid the
  * child keeps (BASHPID is bash 4+; macOS ships 3.2). The child writes straight to `out`;
  * what the terminal shows is a separate follower process, so a display failure can never
- * reach the child. It follows `out` for an event stream it can parse (claude, copilot), and
- * `err` otherwise: pi and codex's bash dispatchers put raw events on stdout and their own
- * `[TOOL]` lines, plus the CLI's errors, on stderr.
+ * reach the child. It follows `out` for an event stream it can parse (every platform), and
+ * `err` otherwise (the fake test seam).
  */
 function runScript({ f, cwd, cmd, args, jsonEvents, agent }) {
   const q = shellQuote;

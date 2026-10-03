@@ -95,14 +95,6 @@
         "discover-commands.sh",
         "write-commands-cache.sh"
       ],
-      "platform-files": {
-        "pi": [
-          "scripts/dispatch-agent.sh"
-        ],
-        "codex": [
-          "scripts/dispatch-codex-agent.sh"
-        ]
-      },
       "agent-deps": [
         "crew-coder",
         "crew-reviewer",

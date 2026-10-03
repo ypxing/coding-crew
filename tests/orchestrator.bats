@@ -181,15 +181,14 @@ load helpers/orchestrator-suite
           model: null, mainRoot: dir, logFile: null, scriptsDir: "skills/crew-afk/scripts",
         });
         const argv = [b.cmd, ...b.args].join(" ");
-        if ((platform === "pi" || platform === "codex") && !argv.includes("crew-coder")) throw new Error(platform + ": agent not named");
-        if ((platform === "claude" || platform === "copilot") && argv.includes("--agent")) throw new Error(platform + ": agent file expected");
+        if (argv.includes("--agent ") || /dispatch-.*agent\.sh/.test(argv)) throw new Error(platform + ": agent file or bash dispatcher expected");
         console.log(platform + ": " + b.cmd + " (" + b.capture + ")");
       }
     }).catch((e) => { console.error(e.message); process.exit(1); });
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"pi: bash"* ]]
-  [[ "$output" == *"codex: bash"* ]]
+  [[ "$output" == *"pi: pi"* ]]
+  [[ "$output" == *"codex: codex"* ]]
   [[ "$output" == *"claude: claude"* ]]
   [[ "$output" == *"copilot: copilot"* ]]
 }

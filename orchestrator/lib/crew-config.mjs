@@ -390,7 +390,6 @@ export function describeModel(runtime, model, env = process.env) {
 export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage" };
 
 /** The bash dispatcher a runtime's agent dispatch needs; claude and copilot resolve their agent themselves. */
-export const DISPATCHER = { pi: "dispatch-agent.sh", codex: "dispatch-codex-agent.sh" };
 
 /** The roles a run dispatches: the command finder, the PRD audit and the PR writer are each optional. */
 export function activeRoles({ commands = true, PRDAudit = DEFAULT_SETTINGS.PRDAudit, openPr = DEFAULT_SETTINGS.openPr } = {}) {
@@ -527,12 +526,10 @@ export function resolveWorktreeRoot({ afk = {}, env = process.env, origin = {} }
 }
 
 /**
- * preflight() once per runtime the active roles use, for the agents bound to it, plus the
- * dispatcher of each pi/codex runtime an agent dispatches on — a plain dispatch calls the CLI
- * directly, so a runtime used only by one needs no dispatcher. A problem on a runtime other
+ * preflight() once per runtime the active roles use, for the agents bound to it. A problem on a runtime other
  * than the launcher's names its roles, since the user chose that runtime in config.json.
  */
-export function crewPreflight(effects, mainRoot, { crew, roles, launcher, paneHost = null, dispatcherDirs = {} }) {
+export function crewPreflight(effects, mainRoot, { crew, roles, launcher, paneHost = null }) {
   const byRuntime = new Map();
   for (const role of roles) {
     const { runtime } = crew[role];
@@ -544,9 +541,6 @@ export function crewPreflight(effects, mainRoot, { crew, roles, launcher, paneHo
   for (const [runtime, { roles: bound, agents }] of byRuntime) {
     const found = preflight(effects, runtime, mainRoot, agents, { paneHost });
     paneHost = null; // checked once, not once per runtime
-    if (!process.env.CREW_FAKE_DISPATCH && agents.length && DISPATCHER[runtime] && !dispatcherDirs[runtime]) {
-      found.push(`${DISPATCHER[runtime]} not found for ${runtime} — run: ./install.sh ${runtime} --skill crew-afk`);
-    }
     const tag = runtime === launcher ? "" : `${bound.join(", ")} → ${runtime}: `;
     problems.push(...found.map((p) => `${tag}${p}`));
   }
