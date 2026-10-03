@@ -32,6 +32,24 @@ test("a redirection target or a flag's value is not a test-file argument", () =>
   assert.deepEqual(fullSuiteRuns(p, "pytest"), ["pytest >out.txt", "pytest -n 4"]);
 });
 
+test("the cached command's leading env assignments are not part of what is matched", () => {
+  const { f } = events("bats tests/*.bats", "ORCHESTRATOR_PREFETCH=1 bats tests/*.bats", "bats tests/one.bats");
+  assert.deepEqual(fullSuiteRuns(f, "ORCHESTRATOR_PREFETCH=1 bats tests/*.bats"), ["bats tests/*.bats", "ORCHESTRATOR_PREFETCH=1 bats tests/*.bats"]);
+});
+
+test("a longer target or program that merely starts with the test command is not it", () => {
+  const { f } = events("make test-unit", "make tests", "xmake test", "make test");
+  assert.deepEqual(fullSuiteRuns(f, "make test"), ["make test"]);
+});
+
+test("one tool call reported at its start and its end counts once", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dev-"));
+  const f = join(dir, "report.md.events.jsonl");
+  const item = (type) => JSON.stringify({ type, item: { id: "item_7", type: "command_execution", command: "npm test" } });
+  writeFileSync(f, [item("item.started"), item("item.completed"), JSON.stringify({ type: "item.started", item: { id: "item_9", type: "command_execution", command: "npm test" } })].join("\n") + "\n");
+  assert.deepEqual(fullSuiteRuns(f, "npm test"), ["npm test", "npm test"]);
+});
+
 test("no test command or no events file means no deviation", () => {
   assert.deepEqual(fullSuiteRuns("/nonexistent", "bats"), []);
   assert.deepEqual(fullSuiteRuns(events("bats x").f, null), []);

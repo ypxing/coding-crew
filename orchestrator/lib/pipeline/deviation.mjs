@@ -11,17 +11,24 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** Every `command` string in an event, whatever the runtime's tool-call shape. */
-function commandsIn(node, out = []) {
-  if (Array.isArray(node)) node.forEach((n) => commandsIn(n, out));
+/**
+ * Every `command` string in an event, whatever the runtime's tool-call shape, with the id of the
+ * tool call it belongs to (the nearest `id` / `toolCallId` / `tool_use_id` around it), or null.
+ */
+function commandsIn(node, out = [], id = null) {
+  if (Array.isArray(node)) node.forEach((n) => commandsIn(n, out, id));
   else if (node && typeof node === "object") {
+    const own = node.id ?? node.toolCallId ?? node.tool_use_id ?? id;
     for (const [k, v] of Object.entries(node)) {
-      if (k === "command" && typeof v === "string") out.push(v);
-      else commandsIn(v, out);
+      if (k === "command" && typeof v === "string") out.push({ cmd: v, id: own });
+      else commandsIn(v, out, own);
     }
   }
   return out;
 }
+
+/** `VAR=value cmd …` → `cmd …`: an env prefix in the cached command is not how a coder types it. */
+const withoutEnvPrefix = (cmd) => cmd.replace(/^(\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
 
 /** The cached `test` command, or null (absent file, `null`, unreadable). */
 export function cachedTestCommand(mainRoot) {
@@ -45,6 +52,8 @@ function runsWholeSuite(cmd, testCommand) {
     const at = cmd.indexOf(testCommand, from);
     if (at < 0) return false;
     from = at + testCommand.length;
+    // Whole words only: `make test` is not in `make test-unit` or `xmake test`.
+    if (/[^\s;&|(]/.test(cmd[at - 1] ?? " ") || /[^\s;&|)<>]/.test(cmd[from] ?? " ")) continue;
     const rest = cmd.slice(from).split(/&&|\|\||[;|\n]/)[0];
     const words = rest.split(/\s+/).filter(Boolean);
     // A bare redirection operator (`>`, `2>`, `&>`) takes the next word as its target; a bare
@@ -59,7 +68,10 @@ function runsWholeSuite(cmd, testCommand) {
 /** Commands in an events file that ran `testCommand` in full; [] when none or unreadable. */
 export function fullSuiteRuns(eventsFile, testCommand) {
   if (!testCommand || !existsSync(eventsFile)) return [];
+  const core = withoutEnvPrefix(testCommand);
   const runs = [];
+  // One tool call can appear in several events (codex's item.started and item.completed).
+  const seen = new Set();
   for (const line of readFileSync(eventsFile, "utf8").split("\n")) {
     if (!line.includes("command")) continue;
     let evt;
@@ -68,8 +80,12 @@ export function fullSuiteRuns(eventsFile, testCommand) {
     } catch {
       continue;
     }
-    for (const cmd of commandsIn(evt)) {
-      if (runsWholeSuite(cmd, testCommand) && !cmd.includes("run-checks.sh")) runs.push(cmd);
+    for (const { cmd, id } of commandsIn(evt)) {
+      if (id != null && seen.has(id)) continue;
+      if (runsWholeSuite(cmd, core) && !cmd.includes("run-checks.sh")) {
+        if (id != null) seen.add(id);
+        runs.push(cmd);
+      }
     }
   }
   return runs;
