@@ -187,3 +187,66 @@ test("wall-clock cap 0 disables it", async () => {
   assert.deepEqual(h.started, ["a", "b"]);
   assert.equal(result.stalled, false);
 });
+
+test("wall-clock cap elapsed with nothing ready: flush is skipped, integration still runs, summary and reason name the cap", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  h.ctx.options.integrationCheck = true;
+  const calls = [];
+  const out = [];
+  h.ctx.out = (s) => out.push(s);
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => { calls.push({ name, args }); return bash(name, args, o); };
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  // Integration check answers from cache (tree already passed): proves it still runs past the cap.
+  Object.assign(h.ctx.sprint, { featureBranch: "crew/demo", readState: () => ({ passing_trees: ["T"] }), state: () => {} });
+  h.ctx.effects.gitRead = () => ({ stdout: "T\n", code: 0 });
+  const logs = [];
+  h.ctx.log = (m) => logs.push(m);
+  const run = runSprint(h.ctx);
+  await settle();
+  t = 10 * 60_000;
+  h.gates.get("a")();
+  const result = await run;
+  assert.ok(logs.some((m) => /INTEGRATION|cached/.test(String(m))), "integration check ran");
+  assert.equal(result.stalled, true);
+  assert.ok(!calls.some((c) => c.name === "promote-findings.sh" && c.args[0] === "flush"), "flush must not run past the cap");
+  assert.match(out.join("\n"), /## Wall-clock cap[\s\S]*Phase 2 fix issues stayed parked/);
+});
+
+test("wall-clock cap with --open-pr: open-pr.sh gets --draft and a note naming the cap", async () => {
+  const { mkdtempSync, readFileSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "wallcap-"));
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  h.ctx.options.openPr = true;
+  Object.assign(h.ctx.sprint, {
+    env: { SPRINT_DIR: dir },
+    featureBranch: "crew/demo",
+    readState: () => ({}),
+    getList: () => [],
+  });
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  const calls = [];
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    calls.push({ name, args });
+    return name === "open-pr.sh" ? { code: 0, stdout: "PR: http://x/1\n", stderr: "" } : bash(name, args, o);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  t = 10 * 60_000;
+  h.gates.get("a")();
+  await run;
+  const pr = calls.find((c) => c.name === "open-pr.sh");
+  assert.ok(pr, "open-pr.sh called");
+  assert.ok(pr.args.includes("--draft"));
+  const note = pr.args[pr.args.indexOf("--note-file") + 1];
+  assert.match(readFileSync(note, "utf8"), /wall-clock cap was hit/);
+});
