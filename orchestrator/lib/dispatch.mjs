@@ -4,14 +4,14 @@
  * A dispatch is: run <agent> with <prompt> in <cwd>, capture its final message to
  * <outFile>, with a hard timeout. Every platform can do this headlessly:
  *
- *   pi       pi -p --mode json --append-system-prompt …   (via dispatch-agent.sh)
- *   codex    codex exec --cd … --json -o …                (via dispatch-codex-agent.sh)
+ *   pi       pi -p --mode json --append-system-prompt <protocol> …   (adapters/pi.mjs)
+ *   codex    codex exec --cd … --json <protocol + prompt>             (adapters/codex.mjs)
  *   claude   claude -p <prompt> --append-system-prompt-file <protocol> …   (adapters/claude.mjs)
  *   copilot  copilot -p <protocol + prompt> -C … --output-format json        (adapters/copilot.mjs)
  *
- * pi and codex run through bash dispatchers that resolve the agent definition and map its
- * frontmatter onto CLI flags. claude and copilot need no agent file: their adapter gets the
- * role's protocol rendered from agents/<role>/protocol.md (adapters/render.mjs).
+ * No platform needs an agent file or a bash dispatcher: each adapter gets the role's protocol
+ * rendered from agents/<role>/protocol.md (adapters/render.mjs) and role settings from
+ * adapters/role-args.mjs.
  *
  * All four emit a JSON event stream. Recognised tool calls become `[TOOL]`/`[TOOL-ERROR]`
  * lines in the trace log while the worker runs; the raw stream is kept as
@@ -23,9 +23,8 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
 import { writeLog } from "./log.mjs";
 import { preflightPaneHost, spawnDispatch } from "./pane-host/index.mjs";
 import { ADAPTERS } from "./adapters/index.mjs";
@@ -41,30 +40,7 @@ export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
  * Default parallelism per platform. Copilot's is conservative because what binds is the
  * account's request rate, which the CLI does not expose; raise with `--max-parallel`.
  */
-export const DEFAULT_PARALLEL = { pi: 3, codex: 3, claude: ADAPTERS.claude.defaultParallel, copilot: ADAPTERS.copilot.defaultParallel };
-
-function agentFileCandidates(platform, mainRoot, agent) {
-  // $HOME first: os.homedir() ignores a $HOME override on Windows (reads USERPROFILE).
-  const home = process.env.HOME || homedir();
-  switch (platform) {
-    case "pi":
-      return [
-        join(mainRoot, ".pi/agents", `${agent}.md`),
-        join(home, ".pi/agent/agents", `${agent}.md`),
-      ];
-    case "codex":
-      return [
-        join(mainRoot, ".codex/agents", `${agent}.toml`),
-        join(home, ".codex/agents", `${agent}.toml`),
-      ];
-    default:
-      return [];
-  }
-}
-
-export function resolveAgentFile(platform, mainRoot, agent) {
-  return agentFileCandidates(platform, mainRoot, agent).find((p) => existsSync(p)) ?? null;
-}
+export const DEFAULT_PARALLEL = Object.fromEntries(PLATFORMS.map((p) => [p, ADAPTERS[p].defaultParallel]));
 
 /**
  * Build the argv for one dispatch.
@@ -106,27 +82,6 @@ export function buildDispatch(platform, spec) {
     };
   }
 
-  if (platform === "pi" || platform === "codex") {
-    const script = platform === "pi" ? "dispatch-agent.sh" : "dispatch-codex-agent.sh";
-    const args = [
-      join(scriptsDir, script),
-      "--agent",
-      agent,
-      "--dir",
-      cwd,
-      "--prompt-file",
-      promptFile,
-      "--out",
-      outFile,
-    ];
-    if (logFile) args.push("--log", logFile);
-    if (model) args.push("--model", model);
-    if (slug) args.push("--slug", slug);
-    // The bash dispatchers cd into --dir themselves; run them from the main root so
-    // their own git lookups resolve the main checkout.
-    return { cmd: "bash", args, ...shared, cwd: mainRoot, capture: "file" };
-  }
-
   const adapter = ADAPTERS[platform];
   if (!adapter) throw new Error(`unknown platform: ${platform}`);
   const role = roleOfAgent(agent);
@@ -135,18 +90,19 @@ export function buildDispatch(platform, spec) {
   const protocol = role ? renderRolePrompt(role, platform, { installDir }) : null;
   let prompt = readFileSync(promptFile, "utf8");
   let protocolFile = null;
-  if (protocol) {
-    // Claude takes the protocol as a system-prompt file; the others get it prepended.
-    if (platform === "claude") {
-      protocolFile = `${outFile}.protocol.md`;
-      mkdirSync(dirname(protocolFile), { recursive: true });
-      writeFileSync(protocolFile, protocol);
-    } else {
-      prompt = `${protocol}\n\n---\n\n${prompt}`;
-    }
+  // claude takes the protocol as a system-prompt file, pi and codex place it themselves, copilot has
+  // no system-prompt flag and gets it prepended.
+  if (protocol && platform === "claude") {
+    protocolFile = `${outFile}.protocol.md`;
+    mkdirSync(dirname(protocolFile), { recursive: true });
+    writeFileSync(protocolFile, protocol);
+  } else if (protocol && platform === "copilot") {
+    prompt = `${protocol}\n\n---\n\n${prompt}`;
   }
-  if (adapter.promptVia === "argv") assertArgvPromptFits(prompt, adapter.cmd);
-  const args = adapter.argv({ cwd, mainRoot, model, role, promptFile, outFile, protocolFile, prompt });
+  // Every argv-borne string is capped; pi and codex carry the protocol in argv too.
+  if (adapter.promptVia === "argv") assertArgvPromptFits(platform === "pi" || platform === "codex" ? `${protocol ?? ""}${prompt}` : prompt, adapter.cmd);
+  const label = basename(promptFile, ".md").replace(/\.prompt$/, "");
+  const args = adapter.argv({ cwd, mainRoot, model, role, promptFile, outFile, protocolFile, protocol: protocol ?? null, prompt, label: `${spec.agent}: ${label}` });
   // A fix round continuing the coder's own earlier session (pipeline.mjs decides when).
   if (resumeSessionId && adapter.resume) args.push(...adapter.resume(resumeSessionId));
   // afk.limits.<role>.usd: a backstop, checked after each turn, so it can overshoot one turn.
@@ -180,13 +136,13 @@ export function formatJsonTraceLine(platform, agent, line) {
 
 /**
  * onTrace heartbeat throttle: every Nth tool call or every INTERVAL_MS, whichever first, so
- * the live signal to the parent stays bounded over a long worker. The bash dispatchers'
- * maybe_heartbeat applies the same rule for pi/codex.
+ * the live signal to the parent stays bounded over a long worker. The fake seam's
+ * dispatch-time throttle applies to every platform.
  */
 const HEARTBEAT_EVERY_N = 5;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
-/** pi's/codex's own already-throttled [TOOL]/[TOOL-ERROR] line, forwarded on their stdout. */
+/** The fake seam's own already-throttled [TOOL]/[TOOL-ERROR] line, forwarded on its stdout. */
 const BASH_HEARTBEAT = /^\[(?:TOOL|TOOL-ERROR)\] /;
 
 /**
@@ -233,6 +189,7 @@ function keepPriorEvents(file) {
  */
 export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } = {}) {
   mkdirSync(dirname(spec.outFile), { recursive: true });
+  const adapter = ADAPTERS[platform];
   let built;
   try {
     built = buildDispatch(platform, spec);
@@ -273,7 +230,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
       }
       return;
     }
-    // pi/codex (and the fake seam): the bash dispatcher writes spec.logFile itself; of its
+    // The fake seam writes spec.logFile itself; of its
     // stdout, only its already-throttled [TOOL] lines are heartbeats — the raw stream is not.
     if (onTrace && BASH_HEARTBEAT.test(line)) onTrace(line);
   };
@@ -283,6 +240,11 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     lineBuffer = parts.pop();
     for (const line of parts) consumeLine(line);
   };
+
+  // A CLI that writes its own final message to outFile (codex `-o`): start from none, so a stale
+  // one from an earlier attempt is never read as this run's.
+  const ownsOut = !!adapter?.lastMessageFile && !!built.jsonEvents && !process.env.CREW_FAKE_DISPATCH;
+  if (ownsOut) writeFileSync(spec.outFile, "");
 
   const r = await spawnDispatch(effects, built.cmd, built.args, {
     cwd: built.cwd,
@@ -300,14 +262,15 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   if (built.jsonEvents && !r.dryRun) {
     keepPriorEvents(`${spec.outFile}.events.jsonl`);
     writeFileSync(`${spec.outFile}.events.jsonl`, lines.length ? `${lines.join("\n")}\n` : "");
-    writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines));
+    const own = ownsOut && existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
+    writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines) || own);
     meta = extractResultMeta(built.jsonEvents, lines);
   } else if (built.capture === "stdout" && !r.dryRun) {
     writeFileSync(spec.outFile, r.stdout ?? "");
   }
   const text = existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
 
-  // A failure before a bash dispatcher traces anything (an early die(), ENOENT, a killed
+  // A failure before anything is traced (a missing CLI → ENOENT/127, a killed
   // child) otherwise leaves its reason only in stderr. claude can also report isError while
   // still exiting 0 with text. Permission denials on an otherwise normal dispatch are not a
   // failure — the agent went on without that call — so they get their own label, naming the
@@ -427,7 +390,7 @@ export async function dispatchPlain(
     default:
       throw new Error(`unknown platform: ${platform}`);
   }
-  if (ADAPTERS[platform]) {
+  {
     try {
       assertArgvPromptFits(prompt, cmd);
     } catch (e) {
@@ -446,21 +409,14 @@ export async function dispatchPlain(
   return { code: r.code, timedOut: !!r.timedOut, text: r.stdout ?? "", dryRun: !!r.dryRun };
 }
 
-/** Preflight: is this platform's CLI and agent definition actually present? */
+/** Preflight: is this platform's CLI actually present? */
 export function preflight(effects, platform, mainRoot, agents, { paneHost = null } = {}) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
   const cli = { pi: "pi", codex: "codex", claude: "claude", copilot: "copilot" }[platform];
   const which = effects.exec("sh", ["-c", `command -v ${cli}`], { mutating: false });
   const problems = [];
   if (which.code !== 0) problems.push(`${cli} CLI not found on PATH`);
-  for (const a of agents) {
-    // claude and copilot are dispatched from the rendered protocol: no agent file to find.
-    if (ADAPTERS[platform]) continue;
-    if (!resolveAgentFile(platform, mainRoot, a)) {
-      problems.push(`${a} agent definition not installed for ${platform} — run: ./install.sh ${platform} --skill crew-afk`);
-      continue;
-    }
-  }
+  // Every platform is dispatched from the rendered protocol: no agent file to find.
   problems.push(...preflightPaneHost(effects, paneHost));
   return problems;
 }

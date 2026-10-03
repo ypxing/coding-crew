@@ -639,7 +639,7 @@ install_single_skill() {
     echo "Error: skill body not found: skills/$source_dir/$skill_md_source ($PLATFORM)" >&2; exit 1; }
 
   # platform-files gates individual source files to a single platform, so e.g. pi's
-  # dispatch-agent.sh never lands in a codex install. Build two lists: paths gated to
+  # a platform's file never lands in another's install. Build two lists: paths gated to
   # some other platform (skipped, and pruned if an older install left them behind) and
   # paths gated to this one (copied normally).
   local -a foreign_files=()
@@ -710,7 +710,7 @@ install_single_skill() {
   local retired
   local -a retired_files=()
   case "$skill_name" in
-    crew-afk) retired_files=("references/verification.md" "scripts/README.md" "scripts/configure-tracker-auto.sh" "scripts/coverage-validation.sh") ;;
+    crew-afk) retired_files=("references/verification.md" "scripts/README.md" "scripts/configure-tracker-auto.sh" "scripts/coverage-validation.sh" "scripts/dispatch-agent.sh" "scripts/dispatch-codex-agent.sh") ;;
     solve-issue) retired_files=("scripts/feature-branch-setup.sh") ;;
   esac
   for retired in "${retired_files[@]+"${retired_files[@]}"}"; do

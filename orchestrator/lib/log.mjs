@@ -4,7 +4,7 @@
  *   2026-09-22T04:28:54Z INFO  [MARKER] field=value ... — text
  *
  * The level is the second column, so `grep -E ' (WARN|ERROR|FATAL) '` answers "what went
- * wrong" with no tooling. trace.sh and the two bash dispatchers write the same shape; this
+ * wrong" with no tooling. trace.sh writes the same shape; this
  * module is the node side of it.
  *
  * Every line reaches the file. stderr gets those at or above stderrThreshold(): info by

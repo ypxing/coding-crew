@@ -78,33 +78,6 @@ teardown() {
   [[ "$output" != *"execute"* ]]
 }
 
-@test "crew-afk ships the pi dispatch script, executable" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
-
-  [ -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh" ]
-  run bash -n "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh"
-  [ "$status" -eq 0 ]
-}
-
-@test "dispatch-agent.sh requires its arguments" {
-  cd "$SCRIPT_DIR"
-  run bash skills/crew-afk/scripts/dispatch-agent.sh --agent crew-coder
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"--dir is required"* ]]
-}
-
-@test "dispatch-agent.sh reports a missing agent definition" {
-  cd "$SCRIPT_DIR"
-  mkdir -p "$TEMP_DIR/wt"
-  echo "task" > "$TEMP_DIR/prompt.md"
-  run env HOME="$TEMP_DIR" MAIN_ROOT="$TEMP_DIR" \
-    bash skills/crew-afk/scripts/dispatch-agent.sh \
-      --agent does-not-exist --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"agent definition not found"* || "$output" == *"pi CLI not found"* ]]
-}
-
 @test "user-level pi install uses ~/.pi/agent/ paths" {
   cd "$SCRIPT_DIR"
   # bootstrap installs with TARGET_REPO=$HOME; pi only scans ~/.pi/agent/skills there
@@ -133,10 +106,12 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "pi install excludes codex's dispatch-codex-agent.sh" {
+@test "pi install ships no bash dispatcher, and an update prunes one an older install left" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
+  [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh" ]
+  touch "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh"
 
-  [ -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh" ]
-  [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
+  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
+  [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh" ]
 }
