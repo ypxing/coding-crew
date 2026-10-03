@@ -250,7 +250,7 @@ export class Sprint {
 
   /**
    * Read-only peek at the same in-memory counter, before spending another attempt — what
-   * claimNext() (loop.mjs) uses to enforce `the round cap` per issue: every issue may reach
+   * claimNext() (loop.mjs) uses to enforce the per-issue attempt cap (CREW_MAX_ROUNDS) per issue: every issue may reach
    * that many attempts, the same way a round-batch sprint gave every issue one attempt per
    * round. Checking a global dispatch count instead would let the first issue claimed
    * exhaust the whole budget while its siblings never ran even once.
