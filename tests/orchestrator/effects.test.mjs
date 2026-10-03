@@ -3,6 +3,7 @@
  */
 
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
@@ -136,6 +137,13 @@ test("a blocking timed exec interrupted by a signal returns at once with interru
   assert.ok(Date.now() - t < 5000);
   assert.equal(r.interrupted, true);
   assert.equal(r.code, 130);
+});
+
+test("a blocking timed exec stays in the caller's process group (not detached)", () => {
+  const r = mk().exec("sh", ["-c", "ps -o pgid= -p $$"], { timeoutMs: 20000 });
+  assert.equal(r.code, 0);
+  const mine = execFileSync("ps", ["-o", "pgid=", "-p", String(process.pid)]).toString().trim();
+  assert.equal(r.stdout.trim(), mine);
 });
 
 test("a blocking timed exec that times out still returns 124", () => {
