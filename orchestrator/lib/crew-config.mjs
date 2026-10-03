@@ -530,7 +530,7 @@ export function resolveWorktreeRoot({ afk = {}, env = process.env, origin = {} }
  * preflight() once per runtime the active roles use, for the agents bound to it. A problem on a runtime other
  * than the launcher's names its roles, since the user chose that runtime in config.json.
  */
-export function crewPreflight(effects, mainRoot, { crew, roles, launcher, paneHost = null }) {
+export function crewPreflight(effects, mainRoot, { crew, roles, launcher, paneHost = null, probeFlags = false }) {
   const byRuntime = new Map();
   for (const role of roles) {
     const { runtime } = crew[role];
@@ -540,7 +540,7 @@ export function crewPreflight(effects, mainRoot, { crew, roles, launcher, paneHo
   }
   const problems = [];
   for (const [runtime, { roles: bound, agents }] of byRuntime) {
-    const found = preflight(effects, runtime, mainRoot, agents, { paneHost });
+    const found = preflight(effects, runtime, mainRoot, agents, { paneHost, probeFlags });
     paneHost = null; // checked once, not once per runtime
     const tag = runtime === launcher ? "" : `${bound.join(", ")} → ${runtime}: `;
     problems.push(...found.map((p) => `${tag}${p}`));

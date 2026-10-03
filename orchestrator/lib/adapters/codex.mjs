@@ -31,6 +31,9 @@ export default {
   defaultParallel: 3,
   defaultModel: undefined,
   promptVia: "argv",
+  // The flags live on the `exec` subcommand.
+  helpArgs: ["exec", "--help"],
+  requiredFlags: ["--sandbox", "--json", "--cd"],
   // `-o` writes the final message to the dispatch's outFile; the stream is the fallback.
   lastMessageFile: true,
 

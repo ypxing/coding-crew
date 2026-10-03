@@ -10,6 +10,7 @@ export default {
   defaultParallel: 2,
   defaultModel: undefined,
   promptVia: "argv",
+  requiredFlags: ["--allow-all-tools", "--output-format", "--add-dir"],
 
   /**
    * --allow-all-tools removes the confirmation prompt. --add-dir: the worker reads the issue and

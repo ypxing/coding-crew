@@ -21,6 +21,7 @@ export default {
   defaultParallel: 3,
   defaultModel: undefined,
   promptVia: "argv",
+  requiredFlags: ["--mode", "--append-system-prompt"],
 
   /** The prompt is pi's positional argument; `protocol` is the role's rendered protocol (none for a plain role). */
   argv({ model, role, protocol, prompt, label }) {
