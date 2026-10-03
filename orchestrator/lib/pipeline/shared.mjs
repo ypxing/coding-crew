@@ -248,7 +248,8 @@ export async function readOnlyDispatch(ctx, { label, ...scope }, run) {
   }
   // A merge or another worker's git work ran meanwhile, so HEAD, the main tree and the shared refs
   // moved for reasons that are not this dispatch's: only its own branch ref is still attributable.
-  const attributable = (k) => !concurrent || (scope.branches ?? []).some((b) => k === `refs/heads/${b}`);
+  // The main checkout's uncommitted changes stay attributable: merges and worker effects commit or run in worktrees, never leave an edit there.
+  const attributable = (k) => !concurrent || k === "uncommitted changes in the main checkout" || (scope.branches ?? []).some((b) => k === `refs/heads/${b}`);
   const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((k) => attributable(k) && before[k] !== after[k]);
   if (changed.length) return fail(`changed ${changed.join(", ")}`);
   return { result };
