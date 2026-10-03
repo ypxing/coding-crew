@@ -36,9 +36,13 @@ case "$1 $2" in
     [ -f "$GH_PR" ] || { echo "no pull requests found" >&2; exit 1; }
     cat "$GH_PR" ;;
   "pr create")
-    jq -n --rawfile body "$(arg --body-file "$@")" --arg title "$(arg --title "$@")" \
-      '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: $body, title: $title}' > "$GH_PR"
+    jq -n --rawfile body "$(arg --body-file "$@")" --arg title "$(arg --title "$@")" --argjson d "$([[ "$*" == *--draft* ]] && echo true || echo false)" \
+      '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: $body, title: $title, isDraft: $d}' > "$GH_PR"
     echo "https://github.com/o/r/pull/7" ;;
+  "pr ready")
+    [ -z "${GH_READY_FAIL:-}" ] || { echo "ready boom" >&2; exit 1; }
+    if [[ "$*" == *--undo* ]]; then d=true; else d=false; fi
+    jq --argjson d "$d" '.isDraft = $d' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR" ;;
   "label create") exit 0 ;;
   "pr edit")
     [[ "$*" == *--body-file* ]] || exit 0
@@ -193,4 +197,51 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   run bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
   [ "$status" -eq 0 ]
   ! grep -q -- '--title' "$GH_LOG"
+}
+
+@test "open-pr --draft: a new PR is created as a draft" {
+  run bash "$OPEN_PR" --draft --closes-file "$TEMP_DIR/closes.txt"
+  [ "$status" -eq 0 ]
+  grep -q '^pr create --draft ' "$GH_LOG"
+  [[ "$output" == *"PR-STATE: draft"* ]]
+}
+
+@test "open-pr --draft: an open ready PR is converted to draft" {
+  bash "$OPEN_PR"
+  run bash "$OPEN_PR" --draft
+  [ "$status" -eq 0 ]
+  grep -q '^pr ready --undo' "$GH_LOG"
+  [ "$(jq -r .isDraft "$GH_PR")" = true ]
+}
+
+@test "open-pr without --draft: an open draft PR is marked ready; a new one is created ready" {
+  run bash "$OPEN_PR"
+  ! grep -q -- '--draft' "$GH_LOG"
+  [[ "$output" == *"PR-STATE: ready"* ]]
+  bash "$OPEN_PR" --draft
+  run bash "$OPEN_PR"
+  [ "$status" -eq 0 ]
+  grep -qx 'pr ready feature/demo' "$GH_LOG"
+  [ "$(jq -r .isDraft "$GH_PR")" = false ]
+}
+
+@test "open-pr: a failed gh pr ready is reported and does not fail the script" {
+  bash "$OPEN_PR"
+  GH_READY_FAIL=1 run bash "$OPEN_PR" --draft
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PR-STATE-FAILED: gh pr ready --undo failed: ready boom"* ]]
+  [[ "$output" == *"PR-STATE: ready"* ]]
+}
+
+@test "open-pr --note-file: the note is inside the markers and text outside survives" {
+  bash "$OPEN_PR"
+  jq '.body = "intro\n\n" + .body + "\n\noutro"' "$GH_PR" > "$GH_PR.n" && mv "$GH_PR.n" "$GH_PR"
+  printf '**Not green:** x\n- 01-a\n' > "$TEMP_DIR/note.md"
+  run bash "$OPEN_PR" --draft --note-file "$TEMP_DIR/note.md"
+  [ "$status" -eq 0 ]
+  pr_body | sed -n '/crew-afk:begin/,/crew-afk:end/p' | grep -qx -- '- 01-a'
+  pr_body | grep -qx intro
+  pr_body | grep -qx outro
+  bash "$OPEN_PR"
+  ! pr_body | grep -q -- '- 01-a'
 }

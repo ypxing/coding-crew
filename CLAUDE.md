@@ -92,7 +92,11 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
 - `open-pr.sh` — `openPr` only: pushes the feature branch, creates or updates its PR with the
   tracker's closing lines (`closingRefs`) in crew-afk's own block of the body, under the body
   `orchestrator/lib/pipeline/pr-body.mjs` had the `prWriter` role write by following `write-pr`'s
-  SKILL.md (installed as an asset at `.coding-crew/write-pr/`), plus the checks line
+  SKILL.md (installed as an asset at `.coding-crew/write-pr/`), plus the checks line.
+  `--draft` (run not green: stalled, a blocked issue, capped, or an integration check that was `skipped`/red/not run)
+  creates the PR as a draft or converts a ready one (`gh pr ready --undo`); without it an open draft is marked ready.
+  `--note-file` puts the blocked list and reason inside the crew-afk block. A failed conversion prints
+  `PR-STATE-FAILED:` and never fails the script or sprint
 
 Effects that run for minutes — a worker's `verify-worktree.sh` and `ensure-deps.sh` — go through `Effects.bashAsync`, so each
 worker loop verifies its own branch concurrently; merge and close stay on the blocking `effects.bash`, which is what keeps
