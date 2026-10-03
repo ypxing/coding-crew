@@ -199,7 +199,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
   // A size tells the reviewer to search the file for its figure rather than read it whole.
@@ -220,6 +220,9 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "---",
     criteria.trim() || "(none listed in the issue)",
     "---",
+    ...(prdDecisions?.length
+      ? ["PRD decisions this issue implements:", "---", ...prdDecisions, "---"]
+      : []),
     "",
     `Gather the diff: git diff $(git merge-base ${featureBranch} ${branch})..${branch}`,
     ...(testOnly ? ["Diff scope: test-only — every changed file is a test, spec or fixture file."] : []),

@@ -57,6 +57,10 @@ downgraded or dropped.
    branch block and the gate keeping a falsely-reported `complete` off the feature branch: when
    unsure, `unmet`.
 
+   A prompt block `PRD decisions this issue implements:` lists decisions the issue carries from the
+   PRD. Judge each like a criterion: cite the file and line that honours it. A branch that
+   contradicts one is `unmet`, and `detail` names its ID (e.g. `D2`).
+
    A criterion's named path or symbol is also met where a branch commit maps it
    (`<issue's name> → <file:line>`): cite that line, which is still the evidence.
 
