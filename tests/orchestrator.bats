@@ -209,3 +209,14 @@ load helpers/orchestrator-suite
     [[ "$output" != *"$f"* ]] || { echo "help names $f"; return 1; }
   done
 }
+
+@test "orchestrator: doctor reports a PROBLEM when the CLI's --help omits a required flag" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  local bin="$BATS_TEST_TMPDIR/bin"; mkdir -p "$bin"
+  printf '#!/bin/sh\necho "usage: claude [--output-format x] [--add-dir d]"\n' > "$bin/claude"
+  chmod +x "$bin/claude"
+  cd "$REPO_ROOT"
+  run env PATH="$bin:$PATH" CREW_PANE_HOST=none node "$REPO_ROOT/orchestrator/main.mjs" doctor --platform claude
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"PROBLEM:"*"--permission-mode"* ]]
+}

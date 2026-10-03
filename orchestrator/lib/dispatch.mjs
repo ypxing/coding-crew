@@ -410,12 +410,19 @@ export async function dispatchPlain(
 }
 
 /** Preflight: is this platform's CLI actually present? */
-export function preflight(effects, platform, mainRoot, agents, { paneHost = null } = {}) {
+export function preflight(effects, platform, mainRoot, agents, { paneHost = null, probeFlags = false } = {}) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
   const cli = { pi: "pi", codex: "codex", claude: "claude", copilot: "copilot" }[platform];
   const which = effects.exec("sh", ["-c", `command -v ${cli}`], { mutating: false });
   const problems = [];
   if (which.code !== 0) problems.push(`${cli} CLI not found on PATH`);
+  if (probeFlags && which.code === 0) {
+    const adapter = ADAPTERS[platform];
+    const help = effects.exec(cli, adapter.helpArgs ?? ["--help"], { mutating: false });
+    const text = `${help.stdout ?? ""}\n${help.stderr ?? ""}`;
+    const missing = (adapter.requiredFlags ?? []).filter((f) => !new RegExp(`(^|[^\\w-])${f}(?![\\w-])`).test(text));
+    for (const f of missing) problems.push(`${cli} \`${(adapter.helpArgs ?? ["--help"]).join(" ")}\` does not list ${f}, which the ${platform} adapter needs for a full-permission headless run`);
+  }
   // Every platform is dispatched from the rendered protocol: no agent file to find.
   problems.push(...preflightPaneHost(effects, paneHost));
   return problems;

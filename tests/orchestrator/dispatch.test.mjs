@@ -936,3 +936,18 @@ test("only crew-coder dispatches set CREW_DEFER_FULL_CHECKS, on every runtime", 
     }
   }
 });
+
+// ─── doctor: --help flag probe ───────────────────────────────────────────────
+
+test("preflight with probeFlags reports a PROBLEM when --help omits a flag the adapter needs", async () => {
+  const { ADAPTERS } = await import("../../orchestrator/lib/adapters/index.mjs");
+  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+    const { requiredFlags } = ADAPTERS[platform];
+    assert.ok(requiredFlags.length, `${platform} declares requiredFlags`);
+    const helpWith = (flags) => ({ exec: (cmd, args) => (args[0] === "-c" ? { code: 0, stdout: "/bin/x", stderr: "" } : { code: 0, stdout: flags.join("\n"), stderr: "" }) });
+    assert.deepEqual(preflight(helpWith(requiredFlags), platform, "/", [], { probeFlags: true }), []);
+    const out = preflight(helpWith(requiredFlags.slice(1)), platform, "/", [], { probeFlags: true });
+    assert.equal(out.length, 1);
+    assert.match(out[0], new RegExp(requiredFlags[0]));
+  }
+});

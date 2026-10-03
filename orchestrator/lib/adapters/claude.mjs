@@ -16,6 +16,8 @@ export default {
   defaultModel: "sonnet",
   // The CLI takes the system prompt from a file, and the prompt as its positional argument.
   promptVia: "argv",
+  // Flags the dispatch argv relies on for a full-permission headless run; `doctor` checks `--help` lists them.
+  requiredFlags: ["--permission-mode", "--output-format", "--append-system-prompt-file", "--add-dir"],
 
   /**
    * bypassPermissions removes the *prompt*, not an allowlist. stream-json requires --verbose, or

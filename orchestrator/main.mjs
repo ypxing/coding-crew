@@ -534,16 +534,17 @@ async function main() {
   }
   options.parallel = settings.maxParallel ?? DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
   options.timeoutMs = Object.fromEntries(Object.entries(settings.timeouts).map(([k, min]) => [k, min * 60 * 1000]));
-  const preflightCrew = () =>
+  const preflightCrew = ({ probeFlags = false } = {}) =>
     crewPreflight(effects, mainRoot, {
       crew: options.crew,
       roles: activeRoles(options),
       launcher: options.platform,
       paneHost: options.paneHost,
+      probeFlags,
     });
 
   if (options.command === "doctor") {
-    const problems = preflightCrew();
+    const problems = preflightCrew({ probeFlags: true });
     console.log(problems.length ? problems.map((p) => `PROBLEM: ${p}`).join("\n") : `OK: ${[...new Set(activeRoles(options).map((r) => options.crew[r].runtime))].join(", ")} can dispatch.`);
     return problems.length ? 1 : 0;
   }
