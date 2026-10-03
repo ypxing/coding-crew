@@ -25,6 +25,13 @@ test("the cached command with explicit test-file arguments is a targeted run, no
   assert.deepEqual(fullSuiteRuns(f, "npm test"), ["npm test 2>&1 | tail -5", "npm test -- --watch=false"]);
 });
 
+test("a redirection target or a flag's value is not a test-file argument", () => {
+  const { f } = events("npm test > /tmp/out.log 2>&1", "npm test -- --maxWorkers 2", "npm test 2> err.txt", "npm test -- a.test.js > /tmp/t.log");
+  assert.deepEqual(fullSuiteRuns(f, "npm test"), ["npm test > /tmp/out.log 2>&1", "npm test -- --maxWorkers 2", "npm test 2> err.txt"]);
+  const p = events("pytest >out.txt", "pytest -n 4", "pytest -n 4 tests/test_x.py").f;
+  assert.deepEqual(fullSuiteRuns(p, "pytest"), ["pytest >out.txt", "pytest -n 4"]);
+});
+
 test("no test command or no events file means no deviation", () => {
   assert.deepEqual(fullSuiteRuns("/nonexistent", "bats"), []);
   assert.deepEqual(fullSuiteRuns(events("bats x").f, null), []);

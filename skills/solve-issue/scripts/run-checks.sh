@@ -150,16 +150,19 @@ _changed_tests() {
 # path/glob arguments replaced by the files. The runner's own words stay: the program, a `cd`
 # target, and a repo script it runs (`bash scripts/test.sh`). A word is a suite argument when it
 # has a glob character, or names an existing directory or test file (not in program position).
+# After a `cd`, words resolve from its target, and the files are passed relative to it (absolute
+# when outside it).
 _targeted_command() {
-  local cmd="$1" w out="" q prev="" keep; shift
+  local cmd="$1" w out="" q prev="" keep cwd="$PROJECT_ROOT" abs; shift
   set -f # the words are inspected, never expanded
   for w in $cmd; do
     keep=1
     case "$w" in
       *[\*\?\[]*) keep=0 ;;
       *)
-        if [ -e "$PROJECT_ROOT/$w" ]; then
-          if [ -d "$PROJECT_ROOT/$w" ]; then keep=0
+        case "$w" in /*) abs="$w" ;; *) abs="$cwd/$w" ;; esac
+        if [ "$prev" != cd ] && [ -e "$abs" ]; then
+          if [ -d "$abs" ]; then keep=0
           elif printf '%s\n' "$w" | grep -qE "$TEST_FILE_RE"; then
             # a shell script that is test-shaped only by its directory (`bash test/run.sh`) is the
             # runner's wrapper, not a suite file
@@ -169,11 +172,16 @@ _targeted_command() {
     esac
     # program position, or the target of `cd`: always the runner's own
     case "$prev" in ""|"&&"|";"|"||"|"|"|cd) keep=1 ;; esac
+    [ "$prev" = cd ] && case "$w" in /*) cwd="$w" ;; *) cwd="$cwd/$w" ;; esac
     [ "$keep" = 1 ] && out="$out $w"
     prev="$w"
   done
   set +f
-  for q in "$@"; do out="$out $(printf '%q' "$q")"; done
+  for q in "$@"; do
+    abs="$PROJECT_ROOT/$q"
+    case "$abs" in "$cwd"/*) q="${abs#"$cwd"/}" ;; *) [ "$cwd" = "$PROJECT_ROOT" ] || q="$abs" ;; esac
+    out="$out $(printf '%q' "$q")"
+  done
   printf '%s' "${out# }"
 }
 

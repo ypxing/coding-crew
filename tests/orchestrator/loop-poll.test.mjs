@@ -198,7 +198,12 @@ test("wall-clock cap elapsed with nothing ready: flush is skipped, integration s
   const out = [];
   h.ctx.out = (s) => out.push(s);
   const bash = h.ctx.effects.bash;
-  h.ctx.effects.bash = (name, args, o) => { calls.push({ name, args }); return bash(name, args, o); };
+  // A parked fix issue exists (flush would promote it), so skipping flush is the cap's doing.
+  h.ctx.effects.bash = (name, args, o) => {
+    calls.push({ name, args });
+    if (name === "promote-findings.sh" && args[0] === "flush") return { code: 0, stdout: "FLUSH: promoted=1", stderr: "" };
+    return bash(name, args, o);
+  };
   h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
   // Integration check answers from cache (tree already passed): proves it still runs past the cap.
   Object.assign(h.ctx.sprint, { featureBranch: "crew/demo", readState: () => ({ passing_trees: ["T"] }), state: () => {} });
@@ -217,7 +222,7 @@ test("wall-clock cap elapsed with nothing ready: flush is skipped, integration s
 });
 
 test("wall-clock cap with --open-pr: open-pr.sh gets --draft and a note naming the cap", async () => {
-  const { mkdtempSync, readFileSync, writeFileSync } = await import("node:fs");
+  const { mkdtempSync, readFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const dir = mkdtempSync(join(tmpdir(), "wallcap-"));

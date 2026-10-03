@@ -155,15 +155,27 @@ _cache() {
 }
 
 @test "run-checks: --targeted keeps a wrapper script and cd target, replacing only the suite paths" {
-  mkdir -p "$WORK/tests" "$WORK/scripts" "$WORK/sub"
-  printf 'echo WRAP "$@"\n' > "$WORK/scripts/test.sh"
-  git -C "$WORK" add -A; git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
-  echo x > "$WORK/tests/new.bats"
+  mkdir -p "$WORK/sub/tests" "$WORK/scripts"
+  : > "$WORK/sub/tests/old.bats"
+  printf 'for f; do [ -f "$f" ] || exit 9; done; echo WRAP "$@"\n' > "$WORK/scripts/test.sh"
+  git -C "$WORK" add -A; git -C "$WORK" commit -q -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/sub/tests/new.bats"
   _cache '{"typecheck": null, "lint": null, "test": "cd sub && bash ../scripts/test.sh tests"}'
   CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
   [ "$status" -eq 0 ]
+  # the files are passed relative to the cd target, so the runner finds them from there
   [[ "$output" == *"cd sub && bash ../scripts/test.sh tests/new.bats"* ]]
   [[ "$output" == *"WRAP tests/new.bats"* ]]
+}
+
+@test "run-checks: --targeted passes a changed test outside the cd target as an absolute path" {
+  mkdir -p "$WORK/sub" "$WORK/tests"
+  git -C "$WORK" add -A; git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/new.bats"
+  _cache '{"typecheck": null, "lint": null, "test": "cd sub && ls"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cd sub && ls $WORK/tests/new.bats"* ]]
 }
 
 @test "run-checks: --targeted keeps a wrapper script that lives under a test dir" {

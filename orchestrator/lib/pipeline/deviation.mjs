@@ -35,7 +35,8 @@ export function cachedTestCommand(mainRoot) {
 
 /**
  * True when `cmd` runs `testCommand` as the whole suite: the text after it, up to the next shell
- * separator, holds no argument that is not a flag or redirection (`pytest tests/test_x.py` and
+ * separator, holds no argument that is not a flag, a flag's numeric value, or a redirection and
+ * its target (`pytest tests/test_x.py` and
  * `npm test -- a.test.js` name test files, so they are targeted runs).
  */
 function runsWholeSuite(cmd, testCommand) {
@@ -45,7 +46,12 @@ function runsWholeSuite(cmd, testCommand) {
     if (at < 0) return false;
     from = at + testCommand.length;
     const rest = cmd.slice(from).split(/&&|\|\||[;|\n]/)[0];
-    const args = rest.split(/\s+/).filter(Boolean).filter((a) => a !== "--" && !/^\d*[<>]/.test(a));
+    const words = rest.split(/\s+/).filter(Boolean);
+    // A bare redirection operator (`>`, `2>`, `&>`) takes the next word as its target; a bare
+    // number is a flag's value (`-n 4`, `--maxWorkers 2`). Neither names a test file.
+    const args = words.filter(
+      (a, i) => a !== "--" && !/^(\d*|&)[<>]/.test(a) && !/^\d+$/.test(a) && !/^(\d*|&)[<>]+$/.test(words[i - 1] ?? ""),
+    );
     if (!args.some((a) => !a.startsWith("-"))) return true;
   }
 }

@@ -5,7 +5,7 @@
 
 setup() {
   command -v node >/dev/null 2>&1 || skip "node not installed"
-  command -v bats >/dev/null 2>&1 || skip "bats not installed"
+  [ -x "${BATS_ROOT:-}/bin/bats" ] || skip "bats not installed"
   FIX="$BATS_TEST_TMPDIR/fix"
   mkdir -p "$FIX/tests/helpers" "$FIX/tests/orchestrator" "$FIX/pids"
   cp "$BATS_TEST_DIRNAME/helpers/orchestrator-suite.bash" "$FIX/tests/helpers/"
@@ -27,9 +27,10 @@ JS
 
 # A nested bats starts from a clean env: none of this run's BATS_* state or exported functions.
 nested() {
-  # bats puts its libexec dir on PATH; the nested run must find the public `bats` instead.
+  # bats puts its libexec dir on PATH; the nested run must find the public `bats` instead, which
+  # need not be on PATH at all (CI runs $HOME/bats-core/bin/bats by path), so put its bin first.
   local path
-  path=$(printf '%s' "$PATH" | tr ':' '\n' | grep -v 'libexec' | paste -sd: -)
+  path="$BATS_ROOT/bin:$(printf '%s' "$PATH" | tr ':' '\n' | grep -v 'libexec' | paste -sd: -)"
   local clean=(env -i "PATH=$path" "HOME=$HOME" "TMPDIR=${TMPDIR:-/tmp}")
   while [ "$1" = -u ]; do shift 2; done
   "${clean[@]}" "$@"
