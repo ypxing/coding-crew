@@ -161,7 +161,7 @@ test("CREW_COMMANDS_REFRESH=1 forces rediscovery and overwrites an existing cach
   assert.match(cacheAfterSecond, /make totally-different-now/);
 });
 
-test("--no-commands skips command discovery entirely", () => {
+test("CREW_NO_COMMANDS skips command discovery entirely", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
 

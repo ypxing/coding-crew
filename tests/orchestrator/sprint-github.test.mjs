@@ -193,7 +193,7 @@ test("github: a blocked issue ends with blocked and without in-progress, in one 
   assert.ok(!ghLines(log).some((l) => l === "issue edit 1 --remove-label in-progress"), "a blocked issue was released a second time");
 });
 
-test("github: a partial issue still held at run end (--max-rounds cap) is released before the summary", () => {
+test("github: a partial issue still held at run end (round cap) is released before the summary", () => {
   const root = githubFixtureRepo();
   const { stub, log, issuesFile } = stubGh(root, [GH_ALPHA]);
   fake(root, "alpha.worker", workerReport({ status: "partial", checks: { test: "pass", lint: "pass", typecheck: "pass" }, progress: "half done" }));

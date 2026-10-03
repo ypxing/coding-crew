@@ -225,9 +225,9 @@ sprint_with_fake_dispatch() {
   git -C "$WORK_REPO" add -A && git -C "$WORK_REPO" commit -qm checks
   mkdir -p "$BATS_TEST_TMPDIR/fake"
   cd "$WORK_REPO"
-  run env -u CREW_INSTALL_DIR -u CREW_SCRIPTS -u CREW_PANE_HOST -u HERDR_ENV -u ORCA_ENV HOME="$FAKE_HOME" \
+  run env -u CREW_INSTALL_DIR -u CREW_SCRIPTS -u CREW_PANE_HOST -u HERDR_ENV -u ORCA_ENV HOME="$FAKE_HOME" CREW_NO_COMMANDS=1 \
     CREW_FAKE_DISPATCH="$REPO_ROOT/tests/orchestrator/fixtures/fake-dispatch.sh" CREW_FAKE_DIR="$BATS_TEST_TMPDIR/fake" \
-    node "$1" run --platform claude --feature-slug demo --no-baseline --no-commands
+    node "$1" run --platform claude --feature-slug demo --no-baseline
 }
 
 @test "user-level install: the reviewer is pointed at \$HOME's review assets" {

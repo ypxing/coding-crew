@@ -51,7 +51,7 @@ scripts/cut-release.sh --dry-run   # verify, then re-run without --dry-run to ta
 The call direction is crew-afk (program) → `crew-coder` (agent) → `solve-issue` (skill) → `tdd` /
 `dep-install`. `crew-coder` is on the **sprint path only** — a human running `/solve-issue` never
 touches it, so anything the direct path also needs belongs below it. Content that fits no row is in
-the wrong file; `tests/layer-ownership.bats` is this table.
+the wrong file; `tests/layer-ownership.bats` checks the `solve-issue`, `tdd` / `dep-install` and `crew-coder` (report wire) rows — the `orchestrator/` and `skills/crew-afk/scripts/` rows are not checked there.
 
 | Layer                      | Owns                                                 | Must not contain                          |
 | -------------------------- | ---------------------------------------------------- | ----------------------------------------- |
@@ -63,7 +63,7 @@ the wrong file; `tests/layer-ownership.bats` is this table.
 
 ## crew-afk's scripts (`skills/crew-afk/scripts/`)
 
-Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
+Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
 
 - `session-init.sh` — derives the feature slug **once** and writes `sprint.env`
 - `ensure-deps.sh` — makes a directory ready to run the project's own checks; delegates every
@@ -72,6 +72,9 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
   is a gate and cannot invoke a skill. Always exits 0
 - `verify-worktree.sh` — the checks, and the verification receipt
 - `receipts.sh` — the two gates as facts on disk
+- `lease.sh` — the feature lease (`refs/crew-lock/<slug>` under `tracker: github`): owner, acquire, reclaim, release
+- `post-findings.sh` — posts the sprint's open review findings to the feature branch's PR as one review
+- `prd-audit.sh` — the PRD audit gate: locates the PRD and prints the prompt the `prdAuditor` dispatch uses
 - `promote-findings.sh` — findings, PRD gaps and fixable integration failures → parked fix issues → Phase 2
 - `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
 - `resolve-merge-conflicts.sh` — called by `merge-branches.sh` on a conflicted merge: when the only conflicts are

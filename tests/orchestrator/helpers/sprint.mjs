@@ -137,7 +137,24 @@ export const NO_INTEGRATION = ["--no-integration-check"];
 // the same agent, counted by the feature-review tests alone.
 export const BRANCH_REVIEW = /^SPAWN .*--agent crew-reviewer(?!.* --slug feature( |$))/;
 
-export function runSprint(root, extra = [], env = {}, { baseline = false, integration = false } = {}) {
+/**
+ * `--max-rounds N` and `--no-commands` are no longer flags; the orchestrator keeps them as the
+ * test-only env seams CREW_MAX_ROUNDS / CREW_NO_COMMANDS. Tests still write them as flags.
+ */
+export function seamArgs(extra) {
+  const args = [];
+  const env = {};
+  for (let i = 0; i < extra.length; i++) {
+    if (extra[i] === "--max-rounds") env.CREW_MAX_ROUNDS = String(extra[++i]);
+    else if (extra[i] === "--no-commands") env.CREW_NO_COMMANDS = "1";
+    else args.push(extra[i]);
+  }
+  return { args, env };
+}
+
+export function runSprint(root, extraIn = [], envIn = {}, { baseline = false, integration = false } = {}) {
+  const { args: extra, env: seam } = seamArgs(extraIn);
+  const env = { ...seam, ...envIn };
   return sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...(integration ? [] : NO_INTEGRATION), ...extra], {
     cwd: root,
     env: {
@@ -387,7 +404,9 @@ export const GH_ALPHA = {
   state: "OPEN",
 };
 
-export function commandLines(root, extra = [], { scripts = SCRIPTS, env = {}, platform = "pi", baseline = false, integration = false } = {}) {
+export function commandLines(root, extraIn = [], { scripts = SCRIPTS, env: envIn = {}, platform = "pi", baseline = false, integration = false } = {}) {
+  const { args: extra, env: seam } = seamArgs(extraIn);
+  const env = { ...seam, ...envIn };
   const r = sh("node", [MAIN, "run", "--platform", platform, "--feature-slug", "demo", ...(baseline ? [] : NO_BASELINE), ...(integration ? [] : NO_INTEGRATION), ...extra], {
     cwd: root,
     env: {

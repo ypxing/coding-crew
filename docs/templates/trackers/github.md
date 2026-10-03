@@ -152,7 +152,7 @@ a human adding or removing it changes nothing. The run adds it when it claims th
 worker is dispatched) and removes it when the issue merges — in the same `gh issue edit` that adds
 `awaiting-merge` (`mark-done` does this; running it by hand on an issue without the label still
 succeeds) — or is blocked (swapped for `blocked`). An issue the run still holds at its end
-(partial, `--max-rounds` cap, stall) is released before the summary. A `## Requires` failure is
+(partial, round cap, stall) is released before the summary. A `## Requires` failure is
 never labelled. The new holder of a feature's lease also removes `in-progress` from every issue in
 the milestone right after acquiring it: only a dead run can have left one. A failed label write only
 warns.

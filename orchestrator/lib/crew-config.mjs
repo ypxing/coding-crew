@@ -404,7 +404,6 @@ const FLAG_FOR = {
   paneHost: "--pane-host",
   "timeouts.coder": "--coder-timeout",
   "timeouts.reviewer": "--reviewer-timeout",
-  "timeouts.merge": "--merge-timeout",
 };
 
 /**
@@ -417,7 +416,7 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
     const problem = SCALARS.paneHost(env.CREW_PANE_HOST);
     if (problem) problems.push(`CREW_PANE_HOST ${problem}`);
   }
-  const name = (k) => flagOf[k] ?? FLAG_FOR[k] ?? "--review-timeout";
+  const name = (k) => flagOf[k] ?? FLAG_FOR[k] ?? k;
   for (const [k, check] of Object.entries(SCALARS)) {
     const problem = cli[k] === undefined ? null : check(cli[k]);
     if (problem) problems.push(`${name(k)} ${problem}`);

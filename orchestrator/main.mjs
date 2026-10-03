@@ -28,21 +28,17 @@
  * Each flag below overrides the config.json setting in brackets for one run (lib/crew-config.mjs):
  *   --fix-findings <actionable|critical|high|medium|none>  [fixFindings, default actionable]
  *                                           what is auto-fixed in Phase 2: every finding triage
- *                                           judges Actionable, or the lowest severity (--promote: old name)
+ *                                           judges Actionable, or the lowest severity
  *   --prd-audit <off|report|fix>           [PRDAudit, default fix] audit the sprint against its
  *                                           PRD.md after Phase 1; `fix` queues ✗ missing gaps
- *                                           for Phase 2 (--coverage: old name, means `report`)
+ *                                           for Phase 2
  *   --max-parallel <n>                     [maxParallel] concurrent coders (the coder runtime's default)
  *   --poll-interval <seconds>              default 30; while work is in flight and a slot is idle, list
  *                                           the tracker once per interval and start any issue made
  *                                           ready mid-run (linted first; an ERROR blocks it for this
  *                                           run only). 0 = claim new issues only when an attempt ends
  *   --coder-timeout <minutes>              [timeouts.coder, 45] a hung coder cannot hang the sprint
- *                                           (--worker-timeout: old name)
- *   --reviewer-timeout <minutes>           [timeouts.reviewer, 20] (--review-timeout, the old
- *                                           name, also sets triage, commandFinder, prdAuditor and prWriter)
- *   --merge-timeout <minutes>              [timeouts.merge, 5] merge/close block the event loop
- *                                           (spawnSync), so a hang would freeze the sprint
+ *   --reviewer-timeout <minutes>           [timeouts.reviewer, 20]
  *   --no-deps                              [installDeps: false] skip both ensure-deps.sh call sites
  *   --squash                               [squashCommits, default false] squash the sprint's
  *                                           commits into one at the end; --no-squash turns it off
@@ -61,11 +57,6 @@
  *                                           branch, when that session is small and the branch
  *                                           has not moved since
  *
- *   --max-rounds <n>                       cap on attempts per issue this invocation. Each issue
- *                                           already blocks after 2, so only `1` (no retry) changes
- *                                           anything: stop every issue after one attempt
- *   --no-commands                          skip one-time command discovery (verify-worktree.sh
- *                                           falls back to its own CLAUDE.md/Makefile heuristics)
  *   --reclaim                              take over the feature lease (refs/crew-lock/<slug> on
  *                                           origin, held under `tracker: github`) when its holder
  *                                           is on another host or otherwise not provably dead. A
@@ -147,9 +138,10 @@ function parseArgs(argv) {
     // Flags that override a config.json setting; undefined = not given (resolveSettings).
     cli: { timeouts: {} },
     flagOf: {}, // setting → the flag that set it, when more than one can (for error text)
-    maxRounds: null,
+    // Test-only seams (not flags): cap attempts per issue / skip command discovery.
+    maxRounds: Number(process.env.CREW_MAX_ROUNDS) || null,
     pollInterval: 30,
-    commands: true,
+    commands: process.env.CREW_NO_COMMANDS !== "1",
     allowDirty: false,
     syncMain: true,
     reclaim: false,
@@ -168,18 +160,11 @@ function parseArgs(argv) {
       case "--model": o.model = args.shift(); break;
       case "--feature-slug": o.featureSlug = args.shift(); break;
       case "--fix-findings": o.cli.fixFindings = value(); break;
-      case "--promote": {
-        const v = value();
-        o.cli.fixFindings = { critical: "critical", "critical-high": "high" }[v] ?? v;
-        o.flagOf.fixFindings = "--promote";
-        break;
-      }
       case "--prd-audit": o.cli.PRDAudit = value(); break;
-      case "--coverage": o.cli.PRDAudit = "report"; break;
       case "--max-parallel": o.cli.maxParallel = Number(args.shift()); break;
       case "--poll-interval": o.pollInterval = Number(args.shift()); break;
       case "--pane-host": o.cli.paneHost = value(); break;
-      case "--coder-timeout": case "--worker-timeout":
+      case "--coder-timeout":
         o.cli.timeouts.coder = Number(args.shift());
         o.flagOf["timeouts.coder"] = a;
         break;
@@ -187,18 +172,7 @@ function parseArgs(argv) {
         o.cli.timeouts.reviewer = Number(args.shift());
         o.flagOf["timeouts.reviewer"] = a;
         break;
-      case "--review-timeout": {
-        const min = Number(args.shift());
-        for (const k of ["reviewer", "triage", "commandFinder", "prdAuditor", "prWriter"]) {
-          o.cli.timeouts[k] = min;
-          o.flagOf[`timeouts.${k}`] = a;
-        }
-        break;
-      }
-      case "--merge-timeout": o.cli.timeouts.merge = Number(args.shift()); break;
-      case "--max-rounds": o.maxRounds = Number(args.shift()); break;
       case "--no-deps": o.cli.installDeps = false; break;
-      case "--no-commands": o.commands = false; break;
       case "--squash": o.cli.squashCommits = true; break;
       case "--no-squash": o.cli.squashCommits = false; break;
       case "--open-pr": o.cli.openPr = true; break;
@@ -451,9 +425,9 @@ async function main() {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none] [--prd-audit off|report|fix]\n" +
-        "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN] [--merge-timeout MIN]\n" +
-        "  [--max-rounds N] [--poll-interval SEC] [--no-deps] [--no-commands] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
-        "  [--allow-dirty] [--no-sync-main]\n" +
+        "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN]\n" +
+        "  [--poll-interval SEC] [--no-deps] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
+        "  [--allow-dirty] [--no-sync-main] [--dry-run]\n" +
         "  [--reclaim]  (take over a github-tracker feature lease held by a run that is dead)\n" +
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
@@ -605,7 +579,7 @@ async function main() {
     const skipped = tracker.selectDispatchable(mainRoot, { status: "deferred-findings", featureSlug: resolved.slug });
     if (skipped.length) console.log(`parked fix issues (${skipped.length}): ${skipped.map((i) => i.slug).join(", ")}`);
     console.log("\npipeline per branch: deps → dispatch → verify → review (AC + findings) → merge → close");
-    console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint (bootstrap-only), before deps (cached at .coding-crew/dev-commands.json)" : "disabled (--no-commands)"}`);
+    console.log(`commands:  ${options.commands ? "discover-commands.sh, once per sprint (bootstrap-only), before deps (cached at .coding-crew/dev-commands.json)" : "disabled"}`);
     const offBy = (k, flag) => `disabled (${loaded.origin[k] === "flag" ? flag : `${k}: false`})`;
     console.log(`deps:      ${options.installDeps ? "ensure-deps.sh, once per sprint and once per worktree, using a discovered install command when one was cached" : offBy("installDeps", "--no-deps")}`);
     console.log(`squash:    ${options.squashCommits ? "at the end of the sprint" : loaded.origin.squashCommits ? offBy("squashCommits", "--no-squash") : "off (opt in: squashCommits: true, or --squash)"}`);

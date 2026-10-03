@@ -670,7 +670,7 @@ install_single_skill() {
   local retired
   local -a retired_files=()
   case "$skill_name" in
-    crew-afk) retired_files=("references/verification.md" "scripts/README.md" "scripts/configure-tracker-auto.sh" "scripts/coverage-validation.sh" "scripts/dispatch-agent.sh" "scripts/dispatch-codex-agent.sh") ;;
+    crew-afk) retired_files=("references/verification.md" "scripts/README.md" "scripts/configure-tracker-auto.sh" "scripts/coverage-validation.sh" "scripts/dispatch-agent.sh" "scripts/dispatch-codex-agent.sh" "references/test-promote-findings.sh" "references/test-session-init.sh" "references/test-sprint-state.sh" "references/test-worktree-lifecycle.sh" "references/test-worktree.sh") ;;
     solve-issue) retired_files=("scripts/feature-branch-setup.sh") ;;
   esac
   for retired in "${retired_files[@]+"${retired_files[@]}"}"; do

@@ -86,6 +86,8 @@ Full pipeline, gates and retry rules: [user guide](docs/guide.md#system-overview
 
 Persist them in `.coding-crew/config.json` — e.g. `{ "afk": { "openPr": true } }`. Need `.env` in
 worktrees? It's copied automatically; list other gitignored files in `.worktreeinclude`.
+Workers run with full permissions on the host, in per-issue worktrees — not in a sandbox.
+
 [All settings →](docs/guide.md#configuring-crew-afk)
 
 ## All commands
