@@ -386,6 +386,37 @@ test("a fix issue whose coder blocks leaves the same commit red: no second triag
   assert.match(r.stdout, /\*\*Fix issue \S+03-fix-integration-1\.md was queued for this commit and has not landed\*\*/);
 });
 
+test("fix issues whose merged tree differs from their verified tree stay red: the cap stalls the run with no further fix issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  // Red in the integration worktree whatever any fix does. While a fix issue is verified, the
+  // feature branch moves (a sibling commit), so the fix merges to a tree its verify never saw
+  // and the integration check must really run again instead of reading cached.
+  const bump = [
+    "m=$$(cd $$(git rev-parse --git-common-dir)/.. && pwd)",
+    "f=$$(basename $$PWD)",
+    "echo x > $$m/bump-$$f.txt",
+    "git -C $$m add bump-$$f.txt",
+    "git -C $$m commit -q -m bump-$$f",
+  ].join("; ");
+  writeFileSync(
+    join(root, "Makefile"),
+    `test:\n\t@case "$$PWD" in *_integration) echo 'alpha and beta clash' >&2; exit 1;; *fix-integration-*) ${bump};; esac\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n`,
+  );
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red when merged; fixes move the branch"]);
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "reconcile alpha and beta"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(triageSpawns(lines), 2, "two fix issues were triaged; the third red drain is capped before triage");
+  assert.deepEqual(integrationFixFiles(root, "done"), ["03-fix-integration-1.md", "04-fix-integration-2.md"]);
+  assert.deepEqual(integrationFixFiles(root, "open"), [], "no third fix issue");
+  assert.equal(integrationRuns(lines), 3, "every drain's merged tree was new, so none was cached");
+  assert.match(r.stdout, /2 integration fix issues were already implemented this run .* no further fix issue/);
+  assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} verdict=limit/);
+});
+
 test("github: a fixable red integration check creates the fix issue in the milestone, ready-for-agent, and implements it", () => {
   const root = githubFixtureRepo();
   const GH_BETA = { ...GH_ALPHA, number: 2, title: "beta", body: "# beta\n\n## Acceptance criteria\n\n- [x] beta exists\n" };
