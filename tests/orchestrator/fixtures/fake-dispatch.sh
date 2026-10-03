@@ -120,6 +120,9 @@ trap mirror_sidecar EXIT
 SLUG="${SLUG_ARG:-$(basename "$OUT" | sed -E 's/\.(report|review)\.md$//')}"
 SLUG="$(printf '%s' "$SLUG" | sed -E 's/^[0-9]+-//')"
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
+# A feature review area reviewer (`feature-<n>`) answers from its own fixtures, else from the
+# plain `feature.*` ones, so a test that does not care about areas writes `feature.review`.
+if [[ "$SLUG" =~ ^feature-[0-9]+$ ]] && ! compgen -G "$FAKE_DIR/$SLUG.*" >/dev/null; then SLUG=feature; fi
 mkdir -p "$(dirname "$OUT")"
 
 # Stands in for a CLI's own tool-call event on stdout, so dispatch.mjs's onTrace heartbeat
@@ -143,6 +146,14 @@ if [ -f "$FAKE_DIR/$SLUG.misbehave" ] && { [ "$AGENT" = "crew-reviewer" ] || [ "
       git -C "$DIR" update-ref "$ref" "$new" ;;
     edit) echo "stray" >> "$DIR/stray-edit.txt" ;;
   esac
+fi
+
+# `--agent feature-planner` stands in for the feature review's planner: $CREW_FAKE_DIR/feature-planner.response
+# verbatim when present, else an answer with no json block (the one-area fallback).
+if [ "$AGENT" = "feature-planner" ]; then
+  if [ -f "$FAKE_DIR/feature-planner.response" ]; then cat "$FAKE_DIR/feature-planner.response" > "$OUT"; else echo "No plan." > "$OUT"; fi
+  [ -f "$FAKE_DIR/feature-planner.exit" ] && exit "$(cat "$FAKE_DIR/feature-planner.exit")"
+  exit 0
 fi
 
 if [ "$AGENT" = "prd-audit" ]; then

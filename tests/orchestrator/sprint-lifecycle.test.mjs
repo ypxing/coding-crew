@@ -399,8 +399,8 @@ test("every agent dispatch's cost is recorded, not only the coder's", () => {
   fake(root, "alpha.review-once", "1");
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  // One coder, two reviewer dispatches, and the feature review at the drain.
-  assert.equal(lines.filter((l) => /^RUN .*state\.sh.* dispatch-cost /.test(l)).length, 4);
+  // One coder, two reviewer dispatches, and the feature review's planner and one area reviewer at the drain.
+  assert.equal(lines.filter((l) => /^RUN .*state\.sh.* dispatch-cost /.test(l)).length, 5);
 });
 
 test("a merge-failed retry skips the worker, verify, and review, and succeeds on a retried merge", () => {

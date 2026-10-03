@@ -120,6 +120,12 @@ only combined. There are no acceptance criteria, so skip Step 2 item 2 — no `A
 holds, with the same severity rubric. A defect inside one issue's diff is reported at any severity. Step 2's
 2000-line / top-10-files cap does not apply: read the whole range.
 
+An `Area:` block in the prompt (name, files, the full text of each decision) narrows the dispatch to one
+area of the feature; other reviewers read the rest in parallel. Read every file of the area end to end,
+plus callers outside it as needed, not only the diff hunks. For each decision given, say whether the
+merged code honours it and what input breaks it; a decision that does not hold is a finding, naming the
+input that breaks it. With no `Area:` block, review the whole range as above.
+
 Write the same object to the report path with `branch` and `slug` both `"feature"`, `verdict` always
 `"all-met"`, `detail` empty. If you could not read the whole range, write no report.
 

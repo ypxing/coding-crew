@@ -153,7 +153,7 @@ test("plan shows the integration check", () => {
 
 // ─── the feature review: crew-reviewer over the whole feature diff, once, at the first drain ──
 
-const featureReviews = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-reviewer.* --slug feature( |$)/.test(l)).length;
+const featureReviews = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-reviewer.* --slug feature-\d+( |$)/.test(l)).length;
 
 test("the queue's first drain runs one feature review over the whole feature diff, attributed to `feature`", () => {
   const root = fixtureRepo();
@@ -164,14 +164,14 @@ test("the queue's first drain runs one feature review over the whole feature dif
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(featureReviews(lines), 1);
   // The prompt: the whole diff from the merge-base with the (local) default branch, and no criteria.
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature/review-prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8");
   assert.ok(prompt.includes(`Gather the diff: git diff ${base}..feature/demo`), prompt);
   assert.ok(prompt.includes(`Base: ${base}`));
   assert.match(prompt, /^Feature review: /m);
   assert.doesNotMatch(prompt, /Acceptance criteria:/);
   // Its result is a block of the sprint review report, under `feature`.
   assert.match(sprintReport(root), /^## Branch: feature \(feature\)$/m);
-  assert.match(r.stdout, /## Feature Review\s+The whole feature diff was reviewed once: 0 finding\(s\)/);
+  assert.match(r.stdout, /## Feature Review\s+The feature was reviewed in 1 area\(s\): 0 finding\(s\)/);
   assert.match(r.stdout, /- feature: all-met \(C:0 H:0 M:0 L:0\)/);
   assert.match(traceLog(root), /\[STEP\] step=feature-review /);
 });
@@ -259,9 +259,9 @@ test("a feature review that never reports is recorded as not run, and does not f
   assert.equal(featureReviews(lines), 1);
   assert.deepEqual(state(root).completed_slugs, ["alpha"]);
   assert.match(r.stdout, /## Feature Review\s+\*\*Not run:\*\* no report\.json/);
-  assert.match(sprintReport(root), /^## Branch: feature \(feature\)$/m);
-  assert.match(r.stdout, /- feature: not-reviewed/);
-  assert.match(traceLog(root), /FEATURE-REVIEW: not run — /);
+  assert.match(sprintReport(root), /^## Branch: feature-1 \(feature-1\)$/m);
+  assert.match(r.stdout, /- feature-1: not-reviewed/);
+  assert.match(traceLog(root), /FEATURE-REVIEW: feature-1 not run — /);
 });
 
 test("a feature review that times out is not run, not a failure; the reviewer's own timeout applies", () => {
@@ -494,8 +494,8 @@ test("a feature review that leaves an uncommitted edit in the main checkout is r
   addIssue(root, "01-alpha.md");
   fake(root, "feature.misbehave", "edit");
   const { r } = commandLines(root);
-  assert.match(traceLog(root), /\[READONLY-VIOLATION\] feature-review: changed uncommitted changes in the main checkout/, `${r.stdout}\n${r.stderr}`);
-  assert.match(traceLog(root), /FEATURE-REVIEW: not run/);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] feature-1: changed uncommitted changes in the main checkout/, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /FEATURE-REVIEW: feature-1 not run/);
 });
 
 test("a triage that edits the main checkout is not-run with the same log line", () => {
