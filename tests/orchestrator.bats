@@ -192,3 +192,20 @@ load helpers/orchestrator-suite
   [[ "$output" == *"claude: claude"* ]]
   [[ "$output" == *"copilot: copilot"* ]]
 }
+
+@test "orchestrator CLI: the seven retired flags are rejected as unrecognized" {
+  for f in --promote --coverage --worker-timeout --review-timeout --max-rounds --merge-timeout --no-commands; do
+    run node orchestrator/main.mjs run "$f"
+    [ "$status" -ne 0 ] || { echo "$f accepted"; return 1; }
+    [[ "$output" == *"unrecognized argument"*"$f"* ]] || { echo "$f: $output"; return 1; }
+  done
+}
+
+@test "orchestrator CLI: --help lists --dry-run and none of the retired flags" {
+  run node orchestrator/main.mjs --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--dry-run"* ]]
+  for f in --promote --coverage --worker-timeout --review-timeout --max-rounds --merge-timeout --no-commands; do
+    [[ "$output" != *"$f"* ]] || { echo "help names $f"; return 1; }
+  done
+}

@@ -412,7 +412,7 @@ test("validateFlags: a bad flag names the flag the user typed", () => {
   assert.deepEqual(validateFlags({ fixFindings: "high" }), []);
   assert.deepEqual(validateFlags({ fixFindings: "actionable" }), []);
   assert.match(validateFlags({ fixFindings: "severe" })[0], /^--fix-findings is "severe"/);
-  assert.match(validateFlags({ fixFindings: "critical-medium" }, { fixFindings: "--promote" })[0], /^--promote is "critical-medium"/);
+  assert.match(validateFlags({ fixFindings: "critical-medium" }, { fixFindings: "--fix-findings" })[0], /^--fix-findings is "critical-medium"/);
   assert.match(validateFlags({ timeouts: { coder: Number.NaN } })[0], /^--coder-timeout must be a positive number/);
   assert.match(validateFlags({ maxParallel: 0 })[0], /^--max-parallel must be a positive integer/);
   // setTimeout fires at once past 2^31-1 ms: a "no limit" timeout would kill every dispatch.
@@ -420,11 +420,11 @@ test("validateFlags: a bad flag names the flag the user typed", () => {
   assert.match(validateFlags({ timeouts: { coder: Infinity } })[0], /^--coder-timeout .* at most 35791/);
   assert.deepEqual(validateFlags({ timeouts: { coder: 35791 } }), []);
   // The flag the user typed, once, when more than one sets the same timeout.
-  assert.match(validateFlags({ timeouts: { coder: Number.NaN } }, { "timeouts.coder": "--worker-timeout" })[0], /^--worker-timeout /);
+  assert.match(validateFlags({ timeouts: { coder: Number.NaN } }, { "timeouts.coder": "--coder-timeout" })[0], /^--coder-timeout /);
   const review = { reviewer: 0, triage: 0, commandFinder: 0, prdAuditor: 0 };
-  const flagOf = Object.fromEntries(Object.keys(review).map((k) => [`timeouts.${k}`, "--review-timeout"]));
+  const flagOf = Object.fromEntries(Object.keys(review).map((k) => [`timeouts.${k}`, "--reviewer-timeout"]));
   assert.deepEqual(validateFlags({ timeouts: review }, flagOf).length, 1);
-  assert.match(validateFlags({ timeouts: review }, flagOf)[0], /^--review-timeout /);
+  assert.match(validateFlags({ timeouts: review }, flagOf)[0], /^--reviewer-timeout /);
 });
 
 test("loadConfig: a legacy afk-models.json's old role names move under the new ones", () => {

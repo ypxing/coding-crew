@@ -421,10 +421,11 @@ test("a dry run records both call sites without running either", () => {
     env: { ...process.env, MAIN_ROOT: root, CREW_SCRIPTS: SCRIPTS },
   });
 
-  const r = sh("node", [MAIN, "run", "--dry-run", "--max-rounds", "1", "--platform", "pi", "--feature-slug", "demo"], {
+  const r = sh("node", [MAIN, "run", "--dry-run", "--platform", "pi", "--feature-slug", "demo"], {
     cwd: root,
     env: {
       ...process.env,
+      CREW_MAX_ROUNDS: "1",
       CREW_SCRIPTS: SCRIPTS,
       CREW_FAKE_DISPATCH: FAKE,
       CREW_FAKE_DIR: join(root, ".scratch/fake"),

@@ -17,10 +17,10 @@
  * retries, so it has to be explicit.
  *
  * Two exits: nothing left to do (every open issue completed, or permanently blocked by a
- * spent retry cap or an unresolvable dependency), or the `--max-rounds` safety cap — each
+ * spent retry cap or an unresolvable dependency), or the `the round cap` safety cap — each
  * issue may reach that many attempts, the same guarantee a round-batch sprint gave for
  * free (every issue gets one attempt per round before any issue gets a second). Checked
- * per issue, not as a global dispatch count, so a small --max-rounds still lets every
+ * per issue, not as a global dispatch count, so a small the round cap still lets every
  * issue take its turn instead of the first one claimed exhausting the whole budget while
  * its siblings never run. Either way, findings are flushed first — see flush() below —
  * because a sprint that stalled on unrelated issues may still have merged code carrying a
@@ -178,7 +178,7 @@ export async function runSprint(ctx) {
     return true;
   }
 
-  /** True once every remaining open issue is either done, blocked, or at its --max-rounds
+  /** True once every remaining open issue is either done, blocked, or at its the round cap
    * limit — as opposed to genuinely nothing left, which flush() still needs to check. */
   function cappedByMaxRounds() {
     if (!options.maxRounds) return false;
@@ -248,7 +248,7 @@ export async function runSprint(ctx) {
     capped = cappedByMaxRounds();
     if (capped) {
       flush(ctx);
-      ctx.log(`Round cap reached (--max-rounds ${options.maxRounds}).`);
+      ctx.log(`Round cap reached (the round cap ${options.maxRounds}).`);
       break;
     }
     // First at every drain, with whatever has merged so far (nothing merged, nothing new to
