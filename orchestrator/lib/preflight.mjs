@@ -263,10 +263,11 @@ function prepareChecks(ctx, stem) {
   const tree = effects.gitRead(["rev-parse", `${sprint.featureBranch}^{tree}`]).stdout.trim();
   const state = sprint.readState();
   const cached = state[stateKey];
-  if (commit && ((cached?.commit === commit && cached.verdict === "pass") || treePassed(state, tree))) {
-    ctx.log(`${label}: pass (cached — ${sprint.featureBranch} already passed at ${commit.slice(0, 12)})`);
+  const commitHit = cached?.commit === commit && cached.verdict === "pass";
+  if (commit && (commitHit || treePassed(state, tree))) {
+    ctx.log(`${label}: pass (cached — ${commitHit ? `${sprint.featureBranch} already passed at ${commit.slice(0, 12)}` : `${sprint.featureBranch}'s tree already passed`})`);
     // A hit by tree, not by this slot's own record: the slot now says pass for this commit too.
-    if (!(cached?.commit === commit && cached.verdict === "pass")) {
+    if (!commitHit) {
       sprint.state(["baseline", "--slot", stateKey, "--commit", commit, "--verdict", "pass", ...(tree ? ["--tree", tree] : [])]);
     }
     return { result: { status: "cached", commit, failed: [] } };
@@ -381,7 +382,7 @@ export function integrationSection(mainRoot, featureBranch, result, fix = null, 
   const history = earlier.length
     ? ["", `Fix issue(s) from earlier red drain(s) this run: ${earlier.map((f) => f.ref).join(", ")}.`]
     : [];
-  if (result.status === "cached") return [`Passed on ${at} (cached — the same commit already passed).`, ...history].join("\n");
+  if (result.status === "cached") return [`Passed on ${at} (cached — this tree already passed).`, ...history].join("\n");
   if (result.status === "skipped") return `**Skipped:** ${result.reason}. Nothing checked the merged branch.`;
   if (result.status === "pass") {
     return [result.reason ? `**Not run:** ${result.reason}.` : `Passed on ${at}.`, ...history].join("\n");
