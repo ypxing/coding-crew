@@ -31,6 +31,8 @@
 #                         so two such issues conflict when the second one merges. A worker
 #                         dispatched into a worktree with a merge in progress resolves it
 #                         first, keeping both sides' lines (ours first), as crew-coder is told to.
+#   <slug>.untracked      after committing, the worker leaves src/<slug>.untracked uncommitted in
+#                         its worktree: a verify that passes on files the branch does not carry.
 #   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
 #                         of resolving it, so the branch conflicts again at the merge gate.
 #   <slug>.exit           exit with this code instead of 0
@@ -241,6 +243,8 @@ if [ "$NOCOMMIT" -eq 0 ]; then
     fi
     git add -A >/dev/null 2>&1
     git -c user.email=fake@test -c user.name=fake commit -q -m "feat: $SLUG" >/dev/null 2>&1
+    [ -f "$FAKE_DIR/$SLUG.untracked" ] && echo "// $SLUG helper" > "src/$SLUG.untracked"
+    exit 0
   )
 fi
 

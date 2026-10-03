@@ -71,6 +71,17 @@ test("a green merged feature branch is reported passed, and a second drain at th
   assert.match(second.r.stdout, /## Integration check\s+Passed on feature\/demo at [0-9a-f]{12} \(cached/);
 });
 
+test("a verify that passed on a worktree with uncommitted files does not stand in for the integration check", () => {
+  // The committed tree lacks what the worktree had on disk, so the pass says nothing about it.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.untracked", "");
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(integrationRuns(lines), 1, "the merged tree is checked, not read as cached");
+  assert.match(traceLog(root), /\[TREE-NOT-CACHED\] slug=alpha/);
+});
+
 test("a drain with nothing merged runs no integration check", () => {
   const root = fixtureRepo();
   const { r, lines } = commandLines(root, [], { integration: true });

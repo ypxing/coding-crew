@@ -636,6 +636,9 @@ export async function runHousekeeping(ctx, worker) {
       logVerifyOutput(ctx, dispatchIssueDir(sprint.dispatchDir, issue), `slug=${issue.slug}`, worker.attempt, v);
       return v;
     };
+    // What verify ran on beyond the committed tree: an untracked or modified file the branch does
+    // not carry. A pass on such a worktree says nothing about the tree that merges.
+    const dirtyBefore = effects.gitRead(["status", "--porcelain"], { cwd: worker.worktree });
     let verify = await runVerify();
     // Output that names no failing check is no evidence against the branch: run the gate
     // once more before triage can call it fixable and a coder is paid to chase it.
@@ -647,9 +650,14 @@ export async function runHousekeeping(ctx, worker) {
       return await handleVerificationFailure(ctx, worker, outcome, verify);
     }
     sprint.markVerifiedThisRun(branch, effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim());
-    // Lets a feature branch of this exact tree skip its baseline / integration check.
+    // Lets a feature branch of this exact tree skip its baseline / integration check — only when
+    // the worktree verify ran on was that tree and nothing else.
     const passedTree = effects.gitRead(["rev-parse", `${branch}^{tree}`]).stdout.trim();
-    if (passedTree) sprint.state(["verified-tree", "--tree", passedTree]);
+    if (dirtyBefore.code !== 0 || dirtyBefore.stdout.trim()) {
+      ctx.log(`[TREE-NOT-CACHED] slug=${issue.slug} round=${worker.attempt} — verify ran with uncommitted files in the worktree; its pass does not stand for the committed tree`, "warn");
+    } else if (passedTree) {
+      sprint.state(["verified-tree", "--tree", passedTree]);
+    }
     // This verify's answer replaces any earlier round's; a skipped verify (above) keeps its own.
     const cats = /coverage gap/i.test(verify.stdout)
       ? [...verify.stdout.matchAll(/not_run:\s*([\w, ]+)/gi)].flatMap((m) => m[1].split(",").map((c) => c.trim())).filter(Boolean)
