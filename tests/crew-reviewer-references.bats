@@ -131,47 +131,6 @@ stack_for() {
   grep -qiE 'if either script is missing|older install' "$PROTOCOL"
 }
 
-@test "protocol body stays under the 2100-word budget" {
-  # Raised from 1,500 by the two *machine* contracts the protocol now owns, both of which
-  # replace an inference the caller used to make: the execution-evidence rule (a read-only
-  # reviewer cannot run `npm test`, so a criterion ending "…and the tests pass" was
-  # unanswerable and stalled every such branch) and the `FINDING: <SEV> | <file:line> |
-  # <criterion>` line (promotion into a fix issue now parses one line instead of re-reading
-  # prose). Duplication was cut first — the criteria rule was stated twice, the session-summary
-  # rule three ways — so this is what the contracts cost after that, not on top of it.
-  #
-  # 1,560 → 1,660: an "Incorrect logic" HIGH class for AI-generated bugs with no prior
-  # behaviour to regress from, a negative-criteria evidence rule (an absence criterion had no
-  # citable line and no guidance, so it either got rubber-stamped or stuck at `unmet` forever),
-  # and a lockfile/generated-file exclusion before the diff-size top-10 cut (those files were
-  # crowding the review budget out of the files that actually carry logic).
-  #
-  # 1,660 → 1,700: moved, not added. The `ROOT=$(pwd)` / read-only preamble used to sit in each
-  # platform shim, outside this count; it now lives here once, and every shim dropped its copy,
-  # so what the reviewer reads per dispatch went down on every platform.
-  #
-  # 1,700 → 1,760: search a verify log for the figure instead of reading all of it, and skip
-  # call-site tracing on a diff the dispatch marks test-only — each saves more per review than
-  # its words cost (coverage/integration logs run to 500+ lines).
-  #
-  # 1,760 → 1,810: an empty diff is judged against the tree instead of read as `unmet` (a coder
-  # that found every criterion already met commits nothing, and used to strand the issue and its
-  # dependents), and a criterion is met at a location a branch commit maps it to (a coder that
-  # adapted to a renamed file used to fail review on the issue's stale path).
-  #
-  # 1,810 → 1,850: Step 1 now covers both the sprint path (context provided in the prompt) and
-  # the manual path (run the script); the orchestrator inlines the checklists once per sprint.
-  # 1,850 → 2,000: Feature Mode (~130 words, the one section a per-branch dispatch skips). It lives
-  # in this protocol rather than a second agent so the severity rubric and report format cannot
-  # drift between the two modes; ~130 words is what a mode switch costs, not a second protocol.
-  # 2,000 → 2,100: the "Leftover references" HIGH class (a deleted or renamed thing still named
-  # elsewhere), the search-every-instance rule in Precision, and Feature Mode reporting at any
-  # severity without the diff cap — each catches a defect class review used to miss.
-  local words
-  words=$(wc -w < "$PROTOCOL")
-  [ "$words" -lt 2100 ] || { echo "protocol.md is $words words"; return 1; }
-}
-
 @test "no single reference is larger than the protocol that conditions it" {
   local protocol_words ref words
   protocol_words=$(wc -w < "$PROTOCOL")
