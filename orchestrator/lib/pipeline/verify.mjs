@@ -10,7 +10,7 @@ import { dispatch } from "../dispatch.mjs";
 import { triagePrompt } from "../prompts.mjs";
 import { parseTriageReport, readVerifyRecord } from "../report.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./finish.mjs";
-import { dispatchIssueDir, dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readSidecar, roleBinding, taggedReason, unblockedReason, VERIFY_INCONCLUSIVE_TAG, VERIFY_INTERRUPTED_TAG } from "./shared.mjs";
+import { dispatchIssueDir, dispatchStem, FIXABLE_TAG, issueDescriptor, limitExceeded, NOT_FIXABLE_TAG, readOnlyDispatch, readSidecar, roleBinding, taggedReason, unblockedReason, VERIFY_INCONCLUSIVE_TAG, VERIFY_INTERRUPTED_TAG } from "./shared.mjs";
 
 /**
  * Does verify-worktree.sh's output name a check that failed? Its own lines: `<CHECK>: fail…`
@@ -110,7 +110,7 @@ export async function runTriage(ctx, worker, verifyStdout) {
   ctx.log(
     `[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=dispatch-triage model=${triage.model ?? "inherit"} runtime=${triage.runtime}`,
   );
-  const result = await dispatch(
+  const guarded = await readOnlyDispatch(ctx, { label: `triage ${issue.slug}`, branches: [branch] }, () => dispatch(
     effects,
     triage.runtime,
     {
@@ -134,7 +134,9 @@ export async function runTriage(ctx, worker, verifyStdout) {
       timeoutMs: options.timeoutMs.triage,
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
-  );
+  ));
+  if (guarded.violation) return { completed: false, parsed: { ok: false, detail: guarded.violation }, limitExceeded: null };
+  const result = guarded.result;
   sprint.recordDispatchCost(result, { slug: issue.slug, role: "triage", attempt: worker.attempt });
 
   const sidecar = readSidecar(sidecarFile);

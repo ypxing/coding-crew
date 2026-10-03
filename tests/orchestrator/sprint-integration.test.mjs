@@ -417,3 +417,45 @@ test("github: a fixable red integration check creates the fix issue in the miles
   assert.match(r.stdout, /## Integration check\s+Passed/);
   assert.doesNotMatch(r.stdout, /Fix issues not implemented/);
 });
+
+// ─── reviewer, triage and feature review are mechanically read-only ──
+
+test("a reviewer that commits to the issue branch is not-run, logged [READONLY-VIOLATION], and never merged", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.misbehave", "commit");
+  const { r } = commandLines(root, ["--max-rounds", "1"]);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] reviewer alpha: changed refs\/heads\/crew\/demo\/alpha/, `${r.stdout}\n${r.stderr}`);
+  assert.match(state(root).retention.alpha.reason, /^review-not-run/);
+  assert.deepEqual(state(root).merged_branches ?? [], []);
+});
+
+test("a feature review that leaves an uncommitted edit in the main checkout is recorded not-run", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.misbehave", "edit");
+  const { r } = commandLines(root);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] feature-review: changed uncommitted changes in the main checkout/, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /FEATURE-REVIEW: not run/);
+});
+
+test("a triage that edits the main checkout is not-run with the same log line", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // A real verify failure (the worker commits; the check is red) routes to triage.
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
+  fake(root, "alpha.misbehave", "edit");
+  const { r } = commandLines(root, ["--max-rounds", "1"]);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] triage alpha/, `${r.stdout}\n${r.stderr}`);
+});
+
+test("a reviewer that changes nothing proceeds as before, and the AC receipt names the reviewed sha", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(traceLog(root), /READONLY-VIOLATION/);
+  assert.deepEqual(state(root).merged_branches, ["crew/demo/alpha"]);
+});
