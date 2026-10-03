@@ -34,3 +34,46 @@ test("isGreen: exit 0, nothing blocked, integration pass or cached", () => {
   assert.equal(isGreen({ ...ok, blocked: ["a"] }), false);
   assert.equal(isGreen({ ...ok, capped: true }), false);
 });
+
+function cacheCtx(state, { tree = "tree1", worktreeFails = true } = {}) {
+  const calls = [];
+  const effects = {
+    mainRoot: "/nonexistent-main",
+    gitRead: (args) => ({ code: 0, stdout: args[1].endsWith("^{tree}") ? `${tree}\n` : "abcdef0123456789\n", stderr: "" }),
+    git: (args) => {
+      calls.push(args.join(" "));
+      return args[0] === "worktree" && args[1] === "add" ? { code: 128, stdout: "", stderr: "boom" } : { code: 0, stdout: "", stderr: "" };
+    },
+  };
+  const recorded = [];
+  const sprint = { featureBranch: "feature/demo", featureSlug: "demo", readState: () => state, state: (a) => recorded.push(a) };
+  return { ctx: { sprint, effects, options: {}, log: () => {} }, calls, recorded };
+}
+
+test("a tree a per-issue verify, a baseline or an integration check passed reads cached and runs nothing", () => {
+  for (const state of [
+    { passing_trees: ["tree1"] },
+    { baseline: { commit: "old", tree: "tree1", verdict: "pass" } },
+    { integration: { commit: "old", tree: "tree1", verdict: "pass" } },
+  ]) {
+    const { ctx, calls, recorded } = cacheCtx(state);
+    for (const stem of ["_integration", "_baseline"]) {
+      assert.equal(runFeatureChecks(ctx, { stem }).status, "cached");
+    }
+    assert.deepEqual(calls, [], "no worktree, no checks");
+    assert.equal(recorded.length, 2, "each slot records the pass");
+  }
+});
+
+test("a tree that only failed, was never checked, or sits in an older state file without trees runs the checks", () => {
+  for (const state of [
+    { baseline: { commit: "old", tree: "tree1", verdict: "fail" } },
+    { passing_trees: ["other"] },
+    { baseline: { commit: "old", verdict: "pass" }, integration: { commit: "old", verdict: "pass" } },
+    {},
+  ]) {
+    const { ctx, calls } = cacheCtx(state);
+    assert.notEqual(runFeatureChecks(ctx, { stem: "_integration" }).status, "cached");
+    assert.ok(calls.some((c) => c.startsWith("worktree add")));
+  }
+});

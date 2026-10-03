@@ -155,7 +155,17 @@ export async function runSprint(ctx) {
     );
   }
 
+  // A red baseline (ctx.baseline, started by main.mjs alongside dispatch) ends further claims.
+  let baselineFailed = null;
+  ctx.baseline?.then((r) => {
+    if (r?.status === "fail") {
+      baselineFailed = r;
+      notifyAll();
+    }
+  }).catch(() => {}); // a crashed baseline surfaces where it is awaited
+
   function claimNext() {
+    if (baselineFailed) return null;
     // What a poll just listed goes first, so N woken workers cost one listing, not N.
     while (handoff.length) {
       const i = handoff.shift();
@@ -244,6 +254,14 @@ export async function runSprint(ctx) {
   while (true) {
     await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
     handoff = [];
+
+    // The baseline may still be running when the queue drains: its verdict decides what follows.
+    if (ctx.baseline) await ctx.baseline;
+    if (baselineFailed) {
+      for (const issue of held.values()) labelIssue(ctx, "release", issue);
+      held.clear();
+      return { stalled: false, history, baselineFailed };
+    }
 
     capped = cappedByMaxRounds();
     if (capped) {

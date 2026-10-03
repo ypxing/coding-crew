@@ -123,7 +123,7 @@ run, `--no-sync-main` skips; runs after the dirty check, before lint and the bas
 `CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
 `orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked
 changes (`--allow-dirty`), the feature branch must pass its own checks in a throwaway
-`crew/<feature>/_baseline` worktree (`--no-baseline`), the feature's open issues must pass `to-issues`' `lint-issues.sh`
+`crew/<feature>/_baseline` worktree (`--no-baseline`) — started alongside dispatch (up to `maxParallel` coders begin meanwhile), no verify starts before its verdict, and a red one stops further claims and the run (exit 1, started branches kept); a git tree that already passed (a per-issue verify, an earlier baseline or integration — `sprint-state.json`'s `passing_trees`) reads `cached` for the baseline and the integration check alike, the feature's open issues must pass `to-issues`' `lint-issues.sh`
 (`preflight.mjs`'s `lintIssues`, before command discovery: an `ERROR` stops the run, `WARN` is logged, exit 2 or a
 failure to run it is logged and never stops; `--dry-run` reports only), and each ready, unblocked issue's `## Requires`
 runs once through solve-issue's `check-requires.sh` — a failure blocks that issue, not the run

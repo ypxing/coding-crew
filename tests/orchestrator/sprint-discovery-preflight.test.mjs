@@ -288,7 +288,7 @@ test("plan names a dirty main checkout", () => {
   assert.match(r.stdout, /main tree: 1 tracked file\(s\) with uncommitted changes .*Makefile/);
 });
 
-test("a feature branch that fails its own checks stops the run before any coder is dispatched", () => {
+test("a feature branch that fails its own checks stops the run, and no issue is verified past it", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
@@ -301,11 +301,27 @@ test("a feature branch that fails its own checks stops the run before any coder 
   assert.match(traceLog(root), /^\S+Z ERROR \[VERIFY-OUTPUT\] step=baseline result=fail file=\S+\/_baseline\/verify\.out$/m);
   assert.match(r.stderr, /^  test: fail — \S+\/dispatch\/_baseline\/verify-test\.log$/m);
   assert.match(r.stderr, /--no-baseline/);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "no coder, no reviewer");
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-(?!coder)/.test(l)).length, 0, "no reviewer or triage");
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir \S+ --stem alpha/.test(l)).length, 0, "no issue is verified before the baseline verdict");
   assert.equal(state(root).baseline.verdict, "fail");
   // The throwaway worktree and its branch are gone.
   assert.equal(sh("git", ["-C", root, "branch", "--list", "crew/demo/_baseline"]).stdout.trim(), "");
   assert.equal(existsSync(join(root, ".scratch/worktrees/crew/demo/_baseline")), false);
+});
+
+test("a red baseline with two issues: coders start alongside it, no issue is verified, branches are kept, exit 1", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red"]);
+  const { r, lines } = commandLines(root, ["--max-parallel", "2"], { baseline: true });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /feature\/demo fails its own checks before any issue has touched it/);
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length <= 2, true);
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir \S+ --stem (alpha|beta)/.test(l)).length, 0);
+  assert.equal(state(root).baseline.verdict, "fail");
 });
 
 // A check command that is not installed exits 127: an environment problem, never the branch's.
@@ -331,7 +347,8 @@ test("a baseline check whose command is not installed is reported as the environ
   assert.match(r.stderr, /Install it where the checks run \(or give \.coding-crew\/dev-commands\.json an `install` command that does\), then re-run\./);
   assert.doesNotMatch(r.stderr, /Fix it on the feature branch/);
   assert.match(r.stderr, /--no-baseline/);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "no coder, no reviewer");
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-(?!coder)/.test(l)).length, 0, "no reviewer or triage");
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir \S+ --stem alpha/.test(l)).length, 0, "no issue is verified before the baseline verdict");
 });
 
 test("an issue's verify failing on a command that is not installed skips triage and never re-dispatches the coder", () => {
