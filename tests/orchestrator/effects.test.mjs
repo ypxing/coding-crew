@@ -85,3 +85,66 @@ test("execAsync reports an outside signal as interrupted (128+signal), a timeout
   assert.equal(t.code, 124);
   assert.equal(t.interrupted, false);
 });
+
+// --- timeouts kill the whole process group ---
+import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const gone = async (pid) => {
+  for (let i = 0; i < 40 && alive(pid); i++) await new Promise((r) => setTimeout(r, 50));
+  return !alive(pid);
+};
+const grandchildScript = () => {
+  const dir = mkdtempSync(join(tmpdir(), "gc-"));
+  const f = join(dir, "pid");
+  return { dir, f, sh: `sleep 30 & echo $! > ${f}; wait` };
+};
+const readPid = async (f) => {
+  for (let i = 0; i < 40 && !existsSync(f); i++) await new Promise((r) => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, 50));
+  return Number(readFileSync(f, "utf8"));
+};
+
+test("spawnWithTimeout timeout leaves no grandchild", async () => {
+  const { dir, f, sh } = grandchildScript();
+  const r = await mk().spawnWithTimeout("sh", ["-c", sh], { cwd: process.cwd(), timeoutMs: 500 });
+  assert.equal(r.code, 124);
+  assert.ok(await gone(await readPid(f)));
+  rmSync(dir, { recursive: true });
+});
+
+test("execAsync timeout leaves no grandchild", async () => {
+  const { dir, f, sh } = grandchildScript();
+  const r = await mk().execAsync("sh", ["-c", sh], { timeoutMs: 500 });
+  assert.equal(r.code, 124);
+  assert.ok(await gone(await readPid(f)));
+  rmSync(dir, { recursive: true });
+});
+
+test("exec timeout leaves no grandchild", async () => {
+  const { dir, f, sh } = grandchildScript();
+  const r = mk().exec("sh", ["-c", sh], { timeoutMs: 500 });
+  assert.equal(r.code, 124);
+  assert.ok(await gone(await readPid(f)));
+  rmSync(dir, { recursive: true });
+});
+
+test("killAllGroups kills live dispatch groups", async () => {
+  const { killAllGroups } = await import("../../orchestrator/lib/effects.mjs");
+  const { dir, f, sh } = grandchildScript();
+  const p = mk().spawnWithTimeout("sh", ["-c", sh], { cwd: process.cwd() });
+  const pid = await readPid(f);
+  killAllGroups();
+  await p;
+  assert.ok(await gone(pid));
+  rmSync(dir, { recursive: true });
+});

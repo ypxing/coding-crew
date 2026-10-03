@@ -93,7 +93,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { Effects } from "./lib/effects.mjs";
+import { Effects, killAllGroups } from "./lib/effects.mjs";
 import { atLeast, levelFor, stderrThreshold, writeLog } from "./lib/log.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
@@ -412,6 +412,14 @@ const USER_SKILL_DIRS = {
   copilot: ".copilot/skills/crew-afk/scripts",
 };
 
+// Env var that relocates a platform's user-level config dir, and where crew-afk's scripts sit under it.
+const CONFIG_DIR_SKILLS = {
+  claude: ["CLAUDE_CONFIG_DIR", "skills/crew-afk/scripts"],
+  copilot: ["COPILOT_HOME", "skills/crew-afk/scripts"],
+  pi: ["PI_CODING_AGENT_DIR", "skills/crew-afk/scripts"],
+  codex: ["CODEX_HOME", "skills/crew-afk/scripts"],
+};
+
 /** `platform`'s own dir first. */
 const ownFirst = (dirs, platform) => [dirs[platform], ...Object.values(dirs).filter((d) => d !== dirs[platform])].filter(Boolean);
 
@@ -423,6 +431,8 @@ function resolveScriptsDir(mainRoot, platform) {
   const candidates = [
     process.env.CREW_SCRIPTS,
     ...ownFirst(PROJECT_SKILL_DIRS, platform).map((d) => join(mainRoot, d)),
+    // A relocated user-level install (the platform's config-dir env var) beats the $HOME default.
+    ...ownFirst(CONFIG_DIR_SKILLS, platform).map(([v, d]) => (process.env[v] ? join(process.env[v], d) : null)),
     ...ownFirst(USER_SKILL_DIRS, platform).map((d) => join(home, d)),
     join(HERE, "../skills/crew-afk/scripts"),
   ].filter(Boolean);
@@ -633,7 +643,15 @@ async function main() {
   let runError;
   let lockPath;
   let lease;
-  let onSignal;
+  // Children run in their own process groups, so a terminal ^C no longer reaches them: kill them
+  // here. Lease release is best effort: SIGKILL cannot be caught, and the next run reclaims a dead pid.
+  const onSignal = (signal) => {
+    killAllGroups();
+    if (lease) releaseLease(effects, lease);
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
   try {
     // Before any sprint output, so a launcher knows the resolved host without re-deriving it
     // from env and config.
@@ -727,13 +745,6 @@ async function main() {
         return exitCode;
       }
       lease = got.lease;
-      // Best effort: SIGKILL cannot be caught, and the next run reclaims a dead pid.
-      onSignal = (signal) => {
-        releaseLease(effects, lease);
-        process.exit(signal === "SIGINT" ? 130 : 143);
-      };
-      process.once("SIGINT", onSignal);
-      process.once("SIGTERM", onSignal);
       const leaseLog = (line, level) => {
         console.error(line);
         if (sprint.traceLog) writeLog(sprint.traceLog, line, level);
@@ -862,11 +873,11 @@ async function main() {
         console.log(`\n## Feature lease\n\n**Not released:** ${r.failed}\n\nRelease it by hand: \`${r.command}\`\n`);
         if (sprint?.traceLog) writeLog(sprint.traceLog, `[LEASE] ${text}`, "error");
       }
-      process.removeListener("SIGINT", onSignal);
-      process.removeListener("SIGTERM", onSignal);
     }
     // Last: released earlier, a second `run` could start while this one is still closing.
     releaseSprintLock(lockPath);
+    process.removeListener("SIGINT", onSignal);
+    process.removeListener("SIGTERM", onSignal);
   }
 }
 
