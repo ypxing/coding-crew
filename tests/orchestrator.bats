@@ -19,10 +19,8 @@ load helpers/orchestrator-suite
 }
 
 @test "orchestrator: unit suite passes (the sprint topic files run from orchestrator-sprint-<topic>.bats)" {
-  local files=() f
-  while IFS= read -r f; do files+=("$f"); done < <(orchestrator_unit_tests)
-  [ "${#files[@]}" -gt 0 ]
-  run_node_tests "${files[@]}"
+  [ -n "$(orchestrator_unit_tests)" ]
+  run_node_tests @unit
 }
 
 @test "orchestrator: every node test file runs from exactly one bats file" {

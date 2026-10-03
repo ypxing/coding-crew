@@ -9,4 +9,13 @@ setup_suite() {
   unset CREW_ORCHESTRATED MAIN_ROOT TRACE_LOG SPRINT_DIR STATE_FILE FEATURE_SLUG FEATURE_BRANCH \
     DISPATCH_DIR REVIEW_DIR CREW_SCRIPTS CREW_INSTALL_DIR CREW_PRD_AUDIT CREW_FIX_FINDINGS \
     CREW_LOG_LEVEL CREW_VERBOSE
+  # The orchestrator node suites' prefetch (helpers/orchestrator-suite.bash) starts here, before
+  # the first file, rather than at the first orchestrator-*.bats wrapper, which sorts late.
+  if [ "${ORCHESTRATOR_PREFETCH:-}" = 1 ] && [ -z "${CI:-}" ] && command -v node >/dev/null 2>&1; then
+    REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    # shellcheck source=helpers/orchestrator-suite.bash
+    . "$REPO_ROOT/tests/helpers/orchestrator-suite.bash"
+    orchestrator_prefetch_start
+    unset REPO_ROOT
+  fi
 }
