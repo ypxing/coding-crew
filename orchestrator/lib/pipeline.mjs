@@ -454,6 +454,19 @@ export async function runWorker(ctx, issue, attempt) {
       ? effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim() || null
       : null;
 
+  // A red baseline (loop.mjs) stopped this attempt before its coder started — during deps, whose
+  // kill leaves no DEPS line to stop on. runHousekeeping keeps the branch for the next run.
+  if (ctx.baselineRed) {
+    return {
+      issue,
+      branch,
+      attempt,
+      worktree,
+      dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
+      report: { parsedFrom: "baseline-red", status: "blocked", checks: {}, branch, workingDirectory: worktree, progress: null, notes: "baseline failed", criteria: [], raw: "" },
+    };
+  }
+
   const coder = roleBinding(ctx, "coder");
   // Opt-in (afk.resumeCoderSession): a fix round continues the session that wrote the branch
   // instead of re-exploring it, when that session is small and the branch has not moved.
@@ -531,11 +544,15 @@ export async function runHousekeeping(ctx, worker) {
   const { issue, branch } = worker;
   const outcome = { slug: issue.slug, branch, status: null, reason: null, coverageGaps: [], findings: [], reviewReport: null };
 
-  // A red baseline stopped this attempt (loop.mjs): the branch is kept as it stands, to be
-  // verified by the next run, and the attempt is free.
+  // A red baseline stopped this attempt (loop.mjs): the branch is kept as it stands and the
+  // attempt is free. A coder-free retry keeps the reason that routed it; an attempt whose coder
+  // was stopped (or never started) is a coder's job again next run, never a verify-only one.
   if (ctx.baselineRed) {
     ctx.log(`[BASELINE-RED] slug=${issue.slug} round=${worker.attempt} — the baseline failed; branch kept, not verified`, "warn");
-    return finishRetryOrBlock(ctx, worker, outcome, taggedReason(VERIFY_INTERRUPTED_TAG, "baseline failed"), { free: true });
+    const reason = worker.skippedWorker
+      ? (sprint.retentionReason(issue.slug) ?? taggedReason(VERIFY_INTERRUPTED_TAG, "baseline failed"))
+      : "baseline failed — the coder was stopped before its branch was verified";
+    return finishRetryOrBlock(ctx, worker, outcome, reason, { free: true });
   }
 
   // The merge route (see resumeRoute): straight to merge/close, which re-checks both receipts.

@@ -37,6 +37,7 @@ case "$1 $2" in
     cat "$GH_PR" ;;
   "pr create")
     [[ -n "${GH_DRAFT_UNSUPPORTED:-}" && "$*" == *--draft* ]] && { echo "Draft pull requests are not supported in this repository" >&2; exit 1; }
+    [ -z "${GH_CREATE_FAIL:-}" ] || { echo "HTTP 502: bad gateway" >&2; exit 1; }
     jq -n --rawfile body "$(arg --body-file "$@")" --arg title "$(arg --title "$@")" --argjson d "$([[ "$*" == *--draft* ]] && echo true || echo false)" \
       '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: $body, title: $title, isDraft: $d}' > "$GH_PR"
     echo "https://github.com/o/r/pull/7" ;;
@@ -242,17 +243,24 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   [[ "$output" == *"PR-STATE-FAILED: gh pr create --draft failed: Draft pull requests are not supported"* ]]
 }
 
-@test "open-pr --no-push --draft: an open ready PR becomes a draft with the note, and nothing is pushed" {
-  bash "$OPEN_PR"
+@test "open-pr --no-push --draft: an open ready PR becomes a draft; its body and closing lines stay; nothing is pushed" {
+  bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
+  body_before=$(jq -r .body "$GH_PR")
   before=$(git ls-remote origin refs/heads/feature/demo | cut -f1)
   git commit -q --allow-empty -m "red work"
-  printf '**Not green:** the integration check failed\n' > "$TEMP_DIR/note.md"
-  run bash "$OPEN_PR" --no-push --draft --note-file "$TEMP_DIR/note.md"
+  run bash "$OPEN_PR" --no-push --draft
   [ "$status" -eq 0 ]
   [[ "$output" == *"PR-STATE: draft"* ]]
   [ "$(jq -r .isDraft "$GH_PR")" = true ]
-  jq -r .body "$GH_PR" | grep -q 'the integration check failed'
+  [ "$(jq -r .body "$GH_PR")" = "$body_before" ]
+  [[ "$body_before" == *"Closes #1"* ]]
   [ "$(git ls-remote origin refs/heads/feature/demo | cut -f1)" = "$before" ]
+}
+
+@test "open-pr --draft: a create that fails for another reason fails the script, not a ready PR" {
+  GH_CREATE_FAIL=1 run bash "$OPEN_PR" --draft
+  [ "$status" -ne 0 ]
+  ! grep -q '^pr create --head' "$GH_LOG"
 }
 
 @test "open-pr --no-push with no open PR creates none" {

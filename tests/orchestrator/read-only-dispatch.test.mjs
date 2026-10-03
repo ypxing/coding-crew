@@ -79,3 +79,32 @@ test("no change is not a violation", async (t) => {
   const r = await readOnlyDispatch(ctx, ALPHA, async () => "ok");
   assert.deepEqual(r, { result: "ok" });
 });
+
+test("a git that moves no ref (worktree remove, status) excuses nothing", async (t) => {
+  const { main, commit, ctx, effects } = fixture(t);
+  const r = await readOnlyDispatch(ctx, ALPHA, async () => {
+    effects.noteRefActivity("git", ["-C", main, "worktree", "prune"], main);
+    commit(main);
+  });
+  assert.match(r.violation ?? "", /refs\/heads\/feature\/demo/);
+});
+
+test("a worktree add from the main checkout excuses a new crew branch, not a move of the feature branch", async (t) => {
+  const { root, main, git, commit, ctx, effects } = fixture(t);
+  const r = await readOnlyDispatch(ctx, ALPHA, async () => {
+    effects.noteRefActivity("git", ["-C", main, "worktree", "add", "-B", "crew/demo/gamma", join(root, "gamma")], main);
+    git(["worktree", "add", "-q", "-b", "crew/demo/gamma", join(root, "gamma")]);
+    commit(main);
+  });
+  assert.match(r.violation ?? "", /refs\/heads\/feature\/demo/);
+  assert.doesNotMatch(r.violation, /gamma/);
+});
+
+test("a worker in a worktree reached through a symlink is still its own branch's mover", async (t) => {
+  const { root, commit, ctx, effects } = fixture(t);
+  const { symlinkSync } = await import("node:fs");
+  const link = join(root, "link");
+  symlinkSync(root, link);
+  const r = await readOnlyDispatch(ctx, ALPHA, () => effects.inWorktree(join(link, "beta"), async () => commit(join(root, "beta"))));
+  assert.equal(r.violation, undefined);
+});

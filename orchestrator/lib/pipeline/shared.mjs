@@ -261,9 +261,9 @@ export async function readOnlyDispatch(ctx, { label, branches = [] }, run) {
   const attributable = (k) => {
     if (own.has(k) || k === "uncommitted changes in the main checkout") return true;
     if (mainRefs.has(k)) return !activity.main;
-    // A crew branch: created or deleted by a main-checkout effect, or moved from its worktree.
+    // A crew branch: created, moved or deleted from the main checkout, or moved from its worktree.
     const wt = before.worktrees[k] ?? after.worktrees[k];
-    return !activity.main && !(wt && activity.worktrees.has(wt));
+    return !activity.branches && !(wt && activity.worktrees.has(wt));
   };
   const keys = new Set([...Object.keys(before.refs), ...Object.keys(after.refs)]);
   const changed = [...keys].filter((k) => before.refs[k] !== after.refs[k] && attributable(k));

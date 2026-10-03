@@ -339,6 +339,8 @@ test("a red baseline stops the coders already running: the run ends at once, the
   assert.ok(Date.now() - t0 < 30_000, `the run ended after ${Date.now() - t0} ms`);
   assert.match(traceLog(root), /\[BASELINE-RED\] .*stopping \d+ running dispatch/);
   assert.match(state(root).retention.alpha.reason, /baseline failed/);
+  // Its coder was stopped mid-work: the next run sends a coder, not a verify-only retry.
+  assert.doesNotMatch(state(root).retention.alpha.reason, /verify-interrupted/);
 });
 
 // A check command that is not installed exits 127: an environment problem, never the branch's.

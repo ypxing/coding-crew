@@ -17,8 +17,8 @@ set -euo pipefail
 #   converted (`gh pr ready --undo`); without it an open draft is marked ready (`gh pr ready`).
 #   A failed conversion is reported as `PR-STATE-FAILED: <why>` and never fails this script.
 #   --note-file holds the not-green text (blocked issues, reason) for the crew-afk block.
-#   --no-push: push nothing and create nothing — only an open PR is updated (its block, and its
-#   draft state). For a red merged branch: the PR a green run opened must not stay ready.
+#   --no-push: push nothing, create nothing and edit no body — only an open PR's draft state is
+#   set. For a red merged branch: the PR a green run opened must not stay ready.
 #
 # The body's crew-afk block — between the two markers below — is the only part this writes:
 # a new PR gets just that block, and an open one has it replaced (or appended), so what a
@@ -116,7 +116,8 @@ if [ "$state" = "OPEN" ]; then
   title_args=()
   old_title=$(printf '%s' "$existing" | jq -r '.title // ""')
   if [ -n "$TITLE" ] && [ "$old_title" = "$FEATURE_SLUG" ]; then title_args=(--title "$TITLE"); fi
-  gh pr edit "$FEATURE_BRANCH" --body-file "$TMP/body.md" "${title_args[@]+"${title_args[@]}"}" >/dev/null
+  # --no-push leaves the body alone: its block holds the closing lines and summary this run did not rebuild.
+  [ "$NO_PUSH" = 1 ] || gh pr edit "$FEATURE_BRANCH" --body-file "$TMP/body.md" "${title_args[@]+"${title_args[@]}"}" >/dev/null
   url=$(printf '%s' "$existing" | jq -r '.url')
   is_draft=$(printf '%s' "$existing" | jq -r '.isDraft // false')
   if [ "$DRAFT" = 1 ] && [ "$is_draft" != "true" ]; then
@@ -131,7 +132,8 @@ else
     # A repo without draft PRs (a private repo on a free plan) refuses --draft: a ready PR, said
     # so, beats none; the crew-afk block's "Not green" note still says why.
     if out=$(create --draft 2>&1); then url=$(printf '%s\n' "$out" | tail -1); is_draft=true
-    else state_failed="gh pr create --draft failed: $out"; url=$(create | tail -1)
+    elif printf '%s' "$out" | grep -qi 'draft'; then state_failed="gh pr create --draft failed: $out"; url=$(create | tail -1)
+    else echo "open-pr.sh: gh pr create failed: $out" >&2; exit 1
     fi
   else
     url=$(create | tail -1)

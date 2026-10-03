@@ -342,9 +342,9 @@ export async function runSprint(ctx) {
       }
     }
     // Past the cap Phase 2 stays parked: the fix issues wait for the next run. With none parked
-    // the cap cut nothing short here.
+    // (and, under github, none created and still awaiting the listing) the cap cut nothing short.
     if (wallElapsed()) {
-      flushSkipped = parkedCount(ctx) > 0;
+      flushSkipped = parkedCount(ctx) > 0 || unseen.size > 0;
       break;
     }
     if (flush(ctx) > 0) {
@@ -671,9 +671,7 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   // A PR an earlier, green run opened is turned into a draft, with nothing pushed to it.
   if (integration?.status === "fail") {
     const notOpened = `**Not opened:** the integration check failed on ${sprint.featureBranch} — see ## Integration check above.`;
-    const note = join(sprint.env.SPRINT_DIR, "pr-note.md");
-    writeFileSync(note, `**Not green:** the integration check failed on ${sprint.featureBranch}; this run pushed nothing. This PR is a draft.\n`);
-    const r = effects.bash("open-pr.sh", ["--no-push", "--draft", "--note-file", note], { env: sprint.childEnv() });
+    const r = effects.bash("open-pr.sh", ["--no-push", "--draft"], { env: sprint.childEnv() });
     const url = /^PR: (.*)$/m.exec(r.stdout ?? "")?.[1]?.trim();
     if (r.dryRun || r.code !== 0 || !url || url === "none") return { text: notOpened };
     const stateFailed = /^PR-STATE-FAILED: (.*)$/m.exec(r.stdout)?.[1];

@@ -829,8 +829,7 @@ async function main() {
     }
     // Last: released earlier, a second `run` could start while this one is still closing.
     releaseSprintLock(lockPath);
-    process.removeListener("SIGINT", onSignal);
-    process.removeListener("SIGTERM", onSignal);
+    for (const signal of Object.keys(SIGNAL_EXIT)) process.removeListener(signal, onSignal);
   }
 }
 

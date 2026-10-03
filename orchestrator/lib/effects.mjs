@@ -12,7 +12,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, realpathSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -80,6 +80,31 @@ const REF_MOVING_SCRIPTS = new Set([
   "session-init.sh",
 ]);
 
+// git subcommands that can move the checkout's HEAD or the branch it is on; and the ones that can
+// only create, move or delete other branches. Anything else (status, worktree remove, …) moves none.
+const GIT_HEAD_MOVING = new Set(["merge", "checkout", "switch", "reset", "commit", "rebase", "cherry-pick", "revert", "pull", "am", "update-ref"]);
+const GIT_BRANCH_MOVING = new Set(["branch", "worktree", "fetch", "push"]);
+
+/** A git argv's subcommand (after `-C <dir>` / `-c <k=v>`), and the dir it runs in. */
+function gitCall(args, cwd) {
+  let where = cwd;
+  let i = 0;
+  while (i < args.length && args[i].startsWith("-")) {
+    if (args[i] === "-C") where = args[i + 1];
+    i += args[i] === "-C" || args[i] === "-c" ? 2 : 1;
+  }
+  return { sub: args[i], next: args[i + 1], where };
+}
+
+/** The path as git prints it (`git worktree list` realpaths), or the path itself when it is gone. */
+function real(p) {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
 export class Effects {
   /**
    * @param {object} o
@@ -98,10 +123,12 @@ export class Effects {
     this.recorded = [];
     // What the orchestrator's own effects may have moved, so a read-only guard can tell its
     // dispatch's ref changes from theirs: `mainMoves` counts effects that can move the main
-    // checkout's HEAD or any branch from it (a merge, a mutating git there); `touched` lists, in
-    // order, the worktrees a mutating git or a dispatch ran in; `active` counts the dispatches
-    // still running in each.
+    // checkout's HEAD or the branch it is on (a merge), `branchMoves` those that can move any
+    // branch from there (a worktree add, a branch delete, and every main move); `touched` lists,
+    // in order, the worktrees (realpath) a mutating git or a dispatch ran in; `active` counts the
+    // dispatches still running in each.
     this.mainMoves = 0;
+    this.branchMoves = 0;
     this.touched = [];
     this.active = new Map();
   }
@@ -218,17 +245,26 @@ export class Effects {
 
   /** Record what a mutating effect may move (see the constructor); called at its start and its end. */
   noteRefActivity(cmd, args, cwd) {
+    let head = false;
+    let branch = false;
     if (cmd === "git") {
-      const where = args[0] === "-C" ? args[1] : cwd;
-      if (where === this.mainRoot) this.mainMoves++;
-      else this.touched.push(where);
+      const { sub, next, where } = gitCall(args, cwd);
+      if (real(where) !== real(this.mainRoot)) {
+        this.touched.push(real(where));
+        return;
+      }
+      head = GIT_HEAD_MOVING.has(sub);
+      branch = head || (GIT_BRANCH_MOVING.has(sub) && !(sub === "worktree" && next !== "add"));
     } else if (cmd === "bash" && REF_MOVING_SCRIPTS.has(basename(args[0] ?? ""))) {
-      this.mainMoves++;
+      head = branch = true;
     }
+    if (head) this.mainMoves++;
+    if (branch) this.branchMoves++;
   }
 
   /** A dispatch running in `cwd` (a worker's worktree) for as long as `run` takes. */
-  async inWorktree(cwd, run) {
+  async inWorktree(cwdIn, run) {
+    const cwd = real(cwdIn);
     this.touched.push(cwd);
     this.active.set(cwd, (this.active.get(cwd) ?? 0) + 1);
     try {
@@ -249,13 +285,14 @@ export class Effects {
 
   /** A point to measure the orchestrator's own ref activity from (`refActivitySince`). */
   refActivityMark() {
-    return { mainMoves: this.mainMoves, touched: this.touched.length, active: new Set(this.active.keys()) };
+    return { mainMoves: this.mainMoves, branchMoves: this.branchMoves, touched: this.touched.length, active: new Set(this.active.keys()) };
   }
 
   /** Since `mark`: whether the main checkout's refs may have moved, and every worktree that was busy. */
   refActivitySince(mark) {
     return {
       main: this.mainMoves !== mark.mainMoves,
+      branches: this.branchMoves !== mark.branchMoves,
       worktrees: new Set([...mark.active, ...this.active.keys(), ...this.touched.slice(mark.touched)]),
     };
   }
