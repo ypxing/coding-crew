@@ -294,32 +294,18 @@ test("describeModel shows a visible ANTHROPIC_DEFAULT_*_MODEL mapping for a clau
 
 // ─── crewPreflight ───────────────────────────────────────────────────────────
 
-// Every CLI on PATH, no agent definition anywhere: only dispatcher and agent problems remain.
+// Every CLI on PATH.
 const cliFound = { exec: () => ({ code: 0, stdout: "/usr/bin/x", stderr: "" }) };
 const onClaude = (over = {}) => Object.fromEntries(activeRoles().map((r) => [r, { runtime: over[r] ?? "claude", model: null }]));
 
-test("crewPreflight: a runtime only a plain dispatch uses needs its CLI, not its dispatcher", () => {
+test("crewPreflight: a pi/codex runtime needs its CLI and nothing else — no dispatcher, no agent file", () => {
   const prev = process.env.CREW_FAKE_DISPATCH;
   delete process.env.CREW_FAKE_DISPATCH;
   try {
-    const crew = onClaude({ commandFinder: "codex", prdAuditor: "pi" });
-    const problems = crewPreflight(cliFound, EMPTY_HOME, {
-      crew, roles: activeRoles(), launcher: "claude", dispatcherDirs: { codex: null, pi: null },
-    });
-    assert.deepEqual(problems.filter((p) => /→ (codex|pi)/.test(p)), [], problems.join("\n"));
-  } finally {
-    if (prev !== undefined) process.env.CREW_FAKE_DISPATCH = prev;
-  }
-});
-
-test("crewPreflight: an agent on a pi/codex runtime still needs that runtime's dispatcher", () => {
-  const prev = process.env.CREW_FAKE_DISPATCH;
-  delete process.env.CREW_FAKE_DISPATCH;
-  try {
-    const problems = crewPreflight(cliFound, EMPTY_HOME, {
-      crew: onClaude({ reviewer: "codex" }), roles: activeRoles(), launcher: "claude", dispatcherDirs: { codex: null },
-    });
-    assert.ok(problems.includes("reviewer → codex: dispatch-codex-agent.sh not found for codex — run: ./install.sh codex --skill crew-afk"), problems.join("\n"));
+    const crew = onClaude({ reviewer: "codex", prdAuditor: "pi" });
+    assert.deepEqual(crewPreflight(cliFound, EMPTY_HOME, { crew, roles: activeRoles(), launcher: "claude" }), []);
+    const noCli = { exec: (cmd, args) => ({ code: /codex/.test(args.join(" ")) ? 1 : 0, stdout: "", stderr: "" }) };
+    assert.deepEqual(crewPreflight(noCli, EMPTY_HOME, { crew, roles: activeRoles(), launcher: "claude" }), ["reviewer → codex: codex CLI not found on PATH"]);
   } finally {
     if (prev !== undefined) process.env.CREW_FAKE_DISPATCH = prev;
   }

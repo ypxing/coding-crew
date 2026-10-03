@@ -61,64 +61,50 @@ teardown() {
 
 # ─── the default ─────────────────────────────────────────────────────────────
 
-@test "policy defaults to actionable" {
-  run bash "$PROMOTE" policy
-  [ "$status" -eq 0 ]
-  [ "$output" = "promote: actionable" ]
-}
-
-@test "each fixFindings level names its severities" {
-  CREW_FIX_FINDINGS=high run bash "$PROMOTE" policy
-  [ "$output" = "promote: CRITICAL, HIGH" ]
-  CREW_FIX_FINDINGS=critical run bash "$PROMOTE" policy
-  [ "$output" = "promote: CRITICAL" ]
-  CREW_FIX_FINDINGS=medium run bash "$PROMOTE" policy
-  [ "$output" = "promote: CRITICAL, HIGH, MEDIUM" ]
-  CREW_FIX_FINDINGS=none run bash "$PROMOTE" policy
-  [ "$output" = "promote: " ]
-}
-
-@test "CREW_PROMOTE, the old name, is still read when CREW_FIX_FINDINGS is absent" {
-  CREW_PROMOTE=critical run bash "$PROMOTE" policy
-  [ "$output" = "promote: CRITICAL" ]
-  CREW_PROMOTE=critical-high run bash "$PROMOTE" policy
-  [ "$output" = "promote: CRITICAL, HIGH" ]
-}
-
-@test "guard names the severities to promote, so no caller carries the threshold in prose" {
-  run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
+@test "guard names the severities it is given, and keeps no level table of its own" {
+  G=.scratch/feat/issues/open/01-a.md
+  run bash "$PROMOTE" guard --issue $G --severities actionable
   [[ "$output" == "guard: eligible — threshold: actionable" ]]
-
-  CREW_FIX_FINDINGS=high run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
+  run bash "$PROMOTE" guard --issue $G --severities "CRITICAL, HIGH"
   [[ "$output" == "guard: eligible — threshold: CRITICAL, HIGH" ]]
-
-  CREW_FIX_FINDINGS=critical run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
-  [[ "$output" == "guard: eligible — threshold: CRITICAL" ]]
+  run bash "$PROMOTE" guard --issue $G --severities ""
+  [[ "$output" == "guard: skip — fixFindings is none" ]]
+  ! grep -qE 'critical\)|medium\)|CREW_PROMOTE|CREW_FIX_FINDINGS' "$PROMOTE"
 }
 
-@test "guard skips every branch when fixFindings is none" {
-  CREW_FIX_FINDINGS=none run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
-  [[ "$output" == "guard: skip — fixFindings is none" ]]
+@test "guard and defer without a severity list fail naming the missing argument" {
+  run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing required argument --severities"* ]]
+  run bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+    --title t --report "$REPORT" --criteria-file crit.md
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing required argument --severities"* ]]
+}
+
+@test "CREW_PROMOTE and CREW_FIX_FINDINGS change nothing in the script" {
+  CREW_PROMOTE=critical CREW_FIX_FINDINGS=none run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md --severities actionable
+  [[ "$output" == "guard: eligible — threshold: actionable" ]]
 }
 
 @test "guard is still the depth bound regardless of threshold" {
   printf '# fix\n\nStatus: deferred-findings\nSource: r (b)\n' > .scratch/feat/issues/open/02-fix.md
-  run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/02-fix.md
+  run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/02-fix.md --severities actionable
   [[ "$output" == *"skip — source-guarded"* ]]
 }
 
 @test "defer marks actionable by default, CRITICAL, HIGH at fixFindings high, and CRITICAL alone at critical" {
-  bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^- crew/feat/a: actionable → ' "$REPORT"
 
   rm .scratch/feat/issues/open/02-fix-findings-a.md
-  CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL, HIGH" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^- crew/feat/a: CRITICAL, HIGH → ' "$REPORT"
 
   rm .scratch/feat/issues/open/02-fix-findings-a.md
-  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   grep -q '^- crew/feat/a: CRITICAL → ' "$REPORT"
 }
@@ -136,7 +122,7 @@ teardown() {
   grep -q '^Source: .scratch/feat/prd-audit.md (prd-audit)$' "$f"
   grep -q '^- \[ \] Users can export to CSV$' "$f"
 
-  run bash "$PROMOTE" guard --issue "$f"
+  run bash "$PROMOTE" guard --issue "$f" --severities actionable
   [[ "$output" == *"skip — source-guarded"* ]]
 
   run bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md
@@ -149,7 +135,7 @@ teardown() {
 # ─── the compensating half: nothing is dropped ───────────────────────────────
 
 @test "an unpromoted HIGH is counted for a human, not silently dropped" {
-  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
   run bash "$PROMOTE" remind --feature-slug feat
@@ -179,7 +165,7 @@ EOF
 }
 
 @test "at fixFindings high, a promoted HIGH is subtracted again" {
-  CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL, HIGH" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
   run bash "$PROMOTE" remind --feature-slug feat
@@ -195,10 +181,10 @@ EOF
   cp "$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$scripts/"
   bash "$scripts/session-init.sh" --feature-slug feat --fix-findings critical >/dev/null
   bash "$scripts/state.sh" complete --slug a --branch crew/feat/a --feature-slug feat >/dev/null
-  CREW_FIX_FINDINGS=critical bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
-  run bash "$scripts/crew-summary.sh" --feature-slug feat
+  run bash "$scripts/crew-summary.sh" --feature-slug feat --promoted CRITICAL
   [[ "$output" == *"## Next Step"* ]]
   [[ "$output" == *"promotion covered CRITICAL on Phase 1 branches only"* ]]
   [[ "$output" == *"afk.fixFindings, or --fix-findings"* ]]
@@ -276,7 +262,7 @@ verdict_report() {
 
 @test "a severity-level promotion still subtracts by (branch, severity), verdicts or not" {
   verdict_report
-  CREW_FIX_FINDINGS=high bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
+  bash "$PROMOTE" defer --severities "CRITICAL, HIGH" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
   run bash "$PROMOTE" remind --feature-slug feat
   [[ "$output" == *"FINDINGS: open=2 (LOW=2)"* ]]
@@ -290,7 +276,7 @@ verdict_report() {
   bash "$scripts/session-init.sh" --feature-slug feat >/dev/null
   bash "$scripts/state.sh" complete --slug a --branch crew/feat/a --feature-slug feat >/dev/null
   verdict_report
-  run bash "$scripts/crew-summary.sh" --feature-slug feat
+  run bash "$scripts/crew-summary.sh" --feature-slug feat --promoted actionable
   [[ "$output" == *"## Next Step"* ]]
   [[ "$output" == *"1 Debatable — decide these first"* ]]
   [[ "$output" == *"- crew/feat/a [HIGH] src/y.ts:40 — Rename the exported helper — why: public contract change"* ]]
@@ -299,7 +285,7 @@ verdict_report() {
 
 # Fixture set shared with tests/orchestrator/body-format.test.mjs (isSourceGuarded).
 @test "guard counts Source: only at column 0 outside a code fence" {
-  g() { printf '%b' "$1" > .scratch/feat/issues/open/03-fx.md; bash "$PROMOTE" guard --issue .scratch/feat/issues/open/03-fx.md; }
+  g() { printf '%b' "$1" > .scratch/feat/issues/open/03-fx.md; bash "$PROMOTE" guard --issue .scratch/feat/issues/open/03-fx.md --severities actionable; }
   run g '# t\n\nSource: r (b)\n';                       [[ "$output" == *"source-guarded"* ]]
   run g '# t\n\n```\nSource: r (b)\n```\n';             [[ "$output" == *"eligible"* ]]
   run g '# t\n\n~~~\nSource: r (b)\n~~~\n';             [[ "$output" == *"eligible"* ]]

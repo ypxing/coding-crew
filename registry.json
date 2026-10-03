@@ -95,14 +95,6 @@
         "discover-commands.sh",
         "write-commands-cache.sh"
       ],
-      "platform-files": {
-        "pi": [
-          "scripts/dispatch-agent.sh"
-        ],
-        "codex": [
-          "scripts/dispatch-codex-agent.sh"
-        ]
-      },
       "agent-deps": [
         "crew-coder",
         "crew-reviewer",
@@ -135,7 +127,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.12.0",
+      "version": "1.12.1",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",

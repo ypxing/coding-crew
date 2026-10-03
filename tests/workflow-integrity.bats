@@ -11,7 +11,6 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 BRANCH_SETUP="$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh"
 SESSION_INIT="$REPO_ROOT/skills/crew-afk/scripts/session-init.sh"
 SQUASH="$REPO_ROOT/skills/crew-afk/scripts/squash-commits.sh"
-DISPATCH_PI="$REPO_ROOT/skills/crew-afk/scripts/dispatch-agent.sh"
 VERIFY="$REPO_ROOT/skills/crew-afk/scripts/verify-worktree.sh"
 
 setup() {
@@ -216,34 +215,6 @@ _installed_scripts() {
     done
   done
 }
-
-@test "C2: dispatch-agent warns about tool names the pi CLI does not provide" {
-  mkdir -p .pi/agents
-  cat > .pi/agents/probe.md <<'EOF'
----
-name: probe
-tools: read, bash, grep
----
-Body.
-EOF
-  mkdir -p wt && echo "hi" > p.md
-  cat > fake-pi <<'EOF'
-#!/usr/bin/env bash
-exit 0
-EOF
-  chmod +x fake-pi
-  PATH="$TEMP_DIR:$PATH" run bash -c "cd '$TEMP_DIR' && ln -sf fake-pi pi && bash '$DISPATCH_PI' --agent probe --dir '$TEMP_DIR/wt' --prompt-file '$TEMP_DIR/p.md' 2>&1"
-  [[ "$output" == *"grep"* ]]
-  [[ "$output" == *"unknown"* || "$output" == *"not a pi tool"* ]]
-}
-
-# --- B3: not_run policy must match verify-worktree.sh ------------------------
-
-# The two body assertions that lived here — "demote only on fail or a missing test command"
-# and "the pre-filter agrees with verify-worktree" — were prose in an orchestrator body, and
-# every platform is a launcher now. The policy is one function, prefilter() in
-# orchestrator/lib/report.mjs, asserted in tests/orchestrator/report.test.mjs; what remains
-# below is the script side of the same contract.
 
 @test "B3: verify-worktree.sh reports a missing lint/typecheck as a non-fatal gap" {
   grep -q 'not_run' "$VERIFY"

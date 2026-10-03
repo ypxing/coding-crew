@@ -73,166 +73,6 @@ assert len(d['developer_instructions']) > 200
   [ -f "$TEMP_DIR/.codex/agents/crew-coder.toml" ]
 }
 
-@test "codex crew-afk ships the codex dispatch script, executable and syntactically valid" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
-
-  [ -f "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
-  run bash -n "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh"
-  [ "$status" -eq 0 ]
-}
-
-@test "dispatch-codex-agent.sh requires its arguments" {
-  cd "$SCRIPT_DIR"
-  run bash skills/crew-afk/scripts/dispatch-codex-agent.sh --agent crew-coder
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"--dir is required"* ]]
-}
-
-@test "dispatch-codex-agent.sh reports a missing agent definition" {
-  cd "$SCRIPT_DIR"
-  mkdir -p "$TEMP_DIR/wt"
-  echo "task" > "$TEMP_DIR/prompt.md"
-  run env HOME="$TEMP_DIR" MAIN_ROOT="$TEMP_DIR" \
-    bash skills/crew-afk/scripts/dispatch-codex-agent.sh \
-      --agent does-not-exist --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"agent definition not found"* ]]
-}
-
-@test "dispatch-codex-agent.sh wires the agent TOML onto codex exec" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null
-
-  mkdir -p "$TEMP_DIR/bin" "$TEMP_DIR/wt"
-  printf '#!/usr/bin/env bash\necho "ARGS: $*"\ncat >/dev/null\n' > "$TEMP_DIR/bin/codex"
-  chmod +x "$TEMP_DIR/bin/codex"
-  echo "implement issue 01" > "$TEMP_DIR/prompt.md"
-
-  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
-    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-coder --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md" \
-      --out "$TEMP_DIR/report.md"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"exec"* ]]
-  [[ "$output" == *"--cd $TEMP_DIR/wt"* ]]
-  [[ "$output" == *"--output-last-message $TEMP_DIR/report.md"* ]]
-  # coder must be able to write in its worktree
-  [[ "$output" == *"--sandbox workspace-write"* ]]
-}
-
-@test "dispatch-codex-agent.sh makes the worktree's git dir writable in the sandbox" {
-  # A linked worktree's index lives in the main repo's .git dir, which codex's
-  # workspace-write sandbox keeps read-only even when its parent is passed with --add-dir.
-  # Without an explicit writable root, `git add` in a worker fails with
-  # "index.lock: Operation not permitted" — a codex sprint where nothing can ever commit.
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null
-
-  git -C "$TEMP_DIR" init -q -b main
-  git -C "$TEMP_DIR" config user.email t@test
-  git -C "$TEMP_DIR" config user.name T
-  echo x > "$TEMP_DIR/README.md"
-  git -C "$TEMP_DIR" add -A
-  git -C "$TEMP_DIR" commit -qm init
-  git -C "$TEMP_DIR" worktree add -q "$TEMP_DIR/wt" -b work
-
-  mkdir -p "$TEMP_DIR/bin"
-  printf '#!/usr/bin/env bash\necho "ARGS: $*"\ncat >/dev/null\n' > "$TEMP_DIR/bin/codex"
-  chmod +x "$TEMP_DIR/bin/codex"
-  echo "implement issue 01" > "$TEMP_DIR/prompt.md"
-
-  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
-    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-coder --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md"
-  [ "$status" -eq 0 ]
-  # --path-format=absolute: dispatch-codex-agent.sh resolves its own writable root the same
-  # way (see the CHANGELOG's v1.29.100 entry); without it, git's default (cwd-relative, or a
-  # differently-normalized absolute form on Windows) can disagree with the script's own
-  # rendering even though both name the same directory.
-  common_dir=$(cd "$TEMP_DIR/wt" && git rev-parse --path-format=absolute --git-common-dir)
-  # The worktree's own git dir too: codex mounts it read-only even under a writable
-  # common dir, and it holds the worktree's index.lock.
-  git_dir=$(cd "$TEMP_DIR/wt" && git rev-parse --path-format=absolute --git-dir)
-  [[ "$output" == *"sandbox_workspace_write.writable_roots=[\"$common_dir\",\"$git_dir\"]"* ]] || {
-    echo "$output" >&2; return 1; }
-}
-
-@test "dispatch-codex-agent.sh adds no writable root for a read-only reviewer" {
-  # The reviewer never commits, so widening its sandbox would buy nothing.
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null
-
-  mkdir -p "$TEMP_DIR/bin"
-  printf '#!/usr/bin/env bash\necho "ARGS: $*"\ncat >/dev/null\n' > "$TEMP_DIR/bin/codex"
-  chmod +x "$TEMP_DIR/bin/codex"
-  echo "review branch" > "$TEMP_DIR/prompt.md"
-
-  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
-    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md"
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"writable_roots"* ]]
-}
-
-@test "dispatch-codex-agent.sh honours the reviewer's read-only sandbox" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null
-
-  mkdir -p "$TEMP_DIR/bin"
-  printf '#!/usr/bin/env bash\necho "ARGS: $*"\ncat >/dev/null\n' > "$TEMP_DIR/bin/codex"
-  chmod +x "$TEMP_DIR/bin/codex"
-  echo "review branch" > "$TEMP_DIR/prompt.md"
-
-  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
-    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"--sandbox read-only"* ]]
-}
-
-@test "a read-only agent with --out can write only --out's directory" {
-  # Its result file goes there, and codex's read-only sandbox can't write it at all.
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null
-
-  mkdir -p "$TEMP_DIR/bin"
-  printf '#!/usr/bin/env bash\necho "ARGS: $*"\ncat\n' > "$TEMP_DIR/bin/codex"
-  chmod +x "$TEMP_DIR/bin/codex"
-  echo "review branch" > "$TEMP_DIR/prompt.md"
-
-  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
-    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-reviewer --dir "$TEMP_DIR" --prompt-file "$TEMP_DIR/prompt.md" \
-      --out "$TEMP_DIR/.scratch/demo/dispatch/01-a/review.md"
-  [ "$status" -eq 0 ]
-  dispatch=$(cd "$TEMP_DIR/.scratch/demo/dispatch/01-a" && pwd)
-  [[ "$output" == *"--cd $dispatch --sandbox workspace-write"* ]] || { echo "$output" >&2; return 1; }
-  [[ "$output" == *"exclude_slash_tmp=true"* && "$output" == *"exclude_tmpdir_env_var=true"* ]]
-  [[ "$output" != *"writable_roots"* && "$output" != *"network_access"* && "$output" != *"--add-dir"* ]]
-  [[ "$output" == *"The repository is $TEMP_DIR"* ]]
-}
-
-@test "--model overrides the agent TOML, --model inherit passes none" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk >/dev/null
-
-  mkdir -p "$TEMP_DIR/bin" "$TEMP_DIR/wt"
-  printf '#!/usr/bin/env bash\necho "ARGS: $*"\ncat >/dev/null\n' > "$TEMP_DIR/bin/codex"
-  chmod +x "$TEMP_DIR/bin/codex"
-  echo "task" > "$TEMP_DIR/prompt.md"
-
-  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
-    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-coder --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md" --model gpt-5.6
-  [[ "$output" == *"--model gpt-5.6"* ]]
-
-  run env PATH="$TEMP_DIR/bin:$PATH" MAIN_ROOT="$TEMP_DIR" \
-    bash "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" \
-      --agent crew-coder --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md" --model inherit
-  [[ "$output" != *"--model"* ]]
-}
-
 @test "uninstall removes codex-installed skills and agents" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
@@ -257,20 +97,14 @@ assert len(d['developer_instructions']) > 200
   [ "$status" -ne 0 ]
 }
 
-@test "codex install excludes pi's dispatch-agent.sh" {
+@test "codex install ships no bash dispatcher, and an update prunes one an older install left" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
-
-  [ -f "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
+  [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
   [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-agent.sh" ]
-}
-
-@test "reinstall prunes a foreign dispatch script left by an older install" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
-  # Simulate the pre-gating install that copied every platform's scripts
-  touch "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-agent.sh"
+  touch "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-agent.sh"
 
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
+  [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
   [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/scripts/dispatch-agent.sh" ]
 }

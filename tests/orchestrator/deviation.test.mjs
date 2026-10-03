@@ -19,6 +19,12 @@ test("a full test command in the trace is found; targeted runs are not", () => {
   assert.deepEqual(fullSuiteRuns(f, "bats tests/*.bats"), ["bats tests/*.bats"]);
 });
 
+test("the cached command with explicit test-file arguments is a targeted run, not the suite", () => {
+  const { f } = events("pytest tests/test_x.py", "npm test -- a.test.js", "pytest -q", "npm test 2>&1 | tail -5", "npm test -- --watch=false");
+  assert.deepEqual(fullSuiteRuns(f, "pytest"), ["pytest -q"]);
+  assert.deepEqual(fullSuiteRuns(f, "npm test"), ["npm test 2>&1 | tail -5", "npm test -- --watch=false"]);
+});
+
 test("no test command or no events file means no deviation", () => {
   assert.deepEqual(fullSuiteRuns("/nonexistent", "bats"), []);
   assert.deepEqual(fullSuiteRuns(events("bats x").f, null), []);

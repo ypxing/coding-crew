@@ -96,22 +96,6 @@ launcher_body() {
   done
 }
 
-@test "launcher: each subprocess platform still ships the dispatcher its adapter runs" {
-  # pi and codex dispatch through a bash script that lib/dispatch.mjs execs, so an
-  # unshipped dispatcher is a sprint that cannot start a worker.
-  local expected
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    case "$p" in
-      pi) expected="scripts/dispatch-agent.sh" ;;
-      codex) expected="scripts/dispatch-codex-agent.sh" ;;
-      *) continue ;;
-    esac
-    run jq -r --arg p "$p" '.skills["crew-afk"]["platform-files"][$p][]' "$REPO_ROOT/registry.json"
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"$expected"* ]] || { echo "$p does not ship $expected" >&2; return 1; }
-  done
-}
-
 # ─── the program's install ───────────────────────────────────────────────────
 
 @test "assets: registry declares the orchestrator at a platform-neutral path" {
@@ -190,4 +174,11 @@ launcher_body() {
   # It found the bash mechanism layer inside the installed skill, unaided.
   # Node prints the scripts dir with the host's native separator (backslash on Windows).
   [[ "$output" == *".pi/skills/crew-afk/scripts"* || "$output" == *".pi\\skills\\crew-afk\\scripts"* ]]
+}
+
+@test "launcher: no platform ships a bash dispatcher" {
+  run jq -r '.skills["crew-afk"]["platform-files"] // {} | tostring' "$REPO_ROOT/registry.json"
+  [[ "$output" != *dispatch* ]]
+  [ ! -e "$REPO_ROOT/skills/crew-afk/scripts/dispatch-agent.sh" ]
+  [ ! -e "$REPO_ROOT/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
 }

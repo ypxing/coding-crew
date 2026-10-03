@@ -1,5 +1,7 @@
 import claude from "./claude.mjs";
+import codex from "./codex.mjs";
 import copilot from "./copilot.mjs";
+import pi from "./pi.mjs";
 
-/** Platforms dispatched through an adapter; pi and codex still go through their bash dispatchers. */
-export const ADAPTERS = { claude, copilot };
+/** Every platform is dispatched through an adapter; none has a bash dispatcher or an agent file. */
+export const ADAPTERS = { pi, codex, claude, copilot };
