@@ -40,9 +40,11 @@ export default {
   // claude ends the session with `subtype: error_max_budget_usd` (exit 1, no result).
   budget: (usd) => ["--max-budget-usd", String(usd)],
 
-  // Cleared so a child launched from inside a Claude Code session starts its own session
+  // Session ids cleared so a child launched from inside a Claude Code session starts its own
   // instead of attaching to the parent's hook chain, which can mutate or swallow the prompt.
-  env: { CLAUDE_CODE_SESSION_ID: "", CLAUDE_CODE_CHILD_SESSION: "" },
+  // Auto-memory off: every dispatch is unattended, and the memory dir is shared across every
+  // worktree, so a note one wrote would reach every later session unreviewed.
+  env: { CLAUDE_CODE_SESSION_ID: "", CLAUDE_CODE_CHILD_SESSION: "", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" },
 
   traceLine(evt, agent) {
     if (evt.type === "assistant") {

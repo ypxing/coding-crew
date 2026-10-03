@@ -268,7 +268,7 @@ export class Effects {
    * Spawn a long-running child (a worker dispatch) with a hard timeout.
    * A hung worker used to block `wait` forever and the sprint never ended.
    */
-  spawnWithTimeout(cmd, args, { cwd, env = {}, timeoutMs, onLine } = {}) {
+  spawnWithTimeout(cmd, args, { cwd, env = {}, timeoutMs, onLine, input } = {}) {
     const argv = [cmd, ...args];
     if (this.dryRun) {
       this.recorded.push({ argv, cwd, env });
@@ -281,10 +281,12 @@ export class Effects {
       const child = spawn(cmd, args, {
         cwd,
         env: { ...process.env, ...this.env, ...env },
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
         detached: true,
       });
       if (child.pid) liveGroups.add(child.pid);
+      child.stdin?.on("error", () => {});
+      if (input !== undefined) child.stdin?.end(input);
       let stdout = "";
       let stderr = "";
       let timedOut = false;

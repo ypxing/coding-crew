@@ -267,3 +267,19 @@ test("the interrupt handler kills a running pane-hosted run.sh, and a finished d
   assert.equal(r.code, 0);
   assert.deepEqual(registeredPids(), []);
 });
+
+test("a dispatch's stdin reaches the child, which leads its own process group", async () => {
+  const { root, stem } = fixture();
+  const adapter = fakeTerminal();
+  const r = await spawnInWorkerTerminal(
+    effects(),
+    adapter,
+    "bash",
+    ["-c", 'read -r line; echo "got $line"; echo "pgid=$(ps -o pgid= -p $$ | tr -d " ") pid=$$"'],
+    { cwd: root, stem, title: "t", input: "the prompt\n", timing: FAST },
+  );
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^got the prompt$/m);
+  const [, pgid, pid] = /pgid=(\d+) pid=(\d+)/.exec(r.stdout);
+  assert.equal(pgid, pid, "a timeout's group kill takes the child's children with it");
+});

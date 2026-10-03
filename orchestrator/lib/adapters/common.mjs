@@ -53,16 +53,26 @@ export function lastEvent(lines, type) {
 }
 
 /**
- * Argv strings are capped per string (Linux MAX_ARG_STRLEN, 128 KiB). A prompt that has to travel
- * as one fails the dispatch with this message rather than being cut.
+ * Argv strings are capped per string (Linux MAX_ARG_STRLEN, 128 KiB), and Windows caps the whole
+ * command line (32,767 characters). A prompt that has to travel in argv fails the dispatch with
+ * this message rather than being cut.
  */
 export const ARGV_PROMPT_LIMIT_BYTES = 128 * 1024;
+const WINDOWS_COMMAND_LINE_CHARS = 32767;
 
-export function assertArgvPromptFits(prompt, cli) {
-  const bytes = Buffer.byteLength(prompt, "utf8");
-  if (bytes > ARGV_PROMPT_LIMIT_BYTES) {
+export function assertArgvFits(args, cli, platform = process.platform) {
+  for (const a of args) {
+    const bytes = Buffer.byteLength(a, "utf8");
+    if (bytes > ARGV_PROMPT_LIMIT_BYTES) {
+      throw new Error(
+        `prompt is ${bytes} bytes, over the ${ARGV_PROMPT_LIMIT_BYTES}-byte (128 KiB) argv size limit; ${cli} takes it as a command-line argument, so it cannot be sent without truncating`,
+      );
+    }
+  }
+  const chars = [cli, ...args].reduce((n, a) => n + a.length + 1, 0);
+  if (platform === "win32" && chars > WINDOWS_COMMAND_LINE_CHARS) {
     throw new Error(
-      `prompt is ${bytes} bytes, over the ${ARGV_PROMPT_LIMIT_BYTES}-byte (128 KiB) argv size limit; ${cli} takes it as a command-line argument, so it cannot be sent without truncating`,
+      `the ${cli} command line is ${chars} characters, over Windows' ${WINDOWS_COMMAND_LINE_CHARS}-character limit; the prompt cannot be sent without truncating`,
     );
   }
 }

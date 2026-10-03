@@ -27,7 +27,7 @@ import { basename, dirname, join } from "node:path";
 import { writeLog } from "./log.mjs";
 import { preflightPaneHost, spawnDispatch } from "./pane-host/index.mjs";
 import { ADAPTERS } from "./adapters/index.mjs";
-import { ARGV_PROMPT_LIMIT_BYTES, EMPTY_RESULT_META, assertArgvPromptFits } from "./adapters/common.mjs";
+import { ARGV_PROMPT_LIMIT_BYTES, EMPTY_RESULT_META, assertArgvFits } from "./adapters/common.mjs";
 import { renderRolePrompt, roleOfAgent } from "./adapters/render.mjs";
 
 export { ARGV_PROMPT_LIMIT_BYTES, renderRolePrompt };
@@ -97,10 +97,11 @@ export function buildDispatch(platform, spec) {
   } else if (protocol && platform === "copilot") {
     prompt = `${protocol}\n\n---\n\n${prompt}`;
   }
-  // Every argv-borne string is capped; pi and codex carry the protocol in argv too.
-  if (adapter.promptVia === "argv") assertArgvPromptFits(platform === "pi" || platform === "codex" ? `${protocol ?? ""}${prompt}` : prompt, adapter.cmd);
   const label = basename(promptFile, ".md").replace(/\.prompt$/, "");
   const args = adapter.argv({ cwd, mainRoot, model, role, promptFile, outFile, protocolFile, protocol: protocol ?? null, prompt, label: `${spec.agent}: ${label}` });
+  // A CLI that reads its prompt on stdin carries no size limit; every argv string is capped.
+  const input = adapter.promptVia === "stdin" ? adapter.stdin({ cwd, role, protocol: protocol ?? null, prompt, outFile }) : undefined;
+  assertArgvFits(args, adapter.cmd);
   // A fix round continuing the coder's own earlier session (pipeline.mjs decides when).
   if (resumeSessionId && adapter.resume) args.push(...adapter.resume(resumeSessionId));
   // afk.limits.<role>.usd: a backstop, checked after each turn, so it can overshoot one turn.
@@ -108,6 +109,7 @@ export function buildDispatch(platform, spec) {
   return {
     cmd: adapter.cmd,
     args,
+    input,
     ...shared,
     env: { ...shared.env, ...(adapter.env ?? {}) },
     capture: "stdout",
@@ -248,6 +250,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     spawnDispatch(effects, built.cmd, built.args, {
       cwd: built.cwd,
       env: built.env,
+      input: built.input,
       timeoutMs,
       onLine,
       stem: spec.outFile,
@@ -313,102 +316,19 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
 }
 
 /**
- * An agent-less dispatch: one reasoning pass with no agent definition, for the PRD audit
- * (loop.mjs) and one-time command discovery (commands.mjs).
- *
- * Tool access is not restricted: claude's `--tools` is variadic and swallows the prompt
- * when no flag separates them.
- *
- * claude's auto-memory is disabled: each call is stateless, and the memory directory is
- * shared across every worktree, so a note written here would leak into every later session
- * unreviewed.
+ * A role with no protocol (commandFinder, prdAuditor, prWriter): one reasoning pass through the
+ * platform's adapter like every other role, its prompt alone. `fakeAgent` names the role to the
+ * CREW_FAKE_DISPATCH seam (fake-dispatch.sh's canned answers) and in the trace.
  */
 export async function dispatchPlain(
   effects,
   platform,
-  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "prd-audit", maxBudgetUsd = null },
+  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "prd-audit", maxBudgetUsd = null, logFile },
 ) {
-  const env = {
-    MAIN_ROOT: mainRoot,
-    CREW_ORCHESTRATED: "1",
-    ...(platform === "claude"
-      ? {
-          CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
-          // See buildDispatch's claude branch.
-          CLAUDE_CODE_SESSION_ID: "",
-          CLAUDE_CODE_CHILD_SESSION: "",
-        }
-      : {}),
-  };
-
-  // Same test/CI seam as buildDispatch. fakeAgent picks fake-dispatch.sh's canned answer.
-  if (process.env.CREW_FAKE_DISPATCH) {
-    const out = outFile ?? join(cwd, "plain-dispatch.out");
-    const r = await effects.spawnWithTimeout(
-      "bash",
-      [
-        process.env.CREW_FAKE_DISPATCH,
-        "--agent", fakeAgent,
-        "--runtime", platform,
-        ...(model ? ["--model", model] : []),
-        "--dir", cwd,
-        "--out", out,
-      ],
-      { cwd: mainRoot, env, timeoutMs },
-    );
-    const text = existsSync(out) ? readFileSync(out, "utf8") : "";
-    return { code: r.code, timedOut: !!r.timedOut, text, dryRun: !!r.dryRun };
-  }
-
-  let cmd;
-  let args;
-  switch (platform) {
-    case "pi":
-      cmd = "pi";
-      args = ["-p", ...(model ? ["--model", model] : []), prompt];
-      break;
-    case "codex":
-      cmd = "codex";
-      args = ["exec", "--cd", cwd, ...(model ? ["--model", model] : []), prompt];
-      break;
-    case "claude":
-      cmd = "claude";
-      // Prompt right after -p: --add-dir is variadic and would swallow a prompt following it.
-      args = [
-        "-p",
-        prompt,
-        "--permission-mode",
-        "bypassPermissions",
-        "--add-dir",
-        mainRoot,
-        ...(model ? ["--model", model] : []),
-        ...(maxBudgetUsd ? ["--max-budget-usd", String(maxBudgetUsd)] : []),
-      ];
-      break;
-    case "copilot":
-      cmd = "copilot";
-      args = ["-p", prompt, "-C", cwd, "--add-dir", mainRoot, "--allow-all-tools", "--no-color", "--silent", ...(model ? ["--model", model] : [])];
-      break;
-    default:
-      throw new Error(`unknown platform: ${platform}`);
-  }
-  {
-    try {
-      assertArgvPromptFits(prompt, cmd);
-    } catch (e) {
-      if (outFile) {
-        mkdirSync(dirname(outFile), { recursive: true });
-        writeFileSync(outFile, "");
-      }
-      return { code: 1, timedOut: false, text: "", stderr: e.message, dryRun: false };
-    }
-  }
-  const r = await effects.spawnWithTimeout(cmd, args, { cwd, env, timeoutMs });
-  if (outFile && !r.dryRun) {
-    mkdirSync(dirname(outFile), { recursive: true });
-    writeFileSync(outFile, r.stdout ?? "");
-  }
-  return { code: r.code, timedOut: !!r.timedOut, text: r.stdout ?? "", dryRun: !!r.dryRun };
+  mkdirSync(dirname(outFile), { recursive: true });
+  const promptFile = `${outFile}.prompt.md`;
+  writeFileSync(promptFile, prompt);
+  return dispatch(effects, platform, { agent: fakeAgent, cwd, mainRoot, model, promptFile, outFile, maxBudgetUsd, logFile }, { timeoutMs });
 }
 
 /**

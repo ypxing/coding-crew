@@ -1,6 +1,6 @@
 /**
  * codex adapter: `codex exec --json`. codex has no system-prompt flag, so the role's protocol is
- * prepended to the prompt, which is codex's positional argument. The sandbox is per role, and the
+ * prepended to the prompt, which codex reads from stdin (`-`): no argv size limit applies. The sandbox is per role, and the
  * writable roots a worktree's git needs are named explicitly.
  */
 import { spawnSync } from "node:child_process";
@@ -30,7 +30,7 @@ export default {
   cmd: "codex",
   defaultParallel: 3,
   defaultModel: undefined,
-  promptVia: "argv",
+  promptVia: "stdin",
   // The flags live on the `exec` subcommand.
   helpArgs: ["exec", "--help"],
   requiredFlags: ["--sandbox", "--json", "--cd"],
@@ -44,7 +44,7 @@ export default {
    * git dirs writable (a linked worktree's index lives in the main repo's git dir), the main
    * checkout added (traces, prompts and reports live under .scratch).
    */
-  argv({ cwd, mainRoot, model, role, protocol, prompt, outFile }) {
+  argv({ cwd, mainRoot, model, role, outFile }) {
     let sandbox = (role && CODEX_SANDBOX[role]) || process.env.CREW_CODEX_SANDBOX || "workspace-write";
     let resultDir = null;
     if (sandbox === "read-only" && outFile) {
@@ -67,11 +67,17 @@ export default {
     if (model && model !== "inherit") args.push("--model", model);
     args.push(...this.roleArgs(role));
     if (outFile) args.push("--output-last-message", outFile);
-    const task = resultDir
-      ? `Your shell starts in ${resultDir}, the only writable directory, where your result file goes. The repository is ${cwd}: run your commands there (\`cd ${cwd} && ...\`).\n\n${prompt}`
-      : prompt;
-    args.push(protocol ? `${protocol}\n\n---\n\n# Task\n\n${task}` : task);
+    args.push("-");
     return args;
+  },
+
+  /** What codex reads on stdin: the protocol, then the task. */
+  stdin({ cwd, role, protocol, prompt, outFile }) {
+    const readOnly = ((role && CODEX_SANDBOX[role]) || process.env.CREW_CODEX_SANDBOX) === "read-only" && outFile;
+    const task = readOnly
+      ? `Your shell starts in ${realpathSync(dirname(outFile))}, the only writable directory, where your result file goes. The repository is ${cwd}: run your commands there (\`cd ${cwd} && ...\`).\n\n${prompt}`
+      : prompt;
+    return protocol ? `${protocol}\n\n---\n\n# Task\n\n${task}` : task;
   },
 
   roleArgs: (role) => ROLE_ARGS.codex[role] ?? [],

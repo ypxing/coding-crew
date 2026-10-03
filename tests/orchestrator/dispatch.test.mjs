@@ -102,28 +102,31 @@ test("codex carries the role's reasoning effort from role config", () => {
   assert.equal(effort("crew-triage"), 'model_reasoning_effort="high"');
 });
 
-test("codex: the coder is workspace-write with network and the git dirs writable; the protocol is prepended to the prompt", () => {
+test("codex: the coder is workspace-write with network and the git dirs writable; protocol then prompt go on stdin", () => {
   const { root, promptFile } = fixture();
   const wt = join(root, "worktree");
   mkdirSync(wt, { recursive: true });
-  const a = buildDispatch("codex", spec(root, promptFile)).args;
+  const b = buildDispatch("codex", spec(root, promptFile));
+  const a = b.args;
   assert.deepEqual(a.slice(0, 7), ["exec", "--cd", wt, "--sandbox", "workspace-write", "--json", "-c"]);
   assert.ok(a.includes("sandbox_workspace_write.network_access=true"));
   assert.deepEqual(a.slice(a.indexOf("--add-dir"), a.indexOf("--add-dir") + 2), ["--add-dir", root]);
-  assert.match(a.at(-1), /^# Coder[\s\S]*# Task\n\nprompt body$/);
+  assert.equal(a.at(-1), "-", "codex reads the prompt from stdin");
+  assert.match(b.input, /^# Coder[\s\S]*# Task\n\nprompt body$/);
   assert.equal(a.at(a.indexOf("--output-last-message") + 1), join(root, "dispatch/alpha.report.md"));
 });
 
 test("codex: a read-only role runs workspace-write rooted at its result file's directory", () => {
   const { root, promptFile } = fixture();
   const out = join(root, "dispatch/alpha.review.md");
-  const a = buildDispatch("codex", spec(root, promptFile, { agent: "crew-reviewer", cwd: root, outFile: out })).args;
+  const b = buildDispatch("codex", spec(root, promptFile, { agent: "crew-reviewer", cwd: root, outFile: out }));
+  const a = b.args;
   const resultDir = join(realpathSync(root), "dispatch");
   assert.deepEqual(a.slice(0, 5), ["exec", "--cd", resultDir, "--sandbox", "workspace-write"]);
   assert.ok(a.includes("sandbox_workspace_write.exclude_slash_tmp=true"));
   assert.equal(a.includes("sandbox_workspace_write.network_access=true"), false);
   assert.equal(a.includes("--add-dir"), false);
-  assert.match(a.at(-1), /Your shell starts in .*dispatch, the only writable directory[\s\S]*prompt body$/);
+  assert.match(b.input, /Your shell starts in .*dispatch, the only writable directory[\s\S]*prompt body$/);
 });
 
 test("no model resolves to no --model flag (what `--model inherit` means)", () => {
@@ -325,13 +328,6 @@ test("copilot: reviewer and triage deny write tools; the coder does not", () => 
   assert.ok(!buildDispatch("copilot", spec(root, promptFile)).args.includes("--deny-tool"));
 });
 
-test("claude and copilot: a plain role (no protocol) dispatches too", async () => {
-  for (const platform of ["claude", "copilot"]) {
-    const argv = await recordedArgv(platform);
-    assert.ok(argv.includes("the whole prompt"));
-  }
-});
-
 test("copilot: every role dispatches with the protocol prepended and no agent file", () => {
   const { root, promptFile } = fixture();
   for (const role of Object.keys(ROLE_AGENT)) {
@@ -387,9 +383,25 @@ test("an argv prompt over 128 KiB fails the dispatch naming the limit, never tru
     assert.match(r.stderr, /128 KiB/);
   }
   const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: root, dryRun: true });
-  const r = await dispatchPlain(effects, "claude", { prompt: "y".repeat(128 * 1024 + 1), cwd: root, mainRoot: root });
+  const r = await dispatchPlain(effects, "claude", { prompt: "y".repeat(128 * 1024 + 1), cwd: root, mainRoot: root, outFile: join(root, "plain.md") });
   assert.match(r.stderr, /128 KiB/);
   assert.equal(effects.recorded.length, 0);
+});
+
+test("a prompt over 128 KiB still reaches codex, which reads it on stdin, and pi, whose two argv strings are each under the cap", () => {
+  const { root } = fixture();
+  const big = join(root, "big.md");
+  writeFileSync(big, "x".repeat(100 * 1024));
+  const codex = buildDispatch("codex", spec(root, big));
+  assert.ok(codex.input.length > 100 * 1024);
+  // pi: the ~100 KiB prompt plus the protocol is over the cap in total, but no one string is.
+  assert.doesNotThrow(() => buildDispatch("pi", spec(root, big)));
+});
+
+test("on Windows the whole command line is capped", async () => {
+  const { assertArgvFits } = await import("../../orchestrator/lib/adapters/common.mjs");
+  assert.throws(() => assertArgvFits(["x".repeat(40_000)], "copilot", "win32"), /32767-character/);
+  assert.doesNotThrow(() => assertArgvFits(["x".repeat(40_000)], "copilot", "linux"));
 });
 
 test("claude cost, session id, resume and budget over a recorded stream-json fixture", async () => {
@@ -441,102 +453,51 @@ test("copilot's concurrency is a number, not a plan-tier batching paragraph", ()
 // prompt at all and exited 1 — surfaced as "Command discovery: model dispatch did not
 // complete (exit 1)". See dispatch.mjs's dispatchPlain doc comment.
 
-async function recordedArgv(platform, over = {}) {
-  const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: "/tmp/does-not-run", dryRun: true });
-  await dispatchPlain(effects, platform, {
-    prompt: "the whole prompt",
-    cwd: "/tmp/does-not-run",
-    mainRoot: "/tmp/does-not-run",
-    outFile: null,
-    ...over,
-  });
-  return effects.recorded.at(-1).argv;
+async function recordedDispatch(platform, over = {}) {
+  const { root } = fixture();
+  const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: root, dryRun: true });
+  await dispatchPlain(effects, platform, { prompt: "the whole prompt", cwd: root, mainRoot: root, outFile: join(root, "plain.md"), ...over });
+  return { root, rec: effects.recorded.at(-1) };
 }
 
-test("pi dispatchPlain never gets a --no-tools/--no-context-files flag", async () => {
-  const argv = await recordedArgv("pi", {});
-  assert.deepEqual(argv, ["pi", "-p", "the whole prompt"]);
+test("a plain role dispatches through its platform's adapter, with its prompt and no protocol", async () => {
+  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+    const { root, rec } = await recordedDispatch(platform);
+    const promptFile = join(root, "plain.md.prompt.md");
+    const built = buildDispatch(platform, { agent: "prd-audit", cwd: root, mainRoot: root, promptFile, outFile: join(root, "plain.md") });
+    assert.deepEqual(rec.argv, [built.cmd, ...built.args], platform);
+    assert.doesNotMatch(rec.argv.join(" "), /# Coder|# Reviewer|# Triage/, `${platform}: no protocol`);
+    if (platform !== "codex") assert.ok(rec.argv.includes("the whole prompt"), platform);
+  }
 });
 
-test("claude dispatchPlain never gets a --tools flag", async () => {
-  const argv = await recordedArgv("claude", { mainRoot: "/tmp/does-not-run" });
-  assert.equal(argv.includes("--tools"), false);
+test("claude: a plain role's prompt sits right after -p, so no variadic flag swallows it, and gets no --tools", async () => {
+  // --add-dir and --tools are variadic: a prompt after them was consumed as their values, and
+  // claude exited 1 with "Input must be provided either through stdin or as a prompt argument".
+  for (const model of [null, "opus"]) {
+    const { rec } = await recordedDispatch("claude", { model });
+    assert.equal(rec.argv[rec.argv.indexOf("-p") + 1], "the whole prompt");
+    assert.equal(rec.argv.includes("--tools"), false);
+  }
 });
 
-test("claude dispatchPlain with a model still gets the prompt as its own argument, not swallowed by --model", async () => {
-  const argv = await recordedArgv("claude", { mainRoot: "/tmp/does-not-run", model: "opus" });
-  assert.equal(argv.includes("the whole prompt"), true);
-  assert.deepEqual(argv.slice(-2), ["--model", "opus"]);
-});
-
-test("claude dispatchPlain with no model still gets the prompt as its own argument, not swallowed by --add-dir", async () => {
-  // Regression: --add-dir is variadic (`<directories...>`). With no --model in between
-  // (the default), a prompt placed after --add-dir's value used to be consumed as a
-  // second directory instead of claude's -p positional argument, so claude saw no
-  // prompt at all and exited 1 with "Input must be provided either through stdin or as
-  // a prompt argument" — surfaced as "Command discovery: model dispatch did not complete
-  // (exit 1)". The prompt must sit right after -p, before --add-dir, so no flag's arity
-  // can ever swallow it.
-  const argv = await recordedArgv("claude", { mainRoot: "/tmp/does-not-run", model: null });
-  assert.deepEqual(argv, [
-    "claude",
-    "-p",
-    "the whole prompt",
-    "--permission-mode",
-    "bypassPermissions",
-    "--add-dir",
-    "/tmp/does-not-run",
-  ]);
-});
-
-test("model still comes through, in the same order as before", async () => {
-  const argv = await recordedArgv("pi", { model: "gemini-flash" });
-  assert.deepEqual(argv, ["pi", "-p", "--model", "gemini-flash", "the whole prompt"]);
-});
-
-// dispatchPlain is always a one-shot, stateless reasoning pass — command discovery
-// re-derives its answer from a source hash every run, the PRD audit from the current
-// diff — so nothing here benefits from persisting across runs, and auto-memory's project
-// directory is shared across every worktree, while this dispatch gets full write-tool
-// access before any worktree exists.
-test("claude dispatchPlain disables auto-memory", async () => {
-  const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: "/tmp/does-not-run", dryRun: true });
-  await dispatchPlain(effects, "claude", {
-    prompt: "the whole prompt",
-    cwd: "/tmp/does-not-run",
-    mainRoot: "/tmp/does-not-run",
-    outFile: null,
-  });
-  assert.equal(effects.recorded.at(-1).env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
-});
-
-// Command discovery's own probe hit this for real: dispatched from inside a Claude Code
-// session, the child inherited the parent's CLAUDE_CODE_SESSION_ID/CLAUDE_CODE_CHILD_SESSION,
-// attached to its hook chain, and a global UserPromptSubmit hook rewrote the prompt into
-// something claude answered with its default "your message came through empty" greeting
-// instead of the discovery question — no cache, no error, just a silent fallback.
-test("claude dispatchPlain clears the parent session's id so the child starts its own", async () => {
-  const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: "/tmp/does-not-run", dryRun: true });
-  await dispatchPlain(effects, "claude", {
-    prompt: "the whole prompt",
-    cwd: "/tmp/does-not-run",
-    mainRoot: "/tmp/does-not-run",
-    outFile: null,
-  });
-  assert.equal(effects.recorded.at(-1).env.CLAUDE_CODE_SESSION_ID, "");
-  assert.equal(effects.recorded.at(-1).env.CLAUDE_CODE_CHILD_SESSION, "");
-});
-
-test("pi and codex dispatchPlain get no auto-memory env var — the flag is claude-specific", async () => {
+// A plain role is a one-shot, stateless pass: auto-memory's project dir is shared across every
+// worktree, and a parent session's ids attached the child to its hook chain (a global
+// UserPromptSubmit hook once rewrote command discovery's prompt).
+test("claude: a plain role disables auto-memory and starts its own session; no other runtime gets those vars", async () => {
+  const { rec } = await recordedDispatch("claude");
+  assert.equal(rec.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
+  assert.equal(rec.env.CLAUDE_CODE_SESSION_ID, "");
+  assert.equal(rec.env.CLAUDE_CODE_CHILD_SESSION, "");
   for (const platform of ["pi", "codex", "copilot"]) {
-    const effects = new Effects({ scriptsDir: SCRIPTS, mainRoot: "/tmp/does-not-run", dryRun: true });
-    await dispatchPlain(effects, platform, {
-      prompt: "the whole prompt",
-      cwd: "/tmp/does-not-run",
-      mainRoot: "/tmp/does-not-run",
-      outFile: null,
-    });
-    assert.equal("CLAUDE_CODE_DISABLE_AUTO_MEMORY" in effects.recorded.at(-1).env, false);
+    assert.equal("CLAUDE_CODE_DISABLE_AUTO_MEMORY" in (await recordedDispatch(platform)).rec.env, false, platform);
+  }
+});
+
+test("a plain role's model comes through", async () => {
+  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+    const { rec } = await recordedDispatch(platform, { model: "m-1" });
+    assert.equal(rec.argv[rec.argv.indexOf("--model") + 1], "m-1", platform);
   }
 });
 
