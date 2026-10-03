@@ -25,7 +25,7 @@ setup() {
 }
 
 launcher_body() {
-  printf '%s\n' "$AFK_DIR/$1.SKILL.md"
+  afk_variant "$1"
 }
 
 # ─── the launchers ───────────────────────────────────────────────────────────
@@ -34,11 +34,12 @@ launcher_body() {
   [ "${#AFK_LAUNCHER_VARIANTS[@]}" -ge 1 ]
 }
 
-@test "launcher: each cut-over platform has its own body and no shared-body mapping" {
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    [ -f "$(launcher_body "$p")" ] || { echo "$p has no $p.SKILL.md" >&2; return 1; }
-    run jq -r --arg p "$p" '.skills["crew-afk"].body[$p] // "none"' "$REPO_ROOT/registry.json"
-    [ "$output" = "none" ] || { echo "$p still maps to a shared prose body" >&2; return 1; }
+@test "launcher: the four platforms render from one shared body, with no per-platform SKILL.md" {
+  [ -f "$AFK_DIR/SKILL.md" ]
+  for p in claude codex copilot pi; do
+    [ ! -e "$AFK_DIR/$p.SKILL.md" ] || { echo "$p.SKILL.md still exists" >&2; return 1; }
+    [ -f "$(launcher_body "$p")" ] || { echo "$p does not render" >&2; return 1; }
+    ! grep -q '{{' "$(launcher_body "$p")"
   done
 }
 
@@ -108,14 +109,6 @@ launcher_body() {
     run jq -r --arg p "$p" '.skills["crew-afk"]["platform-files"][$p][]' "$REPO_ROOT/registry.json"
     [ "$status" -eq 0 ]
     [[ "$output" == *"$expected"* ]] || { echo "$p does not ship $expected" >&2; return 1; }
-  done
-}
-
-@test "launcher: the rendered body is the launcher itself, and its fragments are gone" {
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    diff "$(afk_variant "$p")" "$(launcher_body "$p")"
-    [ ! -d "$AFK_DIR/fragments/$p" ] || {
-      echo "fragments/$p still exists — two orchestrators for $p" >&2; return 1; }
   done
 }
 

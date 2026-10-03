@@ -212,7 +212,7 @@ EOF
   # script the moment the default changes again. The wiring end to end (the default promotes
   # a HIGH into a Phase 2 fix issue, `medium` a MEDIUM) is asserted in
   # tests/orchestrator/sprint-settings.test.mjs.
-  for f in "$REPO_ROOT"/skills/crew-afk/*.SKILL.md; do
+  for f in "$REPO_ROOT"/skills/crew-afk/SKILL.md "$REPO_ROOT"/skills/crew-afk/fragments/*/*.md; do
     if grep -qiE 'Never promote MEDIUM or LOW|severities: CRITICAL' "$f"; then
       echo "$(basename "$f") states the threshold itself" >&2; return 1
     fi
