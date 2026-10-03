@@ -109,15 +109,15 @@ classes live in the references Step 1 named.
 
 ## Feature Mode
 
-A `Feature review:` dispatch runs once per sprint, at the first drain, over the **whole feature diff**
-(`Base:` to the feature branch) for what no single branch's review could see: a helper duplicated across
-issues, inconsistent error handling, a flow unsafe only combined. There are no acceptance criteria, so
-skip Step 2 item 2 — no `AC:` verdict. Everything else holds, with the same severity rubric. A defect
-inside one issue's diff is reported at any severity. Step 2's 2000-line / top-10-files cap does not
-apply to a feature review: read the whole feature diff.
+A `Feature review:` dispatch reviews the range its `Gather the diff:` line gives: the **whole feature diff**,
+or only the commits since an earlier review, default-branch commits excluded. It looks for what no single
+branch's review could see: a helper duplicated across issues, inconsistent error handling, a flow unsafe
+only combined. There are no acceptance criteria, so skip Step 2 item 2 — no `AC:` verdict. Everything else
+holds, with the same severity rubric. A defect inside one issue's diff is reported at any severity. Step 2's
+2000-line / top-10-files cap does not apply: read the whole range.
 
 Write the same object to the report path with `branch` and `slug` both `"feature"`, `verdict` always
-`"all-met"`, `detail` empty. If you could not review (diff too large to scope), write no report.
+`"all-met"`, `detail` empty. If you could not read the whole range, write no report.
 
 ## Precision
 
