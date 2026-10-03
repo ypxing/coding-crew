@@ -43,17 +43,24 @@ _retired_left() {
   [ "$output" = "false" ]
 }
 
-@test "installing crew-afk for one platform removes only that platform's retired files" {
+@test "installing crew-afk for one platform removes every platform's retired files" {
   _old_install
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
-  [ ! -f "$TEMP_DIR/.claude/agents/crew-code-reviewer.md" ]
-  [ ! -f "$TEMP_DIR/.claude/agents/crew-coder.md" ]
+  [ -z "$(_retired_left)" ] || { echo "left behind: $(_retired_left)"; return 1; }
   [ -f "$TEMP_DIR/.claude/agents/my-own.md" ]
-  [ -f "$TEMP_DIR/.codex/agents/crew-coder.toml" ]
   [ ! -d "$TEMP_DIR/.coding-crew/agents" ]
   [ ! -d "$TEMP_DIR/.coding-crew/code-review" ]
   [ -f "$TEMP_DIR/.coding-crew/crew-afk/roles/coder.md" ]
+}
+
+@test "an install of any other skill also removes them, so dropping the manifest's agents strands nothing" {
+  _old_install
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
+  [ -z "$(_retired_left)" ] || { echo "left behind: $(_retired_left)"; return 1; }
+  run jq -r 'has("agents")' "$TEMP_DIR/.coding-crew/manifest.json"
+  [ "$output" = "false" ]
 }
 
 @test "--update of an install that lists agents installs crew-afk, prunes them and drops them from the manifest" {

@@ -48,6 +48,12 @@
         "source": "orchestrator",
         "dest": ".coding-crew/crew-afk"
       },
+      "more-assets": [
+        {
+          "source": "skills/_shared/fragments",
+          "dest": ".coding-crew/skills/_shared/fragments"
+        }
+      ],
       "scripts": [
         "feature-branch-setup.sh",
         "discover-commands.sh",

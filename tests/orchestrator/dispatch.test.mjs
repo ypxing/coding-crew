@@ -925,3 +925,25 @@ test("preflight with probeFlags reports a PROBLEM when --help omits a flag the a
     assert.match(out[0], new RegExp(requiredFlags[0]));
   }
 });
+
+test("the coder's protocol ends with each named skill's installed SKILL.md, per platform and scope", async () => {
+  const { renderRolePrompt } = await import("../../orchestrator/lib/adapters/render.mjs");
+  const main = mkdtempSync(join(tmpdir(), "skills-main-"));
+  const home = mkdtempSync(join(tmpdir(), "skills-home-"));
+  mkdirSync(join(main, ".agents/skills/solve-issue"), { recursive: true });
+  writeFileSync(join(main, ".agents/skills/solve-issue/SKILL.md"), "x");
+  mkdirSync(join(home, ".agents/skills/dep-install"), { recursive: true });
+  writeFileSync(join(home, ".agents/skills/dep-install/SKILL.md"), "x");
+  const saved = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const text = renderRolePrompt("coder", "codex", { mainRoot: main });
+    assert.match(text, /## Installed skills/);
+    assert.ok(text.includes(`\`solve-issue\`: ${join(main, ".agents/skills/solve-issue/SKILL.md")}`), "the project install");
+    assert.ok(text.includes(`\`dep-install\`: ${join(home, ".agents/skills/dep-install/SKILL.md")}`), "the user-level install");
+    assert.match(text, /`tdd`: not installed/);
+    assert.match(text, /BLOCKED: solve-issue skill not installed/);
+  } finally {
+    process.env.HOME = saved;
+  }
+});

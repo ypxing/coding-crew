@@ -162,7 +162,10 @@ removal_candidates() {
 
 # crew-afk's roles used to install as per-platform agent files (registry.json `retired-agents`),
 # with their protocols and assets under .coding-crew/. Removed with crew-afk, or on a full uninstall.
+REMOVED_RETIRED=0
 remove_retired_agents() {
+  [[ "$REMOVED_RETIRED" -eq 0 ]] || return 0
+  REMOVED_RETIRED=1
   local platform name raw candidate full dir
   for platform in "${PLATFORMS[@]}"; do
     raw=$(jq -r --arg p "$platform" '."retired-agents".paths[$p] // empty' "$SCRIPT_DIR/registry.json")
@@ -231,22 +234,16 @@ remove_skill() {
   # uninstall owns them: a stale orchestrator left behind is an executable no installed skill
   # body matches any more.
   local assets_dest
-  assets_dest=$(jq -r --arg s "$name" '.skills[$s].assets.dest // empty' "$SCRIPT_DIR/registry.json")
-  assets_dest="${assets_dest%$'\r'}"
-  if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
-    rm -rf "$REPO_ROOT/$assets_dest"
-    echo "  removed $assets_dest/"
-    prune_empty_dirs "$REPO_ROOT" "$assets_dest"
-  fi
-  # crew-afk also installs the shared fragments its role protocols render with.
-  if [[ "$name" == "crew-afk" ]]; then
-    if [[ -d "$REPO_ROOT/.coding-crew/skills/_shared/fragments" ]]; then
-      rm -rf "$REPO_ROOT/.coding-crew/skills/_shared/fragments"
-      echo "  removed .coding-crew/skills/_shared/fragments/"
-      prune_empty_dirs "$REPO_ROOT" ".coding-crew/skills/_shared/fragments"
+  while IFS= read -r assets_dest; do
+    assets_dest="${assets_dest%$'\r'}"
+    if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
+      rm -rf "$REPO_ROOT/$assets_dest"
+      echo "  removed $assets_dest/"
+      prune_empty_dirs "$REPO_ROOT" "$assets_dest"
     fi
-    remove_retired_agents
-  fi
+  done < <(jq -r --arg s "$name" '.skills[$s] | (.assets.dest // empty), ((.["more-assets"] // [])[] | .dest)' "$SCRIPT_DIR/registry.json")
+  # Stale on any install, so any uninstall removes them (once).
+  remove_retired_agents
 }
 
 echo "Target: $REPO_ROOT ($INSTALL_LEVEL-level)"

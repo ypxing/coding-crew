@@ -230,24 +230,30 @@ prune_legacy_copilot_path() {
 
 # crew-afk's roles (coder, reviewer, triage) used to install as per-platform agent files, and before
 # that crew-reviewer was crew-code-reviewer. Those files are now stale definitions a host still lists,
-# so a crew-afk install removes each by exact path (registry.json `retired-agents`), plus the
-# .coding-crew/ dirs that held their protocols and assets.
+# so every install removes each, on every platform, by exact path (registry.json `retired-agents`),
+# plus the .coding-crew/ dirs that held their protocols and assets. Once per run.
 prune_retired_agents() {
-  local platform="$1" name raw dir
-  while IFS= read -r name; do
-    [[ -n "$name" ]] || continue
+  [[ "$INSTALLED" != *"|retired-agents|"* ]] || return 0
+  INSTALLED="${INSTALLED}|retired-agents|"
+  local platform name raw dir names
+  names=$(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json")
+  for platform in "${PLATFORMS[@]}"; do
     raw=$(jq -r --arg p "$platform" '."retired-agents".paths[$p] // empty' "$SCRIPT_DIR/registry.json")
     [[ -n "$raw" ]] || continue
-    raw="${raw//\{name\}/$name}"
-    assert_safe_path "$raw" "$platform retired agent"
-    prune_legacy_copilot_path "$platform" "$raw"
-    resolve_dest "$platform" "$(adjust_platform_path "$platform" "$raw")"
-    if [[ -f "$_DEST_ROOT/$_DEST_REL" ]]; then
-      rm -f "$_DEST_ROOT/$_DEST_REL"
-      echo "  removed $_DEST_REL (agent files are no longer installed)"
-      prune_empty_agent_dirs "$_DEST_ROOT" "$_DEST_REL"
-    fi
-  done < <(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json")
+    while IFS= read -r name; do
+      name="${name%$'\r'}"
+      [[ -n "$name" ]] || continue
+      local path="${raw//\{name\}/$name}"
+      assert_safe_path "$path" "$platform retired agent"
+      prune_legacy_copilot_path "$platform" "$path"
+      resolve_dest "$platform" "$(adjust_platform_path "$platform" "$path")"
+      if [[ -f "$_DEST_ROOT/$_DEST_REL" ]]; then
+        rm -f "$_DEST_ROOT/$_DEST_REL"
+        echo "  removed $_DEST_REL (agent files are no longer installed)"
+        prune_empty_agent_dirs "$_DEST_ROOT" "$_DEST_REL"
+      fi
+    done <<< "$names"
+  done
   while IFS= read -r dir; do
     [[ -n "$dir" ]] || continue
     assert_safe_path "$dir" "retired agent dir"
@@ -381,6 +387,18 @@ install_skill_assets() {
   assert_safe_path "$src_rel" "skill assets source"
   assert_safe_path "$dest_rel" "skill assets dest"
   install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
+  # `more-assets`: further trees the same way (crew-afk's role protocols render with the shared
+  # fragments, which orchestrator/lib/adapters/render.mjs reads from .coding-crew/skills/_shared/).
+  _skill_list "$skill_name" more_assets '.skills[$s]["more-assets"] // [] | .[] | "\(.source)\t\(.dest)"'
+  local more="$_SKILL_LIST" line
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    [[ -n "$line" ]] || continue
+    src_rel="${line%%$'\t'*}"; dest_rel="${line#*$'\t'}"
+    assert_safe_path "$src_rel" "skill assets source"
+    assert_safe_path "$dest_rel" "skill assets dest"
+    install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
+  done <<< "$more"
 }
 
 
@@ -586,15 +604,6 @@ install_single_skill() {
     install_single_skill "$dep"
   done
 
-  # crew-afk's role protocols render from .coding-crew/crew-afk/roles/ with the shared fragments
-  # their {{FRAGMENT:<key>}} lines name (orchestrator/lib/adapters/render.mjs reads both there).
-  if [[ "$skill_name" == "crew-afk" ]]; then
-    if [[ "$INSTALLED" != *"|fragments|"* ]]; then
-      INSTALLED="${INSTALLED}|fragments|"
-      install_assets_tree "$SCRIPT_DIR/skills/_shared/fragments" ".coding-crew/skills/_shared/fragments" "skill"
-    fi
-    prune_retired_agents "$PLATFORM"
-  fi
 }
 
 install_docs() {
@@ -727,7 +736,8 @@ write_manifest() {
   done
 
   # Merge with existing manifest so entries from prior installs are preserved. Its `agents` (an
-  # install from before the roles moved into crew-afk) is dropped: the crew-afk install pruned them.
+  # install from before the roles moved into crew-afk) is dropped: prune_retired_agents removed
+  # their files on every platform this run.
   local existing_skills="{}"
   if [[ -f "$manifest" ]]; then
     existing_skills=$(jq '.skills // {}' "$manifest")
@@ -828,6 +838,7 @@ echo "Target: $REPO_ROOT"
 
 if [[ "$UPDATE_MODE" == "true" ]]; then
   run_update
+  prune_retired_agents
   # Docs never overwrite an existing file, but the tracker scripts always do — and they carry
   # no version of their own, so an update that skips this keeps a stale gate forever.
   install_docs
@@ -884,6 +895,7 @@ else
 fi
 
 install_docs
+prune_retired_agents
 echo "---"
 write_manifest
 

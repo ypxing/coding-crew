@@ -8,13 +8,9 @@
 # `copilot skill list`, and an agent under .copilot/agents/ does not resolve, while the same
 # file under .github/agents/ does.
 #
-# The dispatch half of this file is gone with the launcher cutover. It asserted prose in
-# `fragments/copilot/`: dispatch with the `task` tool and never `#runSubagent`, the agent
-# locations Copilot scans, `Unknown agent_type` reported rather than self-implemented, and
-# "--model is accepted but ignored". Dispatch is `copilot -p --agent crew-coder` in a
-# worktree now, so those are adapter facts, asserted in tests/orchestrator/dispatch.test.mjs
-# — including the one only a probe found: Copilot resolves `--agent` from the worker's own
-# cwd, so a definition that is not in HEAD (or user-level) fails preflight before round 1.
+# Dispatch is not asserted here: every role runs as `copilot -p` in its worktree with the
+# role's protocol prepended to the prompt and no agent file (orchestrator/lib/adapters/copilot.mjs),
+# which tests/orchestrator/dispatch.test.mjs pins.
 
 load helpers/render
 
