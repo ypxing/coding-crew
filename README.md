@@ -68,7 +68,7 @@ What you can rely on:
 
 - ✅ **Test-first** — every coder uses TDD in its own worktree.
 - 🚦 **Nothing red merges** — each branch must pass your project's own checks.
-- 🔍 **Independent review** — a separate agent reviews every branch, then the whole feature.
+- 🔍 **Independent review** — a separate reviewer reviews every branch, then the whole feature.
 - 🔁 **Self-correcting** — failed checks, unmet criteria and actionable findings go back for a fix.
 - 📋 **PRD-audited** — requirements no issue covered become new issues.
 - 🔒 **Nothing pushed unless you ask** — `--open-pr` opens the PR; otherwise you get the command.
@@ -152,7 +152,7 @@ curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap
 
 - [User guide](docs/guide.md#part-2-using-this-repo-in-your-project) — writing issues, issue
   lifecycle, configuration, reading the logs, troubleshooting
-- [Contributor guide](docs/guide.md#part-1-contributing-to-this-repo) — adding agents and skills,
+- [Contributor guide](docs/guide.md#part-1-contributing-to-this-repo) — adding skills, changing crew-afk's roles,
   registry schema, security rules
 
 ## Acknowledgements
