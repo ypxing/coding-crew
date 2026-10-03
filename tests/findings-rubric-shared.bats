@@ -12,14 +12,7 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 RUBRIC="$REPO_ROOT/skills/_shared/fragments/common/findings-rubric.md"
 
 triage_variant() {
-  local platform="$1" root
-  root=$(installed_agents_root) || return 1
-  case "$platform" in
-    claude)  printf '%s\n' "$root/.claude/agents/crew-triage.md" ;;
-    copilot) printf '%s\n' "$root/.github/agents/crew-triage.agent.md" ;;
-    pi)      printf '%s\n' "$root/.pi/agents/crew-triage.md" ;;
-    codex)   printf '%s\n' "$root/.codex/agents/crew-triage.toml" ;;
-  esac
+  role_prompt triage "$1"
 }
 
 # The rubric's lines, each of which must appear verbatim in a rendered body.

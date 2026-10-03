@@ -426,6 +426,16 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [[ "$output" == *"a: not_run lint,typecheck"* ]]
 }
 
+@test "crew-summary names a coder that ran the full suite under Deviations" {
+  init_sprint calc
+  state complete --slug a --branch crew/calc/a >/dev/null
+  state deviation --slug a --reason "coder ran the full test suite 2x" >/dev/null
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *"## Deviations"* ]]
+  [[ "$output" == *"a: coder ran the full test suite 2x"* ]]
+}
+
 @test "crew-summary does not count a triage-dismissed finding as needing triage" {
   init_sprint calc
   mkdir -p .scratch/calc/reviews
@@ -536,7 +546,7 @@ EOF
 - [CRITICAL] unchecked input at src/x.ts:12
 EOF
   printf -- '- [ ] validate input at src/x.ts:12\n' > .scratch/calc/reviews/a.criteria.md
-  bash "$(installed_scripts)/promote-findings.sh" defer --feature-slug calc \
+  bash "$(installed_scripts)/promote-findings.sh" defer --severities "actionable" --feature-slug calc \
     --branch crew/calc/a --slug a --title "Fix review findings: a" \
     --report .scratch/calc/reviews/sprint-review-1.md \
     --criteria-file .scratch/calc/reviews/a.criteria.md >/dev/null

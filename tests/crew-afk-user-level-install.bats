@@ -106,6 +106,39 @@ work_repo_with_issue() {
   done
 }
 
+@test "user-level install: each platform's config-dir env var relocates where the scripts are found" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  work_repo_with_issue
+  cd "$WORK_REPO"
+
+  local p var home cfg
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
+    case "$p" in
+      claude)  var=CLAUDE_CONFIG_DIR ;;
+      copilot) var=COPILOT_HOME ;;
+      pi)      var=PI_CODING_AGENT_DIR ;;
+      codex)   var=CODEX_HOME ;;
+    esac
+    home="$BATS_TEST_TMPDIR/home-$p"; cfg="$BATS_TEST_TMPDIR/cfg-$p"
+    mkdir -p "$home"
+    env HOME="$home" TARGET_REPO="$home" "$var=$cfg" \
+      bash "$REPO_ROOT/install.sh" "$p" --skill crew-afk >/dev/null
+    if [ "$p" = codex ]; then
+      # install.sh puts codex skills under .agents/, never CODEX_HOME; move them to where a
+      # relocated CODEX_HOME would hold them so only the orchestrator's lookup is tested.
+      mkdir -p "$cfg/skills/crew-afk"
+      mv "$home/.agents/skills/crew-afk/scripts" "$cfg/skills/crew-afk/scripts"
+    fi
+    [ -f "$cfg/skills/crew-afk/scripts/state.sh" ] || {
+      echo "$p: scripts not under $var" >&2; return 1; }
+    run env HOME="$home" "$var=$cfg" \
+      node "$home/.coding-crew/crew-afk/main.mjs" plan --platform "$p"
+    [ "$status" -eq 0 ] || { echo "$p: $output" >&2; return 1; }
+    path_matches "$output" "cfg-$p/skills/crew-afk/scripts" || {
+      echo "$p: $var not used for scripts dir:" >&2; echo "$output" >&2; return 1; }
+  done
+}
+
 @test "user-level install: a project install still wins over the \$HOME copy" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   user_install pi
@@ -155,7 +188,7 @@ work_repo_with_issue() {
 
 @test "launcher: it falls back to the user-level orchestrator when the repo has no copy" {
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$REPO_ROOT/skills/crew-afk/$p.SKILL.md"
+    body="$(afk_variant "$p")"
     grep -q 'HOME/.coding-crew/crew-afk/main.mjs' "$body" || {
       echo "$p launcher cannot reach a user-level install" >&2; return 1; }
   done
@@ -164,7 +197,7 @@ work_repo_with_issue() {
 @test "launcher: the missing-scripts remedy names the install scope, not 'half-installed'" {
   # The old wording sent a user who had installed user-level back to the same install.
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    body="$REPO_ROOT/skills/crew-afk/$p.SKILL.md"
+    body="$(afk_variant "$p")"
     ! grep -q 'half-installed' "$body" || {
       echo "$p still calls a scope problem a half-install" >&2; return 1; }
     grep -q 'TARGET_REPO=\$HOME' "$body" || {
@@ -192,9 +225,9 @@ sprint_with_fake_dispatch() {
   git -C "$WORK_REPO" add -A && git -C "$WORK_REPO" commit -qm checks
   mkdir -p "$BATS_TEST_TMPDIR/fake"
   cd "$WORK_REPO"
-  run env -u CREW_INSTALL_DIR -u CREW_SCRIPTS -u CREW_PANE_HOST -u HERDR_ENV -u ORCA_ENV HOME="$FAKE_HOME" \
+  run env -u CREW_INSTALL_DIR -u CREW_SCRIPTS -u CREW_PANE_HOST -u HERDR_ENV -u ORCA_ENV HOME="$FAKE_HOME" CREW_NO_COMMANDS=1 \
     CREW_FAKE_DISPATCH="$REPO_ROOT/tests/orchestrator/fixtures/fake-dispatch.sh" CREW_FAKE_DIR="$BATS_TEST_TMPDIR/fake" \
-    node "$1" run --platform claude --feature-slug demo --no-baseline --no-commands
+    node "$1" run --platform claude --feature-slug demo --no-baseline
 }
 
 @test "user-level install: the reviewer is pointed at \$HOME's review assets" {

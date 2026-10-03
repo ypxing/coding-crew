@@ -2,17 +2,11 @@
 
 # Structural tests for the crew-reviewer agent
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export AGENT_DIR="$SCRIPT_DIR/agents/crew-reviewer"
-}
-
-@test "crew-reviewer claude.agent.md exists" {
-  [ -f "$AGENT_DIR/claude.agent.md" ]
-}
-
-@test "crew-reviewer copilot.agent.md exists" {
-  [ -f "$AGENT_DIR/copilot.agent.md" ]
 }
 
 @test "crew-reviewer protocol.md exists" {
@@ -56,16 +50,11 @@ setup() {
   grep -qF '`branch` and `slug` both `"feature"`' "$AGENT_DIR/protocol.md"
 }
 
-@test "feature mode reaches every platform's rendered reviewer, and no platform file restates it" {
+@test "feature mode reaches every platform's rendered reviewer" {
   local plat
   for plat in claude copilot pi codex; do
-    f=$(ls "$AGENT_DIR"/$plat.* | head -1)
-    grep -q '{{PROTOCOL}}' "$f"
-    ! grep -q 'Feature Mode' "$f"
+    grep -q '^## Feature Mode$' "$(role_prompt reviewer "$plat")"
   done
-  TARGET_REPO="$BATS_TEST_TMPDIR/repo"; mkdir -p "$TARGET_REPO"; git -C "$TARGET_REPO" init -q
-  TARGET_REPO="$TARGET_REPO" "$SCRIPT_DIR/install.sh" claude crew-reviewer >/dev/null
-  grep -q '^## Feature Mode$' "$TARGET_REPO/.claude/agents/crew-reviewer.md"
 }
 
 @test "crew-reviewer compares a new reader of an input with the existing one, by reading only" {

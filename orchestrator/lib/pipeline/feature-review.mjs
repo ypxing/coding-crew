@@ -138,7 +138,7 @@ async function promoteFeature(ctx, { findings, reportFile, dir, written }) {
     "--title", `Fix feature review findings: ${sprint.featureSlug}`,
     "--report", reportFile,
     "--criteria-file", criteriaPath,
-    ...(promotedAs(sprint.fixFindings, selected) ? ["--severities", promotedAs(sprint.fixFindings, selected)] : []),
+    "--severities", promotedAs(sprint.fixFindings, selected),
   ], { env: sprint.childEnv() });
   ctx.log(`FEATURE-REVIEW: promote: ${promotable.length} finding(s) → ${defer.stdout.trim() || defer.stderr.trim()}`);
   if (defer.code !== 0 || !/^defer: /m.test(defer.stdout)) return {};

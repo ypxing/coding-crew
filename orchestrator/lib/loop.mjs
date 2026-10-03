@@ -17,10 +17,10 @@
  * retries, so it has to be explicit.
  *
  * Two exits: nothing left to do (every open issue completed, or permanently blocked by a
- * spent retry cap or an unresolvable dependency), or the `--max-rounds` safety cap — each
+ * spent retry cap or an unresolvable dependency), or the per-issue attempt cap (CREW_MAX_ROUNDS) — each
  * issue may reach that many attempts, the same guarantee a round-batch sprint gave for
  * free (every issue gets one attempt per round before any issue gets a second). Checked
- * per issue, not as a global dispatch count, so a small --max-rounds still lets every
+ * per issue, not as a global dispatch count, so a small attempt cap still lets every
  * issue take its turn instead of the first one claimed exhausting the whole budget while
  * its siblings never run. Either way, findings are flushed first — see flush() below —
  * because a sprint that stalled on unrelated issues may still have merged code carrying a
@@ -55,7 +55,7 @@ import { checkRequires, integrationSection, lintMidRunIssues, runIntegrationChec
 import { fixIntegration } from "./integration-fix.mjs";
 import { writePrBody } from "./pipeline/pr-body.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
-import { parsePrdAudit } from "./report.mjs";
+import { parsePrdAudit, promoteSeverities } from "./report.mjs";
 import { runFeatureReview } from "./pipeline/feature-review.mjs";
 
 export async function runSprint(ctx) {
@@ -155,7 +155,34 @@ export async function runSprint(ctx) {
     );
   }
 
+  // A red baseline (ctx.baseline, started by main.mjs alongside dispatch) ends further claims.
+  let baselineFailed = null;
+  ctx.baseline?.then((r) => {
+    if (r?.status === "fail") {
+      baselineFailed = r;
+      notifyAll();
+    }
+  }).catch(() => {}); // a crashed baseline surfaces where it is awaited
+
+  // Soft wall-clock cap (afk.maxWallMinutes / --max-wall): once elapsed nothing new is claimed;
+  // workers already running finish, merge and close.
+  const now = ctx.now ?? (() => Date.now());
+  const startedAt = now();
+  const wallMs = Math.max(0, Number(options.maxWallMinutes) || 0) * 60_000;
+  const wallElapsed = () => wallMs > 0 && now() - startedAt >= wallMs;
+  let wallLogged = false;
+  // The drain loop broke on the cap before Phase 2: parked fix issues wait for the next run.
+  let flushSkipped = false;
+
   function claimNext() {
+    if (baselineFailed) return null;
+    if (wallElapsed()) {
+      if (!wallLogged) {
+        wallLogged = true;
+        ctx.log(`[WALL-CAP] ${options.maxWallMinutes} minute cap elapsed — no new issue is claimed; running workers finish.`);
+      }
+      return null;
+    }
     // What a poll just listed goes first, so N woken workers cost one listing, not N.
     while (handoff.length) {
       const i = handoff.shift();
@@ -178,7 +205,7 @@ export async function runSprint(ctx) {
     return true;
   }
 
-  /** True once every remaining open issue is either done, blocked, or at its --max-rounds
+  /** True once every remaining open issue is either done, blocked, or at its attempt cap (CREW_MAX_ROUNDS)
    * limit — as opposed to genuinely nothing left, which flush() still needs to check. */
   function cappedByMaxRounds() {
     if (!options.maxRounds) return false;
@@ -245,10 +272,18 @@ export async function runSprint(ctx) {
     await Promise.all(Array.from({ length: parallel }, () => workerLoop()));
     handoff = [];
 
+    // The baseline may still be running when the queue drains: its verdict decides what follows.
+    if (ctx.baseline) await ctx.baseline;
+    if (baselineFailed) {
+      for (const issue of held.values()) labelIssue(ctx, "release", issue);
+      held.clear();
+      return { stalled: false, history, baselineFailed };
+    }
+
     capped = cappedByMaxRounds();
     if (capped) {
       flush(ctx);
-      ctx.log(`Round cap reached (--max-rounds ${options.maxRounds}).`);
+      ctx.log(`Round cap reached (${options.maxRounds} attempts per issue).`);
       break;
     }
     // First at every drain, with whatever has merged so far (nothing merged, nothing new to
@@ -296,6 +331,11 @@ export async function runSprint(ctx) {
         if (featureReview.promotedRef && !tracker.listOpenIssueFiles) unseen.add(featureReview.promotedRef);
       }
     }
+    // Past the cap Phase 2 stays parked: the fix issues wait for the next run.
+    if (wallElapsed()) {
+      flushSkipped = true;
+      break;
+    }
     if (flush(ctx) > 0) {
       // Promoted fix issues are this run's own: not newcomers to lint.
       if (pollMs) seenNow();
@@ -320,20 +360,26 @@ export async function runSprint(ctx) {
   // listOpenIssueFiles is local-only (a directory scan); github's counterpart is listOpen,
   // whose entries carry their own `status` (a close-state, not a file location) instead of
   // requiring a second directory read to know which are still open.
+  // Unclaimed because of the cap: claimable issues, listed before anything releases them.
+  const wallUnclaimed = wallElapsed()
+    ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i)).map((i) => i.slug)
+    : [];
+  const wallCap = wallUnclaimed.length || flushSkipped ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
   const stalled =
     !capped &&
+    (Boolean(wallCap) ||
     // The last drain's check, not any earlier one: a drain red at the fix-issue limit stalls
     // the run only if no later drain turned it green.
     (integration?.fix?.verdict === "limit" ||
       (tracker.listOpenIssueFiles
         ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
-        : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0));
+        : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0)));
 
   // Before the summary: drained, capped or stalled, no issue keeps a label saying it is being worked.
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, prdAudit, unlisted, integration, integrationFixes, featureReview });
+  await wrapUp(ctx, { tracker, stalled, capped, wallCap, prdAudit, unlisted, integration, integrationFixes, featureReview });
   return { stalled, history };
 }
 
@@ -469,7 +515,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReview = {} }) {
+async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReview = {} }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -496,8 +542,8 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
 
   // --- summary (rendered from disk, never from recollection) -----------------
   // The PR comes first: the summary points at it when the findings were posted there.
-  const pr = await pullRequest(ctx, tracker, integration);
-  const summaryArgs = [];
+  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap });
+  const summaryArgs = ["--promoted", promoteSeverities(sprint.fixFindings)];
   if (stalled) summaryArgs.push("--stalled");
   if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url);
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
@@ -516,6 +562,9 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
       const lines = prdAudit.superseded.map((m) => `- ${m.requirement}${m.by ? ` — ${m.by}` : ""}`);
       ctx.out(`\n**Superseded — update the PRD, nothing queued:**\n${lines.join("\n")}\n`);
     }
+  }
+  if (wallCap) {
+    ctx.out(`\n## Wall-clock cap\n\nThe ${wallCap.minutes}-minute cap elapsed: running workers finished, Phase 2 fix issues stayed parked.${wallCap.unclaimed.length ? ` Unclaimed (${wallCap.unclaimed.length}):\n${wallCap.unclaimed.map((s) => `- ${s}`).join("\n")}` : ""}\n`);
   }
   if (integration) ctx.out(`\n## Integration check\n\n${integrationSection(effects.mainRoot, sprint.featureBranch, integration, integration.fix, integrationFixes)}\n`);
   if (featureReview.skipped) ctx.out(`\n## Feature Review\n\n**Not run:** ${featureReview.skipped}\n`);
@@ -540,6 +589,29 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
 }
 
 /**
+ * A run is green iff it exited 0 (not stalled), no issue is blocked, it was not cut short by
+ * --max-rounds, and the integration check passed or was cached. A check that could not run
+ * (`skipped`) is not green; one the user switched off (`enabled` false) is not held against it.
+ */
+export function isGreen({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true }) {
+  const integrationOk = integration ? ["pass", "cached"].includes(integration.status) : !integrationEnabled;
+  return exitCode === 0 && blocked.length === 0 && !capped && integrationOk;
+}
+
+/** Why a run is not green, one line per cause, for the PR block and the summary. */
+function notGreenReasons({ exitCode, blocked, integration, capped, integrationEnabled, wallCap = null }) {
+  const reasons = [];
+  if (wallCap) reasons.push(`the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length ? `${wallCap.unclaimed.length} issue(s) unclaimed` : "Phase 2 fix issues stayed parked"})`);
+  else if (exitCode !== 0) reasons.push("the run stalled with issues unfinished");
+  if (blocked.length) reasons.push(`${blocked.length} issue(s) blocked`);
+  if (capped) reasons.push("the run stopped at --max-rounds");
+  if (integration?.status === "skipped") reasons.push(`the integration check was skipped (${integration.reason})`);
+  else if (!integration && integrationEnabled) reasons.push("the integration check did not run");
+  else if (integration && !["pass", "cached"].includes(integration.status)) reasons.push(`the integration check ${integration.status}`);
+  return reasons;
+}
+
+/**
  * Last, after squash: the feature PR. `openPr` pushes the branch and creates or updates the PR
  * with the tracker's closing lines in its body (open-pr.sh), under the body the PR writer wrote
  * for a reviewer (pipeline/pr-body.mjs). Off, those lines are printed for
@@ -548,7 +620,7 @@ async function wrapUp(ctx, { tracker, stalled, prdAudit, unlisted = [], integrat
  * (post-findings.sh) its URL and their count — or null when there is nothing to say. A posting
  * failure is reported in the text and never fails the sprint.
  */
-async function pullRequest(ctx, tracker, integration) {
+async function pullRequest(ctx, tracker, integration, { stalled = false, capped = false, wallCap = null } = {}) {
   const { sprint, effects, options } = ctx;
   let refs = [];
   let refsError = null;
@@ -586,14 +658,38 @@ async function pullRequest(ctx, tracker, integration) {
   const closesFile = join(sprint.env.SPRINT_DIR, "pr-closes.txt");
   writeFileSync(closesFile, refs.length ? `${refs.join("\n")}\n` : "");
   const body = await writePrBody(ctx, { integration });
+  const blockedSlugs = sprint.getList("blocked");
+  const retention = sprint.readState().retention ?? {};
+  const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false };
+  const green = isGreen(state);
+  const reasons = green ? [] : notGreenReasons(state);
   const args = ["--closes-file", closesFile];
+  if (!green) {
+    const note = join(sprint.env.SPRINT_DIR, "pr-note.md");
+    const lines = [`**Not green:** ${reasons.join("; ")}. This PR is a draft.`];
+    if (blockedSlugs.length) {
+      lines.push("", "Blocked issues:", ...blockedSlugs.map((slug) => {
+        const why = retention[slug]?.reason;
+        return `- ${slug}${why ? ` — ${why}` : ""}`;
+      }));
+    }
+    writeFileSync(note, `${lines.join("\n")}\n`);
+    args.push("--draft", "--note-file", note);
+  }
   if (body) args.push("--body-file", body.file);
   if (body?.title) args.push("--title", body.title);
   const r = effects.bash("open-pr.sh", args, { env: sprint.childEnv() });
   if (r.dryRun) return null;
   if (r.code !== 0) return { text: `**Failed:** ${r.stderr.trim() || `exit ${r.code}`}` };
-  const url = r.stdout.trim().replace(/^PR: /, "");
-  const opened = body?.failed ? `${url}\n\n**PR body has no summary:** ${body.failed}` : url;
+  const url = /^PR: (.*)$/m.exec(r.stdout)?.[1]?.trim() ?? r.stdout.trim().split("\n")[0];
+  const stateFailed = /^PR-STATE-FAILED: (.*)$/m.exec(r.stdout)?.[1];
+  const actual = /^PR-STATE: (\w+)$/m.exec(r.stdout)?.[1] ?? (green ? "ready" : "draft");
+  const stateLine = green
+    ? `**Ready:** the run finished green.`
+    : `**Draft:** the run did not finish green — ${reasons.join("; ")}.`;
+  if (stateFailed) ctx.log(`PR state: ${stateFailed}`, "warn");
+  const opened0 = `${url}\n\n${stateLine}${stateFailed ? `\n\n**PR state not changed (now ${actual}):** ${stateFailed}` : ""}`;
+  const opened = body?.failed ? `${opened0}\n\n**PR body has no summary:** ${body.failed}` : opened0;
   const post = effects.bash("post-findings.sh", [], { env: sprint.childEnv() });
   const m = /^POSTED: (\d+) \((\d+) inline\)/m.exec(post.stdout ?? "");
   if (post.code !== 0 || !m) {

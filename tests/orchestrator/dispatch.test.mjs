@@ -13,14 +13,12 @@
 
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// resolveAgentFile()'s home-dir fallback reads os.homedir(), which reads $HOME — so a
-// real per-user install (e.g. ~/.claude/agents/crew-coder.md) would otherwise leak into
-// the "no definition anywhere" assertions below. Point HOME at an empty directory for
-// the whole file, and restore it once these tests are done.
+// Point HOME at an empty directory for the whole file, so a real per-user install never leaks
+// into an assertion below, and restore it once these tests are done.
 const isolatedHome = mkdtempSync(join(tmpdir(), "crew-dispatch-home-"));
 const realHome = process.env.HOME;
 
@@ -40,7 +38,6 @@ import {
   extractResultMeta,
   formatJsonTraceLine,
   preflight,
-  resolveAgentFile,
   DEFAULT_PARALLEL,
 } from "../../orchestrator/lib/dispatch.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
@@ -68,28 +65,65 @@ function spec(root, promptFile, over = {}) {
   };
 }
 
-test("codex dispatches through its own script, pinned to the issue's worktree", () => {
+test("pi and codex dispatch their own CLI directly: no bash dispatcher, no agent file", () => {
   const { root, promptFile } = fixture();
-  const b = buildDispatch("codex", spec(root, promptFile));
-  assert.equal(b.cmd, "bash");
-  assert.equal(b.args[0], join(SCRIPTS, "dispatch-codex-agent.sh"));
-  assert.equal(b.capture, "file");
-  const argv = b.args.join(" ");
-  assert.match(argv, /--agent crew-coder/);
-  assert.match(argv, new RegExp(`--dir ${join(root, "worktree")}`));
-  assert.match(argv, /--out .*alpha\.report\.md/);
-  // The worker's log goes to the sprint trace; the dispatcher writes its own DISPATCH line.
-  assert.match(argv, /--log .*trace\.log/);
-  // The script cds into --dir itself, so it runs from the main checkout.
-  assert.equal(b.cwd, root);
-  assert.equal(b.env.CREW_ORCHESTRATED, "1");
-  assert.equal(b.env.MAIN_ROOT, root);
+  const pi = buildDispatch("pi", spec(root, promptFile));
+  const codex = buildDispatch("codex", spec(root, promptFile));
+  assert.equal(pi.cmd, "pi");
+  assert.equal(codex.cmd, "codex");
+  for (const b of [pi, codex]) {
+    assert.equal(b.capture, "stdout");
+    assert.equal(b.cwd, join(root, "worktree"));
+    assert.equal(b.env.CREW_ORCHESTRATED, "1");
+    assert.equal(b.env.MAIN_ROOT, root);
+    assert.doesNotMatch(b.args.join(" "), /dispatch-.*agent\.sh/);
+  }
 });
 
-test("codex is not handed pi's dispatcher, and pi is not handed codex's", () => {
+test("pi carries the role's tools and its rendered protocol as the system prompt, the prompt last", () => {
   const { root, promptFile } = fixture();
-  assert.match(buildDispatch("codex", spec(root, promptFile)).args[0], /dispatch-codex-agent\.sh$/);
-  assert.match(buildDispatch("pi", spec(root, promptFile)).args[0], /dispatch-agent\.sh$/);
+  const coder = buildDispatch("pi", spec(root, promptFile)).args;
+  assert.deepEqual(coder.slice(0, 5), ["-p", "-n", "crew-coder: p", "--mode", "json"]);
+  assert.equal(coder[coder.indexOf("--tools") + 1], "read,bash,edit,write");
+  assert.match(coder[coder.indexOf("--append-system-prompt") + 1], /^# Coder/);
+  assert.equal(coder.at(-1), "prompt body");
+  const reviewer = buildDispatch("pi", spec(root, promptFile, { agent: "crew-reviewer" })).args;
+  assert.equal(reviewer[reviewer.indexOf("--tools") + 1], "read,bash");
+});
+
+test("codex carries the role's reasoning effort from role config", () => {
+  const { root, promptFile } = fixture();
+  const effort = (agent) => {
+    const a = buildDispatch("codex", spec(root, promptFile, { agent })).args;
+    return a[a.indexOf('model_reasoning_effort="' + "medium" + '"') - 1] === "-c" ? "medium" : a.find((x) => /^model_reasoning_effort=/.test(x));
+  };
+  assert.equal(effort("crew-coder"), "medium");
+  assert.equal(effort("crew-reviewer"), 'model_reasoning_effort="high"');
+  assert.equal(effort("crew-triage"), 'model_reasoning_effort="high"');
+});
+
+test("codex: the coder is workspace-write with network and the git dirs writable; the protocol is prepended to the prompt", () => {
+  const { root, promptFile } = fixture();
+  const wt = join(root, "worktree");
+  mkdirSync(wt, { recursive: true });
+  const a = buildDispatch("codex", spec(root, promptFile)).args;
+  assert.deepEqual(a.slice(0, 7), ["exec", "--cd", wt, "--sandbox", "workspace-write", "--json", "-c"]);
+  assert.ok(a.includes("sandbox_workspace_write.network_access=true"));
+  assert.deepEqual(a.slice(a.indexOf("--add-dir"), a.indexOf("--add-dir") + 2), ["--add-dir", root]);
+  assert.match(a.at(-1), /^# Coder[\s\S]*# Task\n\nprompt body$/);
+  assert.equal(a.at(a.indexOf("--output-last-message") + 1), join(root, "dispatch/alpha.report.md"));
+});
+
+test("codex: a read-only role runs workspace-write rooted at its result file's directory", () => {
+  const { root, promptFile } = fixture();
+  const out = join(root, "dispatch/alpha.review.md");
+  const a = buildDispatch("codex", spec(root, promptFile, { agent: "crew-reviewer", cwd: root, outFile: out })).args;
+  const resultDir = join(realpathSync(root), "dispatch");
+  assert.deepEqual(a.slice(0, 5), ["exec", "--cd", resultDir, "--sandbox", "workspace-write"]);
+  assert.ok(a.includes("sandbox_workspace_write.exclude_slash_tmp=true"));
+  assert.equal(a.includes("sandbox_workspace_write.network_access=true"), false);
+  assert.equal(a.includes("--add-dir"), false);
+  assert.match(a.at(-1), /Your shell starts in .*dispatch, the only writable directory[\s\S]*prompt body$/);
 });
 
 test("no model resolves to no --model flag (what `--model inherit` means)", () => {
@@ -97,53 +131,103 @@ test("no model resolves to no --model flag (what `--model inherit` means)", () =
   for (const platform of ["codex", "pi"]) {
     const argv = buildDispatch(platform, spec(root, promptFile, { model: null })).args.join(" ");
     assert.doesNotMatch(argv, /--model/, `${platform} invented a model`);
+    assert.doesNotMatch(buildDispatch(platform, spec(root, promptFile, { model: "inherit" })).args.join(" "), /--model/);
   }
-  const withModel = buildDispatch("codex", spec(root, promptFile, { model: "gpt-5" })).args.join(" ");
-  assert.match(withModel, /--model gpt-5/);
+  assert.match(buildDispatch("codex", spec(root, promptFile, { model: "gpt-5" })).args.join(" "), /--model gpt-5/);
+  assert.match(buildDispatch("pi", spec(root, promptFile, { model: "gpt-5" })).args.join(" "), /--model gpt-5/);
 });
 
-test("the reviewer runs from the main checkout, on the same model as the coder", () => {
-  const { root, promptFile } = fixture();
-  const b = buildDispatch(
-    "codex",
-    spec(root, promptFile, {
-      agent: "crew-reviewer",
-      cwd: root,
-      outFile: join(root, "dispatch/alpha.review.md"),
-      model: "gpt-5",
-    }),
+test("pi's trace lines and final text match what the bash dispatcher produced for the same stream", () => {
+  const stream = [
+    { type: "tool_execution_start", toolName: "bash", args: { command: "ls -la" } },
+    { type: "tool_execution_start", toolName: "read", args: { path: "/a/b.js" } },
+    { type: "tool_execution_start", toolName: "mcp", args: { q: "x" } },
+    { type: "tool_execution_end", toolName: "bash", isError: true },
+    { type: "tool_execution_end", toolName: "bash", isError: false },
+    { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "first" }] } },
+    { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "do" }, { type: "thinking", text: "x" }, { type: "text", text: "ne" }] } },
+    { type: "message_end", message: { role: "user", content: [{ type: "text", text: "ignored" }] } },
+  ].map((e) => JSON.stringify(e));
+  assert.deepEqual(
+    stream.map((l) => formatJsonTraceLine("pi", "crew-coder", l)).filter(Boolean),
+    [
+      "[TOOL] agent=crew-coder tool=bash $ ls -la",
+      "[TOOL] agent=crew-coder tool=read /a/b.js",
+      '[TOOL] agent=crew-coder tool=mcp args={"q":"x"}',
+      "[TOOL-ERROR] agent=crew-coder tool=bash",
+    ],
   );
-  const argv = b.args.join(" ");
-  assert.match(argv, /--agent crew-reviewer/);
-  assert.match(argv, new RegExp(`--dir ${root}`));
-  assert.match(argv, /--model gpt-5/);
+  assert.equal(extractFinalText("pi", stream), "done");
+  assert.equal(extractFinalText("pi", []), "");
 });
 
-test("codex resolves its agent definition from the project, then the home, TOML", () => {
-  const { root } = fixture();
-  assert.equal(resolveAgentFile("codex", root, "crew-coder"), null);
-  mkdirSync(join(root, ".codex/agents"), { recursive: true });
-  const file = join(root, ".codex/agents/crew-coder.toml");
-  writeFileSync(file, 'name = "crew-coder"\n');
-  assert.equal(resolveAgentFile("codex", root, "crew-coder"), file);
+test("codex's trace lines and final text match what the bash dispatcher produced for the same stream", () => {
+  const stream = [
+    { type: "item.started", item: { type: "reasoning" } },
+    { type: "item.started", item: { type: "command_execution", command: "npm test" } },
+    { type: "item.started", item: { type: "file_change", path: "src/a.js" } },
+    { type: "item.started", item: { type: "mcp_tool_call", server: "s" } },
+    { type: "item.completed", item: { type: "command_execution", exit_code: 2 } },
+    { type: "item.completed", item: { type: "command_execution", exit_code: 0 } },
+    { type: "item.completed", item: { type: "agent_message", text: "all done" } },
+    { type: "turn.failed" },
+    { type: "error" },
+  ].map((e) => JSON.stringify(e));
+  assert.deepEqual(
+    stream.map((l) => formatJsonTraceLine("codex", "crew-coder", l)).filter(Boolean),
+    [
+      "[TOOL] agent=crew-coder item=command_execution $ npm test",
+      "[TOOL] agent=crew-coder item=file_change src/a.js",
+      '[TOOL] agent=crew-coder item=mcp_tool_call args={"type":"mcp_tool_call","server":"s"}',
+      "[TOOL-ERROR] agent=crew-coder item=command_execution exit=2",
+      "[TOOL-ERROR] agent=crew-coder turn.failed",
+      "[TOOL-ERROR] agent=crew-coder error",
+    ],
+  );
+  assert.equal(extractFinalText("codex", stream), "all done");
 });
 
-test("a missing codex agent definition is a preflight failure naming the fix", () => {
-  const { root } = fixture();
-  const effects = { exec: () => ({ code: 0, stdout: "/usr/bin/codex", stderr: "" }) };
-  const problems = preflight(effects, "codex", root, ["crew-coder", "crew-reviewer"]);
-  assert.equal(problems.length, 2);
-  assert.match(problems[0], /crew-coder agent definition not installed for codex/);
-  assert.match(problems[0], /\.\/install\.sh codex --skill crew-afk/);
+test("a codex dispatch falls back to the final message codex wrote itself (-o) when the stream has none", async () => {
+  const { root, promptFile } = fixture();
+  const outFile = join(root, "dispatch", "alpha.report.md");
+  const fakeEffects = {
+    spawnWithTimeout: async (cmd, args) => {
+      writeFileSync(args[args.indexOf("--output-last-message") + 1], "from -o");
+      return { code: 0, stdout: "", stderr: "", timedOut: false, dryRun: false };
+    },
+  };
+  const r = await dispatch(fakeEffects, "codex", { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root }, {});
+  assert.equal(r.text, "from -o");
 });
 
-test("a missing CLI is a preflight failure, not a first-dispatch failure", () => {
+test("a missing pi or codex CLI fails the dispatch with 127 and a message naming it", async () => {
+  const { root, promptFile } = fixture();
+  const real = new Effects({ scriptsDir: SCRIPTS, mainRoot: root });
+  const prevPath = process.env.PATH;
+  process.env.PATH = join(root, "empty-bin");
+  try {
+    for (const platform of ["pi", "codex"]) {
+      const r = await dispatch(real, platform, { agent: "crew-coder", cwd: root, promptFile, outFile: join(root, `${platform}.out`), model: null, mainRoot: root }, {});
+      assert.equal(r.code, 127);
+      assert.match(r.stderr, new RegExp(platform));
+    }
+  } finally {
+    process.env.PATH = prevPath;
+  }
+});
+
+test("a CLI missing from PATH is a preflight failure, not a first-dispatch failure", () => {
   const { root } = fixture();
-  mkdirSync(join(root, ".codex/agents"), { recursive: true });
-  writeFileSync(join(root, ".codex/agents/crew-coder.toml"), 'name = "crew-coder"\n');
   const effects = { exec: () => ({ code: 1, stdout: "", stderr: "" }) };
-  const problems = preflight(effects, "codex", root, ["crew-coder"]);
-  assert.deepEqual(problems, ["codex CLI not found on PATH"]);
+  for (const platform of ["pi", "codex"]) {
+    assert.deepEqual(preflight(effects, platform, root, ["crew-coder"]), [`${platform} CLI not found on PATH`]);
+  }
+});
+
+test("pi and codex preflight needs no agent definition", () => {
+  const { root } = fixture();
+  const effects = { exec: () => ({ code: 0, stdout: "/usr/bin/x", stderr: "" }) };
+  for (const platform of ["pi", "codex"]) assert.deepEqual(preflight(effects, platform, root, ["crew-coder", "crew-reviewer"]), []);
 });
 
 // ─── claude ──────────────────────────────────────────────────────────────────
@@ -224,8 +308,21 @@ test("claude: only the coder carries --disallowedTools Agent", () => {
   const { root, promptFile } = fixture();
   const coder = buildDispatch("claude", spec(root, promptFile)).args;
   assert.equal(coder[coder.indexOf("--disallowedTools") + 1], "Agent");
-  const rev = buildDispatch("claude", spec(root, promptFile, { agent: "crew-reviewer" })).args;
-  assert.ok(!rev.includes("--disallowedTools"));
+  for (const agent of ["crew-reviewer", "crew-triage"]) {
+    const a = buildDispatch("claude", spec(root, promptFile, { agent })).args;
+    const denied = a.slice(a.indexOf("--disallowedTools") + 1, a.indexOf("--disallowedTools") + 4);
+    assert.deepEqual(denied, ["Edit", "Write", "NotebookEdit"], `${agent} denies file-editing tools`);
+    assert.ok(!a.includes("Agent"));
+  }
+});
+
+test("copilot: reviewer and triage deny write tools; the coder does not", () => {
+  const { root, promptFile } = fixture();
+  for (const agent of ["crew-reviewer", "crew-triage"]) {
+    const a = buildDispatch("copilot", spec(root, promptFile, { agent })).args;
+    assert.equal(a[a.indexOf("--deny-tool") + 1], "write", agent);
+  }
+  assert.ok(!buildDispatch("copilot", spec(root, promptFile)).args.includes("--deny-tool"));
 });
 
 test("claude and copilot: a plain role (no protocol) dispatches too", async () => {
@@ -443,12 +540,10 @@ test("pi and codex dispatchPlain get no auto-memory env var — the flag is clau
   }
 });
 
-// ─── json-stream visibility (claude, copilot) ────────────────────────────────
+// ─── json-stream visibility ────────────────────────────────
 //
-// pi and codex keep their own bash-side trace_event (dispatch-agent.sh,
-// dispatch-codex-agent.sh); claude and copilot have no bash dispatcher, so the same
-// "live [TOOL]/[TOOL-ERROR] line while the worker is still running" behaviour lives
-// here, driven by formatJsonTraceLine/extractFinalText and dispatch()'s onLine wiring.
+// The "live [TOOL]/[TOOL-ERROR] line while the worker is still running" behaviour lives
+// here for every platform, driven by formatJsonTraceLine/extractFinalText and dispatch()'s onLine wiring.
 
 test("formatJsonTraceLine reads claude's tool_use content block", () => {
   const line = JSON.stringify({
@@ -658,30 +753,6 @@ test("dispatch() throttles claude/copilot trace lines before calling onTrace, bu
     7,
     "the file gets every tool call, unthrottled",
   );
-});
-
-test("dispatch() wires onLine for pi/codex too, but only forwards their own already-throttled [TOOL] line to onTrace — not the raw event stream", async () => {
-  const { root, promptFile } = fixture();
-  const outFile = join(root, "dispatch", "alpha.report.md");
-  let sawOnLine;
-  const fakeEffects = {
-    spawnWithTimeout: async (cmd, args, opts) => {
-      sawOnLine = opts.onLine;
-      opts.onLine('{"type":"tool_execution_start","toolName":"bash"}\n');
-      opts.onLine("[TOOL] agent=crew-coder tool=bash $ ls\n");
-      return { code: 0, stdout: "", stderr: "", timedOut: false, dryRun: false };
-    },
-  };
-  const traced = [];
-  await dispatch(
-    fakeEffects,
-    "pi",
-    { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root, logFile: join(root, "trace.log"), scriptsDir: SCRIPTS },
-    { onTrace: (line) => traced.push(line) },
-  );
-  assert.equal(typeof sawOnLine, "function", "onLine is wired unconditionally now, not just for claude/copilot");
-  assert.equal(existsSync(`${outFile}.events.jsonl`), false, "pi/codex still write their own report file, not dispatch.mjs");
-  assert.deepEqual(traced, ["[TOOL] agent=crew-coder tool=bash $ ls\n".trimEnd()]);
 });
 
 // ─── extractResultMeta: claude's cost/error/turn metadata, scoped to claude only ──────

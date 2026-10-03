@@ -308,9 +308,9 @@ test("a coder that hits afk.limits.coder.usd is blocked at once, not retried", (
     ].join("\n"),
   );
   chmodSync(join(stub, "claude"), 0o755);
-  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--no-baseline", "--no-integration-check", "--no-commands"], {
+  const r = sh("node", [MAIN, "run", "--platform", "claude", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
     cwd: root,
-    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: "", MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
+    env: { ...process.env, CREW_NO_COMMANDS: "1", CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: "", MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
   });
   assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
   const calls = readFileSync(argsLog, "utf8").trim().split("\n").filter((l) => l.includes("--disallowedTools Agent"));
@@ -371,7 +371,7 @@ test("a blocked-by dependency is not dispatched until its blocker closes, and di
   assert.equal(s.rounds, 1, `expected exactly 1 attempt per issue, got ${s.rounds}`);
 });
 
-test("--max-rounds caps attempts per issue, not the sprint's total dispatch count", () => {
+test("CREW_MAX_ROUNDS caps attempts per issue, not the sprint's total dispatch count", () => {
   // A continuous pool has no round barrier serializing "everyone gets one attempt before
   // anyone gets a second" for free — --max-rounds has to enforce that itself, per issue,
   // or the first issue a worker claims could exhaust the whole budget while its siblings

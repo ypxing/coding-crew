@@ -5,7 +5,7 @@ set -uo pipefail
 # sprint-state.json and the review reports.
 #
 # Usage:
-#   crew-summary.sh [--feature-slug <slug>] [--stalled] [--no-reminder] [--posted-to <pr-url>]
+#   crew-summary.sh [--feature-slug <slug>] [--stalled] [--no-reminder] [--posted-to <pr-url>] [--promoted <severities>]
 #
 # The summary used to be ~430 words of print template that the orchestrator filled in
 # from lists it had been carrying in its context since round 1. That is the one part of
@@ -22,6 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STALLED=0
 REMINDER=1
 POSTED_TO=""
+PROMOTE_POLICY=""   # what the sprint promoted, resolved by the orchestrator (report.mjs)
 FEATURE_SLUG_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -29,6 +30,7 @@ while [ $# -gt 0 ]; do
     --stalled) STALLED=1; shift ;;
     --no-reminder) REMINDER=0; shift ;;
     --posted-to) POSTED_TO="${2:-}"; shift 2 ;;
+    --promoted) PROMOTE_POLICY="${2:-}"; shift 2 ;;
     *) echo "crew-summary.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -201,6 +203,15 @@ if [ -n "$GAPS" ]; then
   printf '%s\n' "$GAPS"
 fi
 
+# --- Deviations ---------------------------------------------------------------
+DEVIATIONS=$(jq -r '(.deviations // {}) | to_entries[] | .key as $k | .value[] | "- \($k): \(.)"' "$SF" 2>/dev/null || true)
+if [ -n "$DEVIATIONS" ]; then
+  echo ""
+  echo "## Deviations"
+  echo "Coders that ran the full test suite themselves — logged, not failed; the verify gate owns it."
+  printf '%s\n' "$DEVIATIONS"
+fi
+
 # --- Retained Branches --------------------------------------------------------
 RETAINED=$(jq -r '(.retention // {}) | to_entries[] | "- \(.value.branch): retained (\(.value.reason))"' "$SF" 2>/dev/null || true)
 if [ -n "$RETAINED" ]; then
@@ -324,7 +335,6 @@ fi
 # branches. Everything else — Debatable and Dismissed findings, what a severity level leaves out,
 # and any finding raised against a Phase 2 fix branch — still needs a human.
 REMIND=$(cd "$MAIN_ROOT" && bash "$SCRIPT_DIR/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG" 2>/dev/null || true)
-PROMOTE_POLICY=$(bash "$SCRIPT_DIR/promote-findings.sh" policy 2>/dev/null | sed -n 's/^promote: //p')
 
 OPEN_LINE=$(printf '%s\n' "$REMIND" | grep '^FINDINGS: open=' || true)
 REPORTS=$(printf '%s\n' "$REMIND" | sed -n 's/^report: //p' | paste -sd ', ' - 2>/dev/null || true)

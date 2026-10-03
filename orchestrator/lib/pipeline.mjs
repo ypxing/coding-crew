@@ -23,6 +23,7 @@ import { getTracker } from "./tracker.mjs";
 import { fixPrompt, resumeNote, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
 import { dispatch } from "./dispatch.mjs";
+import { flagFullSuiteRuns } from "./pipeline/deviation.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./pipeline/finish.mjs";
 import { mergeAndClose } from "./pipeline/merge.mjs";
 import { promote, runReview } from "./pipeline/review.mjs";
@@ -502,6 +503,8 @@ export async function runWorker(ctx, issue, attempt) {
   const head = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
   sprint.recordDispatchCost(result, { slug: issue.slug, role: "coder", attempt, head });
 
+  flagFullSuiteRuns(ctx, { slug: dispatchStem(issue), attempt, outFile });
+
   const sidecar = readSidecar(sidecarFile);
   // A worker that ran to completion (no timeout, non-empty output) but left no sidecar is
   // otherwise silent until the pipeline reports "blocked" several steps later — by then
@@ -616,6 +619,13 @@ export async function runHousekeeping(ctx, worker) {
   if (worker.skipVerify || gatesAtTip(ctx, branch).verifiedThisRun) {
     ctx.log(`[SKIP-VERIFY] slug=${issue.slug} round=${worker.attempt} branch=${branch} — verification already passed at this commit, in this run`);
   } else {
+    // No verify starts before the baseline's verdict (it runs alongside the coders). A red one
+    // keeps this branch as it stands, to be verified by the next run.
+    const baseline = await ctx.baseline;
+    if (baseline?.status === "fail") {
+      ctx.log(`[BASELINE-RED] slug=${issue.slug} round=${worker.attempt} — the baseline failed; branch kept, not verified`, "warn");
+      return finishRetryOrBlock(ctx, worker, outcome, taggedReason(VERIFY_INTERRUPTED_TAG, "baseline failed"), { free: true });
+    }
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=verify`);
     // Awaited, not spawnSync: a verify runs the project's whole test suite for minutes, and the
     // other worker loops (their verifies, their coder dispatches) must keep running meanwhile.
@@ -637,6 +647,9 @@ export async function runHousekeeping(ctx, worker) {
       return await handleVerificationFailure(ctx, worker, outcome, verify);
     }
     sprint.markVerifiedThisRun(branch, effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim());
+    // Lets a feature branch of this exact tree skip its baseline / integration check.
+    const passedTree = effects.gitRead(["rev-parse", `${branch}^{tree}`]).stdout.trim();
+    if (passedTree) sprint.state(["verified-tree", "--tree", passedTree]);
     // This verify's answer replaces any earlier round's; a skipped verify (above) keeps its own.
     const cats = /coverage gap/i.test(verify.stdout)
       ? [...verify.stdout.matchAll(/not_run:\s*([\w, ]+)/gi)].flatMap((m) => m[1].split(",").map((c) => c.trim())).filter(Boolean)

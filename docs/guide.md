@@ -50,16 +50,13 @@ install.sh
     └── (when AGENT=all) install every skill in registry.json
 ```
 
-#### `{{PROTOCOL}}` inlining
+#### Protocols, not agent files
 
-Platform files (`claude.*.md`, `copilot.agent.md`, `pi.agent.md`, `codex.agent.toml`) may contain a `{{PROTOCOL}}` placeholder. During install, this is replaced line-by-line with the contents of `protocol.md` or `workflow.js` from the same agent directory. The installed file is self-contained — no runtime file references.
+An agent is `agents/<name>/protocol.md` (plus optional `assets/`). No per-platform agent file exists or is written under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`. Install copies each protocol to `.coding-crew/agents/<name>/protocol.md` (and `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/`); crew-afk renders it per dispatch, expanding `{{FRAGMENT:<key>}}` lines. `install.sh --update` removes the shims an older install wrote, by exact path (`install.legacy-shims` in `registry.json`).
 
 ```
 agents/crew-coder/
-├── claude.agent.md       ← contains {{PROTOCOL}}
-├── copilot.agent.md      ← contains full inline instructions (no {{PROTOCOL}})
-├── codex.agent.toml      ← TOML custom agent; {{PROTOCOL}} inlined inside a ''' block
-└── protocol.md           ← inlined into claude.agent.md on install
+└── protocol.md
 ```
 
 ---
@@ -80,7 +77,7 @@ agents/crew-coder/
       "docs": ["issue-tracker.md"], // doc templates copied (skipped if exist)
       "platforms": ["claude", "copilot"], // omit to support all
       "install": {
-        "shims": {
+        "legacy-shims": {
           "claude": ".claude/agents/<name>.md",
           "copilot": ".github/agents/<name>.agent.md",
           "pi": ".pi/agents/<name>.md",
@@ -417,8 +414,9 @@ flag overrides each for one run:
 | --- | --- | --- | --- |
 | `fixFindings` | `actionable` | `--fix-findings` | What review findings are fixed automatically: `actionable` (every finding the triage agent judges Actionable, whatever its severity); or the lowest severity — `critical`, `high`, `medium`; or `none` |
 | `PRDAudit` | `fix` | `--prd-audit` | `off`; `report` (audit, leave it for you); `fix` (also queue missing requirements) |
-| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout`, `--merge-timeout`; `--review-timeout` sets every non-coder role | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
+| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout` | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
 | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
+| `maxWallMinutes` | `120` | `--max-wall` | Soft wall-clock cap in minutes, `0` = off. Once elapsed no issue is claimed, running workers finish and merge, Phase 2 fix issues stay parked, the integration check still runs; exit 2, PR (with `--open-pr`) is a draft |
 | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
 | `squashCommits` | `false` | `--squash` (`--no-squash` turns it off) | Squash the sprint's commits into one at the end. Each issue is merged as its own commit either way |
 | `openPr` | `false` | `--open-pr` (`--no-open-pr` turns it off) | At the end, push the feature branch and create or update its PR. The `prWriter` role writes the title (else the PRD's; an open PR keeps a title you set) and the body by following `write-pr` (Summary, Evidence, Merge Danger), under which go the checks result on the merged branch and the lines closing the issues the sprint merged (under `tracker: github`). If the writer leaves no `## Summary`, the PR opens anyway and the run summary says why. A re-run rewrites only crew-afk's own block of the body |
