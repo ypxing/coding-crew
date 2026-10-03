@@ -939,6 +939,12 @@ test("only crew-coder dispatches set CREW_DEFER_FULL_CHECKS, on every runtime", 
 
 // ─── doctor: --help flag probe ───────────────────────────────────────────────
 
+test("the flag probe reads a help text that folds a flag's variant into brackets", () => {
+  // claude 2.1's --help lists the file form only as `--append-system-prompt[-file]`.
+  const help = ({ exec: (cmd, args) => (args[0] === "-c" ? { code: 0, stdout: "/bin/x", stderr: "" } : { code: 0, stdout: "  --permission-mode <m>\n  --output-format <f>\n  --add-dir <d>\n  --append-system-prompt <p>\n     … also --append-system-prompt[-file], --add-dir\n", stderr: "" }) });
+  assert.deepEqual(preflight(help, "claude", { probeFlags: true }), []);
+});
+
 test("preflight with probeFlags reports a PROBLEM when --help omits a flag the adapter needs", async () => {
   const { ADAPTERS } = await import("../../orchestrator/lib/adapters/index.mjs");
   for (const platform of ["pi", "codex", "claude", "copilot"]) {

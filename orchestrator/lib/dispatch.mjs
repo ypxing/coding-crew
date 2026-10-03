@@ -410,6 +410,17 @@ export async function dispatchPlain(
   return { code: r.code, timedOut: !!r.timedOut, text: r.stdout ?? "", dryRun: !!r.dryRun };
 }
 
+/**
+ * Whether a `--help` text lists `flag`: as itself, or folded into a sibling's brackets
+ * (`--append-system-prompt[-file]` lists `--append-system-prompt-file`).
+ */
+function helpLists(text, flag) {
+  const forms = [flag];
+  for (let i = flag.indexOf("-", 2); i > 2; i = flag.indexOf("-", i + 1)) forms.push(`${flag.slice(0, i)}[${flag.slice(i)}]`);
+  const esc = (f) => f.replace(/[[\]]/g, "\\$&");
+  return forms.some((f) => new RegExp(`(^|[^\\w-])${esc(f)}(?![\\w-])`).test(text));
+}
+
 /** Preflight: is this platform's CLI actually present? */
 export function preflight(effects, platform, { paneHost = null, probeFlags = false } = {}) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
@@ -421,7 +432,7 @@ export function preflight(effects, platform, { paneHost = null, probeFlags = fal
     const adapter = ADAPTERS[platform];
     const help = effects.exec(cli, adapter.helpArgs ?? ["--help"], { mutating: false });
     const text = `${help.stdout ?? ""}\n${help.stderr ?? ""}`;
-    const missing = (adapter.requiredFlags ?? []).filter((f) => !new RegExp(`(^|[^\\w-])${f}(?![\\w-])`).test(text));
+    const missing = (adapter.requiredFlags ?? []).filter((f) => !helpLists(text, f));
     for (const f of missing) problems.push(`${cli} \`${(adapter.helpArgs ?? ["--help"]).join(" ")}\` does not list ${f}, which the ${platform} adapter needs for a full-permission headless run`);
   }
   // Every platform is dispatched from the rendered protocol: no agent file to find.
