@@ -128,16 +128,14 @@ Where files land:
 | Platform    | Per project                          | User level (honors)                                    |
 | ----------- | ------------------------------------ | ------------------------------------------------------ |
 | Claude Code | `.claude/`                           | `~/.claude/` (`CLAUDE_CONFIG_DIR`)                     |
-| Copilot     | `.github/agents/`, `.github/skills/` | `~/.copilot/` (`COPILOT_HOME`)                         |
+| Copilot     | `.github/skills/`                    | `~/.copilot/` (`COPILOT_HOME`)                         |
 | pi          | `.pi/`                               | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`)                 |
-| Codex       | `.agents/skills/`, `.codex/agents/`  | `~/.agents/skills/`, `~/.codex/agents/` (`CODEX_HOME`) |
+| Codex       | `.agents/skills/`                    | `~/.agents/skills/` (`CODEX_HOME`)                     |
 
 Requirements for `/crew-afk`:
 
 - The platform's **CLI must be on `PATH`** (`claude`, `copilot`, `codex` or `pi`) — each coder runs
   as its own process. `crew-afk doctor` reports anything missing.
-- **Copilot:** agents must be committed (`.github/agents/`) or installed user-level; the sprint
-  tells you which if neither.
 - **Codex and pi:** local CLI only. Hosted surfaces (Codex in ChatGPT, Codex cloud) can't run a sprint.
 
 Uninstall:

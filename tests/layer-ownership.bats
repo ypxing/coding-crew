@@ -9,7 +9,7 @@
 # and duplicated on the sprint path:
 #
 #   | layer        | owns                                          | must not contain      |
-#   | crew-coder   | tool/model bindings, env binding, report wire  | the implementation loop |
+#   | crew-coder   | protocol + report wire                         | the implementation loop |
 #   | solve-issue  | the ordered procedure + the outcome vocabulary | who its caller is       |
 #   | tdd/dep-install | one technique each                         | issue/report/status     |
 #
@@ -196,4 +196,8 @@ defines_term() {
   for layer in 'crew-coder' 'solve-issue' 'orchestrator' 'tdd'; do
     grep -q "$layer" "$f" || { echo "CLAUDE.md's table omits $layer" >&2; return 1; }
   done
+}
+
+@test "CLAUDE.md's crew-coder row reads protocol + report wire" {
+  grep -qE '^\| `crew-coder` +\| protocol \+ report wire +\|' "$REPO_ROOT/CLAUDE.md"
 }

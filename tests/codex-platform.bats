@@ -22,36 +22,6 @@ teardown() {
   [ ! -d "$TEMP_DIR/.codex/skills" ]
 }
 
-@test "codex crew-afk installs both agent-deps as .codex/agents TOML files" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
-
-  [ -f "$TEMP_DIR/.codex/agents/crew-coder.toml" ]
-  [ -f "$TEMP_DIR/.codex/agents/crew-reviewer.toml" ]
-  [ -f "$TEMP_DIR/.agents/skills/crew-afk/SKILL.md" ]
-
-  # protocol placeholder must be expanded
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.codex/agents/crew-reviewer.toml"
-}
-
-@test "installed codex agent files are valid TOML with the required custom-agent fields" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
-
-  for agent in crew-coder crew-reviewer; do
-    # Content goes in on stdin, not as a path: on Windows the runner's python3 is a
-    # native build that cannot resolve MSYS paths like /tmp/tmp.XXXX/...
-    run bash -c "python3 -c \"
-import tomllib, sys
-d = tomllib.loads(sys.stdin.buffer.read().decode('utf-8'))
-for key in ('name', 'description', 'developer_instructions'):
-    assert d.get(key), 'missing ' + key
-assert len(d['developer_instructions']) > 200
-\" < '$TEMP_DIR/.codex/agents/$agent.toml'"
-    [ "$status" -eq 0 ]
-  done
-}
-
 @test "codex crew-afk SKILL.md is the codex variant with no leftover variants" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
@@ -60,17 +30,6 @@ assert len(d['developer_instructions']) > 200
   [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/codex.SKILL.md" ]
   [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/pi.SKILL.md" ]
   [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/copilot.SKILL.md" ]
-}
-
-@test "platform=all installs codex alongside claude, copilot, and pi" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh all --skill crew-afk
-
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.github/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.agents/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.codex/agents/crew-coder.toml" ]
 }
 
 @test "uninstall removes codex-installed skills and agents" {

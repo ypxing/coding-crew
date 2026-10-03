@@ -34,20 +34,6 @@ _old_shims_left() {
   [ "$output" = "crew-code-reviewer" ]
 }
 
-@test "installing over a pre-rename install removes the old shims and manifest entry" {
-  _old_install
-  cd "$SCRIPT_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh all --skill crew-afk
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"removed .claude/agents/crew-code-reviewer.md (renamed to crew-reviewer)"* ]]
-  [ -z "$(_old_shims_left)" ] || { echo "left behind: $(_old_shims_left)"; return 1; }
-  [ -f "$TEMP_DIR/.claude/agents/crew-reviewer.md" ]
-  [ -f "$TEMP_DIR/.codex/agents/crew-reviewer.toml" ]
-  run jq -r '.agents | keys[]' "$TEMP_DIR/.coding-crew/manifest.json"
-  [[ "$output" == *"crew-reviewer"* ]]
-  [[ "$output" != *"crew-code-reviewer"* ]]
-}
-
 @test "installing one platform removes only that platform's old shim" {
   _old_install
   cd "$SCRIPT_DIR"
@@ -68,45 +54,6 @@ _old_shims_left() {
   [[ "$output" == *"./install.sh --update"* ]]
   run jq -r '.agents | keys[]' "$TEMP_DIR/.coding-crew/manifest.json"
   [[ "$output" == *"crew-code-reviewer"* ]]
-}
-
-@test "--update after a one-platform install brings every platform onto the new name" {
-  _old_install
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
-  [ "$status" -eq 0 ]
-  [ -z "$(_old_shims_left)" ] || { echo "left behind: $(_old_shims_left)"; return 1; }
-  [ -f "$TEMP_DIR/.codex/agents/crew-reviewer.toml" ]
-  [ -f "$TEMP_DIR/.pi/agents/crew-reviewer.md" ]
-  [ -f "$TEMP_DIR/.github/agents/crew-reviewer.agent.md" ]
-  run jq -r '.agents | keys[]' "$TEMP_DIR/.coding-crew/manifest.json"
-  [[ "$output" == *"crew-reviewer"* ]]
-  [[ "$output" != *"crew-code-reviewer"* ]]
-}
-
-@test "--update installs the agent that replaces an old manifest name" {
-  _old_install
-  jq '.platform = "all"' "$TEMP_DIR/.coding-crew/manifest.json" > "$TEMP_DIR/m" && mv "$TEMP_DIR/m" "$TEMP_DIR/.coding-crew/manifest.json"
-  cd "$SCRIPT_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"removed from registry"* ]]
-  [[ "$output" == *"crew-code-reviewer: renamed to crew-reviewer"* ]]
-  [ -z "$(_old_shims_left)" ] || { echo "left behind: $(_old_shims_left)"; return 1; }
-  [ -f "$TEMP_DIR/.claude/agents/crew-reviewer.md" ]
-  [ -f "$TEMP_DIR/.codex/agents/crew-reviewer.toml" ]
-  run jq -r '.agents | keys[]' "$TEMP_DIR/.coding-crew/manifest.json"
-  [[ "$output" != *"crew-code-reviewer"* ]]
-}
-
-@test "install.sh accepts an agent's old name and installs its replacement" {
-  cd "$SCRIPT_DIR"
-  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-code-reviewer
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"crew-code-reviewer was renamed to crew-reviewer"* ]]
-  [ -f "$TEMP_DIR/.claude/agents/crew-reviewer.md" ]
-  [ ! -e "$TEMP_DIR/.claude/agents/crew-code-reviewer.md" ]
 }
 
 @test "install.sh names an unknown agent instead of failing inside find" {
