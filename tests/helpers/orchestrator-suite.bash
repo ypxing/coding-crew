@@ -43,13 +43,29 @@ _run_node_test_prefetched() {
     mkdir "$dir/out"
     local jobs
     jobs=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-    ( cd "$REPO_ROOT" && grep -h '^  run_node_tests ' tests/orchestrator-*.bats | awk '{print $2}' |
-      DIR="$dir" xargs -P "$jobs" -I{} bash -c \
-        'k=$(printf %s "$1" | tr / _); node --test "$1" > "$DIR/out/$k.log" 2>&1; echo $? > "$DIR/out/$k.rc.tmp"; mv "$DIR/out/$k.rc.tmp" "$DIR/out/$k.rc"' _ {} \
-      ) >/dev/null 2>&1 </dev/null &
+    ( cd "$REPO_ROOT" && grep -h '^  run_node_tests ' tests/orchestrator-*.bats | awk '{print $2}' ) > "$dir/list.tmp" 2>/dev/null || true
+    mv "$dir/list.tmp" "$dir/list"
+    ( cd "$REPO_ROOT" && DIR="$dir" xargs -P "$jobs" -I{} bash -c         'k=$(printf %s "$1" | tr / _); node --test "$1" > "$DIR/out/$k.log" 2>&1; echo $? > "$DIR/out/$k.rc.tmp"; mv "$DIR/out/$k.rc.tmp" "$DIR/out/$k.rc"' _ {}         < "$dir/list"
+      touch "$dir/done" ) >/dev/null 2>&1 </dev/null &
     disown 2>/dev/null || true
   fi
-  while [ ! -f "$dir/out/$key.rc" ]; do sleep 0.5; done
+  # The prefetch list is written by whichever wrapper asked first; give it a moment to appear.
+  local i=0
+  while [ ! -f "$dir/list" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  # Bounded wait: a file the prefetch never started, or a prefetch job that ended without a
+  # result for it, runs directly instead of waiting forever.
+  if [ -f "$dir/list" ] && grep -qxF -- "$file" "$dir/list"; then
+    while [ ! -f "$dir/out/$key.rc" ] && [ ! -f "$dir/done" ]; do sleep 0.5; done
+  fi
+  if [ ! -f "$dir/out/$key.rc" ]; then
+    run node --test "$file"
+    if [ "$status" -ne 0 ]; then
+      echo "node --test $file failed (no prefetched result)" >&3
+      echo "$output" >&3
+    fi
+    [ "$status" -eq 0 ]
+    return
+  fi
   status=$(cat "$dir/out/$key.rc")
   if [ "$status" -ne 0 ]; then
     cat "$dir/out/$key.log" >&3
