@@ -248,7 +248,7 @@ export async function runSprint(ctx) {
     capped = cappedByMaxRounds();
     if (capped) {
       flush(ctx);
-      ctx.log(`Round cap reached (--max-rounds ${options.maxRounds}).`);
+      ctx.log(`Round cap reached (${options.maxRounds} attempts per issue).`);
       break;
     }
     // First at every drain, with whatever has merged so far (nothing merged, nothing new to
