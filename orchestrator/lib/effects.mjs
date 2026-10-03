@@ -17,8 +17,9 @@ import { constants as osConstants } from "node:os";
 import { dirname, join } from "node:path";
 
 /**
- * Process groups of live children. Every child is spawned `detached` (its own group, pid == pgid)
- * so a timeout or an interrupt can kill the whole tree, grandchildren included.
+ * Process groups of live children. Every async child is spawned `detached` (its own group, pid == pgid)
+ * so a timeout or an interrupt can kill the whole tree, grandchildren included. Blocking `exec`
+ * stays in the terminal's foreground group so ^C reaches it while `spawnSync` blocks.
  */
 const liveGroups = new Set();
 
@@ -38,6 +39,23 @@ export function killGroup(pid, signal = "SIGKILL") {
 export function killAllGroups(signal = "SIGKILL") {
   for (const pid of liveGroups) killGroup(pid, signal);
   liveGroups.clear();
+}
+
+/**
+ * An external pid (one effects.mjs did not spawn, e.g. run.sh inside a pane-host terminal) the
+ * interrupt path must also kill. Pair every register with an unregister on every exit path.
+ */
+export function registerExternalPid(pid) {
+  if (pid) liveGroups.add(pid);
+}
+
+export function unregisterExternalPid(pid) {
+  liveGroups.delete(pid);
+}
+
+/** The pids the interrupt path would kill now. */
+export function registeredPids() {
+  return [...liveGroups];
 }
 
 process.on("exit", () => killAllGroups());
@@ -94,7 +112,7 @@ export class Effects {
       encoding: "utf8",
       env: { ...process.env, ...this.env, ...env },
       maxBuffer: 64 * 1024 * 1024,
-      ...(timeoutMs ? { timeout: timeoutMs, killSignal: "SIGKILL", detached: true } : {}),
+      ...(timeoutMs ? { timeout: timeoutMs, killSignal: "SIGKILL" } : {}),
     });
     // status === null: killed by a signal. Our own `timeout` is the one signal that is a
     // verdict (124, as always); any other was sent from outside — an interruption, not a

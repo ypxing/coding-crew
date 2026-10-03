@@ -130,12 +130,29 @@ test("execAsync timeout leaves no grandchild", async () => {
   rmSync(dir, { recursive: true });
 });
 
-test("exec timeout leaves no grandchild", async () => {
-  const { dir, f, sh } = grandchildScript();
-  const r = mk().exec("sh", ["-c", sh], { timeoutMs: 500 });
+test("a blocking timed exec interrupted by a signal returns at once with interrupted and 128+signal", () => {
+  const t = Date.now();
+  const r = mk().exec("sh", ["-c", "kill -INT $$; sleep 30"], { timeoutMs: 20000 });
+  assert.ok(Date.now() - t < 5000);
+  assert.equal(r.interrupted, true);
+  assert.equal(r.code, 130);
+});
+
+test("a blocking timed exec that times out still returns 124", () => {
+  const r = mk().exec("sh", ["-c", "sleep 5"], { timeoutMs: 200 });
   assert.equal(r.code, 124);
-  assert.ok(await gone(await readPid(f)));
-  rmSync(dir, { recursive: true });
+  assert.equal(r.interrupted, false);
+});
+
+test("register/unregister put an external pid on the interrupt path", async () => {
+  const { registerExternalPid, unregisterExternalPid, registeredPids, killAllGroups } = await import("../../orchestrator/lib/effects.mjs");
+  const { spawn } = await import("node:child_process");
+  const c = spawn("sleep", ["30"], { stdio: "ignore" });
+  registerExternalPid(c.pid);
+  assert.ok(registeredPids().includes(c.pid));
+  killAllGroups();
+  assert.ok(await gone(c.pid));
+  unregisterExternalPid(c.pid);
 });
 
 test("killAllGroups kills live dispatch groups", async () => {
