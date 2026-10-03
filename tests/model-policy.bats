@@ -16,7 +16,7 @@ setup() {
   export CODER_COPILOT="$(coder_variant copilot)"
   export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-reviewer/claude.agent.md"
   export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-reviewer/copilot.agent.md"
-  export CREW_AFK_SKILL="$SCRIPT_DIR/skills/crew-afk/claude.SKILL.md"
+  export CREW_AFK_SKILL="$(rendered_skill crew-afk claude)"
   export CREW_AFK_COPILOT="$(afk_variant copilot)"
 }
 
