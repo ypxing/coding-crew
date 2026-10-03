@@ -313,9 +313,9 @@ test("a coder that hits afk.limits.coder.usd is blocked at once, not retried", (
     env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: "", MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
   });
   assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
-  const calls = readFileSync(argsLog, "utf8").trim().split("\n").filter((l) => l.includes("--agent crew-coder"));
+  const calls = readFileSync(argsLog, "utf8").trim().split("\n").filter((l) => l.includes("--disallowedTools Agent"));
   assert.equal(calls.length, 1, "a capped coder is never dispatched again");
-  assert.match(calls[0], /--max-budget-usd 0\.5 /);
+  assert.match(calls[0], /--max-budget-usd 0\.5/);
   const s = state(root);
   assert.deepEqual(s.blocked_slugs, ["alpha"]);
   assert.match(s.retention.alpha.reason, /^blocked — limit-exceeded \(\$0\.5\) — the coder dispatch hit afk\.limits\.coder\.usd after \$0\.61$/);

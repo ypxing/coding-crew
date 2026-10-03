@@ -181,7 +181,8 @@ load helpers/orchestrator-suite
           model: null, mainRoot: dir, logFile: null, scriptsDir: "skills/crew-afk/scripts",
         });
         const argv = [b.cmd, ...b.args].join(" ");
-        if (!argv.includes("crew-coder")) throw new Error(platform + ": agent not named");
+        if ((platform === "pi" || platform === "codex") && !argv.includes("crew-coder")) throw new Error(platform + ": agent not named");
+        if ((platform === "claude" || platform === "copilot") && argv.includes("--agent")) throw new Error(platform + ": agent file expected");
         console.log(platform + ": " + b.cmd + " (" + b.capture + ")");
       }
     }).catch((e) => { console.error(e.message); process.exit(1); });

@@ -52,6 +52,10 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { PLATFORMS, preflight } from "./dispatch.mjs";
+import { ROLE_ARGS } from "./adapters/role-args.mjs";
+
+/** Extra CLI args per runtime and role (the claude coder's `--disallowedTools Agent`); read by each adapter's `roleArgs`. */
+export { ROLE_ARGS };
 
 export const CONFIG_REL = ".coding-crew/config.json";
 export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
