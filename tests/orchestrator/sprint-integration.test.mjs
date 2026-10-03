@@ -163,7 +163,7 @@ test("the queue's first drain runs one feature review over the whole feature dif
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(featureReviews(lines), 1);
-  // The prompt: the whole diff from the merge-base with the (local) default branch, and no criteria. the sprint state recorded, and no criteria.
+  // The prompt: the whole diff from the merge-base with the (local) default branch, and no criteria.
   const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature/review-prompt.md"), "utf8");
   assert.ok(prompt.includes(`Gather the diff: git diff ${base}..feature/demo`), prompt);
   assert.ok(prompt.includes(`Base: ${base}`));
