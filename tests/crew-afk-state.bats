@@ -546,7 +546,7 @@ EOF
 - [CRITICAL] unchecked input at src/x.ts:12
 EOF
   printf -- '- [ ] validate input at src/x.ts:12\n' > .scratch/calc/reviews/a.criteria.md
-  bash "$(installed_scripts)/promote-findings.sh" defer --feature-slug calc \
+  bash "$(installed_scripts)/promote-findings.sh" defer --severities "actionable" --feature-slug calc \
     --branch crew/calc/a --slug a --title "Fix review findings: a" \
     --report .scratch/calc/reviews/sprint-review-1.md \
     --criteria-file .scratch/calc/reviews/a.criteria.md >/dev/null

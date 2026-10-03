@@ -361,6 +361,15 @@ export function severityNames(level) {
 }
 
 /**
+ * What a sprint promotes under \`level\` (afk.fixFindings), as the scripts take and record it:
+ * "actionable", or the severities ("CRITICAL, HIGH"); "" for \`none\`. The one level → severities
+ * table — promote-findings.sh keeps none and takes this as --severities.
+ */
+export function promoteSeverities(level) {
+  return level === "actionable" ? "actionable" : severityNames(level);
+}
+
+/**
  * One triage sidecar or fenced-json object, normalised — shared by the sidecar branch and
  * the in-text fenced-json branch below so the two can never drift on field handling.
  */

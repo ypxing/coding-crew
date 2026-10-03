@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { findingsTriagePrompt } from "../prompts.mjs";
-import { annotateFindings, applyFindingVerdicts, findingsAtOrAbove, parseFindingsTriage, severityNames } from "../report.mjs";
+import { annotateFindings, applyFindingVerdicts, findingsAtOrAbove, parseFindingsTriage, promoteSeverities, severityNames } from "../report.mjs";
 import { limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /** The severity rule a failed triage falls back to. */
@@ -25,12 +25,12 @@ export const FALLBACK_LEVEL = "high";
 
 /**
  * What `defer --severities` records for a promotion made under `selected` (selectPromotable's
- * result): the verdict `actionable`, or — triage having failed — the severities of the fallback.
- * Null for a severity level, where `defer` already names its own.
+ * result): the level's own severities, the verdict `actionable`, or — triage having failed — the
+ * severities of the fallback.
  */
 export function promotedAs(fixFindings, selected) {
-  if (fixFindings !== "actionable") return null;
-  return selected.fallback ? severityNames(FALLBACK_LEVEL) : "actionable";
+  if (fixFindings === "actionable" && selected.fallback) return severityNames(FALLBACK_LEVEL);
+  return promoteSeverities(fixFindings);
 }
 
 /**
