@@ -389,8 +389,6 @@ export function describeModel(runtime, model, env = process.env) {
 /** Which agent definition each dispatching role needs installed; the plain-dispatch roles need none. */
 export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage" };
 
-/** The bash dispatcher a runtime's agent dispatch needs; claude and copilot resolve their agent themselves. */
-
 /** The roles a run dispatches: the command finder, the PRD audit and the PR writer are each optional. */
 export function activeRoles({ commands = true, PRDAudit = DEFAULT_SETTINGS.PRDAudit, openPr = DEFAULT_SETTINGS.openPr } = {}) {
   return ROLES.filter(
