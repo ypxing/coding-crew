@@ -50,16 +50,13 @@ install.sh
     └── (when AGENT=all) install every skill in registry.json
 ```
 
-#### `{{PROTOCOL}}` inlining
+#### Protocols, not agent files
 
-Platform files (`claude.*.md`, `copilot.agent.md`, `pi.agent.md`, `codex.agent.toml`) may contain a `{{PROTOCOL}}` placeholder. During install, this is replaced line-by-line with the contents of `protocol.md` or `workflow.js` from the same agent directory. The installed file is self-contained — no runtime file references.
+An agent is `agents/<name>/protocol.md` (plus optional `assets/`). No per-platform agent file exists or is written under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`. Install copies each protocol to `.coding-crew/agents/<name>/protocol.md` (and `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/`); crew-afk renders it per dispatch, expanding `{{FRAGMENT:<key>}}` lines. `install.sh --update` removes the shims an older install wrote, by exact path (`install.legacy-shims` in `registry.json`).
 
 ```
 agents/crew-coder/
-├── claude.agent.md       ← contains {{PROTOCOL}}
-├── copilot.agent.md      ← contains full inline instructions (no {{PROTOCOL}})
-├── codex.agent.toml      ← TOML custom agent; {{PROTOCOL}} inlined inside a ''' block
-└── protocol.md           ← inlined into claude.agent.md on install
+└── protocol.md
 ```
 
 ---
@@ -80,7 +77,7 @@ agents/crew-coder/
       "docs": ["issue-tracker.md"], // doc templates copied (skipped if exist)
       "platforms": ["claude", "copilot"], // omit to support all
       "install": {
-        "shims": {
+        "legacy-shims": {
           "claude": ".claude/agents/<name>.md",
           "copilot": ".github/agents/<name>.agent.md",
           "pi": ".pi/agents/<name>.md",

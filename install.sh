@@ -258,7 +258,7 @@ replacement_for() {
 replaced_shims_left() {
   local old="$1" new="$2" p raw cand prev
   for p in "${PLATFORMS[@]}"; do
-    raw=$(jq -r --arg n "$new" --arg p "$p" '.agents[$n].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
+    raw=$(jq -r --arg n "$new" --arg p "$p" '.agents[$n].install["legacy-shims"][$p] // empty' "$SCRIPT_DIR/registry.json")
     [[ -n "$raw" ]] || continue
     raw="${raw//$new/$old}"
     prev=""
@@ -411,6 +411,32 @@ install_skill_assets() {
 }
 
 
+# Where the protocols install, under .coding-crew/ (orchestrator/lib/adapters/render.mjs reads these
+# paths): agents/<dir>/protocol.md, and the shared fragments a protocol's {{FRAGMENT:<key>}} lines name.
+install_agent_protocol() {
+  local dir="$1"
+  if [[ "$INSTALLED" != *"|fragments|"* ]]; then
+    INSTALLED="${INSTALLED}|fragments|"
+    install_assets_tree "$SCRIPT_DIR/skills/_shared/fragments" ".coding-crew/skills/_shared/fragments" "agent"
+  fi
+  [[ -f "$SCRIPT_DIR/agents/$dir/protocol.md" ]] || { echo "Error: agents/$dir/protocol.md not found" >&2; exit 1; }
+  local dest=".coding-crew/agents/$dir/protocol.md" status=0
+  mkdir -p "$REPO_ROOT/.coding-crew/agents/$dir"
+  check_dest_status "$SCRIPT_DIR/agents/$dir/protocol.md" "$REPO_ROOT/$dest" || status=$?
+  cp "$SCRIPT_DIR/agents/$dir/protocol.md" "$REPO_ROOT/$dest"
+  if [[ $status -eq 0 ]]; then echo "  $dest"; fi
+}
+
+# Drop the agents/ dir an emptied legacy shim left behind (never one with anything else in it).
+prune_empty_agent_dirs() {
+  local root="$1" rel="$2" d
+  d="$(dirname "$rel")"
+  while [[ "$d" != "." && "$d" != "/" ]]; do
+    rmdir "$root/$d" 2>/dev/null || break
+    d="$(dirname "$d")"
+  done
+}
+
 install_agent() {
   local agent_name="$1"
   local platform="$2"
@@ -442,92 +468,26 @@ install_agent() {
   local agent_source_dir
   agent_source_dir=$(jq -r --arg name "$agent_name" '.agents[$name]["source-dir"] // $name' "$SCRIPT_DIR/registry.json")
 
-  # Locate protocol source for {{PROTOCOL}} expansion (protocol.md tried first, then workflow.js)
-  local protocol_file=""
-  for candidate in "$SCRIPT_DIR/agents/$agent_source_dir/protocol.md" "$SCRIPT_DIR/agents/$agent_source_dir/workflow.js"; do
-    if [[ -f "$candidate" ]]; then protocol_file="$candidate"; break; fi
-  done
+  # The protocol is the whole agent: crew-afk renders it from .coding-crew/ for every platform and
+  # dispatches with it, so no per-platform agent file is written. (install_agent_protocol dedups.)
+  install_agent_protocol "$agent_source_dir"
 
-  # emit_protocol <platform> — the protocol file, each `{{FRAGMENT:<key>}}` line replaced by
-  # skills/_shared/fragments/<platform>/<key>.md, else .../common/<key>.md: the same files
-  # render-skill.sh inlines into a skill, so an agent and a skill can share one text.
-  emit_protocol() {
-    local plat="$1" line key frag
-    while IFS= read -r line || [[ -n "$line" ]]; do
-      if [[ "$line" =~ ^[[:space:]]*\{\{FRAGMENT:([A-Za-z0-9_-]+)\}\}[[:space:]]*$ ]]; then
-        key="${BASH_REMATCH[1]}"
-        frag="$SCRIPT_DIR/skills/_shared/fragments/$plat/$key.md"
-        [[ -f "$frag" ]] || frag="$SCRIPT_DIR/skills/_shared/fragments/common/$key.md"
-        [[ -f "$frag" ]] || { echo "Error: $protocol_file needs fragment '$key' for platform '$plat' (skills/_shared/fragments/{$plat,common}/$key.md)" >&2; return 1; }
-        printf '%s\n' "$(cat "$frag")"
-      else
-        printf '%s\n' "$line"
-      fi
-    done < "$protocol_file"
-  }
-
-  expand_shim() {
-    local src="$1" dest="$2" plat="$3"
-    if grep -q '{{PROTOCOL}}' "$src" && [[ -z "$protocol_file" ]]; then
-      echo "Error: $src contains {{PROTOCOL}} but no protocol.md or workflow.js found for $agent_name" >&2
-      exit 1
-    fi
-    mkdir -p "$(dirname "$dest")"
-    
-    # Generate content to temp file for diffing
-    local tmpfile
-    tmpfile=$(mktemp)
-    trap "rm -f '$tmpfile'" RETURN
-    
-    if grep -q '{{PROTOCOL}}' "$src"; then
-      {
-        while IFS= read -r line; do
-          if [[ "$line" == *'{{PROTOCOL}}'* ]]; then
-            emit_protocol "$plat"
-          else
-            printf '%s\n' "$line"
-          fi
-        done < "$src"
-      } > "$tmpfile" || { rm -f "$tmpfile"; exit 1; }
-    else
-      cp "$src" "$tmpfile" || { rm -f "$tmpfile"; exit 1; }
-    fi
-    
-    # Check and diff, then write
-    local status=0
-    check_dest_status "$tmpfile" "$dest" || status=$?
-    chmod 0644 "$tmpfile"
-    mv "$tmpfile" "$dest" || { rm -f "$tmpfile"; exit 1; }
-    trap - RETURN
-
-    # Print path only for new files (status=0)
-    if [[ $status -eq 0 ]]; then
-      local rel_dest="${dest#$REPO_ROOT/}"
-      echo "  $rel_dest"
-    fi
-  }
-
+  # Shims an older install wrote under <platform>/agents/ are removed, each by exact path.
   local target_platform
   for target_platform in "${PLATFORMS[@]}"; do
     [[ "$platform" == "$target_platform" || "$platform" == "all" ]] || continue
-
-    local shim_dest shim_src shim_count
-    shim_dest=$(jq -r --arg name "$agent_name" --arg p "$target_platform" '.agents[$name].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
-    shim_count=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "$target_platform.*" | wc -l)
-    if [[ "$shim_count" -gt 1 ]]; then
-      echo "Error: multiple $target_platform.* files in $SCRIPT_DIR/agents/$agent_source_dir — cannot determine which to install" >&2
-      exit 1
+    local shim_dest_raw
+    shim_dest_raw=$(jq -r --arg name "$agent_name" --arg p "$target_platform" '.agents[$name].install["legacy-shims"][$p] // empty' "$SCRIPT_DIR/registry.json")
+    [[ -n "$shim_dest_raw" ]] || continue
+    assert_safe_path "$shim_dest_raw" "$target_platform legacy shim"
+    prune_legacy_copilot_path "$target_platform" "$shim_dest_raw"
+    resolve_dest "$target_platform" "$(adjust_platform_path "$target_platform" "$shim_dest_raw")"
+    if [[ -f "$_DEST_ROOT/$_DEST_REL" ]]; then
+      rm -f "$_DEST_ROOT/$_DEST_REL"
+      echo "  removed $_DEST_REL (agent files are no longer installed)"
+      prune_empty_agent_dirs "$_DEST_ROOT" "$_DEST_REL"
     fi
-    shim_src=$(find "$SCRIPT_DIR/agents/$agent_source_dir" -maxdepth 1 -name "$target_platform.*" | head -1)
-    if [[ -n "$shim_src" && -n "$shim_dest" ]]; then
-      assert_safe_path "$shim_dest" "$target_platform install"
-      local shim_dest_raw="$shim_dest"
-      shim_dest=$(adjust_platform_path "$target_platform" "$shim_dest")
-      prune_legacy_copilot_path "$target_platform" "$shim_dest_raw"
-      resolve_dest "$target_platform" "$shim_dest"
-      expand_shim "$shim_src" "$_DEST_ROOT/$_DEST_REL" "$target_platform"
-      prune_replaced_agent_shims "$agent_name" "$target_platform" "$shim_dest_raw"
-    fi
+    prune_replaced_agent_shims "$agent_name" "$target_platform" "$shim_dest_raw"
   done
 
   local agent_version

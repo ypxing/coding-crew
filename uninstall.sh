@@ -174,7 +174,7 @@ remove_agent() {
     [[ -n "$old" ]] && names+=("$old")
   done < <(jq -r --arg n "$name" '.agents[$n].replaces // [] | .[]' "$SCRIPT_DIR/registry.json")
   for platform in "${PLATFORMS[@]}"; do
-    path=$(jq -r --arg n "$name" --arg p "$platform" '.agents[$n].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
+    path=$(jq -r --arg n "$name" --arg p "$platform" '.agents[$n].install["legacy-shims"][$p] // empty' "$SCRIPT_DIR/registry.json")
     path="${path%$'\r'}"
     [[ -z "$path" ]] && continue
     for old in "${names[@]}"; do
@@ -201,6 +201,21 @@ remove_agent() {
     echo "  removed $assets_dest/"
     prune_empty_dirs "$REPO_ROOT" "$assets_dest"
     removed=1
+  fi
+  # The installed protocol, and the shared fragments once no agent protocol is left to use them.
+  local src_dir proto_dir
+  src_dir=$(jq -r --arg n "$name" '.agents[$n]["source-dir"] // $n' "$SCRIPT_DIR/registry.json")
+  proto_dir=".coding-crew/agents/${src_dir%$'\r'}"
+  if [[ -d "$REPO_ROOT/$proto_dir" ]]; then
+    rm -rf "$REPO_ROOT/$proto_dir"
+    echo "  removed $proto_dir/"
+    prune_empty_dirs "$REPO_ROOT" "$proto_dir"
+    removed=1
+  fi
+  if [[ ! -d "$REPO_ROOT/.coding-crew/agents" && -d "$REPO_ROOT/.coding-crew/skills/_shared/fragments" ]]; then
+    rm -rf "$REPO_ROOT/.coding-crew/skills/_shared/fragments"
+    echo "  removed .coding-crew/skills/_shared/fragments/"
+    prune_empty_dirs "$REPO_ROOT" ".coding-crew/skills/_shared/fragments"
   fi
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 }

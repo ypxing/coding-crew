@@ -39,12 +39,6 @@ setup() {
   grep -qi 'background' "$f"
 }
 
-@test "no other platform's crew-coder names Monitor or ScheduleWakeup" {
-  for p in pi codex copilot; do
-    ! grep -qE 'Monitor|ScheduleWakeup' "$(coder_variant "$p")"
-  done
-}
-
 @test "neither body tells the worker to read in ranges or to skip the Step 5 run" {
   for f in "$BODY" "$(coder_variant claude)"; do
     ! grep -qiE 'read .*(in|by) (line )?ranges|offset.*limit|skip (the )?step 5' "$f"

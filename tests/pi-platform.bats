@@ -25,18 +25,6 @@ teardown() {
   [[ "$output" == *"invalid platform"* ]]
 }
 
-@test "pi crew-afk installs both agent-deps as pi agent files" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
-
-  [ -f "$TEMP_DIR/.pi/agents/crew-coder.md" ]
-  [ -f "$TEMP_DIR/.pi/agents/crew-reviewer.md" ]
-  [ -f "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md" ]
-
-  # protocol placeholder must be expanded
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.pi/agents/crew-reviewer.md"
-}
-
 @test "pi crew-afk SKILL.md is the pi variant, not the claude or copilot one" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
@@ -53,39 +41,6 @@ teardown() {
 
   grep -q "AFK Issue Sprint — Claude Code" "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md"
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/pi.SKILL.md" ]
-}
-
-@test "platform=all installs pi alongside claude and copilot" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh all --skill crew-afk
-
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.github/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.pi/agents/crew-coder.md" ]
-}
-
-@test "pi agent definitions declare pi built-in tool names" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
-
-  run grep -m1 '^tools:' "$TEMP_DIR/.pi/agents/crew-coder.md"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"read"* ]]
-  [[ "$output" == *"bash"* ]]
-  # Claude/Copilot-only tool names must not leak into the pi definition
-  [[ "$output" != *"Agent"* ]]
-  [[ "$output" != *"execute"* ]]
-}
-
-@test "user-level pi install uses ~/.pi/agent/ paths" {
-  cd "$SCRIPT_DIR"
-  # bootstrap installs with TARGET_REPO=$HOME; pi only scans ~/.pi/agent/skills there
-  run env HOME="$TEMP_DIR" TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
-  [ "$status" -eq 0 ]
-  [ -f "$TEMP_DIR/.pi/agent/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.pi/agent/agents/crew-coder.md" ]
-  [ ! -d "$TEMP_DIR/.pi/skills" ]
 }
 
 @test "uninstall removes pi-installed skills and agents" {
