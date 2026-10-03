@@ -18,6 +18,7 @@ set -euo pipefail
 #   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>] [--number <n>]
 #   state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
 #   state.sh coverage-clear --slug <slug>
+#   state.sh deviation --slug <slug> --reason <text>
 #   state.sh dispatch-cost [--cost <usd>] [--duration-ms <ms>] [--turns <n>]
 #                          [--slug <slug> --role <role> --attempt <n>]
 #                          [--session-id <id>] [--context-tokens <n>] [--head <sha>]
@@ -198,6 +199,15 @@ case "$CMD" in
     edit_state --arg s "$slug" --arg c "$cats" '.coverage_gaps[$s] = $c'
     trace --level warn STATE "coverage-gap slug=$slug categories=$cats"
     echo "STATE: coverage-gap slug=$slug categories=$cats"
+    ;;
+
+  deviation)
+    slug=$(flag slug "" "$@"); reason=$(flag reason "" "$@")
+    [ -n "$slug" ] || die "deviation requires --slug"
+    [ -n "$reason" ] || die "deviation requires --reason"
+    edit_state --arg s "$slug" --arg r "$reason" '.deviations[$s] = ((.deviations[$s] // []) + [$r] | unique)'
+    trace --level warn DEVIATION "slug=$slug $reason"
+    echo "STATE: deviation slug=$slug"
     ;;
 
   coverage-clear)

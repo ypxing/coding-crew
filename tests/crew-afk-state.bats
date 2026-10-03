@@ -426,6 +426,16 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [[ "$output" == *"a: not_run lint,typecheck"* ]]
 }
 
+@test "crew-summary names a coder that ran the full suite under Deviations" {
+  init_sprint calc
+  state complete --slug a --branch crew/calc/a >/dev/null
+  state deviation --slug a --reason "coder ran the full test suite 2x" >/dev/null
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *"## Deviations"* ]]
+  [[ "$output" == *"a: coder ran the full test suite 2x"* ]]
+}
+
 @test "crew-summary does not count a triage-dismissed finding as needing triage" {
   init_sprint calc
   mkdir -p .scratch/calc/reviews
