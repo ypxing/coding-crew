@@ -128,9 +128,9 @@ _changed_files() {
 
 # A test file by its own name (a file under tests/ may be a helper or fixture): bats, *.test.* /
 # *.spec.*, pytest's test_*.py, *_test.* (go, python), *_spec.rb, and jest's __tests__/ sources.
-TEST_FILE_RE='(\.bats$|\.(test|spec)\.[A-Za-z0-9]+$|(^|/)test_[^/]*\.py$|_test\.[A-Za-z0-9]+$|_spec\.rb$|(^|/)__tests__/[^/]+\.[cm]?[jt]sx?$)'
-# Never a suite file, whatever its name: test data and helpers.
-NOT_TEST_RE='(^|/)(fixtures?|helpers?|__fixtures__|__snapshots__|testdata)/'
+TEST_FILE_RE='(\.bats$|\.(test|spec)\.[A-Za-z0-9]+$|(^|/)test_[^/]*\.py$|_test\.[A-Za-z0-9]+$|_spec\.rb$|Test\.php$|(^|/)__tests__/.*\.[cm]?[jt]sx?$|(^|/)test/[^/]*\.[cm]?[jt]s$)'
+# Never a suite file, whatever its name: data and helpers inside a test tree, snapshots.
+NOT_TEST_RE='((^|/)(tests?|spec|__tests__)/(.*/)?(fixtures?|helpers?|__fixtures__|testdata)/|(^|/)(__snapshots__|testdata)/)'
 # Runners that take no test file arguments (or treat them as something else): a targeted run
 # through them would not run the changed tests, so they are deferred to the verify gate.
 NO_FILE_ARGS_RE='^(make|gmake|go|cargo|gradle|gradlew|\./gradlew|mvn|mvnw|\./mvnw|dotnet|rake|ctest|tox|nox)$'
@@ -156,14 +156,22 @@ _changed_tests() {
 }
 
 # _takes_test_files <cached test command> — false when a program the command runs (the first word
-# of each `&&`/`;`/`|` segment, `cd` segments aside) is a runner in NO_FILE_ARGS_RE.
+# of each `&&`/`;`/`|` segment, after env assignments and wrappers such as `env`, `time`,
+# `bundle exec`, `poetry run`; `cd` segments aside) is a runner in NO_FILE_ARGS_RE.
 _takes_test_files() {
-  local w prev=""
+  local w prev="" at_prog=1 wrapper=""
   set -f
-  for w in $1; do
-    case "$prev" in ""|"&&"|";"|"||"|"|")
-      if [ "$w" != cd ] && printf '%s\n' "$w" | grep -qE "$NO_FILE_ARGS_RE"; then set +f; return 1; fi ;;
-    esac
+  for w in ${1//;/ ; }; do
+    if [ -n "$wrapper" ]; then wrapper=""; prev="$w"; continue; fi # `exec` of `bundle exec`, …
+    case "$w" in "&&"|";"|"||"|"|") at_prog=1; prev="$w"; continue ;; esac
+    if [ "$at_prog" = 1 ]; then
+      case "$w" in
+        [A-Za-z_]*=*|env|time|nice|command|exec) prev="$w"; continue ;;
+        bundle|poetry|uv|pipenv|pdm|hatch|rye) wrapper=1; prev="$w"; continue ;;
+      esac
+      at_prog=0
+      if [ "$w" != cd ] && printf '%s\n' "$w" | grep -qE "$NO_FILE_ARGS_RE"; then set +f; return 1; fi
+    fi
     prev="$w"
   done
   set +f

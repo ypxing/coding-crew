@@ -237,11 +237,24 @@ _cache() {
   [[ "$output" != *"h.bash"* && "$output" != *"f.jsonl"* && "$output" != *"lib.mjs"* && "$output" != *"case.test.js"* ]]
 }
 
+@test "run-checks: --targeted recognises mocha, phpunit, nested jest and colocated tests outside a test tree" {
+  mkdir -p "$WORK/test" "$WORK/tests" "$WORK/src/__tests__/sub" "$WORK/src/helpers"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/test/app.js"; echo x > "$WORK/tests/FooTest.php"
+  echo x > "$WORK/src/__tests__/sub/b.js"; echo x > "$WORK/src/helpers/format.test.ts"
+  _cache '{"typecheck": null, "lint": null, "test": "echo RAN tests/*.bats"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  for f in test/app.js tests/FooTest.php src/__tests__/sub/b.js src/helpers/format.test.ts; do
+    [[ "$output" == *"$f"* ]] || { echo "missing $f: $output"; return 1; }
+  done
+}
+
 @test "run-checks: --targeted defers a runner that takes no test file arguments (make, go, cargo)" {
   mkdir -p "$WORK/tests"
   git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
   echo x > "$WORK/tests/new_test.go"
-  for runner in "make test" "go test ./..." "cargo test"; do
+  for runner in "make test" "go test ./..." "cargo test" "cd sub; make test" "env CI=1 cargo test" "bundle exec rake test"; do
     _cache "{\"typecheck\": null, \"lint\": null, \"test\": \"$runner\"}"
     CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
     [ "$status" -eq 0 ] || { echo "$runner: $output"; return 1; }

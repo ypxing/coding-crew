@@ -947,3 +947,10 @@ test("the coder's protocol ends with each named skill's installed SKILL.md, per 
     process.env.HOME = saved;
   }
 });
+
+test("codex: a plain role (command finder, PRD auditor, PR writer) runs read-only, writing only its result", () => {
+  const { root, promptFile } = fixture();
+  const b = buildDispatch("codex", { agent: "pr-writer", cwd: root, mainRoot: root, promptFile, outFile: join(root, "dispatch/pr-writer.md") });
+  assert.equal(b.args.includes("sandbox_workspace_write.network_access=true"), false);
+  assert.equal(b.args.at(b.args.indexOf("--cd") + 1), join(realpathSync(root), "dispatch"));
+});

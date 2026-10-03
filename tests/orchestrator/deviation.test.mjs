@@ -37,6 +37,11 @@ test("the cached command's leading env assignments are not part of what is match
   assert.deepEqual(fullSuiteRuns(f, "ORCHESTRATOR_PREFETCH=1 bats tests/*.bats"), ["bats tests/*.bats", "ORCHESTRATOR_PREFETCH=1 bats tests/*.bats"]);
 });
 
+test("a subshell or a quoted shell wrapper around the full suite is a full run", () => {
+  const { f } = events("(npm test)", "bash -lc 'npm test'", 'sh -c "npm test"', "bash -lc 'npm test -- a.test.js'");
+  assert.deepEqual(fullSuiteRuns(f, "npm test"), ["(npm test)", "bash -lc 'npm test'", 'sh -c "npm test"']);
+});
+
 test("a longer target or program that merely starts with the test command is not it", () => {
   const { f } = events("make test-unit", "make tests", "xmake test", "make test");
   assert.deepEqual(fullSuiteRuns(f, "make test"), ["make test"]);

@@ -17,6 +17,12 @@ function gitPath(dir, flag) {
   return isAbsolute(p) || /^[A-Za-z]:/.test(p) ? p : `${dir}/${p}`;
 }
 
+/** A role's sandbox; a plain role (no protocol: command finder, PRD auditor, PR writer) only reads. */
+function sandboxFor(role) {
+  if (!role) return "read-only";
+  return CODEX_SANDBOX[role] || process.env.CREW_CODEX_SANDBOX || "workspace-write";
+}
+
 function summarize(itemType, item) {
   if (itemType === "command_execution" && item?.command) return `$ ${item.command}`;
   if (itemType === "file_change") {
@@ -45,7 +51,7 @@ export default {
    * checkout added (traces, prompts and reports live under .scratch).
    */
   argv({ cwd, mainRoot, model, role, outFile }) {
-    let sandbox = (role && CODEX_SANDBOX[role]) || process.env.CREW_CODEX_SANDBOX || "workspace-write";
+    let sandbox = sandboxFor(role);
     let resultDir = null;
     if (sandbox === "read-only" && outFile) {
       mkdirSync(dirname(outFile), { recursive: true });
@@ -73,7 +79,7 @@ export default {
 
   /** What codex reads on stdin: the protocol, then the task. */
   stdin({ cwd, role, protocol, prompt, outFile }) {
-    const readOnly = ((role && CODEX_SANDBOX[role]) || process.env.CREW_CODEX_SANDBOX) === "read-only" && outFile;
+    const readOnly = sandboxFor(role) === "read-only" && outFile;
     const task = readOnly
       ? `Your shell starts in ${realpathSync(dirname(outFile))}, the only writable directory, where your result file goes. The repository is ${cwd}: run your commands there (\`cd ${cwd} && ...\`).\n\n${prompt}`
       : prompt;

@@ -52,9 +52,10 @@ function runsWholeSuite(cmd, testCommand) {
     const at = cmd.indexOf(testCommand, from);
     if (at < 0) return false;
     from = at + testCommand.length;
-    // Whole words only: `make test` is not in `make test-unit` or `xmake test`.
-    if (/[^\s;&|(]/.test(cmd[at - 1] ?? " ") || /[^\s;&|)<>]/.test(cmd[from] ?? " ")) continue;
-    const rest = cmd.slice(from).split(/&&|\|\||[;|\n]/)[0];
+    // Whole words only: `make test` is not in `make test-unit` or `xmake test`. A subshell or a
+    // quoted `bash -lc '…'` (codex's command form) bounds it too, and ends its arguments.
+    if (/[^\s;&|('"]/.test(cmd[at - 1] ?? " ") || /[^\s;&|)<>'"]/.test(cmd[from] ?? " ")) continue;
+    const rest = cmd.slice(from).split(/&&|\|\||[;|\n)'"]/)[0];
     const words = rest.split(/\s+/).filter(Boolean);
     // A bare redirection operator (`>`, `2>`, `&>`) takes the next word as its target; a bare
     // number is a flag's value (`-n 4`, `--maxWorkers 2`). Neither names a test file.

@@ -11,11 +11,17 @@ setup_suite() {
     CREW_LOG_LEVEL CREW_VERBOSE
   # The orchestrator node suites' prefetch (helpers/orchestrator-suite.bash) starts here, before
   # the first file, rather than at the first orchestrator-*.bats wrapper, which sorts late.
+  # Only for a run that includes an orchestrator wrapper: a targeted run (a coder's
+  # `ORCHESTRATOR_PREFETCH=1 bats tests/one.bats`) must not start the whole node suite.
   if [ "${ORCHESTRATOR_PREFETCH:-}" = 1 ] && [ -z "${CI:-}" ] && command -v node >/dev/null 2>&1; then
     REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
     # shellcheck source=helpers/orchestrator-suite.bash
     . "$REPO_ROOT/tests/helpers/orchestrator-suite.bash"
-    orchestrator_prefetch_start
+    local owner
+    owner=$(_bats_main_pid)
+    if [ -n "$owner" ] && ps -o args= -p "$owner" 2>/dev/null | grep -q 'orchestrator[^ ]*\.bats'; then
+      orchestrator_prefetch_start
+    fi
     unset REPO_ROOT
   fi
 }
