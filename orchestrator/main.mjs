@@ -590,15 +590,16 @@ async function main() {
   let runError;
   let lockPath;
   let lease;
-  // Children run in their own process groups, so a terminal ^C no longer reaches them: kill them
-  // here. Lease release is best effort: SIGKILL cannot be caught, and the next run reclaims a dead pid.
+  // Children run in their own sessions, so neither a terminal ^C nor its hangup (the terminal
+  // closed, an SSH session dropped) reaches them: kill them here. Lease release is best effort:
+  // SIGKILL cannot be caught, and the next run reclaims a dead pid.
+  const SIGNAL_EXIT = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
   const onSignal = (signal) => {
     killAllGroups();
     if (lease) releaseLease(effects, lease);
-    process.exit(signal === "SIGINT" ? 130 : 143);
+    process.exit(SIGNAL_EXIT[signal]);
   };
-  process.once("SIGINT", onSignal);
-  process.once("SIGTERM", onSignal);
+  for (const signal of Object.keys(SIGNAL_EXIT)) process.once(signal, onSignal);
   try {
     // Before any sprint output, so a launcher knows the resolved host without re-deriving it
     // from env and config.

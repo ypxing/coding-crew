@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, SCRIPTS, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, workerReport, triageVerdict, coderSpawns, privateScripts, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, test } from "./helpers/sprint.mjs";
+import { MAIN, SCRIPTS, FAKE, sprintEnv, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, workerReport, triageVerdict, coderSpawns, privateScripts, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, test } from "./helpers/sprint.mjs";
 
 // ─── a coder that stops short with commits: its report is a claim, the gates decide ───────
 
@@ -505,4 +505,34 @@ test("a verify that really fails still goes to triage", () => {
   const { lines } = commandLines(root, ["--max-rounds", "1"]);
   assert.equal(lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 1, "a named failure is not re-run");
   assert.equal(triageSpawns(lines), 1);
+});
+
+test("a hangup (terminal closed, SSH dropped) kills every worker the run started", async () => {
+  // Workers run in their own sessions, so the terminal's SIGHUP never reaches them: the run must.
+  const { spawn, spawnSync } = await import("node:child_process");
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const marker = "37.4142";
+  fake(root, "alpha.worker-sleep", `${marker}\n`);
+  // Anchored: an unanchored -f also matches any shell whose command line merely mentions it.
+  const exact = `^sleep ${marker.replace(".", "\\.")}$`;
+  const alive = () => spawnSync("pgrep", ["-f", exact]).status === 0;
+  const child = spawn("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
+    cwd: root,
+    env: sprintEnv({ ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root }),
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  try {
+    for (let i = 0; i < 200 && !alive(); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.ok(alive(), "the worker started");
+    const exited = new Promise((r) => child.on("exit", (code, signal) => r({ code, signal })));
+    child.kill("SIGHUP");
+    const { code } = await exited;
+    assert.equal(code, 129);
+    for (let i = 0; i < 40 && alive(); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(alive(), false, "the worker's process group is gone");
+  } finally {
+    spawnSync("pkill", ["-f", exact]);
+    child.kill("SIGKILL");
+  }
 });

@@ -71,15 +71,21 @@ export const FAKE = join(HERE, "../fixtures/fake-dispatch.sh");
 // so an inherited HOME is swapped for an empty one. A test that sets its own HOME keeps it.
 export const EMPTY_HOME = mkdtempSync(join(TMPDIR, "crew-sprint-home-"));
 after(() => rmSync(EMPTY_HOME, { recursive: true, force: true }));
+/** `env` (default process.env) as a fixture sprint may see it: no real pane host, HOME or install. */
+export function sprintEnv(env = process.env) {
+  const out = { ...env };
+  if (out.HOME === process.env.HOME) out.HOME = EMPTY_HOME;
+  if (out.CREW_INSTALL_DIR === process.env.CREW_INSTALL_DIR) out.CREW_INSTALL_DIR = INSTALL_DIR;
+  delete out.CREW_PANE_HOST;
+  delete out.HERDR_ENV;
+  delete out.HERDR_PANE_ID;
+  delete out.ORCA_ENV;
+  delete out.ORCA_TERMINAL_HANDLE;
+  return out;
+}
+
 export function sh(cmd, args, opts = {}) {
-  const env = { ...(opts.env ?? process.env) };
-  if (env.HOME === process.env.HOME) env.HOME = EMPTY_HOME;
-  if (env.CREW_INSTALL_DIR === process.env.CREW_INSTALL_DIR) env.CREW_INSTALL_DIR = INSTALL_DIR;
-  delete env.CREW_PANE_HOST;
-  delete env.HERDR_ENV;
-  delete env.HERDR_PANE_ID;
-  delete env.ORCA_ENV;
-  delete env.ORCA_TERMINAL_HANDLE;
+  const env = sprintEnv(opts.env ?? process.env);
   const r = spawnSync(cmd, args, { encoding: "utf8", ...opts, env });
   return { code: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
