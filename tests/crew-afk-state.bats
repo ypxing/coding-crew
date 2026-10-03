@@ -364,6 +364,13 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [[ "$output" == *'Cost:   $2.50 · agent time: 1.0m across 7 turns (every run of this feature)'* ]]
 }
 
+@test "crew-summary --capped names the wall-clock cap, not blockers, as what left work undone" {
+  init_sprint calc
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc --stalled --capped
+  [[ "$output" == *"CAPPED: the wall-clock cap stopped new claims"* ]]
+  [[ "$output" != *"STALLED:"* ]]
+}
+
 @test "state blocked records the reason for every blocked issue, branch or not" {
   init_sprint calc
   state blocked --slug r --reason "requires failed: docker not running" >/dev/null

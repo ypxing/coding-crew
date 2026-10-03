@@ -5,7 +5,7 @@ set -uo pipefail
 # sprint-state.json and the review reports.
 #
 # Usage:
-#   crew-summary.sh [--feature-slug <slug>] [--stalled] [--no-reminder] [--posted-to <pr-url>] [--promoted <severities>]
+#   crew-summary.sh [--feature-slug <slug>] [--stalled] [--capped] [--no-reminder] [--posted-to <pr-url>] [--promoted <severities>]
 #
 # The summary used to be ~430 words of print template that the orchestrator filled in
 # from lists it had been carrying in its context since round 1. That is the one part of
@@ -20,6 +20,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 STALLED=0
+CAPPED=0
 REMINDER=1
 POSTED_TO=""
 PROMOTE_POLICY=""   # what the sprint promoted, resolved by the orchestrator (report.mjs)
@@ -28,6 +29,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --feature-slug) FEATURE_SLUG_ARG="${2:-}"; shift 2 ;;
     --stalled) STALLED=1; shift ;;
+    --capped) CAPPED=1; shift ;;
     --no-reminder) REMINDER=0; shift ;;
     --posted-to) POSTED_TO="${2:-}"; shift 2 ;;
     --promoted) PROMOTE_POLICY="${2:-}"; shift 2 ;;
@@ -178,7 +180,10 @@ if [ -n "$UNBLOCK" ]; then
   echo "Labelled blocked — later runs skip these until a human puts them back in the queue:"
   printf '%s\n' "$UNBLOCK"
 fi
-[ "$STALLED" -eq 1 ] && echo "STALLED: resolve blockers and re-run (/crew-afk)"
+# --capped: the wall-clock cap, not a blocker, is what left work undone.
+if [ "$CAPPED" -eq 1 ]; then echo "CAPPED: the wall-clock cap stopped new claims — re-run (/crew-afk) to continue"
+elif [ "$STALLED" -eq 1 ]; then echo "STALLED: resolve blockers and re-run (/crew-afk)"
+fi
 
 echo ""
 echo "## Code Review"

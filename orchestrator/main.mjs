@@ -586,6 +586,7 @@ async function main() {
   };
   let resolved;
   let stalled;
+  let wallCapped = false;
   let exitCode = 0;
   let runError;
   let lockPath;
@@ -791,6 +792,7 @@ async function main() {
 
     const sprintResult = await runSprint(ctx);
     stalled = sprintResult.stalled;
+    wallCapped = Boolean(sprintResult.wallCapped);
     if (sprintResult.baselineFailed) {
       fatal(baselineFailureMessage(sprint.featureBranch, sprintResult.baselineFailed));
       exitCode = 1;
@@ -811,7 +813,7 @@ async function main() {
     // polling has no other way to learn the run is over.
     if (options.paneHost) {
       await drainPaneNotices(effects);
-      const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : stalled ? "stalled — blockers need a human" : "finished";
+      const outcome = runError ? "errored" : exitCode === 1 ? "setup failed" : wallCapped ? "stopped at the wall-clock cap — re-run to continue" : stalled ? "stalled — blockers need a human" : "finished";
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
       await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);
     }

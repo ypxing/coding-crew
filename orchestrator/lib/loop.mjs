@@ -16,8 +16,9 @@
  * accidentally from a round's real wall-clock cost is now the only thing throttling
  * retries, so it has to be explicit.
  *
- * Two exits: nothing left to do (every open issue completed, or permanently blocked by a
- * spent retry cap or an unresolvable dependency), or the per-issue attempt cap (CREW_MAX_ROUNDS) — each
+ * It ends when nothing is left to do (every open issue completed, or permanently blocked by a
+ * spent retry cap or an unresolvable dependency), when the wall-clock cap stops new claims, when a
+ * red baseline stops the run, or at the per-issue attempt cap (CREW_MAX_ROUNDS, a test seam) — each
  * issue may reach that many attempts, the same guarantee a round-batch sprint gave for
  * free (every issue gets one attempt per round before any issue gets a second). Checked
  * per issue, not as a global dispatch count, so a small attempt cap still lets every
@@ -391,7 +392,7 @@ export async function runSprint(ctx) {
   held.clear();
 
   await wrapUp(ctx, { tracker, stalled, capped, wallCap, prdAudit, unlisted, integration, integrationFixes, featureReview });
-  return { stalled, history };
+  return { stalled, wallCapped: Boolean(wallCap), history };
 }
 
 /**
@@ -564,6 +565,7 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
   const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap });
   const summaryArgs = ["--promoted", promoteSeverities(sprint.fixFindings)];
   if (stalled) summaryArgs.push("--stalled");
+  if (wallCap) summaryArgs.push("--capped");
   if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url);
   const summary = effects.bash("crew-summary.sh", summaryArgs, { env: sprint.childEnv() });
   ctx.out(summary.stdout);
@@ -608,27 +610,24 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
 }
 
 /**
- * A run is green iff it exited 0 (not stalled), no issue is blocked, it was not cut short by
- * --max-rounds, and the integration check passed or was cached. A check that could not run
- * (`skipped`) is not green; one the user switched off (`enabled` false) is not held against it.
+ * Why a run is not green, one line per cause, for the PR block and the summary — none when it
+ * is: exited 0 (not stalled, not capped by the wall clock), no issue blocked, not cut short by the
+ * attempt cap (CREW_MAX_ROUNDS), and the integration check passed or was cached. A check that
+ * could not run (`skipped`) is not green; one the user switched off is not held against it.
  */
-export function isGreen({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true }) {
-  const integrationOk = integration ? ["pass", "cached"].includes(integration.status) : !integrationEnabled;
-  return exitCode === 0 && blocked.length === 0 && !capped && integrationOk;
-}
-
-/** Why a run is not green, one line per cause, for the PR block and the summary. */
-function notGreenReasons({ exitCode, blocked, integration, capped, integrationEnabled, wallCap = null }) {
+function notGreenReasons({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true, wallCap = null }) {
   const reasons = [];
   if (wallCap) reasons.push(`the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length ? `${wallCap.unclaimed.length} issue(s) unclaimed` : "Phase 2 fix issues stayed parked"})`);
   else if (exitCode !== 0) reasons.push("the run stalled with issues unfinished");
   if (blocked.length) reasons.push(`${blocked.length} issue(s) blocked`);
-  if (capped) reasons.push("the run stopped at --max-rounds");
+  if (capped) reasons.push("the run stopped at its per-issue attempt cap");
   if (integration?.status === "skipped") reasons.push(`the integration check was skipped (${integration.reason})`);
   else if (!integration && integrationEnabled) reasons.push("the integration check did not run");
   else if (integration && !["pass", "cached"].includes(integration.status)) reasons.push(`the integration check ${integration.status}`);
   return reasons;
 }
+
+export const isGreen = (state) => notGreenReasons(state).length === 0;
 
 /**
  * Last, after squash: the feature PR. `openPr` pushes the branch and creates or updates the PR
@@ -680,8 +679,8 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   const blockedSlugs = sprint.getList("blocked");
   const { retention = {}, blocked_reasons: blockedReasons = {} } = sprint.readState();
   const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false };
-  const green = isGreen(state);
-  const reasons = green ? [] : notGreenReasons(state);
+  const reasons = notGreenReasons(state);
+  const green = reasons.length === 0;
   const args = ["--closes-file", closesFile];
   if (!green) {
     const note = join(sprint.env.SPRINT_DIR, "pr-note.md");
