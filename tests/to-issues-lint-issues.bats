@@ -115,7 +115,7 @@ J
   lint_clean --prd "$W/PRD.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"WARN "*"PRD.md: "*D9* ]]
-  [[ "$output" != *D1* ]]
+  [[ "${output//$W/}" != *D1* ]]
 }
 
 @test "WARN: blocked-on issue without Exposes, no What to build, no Implements" {
@@ -133,7 +133,7 @@ J
 @test "coverage check skipped silently without --prd, and for a PRD with no IDs" {
   sed -i.bak '/^## Implements$/,/^## Acceptance criteria$/{/^## Acceptance criteria$/!d;}' "$W/issues/01-store.md"
   lint_clean
-  [[ "$output" != *D1* ]]
+  [[ "${output//$W/}" != *D1* ]]
   printf '# PRD\n\nNo ids here, D1 mentioned inline.\n' > "$W/bare.md"
   lint_clean --prd "$W/bare.md"
   [[ "$output" != *bare.md* ]]
