@@ -63,3 +63,17 @@ setup() {
   grep -qF "citing both sides' \`file:line\`" "$q"
   grep -qF 'compare the two by reading' "$q"
 }
+
+@test "reviewer protocol: instance search, leftover references, feature mode depth" {
+  local f; f="$(role_prompt reviewer claude)"
+  grep -qF 'search the tree for every other instance' "$f"
+  grep -qF 'names the defect class' "$f"
+  grep -qF 'listing' "$f"
+  grep -qF '**Leftover references**' "$f"
+  grep -qF 'search code, docs, tests and `registry.json`' "$f"
+  grep -qF 'a live' "$f"
+  grep -qF '`retired_*` lists are exempt' "$f"
+  grep -qF 'is reported at any severity' "$f"
+  ! grep -qF 'report it only if CRITICAL' "$f"
+  grep -qF "2000-line / top-10-files cap does not" "$f"
+}
