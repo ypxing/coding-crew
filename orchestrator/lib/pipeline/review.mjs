@@ -9,7 +9,7 @@ import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { parseReviewReport, severityNames } from "../report.mjs";
+import { parseReviewReport, promoteSeverities, severityNames } from "../report.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
 import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
@@ -144,7 +144,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
 export async function promote(ctx, worker, review, outcome) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
-  const guard = effects.bash("promote-findings.sh", ["guard", "--issue", issueRef(issue)], {
+  const guard = effects.bash("promote-findings.sh", ["guard", "--issue", issueRef(issue), "--severities", promoteSeverities(sprint.fixFindings)], {
     env: sprint.childEnv(),
   });
   const guardText = guard.stdout.trim();
@@ -194,7 +194,7 @@ export async function promote(ctx, worker, review, outcome) {
     "--report", review.reportFile,
     "--criteria-file", criteriaPath,
     // Names what was promoted: a verdict, or — when triage failed — the severities of the fallback rule.
-    ...(promotedAs(sprint.fixFindings, selected) ? ["--severities", promotedAs(sprint.fixFindings, selected)] : []),
+    "--severities", promotedAs(sprint.fixFindings, selected),
   ], { env: sprint.childEnv() });
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${defer.stdout.trim()}`);
   outcome.promoted = promotable.length;

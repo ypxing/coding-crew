@@ -90,7 +90,7 @@ means no verdicts for that review: its CRITICAL and HIGH findings are promoted, 
 open, and the summary's `## Findings Triage` section names which review fell back and why. The
 fallback is per review, so one failed triage never blocks the others.
 
-The threshold is a fixed string printed by `promote-findings.sh guard`; the verdicts are facts on
+The threshold is resolved once in `orchestrator/lib/report.mjs` and echoed by `promote-findings.sh guard`; the verdicts are facts on
 disk in the review report, so the orchestrator never has to remember them.
 
 Anything below the threshold is paid for on the way out rather than hidden: nothing subtracts an
@@ -168,14 +168,12 @@ dismissed once a human reads them.
 ## Script interface
 
 ```bash
-# Which severities does this sprint promote? (CREW_FIX_FINDINGS, set by session-init.sh)
-bash "<skill-dir>/scripts/promote-findings.sh" policy
-# → "promote: actionable" | "promote: CRITICAL" | "promote: CRITICAL, HIGH" | "promote: CRITICAL, HIGH, MEDIUM" | "promote: "
-
-# Depth bound: is this branch's issue itself a promoted fix issue?
-bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file>"
-# → "guard: eligible — threshold: actionable" | "guard: eligible — threshold: CRITICAL, HIGH" | "guard: skip — source-guarded ..."
-#   | "guard: skip — fixFindings is none"
+# Depth bound: is this branch's issue itself a promoted fix issue? --severities is the list the
+# orchestrator resolved from afk.fixFindings (orchestrator/lib/report.mjs); the script keeps no
+# level table and exits 2 naming the argument when it is missing.
+bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file>" --severities "<list>"
+# → "guard: eligible — threshold: <list>" | "guard: skip — source-guarded ..."
+#   | "guard: skip — fixFindings is none" (empty list)
 
 # Park a fix issue and annotate the report. Criteria file = one "- [ ] <finding>" line per finding.
 bash "<skill-dir>/scripts/promote-findings.sh" defer \
