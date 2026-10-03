@@ -7,7 +7,7 @@
 # through the same path that installs it.
 #
 # Caching: keyed by a content hash of everything that can change a rendered result
-# (agents/, skills/, scripts/, registry.json, install.sh), stored under a fixed path
+# (skills/, scripts/, orchestrator/roles/ and the renderer, registry.json, install.sh), stored under a fixed path
 # outside any single bats run's own tmpdir. `install.sh` alone spawns ~84 `jq` calls, and
 # on Git Bash (no real fork()) that dwarfs everything else the suite does — so a cache
 # keyed to *bats' own tmpdir* (as this used to be) paid that cost again on every separate
@@ -25,8 +25,9 @@ RENDER_HELPER_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 _render_cache_key() {
   local root="$RENDER_HELPER_REPO_ROOT" hasher
   if command -v sha256sum >/dev/null 2>&1; then hasher=(sha256sum); else hasher=(shasum -a 256); fi
-  { find "$root/agents" "$root/skills" "$root/scripts" -type f 2>/dev/null
-    printf '%s\n' "$root/registry.json" "$root/install.sh"
+  { find "$root/skills" "$root/scripts" "$root/orchestrator/roles" -type f 2>/dev/null
+    printf '%s\n' "$root/registry.json" "$root/install.sh" "$root/orchestrator/lib/adapters/render.mjs" \
+      "$root/orchestrator/lib/skill-dirs.mjs"
   } | LC_ALL=C sort | xargs "${hasher[@]}" | "${hasher[@]}" | awk '{print $1}'
 }
 
@@ -58,34 +59,7 @@ afk_variant() {
   rendered_skill crew-afk "$1"
 }
 
-# ─── agent bodies ────────────────────────────────────────────────────────────
-# An agent body is assembled at install time too: install.sh substitutes {{PROTOCOL}}
-# with agents/<agent>/protocol.md. crew-coder's four platform files are therefore a
-# frontmatter block plus a short platform block, and the instructions a worker actually
-# receives exist only after that substitution — so body assertions run against the
-# *installed* file, exactly as for skills.
-#
-# The rendering is done by running install.sh, not by re-implementing its substitution:
-# a second inliner is a second thing to drift. One install per bats run, cached.
-
-# installed_agents_root — prints a dir containing one full install of every platform
-installed_agents_root() {
-  local cache="$(_render_cache_root)/installed-agents" tmp
-  if [ ! -d "$cache" ]; then
-    # Installed beside and renamed into place: CI runs bats files concurrently, so a
-    # reader must never see a partial install. A concurrent run that renamed first wins,
-    # and this one's copy is discarded (in the rare race where both pass the check, the
-    # loser lands inside the winner as an unread subdirectory).
-    tmp="$cache.$$"
-    mkdir -p "$tmp"
-    git -C "$tmp" init -q 2>/dev/null || true
-    ( cd "$RENDER_HELPER_REPO_ROOT" && TARGET_REPO="$tmp" ./install.sh >/dev/null ) || return 1
-    [ -d "$cache" ] || mv "$tmp" "$cache"
-    rm -rf "$tmp"
-  fi
-  printf '%s\n' "$cache"
-}
-
+# ─── role bodies ─────────────────────────────────────────────────────────────
 # role_prompt <role> <platform> — prints the path to the role's protocol as crew-afk dispatches it
 # (orchestrator/lib/adapters/render.mjs). There is no agent file: this is the whole worker body.
 role_prompt() {

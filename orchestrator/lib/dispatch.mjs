@@ -10,7 +10,7 @@
  *   copilot  copilot -p <protocol + prompt> -C … --output-format json        (adapters/copilot.mjs)
  *
  * No platform needs an agent file or a bash dispatcher: each adapter gets the role's protocol
- * rendered from agents/<role>/protocol.md (adapters/render.mjs) and role settings from
+ * rendered from orchestrator/roles/<role>.md (adapters/render.mjs) and role settings from
  * adapters/role-args.mjs.
  *
  * All four emit a JSON event stream. Recognised tool calls become `[TOOL]`/`[TOOL-ERROR]`
@@ -24,13 +24,11 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { writeLog } from "./log.mjs";
 import { preflightPaneHost, spawnDispatch } from "./pane-host/index.mjs";
 import { ADAPTERS } from "./adapters/index.mjs";
 import { ARGV_PROMPT_LIMIT_BYTES, EMPTY_RESULT_META, assertArgvPromptFits } from "./adapters/common.mjs";
 import { renderRolePrompt, roleOfAgent } from "./adapters/render.mjs";
-import { resolveInstallDir } from "./install-dir.mjs";
 
 export { ARGV_PROMPT_LIMIT_BYTES, renderRolePrompt };
 
@@ -85,9 +83,8 @@ export function buildDispatch(platform, spec) {
   const adapter = ADAPTERS[platform];
   if (!adapter) throw new Error(`unknown platform: ${platform}`);
   const role = roleOfAgent(agent);
-  const installDir = spec.installDir ?? resolveInstallDir(process.env, dirname(fileURLToPath(import.meta.url)));
   // Rendered here, before anything spawns: a missing protocol or fragment fails the dispatch.
-  const protocol = role ? renderRolePrompt(role, platform, { installDir }) : null;
+  const protocol = role ? renderRolePrompt(role, platform, { mainRoot, rolesDir: spec.rolesDir }) : null;
   let prompt = readFileSync(promptFile, "utf8");
   let protocolFile = null;
   // claude takes the protocol as a system-prompt file, pi and codex place it themselves, copilot has
@@ -410,7 +407,7 @@ export async function dispatchPlain(
 }
 
 /** Preflight: is this platform's CLI actually present? */
-export function preflight(effects, platform, mainRoot, agents, { paneHost = null, probeFlags = false } = {}) {
+export function preflight(effects, platform, { paneHost = null, probeFlags = false } = {}) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
   const cli = { pi: "pi", codex: "codex", claude: "claude", copilot: "copilot" }[platform];
   const which = effects.exec("sh", ["-c", `command -v ${cli}`], { mutating: false });

@@ -50,7 +50,7 @@ assert_rubric_in() {
 
 @test "the rubric is not restated by hand in either body's source" {
   # A copy in a source file is a second rubric that can drift from the fragment.
-  for f in "$REPO_ROOT/skills/crew-address-findings/SKILL.md" "$REPO_ROOT/agents/crew-triage/protocol.md"; do
+  for f in "$REPO_ROOT/skills/crew-address-findings/SKILL.md" "$REPO_ROOT/orchestrator/roles/triage.md"; do
     grep -q '{{FRAGMENT:findings-rubric}}' "$f"
     ! grep -qF 'changes no public contract' "$f"
   done

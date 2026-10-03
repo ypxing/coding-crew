@@ -52,10 +52,6 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { PLATFORMS, preflight } from "./dispatch.mjs";
-import { ROLE_ARGS } from "./adapters/role-args.mjs";
-
-/** Extra CLI args per runtime and role (the claude coder's `--disallowedTools Agent`); read by each adapter's `roleArgs`. */
-export { ROLE_ARGS };
 
 export const CONFIG_REL = ".coding-crew/config.json";
 export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
@@ -388,9 +384,6 @@ export function describeModel(runtime, model, env = process.env) {
   return envName && env[envName] ? `${model} (→ ${env[envName]}, ${envName})` : model;
 }
 
-/** Which agent definition each dispatching role needs installed; the plain-dispatch roles need none. */
-export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage" };
-
 /** The roles a run dispatches: the command finder, the PRD audit and the PR writer are each optional. */
 export function activeRoles({ commands = true, PRDAudit = DEFAULT_SETTINGS.PRDAudit, openPr = DEFAULT_SETTINGS.openPr } = {}) {
   return ROLES.filter(
@@ -527,20 +520,19 @@ export function resolveWorktreeRoot({ afk = {}, env = process.env, origin = {} }
 }
 
 /**
- * preflight() once per runtime the active roles use, for the agents bound to it. A problem on a runtime other
+ * preflight() once per runtime the active roles use. A problem on a runtime other
  * than the launcher's names its roles, since the user chose that runtime in config.json.
  */
 export function crewPreflight(effects, mainRoot, { crew, roles, launcher, paneHost = null, probeFlags = false }) {
   const byRuntime = new Map();
   for (const role of roles) {
     const { runtime } = crew[role];
-    if (!byRuntime.has(runtime)) byRuntime.set(runtime, { roles: [], agents: [] });
-    byRuntime.get(runtime).roles.push(role);
-    if (ROLE_AGENTS[role]) byRuntime.get(runtime).agents.push(ROLE_AGENTS[role]);
+    if (!byRuntime.has(runtime)) byRuntime.set(runtime, []);
+    byRuntime.get(runtime).push(role);
   }
   const problems = [];
-  for (const [runtime, { roles: bound, agents }] of byRuntime) {
-    const found = preflight(effects, runtime, mainRoot, agents, { paneHost, probeFlags });
+  for (const [runtime, bound] of byRuntime) {
+    const found = preflight(effects, runtime, { paneHost, probeFlags });
     paneHost = null; // checked once, not once per runtime
     const tag = runtime === launcher ? "" : `${bound.join(", ")} → ${runtime}: `;
     problems.push(...found.map((p) => `${tag}${p}`));

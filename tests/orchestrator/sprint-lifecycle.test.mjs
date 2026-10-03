@@ -82,7 +82,7 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.match(reviewPromptText, /Checks already run by the pipeline/);
   assert.match(reviewPromptText, /test=pass/);
   // The install this run resolved, once — the reviewer never searches for its assets.
-  assert.ok(reviewPromptText.includes(`Review assets: ${join(INSTALL_DIR, "code-review")}\n`), reviewPromptText);
+  assert.ok(reviewPromptText.includes(`Review assets: ${join(INSTALL_DIR, "crew-afk/roles/reviewer")}\n`), reviewPromptText);
   // Nor the coder for the project's config, which its worktree does not hold.
   const coderPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
   assert.ok(coderPromptText.includes(`Project config: ${join(root, ".coding-crew")} `), coderPromptText);
@@ -128,7 +128,7 @@ test("a run whose install is missing an asset stops before any dispatch, naming 
   cpSync(join(INSTALL_DIR, "to-issues"), join(partial, "to-issues"), { recursive: true });
   const r = runSprint(root, [], { CREW_INSTALL_DIR: partial });
   assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
-  assert.ok(r.stderr.includes(`reviewer: ${join(partial, "code-review/scripts/review-context.sh")}`), r.stderr);
+  assert.ok(r.stderr.includes(`reviewer: ${join(partial, "crew-afk/roles/reviewer/scripts/review-context.sh")}`), r.stderr);
   assert.match(r.stderr, /Re-run install\.sh/);
   assert.doesNotMatch(r.stderr, /depInstall:|solveIssue:/);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch")), false, "nothing was dispatched");

@@ -4,16 +4,16 @@ Guidance for Claude Code (or any agent) working in this repo.
 
 ## What this repo is
 
-A distributable collection of AI agents and skills that other projects install via `install.sh`.
+A distributable collection of AI skills (and crew-afk, the program that runs them unattended) that other projects install via `install.sh`.
 Nothing here runs on its own — this repo is the source; consuming projects are the target.
 For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-address-findings), see `README.md`.
 
 ## Layout
 
-- `agents/<name>/` — `protocol.md` only (plus optional `assets/` = runtime files the agent reads/executes). No per-platform agent files: install copies each protocol to `.coding-crew/agents/<name>/protocol.md` (and the shared fragments to `.coding-crew/skills/_shared/fragments/`), and the orchestrator renders it per dispatch.
 - `skills/<skill>/SKILL.md` (or `<platform>.SKILL.md` per platform) — one skill per directory. `crew-afk`'s skill is a thin launcher; its actual logic is the `orchestrator/` program.
 - `orchestrator/` — the crew-afk state machine (rounds, worktrees, deps → dispatch → verify → review → merge → close, receipts). One implementation, run by all four platform launchers via `orchestrator/lib/dispatch.mjs`.
-- `registry.json` — source of truth for install paths per agent/platform, `deps`, `agent-deps`, `install.assets`, and doc templates.
+- `orchestrator/roles/` — the role protocols crew-afk dispatches (`coder.md`, `reviewer.md` + `reviewer/` checklists and scripts, `triage.md`). They ship with the orchestrator to `.coding-crew/crew-afk/roles/` (crew-afk also installs `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/` for their `{{FRAGMENT:…}}` lines) and are rendered per dispatch; no platform gets an agent file. `registry.json`'s `retired-agents` lists the agent files older installs wrote, which install and uninstall remove.
+- `registry.json` — source of truth for install paths per skill/platform, `deps`, `assets`, `retired-agents`, and doc templates.
 - `install.sh` / `uninstall.sh` — installer; `PLATFORMS=(claude copilot pi codex)`.
 - `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`), skill-local runtime scripts (e.g. `skills/crew-afk/scripts/`), and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`, `eval-design-skills.mjs` with its `eval-design-skills/` cases and rubric).
 - `tests/` — bats tests, run against **rendered/installed** output via `tests/helpers/render.bash`, not source variants.
@@ -23,7 +23,7 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-addr
 
 ```bash
 # Install into a scratch repo to see what a platform actually receives
-TARGET_REPO=/tmp/test-repo ./install.sh claude crew-coder
+TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk
 
 # Render a skill body without a full install
 bash scripts/render-skill.sh crew-afk codex | less
@@ -41,21 +41,21 @@ scripts/sync-pr-with-main.sh <branch>
 scripts/cut-release.sh --dry-run   # verify, then re-run without --dry-run to tag and push
 ```
 
-- Version bump (D4): a change to any file an `agents.*` or `skills.*` entry in `registry.json` ships (its `source-dir` tree, `assets.source` tree, `scripts[]`, `platform-files`) or to that entry's own registry fields needs that entry's `version` in `registry.json` strictly above `origin/main`'s version for it — `install.sh --update` skips an entry whose version is unchanged, and two branches bumping to the same number would collide. An entry the branch did not change (measured from the merge-base) is exempt even if main bumped it. `tests/registry-version-bump.bats` enforces it against `origin/main` (skips when it is not found) and fails the verify gate otherwise.
+- Version bump (D4): a change to any file a `skills.*` entry in `registry.json` ships (its `source-dir` tree, `assets.source` tree, `scripts[]`, `platform-files`) or to that entry's own registry fields needs that entry's `version` in `registry.json` strictly above `origin/main`'s version for it — `install.sh --update` skips an entry whose version is unchanged, and two branches bumping to the same number would collide. An entry the branch did not change (measured from the merge-base) is exempt even if main bumped it. `tests/registry-version-bump.bats` enforces it against `origin/main` (skips when it is not found) and fails the verify gate otherwise.
   In an issue's acceptance criteria, state it as the invariant ("`<entry>`'s version is above origin/main's"), never as "version bumped": issues in one sprint run in parallel, and once a sibling has bumped the entry, the bump drops out of a later branch's diff after it syncs with the feature branch, so the reviewer finds it unmet.
 - One writer per issue file: don't add code paths where a worker/agent edits an issue's `Status:`/checkboxes directly — that's `close-issue.sh`'s job, gated by receipts.
 - Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; see `.coding-crew/docs/issue-tracker.md`.
 
 ## Layer ownership
 
-The call direction is crew-afk (program) → `crew-coder` (agent) → `solve-issue` (skill) → `tdd` /
+The call direction is crew-afk (program) → `crew-coder` (role, `orchestrator/roles/coder.md`) → `solve-issue` (skill) → `tdd` /
 `dep-install`. `crew-coder` is on the **sprint path only** — a human running `/solve-issue` never
 touches it, so anything the direct path also needs belongs below it. Content that fits no row is in
 the wrong file; `tests/layer-ownership.bats` checks the `solve-issue`, `tdd` / `dep-install` and `crew-coder` (report wire) rows — the `orchestrator/` and `skills/crew-afk/scripts/` rows are not checked there.
 
 | Layer                      | Owns                                                 | Must not contain                          |
 | -------------------------- | ---------------------------------------------------- | ----------------------------------------- |
-| `orchestrator/`            | control flow: rounds, gate order, what runs and when | judgement, and prose asking to be obeyed  |
+| `orchestrator/` (code)     | control flow: rounds, gate order, what runs and when | judgement, and prose asking to be obeyed  |
 | `skills/crew-afk/scripts/` | one effect each, runnable by hand                    | any decision the orchestrator should make |
 | `crew-coder`               | protocol + report wire                               | the implementation loop                   |
 | `solve-issue`              | the ordered procedure and the outcome vocabulary     | who its caller is                         |
@@ -167,9 +167,8 @@ by basename. Prints `ERROR <file>: …` (cycle, unmatched `## Blocked by` ref, `
 `## Acceptance criteria`) or `WARN <file>: …` (advisory); exit 1 iff any `ERROR`, 2 on a usage error. Issue text is
 data — never evaluated, and a path in a ref is never opened.
 
-## Adding a new agent
+## Adding a new crew-afk role
 
-1. `agents/<name>/protocol.md` (or `workflow.js`).
-2. `agents/<name>/claude.*.md`, `copilot.agent.md`, `pi.*`, `codex.agent.toml` with `{{PROTOCOL}}` where it inlines.
-3. Add the entry to `registry.json` (paths, deps, `install.assets` if needed).
-4. `TARGET_REPO=/tmp/test-repo ./install.sh claude <name>` and inspect the output.
+1. `orchestrator/roles/<role>.md` — the protocol (whole-line `{{FRAGMENT:<key>}}` and `{{PLATFORM}}` expand at dispatch).
+2. Map it in `ROLE_AGENTS` (`orchestrator/lib/adapters/render.mjs`) and give it any per-CLI args in `adapters/role-args.mjs`.
+3. Bump crew-afk's `version` in `registry.json`; `TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk` and inspect `.coding-crew/crew-afk/roles/`.

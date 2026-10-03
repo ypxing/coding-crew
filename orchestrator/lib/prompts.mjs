@@ -75,34 +75,16 @@ export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criter
 }
 
 /**
- * The structured-result instruction, verbatim, shared by every prompt that ends in a
- * `crew-coder` dispatch (a first attempt, and a fix retry alike) — report.mjs parses one
- * schema regardless of which prompt produced it, so the two must never drift apart.
+ * The structured-result instruction, shared by every prompt that ends in a `crew-coder` dispatch
+ * (a first attempt, and a fix retry alike). The schema itself has one owner, the coder protocol's
+ * **Report** section (orchestrator/roles/coder.md): a second copy here is one that drifts.
  */
 function resultBlock(worktree, reportPath) {
   return [
-    `Write your structured result to ${reportPath} as your last action. This file is the`,
-    "only thing the orchestrator reads — nothing you print in your final message is parsed,",
-    "so a summary sentence with no file write is",
-    "read as `blocked` — never as a silent `complete` — no matter how the work actually went:",
-    "",
-    "```json",
-    JSON.stringify(
-      {
-        status: "complete | partial | blocked",
-        branch: "<branch you committed to>",
-        working_directory: worktree,
-        checks: { test: "pass | fail | not_run", lint: "pass | fail | not_run", typecheck: "pass | fail | not_run", "<each other dev-commands.json check you ran, e.g. coverage>": "pass | fail | not_run" },
-        criteria: [{ text: "<criterion>", met: true }],
-        progress: "<what remains — required for partial>",
-        notes: "<anything a human needs>",
-        cause: "environment | code — required for blocked, optional for partial",
-        evidence: { command: "<the one command that shows why you stopped>", exit: 1, output: "<its verbatim output>" },
-      },
-      null,
-      2,
-    ),
-    "```",
+    `Write your structured result to ${reportPath} as your last action, in the JSON your protocol's`,
+    `**Report** section defines (\`working_directory\`: ${worktree}). This file is the only thing the`,
+    "orchestrator reads — nothing you print in your final message is parsed, so a summary sentence",
+    "with no file write is read as `blocked`, never as a silent `complete`.",
   ];
 }
 

@@ -166,17 +166,10 @@ teardown() {
   ! grep -q 'crew:' registry.json
 }
 
-@test "registry.json agent keys use crew- prefix" {
+@test "registry.json has no agents: the roles ship inside crew-afk" {
   cd "$SCRIPT_DIR"
-
-  run jq -r '.agents | keys[]' registry.json
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"crew-coder"* ]]
-  [[ "$output" == *"crew-reviewer"* ]]
-  # Old keys must not be present
-  ! echo "$output" | grep -qxF "coder"
-  ! echo "$output" | grep -qxF "code-reviewer"
-  ! echo "$output" | grep -qxF "crew-code-reviewer"
+  run jq -r 'has("agents")' registry.json
+  [ "$output" = "false" ]
 }
 
 @test "registry.json skill keys crew-afk and crew-grill are present; crew-plan must not exist" {

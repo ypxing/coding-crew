@@ -43,15 +43,15 @@ teardown() {
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/pi.SKILL.md" ]
 }
 
-@test "uninstall removes pi-installed skills and agents" {
+@test "uninstall removes the pi-installed crew-afk" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
   [ -d "$TEMP_DIR/.pi/skills/crew-afk" ]
 
   TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill crew-afk
-  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --agent crew-coder
 
   [ ! -d "$TEMP_DIR/.pi/skills/crew-afk" ]
+  [ ! -d "$TEMP_DIR/.coding-crew/crew-afk" ]
   [ ! -f "$TEMP_DIR/.pi/agents/crew-coder.md" ]
 }
 

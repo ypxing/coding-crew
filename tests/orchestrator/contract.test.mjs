@@ -39,7 +39,7 @@ function launcherPlatforms() {
 
 function coderDefinition() {
   // No agent file: the protocol is the whole definition, rendered per dispatch.
-  return readFileSync(join(REPO, "agents/crew-coder/protocol.md"), "utf8");
+  return readFileSync(join(REPO, "orchestrator/roles/coder.md"), "utf8");
 }
 
 test("every launcher platform's coder declares the parser's exact field list", () => {
@@ -97,7 +97,7 @@ test("there is no markdown fallback — an un-migrated coder that never writes t
 });
 
 test("the reviewer protocol states the findings shape the parser promotes from", () => {
-  const protocol = readFileSync(join(REPO, "agents/crew-reviewer/protocol.md"), "utf8");
+  const protocol = readFileSync(join(REPO, "orchestrator/roles/reviewer.md"), "utf8");
   assert.match(protocol, /"severity": "CRITICAL"/);
   assert.match(protocol, /verifiable fix criterion/);
   // The verdict field it is printed beneath is the other half of the same contract.
@@ -118,7 +118,7 @@ test("the reviewer protocol states the findings shape the parser promotes from",
 });
 
 test("the triage protocol states the json verdict the parser reads, and never trusts the coder's own diagnosis", () => {
-  const protocol = readFileSync(join(REPO, "agents/crew-triage/protocol.md"), "utf8");
+  const protocol = readFileSync(join(REPO, "orchestrator/roles/triage.md"), "utf8");
   assert.match(protocol, /"fixable": "yes \| no"/);
   assert.match(protocol, /"category":/);
   assert.match(protocol, /"detail":/);
@@ -141,5 +141,5 @@ test("every launcher platform has no agent file, and the triage protocol exists 
       assert.ok(!existsSync(join(REPO, "agents/crew-triage", file)), `agents/crew-triage/${file} should not exist`);
     }
   }
-  assert.ok(existsSync(join(REPO, "agents/crew-triage/protocol.md")));
+  assert.ok(existsSync(join(REPO, "orchestrator/roles/triage.md")));
 });

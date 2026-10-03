@@ -220,14 +220,14 @@ test("a CLI missing from PATH is a preflight failure, not a first-dispatch failu
   const { root } = fixture();
   const effects = { exec: () => ({ code: 1, stdout: "", stderr: "" }) };
   for (const platform of ["pi", "codex"]) {
-    assert.deepEqual(preflight(effects, platform, root, ["crew-coder"]), [`${platform} CLI not found on PATH`]);
+    assert.deepEqual(preflight(effects, platform), [`${platform} CLI not found on PATH`]);
   }
 });
 
 test("pi and codex preflight needs no agent definition", () => {
   const { root } = fixture();
   const effects = { exec: () => ({ code: 0, stdout: "/usr/bin/x", stderr: "" }) };
-  for (const platform of ["pi", "codex"]) assert.deepEqual(preflight(effects, platform, root, ["crew-coder", "crew-reviewer"]), []);
+  for (const platform of ["pi", "codex"]) assert.deepEqual(preflight(effects, platform), []);
 });
 
 // ─── claude ──────────────────────────────────────────────────────────────────
@@ -356,19 +356,19 @@ test("claude and copilot preflight needs no agent file, and no committed-agent c
       exec: () => ({ code: 0, stdout: "/usr/bin/x", stderr: "" }),
       gitRead: () => assert.fail("copilotWorktreeVisible must not run"),
     };
-    assert.deepEqual(preflight(effects, platform, root, ["crew-coder", "crew-reviewer"]), []);
+    assert.deepEqual(preflight(effects, platform), []);
   }
 });
 
 test("a missing fragment fails the dispatch before spawning, naming the fragment", async () => {
   const { root, promptFile } = fixture();
-  const installDir = join(root, "install");
-  mkdirSync(join(installDir, "agents/crew-coder"), { recursive: true });
-  writeFileSync(join(installDir, "agents/crew-coder/protocol.md"), "# P\n{{FRAGMENT:no-such-frag}}\n");
-  assert.throws(() => buildDispatch("claude", spec(root, promptFile, { installDir })), /no-such-frag/);
+  const rolesDir = join(root, "roles");
+  mkdirSync(rolesDir, { recursive: true });
+  writeFileSync(join(rolesDir, "coder.md"), "# P\n{{FRAGMENT:no-such-frag}}\n");
+  assert.throws(() => buildDispatch("claude", spec(root, promptFile, { rolesDir })), /no-such-frag/);
   let spawned = false;
   const effects = { spawnWithTimeout: async () => ((spawned = true), { code: 0, stdout: "", stderr: "" }) };
-  const r = await dispatch(effects, "claude", spec(root, promptFile, { installDir }), {});
+  const r = await dispatch(effects, "claude", spec(root, promptFile, { rolesDir }), {});
   assert.equal(spawned, false);
   assert.notEqual(r.code, 0);
   assert.match(r.stderr, /no-such-frag/);
@@ -945,8 +945,8 @@ test("preflight with probeFlags reports a PROBLEM when --help omits a flag the a
     const { requiredFlags } = ADAPTERS[platform];
     assert.ok(requiredFlags.length, `${platform} declares requiredFlags`);
     const helpWith = (flags) => ({ exec: (cmd, args) => (args[0] === "-c" ? { code: 0, stdout: "/bin/x", stderr: "" } : { code: 0, stdout: flags.join("\n"), stderr: "" }) });
-    assert.deepEqual(preflight(helpWith(requiredFlags), platform, "/", [], { probeFlags: true }), []);
-    const out = preflight(helpWith(requiredFlags.slice(1)), platform, "/", [], { probeFlags: true });
+    assert.deepEqual(preflight(helpWith(requiredFlags), platform, { probeFlags: true }), []);
+    const out = preflight(helpWith(requiredFlags.slice(1)), platform, { probeFlags: true });
     assert.equal(out.length, 1);
     assert.match(out[0], new RegExp(requiredFlags[0]));
   }

@@ -15,10 +15,10 @@ asset_dir() {
     "import('./orchestrator/lib/install-dir.mjs').then((m) => console.log(m.ASSET_DIRS['$1']))")
 }
 
-@test "install-dir: the reviewer's assets are where install.sh puts crew-reviewer's" {
+@test "install-dir: the reviewer's assets are where crew-afk's orchestrator asset puts roles/reviewer" {
   command -v node >/dev/null 2>&1 || skip "node not installed"
-  dest="$(jq -r '.agents["crew-reviewer"].install.assets.dest' "$REPO_ROOT/registry.json")"
-  [ "$(asset_dir reviewer)" = "${dest#.coding-crew/}" ]
+  dest="$(jq -r '.skills["crew-afk"].assets.dest' "$REPO_ROOT/registry.json")"
+  [ "$(asset_dir reviewer)" = "${dest#.coding-crew/}/roles/reviewer" ]
 }
 
 @test "install-dir: dep-install's scripts are where install.sh puts dep-install's" {

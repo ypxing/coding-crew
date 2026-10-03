@@ -7,7 +7,7 @@ load helpers/render
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export REVIEWER_PROTOCOL="$SCRIPT_DIR/agents/crew-reviewer/protocol.md"
+  export REVIEWER_PROTOCOL="$SCRIPT_DIR/orchestrator/roles/reviewer.md"
   export REVIEWER_CLAUDE="$SCRIPT_DIR/agents/crew-reviewer/claude.agent.md"
   export REVIEWER_COPILOT="$SCRIPT_DIR/agents/crew-reviewer/copilot.agent.md"
 }

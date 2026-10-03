@@ -21,7 +21,7 @@ load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_DIR="$REPO_ROOT/skills/crew-afk"
-PROTOCOL="$REPO_ROOT/agents/crew-reviewer/protocol.md"
+PROTOCOL="$REPO_ROOT/orchestrator/roles/reviewer.md"
 
 # ─── the separate AC pass is gone ────────────────────────────────────────────
 #

@@ -81,7 +81,6 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -110,6 +109,7 @@ import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
 import { worktreeRoot } from "./lib/worktree.mjs";
 import { resolveInstallDir } from "./lib/install-dir.mjs";
+import { skillDirCandidates } from "./lib/skill-dirs.mjs";
 import { acquireLease, releaseLease } from "./lib/lease.mjs";
 import { sweepInProgress } from "./lib/labels.mjs";
 import { closeShipped } from "./lib/shipped.mjs";
@@ -373,44 +373,12 @@ function gitRoot() {
   return r.stdout.trim();
 }
 
-// Where each platform's installer puts a skill, relative to a scope root. Project scope and
-// user scope differ per platform (pi nests under .pi/agent/, Copilot reads .github/ in a repo
-// but ~/.copilot/ at user level), so both lists are spelled out rather than derived.
-const PROJECT_SKILL_DIRS = {
-  pi: ".pi/skills/crew-afk/scripts",
-  claude: ".claude/skills/crew-afk/scripts",
-  codex: ".agents/skills/crew-afk/scripts",
-  copilot: ".github/skills/crew-afk/scripts",
-};
-const USER_SKILL_DIRS = {
-  pi: ".pi/agent/skills/crew-afk/scripts",
-  claude: ".claude/skills/crew-afk/scripts",
-  codex: ".agents/skills/crew-afk/scripts",
-  copilot: ".copilot/skills/crew-afk/scripts",
-};
-
-// Env var that relocates a platform's user-level config dir, and where crew-afk's scripts sit under it.
-const CONFIG_DIR_SKILLS = {
-  claude: ["CLAUDE_CONFIG_DIR", "skills/crew-afk/scripts"],
-  copilot: ["COPILOT_HOME", "skills/crew-afk/scripts"],
-  pi: ["PI_CODING_AGENT_DIR", "skills/crew-afk/scripts"],
-  codex: ["CODEX_HOME", "skills/crew-afk/scripts"],
-};
-
-/** `platform`'s own dir first. */
-const ownFirst = (dirs, platform) => [dirs[platform], ...Object.values(dirs).filter((d) => d !== dirs[platform])].filter(Boolean);
-
 function resolveScriptsDir(mainRoot, platform) {
-  // Project install first (a pinned copy wins), then user-level (`TARGET_REPO=$HOME`, the
-  // documented default), then this repo's source tree (dev). $HOME before os.homedir():
-  // on Windows homedir() reads USERPROFILE and would ignore a $HOME override.
-  const home = process.env.HOME || homedir();
+  // Project install, then user-level (`TARGET_REPO=$HOME`, the documented default), then this
+  // repo's source tree (dev).
   const candidates = [
     process.env.CREW_SCRIPTS,
-    ...ownFirst(PROJECT_SKILL_DIRS, platform).map((d) => join(mainRoot, d)),
-    // A relocated user-level install (the platform's config-dir env var) beats the $HOME default.
-    ...ownFirst(CONFIG_DIR_SKILLS, platform).map(([v, d]) => (process.env[v] ? join(process.env[v], d) : null)),
-    ...ownFirst(USER_SKILL_DIRS, platform).map((d) => join(home, d)),
+    ...skillDirCandidates(mainRoot, platform, "crew-afk").map((d) => join(d, "scripts")),
     join(HERE, "../skills/crew-afk/scripts"),
   ].filter(Boolean);
   for (const c of candidates) if (existsSync(join(c, "state.sh"))) return resolve(c);

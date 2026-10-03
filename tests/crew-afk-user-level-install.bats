@@ -117,18 +117,13 @@ work_repo_with_issue() {
       claude)  var=CLAUDE_CONFIG_DIR ;;
       copilot) var=COPILOT_HOME ;;
       pi)      var=PI_CODING_AGENT_DIR ;;
-      codex)   var=CODEX_HOME ;;
+      # install.sh puts codex skills under .agents/skills at every scope, never CODEX_HOME.
+      codex)   continue ;;
     esac
     home="$BATS_TEST_TMPDIR/home-$p"; cfg="$BATS_TEST_TMPDIR/cfg-$p"
     mkdir -p "$home"
     env HOME="$home" TARGET_REPO="$home" "$var=$cfg" \
       bash "$REPO_ROOT/install.sh" "$p" --skill crew-afk >/dev/null
-    if [ "$p" = codex ]; then
-      # install.sh puts codex skills under .agents/, never CODEX_HOME; move them to where a
-      # relocated CODEX_HOME would hold them so only the orchestrator's lookup is tested.
-      mkdir -p "$cfg/skills/crew-afk"
-      mv "$home/.agents/skills/crew-afk/scripts" "$cfg/skills/crew-afk/scripts"
-    fi
     [ -f "$cfg/skills/crew-afk/scripts/state.sh" ] || {
       echo "$p: scripts not under $var" >&2; return 1; }
     run env HOME="$home" "$var=$cfg" \
@@ -213,7 +208,7 @@ work_repo_with_issue() {
 }
 
 # ─── one install dir per run (CREW_INSTALL_DIR) ───────────────────────────────
-# The reviewer's assets used to be read from "$ROOT/.coding-crew/code-review" — a path only a
+# The reviewer's assets used to be read from "$ROOT/.coding-crew/crew-afk/roles/reviewer" — a path only a
 # project install has. Every reviewer on a user-level install hit a TOOL-ERROR on
 # review-context.sh, then spent calls hunting. The orchestrator now names the path it was
 # itself launched beside, in the review prompt.
@@ -239,7 +234,7 @@ sprint_with_fake_dispatch() {
   local expected
   # realpath, not resolve: Node canonicalizes the main module's path, so the orchestrator
   # names the install dir behind macOS's /var -> /private/var symlink.
-  expected="$(FAKE_HOME="$FAKE_HOME" node -e 'const {realpathSync} = require("fs"); console.log(require("path").join(realpathSync(process.env.FAKE_HOME), ".coding-crew/code-review"))')"
+  expected="$(FAKE_HOME="$FAKE_HOME" node -e 'const {realpathSync} = require("fs"); console.log(require("path").join(realpathSync(process.env.FAKE_HOME), ".coding-crew/crew-afk/roles/reviewer"))')"
   grep -qxF "Review assets: $expected" "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" || {
     cat "$WORK_REPO/.scratch/demo/dispatch/01-widget/review-prompt.md" >&2; return 1; }
 }
@@ -256,5 +251,5 @@ sprint_with_fake_dispatch() {
   # Compared canonically: on Windows the orchestrator may name the dir by its 8.3 short form
   # (C:\Users\RUNNER~1\...) where the shell's cwd has the long one — the same directory.
   canon() { node -e 'console.log(require("fs").realpathSync.native(process.argv[1]))' "$1"; }
-  [ "$(canon "$actual")" = "$(canon "$WORK_REPO/.coding-crew/code-review")" ] || { cat "$prompt" >&2; return 1; }
+  [ "$(canon "$actual")" = "$(canon "$WORK_REPO/.coding-crew/crew-afk/roles/reviewer")" ] || { cat "$prompt" >&2; return 1; }
 }

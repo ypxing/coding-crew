@@ -34,7 +34,7 @@ if [[ "${1:-}" == "--update" ]]; then
   AGENT="all"
 else
   PLATFORM="${1:-all}"    # all | claude | copilot | pi | codex
-  AGENT="${2:-all}"       # all | crew-coder | crew-reviewer | --skill <name> | --skills a,b
+  AGENT="${2:-all}"       # all | --skill <name> | --skills a,b
 fi
 
 # --skills a,b,c  (multi-skill shorthand, replaces --skill for multiple names)
@@ -48,30 +48,27 @@ if [[ "$AGENT" == "--skills" ]]; then
 fi
 
 INSTALLED=""
-MANIFEST_AGENT_ENTRIES=()  # each entry: "name version platform"
-MANIFEST_REPLACED_AGENTS=()  # "old new" pairs: a renamed agent's `replaces`, dropped from the manifest once gone
 MANIFEST_SKILL_ENTRIES=()  # each entry: "name version"
 
 usage() {
-  echo "Usage: ./install.sh [platform] [agent]"
+  echo "Usage: ./install.sh [platform]"
   echo "       ./install.sh [platform] --skill <skill-name>"
   echo "       ./install.sh [platform] --skills <a,b,c>"
   echo "       ./install.sh --update"
   echo ""
   echo "  platform:  all (default), claude, copilot, pi, codex"
-  echo "  agent:     all (default), crew-reviewer, crew-coder"
   echo "  --skill:   install a single skill (e.g. to-issues)"
   echo "  --skills:  install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd);"
   echo "             treated as the full desired set — any skill from a prior --skills"
   echo "             install that's missing from this list is uninstalled"
-  echo "  --update:  re-install only agents/skills whose version changed since last install"
+  echo "  --update:  re-install only skills whose version changed since last install"
   echo ""
   echo "Examples:"
   echo "  ./install.sh                                      # install everything into project"
   echo "  ./install.sh claude --skill tdd                   # one skill into project"
   echo "  ./install.sh claude --skills tdd,to-issues          # multiple skills at once"
-  echo "  ./install.sh claude --skill crew-afk              # crew-afk + crew-coder + crew-reviewer"
-  echo "  ./install.sh --update                             # update all installed agents/skills"
+  echo "  ./install.sh claude --skill crew-afk              # crew-afk and the skills its roles follow"
+  echo "  ./install.sh --update                             # update all installed skills"
   echo ""
   echo "Available skills:"
   echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
@@ -231,45 +228,44 @@ prune_legacy_copilot_path() {
   rmdir "$REPO_ROOT/.copilot/agents" "$REPO_ROOT/.copilot/skills" "$REPO_ROOT/.copilot" 2>/dev/null || true
 }
 
-# A renamed agent's old shims would linger as a second, stale definition the host still lists.
-# registry.json's `replaces` names them; each old path is the new one with the name swapped.
-prune_replaced_agent_shims() {
-  local agent_name="$1" platform="$2" shim_dest_raw="$3" old old_raw
-  while IFS= read -r old; do
-    old="${old%$'\r'}"
-    [[ -n "$old" ]] || continue
-    old_raw="${shim_dest_raw//$agent_name/$old}"
-    prune_legacy_copilot_path "$platform" "$old_raw"
-    resolve_dest "$platform" "$(adjust_platform_path "$platform" "$old_raw")"
+# crew-afk's roles (coder, reviewer, triage) used to install as per-platform agent files, and before
+# that crew-reviewer was crew-code-reviewer. Those files are now stale definitions a host still lists,
+# so a crew-afk install removes each by exact path (registry.json `retired-agents`), plus the
+# .coding-crew/ dirs that held their protocols and assets.
+prune_retired_agents() {
+  local platform="$1" name raw dir
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    raw=$(jq -r --arg p "$platform" '."retired-agents".paths[$p] // empty' "$SCRIPT_DIR/registry.json")
+    [[ -n "$raw" ]] || continue
+    raw="${raw//\{name\}/$name}"
+    assert_safe_path "$raw" "$platform retired agent"
+    prune_legacy_copilot_path "$platform" "$raw"
+    resolve_dest "$platform" "$(adjust_platform_path "$platform" "$raw")"
     if [[ -f "$_DEST_ROOT/$_DEST_REL" ]]; then
       rm -f "$_DEST_ROOT/$_DEST_REL"
-      echo "  removed $_DEST_REL (renamed to $agent_name)"
+      echo "  removed $_DEST_REL (agent files are no longer installed)"
+      prune_empty_agent_dirs "$_DEST_ROOT" "$_DEST_REL"
     fi
-  done < <(jq -r --arg n "$agent_name" '.agents[$n].replaces // [] | .[]' "$SCRIPT_DIR/registry.json")
+  done < <(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json")
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] || continue
+    assert_safe_path "$dir" "retired agent dir"
+    if [[ -d "$REPO_ROOT/$dir" ]]; then
+      rm -rf "$REPO_ROOT/$dir"
+      echo "  removed $dir/ (now under .coding-crew/crew-afk/roles/)"
+    fi
+  done < <(jq -r '."retired-agents".dirs // [] | .[]' "$SCRIPT_DIR/registry.json")
 }
 
-# replacement_for <name> — the registry agent whose `replaces` lists <name>, or nothing.
-replacement_for() {
-  jq -r --arg n "$1" '[.agents | to_entries[] | select((.value.replaces // []) | index($n)) | .key][0] // empty' "$SCRIPT_DIR/registry.json"
-}
-
-# replaced_shims_left <old> <new> — every old-name shim still on disk, on any platform. A
-# one-platform install prunes only its own, and the others then lack the agent crew-afk dispatches.
-replaced_shims_left() {
-  local old="$1" new="$2" p raw cand prev
-  for p in "${PLATFORMS[@]}"; do
-    raw=$(jq -r --arg n "$new" --arg p "$p" '.agents[$n].install["legacy-shims"][$p] // empty' "$SCRIPT_DIR/registry.json")
-    [[ -n "$raw" ]] || continue
-    raw="${raw//$new/$old}"
-    prev=""
-    for cand in "$(adjust_platform_path "$p" "$raw")" "$raw"; do
-      [[ "$cand" != "$prev" ]] || continue
-      prev="$cand"
-      resolve_dest "$p" "$cand"
-      [[ -f "$_DEST_ROOT/$_DEST_REL" ]] && printf '%s\n' "$cand"
-    done
+# Drop the agents/ dir an emptied legacy shim left behind (never one with anything else in it).
+prune_empty_agent_dirs() {
+  local root="$1" rel="$2" d
+  d="$(dirname "$rel")"
+  while [[ "$d" != "." && "$d" != "/" ]]; do
+    rmdir "$root/$d" 2>/dev/null || break
+    d="$(dirname "$d")"
   done
-  return 0
 }
 
 assert_identifier() {
@@ -283,7 +279,7 @@ assert_identifier() {
 # ── registry.json read cache ────────────────────────────────────────────────────
 # `install_single_skill` recurses once per platform when PLATFORM=all (four calls for
 # one skill), and most of what it reads from registry.json per skill — source-dir,
-# version, scripts, deps, agent-deps, assets.source/dest, the claude `install` path —
+# version, scripts, deps, assets.source/dest, the claude `install` path —
 # does not vary by platform at all. Read unconditionally, that was 4 jq spawns (one per
 # platform recursion) for a value that is the same all four times; a full default
 # install spawns ~2,400 jq processes, and this is where most of them went. Memoized here
@@ -347,20 +343,8 @@ check_dest_status() {
   return 2  # changed
 }
 
-install_skills() {
-  local agent_name="$1"
-  local skills
-  skills=$(jq -r --arg name "$agent_name" '.agents[$name].skills // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  local skills_arr=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && skills_arr+=("$_line"); done <<< "$skills"
-  for skill in "${skills_arr[@]+"${skills_arr[@]}"}"; do
-    install_single_skill "$skill"
-  done
-}
-
-# Agent assets are platform-neutral runtime files the agent reads or executes itself — the
-# conditional review references and the scripts that select and run them. They install once, to a
-# shared path outside any platform directory, so four platforms do not get four copies. Like
+# Assets are platform-neutral runtime files a skill or role reads or executes itself. They install
+# once, to a shared path outside any platform directory, so four platforms do not get four copies. Like
 # .coding-crew/scripts they are mechanism, not user text, so they are always overwritten: a stale
 # reference would be a checklist that no longer matches the protocol pointing at it.
 install_assets_tree() {
@@ -380,18 +364,7 @@ install_assets_tree() {
   done < <(find "$src" -type f -print0)
 }
 
-install_agent_assets() {
-  local agent_name="$1" agent_source_dir="$2"
-  local src_rel dest_rel
-  src_rel=$(jq -r --arg n "$agent_name" '.agents[$n].install.assets.source // empty' "$SCRIPT_DIR/registry.json")
-  dest_rel=$(jq -r --arg n "$agent_name" '.agents[$n].install.assets.dest // empty' "$SCRIPT_DIR/registry.json")
-  [[ -n "$src_rel" && -n "$dest_rel" ]] || return 0
-  assert_safe_path "$src_rel" "agent assets source"
-  assert_safe_path "$dest_rel" "agent assets dest"
-  install_assets_tree "$SCRIPT_DIR/agents/$agent_source_dir/$src_rel" "$dest_rel" "agent"
-}
-
-# Skill assets follow the same rule, with one difference: the source is repo-root-relative,
+# A skill's assets source is repo-root-relative,
 # because an executable a skill only launches (the crew-afk orchestrator) is not skill text and
 # does not belong inside skills/. Installed once per run, not once per platform — four platforms
 # launching one program must launch the same copy of it, or a fixed bug is only fixed on one.
@@ -410,114 +383,6 @@ install_skill_assets() {
   install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
 }
 
-
-# Where the protocols install, under .coding-crew/ (orchestrator/lib/adapters/render.mjs reads these
-# paths): agents/<dir>/protocol.md, and the shared fragments a protocol's {{FRAGMENT:<key>}} lines name.
-install_agent_protocol() {
-  local dir="$1"
-  if [[ "$INSTALLED" != *"|fragments|"* ]]; then
-    INSTALLED="${INSTALLED}|fragments|"
-    install_assets_tree "$SCRIPT_DIR/skills/_shared/fragments" ".coding-crew/skills/_shared/fragments" "agent"
-  fi
-  [[ -f "$SCRIPT_DIR/agents/$dir/protocol.md" ]] || { echo "Error: agents/$dir/protocol.md not found" >&2; exit 1; }
-  local dest=".coding-crew/agents/$dir/protocol.md" status=0
-  mkdir -p "$REPO_ROOT/.coding-crew/agents/$dir"
-  check_dest_status "$SCRIPT_DIR/agents/$dir/protocol.md" "$REPO_ROOT/$dest" || status=$?
-  cp "$SCRIPT_DIR/agents/$dir/protocol.md" "$REPO_ROOT/$dest"
-  if [[ $status -eq 0 ]]; then echo "  $dest"; fi
-}
-
-# Drop the agents/ dir an emptied legacy shim left behind (never one with anything else in it).
-prune_empty_agent_dirs() {
-  local root="$1" rel="$2" d
-  d="$(dirname "$rel")"
-  while [[ "$d" != "." && "$d" != "/" ]]; do
-    rmdir "$root/$d" 2>/dev/null || break
-    d="$(dirname "$d")"
-  done
-}
-
-install_agent() {
-  local agent_name="$1"
-  local platform="$2"
-
-  assert_identifier "$agent_name" "agent"
-
-  # Dedup per platform — `install_single_skill` fans platform=all out one platform at
-  # a time, so keying on name alone would install an agent for the first platform only.
-  if [[ "$INSTALLED" == *"|agent:$agent_name:$platform|"* ]]; then
-    return
-  fi
-
-  if [[ "$platform" != "all" ]]; then
-    local platforms
-    platforms=$(jq -r --arg name "$agent_name" '.agents[$name].platforms // empty' "$SCRIPT_DIR/registry.json")
-    if [[ -n "$platforms" ]] && ! echo "$platforms" | jq -e --arg p "$platform" 'index($p)' >/dev/null 2>&1; then
-      echo "Skipping $agent_name (not available for $platform)"
-      return
-    fi
-  fi
-
-  INSTALLED="${INSTALLED}|agent:$agent_name:$platform|"
-
-  echo "Installing $agent_name ($platform)..."
-
-  install_skills "$agent_name"
-
-  # Resolve agent source directory: use source-dir field if present, otherwise use agent name
-  local agent_source_dir
-  agent_source_dir=$(jq -r --arg name "$agent_name" '.agents[$name]["source-dir"] // $name' "$SCRIPT_DIR/registry.json")
-
-  # The protocol is the whole agent: crew-afk renders it from .coding-crew/ for every platform and
-  # dispatches with it, so no per-platform agent file is written. (install_agent_protocol dedups.)
-  install_agent_protocol "$agent_source_dir"
-
-  # Shims an older install wrote under <platform>/agents/ are removed, each by exact path.
-  local target_platform
-  for target_platform in "${PLATFORMS[@]}"; do
-    [[ "$platform" == "$target_platform" || "$platform" == "all" ]] || continue
-    local shim_dest_raw
-    shim_dest_raw=$(jq -r --arg name "$agent_name" --arg p "$target_platform" '.agents[$name].install["legacy-shims"][$p] // empty' "$SCRIPT_DIR/registry.json")
-    [[ -n "$shim_dest_raw" ]] || continue
-    assert_safe_path "$shim_dest_raw" "$target_platform legacy shim"
-    prune_legacy_copilot_path "$target_platform" "$shim_dest_raw"
-    resolve_dest "$target_platform" "$(adjust_platform_path "$target_platform" "$shim_dest_raw")"
-    if [[ -f "$_DEST_ROOT/$_DEST_REL" ]]; then
-      rm -f "$_DEST_ROOT/$_DEST_REL"
-      echo "  removed $_DEST_REL (agent files are no longer installed)"
-      prune_empty_agent_dirs "$_DEST_ROOT" "$_DEST_REL"
-    fi
-    prune_replaced_agent_shims "$agent_name" "$target_platform" "$shim_dest_raw"
-  done
-
-  local agent_version
-  agent_version=$(jq -r --arg n "$agent_name" '.agents[$n].version // "unknown"' "$SCRIPT_DIR/registry.json")
-  MANIFEST_AGENT_ENTRIES+=("$agent_name $agent_version $platform")
-  local replaced
-  while IFS= read -r replaced; do
-    replaced="${replaced%$'\r'}"
-    [[ -n "$replaced" ]] && MANIFEST_REPLACED_AGENTS+=("$replaced $agent_name")
-  done < <(jq -r --arg n "$agent_name" '.agents[$n].replaces // [] | .[]' "$SCRIPT_DIR/registry.json")
-
-  install_agent_assets "$agent_name" "$agent_source_dir"
-
-  # Install deps recursively (platform-specific deps take priority)
-  local deps_key="deps"
-  if [[ "$platform" != "all" ]]; then
-    local has_platform_deps
-    has_platform_deps=$(jq -r --arg name "$agent_name" --arg p "$platform" '.agents[$name] | has("deps-" + $p)' "$SCRIPT_DIR/registry.json")
-    if [[ "$has_platform_deps" == "true" ]]; then
-      deps_key="deps-$platform"
-    fi
-  fi
-  local deps
-  deps=$(jq -r --arg name "$agent_name" --arg key "$deps_key" '.agents[$name][$key] // [] | .[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  local deps_arr=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && deps_arr+=("$_line"); done <<< "$deps"
-  for dep in "${deps_arr[@]+"${deps_arr[@]}"}"; do
-    install_agent "$dep" "$platform"
-  done
-}
 
 install_single_skill() {
   local skill_name="$1"
@@ -721,15 +586,15 @@ install_single_skill() {
     install_single_skill "$dep"
   done
 
-  # Resolve agent-deps — agents this skill requires at runtime
-  local agent_deps
-  _skill_list "$skill_name" agent-deps '.skills[$s]["agent-deps"] // [] | .[]'
-  agent_deps="$_SKILL_LIST"
-  local agent_deps_arr=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && agent_deps_arr+=("$_line"); done <<< "$agent_deps"
-  for dep in "${agent_deps_arr[@]+"${agent_deps_arr[@]}"}"; do
-    install_agent "$dep" "$PLATFORM"
-  done
+  # crew-afk's role protocols render from .coding-crew/crew-afk/roles/ with the shared fragments
+  # their {{FRAGMENT:<key>}} lines name (orchestrator/lib/adapters/render.mjs reads both there).
+  if [[ "$skill_name" == "crew-afk" ]]; then
+    if [[ "$INSTALLED" != *"|fragments|"* ]]; then
+      INSTALLED="${INSTALLED}|fragments|"
+      install_assets_tree "$SCRIPT_DIR/skills/_shared/fragments" ".coding-crew/skills/_shared/fragments" "skill"
+    fi
+    prune_retired_agents "$PLATFORM"
+  fi
 }
 
 install_docs() {
@@ -806,7 +671,7 @@ install_docs() {
   fi
 }
 
-# A user-level install of the same skill or agent can take precedence over the copy we
+# A user-level install of the same skill (or a retired agent file) can take precedence over the copy we
 # just wrote into the project, so a project install silently has no effect and the
 # consumer debugs against a stale definition. We cannot change the host agent's
 # resolution order, so say so plainly instead.
@@ -825,8 +690,8 @@ warn_shadowing_user_installs() {
            "$HOME/.agents/skills" "$codex_home/agents"; do
     [[ -d "$d" ]] || continue
     local name
-    # A renamed agent's old name too: nothing cleans a stale user-level copy on a project install.
-    for name in crew-afk crew-coder crew-reviewer solve-issue $(jq -r '[.agents[].replaces // [] | .[]] | .[]' "$SCRIPT_DIR/registry.json"); do
+    # The retired agent names too: nothing cleans a stale user-level copy on a project install.
+    for name in crew-afk solve-issue $(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json"); do
       if [[ -e "$d/$name" || -e "$d/$name.md" || -e "$d/$name.toml" || -e "$d/$name.agent.md" ]]; then
         found+=("$d/$name")
       fi
@@ -852,15 +717,6 @@ write_manifest() {
   source_sha=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
   source_remote=$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null || echo "local")
 
-  # Build agents JSON from collected entries
-  local agents_json="{}"
-  for entry in "${MANIFEST_AGENT_ENTRIES[@]+"${MANIFEST_AGENT_ENTRIES[@]}"}"; do
-    local name version platform_val
-    read -r name version platform_val <<< "$entry"
-    agents_json=$(jq -n --argjson base "$agents_json" --arg n "$name" --arg v "$version" --arg p "$platform_val" \
-      '$base | .[$n] = {version: $v, platform: $p}')
-  done
-
   # Build skills JSON from collected entries
   local skills_json="{}"
   for entry in "${MANIFEST_SKILL_ENTRIES[@]+"${MANIFEST_SKILL_ENTRIES[@]}"}"; do
@@ -870,30 +726,10 @@ write_manifest() {
       '$base | .[$n] = {version: $v}')
   done
 
-  # Merge with existing manifest so entries from prior installs are preserved — except an
-  # agent's old name once its replacement is installed on every platform. While another
-  # platform still has the old shim, the old entry is what lets --update repair it.
-  local existing_agents="{}" existing_skills="{}" replaced_json="[]"
-  local droppable=() seen="|" pair old new left
-  for pair in "${MANIFEST_REPLACED_AGENTS[@]+"${MANIFEST_REPLACED_AGENTS[@]}"}"; do
-    read -r old new <<< "$pair"
-    [[ "$seen" != *"|$old|"* ]] || continue
-    seen+="$old|"
-    left=$(replaced_shims_left "$old" "$new")
-    if [[ -z "$left" ]]; then
-      droppable+=("$old")
-      continue
-    fi
-    echo "WARNING: $old was renamed to $new, but these still have only the old definition:"
-    printf '%s\n' "$left" | sed 's/^/    /'
-    echo "  crew-afk dispatches $new, so those platforms can't run it yet. Run ./install.sh --update"
-    echo "  (or ./install.sh <platform> ... for each of them) to install $new there."
-  done
-  if [[ ${#droppable[@]} -gt 0 ]]; then
-    replaced_json=$(printf '%s\n' "${droppable[@]}" | jq -R . | jq -s .)
-  fi
+  # Merge with existing manifest so entries from prior installs are preserved. Its `agents` (an
+  # install from before the roles moved into crew-afk) is dropped: the crew-afk install pruned them.
+  local existing_skills="{}"
   if [[ -f "$manifest" ]]; then
-    existing_agents=$(jq --argjson r "$replaced_json" '(.agents // {}) | with_entries(select(.key as $k | $r | index($k) | not))' "$manifest")
     existing_skills=$(jq '.skills // {}' "$manifest")
   fi
 
@@ -902,8 +738,6 @@ write_manifest() {
     --arg remote "$source_remote" \
     --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
     --arg platform "$PLATFORM" \
-    --argjson existing_agents "$existing_agents" \
-    --argjson new_agents "$agents_json" \
     --argjson existing_skills "$existing_skills" \
     --argjson new_skills "$skills_json" \
     '{
@@ -911,7 +745,6 @@ write_manifest() {
       source_sha: $sha,
       installed_at: $ts,
       platform: $platform,
-      agents: ($existing_agents * $new_agents),
       skills: ($existing_skills * $new_skills)
     }' > "$manifest"
 
@@ -961,37 +794,13 @@ run_update() {
 
   local updated=0
 
-  # Check agents
-  while IFS= read -r name; do
-    local installed_version current_version
-    installed_version=$(jq -r --arg n "$name" '.agents[$n].version // "unknown"' "$manifest")
-    current_version=$(jq -r --arg n "$name" '.agents[$n].version // empty' "$SCRIPT_DIR/registry.json")
-    if [[ -z "$current_version" ]]; then
-      local replacement entry_platform
-      replacement=$(replacement_for "$name")
-      if [[ -z "$replacement" ]]; then
-        echo "  $name: removed from registry — skipping"
-        continue
-      fi
-      # The old entry's own platform: a later one-platform install may have narrowed the
-      # manifest's, and the platforms it left out are the ones still on the old name.
-      entry_platform=$(jq -r --arg n "$name" '.agents[$n].platform // empty' "$manifest")
-      [[ -n "$entry_platform" && "$entry_platform" != "null" ]] || entry_platform="$saved_platform"
-      echo "  $name: renamed to $replacement — installing $replacement ($entry_platform)"
-      PLATFORM="$entry_platform"
-      install_agent "$replacement" "$entry_platform"
-      PLATFORM="$saved_platform"
-      updated=$((updated + 1))
-      continue
-    fi
-    if [[ "$installed_version" != "$current_version" ]]; then
-      echo "  Updating $name: $installed_version → $current_version"
-      install_agent "$name" "$saved_platform"
-      updated=$((updated + 1))
-    else
-      echo "  $name $installed_version: up to date"
-    fi
-  done < <(jq -r '.agents | keys[]' "$manifest")
+  # An install from before crew-afk owned its roles lists them as agents: they now come with
+  # crew-afk, which also prunes their old files.
+  if [[ -n "$(jq -r '.agents // {} | keys[]' "$manifest")" ]]; then
+    echo "  agents (crew-coder, crew-reviewer, crew-triage): now part of crew-afk — installing crew-afk"
+    install_single_skill crew-afk
+    updated=$((updated + 1))
+  fi
 
   # Check skills
   while IFS= read -r name; do
@@ -1022,7 +831,7 @@ if [[ "$UPDATE_MODE" == "true" ]]; then
   # Docs never overwrite an existing file, but the tracker scripts always do — and they carry
   # no version of their own, so an update that skips this keeps a stale gate forever.
   install_docs
-  if [[ "${#MANIFEST_AGENT_ENTRIES[@]}" -gt 0 || "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
+  if [[ "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
     write_manifest
   fi
   echo "Done."
@@ -1059,32 +868,19 @@ if [[ "$AGENT" == "--skill" ]]; then
     install_single_skill "$SKILL_NAME"
   fi
 elif [[ "$AGENT" == "all" ]]; then
-  echo "Agent: $AGENT"
   echo "---"
-  agent_names=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && agent_names+=("$_line"); done < <(jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json")
-  for agent_name in "${agent_names[@]}"; do
-    install_agent "$agent_name" "$PLATFORM"
-  done
-  # Install all standalone skills — not just those wired to agents as deps
   skill_names=()
   while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && skill_names+=("$_line"); done < <(jq -r '.skills | keys[]' "$SCRIPT_DIR/registry.json")
   for skill_name in "${skill_names[@]}"; do
     install_single_skill "$skill_name"
   done
-else
-  _replacement=$(replacement_for "$AGENT")
-  if [[ -n "$_replacement" ]]; then
-    echo "Note: $AGENT was renamed to $_replacement — installing $_replacement"
-    AGENT="$_replacement"
-  fi
-  if ! jq -e --arg n "$AGENT" '.agents | has($n)' "$SCRIPT_DIR/registry.json" >/dev/null; then
-    echo "Error: unknown agent '$AGENT' (expected one of: $(jq -r '.agents | keys | join(", ")' "$SCRIPT_DIR/registry.json"))" >&2
-    exit 1
-  fi
-  echo "Agent: $AGENT"
+elif jq -e --arg n "$AGENT" '."retired-agents".names | index($n)' "$SCRIPT_DIR/registry.json" >/dev/null; then
+  echo "Note: $AGENT is now a role inside crew-afk — installing crew-afk"
   echo "---"
-  install_agent "$AGENT" "$PLATFORM"
+  install_single_skill crew-afk
+else
+  echo "Error: unknown argument '$AGENT' (expected all, --skill <name> or --skills <a,b>)" >&2
+  usage
 fi
 
 install_docs

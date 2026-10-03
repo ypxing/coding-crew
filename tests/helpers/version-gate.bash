@@ -54,6 +54,6 @@ version_gate_failures() {
       if [ "$branch_v" = "$main_v" ] || [ "$top" != "$branch_v" ]; then
         echo "  $section.$name changed ($reason) but branch version $branch_v is not above origin/main's $main_v"
       fi
-    done < <(jq -r --arg s "$section" '.[$s] | keys[]' "$branch")
+    done < <(jq -r --arg s "$section" '.[$s] // {} | keys[]' "$branch")
   done
 }

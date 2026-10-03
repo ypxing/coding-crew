@@ -19,7 +19,7 @@ load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 SOLVE_ISSUE="$REPO_ROOT/skills/solve-issue/SKILL.md"
-PROTOCOL="$REPO_ROOT/agents/crew-coder/protocol.md"
+PROTOCOL="$REPO_ROOT/orchestrator/roles/coder.md"
 HOST_INSTALL="$REPO_ROOT/skills/dep-install/references/host-install.md"
 TDD="$REPO_ROOT/skills/tdd/SKILL.md"
 

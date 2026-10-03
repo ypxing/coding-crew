@@ -32,13 +32,12 @@ teardown() {
   [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/copilot.SKILL.md" ]
 }
 
-@test "uninstall removes codex-installed skills and agents" {
+@test "uninstall removes the codex-installed crew-afk" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
   [ -d "$TEMP_DIR/.agents/skills/crew-afk" ]
 
   TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill crew-afk
-  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --agent crew-coder
 
   [ ! -d "$TEMP_DIR/.agents/skills/crew-afk" ]
   [ ! -f "$TEMP_DIR/.codex/agents/crew-coder.toml" ]

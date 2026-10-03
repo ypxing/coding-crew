@@ -53,7 +53,7 @@ after(() => rmSync(SCRIPTS_BASE, { recursive: true, force: true }));
 // The `.coding-crew/` an installed orchestrator would sit in (CREW_INSTALL_DIR): this source
 // tree's orchestrator/ has no installed assets beside it, so every run points here instead.
 export const INSTALL_DIR = join(SCRIPTS_BASE, "install");
-cpSync(join(REPO, "agents/crew-reviewer/assets"), join(INSTALL_DIR, "code-review"), { recursive: true });
+cpSync(join(REPO, "orchestrator/roles/reviewer"), join(INSTALL_DIR, "crew-afk/roles/reviewer"), { recursive: true });
 cpSync(join(REPO, "skills/dep-install/scripts"), join(INSTALL_DIR, "dep-install/scripts"), { recursive: true });
 cpSync(join(REPO, "skills/solve-issue/scripts"), join(INSTALL_DIR, "solve-issue/scripts"), { recursive: true });
 cpSync(join(REPO, "skills/to-issues/scripts"), join(INSTALL_DIR, "to-issues/scripts"), { recursive: true });

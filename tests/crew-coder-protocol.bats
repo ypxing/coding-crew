@@ -8,7 +8,7 @@
 # variant's `partial` definition told the worker to write `## Progress` *in the issue
 # file*, which the one-writer rule forbids, while another said only "write notes to
 # `## Progress`". This is the same disease the dispatch bodies had, and the same cure:
-# `{{PROTOCOL}}` (see agents/crew-reviewer/protocol.md for the precedent).
+# `{{PROTOCOL}}` (see orchestrator/roles/reviewer.md for the precedent).
 #
 # What each layer owns:
 #   protocol.md      everything platform-neutral — read by all four
@@ -20,8 +20,8 @@
 load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-CODER_DIR="$REPO_ROOT/agents/crew-coder"
-PROTOCOL="$CODER_DIR/protocol.md"
+ROLES_DIR="$REPO_ROOT/orchestrator/roles"
+PROTOCOL="$ROLES_DIR/coder.md"
 
 # body_of <platform> — the protocol as crew-afk dispatches it to that platform (no agent file).
 body_of() {
@@ -30,7 +30,7 @@ body_of() {
 
 # ─── the protocol exists and is what gets inlined ─────────────────────────────
 
-@test "agents/crew-coder/protocol.md exists" {
+@test "orchestrator/roles/coder.md exists" {
   [ -f "$PROTOCOL" ]
 }
 
