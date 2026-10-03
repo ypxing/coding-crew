@@ -113,6 +113,10 @@ There are no agents. crew-afk's three roles — coder, reviewer, triage — are 
 
 ---
 
+### The feature review
+
+At the first drain of a crew-afk run, one reviewer reviews the feature across its issues. Its range is the whole feature, from the merge-base with origin's default branch (else the local one), whichever run made each commit. It is skipped when the integration check is red, or when the wall-clock cap stopped claims with a claimable issue left. The tip it reviewed is recorded as `feature_review.reviewed_tip` in `sprint-state.json`; on a later run an unchanged tip dispatches no reviewer ("nothing new since <sha>"), and a tip that descends from it is reviewed only for the commits added since, leaving out what merged in from origin's default branch. A rewritten history (`reviewed_tip` not an ancestor) gets the whole-feature review again.
+
 ### Changing a crew-afk Role
 
 A role's protocol is `orchestrator/roles/<role>.md`; it ships as part of crew-afk's `assets`, so a change to it needs crew-afk's `version` above origin/main's. Per-platform text goes in a `{{FRAGMENT:<key>}}` line backed by `skills/_shared/fragments/<platform>/<key>.md` (or `common/<key>.md`) — never a per-platform copy of the protocol. Check the result:

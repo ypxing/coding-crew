@@ -84,6 +84,6 @@
 1	upgrade-deps-skill-structure.bats
 12	verify-worktree-docker.bats
 27	verify-worktree.bats
-2	worker-chain-token-budget.bats
+2	worker-chain-no-duplication.bats
 34	worker-close-guard.bats
 22	workflow-integrity.bats

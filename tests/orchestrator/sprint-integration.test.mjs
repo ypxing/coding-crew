@@ -163,7 +163,7 @@ test("the queue's first drain runs one feature review over the whole feature dif
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(featureReviews(lines), 1);
-  // The prompt: the whole diff from the base commit the sprint state recorded, and no criteria.
+  // The prompt: the whole diff from the merge-base with the (local) default branch, and no criteria.
   const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature/review-prompt.md"), "utf8");
   assert.ok(prompt.includes(`Gather the diff: git diff ${base}..feature/demo`), prompt);
   assert.ok(prompt.includes(`Base: ${base}`));
@@ -174,6 +174,21 @@ test("the queue's first drain runs one feature review over the whole feature dif
   assert.match(r.stdout, /## Feature Review\s+The whole feature diff was reviewed once: 0 finding\(s\)/);
   assert.match(r.stdout, /- feature: all-met \(C:0 H:0 M:0 L:0\)/);
   assert.match(traceLog(root), /\[STEP\] step=feature-review /);
+});
+
+test("the feature review records the tip it reviewed; a rerun on the same tip dispatches no reviewer", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const first = commandLines(root);
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  assert.equal(featureReviews(first.lines), 1);
+  const tip = sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim();
+  assert.equal(state(root).feature_review.reviewed_tip, tip);
+  const again = commandLines(root);
+  assert.equal(again.r.code, 0, `${again.r.stdout}\n${again.r.stderr}`);
+  assert.equal(featureReviews(again.lines), 0);
+  assert.match(traceLog(root), new RegExp(`FEATURE-REVIEW: skipped — nothing new since ${tip}`));
+  assert.match(again.r.stdout, /## Feature Review\s+\*\*Not run:\*\* nothing new since/);
 });
 
 test("feature findings at or above fixFindings become a Phase 2 fix issue; the rest are counted by remind", () => {

@@ -270,3 +270,26 @@ export async function readOnlyDispatch(ctx, { label, branches = [] }, run) {
   if (changed.length) return fail(`changed ${changed.join(", ")}`, result);
   return { result };
 }
+
+/**
+ * Where a range over the whole feature starts: the merge-base of the feature branch with origin's
+ * default branch (origin/HEAD, else origin/main, else origin/master), else with the local main /
+ * master, so it covers every commit the feature holds, whichever run made it. `ref` is the default
+ * branch it measured from. The recorded `base_sha` is only this run's start (session-init.sh resets
+ * it each run, squash-commits.sh moves it to the squash), so it is the fallback of `prBase` alone;
+ * null when no default branch exists.
+ */
+export function defaultBranchBase(effects, featureBranch) {
+  const head = effects.gitRead(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]);
+  const defaults = head.code === 0 && head.stdout.trim() ? [head.stdout.trim().replace(/^refs\/remotes\//, "")] : [];
+  for (const ref of [...defaults, "origin/main", "origin/master", "main", "master"]) {
+    const mb = effects.gitRead(["merge-base", ref, featureBranch]);
+    if (mb.code === 0 && mb.stdout.trim()) return { ref, sha: mb.stdout.trim() };
+  }
+  return null;
+}
+
+/** The PR's range start: `defaultBranchBase`, else the recorded `base_sha`, else null. */
+export function prBase(effects, featureBranch, recordedBase) {
+  return defaultBranchBase(effects, featureBranch)?.sha ?? (recordedBase || null);
+}

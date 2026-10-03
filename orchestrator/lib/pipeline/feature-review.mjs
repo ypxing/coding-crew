@@ -15,27 +15,59 @@ import { FEATURE_REVIEW, criteriaFile, featureReviewPrompt } from "../prompts.mj
 import { sprintReviewContext } from "../review-context.mjs";
 import { parseReviewReport } from "../report.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
-import { limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
+import { defaultBranchBase, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
+
+/**
+ * What this run's feature review covers: `{ mode, base, tip, exclude, reason? }`. `whole` starts at
+ * the merge-base with the default branch (never this run's `base_sha`); `increment` starts at the
+ * `reviewed_tip` an earlier review recorded and leaves out what `exclude` (the default branch) holds,
+ * so commits merged in from it are not reviewed; `skip` has no range, `reason` says why.
+ */
+export function featureReviewRange(ctx) {
+  const { sprint, effects } = ctx;
+  const tipRead = effects.gitRead(["rev-parse", "--verify", "-q", `${sprint.featureBranch}^{commit}`]);
+  const tip = tipRead.code === 0 ? tipRead.stdout.trim() : null;
+  const def = defaultBranchBase(effects, sprint.featureBranch);
+  if (!tip || !def) {
+    const reason = !tip
+      ? `${sprint.featureBranch} does not resolve to a commit, so there is no diff to review.`
+      : `no default branch (origin or local) to measure ${sprint.featureBranch} from, so there is no range to review.`;
+    return { mode: "skip", base: null, tip, exclude: null, reason };
+  }
+  const reviewed = sprint.readState().feature_review?.reviewed_tip;
+  if (reviewed && reviewed === tip) {
+    return { mode: "skip", base: null, tip, exclude: null, reason: `nothing new since ${reviewed} (the feature branch tip the last feature review covered).` };
+  }
+  if (reviewed && effects.gitRead(["merge-base", "--is-ancestor", reviewed, tip]).code === 0) {
+    return { mode: "increment", base: reviewed, tip, exclude: def.ref };
+  }
+  return { mode: "whole", base: def.sha, tip, exclude: null };
+}
 
 /**
  * Returns `{ report?, skipped?, failed?, findings?, promoted?, promotedRef? }`: `skipped` is why it
  * was deliberately not run, `failed` why a dispatch that was made left no review (recorded as
  * not-run in the report), `report` the review report file holding its block.
  */
-export async function runFeatureReview(ctx, { integration = null } = {}) {
+export async function runFeatureReview(ctx, { integration = null, wallCap = null } = {}) {
   const { sprint, effects, options } = ctx;
 
+  if (wallCap) {
+    const skipped = `the ${wallCap.minutes}-minute wall-clock cap stopped claims with ${wallCap.unclaimed} issue(s) still claimable — the feature is not whole yet, so the next run reviews it.`;
+    ctx.log(`FEATURE-REVIEW: skipped — ${skipped}`);
+    return { skipped };
+  }
   if (integration?.status === "fail") {
     const skipped = "the integration check is red on the merged feature branch — a review of code that fails its checks would only restate that.";
     ctx.log(`FEATURE-REVIEW: skipped — ${skipped}`);
     return { skipped };
   }
-  const base = sprint.readState().branches?.[sprint.featureBranch]?.base_sha;
-  if (!base) {
-    const skipped = `no base commit recorded for ${sprint.featureBranch} in the sprint state, so there is no diff to review.`;
-    ctx.log(`FEATURE-REVIEW: skipped — ${skipped}`);
-    return { skipped };
+  const range = featureReviewRange(ctx);
+  if (range.mode === "skip") {
+    ctx.log(`FEATURE-REVIEW: skipped — ${range.reason}`);
+    return { skipped: range.reason };
   }
+  const { base, exclude } = range;
 
   const dir = join(sprint.dispatchDir, FEATURE_REVIEW);
   mkdirSync(dir, { recursive: true });
@@ -47,7 +79,7 @@ export async function runFeatureReview(ctx, { integration = null } = {}) {
 
   const reviewAssets = sprint.installDir ? assetDir(sprint.installDir, "reviewer") : null;
   const reviewContext = reviewAssets ? sprintReviewContext(sprint, effects, reviewAssets, effects.mainRoot) : null;
-  writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, reportPath: sidecarFile, reviewAssets, reviewContext }));
+  writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, exclude, reportPath: sidecarFile, reviewAssets, reviewContext }));
 
   const reviewer = roleBinding(ctx, "reviewer");
   ctx.log(`[STEP] step=feature-review model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`);
@@ -102,8 +134,9 @@ export async function runFeatureReview(ctx, { integration = null } = {}) {
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
 
+  sprint.state(["feature-reviewed", "--tip", range.tip]);
   const findings = parsed.findings ?? [];
-  ctx.log(`FEATURE-REVIEW: ${findings.length} finding(s) (${base.slice(0, 12)}..${sprint.featureBranch})`);
+  ctx.log(`FEATURE-REVIEW: ${findings.length} finding(s) (${range.mode}: ${base.slice(0, 12)}..${sprint.featureBranch})`);
   return { report: reportFile, findings, ...(await promoteFeature(ctx, { findings, reportFile, dir, written })) };
 }
 
