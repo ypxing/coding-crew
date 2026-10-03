@@ -164,8 +164,23 @@ export async function runSprint(ctx) {
     }
   }).catch(() => {}); // a crashed baseline surfaces where it is awaited
 
+  // Soft wall-clock cap (afk.maxWallMinutes / --max-wall): once elapsed nothing new is claimed;
+  // workers already running finish, merge and close.
+  const now = ctx.now ?? (() => Date.now());
+  const startedAt = now();
+  const wallMs = Math.max(0, Number(options.maxWallMinutes) || 0) * 60_000;
+  const wallElapsed = () => wallMs > 0 && now() - startedAt >= wallMs;
+  let wallLogged = false;
+
   function claimNext() {
     if (baselineFailed) return null;
+    if (wallElapsed()) {
+      if (!wallLogged) {
+        wallLogged = true;
+        ctx.log(`[WALL-CAP] ${options.maxWallMinutes} minute cap elapsed — no new issue is claimed; running workers finish.`);
+      }
+      return null;
+    }
     // What a poll just listed goes first, so N woken workers cost one listing, not N.
     while (handoff.length) {
       const i = handoff.shift();
@@ -314,6 +329,8 @@ export async function runSprint(ctx) {
         if (featureReview.promotedRef && !tracker.listOpenIssueFiles) unseen.add(featureReview.promotedRef);
       }
     }
+    // Past the cap Phase 2 stays parked: the fix issues wait for the next run.
+    if (wallElapsed()) break;
     if (flush(ctx) > 0) {
       // Promoted fix issues are this run's own: not newcomers to lint.
       if (pollMs) seenNow();
@@ -338,20 +355,26 @@ export async function runSprint(ctx) {
   // listOpenIssueFiles is local-only (a directory scan); github's counterpart is listOpen,
   // whose entries carry their own `status` (a close-state, not a file location) instead of
   // requiring a second directory read to know which are still open.
+  // Unclaimed because of the cap: claimable issues, listed before anything releases them.
+  const wallUnclaimed = wallElapsed()
+    ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i)).map((i) => i.slug)
+    : [];
+  const wallCap = wallUnclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
   const stalled =
     !capped &&
+    (Boolean(wallCap) ||
     // The last drain's check, not any earlier one: a drain red at the fix-issue limit stalls
     // the run only if no later drain turned it green.
     (integration?.fix?.verdict === "limit" ||
       (tracker.listOpenIssueFiles
         ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
-        : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0));
+        : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0)));
 
   // Before the summary: drained, capped or stalled, no issue keeps a label saying it is being worked.
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, capped, prdAudit, unlisted, integration, integrationFixes, featureReview });
+  await wrapUp(ctx, { tracker, stalled, capped, wallCap, prdAudit, unlisted, integration, integrationFixes, featureReview });
   return { stalled, history };
 }
 
@@ -487,7 +510,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, capped = false, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReview = {} }) {
+async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReview = {} }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -514,7 +537,7 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, prdAudit, unliste
 
   // --- summary (rendered from disk, never from recollection) -----------------
   // The PR comes first: the summary points at it when the findings were posted there.
-  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped });
+  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap });
   const summaryArgs = ["--promoted", promoteSeverities(sprint.fixFindings)];
   if (stalled) summaryArgs.push("--stalled");
   if (pr?.posted != null) summaryArgs.push("--posted-to", pr.url);
@@ -534,6 +557,9 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, prdAudit, unliste
       const lines = prdAudit.superseded.map((m) => `- ${m.requirement}${m.by ? ` — ${m.by}` : ""}`);
       ctx.out(`\n**Superseded — update the PRD, nothing queued:**\n${lines.join("\n")}\n`);
     }
+  }
+  if (wallCap) {
+    ctx.out(`\n## Wall-clock cap\n\nThe ${wallCap.minutes}-minute cap elapsed: running workers finished, Phase 2 fix issues stayed parked. Unclaimed (${wallCap.unclaimed.length}):\n${wallCap.unclaimed.map((s) => `- ${s}`).join("\n")}\n`);
   }
   if (integration) ctx.out(`\n## Integration check\n\n${integrationSection(effects.mainRoot, sprint.featureBranch, integration, integration.fix, integrationFixes)}\n`);
   if (featureReview.skipped) ctx.out(`\n## Feature Review\n\n**Not run:** ${featureReview.skipped}\n`);
@@ -568,9 +594,10 @@ export function isGreen({ exitCode = 0, blocked = [], integration = null, capped
 }
 
 /** Why a run is not green, one line per cause, for the PR block and the summary. */
-function notGreenReasons({ exitCode, blocked, integration, capped, integrationEnabled }) {
+function notGreenReasons({ exitCode, blocked, integration, capped, integrationEnabled, wallCap = null }) {
   const reasons = [];
-  if (exitCode !== 0) reasons.push("the run stalled with issues unfinished");
+  if (wallCap) reasons.push(`the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length} issue(s) unclaimed)`);
+  else if (exitCode !== 0) reasons.push("the run stalled with issues unfinished");
   if (blocked.length) reasons.push(`${blocked.length} issue(s) blocked`);
   if (capped) reasons.push("the run stopped at --max-rounds");
   if (integration?.status === "skipped") reasons.push(`the integration check was skipped (${integration.reason})`);
@@ -588,7 +615,7 @@ function notGreenReasons({ exitCode, blocked, integration, capped, integrationEn
  * (post-findings.sh) its URL and their count — or null when there is nothing to say. A posting
  * failure is reported in the text and never fails the sprint.
  */
-async function pullRequest(ctx, tracker, integration, { stalled = false, capped = false } = {}) {
+async function pullRequest(ctx, tracker, integration, { stalled = false, capped = false, wallCap = null } = {}) {
   const { sprint, effects, options } = ctx;
   let refs = [];
   let refsError = null;
@@ -628,7 +655,7 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   const body = await writePrBody(ctx, { integration });
   const blockedSlugs = sprint.getList("blocked");
   const retention = sprint.readState().retention ?? {};
-  const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, integrationEnabled: options.integrationCheck !== false };
+  const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false };
   const green = isGreen(state);
   const reasons = green ? [] : notGreenReasons(state);
   const args = ["--closes-file", closesFile];
