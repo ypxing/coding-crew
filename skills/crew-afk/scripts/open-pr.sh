@@ -4,7 +4,7 @@ set -euo pipefail
 # open-pr.sh — push the feature branch and create, or update, its pull request.
 #
 # Usage: open-pr.sh [--closes-file <file>] [--body-file <file>] [--title <title>] [--draft]
-#                   [--note-file <file>]
+#                   [--note-file <file>] [--no-push]
 #   FEATURE_BRANCH and FEATURE_SLUG come from the environment (the orchestrator's childEnv).
 #   --closes-file holds the tracker's closing lines (`Closes #n`), one per line; absent or
 #   empty, the PR closes nothing.
@@ -17,6 +17,8 @@ set -euo pipefail
 #   converted (`gh pr ready --undo`); without it an open draft is marked ready (`gh pr ready`).
 #   A failed conversion is reported as `PR-STATE-FAILED: <why>` and never fails this script.
 #   --note-file holds the not-green text (blocked issues, reason) for the crew-afk block.
+#   --no-push: push nothing and create nothing — only an open PR is updated (its block, and its
+#   draft state). For a red merged branch: the PR a green run opened must not stay ready.
 #
 # The body's crew-afk block — between the two markers below — is the only part this writes:
 # a new PR gets just that block, and an open one has it replaced (or appended), so what a
@@ -33,6 +35,7 @@ BODY_FILE=""
 TITLE=""
 DRAFT=0
 NOTE_FILE=""
+NO_PUSH=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --closes-file) CLOSES_FILE="${2:-}"; shift 2 ;;
@@ -40,6 +43,7 @@ while [ $# -gt 0 ]; do
     --title) TITLE="${2:-}"; shift 2 ;;
     --draft) DRAFT=1; shift ;;
     --note-file) NOTE_FILE="${2:-}"; shift 2 ;;
+    --no-push) NO_PUSH=1; shift ;;
     *) echo "open-pr.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -80,7 +84,7 @@ trap 'rm -rf "$TMP"' EXIT
   echo "$END_MARK"
 } > "$TMP/block.md"
 
-if ! push_out=$(git push -u origin "$FEATURE_BRANCH" 2>&1); then
+if [ "$NO_PUSH" = 0 ] && ! push_out=$(git push -u origin "$FEATURE_BRANCH" 2>&1); then
   echo "open-pr.sh: git push failed: $push_out" >&2
   _trace --level error PR "branch=$FEATURE_BRANCH success=false reason=push"
   exit 1
@@ -90,6 +94,11 @@ fi
 # updated, anything else gets a new PR.
 existing=$(gh pr view "$FEATURE_BRANCH" --json url,state,body,title,isDraft 2>/dev/null || true)
 state=$(printf '%s' "$existing" | jq -r '.state // empty' 2>/dev/null || true)
+
+if [ "$NO_PUSH" = 1 ] && [ "$state" != "OPEN" ]; then
+  echo "PR: none"
+  exit 0
+fi
 
 if [ "$state" = "OPEN" ]; then
   # CRLF → LF: GitHub keeps a body edited in its web UI with \r\n (and Windows' jq writes

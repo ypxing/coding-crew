@@ -99,7 +99,8 @@ test("a red final integration check keeps --open-pr from opening the PR, and the
   fake(root, "_integration.triage", triageVerdict("no", "clashing changes", "nothing a coder can do here"));
   const { r, lines } = commandLines(root, ["--open-pr"], { integration: true });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(lines.filter((l) => /open-pr\.sh/.test(l)).length, 0, "nothing was pushed");
+  // Only the no-push call that turns an already-open PR into a draft (there is none here).
+  assert.deepEqual(lines.filter((l) => /open-pr\.sh/.test(l)).map((l) => /--no-push/.test(l)), [true], "nothing was pushed");
   assert.match(r.stdout, /## Pull Request\s+\*\*Not opened:\*\* the integration check failed on feature\/demo — see ## Integration check above\./);
 });
 

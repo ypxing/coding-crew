@@ -242,6 +242,26 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   [[ "$output" == *"PR-STATE-FAILED: gh pr create --draft failed: Draft pull requests are not supported"* ]]
 }
 
+@test "open-pr --no-push --draft: an open ready PR becomes a draft with the note, and nothing is pushed" {
+  bash "$OPEN_PR"
+  before=$(git ls-remote origin refs/heads/feature/demo | cut -f1)
+  git commit -q --allow-empty -m "red work"
+  printf '**Not green:** the integration check failed\n' > "$TEMP_DIR/note.md"
+  run bash "$OPEN_PR" --no-push --draft --note-file "$TEMP_DIR/note.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PR-STATE: draft"* ]]
+  [ "$(jq -r .isDraft "$GH_PR")" = true ]
+  jq -r .body "$GH_PR" | grep -q 'the integration check failed'
+  [ "$(git ls-remote origin refs/heads/feature/demo | cut -f1)" = "$before" ]
+}
+
+@test "open-pr --no-push with no open PR creates none" {
+  run bash "$OPEN_PR" --no-push --draft
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PR: none"* ]]
+  ! grep -q '^pr create' "$GH_LOG"
+}
+
 @test "open-pr --note-file: the note is inside the markers and text outside survives" {
   bash "$OPEN_PR"
   jq '.body = "intro\n\n" + .body + "\n\noutro"' "$GH_PR" > "$GH_PR.n" && mv "$GH_PR.n" "$GH_PR"

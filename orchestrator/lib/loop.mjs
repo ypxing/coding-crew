@@ -668,8 +668,16 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
     ].join("\n") };
   }
   // A red merged branch is not shipped: the PR would ask a reviewer to merge what fails its checks.
+  // A PR an earlier, green run opened is turned into a draft, with nothing pushed to it.
   if (integration?.status === "fail") {
-    return { text: `**Not opened:** the integration check failed on ${sprint.featureBranch} — see ## Integration check above.` };
+    const notOpened = `**Not opened:** the integration check failed on ${sprint.featureBranch} — see ## Integration check above.`;
+    const note = join(sprint.env.SPRINT_DIR, "pr-note.md");
+    writeFileSync(note, `**Not green:** the integration check failed on ${sprint.featureBranch}; this run pushed nothing. This PR is a draft.\n`);
+    const r = effects.bash("open-pr.sh", ["--no-push", "--draft", "--note-file", note], { env: sprint.childEnv() });
+    const url = /^PR: (.*)$/m.exec(r.stdout ?? "")?.[1]?.trim();
+    if (r.dryRun || r.code !== 0 || !url || url === "none") return { text: notOpened };
+    const stateFailed = /^PR-STATE-FAILED: (.*)$/m.exec(r.stdout)?.[1];
+    return { text: `${notOpened}\n\nThe PR already open for it (${url}) ${stateFailed ? `could not be made a draft: ${stateFailed}` : "is now a draft"}.` };
   }
   // A PR without its closing lines would ship the work and strand the issues open.
   if (refsError) return { text: `**Not opened:** could not list the issues it closes — ${refsError}` };
