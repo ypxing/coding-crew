@@ -185,3 +185,16 @@ test("a review that never ran is named in the summary, not just counted in the s
   assert.match(r.stdout, /crew\/demo\/alpha/);
   assert.match(state(root).retention.alpha.reason, /^blocked — retry limit reached \(2 attempts\) — review-not-run — no report\.json — the reviewer never wrote its verdict file$/);
 });
+
+test("--max-wall: past the cap nothing new is claimed, the running issue merges, and the run exits 2 naming the cap", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  // alpha runs past the 0.6 s cap; beta, next in line, is never claimed.
+  fake(root, "alpha.worker-sleep", "2\n");
+  const r = runSprint(root, ["--max-parallel", "1", "--max-wall", "0.01"]);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /## Wall-clock cap[\s\S]*- beta/);
+  assert.match(traceLog(root), /\[WALL-CAP\] 0\.01 minute cap elapsed/);
+  assert.deepEqual(state(root).merged_branches ?? [], ["crew/demo/alpha"]);
+});
