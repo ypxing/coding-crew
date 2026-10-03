@@ -40,6 +40,11 @@ If something outside the TDD red phase fails after 2 consecutive attempts: rever
 changes, report `blocked` with the reason in `notes`, and return immediately. When `solve-issue`
 itself says to stop and output `BLOCKED:`, that is the same outcome — report it and return.
 
+## Headless
+
+No `Monitor`, no `ScheduleWakeup` and no background runs for checks — a headless worker that
+backgrounds a check ends its turn and the run is lost. Run checks in the foreground.
+
 ## Report
 
 `solve-issue` § Outcome defines `complete`, `partial` and `blocked`; what follows is only how to

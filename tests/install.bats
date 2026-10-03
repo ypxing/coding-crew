@@ -19,17 +19,6 @@ teardown() {
   [ -f "$TEMP_DIR/.claude/skills/tdd/SKILL.md" ]
 }
 
-@test "protocol substitution removes {{PROTOCOL}} placeholder" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer
-
-  # Verify the agent file exists
-  [ -f "$TEMP_DIR/.claude/agents/crew-reviewer.md" ]
-
-  # Verify no {{PROTOCOL}} literal remains in the installed file
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.claude/agents/crew-reviewer.md"
-}
-
 @test "manifest contains correct skill name and version after install" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
@@ -41,24 +30,6 @@ teardown() {
   run jq -r '.skills["tdd"].version' "$TEMP_DIR/.coding-crew/manifest.json"
   [ "$status" -eq 0 ]
   [ -n "$output" ]
-  [ "$output" != "null" ]
-}
-
-@test "installing crew-afk installs agent-deps (crew-coder and crew-reviewer)" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-
-  # Verify both agent files were installed
-  [ -f "$TEMP_DIR/.claude/agents/crew-coder.md" ]
-  [ -f "$TEMP_DIR/.claude/agents/crew-reviewer.md" ]
-
-  # Verify manifest contains both agents
-  run jq -r '.agents["crew-coder"].version' "$TEMP_DIR/.coding-crew/manifest.json"
-  [ "$status" -eq 0 ]
-  [ "$output" != "null" ]
-
-  run jq -r '.agents["crew-reviewer"].version' "$TEMP_DIR/.coding-crew/manifest.json"
-  [ "$status" -eq 0 ]
   [ "$output" != "null" ]
 }
 

@@ -86,17 +86,26 @@ installed_agents_root() {
   printf '%s\n' "$cache"
 }
 
-# coder_variant <platform> — prints the path to the installed crew-coder body
+# role_prompt <role> <platform> — prints the path to the role's protocol as crew-afk dispatches it
+# (orchestrator/lib/adapters/render.mjs). There is no agent file: this is the whole worker body.
+role_prompt() {
+  local role="$1" platform="$2"
+  local cache="$(_render_cache_root)/role-prompts"
+  local out="$cache/$role.$platform.md"
+  if [ ! -f "$out" ]; then
+    mkdir -p "$cache"
+    node --input-type=module -e '
+      const { renderRolePrompt } = await import(process.argv[1] + "/orchestrator/lib/adapters/render.mjs");
+      process.stdout.write(renderRolePrompt(process.argv[2], process.argv[3]));
+    ' "$RENDER_HELPER_REPO_ROOT" "$role" "$platform" > "$out.$$" || return 1
+    mv -f "$out.$$" "$out"
+  fi
+  printf '%s\n' "$out"
+}
+
+# coder_variant <platform> — prints the path to crew-coder's rendered protocol
 coder_variant() {
-  local platform="$1" root
-  root=$(installed_agents_root) || return 1
-  case "$platform" in
-    claude)  printf '%s\n' "$root/.claude/agents/crew-coder.md" ;;
-    copilot) printf '%s\n' "$root/.github/agents/crew-coder.agent.md" ;;
-    pi)      printf '%s\n' "$root/.pi/agents/crew-coder.md" ;;
-    codex)   printf '%s\n' "$root/.codex/agents/crew-coder.toml" ;;
-    *) echo "coder_variant: unknown platform '$platform'" >&2; return 1 ;;
-  esac
+  role_prompt coder "$1"
 }
 
 # The one list of platforms crew-coder is built for, read by tests/crew-coder-protocol.bats

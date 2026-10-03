@@ -30,20 +30,6 @@ frontmatter() {
 
 # --- disallowedTools is present and contains Agent ---
 
-@test "claude.agent.md has disallowedTools in frontmatter" {
-  frontmatter "$CLAUDE_AGENT" | grep -q 'disallowedTools'
-}
-
-@test "claude.agent.md disallowedTools contains Agent" {
-  frontmatter "$CLAUDE_AGENT" | grep -q 'Agent'
-}
-
-@test "claude.agent.md disallowedTools contains only Agent (no other entries)" {
-  # Count non-empty entries after disallowedTools — should be exactly 1
-  count=$(frontmatter "$CLAUDE_AGENT" | awk '/disallowedTools/{f=1; next} f && /^  - /{print} f && /^[^ ]/{f=0}' | grep -c '.')
-  [ "$count" -eq 1 ]
-}
-
 # --- No hardcoded mcp__-prefixed server name in any agent file ---
 
 @test "claude.agent.md has no hardcoded mcp__ server name" {

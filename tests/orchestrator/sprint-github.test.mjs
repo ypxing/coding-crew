@@ -310,7 +310,7 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
   assert.doesNotMatch(body, /Here is the body/);
   assert.doesNotMatch(r.stdout, /PR body has no summary/);
   assert.equal(sh("git", ["-C", remote, "rev-parse", "feature/demo"]).stdout.trim(), sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim());
-  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+1 finding\(s\) posted \(0 inline\)/);
+  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+\*\*Ready:\*\* the run finished green\.\s+1 finding\(s\) posted \(0 inline\)/);
   assert.doesNotMatch(r.stdout, /^## Next$/m, "openPr on: the PR is opened, nothing is left to tell the human");
   const review = JSON.parse(readFileSync(join(root, "review-post.json"), "utf8"));
   assert.equal(review.event, "COMMENT");
@@ -343,7 +343,7 @@ test("github --open-pr: a PR writer with no ## Summary still opens the PR, with 
   const body = readFileSync(join(root, "pr-body.md"), "utf8");
   assert.doesNotMatch(body, /## Summary|could not read/);
   assert.match(body, /<!-- crew-afk:begin -->\n\*\*Checks on the merged branch:\*\* [\s\S]*Closes #1/);
-  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+\*\*PR body has no summary:\*\* the writer's answer has no `## Summary` section\./);
+  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+\*\*Ready:\*\* the run finished green\.\s+\*\*PR body has no summary:\*\* the writer's answer has no `## Summary` section\./);
 });
 
 test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implemented in Phase 2", () => {
@@ -452,4 +452,30 @@ test("a gaps issue that could not be created is named in the summary, not only t
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stdout, /## PRD Audit/);
   assert.match(r.stdout, /\*\*Gaps not queued:\*\* 1 missing requirement\(s\), but the fix issue was not created: .*github\.mjs/);
+});
+
+test("github --open-pr: a run with a blocked issue opens a draft PR naming it, and the summary says why", () => {
+  const root = githubFixtureRepo();
+  const { stub, log } = stubGh(root, [GH_ALPHA]);
+  const remote = join(root, ".scratch/remote.git");
+  sh("git", ["init", "-q", "--bare", remote]);
+  sh("git", ["-C", root, "remote", "set-url", "origin", remote]);
+  fake(root, "alpha.nocommit");
+  fake(
+    root,
+    "alpha.worker",
+    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"fail","lint":"pass","typecheck":"pass"},"progress":"tests red"}', '```'].join("\n"),
+  );
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--open-pr"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
+  });
+  const calls = readFileSync(log, "utf8");
+  if (/pr create/.test(calls)) {
+    assert.match(calls, /pr create --draft /);
+    assert.match(readFileSync(join(root, "pr-body.md"), "utf8"), /crew-afk:begin -->[\s\S]*\*\*Not green:\*\*[\s\S]*Blocked issues:\n- alpha/);
+    assert.match(r.stdout, /## Pull Request[\s\S]*\*\*Draft:\*\* the run did not finish green/);
+  } else {
+    assert.fail(`no PR was created:\n${r.stdout}\n${r.stderr}`);
+  }
 });

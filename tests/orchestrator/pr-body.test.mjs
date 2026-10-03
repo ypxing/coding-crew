@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { extractBody, extractTitle, prdTitle } from "../../orchestrator/lib/pipeline/pr-body.mjs";
+import { checksLine, extractBody, extractTitle, prdTitle } from "../../orchestrator/lib/pipeline/pr-body.mjs";
 import { prBodyPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("extractBody: keeps the answer from its first ## Summary line, dropping a preamble", () => {
@@ -61,4 +61,9 @@ test("extractTitle: the last # line before ## Summary; none without one", () => 
   assert.equal(extractTitle("Sure.\n\n# Run the full suite once per branch\n\n## Summary\n\nX\n# not this"), "Run the full suite once per branch");
   assert.equal(extractTitle("## Summary\n\nX"), null);
   assert.equal(extractTitle("# A title\n\nno summary"), null);
+});
+
+test("checksLine: a cached integration result reads as a pass, not `not run`", () => {
+  assert.equal(checksLine({ dispatchDir: "/nonexistent" }, { status: "cached", failed: [] }), "pass (cached)");
+  assert.equal(checksLine({ dispatchDir: "/nonexistent" }, null), null);
 });

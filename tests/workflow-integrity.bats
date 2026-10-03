@@ -202,20 +202,6 @@ _installed_scripts() {
   done
 }
 
-@test "C2: pi agent tool allowlists contain only tools the pi CLI provides" {
-  for f in "$REPO_ROOT"/agents/*/pi.agent.md; do
-    local tools
-    tools=$(_frontmatter "$f" | sed -n 's/^tools: *//p' | tr -d '[]"' | tr ',' ' ')
-    [ -n "$tools" ]
-    for t in $tools; do
-      case "$t" in
-        read|bash|edit|write|web_search|fetch_content|get_search_content|source_check|mcp|mcpScript) ;;
-        *) echo "unknown pi tool '$t' in $f"; return 1 ;;
-      esac
-    done
-  done
-}
-
 @test "B3: verify-worktree.sh reports a missing lint/typecheck as a non-fatal gap" {
   grep -q 'not_run' "$VERIFY"
 }

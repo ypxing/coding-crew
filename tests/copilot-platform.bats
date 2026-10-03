@@ -29,15 +29,6 @@ teardown() {
 
 # ─── install locations ────────────────────────────────────────────────────────
 
-@test "copilot project install writes agents to .github/agents, not .copilot/agents" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
-
-  [ -f "$TEMP_DIR/.github/agents/crew-coder.agent.md" ]
-  [ -f "$TEMP_DIR/.github/agents/crew-reviewer.agent.md" ]
-  [ ! -e "$TEMP_DIR/.copilot/agents/crew-coder.agent.md" ]
-}
-
 @test "copilot project install writes skills to .github/skills, not .copilot/skills" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
@@ -54,30 +45,6 @@ teardown() {
 
   ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.github/agents/crew-reviewer.agent.md"
   ! grep -q '{{FRAGMENT' "$TEMP_DIR/.github/skills/crew-afk/SKILL.md"
-}
-
-@test "a user-level copilot install keeps ~/.copilot paths" {
-  cd "$SCRIPT_DIR"
-  # A user-level install is TARGET_REPO=$HOME; fake HOME so the real one is untouched.
-  run env HOME="$TEMP_DIR" TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
-  [ "$status" -eq 0 ]
-
-  [ -f "$TEMP_DIR/.copilot/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.copilot/agents/crew-coder.agent.md" ]
-  [ ! -d "$TEMP_DIR/.github/agents" ]
-}
-
-@test "re-install removes a legacy .copilot/ project copy left by an older install" {
-  cd "$SCRIPT_DIR"
-  mkdir -p "$TEMP_DIR/.copilot/agents" "$TEMP_DIR/.copilot/skills/crew-afk"
-  echo "stale agent" > "$TEMP_DIR/.copilot/agents/crew-coder.agent.md"
-  echo "stale body" > "$TEMP_DIR/.copilot/skills/crew-afk/SKILL.md"
-
-  TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
-
-  [ ! -e "$TEMP_DIR/.copilot/agents/crew-coder.agent.md" ]
-  [ ! -e "$TEMP_DIR/.copilot/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.github/agents/crew-coder.agent.md" ]
 }
 
 @test "uninstall sweeps both the current and the legacy copilot locations" {

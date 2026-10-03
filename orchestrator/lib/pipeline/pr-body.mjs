@@ -22,6 +22,7 @@ import { roleBinding } from "./shared.mjs";
  * not run — off, a dry run, or a worktree it could not create. Only reached when it is not red.
  */
 export function checksLine(sprint, integration) {
+  if (integration?.status === "cached" && !integration.reason) return "pass (cached)";
   if (integration?.status !== "pass" || integration.reason) return null;
   const { checks } = readVerifyRecord(join(sprint.dispatchDir, INTEGRATION_STEM, "verify.json"));
   const ran = CHECK_CATEGORIES.filter((c) => checks[c] !== "not_run").map((c) => `${c} ${checks[c]}`);

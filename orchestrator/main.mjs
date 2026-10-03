@@ -121,7 +121,7 @@ import {
   lintIssues,
   missingAssets,
   missingAssetsMessage,
-  runBaseline,
+  runBaselineAsync,
   syncConflictMessage,
   syncFeatureBranch,
 } from "./lib/preflight.mjs";
@@ -796,16 +796,13 @@ async function main() {
       out: (text) => console.log(text),
     };
 
-    // Once, before any dispatch, and only when there is something to dispatch.
+    // Once, before any dispatch, and only when there is something to dispatch. It runs alongside
+    // the first coders (up to --parallel); no verify starts before its verdict, and a red one
+    // stops further claims (loop.mjs) and the run (below).
     if (options.baselineCheck && !options.dryRun) {
       const tracker = await getTracker(mainRoot);
       if (tracker.selectDispatchable(mainRoot, { featureSlug: sprint.featureSlug }).length) {
-        const baseline = runBaseline(ctx);
-        if (baseline.status === "fail") {
-          fatal(baselineFailureMessage(sprint.featureBranch, baseline));
-          exitCode = 1;
-          return exitCode;
-        }
+        ctx.baseline = runBaselineAsync(ctx);
       }
     }
 
@@ -818,7 +815,13 @@ async function main() {
       await checkRequires(ctx, tracker.selectDispatchable(mainRoot, { featureSlug: sprint.featureSlug }));
     }
 
-    ({ stalled } = await runSprint(ctx));
+    const sprintResult = await runSprint(ctx);
+    stalled = sprintResult.stalled;
+    if (sprintResult.baselineFailed) {
+      fatal(baselineFailureMessage(sprint.featureBranch, sprintResult.baselineFailed));
+      exitCode = 1;
+      return exitCode;
+    }
     exitCode = stalled ? 2 : 0;
     return exitCode;
   } catch (err) {
