@@ -187,7 +187,7 @@ Still start each branch's message with `## Branch: <branch-name> (<slug>)`, then
   "detail": "",
   "cause": "code",
   "findings": [
-    {"severity": "CRITICAL", "location": "<path>:<line>", "criterion": "<one verifiable fix criterion>"}
+    {"severity": "CRITICAL", "location": "<path>:<line>", "issue": "<what is wrong, one sentence>", "criterion": "<one verifiable fix criterion>"}
   ]
 }
 ```
@@ -198,7 +198,7 @@ and findings are still reported — the branch returns to a worker with them, un
 `"environment"` (the dispatch says when). `findings` is `[]` when
 there are none; never omit the block itself for a clean branch.
 
-Every finding needs `severity`, `location` (`file:line`), and **one verifiable fix criterion** — the
+Every finding needs `severity`, `location` (`file:line`), `issue` (the problem, one sentence), and **one verifiable fix criterion** — the
 acceptance criterion a fix worker would be given, because that is what it becomes. After the json
 block, add your usual prose per finding, in severity order (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`):
 

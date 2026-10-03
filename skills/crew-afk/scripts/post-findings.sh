@@ -9,7 +9,8 @@ set -euo pipefail
 # The findings are `promote-findings.sh open`'s: those no fix issue covers. They go up as ONE
 # PR review (event COMMENT). A finding whose location is `path:line` on a line the PR diff
 # shows becomes an inline comment; the rest are listed in the review body, grouped by
-# severity. Every finding carries a hidden marker, and one already on the PR (in a review
+# severity. Each shows what is wrong before what the fix must achieve, and triage's verdict and
+# rationale when it has them. Every finding carries a hidden marker, and one already on the PR (in a review
 # body or an inline comment) is skipped, so a re-run posts only what is new.
 #
 # Prints `POSTED: <n> (<inline> inline)`.
@@ -64,8 +65,7 @@ while IFS= read -r row; do
   grep -qF "$marker" "$TMP/existing.txt" && continue
   loc=$(jq -r '.location' <<< "$row")
   path=""; line=0
-  verdict=$(jq -r '.verdict // ""' <<< "$row")
-  if [ "$verdict" != "dismiss" ] && [[ "$loc" =~ ^(.+):([0-9]+)$ ]] && grep -qxF "${BASH_REMATCH[1]}:${BASH_REMATCH[2]}" "$TMP/diff-lines.txt"; then
+  if [[ "$loc" =~ ^(.+):([0-9]+)$ ]] && grep -qxF "${BASH_REMATCH[1]}:${BASH_REMATCH[2]}" "$TMP/diff-lines.txt"; then
     path="${BASH_REMATCH[1]}"; line="${BASH_REMATCH[2]}"
   fi
   jq -c --arg m "$marker" --arg p "$path" --argjson l "$line" '. + {marker: $m, path: $p, line: $l}' <<< "$row" >> "$TMP/annotated.jsonl"
@@ -77,28 +77,26 @@ if [ ! -s "$TMP/annotated.jsonl" ]; then
 fi
 
 jq -s '
+  def what: (if (.issue // "") != "" then .issue + " — Fix: " else "" end) + .criterion;
+  def triage: if (.verdict // "") == "" then "" else
+      "triage: \(.verdict)" + (if (.rationale // "") != "" then " — " + .rationale else "" end) end;
   . as $all
   | ($all | map(select(.path != ""))) as $inline
-  | ($all | map(select(.path == "" and .verdict != "dismiss"))) as $rest
-  | ($all | map(select(.verdict == "dismiss"))) as $dis
-  | (($rest | if length == 0 then "" else
+  | ($all | map(select(.path == ""))) as $rest
+  | ($rest | if length == 0 then "" else
       "\n\n" + ([ "CRITICAL", "HIGH", "MEDIUM", "LOW" ]
         | map(. as $sev | $rest | map(select(.severity == $sev)) | select(length > 0)
             | "### \($sev)\n\n" + (map("- " + (if .location != "" then "`\(.location)` — " else "" end)
-                + .criterion + " (`\(.branch)`) <!-- \(.marker) -->") | join("\n")))
+                + what + " (`\(.branch)`)" + (triage | if . != "" then " — " + . else "" end)
+                + " <!-- \(.marker) -->") | join("\n")))
         | join("\n\n"))
-    end)
-    + ($dis | if length == 0 then "" else
-        "\n\n### Dismissed by triage\n\n" + (map("- " + (if .location != "" then "`\(.location)` — " else "" end)
-          + .criterion + " (`\(.branch)`, \(.severity))"
-          + (if (.rationale // "") != "" then " — why: " + .rationale else "" end)
-          + " <!-- \(.marker) -->") | join("\n"))
-      end)) as $list
+    end) as $list
   | {
       event: "COMMENT",
       body: ("crew-afk review findings. Nothing here is acted on until a human replies." + $list),
       comments: ($inline | map({path, line, side: "RIGHT",
-        body: ("**\(.severity)** (`\(.branch)`) — \(.criterion)\n\n<!-- \(.marker) -->")}))
+        body: ("**\(.severity)** (`\(.branch)`) — \(what)\n\n" + (triage | if . != "" then "_\(.)_\n\n" else "" end)
+          + "<!-- \(.marker) -->")}))
     }
 ' "$TMP/annotated.jsonl" > "$TMP/payload.json"
 

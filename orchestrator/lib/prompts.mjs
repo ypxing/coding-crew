@@ -499,8 +499,9 @@ function coderEvidenceLines(e) {
 }
 
 /**
- * crew-triage's findings mode: judge each review finding Actionable / Debatable / Dismiss, by the
- * shared rubric (inlined in the agent from skills/_shared/fragments/common/findings-rubric.md).
+ * crew-triage's findings mode: judge each review finding Actionable / Debatable, by the shared
+ * rubric (inlined in the agent from skills/_shared/fragments/common/findings-rubric.md). Never
+ * Dismiss: a doubted finding goes to the coder's premise check.
  * Dispatched apart from the reviewer that raised them — a review never grades its own findings.
  * `scope` says where the findings came from; `findings` are report.mjs's normalised findings.
  */
@@ -514,8 +515,8 @@ export function findingsTriagePrompt({ scope, ref, featureBranch, findings, repo
     "Read each cited location before you judge its finding, and CONTEXT.md and docs/adr/ (when",
     "they exist) for any decision a fix would contradict.",
     "",
-    "Findings (index — severity — location — what the reviewer wants):",
-    ...findings.map((f, i) => `${i} — ${f.severity} — ${f.location || "(no location)"} — ${f.criterion}`),
+    "Findings (index — severity — location — problem — fix criterion):",
+    ...findings.map((f, i) => `${i} — ${f.severity} — ${f.location || "(no location)"} — ${f.issue ? `${f.issue} — ` : ""}${f.criterion}`),
     "",
     `Write your structured verdicts to ${reportPath} as your last action. This file is the only`,
     "thing the orchestrator reads — nothing you print in your final message is parsed. One entry",
@@ -527,7 +528,7 @@ export function findingsTriagePrompt({ scope, ref, featureBranch, findings, repo
         findings: [
           {
             index: 0,
-            verdict: "actionable | debatable | dismiss",
+            verdict: "actionable | debatable",
             rationale: "one line: why this verdict",
             adr: "true when the fix would contradict an ADR or CONTEXT.md, else false",
             protected: "true when the fix would touch CI config, auth, deploy or .env, else false",
