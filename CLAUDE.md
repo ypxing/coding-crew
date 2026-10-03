@@ -95,7 +95,6 @@ Effects with one caller each, invoked by `orchestrator/lib/effects.mjs`.
   tracker's closing lines (`closingRefs`) in crew-afk's own block of the body, under the body
   `orchestrator/lib/pipeline/pr-body.mjs` had the `prWriter` role write by following `write-pr`'s
   SKILL.md (installed as an asset at `.coding-crew/write-pr/`), plus the checks line
-- `dispatch-agent.sh` (pi), `dispatch-codex-agent.sh` (codex)
 
 Effects that run for minutes — a worker's `verify-worktree.sh` and `ensure-deps.sh` — go through `Effects.bashAsync`, so each
 worker loop verifies its own branch concurrently; merge and close stay on the blocking `effects.bash`, which is what keeps

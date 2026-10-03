@@ -270,18 +270,6 @@ test("an invalid config.json is a setup error naming every problem", () => {
   assert.match(r.stderr, /"afk\.runtime\.triage" is "cursor"/);
 });
 
-test("doctor names the role when a runtime other than the launcher's is not installed", () => {
-  const root = fixtureRepo();
-  mkdirSync(join(root, ".coding-crew"), { recursive: true });
-  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { runtime: { reviewer: "codex" } } }));
-  const env = { ...process.env, CREW_SCRIPTS: SCRIPTS, MAIN_ROOT: root, HOME: root };
-  delete env.CREW_FAKE_DISPATCH;
-  const r = sh("node", [MAIN, "doctor", "--platform", "claude"], { cwd: root, env });
-  assert.equal(r.code, 1);
-  assert.match(r.stdout, /PROBLEM: reviewer → codex: crew-reviewer agent definition not installed for codex/);
-  assert.doesNotMatch(r.stdout, /→ codex: crew-coder/);
-});
-
 const lineOf = (log, text) => log.split("\n").findIndex((l) => l.includes(text));
 
 test("the PRD audit runs by default after Phase 1, before the flush and the squash", () => {
