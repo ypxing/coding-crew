@@ -171,6 +171,8 @@ export async function runSprint(ctx) {
   const wallMs = Math.max(0, Number(options.maxWallMinutes) || 0) * 60_000;
   const wallElapsed = () => wallMs > 0 && now() - startedAt >= wallMs;
   let wallLogged = false;
+  // The drain loop broke on the cap before Phase 2: parked fix issues wait for the next run.
+  let flushSkipped = false;
 
   function claimNext() {
     if (baselineFailed) return null;
@@ -330,7 +332,10 @@ export async function runSprint(ctx) {
       }
     }
     // Past the cap Phase 2 stays parked: the fix issues wait for the next run.
-    if (wallElapsed()) break;
+    if (wallElapsed()) {
+      flushSkipped = true;
+      break;
+    }
     if (flush(ctx) > 0) {
       // Promoted fix issues are this run's own: not newcomers to lint.
       if (pollMs) seenNow();
@@ -359,7 +364,7 @@ export async function runSprint(ctx) {
   const wallUnclaimed = wallElapsed()
     ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i)).map((i) => i.slug)
     : [];
-  const wallCap = wallUnclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
+  const wallCap = wallUnclaimed.length || flushSkipped ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
   const stalled =
     !capped &&
     (Boolean(wallCap) ||
@@ -559,7 +564,7 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
     }
   }
   if (wallCap) {
-    ctx.out(`\n## Wall-clock cap\n\nThe ${wallCap.minutes}-minute cap elapsed: running workers finished, Phase 2 fix issues stayed parked. Unclaimed (${wallCap.unclaimed.length}):\n${wallCap.unclaimed.map((s) => `- ${s}`).join("\n")}\n`);
+    ctx.out(`\n## Wall-clock cap\n\nThe ${wallCap.minutes}-minute cap elapsed: running workers finished, Phase 2 fix issues stayed parked.${wallCap.unclaimed.length ? ` Unclaimed (${wallCap.unclaimed.length}):\n${wallCap.unclaimed.map((s) => `- ${s}`).join("\n")}` : ""}\n`);
   }
   if (integration) ctx.out(`\n## Integration check\n\n${integrationSection(effects.mainRoot, sprint.featureBranch, integration, integration.fix, integrationFixes)}\n`);
   if (featureReview.skipped) ctx.out(`\n## Feature Review\n\n**Not run:** ${featureReview.skipped}\n`);
@@ -596,7 +601,7 @@ export function isGreen({ exitCode = 0, blocked = [], integration = null, capped
 /** Why a run is not green, one line per cause, for the PR block and the summary. */
 function notGreenReasons({ exitCode, blocked, integration, capped, integrationEnabled, wallCap = null }) {
   const reasons = [];
-  if (wallCap) reasons.push(`the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length} issue(s) unclaimed)`);
+  if (wallCap) reasons.push(`the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length ? `${wallCap.unclaimed.length} issue(s) unclaimed` : "Phase 2 fix issues stayed parked"})`);
   else if (exitCode !== 0) reasons.push("the run stalled with issues unfinished");
   if (blocked.length) reasons.push(`${blocked.length} issue(s) blocked`);
   if (capped) reasons.push("the run stopped at --max-rounds");
