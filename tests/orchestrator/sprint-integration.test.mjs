@@ -442,11 +442,13 @@ test("a feature review that leaves an uncommitted edit in the main checkout is r
 test("a triage that edits the main checkout is not-run with the same log line", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  fake(root, "alpha.worker", "```json\n{\"status\":\"blocked\",\"branch\":\"x\",\"working_directory\":\"x\",\"checks\":{},\"cause\":\"code\"}\n```\n");
+  // A real verify failure (the worker commits; the check is red) routes to triage.
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
   fake(root, "alpha.misbehave", "edit");
   const { r } = commandLines(root, ["--max-rounds", "1"]);
-  const log = traceLog(root);
-  if (/dispatch-triage/.test(log)) assert.match(log, /\[READONLY-VIOLATION\] triage alpha/, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] triage alpha/, `${r.stdout}\n${r.stderr}`);
 });
 
 test("a reviewer that changes nothing proceeds as before, and the AC receipt names the reviewed sha", () => {
