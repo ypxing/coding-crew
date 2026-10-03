@@ -237,6 +237,7 @@ test("wall-clock cap with --open-pr: open-pr.sh gets --draft and a note naming t
     readState: () => ({}),
     getList: () => [],
   });
+  h.ctx.effects.gitRead = () => ({ code: 1, stdout: "" }); // no origin: the PR body has no range
   h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
   const calls = [];
   const bash = h.ctx.effects.bash;

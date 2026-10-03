@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checksLine, extractBody, extractTitle, prdTitle } from "../../orchestrator/lib/pipeline/pr-body.mjs";
+import { checksLine, extractBody, extractTitle, prBase, prdTitle } from "../../orchestrator/lib/pipeline/pr-body.mjs";
 import { prBodyPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("extractBody: keeps the answer from its first ## Summary line, dropping a preamble", () => {
@@ -66,4 +66,25 @@ test("extractTitle: the last # line before ## Summary; none without one", () => 
 test("checksLine: a cached integration result reads as a pass, not `not run`", () => {
   assert.equal(checksLine({ dispatchDir: "/nonexistent" }, { status: "cached", failed: [] }), "pass (cached)");
   assert.equal(checksLine({ dispatchDir: "/nonexistent" }, null), null);
+});
+
+// gitRead stub: answers from a table keyed by the joined args; anything else fails.
+const git = (table) => ({ gitRead: (args) => (args.join(" ") in table ? { code: 0, stdout: `${table[args.join(" ")]}\n` } : { code: 1, stdout: "" }) });
+
+test("prBase: the PR's whole range starts at the merge-base with origin's default branch, not this run's start", () => {
+  const effects = git({
+    "symbolic-ref -q refs/remotes/origin/HEAD": "refs/remotes/origin/trunk",
+    "merge-base origin/trunk feature/demo": "mb1",
+  });
+  assert.equal(prBase(effects, "feature/demo", "run-start"), "mb1");
+});
+
+test("prBase: no origin/HEAD falls back to origin/main, then origin/master", () => {
+  assert.equal(prBase(git({ "merge-base origin/main f": "mb-main" }), "f", "run-start"), "mb-main");
+  assert.equal(prBase(git({ "merge-base origin/master f": "mb-master" }), "f", "run-start"), "mb-master");
+});
+
+test("prBase: no origin default branch to measure from keeps the recorded base", () => {
+  assert.equal(prBase(git({}), "f", "run-start"), "run-start");
+  assert.equal(prBase(git({}), "f", undefined), null);
 });
