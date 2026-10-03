@@ -98,8 +98,8 @@ Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
   SKILL.md (installed as an asset at `.coding-crew/write-pr/`), plus the checks line.
   `--draft` (run not green: stalled, a blocked issue, capped, or an integration check that was `skipped`/red/not run)
   creates the PR as a draft or converts a ready one (`gh pr ready --undo`); without it an open draft is marked ready.
-  `--note-file` puts the blocked list and reason inside the crew-afk block. A failed conversion prints
-  `PR-STATE-FAILED:` and never fails the script or sprint
+  `--note-file` puts the blocked list and reason inside the crew-afk block. A failed conversion, or a
+  `--draft` create the repo refuses (the PR is then created ready), prints `PR-STATE-FAILED:` and never fails the script or sprint
 
 Effects that run for minutes — a worker's `verify-worktree.sh` and `ensure-deps.sh` — go through `Effects.bashAsync`, so each
 worker loop verifies its own branch concurrently; merge and close stay on the blocking `effects.bash`, which is what keeps

@@ -364,6 +364,15 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [[ "$output" == *'Cost:   $2.50 · agent time: 1.0m across 7 turns (every run of this feature)'* ]]
 }
 
+@test "state blocked records the reason for every blocked issue, branch or not" {
+  init_sprint calc
+  state blocked --slug r --reason "requires failed: docker not running" >/dev/null
+  state blocked --slug c --branch crew/calc/c --reason "spec is ambiguous" >/dev/null
+  run jq -r '.blocked_reasons.r, .blocked_reasons.c' .scratch/calc/sprint-state.json
+  [ "${lines[0]}" = "requires failed: docker not running" ]
+  [ "${lines[1]}" = "spec is ambiguous" ]
+}
+
 @test "crew-summary names a main-tree-dirty block as a human's job, with the files" {
   init_sprint calc
   state blocked --slug b --branch crew/calc/b --reason "main-tree-dirty — uncommitted changes in /r would be overwritten: a.ts — commit or stash them in the main checkout, then re-run" >/dev/null

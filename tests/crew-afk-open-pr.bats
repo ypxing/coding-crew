@@ -36,6 +36,7 @@ case "$1 $2" in
     [ -f "$GH_PR" ] || { echo "no pull requests found" >&2; exit 1; }
     cat "$GH_PR" ;;
   "pr create")
+    [[ -n "${GH_DRAFT_UNSUPPORTED:-}" && "$*" == *--draft* ]] && { echo "Draft pull requests are not supported in this repository" >&2; exit 1; }
     jq -n --rawfile body "$(arg --body-file "$@")" --arg title "$(arg --title "$@")" --argjson d "$([[ "$*" == *--draft* ]] && echo true || echo false)" \
       '{url: "https://github.com/o/r/pull/7", state: "OPEN", body: $body, title: $title, isDraft: $d}' > "$GH_PR"
     echo "https://github.com/o/r/pull/7" ;;
@@ -231,6 +232,14 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   [ "$status" -eq 0 ]
   [[ "$output" == *"PR-STATE-FAILED: gh pr ready --undo failed: ready boom"* ]]
   [[ "$output" == *"PR-STATE: ready"* ]]
+}
+
+@test "open-pr --draft where drafts are unsupported: the PR is created ready and the failure is reported" {
+  GH_DRAFT_UNSUPPORTED=1 run bash "$OPEN_PR" --draft --closes-file "$TEMP_DIR/closes.txt"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PR: https://github.com/o/r/pull/7"* ]]
+  [[ "$output" == *"PR-STATE: ready"* ]]
+  [[ "$output" == *"PR-STATE-FAILED: gh pr create --draft failed: Draft pull requests are not supported"* ]]
 }
 
 @test "open-pr --note-file: the note is inside the markers and text outside survives" {

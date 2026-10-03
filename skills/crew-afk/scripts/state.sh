@@ -180,7 +180,7 @@ case "$CMD" in
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@"); reason=$(flag reason "blocked" "$@")
     number=$(flag number "" "$@")
     [ -n "$slug" ] || die "blocked requires --slug"
-    edit_state --arg s "$slug" '.blocked_slugs = ((.blocked_slugs // []) + [$s] | unique)'
+    edit_state --arg s "$slug" --arg r "$reason" '.blocked_slugs = ((.blocked_slugs // []) + [$s] | unique) | .blocked_reasons[$s] = $r'
     # --number: the issue got the `blocked` label; crew-summary prints how to remove it.
     if [ -n "$number" ]; then
       edit_state --arg s "$slug" --argjson n "$number" '.blocked_labelled = ((.blocked_labelled // {}) + {($s): $n})'

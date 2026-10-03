@@ -313,3 +313,33 @@ test("wall-clock cap with --open-pr: open-pr.sh gets --draft and a note naming t
   const note = pr.args[pr.args.indexOf("--note-file") + 1];
   assert.match(readFileSync(note, "utf8"), /wall-clock cap was hit/);
 });
+
+test("--open-pr: an issue blocked with no branch (a failing ## Requires) is listed with its reason", async () => {
+  const { mkdtempSync, readFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "blocked-note-"));
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  h.ctx.options.openPr = true;
+  Object.assign(h.ctx.sprint, {
+    env: { SPRINT_DIR: dir },
+    featureBranch: "crew/demo",
+    readState: () => ({ blocked_reasons: { req: "requires failed: docker not running" } }),
+    getList: (k) => (k === "blocked" ? ["req"] : []),
+  });
+  h.ctx.effects.gitRead = () => ({ code: 1, stdout: "" });
+  h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
+  const calls = [];
+  const bash = h.ctx.effects.bash;
+  h.ctx.effects.bash = (name, args, o) => {
+    calls.push({ name, args });
+    return name === "open-pr.sh" ? { code: 0, stdout: "PR: http://x/1\n", stderr: "" } : bash(name, args, o);
+  };
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  await run;
+  const pr = calls.find((c) => c.name === "open-pr.sh");
+  const note = pr.args[pr.args.indexOf("--note-file") + 1];
+  assert.match(readFileSync(note, "utf8"), /- req — requires failed: docker not running/);
+});

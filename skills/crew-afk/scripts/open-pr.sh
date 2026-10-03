@@ -116,10 +116,17 @@ if [ "$state" = "OPEN" ]; then
     if out=$(gh pr ready "$FEATURE_BRANCH" 2>&1); then is_draft=false; else state_failed="gh pr ready failed: $out"; fi
   fi
 else
-  draft_args=()
-  [ "$DRAFT" = 1 ] && draft_args=(--draft)
-  url=$(gh pr create "${draft_args[@]+"${draft_args[@]}"}" --head "$FEATURE_BRANCH" --title "${TITLE:-$FEATURE_SLUG}" --body-file "$TMP/block.md" | tail -1)
-  is_draft=$([ "$DRAFT" = 1 ] && echo true || echo false)
+  create() { gh pr create "$@" --head "$FEATURE_BRANCH" --title "${TITLE:-$FEATURE_SLUG}" --body-file "$TMP/block.md"; }
+  is_draft=false
+  if [ "$DRAFT" = 1 ]; then
+    # A repo without draft PRs (a private repo on a free plan) refuses --draft: a ready PR, said
+    # so, beats none; the crew-afk block's "Not green" note still says why.
+    if out=$(create --draft 2>&1); then url=$(printf '%s\n' "$out" | tail -1); is_draft=true
+    else state_failed="gh pr create --draft failed: $out"; url=$(create | tail -1)
+    fi
+  else
+    url=$(create | tail -1)
+  fi
 fi
 
 _trace PR "branch=$FEATURE_BRANCH url=$url"

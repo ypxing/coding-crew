@@ -678,7 +678,7 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   writeFileSync(closesFile, refs.length ? `${refs.join("\n")}\n` : "");
   const body = await writePrBody(ctx, { integration });
   const blockedSlugs = sprint.getList("blocked");
-  const retention = sprint.readState().retention ?? {};
+  const { retention = {}, blocked_reasons: blockedReasons = {} } = sprint.readState();
   const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false };
   const green = isGreen(state);
   const reasons = green ? [] : notGreenReasons(state);
@@ -688,7 +688,9 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
     const lines = [`**Not green:** ${reasons.join("; ")}. This PR is a draft.`];
     if (blockedSlugs.length) {
       lines.push("", "Blocked issues:", ...blockedSlugs.map((slug) => {
-        const why = retention[slug]?.reason;
+        // A blocked issue with a branch keeps its reason in retention; one without (a failing
+        // `## Requires`) only in blocked_reasons.
+        const why = retention[slug]?.reason ?? blockedReasons[slug];
         return `- ${slug}${why ? ` — ${why}` : ""}`;
       }));
     }
