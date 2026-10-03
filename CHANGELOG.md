@@ -6,6 +6,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: the four launchers render from one `SKILL.md` with `{{PLATFORM}}` and no per-platform fragments; every platform's frontmatter pre-approves the shell (`allowed-tools: Bash, shell`). The unused `skills/crew-afk/references/test-*.sh` scripts are deleted, and `install.sh --update` removes them from installs.
 - `crew-afk`: the `--open-pr` PR body describes the PR's whole range — from the feature branch's merge-base with origin's default branch (`origin/HEAD`, else `origin/main`, else `origin/master`) — instead of only the latest run's commits; the run's recorded `base_sha` is used only when there is no origin default branch.
 - `crew-afk`: `doctor` runs each active platform CLI's `--help` (`codex exec --help` for codex) and reports a PROBLEM, exit 1, when the output lacks a flag its adapter declares in `requiredFlags` for a full-permission headless run.
 - `crew-afk`: every spawned child runs in its own process group; a timeout (`exec`, `bashAsync`, `spawnWithTimeout`) or SIGINT/SIGTERM to the orchestrator kills the whole group, grandchildren included (exit codes unchanged: 124, 128+signal). Script lookup also checks `CLAUDE_CONFIG_DIR`, `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, `CODEX_HOME` (after the project install, before the `$HOME` defaults).

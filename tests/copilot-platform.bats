@@ -68,7 +68,7 @@ teardown() {
 # exercises the argv and the preflight instead of grepping a body for the promise of them.
 # What stays here is the one dispatch fact that is still the *body's* to carry.
 
-@test "the copilot launcher pre-approves the shell, and no longer the task tool" {
+@test "the launcher pre-approves the shell on every platform, and no longer the task tool" {
   body=$(afk_variant copilot)
   run grep -m1 '^allowed-tools:' "$body"
   [ "$status" -eq 0 ]

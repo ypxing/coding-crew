@@ -29,7 +29,7 @@ teardown() {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
 
-  grep -q "AFK Issue Sprint — pi" "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md"
+  grep -q "run --platform pi " "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md"
   # no unselected platform variants left behind
   [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/pi.SKILL.md" ]
   [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/copilot.SKILL.md" ]
@@ -39,7 +39,7 @@ teardown() {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
 
-  grep -q "AFK Issue Sprint — Claude Code" "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md"
+  grep -q "run --platform claude " "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md"
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/pi.SKILL.md" ]
 }
 

@@ -26,7 +26,7 @@ teardown() {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill crew-afk
 
-  grep -q "AFK Issue Sprint — Codex" "$TEMP_DIR/.agents/skills/crew-afk/SKILL.md"
+  grep -q "run --platform codex " "$TEMP_DIR/.agents/skills/crew-afk/SKILL.md"
   [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/codex.SKILL.md" ]
   [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/pi.SKILL.md" ]
   [ ! -f "$TEMP_DIR/.agents/skills/crew-afk/copilot.SKILL.md" ]
