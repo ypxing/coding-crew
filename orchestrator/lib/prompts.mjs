@@ -288,9 +288,9 @@ export const FEATURE_REVIEW = "feature";
  * Feature mode (crew-reviewer's protocol § Feature Mode): the whole feature diff, once, at the first
  * drain. Same report object as a branch review, but no issue and no criteria — findings only.
  */
-export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAssets, reviewContext }) {
+export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext }) {
   return [
-    "Feature review: review the whole feature diff, once, before it ships.",
+    "Feature review: review the feature diff across its issues before it ships.",
     ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
     ...renderReviewContext(reviewContext),
     `Feature branch: ${featureBranch}`,
@@ -298,7 +298,10 @@ export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAss
     `Branch: ${FEATURE_REVIEW}`,
     `Slug: ${FEATURE_REVIEW}`,
     "",
-    `Gather the diff: git diff ${base}..${featureBranch}`,
+    exclude
+      ? `Gather the diff: git log -p --reverse ${base}..${featureBranch} --not ${exclude}`
+      : `Gather the diff: git diff ${base}..${featureBranch}`,
+    ...(exclude ? ["", `An earlier run already reviewed up to ${base}; this range holds only the commits added since, without anything merged in from ${exclude}.`] : []),
     "",
     "Every issue's branch was already reviewed on its own diff, and the checks passed on the merged",
     "branch. Look for what only the whole diff shows (crew-reviewer's Feature Mode). There is no issue and",

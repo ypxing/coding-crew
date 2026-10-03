@@ -262,7 +262,8 @@ test("wall-clock cap elapsed with nothing ready: flush is skipped, integration s
   h.ctx.sprint.get = (k) => (k === "merged" ? "crew/demo/a" : null);
   // Integration check answers from cache (tree already passed): proves it still runs past the cap.
   Object.assign(h.ctx.sprint, { featureBranch: "crew/demo", readState: () => ({ passing_trees: ["T"] }), state: () => {} });
-  h.ctx.effects.gitRead = () => ({ stdout: "T\n", code: 0 });
+  // The feature review finds no default branch to measure from, and skips.
+  h.ctx.effects.gitRead = (args) => (args[0] === "rev-parse" ? { stdout: "T\n", code: 0 } : { stdout: "", code: 1 });
   const logs = [];
   h.ctx.log = (m) => logs.push(m);
   const run = runSprint(h.ctx);
