@@ -3,7 +3,11 @@
 # dep-install's run.sh, and report each one.
 #
 # Usage:
-#   bash scripts/run-checks.sh --project-root <path> --main-root <path> --dep-scripts <dir>
+#   bash scripts/run-checks.sh --project-root <path> --main-root <path> --dep-scripts <dir> [--targeted]
+#
+# --targeted only means something under CREW_DEFER_FULL_CHECKS=1; without it the full suite runs
+# as always. CREW_BASE_REF names the ref to take the merge-base against (default: origin/HEAD,
+# origin/main, main, master — the first that resolves).
 #
 # Order: typecheck, lint, test, then every other check key with a command (coverage,
 # integration, …) in file order — the same set, in the same order, crew-afk's verify gate runs,
@@ -15,6 +19,12 @@
 #   <key>: modified files: <list> — …      then `<key>: fail (…)`: the check rewrote tracked or
 #                                          untracked files (an auto-fixing lint) — the human
 #                                          commits the rewrite; not something to revert and re-run
+#   test: pass (targeted) | test: fail (targeted, exit N)
+#                                          with CREW_DEFER_FULL_CHECKS=1 and --targeted: only the test
+#                                          files changed on the branch since its merge-base (plus
+#                                          uncommitted ones) ran, as the cached test command with its
+#                                          path/glob arguments swapped for those files
+#   test: deferred (no changed test files) with --targeted and no changed test file: nothing ran
 #   <key>: deferred …                      with CREW_DEFER_FULL_CHECKS=1 only: every check other than
 #                                          typecheck and lint (test, coverage, …) is not run here — the
 #                                          verify gate runs it; report the check as `deferred`
@@ -32,6 +42,7 @@ set -uo pipefail
 PROJECT_ROOT=""
 MAIN_ROOT=""
 DEP_SCRIPTS=""
+TARGETED=0
 TAIL_LINES="${CREW_CHECK_TAIL_LINES:-80}"
 
 while [[ $# -gt 0 ]]; do
@@ -45,6 +56,7 @@ while [[ $# -gt 0 ]]; do
       esac
       shift 2
       ;;
+    --targeted) TARGETED=1; shift ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -112,6 +124,43 @@ _changed_files() {
     | awk 'NF && !seen[$0]++ { printf "%s%s", (n++ ? ", " : ""), $0 }'
 }
 
+# _changed_tests — existing test files changed on this branch since its merge-base, plus
+# uncommitted and untracked ones, one per line.
+_changed_tests() {
+  local ref base="" cand
+  for cand in "${CREW_BASE_REF:-}" origin/HEAD origin/main main master; do
+    [ -n "$cand" ] || continue
+    if git -C "$PROJECT_ROOT" rev-parse --verify -q "$cand^{commit}" >/dev/null 2>&1; then
+      base="$(git -C "$PROJECT_ROOT" merge-base HEAD "$cand" 2>/dev/null)" && [ -n "$base" ] && break
+      base=""
+    fi
+  done
+  {
+    [ -z "$base" ] || git -C "$PROJECT_ROOT" diff --name-only --diff-filter=d "$base" HEAD 2>/dev/null
+    git -C "$PROJECT_ROOT" diff --name-only --diff-filter=d HEAD 2>/dev/null
+    git -C "$PROJECT_ROOT" ls-files --others --exclude-standard 2>/dev/null
+  } | awk 'NF && !seen[$0]++' | grep -E '(\.(bats)$|\.(test|spec)\.[A-Za-z0-9]+$|(^|/)test_[^/]*\.py$|_test\.[A-Za-z0-9]+$|(^|/)(tests?|__tests__)/.*\.[A-Za-z0-9]+$)' | while IFS= read -r f; do
+    [ -f "$PROJECT_ROOT/$f" ] && printf '%s\n' "$f"
+  done
+}
+
+# _targeted_command <cached test command> <files…> — the test command with its path/glob
+# arguments (a word with a glob character or naming an existing path) replaced by the files.
+_targeted_command() {
+  local cmd="$1" w out="" q; shift
+  set -f # the words are inspected, never expanded
+  for w in $cmd; do
+    case "$w" in
+      *[\*\?\[]*) continue ;;
+    esac
+    [ -e "$PROJECT_ROOT/$w" ] && continue
+    out="$out $w"
+  done
+  set +f
+  for q in "$@"; do out="$out $(printf '%q' "$q")"; done
+  printf '%s' "${out# }"
+}
+
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/solve-issue-checks.XXXXXX")"
 OVERALL=0
 for key in "${KEYS[@]}"; do
@@ -120,9 +169,20 @@ for key in "${KEYS[@]}"; do
     echo "$key: NOT RUN: no command found"
     continue
   fi
-  if [ "${CREW_DEFER_FULL_CHECKS:-}" = 1 ] && [ "$key" != typecheck ] && [ "$key" != lint ]; then
+  if [ "${CREW_DEFER_FULL_CHECKS:-}" = 1 ] && [ "$key" != typecheck ] && [ "$key" != lint ] \
+    && ! { [ "$TARGETED" = 1 ] && [ "$key" = test ]; }; then
     echo "$key: deferred — CREW_DEFER_FULL_CHECKS=1; the verify gate runs it on this branch"
     continue
+  fi
+  label=""
+  if [ "${CREW_DEFER_FULL_CHECKS:-}" = 1 ] && [ "$TARGETED" = 1 ] && [ "$key" = test ]; then
+    mapfile -t tfiles < <(_changed_tests)
+    if [ "${#tfiles[@]}" -eq 0 ]; then
+      echo "test: deferred (no changed test files) — nothing ran; the verify gate runs the full suite"
+      continue
+    fi
+    cmd="$(_targeted_command "$cmd" "${tfiles[@]}")"
+    label=1
   fi
   log="$LOG_DIR/$key.log"
   echo "=== $key: $cmd"
@@ -140,9 +200,9 @@ for key in "${KEYS[@]}"; do
     echo "$key: fail (exit $rc, modified files)"
     OVERALL=1
   elif [ "$rc" -eq 0 ]; then
-    echo "$key: pass"
+    echo "$key: pass${label:+ (targeted)}"
   else
-    echo "$key: fail (exit $rc)"
+    echo "$key: fail (${label:+targeted, }exit $rc)"
     OVERALL=1
   fi
   echo "$key: log: $log"

@@ -328,6 +328,11 @@ export class Sprint {
     return this.state(["coverage-gap", "--slug", slug, "--categories", categories.join(",")]);
   }
 
+  /** A coder-side departure from the procedure (a full-suite run): named in the summary, never a failure. */
+  deviation(slug, reason) {
+    return this.state(["deviation", "--slug", slug, "--reason", reason]);
+  }
+
   /** Drops a slug's recorded gap: the latest verify reported none. */
   coverageClear(slug) {
     return this.state(["coverage-clear", "--slug", slug]);

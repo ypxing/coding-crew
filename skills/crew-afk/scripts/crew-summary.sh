@@ -201,6 +201,15 @@ if [ -n "$GAPS" ]; then
   printf '%s\n' "$GAPS"
 fi
 
+# --- Deviations ---------------------------------------------------------------
+DEVIATIONS=$(jq -r '(.deviations // {}) | to_entries[] | .key as $k | .value[] | "- \($k): \(.)"' "$SF" 2>/dev/null || true)
+if [ -n "$DEVIATIONS" ]; then
+  echo ""
+  echo "## Deviations"
+  echo "Coders that ran the full test suite themselves — logged, not failed; the verify gate owns it."
+  printf '%s\n' "$DEVIATIONS"
+fi
+
 # --- Retained Branches --------------------------------------------------------
 RETAINED=$(jq -r '(.retention // {}) | to_entries[] | "- \(.value.branch): retained (\(.value.reason))"' "$SF" 2>/dev/null || true)
 if [ -n "$RETAINED" ]; then
