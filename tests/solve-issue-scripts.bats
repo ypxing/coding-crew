@@ -166,6 +166,18 @@ _cache() {
   [[ "$output" == *"WRAP tests/new.bats"* ]]
 }
 
+@test "run-checks: --targeted keeps a wrapper script that lives under a test dir" {
+  mkdir -p "$WORK/tests"
+  printf 'echo WRAP "$@"\n' > "$WORK/tests/run.sh"
+  git -C "$WORK" add -A; git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/new.bats"
+  _cache '{"typecheck": null, "lint": null, "test": "bash tests/run.sh"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"bash tests/run.sh tests/new.bats"* ]]
+  [[ "$output" == *"WRAP tests/new.bats"* ]]
+}
+
 @test "run-checks: --targeted reports fail (targeted) when the changed tests fail" {
   mkdir -p "$WORK/tests"
   git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main

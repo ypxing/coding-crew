@@ -159,7 +159,12 @@ _targeted_command() {
       *[\*\?\[]*) keep=0 ;;
       *)
         if [ -e "$PROJECT_ROOT/$w" ]; then
-          if [ -d "$PROJECT_ROOT/$w" ] || printf '%s\n' "$w" | grep -qE "$TEST_FILE_RE"; then keep=0; fi
+          if [ -d "$PROJECT_ROOT/$w" ]; then keep=0
+          elif printf '%s\n' "$w" | grep -qE "$TEST_FILE_RE"; then
+            # a shell script that is test-shaped only by its directory (`bash test/run.sh`) is the
+            # runner's wrapper, not a suite file
+            case "$w" in *.sh) printf '%s\n' "$w" | grep -qE '(\.bats$|\.(test|spec)\.|(^|/)test_[^/]*$|_test\.[A-Za-z0-9]+$)' && keep=0 ;; *) keep=0 ;; esac
+          fi
         fi ;;
     esac
     # program position, or the target of `cd`: always the runner's own
