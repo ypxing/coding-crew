@@ -13,7 +13,7 @@
  *       "runtime": { "reviewer": "codex" },
  *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
  *       "fixFindings": "actionable", "PRDAudit": "fix",
- *       "timeouts": { "coder": 45 }, "maxParallel": 3, "installDeps": true, "squashCommits": false,
+ *       "timeouts": { "coder": 45 }, "maxParallel": 3, "maxWallMinutes": 120, "installDeps": true, "squashCommits": false,
  *       "openPr": false,
  *       "baselineCheck": true, "integrationCheck": true, "resumeCoderSession": false,
  *       "limits": { "coder": { "usd": 5 } } } }
@@ -87,6 +87,7 @@ export const DEFAULT_SETTINGS = {
   baselineCheck: true,
   integrationCheck: true,
   resumeCoderSession: false,
+  maxWallMinutes: 120,
 };
 
 // Settings that are one value each, merged by replacement; `check` returns a problem or null.
@@ -94,6 +95,7 @@ const SCALARS = {
   fixFindings: (v) => (FIX_FINDINGS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${FIX_FINDINGS.join(", ")})`),
   PRDAudit: (v) => (PRD_AUDIT.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PRD_AUDIT.join(", ")})`),
   maxParallel: (v) => (Number.isInteger(v) && v > 0 ? null : "must be a positive integer"),
+  maxWallMinutes: (v) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? null : "must be a number of minutes, 0 or more (0 disables the cap)"),
   installDeps: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   squashCommits: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   openPr: (v) => (typeof v === "boolean" ? null : "must be true or false"),
@@ -401,6 +403,7 @@ const FLAG_FOR = {
   fixFindings: "--fix-findings",
   PRDAudit: "--prd-audit",
   maxParallel: "--max-parallel",
+  maxWallMinutes: "--max-wall",
   paneHost: "--pane-host",
   "timeouts.coder": "--coder-timeout",
   "timeouts.reviewer": "--reviewer-timeout",
@@ -460,6 +463,7 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     integrationCheck: pick("integrationCheck"),
     resumeCoderSession: pick("resumeCoderSession"),
     maxParallel: pick("maxParallel"),
+    maxWallMinutes: pick("maxWallMinutes"),
     timeouts,
     limitsUsd: Object.fromEntries(Object.entries(afk.limits ?? {}).map(([role, l]) => [role, l.usd])),
   };

@@ -33,6 +33,8 @@
  *                                           PRD.md after Phase 1; `fix` queues ✗ missing gaps
  *                                           for Phase 2
  *   --max-parallel <n>                     [maxParallel] concurrent coders (the coder runtime's default)
+ *   --max-wall <minutes>                   [maxWallMinutes] default 120, 0 = off; once elapsed no new issue is
+ *                                          claimed, in-flight workers finish, Phase 2 is parked, exit 2
  *   --poll-interval <seconds>              default 30; while work is in flight and a slot is idle, list
  *                                           the tracker once per interval and start any issue made
  *                                           ready mid-run (linted first; an ERROR blocks it for this
@@ -162,6 +164,7 @@ function parseArgs(argv) {
       case "--fix-findings": o.cli.fixFindings = value(); break;
       case "--prd-audit": o.cli.PRDAudit = value(); break;
       case "--max-parallel": o.cli.maxParallel = Number(args.shift()); break;
+      case "--max-wall": o.cli.maxWallMinutes = Number(args.shift()); break;
       case "--poll-interval": o.pollInterval = Number(args.shift()); break;
       case "--pane-host": o.cli.paneHost = value(); break;
       case "--coder-timeout":
@@ -426,7 +429,7 @@ async function main() {
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
         "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none] [--prd-audit off|report|fix]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN]\n" +
-        "  [--poll-interval SEC] [--no-deps] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
+        "  [--max-wall MIN] [--poll-interval SEC] [--no-deps] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
         "  [--allow-dirty] [--no-sync-main] [--dry-run]\n" +
         "  [--reclaim]  (take over a github-tracker feature lease held by a run that is dead)\n" +
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
@@ -561,6 +564,7 @@ async function main() {
     for (const line of crewTable(options.crew, loaded.origin)) console.log(line);
     const tag = (k) => (loaded.origin[k] ? `  [${loaded.origin[k]}]` : "");
     console.log(`parallel:  ${options.parallel}${tag("maxParallel")}`);
+    console.log(`wall cap:  ${options.maxWallMinutes > 0 ? `${options.maxWallMinutes} minutes` : "off"}${tag("maxWallMinutes")}`);
     console.log(`poll:      ${options.pollInterval > 0 ? `every ${options.pollInterval}s while a slot is idle` : "off (--poll-interval 0)"}`);
     console.log(`findings:  fix ${{ none: "none", actionable: "every Actionable finding" }[options.fixFindings] ?? `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
     console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);

@@ -151,3 +151,39 @@ test("a fix issue this run created is not linted", async () => {
   h.gates.get("a")(); h.gates.get("fix")();
   await run;
 });
+
+test("wall-clock cap: once elapsed nothing new is claimed, the running worker finishes, run is stalled and names the cap", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1 });
+  let t = 0;
+  h.ctx.now = () => t;
+  h.ctx.options.maxWallMinutes = 10;
+  const out = [];
+  h.ctx.out = (s) => out.push(s);
+  const run = runSprint(h.ctx);
+  await settle();
+  assert.deepEqual(h.started, ["a"]);
+  h.ready.push({ slug: "b", number: null }, { slug: "c", number: null });
+  t = 10 * 60_000;
+  h.gates.get("a")();
+  const result = await run;
+  assert.deepEqual(h.started, ["a"]);
+  assert.ok(h.done.has("a"));
+  assert.equal(result.stalled, true);
+  const text = out.join("\n");
+  assert.match(text, /10-minute cap/);
+  assert.match(text, /- b\n- c/);
+});
+
+test("wall-clock cap 0 disables it", async () => {
+  const h = harness({ pollInterval: 0, parallel: 1, initial: ["a", "b"] });
+  h.ctx.now = () => 1e12;
+  h.ctx.options.maxWallMinutes = 0;
+  const run = runSprint(h.ctx);
+  await settle();
+  h.gates.get("a")();
+  await settle();
+  h.gates.get("b")();
+  const result = await run;
+  assert.deepEqual(h.started, ["a", "b"]);
+  assert.equal(result.stalled, false);
+});

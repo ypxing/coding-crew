@@ -547,3 +547,13 @@ test("ignoredLimitsNotice names each capped role not on claude, in one line", ()
   assert.match(notice, /^afk\.limits ignored for reviewer \(codex\), triage \(pi\) — /);
   assert.doesNotMatch(notice, /coder/);
 });
+
+test("maxWallMinutes: default 120, flag over config, 0 allowed, non-number rejected", async () => {
+  const { resolveSettings, validateFlags, DEFAULT_SETTINGS } = await import("../../orchestrator/lib/crew-config.mjs");
+  assert.equal(resolveSettings({}).maxWallMinutes, 120);
+  assert.equal(DEFAULT_SETTINGS.maxWallMinutes, 120);
+  assert.equal(resolveSettings({ afk: { maxWallMinutes: 30 } }).maxWallMinutes, 30);
+  assert.equal(resolveSettings({ afk: { maxWallMinutes: 30 }, cli: { maxWallMinutes: 0 } }).maxWallMinutes, 0);
+  assert.deepEqual(validateFlags({ maxWallMinutes: 0 }), []);
+  assert.match(validateFlags({ maxWallMinutes: NaN })[0], /--max-wall/);
+});
