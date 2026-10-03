@@ -51,7 +51,7 @@ export async function runFeatureReview(ctx, { integration = null } = {}) {
 
   const reviewer = roleBinding(ctx, "reviewer");
   ctx.log(`[STEP] step=feature-review model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`);
-  const guarded = await readOnlyDispatch(ctx, { label: "feature-review", all: true }, () => dispatch(
+  const guarded = await readOnlyDispatch(ctx, { label: "feature-review" }, () => dispatch(
     effects,
     reviewer.runtime,
     {

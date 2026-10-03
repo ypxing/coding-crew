@@ -108,9 +108,9 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   ));
-  if (guarded.violation) return { completed: false, violation: true, reportFile, reason: guarded.violation, parsed: { ok: false } };
   const result = guarded.result;
-  sprint.recordDispatchCost(result, { slug: issue.slug, role: "reviewer", attempt: worker.attempt });
+  if (result) sprint.recordDispatchCost(result, { slug: issue.slug, role: "reviewer", attempt: worker.attempt });
+  if (guarded.violation) return { completed: false, violation: true, reportFile, reason: guarded.violation, parsed: { ok: false } };
 
   const sidecar = readSidecar(sidecarFile);
 

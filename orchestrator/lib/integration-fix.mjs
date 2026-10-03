@@ -110,7 +110,7 @@ async function runIntegrationTriage(ctx, result, attempt) {
 
   const triage = roleBinding(ctx, "triage");
   ctx.log(`[STEP] slug=${INTEGRATION_STEM} round=${attempt} step=dispatch-triage model=${triage.model ?? "inherit"} runtime=${triage.runtime}`);
-  const guarded = await readOnlyDispatch(ctx, { label: "integration-triage", all: true }, () => dispatch(
+  const guarded = await readOnlyDispatch(ctx, { label: "integration-triage" }, () => dispatch(
     effects,
     triage.runtime,
     {
@@ -133,9 +133,9 @@ async function runIntegrationTriage(ctx, result, attempt) {
       onTrace: (line) => ctx.heartbeat(`slug=${INTEGRATION_STEM} round=${attempt} ${line}`),
     },
   ));
-  if (guarded.violation) return { completed: false, parsed: { ok: false, detail: guarded.violation }, limitExceeded: null };
   const dispatched = guarded.result;
-  sprint.recordDispatchCost(dispatched, { slug: INTEGRATION_STEM, role: "triage", attempt });
+  if (dispatched) sprint.recordDispatchCost(dispatched, { slug: INTEGRATION_STEM, role: "triage", attempt });
+  if (guarded.violation) return { completed: false, parsed: { ok: false, detail: guarded.violation }, limitExceeded: null };
   const parsed = parseTriageReport(dispatched.text, readSidecar(sidecarFile));
   return { completed: !dispatched.timedOut && parsed.ok, parsed, limitExceeded: limitExceeded(dispatched, "triage", triage) };
 }

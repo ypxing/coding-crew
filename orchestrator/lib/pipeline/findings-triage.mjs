@@ -86,7 +86,7 @@ async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug,
 
   const triage = roleBinding(ctx, "triage");
   ctx.log(`[STEP] slug=${dispatchSlug} round=${round} step=dispatch-findings-triage model=${triage.model ?? "inherit"} runtime=${triage.runtime}`);
-  const guarded = await readOnlyDispatch(ctx, { label: `findings-triage ${dispatchSlug}`, ...(ref === sprint.featureBranch ? { all: true } : { branches: [ref] }) }, () => dispatch(
+  const guarded = await readOnlyDispatch(ctx, { label: `findings-triage ${dispatchSlug}`, ...(ref === sprint.featureBranch ? {} : { branches: [ref] }) }, () => dispatch(
     effects,
     triage.runtime,
     {
@@ -109,9 +109,9 @@ async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug,
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchSlug} round=${round} ${line}`),
     },
   ));
-  if (guarded.violation) return { failed: guarded.violation };
   const result = guarded.result;
-  sprint.recordDispatchCost(result, { slug: ledgerSlug, role: "triage", attempt: round });
+  if (result) sprint.recordDispatchCost(result, { slug: ledgerSlug, role: "triage", attempt: round });
+  if (guarded.violation) return { failed: guarded.violation };
 
   const capped = limitExceeded(result, "triage", triage);
   if (capped) return { failed: capped };

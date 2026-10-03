@@ -14,7 +14,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { constants as osConstants } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 /**
  * Process groups of live children. Every async child is spawned `detached` (its own group, pid == pgid)
@@ -60,6 +60,16 @@ export function registeredPids() {
 
 process.on("exit", () => killAllGroups());
 
+// crew-afk scripts that move a branch ref or HEAD in the main checkout.
+const REF_MOVING_SCRIPTS = new Set([
+  "merge-branches.sh",
+  "resolve-merge-conflicts.sh",
+  "squash-commits.sh",
+  "cleanup-worktrees.sh",
+  "sync-feature-branch.sh",
+  "session-init.sh",
+]);
+
 export class Effects {
   /**
    * @param {object} o
@@ -76,8 +86,14 @@ export class Effects {
     this.env = env;
     /** @type {{argv: string[], cwd: string}[]} */
     this.recorded = [];
-    /** Counts effects that may change the repository (start and end of each): lets a read-only guard tell its dispatch from a concurrent merge. */
-    this.mutations = 0;
+    // What the orchestrator's own effects may have moved, so a read-only guard can tell its
+    // dispatch's ref changes from theirs: `mainMoves` counts effects that can move the main
+    // checkout's HEAD or any branch from it (a merge, a mutating git there); `touched` lists, in
+    // order, the worktrees a mutating git or a dispatch ran in; `active` counts the dispatches
+    // still running in each.
+    this.mainMoves = 0;
+    this.touched = [];
+    this.active = new Map();
   }
 
   script(name) {
@@ -105,7 +121,7 @@ export class Effects {
       return { code: 0, stdout: "", stderr: "", dryRun: true };
     }
     this.recorded.push({ argv, cwd });
-    if (mutating) this.mutations++;
+    if (mutating) this.noteRefActivity(cmd, args, cwd);
     const r = spawnSync(cmd, args, {
       cwd,
       input,
@@ -123,7 +139,7 @@ export class Effects {
     const code = interrupted ? 128 + (osConstants.signals[r.signal] ?? 0) : r.status === null ? 124 : r.status;
     this.log(`RUN  (${code}) ${argv.map(quote).join(" ")}${interrupted ? ` [${r.signal}]` : ""}`);
     if (r.error) this.log(`ERR  ${r.error.message}`);
-    if (mutating) this.mutations++;
+    if (mutating) this.noteRefActivity(cmd, args, cwd);
     return { code, stdout: r.stdout ?? "", stderr: r.stderr ?? "", error: r.error, interrupted, signal: r.signal ?? null };
   }
 
@@ -139,7 +155,7 @@ export class Effects {
       return Promise.resolve({ code: 0, stdout: "", stderr: "", dryRun: true });
     }
     this.recorded.push({ argv, cwd });
-    if (mutating) this.mutations++;
+    if (mutating) this.noteRefActivity(cmd, args, cwd);
     return new Promise((resolve) => {
       let stdout = "";
       let stderr = "";
@@ -148,7 +164,7 @@ export class Effects {
       let timedOut = false;
       let timer = null;
       const finish = (status, signal = null) => {
-        if (mutating) this.mutations++;
+        if (mutating) this.noteRefActivity(cmd, args, cwd);
         if (settled) return;
         settled = true;
         if (timer) clearTimeout(timer);
@@ -187,6 +203,43 @@ export class Effects {
       });
       child.on("close", (code, signal) => finish(code, signal));
     });
+  }
+
+  /** Record what a mutating effect may move (see the constructor); called at its start and its end. */
+  noteRefActivity(cmd, args, cwd) {
+    if (cmd === "git") {
+      const where = args[0] === "-C" ? args[1] : cwd;
+      if (where === this.mainRoot) this.mainMoves++;
+      else this.touched.push(where);
+    } else if (cmd === "bash" && REF_MOVING_SCRIPTS.has(basename(args[0] ?? ""))) {
+      this.mainMoves++;
+    }
+  }
+
+  /** A dispatch running in `cwd` (a worker's worktree) for as long as `run` takes. */
+  async inWorktree(cwd, run) {
+    this.touched.push(cwd);
+    this.active.set(cwd, (this.active.get(cwd) ?? 0) + 1);
+    try {
+      return await run();
+    } finally {
+      const n = this.active.get(cwd) - 1;
+      if (n > 0) this.active.set(cwd, n);
+      else this.active.delete(cwd);
+    }
+  }
+
+  /** A point to measure the orchestrator's own ref activity from (`refActivitySince`). */
+  refActivityMark() {
+    return { mainMoves: this.mainMoves, touched: this.touched.length, active: new Set(this.active.keys()) };
+  }
+
+  /** Since `mark`: whether the main checkout's refs may have moved, and every worktree that was busy. */
+  refActivitySince(mark) {
+    return {
+      main: this.mainMoves !== mark.mainMoves,
+      worktrees: new Set([...mark.active, ...this.active.keys(), ...this.touched.slice(mark.touched)]),
+    };
   }
 
   git(args, opts = {}) {

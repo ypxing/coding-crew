@@ -189,67 +189,84 @@ export function readSidecar(file) {
 }
 
 /**
- * What a read-only dispatch (reviewer, triage) must leave untouched, as `{key: value}`: the named
- * branch refs (or, with `all`, every crew/<feature>/ ref and the feature branch), the main
- * checkout's HEAD, and its uncommitted changes (sprint state under .scratch/ aside — the
- * orchestrator and the dispatch's own sidecar write there). Throws when git cannot answer, so
- * the caller fails closed.
+ * What a read-only dispatch (reviewer, triage) must leave untouched, as `{key: value}`: every
+ * crew/<feature>/ ref, the feature branch, the main checkout's HEAD (commit and the branch it is
+ * on), and its uncommitted changes (sprint state under .scratch/ aside — the orchestrator and the
+ * dispatch's own sidecar write there). `worktrees` maps each crew branch to its worktree, for
+ * attribution only. Throws when git cannot answer, so the caller fails closed.
  */
-export function readOnlySnapshot(ctx, { branches = [], all = false } = {}) {
+export function readOnlySnapshot(ctx) {
   const { sprint, effects } = ctx;
-  const git = (args) => {
+  const git = (args, { quiet = false } = {}) => {
     const r = effects.gitRead(args);
-    if (r.code !== 0) throw new Error(`git ${args[0]} exited ${r.code}: ${(r.stderr || "").trim().slice(0, 200)}`);
-    return r.stdout;
+    if (r.code !== 0 && !quiet) throw new Error(`git ${args[0]} exited ${r.code}: ${(r.stderr || "").trim().slice(0, 200)}`);
+    return r.code === 0 ? r.stdout : "";
   };
-  const snap = {};
-  const names = all ? [sprint.featureBranch, ...branches] : branches;
-  if (all) {
-    for (const line of git(["for-each-ref", "--format=%(refname) %(objectname)", `refs/heads/crew/${sprint.featureSlug}/`]).split("\n").filter(Boolean)) {
-      const [ref, sha] = line.split(" ");
-      snap[ref] = sha;
-    }
+  const refs = {};
+  for (const line of git(["for-each-ref", "--format=%(refname) %(objectname)", `refs/heads/crew/${sprint.featureSlug}/`, `refs/heads/${sprint.featureBranch}`]).split("\n").filter(Boolean)) {
+    const [ref, sha] = line.split(" ");
+    refs[ref] = sha;
   }
-  for (const name of names) snap[`refs/heads/${name}`] = git(["rev-parse", "--verify", `refs/heads/${name}`]).trim();
-  snap.HEAD = git(["rev-parse", "HEAD"]).trim();
-  snap["uncommitted changes in the main checkout"] = git(["status", "--porcelain"])
+  refs.HEAD = git(["rev-parse", "HEAD"]).trim();
+  // Detached HEAD is a state too: `symbolic-ref` exits 1 there, which is an answer, not an error.
+  refs["HEAD's branch"] = git(["symbolic-ref", "-q", "HEAD"], { quiet: true }).trim() || "(detached)";
+  refs["uncommitted changes in the main checkout"] = git(["status", "--porcelain"])
     .split("\n")
     .filter((l) => l && !/^.. "?\.scratch\//.test(l) && !/^\?\? "?\.scratch\/?"?$/.test(l))
     .join("\n");
-  return snap;
+  const worktrees = {};
+  let path = null;
+  for (const line of git(["worktree", "list", "--porcelain"]).split("\n")) {
+    if (line.startsWith("worktree ")) path = line.slice("worktree ".length);
+    else if (line.startsWith("branch ") && path) worktrees[line.slice("branch ".length)] = path;
+  }
+  return { refs, worktrees };
 }
 
 /**
  * Run a read-only dispatch under a before/after snapshot. Returns `{result}` when nothing
- * changed, or `{violation}` (a reason string, already logged as [READONLY-VIOLATION]) when
- * the snapshot could not be taken — in which case `run` never starts — or the dispatch
- * changed anything. Never open: a violation is a not-run for the caller to record.
+ * changed, or `{violation, result}` (a reason string, already logged as [READONLY-VIOLATION])
+ * when the dispatch changed anything — or `{violation}` alone when a snapshot could not be taken,
+ * in which case `run` never starts or its outcome is not trusted. Never open: a violation is a
+ * not-run for the caller to record; `result` only lets it account for what the dispatch cost.
+ *
+ * A change the orchestrator's own concurrent effects could have made is not blamed on the
+ * dispatch: the feature branch and HEAD while a merge (or other main-checkout ref move) ran, and
+ * a crew branch while its worktree was busy (its worker committing, a git run in it).
+ * `branches` names the dispatch's own branch(es), which nothing else touches during it.
  */
-export async function readOnlyDispatch(ctx, { label, ...scope }, run) {
-  const fail = (why) => {
+export async function readOnlyDispatch(ctx, { label, branches = [] }, run) {
+  const fail = (why, result) => {
     ctx.log(`[READONLY-VIOLATION] ${label}: ${why}`, "warn");
-    return { violation: `read-only violation (${why})` };
+    return { violation: `read-only violation (${why})`, ...(result === undefined ? {} : { result }) };
   };
+  const { effects, sprint } = ctx;
   let before;
   try {
-    before = readOnlySnapshot(ctx, scope);
+    before = readOnlySnapshot(ctx);
   } catch (e) {
     return fail(`snapshot failed: ${e.message}`);
   }
-  const mutationsBefore = ctx.effects.mutations;
+  const mark = effects.refActivityMark();
   const result = await run();
-  const concurrent = ctx.effects.mutations !== mutationsBefore;
+  const activity = effects.refActivitySince(mark);
   let after;
   try {
-    after = readOnlySnapshot(ctx, scope);
+    after = readOnlySnapshot(ctx);
   } catch (e) {
-    return fail(`snapshot failed: ${e.message}`);
+    return fail(`snapshot failed: ${e.message}`, result);
   }
-  // A merge or another worker's git work ran meanwhile, so HEAD, the main tree and the shared refs
-  // moved for reasons that are not this dispatch's: only its own branch ref is still attributable.
-  // The main checkout's uncommitted changes stay attributable: merges and worker effects commit or run in worktrees, never leave an edit there.
-  const attributable = (k) => !concurrent || k === "uncommitted changes in the main checkout" || (scope.branches ?? []).some((b) => k === `refs/heads/${b}`);
-  const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((k) => attributable(k) && before[k] !== after[k]);
-  if (changed.length) return fail(`changed ${changed.join(", ")}`);
+  const own = new Set(branches.map((b) => `refs/heads/${b}`));
+  const mainRefs = new Set(["HEAD", "HEAD's branch", `refs/heads/${sprint.featureBranch}`]);
+  const attributable = (k) => {
+    if (own.has(k) || k === "uncommitted changes in the main checkout") return true;
+    if (mainRefs.has(k)) return !activity.main;
+    // A crew branch: created or deleted by a main-checkout effect, or moved from its worktree.
+    const wt = before.worktrees[k] ?? after.worktrees[k];
+    return !activity.main && !(wt && activity.worktrees.has(wt));
+  };
+  const keys = new Set([...Object.keys(before.refs), ...Object.keys(after.refs)]);
+  const changed = [...keys].filter((k) => before.refs[k] !== after.refs[k] && attributable(k));
+  if (changed.length) return fail(`changed ${changed.join(", ")}`, result);
   return { result };
 }

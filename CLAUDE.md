@@ -152,10 +152,12 @@ merged; skipped (the summary says so) when the integration check is red; a dispa
 not-run and never fails the sprint.
 
 Reviewer, triage (verify, findings, integration) and feature-review dispatches are mechanically read-only
-(`pipeline/shared.mjs`'s `readOnlyDispatch`): refs, main `HEAD` and the main checkout's uncommitted changes are
-snapshotted around the dispatch; any change (or a snapshot git cannot take) fails it closed as not-run and logs
-`[READONLY-VIOLATION]`. When another effect mutated the repo meanwhile (`Effects.mutations`), only the dispatch's own
-branch ref is compared. The AC receipt is written with `receipts.sh write ac --branch <b> --sha <reviewed sha>`, so a
+(`pipeline/shared.mjs`'s `readOnlyDispatch`): every `crew/<feature>/*` ref, the feature branch, main `HEAD` (commit
+and branch) and the main checkout's uncommitted changes are snapshotted around the dispatch; any change (or a
+snapshot git cannot take) fails it closed as not-run and logs `[READONLY-VIOLATION]`, with the dispatch's cost still
+recorded. A change the orchestrator's own concurrent effects could have made is not blamed on it (`Effects`'
+`refActivityMark`/`refActivitySince`): the feature branch and `HEAD` while a merge or other main-checkout ref move
+ran, a crew branch while its worktree was busy (its worker dispatch, a git run there). The AC receipt is written with `receipts.sh write ac --branch <b> --sha <reviewed sha>`, so a
 branch that moved during review fails `check ac --at-tip` as stale.
 
 ## `to-issues`' linter (`skills/to-issues/scripts/lint-issues.sh`)

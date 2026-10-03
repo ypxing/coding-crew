@@ -243,16 +243,20 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   const ownsOut = !!adapter?.lastMessageFile && !!built.jsonEvents && !process.env.CREW_FAKE_DISPATCH;
   if (ownsOut) writeFileSync(spec.outFile, "");
 
-  const r = await spawnDispatch(effects, built.cmd, built.args, {
-    cwd: built.cwd,
-    env: built.env,
-    timeoutMs,
-    onLine,
-    stem: spec.outFile,
-    title: `${spec.slug ?? "crew-afk"} ${spec.agent}`,
-    jsonEvents: built.jsonEvents,
-    agent: spec.agent,
-  });
+  const spawned = () =>
+    spawnDispatch(effects, built.cmd, built.args, {
+      cwd: built.cwd,
+      env: built.env,
+      timeoutMs,
+      onLine,
+      stem: spec.outFile,
+      title: `${spec.slug ?? "crew-afk"} ${spec.agent}`,
+      jsonEvents: built.jsonEvents,
+      agent: spec.agent,
+    });
+  // A worker commits to its worktree's branch while it runs: a read-only guard elsewhere must not
+  // blame that ref move on its own dispatch.
+  const r = spec.cwd && spec.cwd !== spec.mainRoot && effects.inWorktree ? await effects.inWorktree(spec.cwd, spawned) : await spawned();
   consumeLine(lineBuffer);
 
   let meta = EMPTY_RESULT_META;

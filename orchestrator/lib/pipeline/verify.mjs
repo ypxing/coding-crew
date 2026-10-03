@@ -135,9 +135,9 @@ export async function runTriage(ctx, worker, verifyStdout) {
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${worker.attempt} ${line}`),
     },
   ));
-  if (guarded.violation) return { completed: false, parsed: { ok: false, detail: guarded.violation }, limitExceeded: null };
   const result = guarded.result;
-  sprint.recordDispatchCost(result, { slug: issue.slug, role: "triage", attempt: worker.attempt });
+  if (result) sprint.recordDispatchCost(result, { slug: issue.slug, role: "triage", attempt: worker.attempt });
+  if (guarded.violation) return { completed: false, parsed: { ok: false, detail: guarded.violation }, limitExceeded: null };
 
   const sidecar = readSidecar(sidecarFile);
 
