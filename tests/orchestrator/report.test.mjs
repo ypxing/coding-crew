@@ -9,6 +9,7 @@ import {
   EVIDENCE_OUTPUT_MAX,
   findingsAtOrAbove,
   parseFindingsTriage,
+  foldDuplicates,
   parsePrdAudit,
   parseRequiresFailures,
   parseReviewAggregate,
@@ -681,6 +682,39 @@ test("parseFindingsTriage is all-or-nothing: a missing, unknown, duplicate or st
   assert.match(parseFindingsTriage({ findings: [ok, ok] }, 1).detail, /judges finding 0 twice/);
   assert.match(parseFindingsTriage({ findings: [{ index: 3, verdict: "actionable" }] }, 1).detail, /outside 0\.\.0/);
   for (const bad of [null, {}, { findings: [ok] }]) assert.equal(parseFindingsTriage(bad, 2).ok, false);
+});
+
+test("parseFindingsTriage reads duplicate_of and rejects out-of-range, self and chained ones", () => {
+  const a = { index: 0, verdict: "actionable" };
+  const dup = (of) => ({ index: 1, verdict: "actionable", duplicate_of: of });
+  const ok = parseFindingsTriage({ findings: [a, dup(0)] }, 2);
+  assert.equal(ok.verdicts[1].duplicate_of, 0);
+  assert.equal(ok.verdicts[0].duplicate_of, undefined);
+  assert.match(parseFindingsTriage({ findings: [a, dup(5)] }, 2).detail, /outside 0\.\.1/);
+  assert.match(parseFindingsTriage({ findings: [a, dup(-1)] }, 2).detail, /outside 0\.\.1/);
+  assert.match(parseFindingsTriage({ findings: [a, dup(1)] }, 2).detail, /duplicate of itself/);
+  const chain = parseFindingsTriage({ findings: [{ ...a, duplicate_of: 1 }, dup(0)] }, 2);
+  assert.match(chain.detail, /itself a duplicate/);
+});
+
+test("foldDuplicates promotes the target once, at the higher severity, naming both locations", () => {
+  const judged = applyFindingVerdicts(
+    [
+      { severity: "LOW", location: "a.ts:1", criterion: "fix x" },
+      { severity: "HIGH", location: "b.ts:2", criterion: "fix x too" },
+    ],
+    [
+      { verdict: "actionable", rationale: "", adr: false, protected: false },
+      { verdict: "actionable", rationale: "", adr: false, protected: false, duplicate_of: 0 },
+    ],
+  );
+  const out = foldDuplicates(judged, judged);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].severity, "HIGH");
+  assert.match(out[0].criterion, /fix x.*a\.ts:1|fix x.*b\.ts:2/);
+  assert.match(out[0].location, /a\.ts:1/);
+  assert.match(out[0].location, /b\.ts:2/);
+  assert.equal(annotateFindings({ findings: judged.map((f) => ({ severity: f.severity })) }, judged).findings[1].duplicate_of, 0);
 });
 
 test("touchesProtectedPath: CI config, auth, deploy and .env, by the finding's location", () => {

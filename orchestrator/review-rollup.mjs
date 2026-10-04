@@ -48,7 +48,8 @@ function main(argv) {
   // branch and buys jq/bash consumers nothing.
   const branches = order.map((key) => {
     const { branch, slug, verdict, detail, findings } = byBranch.get(key);
-    return { branch, slug, verdict, detail, findings };
+    // A finding triage folded into another one (`duplicate_of`) is shown once, as its target.
+    return { branch, slug, verdict, detail, findings: findings.filter((f) => f.duplicate_of === undefined) };
   });
   process.stdout.write(`${JSON.stringify({ branches })}\n`);
 }
