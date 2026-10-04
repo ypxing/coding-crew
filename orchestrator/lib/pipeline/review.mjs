@@ -175,6 +175,8 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
 /**
  * The newest review block of `branch` in the sprint review reports, shaped like runReview's
  * result, when it is all-met: what a merge-route retry (no review this round) promotes from.
+ * Null too once any report's `## Promoted Findings` names the branch: an earlier run, from before
+ * promotion followed the close, already made its fix issue.
  */
 export function savedAllMetReview(sprint, branch) {
   if (!existsSync(sprint.reviewDir)) return null;
@@ -182,11 +184,27 @@ export function savedAllMetReview(sprint, branch) {
   for (const name of readdirSync(sprint.reviewDir).filter((n) => /^sprint-review-.*\.md$/.test(n)).sort()) {
     const reportFile = join(sprint.reviewDir, name);
     const text = readFileSync(reportFile, "utf8");
+    const promoted = text.split(/^## Promoted Findings$/m).slice(1).join("\n");
+    if (promoted.split("\n").some((l) => l.startsWith(`- ${branch}: `))) return null;
     const written = allFencedJson(text, "verdict").filter((o) => o.branch === branch);
     const recs = parseReviewBlocks(text).filter((r) => r.branch === branch);
     if (recs.length) found = { reportFile, parsed: recs.at(-1), written: written.at(-1) };
   }
   return found?.parsed.verdict === "all-met" ? { completed: true, ...found } : null;
+}
+
+/**
+ * The command that shows what `branch` brought into the feature branch, which it has merged into:
+ * from the first parent of its (--no-ff) merge commit. Without one found (a dry run), its tip commit.
+ */
+function mergedChange(effects, featureBranch, branch) {
+  const tip = effects.gitRead(["rev-parse", "--verify", "-q", `refs/heads/${branch}^{commit}`]).stdout.trim();
+  const merge = effects
+    .gitRead(["rev-list", "--first-parent", "--merges", "--parents", featureBranch])
+    .stdout.split("\n")
+    .map((l) => l.trim().split(/\s+/))
+    .find((shas) => tip && shas.slice(2).includes(tip))?.[0];
+  return merge ? `git diff ${merge}^1...${branch}` : `git show ${branch}`;
 }
 
 export async function promote(ctx, worker, review, outcome) {
@@ -208,6 +226,7 @@ export async function promote(ctx, worker, review, outcome) {
     label: issue.slug,
     scope: `Findings raised against branch ${branch} (issue ${issue.slug}), which has merged.`,
     ref: branch,
+    change: mergedChange(effects, sprint.featureBranch, branch),
     dir: dispatchIssueDir(sprint.dispatchDir, issue),
     dispatchSlug: `${dispatchStem(issue)}-findings`,
     round: worker.attempt,

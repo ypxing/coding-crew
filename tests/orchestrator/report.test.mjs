@@ -776,7 +776,7 @@ test("review findings carry issue, or an empty string when absent", () => {
 test("findingsTriagePrompt lists issue before criterion", async () => {
   const { findingsTriagePrompt } = await import("../../orchestrator/lib/prompts.mjs");
   const out = findingsTriagePrompt({
-    scope: "s", ref: "r", featureBranch: "f", reportPath: "/p",
+    scope: "s", ref: "r", change: "git diff c", reportPath: "/p",
     findings: [{ severity: "HIGH", location: "a.ts:1", issue: "PROBLEM-TEXT", criterion: "FIX-TEXT" }],
   });
   assert.ok(out.indexOf("PROBLEM-TEXT") > -1 && out.indexOf("PROBLEM-TEXT") < out.indexOf("FIX-TEXT"));
@@ -785,7 +785,7 @@ test("findingsTriagePrompt lists issue before criterion", async () => {
 
 test("findingsTriagePrompt does not offer dismiss", async () => {
   const { findingsTriagePrompt } = await import("../../orchestrator/lib/prompts.mjs");
-  const out = findingsTriagePrompt({ scope: "s", ref: "r", featureBranch: "f", findings: [{ severity: "LOW", location: "a:1", criterion: "x" }], reportPath: "/p" });
+  const out = findingsTriagePrompt({ scope: "s", ref: "r", change: "git diff c", findings: [{ severity: "LOW", location: "a:1", criterion: "x" }], reportPath: "/p" });
   assert.match(out, /"actionable \| debatable"/);
   assert.doesNotMatch(out, /dismiss \|?"|\| dismiss/);
 });

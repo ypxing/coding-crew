@@ -272,6 +272,27 @@ test("a merged-and-closed branch is promoted exactly once, after the close", () 
   const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/findings-triage-prompt.md"), "utf8");
   assert.match(prompt, /which has merged\./);
   assert.doesNotMatch(prompt, /has not merged/);
+  // The change triage is pointed at is the branch's own, not the merged feature branch against it.
+  const change = /the change with (git diff \S+\^1\.\.\.crew\/demo\/alpha)\./.exec(prompt)?.[1];
+  assert.ok(change, prompt);
+  // The sprint's cleanup has since deleted the branch, so read the range through the merge's second parent.
+  const git = (args) => sh("git", ["-C", root, ...args]).stdout.trim();
+  const merge = change.split(" ")[2].replace(/\^1\.\.\..*$/, "");
+  assert.equal(git(["log", "-1", "--format=%s", merge]), "Merge branch 'crew/demo/alpha'");
+  assert.equal(git(["diff", "--name-only", `${merge}^1...${merge}^2`]), "src/alpha.txt", "only the branch's own change");
+});
+
+test("savedAllMetReview: a branch an earlier run already promoted (pre-merge) is not promoted again", async () => {
+  const { savedAllMetReview } = await import("../../orchestrator/lib/pipeline/review.mjs");
+  const root = fixtureRepo();
+  const reviewDir = join(root, ".scratch/demo/reviews");
+  mkdirSync(reviewDir, { recursive: true });
+  const report = join(reviewDir, "sprint-review-00000000T000000.md");
+  writeFileSync(report, reviewOf([retryHigh]));
+  assert.equal(savedAllMetReview({ reviewDir }, "crew/demo/alpha")?.parsed.verdict, "all-met");
+  writeFileSync(report, `${reviewOf([retryHigh])}\n## Promoted Findings\n\n- crew/demo/alpha: actionable → 02-fix\n`);
+  assert.equal(savedAllMetReview({ reviewDir }, "crew/demo/alpha"), null);
+  assert.equal(savedAllMetReview({ reviewDir }, "crew/demo/alph"), null, "no block for that branch");
 });
 
 // ─── findings an earlier review raised and the latest dropped are carried forward ──

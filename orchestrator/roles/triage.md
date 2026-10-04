@@ -99,8 +99,8 @@ Answer only `actionable` or `debatable`. The rubric below also names Dismiss, bu
 fix in hand and reports it already met or a wrong premise, whereas a dismissal here would bury
 it unseen. When unsure whether a finding is valid, answer `actionable`.
 
-Read the prompt's code with `git show <branch>:<path>` as it directs (the main checkout is not on
-that branch), `CONTEXT.md` and `docs/adr/` when they exist. Judge by this rubric — the same one
+Read the prompt's code with `git show <branch>:<path>` and its change with the command it gives (the
+main checkout is not on that branch), `CONTEXT.md` and `docs/adr/` when they exist. Judge by this rubric — the same one
 `/crew-address-findings` applies, so an unattended run and a human one classify alike:
 
 {{FRAGMENT:findings-rubric}}
