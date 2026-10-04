@@ -94,6 +94,10 @@ The helper is wrong after the change.
 ## PRD
 
 - **D1** — the decision text.
+
+### Compatibility & Migration
+
+Old reports stay readable.
 EOC
 }
 
@@ -115,6 +119,14 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
     [ -s "$d/$f" ]
   done
   grep -q 'the decision text' "$d/branch-case-head.feat.prompt.md"
+}
+
+@test "a feature case's prompt carries the PRD's Compatibility & Migration section verbatim" {
+  run run_eval --dry-run
+  [ "$status" -eq 0 ]
+  d=$(out_dir)
+  grep -q 'PRD ## Compatibility & Migration (verbatim):' "$d/feature-case-head.feature-1.prompt.md"
+  grep -q 'Old reports stay readable.' "$d/feature-case-head.feature-1.prompt.md"
 }
 
 @test "each ref's prompts carry that ref's own protocol text" {

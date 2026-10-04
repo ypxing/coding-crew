@@ -30,7 +30,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { LIMIT_RE, pool, runClaude, shuffleLabels } from "./eval-design-skills.mjs";
+import { LIMIT_RE, parseJudge, pool, runClaude, shuffleLabels } from "./eval-design-skills.mjs";
 
 const ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
 const HERE = path.join(ROOT, "scripts", "eval-reviewer-misses");
@@ -111,11 +111,7 @@ export function judgePrompt(rubric, c, labelled) {
   ].join("\n");
 }
 
-export function parseJudge(text) {
-  const s = text.indexOf("["), e = text.lastIndexOf("]");
-  if (s < 0 || e < s) throw new Error("judge reply has no JSON array");
-  return JSON.parse(text.slice(s, e + 1));
-}
+export { parseJudge };
 
 /** Findings reported in one reviewer output: the `findings` of its last fenced json block that has them; null when none parses. */
 export function countFindings(text) {
