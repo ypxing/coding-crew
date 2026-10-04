@@ -128,6 +128,13 @@ export function countFindings(text) {
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const fmt = (n) => (n === null ? "n/a" : n.toFixed(1));
 
+/** head / base as text: a base mean of 0 is an increase (or no change), not a missing mean. */
+export function formatRatio(base, head) {
+  if (base == null || head == null) return "n/a";
+  if (base === 0) return head > 0 ? `inf (base 0, head ${fmt(head)})` : "n/a (base 0, head 0)";
+  return (head / base).toFixed(2) + "x";
+}
+
 /** Per case: mean raw and distinct findings per ref, plus head/base distinct ratio and the max(2x, +2) noise-bound verdict. */
 export function aggregate(rows, cases) {
   const out = {};
@@ -142,7 +149,7 @@ export function aggregate(rows, cases) {
       };
     }
     const base = entry.base?.meanDistinct, head = entry.head?.meanDistinct;
-    entry.ratio = base && head != null ? head / base : null;
+    entry.ratio = base && head != null ? head / base : null; // base 0 stays null in JSON; summary.md carries the text
     entry.withinBound = base != null && head != null ? head <= Math.max(2 * base, base + 2) : null;
     out[c.name] = entry;
   }
@@ -166,7 +173,7 @@ export function summarize(rows, cases) {
   }
   lines.push("", "Mean distinct findings, head / base: " + cases.map((c) => {
     const { base, head } = means[c.name] ?? {};
-    const ratio = base && head != null ? (head / base).toFixed(2) + "x" : "n/a";
+    const ratio = formatRatio(base, head);
     const within = base != null && head != null ? (head <= Math.max(2 * base, base + 2) ? "within" : "over") : "n/a";
     return `${c.name} ${ratio} (${within} max(2x, +2))`;
   }).join("; "));
