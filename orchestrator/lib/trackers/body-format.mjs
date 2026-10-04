@@ -10,9 +10,12 @@
 
 /** The code fence open after `line`, given the one open before it: "" when none (``` / ~~~, closed by the same mark). */
 function fenceAfter(fence, line) {
-  if (fence) return line.startsWith(fence) && /^ {0,3}(`{3,}|~{3,})\s*$/.test(line) ? "" : fence;
+  if (fence) {
+    const c = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
+    return c && c[1][0] === fence[0] && c[1].length >= fence.length ? "" : fence;
+  }
   const m = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-  return m ? m[1].slice(0, 3) : "";
+  return m ? m[1] : "";
 }
 
 /**
@@ -75,8 +78,11 @@ export function spliceSection(text, heading, body) {
     return `${text}${sep}${block}\n`;
   }
   let end = lines.length;
+  fence = "";
   for (let i = start + 1; i < lines.length; i++) {
-    const m = /^(#{1,6})\s+/.exec(lines[i]);
+    const inFence = fence !== "";
+    fence = fenceAfter(fence, lines[i]);
+    const m = !inFence && !fence ? /^(#{1,6})\s+/.exec(lines[i]) : null;
     if (m && m[1].length <= level) {
       end = i;
       break;
