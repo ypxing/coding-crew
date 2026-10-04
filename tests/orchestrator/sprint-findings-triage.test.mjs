@@ -4,9 +4,9 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { REPO, SCRIPTS, sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, test } from "./helpers/sprint.mjs";
+import { REPO, SCRIPTS, sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, privateScripts, failFirstCall, test } from "./helpers/sprint.mjs";
 
 // ─── fixFindings actionable (the default): crew-triage judges each finding, whatever its severity ──
 
@@ -212,4 +212,49 @@ test("actionable: a review with no findings dispatches no triage", () => {
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(findingsTriageSpawns(lines), 0);
   assert.doesNotMatch(r.stdout, /## Findings Triage/);
+});
+
+// ─── promotion follows the merge and the close, never precedes them ──
+
+const deferCalls = (lines) => lines.map((l, i) => [l, i]).filter(([l]) => /promote-findings\.sh.* defer /.test(l));
+
+test("a conflicted-looking merge failure promotes nothing: no defer call, no fix issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "actionable", rationale: "local" }]));
+  const scripts = privateScripts();
+  failFirstCall(scripts, "merge-branches.sh", join(root, ".scratch/merge-fail.marker"), "MERGE: forced failure for test");
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(deferCalls(lines).length, 0);
+  assert.equal(existsSync(join(root, ".scratch/demo/reviews/alpha.criteria.md")), false);
+});
+
+test("a refused close promotes nothing", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "actionable", rationale: "local" }]));
+  const scripts = privateScripts();
+  failFirstCall(scripts, "close-issue.sh", join(root, ".scratch/close-fail.marker"), "ERROR: forced close failure for test");
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(deferCalls(lines).length, 0);
+});
+
+test("a merged-and-closed branch is promoted exactly once, after the close", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "actionable", rationale: "local" }]));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const defers = deferCalls(lines);
+  assert.equal(defers.length, 1);
+  const closeAt = lines.findIndex((l) => /close-issue\.sh/.test(l));
+  assert.ok(closeAt >= 0 && closeAt < defers[0][1], "defer comes after close-issue.sh");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/findings-triage-prompt.md"), "utf8");
+  assert.match(prompt, /which has merged\./);
+  assert.doesNotMatch(prompt, /has not merged/);
 });

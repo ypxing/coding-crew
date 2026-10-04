@@ -186,6 +186,10 @@ cmd_guard() {
       exit 0
     fi
   else
+    # Promotion follows the close, which moves the file from open/ to done/ beside it.
+    if [ ! -f "$issue" ] && [ -f "$(dirname "$(dirname "$issue")")/done/$(basename "$issue")" ]; then
+      issue="$(dirname "$(dirname "$issue")")/done/$(basename "$issue")"
+    fi
     # A missing file cannot be shown to be a fix issue. Fail closed: no promotion.
     if [ ! -f "$issue" ]; then
       echo "guard: skip — issue file not found: $issue"

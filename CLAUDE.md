@@ -113,7 +113,7 @@ output naming no failing check even on a second run — is retained as `verify-i
 re-verified next round with no triage and no coder (`pipeline/verify.mjs`).
 
 Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
-AC receipt → promote → merge → close. Deps sit there because that one position is before both
+AC receipt → merge → close → promote. Deps sit there because that one position is before both
 consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any
 gate whose receipt already matches the branch tip (`gatesAtTip`).
 

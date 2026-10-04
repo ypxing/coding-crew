@@ -7,7 +7,7 @@ import { after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO, MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog, state, fake, workerReport, AUDIT_WITH_GAP, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, test } from "./helpers/sprint.mjs";
+import { REPO, MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog, state, fake, workerReport, AUDIT_WITH_GAP, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, privateScripts, failFirstCall, test } from "./helpers/sprint.mjs";
 
 // ─── GitHub tracker backend wiring ────────────────────────────────────────────
 //
@@ -427,6 +427,34 @@ test("github: a findings fix issue from the last branch, not listed yet, is stil
   assert.ok(fix, `the findings fix issue was never created\n${traceLog(root)}`);
   assert.ok(fix.labels.some((l) => l.name === "awaiting-merge"), `the fix issue was never implemented\n${traceLog(root)}`);
   assert.doesNotMatch(r.stdout, /Fix issues not implemented/);
+});
+
+test("github: a branch whose merge fails creates no findings fix issue", () => {
+  const root = githubFixtureRepo();
+  const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
+  fake(
+    root,
+    "alpha.review",
+    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "all-met", findings: [{ severity: "HIGH", location: "somewhere in alpha", criterion: "Check the boundary" }] })}\n\`\`\`\n`,
+  );
+  const scripts = privateScripts();
+  failFirstCall(scripts, "merge-branches.sh", join(root, ".scratch/merge-fail.marker"), "MERGE: forced failure for test");
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CREW_SCRIPTS: scripts,
+      CREW_MAX_ROUNDS: "1",
+      CREW_FAKE_DISPATCH: FAKE,
+      CREW_FAKE_DIR: join(root, ".scratch/fake"),
+      MAIN_ROOT: root,
+      CREW_GITHUB_TRACKER_CLI: join(REPO, "orchestrator/lib/trackers/github.mjs"),
+      PATH: `${stub}:${process.env.PATH}`,
+    },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const issues = JSON.parse(readFileSync(issuesFile, "utf8"));
+  assert.ok(!issues.some((i) => i.title === "Fix review findings: alpha"), `a fix issue was created for an unmerged branch\n${traceLog(root)}`);
 });
 
 test("a gaps issue that could not be created is named in the summary, not only the trace", () => {
