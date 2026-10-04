@@ -32,6 +32,16 @@ function main(argv) {
       const key = rec.branch ?? `#${order.length}`;
       if (!byBranch.has(key)) order.push(key);
       byBranch.set(key, rec);
+      // A whole-feature review that wrote its `feature` block covered every area, so an earlier
+      // run's not-run `feature-<n>` gap is closed; a gap written after the block (same run) stays.
+      if (rec.branch === "feature") {
+        for (const k of [...byBranch.keys()]) {
+          if (/^feature-\d+$/.test(k) && byBranch.get(k).verdict === "not_run") {
+            byBranch.delete(k);
+            order.splice(order.indexOf(k), 1);
+          }
+        }
+      }
     }
   }
   // Only the fields callers actually need — `raw` duplicates the whole source block per

@@ -105,21 +105,27 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
     return reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFile });
   }));
 
-  // A gap on disk, so remind and the summary show it instead of reading as a clean review.
-  const failures = runs.filter((r) => r.reason);
-  for (const r of failures) {
-    ctx.log(`FEATURE-REVIEW: ${r.slug} not run — ${r.reason}`, "warn");
-    effects.bash("promote-findings.sh", [
-      "mark-not-run",
-      "--feature-slug", sprint.featureSlug,
-      "--branch", r.slug,
-      "--slug", r.slug,
-      "--report", reportFile,
-      "--reason", r.reason,
-    ], { env: sprint.childEnv() });
-  }
   const ok = runs.filter((r) => !r.reason);
-  if (!ok.length) return { failed: runs.length === 1 ? failures[0].reason : failures.map((r) => `${r.slug}: ${r.reason}`).join("; "), report: reportFile };
+  const failures = runs.filter((r) => r.reason);
+  // A gap on disk, so remind and the summary show it instead of reading as a clean review. With a
+  // `feature` block it is written after it: the block closes an earlier run's gaps when the rollup folds.
+  const markGaps = () => {
+    for (const r of failures) {
+      ctx.log(`FEATURE-REVIEW: ${r.slug} not run — ${r.reason}`, "warn");
+      effects.bash("promote-findings.sh", [
+        "mark-not-run",
+        "--feature-slug", sprint.featureSlug,
+        "--branch", r.slug,
+        "--slug", r.slug,
+        "--report", reportFile,
+        "--reason", r.reason,
+      ], { env: sprint.childEnv() });
+    }
+  };
+  if (!ok.length) {
+    markGaps();
+    return { failed: runs.length === 1 ? failures[0].reason : failures.map((r) => `${r.slug}: ${r.reason}`).join("; "), report: reportFile };
+  }
 
   // One `feature` block whatever the reviewers called themselves: the aggregate keys on it.
   const seen = new Set();
@@ -132,6 +138,8 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   const block = `## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
+
+  markGaps();
 
   // An area that left no review is a gap the next run should still cover, so the tip is kept for a full pass.
   if (!failures.length) sprint.state(["feature-reviewed", "--tip", range.tip]);
