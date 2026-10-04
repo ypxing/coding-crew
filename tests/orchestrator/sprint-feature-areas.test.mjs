@@ -100,11 +100,17 @@ test("a planner that fails, or answers with no json or no areas, gives one whole
   }
 });
 
-test("a planner that times out falls back to one area", () => {
+test("a planner that times out falls back to one whole-diff area and logs why", () => {
   const root = twoIssues();
-  const { r, lines } = commandLines(root, ["--reviewer-timeout", "0.01"]);
+  fake(root, "feature-planner.sleep", "10");
+  const { r, lines } = commandLines(root, ["--reviewer-timeout", "0.02"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.ok(areaReviews(lines).length <= 1);
+  assert.equal(planners(lines).length, 1);
+  assert.equal(areaReviews(lines).length, 1);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8");
+  assert.match(prompt, /- src\/alpha\.txt/);
+  assert.match(prompt, /- src\/beta\.txt/);
+  assert.match(traceLog(root), /FEATURE-REVIEW: planner fallback — the planner timed out/);
 });
 
 test("one failed area is recorded not-run as feature-<n>; the others' findings are still reported and promoted", () => {

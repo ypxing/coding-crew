@@ -20,6 +20,8 @@
 #                         the same <slug>.review-once.calls counter file.
 #   <slug>.review-sleep   the reviewer sleeps this many seconds before answering — with a
 #                         fractional --reviewer-timeout, a review dispatch that times out.
+#   feature-planner.sleep  the feature review's planner sleeps this many seconds before answering — with a
+#                         fractional --reviewer-timeout, a planner that times out.
 #   <slug>.misbehave      a reviewer/triage dispatch that breaks its read-only contract; the content
 #                         is `commit` (a commit on the crew/*/<slug> branch) or `edit` (an uncommitted
 #                         file in the main checkout). Applies to every reviewer/triage call for the slug.
@@ -151,6 +153,7 @@ fi
 # `--agent feature-planner` stands in for the feature review's planner: $CREW_FAKE_DIR/feature-planner.response
 # verbatim when present, else an answer with no json block (the one-area fallback).
 if [ "$AGENT" = "feature-planner" ]; then
+  [ -f "$FAKE_DIR/feature-planner.sleep" ] && sleep "$(cat "$FAKE_DIR/feature-planner.sleep")"
   if [ -f "$FAKE_DIR/feature-planner.response" ]; then cat "$FAKE_DIR/feature-planner.response" > "$OUT"; else echo "No plan." > "$OUT"; fi
   [ -f "$FAKE_DIR/feature-planner.exit" ] && exit "$(cat "$FAKE_DIR/feature-planner.exit")"
   exit 0
