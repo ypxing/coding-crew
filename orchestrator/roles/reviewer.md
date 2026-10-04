@@ -85,9 +85,24 @@ downgraded or dropped.
 3. **Read what the change relies on and affects** — never review a hunk in isolation. Read the
    full file and its imports, then the callers of what changed, what it calls, and the state it
    reads or writes (files, config, saved reports, records older versions left behind). A fault in
-   that code the change exposes or depends on is a finding even though no hunk touches it. When the
-   dispatch marks the diff test-only, read each test and the code it exercises, and skip caller
-   tracing: tests have no callers.
+   that code the change exposes or depends on is a finding even though no hunk touches it.
+
+   Name what the change moves, reorders or re-scopes (a step that now runs later, a value now
+   computed elsewhere, a condition that now holds at a different time, a format or key now
+   written differently), then find each other consumer of the old behaviour: prompts, docs,
+   helpers, scripts, tests and anything already saved on disk by an earlier version or run. Read
+   each one as it stands at the branch tip and say whether it still holds. A check that passes
+   only because the diff was read and the rest was assumed is not a check.
+
+   A criterion or PRD decision names the line it changes; the defect is usually in the rest of that
+   function, prompt or document, in a sentence, argument or default that still assumes the old
+   behaviour. Read the whole of every function and prompt they name, and check each statement in it
+   against the new behaviour. If the PRD has a compatibility or migration section, run the new path
+   against the state it says older versions left behind: what happens when that state is already
+   there?
+
+   When the dispatch marks the diff test-only, read each test and the code it exercises, and skip
+   caller tracing: tests have no callers.
 4. **Apply Step 3 plus every loaded reference**, CRITICAL to LOW, then report in the format below.
 
 ### Step 3 — Always-on classes
@@ -132,7 +147,7 @@ holds, with the same severity rubric. A defect inside one issue's diff is report
 An `Area:` block in the prompt (name, files, the full text of each decision) narrows the dispatch, and
 its `Gather the diff:` line, to one area of the feature; other reviewers read the rest in parallel. Read
 every file of the area end to end, plus callers outside it as needed, not only the diff hunks. For each
-decision given, say whether the merged code honours it and what input breaks it; a decision that does not
+decision given, read the whole function, prompt or document it names, not only the line it changes, and say whether the merged code honours it and what input breaks it; a decision that does not
 hold is a finding, naming the input that breaks it. With no `Area:` block, review the whole range as above.
 
 Write the same object to the report path with `branch` and `slug` both `"feature"`, `verdict` always
