@@ -116,3 +116,18 @@ test("review-rollup: a later not_run block keeps the earlier block's findings, c
   assert.equal(b.verdict, "not_run");
   assert.deepEqual(b.findings.map((f) => f.carried), [true]);
 });
+
+test("review-rollup folds a duplicate into its target: higher severity, both locations, shown once", () => {
+  const dir = mkdtempSync(join(tmpdir(), "review-rollup-"));
+  const f = join(dir, "sprint-review-1.md");
+  const findings = [
+    { severity: "MEDIUM", location: "a.ts:1", criterion: "fix x", verdict: "debatable" },
+    { severity: "HIGH", location: "b.ts:2", criterion: "fix x too", verdict: "actionable", duplicate_of: 0 },
+  ];
+  writeFileSync(f, ["```json", JSON.stringify({ branch: "feature", slug: "feature", verdict: "all-met", findings }), "```"].join("\n"));
+  const out = runRollup([f]).branches[0].findings;
+  assert.equal(out.length, 1);
+  assert.equal(out[0].severity, "HIGH");
+  assert.match(out[0].location, /a\.ts:1/);
+  assert.match(out[0].location, /b\.ts:2/);
+});

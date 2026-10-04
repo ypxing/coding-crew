@@ -198,7 +198,7 @@ for idx in "${!NAMES[@]}"; do
     case "$lower" in none* | n/a* | nothing*) continue ;; esac
 
     found=0
-    # Issue #n / Issue n references — scanned over the entry minus its *.md filename tokens, so a
+    # `Issue #n` / `Issue n` / bare `#n` references (the set github.mjs's blockerNumbers reads) — scanned over the entry minus its *.md filename tokens, so a
     # filename like fix-issue-3-thing.md is not also read as "Issue #3"
     read -r -a toks <<< "$entry"
     rest=""
@@ -206,9 +206,9 @@ for idx in "${!NAMES[@]}"; do
       strip_markup "$tok"
       [[ "$STRIPPED" == *.md ]] || rest+="$tok "
     done
-    while [[ "$rest" =~ [Ii][Ss][Ss][Uu][Ee][[:space:]-]*#?0*([0-9]+) ]]; do
+    while [[ "$rest" =~ ([Ii][Ss][Ss][Uu][Ee][[:space:]-]*#?|#)0*([0-9]+) ]]; do
       found=1
-      n="${BASH_REMATCH[1]}"
+      n="${BASH_REMATCH[2]}"
       rest="${rest#*"${BASH_REMATCH[0]}"}"
       if target=$(resolve_number "$n"); then
         resolved+="$target"$'\n'
