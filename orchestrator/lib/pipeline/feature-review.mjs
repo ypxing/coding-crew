@@ -208,6 +208,26 @@ function carryEarlierFindings(reportFile, earlier) {
   writeFileSync(reportFile, `${text.slice(0, from)}${JSON.stringify(block)}${text.slice(to)}`);
 }
 
+/**
+ * Marks `report_only: true` on these findings in the report's last `feature` block: the fix issue an
+ * earlier drain promoted leaves a `- feature: …` bullet that would otherwise read them as covered too.
+ */
+function markReportOnly(reportFile, findings) {
+  const text = readFileSync(reportFile, "utf8");
+  const start = text.lastIndexOf(`## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})`);
+  const open = start < 0 ? -1 : text.indexOf("```json\n", start);
+  if (open < 0) return;
+  const from = open + "```json\n".length;
+  const to = text.indexOf("\n```", from);
+  if (to < 0) return;
+  let block;
+  try { block = JSON.parse(text.slice(from, to)); } catch { return; }
+  const key = (f) => JSON.stringify([f.severity, f.location, f.criterion]);
+  const marked = new Set(findings.map(key));
+  block.findings = (block.findings ?? []).map((f) => (marked.has(key(f)) ? { ...f, report_only: true } : f));
+  writeFileSync(reportFile, `${text.slice(0, from)}${JSON.stringify(block)}${text.slice(to)}`);
+}
+
 /** One area's crew-reviewer dispatch: `{ slug, parsed }`, or `{ slug, reason }` when it left no review. */
 async function reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFile }) {
   const { sprint, effects, options } = ctx;
@@ -270,6 +290,7 @@ async function promoteFeature(ctx, { findings, reportFile, dir, written, change,
   // Past the promotion cap: what the rule would have promoted is only reported, never made a fix issue.
   if (!promote) {
     ctx.log(`FEATURE-REVIEW: ${promotable.length} finding(s) the rule would promote are report-only at this drain`);
+    markReportOnly(reportFile, promotable);
     return { reportOnly: promotable };
   }
   const criteriaPath = join(sprint.reviewDir, `${FEATURE_REVIEW}.criteria.md`);

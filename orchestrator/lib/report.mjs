@@ -271,6 +271,8 @@ function findingsFromStructured(list) {
       explicit: true,
       // Set by carryFindings: raised by an earlier review of the branch, not repeated by the latest.
       ...(f.carried === true ? { carried: true } : {}),
+      // Set on a feature-review finding the promotion cap left report-only: no fix issue covers it.
+      ...(f.report_only === true ? { report_only: true } : {}),
       // Written beside the finding once findings triage has judged it (annotateFindings below).
       ...(FINDING_VERDICTS.includes(String(f.verdict).toLowerCase())
         ? { verdict: String(f.verdict).toLowerCase(), rationale: f.rationale ? String(f.rationale).trim() : "" }
