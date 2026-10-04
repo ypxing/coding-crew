@@ -33,7 +33,7 @@ test("a merge conflict is retried through the coder, resolved, re-verified, re-r
   const loser = kept[1];
   assert.match(log, new RegExp(`MERGE\\] branch=crew/demo/${loser} success=false reason=conflict`));
   assert.doesNotMatch(log, /\[SKIP-TO-MERGE\]/, "a conflict must not take the merge-only route");
-  const prompt = readFileSync(join(root, `.scratch/demo/dispatch/${loser === "alpha" ? "01" : "02"}-${loser}/prompt.md`), "utf8");
+  const prompt = readFileSync(join(root, `.scratch/demo/dispatch/${loser === "alpha" ? "01" : "02"}-${loser}/conflict-prompt.md`), "utf8");
   assert.match(prompt, /A merge of `feature\/demo` into this branch is in progress/);
   assert.match(prompt, /^- src\/shared\.txt$/m);
 
@@ -106,6 +106,8 @@ for (const [label, retained, setup] of [
     assert.match(state(root).retention?.alpha?.reason ?? "", retained);
 
     rmSync(join(root, ".scratch/fake/alpha.review"), { force: true });
+    // The fix dispatch runs after the conflict one; it must not rewrite the merged file.
+    rmSync(join(root, ".scratch/fake/alpha.shared"), { force: true });
     addIssue(root, "00-beta.md");
     fake(root, "beta.shared");
     const second = commandLines(root, ["--max-parallel", "1"]);
@@ -114,13 +116,36 @@ for (const [label, retained, setup] of [
     assert.deepEqual([...s.completed_slugs].sort(), ["alpha", "beta"], traceLog(root));
     assert.match(traceLog(root), /\[SYNC-CONFLICT-KEPT\] slug=alpha /);
     assert.doesNotMatch(traceLog(root), /\[SYNC-CONFLICT\] slug=alpha/);
-    const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
-    assert.match(prompt, /A merge of `feature\/demo` into this branch is in progress/);
-    if (label.startsWith("a criteria")) assert.match(prompt, /AC 1 has no test/, "the review fix is still asked for");
+    const dir = join(root, ".scratch/demo/dispatch/01-alpha");
+    assert.match(readFileSync(join(dir, "conflict-prompt.md"), "utf8"), /A merge of `feature\/demo` into this branch is in progress/);
+    if (label.startsWith("a criteria")) {
+      const prompt = readFileSync(join(dir, "prompt.md"), "utf8");
+      assert.match(prompt, /AC 1 has no test/, "the review fix is still asked for");
+      assert.doesNotMatch(prompt, /in progress|git commit --no-edit/, "no conflict text in the fix prompt");
+    }
     const shared = sh("git", ["-C", root, "show", "feature/demo:src/shared.txt"]).stdout;
     assert.deepEqual(shared.trim().split("\n").sort(), ["alpha", "beta"]);
   });
 }
+
+test("a conflict dispatch that leaves the merge unresolved is judged by git, and the original route does not run", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.shared");
+  fake(root, "alpha.review-once", "2");
+  const first = commandLines(root, ["--max-rounds", "1"]);
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  rmSync(join(root, ".scratch/fake/alpha.shared"), { force: true });
+  addIssue(root, "00-beta.md");
+  fake(root, "beta.shared");
+  fake(root, "alpha.no-resolve");
+  const second = commandLines(root, ["--max-parallel", "1"]);
+  const log = traceLog(root);
+  assert.match(log, /\[CONFLICT-UNRESOLVED\] slug=alpha /, `${second.r.stdout}\n${log}`);
+  assert.match(log, /merge-conflict/, "retained as a conflict");
+  assert.match(log, /step=dispatch-conflict/);
+  assert.doesNotMatch(log, /slug=01-alpha round=\d+ step=dispatch-coder/, "the original route's coder never ran");
+});
 
 test("a close-refused retry skips the worker, verify, and review, no-ops the already-merged retry, and succeeds on a retried close", () => {
   const root = fixtureRepo();
