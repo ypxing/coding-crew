@@ -601,7 +601,8 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
     const queued = featureReview.promoted
       ? `; ${featureReview.promoted} ${sprint.fixFindings === "actionable" ? "Actionable" : "at or above the fix threshold"} went to Phase 2`
       : "";
-    ctx.out(`\n## Feature Review\n\nThe whole feature diff was reviewed once: ${n} finding(s)${queued} (see ${featureReview.report}, branch \`feature\`).\n`);
+    const gaps = featureReview.areaFailures?.length ? `\n\n**Not run (${featureReview.areaFailures.length} of ${featureReview.areas} area reviewers):**\n${featureReview.areaFailures.map((f) => `- ${f}`).join("\n")}` : "";
+    ctx.out(`\n## Feature Review\n\nThe feature was reviewed in ${featureReview.areas} area(s): ${n} finding(s)${queued} (see ${featureReview.report}, branch \`feature\`).${gaps}\n`);
   }
   if (sprint.triageFallbacks.length) {
     const lines = sprint.triageFallbacks.map((f) => `- ${f.scope}: ${f.reason}`);

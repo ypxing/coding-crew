@@ -1,0 +1,215 @@
+/**
+ * The feature review's areas: a whole-feature review is split by a planner into up to `maxParallel`
+ * areas, each read end to end by its own reviewer. The planner is one plain dispatch (like the PRD
+ * audit) on the reviewer's binding; its answer is validated against the diff and the PRD, and any
+ * failure to plan gives one area over the whole diff with every decision.
+ */
+
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { dispatchPlain } from "../dispatch.mjs";
+import { implementedIds, loadPrdDecisions } from "../prd-decisions.mjs";
+import { getTracker } from "../tracker.mjs";
+import { FEATURE_REVIEW } from "../prompts.mjs";
+import { readOnlyDispatch, roleBinding } from "./shared.mjs";
+
+export const FEATURE_PLAN = `${FEATURE_REVIEW}-plan`;
+
+/** Pure: the last fenced json block of the planner's answer, parsed; null when there is none. */
+export function parsePlannerAnswer(text) {
+  const blocks = [...String(text ?? "").matchAll(/```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g)];
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    try {
+      const v = JSON.parse(blocks[i][1]);
+      if (v && typeof v === "object") return v;
+    } catch {
+      /* try the previous block */
+    }
+  }
+  return null;
+}
+
+const size = (a) => a.files.length;
+
+/**
+ * Pure: the planner's `areas` made safe to dispatch. Paths not in the diff and IDs not in the PRD
+ * are dropped, an area left with no file goes, more than `max` areas are merged down (the two
+ * smallest first), and a changed file no area holds joins the smallest one. Empty when nothing
+ * valid remains.
+ */
+export function normalizeAreas(raw, { diffFiles, decisionIds, max }) {
+  const inDiff = new Set(diffFiles);
+  const inPrd = new Set(decisionIds);
+  const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string").map((x) => x.trim()) : []);
+  let areas = (Array.isArray(raw) ? raw : [])
+    .filter((a) => a && typeof a === "object")
+    .map((a, i) => ({
+      name: typeof a.name === "string" && a.name.trim() ? a.name.trim() : `area ${i + 1}`,
+      files: [...new Set(strings(a.files).filter((f) => inDiff.has(f)))],
+      decisions: [...new Set(strings(a.decisions).filter((d) => inPrd.has(d)))],
+    }))
+    .filter((a) => a.files.length);
+  if (!areas.length) return [];
+  while (areas.length > Math.max(1, max)) {
+    areas.sort((x, y) => size(x) - size(y));
+    const [a, b, ...rest] = areas;
+    areas = [
+      {
+        name: `${a.name} + ${b.name}`,
+        files: [...new Set([...a.files, ...b.files])],
+        decisions: [...new Set([...a.decisions, ...b.decisions])],
+      },
+      ...rest,
+    ];
+  }
+  const covered = new Set(areas.flatMap((a) => a.files));
+  const left = diffFiles.filter((f) => !covered.has(f));
+  if (left.length) {
+    const smallest = areas.reduce((m, a) => (size(a) < size(m) ? a : m));
+    smallest.files = [...smallest.files, ...left];
+  }
+  return areas;
+}
+
+/** The one area a failed or empty plan falls back to. */
+export function wholeFeatureArea(diffFiles, decisionIds) {
+  return { name: "whole feature", files: [...diffFiles], decisions: [...decisionIds] };
+}
+
+/** Pure: what the planner is told. */
+export function plannerPrompt({ featureBranch, base, max, stat, issues, decisions }) {
+  return [
+    `Feature review planning: split the review of ${featureBranch} (diff ${base}..${featureBranch}) into at most ${max} areas.`,
+    "Each area is read end to end by one reviewer, who judges whether the PRD decisions you give it hold in the merged code.",
+    "Group files that work together (one flow, one module and its callers) and give each area the decisions that touch it.",
+    "You may only read this prompt: answer from it, run nothing.",
+    "",
+    "Diff stat:",
+    "```",
+    stat.trimEnd(),
+    "```",
+    "",
+    "Merged issues (files changed, PRD decision IDs each implements):",
+    ...(issues.length
+      ? issues.map((i) => `- ${i.branch}: files ${i.files.join(", ") || "(none)"}; implements ${i.ids.join(", ") || "(none named)"}`)
+      : ["- (none found in the history)"]),
+    "",
+    "PRD decisions:",
+    ...(decisions.size ? [...decisions.values()] : ["(none — the PRD has no decision lines)"]),
+    "",
+    `Answer with one fenced json block: {"areas": [{"name": "<short>", "files": ["<path from the diff stat>"], "decisions": ["<ID such as D3>"]}]}`,
+    `At most ${max} areas; every changed file should sit in some area; use only the paths and IDs above.`,
+  ].join("\n");
+}
+
+/** `{branch, files, ids}` for each issue branch merged into the feature in `base..tip`; `ids` from `idsFor(branch)`. */
+export function mergedIssues(ctx, { base, tip, idsFor = () => [] }) {
+  const { effects } = ctx;
+  const log = effects.gitRead(["log", "--first-parent", "--merges", "--reverse", "--format=%H%x09%s", `${base}..${tip}`]);
+  if (log.code !== 0) return [];
+  const out = [];
+  for (const line of log.stdout.split("\n").filter(Boolean)) {
+    const [sha, subject = ""] = line.split("\t");
+    const branch = /^Merge branch '(crew\/[^']+)'/.exec(subject)?.[1];
+    if (!branch) continue;
+    const files = effects.gitRead(["diff", "--name-only", `${sha}^1`, sha]);
+    out.push({ branch, files: files.code === 0 ? files.stdout.split("\n").filter(Boolean) : [], ids: idsFor(branch) });
+  }
+  return out;
+}
+
+/**
+ * `branch → ## Implements IDs`, from the tracker the run uses. A local tracker reads the issue file for
+ * the branch's `<n>-<slug>` stem; any other lists the feature's issues once (every state — a merged
+ * issue is `awaiting-merge` or closed) and matches the stem's leading number. A failed listing warns
+ * and every branch reads as implementing none.
+ */
+export function implementsLookup(ctx, tracker) {
+  const { effects, sprint } = ctx;
+  if (tracker.listOpenIssueFiles) return (branch) => localIssueIds(effects.mainRoot, sprint.featureSlug, branch);
+  let byNumber;
+  return (branch) => {
+    if (!byNumber) {
+      byNumber = new Map();
+      try {
+        for (const i of tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug })) byNumber.set(Number(i.number), i.text ?? "");
+      } catch (e) {
+        ctx.log(`FEATURE-REVIEW: could not list the feature's issues for their ## Implements IDs — ${e.message}`, "warn");
+      }
+    }
+    const n = Number(/^(\d+)-/.exec(branch.split("/").pop())?.[1]);
+    return byNumber.has(n) ? implementedIds(byNumber.get(n)) : [];
+  };
+}
+
+/** The `## Implements` IDs of a local issue file for this branch's `<n>-<slug>` stem. */
+function localIssueIds(mainRoot, featureSlug, branch) {
+  const stem = branch.split("/").pop();
+  for (const dir of ["open", "done"]) {
+    const d = join(mainRoot, ".scratch", featureSlug, "issues", dir);
+    try {
+      const f = readdirSync(d).find((n) => n === `${stem}.md` || n.replace(/^\d+[-_]?/, "") === `${stem}.md`);
+      if (f) return implementedIds(readFileSync(join(d, f), "utf8"));
+    } catch {
+      /* no such folder */
+    }
+  }
+  return [];
+}
+
+/**
+ * Plan the areas of a whole-feature review: `{ areas, why? }` with at least one area. `why` is set
+ * when the planner could not be used and the one-area fallback applies.
+ */
+export async function planAreas(ctx, { base, tip, dir }) {
+  const { sprint, effects, options } = ctx;
+  const max = Math.max(1, options.parallel ?? 1);
+  const git = (args) => {
+    const r = effects.gitRead(args);
+    return r.code === 0 ? r.stdout : "";
+  };
+  const diffFiles = git(["diff", "--name-only", `${base}..${tip}`]).split("\n").filter(Boolean);
+  const decisions = loadPrdDecisions(ctx);
+  const ids = [...decisions.keys()];
+  const fallback = (why) => {
+    ctx.log(`FEATURE-REVIEW: planner fallback — ${why}; one area over the whole diff`, "warn");
+    return { areas: [wholeFeatureArea(diffFiles, ids)], why };
+  };
+
+  const prompt = plannerPrompt({
+    featureBranch: sprint.featureBranch,
+    base,
+    max,
+    stat: git(["diff", "--stat", `${base}..${tip}`]),
+    issues: mergedIssues(ctx, { base, tip, idsFor: implementsLookup(ctx, ctx.tracker ?? (await getTracker(effects.mainRoot))) }),
+    decisions,
+  });
+  const planner = roleBinding(ctx, "reviewer");
+  ctx.log(`[STEP] step=feature-plan model=${planner.model ?? "inherit"} runtime=${planner.runtime}`);
+  const guarded = await readOnlyDispatch(ctx, { label: "feature-plan" }, () =>
+    dispatchPlain(effects, planner.runtime, {
+      prompt,
+      cwd: effects.mainRoot,
+      mainRoot: effects.mainRoot,
+      model: planner.model,
+      outFile: join(dir, "planner.md"),
+      timeoutMs: options.timeoutMs.reviewer,
+      maxBudgetUsd: planner.maxBudgetUsd,
+      fakeAgent: "feature-planner",
+      logFile: sprint.traceLog,
+    }),
+  );
+  const r = guarded.result;
+  if (r && !r.dryRun) sprint.recordDispatchCost(r, { slug: FEATURE_PLAN, role: "reviewer", attempt: 1 });
+  if (guarded.violation) return fallback(`the planner ${guarded.violation}`);
+  if (!r || r.dryRun) return fallback("the planner did not run");
+  if (r.timedOut) return fallback("the planner timed out");
+  if (r.code !== 0) return fallback(`the planner exited ${r.code}`);
+  const answer = parsePlannerAnswer(r.text);
+  if (!answer) return fallback("the planner's answer has no fenced json block");
+  const areas = normalizeAreas(answer.areas, { diffFiles, decisionIds: ids, max });
+  if (!areas.length) return fallback("the planner returned no usable area");
+  ctx.log(`FEATURE-REVIEW: planner: ${areas.length} area(s) — ${areas.map((a) => `${a.name} (${a.files.length} file(s), ${a.decisions.length} decision(s))`).join("; ")}`);
+  return { areas };
+}

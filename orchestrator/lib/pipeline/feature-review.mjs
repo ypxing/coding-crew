@@ -4,6 +4,9 @@
  * issues — a duplicated helper, inconsistent error handling, a flow unsafe only combined — is seen
  * nowhere else. Its findings join the sprint review report under `feature` and flow through the
  * same promotion (afk.fixFindings) as a branch's; it is advisory and never fails the sprint.
+ *
+ * A whole-feature review is split into areas (feature-areas.mjs), one concurrent reviewer each, all
+ * findings joined in one `feature` block and promoted once.
  */
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -14,7 +17,9 @@ import { assetDir } from "../install-dir.mjs";
 import { FEATURE_REVIEW, criteriaFile, featureReviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
 import { parseReviewReport } from "../report.mjs";
+import { loadPrdDecisions } from "../prd-decisions.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
+import { FEATURE_PLAN, planAreas } from "./feature-areas.mjs";
 import { defaultBranchBase, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /**
@@ -71,19 +76,79 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
 
   const dir = join(sprint.dispatchDir, FEATURE_REVIEW);
   mkdirSync(dir, { recursive: true });
-  const promptFile = join(dir, "review-prompt.md");
-  const outFile = join(dir, "review.md");
-  const sidecarFile = join(dir, "review.report.json");
-  rmSync(sidecarFile, { force: true });
   const reportFile = ctx.roundReviewFile();
 
   const reviewAssets = sprint.installDir ? assetDir(sprint.installDir, "reviewer") : null;
   const reviewContext = reviewAssets ? sprintReviewContext(sprint, effects, reviewAssets, effects.mainRoot) : null;
-  writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, exclude, reportPath: sidecarFile, reviewAssets, reviewContext }));
+
+  // A whole-feature review is split into areas by the planner; an increment is one reviewer, no planner.
+  let areas = [null];
+  if (range.mode === "whole") {
+    const planDir = join(sprint.dispatchDir, FEATURE_PLAN);
+    mkdirSync(planDir, { recursive: true });
+    areas = (await planAreas(ctx, { base, tip: range.tip, dir: planDir })).areas;
+  }
+  const decisions = loadPrdDecisions(ctx);
 
   const reviewer = roleBinding(ctx, "reviewer");
-  ctx.log(`[STEP] step=feature-review model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`);
-  const guarded = await readOnlyDispatch(ctx, { label: "feature-review" }, () => dispatch(
+  const runs = await Promise.all(areas.map((area, i) => {
+    const slug = `${FEATURE_REVIEW}-${i + 1}`;
+    const areaDir = join(sprint.dispatchDir, slug);
+    mkdirSync(areaDir, { recursive: true });
+    const promptFile = join(areaDir, "review-prompt.md");
+    const outFile = join(areaDir, "review.md");
+    const sidecarFile = join(areaDir, "review.report.json");
+    rmSync(sidecarFile, { force: true });
+    const lines = area ? area.decisions.map((id) => decisions.get(id)).filter(Boolean) : [];
+    writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, exclude, reportPath: sidecarFile, reviewAssets, reviewContext, area, decisions: lines }));
+    ctx.log(`[STEP] step=feature-review slug=${slug} model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`);
+    return reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFile });
+  }));
+
+  // A gap on disk, so remind and the summary show it instead of reading as a clean review.
+  const failures = runs.filter((r) => r.reason);
+  for (const r of failures) {
+    ctx.log(`FEATURE-REVIEW: ${r.slug} not run — ${r.reason}`, "warn");
+    effects.bash("promote-findings.sh", [
+      "mark-not-run",
+      "--feature-slug", sprint.featureSlug,
+      "--branch", r.slug,
+      "--slug", r.slug,
+      "--report", reportFile,
+      "--reason", r.reason,
+    ], { env: sprint.childEnv() });
+  }
+  const ok = runs.filter((r) => !r.reason);
+  if (!ok.length) return { failed: runs.length === 1 ? failures[0].reason : failures.map((r) => `${r.slug}: ${r.reason}`).join("; "), report: reportFile };
+
+  // One `feature` block whatever the reviewers called themselves: the aggregate keys on it.
+  const seen = new Set();
+  const findings = ok.flatMap((r) => r.parsed.findings ?? []).filter((f) => {
+    const key = JSON.stringify([f.severity, f.location, f.criterion]);
+    return seen.has(key) ? false : (seen.add(key), true);
+  });
+  mkdirSync(sprint.reviewDir, { recursive: true });
+  const written = { branch: FEATURE_REVIEW, slug: FEATURE_REVIEW, verdict: "all-met", detail: "", findings };
+  const block = `## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
+  const prefix = existsSync(reportFile) ? "\n\n" : "";
+  writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
+
+  // An area that left no review is a gap the next run should still cover, so the tip is kept for a full pass.
+  if (!failures.length) sprint.state(["feature-reviewed", "--tip", range.tip]);
+  ctx.log(`FEATURE-REVIEW: ${findings.length} finding(s) from ${ok.length} of ${runs.length} area reviewer(s) (${range.mode}: ${base.slice(0, 12)}..${sprint.featureBranch})`);
+  return {
+    report: reportFile,
+    findings,
+    areas: runs.length,
+    ...(failures.length ? { areaFailures: failures.map((r) => `${r.slug}: ${r.reason}`) } : {}),
+    ...(await promoteFeature(ctx, { findings, reportFile, dir, written })),
+  };
+}
+
+/** One area's crew-reviewer dispatch: `{ slug, parsed }`, or `{ slug, reason }` when it left no review. */
+async function reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFile }) {
+  const { sprint, effects, options } = ctx;
+  const guarded = await readOnlyDispatch(ctx, { label: slug }, () => dispatch(
     effects,
     reviewer.runtime,
     {
@@ -95,7 +160,7 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      slug: FEATURE_REVIEW,
+      slug,
       round: 1,
       reportPath: sidecarFile,
       maxBudgetUsd: reviewer.maxBudgetUsd,
@@ -106,38 +171,16 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
     },
   ));
   const result = guarded.result ?? { text: "", stderr: "", timedOut: false };
-  if (guarded.result) sprint.recordDispatchCost(result, { slug: FEATURE_REVIEW, role: "reviewer", attempt: 1 });
+  if (guarded.result) sprint.recordDispatchCost(result, { slug, role: "reviewer", attempt: 1 });
 
   const sidecar = guarded.violation ? null : readSidecar(sidecarFile);
   const parsed = guarded.violation ? { ok: false, detail: guarded.violation } : parseReviewReport(result.text, sidecar);
   const capped = guarded.violation ? null : limitExceeded(result, "reviewer", reviewer);
   if (capped || result.timedOut || !parsed.ok) {
     const stderrHint = (result.stderr ?? "").trim().slice(0, 300).replace(/\s+/g, " ");
-    const reason = capped ?? (result.timedOut ? "review dispatch timed out" : `${parsed.detail}${stderrHint ? ` — ${stderrHint}` : ""}`);
-    ctx.log(`FEATURE-REVIEW: not run — ${reason}`, "warn");
-    // A gap on disk, so remind and the summary show it instead of reading as a clean review.
-    effects.bash("promote-findings.sh", [
-      "mark-not-run",
-      "--feature-slug", sprint.featureSlug,
-      "--branch", FEATURE_REVIEW,
-      "--slug", FEATURE_REVIEW,
-      "--report", reportFile,
-      "--reason", reason,
-    ], { env: sprint.childEnv() });
-    return { failed: reason, report: reportFile };
+    return { slug, reason: capped ?? (result.timedOut ? "review dispatch timed out" : `${parsed.detail}${stderrHint ? ` — ${stderrHint}` : ""}`) };
   }
-
-  // Attributed to `feature` whatever the reviewer called itself: the aggregate keys on it.
-  mkdirSync(sprint.reviewDir, { recursive: true });
-  const written = { ...sidecar, branch: FEATURE_REVIEW, slug: FEATURE_REVIEW };
-  const block = `## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
-  const prefix = existsSync(reportFile) ? "\n\n" : "";
-  writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
-
-  sprint.state(["feature-reviewed", "--tip", range.tip]);
-  const findings = parsed.findings ?? [];
-  ctx.log(`FEATURE-REVIEW: ${findings.length} finding(s) (${range.mode}: ${base.slice(0, 12)}..${sprint.featureBranch})`);
-  return { report: reportFile, findings, ...(await promoteFeature(ctx, { findings, reportFile, dir, written })) };
+  return { slug, parsed };
 }
 
 /** The same fixFindings rule as a branch's findings; the feature has no issue file, so no depth guard. */

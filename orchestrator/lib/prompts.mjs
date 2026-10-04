@@ -291,7 +291,7 @@ export const FEATURE_REVIEW = "feature";
  * Feature mode (crew-reviewer's protocol § Feature Mode): the whole feature diff, once, at the first
  * drain. Same report object as a branch review, but no issue and no criteria — findings only.
  */
-export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext }) {
+export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, area = null, decisions = [] }) {
   return [
     "Feature review: review the feature diff across its issues before it ships.",
     ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
@@ -305,6 +305,17 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
       ? `Gather the diff: git log -p --reverse ${base}..${featureBranch} --not ${exclude}`
       : `Gather the diff: git diff ${base}..${featureBranch}`,
     ...(exclude ? ["", `An earlier run already reviewed up to ${base}; this range holds only the commits added since, without anything merged in from ${exclude}.`] : []),
+    ...(area
+      ? [
+          "",
+          "Area:",
+          `Name: ${area.name}`,
+          "Files:",
+          ...(area.files.length ? area.files.map((f) => `- ${f}`) : ["- (the whole diff)"]),
+          "Decisions:",
+          ...(decisions.length ? decisions : ["(none given for this area)"]),
+        ]
+      : []),
     "",
     "Every issue's branch was already reviewed on its own diff, and the checks passed on the merged",
     "branch. Look first for what only the whole diff shows, but report a defect inside one issue's diff",
