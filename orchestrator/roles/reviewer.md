@@ -99,7 +99,12 @@ downgraded or dropped.
    behaviour. Read the whole of every function and prompt they name, and check each statement in it
    against the new behaviour. If the PRD has a compatibility or migration section, run the new path
    against the state it says older versions left behind: what happens when that state is already
-   there?
+   there? A change of *when* something runs makes every state the old timing produced a live
+   input: for each record, marker or saved report the new path reads, ask whether an earlier run
+   could already have acted on it (promoted, created, closed), and whether the new path then acts
+   a second time. Likewise, every command, range or query that names a relation between refs or
+   states (`git diff A..B`, "since X", "before Y") must be evaluated at the time the change makes
+   it run: say what it returns there, and whether that is still what its reader expects.
 
    When the dispatch marks the diff test-only, read each test and the code it exercises, and skip
    caller tracing: tests have no callers.
