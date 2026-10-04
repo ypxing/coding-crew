@@ -146,9 +146,9 @@ fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, aft
 — at most two per run, then the run ends stalled; exit 127 or a "not fixable" verdict queues nothing and the summary
 says why.
 
-At the first drain only (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
+At every drain where something merged (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
 runs in feature mode: no criteria, findings only, attributed to `feature` in the sprint
-review report and promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
+review report and, at the first two drains whose review ran, promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
 `crew-triage`'s findings mode judges Actionable, via `orchestrator/lib/pipeline/findings-triage.mjs`; a failed triage
 falls back to the `high` rule). The range (`featureReviewRange`) is the whole feature, from the merge-base with origin's default
 branch (else the local default branch; with neither the review is skipped, logged) — never this run's `base_sha`, which
@@ -156,8 +156,12 @@ branch (else the local default branch; with neither the review is skipped, logge
 `feature_review.reviewed_tip` in `sprint-state.json`; a later run whose tip equals it dispatches no reviewer ("nothing new
 since <sha>"), one whose tip descends from it reviews only `reviewed_tip..tip` minus commits on `origin/<default>` (what
 `sync-feature-branch.sh` merged in), and a `reviewed_tip` that is no ancestor (history rewritten) gives the whole-feature
-review again. Not re-run after Phase 2, nor when nothing merged; skipped (the summary says so) when the integration check
-is red, or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
+review again. Reviews after the second are report-only (promotion cap, PRD D5): no fix issue; the findings reach the review
+report and the summary, and each one the rule would have promoted is a not-green reason, so an `--open-pr` PR is a draft naming
+them (none under `fixFindings: none`). Every feature review carries the PRD's `## Compatibility & Migration` section verbatim
+(`loadPrdSection`), and an increment review every PRD decision line. The summary's `## Feature Review` lists each drain's review
+(range, finding count, promoted or report-only, or why skipped). Not run when nothing merged; skipped (the summary says so) at a drain
+whose integration check is red, or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
 a dispatch that leaves no review is recorded not-run (and no `reviewed_tip`) and never fails the sprint.
 
 A whole-feature review is split into areas (`pipeline/feature-areas.mjs`): one plain `reviewer`-bound planner dispatch gets the

@@ -18,6 +18,8 @@
 #                         behaviour this fixture exists to pin down.
 #                         Mutually exclusive with <slug>.review and <slug>.review-once; shares
 #                         the same <slug>.review-once.calls counter file.
+#   <slug>.review-later  the review report from a slug's second call on, instead of <slug>.review (a
+#                         later drain's feature review); counter at <slug>.review.calls.
 #   <slug>.review-sleep   the reviewer sleeps this many seconds before answering — with a
 #                         fractional --reviewer-timeout, a review dispatch that times out.
 #   feature-planner.sleep  the feature review's planner sleeps this many seconds before answering — with a
@@ -211,6 +213,13 @@ if [ "$AGENT" = "crew-reviewer" ]; then
       printf '## Branch: crew/x/%s\n```json\n{"branch":"crew/x/%s","slug":"%s","verdict":"all-met","detail":"","findings":[]}\n```\n' "$SLUG" "$SLUG" "$SLUG" > "$OUT"
     fi
     exit 0
+  fi
+  if [ -f "$FAKE_DIR/$SLUG.review-later" ]; then
+    LATER_COUNT=0
+    [ -f "$FAKE_DIR/$SLUG.review.calls" ] && LATER_COUNT=$(cat "$FAKE_DIR/$SLUG.review.calls")
+    LATER_COUNT=$((LATER_COUNT + 1))
+    echo "$LATER_COUNT" > "$FAKE_DIR/$SLUG.review.calls"
+    if [ "$LATER_COUNT" -gt 1 ]; then cat "$FAKE_DIR/$SLUG.review-later" > "$OUT"; exit 0; fi
   fi
   if [ -f "$FAKE_DIR/$SLUG.review" ]; then
     cat "$FAKE_DIR/$SLUG.review" > "$OUT"

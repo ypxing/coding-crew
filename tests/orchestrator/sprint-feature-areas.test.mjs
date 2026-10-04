@@ -94,17 +94,18 @@ test("K valid areas give K concurrent reviewers with their own dir, report and c
   ]);
   fake(root, "feature-1.review", featureReviewFile([crossIssue("HIGH", "Bound the alpha retry")]));
   fake(root, "feature-2.review", featureReviewFile([crossIssue("HIGH", "Name the file in beta's error")]));
+  fake(root, "feature-1.review-later", featureReviewFile([])); // the Phase 2 drain's increment review
   const { r, lines } = commandLines(root, ["--max-parallel", "2"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(areaReviews(lines).length, 2);
-  for (const n of [1, 2]) {
-    assert.ok(readFileSync(join(root, `.scratch/demo/dispatch/feature-${n}/review-prompt.md`), "utf8").includes("Area:"));
-    readFileSync(join(root, `.scratch/demo/dispatch/feature-${n}/review.report.json`), "utf8");
-  }
+  assert.equal(areaReviews(lines).length, 3, "two areas, then one increment reviewer");
+  // feature-1's dir now holds the Phase 2 drain's increment review (no Area:); feature-2 is still the whole-feature area.
+  assert.ok(readFileSync(join(root, ".scratch/demo/dispatch/feature-2/review-prompt.md"), "utf8").includes("Area:"));
+  assert.doesNotMatch(readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8"), /^Area:/m);
+  for (const n of [1, 2]) readFileSync(join(root, `.scratch/demo/dispatch/feature-${n}/review.report.json`), "utf8");
   const slugs = state(root).dispatches.map((d) => d.slug);
   assert.ok(slugs.includes("feature-1") && slugs.includes("feature-2"), slugs.join());
   const report = sprintReport(root);
-  assert.equal(report.match(/^## Branch: feature \(feature\)$/gm).length, 1);
+  assert.equal(report.match(/^## Branch: feature \(feature\)$/gm).length, 2, "one feature block per drain, not per area");
   assert.match(report, /Bound the alpha retry/);
   assert.match(report, /Name the file in beta's error/);
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-triage.* --slug feature-findings/.test(l)).length, 1);
@@ -284,6 +285,20 @@ nodeTest("featureReviewPrompt carries an Area: block with the files and the full
   const withArea = featureReviewPrompt({ ...base, area: { name: "flow", files: ["a.js"] }, decisions: ["- **D1** — Retries are bounded."] });
   assert.match(withArea, /^Area:\nName: flow\nFiles:\n- a\.js\nDecisions:\n- \*\*D1\*\* — Retries are bounded\.$/m);
   assert.doesNotMatch(featureReviewPrompt(base), /^Area:/m);
+});
+
+nodeTest("featureReviewPrompt: an increment carries every decision line and the Compatibility & Migration section; an area prompt the section; none without", () => {
+  const base = { featureBranch: "feature/x", base: "abc", exclude: "main", reportPath: "/r.json" };
+  const decisions = ["- **D1** — Retries are bounded.", "- **B2** — Old runs resume."];
+  const compatibility = "Old runs keep working.\n\n- re-run install.sh";
+  const inc = featureReviewPrompt({ ...base, decisions, compatibility });
+  assert.ok(inc.includes(decisions.join("\n")));
+  assert.ok(inc.includes(compatibility));
+  assert.doesNotMatch(inc, /^Area:/m);
+  const area = featureReviewPrompt({ ...base, exclude: null, area: { name: "flow", files: ["a.js"] }, decisions: [decisions[0]], compatibility });
+  assert.ok(area.includes(compatibility));
+  const bare = featureReviewPrompt({ ...base });
+  assert.doesNotMatch(bare, /Compatibility|PRD decisions/);
 });
 
 nodeTest("an area's Gather the diff line is limited to its files, quoted; the whole-feature fallback and no area are not", () => {
