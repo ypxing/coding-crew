@@ -85,6 +85,27 @@ test("actionable: a finding triage marks duplicate_of is folded into its target:
   assert.match(remindOf(root), /^FINDINGS: none$/m);
 });
 
+test("actionable: a duplicate_of pair at a report-only feature drain leaves its target report_only, open and not green", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const target = { severity: "MEDIUM", location: "src/alpha.txt:1", issue: "Retry loop is unbounded", criterion: "Bound the retry loop" };
+  const dup = { severity: "HIGH", location: "src/beta.txt:9", issue: "Beta retries forever", criterion: "Bound beta's retry" };
+  fake(root, "feature.review", featureReviewFile([target, dup]));
+  fake(root, "feature.review-later", featureReviewFile([target, dup]));
+  fake(root, "feature-findings.triage", findingVerdicts([
+    { verdict: "actionable", rationale: "one fix" },
+    { verdict: "actionable", rationale: "same defect", duplicate_of: 0 },
+  ]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /FEATURE-REVIEW: 1 finding\(s\) the rule would promote are report-only/);
+  const blocks = sprintReport(root).split("## Branch: feature (feature)").pop();
+  const last = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(blocks)[1]).findings;
+  assert.equal(last.find((f) => f.issue === target.issue).report_only, true);
+  assert.match(remindOf(root), /^FINDINGS: open=1 \(MEDIUM=1\)$/m);
+  assert.match(r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
+});
+
 test("actionable: a dismiss verdict is remapped to actionable and promoted to a fix issue", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

@@ -299,7 +299,11 @@ async function promoteFeature(ctx, { findings, reportFile, dir, written, change,
   // Past the promotion cap: what the rule would have promoted is only reported, never made a fix issue.
   if (!promote) {
     ctx.log(`FEATURE-REVIEW: ${promotable.length} finding(s) the rule would promote are report-only at this drain`);
-    markReportOnly(reportFile, promotable);
+    // The report holds the unfolded findings; foldDuplicates' copies may differ in severity and location.
+    const inReport = selected.rule === "actionable"
+      ? selected.findings.filter((f) => f.verdict === "actionable" && f.duplicate_of === undefined)
+      : promotable;
+    markReportOnly(reportFile, inReport);
     return { reportOnly: promotable };
   }
   const criteriaPath = join(sprint.reviewDir, `${FEATURE_REVIEW}.criteria.md`);
