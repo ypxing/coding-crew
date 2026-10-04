@@ -399,6 +399,12 @@ install_skill_assets() {
     assert_safe_path "$dest_rel" "skill assets dest"
     install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
   done <<< "$more"
+  # Older installs kept the shared fragments in common/ and per-platform subdirectories; the
+  # renderers read only skills/_shared/fragments/<key>.md now.
+  if [[ "$skill_name" == "crew-afk" ]]; then
+    local old
+    for old in common "${PLATFORMS[@]}"; do rm -rf "$REPO_ROOT/.coding-crew/skills/_shared/fragments/$old"; done
+  fi
 }
 
 
@@ -466,9 +472,8 @@ install_single_skill() {
   # installed platform variant reports the entire file as changed on every
   # re-install. Pick the source now and copy it straight to SKILL.md.
   #
-  # A `body` map in registry.json can point several platforms at one shared body, whose
-  # per-platform differences live in fragments/<platform>/<key>.md and are inlined at
-  # install time by scripts/render-skill.sh. No skill uses it now that crew-afk's last
+  # A `body` map in registry.json can point several platforms at one shared body, rendered
+  # at install time by scripts/render-skill.sh. No skill uses it now that crew-afk's last
   # prose body is gone. Without a map entry the ordinary convention holds:
   # <platform>.SKILL.md, else the shared SKILL.md.
   local skill_md_source
@@ -502,9 +507,6 @@ install_single_skill() {
   # Copy files with diff output for changed files
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
-    # Fragments are build inputs, not runtime files — they are inlined into the
-    # rendered SKILL.md and must never ship on their own.
-    [[ "$rel_path" == fragments/* ]] && continue
     # Every *.SKILL.md competes for one destination: SKILL.md. Copy only the variant
     # this platform resolved to and skip the rest.
     if [[ "$rel_path" == "SKILL.md" || "$rel_path" == *".SKILL.md" ]]; then

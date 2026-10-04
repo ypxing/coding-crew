@@ -6,6 +6,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`, `to-issues`, `to-prd`, `upgrade-deps`, `crew-address-findings`: shared fragments live flat at `skills/_shared/fragments/<key>.md`; the `common/` and per-platform lookups are gone (the four per-platform `tracker-configuration.md` copies were identical), as is the unused skill-local `fragments/<platform>/` lookup. Installing crew-afk removes the old `common/` and per-platform fragment directories.
 - `crew-afk`: a later feature review that writes its `feature` block closes an earlier run's not-run `feature-<n>` area in `review-rollup.mjs`, so `remind` and the summary no longer report it; a gap from the same run is written after the block and still shows.
 - `crew-afk`: a whole-feature review is split by a planner into up to `maxParallel` areas, each read end to end by its own concurrent `crew-reviewer` (`feature-<n>`) given an `Area:` block of its files and the full text of its PRD decisions; findings join one `feature` block and are promoted once. A failed planner gives one whole-diff area; a failed area is recorded not-run as `feature-<n>`. An incremental review stays one reviewer.
 - `crew-afk`: the feature review covers the whole feature (merge-base with origin's default branch, else the local one) instead of only the run's `base_sha`, then only the commits added since (`feature_review.reviewed_tip`, `state.sh feature-reviewed`); an unchanged tip dispatches no reviewer, and the wall-clock cap with a claimable issue left skips it.

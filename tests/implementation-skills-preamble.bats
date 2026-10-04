@@ -28,7 +28,7 @@ setup() {
 }
 
 @test "crew-address-findings/SKILL.md contains the Tracker Configuration section" {
-  # The preamble now comes from the shared fragment (skills/_shared/fragments/<platform>/
+  # The preamble now comes from the shared fragment (skills/_shared/fragments/
   # tracker-configuration.md) via {{FRAGMENT:...}}, so assert against the rendered body.
   grep -q '^## Tracker Configuration' "$(rendered_skill crew-address-findings claude)"
 }

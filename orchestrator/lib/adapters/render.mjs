@@ -3,8 +3,8 @@
  *
  * Reads `orchestrator/roles/<role>.md` (shipped with the orchestrator, so the installed copy sits
  * at the same relative path) and expands each whole-line `{{FRAGMENT:<key>}}` by
- * `scripts/render-skill.sh`'s rules (`skills/_shared/fragments/<platform>/<key>.md`, then
- * `.../common/<key>.md`, under the repo root or the installed `.coding-crew/`). A missing protocol
+ * `scripts/render-skill.sh`'s rule (`skills/_shared/fragments/<key>.md`, under the repo root or the
+ * installed `.coding-crew/`). A missing protocol
  * or fragment, or any `{{…}}` left over, throws before anything is spawned. Each skill the
  * protocol names gets the absolute path of its installed SKILL.md, so a worker in a worktree
  * (where gitignored skill dirs are absent) can still read it.
@@ -51,8 +51,8 @@ export function renderRolePrompt(role, platform, { mainRoot = null, rolesDir = R
       continue;
     }
     const key = m[1];
-    const frag = [platform, "common"].map((d) => join(FRAGMENT_ROOT, "skills/_shared/fragments", d, `${key}.md`)).find((p) => existsSync(p));
-    if (!frag) throw new Error(`fragment '${key}' needed by ${ROLE_AGENTS[name]}'s protocol not found (skills/_shared/fragments/${platform}/${key}.md or common/${key}.md)`);
+    const frag = join(FRAGMENT_ROOT, "skills/_shared/fragments", `${key}.md`);
+    if (!existsSync(frag)) throw new Error(`fragment '${key}' needed by ${ROLE_AGENTS[name]}'s protocol not found (skills/_shared/fragments/${key}.md)`);
     out.push(readFileSync(frag, "utf8").replace(/\n$/, ""));
   }
   let text = out.join("\n");

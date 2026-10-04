@@ -1,11 +1,9 @@
 #!/usr/bin/env bats
 
-# scripts/render-skill.sh's shared-fragments fallback: skills/_shared/fragments/<platform>/
-# <key>.md is checked when a skill-local fragment of the same key is absent, so a fragment
-# used by several skills (e.g. the "Tracker Configuration" preamble to-issues/to-prd/
-# upgrade-deps/crew-address-findings all used to copy-paste independently) has exactly one
-# source instead of one per skill. See .scratch/github-issue-tracker/issues/open/
-# 08-skill-prose-github-support.md.
+# scripts/render-skill.sh's shared fragments: a whole-line {{FRAGMENT:<key>}} expands to
+# skills/_shared/fragments/<key>.md, so a fragment used by several skills (e.g. the "Tracker
+# Configuration" preamble to-issues/to-prd/upgrade-deps/crew-address-findings all used to
+# copy-paste independently) has exactly one source instead of one per skill.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 RENDER="$REPO_ROOT/scripts/render-skill.sh"
@@ -25,7 +23,7 @@ setup() {
   cp "$REPO_ROOT/registry.json" "$TREE/registry.json"
   PROBE_RENDER="$TREE/scripts/render-skill.sh"
   FIXTURE_SKILL_DIR="$TREE/skills/$FIXTURE_NAME"
-  SHARED_DIR="$TREE/skills/_shared/fragments/claude"
+  SHARED_DIR="$TREE/skills/_shared/fragments"
   {
     echo "# Probe"
     echo ""
@@ -35,41 +33,31 @@ setup() {
   } > "$FIXTURE_SKILL_DIR/SKILL.md"
 }
 
-@test "a fragment absent locally but present under skills/_shared/fragments/<platform> renders" {
+@test "a fragment under skills/_shared/fragments renders on every platform" {
   mkdir -p "$SHARED_DIR"
-  echo "Shared fallback content." > "$SHARED_DIR/shared-only.md"
+  echo "Shared content." > "$SHARED_DIR/shared-only.md"
 
-  run bash "$PROBE_RENDER" "$FIXTURE_NAME" claude
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Shared fallback content."* ]]
-  [[ "$output" != *"{{FRAGMENT"* ]]
+  for p in "${PLATFORMS[@]}"; do
+    run bash "$PROBE_RENDER" "$FIXTURE_NAME" "$p"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Shared content."* ]]
+    [[ "$output" != *"{{FRAGMENT"* ]]
+  done
 }
 
-@test "a skill-local fragment of the same key wins over the shared fallback" {
-  mkdir -p "$FIXTURE_SKILL_DIR/fragments/claude"
-  echo "Skill-local content." > "$FIXTURE_SKILL_DIR/fragments/claude/shared-only.md"
-  mkdir -p "$SHARED_DIR"
-  echo "Shared fallback content." > "$SHARED_DIR/shared-only.md"
-
-  run bash "$PROBE_RENDER" "$FIXTURE_NAME" claude
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Skill-local content."* ]]
-  [[ "$output" != *"Shared fallback content."* ]]
-}
-
-@test "missing from both skill-local and shared fallback is still a hard error" {
+@test "a missing fragment is a hard error" {
   run bash "$PROBE_RENDER" "$FIXTURE_NAME" claude
   [ "$status" -ne 0 ]
   [[ "$output" == *"fragment"* ]]
 }
 
-# ─── the real shared fragment this issue adds ──────────────────────────────────
+# ─── the real shared fragments ───────────────────────────────────────────────────
 
-@test "skills/_shared/fragments/<platform>/tracker-configuration.md exists for every platform" {
-  for p in "${PLATFORMS[@]}"; do
-    [ -f "$REPO_ROOT/skills/_shared/fragments/$p/tracker-configuration.md" ] || {
-      echo "missing skills/_shared/fragments/$p/tracker-configuration.md" >&2; return 1; }
-  done
+@test "skills/_shared/fragments holds one file per fragment and no subdirectories" {
+  [ -f "$REPO_ROOT/skills/_shared/fragments/tracker-configuration.md" ]
+  run find "$REPO_ROOT/skills/_shared/fragments" -mindepth 1 -type d
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "to-issues, to-prd and crew-address-findings's Tracker Configuration prose is byte-identical to before the fragment consolidation" {
