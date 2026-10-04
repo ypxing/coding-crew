@@ -10,7 +10,7 @@
 // editing orchestrator/roles/reviewer.md, never in CI.
 //
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
-//          [--case <name>]... [--runs N] [--model sonnet] [--judge-model opus] [--parallel 4]
+//          [--case <name>]... [--runs N] [--model opus] [--judge-model opus] [--parallel 4]
 //          [--max-areas 3] [--dry-run]
 //
 // Each ref builds its prompts from its OWN files (build-prompts.mjs runs inside that ref's checkout):
@@ -41,7 +41,7 @@ const EVAL_NOTE = (prdPath) =>
   `Modify nothing. The PRD is at ${prdPath}.`;
 
 function parseArgs(argv) {
-  const o = { base: "main", head: "worktree", cases: [], runs: 2, model: "sonnet", judgeModel: "opus",
+  const o = { base: "main", head: "worktree", cases: [], runs: 2, model: "opus", judgeModel: "opus",
     parallel: 4, maxAreas: 3, dryRun: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = () => {
@@ -105,7 +105,9 @@ export function judgePrompt(rubric, c, labelled) {
     "## Outputs",
     ...labelled.map(({ label, text }) => `### Output ${label}\n${text}\n`),
     "Reply with ONLY a JSON array, one object per output: " +
-      `{"label": "A", "caught": {${c.misses.map((x) => `"${x.id}": true|false`).join(", ")}}, "note": "<one sentence>"}`,
+      `{"label": "A", "caught": {${c.misses.map((x) => `"${x.id}": true|false`).join(", ")}}, "distinct": <N>, "note": "<one sentence>"}`,
+    "distinct = the number of distinct defects the output's findings name: findings naming the same defect " +
+      "(in different areas, or at neighbouring lines) count once.",
   ].join("\n");
 }
 
@@ -131,7 +133,7 @@ const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : nu
 const fmt = (n) => (n === null ? "n/a" : n.toFixed(1));
 
 export function summarize(rows, cases) {
-  const lines = ["| case | version | runs ok | caught (per expected miss) | mean findings | cost |", "|---|---|---|---|---|---|"];
+  const lines = ["| case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | cost |", "|---|---|---|---|---|---|---|"];
   const means = {};
   for (const c of cases) {
     for (const v of ["base", "head"]) {
@@ -140,11 +142,12 @@ export function summarize(rows, cases) {
       const judged = rs.filter((r) => r.caught);
       const caught = c.misses.map((x) => `${x.id} ${judged.filter((r) => r.caught[x.id]).length}/${judged.length}`).join("; ");
       const m = mean(rs.map((r) => r.findings).filter((n) => typeof n === "number"));
-      (means[c.name] ??= {})[v] = m;
-      lines.push(`| ${c.name} | ${v} | ${rs.filter((r) => r.ok).length}/${rs.length} | ${caught} | ${fmt(m)} | $${rs.reduce((a, r) => a + (r.cost || 0), 0).toFixed(2)} |`);
+      const d = mean(rs.map((r) => r.distinct).filter((n) => typeof n === "number"));
+      (means[c.name] ??= {})[v] = d;
+      lines.push(`| ${c.name} | ${v} | ${rs.filter((r) => r.ok).length}/${rs.length} | ${caught} | ${fmt(m)} | ${fmt(d)} | $${rs.reduce((a, r) => a + (r.cost || 0), 0).toFixed(2)} |`);
     }
   }
-  lines.push("", "Mean findings, head / base: " + cases.map((c) => {
+  lines.push("", "Mean distinct findings, head / base: " + cases.map((c) => {
     const { base, head } = means[c.name] ?? {};
     return `${c.name} ${base && head != null ? (head / base).toFixed(2) + "x" : "n/a"}`;
   }).join("; "));
@@ -288,18 +291,19 @@ async function main() {
       for (const r of mine) {
         const vd = r.ok && judgeOk ? verdicts.get(labelOf.get(`${r.version}#${r.run}`)) : null;
         const caught = vd ? Object.fromEntries(c.misses.map((x) => [x.id, vd.caught?.[x.id] === true])) : null;
+        const distinct = Number.isFinite(vd?.distinct) ? vd.distinct : null;
         rows.push({ case: c.name, version: r.version, run: r.run, ok: r.ok && !!caught, failure: r.failure ?? (r.ok && !caught ? "judge gave no verdict" : null),
-          areas: r.areas, findings: r.findings, caught, note: vd?.note ?? null, cost: r.cost });
+          areas: r.areas, findings: r.findings, distinct, caught, note: vd?.note ?? null, cost: r.cost });
       }
       if (rows.length) rows.at(-1).cost += judgeCost;
     }
     const total = rows.reduce((a, r) => a + (r.cost || 0), 0);
-    const summary = `${summarize(rows, cases)}\n\nTotal cost: $${total.toFixed(2)} (judge included). Base \`${o.base}\`, head \`${o.head}\`, ${o.runs} run(s) each.\n\n## Runs\n` +
+    const summary = `${summarize(rows, cases)}\n\nTotal cost: $${total.toFixed(2)} (judge included). Base \`${o.base}\`, head \`${o.head}\`, ${o.runs} run(s) each. Reviewers on ${o.model}, judge on ${o.judgeModel}.\n\n## Runs\n` +
       rows.map((r) => `- ${r.case} ${r.version} #${r.run}: ` + (r.caught
-        ? `${Object.entries(r.caught).map(([k, v]) => `${k} ${v ? "caught" : "not caught"}`).join(", ")}; ${r.findings ?? "n/a"} finding(s)${r.areas > 1 ? ` over ${r.areas} areas` : ""} — ${r.note ?? ""}`
+        ? `${Object.entries(r.caught).map(([k, v]) => `${k} ${v ? "caught" : "not caught"}`).join(", ")}; ${r.findings ?? "n/a"} finding(s), ${r.distinct ?? "n/a"} distinct${r.areas > 1 ? ` over ${r.areas} areas` : ""} — ${r.note ?? ""}`
         : `FAILED (${r.failure})`)).join("\n") + "\n";
     fs.writeFileSync(path.join(outDir, "summary.md"), summary);
-    fs.writeFileSync(path.join(outDir, "results.json"), JSON.stringify({ base: o.base, head: o.head, runs: o.runs, rows }, null, 2));
+    fs.writeFileSync(path.join(outDir, "results.json"), JSON.stringify({ base: o.base, head: o.head, runs: o.runs, model: o.model, judgeModel: o.judgeModel, rows }, null, 2));
     if (rows.some((r) => !r.ok)) process.exitCode ||= 1;
     console.log(`\n${summary}\nResults: ${path.relative(ROOT, outDir)}/`);
   } finally {

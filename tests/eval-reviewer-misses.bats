@@ -41,7 +41,7 @@ if [[ "$input" == *"## Expected misses"* ]]; then
   printf '%s' "$input" > "$FAKE_DIR/judge-prompt.txt"
   [ -n "${FAKE_JUDGE_FAIL:-}" ] && { echo '{"result":"boom","total_cost_usd":0.1,"is_error":true}'; exit 1; }
   labels=$(printf '%s\n' "$input" | sed -n 's/^### Output \([A-Z]\)$/\1/p')
-  arr=""; for l in $labels; do arr+="${arr:+,}{\"label\":\"$l\",\"caught\":{\"m1\":true},\"note\":\"ok\"}"; done
+  arr=""; for l in $labels; do arr+="${arr:+,}{\"label\":\"$l\",\"caught\":{\"m1\":true},\"distinct\":1,\"note\":\"ok\"}"; done
   jq -n --arg r "[$arr]" '{result:$r,total_cost_usd:0.5,is_error:false}'; exit 0
 fi
 if [[ "$input" == *"Feature review planning"* ]]; then
@@ -135,7 +135,7 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   [ "$status" -eq 0 ]
   d=$(out_dir)
   [ -s "$d/summary.md" ]
-  [ "$(jq '[.rows[] | select(.case=="branch-case" and .version=="base" and .caught.m1==true and .findings==2)] | length' "$d/results.json")" -eq 2 ]
+  [ "$(jq '[.rows[] | select(.case=="branch-case" and .version=="base" and .caught.m1==true and .findings==2 and .distinct==1)] | length' "$d/results.json")" -eq 2 ]
   [ "$(jq '[.rows[] | select(.case=="feature-case" and .version=="head" and .caught.m1==true and .findings==2)] | length' "$d/results.json")" -eq 2 ]
   grep -q 'm1 2/2' "$d/summary.md"
   p="$T/judge-prompt.txt"
@@ -222,4 +222,26 @@ role() {
   grep -q 'state it reads or writes' "$f"
   grep -q 'older' "$f"
   grep -q 'is not a fact' "$f"
+}
+
+@test "the judge is asked for distinct findings, the summary names the models and gives both means" {
+  run run_eval --runs 1
+  d=$(out_dir)
+  grep -q '"distinct"' "$T/judge-prompt.txt"
+  grep -q 'Reviewers on opus, judge on opus' "$d/summary.md"
+  grep -q 'mean findings (raw) | mean findings (distinct)' "$d/summary.md"
+  [ "$(jq -r .model "$d/results.json")" = opus ]
+}
+
+@test "an API rate limit is retried, not recorded" {
+  cat > "$T/flaky" <<'EOS'
+#!/usr/bin/env bash
+n=$(cat "$FAKE_DIR/n" 2>/dev/null || echo 0); echo $((n+1)) > "$FAKE_DIR/n"
+if [ "$n" -lt 2 ]; then echo '{"result":"API Error: rate limit exceeded (ApplyGuardrail throttled)","total_cost_usd":0,"is_error":true}'; exit 1; fi
+exec "$FAKE_DIR/claude"
+EOS
+  chmod +x "$T/flaky"
+  CLAUDE_BIN="$T/flaky" run run_eval --runs 1 --case branch-case
+  [ "$status" -eq 0 ]
+  [ "$(cat "$T/n")" -gt 2 ]
 }
