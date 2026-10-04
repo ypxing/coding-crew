@@ -208,9 +208,10 @@ export function applyWorktreeInclude(mainRoot, worktree) {
  * surfaces ~45 minutes later as an unexplained conflict at the merge gate.
  *
  * Never attempted for a brand-new branch (`reusedBranch: false` — nothing to merge yet,
- * it forked from the current tip). On conflict: aborts cleanly and reports it, exactly
- * like merge-branches.sh's own "never attempts resolution" rule — reconciling by hand
- * is the caller's job, not this function's.
+ * it forked from the current tip). On conflict: first `resolve-merge-conflicts.sh`, as
+ * merge-branches.sh does — when only registry versions / CHANGELOG appends conflict, the
+ * merge is committed and the result is a plain `{ merged: true }`. Anything else aborts
+ * cleanly and reports it, or with `keepConflict` is left in the worktree for the caller.
  */
 export function mergeFeatureBranch(effects, { worktree, branch, featureBranch, keepConflict = false }) {
   if (!featureBranch || featureBranch === branch) return { merged: false };
@@ -221,6 +222,13 @@ export function mergeFeatureBranch(effects, { worktree, branch, featureBranch, k
     ["merge", "--no-ff", featureBranch, "-m", `Merge '${featureBranch}' into '${branch}'`],
     { cwd: worktree },
   );
+  if (r.code !== 0) {
+    const resolved = effects.bash("resolve-merge-conflicts.sh", [], { cwd: worktree });
+    if (resolved.code === 0) {
+      const c = effects.git(["commit", "--no-verify", "-q", "-m", `Merge '${featureBranch}' into '${branch}'`], { cwd: worktree });
+      if (c.code === 0) return { merged: true, autoResolved: true };
+    }
+  }
   if (r.code !== 0 && keepConflict) {
     // Left in progress for the coder to resolve; the files are what it is told to fix. A
     // merge that failed with nothing conflicted (e.g. an untracked file in the way) has

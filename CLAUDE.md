@@ -115,6 +115,11 @@ A verify that gives no verdict — killed by a signal (`Effects.exec`'s `interru
 output naming no failing check even on a second run — is retained as `verify-interrupted` / `verify-inconclusive` and
 re-verified next round with no triage and no coder (`pipeline/verify.mjs`).
 
+A retained branch is first synced with the feature branch (`pipeline.mjs`), in three steps: `mergeFeatureBranch` commits what
+`resolve-merge-conflicts.sh` resolves; any other conflict gets its own conflict-only `coder` dispatch (`conflictPrompt`, at most
+one per attempt, outside the retry cap and `MAX_DISPATCHES_PER_ISSUE`) whose success is read from git, not its report; then the
+original route (`restart`, `fix`, `verify`) runs with a prompt that has no conflict text.
+
 Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
 AC receipt → merge → close → promote. Deps sit there because that one position is before both
 consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any

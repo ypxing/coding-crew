@@ -29,7 +29,7 @@ function verifyRecord(obj) {
   writeFileSync(f, typeof obj === "string" ? obj : JSON.stringify(obj));
   return f;
 }
-import { fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
+import { conflictPrompt, fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("a structured sidecar wins over prose", () => {
   const r = parseWorkerReport("## Issue: thing\nStatus: complete\n", {
@@ -457,7 +457,7 @@ test("the worker prompt hands over this issue's deps outcome only when the deps 
   assert.match(workerPrompt({ ...base, deps: "docker-present" }), /^DEPS=docker-present$/m);
   assert.doesNotMatch(workerPrompt(base), /DEPS=/);
   assert.match(fixPrompt({ ...base, branch: "b", deps: "present" }), /^DEPS=present$/m);
-  assert.match(fixPrompt({ ...base, branch: "b", kind: "conflict", deps: "present" }), /^DEPS=present$/m);
+  assert.match(conflictPrompt({ ...base, branch: "b", deps: "present", featureBranch: "f", conflictFiles: ["a"] }), /^DEPS=present$/m);
 });
 
 test("every coder prompt points at the project config the worktree lacks; the review prompt at its assets", () => {
@@ -468,7 +468,7 @@ test("every coder prompt points at the project config the worktree lacks; the re
   assert.match(workerPrompt(base), line);
   assert.match(fixPrompt({ ...base, branch: "b" }), line);
   assert.match(fixPrompt({ ...base, branch: "b", kind: "review" }), line);
-  assert.match(fixPrompt({ ...base, branch: "b", kind: "conflict", conflictFiles: ["a"] }), line);
+  assert.match(conflictPrompt({ ...base, branch: "b", featureBranch: "f", conflictFiles: ["a"] }), line);
   const review = { branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r" };
   assert.match(reviewPrompt({ ...review, reviewAssets: "/home/u/.coding-crew/code-review" }), /^Review assets: \/home\/u\/\.coding-crew\/code-review$/m);
   assert.doesNotMatch(reviewPrompt(review), /Review assets:/);
@@ -856,4 +856,13 @@ test("foldDuplicates: a duplicate whose target is not promotable stays promotabl
   ];
   const out = foldDuplicates(judged, [judged[1]]);
   assert.deepEqual(out, [judged[1]]);
+});
+
+test("workerPrompt and fixPrompt carry no conflict text; conflictPrompt is the conflict dispatch", () => {
+  const base = { mainRoot: "/main", worktree: "/w", issuePath: "/w/i.md", slug: "x", criteria: "", resume: "", reportPath: "/w/r.json", branch: "b" };
+  const extra = { featureBranch: "f", conflictFiles: ["a.txt"] };
+  for (const p of [workerPrompt({ ...base, ...extra }), fixPrompt({ ...base, ...extra }), fixPrompt({ ...base, ...extra, kind: "review" })]) {
+    assert.doesNotMatch(p, /in progress|a\.txt|git commit --no-edit/);
+  }
+  assert.match(conflictPrompt({ ...base, ...extra }), /^- a\.txt$/m);
 });

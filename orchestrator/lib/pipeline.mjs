@@ -20,7 +20,7 @@ import { join } from "node:path";
 
 import { applySchemaPrefilter, depsLine, parseWorkerReport, readVerifyRecord } from "./report.mjs";
 import { getTracker } from "./tracker.mjs";
-import { fixPrompt, resumeNote, workerPrompt } from "./prompts.mjs";
+import { conflictPrompt, fixPrompt, resumeNote, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
 import { dispatch } from "./dispatch.mjs";
 import { flagFullSuiteRuns } from "./pipeline/deviation.mjs";
@@ -270,19 +270,26 @@ export async function runWorker(ctx, issue, attempt) {
   if (resume.kind === "conflict" && !wt.reusedBranch) resume = { route: "restart" };
 
   // A reused branch may predate other issues' merges: sync it now, so the gap surfaces
-  // here rather than as a conflict at the merge gate. A conflict is left in the worktree
-  // for the coder, whatever this retry was for: a sibling can merge while any retry waits.
+  // here rather than as a conflict at the merge gate. A sync is three steps, whatever this
+  // retry was for (a sibling can merge while any retry waits): mergeFeatureBranch commits
+  // what resolve-merge-conflicts.sh resolves (registry versions, CHANGELOG appends); any
+  // other conflict is left in the worktree for its own conflict-only coder dispatch, checked
+  // mechanically (conflictResolved); only then does the original route run, with a prompt
+  // that has no conflict text. The conflict dispatch spends no attempt and no dispatch.
   let synced = false;
+  let pendingConflict = null;
   if (wt.reusedBranch) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=sync-feature-branch`);
     const conflictRetry = resume.kind === "conflict";
     const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch, keepConflict: true });
     if (sync.kept) {
-      ctx.log(`[SYNC-CONFLICT-KEPT] slug=${issue.slug} branch=${branch} files=${sync.files.join(",")} — left for the coder to resolve`);
-      // A retry that would have skipped the coder now needs one, for the conflict alone;
-      // verify and review re-run on its resolution either way.
-      if (resume.route === "verify") resume = { route: "fix", kind: "conflict", context: `'${sprint.featureBranch}' moved on under this branch` };
-      resume = { ...resume, conflictFiles: sync.files };
+      ctx.log(`[SYNC-CONFLICT-KEPT] slug=${issue.slug} branch=${branch} files=${sync.files.join(",")} — left for a conflict-only coder dispatch`);
+      pendingConflict = {
+        files: sync.files,
+        context: resume.kind === "conflict" && resume.context ? resume.context : `'${sprint.featureBranch}' moved on under this branch`,
+      };
+      // A conflict retry's only job was the merge: once resolved, verify and review re-run.
+      if (conflictRetry) resume = { route: "verify", label: "conflict-merged-clean" };
     } else if (conflictRetry) {
       resume = { route: "verify", label: "conflict-merged-clean" };
     }
@@ -316,7 +323,7 @@ export async function runWorker(ctx, issue, attempt) {
   // A coder-free retry re-runs only the gates this commit has not already passed: their
   // receipts are bound to the commit, so a gate re-run on it could only repeat its answer.
   let skipVerify = false;
-  if (resume.route === "verify") {
+  if (resume.route === "verify" && !pendingConflict) {
     const gates = gatesAtTip(ctx, branch);
     if (gates.reviewed) {
       ctx.log(
@@ -369,6 +376,44 @@ export async function runWorker(ctx, issue, attempt) {
     }
   }
 
+  const issueDir = dispatchIssueDir(dispatchDir, issue);
+  mkdirSync(issueDir, { recursive: true });
+  if (pendingConflict) {
+    const resolved = await dispatchConflict(ctx, {
+      issue,
+      worktree,
+      branch,
+      attempt,
+      issueDir,
+      deps: depsOutcome,
+      files: pendingConflict.files,
+      context: pendingConflict.context,
+    });
+    if (!resolved.ok) {
+      ctx.log(`[CONFLICT-UNRESOLVED] slug=${issue.slug} round=${attempt} branch=${branch} — ${resolved.why}; the original route did not run`, "warn");
+      return {
+        issue,
+        branch,
+        attempt,
+        worktree,
+        dispatch: resolved.dispatch,
+        report: {
+          parsedFrom: "conflict-unresolved",
+          status: "partial",
+          checks: { test: "not_run", lint: "not_run", typecheck: "not_run" },
+          branch,
+          workingDirectory: worktree,
+          progress: null,
+          notes: resolved.why,
+          criteria: [],
+          raw: "",
+        },
+        conflictUnresolved: resolved.why,
+      };
+    }
+    synced = true;
+  }
+
   if (resume.route === "verify") {
     const skip = SKIPPED_WORKER[resume.label];
     const verifyNote = skipVerify ? " (verify already passed at this commit — review only)" : "";
@@ -395,8 +440,6 @@ export async function runWorker(ctx, issue, attempt) {
     };
   }
 
-  const issueDir = dispatchIssueDir(dispatchDir, issue);
-  mkdirSync(issueDir, { recursive: true });
   const promptFile = join(issueDir, "prompt.md");
   const outFile = join(issueDir, "report.md");
   const sidecarFile = join(issueDir, "report.json");
@@ -416,8 +459,6 @@ export async function runWorker(ctx, issue, attempt) {
           branch,
           context: resume.context,
           kind: resume.kind,
-          featureBranch: sprint.featureBranch,
-          conflictFiles: resume.conflictFiles,
           reportPath: sidecarFile,
         })
       : workerPrompt({
@@ -433,8 +474,6 @@ export async function runWorker(ctx, issue, attempt) {
             hasProgress: issue.hasProgress,
             hasBlocked: issue.hasBlocked,
           }),
-          featureBranch: sprint.featureBranch,
-          conflictFiles: resume.conflictFiles,
           reportPath: sidecarFile,
         }),
   );
@@ -472,7 +511,7 @@ export async function runWorker(ctx, issue, attempt) {
   // instead of re-exploring it, when that session is small and the branch has not moved.
   // Not for a conflict fix: the kept merge changed files that session never saw.
   let resumeSessionId = null;
-  if (options.resumeCoderSession && resume.route === "fix" && resume.kind !== "conflict" && coder.runtime === "claude") {
+  if (options.resumeCoderSession && resume.route === "fix" && coder.runtime === "claude") {
     const tip = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
     const pick = resumableSession(sprint.lastDispatch(issue.slug, "coder"), tip);
     if (pick.sessionId) {
@@ -534,6 +573,72 @@ export async function runWorker(ctx, issue, attempt) {
 }
 
 /**
+ * The conflict-only coder dispatch for a sync merge left conflicted in the worktree: one per
+ * attempt, outside the retry cap and MAX_DISPATCHES_PER_ISSUE (it is not a worker round). Its
+ * success is read from git, never from its report.
+ */
+async function dispatchConflict(ctx, { issue, worktree, branch, attempt, issueDir, deps, files, context }) {
+  const { sprint, effects, options } = ctx;
+  const promptFile = join(issueDir, "conflict-prompt.md");
+  const outFile = join(issueDir, "conflict-report.md");
+  const sidecarFile = join(issueDir, "conflict-report.json");
+  rmSync(sidecarFile, { force: true });
+  writeFileSync(
+    promptFile,
+    conflictPrompt({
+      mainRoot: effects.mainRoot,
+      deps,
+      worktree,
+      issuePath: issueDescriptor(issue),
+      slug: issue.slug,
+      branch,
+      context,
+      reportPath: sidecarFile,
+      featureBranch: sprint.featureBranch,
+      conflictFiles: files,
+    }),
+  );
+  const coder = roleBinding(ctx, "coder");
+  ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=dispatch-conflict model=${coder.model ?? "inherit"} runtime=${coder.runtime}`);
+  const result = await dispatch(
+    effects,
+    coder.runtime,
+    {
+      agent: "crew-coder",
+      cwd: worktree,
+      promptFile,
+      outFile,
+      model: coder.model,
+      mainRoot: effects.mainRoot,
+      baseRef: sprint.featureBranch,
+      logFile: sprint.traceLog,
+      featureSlug: sprint.featureSlug,
+      slug: dispatchStem(issue),
+      issueNumber: issue.number,
+      round: attempt,
+      reportPath: sidecarFile,
+      maxBudgetUsd: coder.maxBudgetUsd,
+    },
+    {
+      timeoutMs: options.timeoutMs.coder,
+      onTrace: (line) => ctx.heartbeat(`slug=${dispatchStem(issue)} round=${attempt} conflict ${line}`),
+    },
+  );
+  const head = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
+  sprint.recordDispatchCost(result, { slug: issue.slug, role: "coder", attempt, head });
+  return { ...conflictResolved(effects, worktree, sprint.featureBranch), dispatch: result };
+}
+
+/** Is the merge really concluded: no MERGE_HEAD, nothing unmerged, the feature branch inside HEAD. */
+function conflictResolved(effects, worktree, featureBranch) {
+  const git = (args) => effects.gitRead(args, { cwd: worktree });
+  if (git(["rev-parse", "-q", "--verify", "MERGE_HEAD"]).code === 0) return { ok: false, why: "the merge is still in progress (MERGE_HEAD)" };
+  if (git(["diff", "--name-only", "--diff-filter=U"]).stdout.trim()) return { ok: false, why: "unmerged paths remain" };
+  if (git(["merge-base", "--is-ancestor", featureBranch, "HEAD"]).code !== 0) return { ok: false, why: `HEAD does not contain '${featureBranch}'` };
+  return { ok: true };
+}
+
+/**
  * Phase 2 of an issue: everything after the worker. Runs concurrently across issues, but
  * merge and close shell out via spawnSync, which blocks this process, so two issues'
  * merge-and-close never interleave. Merge order is completion order; merge-branches.sh
@@ -563,6 +668,11 @@ export async function runHousekeeping(ctx, worker) {
     const saved = merged.status === "complete" ? savedAllMetReview(sprint, branch) : null;
     if (saved) await promote(ctx, worker, saved, merged);
     return merged;
+  }
+
+  // The conflict dispatch left the merge unresolved: retained as a conflict, whatever it reported.
+  if (worker.conflictUnresolved) {
+    return finishRetryOrBlock(ctx, worker, outcome, taggedReason(MERGE_CONFLICT_TAG, `the conflict dispatch left the sync merge unresolved: ${worker.conflictUnresolved}`));
   }
 
   // --- dispatch health -------------------------------------------------------

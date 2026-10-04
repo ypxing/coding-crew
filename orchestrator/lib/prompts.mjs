@@ -55,7 +55,7 @@ function projectConfigLine(mainRoot) {
   return `Project config: ${join(mainRoot, ".coding-crew")} (dev-commands.json, docs/test-conventions.md) — not in the worktree`;
 }
 
-export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criteria, resume, reportPath, featureBranch, conflictFiles = [] }) {
+export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criteria, resume, reportPath }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
     ...installModeLines(mainRoot, deps),
@@ -70,7 +70,6 @@ export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criter
     "---",
   ];
   if (resume) lines.push("", resume);
-  if (conflictFiles.length) lines.push("", ...conflictLines(featureBranch, conflictFiles));
   lines.push("", ...resultBlock(worktree, reportPath));
   return `${lines.join("\n")}\n`;
 }
@@ -99,10 +98,7 @@ function resultBlock(worktree, reportPath) {
  * is already accepted — the only job is to make the stated problem go away with the
  * smallest change that does it.
  */
-export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify", featureBranch, conflictFiles = [] }) {
-  if (kind === "conflict") {
-    return conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles });
-  }
+export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify" }) {
   const isReview = kind === "review";
   const judged = isReview
     ? "This branch's code was already reviewed and accepted overall — it only failed on one or\n" +
@@ -137,15 +133,11 @@ export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, c
       "---",
     );
   }
-  if (conflictFiles.length) lines.push("", ...conflictLines(featureBranch, conflictFiles));
   lines.push("", ...resultBlock(worktree, reportPath));
   return `${lines.join("\n")}\n`;
 }
 
-/**
- * A merge of the feature branch into this one, left conflicted in the worktree: the
- * whole task of a conflict retry, and one more step of any other retry that hit it.
- */
+/** A merge of the feature branch into this one, left conflicted in the worktree. */
 function conflictLines(featureBranch, conflictFiles) {
   return [
     `A merge of \`${featureBranch}\` into this branch is in progress in the working directory, with`,
@@ -158,8 +150,8 @@ function conflictLines(featureBranch, conflictFiles) {
   ];
 }
 
-/** A retry whose only job is the conflicted merge. */
-function conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles }) {
+/** The conflict-only dispatch: its one job is the conflicted merge, never a step of another prompt. */
+export function conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
     ...installModeLines(mainRoot, deps),

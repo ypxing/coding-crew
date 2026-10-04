@@ -568,3 +568,29 @@ test("mergeFeatureBranch is a no-op when the branch is itself the feature branch
 
   assert.deepEqual(result, { merged: false });
 });
+
+test("mergeFeatureBranch runs resolve-merge-conflicts.sh on a conflict and commits what it resolved", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  writeFileSync(join(mainRoot, "resolve-merge-conflicts.sh"), "#!/usr/bin/env bash\ngit checkout --theirs shared.txt && git add shared.txt && echo resolved\n");
+  const featureBranch = "feature/x";
+  git("checkout", "-q", "-b", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "base\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "shared");
+  const branch = "crew/x/a";
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "shared.txt"), "issue\n");
+  git("commit", "-q", "-am", "issue edit");
+  git("checkout", "-q", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "feature\n");
+  git("commit", "-q", "-am", "feature edit");
+  const worktree = join(mainRoot, "wt-a");
+  git("worktree", "add", worktree, branch);
+
+  const result = mergeFeatureBranch(effects, { worktree, branch, featureBranch, keepConflict: true });
+
+  assert.equal(result.merged, true);
+  assert.equal(result.kept, undefined);
+  assert.equal(execFileSync("git", ["-C", worktree, "status", "--porcelain=v1", "--untracked-files=no"], { encoding: "utf8" }).trim(), "");
+  assert.equal(execFileSync("git", ["-C", worktree, "merge-base", "--is-ancestor", featureBranch, "HEAD"]).length, 0);
+});
