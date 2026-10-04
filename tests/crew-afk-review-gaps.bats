@@ -178,6 +178,36 @@ EOF
   [[ "$output" == *"LOW=1"* ]]
 }
 
+@test "a later run's feature block closes an earlier run's failed feature-<n> area" {
+  bash "$SCRIPT" mark-not-run --feature-slug "$SLUG" --branch feature-2 \
+    --slug feature-2 --report "$REPORT" --reason "review dispatch timed out" >/dev/null
+
+  run bash "$SCRIPT" remind --feature-slug "$SLUG"
+  [[ "$output" == *"gap: feature-2"* ]]
+
+  LATER_REPORT=".scratch/$SLUG/reviews/sprint-review-20260813.md"
+  cat > "$LATER_REPORT" <<EOF
+## Branch: feature (feature)
+
+\`\`\`json
+{"branch":"feature","slug":"feature","verdict":"all-met","detail":"","findings":[]}
+\`\`\`
+EOF
+
+  run bash "$SCRIPT" remind --feature-slug "$SLUG"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"gap: feature-"* ]]
+  [[ "$output" != *"REVIEW-GAPS"* ]]
+  run node "$CREW_REVIEW_ROLLUP" "$REPORT" "$LATER_REPORT"
+  [[ "$output" != *"feature-2"* ]]
+
+  # a failed area of the same run (gap written after its block) still shows
+  bash "$SCRIPT" mark-not-run --feature-slug "$SLUG" --branch feature-1 \
+    --slug feature-1 --report "$LATER_REPORT" --reason "timed out" >/dev/null
+  run bash "$SCRIPT" remind --feature-slug "$SLUG"
+  [[ "$output" == *"gap: feature-1"* ]]
+}
+
 @test "remind is unchanged when every branch was reviewed" {
   json=$(jq -n '{
     branch: "crew/my-feature/alpha", slug: "alpha", verdict: "all-met",
