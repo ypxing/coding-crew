@@ -320,8 +320,10 @@ _review_findings_md() {
   fi
 
   local out
-  out="$(_review_branch_prose "$report" "$branch" | awk -v sevs="$sevs" -v locs="$locs" \
+  # locs is one location per line: passed through the environment, since BSD awk rejects a newline in a -v value.
+  out="$(_review_branch_prose "$report" "$branch" | PF_LOCS="$locs" awk -v sevs="$sevs" \
       -v maxb="$FINDINGS_MAX_BYTES" -v maxl="$FINDING_MAX_LINES" '
+    BEGIN { locs = ENVIRON["PF_LOCS"] }
     function flush(   i, n, lines, m, L, ok, title, body, fences, entry) {
       if (blk == "") return
       n = split(blk, lines, "\n")
