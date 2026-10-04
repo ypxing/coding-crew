@@ -57,6 +57,10 @@ downgraded or dropped.
    branch block and the gate keeping a falsely-reported `complete` off the feature branch: when
    unsure, `unmet`.
 
+   A prompt block `PRD decisions this issue implements:` lists decisions the issue carries from the
+   PRD. Judge each like a criterion: cite the file and line that honours it. A branch that
+   contradicts one is `unmet`, and `detail` names its ID (e.g. `D2`).
+
    A criterion's named path or symbol is also met where a branch commit maps it
    (`<issue's name> → <file:line>`): cite that line, which is still the evidence.
 
@@ -100,20 +104,30 @@ Stack-agnostic, flag whenever the **diff** introduces them:
 3. **Trust boundary assumptions** — does it trust input it should not?
 4. **Architecture drift** — hidden coupling, or a deviation from the codebase's established
    patterns with no justification.
+5. **Leftover references** — for each file, flag, function, script or config key the diff deletes or
+   renames, search code, docs, tests and `registry.json` for anything still naming it; a live
+   reference is a finding. Tests asserting absence and `retired_*` lists are exempt.
 
 Thresholds for size/nesting/error-handling/test-coverage live in `quality.md`; framework-specific
 classes live in the references Step 1 named.
 
 ## Feature Mode
 
-A `Feature review:` dispatch runs once per sprint, at the first drain, over the **whole feature diff**
-(`Base:` to the feature branch) for what no single branch's review could see: a helper duplicated across
-issues, inconsistent error handling, a flow unsafe only combined. There are no acceptance criteria, so
-skip Step 2 item 2 — no `AC:` verdict. Everything else holds, with the same severity rubric. A defect
-inside one issue's diff was that branch's review's to find: report it only if CRITICAL.
+A `Feature review:` dispatch reviews the range its `Gather the diff:` line gives: the **whole feature diff**,
+or only the commits since an earlier review, default-branch commits excluded. It looks for what no single
+branch's review could see: a helper duplicated across issues, inconsistent error handling, a flow unsafe
+only combined. There are no acceptance criteria, so skip Step 2 item 2 — no `AC:` verdict. Everything else
+holds, with the same severity rubric. A defect inside one issue's diff is reported at any severity. Step 2's
+2000-line / top-10-files cap does not apply: read the whole range the line gives.
+
+An `Area:` block in the prompt (name, files, the full text of each decision) narrows the dispatch, and
+its `Gather the diff:` line, to one area of the feature; other reviewers read the rest in parallel. Read
+every file of the area end to end, plus callers outside it as needed, not only the diff hunks. For each
+decision given, say whether the merged code honours it and what input breaks it; a decision that does not
+hold is a finding, naming the input that breaks it. With no `Area:` block, review the whole range as above.
 
 Write the same object to the report path with `branch` and `slug` both `"feature"`, `verdict` always
-`"all-met"`, `detail` empty. If you could not review (diff too large to scope), write no report.
+`"all-met"`, `detail` empty. If you could not read the whole range, write no report.
 
 ## Precision
 
@@ -121,6 +135,10 @@ Report a finding only when you are >80% confident it is real. Skip stylistic pre
 violate project conventions, and unchanged code unless the new code directly triggers a CRITICAL
 class. Consolidate repeats into one finding ("5 functions missing error handling", not 5 items).
 Prioritise what could cause bugs, vulnerabilities, or data loss.
+
+Before reporting a finding, search the tree for every other instance of the same defect. The
+finding's `issue` names the defect class, and its `criterion` covers every instance found, listing
+their locations.
 
 ### Pre-Report Gate
 

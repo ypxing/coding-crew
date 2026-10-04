@@ -20,6 +20,8 @@
 #                         the same <slug>.review-once.calls counter file.
 #   <slug>.review-sleep   the reviewer sleeps this many seconds before answering — with a
 #                         fractional --reviewer-timeout, a review dispatch that times out.
+#   feature-planner.sleep  the feature review's planner sleeps this many seconds before answering — with a
+#                         fractional --reviewer-timeout, a planner that times out.
 #   <slug>.misbehave      a reviewer/triage dispatch that breaks its read-only contract; the content
 #                         is `commit` (a commit on the crew/*/<slug> branch) or `edit` (an uncommitted
 #                         file in the main checkout). Applies to every reviewer/triage call for the slug.
@@ -31,6 +33,8 @@
 #                         so two such issues conflict when the second one merges. A worker
 #                         dispatched into a worktree with a merge in progress resolves it
 #                         first, keeping both sides' lines (ours first), as crew-coder is told to.
+#   <slug>.rename         "<from> <to>": the worker also `git mv`s <from> to <to> in its commit
+#                         (when <from> still exists), so the issue's merge carries a rename.
 #   <slug>.untracked      after committing, the worker leaves src/<slug>.untracked uncommitted in
 #                         its worktree: a verify that passes on files the branch does not carry.
 #   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
@@ -120,6 +124,9 @@ trap mirror_sidecar EXIT
 SLUG="${SLUG_ARG:-$(basename "$OUT" | sed -E 's/\.(report|review)\.md$//')}"
 SLUG="$(printf '%s' "$SLUG" | sed -E 's/^[0-9]+-//')"
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
+# A feature review area reviewer (`feature-<n>`) answers from its own fixtures, else from the
+# plain `feature.*` ones, so a test that does not care about areas writes `feature.review`.
+if [[ "$SLUG" =~ ^feature-[0-9]+$ ]] && ! compgen -G "$FAKE_DIR/$SLUG.*" >/dev/null; then SLUG=feature; fi
 mkdir -p "$(dirname "$OUT")"
 
 # Stands in for a CLI's own tool-call event on stdout, so dispatch.mjs's onTrace heartbeat
@@ -143,6 +150,15 @@ if [ -f "$FAKE_DIR/$SLUG.misbehave" ] && { [ "$AGENT" = "crew-reviewer" ] || [ "
       git -C "$DIR" update-ref "$ref" "$new" ;;
     edit) echo "stray" >> "$DIR/stray-edit.txt" ;;
   esac
+fi
+
+# `--agent feature-planner` stands in for the feature review's planner: $CREW_FAKE_DIR/feature-planner.response
+# verbatim when present, else an answer with no json block (the one-area fallback).
+if [ "$AGENT" = "feature-planner" ]; then
+  [ -f "$FAKE_DIR/feature-planner.sleep" ] && sleep "$(cat "$FAKE_DIR/feature-planner.sleep")"
+  if [ -f "$FAKE_DIR/feature-planner.response" ]; then cat "$FAKE_DIR/feature-planner.response" > "$OUT"; else echo "No plan." > "$OUT"; fi
+  [ -f "$FAKE_DIR/feature-planner.exit" ] && exit "$(cat "$FAKE_DIR/feature-planner.exit")"
+  exit 0
 fi
 
 if [ "$AGENT" = "prd-audit" ]; then
@@ -239,6 +255,10 @@ if [ "$NOCOMMIT" -eq 0 ]; then
       echo "$SLUG" > src/shared.txt
     else
       echo "// $SLUG" >> "src/$SLUG.txt"
+    fi
+    if [ -f "$FAKE_DIR/$SLUG.rename" ]; then
+      read -r FROM TO < "$FAKE_DIR/$SLUG.rename"
+      [ -e "$FROM" ] && git mv "$FROM" "$TO"
     fi
     git add -A >/dev/null 2>&1
     git -c user.email=fake@test -c user.name=fake commit -q -m "feat: $SLUG" >/dev/null 2>&1

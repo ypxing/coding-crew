@@ -4,7 +4,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checksLine, extractBody, extractTitle, prBase, prdTitle } from "../../orchestrator/lib/pipeline/pr-body.mjs";
+import { checksLine, extractBody, extractTitle, prdTitle } from "../../orchestrator/lib/pipeline/pr-body.mjs";
+import { prBase } from "../../orchestrator/lib/pipeline/shared.mjs";
 import { prBodyPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("extractBody: keeps the answer from its first ## Summary line, dropping a preamble", () => {
@@ -87,4 +88,38 @@ test("prBase: no origin/HEAD falls back to origin/main, then origin/master", () 
 test("prBase: no origin default branch to measure from keeps the recorded base", () => {
   assert.equal(prBase(git({}), "f", "run-start"), "run-start");
   assert.equal(prBase(git({}), "f", undefined), null);
+});
+
+// ─── featureReviewRange, over a real repo ──
+import { execFileSync } from "node:child_process";
+import { featureReviewRange } from "../../orchestrator/lib/pipeline/feature-review.mjs";
+
+function rangeRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "range-"));
+  const g = (...a) => execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { encoding: "utf8" }).trim();
+  g("init", "-q", "-b", "main");
+  const commit = (f) => { writeFileSync(join(dir, f), f); g("add", f); g("commit", "-q", "-m", f); return g("rev-parse", "HEAD"); };
+  const effects = { gitRead: (args) => { try { return { code: 0, stdout: g(...args) }; } catch { return { code: 1, stdout: "" }; } } };
+  return { dir, g, commit, effects };
+}
+const rangeCtx = (effects, reviewed) => ({ effects, sprint: { featureBranch: "feature/x", readState: () => (reviewed ? { feature_review: { reviewed_tip: reviewed } } : {}) } });
+
+test("featureReviewRange: whole from the merge-base, incremental past reviewed_tip, whole again after a rewrite, skip when unchanged", () => {
+  const { dir, g, commit, effects } = rangeRepo();
+  try {
+    const root = commit("a");
+    g("checkout", "-q", "-b", "feature/x");
+    const one = commit("b");
+    assert.deepEqual(featureReviewRange(rangeCtx(effects)), { mode: "whole", base: root, tip: one, exclude: null });
+    const two = commit("c");
+    assert.deepEqual(featureReviewRange(rangeCtx(effects, one)), { mode: "increment", base: one, tip: two, exclude: "main" });
+    assert.equal(featureReviewRange(rangeCtx(effects, two)).mode, "skip");
+    assert.match(featureReviewRange(rangeCtx(effects, two)).reason, new RegExp(`nothing new since ${two}`));
+    assert.equal(featureReviewRange(rangeCtx(effects, "0".repeat(40))).mode, "whole");
+    g("checkout", "-q", "main");
+    g("branch", "-m", "trunk");
+    assert.equal(featureReviewRange(rangeCtx(effects)).mode, "skip");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

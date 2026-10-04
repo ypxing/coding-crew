@@ -441,7 +441,7 @@ test("a merge refused by uncommitted changes in the main checkout blocks at once
   assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
   assert.deepEqual(state(root).completed_slugs, ["alpha"]);
   // Nothing of alpha's is re-dispatched; the merge it resumes at is a first drain's feature review.
-  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-/.test(l) && !/ --slug feature( |$)/.test(l)).length, 0);
+  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-/.test(l) && !/ --slug feature(-\d+)?( |$)/.test(l)).length, 0);
   assert.equal(second.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=blocked — main-tree-dirty/);
 });
@@ -462,7 +462,8 @@ test("every dispatch is filed in this run's ledger with its slug, role and attem
     ["reviewer", 1, true],
     ["reviewer", 1, true],
     ["reviewer", 2, true],
-    ["reviewer", 1, true], // the feature review, once, at the drain
+    ["reviewer", 1, true], // the feature review's planner, once, at the drain
+    ["reviewer", 1, true], // the feature review's one area reviewer
   ]);
   // The coder's entry keeps the tip it left: the commit verify then checked.
   const verified = JSON.parse(readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json"), "utf8")).commit;

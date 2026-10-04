@@ -608,3 +608,11 @@ EOF
 #     orchestrator/lib/loop.mjs                                                        → ditto
 #   - the sprint reports once, from disk, at the end                                   → ditto
 #   - the word budget is AFK_LAUNCHER_WORD_BUDGET per launcher → tests/crew-afk-launcher.bats
+
+@test "state.sh feature-reviewed records feature_review.reviewed_tip and requires --tip" {
+  init_sprint calc
+  run state feature-reviewed
+  [ "$status" -ne 0 ]
+  state feature-reviewed --tip abc123 >/dev/null
+  [ "$(jq -r .feature_review.reviewed_tip .scratch/calc/sprint-state.json)" = "abc123" ]
+}

@@ -141,7 +141,7 @@ export const NO_BASELINE = ["--no-baseline"];
 export const NO_INTEGRATION = ["--no-integration-check"];
 // A per-branch review dispatch: the feature review (slug `feature`, once at the first drain) is
 // the same agent, counted by the feature-review tests alone.
-export const BRANCH_REVIEW = /^SPAWN .*--agent crew-reviewer(?!.* --slug feature( |$))/;
+export const BRANCH_REVIEW = /^SPAWN .*--agent crew-reviewer(?!.* --slug feature(-\d+)?( |$))/;
 
 /**
  * `--max-rounds N` and `--no-commands` are no longer flags; the orchestrator keeps them as the

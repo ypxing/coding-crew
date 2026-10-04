@@ -176,6 +176,9 @@ export async function runSprint(ctx) {
   const startedAt = now();
   const wallMs = Math.max(0, Number(options.maxWallMinutes) || 0) * 60_000;
   const wallElapsed = () => wallMs > 0 && now() - startedAt >= wallMs;
+  // Claimable issues the wall-clock cap left unclaimed: none until the cap has passed.
+  const unclaimedByCap = () =>
+    wallElapsed() ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i)) : [];
   let wallLogged = false;
   // The drain loop broke on the cap before Phase 2: parked fix issues wait for the next run.
   let flushSkipped = false;
@@ -336,7 +339,11 @@ export async function runSprint(ctx) {
     if (!featureReviewed) {
       featureReviewed = true;
       if (!options.dryRun && sprint.get("merged")) {
-        featureReview = await runFeatureReview(ctx, { integration });
+        const unclaimed = unclaimedByCap();
+        featureReview = await runFeatureReview(ctx, {
+          integration,
+          wallCap: unclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: unclaimed.length } : null,
+        });
         if (featureReview.promotedRef) ownRefs.add(featureReview.promotedRef);
         if (featureReview.promotedRef && !tracker.listOpenIssueFiles) unseen.add(featureReview.promotedRef);
       }
@@ -372,9 +379,7 @@ export async function runSprint(ctx) {
   // whose entries carry their own `status` (a close-state, not a file location) instead of
   // requiring a second directory read to know which are still open.
   // Unclaimed because of the cap: claimable issues, listed before anything releases them.
-  const wallUnclaimed = wallElapsed()
-    ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i)).map((i) => i.slug)
-    : [];
+  const wallUnclaimed = unclaimedByCap().map((i) => i.slug);
   const wallCap = wallUnclaimed.length || flushSkipped ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
   // A cap hit stalls the run even when the attempt cap (CREW_MAX_ROUNDS) also ended it.
   const stalled =
@@ -595,7 +600,8 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
     const queued = featureReview.promoted
       ? `; ${featureReview.promoted} ${sprint.fixFindings === "actionable" ? "Actionable" : "at or above the fix threshold"} went to Phase 2`
       : "";
-    ctx.out(`\n## Feature Review\n\nThe whole feature diff was reviewed once: ${n} finding(s)${queued} (see ${featureReview.report}, branch \`feature\`).\n`);
+    const gaps = featureReview.areaFailures?.length ? `\n\n**Not run (${featureReview.areaFailures.length} of ${featureReview.areas} area reviewers):**\n${featureReview.areaFailures.map((f) => `- ${f}`).join("\n")}` : "";
+    ctx.out(`\n## Feature Review\n\nThe feature was reviewed in ${featureReview.areas} area(s): ${n} finding(s)${queued} (see ${featureReview.report}, branch \`feature\`).${gaps}\n`);
   }
   if (sprint.triageFallbacks.length) {
     const lines = sprint.triageFallbacks.map((f) => `- ${f.scope}: ${f.reason}`);

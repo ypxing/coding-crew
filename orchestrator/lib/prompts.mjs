@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { shellQuote } from "./pane-host/shared.mjs";
 import { renderReviewContext } from "./review-context.mjs";
 
 /**
@@ -199,7 +200,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
   // A size tells the reviewer to search the file for its figure rather than read it whole.
@@ -220,6 +221,9 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "---",
     criteria.trim() || "(none listed in the issue)",
     "---",
+    ...(prdDecisions?.length
+      ? ["PRD decisions this issue implements:", "---", ...prdDecisions, "---"]
+      : []),
     "",
     `Gather the diff: git diff $(git merge-base ${featureBranch} ${branch})..${branch}`,
     ...(testOnly ? ["Diff scope: test-only — every changed file is a test, spec or fixture file."] : []),
@@ -285,12 +289,13 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
 export const FEATURE_REVIEW = "feature";
 
 /**
- * Feature mode (crew-reviewer's protocol § Feature Mode): the whole feature diff, once, at the first
- * drain. Same report object as a branch review, but no issue and no criteria — findings only.
+ * Feature mode (crew-reviewer's protocol § Feature Mode), once per run at the first drain: the whole
+ * feature diff or one area of it (its files only), or the commits since the last review. Same report
+ * object as a branch review, but no issue and no criteria — findings only.
  */
-export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAssets, reviewContext }) {
+export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, area = null, decisions = [] }) {
   return [
-    "Feature review: review the whole feature diff, once, before it ships.",
+    "Feature review: review the feature diff across its issues before it ships.",
     ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
     ...renderReviewContext(reviewContext),
     `Feature branch: ${featureBranch}`,
@@ -298,11 +303,30 @@ export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAss
     `Branch: ${FEATURE_REVIEW}`,
     `Slug: ${FEATURE_REVIEW}`,
     "",
-    `Gather the diff: git diff ${base}..${featureBranch}`,
+    exclude
+      ? `Gather the diff: git log -p --reverse ${base}..${featureBranch} --not ${exclude}`
+      : area && !area.whole
+        ? // Paths are repo data: shell-quoted, and literal so `[id].js` or `:x` is no glob or pathspec magic.
+          // --no-renames keeps a renamed file's old path, and so its deletion, in view.
+          `Gather the diff: git --literal-pathspecs diff --no-renames ${base}..${featureBranch} -- ${area.files.map(shellQuote).join(" ")}`
+        : `Gather the diff: git diff ${base}..${featureBranch}`,
+    ...(exclude ? ["", `An earlier run already reviewed up to ${base}; this range holds only the commits added since, without anything merged in from ${exclude}.`] : []),
+    ...(area
+      ? [
+          "",
+          "Area:",
+          `Name: ${area.name}`,
+          "Files:",
+          ...(area.files.length ? area.files.map((f) => `- ${f}`) : ["- (the whole diff)"]),
+          "Decisions:",
+          ...(decisions.length ? decisions : ["(none given for this area)"]),
+        ]
+      : []),
     "",
     "Every issue's branch was already reviewed on its own diff, and the checks passed on the merged",
-    "branch. Look for what only the whole diff shows (crew-reviewer's Feature Mode). There is no issue and",
-    "no acceptance criteria: give no AC verdict, only findings.",
+    `branch. Look first for what only ${area && !area.whole ? "this area's diff, across its issues," : "the whole diff"} shows, but report a defect inside one`,
+    "issue's diff too, at any severity (crew-reviewer's Feature Mode). There is no issue and no acceptance",
+    "criteria: give no AC verdict, only findings.",
     "",
     `Write your structured result to ${reportPath} as your last action. This file is the only thing`,
     "counted — nothing you print in your final message is parsed:",

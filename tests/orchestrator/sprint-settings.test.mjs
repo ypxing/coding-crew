@@ -197,6 +197,7 @@ test("--max-wall: past the cap nothing new is claimed, the running issue merges,
   assert.match(r.stdout, /## Wall-clock cap[\s\S]*- beta/);
   assert.match(traceLog(root), /\[WALL-CAP\] 0\.01 minute cap elapsed/);
   assert.match(r.stdout, /CAPPED: the wall-clock cap stopped new claims/);
+  assert.match(traceLog(root), /FEATURE-REVIEW: skipped — the 0\.01-minute wall-clock cap/);
   assert.doesNotMatch(r.stdout, /STALLED:/);
   assert.deepEqual(state(root).merged_branches ?? [], ["crew/demo/alpha"]);
 });
