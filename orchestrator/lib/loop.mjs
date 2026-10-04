@@ -38,10 +38,12 @@
  * The PRD audit (runPrdAudit) runs once, the first time the queue drains: its gaps are parked
  * like findings, so the same flush sends both into Phase 2.
  *
- * The feature review (runFeatureReview) also runs once, at that first drain, after the integration
- * check: crew-reviewer over the whole feature diff. Its findings are parked like a branch's, so the
- * same flush sends them into Phase 2; it is not re-run after Phase 2, and it is skipped when nothing
- * merged or when the integration check is red.
+ * The feature review (runFeatureReview) runs at every drain where something merged, after the
+ * integration check: crew-reviewer over the whole feature diff the first time, then over the commits
+ * since the last review (no reviewer when there are none). The findings of the first two reviews that
+ * ran are parked like a branch's, so the same flush sends them into Phase 2; later reviews only
+ * report, and each finding the fixFindings rule would have promoted keeps the PR a draft. Each drain
+ * is skipped when the integration check is red or the wall-clock cap stopped claims.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -57,7 +59,7 @@ import { fixIntegration } from "./integration-fix.mjs";
 import { writePrBody } from "./pipeline/pr-body.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit, promoteSeverities } from "./report.mjs";
-import { runFeatureReview } from "./pipeline/feature-review.mjs";
+import { reportOnlyFeatureFindings, runFeatureReview } from "./pipeline/feature-review.mjs";
 
 export async function runSprint(ctx) {
   const { sprint, effects, options } = ctx;
@@ -275,8 +277,8 @@ export async function runSprint(ctx) {
   let prdAudit = {};
   let audited = false;
   let integration = null;
-  let featureReview = {};
-  let featureReviewed = false;
+  // One entry per drain whose review was attempted (featureReviewEntry), for the summary and the PR.
+  const featureReviews = [];
   // Every red drain's outcome (integration-fix.mjs), for the cap, the repeat check and the summary.
   const integrationFixes = [];
   const integrationRefs = new Set();
@@ -335,18 +337,21 @@ export async function runSprint(ctx) {
         if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
       }
     }
-    // Once, at the first drain whatever it merged: Phase 2's fixes are not reviewed as a feature again.
-    if (!featureReviewed) {
-      featureReviewed = true;
-      if (!options.dryRun && sprint.get("merged")) {
-        const unclaimed = unclaimedByCap();
-        featureReview = await runFeatureReview(ctx, {
-          integration,
-          wallCap: unclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: unclaimed.length } : null,
-        });
-        if (featureReview.promotedRef) ownRefs.add(featureReview.promotedRef);
-        if (featureReview.promotedRef && !tracker.listOpenIssueFiles) unseen.add(featureReview.promotedRef);
-      }
+    // At every drain with something merged. Only the first two reviews that ran promote (PRD D5):
+    // Phase 2's fix of a fix is not chased further, later findings are reported.
+    if (!options.dryRun && sprint.get("merged")) {
+      const unclaimed = unclaimedByCap();
+      const ran = featureReviews.filter((r) => r.findings).length;
+      const promote = ran < FEATURE_REVIEW_PROMOTIONS ? ran + 1 : false;
+      const review = await runFeatureReview(ctx, {
+        integration,
+        wallCap: unclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: unclaimed.length } : null,
+        promote,
+        drain: featureReviews.length + 1,
+      });
+      featureReviews.push(review);
+      if (review.promotedRef) ownRefs.add(review.promotedRef);
+      if (review.promotedRef && !tracker.listOpenIssueFiles) unseen.add(review.promotedRef);
     }
     // Past the cap Phase 2 stays parked: the fix issues wait for the next run. With none parked
     // (and, under github, none created and still awaiting the listing) the cap cut nothing short.
@@ -396,7 +401,7 @@ export async function runSprint(ctx) {
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, capped, wallCap, prdAudit, unlisted, integration, integrationFixes, featureReview });
+  await wrapUp(ctx, { tracker, stalled, capped, wallCap, prdAudit, unlisted, integration, integrationFixes, featureReviews });
   return { stalled, wallCapped: Boolean(wallCap), history };
 }
 
@@ -540,7 +545,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReview = {} }) {
+async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReviews = [] }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -567,7 +572,7 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
 
   // --- summary (rendered from disk, never from recollection) -----------------
   // The PR comes first: the summary points at it when the findings were posted there.
-  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap });
+  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap, unfixedFindings: unfixedFeatureFindings(sprint) });
   const summaryArgs = ["--promoted", promoteSeverities(sprint.fixFindings)];
   if (stalled) summaryArgs.push("--stalled");
   if (wallCap) summaryArgs.push("--capped");
@@ -593,16 +598,7 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
     ctx.out(`\n## Wall-clock cap\n\nThe ${wallCap.minutes}-minute cap elapsed: running workers finished, Phase 2 fix issues stayed parked.${wallCap.unclaimed.length ? ` Unclaimed (${wallCap.unclaimed.length}):\n${wallCap.unclaimed.map((s) => `- ${s}`).join("\n")}` : ""}\n`);
   }
   if (integration) ctx.out(`\n## Integration check\n\n${integrationSection(effects.mainRoot, sprint.featureBranch, integration, integration.fix, integrationFixes)}\n`);
-  if (featureReview.skipped) ctx.out(`\n## Feature Review\n\n**Not run:** ${featureReview.skipped}\n`);
-  else if (featureReview.failed) ctx.out(`\n## Feature Review\n\n**Not run:** ${featureReview.failed}\n`);
-  else if (featureReview.report) {
-    const n = featureReview.findings?.length ?? 0;
-    const queued = featureReview.promoted
-      ? `; ${featureReview.promoted} ${sprint.fixFindings === "actionable" ? "Actionable" : "at or above the fix threshold"} went to Phase 2`
-      : "";
-    const gaps = featureReview.areaFailures?.length ? `\n\n**Not run (${featureReview.areaFailures.length} of ${featureReview.areas} area reviewers):**\n${featureReview.areaFailures.map((f) => `- ${f}`).join("\n")}` : "";
-    ctx.out(`\n## Feature Review\n\nThe feature was reviewed in ${featureReview.areas} area(s): ${n} finding(s)${queued} (see ${featureReview.report}, branch \`feature\`).${gaps}\n`);
-  }
+  if (featureReviews.length) ctx.out(`\n## Feature Review\n\n${featureReviews.map((r, i) => featureReviewLine(sprint, r, i + 1, featureReviews.length)).join("\n\n")}\n`);
   if (sprint.triageFallbacks.length) {
     const lines = sprint.triageFallbacks.map((f) => `- ${f.scope}: ${f.reason}`);
     ctx.out(
@@ -615,13 +611,38 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
   ctx.out("NO MORE TASKS");
 }
 
+/** Feature reviews promote at the first two drains whose review ran; later ones are report-only. */
+const FEATURE_REVIEW_PROMOTIONS = 2;
+
+/** The findings a report-only feature review left that the fixFindings rule would have promoted, read from the review report on disk (an earlier run's count too). */
+function unfixedFeatureFindings(sprint) {
+  return sprint.fixFindings === "none" ? [] : reportOnlyFeatureFindings(sprint.reviewDir);
+}
+
+/** One drain's entry of the summary's `## Feature Review`: its range, finding count, and what became of them. */
+function featureReviewLine(sprint, r, n, total) {
+  const label = total > 1 ? `Drain ${n}: ` : "";
+  if (r.skipped) return `${label}**Not run:** ${r.skipped}`;
+  if (r.failed) return `${label}**Not run:** ${r.failed}`;
+  const count = r.findings?.length ?? 0;
+  const rule = sprint.fixFindings === "actionable" ? "Actionable" : "at or above the fix threshold";
+  const fate = r.promoted
+    ? `; ${r.promoted} ${rule} went to Phase 2`
+    : r.reportOnly?.length
+      ? `; report-only (past the promotion cap): ${r.reportOnly.length} ${rule} not sent to Phase 2`
+      : "";
+  const gaps = r.areaFailures?.length ? `\n\n**Not run (${r.areaFailures.length} of ${r.areas} area reviewers):**\n${r.areaFailures.map((f) => `- ${f}`).join("\n")}` : "";
+  const what = r.mode === "increment" ? "The commits since the last review were" : "The feature was";
+  return `${label}${what} reviewed in ${r.areas} area(s): ${count} finding(s)${fate} (see ${r.report}, branch \`feature\`).${gaps}`;
+}
+
 /**
  * Why a run is not green, one line per cause, for the PR block and the summary — none when it
  * is: exited 0 (not stalled, not capped by the wall clock), no issue blocked, not cut short by the
  * attempt cap (CREW_MAX_ROUNDS), and the integration check passed or was cached. A check that
  * could not run (`skipped`) is not green; one the user switched off is not held against it.
  */
-function notGreenReasons({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true, wallCap = null }) {
+function notGreenReasons({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true, wallCap = null, unfixedFindings = [] }) {
   const reasons = [];
   if (wallCap) reasons.push(`the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length ? `${wallCap.unclaimed.length} issue(s) unclaimed` : "Phase 2 fix issues stayed parked"})`);
   else if (exitCode !== 0) reasons.push("the run stalled with issues unfinished");
@@ -630,6 +651,10 @@ function notGreenReasons({ exitCode = 0, blocked = [], integration = null, cappe
   if (integration?.status === "skipped") reasons.push(`the integration check was skipped (${integration.reason})`);
   else if (!integration && integrationEnabled) reasons.push("the integration check did not run");
   else if (integration && !["pass", "cached"].includes(integration.status)) reasons.push(`the integration check ${integration.status}`);
+  if (unfixedFindings.length) {
+    const names = unfixedFindings.slice(0, 5).map((f) => `${f.location} (${f.severity})`).join(", ");
+    reasons.push(`${unfixedFindings.length} feature review finding(s) past the promotion cap were reported, not fixed: ${names}${unfixedFindings.length > 5 ? ", …" : ""}`);
+  }
   return reasons;
 }
 
@@ -644,7 +669,7 @@ export const isGreen = (state) => notGreenReasons(state).length === 0;
  * (post-findings.sh) its URL and their count — or null when there is nothing to say. A posting
  * failure is reported in the text and never fails the sprint.
  */
-async function pullRequest(ctx, tracker, integration, { stalled = false, capped = false, wallCap = null } = {}) {
+async function pullRequest(ctx, tracker, integration, { stalled = false, capped = false, wallCap = null, unfixedFindings = [] } = {}) {
   const { sprint, effects, options } = ctx;
   let refs = [];
   let refsError = null;
@@ -690,7 +715,7 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   const body = await writePrBody(ctx, { integration });
   const blockedSlugs = sprint.getList("blocked");
   const { retention = {}, blocked_reasons: blockedReasons = {} } = sprint.readState();
-  const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false };
+  const state = { exitCode: stalled ? 2 : 0, blocked: blockedSlugs, integration, capped, wallCap, integrationEnabled: options.integrationCheck !== false, unfixedFindings };
   const reasons = notGreenReasons(state);
   const green = reasons.length === 0;
   const args = ["--closes-file", closesFile];

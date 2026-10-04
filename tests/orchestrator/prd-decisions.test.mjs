@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { decisionsFor, implementedIds, loadPrdDecisions, parsePrdDecisions } from "../../orchestrator/lib/prd-decisions.mjs";
+import { decisionsFor, implementedIds, loadPrdDecisions, loadPrdSection, parsePrdDecisions } from "../../orchestrator/lib/prd-decisions.mjs";
 import { reviewPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 const FIX = join(import.meta.dirname, "../fixtures/prd-decisions");
@@ -110,4 +110,18 @@ test("github: a failed fetch falls back to the saved prd-issue.md", () => {
   writeFileSync(join(dir, ".scratch/demo/prd-issue.md"), "- **D2** — saved\n");
   const ctx = ctxFor(dir, () => ({ code: 1, stdout: "" }));
   assert.deepEqual(decisionsFor(ctx, "## Implements\n\nD2\n"), ["- **D2** — saved"]);
+});
+
+test("loadPrdSection returns the section body verbatim; null without the section or without a PRD", () => {
+  const body = "Old runs keep working.\n\n### Migration\n\n- re-run `install.sh`";
+  const dir = root({ prd: `# PRD\n\n## Decisions\n\n- **D1** — x.\n\n## Compatibility & Migration\n\n${body}\n\n## Out of scope\n\nnope\n` });
+  assert.equal(loadPrdSection(ctxFor(dir), "Compatibility & Migration"), body);
+  assert.equal(loadPrdSection(ctxFor(root({ prd: "# PRD\n\n## Decisions\n\n- **D1** — x.\n" })), "Compatibility & Migration"), null);
+  assert.equal(loadPrdSection(ctxFor(root()), "Compatibility & Migration"), null);
+});
+
+test("loadPrdSection ignores a # comment line inside a fenced block and runs to the next real heading", () => {
+  const body = "Run:\n\n```sh\n# re-run the installer\n./install.sh --update\n```\n\nDone.";
+  const dir = root({ prd: `# PRD\n\n## Compatibility & Migration\n\n${body}\n\n## Out of scope\n\nnope\n` });
+  assert.equal(loadPrdSection(ctxFor(dir), "Compatibility & Migration"), body);
 });

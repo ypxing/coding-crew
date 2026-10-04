@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO, SCRIPTS, sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, privateScripts, failFirstCall, test } from "./helpers/sprint.mjs";
+import { reportOnlyFeatureFindings } from "../../orchestrator/lib/pipeline/feature-review.mjs";
 
 // ─── fixFindings actionable (the default): crew-triage judges each finding, whatever its severity ──
 
@@ -62,6 +63,73 @@ test("actionable: an Actionable LOW is fixed in Phase 2, a Debatable HIGH is not
   assert.match(r.stdout, /1 Debatable — decide these first/);
 });
 
+test("actionable: a finding triage marks duplicate_of is folded into its target: promoted once, shown once", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryLow, retryHigh]));
+  fake(
+    root,
+    "alpha-findings.triage",
+    findingVerdicts([
+      { verdict: "actionable", rationale: "one rename" },
+      { verdict: "actionable", rationale: "same defect", duplicate_of: 0 },
+    ]),
+  );
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
+  assert.equal((criteria.match(/^- \[ \]/gm) ?? []).length, 1);
+  assert.match(criteria, /\[HIGH\]/);
+  assert.match(criteria, /src\/alpha\.txt:2/);
+  assert.match(criteria, /src\/alpha\.txt:1/);
+  assert.match(sprintReport(root), /"duplicate_of":0/);
+  assert.match(remindOf(root), /^FINDINGS: none$/m);
+});
+
+test("actionable: a duplicate_of pair at a report-only feature drain leaves its target report_only, open and not green", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const target = { severity: "MEDIUM", location: "src/alpha.txt:1", issue: "Retry loop is unbounded", criterion: "Bound the retry loop" };
+  const dup = { severity: "HIGH", location: "src/beta.txt:9", issue: "Beta retries forever", criterion: "Bound beta's retry" };
+  fake(root, "feature.review", featureReviewFile([target, dup]));
+  fake(root, "feature.review-later", featureReviewFile([target, dup]));
+  fake(root, "feature-findings.triage", findingVerdicts([
+    { verdict: "actionable", rationale: "one fix" },
+    { verdict: "actionable", rationale: "same defect", duplicate_of: 0 },
+  ]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /FEATURE-REVIEW: 1 finding\(s\) the rule would promote are report-only/);
+  const blocks = sprintReport(root).split("## Branch: feature (feature)").pop();
+  const last = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(blocks)[1]).findings;
+  assert.equal(last.find((f) => f.issue === target.issue).report_only, true);
+  // reportOnlyFeatureFindings is what notGreenReasons' unfixedFindings is read from: the run is not green.
+  assert.deepEqual(reportOnlyFeatureFindings(join(root, ".scratch/demo/reviews")).map((f) => [f.location, f.severity]), [["src/alpha.txt:1", "MEDIUM"]]);
+  assert.match(remindOf(root), /^FINDINGS: open=1 \(HIGH=1\)$/m);
+  assert.match(r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
+});
+
+test("actionable: an actionable duplicate_of a debatable target at a report-only feature drain is report_only and not green", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const target = { severity: "MEDIUM", location: "src/alpha.txt:1", issue: "Retry contract is unclear", criterion: "Clarify the retry contract" };
+  const dup = { severity: "HIGH", location: "src/beta.txt:9", issue: "Beta retries forever", criterion: "Bound beta's retry" };
+  fake(root, "feature.review", featureReviewFile([target, dup]));
+  fake(root, "feature.review-later", featureReviewFile([target, dup]));
+  fake(root, "feature-findings.triage", findingVerdicts([
+    { verdict: "debatable", rationale: "changes the public contract" },
+    { verdict: "actionable", rationale: "same area", duplicate_of: 0 },
+  ]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /FEATURE-REVIEW: 1 finding\(s\) the rule would promote are report-only/);
+  const blocks = sprintReport(root).split("## Branch: feature (feature)").pop();
+  const last = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(blocks)[1]).findings;
+  assert.equal(last.find((f) => f.issue === dup.issue).report_only, true);
+  assert.notEqual(last.find((f) => f.issue === target.issue).report_only, true);
+  assert.match(r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
+});
+
 test("actionable: a dismiss verdict is remapped to actionable and promoted to a fix issue", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -109,6 +177,7 @@ test("actionable: the feature review's findings are triaged and promoted the sam
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "feature.review", featureReviewFile([crossIssue("LOW", "Name the two retry loops alike"), crossIssue("HIGH", "Merge the retry helpers into a new public module")]));
+  fake(root, "feature.review-later", featureReviewFile([])); // the Phase 2 drain's increment review
   fake(
     root,
     "feature-findings.triage",

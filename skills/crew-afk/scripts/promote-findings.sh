@@ -308,20 +308,22 @@ _review_branch_prose() {
 # promotes: each one's full prose block (title, File:, Snippet:, Issue:, Fix:) in a <details>.
 # <severities> is a list such as "CRITICAL, HIGH", or `actionable`, which keeps the blocks whose
 # location the findings triage judged actionable (that verdict sits in the block's json, not its
-# prose). Where the prose has no block to keep, the json's one-line findings are listed instead,
+# prose; a folded duplicate_of target's location lists both spots, each matched on its own). Where the prose has no block to keep, the json's one-line findings are listed instead,
 # so a promoted finding is never absent from the body.
 _review_findings_md() {
   local report="$1" branch="$2" severities="$3" locs="" sevs="" rollup
   rollup="$(review_rollup "$report")"
   if [ "$severities" = "actionable" ]; then
-    locs="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.verdict == "actionable") | .location' <<< "$rollup" 2>/dev/null || true)"
+    locs="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.verdict == "actionable") | .location | split(", ")[]' <<< "$rollup" 2>/dev/null || true)"
   else
     sevs="$(printf '%s' "$severities" | tr -d ' ')"
   fi
 
   local out
-  out="$(_review_branch_prose "$report" "$branch" | awk -v sevs="$sevs" -v locs="$locs" \
+  # locs is one location per line: passed through the environment, since BSD awk rejects a newline in a -v value.
+  out="$(_review_branch_prose "$report" "$branch" | PF_LOCS="$locs" awk -v sevs="$sevs" \
       -v maxb="$FINDINGS_MAX_BYTES" -v maxl="$FINDING_MAX_LINES" '
+    BEGIN { locs = ENVIRON["PF_LOCS"] }
     function flush(   i, n, lines, m, L, ok, title, body, fences, entry) {
       if (blk == "") return
       n = split(blk, lines, "\n")
@@ -772,7 +774,8 @@ cmd_mark_not_run() {
 # ("- <branch>: SEV, SEV → <path>"), never the reviewer's free text, so a plain regex capture reads
 # them exactly. Prints a JSON array of {branch, severity, location, criterion, verdict, rationale};
 # verdict and rationale are "" for a finding triage never judged. `carried: true` is added to a
-# finding an earlier review of the branch raised and the latest did not repeat.
+# finding an earlier review of the branch raised and the latest did not repeat. A finding marked
+# `report_only` (a feature review past the promotion cap) is never covered: no fix issue took it.
 open_findings_json() {
   local rollup="$1" promoted
   shift
@@ -787,8 +790,9 @@ open_findings_json() {
   jq -n --argjson rollup "$rollup" --argjson promoted "$promoted" '
     ($promoted | map(.branch as $b | .sevs[] as $s | {(($b + " " + $s)): true}) | add // {}) as $pset
     | [$rollup.branches[] | .branch as $b | .findings[]
-       | select((($pset[$b + " " + .severity] // false)
-                 or ((.verdict // "") == "actionable" and ($pset[$b + " actionable"] // false))) | not)
+       | select((.report_only == true)
+                 or ((($pset[$b + " " + .severity] // false)
+                 or ((.verdict // "") == "actionable" and ($pset[$b + " actionable"] // false))) | not))
        | {branch: $b, severity, location: (.location // ""), issue: (.issue // ""), criterion: (.criterion // ""),
           verdict: (.verdict // ""), rationale: (.rationale // "")}
           + (if .carried == true then {carried: true} else {} end)]

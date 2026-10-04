@@ -37,7 +37,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.15.2",
+      "version": "2.16.1",
       "source-dir": "crew-afk",
       "description": "Orchestrator that dispatches each ready-for-agent issue to a coder CLI process in its own worktree, reviews and merges every branch, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -133,7 +133,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.10.1",
+      "version": "1.10.2",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
@@ -144,7 +144,7 @@
       }
     },
     "to-prd": {
-      "version": "1.4.2",
+      "version": "1.4.3",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills",

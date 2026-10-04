@@ -478,3 +478,15 @@ test("closingRefs adds Origin: issues exactly when the PRD's line is returned", 
     ["Closes #2", "Closes #3", "Closes #5", "Closes #7"]);
   assert.deepEqual(closingRefs(repo(), { featureSlug: "feat", exec: mk([prd(2), issue(3, "awaiting-merge"), issue(4, "blocked")]) }), ["Closes #3"]);
 });
+
+test("parseIssue reads blockedBy after an indented closing code fence", () => {
+  const body = "## What to build\n\n1. x:\n   ```sh\n   y\n   ```\n\n## Blocked by\n\n- #12\n";
+  const i = parseIssue({ number: 5, title: "t", body, labels: [], state: "OPEN" });
+  assert.deepEqual(i.blockedBy, [12]);
+});
+
+test("parseIssue does not read a PR / pull request number in ## Blocked by as a blocker", () => {
+  const body = "## Blocked by\n\n- Issue #3 (needs the parser from PR #40)\n- #12, after pull request #41 and pull #42\n- Issue #2, #5\n";
+  const i = parseIssue({ number: 9, title: "t", body, labels: [], state: "OPEN" });
+  assert.deepEqual(i.blockedBy, [3, 12, 2, 5]);
+});

@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { findingsTriagePrompt } from "../prompts.mjs";
-import { annotateFindings, applyFindingVerdicts, findingsAtOrAbove, parseFindingsTriage, promoteSeverities, severityNames } from "../report.mjs";
+import { annotateFindings, applyFindingVerdicts, findingsAtOrAbove, foldDuplicates, parseFindingsTriage, promoteSeverities, severityNames } from "../report.mjs";
 import { limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /** The severity rule a failed triage falls back to. */
@@ -71,7 +71,7 @@ export async function selectPromotable(ctx, { findings, label, scope, ref, chang
   writeVerdicts(reportFile, written, annotateFindings(written, judged));
   const count = (v) => judged.filter((f) => f.verdict === v).length;
   ctx.log(`FINDINGS-TRIAGE: ${label}: ${count("actionable")} actionable, ${count("debatable")} debatable`);
-  return { promotable: judged.filter((f) => f.verdict === "actionable"), findings: judged, rule: "actionable" };
+  return { promotable: foldDuplicates(judged, judged.filter((f) => f.verdict === "actionable")), findings: judged, rule: "actionable" };
 }
 
 /** Dispatched to `crew-triage` in findings mode. Returns `{verdicts}` or `{failed: reason}`. */
