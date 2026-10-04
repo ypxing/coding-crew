@@ -289,11 +289,11 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
 export const FEATURE_REVIEW = "feature";
 
 /**
- * Feature mode (crew-reviewer's protocol § Feature Mode), once per run at the first drain: the whole
+ * Feature mode (crew-reviewer's protocol § Feature Mode), at every drain: the whole
  * feature diff or one area of it (its files only), or the commits since the last review. Same report
  * object as a branch review, but no issue and no criteria — findings only.
  */
-export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, area = null, decisions = [] }) {
+export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, area = null, decisions = [], compatibility = null }) {
   return [
     "Feature review: review the feature diff across its issues before it ships.",
     ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
@@ -322,6 +322,8 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
           ...(decisions.length ? decisions : ["(none given for this area)"]),
         ]
       : []),
+    ...(!area && decisions.length ? ["", "PRD decisions:", ...decisions] : []),
+    ...(compatibility ? ["", "PRD ## Compatibility & Migration (verbatim):", "", compatibility] : []),
     "",
     "Every issue's branch was already reviewed on its own diff, and the checks passed on the merged",
     `branch. Look first for what only ${area && !area.whole ? "this area's diff, across its issues," : "the whole diff"} shows, but report a defect inside one`,
