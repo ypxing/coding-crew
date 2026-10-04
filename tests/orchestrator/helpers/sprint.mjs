@@ -139,7 +139,7 @@ export const NO_BASELINE = ["--no-baseline"];
 // Likewise the integration check (at each drain, on the merged feature branch) is one more set of
 // check runs; the helpers leave it out unless a test asks for it.
 export const NO_INTEGRATION = ["--no-integration-check"];
-// A per-branch review dispatch: the feature review (slug `feature`, once at the first drain) is
+// A per-branch review dispatch: the feature review (slug `feature`, at each drain) is
 // the same agent, counted by the feature-review tests alone.
 export const BRANCH_REVIEW = /^SPAWN .*--agent crew-reviewer(?!.* --slug feature(-\d+)?( |$))/;
 
