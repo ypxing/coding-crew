@@ -511,13 +511,16 @@ function coderEvidenceLines(e) {
  * Dispatched apart from the reviewer that raised them — a review never grades its own findings.
  * `scope` says where the findings came from; `findings` are report.mjs's normalised findings.
  */
-export function findingsTriagePrompt({ scope, ref, featureBranch, findings, reportPath }) {
+/**
+ * `change` is the command that shows the reviewed change: a branch is triaged after it merged, so
+ * a diff against the feature branch would show the other branches' work, inverted, and not its own.
+ */
+export function findingsTriagePrompt({ scope, ref, change, findings, reportPath }) {
   return [
     "Findings mode: judge each code-review finding below by your Findings rubric, and answer",
     "per finding. You are not fixing anything, and you are not the reviewer that raised them.",
     scope,
-    `The code under review is on ${ref}, which the main checkout is not on: read it with`,
-    `git show ${ref}:<path>, and the change with git diff ${featureBranch}..${ref}.`,
+    `Read the code under review with git show ${ref}:<path>, and the change with ${change}.`,
     "Read each cited location before you judge its finding, and CONTEXT.md and docs/adr/ (when",
     "they exist) for any decision a fix would contradict.",
     "",

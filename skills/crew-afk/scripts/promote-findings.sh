@@ -186,6 +186,10 @@ cmd_guard() {
       exit 0
     fi
   else
+    # Promotion follows the close, which moves the file from open/ to done/ beside it.
+    if [ ! -f "$issue" ] && [ -f "$(dirname "$(dirname "$issue")")/done/$(basename "$issue")" ]; then
+      issue="$(dirname "$(dirname "$issue")")/done/$(basename "$issue")"
+    fi
     # A missing file cannot be shown to be a fix issue. Fail closed: no promotion.
     if [ ! -f "$issue" ]; then
       echo "guard: skip — issue file not found: $issue"
@@ -767,7 +771,8 @@ cmd_mark_not_run() {
 # where the severities go). Those are defer's own bash-generated "## Promoted Findings" bullets
 # ("- <branch>: SEV, SEV → <path>"), never the reviewer's free text, so a plain regex capture reads
 # them exactly. Prints a JSON array of {branch, severity, location, criterion, verdict, rationale};
-# verdict and rationale are "" for a finding triage never judged.
+# verdict and rationale are "" for a finding triage never judged. `carried: true` is added to a
+# finding an earlier review of the branch raised and the latest did not repeat.
 open_findings_json() {
   local rollup="$1" promoted
   shift
@@ -785,7 +790,8 @@ open_findings_json() {
        | select((($pset[$b + " " + .severity] // false)
                  or ((.verdict // "") == "actionable" and ($pset[$b + " actionable"] // false))) | not)
        | {branch: $b, severity, location: (.location // ""), issue: (.issue // ""), criterion: (.criterion // ""),
-          verdict: (.verdict // ""), rationale: (.rationale // "")}]
+          verdict: (.verdict // ""), rationale: (.rationale // "")}
+          + (if .carried == true then {carried: true} else {} end)]
   '
 }
 
@@ -819,7 +825,7 @@ verdict_lines() {
   echo "$heading: $n ($note)"
   jq -r --arg v "$verdict" --arg h "$(printf '%s' "$heading" | tr '[:upper:]' '[:lower:]')" '
     .[] | select(.verdict == $v)
-    | "\($h): \(.branch) [\(.severity)] \(.location) — \(.criterion)\(if .rationale != "" then " — why: " + .rationale else "" end)"
+    | "\($h): \(.branch) [\(.severity)] \(.location) — \(.criterion)\(if .carried == true then " (earlier review)" else "" end)\(if .rationale != "" then " — why: " + .rationale else "" end)"
   ' <<< "$json"
 }
 
@@ -896,6 +902,10 @@ cmd_remind() {
     verdict_lines debatable DEBATABLE "decide these first" <<< "$open_json"
     verdict_lines actionable ACTIONABLE "not promoted" <<< "$open_json"
     verdict_lines dismiss DISMISSED "triage's rationale, collapsed" <<< "$open_json"
+    # Carried findings triage never judged have no line above to carry the label; they are counted
+    # in the total already.
+    jq -r '.[] | select(.carried == true and .verdict == "")
+      | "earlier: \(.branch) [\(.severity)] \(.location) — \(.criterion) (earlier review)"' <<< "$open_json"
     printf 'report: %s\n' "${reports[@]}"
   fi
 

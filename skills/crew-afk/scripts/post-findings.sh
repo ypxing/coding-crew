@@ -77,7 +77,8 @@ if [ ! -s "$TMP/annotated.jsonl" ]; then
 fi
 
 jq -s '
-  def what: (if (.issue // "") != "" then .issue + " — Fix: " else "" end) + .criterion;
+  def what: (if (.issue // "") != "" then .issue + " — Fix: " else "" end) + .criterion
+    + (if .carried == true then " (earlier review)" else "" end);
   def triage: if (.verdict // "") == "" then "" else
       "triage: \(.verdict)" + (if (.rationale // "") != "" then " — " + .rationale else "" end) end;
   . as $all

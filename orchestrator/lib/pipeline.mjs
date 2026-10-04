@@ -2,7 +2,7 @@
  * pipeline.mjs — the per-branch gate chain, in one place, in one order:
  *
  *     worktree → include → deps → dispatch → prefilter → verify → review → AC receipt
- *     → promote → merge → close
+ *     → merge → close → promote
  *
  * The order is a function body, so no model can reorder or skip it, and each gate's
  * refusal is a return value rather than a paragraph asking to be obeyed.
@@ -26,7 +26,7 @@ import { dispatch } from "./dispatch.mjs";
 import { flagFullSuiteRuns } from "./pipeline/deviation.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./pipeline/finish.mjs";
 import { mergeAndClose } from "./pipeline/merge.mjs";
-import { promote, runReview } from "./pipeline/review.mjs";
+import { promote, runReview, savedAllMetReview } from "./pipeline/review.mjs";
 import {
   AC_RECEIPT_FAILED_TAG,
   CRITERIA_ENVIRONMENT_TAG,
@@ -556,8 +556,13 @@ export async function runHousekeeping(ctx, worker) {
   }
 
   // The merge route (see resumeRoute): straight to merge/close, which re-checks both receipts.
+  // The findings of the review that passed were not promoted (promotion follows a merge that
+  // closed), so a retry that completes the merge promotes them from the saved report.
   if (worker.resumeAtMerge) {
-    return mergeAndClose(ctx, worker, outcome);
+    const merged = await mergeAndClose(ctx, worker, outcome);
+    const saved = merged.status === "complete" ? savedAllMetReview(sprint, branch) : null;
+    if (saved) await promote(ctx, worker, saved, merged);
+    return merged;
   }
 
   // --- dispatch health -------------------------------------------------------
@@ -749,9 +754,13 @@ export async function runHousekeeping(ctx, worker) {
     return finishRetryOrBlock(ctx, worker, outcome, taggedReason(AC_RECEIPT_FAILED_TAG, detail));
   }
 
-  // --- findings promotion (advisory findings routed back into the sprint) ----
-  await promote(ctx, worker, review, outcome);
+  const merged = await mergeAndClose(ctx, worker, outcome);
 
-  return mergeAndClose(ctx, worker, outcome);
+  // --- findings promotion (advisory findings routed back into the sprint) ----
+  // Only once the branch has merged and its issue closed: a fix issue for an unmerged branch
+  // would be claimed against code that is not on the feature branch, and every re-review of a
+  // conflicted branch would promote again.
+  if (merged.status === "complete") await promote(ctx, worker, review, merged);
+  return merged;
 }
 

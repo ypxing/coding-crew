@@ -20,7 +20,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { parseReviewAggregate } from "./lib/report.mjs";
+import { foldReview, parseReviewAggregate } from "./lib/report.mjs";
 
 function main(argv) {
   const files = argv.filter((f) => existsSync(f));
@@ -31,7 +31,7 @@ function main(argv) {
     for (const rec of parseReviewAggregate(text)) {
       const key = rec.branch ?? `#${order.length}`;
       if (!byBranch.has(key)) order.push(key);
-      byBranch.set(key, rec);
+      byBranch.set(key, foldReview(byBranch.get(key), rec));
       // A whole-feature review that wrote its `feature` block covered every area, so an earlier
       // run's not-run `feature-<n>` gap is closed; a gap written after the block (same run) stays.
       if (rec.branch === "feature") {

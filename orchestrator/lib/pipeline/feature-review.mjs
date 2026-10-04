@@ -150,7 +150,15 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
     findings,
     areas: runs.length,
     ...(failures.length ? { areaFailures: failures.map((r) => `${r.slug}: ${r.reason}`) } : {}),
-    ...(await promoteFeature(ctx, { findings, reportFile, dir, written })),
+    ...(await promoteFeature(ctx, {
+      findings,
+      reportFile,
+      dir,
+      written,
+      change: exclude
+        ? `git log -p --reverse ${base}..${sprint.featureBranch} --not ${exclude}`
+        : `git diff ${base}..${sprint.featureBranch}`,
+    })),
   };
 }
 
@@ -193,13 +201,14 @@ async function reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFil
 }
 
 /** The same fixFindings rule as a branch's findings; the feature has no issue file, so no depth guard. */
-async function promoteFeature(ctx, { findings, reportFile, dir, written }) {
+async function promoteFeature(ctx, { findings, reportFile, dir, written, change }) {
   const { sprint, effects } = ctx;
   const selected = await selectPromotable(ctx, {
     findings,
     label: FEATURE_REVIEW,
     scope: `Findings raised against the whole feature diff (${sprint.featureBranch}), reviewed once across all its issues.`,
     ref: sprint.featureBranch,
+    change,
     dir,
     dispatchSlug: `${FEATURE_REVIEW}-findings`,
     round: 1,

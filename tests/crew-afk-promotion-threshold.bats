@@ -293,3 +293,17 @@ verdict_report() {
   run g '# t\n\n  Source: r (b)\n';                     [[ "$output" == *"eligible"* ]]
   run g '# t\n\n**Source:** r (b)\n';                   [[ "$output" == *"eligible"* ]]
 }
+
+@test "remind counts a carried finding and labels it (earlier review)" {
+  cat > "$REPORT" <<'EOF2'
+## Branch: crew/feat/a (a)
+
+```json
+{"branch":"crew/feat/a","slug":"a","verdict":"all-met","findings":[{"severity":"LOW","location":"src/x.ts:1","criterion":"a nit","carried":true},{"severity":"HIGH","location":"src/y.ts:2","criterion":"fresh"}]}
+```
+EOF2
+  run bash "$PROMOTE" remind --feature-slug feat
+  [[ "$output" == *"FINDINGS: open=2 (HIGH=1, LOW=1)"* ]]
+  [[ "$output" == *"[LOW] src/x.ts:1 — a nit (earlier review)"* ]]
+  [[ "$output" != *"fresh (earlier review)"* ]]
+}

@@ -42,7 +42,7 @@ function normaliseCheck(value) {
  * parseReviewReport, parseTriageReport) reads the sidecar object directly and never
  * scans text for a fence.
  */
-function allFencedJson(text, requiredField) {
+export function allFencedJson(text, requiredField) {
   const re = /[ \t]*```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g;
   const out = [];
   let m;
@@ -269,6 +269,8 @@ function findingsFromStructured(list) {
       issue: f.issue ? String(f.issue).trim() : "",
       criterion: f.criterion ? String(f.criterion).trim() : "",
       explicit: true,
+      // Set by carryFindings: raised by an earlier review of the branch, not repeated by the latest.
+      ...(f.carried === true ? { carried: true } : {}),
       // Written beside the finding once findings triage has judged it (annotateFindings below).
       ...(FINDING_VERDICTS.includes(String(f.verdict).toLowerCase())
         ? { verdict: String(f.verdict).toLowerCase(), rationale: f.rationale ? String(f.rationale).trim() : "" }
@@ -331,16 +333,57 @@ export function parseReviewReport(text, sidecar = null) {
  * orchestrator/review-rollup.mjs) instead of re-parsing the file themselves.
  */
 export function parseReviewAggregate(text) {
-  const raw = text ?? "";
   const order = [];
   const byBranch = new Map();
-  for (const obj of allFencedJson(raw, "verdict")) {
-    const rec = reviewFromStructured(raw, obj);
+  for (const rec of parseReviewBlocks(text)) {
     const key = rec.branch ?? `#${order.length}`;
     if (!byBranch.has(key)) order.push(key);
-    byBranch.set(key, rec);
+    byBranch.set(key, foldReview(byBranch.get(key), rec));
   }
   return order.map((key) => byBranch.get(key));
+}
+
+/** Every review block in `text`, in file order and unfolded (parseReviewAggregate folds them). */
+export function parseReviewBlocks(text) {
+  const raw = text ?? "";
+  return allFencedJson(raw, "verdict").map((obj) => reviewFromStructured(raw, obj));
+}
+
+/**
+ * The one fold step, shared by parseReviewAggregate and review-rollup.mjs: `rec` replaces `prev`
+ * (later block wins), except that a `not_run` block says nothing about the code, so the previous
+ * record's findings stay, marked carried, under the `not_run` verdict.
+ */
+export function foldReview(prev, rec) {
+  if (!prev || rec.verdict !== "not_run" || !prev.findings?.length) return rec;
+  return { ...rec, findings: prev.findings.map((f) => ({ ...f, carried: true })) };
+}
+
+/** What makes two findings the same: severity, path (line dropped), whitespace-normalised case-folded issue. */
+function findingKey(f) {
+  const path = String(f.location ?? "").trim().replace(/(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$/, "");
+  const issue = String(f.issue ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  return `${f.severity}\u0000${path}\u0000${issue}`;
+}
+
+/**
+ * `latestFindings` followed by each finding of `earlierRecords` (one branch's earlier review
+ * blocks, oldest first) that the latest does not repeat, marked `carried: true` and deduped among
+ * themselves. A carried finding drops any triage verdict: the new round judges it afresh.
+ */
+export function carryFindings(earlierRecords, latestFindings) {
+  const seen = new Set(latestFindings.map(findingKey));
+  const carried = [];
+  for (const rec of earlierRecords) {
+    for (const f of rec.findings ?? []) {
+      const key = findingKey(f);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const { verdict, rationale, ...rest } = f;
+      carried.push({ ...rest, carried: true });
+    }
+  }
+  return [...latestFindings, ...carried];
 }
 
 const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];

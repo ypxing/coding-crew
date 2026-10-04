@@ -4,9 +4,9 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO, SCRIPTS, sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, test } from "./helpers/sprint.mjs";
+import { REPO, SCRIPTS, sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, privateScripts, failFirstCall, test } from "./helpers/sprint.mjs";
 
 // ─── fixFindings actionable (the default): crew-triage judges each finding, whatever its severity ──
 
@@ -212,4 +212,109 @@ test("actionable: a review with no findings dispatches no triage", () => {
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(findingsTriageSpawns(lines), 0);
   assert.doesNotMatch(r.stdout, /## Findings Triage/);
+});
+
+// ─── promotion follows the merge and the close, never precedes them ──
+
+const deferCalls = (lines) => lines.map((l, i) => [l, i]).filter(([l]) => /promote-findings\.sh.* defer /.test(l));
+
+test("a conflicted-looking merge failure promotes nothing: no defer call, no fix issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "actionable", rationale: "local" }]));
+  const scripts = privateScripts();
+  failFirstCall(scripts, "merge-branches.sh", join(root, ".scratch/merge-fail.marker"), "MERGE: forced failure for test");
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(deferCalls(lines).length, 0);
+  assert.equal(existsSync(join(root, ".scratch/demo/reviews/alpha.criteria.md")), false);
+});
+
+test("a refused close promotes nothing", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "actionable", rationale: "local" }]));
+  const scripts = privateScripts();
+  failFirstCall(scripts, "close-issue.sh", join(root, ".scratch/close-fail.marker"), "ERROR: forced close failure for test");
+  const { r, lines } = commandLines(root, ["--max-rounds", "1"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(deferCalls(lines).length, 0);
+});
+
+test("a refused close whose retry closes via the merge route promotes exactly once, after the successful close", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "actionable", rationale: "local" }]));
+  const scripts = privateScripts();
+  failFirstCall(scripts, "close-issue.sh", join(root, ".scratch/close-fail.marker"), "ERROR: forced close failure for test");
+  const { r, lines } = commandLines(root, ["--max-rounds", "2"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const defers = deferCalls(lines);
+  assert.equal(defers.length, 1);
+  const closesBefore = lines.slice(0, defers[0][1]).filter((l) => /close-issue\.sh/.test(l));
+  assert.equal(closesBefore.length, 2, "defer comes after the refused close and the successful retry");
+});
+
+test("a merged-and-closed branch is promoted exactly once, after the close", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "actionable", rationale: "local" }]));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const defers = deferCalls(lines);
+  assert.equal(defers.length, 1);
+  const closeAt = lines.findIndex((l) => /close-issue\.sh/.test(l));
+  assert.ok(closeAt >= 0 && closeAt < defers[0][1], "defer comes after close-issue.sh");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/findings-triage-prompt.md"), "utf8");
+  assert.match(prompt, /which has merged\./);
+  assert.doesNotMatch(prompt, /has not merged/);
+  // The change triage is pointed at is the branch's own, not the merged feature branch against it.
+  const change = /the change with (git diff \S+\^1\.\.\.crew\/demo\/alpha)\./.exec(prompt)?.[1];
+  assert.ok(change, prompt);
+  // The sprint's cleanup has since deleted the branch, so read the range through the merge's second parent.
+  const git = (args) => sh("git", ["-C", root, ...args]).stdout.trim();
+  const merge = change.split(" ")[2].replace(/\^1\.\.\..*$/, "");
+  assert.equal(git(["log", "-1", "--format=%s", merge]), "Merge branch 'crew/demo/alpha'");
+  assert.equal(git(["diff", "--name-only", `${merge}^1...${merge}^2`]), "src/alpha.txt", "only the branch's own change");
+});
+
+test("savedAllMetReview: a branch an earlier run already promoted (pre-merge) is not promoted again", async () => {
+  const { savedAllMetReview } = await import("../../orchestrator/lib/pipeline/review.mjs");
+  const root = fixtureRepo();
+  const reviewDir = join(root, ".scratch/demo/reviews");
+  mkdirSync(reviewDir, { recursive: true });
+  const report = join(reviewDir, "sprint-review-00000000T000000.md");
+  writeFileSync(report, reviewOf([retryHigh]));
+  assert.equal(savedAllMetReview({ reviewDir }, "crew/demo/alpha")?.parsed.verdict, "all-met");
+  writeFileSync(report, `${reviewOf([retryHigh])}\n## Promoted Findings\n\n- crew/demo/alpha: actionable → 02-fix\n`);
+  assert.equal(savedAllMetReview({ reviewDir }, "crew/demo/alpha"), null);
+  assert.equal(savedAllMetReview({ reviewDir }, "crew/demo/alph"), null, "no block for that branch");
+});
+
+// ─── findings an earlier review raised and the latest dropped are carried forward ──
+
+test("carry: an earlier run's unmet finding the all-met review drops is written carried, and remind labels it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const earlier = { branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "", findings: [retryLow, { ...retryHigh, issue: "Same  problem" }] };
+  mkdirSync(join(root, ".scratch/demo/reviews"), { recursive: true });
+  writeFileSync(
+    join(root, ".scratch/demo/reviews/sprint-review-00000000T000000.md"),
+    `## Branch: crew/demo/alpha (alpha)\n\n\`\`\`json\n${JSON.stringify(earlier)}\n\`\`\`\n`,
+  );
+  // The latest review repeats the HIGH (other line, same issue text) and drops the LOW.
+  fake(root, "alpha.review", reviewOf([{ ...retryHigh, location: "src/alpha.txt:99", issue: "same problem" }]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const written = readdirSync(join(root, ".scratch/demo/reviews"))
+    .filter((n) => n.startsWith("sprint-review-") && n !== "sprint-review-00000000T000000.md")
+    .map((n) => readFileSync(join(root, ".scratch/demo/reviews", n), "utf8"))
+    .join("\n");
+  assert.equal((written.match(/"carried":true/g) ?? []).length, 1, "only the dropped LOW is carried");
+  assert.match(written, /"severity":"LOW"[^}]*"carried":true/);
+  assert.match(remindOf(root), /^earlier: crew\/demo\/alpha \[LOW\] src\/alpha\.txt:2 — Name the retry constant \(earlier review\)$/m);
 });

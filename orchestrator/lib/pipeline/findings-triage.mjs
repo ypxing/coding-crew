@@ -42,6 +42,7 @@ export function promotedAs(fixFindings, selected) {
  * @param {string} args.label       what is being triaged, for logs and the summary ("alpha", "feature")
  * @param {string} args.scope       one prompt line saying where the findings came from
  * @param {string} args.ref         the branch holding the code under review
+ * @param {string} args.change      the git command that shows the reviewed change
  * @param {string} args.dir         where this review's dispatch files live
  * @param {string} args.dispatchSlug  the dispatch's slug (and its fake-dispatch fixture name)
  * @param {number} args.round
@@ -52,14 +53,14 @@ export function promotedAs(fixFindings, selected) {
  *   `rule` names what decided: "actionable", or the severity level; `findings` carry
  *   `verdict` and `rationale` when triage judged them.
  */
-export async function selectPromotable(ctx, { findings, label, scope, ref, dir, dispatchSlug, round, ledgerSlug, reportFile, written }) {
+export async function selectPromotable(ctx, { findings, label, scope, ref, change, dir, dispatchSlug, round, ledgerSlug, reportFile, written }) {
   const { sprint } = ctx;
   const level = sprint.fixFindings;
   if (level !== "actionable") return { promotable: findingsAtOrAbove(findings, level), findings, rule: level };
   // Nothing to judge: no dispatch, and no reason to call it a fallback.
   if (!findings.length) return { promotable: [], findings, rule: "actionable" };
 
-  const triage = await runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug, round, ledgerSlug });
+  const triage = await runFindingsTriage(ctx, { findings, scope, ref, change, dir, dispatchSlug, round, ledgerSlug });
   if (triage.failed) {
     sprint.triageFallbacks.push({ scope: label, reason: triage.failed });
     ctx.log(`FINDINGS-TRIAGE: ${label}: no usable verdict — ${triage.failed}; the ${FALLBACK_LEVEL} rule applies`, "warn");
@@ -74,7 +75,7 @@ export async function selectPromotable(ctx, { findings, label, scope, ref, dir, 
 }
 
 /** Dispatched to `crew-triage` in findings mode. Returns `{verdicts}` or `{failed: reason}`. */
-async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug, round, ledgerSlug }) {
+async function runFindingsTriage(ctx, { findings, scope, ref, change, dir, dispatchSlug, round, ledgerSlug }) {
   const { sprint, effects, options } = ctx;
   mkdirSync(dir, { recursive: true });
   const promptFile = join(dir, "findings-triage-prompt.md");
@@ -82,7 +83,7 @@ async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug,
   const sidecarFile = join(dir, "findings-triage.report.json");
   // A stale sidecar at this fixed path must not be read back as this dispatch's verdicts.
   rmSync(sidecarFile, { force: true });
-  writeFileSync(promptFile, findingsTriagePrompt({ scope, ref, featureBranch: sprint.featureBranch, findings, reportPath: sidecarFile }));
+  writeFileSync(promptFile, findingsTriagePrompt({ scope, ref, change, findings, reportPath: sidecarFile }));
 
   const triage = roleBinding(ctx, "triage");
   ctx.log(`[STEP] slug=${dispatchSlug} round=${round} step=dispatch-findings-triage model=${triage.model ?? "inherit"} runtime=${triage.runtime}`);

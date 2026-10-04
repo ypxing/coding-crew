@@ -10,14 +10,15 @@ behave identically.
 ## Why this exists
 
 Per-branch review runs before each merge, and its findings are **advisory** — the branch merges
-regardless. That leaves findings on already-merged code with no route back into the
+regardless. They are promoted only after the branch has merged and its issue closed; a branch
+whose merge conflicts or whose close is refused promotes nothing that round; when the retry completes the merge and close (the merge-only route), promotion happens then, from the saved review. That leaves findings on already-merged code with no route back into the
 sprint: the report sits in `reviews/` until a human runs `/crew-address-findings`. Promotion
 gives those findings a route, using the machinery that already exists (issue → worktree → TDD →
 verify → review → merge) instead of a bespoke fix path.
 
 ## Two phases
 
-**Phase 1 — normal sprint.** Unchanged. When a branch's review raises findings at or above the
+**Phase 1 — normal sprint.** Unchanged. When a merged-and-closed branch's review raised findings at or above the
 promotion rule (below), write a *parked* fix issue with `Status: deferred-findings`. The loop's `list`
 operation selects on `ready-for-agent`, so parked issues are invisible and Phase 1 drains its
 original queue at its normal pace.
