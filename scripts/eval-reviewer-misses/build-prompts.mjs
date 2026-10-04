@@ -21,6 +21,7 @@ const [prompts, areasMod, decMod, render] = await Promise.all([
   load("orchestrator/lib/prd-decisions.mjs"),
   load("orchestrator/lib/adapters/render.mjs"),
 ]);
+const { sectionBody } = await load("orchestrator/lib/trackers/body-format.mjs");
 const inp = JSON.parse(fs.readFileSync(0, "utf8"));
 
 const git = (args) => {
@@ -64,6 +65,7 @@ if (inp.mode === "branch") {
     prompt: prompts.featureReviewPrompt({
       featureBranch: inp.tip, base: inp.base, reportPath: inp.reportPath, reviewAssets, area,
       decisions: area.decisions.map((id) => decisions.get(id)).filter(Boolean),
+      compatibility: sectionBody(String(inp.prdText ?? ""), "Compatibility & Migration") || null,
     }),
   }));
 }
