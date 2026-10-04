@@ -83,3 +83,20 @@ test("extractBlockedByNumbers matches 'Issue NN' references, with or without a #
   assert.deepEqual(extractBlockedByNumbers("- Issue 01\n- Issue #7\n- issue-03\n"), ["1", "7", "3"]);
   assert.deepEqual(extractBlockedByNumbers("- 01-first.md\n"), []);
 });
+
+test("sectionBody closes a fence on an indented closing fence line", () => {
+  const body = "## What to build\n\n1. x:\n   ```sh\n   y\n   ```\n\n## Blocked by\n\n- #12\n";
+  assert.equal(sectionBody(body, "Blocked by"), "- #12");
+});
+
+test("a shorter or different-mark fence line does not close a fence", () => {
+  const body = "## A\n\n````\n```\n~~~\n# not heading\n````\n\n## B\nb\n";
+  assert.equal(sectionBody(body, "A"), "````\n```\n~~~\n# not heading\n````");
+});
+
+test("appendToSection does not end the section at a heading inside a fence", () => {
+  const out = appendToSection("## Progress\n\n```sh\n# step\nrun\n```\n- a\n\n## Next\nn\n", "Progress", "- b");
+  assert.equal(out.split("# step").length - 1, 1);
+  assert.ok(out.endsWith("## Next\nn\n"));
+  assert.ok(out.includes("- a\n- b"));
+});
