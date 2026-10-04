@@ -106,6 +106,12 @@ downgraded or dropped.
    states (`git diff A..B`, "since X", "before Y") must be evaluated at the time the change makes
    it run: say what it returns there, and whether that is still what its reader expects.
 
+   Make that a written list, not a glance: for the function a criterion or decision changes, list
+   every prompt, command and range it builds or hands on, and the saved state it reads, and write
+   one line per item saying what it holds or returns once the change has run. An item whose line
+   you cannot write from the code you have read is a file you have not read yet. A line that
+   contradicts what its reader expects is a finding, even in a line the diff never touched.
+
    When the dispatch marks the diff test-only, read each test and the code it exercises, and skip
    caller tracing: tests have no callers.
 4. **Apply Step 3 plus every loaded reference**, CRITICAL to LOW, then report in the format below.
