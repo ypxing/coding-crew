@@ -173,8 +173,8 @@ review (`increment` mode) dispatches no planner and one reviewer, without an `Ar
 
 The per-branch review also checks the PRD decisions an issue implements: `pipeline/review.mjs` reads the issue's `## Implements` IDs and
 `orchestrator/lib/prd-decisions.mjs` maps them to the PRD's `- **D<n>** — …` / `- **B<n>** — …` lines (PRD located once per run:
-`.scratch/<slug>/PRD.md`, else `prd-issue.md`, else under `tracker: github` fetched with `trackers/github.mjs prd`; a failed fetch warns and
-reviews proceed without). `reviewPrompt` renders them as a `PRD decisions this issue implements:` block, and the reviewer judges each like a
+`.scratch/<slug>/PRD.md`; else under `tracker: github` fetched with `trackers/github.mjs prd` and saved as `prd-issue.md`, a saved
+`prd-issue.md` read only when that fetch fails (it warns) or under another tracker; with neither, reviews proceed without). `reviewPrompt` renders them as a `PRD decisions this issue implements:` block, and the reviewer judges each like a
 criterion — a contradicted decision is `unmet`, `detail` naming its ID.
 
 Reviewer, triage (verify, findings, integration) and feature-review dispatches are mechanically read-only
