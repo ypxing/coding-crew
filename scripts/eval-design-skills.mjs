@@ -153,7 +153,7 @@ export function summarize(rows) {
 // A usage limit is not transient and is handled by the caller.
 export const TRANSIENT_RE = /too many requests|overloaded|\b(429|529)\b|ECONNRESET|ETIMEDOUT/i;
 
-async function runClaude(args, input, cwd) {
+export async function runClaude(args, input, cwd) {
   const base = Number(process.env.EVAL_RETRY_MS ?? 5000);
   let r;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -189,7 +189,7 @@ function runClaudeOnce(args, input, cwd) {
 // 60-run matrix look finished. It stops the whole evaluation instead.
 export const LIMIT_RE = /(session|usage|rate) limit|limit reached|resets \d/i;
 
-async function pool(tasks, n, stop) {
+export async function pool(tasks, n, stop) {
   const results = [];
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(n, tasks.length) }, async () => {
