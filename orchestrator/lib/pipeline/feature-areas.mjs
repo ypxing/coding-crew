@@ -16,6 +16,13 @@ import { readOnlyDispatch, roleBinding } from "./shared.mjs";
 
 export const FEATURE_PLAN = `${FEATURE_REVIEW}-plan`;
 
+// Paths verbatim (core.quotePath=false, -z) and no rename detection: an area's diff is limited to these
+// paths, so an escaped name would match nothing, and a renamed file's old path must be listed for its
+// deletion to be seen.
+const DIFF = ["-c", "core.quotePath=false", "diff", "--no-renames"];
+const stdoutOf = (r) => (r.code === 0 ? r.stdout : "");
+const names = (r) => stdoutOf(r).split("\0").filter(Boolean);
+
 /** Pure: the last fenced json block of the planner's answer, parsed; null when there is none. */
 export function parsePlannerAnswer(text) {
   const blocks = [...String(text ?? "").matchAll(/```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g)];
@@ -72,9 +79,9 @@ export function normalizeAreas(raw, { diffFiles, decisionIds, max }) {
   return areas;
 }
 
-/** The one area a failed or empty plan falls back to. */
+/** The one area a failed or empty plan falls back to; `whole`, so its diff needs no pathspec. */
 export function wholeFeatureArea(diffFiles, decisionIds) {
-  return { name: "whole feature", files: [...diffFiles], decisions: [...decisionIds] };
+  return { name: "whole feature", files: [...diffFiles], decisions: [...decisionIds], whole: true };
 }
 
 /** Pure: what the planner is told. */
@@ -113,8 +120,7 @@ export function mergedIssues(ctx, { base, tip, idsFor = () => [] }) {
     const [sha, subject = ""] = line.split("\t");
     const branch = /^Merge branch '(crew\/[^']+)'/.exec(subject)?.[1];
     if (!branch) continue;
-    const files = effects.gitRead(["diff", "--name-only", `${sha}^1`, sha]);
-    out.push({ branch, files: files.code === 0 ? files.stdout.split("\n").filter(Boolean) : [], ids: idsFor(branch) });
+    out.push({ branch, files: names(effects.gitRead([...DIFF, "--name-only", "-z", `${sha}^1`, sha])), ids: idsFor(branch) });
   }
   return out;
 }
@@ -165,11 +171,7 @@ function localIssueIds(mainRoot, featureSlug, branch) {
 export async function planAreas(ctx, { base, tip, dir }) {
   const { sprint, effects, options } = ctx;
   const max = Math.max(1, options.parallel ?? 1);
-  const git = (args) => {
-    const r = effects.gitRead(args);
-    return r.code === 0 ? r.stdout : "";
-  };
-  const diffFiles = git(["diff", "--name-only", `${base}..${tip}`]).split("\n").filter(Boolean);
+  const diffFiles = names(effects.gitRead([...DIFF, "--name-only", "-z", `${base}..${tip}`]));
   const decisions = loadPrdDecisions(ctx);
   const ids = [...decisions.keys()];
   const fallback = (why) => {
@@ -183,7 +185,7 @@ export async function planAreas(ctx, { base, tip, dir }) {
     max,
     // Off a tty git fits the stat to 80 columns and shortens long paths to `.../name`, which the planner
     // must answer with verbatim: give it room for every path in full.
-    stat: git(["diff", "--stat=1000", "--stat-name-width=1000", `${base}..${tip}`]),
+    stat: stdoutOf(effects.gitRead([...DIFF, "--stat=1000", "--stat-name-width=1000", `${base}..${tip}`])),
     issues: mergedIssues(ctx, { base, tip, idsFor: implementsLookup(ctx, ctx.tracker ?? (await getTracker(effects.mainRoot))) }),
     decisions,
   });
@@ -212,6 +214,8 @@ export async function planAreas(ctx, { base, tip, dir }) {
   if (!answer) return fallback("the planner's answer has no fenced json block");
   const areas = normalizeAreas(answer.areas, { diffFiles, decisionIds: ids, max });
   if (!areas.length) return fallback("the planner returned no usable area");
+  // One area holds every changed file (uncovered ones join it), so its diff needs no pathspec.
+  if (areas.length === 1) areas[0].whole = true;
   ctx.log(`FEATURE-REVIEW: planner: ${areas.length} area(s) — ${areas.map((a) => `${a.name} (${a.files.length} file(s), ${a.decisions.length} decision(s))`).join("; ")}`);
   return { areas };
 }

@@ -176,6 +176,9 @@ export async function runSprint(ctx) {
   const startedAt = now();
   const wallMs = Math.max(0, Number(options.maxWallMinutes) || 0) * 60_000;
   const wallElapsed = () => wallMs > 0 && now() - startedAt >= wallMs;
+  // Claimable issues the wall-clock cap left unclaimed: none until the cap has passed.
+  const unclaimedByCap = () =>
+    wallElapsed() ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i)) : [];
   let wallLogged = false;
   // The drain loop broke on the cap before Phase 2: parked fix issues wait for the next run.
   let flushSkipped = false;
@@ -336,9 +339,7 @@ export async function runSprint(ctx) {
     if (!featureReviewed) {
       featureReviewed = true;
       if (!options.dryRun && sprint.get("merged")) {
-        const unclaimed = wallElapsed()
-          ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i))
-          : [];
+        const unclaimed = unclaimedByCap();
         featureReview = await runFeatureReview(ctx, {
           integration,
           wallCap: unclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: unclaimed.length } : null,
@@ -378,9 +379,7 @@ export async function runSprint(ctx) {
   // whose entries carry their own `status` (a close-state, not a file location) instead of
   // requiring a second directory read to know which are still open.
   // Unclaimed because of the cap: claimable issues, listed before anything releases them.
-  const wallUnclaimed = wallElapsed()
-    ? tracker.selectDispatchable(effects.mainRoot, { featureSlug: sprint.featureSlug }).filter((i) => isClaimable(i)).map((i) => i.slug)
-    : [];
+  const wallUnclaimed = unclaimedByCap().map((i) => i.slug);
   const wallCap = wallUnclaimed.length || flushSkipped ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
   // A cap hit stalls the run even when the attempt cap (CREW_MAX_ROUNDS) also ended it.
   const stalled =

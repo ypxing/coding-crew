@@ -33,6 +33,8 @@
 #                         so two such issues conflict when the second one merges. A worker
 #                         dispatched into a worktree with a merge in progress resolves it
 #                         first, keeping both sides' lines (ours first), as crew-coder is told to.
+#   <slug>.rename         "<from> <to>": the worker also `git mv`s <from> to <to> in its commit
+#                         (when <from> still exists), so the issue's merge carries a rename.
 #   <slug>.untracked      after committing, the worker leaves src/<slug>.untracked uncommitted in
 #                         its worktree: a verify that passes on files the branch does not carry.
 #   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
@@ -253,6 +255,10 @@ if [ "$NOCOMMIT" -eq 0 ]; then
       echo "$SLUG" > src/shared.txt
     else
       echo "// $SLUG" >> "src/$SLUG.txt"
+    fi
+    if [ -f "$FAKE_DIR/$SLUG.rename" ]; then
+      read -r FROM TO < "$FAKE_DIR/$SLUG.rename"
+      [ -e "$FROM" ] && git mv "$FROM" "$TO"
     fi
     git add -A >/dev/null 2>&1
     git -c user.email=fake@test -c user.name=fake commit -q -m "feat: $SLUG" >/dev/null 2>&1

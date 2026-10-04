@@ -8,7 +8,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { default as nodeTest } from "node:test";
 import { sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, test } from "./helpers/sprint.mjs";
-import { implementsLookup, normalizeAreas, parsePlannerAnswer, plannerPrompt } from "../../orchestrator/lib/pipeline/feature-areas.mjs";
+import { implementsLookup, normalizeAreas, parsePlannerAnswer, plannerPrompt, wholeFeatureArea } from "../../orchestrator/lib/pipeline/feature-areas.mjs";
 import { featureReviewPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 const areaReviews = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-reviewer.* --slug feature-\d+( |$)/.test(l));
@@ -49,6 +49,41 @@ test("the planner's diff stat names a long path in full, not as .../name", () =>
   const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-plan/planner.md.prompt.md"), "utf8");
   assert.match(prompt, new RegExp(` src/${long}\\.txt\\s+\\|`));
   assert.doesNotMatch(prompt, /^ \.\.\.\//m);
+});
+
+test("an issue's rename and a non-ASCII path reach the planner and an area's diff verbatim, old path included", () => {
+  const root = twoIssues();
+  const git = (...args) => sh("git", ["-C", root, ...args]);
+  git("checkout", "-q", "main");
+  writeFileSync(join(root, "old.txt"), "kept\n");
+  git("add", "old.txt");
+  git("commit", "-q", "-m", "old");
+  git("checkout", "-q", "feature/demo");
+  git("merge", "-q", "--ff-only", "main");
+  writeFileSync(join(root, "ünï.txt"), "x\n");
+  git("add", "ünï.txt");
+  git("commit", "-q", "-m", "non-ascii");
+  fake(root, "alpha.rename", "old.txt new.txt");
+  plan(root, [{ name: "alpha", files: ["src/alpha.txt", "new.txt"] }, { name: "beta", files: ["src/beta.txt"] }]);
+  const { r } = commandLines(root, ["--max-parallel", "2"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const planner = readFileSync(join(root, ".scratch/demo/dispatch/feature-plan/planner.md.prompt.md"), "utf8");
+  assert.match(planner, /^ old\.txt\s+\|/m);
+  assert.match(planner, /^ ünï\.txt\s+\|/m);
+  assert.match(planner, /crew\/demo\/alpha: files [^;]*\bold\.txt\b/);
+  // Neither old.txt nor ünï.txt is in the plan: both join the smallest area (beta), by their real names.
+  const beta = readFileSync(join(root, ".scratch/demo/dispatch/feature-2/review-prompt.md"), "utf8");
+  assert.match(beta, /^Gather the diff: git --literal-pathspecs diff --no-renames \S+ -- 'src\/beta\.txt' 'old\.txt' 'ünï\.txt'$/m);
+});
+
+test("a plan of one area reads as the whole feature: its diff has no pathspec", () => {
+  const root = twoIssues();
+  plan(root, [{ name: "all", files: ["src/alpha.txt"] }]);
+  const { r } = commandLines(root, ["--max-parallel", "2"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8");
+  assert.match(prompt, /^Gather the diff: git diff \S+\.\.feature\/demo$/m);
+  assert.match(prompt, /^Files:\n- src\/alpha\.txt\n- src\/beta\.txt$/m);
 });
 
 test("K valid areas give K concurrent reviewers with their own dir, report and cost; one feature block; one promotion", () => {
@@ -249,4 +284,18 @@ nodeTest("featureReviewPrompt carries an Area: block with the files and the full
   const withArea = featureReviewPrompt({ ...base, area: { name: "flow", files: ["a.js"] }, decisions: ["- **D1** — Retries are bounded."] });
   assert.match(withArea, /^Area:\nName: flow\nFiles:\n- a\.js\nDecisions:\n- \*\*D1\*\* — Retries are bounded\.$/m);
   assert.doesNotMatch(featureReviewPrompt(base), /^Area:/m);
+});
+
+nodeTest("an area's Gather the diff line is limited to its files, quoted; the whole-feature fallback and no area are not", () => {
+  const base = { featureBranch: "feature/x", base: "abc", reportPath: "/r.json" };
+  const gather = (p) => /^Gather the diff: .*$/m.exec(p)[0];
+  const files = ["a.js", "my dir/$(touch x).js", "it's.js", "app/[id].js", ":x"];
+  const scoped = featureReviewPrompt({ ...base, area: { name: "flow", files, decisions: [] } });
+  assert.equal(
+    gather(scoped),
+    `Gather the diff: git --literal-pathspecs diff --no-renames abc..feature/x -- 'a.js' 'my dir/$(touch x).js' 'it'\\''s.js' 'app/[id].js' ':x'`,
+  );
+  assert.match(scoped, /Look first for what only this area's diff, across its issues, shows/);
+  assert.equal(gather(featureReviewPrompt({ ...base, area: wholeFeatureArea(["a.js", "b.js"], []) })), "Gather the diff: git diff abc..feature/x");
+  assert.equal(gather(featureReviewPrompt(base)), "Gather the diff: git diff abc..feature/x");
 });

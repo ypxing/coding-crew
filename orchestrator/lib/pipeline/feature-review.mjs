@@ -1,9 +1,10 @@
 /**
- * The feature review: crew-reviewer's feature mode over the whole feature diff, once, at the
- * first drain of the queue. Each branch was reviewed on its own diff, so what exists only across
- * issues — a duplicated helper, inconsistent error handling, a flow unsafe only combined — is seen
- * nowhere else. Its findings join the sprint review report under `feature` and flow through the
- * same promotion (afk.fixFindings) as a branch's; it is advisory and never fails the sprint.
+ * The feature review: crew-reviewer's feature mode over the feature diff — the whole feature, or only
+ * the commits since the last review — once per run, at the first drain of the queue. Each branch was
+ * reviewed on its own diff, so what exists only across issues — a duplicated helper, inconsistent
+ * error handling, a flow unsafe only combined — is seen nowhere else. Its findings join the sprint
+ * review report under `feature` and flow through the same promotion (afk.fixFindings) as a branch's;
+ * it is advisory and never fails the sprint.
  *
  * A whole-feature review is split into areas (feature-areas.mjs), one concurrent reviewer each, all
  * findings joined in one `feature` block and promoted once.
@@ -55,7 +56,7 @@ export function featureReviewRange(ctx) {
  * not-run in the report), `report` the review report file holding its block.
  */
 export async function runFeatureReview(ctx, { integration = null, wallCap = null } = {}) {
-  const { sprint, effects, options } = ctx;
+  const { sprint, effects } = ctx;
 
   if (wallCap) {
     const skipped = `the ${wallCap.minutes}-minute wall-clock cap stopped claims with ${wallCap.unclaimed} issue(s) still claimable — the feature is not whole yet, so the next run reviews it.`;

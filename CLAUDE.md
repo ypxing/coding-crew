@@ -166,7 +166,9 @@ A whole-feature review is split into areas (`pipeline/feature-areas.mjs`): one p
 `maxParallel` areas are merged down (the two smallest first), and a changed file no area holds joins the smallest. A planner that fails,
 times out, or gives no json or no usable area gives one area over the whole diff with every decision (`FEATURE-REVIEW: planner fallback — <why>`).
 `runFeatureReview` then runs one `crew-reviewer` per area concurrently (`Promise.all`), each with its own `dispatch/feature-<n>/` dir, report
-file and cost record and an `Area:` block (name, files, full decision text) in its prompt. All areas' findings are written as one `feature`
+file and cost record and an `Area:` block (name, files, full decision text) in its prompt; with more than one area, each area's
+`Gather the diff:` line is limited to its files (`git --literal-pathspecs diff --no-renames … -- <quoted paths>`; the file lists are read
+with `core.quotePath=false -z --no-renames`, so a renamed file's old path is listed and its deletion seen). All areas' findings are written as one `feature`
 block and promoted once (one findings triage, at most one deferred fix issue). An area that leaves no review is marked not-run as
 `feature-<n>`, the others still count, and no `reviewed_tip` is recorded so the next run reviews the whole feature again. An incremental
 review (`increment` mode) dispatches no planner and one reviewer, without an `Area:` block.
