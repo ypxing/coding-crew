@@ -62,6 +62,29 @@ test("actionable: an Actionable LOW is fixed in Phase 2, a Debatable HIGH is not
   assert.match(r.stdout, /1 Debatable — decide these first/);
 });
 
+test("actionable: a finding triage marks duplicate_of is folded into its target: promoted once, shown once", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryLow, retryHigh]));
+  fake(
+    root,
+    "alpha-findings.triage",
+    findingVerdicts([
+      { verdict: "actionable", rationale: "one rename" },
+      { verdict: "actionable", rationale: "same defect", duplicate_of: 0 },
+    ]),
+  );
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
+  assert.equal((criteria.match(/^- \[ \]/gm) ?? []).length, 1);
+  assert.match(criteria, /\[HIGH\]/);
+  assert.match(criteria, /src\/alpha\.txt:2/);
+  assert.match(criteria, /src\/alpha\.txt:1/);
+  assert.match(sprintReport(root), /"duplicate_of":0/);
+  assert.match(remindOf(root), /^FINDINGS: none$/m);
+});
+
 test("actionable: a dismiss verdict is remapped to actionable and promoted to a fix issue", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

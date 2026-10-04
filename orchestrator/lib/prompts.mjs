@@ -533,6 +533,10 @@ export function findingsTriagePrompt({ scope, ref, change, findings, reportPath 
     "thing the orchestrator reads — nothing you print in your final message is parsed. One entry",
     "per finding, `index` as listed above:",
     "",
+    "`duplicate_of` is only for two findings naming the same defect (one fix resolves both); it must",
+    "name a finding that is not itself a duplicate. Findings that merely touch the same file or theme",
+    "are not duplicates.",
+    "",
     "```json",
     JSON.stringify(
       {
@@ -543,6 +547,7 @@ export function findingsTriagePrompt({ scope, ref, change, findings, reportPath 
             rationale: "one line: why this verdict",
             adr: "true when the fix would contradict an ADR or CONTEXT.md, else false",
             protected: "true when the fix would touch CI config, auth, deploy or .env, else false",
+            duplicate_of: "optional: the index of an earlier-listed finding describing the same defect; omit otherwise",
           },
         ],
       },

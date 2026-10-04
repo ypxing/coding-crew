@@ -109,6 +109,11 @@ Set `adr` to `true` when the fix would contradict an ADR or `CONTEXT.md`, and `p
 `true` when it would touch a protected path. crew-afk forces such a finding to Debatable
 whatever `verdict` you give, so say so even when you judged it `actionable`.
 
+When two findings describe the same defect — one fix resolves both — give the later one
+`"duplicate_of": <index of the other>`. crew-afk then promotes them as one finding, at the higher
+severity, naming both locations. Use it only for the same defect, never for findings that merely
+share a file or theme, and never point it at a finding that is itself a duplicate. Omit it otherwise.
+
 **Write this JSON to the report path the prompt names, as your last action.** That file is the
 only thing the orchestrator reads; a missing, partial or unparsable file means no verdict, and
 crew-afk then falls back to promoting by severity. One entry per listed finding, `index` as listed:

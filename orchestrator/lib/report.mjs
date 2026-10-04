@@ -277,6 +277,8 @@ function findingsFromStructured(list) {
       ...(FINDING_VERDICTS.includes(String(f.verdict).toLowerCase())
         ? { verdict: String(f.verdict).toLowerCase(), rationale: f.rationale ? String(f.rationale).trim() : "" }
         : {}),
+      // Written by annotateFindings: triage folded this finding into finding `duplicate_of` of the same review.
+      ...(Number.isInteger(f.duplicate_of) && f.duplicate_of >= 0 ? { duplicate_of: f.duplicate_of } : {}),
     }));
 }
 
@@ -463,14 +465,14 @@ const isYes = (v) => v === true || ["true", "yes"].includes(String(v).trim().toL
 
 /**
  * Findings triage (crew-triage's findings mode): `{"findings": [{index, verdict, rationale, adr?,
- * protected?}]}` — one entry per finding, `index` the 0-based position in the prompt's list. Only
+ * protected?, duplicate_of?}]}` — one entry per finding, `index` the 0-based position in the prompt's list. Only
  * the sidecar is read. All-or-nothing: a missing, unknown or duplicate entry makes the whole
  * answer `ok: false` — the caller falls back to the severity rule, as it does for no sidecar at
  * all, rather than promoting on a half-read verdict.
  *
  * @param {object|null} sidecar  parsed findings-triage.report.json
  * @param {number} count  how many findings were sent
- * @returns {{ok: true, verdicts: {verdict, rationale, adr, protected}[]} | {ok: false, detail: string}}
+ * @returns {{ok: true, verdicts: {verdict, rationale, adr, protected, duplicate_of?}[]} | {ok: false, detail: string}}
  */
 export function parseFindingsTriage(sidecar, count) {
   if (!sidecar) return { ok: false, detail: "no report.json — triage never wrote its verdict file" };
@@ -482,15 +484,22 @@ export function parseFindingsTriage(sidecar, count) {
     if (!Number.isInteger(i) || i < 0 || i >= count) return { ok: false, detail: `the triage report.json names finding ${JSON.stringify(e?.index)}, outside 0..${count - 1}` };
     if (!FINDING_VERDICTS.includes(verdict)) return { ok: false, detail: `the triage report.json gives finding ${i} the verdict ${JSON.stringify(e?.verdict)}` };
     if (verdicts[i]) return { ok: false, detail: `the triage report.json judges finding ${i} twice` };
+    const dup = e.duplicate_of;
+    const hasDup = dup !== undefined && dup !== null;
+    if (hasDup && (!Number.isInteger(dup) || dup < 0 || dup >= count)) return { ok: false, detail: `the triage report.json gives finding ${i} a duplicate_of ${JSON.stringify(dup)}, outside 0..${count - 1}` };
+    if (hasDup && dup === i) return { ok: false, detail: `the triage report.json makes finding ${i} a duplicate of itself` };
     verdicts[i] = {
       verdict,
       rationale: e.rationale ? String(e.rationale).trim() : "",
       adr: isYes(e.adr),
       protected: isYes(e.protected),
+      ...(hasDup ? { duplicate_of: dup } : {}),
     };
   }
   const missing = verdicts.findIndex((v) => !v);
   if (missing >= 0) return { ok: false, detail: `the triage report.json leaves finding ${missing} unjudged` };
+  const chained = verdicts.findIndex((v) => v.duplicate_of !== undefined && verdicts[v.duplicate_of].duplicate_of !== undefined);
+  if (chained >= 0) return { ok: false, detail: `the triage report.json makes finding ${chained} a duplicate of finding ${verdicts[chained].duplicate_of}, which is itself a duplicate` };
   return { ok: true, verdicts };
 }
 
@@ -545,8 +554,31 @@ export function applyFindingVerdicts(findings, verdicts) {
       verdict = "debatable";
       rationale = `${rationale ? `${rationale} ` : ""}[forced Debatable: ${forced.join("; ")}]`;
     }
-    return { ...f, verdict, rationale };
+    return { ...f, verdict, rationale, ...(t.duplicate_of !== undefined ? { duplicate_of: t.duplicate_of } : {}) };
   });
+}
+
+const SEVERITY_RANK = Object.fromEntries(SEVERITIES.map((s, i) => [s, i]));
+
+/**
+ * Fold the findings triage marked `duplicate_of` into their targets, for promotion. `judged` is
+ * applyFindingVerdicts' list and `promotable` the subset selected from it. A duplicate is never
+ * promoted itself; when its target is promoted the target takes the higher severity and its
+ * criterion names both locations. Returns the promotable list, folded.
+ */
+export function foldDuplicates(judged, promotable) {
+  const folded = new Map();
+  judged.forEach((f, i) => {
+    if (f.duplicate_of === undefined || !promotable.includes(judged[f.duplicate_of])) return;
+    const t = folded.get(f.duplicate_of) ?? { ...judged[f.duplicate_of] };
+    if (SEVERITY_RANK[f.severity] < SEVERITY_RANK[t.severity]) t.severity = f.severity;
+    if (f.location && f.location !== t.location) {
+      t.criterion = `${t.criterion} (also at ${f.location})`;
+      t.location = t.location ? `${t.location}, ${f.location}` : f.location;
+    }
+    folded.set(f.duplicate_of, t);
+  });
+  return promotable.filter((f) => f.duplicate_of === undefined).map((f) => folded.get(judged.indexOf(f)) ?? f);
 }
 
 /**
@@ -560,7 +592,7 @@ export function annotateFindings(sidecar, findings) {
   const annotated = (Array.isArray(sidecar.findings) ? sidecar.findings : []).map((f) => {
     if (!f || !SEVERITIES.includes(String(f.severity).toUpperCase())) return f;
     const v = findings[k++];
-    return v ? { ...f, verdict: v.verdict, rationale: v.rationale } : f;
+    return v ? { ...f, verdict: v.verdict, rationale: v.rationale, ...(v.duplicate_of !== undefined ? { duplicate_of: v.duplicate_of } : {}) } : f;
   });
   return { ...sidecar, findings: annotated };
 }
