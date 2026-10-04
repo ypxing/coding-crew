@@ -42,7 +42,7 @@ function normaliseCheck(value) {
  * parseReviewReport, parseTriageReport) reads the sidecar object directly and never
  * scans text for a fence.
  */
-function allFencedJson(text, requiredField) {
+export function allFencedJson(text, requiredField) {
   const re = /[ \t]*```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g;
   const out = [];
   let m;

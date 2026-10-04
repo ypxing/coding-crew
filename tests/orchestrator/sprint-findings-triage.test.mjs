@@ -243,6 +243,21 @@ test("a refused close promotes nothing", () => {
   assert.equal(deferCalls(lines).length, 0);
 });
 
+test("a refused close whose retry closes via the merge route promotes exactly once, after the successful close", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", reviewOf([retryHigh]));
+  fake(root, "alpha-findings.triage", findingVerdicts([{ verdict: "actionable", rationale: "local" }]));
+  const scripts = privateScripts();
+  failFirstCall(scripts, "close-issue.sh", join(root, ".scratch/close-fail.marker"), "ERROR: forced close failure for test");
+  const { r, lines } = commandLines(root, ["--max-rounds", "2"], { scripts });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const defers = deferCalls(lines);
+  assert.equal(defers.length, 1);
+  const closesBefore = lines.slice(0, defers[0][1]).filter((l) => /close-issue\.sh/.test(l));
+  assert.equal(closesBefore.length, 2, "defer comes after the refused close and the successful retry");
+});
+
 test("a merged-and-closed branch is promoted exactly once, after the close", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

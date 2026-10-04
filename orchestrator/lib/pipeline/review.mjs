@@ -10,7 +10,7 @@ import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { decisionsFor } from "../prd-decisions.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { carryFindings, parseReviewBlocks, parseReviewReport, promoteSeverities, severityNames } from "../report.mjs";
+import { allFencedJson, carryFindings, parseReviewBlocks, parseReviewReport, promoteSeverities, severityNames } from "../report.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
 import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
@@ -170,6 +170,23 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
   return { completed: true, reportFile, parsed, written, reviewedSha };
+}
+
+/**
+ * The newest review block of `branch` in the sprint review reports, shaped like runReview's
+ * result, when it is all-met: what a merge-route retry (no review this round) promotes from.
+ */
+export function savedAllMetReview(sprint, branch) {
+  if (!existsSync(sprint.reviewDir)) return null;
+  let found = null;
+  for (const name of readdirSync(sprint.reviewDir).filter((n) => /^sprint-review-.*\.md$/.test(n)).sort()) {
+    const reportFile = join(sprint.reviewDir, name);
+    const text = readFileSync(reportFile, "utf8");
+    const written = allFencedJson(text, "verdict").filter((o) => o.branch === branch);
+    const recs = parseReviewBlocks(text).filter((r) => r.branch === branch);
+    if (recs.length) found = { reportFile, parsed: recs.at(-1), written: written.at(-1) };
+  }
+  return found?.parsed.verdict === "all-met" ? { completed: true, ...found } : null;
 }
 
 export async function promote(ctx, worker, review, outcome) {
