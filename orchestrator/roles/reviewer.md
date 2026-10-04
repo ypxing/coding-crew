@@ -152,7 +152,7 @@ holds, with the same severity rubric. A defect inside one issue's diff is report
 An `Area:` block in the prompt (name, files, the full text of each decision) narrows the dispatch, and
 its `Gather the diff:` line, to one area of the feature; other reviewers read the rest in parallel. Read
 every file of the area end to end, plus callers outside it as needed, not only the diff hunks. For each
-decision given, read the whole function, prompt or document it names, not only the line it changes, and say whether the merged code honours it and what input breaks it; a decision that does not
+decision given, read the whole function, prompt or document it names, not only the line it changes, and say whether the merged code honours it and what input breaks it. Then open each callee that receives what the decision moved (a prompt builder, a script, a range) and evaluate it at the new timing; a decision that does not
 hold is a finding, naming the input that breaks it. With no `Area:` block, review the whole range as above.
 
 Write the same object to the report path with `branch` and `slug` both `"feature"`, `verdict` always
