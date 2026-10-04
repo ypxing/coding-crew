@@ -39,6 +39,18 @@ test("the planner is dispatched once, with the stat, each issue's files and IDs,
   assert.match(prompt, /^- \*\*D2\*\* — Errors name the file\.$/m);
 });
 
+test("the planner's diff stat names a long path in full, not as .../name", () => {
+  const root = fixtureRepo();
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), PRD);
+  const long = "a-very-long-issue-slug-whose-changed-file-path-runs-well-past-the-default-stat-width";
+  addIssue(root, `01-${long}.md`, { body: "## Implements\n\nD1\n" });
+  const { r } = commandLines(root, ["--max-parallel", "2"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-plan/planner.md.prompt.md"), "utf8");
+  assert.match(prompt, new RegExp(` src/${long}\\.txt\\s+\\|`));
+  assert.doesNotMatch(prompt, /^ \.\.\.\//m);
+});
+
 test("K valid areas give K concurrent reviewers with their own dir, report and cost; one feature block; one promotion", () => {
   const root = twoIssues();
   plan(root, [

@@ -181,7 +181,9 @@ export async function planAreas(ctx, { base, tip, dir }) {
     featureBranch: sprint.featureBranch,
     base,
     max,
-    stat: git(["diff", "--stat", `${base}..${tip}`]),
+    // Off a tty git fits the stat to 80 columns and shortens long paths to `.../name`, which the planner
+    // must answer with verbatim: give it room for every path in full.
+    stat: git(["diff", "--stat=1000", "--stat-name-width=1000", `${base}..${tip}`]),
     issues: mergedIssues(ctx, { base, tip, idsFor: implementsLookup(ctx, ctx.tracker ?? (await getTracker(effects.mainRoot))) }),
     decisions,
   });
