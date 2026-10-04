@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO, SCRIPTS, sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, test } from "./helpers/sprint.mjs";
 
@@ -212,4 +212,28 @@ test("actionable: a review with no findings dispatches no triage", () => {
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(findingsTriageSpawns(lines), 0);
   assert.doesNotMatch(r.stdout, /## Findings Triage/);
+});
+
+// ─── findings an earlier review raised and the latest dropped are carried forward ──
+
+test("carry: an earlier run's unmet finding the all-met review drops is written carried, and remind labels it", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const earlier = { branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "", findings: [retryLow, { ...retryHigh, issue: "Same  problem" }] };
+  mkdirSync(join(root, ".scratch/demo/reviews"), { recursive: true });
+  writeFileSync(
+    join(root, ".scratch/demo/reviews/sprint-review-00000000T000000.md"),
+    `## Branch: crew/demo/alpha (alpha)\n\n\`\`\`json\n${JSON.stringify(earlier)}\n\`\`\`\n`,
+  );
+  // The latest review repeats the HIGH (other line, same issue text) and drops the LOW.
+  fake(root, "alpha.review", reviewOf([{ ...retryHigh, location: "src/alpha.txt:99", issue: "same problem" }]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const written = readdirSync(join(root, ".scratch/demo/reviews"))
+    .filter((n) => n.startsWith("sprint-review-") && n !== "sprint-review-00000000T000000.md")
+    .map((n) => readFileSync(join(root, ".scratch/demo/reviews", n), "utf8"))
+    .join("\n");
+  assert.equal((written.match(/"carried":true/g) ?? []).length, 1, "only the dropped LOW is carried");
+  assert.match(written, /"severity":"LOW"[^}]*"carried":true/);
+  assert.match(remindOf(root), /^earlier: crew\/demo\/alpha \[LOW\] src\/alpha\.txt:2 — Name the retry constant \(earlier review\)$/m);
 });
