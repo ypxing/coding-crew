@@ -59,7 +59,7 @@ import { fixIntegration } from "./integration-fix.mjs";
 import { writePrBody } from "./pipeline/pr-body.mjs";
 import { prdGapsCriteria } from "./prompts.mjs";
 import { parsePrdAudit, promoteSeverities } from "./report.mjs";
-import { runFeatureReview } from "./pipeline/feature-review.mjs";
+import { reportOnlyFeatureFindings, runFeatureReview } from "./pipeline/feature-review.mjs";
 
 export async function runSprint(ctx) {
   const { sprint, effects, options } = ctx;
@@ -347,6 +347,7 @@ export async function runSprint(ctx) {
         integration,
         wallCap: unclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: unclaimed.length } : null,
         promote,
+        drain: featureReviews.length + 1,
       });
       featureReviews.push(review);
       if (review.promotedRef) ownRefs.add(review.promotedRef);
@@ -571,7 +572,7 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
 
   // --- summary (rendered from disk, never from recollection) -----------------
   // The PR comes first: the summary points at it when the findings were posted there.
-  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap, unfixedFindings: unfixedFeatureFindings(featureReviews) });
+  const pr = await pullRequest(ctx, tracker, integration, { stalled, capped, wallCap, unfixedFindings: unfixedFeatureFindings(sprint) });
   const summaryArgs = ["--promoted", promoteSeverities(sprint.fixFindings)];
   if (stalled) summaryArgs.push("--stalled");
   if (wallCap) summaryArgs.push("--capped");
@@ -613,9 +614,9 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
 /** Feature reviews promote at the first two drains whose review ran; later ones are report-only. */
 const FEATURE_REVIEW_PROMOTIONS = 2;
 
-/** The findings a report-only feature review left that the fixFindings rule would have promoted. */
-function unfixedFeatureFindings(featureReviews) {
-  return featureReviews.flatMap((r) => r.reportOnly ?? []);
+/** The findings a report-only feature review left that the fixFindings rule would have promoted, read from the review report on disk (an earlier run's count too). */
+function unfixedFeatureFindings(sprint) {
+  return sprint.fixFindings === "none" ? [] : reportOnlyFeatureFindings(sprint.reviewDir);
 }
 
 /** One drain's entry of the summary's `## Feature Review`: its range, finding count, and what became of them. */
