@@ -55,11 +55,11 @@ Break the plan into **tracer bullet** issues. Each issue is a thin vertical slic
 
 Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an architectural decision or a design review. AFK slices can be implemented and merged without human interaction. Prefer AFK over HITL where possible.
 
-Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge. Many thin slices pay it many times, so do not split below the floor in the rules.
+Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge. Many thin slices pay it many times, so do not split below the floor in the rules. A `Blocked by` edge also costs a serial round: the dependent pays its overhead only after its blocker merges.
 
 **Edge rule.** For each pair of slices that share a surface or a file, take the first row that matches (first match wins):
 
-1. One slice consumes what the other produces (a signature, shape or output) → `Blocked by`.
+1. One slice consumes what the other produces (a signature, shape or output) → `Blocked by`, unless the consumer only surfaces, labels or passes through the producer's output — then merge it into the producer.
 2. The two change the same meaning (the same behaviour, function or rule) → `Blocked by`.
 3. They edit the same small file and together carry at most 8 acceptance criteria → merge them into one slice.
 4. Anything else → leave them parallel.
@@ -72,7 +72,7 @@ A small file is one a coder can read whole in a single pass alongside its tests,
 - A completed slice is demoable or verifiable on its own
 - Each slice is sized to fit in a single fresh context window — if a slice requires multiple agent sessions it must be split further
 - Merge rule: merge two slices when they share a test seam and neither is reviewable or demoable alone. Do not split below that floor — a fragment nobody can review or demo on its own is not a slice
-- Aim for 3–8 acceptance criteria per slice (a soft target, not a gate): fewer usually means a fragment to merge, more usually means two behaviours to split
+- Aim for 3–8 acceptance criteria per slice (a soft target, not a gate): fewer usually means a fragment to merge, more usually means two behaviours to split. Going over 8 is cheaper than a `Blocked by` edge to a dependent of 3 or fewer criteria
 - Any prefactoring should be sequenced first
 </vertical-slice-rules>
 
@@ -99,7 +99,7 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 2. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct.
 3. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
 4. **Slices outside the criteria range** — any slice that would carry fewer than 3 or more than 8 acceptance criteria: merge it, split it, or keep it as is.
-5. **Edges and merges the edge rule produced** — one line per edge or merge from step 4, naming the slices and the rule row (reason) that produced it, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
+5. **Edges and merges the edge rule produced** — one line per edge or merge from step 4, naming the slices and the rule row (reason) that produced it, for the user to override. Flag each `Blocked by` edge whose dependent carries 3 or fewer criteria as a merge candidate. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
 6. **Seam count** — when the slices' `## Implements` name more than two distinct seams, ask whether some slices can share one seam (and so merge or share a test).
 7. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
 

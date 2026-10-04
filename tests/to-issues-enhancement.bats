@@ -247,6 +247,15 @@ setup() {
   echo "$section" | grep -q 'first match wins'
 }
 
+@test "to-issues: a pass-through consumer merges into its producer; a small dependent is flagged, not edged" {
+  section=$(awk '/^### 4\. Draft vertical slices/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$section" | grep -q 'A `Blocked by` edge also costs a serial round'
+  echo "$section" | grep -q '^1\. One slice consumes.*unless the consumer only surfaces, labels or passes through.*merge it into the producer'
+  grep -q 'Going over 8 is cheaper than a `Blocked by` edge to a dependent of 3 or fewer criteria' "$SKILL_FILE"
+  quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+  echo "$quiz" | grep -q 'whose dependent carries 3 or fewer criteria as a merge candidate'
+}
+
 @test "to-issues D3: per-slice overhead sentence precedes the edge rule" {
   section=$(awk '/^### 4\. Draft vertical slices/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
   echo "$section" | grep -q 'Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge'

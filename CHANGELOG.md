@@ -6,6 +6,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `to-issues`: a slice that only surfaces, labels or passes through another slice's output merges into it instead of becoming a `Blocked by` dependent, since each edge costs a serial round; going over 8 criteria beats an edge to a dependent of 3 or fewer, and the quiz flags such edges as merge candidates.
 - `crew-afk`, `to-issues`, `to-prd`, `upgrade-deps`, `crew-address-findings`: shared fragments live flat at `skills/_shared/fragments/<key>.md`; the `common/` and per-platform lookups are gone (the four per-platform `tracker-configuration.md` copies were identical), as is the unused skill-local `fragments/<platform>/` lookup. Installing crew-afk removes the old `common/` and per-platform fragment directories.
 - `crew-afk`: a later feature review that writes its `feature` block closes an earlier run's not-run `feature-<n>` area in `review-rollup.mjs`, so `remind` and the summary no longer report it; a gap from the same run is written after the block and still shows.
 - `crew-afk`: a whole-feature review is split by a planner into up to `maxParallel` areas, each read end to end by its own concurrent `crew-reviewer` (`feature-<n>`) given an `Area:` block of its files and the full text of its PRD decisions; findings join one `feature` block and are promoted once. A failed planner gives one whole-diff area; a failed area is recorded not-run as `feature-<n>`. An incremental review stays one reviewer.
