@@ -484,3 +484,9 @@ test("parseIssue reads blockedBy after an indented closing code fence", () => {
   const i = parseIssue({ number: 5, title: "t", body, labels: [], state: "OPEN" });
   assert.deepEqual(i.blockedBy, [12]);
 });
+
+test("parseIssue does not read a PR / pull request number in ## Blocked by as a blocker", () => {
+  const body = "## Blocked by\n\n- Issue #3 (needs the parser from PR #40)\n- #12, after pull request #41 and pull #42\n- Issue #2, #5\n";
+  const i = parseIssue({ number: 9, title: "t", body, labels: [], state: "OPEN" });
+  assert.deepEqual(i.blockedBy, [3, 12, 2, 5]);
+});

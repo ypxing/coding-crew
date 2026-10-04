@@ -206,6 +206,8 @@ for idx in "${!NAMES[@]}"; do
       strip_markup "$tok"
       [[ "$STRIPPED" == *.md ]] || rest+="$tok "
     done
+    # A `PR #n` / `pull #n` / `pull request #n` mention is prose, not a ref (github.mjs strips the same).
+    rest=$(printf '%s' "$rest" | sed -E 's/(^|[^[:alnum:]])([Pp][Rr]|[Pp][Uu][Ll][Ll]([[:space:]]+[Rr][Ee][Qq][Uu][Ee][Ss][Tt])?)[[:space:]]*#[0-9]+/\1/g')
     while [[ "$rest" =~ ([Ii][Ss][Ss][Uu][Ee][[:space:]-]*#?|#)0*([0-9]+) ]]; do
       found=1
       n="${BASH_REMATCH[2]}"

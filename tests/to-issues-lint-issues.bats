@@ -79,11 +79,19 @@ lint_clean() { # extra args
 }
 
 @test "Blocked by 'Issue #a, #b' contributes both edges to the cycle check" {
+  # 04 blocks on nothing, so only the second ref (#3 -> 02 -> 01) closes the cycle.
+  cp "$W/issues/01-store.md" "$W/issues/04-extra.md"
   sed -i.bak '/^## Blocked by/,$d' "$W/issues/01-store.md"
-  printf '## Blocked by\n\n- Issue #2, #3\n' >> "$W/issues/01-store.md"
+  printf '## Blocked by\n\n- Issue #4, #3\n' >> "$W/issues/01-store.md"
   lint_clean
   [ "$status" -eq 1 ]
   [[ "$output" == *"ERROR "*"cycle"* ]]
+}
+
+@test "Blocked by PR #n / pull request #n is prose, not a ref, like github.mjs's blockerNumbers" {
+  printf '\n- 01-store.md (needs the parser from PR #40, pull request #41, pull #42)\n' >> "$W/issues/02-cli.md"
+  lint_clean
+  [[ "$output" != *"ERROR "*"02-cli.md"* ]]
 }
 
 @test "Blocked by filename containing issue-<n> is not also parsed as an Issue #<n> reference" {

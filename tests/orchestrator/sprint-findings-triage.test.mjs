@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO, SCRIPTS, sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, privateScripts, failFirstCall, test } from "./helpers/sprint.mjs";
+import { reportOnlyFeatureFindings } from "../../orchestrator/lib/pipeline/feature-review.mjs";
 
 // ─── fixFindings actionable (the default): crew-triage judges each finding, whatever its severity ──
 
@@ -102,6 +103,8 @@ test("actionable: a duplicate_of pair at a report-only feature drain leaves its 
   const blocks = sprintReport(root).split("## Branch: feature (feature)").pop();
   const last = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(blocks)[1]).findings;
   assert.equal(last.find((f) => f.issue === target.issue).report_only, true);
+  // reportOnlyFeatureFindings is what notGreenReasons' unfixedFindings is read from: the run is not green.
+  assert.deepEqual(reportOnlyFeatureFindings(join(root, ".scratch/demo/reviews")).map((f) => [f.location, f.severity]), [["src/alpha.txt:1", "MEDIUM"]]);
   assert.match(remindOf(root), /^FINDINGS: open=1 \(HIGH=1\)$/m);
   assert.match(r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
 });
