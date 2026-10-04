@@ -102,7 +102,7 @@ test("actionable: a duplicate_of pair at a report-only feature drain leaves its 
   const blocks = sprintReport(root).split("## Branch: feature (feature)").pop();
   const last = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(blocks)[1]).findings;
   assert.equal(last.find((f) => f.issue === target.issue).report_only, true);
-  assert.match(remindOf(root), /^FINDINGS: open=1 \(MEDIUM=1\)$/m);
+  assert.match(remindOf(root), /^FINDINGS: open=1 \(HIGH=1\)$/m);
   assert.match(r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
 });
 
