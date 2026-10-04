@@ -563,8 +563,9 @@ const SEVERITY_RANK = Object.fromEntries(SEVERITIES.map((s, i) => [s, i]));
 /**
  * Fold the findings triage marked `duplicate_of` into their targets, for promotion. `judged` is
  * applyFindingVerdicts' list and `promotable` the subset selected from it. A duplicate is never
- * promoted itself; when its target is promoted the target takes the higher severity and its
- * criterion names both locations. Returns the promotable list, folded.
+ * promoted itself while its target is; then the target takes the higher severity and its
+ * criterion names both locations. A duplicate whose target is not promotable stays promotable
+ * itself, so the defect is not lost. Returns the promotable list, folded.
  */
 export function foldDuplicates(judged, promotable) {
   const folded = new Map();
@@ -578,7 +579,8 @@ export function foldDuplicates(judged, promotable) {
     }
     folded.set(f.duplicate_of, t);
   });
-  return promotable.filter((f) => f.duplicate_of === undefined).map((f) => folded.get(judged.indexOf(f)) ?? f);
+  const folds = (f) => f.duplicate_of !== undefined && promotable.includes(judged[f.duplicate_of]);
+  return promotable.filter((f) => !folds(f)).map((f) => folded.get(judged.indexOf(f)) ?? f);
 }
 
 /**
