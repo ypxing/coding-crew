@@ -18,7 +18,7 @@ import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { FEATURE_REVIEW, criteriaFile, featureReviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { parseReviewBlocks, parseReviewReport } from "../report.mjs";
+import { carryFindings, findingKey, parseReviewBlocks, parseReviewReport } from "../report.mjs";
 import { loadPrdDecisions, loadPrdSection } from "../prd-decisions.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
 import { FEATURE_PLAN, planAreas } from "./feature-areas.mjs";
@@ -134,7 +134,7 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   // One `feature` block whatever the reviewers called themselves: the aggregate keys on it.
   const seen = new Set();
   const findings = ok.flatMap((r) => r.parsed.findings ?? []).filter((f) => {
-    const key = JSON.stringify([f.severity, f.location, f.criterion]);
+    const key = findingKey(f);
     return seen.has(key) ? false : (seen.add(key), true);
   });
   mkdirSync(sprint.reviewDir, { recursive: true });
@@ -152,6 +152,7 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
     dir,
     written,
     promote,
+    range,
     change: exclude
       ? `git log -p --reverse ${base}..${sprint.featureBranch} --not ${exclude}`
       : `git diff ${base}..${sprint.featureBranch}`,
@@ -183,12 +184,10 @@ function earlierFeatureFindings(reviewDir) {
 }
 
 /**
- * The rollup keeps only a branch's last block, so the review just written would hide what an earlier
- * drain raised and left unfixed. Rewrites that block with those findings appended, `carried: true`,
- * verdicts kept; what the new review repeats is not duplicated.
+ * Rewrites the report's last `feature` block through `edit(block)` (which returns the new findings);
+ * the block is left alone when it cannot be located or parsed.
  */
-function carryEarlierFindings(reportFile, earlier) {
-  if (!earlier.length) return;
+function rewriteFeatureFindings(reportFile, edit) {
   const text = readFileSync(reportFile, "utf8");
   const start = text.lastIndexOf(`## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})`);
   const open = start < 0 ? -1 : text.indexOf("```json\n", start);
@@ -198,14 +197,23 @@ function carryEarlierFindings(reportFile, earlier) {
   if (to < 0) return;
   let block;
   try { block = JSON.parse(text.slice(from, to)); } catch { return; }
-  const key = (f) => JSON.stringify([f.severity, f.location, f.criterion]);
-  const have = new Set((block.findings ?? []).map(key));
-  const carried = earlier
-    .filter((f) => !have.has(key(f)))
-    .map(({ explicit, ...f }) => ({ ...f, carried: true }));
-  if (!carried.length) return;
-  block.findings = [...(block.findings ?? []), ...carried];
+  const findings = edit(block.findings ?? []);
+  if (!findings) return;
+  block.findings = findings;
   writeFileSync(reportFile, `${text.slice(0, from)}${JSON.stringify(block)}${text.slice(to)}`);
+}
+
+/**
+ * The rollup keeps only a branch's last block, so the review just written would hide what an earlier
+ * drain raised and left unfixed. Rewrites that block with those findings appended, `carried: true`,
+ * verdicts kept; what the new review repeats (report.mjs's findingKey) is not duplicated.
+ */
+function carryEarlierFindings(reportFile, earlier) {
+  if (!earlier.length) return;
+  rewriteFeatureFindings(reportFile, (latest) => {
+    const merged = carryFindings([{ findings: earlier.map(({ explicit, ...f }) => f) }], latest, { keepVerdicts: true });
+    return merged.length > latest.length ? merged : null;
+  });
 }
 
 /**
@@ -213,19 +221,8 @@ function carryEarlierFindings(reportFile, earlier) {
  * earlier drain promoted leaves a `- feature: …` bullet that would otherwise read them as covered too.
  */
 function markReportOnly(reportFile, findings) {
-  const text = readFileSync(reportFile, "utf8");
-  const start = text.lastIndexOf(`## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})`);
-  const open = start < 0 ? -1 : text.indexOf("```json\n", start);
-  if (open < 0) return;
-  const from = open + "```json\n".length;
-  const to = text.indexOf("\n```", from);
-  if (to < 0) return;
-  let block;
-  try { block = JSON.parse(text.slice(from, to)); } catch { return; }
-  const key = (f) => JSON.stringify([f.severity, f.location, f.criterion]);
-  const marked = new Set(findings.map(key));
-  block.findings = (block.findings ?? []).map((f) => (marked.has(key(f)) ? { ...f, report_only: true } : f));
-  writeFileSync(reportFile, `${text.slice(0, from)}${JSON.stringify(block)}${text.slice(to)}`);
+  const marked = new Set(findings.map(findingKey));
+  rewriteFeatureFindings(reportFile, (all) => all.map((f) => (marked.has(findingKey(f)) ? { ...f, report_only: true } : f)));
 }
 
 /** One area's crew-reviewer dispatch: `{ slug, parsed }`, or `{ slug, reason }` when it left no review. */
@@ -267,12 +264,14 @@ async function reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFil
 }
 
 /** The same fixFindings rule as a branch's findings; the feature has no issue file, so no depth guard. */
-async function promoteFeature(ctx, { findings, reportFile, dir, written, change, promote }) {
+async function promoteFeature(ctx, { findings, reportFile, dir, written, change, promote, range }) {
   const { sprint, effects } = ctx;
   const selected = await selectPromotable(ctx, {
     findings,
     label: FEATURE_REVIEW,
-    scope: `Findings raised against the whole feature diff (${sprint.featureBranch}), reviewed once across all its issues.`,
+    scope: range.mode === "increment"
+      ? `Findings raised against the commits added to ${sprint.featureBranch} since the last feature review (${range.base.slice(0, 12)}..${range.tip.slice(0, 12)}).`
+      : `Findings raised against the whole feature diff (${sprint.featureBranch}), reviewed across all its issues.`,
     ref: sprint.featureBranch,
     change,
     dir,

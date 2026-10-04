@@ -361,19 +361,20 @@ export function foldReview(prev, rec) {
   return { ...rec, findings: prev.findings.map((f) => ({ ...f, carried: true })) };
 }
 
-/** What makes two findings the same: severity, path (line dropped), whitespace-normalised case-folded issue. */
-function findingKey(f) {
+/** What makes two findings the same: severity, path (line dropped), whitespace-normalised case-folded issue (the criterion when a finding has none). */
+export function findingKey(f) {
   const path = String(f.location ?? "").trim().replace(/(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$/, "");
-  const issue = String(f.issue ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  const issue = String(f.issue || f.criterion || "").replace(/\s+/g, " ").trim().toLowerCase();
   return `${f.severity}\u0000${path}\u0000${issue}`;
 }
 
 /**
  * `latestFindings` followed by each finding of `earlierRecords` (one branch's earlier review
  * blocks, oldest first) that the latest does not repeat, marked `carried: true` and deduped among
- * themselves. A carried finding drops any triage verdict: the new round judges it afresh.
+ * themselves. A carried finding drops any triage verdict (the new round judges it afresh) unless
+ * `keepVerdicts`: the feature review's verdicts are what its promotion was decided on.
  */
-export function carryFindings(earlierRecords, latestFindings) {
+export function carryFindings(earlierRecords, latestFindings, { keepVerdicts = false } = {}) {
   const seen = new Set(latestFindings.map(findingKey));
   const carried = [];
   for (const rec of earlierRecords) {
@@ -381,8 +382,8 @@ export function carryFindings(earlierRecords, latestFindings) {
       const key = findingKey(f);
       if (seen.has(key)) continue;
       seen.add(key);
-      const { verdict, rationale, ...rest } = f;
-      carried.push({ ...rest, carried: true });
+      const { verdict, rationale, ...rest } = keepVerdicts ? { ...f } : f;
+      carried.push({ ...(keepVerdicts ? f : rest), carried: true });
     }
   }
   return [...latestFindings, ...carried];
