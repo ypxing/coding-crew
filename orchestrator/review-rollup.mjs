@@ -20,7 +20,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { foldReview, parseReviewAggregate } from "./lib/report.mjs";
+import { foldDuplicates, foldReview, parseReviewAggregate } from "./lib/report.mjs";
 
 function main(argv) {
   const files = argv.filter((f) => existsSync(f));
@@ -48,8 +48,9 @@ function main(argv) {
   // branch and buys jq/bash consumers nothing.
   const branches = order.map((key) => {
     const { branch, slug, verdict, detail, findings } = byBranch.get(key);
-    // A finding triage folded into another one (`duplicate_of`) is shown once, as its target.
-    return { branch, slug, verdict, detail, findings: findings.filter((f) => f.duplicate_of === undefined) };
+    // A finding triage folded into another one (`duplicate_of`) is shown once, as its target, which
+    // takes the higher severity and both locations (foldDuplicates, as promotion does).
+    return { branch, slug, verdict, detail, findings: foldDuplicates(findings, findings) };
   });
   process.stdout.write(`${JSON.stringify({ branches })}\n`);
 }

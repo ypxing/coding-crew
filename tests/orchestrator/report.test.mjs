@@ -848,3 +848,12 @@ test("parseReviewAggregate: a not_run block keeps the previous findings, carried
   assert.equal(rec.findings[0].carried, true);
   assert.equal(parseReviewAggregate(blk({ verdict: "all-met", findings: [{ severity: "LOW", carried: true, issue: "x" }] }))[0].findings[0].carried, true);
 });
+
+test("foldDuplicates: a duplicate whose target is not promotable stays promotable itself", () => {
+  const judged = [
+    { severity: "MEDIUM", location: "a.ts:1", criterion: "x", verdict: "debatable" },
+    { severity: "HIGH", location: "b.ts:2", criterion: "x too", verdict: "actionable", duplicate_of: 0 },
+  ];
+  const out = foldDuplicates(judged, [judged[1]]);
+  assert.deepEqual(out, [judged[1]]);
+});
