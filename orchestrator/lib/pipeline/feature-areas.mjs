@@ -10,6 +10,7 @@ import { join } from "node:path";
 
 import { dispatchPlain } from "../dispatch.mjs";
 import { implementedIds, loadPrdDecisions } from "../prd-decisions.mjs";
+import { getTracker } from "../tracker.mjs";
 import { FEATURE_REVIEW } from "../prompts.mjs";
 import { readOnlyDispatch, roleBinding } from "./shared.mjs";
 
@@ -102,9 +103,9 @@ export function plannerPrompt({ featureBranch, base, max, stat, issues, decision
   ].join("\n");
 }
 
-/** `{branch, files, ids}` for each issue branch merged into the feature in `base..tip`. */
-export function mergedIssues(ctx, { base, tip }) {
-  const { effects, sprint } = ctx;
+/** `{branch, files, ids}` for each issue branch merged into the feature in `base..tip`; `ids` from `idsFor(branch)`. */
+export function mergedIssues(ctx, { base, tip, idsFor = () => [] }) {
+  const { effects } = ctx;
   const log = effects.gitRead(["log", "--first-parent", "--merges", "--reverse", "--format=%H%x09%s", `${base}..${tip}`]);
   if (log.code !== 0) return [];
   const out = [];
@@ -113,13 +114,37 @@ export function mergedIssues(ctx, { base, tip }) {
     const branch = /^Merge branch '(crew\/[^']+)'/.exec(subject)?.[1];
     if (!branch) continue;
     const files = effects.gitRead(["diff", "--name-only", `${sha}^1`, sha]);
-    out.push({ branch, files: files.code === 0 ? files.stdout.split("\n").filter(Boolean) : [], ids: issueIds(effects.mainRoot, sprint.featureSlug, branch) });
+    out.push({ branch, files: files.code === 0 ? files.stdout.split("\n").filter(Boolean) : [], ids: idsFor(branch) });
   }
   return out;
 }
 
-/** The `## Implements` IDs of a local issue file for this branch's `<n>-<slug>` stem; none for a tracker with no file. */
-function issueIds(mainRoot, featureSlug, branch) {
+/**
+ * `branch → ## Implements IDs`, from the tracker the run uses. A local tracker reads the issue file for
+ * the branch's `<n>-<slug>` stem; any other lists the feature's issues once (every state — a merged
+ * issue is `awaiting-merge` or closed) and matches the stem's leading number. A failed listing warns
+ * and every branch reads as implementing none.
+ */
+export function implementsLookup(ctx, tracker) {
+  const { effects, sprint } = ctx;
+  if (tracker.listOpenIssueFiles) return (branch) => localIssueIds(effects.mainRoot, sprint.featureSlug, branch);
+  let byNumber;
+  return (branch) => {
+    if (!byNumber) {
+      byNumber = new Map();
+      try {
+        for (const i of tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug })) byNumber.set(Number(i.number), i.text ?? "");
+      } catch (e) {
+        ctx.log(`FEATURE-REVIEW: could not list the feature's issues for their ## Implements IDs — ${e.message}`, "warn");
+      }
+    }
+    const n = Number(/^(\d+)-/.exec(branch.split("/").pop())?.[1]);
+    return byNumber.has(n) ? implementedIds(byNumber.get(n)) : [];
+  };
+}
+
+/** The `## Implements` IDs of a local issue file for this branch's `<n>-<slug>` stem. */
+function localIssueIds(mainRoot, featureSlug, branch) {
   const stem = branch.split("/").pop();
   for (const dir of ["open", "done"]) {
     const d = join(mainRoot, ".scratch", featureSlug, "issues", dir);
@@ -157,7 +182,7 @@ export async function planAreas(ctx, { base, tip, dir }) {
     base,
     max,
     stat: git(["diff", "--stat", `${base}..${tip}`]),
-    issues: mergedIssues(ctx, { base, tip }),
+    issues: mergedIssues(ctx, { base, tip, idsFor: implementsLookup(ctx, ctx.tracker ?? (await getTracker(effects.mainRoot))) }),
     decisions,
   });
   const planner = roleBinding(ctx, "reviewer");

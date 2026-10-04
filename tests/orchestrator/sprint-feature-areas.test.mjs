@@ -8,7 +8,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { default as nodeTest } from "node:test";
 import { sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, test } from "./helpers/sprint.mjs";
-import { normalizeAreas, parsePlannerAnswer, plannerPrompt } from "../../orchestrator/lib/pipeline/feature-areas.mjs";
+import { implementsLookup, normalizeAreas, parsePlannerAnswer, plannerPrompt } from "../../orchestrator/lib/pipeline/feature-areas.mjs";
 import { featureReviewPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 const areaReviews = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-reviewer.* --slug feature-\d+( |$)/.test(l));
@@ -176,6 +176,34 @@ nodeTest("normalizeAreas appends an uncovered file to the smallest area and merg
   );
   assert.equal(merged.length, 2);
   assert.deepEqual(merged.flatMap((a) => a.files).sort(), ["a.js", "b.js", "c.js"]);
+});
+
+nodeTest("implementsLookup reads ## Implements from a non-file tracker's listing, by the branch's issue number, listing once", () => {
+  let listings = 0;
+  const tracker = {
+    listOpen: (_root, { featureSlug }) => {
+      listings++;
+      assert.equal(featureSlug, "demo");
+      return [
+        { number: 188, status: "done", text: "## Implements\n\nD1, D2\n" },
+        { number: 191, status: "awaiting-merge", text: "## Implements\n\nD3\n" },
+      ];
+    },
+  };
+  const ctx = { effects: { mainRoot: "/nowhere" }, sprint: { featureSlug: "demo" }, log: () => {} };
+  const idsFor = implementsLookup(ctx, tracker);
+  assert.deepEqual(idsFor("crew/demo/188-whole-feature"), ["D1", "D2"]);
+  assert.deepEqual(idsFor("crew/demo/191-areas"), ["D3"]);
+  assert.deepEqual(idsFor("crew/demo/999-unknown"), []);
+  assert.equal(listings, 1);
+});
+
+nodeTest("implementsLookup warns and names nothing when the tracker listing fails", () => {
+  const logs = [];
+  const tracker = { listOpen: () => { throw new Error("gh down"); } };
+  const ctx = { effects: { mainRoot: "/nowhere" }, sprint: { featureSlug: "demo" }, log: (m, lvl) => logs.push([lvl, m]) };
+  assert.deepEqual(implementsLookup(ctx, tracker)("crew/demo/1-a"), []);
+  assert.ok(logs.some(([lvl, m]) => lvl === "warn" && /gh down/.test(m)));
 });
 
 nodeTest("parsePlannerAnswer reads the last fenced json block and nothing else", () => {
