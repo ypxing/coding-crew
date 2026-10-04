@@ -109,6 +109,7 @@ test("actionable: the feature review's findings are triaged and promoted the sam
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "feature.review", featureReviewFile([crossIssue("LOW", "Name the two retry loops alike"), crossIssue("HIGH", "Merge the retry helpers into a new public module")]));
+  fake(root, "feature.review-later", featureReviewFile([])); // the Phase 2 drain's increment review
   fake(
     root,
     "feature-findings.triage",

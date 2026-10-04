@@ -8,16 +8,27 @@
  * (no behavior change) rather than duplicated per backend.
  */
 
+/** The code fence open after `line`, given the one open before it: "" when none (``` / ~~~, closed by the same mark). */
+function fenceAfter(fence, line) {
+  if (fence) return line.startsWith(fence) && /^ {0,3}(`{3,}|~{3,})\s*$/.test(line) ? "" : fence;
+  const m = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+  return m ? m[1].slice(0, 3) : "";
+}
+
 /**
  * Extract one `## <heading>` section's body. Stops at the next heading of the
- * same or higher level, so a `### Sub` inside the section is kept.
+ * same or higher level, so a `### Sub` inside the section is kept. Lines inside a
+ * ``` / ~~~ fence are never headings.
  */
 export function sectionBody(text, heading) {
   const lines = text.split("\n");
   const want = heading.trim().toLowerCase();
   let start = -1;
   let level = 0;
+  let fence = "";
   for (let i = 0; i < lines.length; i++) {
+    fence = fenceAfter(fence, lines[i]);
+    if (fence || /^ {0,3}(`{3,}|~{3,})/.test(lines[i])) continue;
     const m = /^(#{1,6})\s+(.*?)\s*$/.exec(lines[i]);
     if (m && m[2].toLowerCase() === want) {
       start = i + 1;
@@ -27,8 +38,11 @@ export function sectionBody(text, heading) {
   }
   if (start === -1) return null;
   const body = [];
+  fence = "";
   for (let i = start; i < lines.length; i++) {
-    const m = /^(#{1,6})\s+/.exec(lines[i]);
+    const inFence = fence !== "";
+    fence = fenceAfter(fence, lines[i]);
+    const m = !inFence && !fence ? /^(#{1,6})\s+/.exec(lines[i]) : null;
     if (m && m[1].length <= level) break;
     body.push(lines[i]);
   }
@@ -44,7 +58,10 @@ export function spliceSection(text, heading, body) {
   const want = heading.trim().toLowerCase();
   let start = -1;
   let level = 2;
+  let fence = "";
   for (let i = 0; i < lines.length; i++) {
+    fence = fenceAfter(fence, lines[i]);
+    if (fence || /^ {0,3}(`{3,}|~{3,})/.test(lines[i])) continue;
     const m = /^(#{1,6})\s+(.*?)\s*$/.exec(lines[i]);
     if (m && m[2].toLowerCase() === want) {
       start = i;

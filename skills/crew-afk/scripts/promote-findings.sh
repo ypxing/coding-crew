@@ -772,7 +772,8 @@ cmd_mark_not_run() {
 # ("- <branch>: SEV, SEV → <path>"), never the reviewer's free text, so a plain regex capture reads
 # them exactly. Prints a JSON array of {branch, severity, location, criterion, verdict, rationale};
 # verdict and rationale are "" for a finding triage never judged. `carried: true` is added to a
-# finding an earlier review of the branch raised and the latest did not repeat.
+# finding an earlier review of the branch raised and the latest did not repeat. A finding marked
+# `report_only` (a feature review past the promotion cap) is never covered: no fix issue took it.
 open_findings_json() {
   local rollup="$1" promoted
   shift
@@ -787,8 +788,9 @@ open_findings_json() {
   jq -n --argjson rollup "$rollup" --argjson promoted "$promoted" '
     ($promoted | map(.branch as $b | .sevs[] as $s | {(($b + " " + $s)): true}) | add // {}) as $pset
     | [$rollup.branches[] | .branch as $b | .findings[]
-       | select((($pset[$b + " " + .severity] // false)
-                 or ((.verdict // "") == "actionable" and ($pset[$b + " actionable"] // false))) | not)
+       | select((.report_only == true)
+                 or ((($pset[$b + " " + .severity] // false)
+                 or ((.verdict // "") == "actionable" and ($pset[$b + " actionable"] // false))) | not))
        | {branch: $b, severity, location: (.location // ""), issue: (.issue // ""), criterion: (.criterion // ""),
           verdict: (.verdict // ""), rationale: (.rationale // "")}
           + (if .carried == true then {carried: true} else {} end)]

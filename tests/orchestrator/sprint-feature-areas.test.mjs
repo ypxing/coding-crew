@@ -72,7 +72,7 @@ test("an issue's rename and a non-ASCII path reach the planner and an area's dif
   assert.match(planner, /^ ünï\.txt\s+\|/m);
   assert.match(planner, /crew\/demo\/alpha: files [^;]*\bold\.txt\b/);
   // Neither old.txt nor ünï.txt is in the plan: both join the smallest area (beta), by their real names.
-  const beta = readFileSync(join(root, ".scratch/demo/dispatch/feature-2/review-prompt.md"), "utf8");
+  const beta = readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-2/review-prompt.md"), "utf8");
   assert.match(beta, /^Gather the diff: git --literal-pathspecs diff --no-renames \S+ -- 'src\/beta\.txt' 'old\.txt' 'ünï\.txt'$/m);
 });
 
@@ -81,7 +81,7 @@ test("a plan of one area reads as the whole feature: its diff has no pathspec", 
   plan(root, [{ name: "all", files: ["src/alpha.txt"] }]);
   const { r } = commandLines(root, ["--max-parallel", "2"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8");
   assert.match(prompt, /^Gather the diff: git diff \S+\.\.feature\/demo$/m);
   assert.match(prompt, /^Files:\n- src\/alpha\.txt\n- src\/beta\.txt$/m);
 });
@@ -94,17 +94,19 @@ test("K valid areas give K concurrent reviewers with their own dir, report and c
   ]);
   fake(root, "feature-1.review", featureReviewFile([crossIssue("HIGH", "Bound the alpha retry")]));
   fake(root, "feature-2.review", featureReviewFile([crossIssue("HIGH", "Name the file in beta's error")]));
+  fake(root, "feature-1.review-later", featureReviewFile([])); // the Phase 2 drain's increment review
   const { r, lines } = commandLines(root, ["--max-parallel", "2"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(areaReviews(lines).length, 2);
-  for (const n of [1, 2]) {
-    assert.ok(readFileSync(join(root, `.scratch/demo/dispatch/feature-${n}/review-prompt.md`), "utf8").includes("Area:"));
-    readFileSync(join(root, `.scratch/demo/dispatch/feature-${n}/review.report.json`), "utf8");
-  }
+  assert.equal(areaReviews(lines).length, 3, "two areas, then one increment reviewer");
+  // Each drain keeps its own dir: drain 1's two areas, then drain 2's increment review (no Area:).
+  assert.ok(readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8").includes("Area:"));
+  assert.ok(readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-2/review-prompt.md"), "utf8").includes("Area:"));
+  assert.doesNotMatch(readFileSync(join(root, ".scratch/demo/dispatch/feature-d2-1/review-prompt.md"), "utf8"), /^Area:/m);
+  for (const d of ["d1-1", "d1-2"]) readFileSync(join(root, `.scratch/demo/dispatch/feature-${d}/review.report.json`), "utf8");
   const slugs = state(root).dispatches.map((d) => d.slug);
   assert.ok(slugs.includes("feature-1") && slugs.includes("feature-2"), slugs.join());
   const report = sprintReport(root);
-  assert.equal(report.match(/^## Branch: feature \(feature\)$/gm).length, 1);
+  assert.equal(report.match(/^## Branch: feature \(feature\)$/gm).length, 2, "one feature block per drain, not per area");
   assert.match(report, /Bound the alpha retry/);
   assert.match(report, /Name the file in beta's error/);
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-triage.* --slug feature-findings/.test(l)).length, 1);
@@ -120,7 +122,7 @@ test("an answer with more areas than maxParallel is merged down to maxParallel",
   const { r, lines } = commandLines(root, ["--max-parallel", "1"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(areaReviews(lines).length, 1);
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8");
   assert.match(prompt, /- src\/alpha\.txt/);
   assert.match(prompt, /- src\/beta\.txt/);
   assert.match(prompt, /^- \*\*D1\*\* — Retries are bounded\.$/m);
@@ -139,7 +141,7 @@ test("a planner that fails, or answers with no json or no areas, gives one whole
     const { r, lines } = commandLines(root, ["--max-parallel", "3"]);
     assert.equal(r.code, 0, `${label}: ${r.stdout}\n${r.stderr}`);
     assert.equal(areaReviews(lines).length, 1, label);
-    const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8");
+    const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8");
     assert.match(prompt, /- src\/alpha\.txt/, label);
     assert.match(prompt, /- src\/beta\.txt/, label);
     assert.match(prompt, /\*\*D1\*\*[\s\S]*\*\*D2\*\*/, label);
@@ -154,7 +156,7 @@ test("a planner that times out falls back to one whole-diff area and logs why", 
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(planners(lines).length, 1);
   assert.equal(areaReviews(lines).length, 1);
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8");
   assert.match(prompt, /- src\/alpha\.txt/);
   assert.match(prompt, /- src\/beta\.txt/);
   assert.match(traceLog(root), /FEATURE-REVIEW: planner fallback — the planner timed out/);
@@ -196,7 +198,7 @@ test("an incremental review dispatches no planner and one reviewer", () => {
   assert.equal(again.r.code, 0, `${again.r.stdout}\n${again.r.stderr}`);
   assert.equal(planners(again.lines).length, 0);
   assert.equal(areaReviews(again.lines).length, 1);
-  assert.doesNotMatch(readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8"), /^Area:/m);
+  assert.doesNotMatch(readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8"), /^Area:/m);
 });
 
 // ─── pure pieces ──────────────────────────────────────────────────────────────────────
@@ -284,6 +286,20 @@ nodeTest("featureReviewPrompt carries an Area: block with the files and the full
   const withArea = featureReviewPrompt({ ...base, area: { name: "flow", files: ["a.js"] }, decisions: ["- **D1** — Retries are bounded."] });
   assert.match(withArea, /^Area:\nName: flow\nFiles:\n- a\.js\nDecisions:\n- \*\*D1\*\* — Retries are bounded\.$/m);
   assert.doesNotMatch(featureReviewPrompt(base), /^Area:/m);
+});
+
+nodeTest("featureReviewPrompt: an increment carries every decision line and the Compatibility & Migration section; an area prompt the section; none without", () => {
+  const base = { featureBranch: "feature/x", base: "abc", exclude: "main", reportPath: "/r.json" };
+  const decisions = ["- **D1** — Retries are bounded.", "- **B2** — Old runs resume."];
+  const compatibility = "Old runs keep working.\n\n- re-run install.sh";
+  const inc = featureReviewPrompt({ ...base, decisions, compatibility });
+  assert.ok(inc.includes(decisions.join("\n")));
+  assert.ok(inc.includes(compatibility));
+  assert.doesNotMatch(inc, /^Area:/m);
+  const area = featureReviewPrompt({ ...base, exclude: null, area: { name: "flow", files: ["a.js"] }, decisions: [decisions[0]], compatibility });
+  assert.ok(area.includes(compatibility));
+  const bare = featureReviewPrompt({ ...base });
+  assert.doesNotMatch(bare, /Compatibility|PRD decisions/);
 });
 
 nodeTest("an area's Gather the diff line is limited to its files, quoted; the whole-feature fallback and no area are not", () => {

@@ -168,3 +168,12 @@ write_report() { # file branch findings-json
   [[ "$body" == *"a nit (earlier review)"* ]]
   [[ "$body" != *"a fresh one (earlier review)"* ]]
 }
+
+@test "a report_only feature finding stays open though a '- feature: actionable' bullet covers its verdict" {
+  write_report "$REPORT" feature '[
+    {"severity":"HIGH","location":"a.ts:1","criterion":"promoted","verdict":"actionable"},
+    {"severity":"HIGH","location":"b.ts:2","criterion":"report only","verdict":"actionable","report_only":true}]'
+  printf '\n## Promoted Findings\n\n- feature: actionable → #9\n' >> "$REPORT"
+  run bash "$PROMOTE" open --feature-slug feat
+  [ "$(jq -r '[.[] | .criterion] | @json' <<< "$output")" = '["report only"]' ]
+}

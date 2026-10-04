@@ -1,24 +1,25 @@
 /**
  * The feature review: crew-reviewer's feature mode over the feature diff — the whole feature, or only
- * the commits since the last review — once per run, at the first drain of the queue. Each branch was
+ * the commits since the last review — at every drain of the queue (a drain whose tip the last review
+ * covered dispatches nothing). Each branch was
  * reviewed on its own diff, so what exists only across issues — a duplicated helper, inconsistent
  * error handling, a flow unsafe only combined — is seen nowhere else. Its findings join the sprint
- * review report under `feature` and flow through the same promotion (afk.fixFindings) as a branch's;
- * it is advisory and never fails the sprint.
+ * review report under `feature` and flow through the same promotion (afk.fixFindings) as a branch's
+ * at the first two drains it ran (loop.mjs passes `promote`: the promotion's ordinal, false past the cap); later ones only report. It is advisory and never fails the sprint.
  *
  * A whole-feature review is split into areas (feature-areas.mjs), one concurrent reviewer each, all
  * findings joined in one `feature` block and promoted once.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { FEATURE_REVIEW, criteriaFile, featureReviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { parseReviewReport } from "../report.mjs";
-import { loadPrdDecisions } from "../prd-decisions.mjs";
+import { carryFindings, findingKey, parseReviewBlocks, parseReviewReport } from "../report.mjs";
+import { loadPrdDecisions, loadPrdSection } from "../prd-decisions.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
 import { FEATURE_PLAN, planAreas } from "./feature-areas.mjs";
 import { defaultBranchBase, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
@@ -55,7 +56,7 @@ export function featureReviewRange(ctx) {
  * was deliberately not run, `failed` why a dispatch that was made left no review (recorded as
  * not-run in the report), `report` the review report file holding its block.
  */
-export async function runFeatureReview(ctx, { integration = null, wallCap = null } = {}) {
+export async function runFeatureReview(ctx, { integration = null, wallCap = null, promote = 1, drain = 1 } = {}) {
   const { sprint, effects } = ctx;
 
   if (wallCap) {
@@ -75,7 +76,8 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   }
   const { base, exclude } = range;
 
-  const dir = join(sprint.dispatchDir, FEATURE_REVIEW);
+  // Each drain's artifacts get their own dirs: a later drain's review must not overwrite an earlier one's.
+  const dir = join(sprint.dispatchDir, `${FEATURE_REVIEW}-d${drain}`);
   mkdirSync(dir, { recursive: true });
   const reportFile = ctx.roundReviewFile();
 
@@ -90,18 +92,20 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
     areas = (await planAreas(ctx, { base, tip: range.tip, dir: planDir })).areas;
   }
   const decisions = loadPrdDecisions(ctx);
+  const compatibility = loadPrdSection(ctx, "Compatibility & Migration");
 
   const reviewer = roleBinding(ctx, "reviewer");
   const runs = await Promise.all(areas.map((area, i) => {
     const slug = `${FEATURE_REVIEW}-${i + 1}`;
-    const areaDir = join(sprint.dispatchDir, slug);
+    const areaDir = join(sprint.dispatchDir, `${FEATURE_REVIEW}-d${drain}-${i + 1}`);
     mkdirSync(areaDir, { recursive: true });
     const promptFile = join(areaDir, "review-prompt.md");
     const outFile = join(areaDir, "review.md");
     const sidecarFile = join(areaDir, "review.report.json");
     rmSync(sidecarFile, { force: true });
-    const lines = area ? area.decisions.map((id) => decisions.get(id)).filter(Boolean) : [];
-    writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, exclude, reportPath: sidecarFile, reviewAssets, reviewContext, area, decisions: lines }));
+    // An area gets its own decisions; an increment has no area, so it gets every one.
+    const lines = area ? area.decisions.map((id) => decisions.get(id)).filter(Boolean) : [...decisions.values()];
+    writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, exclude, reportPath: sidecarFile, reviewAssets, reviewContext, area, decisions: lines, compatibility }));
     ctx.log(`[STEP] step=feature-review slug=${slug} model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`);
     return reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFile });
   }));
@@ -131,10 +135,11 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   // One `feature` block whatever the reviewers called themselves: the aggregate keys on it.
   const seen = new Set();
   const findings = ok.flatMap((r) => r.parsed.findings ?? []).filter((f) => {
-    const key = JSON.stringify([f.severity, f.location, f.criterion]);
+    const key = findingKey(f);
     return seen.has(key) ? false : (seen.add(key), true);
   });
   mkdirSync(sprint.reviewDir, { recursive: true });
+  const earlier = earlierFeatureFindings(sprint.reviewDir);
   const written = { branch: FEATURE_REVIEW, slug: FEATURE_REVIEW, verdict: "all-met", detail: "", findings };
   const block = `## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
@@ -142,24 +147,92 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
 
   markGaps();
 
+  const promotion = await promoteFeature(ctx, {
+    findings,
+    reportFile,
+    dir,
+    written,
+    promote,
+    range,
+    change: exclude
+      ? `git log -p --reverse ${base}..${sprint.featureBranch} --not ${exclude}`
+      : `git diff ${base}..${sprint.featureBranch}`,
+  });
+  carryEarlierFindings(reportFile, earlier);
+
   // An area that left no review is a gap the next run should still cover, so the tip is kept for a full pass.
   if (!failures.length) sprint.state(["feature-reviewed", "--tip", range.tip]);
   ctx.log(`FEATURE-REVIEW: ${findings.length} finding(s) from ${ok.length} of ${runs.length} area reviewer(s) (${range.mode}: ${base.slice(0, 12)}..${sprint.featureBranch})`);
   return {
     report: reportFile,
     findings,
+    mode: range.mode,
     areas: runs.length,
     ...(failures.length ? { areaFailures: failures.map((r) => `${r.slug}: ${r.reason}`) } : {}),
-    ...(await promoteFeature(ctx, {
-      findings,
-      reportFile,
-      dir,
-      written,
-      change: exclude
-        ? `git log -p --reverse ${base}..${sprint.featureBranch} --not ${exclude}`
-        : `git diff ${base}..${sprint.featureBranch}`,
-    })),
+    ...promotion,
   };
+}
+
+/** The findings the sprint review reports last held under `feature` (earlier drains' or runs'), verdicts kept. */
+function earlierFeatureFindings(reviewDir) {
+  if (!existsSync(reviewDir)) return [];
+  const recs = readdirSync(reviewDir)
+    .filter((n) => /^sprint-review-.*\.md$/.test(n))
+    .sort()
+    .flatMap((n) => parseReviewBlocks(readFileSync(join(reviewDir, n), "utf8")))
+    .filter((rec) => rec.branch === FEATURE_REVIEW);
+  return recs.at(-1)?.findings ?? [];
+}
+
+/**
+ * The open findings a feature review left report-only (past the promotion cap): the `report_only`
+ * ones in the last `feature` block on disk, which no fix issue covers — what promote-findings.sh
+ * `open` reads — whichever run or drain wrote them.
+ */
+export function reportOnlyFeatureFindings(reviewDir) {
+  return earlierFeatureFindings(reviewDir).filter((f) => f.report_only === true);
+}
+
+/**
+ * Rewrites the report's last `feature` block through `edit(block)` (which returns the new findings);
+ * the block is left alone when it cannot be located or parsed.
+ */
+function rewriteFeatureFindings(reportFile, edit) {
+  const text = readFileSync(reportFile, "utf8");
+  const start = text.lastIndexOf(`## Branch: ${FEATURE_REVIEW} (${FEATURE_REVIEW})`);
+  const open = start < 0 ? -1 : text.indexOf("```json\n", start);
+  if (open < 0) return;
+  const from = open + "```json\n".length;
+  const to = text.indexOf("\n```", from);
+  if (to < 0) return;
+  let block;
+  try { block = JSON.parse(text.slice(from, to)); } catch { return; }
+  const findings = edit(block.findings ?? []);
+  if (!findings) return;
+  block.findings = findings;
+  writeFileSync(reportFile, `${text.slice(0, from)}${JSON.stringify(block)}${text.slice(to)}`);
+}
+
+/**
+ * The rollup keeps only a branch's last block, so the review just written would hide what an earlier
+ * drain raised and left unfixed. Rewrites that block with those findings appended, `carried: true`,
+ * verdicts kept; what the new review repeats (report.mjs's findingKey) is not duplicated.
+ */
+function carryEarlierFindings(reportFile, earlier) {
+  if (!earlier.length) return;
+  rewriteFeatureFindings(reportFile, (latest) => {
+    const merged = carryFindings([{ findings: earlier.map(({ explicit, ...f }) => f) }], latest, { keepVerdicts: true });
+    return merged.length > latest.length ? merged : null;
+  });
+}
+
+/**
+ * Marks `report_only: true` on these findings in the report's last `feature` block: the fix issue an
+ * earlier drain promoted leaves a `- feature: …` bullet that would otherwise read them as covered too.
+ */
+function markReportOnly(reportFile, findings) {
+  const marked = new Set(findings.map(findingKey));
+  rewriteFeatureFindings(reportFile, (all) => all.map((f) => (marked.has(findingKey(f)) ? { ...f, report_only: true } : f)));
 }
 
 /** One area's crew-reviewer dispatch: `{ slug, parsed }`, or `{ slug, reason }` when it left no review. */
@@ -201,12 +274,14 @@ async function reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFil
 }
 
 /** The same fixFindings rule as a branch's findings; the feature has no issue file, so no depth guard. */
-async function promoteFeature(ctx, { findings, reportFile, dir, written, change }) {
+async function promoteFeature(ctx, { findings, reportFile, dir, written, change, promote, range }) {
   const { sprint, effects } = ctx;
   const selected = await selectPromotable(ctx, {
     findings,
     label: FEATURE_REVIEW,
-    scope: `Findings raised against the whole feature diff (${sprint.featureBranch}), reviewed once across all its issues.`,
+    scope: range.mode === "increment"
+      ? `Findings raised against the commits added to ${sprint.featureBranch} since the last feature review (${range.base.slice(0, 12)}..${range.tip.slice(0, 12)}).`
+      : `Findings raised against the whole feature diff (${sprint.featureBranch}), reviewed across all its issues.`,
     ref: sprint.featureBranch,
     change,
     dir,
@@ -221,13 +296,20 @@ async function promoteFeature(ctx, { findings, reportFile, dir, written, change 
     ctx.log(`FEATURE-REVIEW: promote: none — ${selected.rule === "actionable" ? "no Actionable finding" : "no findings at or above the threshold"}`);
     return {};
   }
+  // Past the promotion cap: what the rule would have promoted is only reported, never made a fix issue.
+  if (!promote) {
+    ctx.log(`FEATURE-REVIEW: ${promotable.length} finding(s) the rule would promote are report-only at this drain`);
+    markReportOnly(reportFile, promotable);
+    return { reportOnly: promotable };
+  }
   const criteriaPath = join(sprint.reviewDir, `${FEATURE_REVIEW}.criteria.md`);
   writeFileSync(criteriaPath, criteriaFile({ branch: FEATURE_REVIEW, findings: promotable }));
   const defer = effects.bash("promote-findings.sh", [
     "defer",
     "--feature-slug", sprint.featureSlug,
     "--branch", FEATURE_REVIEW,
-    "--slug", FEATURE_REVIEW,
+    // A second promotion is a fix issue of its own: a reused slug would read as the finished first one.
+    "--slug", promote > 1 ? `${FEATURE_REVIEW}-${promote}` : FEATURE_REVIEW,
     "--title", `Fix feature review findings: ${sprint.featureSlug}`,
     "--report", reportFile,
     "--criteria-file", criteriaPath,

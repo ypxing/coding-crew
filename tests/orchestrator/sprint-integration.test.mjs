@@ -4,7 +4,8 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
+import { isGreen } from "../../orchestrator/lib/loop.mjs";
+import { cpSync, mkdirSync, rmSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { REPO, MAIN, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog, state, fake, triageVerdict, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, featureReviewFile, crossIssue, sprintReport, test } from "./helpers/sprint.mjs";
 
@@ -151,7 +152,7 @@ test("plan shows the integration check", () => {
   assert.match(plan(["--no-integration-check"]), /^integration: disabled \(--no-integration-check\)$/m);
 });
 
-// ─── the feature review: crew-reviewer over the whole feature diff, once, at the first drain ──
+// ─── the feature review: crew-reviewer over the feature diff at each drain ──
 
 const featureReviews = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-reviewer.* --slug feature-\d+( |$)/.test(l)).length;
 
@@ -164,7 +165,7 @@ test("the queue's first drain runs one feature review over the whole feature dif
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(featureReviews(lines), 1);
   // The prompt: the whole diff from the merge-base with the (local) default branch, and no criteria.
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8");
   assert.ok(prompt.includes(`Gather the diff: git diff ${base}..feature/demo`), prompt);
   assert.ok(prompt.includes(`Base: ${base}`));
   assert.match(prompt, /^Feature review: /m);
@@ -195,6 +196,7 @@ test("feature findings at or above fixFindings become a Phase 2 fix issue; the r
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "feature.review", featureReviewFile([crossIssue("HIGH"), crossIssue("LOW", "Name the two retry loops alike")]));
+  fake(root, "feature.review-later", featureReviewFile([])); // the Phase 2 drain's increment review
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const files = readdirSync(join(root, ".scratch/demo/issues/done"));
@@ -203,14 +205,113 @@ test("feature findings at or above fixFindings become a Phase 2 fix issue; the r
   const criteria = readFileSync(join(root, ".scratch/demo/reviews/feature.criteria.md"), "utf8");
   assert.match(criteria, /\[HIGH\] Share one retry helper between alpha and beta \(src\/alpha\.txt:1\)/);
   assert.doesNotMatch(criteria, /LOW/);
-  // Not re-run after Phase 2, whose own fix issue was reviewed on its own diff.
-  assert.equal(featureReviews(lines), 1);
+  // Re-run at the Phase 2 drain, over the commits since the first review.
+  assert.equal(featureReviews(lines), 2);
   // The LOW is below the threshold: still open, so remind counts it (the HIGH is covered by the fix issue).
   const remind = sh("bash", [join(SCRIPTS, "promote-findings.sh"), "remind", "--feature-slug", "demo"], {
     cwd: root,
     env: { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") },
   });
   assert.match(remind.stdout, /^FINDINGS: open=1 \(LOW=1\)$/m);
+});
+
+test("the second drain's findings become a second fix issue; a third drain's are report-only and keep the run from green", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.review", featureReviewFile([crossIssue("HIGH", "Share one retry helper")]));
+  fake(root, "feature.review-later", featureReviewFile([crossIssue("HIGH", "Bound the retry loop")]));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(featureReviews(lines), 3);
+  const fixes = readdirSync(join(root, ".scratch/demo/issues/done")).filter((f) => /fix-findings-feature/.test(f));
+  assert.equal(fixes.length, 2, `two fix issues, no third: ${fixes}`);
+  assert.match(r.stdout, /Drain 1: The feature was reviewed in 1 area\(s\): 1 finding\(s\); 1 Actionable went to Phase 2/);
+  assert.match(r.stdout, /Drain 2: The commits since the last review were reviewed in 1 area\(s\): 1 finding\(s\); 1 Actionable went to Phase 2/);
+  assert.match(r.stdout, /Drain 3: .*1 finding\(s\); report-only \(past the promotion cap\)/);
+  assert.match(traceLog(root), /FEATURE-REVIEW: 1 finding\(s\) the rule would promote are report-only/);
+  assert.match(sprintReport(root), /Bound the retry loop/);
+});
+
+/** A copy of the crew-afk scripts whose open-pr.sh records its arguments instead of touching a remote. */
+function scriptsWithFakeOpenPr(root) {
+  const dir = join(root, ".scratch/scripts-fake-pr");
+  cpSync(SCRIPTS, dir, { recursive: true });
+  writeFileSync(join(dir, "open-pr.sh"), `#!/usr/bin/env bash\necho "$@" >> "${root}/open-pr.args"\necho "PR: http://x/1"\n`, { mode: 0o755 });
+  return dir;
+}
+
+const thirdDrain = (root) => {
+  fake(root, "feature.review", featureReviewFile([crossIssue("HIGH", "Share one retry helper")]));
+  fake(root, "feature.review-later", featureReviewFile([{ severity: "HIGH", location: "src/beta.txt:9", criterion: "Bound the retry loop" }]));
+};
+
+test("--open-pr with a third-drain report-only finding: open-pr.sh gets --draft and the note names the finding", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  thirdDrain(root);
+  const { r } = commandLines(root, ["--open-pr"], { scripts: scriptsWithFakeOpenPr(root) });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(readFileSync(join(root, "open-pr.args"), "utf8"), /--draft/);
+  const note = readFileSync(join(root, ".scratch/demo/pr-note.md"), "utf8");
+  assert.match(note, /past the promotion cap[^\n]*src\/beta\.txt:9 \(HIGH\)/);
+});
+
+test("a later --open-pr run that merges nothing still passes --draft and names the report-only finding from the report on disk", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  thirdDrain(root);
+  const scripts = scriptsWithFakeOpenPr(root);
+  const first = commandLines(root, ["--open-pr"], { scripts });
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  rmSync(join(root, "open-pr.args"), { force: true });
+  const second = commandLines(root, ["--open-pr"], { scripts });
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  assert.equal(featureReviews(second.lines), 0, "nothing merged, no review");
+  assert.match(readFileSync(join(root, "open-pr.args"), "utf8"), /--draft/);
+  assert.match(readFileSync(join(root, ".scratch/demo/pr-note.md"), "utf8"), /past the promotion cap[^\n]*src\/beta\.txt:9 \(HIGH\)/);
+});
+
+test("--fix-findings none: no promotion-cap reason reaches the PR", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  thirdDrain(root);
+  const { r } = commandLines(root, ["--open-pr", "--fix-findings", "none"], { scripts: scriptsWithFakeOpenPr(root) });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /promotion cap/);
+  const noteFile = join(root, ".scratch/demo/pr-note.md");
+  assert.doesNotMatch(existsSync(noteFile) ? readFileSync(noteFile, "utf8") : "", /promotion cap/);
+});
+
+test("a finding repeated at a shifted line across drains appears once in the feature block", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.review", featureReviewFile([{ severity: "HIGH", location: "src/alpha.txt:1", issue: "Retry loop is unbounded", criterion: "Bound it" }]));
+  fake(root, "feature.review-later", featureReviewFile([{ severity: "HIGH", location: "src/alpha.txt:7", issue: "Retry loop is unbounded", criterion: "Bound it" }]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const report = sprintReport(root);
+  const last = [...report.matchAll(/## Branch: feature \(feature\)\n\n?```json\n(.*)\n```/g)].at(-1);
+  const findings = JSON.parse(last[1]).findings;
+  assert.equal(findings.length, 1, JSON.stringify(findings));
+  assert.equal(findings[0].location, "src/alpha.txt:7");
+});
+
+test("a third-drain report-only finding stays open for promote-findings open/remind despite earlier promoted bullets", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  thirdDrain(root);
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const env = { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") };
+  const open = JSON.parse(sh("bash", [join(SCRIPTS, "promote-findings.sh"), "open", "--feature-slug", "demo"], { cwd: root, env }).stdout);
+  assert.deepEqual(open.map((f) => f.criterion), ["Bound the retry loop"]);
+  const remind = sh("bash", [join(SCRIPTS, "promote-findings.sh"), "remind", "--feature-slug", "demo"], { cwd: root, env });
+  assert.match(remind.stdout, /^FINDINGS: open=1 \(HIGH=1\)$/m);
+});
+
+test("notGreenReasons: report-only feature findings make the run not green and are named", () => {
+  assert.equal(isGreen({ integration: { status: "pass" }, unfixedFindings: [] }), true);
+  assert.equal(isGreen({ integration: { status: "pass" }, unfixedFindings: [{ severity: "HIGH", location: "src/a.js:1" }] }), false);
 });
 
 test("a feature review with nothing at the threshold queues nothing, and --fix-findings none queues nothing at all", () => {
