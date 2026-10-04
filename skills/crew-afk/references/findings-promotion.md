@@ -11,7 +11,7 @@ behave identically.
 
 Per-branch review runs before each merge, and its findings are **advisory** — the branch merges
 regardless. They are promoted only after the branch has merged and its issue closed; a branch
-whose merge conflicts or whose close is refused promotes nothing. That leaves findings on already-merged code with no route back into the
+whose merge conflicts or whose close is refused promotes nothing that round; when the retry completes the merge and close (the merge-only route), promotion happens then, from the saved review. That leaves findings on already-merged code with no route back into the
 sprint: the report sits in `reviews/` until a human runs `/crew-address-findings`. Promotion
 gives those findings a route, using the machinery that already exists (issue → worktree → TDD →
 verify → review → merge) instead of a bespoke fix path.

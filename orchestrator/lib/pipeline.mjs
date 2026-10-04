@@ -26,7 +26,7 @@ import { dispatch } from "./dispatch.mjs";
 import { flagFullSuiteRuns } from "./pipeline/deviation.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./pipeline/finish.mjs";
 import { mergeAndClose } from "./pipeline/merge.mjs";
-import { promote, runReview } from "./pipeline/review.mjs";
+import { promote, runReview, savedAllMetReview } from "./pipeline/review.mjs";
 import {
   AC_RECEIPT_FAILED_TAG,
   CRITERIA_ENVIRONMENT_TAG,
@@ -556,8 +556,13 @@ export async function runHousekeeping(ctx, worker) {
   }
 
   // The merge route (see resumeRoute): straight to merge/close, which re-checks both receipts.
+  // The findings of the review that passed were not promoted (promotion follows a merge that
+  // closed), so a retry that completes the merge promotes them from the saved report.
   if (worker.resumeAtMerge) {
-    return mergeAndClose(ctx, worker, outcome);
+    const merged = await mergeAndClose(ctx, worker, outcome);
+    const saved = merged.status === "complete" ? savedAllMetReview(sprint, branch) : null;
+    if (saved) await promote(ctx, worker, saved, merged);
+    return merged;
   }
 
   // --- dispatch health -------------------------------------------------------
