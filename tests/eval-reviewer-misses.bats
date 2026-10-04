@@ -41,7 +41,11 @@ if [[ "$input" == *"## Expected misses"* ]]; then
   printf '%s' "$input" > "$FAKE_DIR/judge-prompt.txt"
   [ -n "${FAKE_JUDGE_FAIL:-}" ] && { echo '{"result":"boom","total_cost_usd":0.1,"is_error":true}'; exit 1; }
   labels=$(printf '%s\n' "$input" | sed -n 's/^### Output \([A-Z]\)$/\1/p')
-  arr=""; for l in $labels; do arr+="${arr:+,}{\"label\":\"$l\",\"caught\":{\"m1\":true},\"distinct\":1,\"note\":\"ok\"}"; done
+  arr=""; for l in $labels; do
+    d=1
+    if [ -n "${FAKE_BASE_EMPTY:-}" ]; then d=$(printf '%s\n' "$input" | awk -v l="$l" '/^### Output /{on=($3==l)} on&&/"severity"/{n++} END{print n+0}'); fi
+    arr+="${arr:+,}{\"label\":\"$l\",\"caught\":{\"m1\":true},\"distinct\":$d,\"note\":\"ok\"}"
+  done
   jq -n --arg r "[$arr]" '{result:$r,total_cost_usd:0.5,is_error:false}'; exit 0
 fi
 if [[ "$input" == *"Feature review planning"* ]]; then
@@ -49,6 +53,9 @@ if [[ "$input" == *"Feature review planning"* ]]; then
 fi
 if [ -n "${FAKE_FAIL:-}" ] && [[ "$input" == *"$FAKE_FAIL"* ]]; then
   echo '{"result":"boom","total_cost_usd":0.1,"is_error":true}'; exit 1
+fi
+if [ -n "${FAKE_BASE_EMPTY:-}" ] && [[ "$input" == *PROTO-V1* ]]; then
+  jq -n --arg r $'Reviewed.\n```json\n{"findings":[]}\n```' '{result:$r,total_cost_usd:0.25,is_error:false}'; exit 0
 fi
 jq -n --arg r $'Reviewed.\n```json\n{"findings":[{"severity":"HIGH"},{"severity":"LOW"}]}\n```' '{result:$r,total_cost_usd:0.25,is_error:false}'
 EOS
@@ -231,6 +238,24 @@ role() {
   grep -q 'Reviewers on opus, judge on opus' "$d/summary.md"
   grep -q 'mean findings (raw) | mean findings (distinct)' "$d/summary.md"
   [ "$(jq -r .model "$d/results.json")" = opus ]
+}
+
+@test "a base mean of 0 against a head above 0 reports the increase, not n/a" {
+  run env FAKE_BASE_EMPTY=1 bash -c "cd '$R' && node scripts/eval-reviewer-misses.mjs --base '$BASEREF' --head main --runs 1"
+  [ "$status" -eq 0 ]
+  d=$(out_dir)
+  grep -q 'branch-case inf (base 0, head 1.0)' "$d/summary.md"
+  ! grep -q 'branch-case n/a' "$d/summary.md"
+}
+
+@test "formatRatio tells a base mean of 0 from a missing mean" {
+  run env MOD="$REPO_ROOT/scripts/eval-reviewer-misses.mjs" node -e '
+    import(process.env.MOD).then((m) => {
+      const a = m.formatRatio(0, 0.5), b = m.formatRatio(null, 1), c = m.formatRatio(2, 3), d = m.formatRatio(0, 0);
+      if (!a.startsWith("inf") || b !== "n/a" || c !== "1.50x" || d === "inf" || !d.startsWith("n/a")) throw new Error([a, b, c, d].join("|"));
+    }).catch((e) => { console.error(e.message); process.exit(1); });
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "an API rate limit is retried, not recorded" {
