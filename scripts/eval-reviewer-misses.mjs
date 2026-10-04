@@ -132,6 +132,27 @@ export function countFindings(text) {
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const fmt = (n) => (n === null ? "n/a" : n.toFixed(1));
 
+/** Per case: mean raw and distinct findings per ref, plus head/base distinct ratio and the max(2x, +2) noise-bound verdict. */
+export function aggregate(rows, cases) {
+  const out = {};
+  for (const c of cases) {
+    const entry = {};
+    for (const v of ["base", "head"]) {
+      const rs = rows.filter((r) => r.case === c.name && r.version === v);
+      if (!rs.length) continue;
+      entry[v] = {
+        meanFindings: mean(rs.map((r) => r.findings).filter((n) => typeof n === "number")),
+        meanDistinct: mean(rs.map((r) => r.distinct).filter((n) => typeof n === "number")),
+      };
+    }
+    const base = entry.base?.meanDistinct, head = entry.head?.meanDistinct;
+    entry.ratio = base && head != null ? head / base : null;
+    entry.withinBound = base != null && head != null ? head <= Math.max(2 * base, base + 2) : null;
+    out[c.name] = entry;
+  }
+  return out;
+}
+
 export function summarize(rows, cases) {
   const lines = ["| case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | cost |", "|---|---|---|---|---|---|---|"];
   const means = {};
@@ -305,7 +326,7 @@ async function main() {
         ? `${Object.entries(r.caught).map(([k, v]) => `${k} ${v ? "caught" : "not caught"}`).join(", ")}; ${r.findings ?? "n/a"} finding(s), ${r.distinct ?? "n/a"} distinct${r.areas > 1 ? ` over ${r.areas} areas` : ""} — ${r.note ?? ""}`
         : `FAILED (${r.failure})`)).join("\n") + "\n";
     fs.writeFileSync(path.join(outDir, "summary.md"), summary);
-    fs.writeFileSync(path.join(outDir, "results.json"), JSON.stringify({ base: o.base, head: o.head, runs: o.runs, model: o.model, judgeModel: o.judgeModel, rows }, null, 2));
+    fs.writeFileSync(path.join(outDir, "results.json"), JSON.stringify({ base: o.base, head: o.head, runs: o.runs, model: o.model, judgeModel: o.judgeModel, means: aggregate(rows, cases), rows }, null, 2));
     if (rows.some((r) => !r.ok)) process.exitCode ||= 1;
     console.log(`\n${summary}\nResults: ${path.relative(ROOT, outDir)}/`);
   } finally {
