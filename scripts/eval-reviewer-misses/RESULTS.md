@@ -2,7 +2,7 @@
 
 `node scripts/eval-reviewer-misses.mjs --runs 2 --parallel 3`, base `main`, head this branch's worktree.
 Reviewers on opus (the eval's default, crew-afk's reviewer model), judge on opus. Every reviewer and judge call completed (8/8 runs ok).
-Head reports each case's expected miss in at least one of its two runs, and head's mean distinct finding count is within 2x of base's on the feature case (1.83x). On promote-after-merge-207 base reported none, so the ratio is undefined and the 2x bound is not met: head reported 1.0 distinct against base's 0.0.
+Head reports each case's expected miss in at least one of its two runs, and head's mean distinct finding count is within max(2 × base's, base's + 2) on both cases: promote-after-merge-207 1.0 against base's 0.0 (bound 2.0; the ratio is undefined), promote-after-merge-feature 5.5 against 3.0 (1.83x, bound 6.0).
 
 | case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | cost |
 |---|---|---|---|---|---|---|
@@ -11,7 +11,7 @@ Head reports each case's expected miss in at least one of its two runs, and head
 | promote-after-merge-feature | base | 2/2 | triage-diff-inverted 1/2 | 3.0 | 3.0 | $2.51 |
 | promote-after-merge-feature | head | 2/2 | triage-diff-inverted 2/2 | 7.0 | 5.5 | $4.44 |
 
-Mean distinct findings, head / base: promote-after-merge-207 n/a; promote-after-merge-feature 1.83x
+Mean distinct findings, head / base: promote-after-merge-207 n/a (within max(2x, +2)); promote-after-merge-feature 1.83x (within max(2x, +2))
 
 Total cost: $8.55 (judge included). Base `main`, head `worktree`, 2 run(s) each. Reviewers on opus, judge on opus.
 

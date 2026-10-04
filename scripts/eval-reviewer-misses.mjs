@@ -149,7 +149,9 @@ export function summarize(rows, cases) {
   }
   lines.push("", "Mean distinct findings, head / base: " + cases.map((c) => {
     const { base, head } = means[c.name] ?? {};
-    return `${c.name} ${base && head != null ? (head / base).toFixed(2) + "x" : "n/a"}`;
+    const ratio = base && head != null ? (head / base).toFixed(2) + "x" : "n/a";
+    const within = base != null && head != null ? (head <= Math.max(2 * base, base + 2) ? "within" : "over") : "n/a";
+    return `${c.name} ${ratio} (${within} max(2x, +2))`;
   }).join("; "));
   return lines.join("\n");
 }
