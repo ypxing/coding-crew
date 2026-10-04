@@ -189,7 +189,7 @@ export async function promote(ctx, worker, review, outcome) {
   const selected = await selectPromotable(ctx, {
     findings,
     label: issue.slug,
-    scope: `Findings raised against branch ${branch} (issue ${issue.slug}), which has not merged yet.`,
+    scope: `Findings raised against branch ${branch} (issue ${issue.slug}), which has merged.`,
     ref: branch,
     dir: dispatchIssueDir(sprint.dispatchDir, issue),
     dispatchSlug: `${dispatchStem(issue)}-findings`,

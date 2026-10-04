@@ -2,7 +2,7 @@
  * pipeline.mjs — the per-branch gate chain, in one place, in one order:
  *
  *     worktree → include → deps → dispatch → prefilter → verify → review → AC receipt
- *     → promote → merge → close
+ *     → merge → close → promote
  *
  * The order is a function body, so no model can reorder or skip it, and each gate's
  * refusal is a return value rather than a paragraph asking to be obeyed.
@@ -749,9 +749,13 @@ export async function runHousekeeping(ctx, worker) {
     return finishRetryOrBlock(ctx, worker, outcome, taggedReason(AC_RECEIPT_FAILED_TAG, detail));
   }
 
-  // --- findings promotion (advisory findings routed back into the sprint) ----
-  await promote(ctx, worker, review, outcome);
+  const merged = await mergeAndClose(ctx, worker, outcome);
 
-  return mergeAndClose(ctx, worker, outcome);
+  // --- findings promotion (advisory findings routed back into the sprint) ----
+  // Only once the branch has merged and its issue closed: a fix issue for an unmerged branch
+  // would be claimed against code that is not on the feature branch, and every re-review of a
+  // conflicted branch would promote again.
+  if (merged.status === "complete") await promote(ctx, worker, review, merged);
+  return merged;
 }
 
