@@ -2,7 +2,7 @@
 
 `node scripts/eval-reviewer-misses.mjs --runs 2 --parallel 3`, base `main`, head this branch's worktree.
 Reviewers on opus (the eval's default, crew-afk's reviewer model), judge on opus. Every reviewer and judge call completed (8/8 runs ok).
-Head reports each case's expected miss in at least one of its two runs, and head's mean distinct finding count stays within 2x of base's (1.83x on the feature case).
+Head reports each case's expected miss in at least one of its two runs, and head's mean distinct finding count is within 2x of base's on the feature case (1.83x). On promote-after-merge-207 base reported none, so the ratio is undefined and the 2x bound is not met: head reported 1.0 distinct against base's 0.0.
 
 | case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | cost |
 |---|---|---|---|---|---|---|
