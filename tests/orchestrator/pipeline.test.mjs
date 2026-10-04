@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { issueFingerprint } from "../../orchestrator/lib/trackers/body-format.mjs";
 import { RESUME_MAX_CONTEXT_TOKENS, resumableSession, resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
 import { isTestPath } from "../../orchestrator/lib/pipeline/review.mjs";
 import { resumeNote } from "../../orchestrator/lib/prompts.mjs";
@@ -92,4 +93,36 @@ test("isTestPath recognises test files by name and by directory", () => {
   for (const p of ["src/a.ts", "src/latest.ts", "src/contest/x.ts", "README.md", "package.json"]) {
     assert.equal(isTestPath(p), false, p);
   }
+});
+
+// ─── an edited issue restarts instead of fixing ────────────────────────────────────────
+
+test("an edited issue restarts on workerPrompt for fix and verify routes", () => {
+  for (const reason of ["criteria-unmet — AC 2", "verification-failed:fixable — lint: x", "review-not-run", "verification-failed:not-fixable — x"]) {
+    assert.deepEqual(resumeRoute(reason, { edited: true }), { route: "restart", edited: true }, reason);
+  }
+});
+
+test("an edited issue leaves the merge and conflict routes alone", () => {
+  assert.deepEqual(resumeRoute("merge-failed", { edited: true }), { route: "merge" });
+  assert.equal(resumeRoute("merge-conflict — x", { edited: true }).kind, "conflict");
+});
+
+test("an unedited issue takes today's route", () => {
+  assert.deepEqual(resumeRoute("criteria-unmet — AC 2", { edited: false }), { route: "fix", kind: "review", context: "AC 2" });
+});
+
+const ISSUE = "Status: ready-for-agent\n\n## What to build\n\nA thing.\n\n## Acceptance criteria\n\n- [ ] one\n- [ ] two\n\n## Blocked by\n\nNone\n";
+
+test("the fingerprint ignores crew-afk's own writes", () => {
+  const fp = issueFingerprint(ISSUE);
+  const own = ISSUE.replace("ready-for-agent", "in-progress").replace("- [ ] one", "- [x] one") + "\n## Progress\n\nRound 1\n\n## Blocked\n\nwhy\n";
+  assert.equal(issueFingerprint(own), fp);
+});
+
+test("the fingerprint changes when What to build or a criterion is edited", () => {
+  const fp = issueFingerprint(ISSUE);
+  assert.notEqual(issueFingerprint(ISSUE.replace("two", "three")), fp);
+  assert.notEqual(issueFingerprint(ISSUE.replace("A thing.", "Another thing.")), fp);
+  assert.notEqual(issueFingerprint(ISSUE.replace("- [ ] two\n", "- [ ] two\n- [ ] new\n")), fp);
 });

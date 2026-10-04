@@ -4,6 +4,7 @@
  */
 
 import { removeWorktree } from "../worktree.mjs";
+import { issueFingerprint } from "../trackers/body-format.mjs";
 import { notifyMilestone, writeTrackerSection } from "./shared.mjs";
 
 // Every non-complete outcome spends an attempt. One retry covers "might have been
@@ -51,7 +52,7 @@ export async function finishPartial(ctx, worker, outcome, reason) {
     `Round ${worker.attempt}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
   );
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-  sprint.retain(issue.slug, branch, reason);
+  sprint.retain(issue.slug, branch, reason, issue.text ? issueFingerprint(issue.text) : null);
   outcome.status = "partial";
   outcome.reason = reason;
   notifyMilestone(ctx, issue, `partial — retrying (round ${worker.attempt}) — ${reason}`);

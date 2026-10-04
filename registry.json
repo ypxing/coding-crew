@@ -37,7 +37,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.17.0",
+      "version": "2.18.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that dispatches each ready-for-agent issue to a coder CLI process in its own worktree, reviews and merges every branch, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",

@@ -20,6 +20,7 @@ import { join } from "node:path";
 
 import { applySchemaPrefilter, depsLine, parseWorkerReport, readVerifyRecord } from "./report.mjs";
 import { getTracker } from "./tracker.mjs";
+import { issueFingerprint } from "./trackers/body-format.mjs";
 import { conflictPrompt, fixPrompt, resumeNote, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
 import { dispatch } from "./dispatch.mjs";
@@ -108,6 +109,13 @@ export function resumableSession(prior, tip) {
  *           all, the coder is skipped and only verify + review re-run.
  *           Also the route once a human reruns after the retry cap blocked it: a restart
  *           would only hit the same conflict at the sync step.
+ *   An edited issue overrides `fix` (but not `conflict`) and `verify`: when the issue's
+ *   fingerprint (What to build + Acceptance criteria, checkboxes normalised; crew-afk's own
+ *   writes are outside it) differs from the one recorded when the branch was retained, a human
+ *   changed what the coder works from, so the route is `restart` — workerPrompt on the
+ *   retained branch, commits kept — never fixPrompt's "do not re-read the issue". A record
+ *   with no fingerprint, and the `merge` route, ignore it.
+ *
  *   restart anything else, including no reason — the coder runs on workerPrompt. An issue
  *           blocked as `requires-failed` retains no branch, so it has no reason here and
  *           restarts once check-requires.sh passes it.
@@ -119,7 +127,15 @@ export function resumableSession(prior, tip) {
  * The retry cap (MAX_ATTEMPTS_PER_ISSUE, pipeline/finish.mjs) bounds every route alike;
  * a coder that timed out after committing gets a free retry, up to MAX_DISPATCHES_PER_ISSUE.
  */
-export function resumeRoute(reason) {
+export function resumeRoute(reason, { edited = false } = {}) {
+  const route = baseRoute(reason);
+  if (edited && (route.route === "verify" || (route.route === "fix" && route.kind !== "conflict"))) {
+    return { route: "restart", edited: true };
+  }
+  return route;
+}
+
+function baseRoute(reason) {
   if (reason == null) return { route: "restart" };
   const unblocked = unblockedReason(reason);
   if (unblocked.startsWith(AC_RECEIPT_FAILED_TAG)) return { route: "verify", label: "ac-receipt-retry" };
@@ -221,8 +237,13 @@ export async function runWorker(ctx, issue, attempt) {
   // gated on the issue's Progress/Blocked sections: under tracker: github those live in
   // comments the issue body does not carry, so the flags would hide a retained branch.
   const priorBranch = sprint.resumeBranch(issue.slug);
-  const retentionReason = priorBranch != null ? sprint.retentionReason(issue.slug) : null;
-  let resume = resumeRoute(retentionReason);
+  const retention = priorBranch != null ? sprint.retentionRecord(issue.slug) : { reason: null, fingerprint: null };
+  const retentionReason = retention.reason;
+  const edited = retention.fingerprint != null && issue.text != null && issueFingerprint(issue.text) !== retention.fingerprint;
+  let resume = resumeRoute(retentionReason, { edited });
+  if (resume.edited) {
+    ctx.log(`[RESUME] slug=${issue.slug} reason=${retentionReason} — issue edited since the last attempt — restarting on the retained branch`);
+  }
 
   if (resume.route === "merge") {
     ctx.log(
