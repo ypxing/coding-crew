@@ -402,6 +402,56 @@ no_local_paths() {
   no_local_paths
 }
 
+@test "defer under actionable embeds a folded duplicate_of target's prose block beside an unrelated finding" {
+  configure_github
+  stub_gh
+  json=$(jq -n '{branch: "crew/feat/a", slug: "a", verdict: "unmet",
+    findings: [
+      {severity: "MEDIUM", location: "src/x.ts:1", criterion: "bound the loop", verdict: "actionable"},
+      {severity: "HIGH", location: "src/y.ts:9", criterion: "bound y loop", verdict: "actionable", duplicate_of: 0},
+      {severity: "LOW", location: "src/z.ts:5", criterion: "rename z", verdict: "actionable"}]}')
+  cat > "$REPORT" <<EOF
+## Branch: crew/feat/a (a)
+
+\`\`\`json
+$json
+\`\`\`
+
+[MEDIUM] Unbounded loop
+File: src/x.ts:1
+Snippet:
+~~~
+while (true) {}
+~~~
+Issue: never ends
+Fix: add a bound
+
+[HIGH] Unbounded y loop
+File: src/y.ts:9
+Snippet:
+~~~
+for (;;) {}
+~~~
+Issue: same defect
+Fix: add a bound
+
+[LOW] Poor name
+File: src/z.ts:5
+Snippet:
+~~~
+const z = 1
+~~~
+Issue: unclear
+Fix: rename
+EOF
+
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^File: src/x.ts:1$' "$GH_LAST_BODY"
+  grep -q '^while (true) {}$' "$GH_LAST_BODY"
+  grep -q '^File: src/z.ts:5$' "$GH_LAST_BODY"
+}
+
 @test "defer keeps a finding whose snippet fence has column-0 '#' and '##' lines whole" {
   configure_github
   stub_gh

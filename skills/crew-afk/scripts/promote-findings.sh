@@ -308,13 +308,13 @@ _review_branch_prose() {
 # promotes: each one's full prose block (title, File:, Snippet:, Issue:, Fix:) in a <details>.
 # <severities> is a list such as "CRITICAL, HIGH", or `actionable`, which keeps the blocks whose
 # location the findings triage judged actionable (that verdict sits in the block's json, not its
-# prose). Where the prose has no block to keep, the json's one-line findings are listed instead,
+# prose; a folded duplicate_of target's location lists both spots, each matched on its own). Where the prose has no block to keep, the json's one-line findings are listed instead,
 # so a promoted finding is never absent from the body.
 _review_findings_md() {
   local report="$1" branch="$2" severities="$3" locs="" sevs="" rollup
   rollup="$(review_rollup "$report")"
   if [ "$severities" = "actionable" ]; then
-    locs="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.verdict == "actionable") | .location' <<< "$rollup" 2>/dev/null || true)"
+    locs="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.verdict == "actionable") | .location | split(", ")[]' <<< "$rollup" 2>/dev/null || true)"
   else
     sevs="$(printf '%s' "$severities" | tr -d ' ')"
   fi
