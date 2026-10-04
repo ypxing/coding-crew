@@ -3,8 +3,8 @@
  *
  * An issue names the ones it implements under `## Implements`; the per-branch review judges the
  * branch against each like a criterion. The PRD is located once per sprint: the local
- * `.scratch/<slug>/PRD.md`, else a `prd-issue.md` an earlier fetch left, else — under
- * `tracker: github` — fetched with `trackers/github.mjs prd` (the CLI prd-audit.sh uses).
+ * `.scratch/<slug>/PRD.md`, else — under `tracker: github` — fetched with `trackers/github.mjs prd` (the CLI prd-audit.sh uses)
+ * and saved as `prd-issue.md`, which is read back only when the fetch fails (or under another tracker).
  */
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -45,19 +45,20 @@ export function loadPrdDecisions(ctx) {
 
 function locate({ log = () => {} }, sprint, effects) {
   const dir = join(effects.mainRoot, ".scratch", sprint.featureSlug);
-  for (const name of ["PRD.md", "prd-issue.md"]) {
-    const file = join(dir, name);
-    if (existsSync(file)) return parsePrdDecisions(readFileSync(file, "utf8"));
-  }
-  if (readTrackerConfig(effects.mainRoot).tracker !== "github") return new Map();
-
+  const local = join(dir, "PRD.md");
+  if (existsSync(local)) return parsePrdDecisions(readFileSync(local, "utf8"));
   const file = join(dir, "prd-issue.md");
+  const github = readTrackerConfig(effects.mainRoot).tracker === "github";
+  // Under github a saved prd-issue.md may be an earlier run's copy of an edited issue: fetch first, keep it as the fallback.
+  const saved = () => (existsSync(file) ? parsePrdDecisions(readFileSync(file, "utf8")) : new Map());
+  if (!github) return saved();
+
   const cli = process.env.CREW_GITHUB_TRACKER_CLI || GITHUB_CLI;
   const r = effects.exec("node", [cli, "prd", "--feature-slug", sprint.featureSlug, "--main-root", effects.mainRoot], { mutating: false });
   if (r.code === 3) return new Map(); // the milestone has no PRD issue
   if (r.code !== 0 || r.error) {
-    log(`[WARN] PRD decisions: could not fetch the PRD issue (exit ${r.code}) — branch reviews proceed without them`, "warn");
-    return new Map();
+    log(`[WARN] PRD decisions: could not fetch the PRD issue (exit ${r.code}) — branch reviews use the saved copy, if any`, "warn");
+    return saved();
   }
   try {
     mkdirSync(dirname(file), { recursive: true });

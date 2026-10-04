@@ -93,3 +93,21 @@ test("a milestone with no PRD issue (exit 3) is silent", () => {
   assert.deepEqual(decisionsFor(ctx, "## Implements\n\nD2\n"), []);
   assert.deepEqual(ctx.logs, []);
 });
+
+test("github: a stale prd-issue.md from an earlier run is replaced by the fetched body", () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".scratch/demo/prd-issue.md"), "- **D2** — stale\n");
+  let calls = 0;
+  const ctx = ctxFor(dir, () => (calls++, { code: 0, stdout: PRD }));
+  const lines = decisionsFor(ctx, "## Implements\n\nD2\n");
+  assert.equal(calls, 1);
+  assert.match(lines[0], /\*\*Adapters\.\*\*/);
+  assert.equal(readFileSync(join(dir, ".scratch/demo/prd-issue.md"), "utf8"), PRD);
+});
+
+test("github: a failed fetch falls back to the saved prd-issue.md", () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".scratch/demo/prd-issue.md"), "- **D2** — saved\n");
+  const ctx = ctxFor(dir, () => ({ code: 1, stdout: "" }));
+  assert.deepEqual(decisionsFor(ctx, "## Implements\n\nD2\n"), ["- **D2** — saved"]);
+});
