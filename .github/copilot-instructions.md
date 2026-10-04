@@ -39,7 +39,7 @@ There are no installable agents: crew-coder, crew-reviewer and crew-triage are c
 ### Key Components
 
 - **`orchestrator/`** — crew-afk's program; `orchestrator/roles/` holds its three roles' protocols: `coder.md` (implements one issue using TDD in an isolated worktree), `reviewer.md` (+ `reviewer/{references,scripts}`; reviews each branch before merge, then the whole feature) and `triage.md` (classifies verify failures, findings and integration failures)
-- **`skills/`** — Reusable skill files (tdd, solve-issue, domain-modeling, crew-grill, etc.); `skills/_shared/fragments/` holds per-platform fragments
+- **`skills/`** — Reusable skill files (tdd, solve-issue, domain-modeling, crew-grill, etc.); `skills/_shared/fragments/` holds shared fragments
 - **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and doc templates
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
 - **`docs/templates/`** — Default tracker templates (`trackers/local.md` → `.coding-crew/docs/issue-tracker.md`) and optional workflows
@@ -94,7 +94,7 @@ Issues live in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
 
 ### Changing a crew-afk Role
 
-1. Edit `orchestrator/roles/<role>.md`; put per-platform text in a `{{FRAGMENT:<key>}}` line backed by `skills/_shared/fragments/<platform>/<key>.md` (or `common/`)
+1. Edit `orchestrator/roles/<role>.md`; put text shared with a skill in a `{{FRAGMENT:<key>}}` line backed by `skills/_shared/fragments/<key>.md`, and per-platform text behind `{{PLATFORM}}`
 2. Bump crew-afk's `version` in `registry.json` (roles ship as its `assets`)
 3. Test: `TARGET_REPO=/tmp/test ./install.sh claude --skill crew-afk`, then inspect `.coding-crew/crew-afk/roles/`
 

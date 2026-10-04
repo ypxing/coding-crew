@@ -256,7 +256,7 @@ export function parseRequiresFailures(stdout, files) {
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const VERDICTS = new Set(["all-met", "unmet", "not_run"]);
-/** Findings triage's answer per finding (the shared rubric: skills/_shared/fragments/common/findings-rubric.md). */
+/** Findings triage's answer per finding (the shared rubric: skills/_shared/fragments/findings-rubric.md). */
 export const FINDING_VERDICTS = ["actionable", "debatable", "dismiss"];
 
 function findingsFromStructured(list) {

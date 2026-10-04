@@ -1,12 +1,12 @@
 #!/usr/bin/env bats
 
-# The `## For a human` block lives once, in skills/_shared/fragments/common/human-issue.md, and is
+# The `## For a human` block lives once, in skills/_shared/fragments/human-issue.md, and is
 # inlined into to-issues and upgrade-deps. Assertions read the rendered skill bodies.
 
 load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-FRAG="$REPO_ROOT/skills/_shared/fragments/common/human-issue.md"
+FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
 
 @test "fragment names the five parts, Check/Undo, and both kinds" {
   for t in 'Why a person' 'What changes' 'Steps' 'If skipped or done wrong' 'Done when' 'Check:' 'Undo:' '## Interfaces' 'ready-for-agent'; do

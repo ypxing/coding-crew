@@ -12,7 +12,7 @@ setup() {
 
 # --- Tracker Configuration preamble ---
 #
-# The preamble itself now lives in one shared fragment (skills/_shared/fragments/<platform>/
+# The preamble itself now lives in one shared fragment (skills/_shared/fragments/
 # tracker-configuration.md), referenced from the source SKILL.md via {{FRAGMENT:...}} rather
 # than copy-pasted — see .scratch/github-issue-tracker/issues/open/
 # 08-skill-prose-github-support.md. So these assertions run against the *rendered* body,

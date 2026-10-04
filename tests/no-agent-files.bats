@@ -30,7 +30,18 @@ AGENT_DIRS=(.claude/agents .github/agents .pi/agents .codex/agents .copilot/agen
   for r in coder reviewer triage; do
     [ -f "$T/.coding-crew/crew-afk/roles/$r.md" ]
   done
-  [ -f "$T/.coding-crew/skills/_shared/fragments/common/findings-rubric.md" ]
+  [ -f "$T/.coding-crew/skills/_shared/fragments/findings-rubric.md" ]
+}
+
+@test "installing crew-afk removes the common/ and per-platform fragment directories an older install wrote" {
+  for d in common claude copilot pi codex; do
+    mkdir -p "$T/.coding-crew/skills/_shared/fragments/$d"
+    echo stale > "$T/.coding-crew/skills/_shared/fragments/$d/tracker-configuration.md"
+  done
+  (cd "$REPO_ROOT" && TARGET_REPO="$T" ./install.sh claude --skill crew-afk >/dev/null)
+  run find "$T/.coding-crew/skills/_shared/fragments" -mindepth 1 -type d
+  [ -z "$output" ]
+  [ -f "$T/.coding-crew/skills/_shared/fragments/findings-rubric.md" ]
 }
 
 @test "uninstall --skill crew-afk removes the protocols and the shared fragments" {

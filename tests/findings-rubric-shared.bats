@@ -3,13 +3,13 @@
 # One rubric for classifying a review finding — Actionable / Debatable / Dismiss, and the two hard
 # rules that force Debatable — rendered into both /crew-address-findings (a human's run) and
 # crew-triage's findings mode (the unattended one). It lives once, in
-# skills/_shared/fragments/common/findings-rubric.md; these tests read the *rendered* output of
+# skills/_shared/fragments/findings-rubric.md; these tests read the *rendered* output of
 # each, so the two can never describe different rubrics.
 
 load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-RUBRIC="$REPO_ROOT/skills/_shared/fragments/common/findings-rubric.md"
+RUBRIC="$REPO_ROOT/skills/_shared/fragments/findings-rubric.md"
 
 triage_variant() {
   role_prompt triage "$1"
