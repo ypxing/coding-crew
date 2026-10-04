@@ -119,3 +119,9 @@ test("loadPrdSection returns the section body verbatim; null without the section
   assert.equal(loadPrdSection(ctxFor(root({ prd: "# PRD\n\n## Decisions\n\n- **D1** — x.\n" })), "Compatibility & Migration"), null);
   assert.equal(loadPrdSection(ctxFor(root()), "Compatibility & Migration"), null);
 });
+
+test("loadPrdSection ignores a # comment line inside a fenced block and runs to the next real heading", () => {
+  const body = "Run:\n\n```sh\n# re-run the installer\n./install.sh --update\n```\n\nDone.";
+  const dir = root({ prd: `# PRD\n\n## Compatibility & Migration\n\n${body}\n\n## Out of scope\n\nnope\n` });
+  assert.equal(loadPrdSection(ctxFor(dir), "Compatibility & Migration"), body);
+});

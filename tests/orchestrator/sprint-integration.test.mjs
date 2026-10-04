@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { isGreen } from "../../orchestrator/lib/loop.mjs";
-import { cpSync, mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { REPO, MAIN, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog, state, fake, triageVerdict, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, featureReviewFile, crossIssue, sprintReport, test } from "./helpers/sprint.mjs";
 
@@ -165,7 +165,7 @@ test("the queue's first drain runs one feature review over the whole feature dif
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.equal(featureReviews(lines), 1);
   // The prompt: the whole diff from the merge-base with the (local) default branch, and no criteria.
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-1/review-prompt.md"), "utf8");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8");
   assert.ok(prompt.includes(`Gather the diff: git diff ${base}..feature/demo`), prompt);
   assert.ok(prompt.includes(`Base: ${base}`));
   assert.match(prompt, /^Feature review: /m);
@@ -254,6 +254,21 @@ test("--open-pr with a third-drain report-only finding: open-pr.sh gets --draft 
   assert.match(readFileSync(join(root, "open-pr.args"), "utf8"), /--draft/);
   const note = readFileSync(join(root, ".scratch/demo/pr-note.md"), "utf8");
   assert.match(note, /past the promotion cap[^\n]*src\/beta\.txt:9 \(HIGH\)/);
+});
+
+test("a later --open-pr run that merges nothing still passes --draft and names the report-only finding from the report on disk", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  thirdDrain(root);
+  const scripts = scriptsWithFakeOpenPr(root);
+  const first = commandLines(root, ["--open-pr"], { scripts });
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  rmSync(join(root, "open-pr.args"), { force: true });
+  const second = commandLines(root, ["--open-pr"], { scripts });
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
+  assert.equal(featureReviews(second.lines), 0, "nothing merged, no review");
+  assert.match(readFileSync(join(root, "open-pr.args"), "utf8"), /--draft/);
+  assert.match(readFileSync(join(root, ".scratch/demo/pr-note.md"), "utf8"), /past the promotion cap[^\n]*src\/beta\.txt:9 \(HIGH\)/);
 });
 
 test("--fix-findings none: no promotion-cap reason reaches the PR", () => {

@@ -56,7 +56,7 @@ export function featureReviewRange(ctx) {
  * was deliberately not run, `failed` why a dispatch that was made left no review (recorded as
  * not-run in the report), `report` the review report file holding its block.
  */
-export async function runFeatureReview(ctx, { integration = null, wallCap = null, promote = 1 } = {}) {
+export async function runFeatureReview(ctx, { integration = null, wallCap = null, promote = 1, drain = 1 } = {}) {
   const { sprint, effects } = ctx;
 
   if (wallCap) {
@@ -76,7 +76,8 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   }
   const { base, exclude } = range;
 
-  const dir = join(sprint.dispatchDir, FEATURE_REVIEW);
+  // Each drain's artifacts get their own dirs: a later drain's review must not overwrite an earlier one's.
+  const dir = join(sprint.dispatchDir, `${FEATURE_REVIEW}-d${drain}`);
   mkdirSync(dir, { recursive: true });
   const reportFile = ctx.roundReviewFile();
 
@@ -96,7 +97,7 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
   const reviewer = roleBinding(ctx, "reviewer");
   const runs = await Promise.all(areas.map((area, i) => {
     const slug = `${FEATURE_REVIEW}-${i + 1}`;
-    const areaDir = join(sprint.dispatchDir, slug);
+    const areaDir = join(sprint.dispatchDir, `${FEATURE_REVIEW}-d${drain}-${i + 1}`);
     mkdirSync(areaDir, { recursive: true });
     const promptFile = join(areaDir, "review-prompt.md");
     const outFile = join(areaDir, "review.md");
@@ -181,6 +182,15 @@ function earlierFeatureFindings(reviewDir) {
     .flatMap((n) => parseReviewBlocks(readFileSync(join(reviewDir, n), "utf8")))
     .filter((rec) => rec.branch === FEATURE_REVIEW);
   return recs.at(-1)?.findings ?? [];
+}
+
+/**
+ * The open findings a feature review left report-only (past the promotion cap): the `report_only`
+ * ones in the last `feature` block on disk, which no fix issue covers — what promote-findings.sh
+ * `open` reads — whichever run or drain wrote them.
+ */
+export function reportOnlyFeatureFindings(reviewDir) {
+  return earlierFeatureFindings(reviewDir).filter((f) => f.report_only === true);
 }
 
 /**
