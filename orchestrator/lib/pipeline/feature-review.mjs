@@ -301,7 +301,7 @@ async function promoteFeature(ctx, { findings, reportFile, dir, written, change,
     ctx.log(`FEATURE-REVIEW: ${promotable.length} finding(s) the rule would promote are report-only at this drain`);
     // The report holds the unfolded findings; foldDuplicates' copies may differ in severity and location.
     const inReport = selected.rule === "actionable"
-      ? selected.findings.filter((f) => f.verdict === "actionable" && f.duplicate_of === undefined)
+      ? selected.findings.filter((f) => f.verdict === "actionable" && (f.duplicate_of === undefined || selected.findings[f.duplicate_of].verdict !== "actionable"))
       : promotable;
     markReportOnly(reportFile, inReport);
     return { reportOnly: promotable };

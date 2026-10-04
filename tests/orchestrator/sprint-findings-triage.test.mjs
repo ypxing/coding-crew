@@ -106,6 +106,27 @@ test("actionable: a duplicate_of pair at a report-only feature drain leaves its 
   assert.match(r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
 });
 
+test("actionable: an actionable duplicate_of a debatable target at a report-only feature drain is report_only and not green", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const target = { severity: "MEDIUM", location: "src/alpha.txt:1", issue: "Retry contract is unclear", criterion: "Clarify the retry contract" };
+  const dup = { severity: "HIGH", location: "src/beta.txt:9", issue: "Beta retries forever", criterion: "Bound beta's retry" };
+  fake(root, "feature.review", featureReviewFile([target, dup]));
+  fake(root, "feature.review-later", featureReviewFile([target, dup]));
+  fake(root, "feature-findings.triage", findingVerdicts([
+    { verdict: "debatable", rationale: "changes the public contract" },
+    { verdict: "actionable", rationale: "same area", duplicate_of: 0 },
+  ]));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /FEATURE-REVIEW: 1 finding\(s\) the rule would promote are report-only/);
+  const blocks = sprintReport(root).split("## Branch: feature (feature)").pop();
+  const last = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(blocks)[1]).findings;
+  assert.equal(last.find((f) => f.issue === dup.issue).report_only, true);
+  assert.notEqual(last.find((f) => f.issue === target.issue).report_only, true);
+  assert.match(r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
+});
+
 test("actionable: a dismiss verdict is remapped to actionable and promoted to a fix issue", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
