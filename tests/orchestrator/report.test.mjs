@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   annotateFindings,
+  carryFindings,
   applyFindingVerdicts,
   applySchemaPrefilter,
   EVIDENCE_OUTPUT_MAX,
@@ -787,4 +788,29 @@ test("findingsTriagePrompt does not offer dismiss", async () => {
   const out = findingsTriagePrompt({ scope: "s", ref: "r", featureBranch: "f", findings: [{ severity: "LOW", location: "a:1", criterion: "x" }], reportPath: "/p" });
   assert.match(out, /"actionable \| debatable"/);
   assert.doesNotMatch(out, /dismiss \|?"|\| dismiss/);
+});
+
+// ─── carrying findings forward ────────────────────────────────────────────────
+
+const F = (severity, location, issue, extra = {}) => ({ severity, location, issue, criterion: "c", ...extra });
+
+test("carryFindings: a repeat (line ignored, text normalised) appears once uncarried; an unrepeated earlier finding is carried once", () => {
+  const latest = [F("HIGH", "a.js:10", "Bad  thing")];
+  const earlier = [
+    { findings: [F("HIGH", "a.js:3-5", "bad thing"), F("LOW", "b.js#L4", "nit", { verdict: "actionable", rationale: "x" })] },
+    { findings: [F("LOW", "b.js:9", "NIT")] },
+  ];
+  const out = carryFindings(earlier, latest);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].carried, undefined);
+  assert.deepEqual(out[1], { severity: "LOW", location: "b.js#L4", issue: "nit", criterion: "c", carried: true });
+});
+
+test("parseReviewAggregate: a not_run block keeps the previous findings, carried, under the not_run verdict", () => {
+  const blk = (o) => `\`\`\`json\n${JSON.stringify({ branch: "b", slug: "s", ...o })}\n\`\`\`\n`;
+  const [rec] = parseReviewAggregate(blk({ verdict: "unmet", findings: [F("LOW", "a:1", "x")] }) + blk({ verdict: "not_run", findings: [] }));
+  assert.equal(rec.verdict, "not_run");
+  assert.equal(rec.findings.length, 1);
+  assert.equal(rec.findings[0].carried, true);
+  assert.equal(parseReviewAggregate(blk({ verdict: "all-met", findings: [{ severity: "LOW", carried: true, issue: "x" }] }))[0].findings[0].carried, true);
 });

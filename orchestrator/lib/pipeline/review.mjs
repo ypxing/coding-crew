@@ -2,7 +2,7 @@
  * Gate 2, the independent review, and promotion of its findings into fix issues.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
@@ -10,7 +10,7 @@ import { assetDir } from "../install-dir.mjs";
 import { criteriaFile, reviewPrompt } from "../prompts.mjs";
 import { decisionsFor } from "../prd-decisions.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { parseReviewReport, promoteSeverities, severityNames } from "../report.mjs";
+import { carryFindings, parseReviewBlocks, parseReviewReport, promoteSeverities, severityNames } from "../report.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
 import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
@@ -145,11 +145,31 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   // disagree. The `## Branch:` heading is for humans; parseReviewAggregate reads only the
   // fenced json.
   mkdirSync(sprint.reviewDir, { recursive: true });
-  const heading = `## Branch: ${sidecar.branch ?? branch} (${sidecar.slug ?? issue.slug})`;
-  const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(sidecar)}\n\`\`\``;
+  const reviewedBranch = sidecar.branch ?? branch;
+  // What an earlier review of this branch raised and this one dropped stays in the block.
+  const earlier = readdirSync(sprint.reviewDir)
+    .filter((n) => /^sprint-review-.*\.md$/.test(n))
+    .sort()
+    .flatMap((n) => parseReviewBlocks(readFileSync(join(sprint.reviewDir, n), "utf8")))
+    .filter((rec) => rec.branch === reviewedBranch);
+  const merged = carryFindings(earlier, parsed.findings ?? []);
+  const carried = merged.slice((parsed.findings ?? []).length);
+  let written = sidecar;
+  if (carried.length) {
+    parsed.findings = merged;
+    written = {
+      ...sidecar,
+      findings: [
+        ...(Array.isArray(sidecar.findings) ? sidecar.findings : []),
+        ...carried.map(({ explicit, ...f }) => f),
+      ],
+    };
+  }
+  const heading = `## Branch: ${reviewedBranch} (${sidecar.slug ?? issue.slug})`;
+  const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
-  return { completed: true, reportFile, parsed, written: sidecar, reviewedSha };
+  return { completed: true, reportFile, parsed, written, reviewedSha };
 }
 
 export async function promote(ctx, worker, review, outcome) {

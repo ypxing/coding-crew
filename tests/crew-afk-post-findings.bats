@@ -154,3 +154,17 @@ write_report() { # file branch findings-json
   run bash "$POST"
   [ "$output" = "POSTED: 0 (0 inline)" ]
 }
+
+@test "a carried finding is passed through by open and labelled (earlier review) in the posted review" {
+  write_report "$REPORT" crew/feat/a '[
+    {"severity":"LOW","location":"free text","criterion":"a nit","carried":true},
+    {"severity":"HIGH","location":"free text two","criterion":"a fresh one"}]'
+  run bash "$PROMOTE" open --feature-slug feat
+  [ "$(jq -r '[.[] | .carried] | @json' <<< "$output")" = "[true,null]" ]
+
+  PATH="$TEMP_DIR/stub:$PATH" run bash "$POST"
+  [ "$status" -eq 0 ]
+  body=$(jq -r '.body' "$GH_STORE")
+  [[ "$body" == *"a nit (earlier review)"* ]]
+  [[ "$body" != *"a fresh one (earlier review)"* ]]
+}
