@@ -262,6 +262,15 @@ EOF
   done
 }
 
+@test "slice-crew-afk-review's Request names neither the crew-afk-review slug nor PRD #147 (the SKILL.md reference example)" {
+  f="$REPO_ROOT/scripts/eval-design-skills/cases/slice-crew-afk-review.md"
+  req=$(awk '/^## Request[ \t]*$/{on=1} /^## Reference judgement[ \t]*$/{on=0} on' "$f")
+  [ -n "$req" ]
+  [[ "$req" != *crew-afk-review* ]]
+  [[ "$req" != *"#147"* ]]
+  grep -q "the feature slug is \`" <<<"$req"
+}
+
 @test "a Request that inlines a PRD keeps the PRD's own ## headings" {
   run env MOD="$R/scripts/eval-design-skills.mjs" node -e '
     import(process.env.MOD).then((m) => {

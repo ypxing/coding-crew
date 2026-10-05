@@ -24,7 +24,8 @@
 #        `###` parts (Why a person, What changes, Steps, If skipped or done wrong, Done when); it is
 #        exempt from the `## What to build` / `## Implements` warnings. Two issues that name the
 #        same file (a path with a `/`, `:<line>` dropped) with neither reaching the other through
-#        `## Blocked by` (directly or via other issues in the set): parallel coders may conflict on it.
+#        `## Blocked by` (directly or via other issues in the set). Advisory: a Blocked by edge comes
+#        only from to-issues' edge rule rows 1–2, never from this WARN alone.
 #        One WARN per pair, on the first file. Paths under `## Blocked by` / `## Context Documents`,
 #        under `.scratch/`, and in URLs do not count; --known issues are never read.
 #
@@ -355,7 +356,7 @@ if ((${#NAMES[@]} > 1)); then
       if printf '%s\n' "$REACH" | grep -q -x -F -e "${NAMES[$i]} ${NAMES[$j]}" -e "${NAMES[$j]} ${NAMES[$i]}"; then
         continue
       fi
-      warn "${PATHS[$i]}" "names the same file as ${PATHS[$j]} with no ## Blocked by between them: $shared (parallel coders may conflict)"
+      warn "${PATHS[$i]}" "names the same file as ${PATHS[$j]} with no ## Blocked by between them: $shared (advisory: add a Blocked by only if to-issues' edge rule row 1 or 2 matches)"
     done
   done
 fi

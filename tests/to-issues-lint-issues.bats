@@ -406,6 +406,17 @@ shared_issue() {
   [ -z "$output" ]
 }
 
+@test "shared-file WARN is advisory and points at to-issues' edge rule, not at a conflict" {
+  d="$BATS_TEST_TMPDIR/s"; mkdir -p "$d"
+  shared_issue "$d/01-a.md" "None" "Edit src/a.ts."
+  shared_issue "$d/02-b.md" "None" "Edit src/a.ts:10."
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"src/a.ts (advisory: add a Blocked by only if to-issues' edge rule row 1 or 2 matches)" ]]
+  [[ "$output" != *"may conflict"* ]]
+  ! grep -q 'may conflict' "$LINT"
+}
+
 @test "header comment lists the shared-file WARN" {
   sed -n '1,/^set -uo/p' "$LINT" | grep -q -i 'same file'
 }
