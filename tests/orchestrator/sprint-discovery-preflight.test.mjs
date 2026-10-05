@@ -488,8 +488,7 @@ test("every dispatch is filed in this run's ledger with its slug, role and attem
     ["reviewer", 1, true],
     ["reviewer", 1, true],
     ["reviewer", 2, true],
-    ["reviewer", 1, true], // the feature review's planner, once, at the drain
-    ["reviewer", 1, true], // the feature review's one area reviewer
+    ["reviewer", 1, true], // the feature review's one reviewer, at the drain
   ]);
   // The coder's entry keeps the tip it left: the commit verify then checked.
   const verified = JSON.parse(readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json"), "utf8")).commit;

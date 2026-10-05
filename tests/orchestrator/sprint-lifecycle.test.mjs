@@ -499,8 +499,8 @@ test("every agent dispatch's cost is recorded, not only the coder's", () => {
   fake(root, "alpha.review-once", "1");
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  // One coder, two reviewer dispatches, and the feature review's planner and one area reviewer at the drain.
-  assert.equal(lines.filter((l) => /^RUN .*state\.sh.* dispatch-cost /.test(l)).length, 5);
+  // One coder, two reviewer dispatches, and the feature review's one reviewer at the drain.
+  assert.equal(lines.filter((l) => /^RUN .*state\.sh.* dispatch-cost /.test(l)).length, 4);
 });
 
 test("a merge-failed retry skips the worker, verify, and review, and succeeds on a retried merge", () => {
@@ -647,31 +647,14 @@ test("merges stay serialized while verifies overlap", () => {
   assert.deepEqual(state(root).merged_branches.sort(), ["crew/demo/alpha", "crew/demo/beta"]);
 });
 
-test("the branch review prompt carries the PRD decisions the issue implements", () => {
-  const root = fixtureRepo();
-  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- **D2** — **Adapters.** one per CLI\n- **D3** — unrelated\n");
-  addIssue(root, "01-alpha.md", { body: "## Implements\n\nD2, D9" });
-  const r = runSprint(root);
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8");
-  assert.match(prompt, /PRD decisions this issue implements:\n---\n- \*\*D2\*\* — \*\*Adapters\.\*\* one per CLI\n---/);
-  assert.doesNotMatch(prompt, /D3/);
-  assert.match(`${r.stdout}\n${r.stderr}\n${traceLog(root)}`, /D9, which has no line in the PRD/);
-});
-
-test("an unmet verdict naming a PRD decision retains the branch for its coder, like an unmet criterion", () => {
+test("the branch review prompt judges criteria only: no PRD decisions block, even for an issue whose ## Implements names a PRD line", () => {
   const root = fixtureRepo();
   writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- **D2** — **Adapters.** one per CLI\n");
   addIssue(root, "01-alpha.md", { body: "## Implements\n\nD2" });
-  fake(
-    root,
-    "alpha.review",
-    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "D2: the branch dispatches through a per-platform agent file", findings: [] })}\n\`\`\`\n`,
-  );
   const r = runSprint(root);
-  const s = state(root);
-  assert.equal(r.code, 2);
-  assert.deepEqual(s.merged_branches ?? [], []);
-  assert.match(s.retention.alpha.reason, /criteria-unmet/);
-  assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8");
+  assert.match(prompt, /^Acceptance criteria:$/m);
+  assert.doesNotMatch(prompt, /PRD decisions/);
+  assert.doesNotMatch(prompt, /Adapters/);
 });

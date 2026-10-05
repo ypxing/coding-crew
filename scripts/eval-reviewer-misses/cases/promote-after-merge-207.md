@@ -7,7 +7,7 @@ via: origin/feature/promote-after-merge
 ---
 Replay of the feature review over #207's code ("Fix feature review findings: promote-after-merge"):
 the drain that merged it reviews the feature's new commits, `4bcc149..b221314` (#207's branch and its
-merge), split into areas by the planner, one reviewer per area. Findings come from the feature review
+merge), one reviewer reading the whole PRD. Findings come from the feature review
 alone (the per-branch review judges criteria and raises none), so this is where the miss had to be
 caught. The SHAs are reachable through `origin/feature/promote-after-merge`; fetch it before running
 if they do not resolve.

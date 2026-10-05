@@ -24,7 +24,6 @@ test("the promotion threshold has one source: fixFindings reaches findingsAtOrAb
     const root = fixtureRepo();
     addIssue(root, "01-alpha.md");
     fake(root, "feature.review", reviewWith(severity));
-    fake(root, "feature.review-later", featureReviewFile([]));
     if (config) {
       mkdirSync(join(root, ".coding-crew"), { recursive: true });
       writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: config }));

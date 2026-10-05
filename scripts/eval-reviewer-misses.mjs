@@ -11,18 +11,18 @@
 //
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
 //          [--case <name>]... [--runs N] [--model opus] [--judge-model opus] [--parallel 4]
-//          [--max-areas 3] [--dry-run]
+//          [--dry-run]
 //
 // Each ref builds its prompts from its OWN files (build-prompts.mjs runs inside that ref's checkout):
-// reviewPrompt / featureReviewPrompt, the feature-areas pure functions, and the rendered
-// orchestrator/roles/reviewer.md. The reviewer then runs against the case's tree (a detached
-// worktree at the case's head_sha) with file-writing tools disallowed, so its report is read from
-// its final message. A `feature` case replays the planner split, then one reviewer per area.
+// reviewPrompt / featureReviewPrompt and the rendered orchestrator/roles/reviewer.md. The reviewer
+// then runs against the case's tree (a detached worktree at the case's head_sha) with file-writing
+// tools disallowed, so its report is read from its final message. A `feature` case is one reviewer
+// over the whole feature, given the case's PRD file; a `branch` case is the criteria-only review.
 //
 // Cases live in scripts/eval-reviewer-misses/cases/*.md: front matter (mode: feature|branch,
 // base_sha, head_sha, slug), free text, then `## PRD` (a frozen copy), `## Expected misses`
-// (`- <id>: <defect>`), `## Reference judgement`, and for `branch` cases `## Issue`,
-// `## Implements`, `## Acceptance criteria`. A SHA that does not resolve names the case and skips
+// (`- <id>: <defect>`), `## Reference judgement`, and for `branch` cases `## Issue` and
+// `## Acceptance criteria`. A SHA that does not resolve names the case and skips
 // only it (exit 1). Results land in .scratch/eval-reviewer-misses/<timestamp>/ (summary.md,
 // results.json, every prompt and output). A reviewer or judge CLI failure is a failed run, never
 // "not caught".
@@ -42,7 +42,7 @@ const EVAL_NOTE = (prdPath) =>
 
 function parseArgs(argv) {
   const o = { base: "main", head: "worktree", cases: [], runs: 2, model: "opus", judgeModel: "opus",
-    parallel: 4, maxAreas: 3, dryRun: false };
+    parallel: 4, dryRun: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = () => {
       if (i + 1 >= argv.length) throw new Error(`${a} needs a value`);
@@ -56,12 +56,11 @@ function parseArgs(argv) {
       case "--model": o.model = v(); break;
       case "--judge-model": o.judgeModel = v(); break;
       case "--parallel": o.parallel = Number(v()); break;
-      case "--max-areas": o.maxAreas = Number(v()); break;
       case "--dry-run": o.dryRun = true; break;
       default: throw new Error(`unknown argument: ${a}`);
     }
   }
-  if (!(o.runs >= 1) || !(o.parallel >= 1) || !(o.maxAreas >= 1)) throw new Error("--runs, --parallel and --max-areas must be >= 1");
+  if (!(o.runs >= 1) || !(o.parallel >= 1)) throw new Error("--runs and --parallel must be >= 1");
   return o;
 }
 
@@ -87,13 +86,8 @@ export function parseCase(name, text) {
     throw new Error(`${name}: needs ## PRD, ## Expected misses and ## Reference judgement`);
   }
   if (meta.mode === "branch" && !sections["Acceptance criteria"]) throw new Error(`${name}: a branch case needs ## Acceptance criteria`);
-  // `- <merged branch>: D2, D3` per line: each merged issue's ## Implements IDs, which planAreas reads
-  // from the tracker and a replay cannot (.scratch/ is not in the tree).
-  const mergedIds = Object.fromEntries((sections["Merged issues"] ?? "").split("\n")
-    .map((l) => /^\s*-\s+(\S+):\s*(.*)$/.exec(l)).filter(Boolean)
-    .map((x) => [x[1], x[2].split(",").map((id) => id.trim()).filter(Boolean)]));
   return { name, ...meta, intro, prd: sections.PRD, misses, reference: sections["Reference judgement"],
-    issue: sections.Issue ?? name, implements: sections.Implements ?? "", criteria: sections["Acceptance criteria"] ?? "", mergedIds };
+    issue: sections.Issue ?? name, criteria: sections["Acceptance criteria"] ?? "" };
 }
 
 const git = (args, cwd = ROOT) => spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -112,7 +106,7 @@ export function judgePrompt(rubric, c, labelled) {
     "Reply with ONLY a JSON array, one object per output: " +
       `{"label": "A", "caught": {${c.misses.map((x) => `"${x.id}": true|false`).join(", ")}}, "distinct": <N>, "note": "<one sentence>"}`,
     "distinct = the number of distinct defects the output's findings name: findings naming the same defect " +
-      "(in different areas, or at neighbouring lines) count once.",
+      "(at neighbouring lines) count once.",
   ].join("\n");
 }
 
@@ -227,29 +221,28 @@ async function main() {
     const refTree = {};
     for (const [v, ref] of Object.entries(versions)) refTree[v] = ref === "worktree" ? ROOT : addTree(`ref-${v}`, ref);
     const caseTree = {};
-    const input = (c, v, extra = {}) => ({ mode: c.mode, base: c.base, tip: c.tip, branch: c.tip, slug: c.slug, issue: c.issue,
-      criteria: c.criteria, implements: c.implements, mergedIds: c.mergedIds, prdText: c.prd, reportPath: "(print it in your final message)", max: o.maxAreas, ...extra });
-    const prompt = (c, name, body, role) => `${role}\n\n=== THIS DISPATCH ===\n\n${body}\n\n${EVAL_NOTE(path.join(caseTree[c.name] ?? "<case tree>", ".scratch", c.slug, "PRD.md"))}\n`;
+    // The case's PRD as a file: in its tree when the reviewer runs there, beside the prompts on a dry run.
+    const prdFile = {};
+    const input = (c) => ({ mode: c.mode, base: c.base, tip: c.tip, branch: c.tip, slug: c.slug, issue: c.issue,
+      criteria: c.criteria, prdPath: prdFile[c.name], prdText: c.prd, reportPath: "(print it in your final message)" });
+    const prompt = (c, name, body, role) => `${role}\n\n=== THIS DISPATCH ===\n\n${body}\n\n${EVAL_NOTE(prdFile[c.name])}\n`;
 
-    if (!o.dryRun) {
-      for (const c of cases) {
-        caseTree[c.name] = addTree(`tree-${c.name}`, c.tip);
-        const prd = path.join(caseTree[c.name], ".scratch", c.slug, "PRD.md");
-        fs.mkdirSync(path.dirname(prd), { recursive: true });
-        fs.writeFileSync(prd, c.prd + "\n");
-      }
+    for (const c of cases) {
+      if (!o.dryRun) caseTree[c.name] = addTree(`tree-${c.name}`, c.tip);
+      prdFile[c.name] = o.dryRun ? path.join(outDir, `${c.name}.PRD.md`) : path.join(caseTree[c.name], ".scratch", c.slug, "PRD.md");
+      fs.mkdirSync(path.dirname(prdFile[c.name]), { recursive: true });
+      fs.writeFileSync(prdFile[c.name], c.prd + "\n");
     }
 
     if (o.dryRun) {
       for (const c of cases) {
         console.log(`  ${c.name}`);
         for (const v of Object.keys(versions)) {
-          const b = buildPrompts(refTree[v], input(c, v));
-          if (b.planner) fs.writeFileSync(path.join(outDir, `${c.name}-${v}.planner.prompt.md`), b.planner);
+          const b = buildPrompts(refTree[v], input(c));
           for (const r of b.reviews) fs.writeFileSync(path.join(outDir, `${c.name}-${v}.${r.name}.prompt.md`), prompt(c, r.name, r.prompt, b.role));
         }
       }
-      console.log(`\nDry run: prompts written to ${path.relative(ROOT, outDir)}/ (a feature case shows its whole-feature fallback area; no planner ran). No model was called.`);
+      console.log(`\nDry run: prompts written to ${path.relative(ROOT, outDir)}/. No model was called.`);
       return;
     }
 
@@ -262,19 +255,8 @@ async function main() {
 
     const runs = await pool(plan.map(({ c, v, i }) => async () => {
       const id = `${c.name}-${v}-${i}`;
-      let cost = 0, failure = null, areas = null;
-      let b = buildPrompts(refTree[v], input(c, v));
-      if (c.mode === "feature") {
-        fs.writeFileSync(path.join(outDir, `${id}.planner.prompt.md`), b.planner);
-        const p = await claude(o.model, 1, b.planner, outDir, "Bash,Read,Grep,Glob,");
-        cost += p.cost; note(p);
-        fs.writeFileSync(path.join(outDir, `${id}.planner.out.md`), p.ok ? p.text : `PLANNER FAILED: ${p.err}\n${p.text}`);
-        if (p.ok) {
-          const m = [...p.text.matchAll(/```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g)].at(-1);
-          try { areas = JSON.parse(m[1]).areas; } catch { /* whole-feature fallback */ }
-        }
-        if (areas) b = buildPrompts(refTree[v], input(c, v, { areas }));
-      }
+      let cost = 0, failure = null;
+      const b = buildPrompts(refTree[v], input(c));
       const outs = await Promise.all(b.reviews.map(async (r) => {
         const text = prompt(c, r.name, r.prompt, b.role);
         fs.writeFileSync(path.join(outDir, `${id}.${r.name}.prompt.md`), text);
@@ -287,8 +269,8 @@ async function main() {
       const ok = !failure;
       const counts = outs.map(countFindings);
       const findings = ok && counts.every((n) => n !== null) ? counts.reduce((a, n) => a + n, 0) : null;
-      console.log(`  ${id}: ${stop.hit && !ok ? "LIMIT" : ok ? "ok" : "FAILED"} ${b.reviews.length} area(s) $${cost.toFixed(2)}`);
-      return { case: c.name, version: v, run: i, ok, failure, areas: b.reviews.length, text: outs.join("\n\n--- next area ---\n\n"), findings, cost };
+      console.log(`  ${id}: ${stop.hit && !ok ? "LIMIT" : ok ? "ok" : "FAILED"} $${cost.toFixed(2)}`);
+      return { case: c.name, version: v, run: i, ok, failure, text: outs.join("\n\n"), findings, cost };
     }), o.parallel, stop);
     if (stop.hit) {
       console.error(`\nSTOPPED: "${stop.why}". ${runs.filter((r) => r?.ok).length} of ${plan.length} runs finished; nothing was judged. ` +
@@ -324,14 +306,14 @@ async function main() {
         const caught = vd ? Object.fromEntries(c.misses.map((x) => [x.id, vd.caught?.[x.id] === true])) : null;
         const distinct = Number.isFinite(vd?.distinct) ? vd.distinct : null;
         rows.push({ case: c.name, version: r.version, run: r.run, ok: r.ok && !!caught, failure: r.failure ?? (r.ok && !caught ? "judge gave no verdict" : null),
-          areas: r.areas, findings: r.findings, distinct, caught, note: vd?.note ?? null, cost: r.cost });
+          findings: r.findings, distinct, caught, note: vd?.note ?? null, cost: r.cost });
       }
       if (rows.length) rows.at(-1).cost += judgeCost;
     }
     const total = rows.reduce((a, r) => a + (r.cost || 0), 0);
     const summary = `${summarize(rows, cases)}\n\nTotal cost: $${total.toFixed(2)} (judge included). Base \`${o.base}\`, head \`${o.head}\`, ${o.runs} run(s) each. Reviewers on ${o.model}, judge on ${o.judgeModel}.\n\n## Runs\n` +
       rows.map((r) => `- ${r.case} ${r.version} #${r.run}: ` + (r.caught
-        ? `${Object.entries(r.caught).map(([k, v]) => `${k} ${v ? "caught" : "not caught"}`).join(", ")}; ${r.findings ?? "n/a"} finding(s), ${r.distinct ?? "n/a"} distinct${r.areas > 1 ? ` over ${r.areas} areas` : ""} — ${r.note ?? ""}`
+        ? `${Object.entries(r.caught).map(([k, v]) => `${k} ${v ? "caught" : "not caught"}`).join(", ")}; ${r.findings ?? "n/a"} finding(s), ${r.distinct ?? "n/a"} distinct — ${r.note ?? ""}`
         : `FAILED (${r.failure})`)).join("\n") + "\n";
     fs.writeFileSync(path.join(outDir, "summary.md"), summary);
     fs.writeFileSync(path.join(outDir, "results.json"), JSON.stringify({ base: o.base, head: o.head, runs: o.runs, model: o.model, judgeModel: o.judgeModel, means: aggregate(rows, cases), rows }, null, 2));

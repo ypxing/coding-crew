@@ -5,8 +5,7 @@ misses**: a defect a maintainer found by hand after a review shipped the change.
 decide for each expected miss whether the output **reports it**.
 
 The outputs are labelled A, B, C…; nothing tells you which reviewer version wrote which, and order is
-random. A case's output may hold several area reviews concatenated; the miss counts as reported if
-any of them reports it.
+random.
 
 - **caught** — true only if the output names the defect in the expected miss's terms: the same code
   and the same failure (see the case's reference judgement). A finding in the right file about a

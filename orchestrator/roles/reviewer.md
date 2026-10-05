@@ -60,17 +60,13 @@ downgraded or dropped.
    buys shallow coverage of everything instead of deep coverage of what matters. Empty diff
    (`Diff scope: empty`): skip items 3–4.
 
-   Item 4 is the findings pass: it runs only in Feature Mode. A per-branch review runs item 3 as evidence for its criterion and decision verdicts
-   (a criterion or decision the rest of the code contradicts is `unmet`), raises no findings from it, skips item 4 and writes `findings: []`.
+   Item 4 is the findings pass: it runs only in Feature Mode. A per-branch review runs item 3 as evidence for its criterion verdicts
+   (a criterion the rest of the code contradicts is `unmet`), raises no findings from it, skips item 4 and writes `findings: []`.
 2. **Check the acceptance criteria** — for every criterion in `## Acceptance criteria` (and
    `## Cross-cutting Requirements`, if present), cite the file and line satisfying it. No concrete
    evidence → `unmet`; a worker's `[x]`, progress notes and commit messages are claims, not evidence. This is the `AC:` line of the
    branch block and the gate keeping a falsely-reported `complete` off the feature branch: when
    unsure, `unmet`.
-
-   A prompt block `PRD decisions this issue implements:` lists decisions the issue carries from the
-   PRD. Judge each like a criterion: cite the file and line that honours it. A branch that
-   contradicts one is `unmet`, and `detail` names its ID (e.g. `D2`).
 
    A criterion's named path or symbol is also met where a branch commit maps it
    (`<issue's name> → <file:line>`): cite that line, which is still the evidence.
@@ -99,7 +95,7 @@ downgraded or dropped.
    each one as it stands at the branch tip and say whether it still holds. A check that passes
    only because the diff was read and the rest was assumed is not a check.
 
-   A criterion or PRD decision names the line it changes; the defect is usually in the rest of that
+   A criterion names the line it changes; the defect is usually in the rest of that
    function, prompt or document, in a sentence, argument or default that still assumes the old
    behaviour. Read the whole of every function and prompt they name, and check each statement in it
    against the new behaviour. If the PRD has a compatibility or migration section, run the new path
@@ -110,7 +106,7 @@ downgraded or dropped.
    command or query whose result depends on when or where it runs must be evaluated under the new
    timing: say what it yields there, and whether that is still what its reader expects.
 
-   Make that a written list, not a glance: for the function a criterion or decision changes, list
+   Make that a written list, not a glance: for the function a criterion changes, list
    every prompt, command and range it builds or hands on, and the saved state it reads, and write
    one line per item saying what it holds or returns once the change has run. An item whose line
    you cannot write from the code you have read is a file you have not read yet. A line that
@@ -165,7 +161,7 @@ it passes the Pre-Report Gate (the "concrete failure mode" question is answered 
 failure signal and its evidence: the second place the decision is coded, the unused parameter, the
 earlier point the fact was known). Start its `issue` with `Design standard (criterion <n>):`.
 A design-only finding never makes an acceptance criterion `unmet` and never raises a severity: the
-`AC:` verdict is judged on the criteria and PRD decisions alone.
+`AC:` verdict is judged on the criteria alone.
 
 ## Feature Mode
 
@@ -176,12 +172,17 @@ only combined. There are no acceptance criteria, so skip Step 2 item 2 — no `A
 holds, with the same severity rubric, and Step 2 items 3–4, Step 3 and the design standard run here. A defect inside one issue's diff is reported at any severity. Step 2's
 2000-line / top-10-files cap does not apply: read the whole range the line gives.
 
-An `Area:` block in the prompt (name, files, the full text of each decision) narrows the dispatch, and
-its `Gather the diff:` line, to one area of the feature; other reviewers read the rest in parallel. Read
-every file of the area end to end, plus callers outside it as needed, not only the diff hunks. For each
-decision given, read the whole function, prompt or document it names, not only the line it changes, and say whether the merged code honours it and what input breaks it. Then open each piece of code that receives what the decision changed and evaluate it under the changed behaviour; a decision that does not
-hold is a finding, naming the input that breaks it. An `Other areas` block is reference only: it names
-the other areas' files and decisions so you judge none of them, but a file in this area that still states or relies on behaviour one of those decisions changed is a finding (the leftover-reference class above). With no `Area:` block, review the whole range as above.
+The prompt's `PRD (read it whole; the feature's intent):` line, when present, names the PRD. Read it
+whole, then judge the merged code against it. Each of these is a finding:
+
+- a requirement — a behaviour, a decision, or a `## Compatibility & Migration` item — that the merged
+  code does not implement at all;
+- a flow spanning several issues that the merged code does not connect end to end;
+- a cross-cutting concern the PRD asks for that no issue owned.
+
+A requirement a later ADR, `CONTEXT.md` entry or commit deliberately replaced is not a finding. For a
+requirement that is implemented, read the whole function, prompt or document it names, and the code
+that receives what it changed, and report an input that breaks it.
 
 Write the same object to the report path with `branch` and `slug` both `"feature"`, `verdict` always
 `"all-met"`, `detail` empty. If you could not read the whole range, write no report.

@@ -9,25 +9,14 @@ Replay of <the feature review that ran over the escaped code>, range `<base_sha>
 Escaped: `<the escaped.md line, verbatim>`.
 
 Copy this file to `cases/<name>.md` (outside `cases/` it is never run). An escaped defect is a
-`mode: feature` case: findings come from the feature review alone, so drop `## Issue`,
-`## Implements` and `## Acceptance criteria`. Use `mode: branch` (the per-branch review of #<n>, its
-range the feature branch before the issue's merge to the branch tip the reviewer passed) only for a
-defect that should have made one of the issue's acceptance criteria `unmet`, and fill those three
-sections from the issue. A feature case keeps `## Merged issues` instead, one line per issue branch
-merged in the range with that issue's `## Implements` IDs, so a decision the planner leaves out is
-placed where production places it; a branch case drops it.
-
-## Merged issues
-
-- crew/<slug>/<n>-<issue-slug>: <IDs from that issue's ## Implements, or empty>
+`mode: feature` case: findings come from the feature review alone, so drop `## Issue` and
+`## Acceptance criteria`. Use `mode: branch` (the per-branch review of #<n>, its range the feature
+branch before the issue's merge to the branch tip the reviewer passed) only for a defect that should
+have made one of the issue's acceptance criteria `unmet`, and fill those two sections from the issue.
 
 ## Issue
 
 <issue slug or number>
-
-## Implements
-
-<D/B IDs from the issue's ## Implements, or empty>
 
 ## Acceptance criteria
 

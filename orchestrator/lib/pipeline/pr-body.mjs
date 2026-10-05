@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { dispatchPlain } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { INTEGRATION_STEM } from "../preflight.mjs";
+import { prdPath } from "../prd.mjs";
 import { prBodyPrompt } from "../prompts.mjs";
 import { CHECK_CATEGORIES, readVerifyRecord } from "../report.mjs";
 import { prBase, roleBinding } from "./shared.mjs";
@@ -60,8 +61,7 @@ export async function writePrBody(ctx, { integration = null } = {}) {
   const checks = checksLine(sprint, integration);
   const file = join(sprint.env.SPRINT_DIR, "pr-body.md");
   const facts = `**Checks on the merged branch:** ${checks ?? "not run"}\n`;
-  const scratch = join(effects.mainRoot, ".scratch", sprint.featureSlug);
-  const prd = ["PRD.md", "prd-issue.md"].map((f) => join(scratch, f)).find((p) => existsSync(p)) ?? null;
+  const prd = prdPath(ctx);
   const finish = (prose, failed, title = null) => {
     writeFileSync(file, prose ? `${prose}\n${facts}` : facts);
     if (failed) ctx.log(`PR body: ${failed}`, "warn");

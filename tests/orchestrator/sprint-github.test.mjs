@@ -401,7 +401,6 @@ test("github: a feature-review fix issue, not listed yet, is still implemented",
   const root = githubFixtureRepo();
   const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
   fake(root, "feature.review", featureReviewFile([{ severity: "HIGH", location: "somewhere in alpha", criterion: "Check the boundary" }]));
-  fake(root, "feature.review-later", featureReviewFile([]));
   const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
     cwd: root,
     env: {
