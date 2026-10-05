@@ -15,7 +15,8 @@
 #
 # ERROR: a dependency cycle; a `## Blocked by` ref (filename, or `Issue #<n>`) matching no issue in
 #        the set; --deps edges that differ from the `## Blocked by` prose; no `## Acceptance criteria`.
-# WARN:  acceptance-criteria count outside 3-8; a **D<n>**/**B<n>** ID in --prd that no issue's
+# WARN:  more than 10 acceptance criteria (a context-budget check — does it fit one coder session?
+#        never a rule to split); a **D<n>**/**B<n>** ID in --prd that no issue's
 #        `## Implements` names; an issue another issue blocks on with no `### Exposes:` under
 #        `## Interfaces`; no `## What to build`; no `## Implements`. A `Status: ready-for-human`
 #        issue instead gets: no `## For a human` section, or that section missing one of its five
@@ -159,8 +160,8 @@ for idx in "${!NAMES[@]}"; do
   # Acceptance criteria
   if has_section "$file" "Acceptance criteria"; then
     count=$(section "$file" "Acceptance criteria" | grep -c -E '^[[:space:]]*[-*][[:space:]]+\[[ xX]\]' || true)
-    if ((count < 3 || count > 8)); then
-      warn "$file" "$count acceptance criteria (expected 3-8)"
+    if ((count > 10)); then
+      warn "$file" "$count acceptance criteria (over 10: a context-budget check — does it fit one coder session?)"
     fi
   else
     err "$file" "no ## Acceptance criteria section"

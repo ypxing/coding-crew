@@ -529,10 +529,11 @@ test("a structural error in the issue set stops the run before any worktree or d
 
 test("lint WARN lines are logged and the run goes on", () => {
   const root = fixtureRepo();
-  addIssue(root, "01-alpha.md"); // one criterion: a WARN (3-8 expected), never an ERROR
+  // eleven criteria: a context-budget WARN (over 10), never an ERROR
+  addIssue(root, "01-alpha.md", { body: Array.from({ length: 10 }, (_, i) => `- [ ] alpha part ${i + 1}`).join("\n") });
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(traceLog(root), /WARN  LINT: WARN .*01-alpha\.md: 1 acceptance criteria \(expected 3-8\)/);
+  assert.match(traceLog(root), /WARN  LINT: WARN .*01-alpha\.md: 11 acceptance criteria \(over 10: a context-budget check/);
   assert.match(traceLog(root), /LINT: pass \(\d+ warnings?\)/);
 });
 
