@@ -566,6 +566,36 @@ test("a resumed sprint: a Blocked by ref to a done issue resolves through --know
   assert.match(traceLog(root), /LINT: pass/);
 });
 
+test("a re-run under local: a PRD ID only a done issue implements gets no coverage WARN", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md", { body: "## Implements\n\nD1" });
+  mkdirSync(join(root, ".scratch/demo/issues/done"), { recursive: true });
+  renameSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), join(root, ".scratch/demo/issues/done/01-alpha.md"));
+  addIssue(root, "02-beta.md", { body: "## Implements\n\nD2" });
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n## Decisions\n\n- **D1** — alpha.\n- **D2** — beta.\n- **D3** — orphan.\n");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(traceLog(root), /LINT: WARN .*D1 is not named/);
+  assert.match(traceLog(root), /LINT: WARN .*D3 is not named by any issue's ## Implements/);
+});
+
+test("a re-run under github: a PRD ID only a closed issue implements gets no coverage WARN", () => {
+  const root = githubFixtureRepo();
+  const alpha = { ...GH_ALPHA, body: `${GH_ALPHA.body}\n## Implements\n\nD2\n` };
+  const closed = { ...GH_ALPHA, number: 2, title: "beta", state: "CLOSED", body: "# beta\n\n## Implements\n\nD1\n\n## Acceptance criteria\n\n- [x] beta exists\n" };
+  const prd = { number: 9, title: "PRD: Demo", body: "# PRD\n\n- **D1** — beta.\n- **D2** — alpha.\n- **D3** — orphan.\n", labels: [], state: "OPEN" };
+  const { stub } = stubGh(root, [alpha, closed, prd]);
+  initSprint(root, { PATH: `${stub}:${process.env.PATH}` });
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check", "--dry-run"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, MAIN_ROOT: root, CREW_INSTALL_DIR: INSTALL_DIR, PATH: `${stub}:${process.env.PATH}` },
+  });
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  const out = `${r.stdout}\n${r.stderr}\n${traceLog(root)}`;
+  assert.match(out, /LINT: WARN .*D3 is not named by any issue's ## Implements/);
+  assert.doesNotMatch(out, /D1 is not named/);
+});
+
 test("without issues-deps.json or a PRD the linter is passed neither flag", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -590,7 +620,9 @@ test("under github the linter gets one written-out body file per open milestone 
   assert.equal(argv.length, 6, argv.join(" "));
   assert.equal(argv[0], "--issue");
   assert.match(argv[1], /\/1-alpha\.md$/);
-  assert.deepEqual(argv.slice(2, 4), ["--known", "2-beta.md"]);
+  assert.equal(argv[2], "--known");
+  assert.match(argv[3], /\/2-beta\.md$/); // written out, so its ## Implements counts toward coverage
+  assert.equal(readFileSync(argv[3], "utf8"), closed.body);
   assert.equal(argv[4], "--prd");
   assert.match(argv[5], /\/PRD\.md$/);
   assert.equal(readFileSync(join(root, "lint-body.txt"), "utf8"), GH_ALPHA.body);
