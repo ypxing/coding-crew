@@ -11,6 +11,16 @@ split into areas by the planner, one reviewer per area. The SHAs are reachable t
 Escaped (`.scratch/afk-effectiveness/reviews/escaped.md`, all three fixed in `7128c49`):
 `orchestrator/main.mjs:602` (D14), `scripts/cut-release.sh:101` (D16), `registry.json:42` (D2–D4).
 
+## Merged issues
+
+- crew/afk-effectiveness/254-address-pr-comments-records-what-crew-afk-missed: D12, D13, B7
+- crew/afk-effectiveness/255-demo-smoke-sprint-and-the-release-gate: D15, D16, B8
+- crew/afk-effectiveness/252-one-findings-fix-issue-per-feature-at-most-8-by-severity: D2, D3, D4, D8, D10, B2, B3, B6
+- crew/afk-effectiveness/251-per-issue-review-judges-criteria-only-the-rubric-and-to-issues-gain-their-rules: D1, D9, D11, D10, D5, D7, D17, D19, B1, B4
+- crew/afk-effectiveness/265-fix-review-findings-demo-smoke-sprint-and-the-release-gate:
+- crew/afk-effectiveness/267-fix-review-findings-one-findings-fix-issue-per-feature-at-most-8-by-severity:
+- crew/afk-effectiveness/253-run-summary-names-the-next-command-and-why-the-previous-run-ended: D6, D14, D18, B5
+
 ## Expected misses
 
 - signal-no-run-end: A run ended by SIGINT, SIGTERM or SIGHUP after run-start records no run-end reason: `onSignal` in `orchestrator/main.mjs` calls `process.exit` before the `finally` block that writes `last_exit`, so the next run reports the previous one as killed or crashed (D14).

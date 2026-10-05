@@ -299,3 +299,31 @@ EOS
   grep -qzF $'Name: alpha\nFiles:\n- a.js\nDecisions:\n- **D1** — Retries are bounded.' <<<"$p2"
   ! grep -qF 'Name: alpha' <<<"$(sed -n '/^Other areas/,$p' <<<"$p1")"
 }
+
+@test "a decision the planner omits goes to the area holding its issue's files, as planAreas places it" {
+  g() { git -C "$R" -c user.email=t@t -c user.name=t "$@"; }
+  g checkout -qb crew/f/one
+  printf 'a\n' > "$R/a.js"; g add a.js; g commit -qm one
+  g checkout -q main; g merge -q --no-ff -m "Merge branch 'crew/f/one'" crew/f/one
+  g checkout -qb crew/f/two
+  printf 'b\n' > "$R/b.js"; printf 'c\n' > "$R/c.js"; g add b.js c.js; g commit -qm two
+  g checkout -q main; g merge -q --no-ff -m "Merge branch 'crew/f/two'" crew/f/two
+  TIP=$(git -C "$R" rev-parse HEAD)
+  in=$(jq -n --arg b "$C2" --arg t "$TIP" '{mode:"feature", base:$b, tip:$t, max:3, reportPath:"r.json",
+    prdText:"- **D1** — Retries are bounded.\n- **D2** — Errors name the file.\n",
+    mergedIds:{"crew/f/one":["D1"], "crew/f/two":["D2"]},
+    areas:[{name:"alpha", files:["a.js"], decisions:["D1"]}, {name:"beta", files:["b.js","c.js"], decisions:[]}]}')
+  run bash -c "node '$REPO_ROOT/scripts/eval-reviewer-misses/build-prompts.mjs' '$R' <<<'$in'"
+  [ "$status" -eq 0 ]
+  [ "$(jq -c '[.areas[] | {name, decisions}]' <<<"$output")" = '[{"name":"alpha","decisions":["D1"]},{"name":"beta","decisions":["D2"]}]' ]
+  grep -qF 'crew/f/two: files b.js, c.js; implements D2' <<<"$(jq -r '.planner' <<<"$output")"
+}
+
+@test "a feature case's ## Merged issues section reaches build-prompts as per-branch IDs" {
+  run node --input-type=module -e "
+    const { parseCase } = await import('$REPO_ROOT/scripts/eval-reviewer-misses.mjs');
+    const c = parseCase('x', '---\nmode: feature\nbase_sha: a\nhead_sha: b\nslug: s\n---\n## Merged issues\n\n- crew/s/one: D2, D3\n- crew/s/two:\n\n## Expected misses\n\n- m1: x\n\n## Reference judgement\n\nr\n\n## PRD\n\np\n');
+    console.log(JSON.stringify(c.mergedIds));"
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"crew/s/one":["D2","D3"],"crew/s/two":[]}' ]
+}

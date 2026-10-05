@@ -4,9 +4,10 @@
 // eval-reviewer-misses.mjs runs this once per ref with <tree> = that ref's checkout, so the prompt
 // builders (orchestrator/lib/prompts.mjs, pipeline/feature-areas.mjs, prd-decisions.mjs) and the
 // rendered reviewer role are the ref's, never the head's. stdin: JSON
-// {mode, base, tip, branch, slug, criteria, prdPath, prdText, implements, areas?, max}; stdout: JSON
+// {mode, base, tip, branch, slug, criteria, prdPath, prdText, implements, mergedIds?, areas?, max}; stdout: JSON
 // {role, planner?, diffFiles, reviews: [{name, prompt}]}. `areas` is the planner's raw answer;
 // without it a feature case gets one whole-feature area (what a failed planner falls back to).
+// `mergedIds` maps a merged issue branch to its ## Implements IDs, as planAreas' implementsLookup does.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -52,7 +53,7 @@ if (inp.mode === "branch") {
   out.diffFiles = diffFiles;
   const stat = git([...DIFF, "--stat=1000", "--stat-name-width=1000", `${inp.base}..${inp.tip}`]).stdout;
   const ctx = { effects: { gitRead: (a) => git(a) } };
-  const issues = areasMod.mergedIssues(ctx, { base: inp.base, tip: inp.tip });
+  const issues = areasMod.mergedIssues(ctx, { base: inp.base, tip: inp.tip, idsFor: (branch) => inp.mergedIds?.[branch] ?? [] });
   out.planner = areasMod.plannerPrompt({ featureBranch: inp.tip, base: inp.base, max: inp.max, stat, issues, decisions });
   let areas = [];
   if (inp.areas) areas = areasMod.normalizeAreas(inp.areas, { diffFiles, decisionIds: ids, max: inp.max, issues });

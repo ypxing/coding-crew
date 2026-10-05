@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `eval-reviewer-misses`: a feature case's `## Merged issues` section gives each merged issue branch its `## Implements` IDs,
+  so a decision the replayed planner leaves out goes to the area holding its issue's files, as in a sprint; filled in for
+  `afk-effectiveness-feature` (#284).
 - `eval-reviewer-misses`: a replayed feature case with 2+ areas now builds each area's prompt with the same `Other areas` block
   the sprint's feature review writes (one shared `areaReviewArgs` helper), and normalizes the planner's answer against the
   merged issues as `planAreas` does (#283).

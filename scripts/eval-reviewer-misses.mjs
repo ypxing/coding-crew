@@ -87,8 +87,13 @@ export function parseCase(name, text) {
     throw new Error(`${name}: needs ## PRD, ## Expected misses and ## Reference judgement`);
   }
   if (meta.mode === "branch" && !sections["Acceptance criteria"]) throw new Error(`${name}: a branch case needs ## Acceptance criteria`);
+  // `- <merged branch>: D2, D3` per line: each merged issue's ## Implements IDs, which planAreas reads
+  // from the tracker and a replay cannot (.scratch/ is not in the tree).
+  const mergedIds = Object.fromEntries((sections["Merged issues"] ?? "").split("\n")
+    .map((l) => /^\s*-\s+(\S+):\s*(.*)$/.exec(l)).filter(Boolean)
+    .map((x) => [x[1], x[2].split(",").map((id) => id.trim()).filter(Boolean)]));
   return { name, ...meta, intro, prd: sections.PRD, misses, reference: sections["Reference judgement"],
-    issue: sections.Issue ?? name, implements: sections.Implements ?? "", criteria: sections["Acceptance criteria"] ?? "" };
+    issue: sections.Issue ?? name, implements: sections.Implements ?? "", criteria: sections["Acceptance criteria"] ?? "", mergedIds };
 }
 
 const git = (args, cwd = ROOT) => spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -223,7 +228,7 @@ async function main() {
     for (const [v, ref] of Object.entries(versions)) refTree[v] = ref === "worktree" ? ROOT : addTree(`ref-${v}`, ref);
     const caseTree = {};
     const input = (c, v, extra = {}) => ({ mode: c.mode, base: c.base, tip: c.tip, branch: c.tip, slug: c.slug, issue: c.issue,
-      criteria: c.criteria, implements: c.implements, prdText: c.prd, reportPath: "(print it in your final message)", max: o.maxAreas, ...extra });
+      criteria: c.criteria, implements: c.implements, mergedIds: c.mergedIds, prdText: c.prd, reportPath: "(print it in your final message)", max: o.maxAreas, ...extra });
     const prompt = (c, name, body, role) => `${role}\n\n=== THIS DISPATCH ===\n\n${body}\n\n${EVAL_NOTE(path.join(caseTree[c.name] ?? "<case tree>", ".scratch", c.slug, "PRD.md"))}\n`;
 
     if (!o.dryRun) {
