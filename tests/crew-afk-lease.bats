@@ -7,9 +7,13 @@ LEASE="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/le
 setup() {
   TEMP_DIR=$(mktemp -d)
   git init -q --bare "$TEMP_DIR/remote.git"
+  # No detached auto-gc/maintenance: one still writing objects/pack after a fetch or push races teardown's rm -rf
+  git -C "$TEMP_DIR/remote.git" config receive.autogc false
   export MAIN_ROOT="$TEMP_DIR/repo"
   git init -q -b main "$MAIN_ROOT"
   cd "$MAIN_ROOT"
+  git config gc.auto 0
+  git config maintenance.auto false
   git config user.email t@test
   git config user.name T
   git commit -q --allow-empty -m init
