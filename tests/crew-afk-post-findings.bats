@@ -85,6 +85,12 @@ write_report() { # file branch findings-json
   [ "$(jq -r 'map(.severity) | join(",")' <<< "$output")" = "LOW" ]
 }
 
+@test "open drops promoted pairs from a marker that carries a finding count" {
+  printf '\n## Promoted Findings\n\n- crew/feat/a: CRITICAL, HIGH → https://github.com/acme/widgets/issues/42 (2 finding(s))\n' >> "$REPORT"
+  run bash "$PROMOTE" open --feature-slug feat
+  [ "$(jq -r 'map(.severity) | join(",")' <<< "$output")" = "LOW" ]
+}
+
 @test "open prints [] with no reports" {
   rm "$REPORT"
   run bash "$PROMOTE" open --feature-slug feat

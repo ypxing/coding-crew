@@ -587,6 +587,53 @@ EOF
   [[ "$output" == *"No open review findings."* ]]
 }
 
+@test "crew-summary renders a github fix issue as #<n> with the marker's count, offline" {
+  init_sprint calc
+  mkdir -p .scratch/calc/reviews
+  cat > .scratch/calc/reviews/sprint-review-1.md <<'EOF'
+## Branch: crew/calc/a (a)
+
+## Promoted Findings
+
+- crew/calc/a: actionable → https://github.com/acme/widgets/issues/42 (3 finding(s))
+EOF
+  # No network: a gh on PATH that fails the test if called.
+  mkdir -p nogh && printf '#!/bin/sh\necho called >> "%s/gh-called"\nexit 1\n' "$PWD" > nogh/gh && chmod +x nogh/gh
+
+  PATH="$PWD/nogh:$PATH" run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *"- crew/calc/a: 3 finding(s) → #42"* ]]
+  [[ "$output" != *"missing"* ]]
+  [ ! -e gh-called ]
+}
+
+@test "crew-summary renders an old count-less github marker without a count, never as 0 / missing" {
+  init_sprint calc
+  mkdir -p .scratch/calc/reviews
+  cat > .scratch/calc/reviews/sprint-review-1.md <<'EOF'
+## Promoted Findings
+
+- crew/calc/a: CRITICAL, HIGH → https://github.com/acme/widgets/issues/42
+EOF
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *"- crew/calc/a: findings → #42"* ]]
+  [[ "$output" != *"0 finding(s)"* ]]
+  [[ "$output" != *"missing"* ]]
+}
+
+@test "crew-summary still counts an old count-less local marker from the issue file" {
+  init_sprint calc
+  mkdir -p .scratch/calc/reviews .scratch/calc/issues/open
+  printf '# Fix\n\nStatus: deferred-findings\n\n## Acceptance criteria\n\n- [ ] one\n- [ ] two\n' \
+    > .scratch/calc/issues/open/05-fix-findings-a.md
+  cat > .scratch/calc/reviews/sprint-review-1.md <<EOF
+## Promoted Findings
+
+- crew/calc/a: CRITICAL → $PWD/.scratch/calc/issues/open/05-fix-findings-a.md
+EOF
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [[ "$output" == *"- crew/calc/a: 2 finding(s) → 05-fix-findings-a (deferred-findings)"* ]]
+}
+
 @test "crew-summary --stalled says so, and --no-reminder stops before the reminder" {
   init_sprint calc
 
