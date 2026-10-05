@@ -50,9 +50,22 @@ setup() {
   grep -qF '`branch` and `slug` both `"feature"`' "$AGENT_DIR/reviewer.md"
 }
 
-@test "feature mode reads an Other areas block as reference, and a file still relying on a changed behaviour as a finding" {
-  grep -qF 'An `Other areas` block is reference only' "$AGENT_DIR/reviewer.md"
-  grep -qF 'still states or relies on behaviour one of those decisions changed is a finding' "$AGENT_DIR/reviewer.md"
+@test "feature mode reads the whole PRD: unimplemented requirements, unconnected flows and unowned concerns are findings, on every platform" {
+  local plat f mode
+  for plat in claude copilot pi codex; do
+    f="$(role_prompt reviewer "$plat")"
+    mode="$(sed -n '/^## Feature Mode$/,/^## Precision$/p' "$f")"
+    grep -qF 'PRD (read it whole; the feature'"'"'s intent):' <<<"$mode"
+    grep -qF 'code does not implement at all' <<<"$mode"
+    grep -qF 'a flow spanning several issues that the merged code does not connect' <<<"$mode"
+    grep -qF 'a cross-cutting concern the PRD asks for that no issue owned' <<<"$mode"
+    grep -qF 'A requirement a later ADR, `CONTEXT.md` entry or commit deliberately replaced is not a finding' <<<"$mode"
+    ! grep -qF 'Area:' <<<"$mode"
+    ! grep -qF 'Other areas' "$f"
+    ! grep -qF 'PRD decisions this issue implements' "$f"
+    ! grep -qF 'criterion and decision verdicts' "$f"
+    ! grep -qF 'criteria and PRD decisions alone' "$f"
+  done
 }
 
 @test "feature mode reaches every platform's rendered reviewer" {
@@ -97,7 +110,7 @@ setup() {
   local plat f
   for plat in claude copilot pi codex; do
     f="$(role_prompt reviewer "$plat")"
-    grep -qF 'A per-branch review runs item 3 as evidence for its criterion and decision verdicts' "$f"
+    grep -qF 'A per-branch review runs item 3 as evidence for its criterion verdicts' "$f"
     ! grep -qF 'A per-branch review stops after item 2' "$f"
   done
 }

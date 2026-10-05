@@ -62,7 +62,6 @@
 79	orchestrator-sprint-discovery-preflight.bats
 77	orchestrator-sprint-integration.bats
 40	orchestrator-sprint-findings-triage.bats
-40	orchestrator-sprint-feature-areas.bats
 7	orchestrator.bats
 35	pi-platform.bats
 1	planning-skills-preamble.bats

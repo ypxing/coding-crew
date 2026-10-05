@@ -268,6 +268,7 @@ export async function runSprint(ctx) {
   }
 
   let capped = false;
+  let featureReviewed = false;
   let integration = null;
   // One entry per drain whose review was attempted (featureReviewEntry), for the summary and the PR.
   const featureReviews = [];
@@ -308,10 +309,11 @@ export async function runSprint(ctx) {
         }
       }
     }
-    // At every drain with something merged. Reviews promote until one has created the feature's
-    // fix issue (counted per feature in sprint-state.json, across runs): Phase 2's fix of a fix is
-    // not chased further, later findings are reported.
-    if (!options.dryRun && sprint.get("merged")) {
+    // Once per run, at the first drain with something merged: a later drain's review could open no
+    // second fix issue. Reviews promote until one has created the feature's fix issue (counted per
+    // feature in sprint-state.json, across runs); a later run's findings are reported.
+    if (!featureReviewed && !options.dryRun && sprint.get("merged")) {
+      featureReviewed = true;
       const unclaimed = unclaimedByCap();
       const promote = (Number(sprint.get("feature-review-promotions")) || 0) < FEATURE_REVIEW_PROMOTIONS;
       const review = await runFeatureReview(ctx, {
@@ -503,9 +505,8 @@ function featureReviewLine(sprint, r, n, total) {
     : r.reportOnly?.length
       ? `; report-only (past the promotion cap): ${r.reportOnly.length} ${rule} not sent to Phase 2`
       : "";
-  const gaps = r.areaFailures?.length ? `\n\n**Not run (${r.areaFailures.length} of ${r.areas} area reviewers):**\n${r.areaFailures.map((f) => `- ${f}`).join("\n")}` : "";
   const what = r.mode === "increment" ? "The commits since the last review were" : "The feature was";
-  return `${label}${what} reviewed in ${r.areas} area(s): ${count} finding(s)${fate} (see ${r.report}, branch \`feature\`).${gaps}`;
+  return `${label}${what} reviewed: ${count} finding(s)${fate} (see ${r.report}, branch \`feature\`).`;
 }
 
 /**

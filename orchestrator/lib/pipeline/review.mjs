@@ -1,5 +1,5 @@
 /**
- * Gate 2, the independent review: the acceptance criteria and PRD decisions, and no findings.
+ * Gate 2, the independent review: the acceptance criteria, and no findings.
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -8,7 +8,6 @@ import { join } from "node:path";
 import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { reviewPrompt } from "../prompts.mjs";
-import { decisionsFor } from "../prd-decisions.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
 import { carryFindings, foldReview, parseReviewBlocks, parseReviewReport } from "../report.mjs";
 import { dispatchIssueDir, dispatchStem, issueDescriptor, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
@@ -34,16 +33,6 @@ function countLines(logs = {}) {
     }
   }
   return out;
-}
-
-/** A decisions lookup that fails must never fail the review. */
-function safeDecisions(ctx, issue) {
-  try {
-    return decisionsFor(ctx, issue.text, issue.slug);
-  } catch (err) {
-    ctx.log(`[WARN] PRD decisions: ${err.message} — review proceeds without them`, "warn");
-    return [];
-  }
 }
 
 /** `branch`'s review blocks on disk, across the sprint review reports, folded into one record (empty when none): a not_run stub keeps the findings before it. */
@@ -86,7 +75,6 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       slug: issue.slug,
       issuePath: issueDescriptor(issue),
       criteria: issue.criteria,
-      prdDecisions: safeDecisions(ctx, issue),
       featureBranch: sprint.featureBranch,
       checks,
       logs,

@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: the feature review is one reviewer that reads the whole PRD, once per run (at the first drain that merged
+  something, not again after Phase 2): no planner, no areas. It reports a PRD requirement the merged code does not implement,
+  an unconnected multi-issue flow, or an unowned cross-cutting concern as a finding. The branch review checks acceptance
+  criteria only (no `PRD decisions this issue implements:` block). `orchestrator/lib/prd.mjs`'s `prdPath` is the one PRD
+  lookup, also used for the PR body; `eval-reviewer-misses` replays the single-reviewer prompt and drops `--max-areas` and
+  `## Merged issues` (#287).
 - `write-pr` / `crew-afk`: PR bodies are a short Why / What changes / Risk / **Tested:** note (no Evidence or Merge Danger);
   crew-afk adds its checks line only when the writer fails. Command discovery and the PR writer now record their cost, the
   summary's by-role line gains an `other` bucket so the roles sum to the run total, and unknown-cost dispatches read
