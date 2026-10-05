@@ -83,7 +83,9 @@ run).
   finding that contradicts an ADR / `CONTEXT.md`, whose fix touches a protected path (CI config,
   auth, deploy, `.env`), or whose only basis is the design standard (the reviewer reports those at
   LOW, prefixed `Design standard (criterion <n>):`) is Debatable. The rubric names the design-only
-  rule too, so triage normally answers it `debatable` already; the code holds it either way.
+  rule too, so triage normally answers it `debatable` already; the code holds it either way. A
+  fourth rule, "Necessary" — a failure that needs an input or state no current caller, user or
+  documented contract produces is Debatable — is triage's judgement alone.
   The verdict and rationale are written beside each finding in the feature review's block of the
   review report.
 - `critical`, `high` (CRITICAL and HIGH), `medium` (adds MEDIUM) fix by severity alone, with no
