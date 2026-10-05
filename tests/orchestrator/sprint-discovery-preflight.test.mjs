@@ -12,7 +12,7 @@ import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, FIXTURE_ROOTS, sh, fixtureRep
 //
 // discover-commands.sh / write-commands-cache.sh mechanically build the prompt and persist
 // the answer; the model call itself is faked here (fake-dispatch.sh's "commands-discovery"
-// branch), exactly the seam the PRD audit already uses for the same reason.
+// branch), the seam every agent-less dispatch uses for the same reason.
 
 test("command discovery writes .coding-crew/dev-commands.json from the repo's own Makefile", () => {
   const root = fixtureRepo(); // fixtureRepo() always seeds a Makefile with test/lint/typecheck

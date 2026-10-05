@@ -538,7 +538,7 @@ test("a missing command on a red integration check is not fixable: no triage, no
   assert.match(traceLog(root), /\[INTEGRATION-TRIAGE\] commit=[0-9a-f]{12} verdict=not-fixable — missing command: crew-no-such-tool is not installed \(test\); triage skipped/);
 });
 
-test("triage calling a red integration check not fixable queues nothing, skips the PRD audit, and says so", () => {
+test("triage calling a red integration check not fixable queues nothing, and says so", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   addIssue(root, "02-beta.md");
@@ -549,9 +549,7 @@ test("triage calling a red integration check not fixable queues nothing, skips t
   assert.equal(triageSpawns(lines), 1);
   assert.deepEqual([...integrationFixFiles(root, "open"), ...integrationFixFiles(root, "done")], []);
   assert.match(r.stdout, /\*\*Not fixable by a code change, no fix issue queued:\*\* service down: the database the integration tests use is not reachable\./);
-  assert.match(r.stdout, /The rest of the drain-time checks \(the PRD audit\) were skipped\./);
-  assert.match(r.stdout, /## PRD Audit\s+\*\*Not run:\*\* the integration check failed/);
-  assert.equal(traceLog(root).split("step=prd-audit").length - 1, 0, "the audit never ran");
+  assert.doesNotMatch(r.stdout, /PRD audit|## PRD Audit/i);
   assert.match(traceLog(root), /fixable=no category=service down/);
 });
 

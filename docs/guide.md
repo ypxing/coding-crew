@@ -367,7 +367,7 @@ doesn't silently drop. Applies on every platform, including Copilot — each wor
 `copilot -p` process, so the flag reaches the CLI.
 
 **Per-role runtime and model** — `.coding-crew/config.json` can put any role (`coder`, `reviewer`,
-`triage`, `commandFinder`, `prdAuditor`, `prWriter`) on another installed runtime, and name models per runtime:
+`triage`, `commandFinder`, `prWriter`) on another installed runtime, and name models per runtime:
 
 ```json
 { "afk": { "runtime": { "reviewer": "codex" },
@@ -388,13 +388,13 @@ it's committed. Provider-specific IDs belong at user level, or in env such as
 `ANTHROPIC_DEFAULT_SONNET_MODEL`, which every dispatch inherits.
 
 **Sprint settings** — the same `afk` section holds the rest of what stays the same run to run. A
-flag overrides each for one run:
+flag overrides each for one run. The PRD audit is gone — the feature review checks PRD coverage —
+and a config or flag still setting it loads with a notice:
 
 | Setting | Default | Flag | What it does |
 | --- | --- | --- | --- |
 | `fixFindings` | `actionable` | `--fix-findings` | What review findings are fixed automatically: `actionable` (every finding the triage role judges Actionable, whatever its severity); or the lowest severity — `critical`, `high`, `medium`; or `none` |
-| `PRDAudit` | `fix` | `--prd-audit` | `off`; `report` (audit, leave it for you); `fix` (also queue missing requirements) |
-| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prdAuditor 20, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout` | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
+| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout` | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
 | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
 | `maxWallMinutes` | `120` | `--max-wall` | Soft wall-clock cap in minutes, `0` = off. Once elapsed no issue is claimed, running workers finish and merge, Phase 2 fix issues stay parked, the integration check still runs; exit 2, PR (with `--open-pr`) is a draft |
 | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |

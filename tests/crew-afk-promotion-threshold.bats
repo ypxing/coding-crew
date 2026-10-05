@@ -91,26 +91,6 @@ teardown() {
   grep -q '^- crew/feat/a: CRITICAL → ' "$REPORT"
 }
 
-# ─── defer-gaps: the PRD audit's missing requirements ────────────────────────
-
-@test "defer-gaps parks one fix issue with a Source: line, and never a second while it is open" {
-  printf -- '- [ ] Users can export to CSV\n' > gaps.md
-  : > .scratch/feat/prd-audit.md
-  run bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md
-  [ "$status" -eq 0 ]
-  [[ "$output" == "defer-gaps: .scratch/feat/issues/open/02-fix-prd-gaps.md" ]]
-  f=.scratch/feat/issues/open/02-fix-prd-gaps.md
-  grep -q '^Status: deferred-findings$' "$f"
-  grep -q '^Source: .scratch/feat/prd-audit.md (prd-audit)$' "$f"
-  grep -q '^- \[ \] Users can export to CSV$' "$f"
-
-  run bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md
-  [[ "$output" == "defer-gaps: skip — already queued: $f" ]]
-
-  run bash "$PROMOTE" flush --feature-slug feat
-  [[ "$output" == *"FLUSH: promoted=1"* ]]
-}
-
 # ─── the compensating half: nothing is dropped ───────────────────────────────
 
 @test "an unpromoted HIGH is counted for a human, not silently dropped" {

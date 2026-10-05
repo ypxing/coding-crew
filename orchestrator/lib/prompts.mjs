@@ -538,13 +538,6 @@ export function findingsTriagePrompt({ scope, ref, change, findings, reportPath 
   ].join("\n");
 }
 
-/** The PRD audit's missing requirements, as the fix issue's acceptance criteria. */
-export function prdGapsCriteria(missing) {
-  const lines = ["<!-- queued from the PRD audit's missing requirements -->", ""];
-  for (const m of missing) lines.push(`- [ ] ${m.requirement}${m.detail ? ` — ${m.detail}` : ""}`);
-  return `${lines.join("\n")}\n`;
-}
-
 /** Promotable findings most severe first (CRITICAL→LOW); a stable sort, so one severity keeps its input order. */
 export function bySeverity(findings) {
   const rank = (f) => SEVERITY_RANK[String(f.severity).toUpperCase()] ?? 4;

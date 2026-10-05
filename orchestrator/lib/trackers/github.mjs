@@ -411,7 +411,7 @@ function cliCreateIssue(argv) {
 
 /**
  * `prd --feature-slug <slug> [--main-root <dir>]` — print the milestone's PRD issue body, for
- * prd-audit.sh, which has no local PRD.md under github. Exit 3 when the milestone has none.
+ * prd.mjs, which has no local PRD.md under github. Exit 3 when the milestone has none.
  */
 function cliPrd(argv) {
   const opts = {};

@@ -12,7 +12,6 @@ set -euo pipefail
 #
 #   (the severity list comes from the orchestrator as --severities; no level table here)
 #   defer   — write a parked fix issue (Status: deferred-findings) + annotate the review report
-#   defer-gaps — the same for the PRD audit's ✗ missing requirements: one parked issue
 #   defer-integration — the same for a fixable red integration check on the merged feature branch
 #   flush   — flip every parked fix issue to ready-for-agent (Phase 1 → Phase 2 transition)
 #   list    — list parked fix issues without changing anything
@@ -109,8 +108,6 @@ Usage:
   promote-findings.sh defer --feature-slug <slug> --branch <branch> --slug <issue-slug>
                             --title <title> --report <review-report> --criteria-file <file>
                             --severities <list> [--blocked-by <issue-number>]
-  promote-findings.sh defer-gaps --feature-slug <slug> --report <prd-audit-report>
-                            --criteria-file <file>
   promote-findings.sh defer-integration --feature-slug <slug> --report <integration-verify-output>
                             --criteria-file <file> [--at <commit>]
   promote-findings.sh flush --feature-slug <slug>
@@ -211,10 +208,10 @@ _github_tracker_cli() {
 # --- github bodies embed their evidence --------------------------------------
 # A github fix issue is read where the sprint's checkout does not exist, and the `.scratch/`
 # reports are gitignored runtime bookkeeping that is never pushed. So under github the body
-# carries the reviewer's / auditor's / verifier's content itself, and never a local path.
+# carries the reviewer's / verifier's content itself, and never a local path.
 # (Local issues sit in the same checkout as the report and keep naming it in `Source:`.)
 FINDINGS_MAX_BYTES=30000   # all embedded review findings; GitHub caps a body at 65536
-EVIDENCE_MAX_BYTES=8000    # the audit's evidence / the failing output's tail
+EVIDENCE_MAX_BYTES=8000    # the failing output's tail
 FINDING_MAX_LINES=60       # one finding's prose
 
 # _scrub_paths — stdin → stdout with absolute filesystem paths and `.scratch/` paths made
@@ -325,28 +322,6 @@ _review_findings_md() {
       | "- **[\(.severity)]** `\(.location)` — \(.criterion)"' <<< "$rollup" 2>/dev/null || true)"
   fi
   printf '%s' "$out"
-}
-
-# _prd_gaps_md <report> — the audit's evidence for each missing requirement, from the audit's
-# closing fenced json (the last block naming `missing`, as parsePrdAudit reads it). An audit
-# without one falls back to the report's tail.
-_prd_gaps_md() {
-  local report="$1" json md=""
-  [ -f "$report" ] || return 0
-  json="$(awk '
-    /^[ \t]*```json/ { inj = 1; cur = ""; next }
-    inj && /^[ \t]*```[ \t]*$/ { inj = 0; if (cur ~ /"missing"/) last = cur; next }
-    inj { cur = cur $0 "\n" }
-    END { printf "%s", last }
-  ' "$report")"
-  if [ -n "$json" ]; then
-    md="$(printf '%s' "$json" | jq -r '.missing[]? | (if type == "string" then {requirement: .} else . end)
-      | "- **\(.requirement)**" + (if (.detail // "") != "" then "\n  " + (.detail | gsub("\n"; "\n  ")) else "" end)' 2>/dev/null || true)"
-  fi
-  if [ -z "$md" ]; then
-    md="$(_tail_fenced "$report")"
-  fi
-  printf '%s' "$md" | head -c "$EVIDENCE_MAX_BYTES"
 }
 
 # _tail_fenced <file> — the last lines of <file> (EVIDENCE_MAX_BYTES at most) in a fenced block.
@@ -467,30 +442,23 @@ cmd_defer() {
   echo "defer: $ref"
 }
 
-# --- defer-gaps / defer-integration ---------------------------------------------
-# Two fix issues that come from no reviewed branch, each one per feature while open, each flushed
-# into Phase 2 with the review findings. Their `Source:` line is the same depth bound: findings on
-# their branches are report-only.
-#   defer-gaps        — the PRD audit's ✗ missing requirements. A resumed sprint that audits again
-#                       must not queue the same gaps twice.
+# --- defer-integration -----------------------------------------------------------
+# A fix issue that comes from no reviewed branch, flushed into Phase 2 with the review findings.
+# Its `Source:` line is the same depth bound: findings on its branch are report-only.
 #   defer-integration — a drain-time integration check that triage judged fixable: the merged
 #                       feature branch's own checks fail. The caller (loop.mjs) bounds how many a
 #                       run may create; this only refuses a second while one is still open.
 # _defer_feature_issue <command> <feature-slug> <report> <criteria-file> <title> <source-tag>
 #                      <file-suffix> <trace-label> <context> <github-context> [numbered]
-# The github body drops the report path for the evidence itself: <source-tag> `prd-audit` embeds
-# the audit's missing-requirement details, `integration` the tail of the failing output.
+# The github body drops the report path for the evidence itself: the tail of the failing output.
 _defer_feature_issue() {
   local command="$1" slug="$2" report="$3" criteria_file="$4" title="$5" source_tag="$6"
   local suffix="$7" label="$8" context="$9" github_context="${10}" numbered="${11:-}" ref
 
   if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
-    local body_file evidence="" evidence_heading source_name
+    local body_file evidence source_name="integration check" evidence_heading="Failing output (tail)"
     body_file="$(mktemp)"
-    case "$source_tag" in
-      prd-audit) source_name="PRD audit"; evidence_heading="PRD audit evidence"; evidence="$(_prd_gaps_md "$report")" ;;
-      *) source_name="integration check"; evidence_heading="Failing output (tail)"; evidence="$(_tail_fenced "$report")" ;;
-    esac
+    evidence="$(_tail_fenced "$report")"
     {
       printf 'Source: %s (%s)\n\n## Context\n\n%s\n\n## Acceptance criteria\n\n' "$source_name" "$source_tag" "$github_context"
       cat "$criteria_file"
@@ -548,7 +516,7 @@ _defer_feature_issue() {
   echo "$command: $ref"
 }
 
-# _feature_issue_args <command> <args...> — the options both subcommands take; sets slug,
+# _feature_issue_args <command> <args...> — the options defer-integration takes; sets slug,
 # report and criteria_file in the caller (bash dynamic scope).
 _feature_issue_args() {
   slug="" report="" criteria_file=""
@@ -563,17 +531,6 @@ _feature_issue_args() {
   done
   [ -n "$slug" ] && [ -n "$report" ] && [ -n "$criteria_file" ] || usage
   [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to queue)"
-}
-
-cmd_defer_gaps() {
-  local slug report criteria_file
-  _feature_issue_args defer-gaps "$@"
-  _defer_feature_issue defer-gaps "$slug" "$report" "$criteria_file" "Fix PRD gaps: $slug" prd-audit \
-    fix-prd-gaps prd-gaps "Auto-queued by crew-afk from the PRD audit's missing requirements. No issue carried
-these, so no review ever checked them. The audit's evidence for each is in the report named in
-\`Source:\`." "Auto-queued by crew-afk from the PRD audit's missing requirements. No issue carried
-these, so no review ever checked them. The audit's evidence for each is under
-\`## PRD audit evidence\` below."
 }
 
 cmd_defer_integration() {
@@ -909,7 +866,6 @@ shift || true
 
 case "$COMMAND" in
   defer) cmd_defer "$@" ;;
-  defer-gaps) cmd_defer_gaps "$@" ;;
   defer-integration) cmd_defer_integration "$@" ;;
   flush) cmd_flush "$@" ;;
   list)  cmd_list "$@" ;;

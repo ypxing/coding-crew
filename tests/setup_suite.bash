@@ -7,7 +7,7 @@
 # a developer's own CREW_LOG_LEVEL/CREW_VERBOSE must not change what stderr assertions see.
 setup_suite() {
   unset CREW_ORCHESTRATED MAIN_ROOT TRACE_LOG SPRINT_DIR STATE_FILE FEATURE_SLUG FEATURE_BRANCH \
-    DISPATCH_DIR REVIEW_DIR CREW_SCRIPTS CREW_INSTALL_DIR CREW_PRD_AUDIT CREW_FIX_FINDINGS \
+    DISPATCH_DIR REVIEW_DIR CREW_SCRIPTS CREW_INSTALL_DIR CREW_FIX_FINDINGS \
     CREW_LOG_LEVEL CREW_VERBOSE
   # The orchestrator node suites' prefetch (helpers/orchestrator-suite.bash) starts here, before
   # the first file, rather than at the first orchestrator-*.bats wrapper, which sorts late.

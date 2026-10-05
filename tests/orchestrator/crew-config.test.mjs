@@ -106,10 +106,10 @@ test("loadConfig: a legacy file's unknown key is dropped with a notice, as the o
 });
 
 test("loadConfig: a bad legacy value names the key the user wrote, not its new name", () => {
-  const root = tmpRoot({ "afk-models.json": { coverageValidation: "" } });
+  const root = tmpRoot({ "afk-models.json": { commandsDiscovery: "" } });
   assert.throws(
     () => loadConfig(root, { write: true, home: EMPTY_HOME }),
-    (err) => err instanceof ConfigError && /afk-models\.json: "coverageValidation" must be a non-empty string/.test(err.message),
+    (err) => err instanceof ConfigError && /afk-models\.json: "commandsDiscovery" must be a non-empty string/.test(err.message),
   );
   assert.equal(existsSync(join(root, ".coding-crew/afk-models.json")), true);
   rmSync(root, { recursive: true, force: true });
@@ -271,7 +271,7 @@ test("resolveCrew: a coder moved off the launcher's runtime ignores --model, and
   assert.deepEqual(r.roles.coder, { runtime: "codex", model: null });
   assert.equal(r.roles.reviewer.model, "opus", "--model still reaches the roles left on the launcher's runtime");
   assert.match(r.warnings[0], /--model opus is ignored for the coder: it runs on codex/);
-  assert.match(r.warnings[0], /still applies to reviewer, triage, commandFinder, prdAuditor, prWriter, on claude/);
+  assert.match(r.warnings[0], /still applies to reviewer, triage, commandFinder, prWriter, on claude/);
 });
 
 test("resolveCrew: no tier warning across runtimes, where there is nothing to compare", () => {
@@ -302,7 +302,7 @@ test("crewPreflight: a pi/codex runtime needs its CLI and nothing else — no di
   const prev = process.env.CREW_FAKE_DISPATCH;
   delete process.env.CREW_FAKE_DISPATCH;
   try {
-    const crew = onClaude({ reviewer: "codex", prdAuditor: "pi" });
+    const crew = onClaude({ reviewer: "codex", commandFinder: "pi" });
     assert.deepEqual(crewPreflight(cliFound, EMPTY_HOME, { crew, roles: activeRoles(), launcher: "claude" }), []);
     const noCli = { exec: (cmd, args) => ({ code: /codex/.test(args.join(" ")) ? 1 : 0, stdout: "", stderr: "" }) };
     assert.deepEqual(crewPreflight(noCli, EMPTY_HOME, { crew, roles: activeRoles(), launcher: "claude" }), ["reviewer → codex: codex CLI not found on PATH"]);
@@ -311,10 +311,9 @@ test("crewPreflight: a pi/codex runtime needs its CLI and nothing else — no di
   }
 });
 
-test("activeRoles: the command finder and the PRD audit are checked only when the run does them", () => {
-  assert.deepEqual(activeRoles(), ["coder", "reviewer", "triage", "commandFinder", "prdAuditor"]);
-  assert.deepEqual(activeRoles({ commands: false, PRDAudit: "report" }), ["coder", "reviewer", "triage", "prdAuditor"]);
-  assert.deepEqual(activeRoles({ PRDAudit: "off" }), ["coder", "reviewer", "triage", "commandFinder"]);
+test("activeRoles: the command finder and the PR writer are checked only when the run does them", () => {
+  assert.deepEqual(activeRoles(), ["coder", "reviewer", "triage", "commandFinder"]);
+  assert.deepEqual(activeRoles({ commands: false, openPr: true }), ["coder", "reviewer", "triage", "prWriter"]);
 });
 
 // ─── settings ────────────────────────────────────────────────────────────────
@@ -324,7 +323,6 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
     "config.json": {
       afk: {
         fixFindings: "critical-high",
-        PRDAudit: true,
         maxParallel: 0,
         installDeps: "no",
         squashCommits: 1,
@@ -341,7 +339,6 @@ test("loadConfig: every afk setting is validated, all problems at once", () => {
       err instanceof ConfigError &&
       [
         /"afk\.fixFindings" is "critical-high" \(expected actionable, critical, high, medium, none\)/,
-        /"afk\.PRDAudit" is true \(expected off, report, fix\)/,
         /"afk\.maxParallel" must be a positive integer/,
         /"afk\.installDeps" must be true or false/,
         /"afk\.squashCommits" must be true or false/,
@@ -384,14 +381,14 @@ test("loadConfig: settings merge per key, the repo's over the user's, timeouts o
 test("resolveSettings: defaults, then config.json, then flags — and a flag is credited", () => {
   const defaults = resolveSettings({});
   assert.equal(defaults.fixFindings, "actionable", "every Actionable finding is fixed unless told otherwise");
-  assert.equal(defaults.PRDAudit, "fix");
+  assert.equal("PRDAudit" in defaults, false, "the PRD audit is gone");
   assert.equal(defaults.installDeps, true);
   assert.equal(defaults.squashCommits, false, "squashing rewrites history, so it is opt-in");
   assert.equal(defaults.baselineCheck, true, "the baseline runs unless turned off");
   assert.equal(defaults.integrationCheck, true, "the integration check runs unless turned off");
   assert.equal(defaults.resumeCoderSession, false, "session resume is opt-in until measured");
   assert.equal(defaults.maxParallel, null);
-  assert.deepEqual(defaults.timeouts, { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, prWriter: 10, merge: 5 });
+  assert.deepEqual(defaults.timeouts, { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prWriter: 10, merge: 5 });
 
   const origin = {};
   const s = resolveSettings({
@@ -421,17 +418,61 @@ test("validateFlags: a bad flag names the flag the user typed", () => {
   assert.deepEqual(validateFlags({ timeouts: { coder: 35791 } }), []);
   // The flag the user typed, once, when more than one sets the same timeout.
   assert.match(validateFlags({ timeouts: { coder: Number.NaN } }, { "timeouts.coder": "--coder-timeout" })[0], /^--coder-timeout /);
-  const review = { reviewer: 0, triage: 0, commandFinder: 0, prdAuditor: 0 };
+  const review = { reviewer: 0, triage: 0, commandFinder: 0, prWriter: 0 };
   const flagOf = Object.fromEntries(Object.keys(review).map((k) => [`timeouts.${k}`, "--reviewer-timeout"]));
   assert.deepEqual(validateFlags({ timeouts: review }, flagOf).length, 1);
   assert.match(validateFlags({ timeouts: review }, flagOf)[0], /^--reviewer-timeout /);
 });
 
-test("loadConfig: a legacy afk-models.json's old role names move under the new ones", () => {
+test("loadConfig: a legacy afk-models.json's old role names move under the new ones; the PRD audit's is dropped", () => {
   const root = tmpRoot({ "afk-models.json": { commandsDiscovery: "haiku", coverageValidation: "opus" } });
-  const { config } = loadConfig(root, { home: EMPTY_HOME });
-  assert.deepEqual(config.afk.models.claude, { commandFinder: "haiku", prdAuditor: "opus" });
+  const { config, notices } = loadConfig(root, { home: EMPTY_HOME });
+  assert.deepEqual(config.afk.models.claude, { commandFinder: "haiku" });
+  assert.match(notices.join("\n"), /afk-models\.json: unknown key "coverageValidation" is dropped/);
   rmSync(root, { recursive: true, force: true });
+});
+
+// ─── the retired PRD audit's settings: accepted, ignored, one notice each ───
+
+test("loadConfig: afk.PRDAudit loads, does nothing, and says so once", () => {
+  const root = tmpRoot({ "config.json": { afk: { PRDAudit: "fix", fixFindings: "medium" } } });
+  const { config, notices } = loadConfig(root, { home: EMPTY_HOME });
+  assert.deepEqual(config.afk, { fixFindings: "medium" });
+  assert.equal(notices.length, 1);
+  assert.match(notices[0], /`afk\.PRDAudit` no longer does anything: the feature review checks PRD coverage/);
+  assert.equal("PRDAudit" in resolveSettings({ afk: config.afk }), false);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: the prdAuditor role under models, timeouts or limits loads, with one notice per entry", () => {
+  const root = tmpRoot({
+    "config.json": {
+      afk: {
+        models: { claude: { prdAuditor: "opus", coder: "sonnet" } },
+        timeouts: { prdAuditor: 30, coder: 60 },
+        limits: { prdAuditor: { usd: 1 } },
+      },
+    },
+  });
+  const { config, notices } = loadConfig(root, { home: EMPTY_HOME });
+  assert.deepEqual(config.afk.models.claude, { coder: "sonnet" });
+  assert.deepEqual(config.afk.timeouts, { coder: 60 });
+  assert.deepEqual(config.afk.limits ?? {}, {});
+  assert.equal(notices.length, 3, notices.join("\n"));
+  for (const name of ["afk.models.claude.prdAuditor", "afk.timeouts.prdAuditor", "afk.limits.prdAuditor"]) {
+    assert.equal(notices.filter((n) => n.includes(`\`${name}\` no longer does anything`)).length, 1, name);
+  }
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("loadConfig: the user's config may still set the PRD audit, and the notice names that file", () => {
+  const root = tmpRoot();
+  const home = tmpRoot({ "config.json": { afk: { PRDAudit: "off", runtime: { prdAuditor: "codex" } } } });
+  const { notices } = loadConfig(root, { home });
+  assert.equal(notices.length, 2);
+  assert.ok(notices.every((n) => n.startsWith("~/.coding-crew/config.json: ")), notices.join("\n"));
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
 });
 
 // ─── paneHost: per-machine, with an env layer ────────────────────────────────
@@ -510,7 +551,7 @@ test("resolveWorktreeRoot: CREW_WORKTREE_ROOT, then the file, else null (the def
 
 test("loadConfig: afk.limits is validated per role, all problems at once", () => {
   const root = tmpRoot({
-    "config.json": { afk: { limits: { coder: { usd: 0 }, reviewer: { usd: "5" }, worker: { usd: 1 }, triage: 3, prdAuditor: { usd: 1, turns: 9 } } } },
+    "config.json": { afk: { limits: { coder: { usd: 0 }, reviewer: { usd: "5" }, worker: { usd: 1 }, triage: 3, prWriter: { usd: 1, turns: 9 } } } },
   });
   assert.throws(
     () => loadConfig(root, { home: EMPTY_HOME }),
@@ -521,7 +562,7 @@ test("loadConfig: afk.limits is validated per role, all problems at once", () =>
         /"afk\.limits\.reviewer\.usd" must be a positive number of dollars/,
         /unknown role "afk\.limits\.worker"/,
         /"afk\.limits\.triage" must be an object like \{ "usd": 5 \}/,
-        /unknown key "afk\.limits\.prdAuditor\.turns" \(expected usd\)/,
+        /unknown key "afk\.limits\.prWriter\.turns" \(expected usd\)/,
       ].every((re) => re.test(err.message)),
   );
   rmSync(root, { recursive: true, force: true });

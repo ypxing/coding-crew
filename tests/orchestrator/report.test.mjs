@@ -10,7 +10,6 @@ import {
   findingsAtOrAbove,
   parseFindingsTriage,
   foldDuplicates,
-  parsePrdAudit,
   parseRequiresFailures,
   parseReviewAggregate,
   parseReviewReport,
@@ -163,39 +162,6 @@ test("a review sidecar's findings parse into severity, location and criterion", 
 test("findingsAtOrAbove: medium takes MEDIUM too, never LOW", () => {
   const findings = ["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((severity) => ({ severity }));
   assert.deepEqual(findingsAtOrAbove(findings, "medium").map((f) => f.severity), ["MEDIUM", "HIGH", "CRITICAL"]);
-});
-
-test("parsePrdAudit: the last fenced json's missing list; no block queues nothing", () => {
-  const text = [
-    "✗ Export to CSV: no evidence",
-    "```json",
-    '{"covered": 3, "partial": 1, "missing": [{"requirement": "Users can export to CSV", "detail": "PRD §2"}, {"requirement": " "}]}',
-    "```",
-  ].join("\n");
-  assert.deepEqual(parsePrdAudit(text), {
-    ok: true,
-    missing: [{ requirement: "Users can export to CSV", detail: "PRD §2" }],
-    superseded: [],
-  });
-  assert.deepEqual(parsePrdAudit("✗ Export to CSV: no evidence"), { ok: false, missing: [], superseded: [] });
-});
-
-test("parsePrdAudit: a superseded requirement is never missing, even when listed as both", () => {
-  const text = [
-    "```json",
-    JSON.stringify({
-      covered: 1,
-      partial: 0,
-      missing: [{ requirement: "Sessions expire after 30 minutes" }, { requirement: "Users can export to CSV" }],
-      superseded: [{ requirement: "Sessions expire after 30 minutes", by: "docs/adr/0007-no-session-expiry.md" }, { by: "x" }],
-    }),
-    "```",
-  ].join("\n");
-  assert.deepEqual(parsePrdAudit(text), {
-    ok: true,
-    missing: [{ requirement: "Users can export to CSV", detail: "" }],
-    superseded: [{ requirement: "Sessions expire after 30 minutes", by: "docs/adr/0007-no-session-expiry.md" }],
-  });
 });
 
 // ─── review: the sidecar is the only channel ─────────────────────────────────────

@@ -35,9 +35,6 @@
  * ends the run stalled. A failure no code can fix is reported, queues nothing, and skips the
  * drain's remaining checks. A red final one keeps the PR from being opened.
  *
- * The PRD audit (runPrdAudit) runs once, the first time the queue drains: its gaps are parked
- * like findings, so the same flush sends both into Phase 2.
- *
  * The feature review (runFeatureReview) runs at every drain where something merged, after the
  * integration check: crew-reviewer over the whole feature diff the first time, then over the commits
  * since the last review (no reviewer when there are none). Each review's findings are parked like a
@@ -47,19 +44,17 @@
  * is skipped when the integration check is red or the wall-clock cap stopped claims.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { resumeRoute, runHousekeeping, runWorker } from "./pipeline.mjs";
 import { getTracker } from "./tracker.mjs";
-import { dispatchPlain } from "./dispatch.mjs";
 import { writeLog } from "./log.mjs";
 import { labelIssue } from "./labels.mjs";
 import { checkRequires, integrationSection, lintMidRunIssues, runIntegrationCheck } from "./preflight.mjs";
 import { fixIntegration } from "./integration-fix.mjs";
 import { writePrBody } from "./pipeline/pr-body.mjs";
-import { prdGapsCriteria } from "./prompts.mjs";
-import { parsePrdAudit, promoteSeverities } from "./report.mjs";
+import { promoteSeverities } from "./report.mjs";
 import { reportOnlyFeatureFindings, runFeatureReview } from "./pipeline/feature-review.mjs";
 
 export async function runSprint(ctx) {
@@ -84,8 +79,8 @@ export async function runSprint(ctx) {
   // Issues this run labelled `in-progress` and has not seen leave it: a merge (mark-done) and a
   // block (issue-labels.sh block) each remove it themselves; whatever is left is released at run end.
   const held = new Map();
-  // github fix issues this run created already ready-for-agent (a review's findings, the PRD
-  // audit's gaps), not yet seen in the milestone listing — see awaitListed.
+  // github fix issues this run created already ready-for-agent (a review's findings, an
+  // integration fix), not yet seen in the milestone listing — see awaitListed.
   const unseen = new Set();
   const unlisted = [];
 
@@ -273,8 +268,6 @@ export async function runSprint(ctx) {
   }
 
   let capped = false;
-  let prdAudit = {};
-  let audited = false;
   let featureReviewed = false;
   let integration = null;
   // One entry per drain whose review was attempted (featureReviewEntry), for the summary and the PR.
@@ -301,9 +294,7 @@ export async function runSprint(ctx) {
       ctx.log(`Round cap reached (${options.maxRounds} attempts per issue).`);
       break;
     }
-    // First at every drain, with whatever has merged so far (nothing merged, nothing new to
-    // check): a red result that no code can fix skips the rest of this drain's checks.
-    let skipRest = null;
+    // First at every drain, with whatever has merged so far (nothing merged, nothing new to check).
     if (options.integrationCheck && !options.dryRun && sprint.get("merged")) {
       integration = runIntegrationCheck(ctx);
       integration.fix = null;
@@ -316,25 +307,6 @@ export async function runSprint(ctx) {
           unseen.add(fix.number);
           integrationRefs.add(fix.number);
         }
-        if (fix.verdict === "not-fixable" || fix.verdict === "limit") {
-          skipRest = "the integration check failed and no code change is queued to fix it — see ## Integration check.";
-          fix.skippedRest = !audited;
-        }
-      }
-    }
-    // Once, when Phase 1 has drained: its gaps join the findings in the one flush below,
-    // so Phase 2 fixes both, and nothing after it is audited again.
-    // github creates the gaps issue — like a finding's fix issue — ready-for-agent, so the
-    // flush has nothing to promote for it and the loop goes round again once it is listed.
-    if (!audited) {
-      audited = true;
-      if (skipRest) {
-        prdAudit = { report: null, queuedReady: false, skipped: skipRest };
-        ctx.log(`PRD audit: skipped — ${skipRest}`);
-      } else {
-        prdAudit = await runPrdAudit(ctx, tracker);
-        if (prdAudit.queuedRef) ownRefs.add(prdAudit.queuedRef);
-        if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
       }
     }
     // Once per run, at the first drain with something merged: a later drain's review could open no
@@ -372,10 +344,9 @@ export async function runSprint(ctx) {
       unseen.clear();
       const missing = await awaitListed(ctx, tracker, refs);
       for (const ref of missing) {
-        const what = ref === prdAudit.queuedRef ? "PRD gaps" : integrationRefs.has(ref) ? "integration fix" : "review findings";
+        const what = integrationRefs.has(ref) ? "integration fix" : "review findings";
         const line = `#${ref} (${what}) was created but never appeared in the milestone listing — re-run to implement it.`;
-        if (ref === prdAudit.queuedRef) prdAudit.unqueued = line;
-        else unlisted.push(line);
+        unlisted.push(line);
         ctx.log(`[FIX-ISSUE-UNLISTED] ${line}`, "warn");
       }
       if (missing.length < refs.length) continue;
@@ -399,7 +370,7 @@ export async function runSprint(ctx) {
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, capped, wallCap, prdAudit, unlisted, integration, integrationFixes, featureReviews });
+  await wrapUp(ctx, { tracker, stalled, capped, wallCap, unlisted, integration, integrationFixes, featureReviews });
   return { stalled, capped, wallCapped: Boolean(wallCap), history };
 }
 
@@ -410,96 +381,6 @@ export async function runSprint(ctx) {
  */
 function openIssues(tracker, mainRoot, featureSlug) {
   return tracker.listFeatureIssues(mainRoot, { featureSlug }).filter((i) => i.status !== "done" && !tracker.isPrdIssue(i));
-}
-
-/**
- * Work issues this sprint hasn't finished. Fix issues — parked, or any with a `Source:` line (review,
- * integration, PRD gaps) — are left out: none of them carries a PRD requirement.
- */
-function unfinishedIssues(tracker, mainRoot, featureSlug) {
-  return openIssues(tracker, mainRoot, featureSlug).filter((i) => i.status !== "deferred-findings" && !i.sourceGuarded);
-}
-
-/**
- * The PRD audit (prdAuditor, afk.PRDAudit): what no per-branch review can see — a PRD
- * requirement no issue carried, a flow across issues. In `fix` mode its ✗ missing
- * requirements become one parked fix issue, which the caller's flush sends into Phase 2.
- * It does not run while a Phase 1 issue is still open (blocked, retained, stalled): that
- * issue's requirements would read as missing, so the report is noise and its gaps would
- * duplicate the issue — and the re-run that finishes it audits anyway. Returns
- * `{report, queuedReady, queuedRef, unqueued, superseded, failed, skipped}`: the report's path (or null); whether an
- * issue was created already ready-for-agent (github — local parks it for the flush instead), and its number;
- * in fix mode, why gaps were left unqueued; why an audit that ran did not finish; and why it
- * did not run. `superseded` lists the PRD requirements a later decision replaced, in either mode. The last three are for the summary — the trace log alone is too easy to miss.
- */
-async function runPrdAudit(ctx, tracker) {
-  const { sprint, effects, options } = ctx;
-  const mode = sprint.PRDAudit;
-  if (mode === "off") return { report: null, queuedReady: false };
-  const unfinished = unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug);
-  if (unfinished.length) {
-    const skipped = `${unfinished.length} Phase 1 issue(s) still open (${unfinished.map((i) => i.slug).join(", ")}) — resolve them and re-run.`;
-    ctx.log(`PRD audit: skipped — ${skipped}`);
-    return { report: null, queuedReady: false, skipped };
-  }
-  const audit = effects.exec("bash", [effects.script("prd-audit.sh"), "--mode", mode], {
-    env: sprint.childEnv(),
-    mutating: false,
-  });
-  // Only the script's own first line ever says "skipped" — the PRD it quotes may say it too.
-  const firstLine = audit.stdout.split("\n", 1)[0] ?? "";
-  if (/^PRD audit: skipped/.test(firstLine)) {
-    ctx.log(firstLine);
-    return { report: null, queuedReady: false };
-  }
-
-  const outFile = join(sprint.env.SPRINT_DIR, "prd-audit.md");
-  const { runtime, model } = options.crew.prdAuditor;
-  ctx.log(`[STEP] step=prd-audit mode=${mode} model=${model ?? "inherit"} runtime=${runtime}`);
-  const r = await dispatchPlain(effects, runtime, {
-    prompt: audit.stdout,
-    cwd: effects.mainRoot,
-    mainRoot: effects.mainRoot,
-    model,
-    outFile,
-    timeoutMs: options.timeoutMs.prdAuditor,
-    maxBudgetUsd: options.limitsUsd?.prdAuditor,
-  });
-  if (r.code !== 0 || r.timedOut) {
-    const failed = `the audit did not complete (${r.timedOut ? "timed out" : `exit ${r.code}`}) — no report, nothing queued.`;
-    ctx.log(`PRD audit: ${failed}`);
-    return { report: null, queuedReady: false, failed };
-  }
-  ctx.log(`PRD audit report: ${outFile}`);
-  if (r.dryRun) return { report: outFile, queuedReady: false };
-
-  // Superseded requirements are named in both modes and queued in neither: the PRD is older
-  // than the decision that replaced them, and only a human should rewrite the PRD.
-  const parsed = parsePrdAudit(r.text);
-  const { superseded } = parsed;
-  if (superseded.length) ctx.log(`PRD audit: ${superseded.length} superseded requirement(s), not queued.`);
-  if (mode !== "fix") return { report: outFile, queuedReady: false, superseded };
-  if (!parsed.ok) {
-    ctx.log("PRD audit: no closing json block in the report — nothing queued; read it by hand.");
-    return { report: outFile, queuedReady: false, unqueued: "the report has no closing json block — read it by hand." };
-  }
-  if (!parsed.missing.length) {
-    ctx.log("PRD audit: no missing requirements.");
-    return { report: outFile, queuedReady: false, superseded };
-  }
-  const criteriaPath = join(sprint.env.SPRINT_DIR, "prd-gaps.criteria.md");
-  writeFileSync(criteriaPath, prdGapsCriteria(parsed.missing));
-  const defer = effects.bash(
-    "promote-findings.sh",
-    ["defer-gaps", "--feature-slug", sprint.featureSlug, "--report", outFile, "--criteria-file", criteriaPath],
-    { env: sprint.childEnv() },
-  );
-  ctx.log(`PRD audit: ${parsed.missing.length} missing requirement(s) → ${defer.stdout.trim() || defer.stderr.trim()}`);
-  const queued = defer.code === 0 && /^defer-gaps: (?!skip)/m.test(defer.stdout);
-  const unqueued = defer.code === 0 ? null
-    : `${parsed.missing.length} missing requirement(s), but the fix issue was not created: ${defer.stderr.trim() || `exit ${defer.code}`}`;
-  const queuedRef = Number(/\/issues\/(\d+)\s*$/m.exec(defer.stdout)?.[1]) || null;
-  return { report: outFile, queuedReady: queued && tracker.fixIssuesCreatedReady, queuedRef, unqueued, superseded };
 }
 
 /** Polls of the milestone listing, and the wait before each, for awaitListed. */
@@ -545,7 +426,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, prdAudit, unlisted = [], integration = null, integrationFixes = [], featureReviews = [] }) {
+async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, unlisted = [], integration = null, integrationFixes = [], featureReviews = [] }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -582,18 +463,6 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
   // Also kept with the run's trace: stdout goes to whoever launched the run, and a launcher
   // that retells it can drop a line (the cost) nobody can then recover.
   if (sprint.traceLog && summary.stdout.trim()) writeLog(sprint.traceLog, `[SUMMARY]\n${summary.stdout.trimEnd()}`);
-  if (prdAudit.skipped) {
-    ctx.out(`\n## PRD Audit\n\n**Not run:** ${prdAudit.skipped}\n`);
-  } else if (prdAudit.failed) {
-    ctx.out(`\n## PRD Audit\n\n**Failed:** ${prdAudit.failed}\n`);
-  } else if (prdAudit.report && existsSync(prdAudit.report)) {
-    ctx.out(`\n## PRD Audit\n\n(see ${prdAudit.report})\n`);
-    if (prdAudit.unqueued) ctx.out(`\n**Gaps not queued:** ${prdAudit.unqueued}\n`);
-    if (prdAudit.superseded?.length) {
-      const lines = prdAudit.superseded.map((m) => `- ${m.requirement}${m.by ? ` — ${m.by}` : ""}`);
-      ctx.out(`\n**Superseded — update the PRD, nothing queued:**\n${lines.join("\n")}\n`);
-    }
-  }
   if (wallCap) {
     ctx.out(`\n## Wall-clock cap\n\nThe ${wallCap.minutes}-minute cap elapsed: running workers finished, Phase 2 fix issues stayed parked.${wallCap.unclaimed.length ? ` Unclaimed (${wallCap.unclaimed.length}):\n${wallCap.unclaimed.map((s) => `- ${s}`).join("\n")}` : ""}\n`);
   }

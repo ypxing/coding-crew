@@ -72,9 +72,9 @@ test("a bad flag value is a setup error naming the flag", () => {
   assert.match(r.stderr, /--fix-findings is "severe"/);
   assert.match(r.stderr, /--coder-timeout must be a positive number of minutes/);
   // A setting flag left without its value is an error, not silently the default.
-  const bare = runSprint(root, ["--prd-audit"]);
+  const bare = runSprint(root, ["--fix-findings"]);
   assert.equal(bare.code, 1);
-  assert.match(bare.stderr, /--prd-audit is ""/);
+  assert.match(bare.stderr, /--fix-findings is ""/);
 });
 
 test("by default the sprint is not squashed: each issue's merge stays its own commit", () => {
@@ -110,8 +110,9 @@ test("`plan` shows each setting and which file or flag set it", () => {
   });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stdout, /findings: +fix medium and above in Phase 2 +\[project\]/);
-  assert.match(r.stdout, /PRD audit: report +\[flag\]/);
-  assert.match(r.stdout, /timeouts: +coder 60m \[project\], reviewer 20m, triage 20m, commandFinder 5m, prdAuditor 20m, prWriter 10m, merge 5m/);
+  assert.doesNotMatch(r.stdout, /PRD audit/, "the retired flag is accepted and shown nowhere");
+  assert.match(r.stderr, /`--prd-audit` no longer does anything/);
+  assert.match(r.stdout, /timeouts: +coder 60m \[project\], reviewer 20m, triage 20m, commandFinder 5m, prWriter 10m, merge 5m/);
 });
 
 test("`plan` shows the worktree root and which file set it", () => {

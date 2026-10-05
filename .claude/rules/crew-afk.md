@@ -24,8 +24,7 @@ Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
 - `receipts.sh` — the two gates as facts on disk
 - `lease.sh` — the feature lease (`refs/crew-lock/<slug>` under `tracker: github`): owner, acquire, reclaim, release
 - `post-findings.sh` — posts the sprint's open review findings to the feature branch's PR as one review
-- `prd-audit.sh` — the PRD audit gate: locates the PRD and prints the prompt the `prdAuditor` dispatch uses
-- `promote-findings.sh` — findings, PRD gaps and fixable integration failures → parked fix issues → Phase 2
+- `promote-findings.sh` — findings and fixable integration failures → parked fix issues → Phase 2
 - `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
 - `resolve-merge-conflicts.sh` — called by `merge-branches.sh` on a conflicted merge: when the only conflicts are
   `registry.json` entry `version`s (higher semver kept) and `CHANGELOG.md` entries both sides appended (both kept,
