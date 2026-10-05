@@ -348,6 +348,29 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ "$(jq -r '.previous_exit.reason' .scratch/calc/sprint-state.json)" = "ended without an exit (killed or crashed)" ]
 }
 
+@test "state.sh run-start on a pre-upgrade state (current_run set, no last_exit key) claims no crash" {
+  init_sprint calc
+  f=.scratch/calc/sprint-state.json
+  jq '.current_run = "run-old" | del(.last_exit)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  run state run-start --id run-new
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"killed or crashed"* ]]
+  ! grep -q 'killed or crashed' .scratch/calc/traces/orchestrator.log
+  [ "$(jq -r '.previous_exit.reason' "$f")" = "unknown" ]
+  [ "$(jq -r '.current_run' "$f")" = "run-new" ]
+}
+
+@test "state.sh run-start still reports a crash when last_exit names a different run" {
+  init_sprint calc
+  state run-start --id run-1 >/dev/null
+  state run-end --reason "finished" --code 0 >/dev/null
+  state run-start --id run-2 >/dev/null
+  run state run-start --id run-3
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"previous run ended without an exit (killed or crashed)"* ]]
+  [ "$(jq -c '.previous_exit | [.run, .reason]' .scratch/calc/sprint-state.json)" = '["run-2","ended without an exit (killed or crashed)"]' ]
+}
+
 @test "crew-summary names the run count and why the previous run ended" {
   init_sprint calc
   state run-start --id run-1 >/dev/null
