@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: every PRD decision reaches a feature-review area, and each area sees the others. `parsePrdDecisions` reads any
+  `- **<ID>**` line (`**D1**:` and `**D1** (auto):` were dropped); a decision the planner gives no area joins the area holding
+  most of its issues' files, else the smallest; with 2+ areas each reviewer's prompt carries an `Other areas` reference block,
+  and the reviewer reports a file in its area still relying on behaviour another area's decision changed. New replay case
+  `afk-effectiveness-feature` for `eval-reviewer-misses.mjs` (#281).
 - `crew-afk`: at run start (`preflight.mjs`'s `dropStaleRetained`, after the feature-branch sync), a retained-branch
   record is dropped and logged (`[RETAINED-DROPPED] slug=… — <why>`) when its issue is closed or no longer in the tracker
   (`listFeatureIssues`, `local` and `github` alike), or its branch no longer exists. A dropped record no longer counts
