@@ -313,3 +313,25 @@ test("a pre-upgrade report's branch finding stays open after the branch is re-re
   assert.equal(alpha[0].severity, "HIGH");
   assert.equal(alpha[0].carried, true);
 });
+
+test("a pre-upgrade report's actionable branch finding a fix issue took stays covered after the branch is re-reviewed all-met", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Run 1, by an earlier version: the branch's review raised a finding triage judged Actionable, and defer promoted it.
+  mkdirSync(join(root, ".scratch/demo/reviews"), { recursive: true });
+  const promotedHigh = { ...retryHigh, verdict: "actionable", rationale: "one local change" };
+  writeFileSync(
+    join(root, ".scratch/demo/reviews/sprint-review-00000000-000000.md"),
+    `## Branch: crew/x/alpha (alpha)\n\n\`\`\`json\n${JSON.stringify({ branch: "crew/x/alpha", slug: "alpha", verdict: "unmet", detail: "alpha exists: missing", findings: [promotedHigh] })}\n\`\`\`\n\n## Promoted Findings\n\n- crew/x/alpha: actionable → .scratch/demo/issues/open/09-fix-alpha.md (1 finding(s))\n`,
+  );
+  // Run 2: the same branch is re-reviewed all-met; the carried finding keeps the verdict its promotion was decided on.
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const open = JSON.parse(
+    sh("bash", [join(SCRIPTS, "promote-findings.sh"), "open", "--feature-slug", "demo"], {
+      cwd: root,
+      env: { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") },
+    }).stdout,
+  );
+  assert.deepEqual(open.filter((f) => f.branch === "crew/x/alpha"), [], JSON.stringify(open));
+});

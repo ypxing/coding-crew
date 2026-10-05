@@ -15,8 +15,6 @@ range the feature branch before the issue's merge to the branch tip the reviewer
 defect that should have made one of the issue's acceptance criteria `unmet`, and fill those three
 sections from the issue.
 
-## Issue`, `## Implements` and `## Acceptance criteria`.
-
 ## Issue
 
 <issue slug or number>
