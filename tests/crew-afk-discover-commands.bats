@@ -228,6 +228,96 @@ EOF
   [ "$makefile_line" -lt "$package_line" ]
 }
 
+@test "lists README.md as a source, after Makefile and before the manifests" {
+  echo "claude notes" > CLAUDE.md
+  echo "Run \`uv run pytest\`" > README.md
+  printf 'test:\n\t@exit 0\n' > Makefile
+  printf '[project]\nname = "x"\n' > pyproject.toml
+
+  run bash "$DISCOVER_SCRIPT"
+
+  claude_line=$(grep -n -- "- CLAUDE.md" <<< "$output" | head -1 | cut -d: -f1)
+  makefile_line=$(grep -n -- "- Makefile" <<< "$output" | head -1 | cut -d: -f1)
+  readme_line=$(grep -n -- "- README.md" <<< "$output" | head -1 | cut -d: -f1)
+  pyproject_line=$(grep -n -- "- pyproject.toml" <<< "$output" | head -1 | cut -d: -f1)
+  [ -n "$readme_line" ]
+  [ "$claude_line" -lt "$makefile_line" ]
+  [ "$makefile_line" -lt "$readme_line" ]
+  [ "$readme_line" -lt "$pyproject_line" ]
+}
+
+@test "a README.md alone is enough to build a prompt" {
+  echo "Run \`uv run pytest\`" > README.md
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" != *"skipped"* ]]
+  [[ "$output" == *"- README.md"* ]]
+}
+
+@test "a uv.lock tells the model to report the Python checks through uv run" {
+  printf '[project]\nname = "x"\n' > pyproject.toml
+  touch uv.lock
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uv.lock"* ]]
+  [[ "$output" == *"uv run pytest"* ]]
+  [[ "$output" != *"poetry run"* ]]
+}
+
+@test "a poetry.lock tells the model to report the Python checks through poetry run" {
+  printf '[tool.poetry]\nname = "x"\n' > pyproject.toml
+  touch poetry.lock
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *"poetry.lock"* ]]
+  [[ "$output" == *"poetry run pytest"* ]]
+}
+
+@test "a uv.lock wins over a poetry.lock, as host-install.sh picks uv first" {
+  printf '[project]\nname = "x"\n' > pyproject.toml
+  touch uv.lock poetry.lock
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *"uv run pytest"* ]]
+  [[ "$output" != *"poetry run"* ]]
+}
+
+@test "a composer.json tells the model to report the PHP checks through vendor/bin" {
+  echo '{"require-dev": {"phpunit/phpunit": "^11"}}' > composer.json
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *"vendor/bin/phpunit"* ]]
+}
+
+@test "composer.json and uv.lock in one repo each get their own runner rule" {
+  echo '{}' > composer.json
+  printf '[project]\nname = "x"\n' > pyproject.toml
+  touch uv.lock
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" == *"uv run pytest"* ]]
+  [[ "$output" == *"vendor/bin/phpunit"* ]]
+}
+
+@test "no runner rule when no uv.lock, poetry.lock or composer.json exists" {
+  printf '[project]\nname = "x"\n' > pyproject.toml
+  echo '{"scripts": {"test": "jest"}}' > package.json
+
+  run bash "$DISCOVER_SCRIPT"
+
+  [[ "$output" != *"uv run"* ]]
+  [[ "$output" != *"poetry run"* ]]
+  [[ "$output" != *"vendor/bin"* ]]
+  [[ "$output" != *"not on PATH"* ]]
+}
+
 @test "a symlinked AGENTS.md pointing at CLAUDE.md is listed once, not twice" {
   echo "run tests with: npm test" > CLAUDE.md
   ln -s CLAUDE.md AGENTS.md

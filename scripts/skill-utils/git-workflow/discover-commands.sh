@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Finds the *local dev-loop* command for test/lint/typecheck/install/env/credential_target/
 # coverage/integration once per sprint, before
-# any worktree exists, by asking a model to read whatever of CLAUDE.md/AGENTS.md/Makefile/manifest
+# any worktree exists, by asking a model to read whatever of CLAUDE.md/AGENTS.md/README.md/Makefile/manifest
 # files this repo actually has — the same reference chain solve-issue's verification.md names,
 # but read by a model instead of pattern-matched by this script. Real repos document these
 # commands in prose, tables, and bullet lists a regex has no reliable way to parse (a table
@@ -144,13 +144,14 @@ _cache_field_present() {
 
 # Fixed, deterministic order — keeps the hash (and the prompt's file order) stable across
 # runs regardless of filesystem iteration order. Not tied to any one repo's stack: covers the
-# doc conventions (CLAUDE.md/AGENTS.md/Makefile) plus one manifest per common ecosystem. This
+# doc conventions (CLAUDE.md/AGENTS.md/README.md/Makefile) plus one manifest per common ecosystem. This
 # is also the priority order handed to the model: docs first (most likely to state the
 # command in prose), build files next, manifests last (often just a script name to infer).
 CANDIDATE_FILES=(
   "$MAIN_ROOT/CLAUDE.md"
   "$MAIN_ROOT/AGENTS.md"
   "$MAIN_ROOT/Makefile"
+  "$MAIN_ROOT/README.md"
   "$MAIN_ROOT/package.json"
   "$MAIN_ROOT/pyproject.toml"
   "$MAIN_ROOT/Cargo.toml"
@@ -186,7 +187,7 @@ for f in "${CANDIDATE_FILES[@]}"; do
 done
 
 if [ "${#FOUND_FILES[@]}" -eq 0 ]; then
-  echo "Command discovery: skipped (no CLAUDE.md, AGENTS.md, Makefile, or manifest found — ecosystem-convention fallback applies)"
+  echo "Command discovery: skipped (no CLAUDE.md, AGENTS.md, README.md, Makefile, or manifest found — ecosystem-convention fallback applies)"
   exit 0
 fi
 
@@ -356,6 +357,30 @@ cat <<'PROMPT'
   even if the recipe's final line is a single simple command — report the target invocation, not
   that line. This is not limited to install/env/credential_target: a "test" or "lint" target is
   eval'd the same way downstream and loses the same guards if paraphrased.
+PROMPT
+
+# A manifest whose install puts the project's tools in a project-local directory that is not on
+# PATH (dep-install's host-install.sh: `uv sync --frozen` / `poetry install` → a virtualenv,
+# `composer install` → vendor/bin) makes a bare `pytest` or `phpunit` fail every check as
+# "command not found" — what the first demo smoke sprint hit (once, with uv). One line per
+# ecosystem present; uv before poetry, the order host-install.sh picks them in.
+_runner_rule() { # <manifest> <tools> <where> <runner> <example: runner + tool> <tool>
+  cat <<PROMPT
+- This project has a $1: its $2 are installed into $3, which is not on PATH. Report each such
+  tool's command through \`$4\` (e.g. \`$5\`, not \`$6\`), unless the source names a command
+  that already runs it that way (a Makefile target, a package-manager script).
+PROMPT
+}
+if [ -f "$MAIN_ROOT/uv.lock" ]; then
+  _runner_rule uv.lock "Python tools" "a project virtualenv" "uv run" "uv run pytest" pytest
+elif [ -f "$MAIN_ROOT/poetry.lock" ]; then
+  _runner_rule poetry.lock "Python tools" "a project virtualenv" "poetry run" "poetry run pytest" pytest
+fi
+if [ -f "$MAIN_ROOT/composer.json" ]; then
+  _runner_rule composer.json "PHP tools" "vendor/bin" "vendor/bin/" "vendor/bin/phpunit" phpunit
+fi
+
+cat <<'PROMPT'
 
 Respond with **only** this JSON shape, no other prose:
 PROMPT
