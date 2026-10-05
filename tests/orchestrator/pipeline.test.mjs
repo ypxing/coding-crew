@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { issueFingerprint } from "../../orchestrator/lib/trackers/body-format.mjs";
-import { RESUME_MAX_CONTEXT_TOKENS, resumableSession, resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
+import { RESUME_MAX_CONTEXT_TOKENS, mayResumeCoderSession, resumableSession, resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
 import { isTestPath } from "../../orchestrator/lib/pipeline/review.mjs";
 import { resumeNote } from "../../orchestrator/lib/prompts.mjs";
 
@@ -125,4 +125,13 @@ test("the fingerprint changes when What to build or a criterion is edited", () =
   assert.notEqual(issueFingerprint(ISSUE.replace("two", "three")), fp);
   assert.notEqual(issueFingerprint(ISSUE.replace("A thing.", "Another thing.")), fp);
   assert.notEqual(issueFingerprint(ISSUE.replace("- [ ] two\n", "- [ ] two\n- [ ] new\n")), fp);
+});
+
+test("a fix round never resumes a session after a conflict dispatch ran in the same attempt", () => {
+  const base = { enabled: true, route: "fix", runtime: "claude", conflictDispatched: false };
+  assert.equal(mayResumeCoderSession(base), true);
+  assert.equal(mayResumeCoderSession({ ...base, conflictDispatched: true }), false);
+  assert.equal(mayResumeCoderSession({ ...base, enabled: false }), false);
+  assert.equal(mayResumeCoderSession({ ...base, route: "restart" }), false);
+  assert.equal(mayResumeCoderSession({ ...base, runtime: "pi" }), false);
 });
