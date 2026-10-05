@@ -230,7 +230,7 @@ _cache() {
   echo x > "$WORK/tests/helpers/h.bash"; echo x > "$WORK/tests/fixtures/f.jsonl"
   echo x > "$WORK/tests/orchestrator/lib.mjs"; echo x > "$WORK/tests/orchestrator/x.test.mjs"
   echo x > "$WORK/tests/fixtures/case.test.js"
-  _cache '{"typecheck": null, "lint": null, "test": "echo RAN tests/*.bats"}'
+  _cache '{"typecheck": null, "lint": null, "test": "echo RAN"}'
   CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
   [ "$status" -eq 0 ]
   [[ "$output" == *"RAN tests/orchestrator/x.test.mjs"* ]]
@@ -242,12 +242,62 @@ _cache() {
   git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
   echo x > "$WORK/test/app.js"; echo x > "$WORK/tests/FooTest.php"
   echo x > "$WORK/src/__tests__/sub/b.js"; echo x > "$WORK/src/helpers/format.test.ts"
-  _cache '{"typecheck": null, "lint": null, "test": "echo RAN tests/*.bats"}'
+  _cache '{"typecheck": null, "lint": null, "test": "echo RAN"}'
   CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
   [ "$status" -eq 0 ]
   for f in test/app.js tests/FooTest.php src/__tests__/sub/b.js src/helpers/format.test.ts; do
     [[ "$output" == *"$f"* ]] || { echo "missing $f: $output"; return 1; }
   done
+}
+
+@test "run-checks: --targeted passes only the changed files the suite argument it replaces selects" {
+  mkdir -p "$WORK/tests/orchestrator"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  printf '@test "x" { true; }\n' > "$WORK/tests/x.bats"
+  echo 'import "node:test";' > "$WORK/tests/orchestrator/y.test.mjs"
+  _cache '{"typecheck": null, "lint": null, "test": "bats tests/*.bats"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" == *$'=== test: bats tests/x.bats\n'* ]]
+  [[ "$output" != *"y.test.mjs"* ]]
+  [[ "$output" == *"test: pass (targeted)"* ]]
+}
+
+@test "run-checks: --targeted matches a glob the way the shell would, and a directory by what it holds" {
+  mkdir -p "$WORK/tests/sub" "$WORK/src/a/b" "$WORK/spec"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/top.bats"; echo x > "$WORK/tests/sub/deep.bats"
+  echo x > "$WORK/src/a/b/c.test.ts"; echo x > "$WORK/src/d.test.ts"; echo x > "$WORK/spec/e_spec.rb"
+  # `*` stays inside one directory; `**/` spans any number of them, none included
+  _cache "{\"typecheck\": null, \"lint\": null, \"test\": \"echo RAN tests/*.bats 'src/**/*.test.ts' spec\"}"
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  for f in tests/top.bats src/a/b/c.test.ts src/d.test.ts spec/e_spec.rb; do
+    [[ "$output" == *"RAN"*"$f"* ]] || { echo "missing $f: $output"; return 1; }
+  done
+  [[ "$output" != *"deep.bats"* ]]
+}
+
+@test "run-checks: --targeted defers, running nothing, when no changed test file is one the suite argument selects" {
+  mkdir -p "$WORK/tests/orchestrator"
+  git -C "$WORK" commit -q --allow-empty -m base && git -C "$WORK" branch -f main
+  echo x > "$WORK/tests/orchestrator/y.test.mjs"
+  _cache '{"typecheck": null, "lint": null, "test": "touch $PWD/ran-test tests/*.bats"}'
+  CREW_DEFER_FULL_CHECKS=1 run bash "$RUN_CHECKS" --targeted --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"test: deferred (no changed test file the test command's suite arguments select)"* ]]
+  [[ "$output" != *"=== test"* ]]
+  [ ! -e "$WORK/ran-test" ]
+}
+
+@test "run-checks: each check writes its log through a pipe, and reports its own exit code" {
+  # a log file on overlayfs can hang a bats load error forever (#266); a pipe never does
+  _cache '{"typecheck": null, "lint": "if [ -p /dev/stdout ]; then echo PIPED; else echo FILE; fi; exit 3", "test": "echo T"}'
+  run bash "$RUN_CHECKS" --project-root "$WORK" --main-root "$WORK" --dep-scripts "$DEP_SCRIPTS"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"PIPED"*"lint: fail (exit 3)"*"test: pass"*"CHECKS: fail" ]] || { echo "$output"; return 1; }
+  log="$(printf '%s\n' "$output" | sed -n 's/^lint: log: //p')"
+  grep -qx PIPED "$log"
 }
 
 @test "run-checks: --targeted defers a runner that takes no test file arguments (make, go, cargo)" {
