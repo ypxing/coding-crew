@@ -204,8 +204,14 @@ setup() {
 }
 
 @test "to-issues: under github the lint run uses provisional Issue #<n> numbers and --known for existing milestone issues" {
-  grep -qF -- '--known <number>-<slug>.md' "$SKILL_FILE"
+  grep -qF -- '--known .scratch/<feature-slug>/.lint/<number>-<slug>.md' "$SKILL_FILE"
   grep -qiE 'replace each `Issue #<n>` with the number `gh issue create` returned' "$SKILL_FILE"
+}
+
+@test "to-issues: under github the existing milestone issues' bodies are written out for --known, so their ## Implements counts toward --prd coverage" {
+  run grep -qF 'never opened' "$SKILL_FILE"
+  [ "$status" -ne 0 ]
+  grep -qF 'its `## Implements` counts toward `--prd` coverage' "$SKILL_FILE"
 }
 
 @test "to-issues: a new parser/validator/gate gets a criterion over the repo's existing examples, as committed fixtures" {
