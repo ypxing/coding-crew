@@ -47,7 +47,9 @@ fixes; its criterion is "the project's checks pass on the merged feature branch"
 triage's detail and the failing output's tail. The next drain's check then runs on the fixed branch.
 Not fixable — a missing command (exit 127, no triage at all), a failed dependency install, or
 triage's own verdict — queues nothing: the summary's `## Integration check` section gives the
-reason, and the feature review is skipped for that drain. A triage dispatch that itself fails counts as fixable, once. Its `Source:` line is
+reason, and the feature review is skipped for that drain. A skipped review is not the run's one
+review: the next drain whose integration check passes runs it, and a run that ends red reports it
+as not run. A triage dispatch that itself fails counts as fixable, once. Its `Source:` line is
 the same depth bound. At most two integration fix issues are created per run: a third red drain is
 reported and the run ends stalled, with no third fix issue. The same commit red again (its fix
 issue blocked) is not a new drain — it is not re-triaged and gets no second fix issue.

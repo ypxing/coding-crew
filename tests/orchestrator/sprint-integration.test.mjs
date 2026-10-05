@@ -516,6 +516,22 @@ test("a fixable red integration check becomes a fix issue, implemented in Phase 
   assert.deepEqual(integrationFixFiles(root, "open"), []);
 });
 
+test("a feature review skipped by a red integration check runs once, at the drain the fix turns green", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  redUntilFixed(root);
+  fake(root, "_integration.triage", triageVerdict("yes", "clashing changes", "alpha.txt and beta.txt cannot both exist without src/fix-integration-*"));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(featureReviews(lines), 1);
+  const review = lines.findIndex((l) => /^SPAWN .*--agent crew-reviewer.* --slug feature( |$)/.test(l));
+  const fix = lines.findIndex((l) => /^SPAWN .*fix-integration-1/.test(l));
+  assert.ok(fix >= 0 && review > fix, "reviewed after the fix issue ran, at the green drain");
+  assert.equal(existsSync(join(root, ".scratch/demo/dispatch/feature-d1/review-prompt.md")), true);
+  assert.doesNotMatch(r.stdout, /\*\*Not run:\*\* the integration check is red/, "the red drain's skip gave way to the review");
+});
+
 test("a missing command on a red integration check is not fixable: no triage, no fix issue, the summary says why", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
