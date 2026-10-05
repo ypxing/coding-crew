@@ -32,6 +32,12 @@ import {
 export const READY_STATUS = "ready-for-agent";
 export const PARKED_STATUS = "deferred-findings";
 
+/** A promoted fix issue is written parked (`deferred-findings`) for the loop's flush to make ready. */
+export const fixIssuesCreatedReady = false;
+
+/** Local has no PRD issue: the PRD is `.scratch/<slug>/PRD.md`, never a file in `issues/`. */
+export const isPrdIssue = () => false;
+
 /** Filename minus leading digits and extension. Mirrors receipts.sh issue_slug_of(). */
 export function issueSlug(file) {
   return basename(file).replace(/\.md$/, "").replace(/^[0-9]+[-_]?/, "");
@@ -144,6 +150,34 @@ export function parseIssue(path, text = readFileSync(path, "utf8")) {
     hasBlocked: sectionBody(text, "Blocked") !== null,
     text,
   };
+}
+
+/**
+ * Every issue of one feature, in every state, as `parseIssue` entries: `issues/open/` files with
+ * their own `Status:`, then `issues/done/` files, whose status is `done` whatever their text says —
+ * the directory is the state. The same entry shape (`slug`, `number`, `title`, `status`, `text`, …)
+ * as github's `listFeatureIssues`, plus the `path`/`file` only a file has.
+ */
+export function listFeatureIssues(mainRoot, { featureSlug } = {}) {
+  const dir = join(mainRoot, ".scratch", featureSlug, "issues");
+  const files = (state) => {
+    const d = join(dir, state);
+    if (!existsSync(d)) return [];
+    return readdirSync(d)
+      .filter((f) => f.endsWith(".md"))
+      .sort()
+      .map((f) => join(d, f));
+  };
+  return [
+    ...files("open").map((p) => parseIssue(p)),
+    ...files("done").map((p) => ({ ...parseIssue(p), status: "done" })),
+  ];
+}
+
+/** The feature's `issues-deps.json` when `to-issues` wrote one, else null. */
+export function featureDepsFile(mainRoot, { featureSlug } = {}) {
+  const path = join(mainRoot, ".scratch", featureSlug, "issues", "issues-deps.json");
+  return existsSync(path) ? path : null;
 }
 
 /** Files present in the sibling done/ dir of an issue's open/ dir. */

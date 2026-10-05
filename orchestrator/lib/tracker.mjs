@@ -40,6 +40,7 @@ export const issueSlug = local.issueSlug;
 export const issueNumber = local.issueNumber;
 export const branchFor = local.branchFor;
 export const listOpenIssueFiles = local.listOpenIssueFiles;
+export const listFeatureIssues = local.listFeatureIssues;
 export const resolveBlockedBy = local.resolveBlockedBy;
 export const issueDepsPath = local.issueDepsPath;
 export const readIssueDeps = local.readIssueDeps;

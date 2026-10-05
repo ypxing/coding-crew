@@ -175,5 +175,5 @@ function queueFixIssue(ctx, tracker, result, { category, detail }) {
   const ref = /^defer-integration: (.+)$/m.exec(defer.stdout)?.[1]?.trim() ?? text;
   const number = Number(/\/issues\/(\d+)\s*$/m.exec(defer.stdout)?.[1]) || null;
   // github creates the issue ready-for-agent (local parks it for the flush), and its listing lags.
-  return { verdict: "queued", ref, number, queuedReady: !tracker.listOpenIssueFiles };
+  return { verdict: "queued", ref, number, queuedReady: tracker.fixIssuesCreatedReady };
 }

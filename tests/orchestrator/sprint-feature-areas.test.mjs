@@ -4,10 +4,10 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { default as nodeTest } from "node:test";
-import { sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, test } from "./helpers/sprint.mjs";
+import { sh, fixtureRepo, addIssue, traceLog, state, fake, commandLines, featureReviewFile, crossIssue, sprintReport, githubFixtureRepo, stubGh, test } from "./helpers/sprint.mjs";
 import { implementsLookup, normalizeAreas, parsePlannerAnswer, plannerPrompt, wholeFeatureArea } from "../../orchestrator/lib/pipeline/feature-areas.mjs";
 import { featureReviewPrompt } from "../../orchestrator/lib/prompts.mjs";
 
@@ -37,6 +37,27 @@ test("the planner is dispatched once, with the stat, each issue's files and IDs,
   assert.match(prompt, /crew\/demo\/beta: files src\/beta\.txt; implements D2/);
   assert.match(prompt, /^- \*\*D1\*\* — Retries are bounded\.$/m);
   assert.match(prompt, /^- \*\*D2\*\* — Errors name the file\.$/m);
+});
+
+test("under tracker: github the planner gets each milestone issue's ## Implements IDs too", () => {
+  const root = githubFixtureRepo();
+  mkdirSync(join(root, ".scratch/demo"), { recursive: true });
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), PRD);
+  const ready = [{ name: "ready-for-agent" }];
+  const issue = (number, title, id) => ({
+    number,
+    title,
+    body: `# ${title}\n\n## Acceptance criteria\n\n- [x] ${title} exists\n\n## Implements\n\n${id}\n`,
+    labels: ready,
+    state: "OPEN",
+  });
+  const { stub } = stubGh(root, [issue(1, "alpha", "D1"), issue(2, "beta", "D2")]);
+  const { r, lines } = commandLines(root, ["--max-parallel", "2"], { env: { PATH: `${stub}:${process.env.PATH}` } });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(planners(lines).length, 1);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-plan/planner.md.prompt.md"), "utf8");
+  assert.match(prompt, /crew\/demo\/1-alpha: files [^;]*; implements D1/);
+  assert.match(prompt, /crew\/demo\/2-beta: files [^;]*; implements D2/);
 });
 
 test("the planner's diff stat names a long path in full, not as .../name", () => {
@@ -236,7 +257,7 @@ nodeTest("normalizeAreas appends an uncovered file to the smallest area and merg
 nodeTest("implementsLookup reads ## Implements from a non-file tracker's listing, by the branch's issue number, listing once", () => {
   let listings = 0;
   const tracker = {
-    listOpen: (_root, { featureSlug }) => {
+    listFeatureIssues: (_root, { featureSlug }) => {
       listings++;
       assert.equal(featureSlug, "demo");
       return [
@@ -255,7 +276,7 @@ nodeTest("implementsLookup reads ## Implements from a non-file tracker's listing
 
 nodeTest("implementsLookup warns and names nothing when the tracker listing fails", () => {
   const logs = [];
-  const tracker = { listOpen: () => { throw new Error("gh down"); } };
+  const tracker = { listFeatureIssues: () => { throw new Error("gh down"); } };
   const ctx = { effects: { mainRoot: "/nowhere" }, sprint: { featureSlug: "demo" }, log: (m, lvl) => logs.push([lvl, m]) };
   assert.deepEqual(implementsLookup(ctx, tracker)("crew/demo/1-a"), []);
   assert.ok(logs.some(([lvl, m]) => lvl === "warn" && /gh down/.test(m)));

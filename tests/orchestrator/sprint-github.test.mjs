@@ -26,7 +26,7 @@ import { REPO, MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog,
  * `gh.log` and answers just enough of the CLI surface a live sprint's dispatch loop and
  * close-issue.sh's github branch actually call — `issue list` from the fixture's own
  * `gh-issues.json` (mutated by `issue edit --add-label/--remove-label` and by `issue close`,
- * so a second `listOpen` fetch sees the new labels/state the same way a real re-fetch
+ * so a second `listFeatureIssues` fetch sees the new labels/state the same way a real re-fetch
  * would), `issue view --json body --jq .body` echoing that same issue's body, `issue
  * comment`/`label create` as plain no-ops. Everything else exits 0 — this pins the wiring, not the full `gh` surface
  * (already covered by tracker-github.test.mjs / tracker-mark-done-github.bats).

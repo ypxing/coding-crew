@@ -246,7 +246,7 @@ export async function runSprint(ctx) {
     const worker = await stages.runWorker(ctx, issue, attempt);
     const outcome = await stages.runHousekeeping(ctx, worker);
     history.push(outcome);
-    if (outcome.promotedRef && !tracker.listOpenIssueFiles) unseen.add(outcome.promotedRef);
+    if (outcome.promotedRef && tracker.fixIssuesCreatedReady) unseen.add(outcome.promotedRef);
     if (outcome.promotedRef) ownRefs.add(outcome.promotedRef);
     if (outcome.status === "complete" || outcome.inProgressCleared) held.delete(issue.slug);
     ctx.log(
@@ -353,7 +353,7 @@ export async function runSprint(ctx) {
       if (review.findings && promote) sprint.state(["feature-review-promoted"]);
       featureReviews.push(review);
       if (review.promotedRef) ownRefs.add(review.promotedRef);
-      if (review.promotedRef && !tracker.listOpenIssueFiles) unseen.add(review.promotedRef);
+      if (review.promotedRef && tracker.fixIssuesCreatedReady) unseen.add(review.promotedRef);
     }
     // Past the cap Phase 2 stays parked: the fix issues wait for the next run. With none parked
     // (and, under github, none created and still awaiting the listing) the cap cut nothing short.
@@ -382,9 +382,6 @@ export async function runSprint(ctx) {
     break;
   }
 
-  // listOpenIssueFiles is local-only (a directory scan); github's counterpart is listOpen,
-  // whose entries carry their own `status` (a close-state, not a file location) instead of
-  // requiring a second directory read to know which are still open.
   // Unclaimed because of the cap: claimable issues, listed before anything releases them.
   const wallUnclaimed = unclaimedByCap().map((i) => i.slug);
   const wallCap = wallUnclaimed.length || flushSkipped ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
@@ -395,9 +392,7 @@ export async function runSprint(ctx) {
       // The last drain's check, not any earlier one: a drain red at the fix-issue limit stalls
       // the run only if no later drain turned it green.
       (integration?.fix?.verdict === "limit" ||
-        (tracker.listOpenIssueFiles
-          ? tracker.listOpenIssueFiles(effects.mainRoot, { featureSlug: sprint.featureSlug }).length > 0
-          : unfinishedIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0)));
+        openIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0));
 
   // Before the summary: drained, capped or stalled, no issue keeps a label saying it is being worked.
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
@@ -408,18 +403,17 @@ export async function runSprint(ctx) {
 }
 
 /**
- * Issues this sprint hasn't finished, other than parked fix issues. Local issues keep their
- * `Status:` until close-issue.sh moves them, so a blocked one is still in open/.
+ * The feature's work issues not yet `done`, parked fix issues included: a blocked issue keeps its
+ * status until close-issue.sh closes it. The milestone's PRD issue stays open for the life of the
+ * feature; it is not work.
  */
+function openIssues(tracker, mainRoot, featureSlug) {
+  return tracker.listFeatureIssues(mainRoot, { featureSlug }).filter((i) => i.status !== "done" && !tracker.isPrdIssue(i));
+}
+
+/** Issues this sprint hasn't finished, other than parked fix issues. */
 function unfinishedIssues(tracker, mainRoot, featureSlug) {
-  if (tracker.listOpenIssueFiles) {
-    return tracker
-      .listOpenIssueFiles(mainRoot, { featureSlug })
-      .map((p) => tracker.parseIssue(p))
-      .filter((i) => i.status !== "deferred-findings");
-  }
-  // The milestone's PRD issue stays open for the life of the feature; it is not work.
-  return tracker.listOpen(mainRoot, { featureSlug }).filter((i) => i.status !== "done" && !tracker.isPrdIssue?.(i));
+  return openIssues(tracker, mainRoot, featureSlug).filter((i) => i.status !== "deferred-findings");
 }
 
 /**
@@ -501,7 +495,7 @@ async function runPrdAudit(ctx, tracker) {
   const unqueued = defer.code === 0 ? null
     : `${parsed.missing.length} missing requirement(s), but the fix issue was not created: ${defer.stderr.trim() || `exit ${defer.code}`}`;
   const queuedRef = Number(/\/issues\/(\d+)\s*$/m.exec(defer.stdout)?.[1]) || null;
-  return { report: outFile, queuedReady: queued && !tracker.listOpenIssueFiles, queuedRef, unqueued, superseded };
+  return { report: outFile, queuedReady: queued && tracker.fixIssuesCreatedReady, queuedRef, unqueued, superseded };
 }
 
 /** Polls of the milestone listing, and the wait before each, for awaitListed. */
@@ -517,7 +511,7 @@ async function awaitListed(ctx, tracker, refs) {
   const { effects, sprint } = ctx;
   let missing = refs;
   for (let n = 0; ; n++) {
-    const listed = new Set(tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug }).map((i) => i.number));
+    const listed = new Set(tracker.listFeatureIssues(effects.mainRoot, { featureSlug: sprint.featureSlug }).map((i) => i.number));
     missing = missing.filter((ref) => !listed.has(ref));
     if (n && missing.length < refs.length) ctx.log(`fix issue(s) listed after ${n} poll(s)`);
     if (!missing.length || n >= LISTED_POLL.tries) return missing;

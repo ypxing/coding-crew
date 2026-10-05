@@ -10,6 +10,7 @@ import {
   branchFor,
   issueNumber,
   issueSlug,
+  listFeatureIssues,
   listOpenIssueFiles,
   parseIssue,
   readIssueDeps,
@@ -232,6 +233,23 @@ test("listOpenIssueFiles scopes to one feature dir when given a featureSlug", ()
   const files = listOpenIssueFiles(root, { featureSlug: "alpha" });
   assert.equal(files.length, 1);
   assert.match(files[0], /alpha\/issues\/open\/01-a\.md$/);
+});
+
+test("listFeatureIssues lists one feature's open and done issues, a done/ file reading as done", () => {
+  const root = repo();
+  issue(root, "alpha", "02-b.md", "# B\n\nStatus: ready-for-agent\n\n## Implements\n\nD2\n");
+  issue(root, "alpha", "01-a.md", "# A\n\nStatus: ready-for-agent\n", { dir: "done" });
+  issue(root, "zeta", "01-z.md", "# Z\n\nStatus: ready-for-agent\n");
+  const issues = listFeatureIssues(root, { featureSlug: "alpha" });
+  assert.deepEqual(
+    issues.map((i) => [i.file, i.slug, i.number, i.status]),
+    [
+      ["02-b.md", "b", "02", "ready-for-agent"],
+      ["01-a.md", "a", "01", "done"],
+    ],
+  );
+  assert.match(issues[0].text, /## Implements\n\nD2/);
+  assert.deepEqual(listFeatureIssues(root, { featureSlug: "missing" }), []);
 });
 
 test("listOpenIssueFiles returns nothing for a featureSlug with no issues/open dir", () => {
