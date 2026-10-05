@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: a feature review skipped because the integration check was red no longer uses up the run's one review —
+  the next drain whose integration check passes runs it (#290).
 - `crew-afk`: the feature review is one reviewer that reads the whole PRD, once per run (at the first drain that merged
   something, not again after Phase 2): no planner, no areas. It reports a PRD requirement the merged code does not implement,
   an unconnected multi-issue flow, or an unowned cross-cutting concern as a finding. The branch review checks acceptance

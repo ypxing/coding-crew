@@ -42,9 +42,11 @@ Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
   issues that a merged PR's body names (`Closes #n`), then the PRD once no work issue is left, and with it each open issue on the PRD's `Origin:` line.
   It reads the bodies itself, since GitHub can fail to link a `Closes` line. Runnable by hand
 - `open-pr.sh` — `openPr` only: pushes the feature branch, creates or updates its PR with the
-  tracker's closing lines (`closingRefs`) in crew-afk's own block of the body, under the body
-  `orchestrator/lib/pipeline/pr-body.mjs` had the `prWriter` role write by following `write-pr`'s
-  SKILL.md (installed as an asset at `.coding-crew/write-pr/`), plus the checks line.
+  tracker's closing lines (`closingRefs`) in crew-afk's own block of the body. The body above it is
+  what `orchestrator/lib/pipeline/pr-body.mjs`'s `finish()` wrote: the `prWriter` role's Why / What
+  changes / Risk / **Tested:** note, written by following `write-pr`'s SKILL.md (installed as an
+  asset at `.coding-crew/write-pr/`), or crew-afk's `**Checks on the merged branch:**` line alone
+  when the writer leaves no `## Why`.
   `--draft` (run not green: stalled, a blocked issue, capped, or an integration check that was `skipped`/red/not run)
   creates the PR as a draft or converts a ready one (`gh pr ready --undo`); without it an open draft is marked ready.
   `--note-file` puts the blocked list and reason inside the crew-afk block. A failed conversion, or a

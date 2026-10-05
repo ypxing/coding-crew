@@ -316,7 +316,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
 }
 
 /**
- * A role with no protocol (commandFinder, prWriter, the feature planner): one reasoning pass through the
+ * A role with no protocol (commandFinder, prWriter): one reasoning pass through the
  * platform's adapter like every other role, its prompt alone. `fakeAgent` names the role to the
  * CREW_FAKE_DISPATCH seam (fake-dispatch.sh's canned answers) and in the trace.
  */
