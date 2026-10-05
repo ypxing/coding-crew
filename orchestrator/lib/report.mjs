@@ -255,6 +255,8 @@ export function parseRequiresFailures(stdout, files) {
 }
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+/** The one severity order: CRITICAL 0 … LOW 3. */
+export const SEVERITY_RANK = Object.fromEntries(SEVERITIES.map((s, i) => [s, i]));
 const VERDICTS = new Set(["all-met", "unmet", "not_run"]);
 /** Findings triage's answer per finding (the shared rubric: skills/_shared/fragments/findings-rubric.md). */
 export const FINDING_VERDICTS = ["actionable", "debatable", "dismiss"];
@@ -393,21 +395,19 @@ export function carryFindings(earlierRecords, latestFindings, { keepVerdicts = f
   return [...latestFindings, ...carried];
 }
 
-const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-
 /** Findings at `level` ("critical" | "high" | "medium" | "none", afk.fixFindings) or more severe. */
 export function findingsAtOrAbove(findings, level) {
-  const cut = SEVERITY_ORDER.indexOf(String(level).toUpperCase());
+  const cut = SEVERITIES.indexOf(String(level).toUpperCase());
   if (cut < 0) return [];
   return findings.filter((f) => {
-    const i = SEVERITY_ORDER.indexOf(f.severity);
+    const i = SEVERITIES.indexOf(f.severity);
     return i >= 0 && i <= cut;
   });
 }
 
 /** The severities `level` promotes, as `defer` records them: "CRITICAL, HIGH" for `high`. */
 export function severityNames(level) {
-  return [...new Set(findingsAtOrAbove(SEVERITY_ORDER.map((severity) => ({ severity })), level).map((f) => f.severity))].join(", ");
+  return [...new Set(findingsAtOrAbove(SEVERITIES.map((severity) => ({ severity })), level).map((f) => f.severity))].join(", ");
 }
 
 /**
@@ -568,7 +568,6 @@ export function applyFindingVerdicts(findings, verdicts) {
   });
 }
 
-const SEVERITY_RANK = Object.fromEntries(SEVERITIES.map((s, i) => [s, i]));
 
 /**
  * Fold the findings triage marked `duplicate_of` into their targets, for promotion. `judged` is

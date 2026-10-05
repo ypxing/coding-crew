@@ -87,3 +87,12 @@ setup() {
     ! grep -qF 'findings are still reported — the branch returns to a worker with them' "$f"
   done
 }
+
+@test "a per-branch review still reads what the change relies on (item 3) as evidence for its verdicts, on every platform" {
+  local plat f
+  for plat in claude copilot pi codex; do
+    f="$(role_prompt reviewer "$plat")"
+    grep -qF 'A per-branch review runs item 3 as evidence for its criterion and decision verdicts' "$f"
+    ! grep -qF 'A per-branch review stops after item 2' "$f"
+  done
+}

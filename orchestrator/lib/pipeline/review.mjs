@@ -10,7 +10,7 @@ import { assetDir } from "../install-dir.mjs";
 import { reviewPrompt } from "../prompts.mjs";
 import { decisionsFor } from "../prd-decisions.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { carryFindings, parseReviewBlocks, parseReviewReport } from "../report.mjs";
+import { carryFindings, foldReview, parseReviewBlocks, parseReviewReport } from "../report.mjs";
 import { dispatchIssueDir, dispatchStem, issueDescriptor, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /** A path that only tests: a test/spec file by name, or anything under a test or fixture dir. */
@@ -46,15 +46,16 @@ function safeDecisions(ctx, issue) {
   }
 }
 
-/** The last review block on disk for `branch`, across the sprint review reports (empty when none). */
+/** `branch`'s review blocks on disk, across the sprint review reports, folded into one record (empty when none): a not_run stub keeps the findings before it. */
 function earlierBranchReviews(reviewDir, branch) {
   if (!existsSync(reviewDir)) return [];
-  const recs = readdirSync(reviewDir)
+  const folded = readdirSync(reviewDir)
     .filter((n) => /^sprint-review-.*\.md$/.test(n))
     .sort()
     .flatMap((n) => parseReviewBlocks(readFileSync(join(reviewDir, n), "utf8")))
-    .filter((rec) => rec.branch === branch);
-  return recs.slice(-1);
+    .filter((rec) => rec.branch === branch)
+    .reduce(foldReview, undefined);
+  return folded ? [folded] : [];
 }
 
 export async function runReview(ctx, worker, { checks, logs, notConfigured, file } = {}) {

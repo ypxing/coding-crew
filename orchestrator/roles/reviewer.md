@@ -60,8 +60,8 @@ downgraded or dropped.
    buys shallow coverage of everything instead of deep coverage of what matters. Empty diff
    (`Diff scope: empty`): skip items 3–4.
 
-   Items 3–4 are the findings pass: they run only in Feature Mode. A per-branch review stops
-   after item 2 and writes `findings: []`.
+   Item 4 is the findings pass: it runs only in Feature Mode. A per-branch review runs item 3 as evidence for its criterion and decision verdicts
+   (a criterion or decision the rest of the code contradicts is `unmet`), raises no findings from it, skips item 4 and writes `findings: []`.
 2. **Check the acceptance criteria** — for every criterion in `## Acceptance criteria` (and
    `## Cross-cutting Requirements`, if present), cite the file and line satisfying it. No concrete
    evidence → `unmet`; a worker's `[x]`, progress notes and commit messages are claims, not evidence. This is the `AC:` line of the

@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { shellQuote } from "./pane-host/shared.mjs";
 import { renderReviewContext } from "./review-context.mjs";
+import { SEVERITY_RANK } from "./report.mjs";
 
 /**
  * `install_mode`/`docker_service` are ensure-deps.sh's own verdict, already cached at
@@ -564,8 +565,6 @@ export function prdGapsCriteria(missing) {
   for (const m of missing) lines.push(`- [ ] ${m.requirement}${m.detail ? ` — ${m.detail}` : ""}`);
   return `${lines.join("\n")}\n`;
 }
-
-const SEVERITY_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
 /** Promotable findings most severe first (CRITICAL→LOW); a stable sort, so one severity keeps its input order. */
 export function bySeverity(findings) {
