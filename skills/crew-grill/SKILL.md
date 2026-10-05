@@ -13,7 +13,7 @@ Interview the user relentlessly until you reach shared understanding. Map the pl
 
 The tree's root is the problem, not the solutions on offer. Before any solution node, establish the **problem size**: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. These are mostly facts (git history, the tracker, the code), so Gate 1 applies — look them up (`git log`, merged PRs, the issue list), cite them, and ask only what no source holds. Never ask the user how often something happens when the history can count it. Candidate solutions the user brings with them are inputs to this tree, not its frontier: the smallest change that removes the cost you measured is the baseline every larger option has to beat.
 
-Size is fine; **unjustified** size is not. Well-architected is a justification, overengineered is not: a component earns its place through the measured problem, or through the structure of what is being built *now* — one owner per concern, no duplicated logic, a seam its tests need, the repo's layer rules. A need nobody has yet, generality for a hypothetical caller, or completeness for its own sake earns nothing. Logic that would otherwise be copied into several places gets one shared owner: that is structure, not a speculative layer, and dropping it to avoid "abstraction" leaves the design under-built.
+{{FRAGMENT:design-standard}}
 
 ### Rounds and gates
 
