@@ -246,8 +246,6 @@ export async function runSprint(ctx) {
     const worker = await stages.runWorker(ctx, issue, attempt);
     const outcome = await stages.runHousekeeping(ctx, worker);
     history.push(outcome);
-    if (outcome.promotedRef && tracker.fixIssuesCreatedReady) unseen.add(outcome.promotedRef);
-    if (outcome.promotedRef) ownRefs.add(outcome.promotedRef);
     if (outcome.status === "complete" || outcome.inProgressCleared) held.delete(issue.slug);
     ctx.log(
       `[ATTEMPT-END] slug=${issue.slug} attempt=${attempt} status=${outcome.status}${outcome.reason ? ` reason=${outcome.reason}` : ""}`,

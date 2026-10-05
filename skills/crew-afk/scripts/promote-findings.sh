@@ -5,13 +5,12 @@ set -euo pipefail
 #
 # Findings promotion turns actionable code-review findings into fix issues that the
 # existing sprint loop implements in a second phase. See references/findings-promotion.md
-# for the full policy (severity threshold, per-branch grouping, depth guard, phases).
+# for the full policy (severity threshold, grouping, depth bound, phases).
 #
 # This script owns only the deterministic parts, so all four platform variants behave
 # identically:
 #
 #   (the severity list comes from the orchestrator as --severities; no level table here)
-#   guard   — may findings from this issue's branch be promoted, or is it already a fix issue?
 #   defer   — write a parked fix issue (Status: deferred-findings) + annotate the review report
 #   defer-gaps — the same for the PRD audit's ✗ missing requirements: one parked issue
 #   defer-integration — the same for a fixable red integration check on the merged feature branch
@@ -107,7 +106,6 @@ need_severities() {
 usage() {
   cat >&2 <<'USAGE'
 Usage:
-  promote-findings.sh guard --issue <issue-file> --severities <list>
   promote-findings.sh defer --feature-slug <slug> --branch <branch> --slug <issue-slug>
                             --title <title> --report <review-report> --criteria-file <file>
                             --severities <list> [--blocked-by <issue-number>]
@@ -155,65 +153,6 @@ next_issue_number() {
     [ "$n" -gt "$max" ] && max="$n"
   done
   printf '%02d' $((max + 1))
-}
-
-# --- guard -------------------------------------------------------------------
-# The depth bound. A fix issue carries a `Source:` line; findings raised against a fix
-# issue's own branch are reported only, never promoted again. That caps the sprint at
-# two phases without any counter or state flag.
-cmd_guard() {
-  local issue="" severities="" have_sev=0
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --issue) issue="${2:-}"; shift 2 ;;
-      --severities) severities="${2:-}"; have_sev=1; shift 2 ;;
-      *) usage ;;
-    esac
-  done
-  [ -n "$issue" ] || usage
-  [ "$have_sev" -eq 1 ] || need_severities guard
-
-  local body
-  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
-    # No local file to grep — under github, `--issue` is the issue number, and the depth
-    # bound must hold against whatever the body says *right now*, not a stale in-memory
-    # copy from an earlier `gh issue list`. A human may have edited the body since.
-    local repo_args=()
-    [ -n "$TRACKER_CONFIG_REPO" ] && repo_args=(--repo "$TRACKER_CONFIG_REPO")
-    if ! body="$(gh issue view "$issue" "${repo_args[@]}" --json body -q .body 2>/dev/null)"; then
-      # A missing/unreachable issue cannot be shown to be a fix issue. Fail closed: no promotion.
-      echo "guard: skip — issue not found: $issue"
-      exit 0
-    fi
-  else
-    # Promotion follows the close, which moves the file from open/ to done/ beside it.
-    if [ ! -f "$issue" ] && [ -f "$(dirname "$(dirname "$issue")")/done/$(basename "$issue")" ]; then
-      issue="$(dirname "$(dirname "$issue")")/done/$(basename "$issue")"
-    fi
-    # A missing file cannot be shown to be a fix issue. Fail closed: no promotion.
-    if [ ! -f "$issue" ]; then
-      echo "guard: skip — issue file not found: $issue"
-      exit 0
-    fi
-    body="$(cat "$issue")"
-  fi
-
-  # Column-0 `Source:` outside a ``` / ~~~ fence only (same rule as body-format.mjs isSourceGuarded).
-  if printf '%s\n' "$body" | awk '
-      fence != "" { if (substr($0, 1, length(fence)) == fence && $0 ~ /^ {0,3}(```+|~~~+)[ \t]*$/) fence = ""; next }
-      /^ {0,3}```/ { fence = "```"; next }
-      /^ {0,3}~~~/ { fence = "~~~"; next }
-      /^Source:/ { found = 1 }
-      END { exit !found }'; then
-    echo "guard: skip — source-guarded (this issue was itself promoted from a review)"
-  elif [ -z "$severities" ]; then
-    echo "guard: skip — fixFindings is none"
-  else
-    # Eligible names the threshold, not what the review found: the branch is promoted only if
-    # a finding at one of these severities (or, under `actionable`, one triage judges Actionable)
-    # exists, which the caller decides from the review.
-    echo "guard: eligible — threshold: $severities"
-  fi
 }
 
 # --- defer -------------------------------------------------------------------
@@ -402,7 +341,7 @@ _tail_fenced() {
 # (github has no pre-created label to represent "parked", so there is no local-style
 # park/flush step for this backend — flush/list correctly report nothing to promote, see
 # cmd_flush/cmd_list). The body keeps local's `Source:` line (naming the kind and branch, not
-# a local report path) so parseIssue and `guard` read both the same way, embeds the promoted
+# a local report path) so parseIssue reads both the same way, embeds the promoted
 # findings' full reviewer text, and adds a numeric `## Blocked by` reference when the caller
 # names one. Prints the created issue's URL (github.mjs's own stdout, itself `gh issue
 # create`'s stdout passed through).
@@ -947,7 +886,6 @@ COMMAND="${1:-}"
 shift || true
 
 case "$COMMAND" in
-  guard) cmd_guard "$@" ;;
   defer) cmd_defer "$@" ;;
   defer-gaps) cmd_defer_gaps "$@" ;;
   defer-integration) cmd_defer_integration "$@" ;;

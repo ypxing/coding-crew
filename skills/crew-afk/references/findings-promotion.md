@@ -9,16 +9,20 @@ behave identically.
 
 ## Why this exists
 
-Per-branch review runs before each merge, and its findings are **advisory** — the branch merges
-regardless. They are promoted only after the branch has merged and its issue closed; a branch
-whose merge conflicts or whose close is refused promotes nothing that round; when the retry completes the merge and close (the merge-only route), promotion happens then, from the saved review. That leaves findings on already-merged code with no route back into the
-sprint: the report sits in `reviews/` until a human runs `/crew-address-findings`. Promotion
-gives those findings a route, using the machinery that already exists (issue → worktree → TDD →
-verify → review → merge) instead of a bespoke fix path.
+Per-branch review runs before each merge and judges only the acceptance criteria and the PRD
+decisions an issue implements: it raises no findings (`findings: []`; the orchestrator drops any a
+branch report still carries), so no branch gets a fix issue of its own. Findings come from the
+feature review alone, on code that has already merged, with no route back into the sprint: the
+report sits in `reviews/` until a human runs `/crew-address-findings`. Promotion gives those
+findings a route, using the machinery that already exists (issue → worktree → TDD → verify →
+review → merge) instead of a bespoke fix path.
+
+Open findings an earlier version's branch reviews left in a `sprint-review-*.md` block are never
+promoted: `promote-findings.sh open` still lists them, so they are posted or reminded.
 
 ## Two phases
 
-**Phase 1 — normal sprint.** Unchanged. When a merged-and-closed branch's review raised findings at or above the
+**Phase 1 — normal sprint.** Unchanged. When a feature review raised findings at or above the
 promotion rule (below), write a *parked* fix issue with `Status: deferred-findings`. The loop's `list`
 operation selects on `ready-for-agent`, so parked issues are invisible and Phase 1 drains its
 original queue at its normal pace.
@@ -79,9 +83,11 @@ run).
   finding that contradicts an ADR / `CONTEXT.md`, whose fix touches a protected path (CI config,
   auth, deploy, `.env`), or whose only basis is the design standard (the reviewer reports those at
   LOW, prefixed `Design standard (criterion <n>):`) is Debatable. The rubric names the design-only
-  rule too, so triage normally answers it `debatable` already; the code holds it either way.
-  The verdict and rationale are written beside each finding in the review report. It
-  applies to the full-feature review's findings the same way.
+  rule too, so triage normally answers it `debatable` already; the code holds it either way. A
+  fourth rule, "Necessary" — a failure that needs an input or state no current caller, user or
+  documented contract produces is Debatable — is triage's judgement alone.
+  The verdict and rationale are written beside each finding in the feature review's block of the
+  review report.
 - `critical`, `high` (CRITICAL and HIGH), `medium` (adds MEDIUM) fix by severity alone, with no
   triage dispatch; LOW is never promoted. Unattended, that has no way to dismiss a finding that is
   technically correct but contradicts a documented decision — the risk the CRITICAL/HIGH bar
@@ -94,7 +100,7 @@ means no verdicts for that review: its CRITICAL and HIGH findings are promoted, 
 open, and the summary's `## Findings Triage` section names which review fell back and why. The
 fallback is per review, so one failed triage never blocks the others.
 
-The threshold is resolved once in `orchestrator/lib/report.mjs` and echoed by `promote-findings.sh guard`; the verdicts are facts on
+The threshold is resolved once in `orchestrator/lib/report.mjs` and passed to `defer` as `--severities`; the verdicts are facts on
 disk in the review report, so the orchestrator never has to remember them.
 
 Anything below the threshold is paid for on the way out rather than hidden: nothing subtracts an
@@ -102,16 +108,12 @@ unpromoted severity from `remind`, so every such finding is counted, named, and 
 report, and the reminder states the threshold that left it open plus the setting that would have
 promoted it.
 
-**Grouping: one fix issue per reviewed branch**, with one acceptance criterion per finding. All
-findings from one branch cite that branch's diff, so they cluster in the same files — one
-worktree edits them sequentially and intra-group conflict is impossible. Different reviewed
-branches touch mostly disjoint code, so those fix issues still parallelize across a batch. This
-matches `crew-address-findings` Step 2, which groups findings by branch for the same reason.
+**Grouping: one fix issue per feature review**, with one acceptance criterion per finding
+(`orchestrator/lib/pipeline/feature-review.mjs`).
 
-**Depth bound: one generation.** Every fix issue carries a `Source:` line. Before promoting, run
-`promote-findings.sh guard --issue <issue-file> --severities <list>`; if it prints `skip — source-guarded`, the
-findings go in the report and no issue is written. So Phase 2 reviews are report-only and there
-is never a Phase 3. This is the whole termination argument — no counters, no phase flag.
+**Depth bound.** Every fix issue carries a `Source:` line, and a branch review raises no findings,
+so a fix issue's own review never promotes anything. Feature reviews promote only up to the
+per-feature cap (`feature_review.promotions` in `sprint-state.json`); later ones are report-only.
 
 **No phase state.** The issue files' `Status:` lines are the only record of which phase the
 sprint is in ("do any `deferred-findings` issues remain?"). Do not mirror it into
@@ -129,8 +131,8 @@ round-batch or dry-round counter any more (see `orchestrator/lib/loop.mjs`) — 
 exactly when nothing is in flight and nothing is dispatchable, Phase 1 or Phase 2 alike, so
 there is no stall-counter state that Phase 2 could inherit stale from Phase 1 in the first place.
 
-**Nothing merged ⇒ nothing promoted, for free.** Findings only exist for branches that passed
-both verification gates and merged. A sprint that stalls on a broken environment reviewed nothing,
+**Nothing merged ⇒ nothing promoted, for free.** The feature review runs only at a drain where
+something merged. A sprint that stalls on a broken environment reviewed nothing,
 so the parked set is empty and flush is a no-op — no separate guard needed for that case.
 
 ## Report buckets
@@ -141,11 +143,11 @@ After a sprint with promotion, `sprint-review-<TIMESTAMP>.md` distinguishes thre
   severities), fixed in Phase 2, listed under the `## Promoted Findings` section that
   `promote-findings.sh defer` appends (`<branch>: actionable → <issue ref> (<n> finding(s))` or
   `<branch>: CRITICAL → <issue ref> (<n> finding(s))`; a marker from before the count ends at the ref).
-- **Open, needs human triage** — everything the rule did not cover on Phase 1 branches: Debatable
-  and Dismissed findings (each carries its verdict and rationale in the report), or under a
-  severity level LOW always, and MEDIUM unless `fixFindings` is `medium`.
-- **New, found reviewing the fixes** — findings of any severity raised against Phase 2 branches,
-  report-only via the depth bound.
+- **Open, needs human triage** — everything the rule did not cover: Debatable and Dismissed
+  findings (each carries its verdict and rationale in the report), or under a severity level LOW
+  always, and MEDIUM unless `fixFindings` is `medium`.
+- **Report-only** — findings of a feature review past the promotion cap, and open branch findings
+  an earlier version's per-branch reviews left in the report.
 
 `crew-address-findings` reads `## Promoted Findings` and skips what it covers — the promoted
 (branch, severity) pairs, and a branch's `actionable`-verdict findings where the line says
@@ -155,7 +157,7 @@ Debatable ones.
 ## End-of-sprint reminder
 
 Promotion is deliberately partial — Debatable and Dismissed findings are never promoted (under a
-severity level, LOW never is and MEDIUM is not by default), and Phase 2 findings are report-only —
+severity level, LOW never is and MEDIUM is not by default), and reviews past the cap are report-only —
 so a sprint can end with findings a human still has to look at. Every
 variant therefore ends by running `promote-findings.sh remind`, which counts the findings **not**
 covered by a `## Promoted Findings` marker (attributing each finding to the `## Branch:` section it
@@ -172,14 +174,9 @@ dismissed once a human reads them.
 ## Script interface
 
 ```bash
-# Depth bound: is this branch's issue itself a promoted fix issue? --severities is the list the
-# orchestrator resolved from afk.fixFindings (orchestrator/lib/report.mjs); the script keeps no
-# level table and exits 2 naming the argument when it is missing.
-bash "<skill-dir>/scripts/promote-findings.sh" guard --issue "<issue-file>" --severities "<list>"
-# → "guard: eligible — threshold: <list>" | "guard: skip — source-guarded ..."
-#   | "guard: skip — fixFindings is none" (empty list)
-
 # Park a fix issue and annotate the report. Criteria file = one "- [ ] <finding>" line per finding.
+# --severities is the list the orchestrator resolved from afk.fixFindings (orchestrator/lib/report.mjs);
+# the script keeps no level table and exits 2 naming the argument when it is missing.
 bash "<skill-dir>/scripts/promote-findings.sh" defer \
   --feature-slug "$FEATURE_SLUG" --branch "<reviewed-branch>" --slug "<issue-slug>" \
   --title "Fix review findings: <issue title>" \
@@ -225,8 +222,7 @@ bash "<skill-dir>/scripts/promote-findings.sh" mark-not-run \
 
 ## Reviews that never ran
 
-Promotion reads the review report, so a review that never completed promotes nothing. That is
-acceptable — review is advisory and no branch is blocked by it. What is not acceptable is the
+A review that never completed gives no verdict, so its branch does not merge (it is retained). What is not acceptable is the
 default failure shape: a dead dispatch writes no `--out` file, nothing is appended to `reviews/`,
 and `remind` globbing an empty directory prints `FINDINGS: none`. The sprint then reports a branch
 nobody reviewed as though it came back clean.

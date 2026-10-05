@@ -65,12 +65,11 @@ test("a missing script falls back without running anything", () => {
   assert.equal(ctx.files.length, 2);
 });
 
-test("both review schemas carry each finding's `issue`, where reviewer.md puts the design-standard marker", async () => {
+test("the feature review schema carries each finding's `issue`, where reviewer.md puts the design-standard marker; the branch schema has no findings", async () => {
   const { featureReviewPrompt } = await import("../../orchestrator/lib/prompts.mjs");
-  const fr = featureReviewPrompt({ featureBranch: "f", base: "b", reportPath: "/r" });
-  for (const p of [reviewPrompt(base), fr]) {
-    const json = JSON.parse(p.match(/```json\n([\s\S]*?)\n```/)[1]);
-    assert.deepEqual(Object.keys(json.findings[0]), ["severity", "location", "issue", "criterion"]);
-    assert.match(json.findings[0].issue, /Design standard \(criterion <n>\):/);
-  }
+  const schema = (p) => JSON.parse(p.match(/```json\n([\s\S]*?)\n```/)[1]);
+  const json = schema(featureReviewPrompt({ featureBranch: "f", base: "b", reportPath: "/r" }));
+  assert.deepEqual(Object.keys(json.findings[0]), ["severity", "location", "issue", "criterion"]);
+  assert.match(json.findings[0].issue, /Design standard \(criterion <n>\):/);
+  assert.deepEqual(schema(reviewPrompt(base)).findings, []);
 });

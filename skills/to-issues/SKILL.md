@@ -145,6 +145,8 @@ For each approved slice, execute the `publish` operation from `issue-tracker.md`
 
 **Acceptance criteria describe this slice's behaviour, not repo-wide hygiene.** A rule every change must follow that a check already enforces — a version bump, a changelog entry, lint — is not a criterion: the verify gate holds it, and as a per-issue criterion two parallel issues satisfy it with the same edit, which then merges away on one of them.
 
+A criterion that needs a paid run, a manual measurement or a person is not an acceptance criterion: no unattended coder can meet it, so the reviewer finds it unmet on every retry. It goes to the PRD's human steps or a `ready-for-human` issue.
+
 **Acceptance-criteria rubric.** The reviewer gates on these, so each criterion is:
 
 - one observable behaviour or consumed contract (a signature, shape or output another issue relies on), checkable from the diff plus the checks — never "tests pass";

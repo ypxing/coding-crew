@@ -111,7 +111,7 @@ export function criteriaSection(text) {
  * depth bound: findings raised against it are never promoted again.
  */
 export function isSourceGuarded(text) {
-  // Only where promote-findings.sh writes it: column 0, outside a ``` / ~~~ fence. Mirrors cmd_guard.
+  // Only where promote-findings.sh writes it: column 0, outside a ``` / ~~~ fence.
   let fence = "";
   for (const line of String(text).split("\n")) {
     if (fence) {

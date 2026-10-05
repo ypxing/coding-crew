@@ -104,7 +104,7 @@
       ]
     },
     "crew-address-findings": {
-      "version": "1.4.3",
+      "version": "1.4.4",
       "source-dir": "crew-address-findings",
       "description": "Triage and fix findings from a crew-afk code review report using TDD.",
       "install": ".claude/skills/crew-address-findings",
@@ -133,7 +133,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.12.0",
+      "version": "1.12.1",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",

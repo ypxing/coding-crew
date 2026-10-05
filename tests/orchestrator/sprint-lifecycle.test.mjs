@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, FIXTURE_ROOTS, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, privateScripts, failFirstCall, commandLines, test } from "./helpers/sprint.mjs";
+import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, FIXTURE_ROOTS, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, privateScripts, failFirstCall, commandLines, sprintReport, test } from "./helpers/sprint.mjs";
 
 // Spawned directly, not through sh(): sh() strips both vars, which is exactly what this
 // test needs set. `plan`, so no orca is ever called.
@@ -305,6 +305,49 @@ test("an unmet acceptance-criteria verdict retains the branch and closes nothing
   assert.match(s.retention.alpha.reason, /criteria-unmet/);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/ac.ok")), false);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true);
+});
+
+// Per-branch review is a criteria gate: findings come from the feature review alone (PRD D1).
+const branchReview = (verdict, findings) =>
+  `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict, detail: verdict === "unmet" ? "no test covers the criterion" : "", findings })}\n\`\`\`\n`;
+const strayFindings = [
+  { severity: "CRITICAL", location: "src/alpha.txt:1", issue: "Input is trusted", criterion: "Reject unsigned input before use" },
+  { severity: "LOW", location: "src/alpha.txt:2", issue: "Unclear name", criterion: "Rename the variable" },
+];
+const branchBlocks = (root) =>
+  sprintReport(root)
+    .split(/^## Branch: /m)
+    .filter((b) => b.startsWith("crew/demo/alpha "))
+    .map((b) => JSON.parse(/```json\n([\s\S]*?)\n```/.exec(b)[1]));
+
+test("a branch review whose report carries findings writes findings: [] and promotes nothing for that branch", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", branchReview("all-met", strayFindings));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const blocks = branchBlocks(root);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].verdict, "all-met");
+  assert.deepEqual(blocks[0].findings, []);
+  assert.ok(!lines.some((l) => /promote-findings\.sh.* defer /.test(l)), "no defer runs: the feature review found nothing either");
+  assert.ok(!lines.some((l) => /--agent crew-triage.* --slug \S*alpha-findings/.test(l)), "no findings triage for the branch");
+  assert.deepEqual(state(root).completed_slugs, ["alpha"], "no fix issue ran");
+  assert.equal(existsSync(join(root, ".scratch/demo/reviews/alpha.criteria.md")), false);
+});
+
+test("an unmet verdict whose report carries findings still retains the branch as criteria-unmet for its coder", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", branchReview("unmet", strayFindings));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  const s = state(root);
+  assert.deepEqual(s.merged_branches ?? [], []);
+  assert.match(s.retention.alpha.reason, /criteria-unmet/);
+  assert.ok(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length >= 2, "the coder is dispatched again on the unmet criteria");
+  for (const b of branchBlocks(root)) assert.deepEqual(b.findings, []);
+  assert.ok(!lines.some((l) => /promote-findings\.sh.* defer /.test(l)));
 });
 
 test("a review that produced nothing is a gap, not a clean pass", () => {

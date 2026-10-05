@@ -7,7 +7,7 @@ import { after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO, MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog, state, fake, workerReport, AUDIT_WITH_GAP, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, privateScripts, failFirstCall, test } from "./helpers/sprint.mjs";
+import { REPO, MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog, state, fake, workerReport, AUDIT_WITH_GAP, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, featureReviewFile, test } from "./helpers/sprint.mjs";
 
 // ─── GitHub tracker backend wiring ────────────────────────────────────────────
 //
@@ -284,11 +284,7 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
   const remote = join(root, ".scratch/remote.git");
   sh("git", ["init", "-q", "--bare", remote]);
   sh("git", ["-C", root, "remote", "set-url", "origin", remote]);
-  fake(
-    root,
-    "alpha.review",
-    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "all-met", findings: [{ severity: "MEDIUM", location: "somewhere in alpha", criterion: "Rename the variable" }] })}\n\`\`\`\n`,
-  );
+  fake(root, "feature.review", featureReviewFile([{ severity: "MEDIUM", location: "somewhere in alpha", criterion: "Rename the variable" }]));
   const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--open-pr"], {
     cwd: root,
     env: {
@@ -399,16 +395,13 @@ test("github PRDAudit fix: a gaps issue the listing does not show yet is still i
   assert.match(traceLog(root), /fix issue\(s\) listed after \d+ poll/);
 });
 
-test("github: a findings fix issue from the last branch, not listed yet, is still implemented", () => {
+test("github: a feature-review fix issue, not listed yet, is still implemented", () => {
   // The fix issue is created ready-for-agent as the queue drains; a listing that lags the
   // create must not end the sprint with it open.
   const root = githubFixtureRepo();
   const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
-  fake(
-    root,
-    "alpha.review",
-    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "all-met", findings: [{ severity: "HIGH", location: "somewhere in alpha", criterion: "Check the boundary" }] })}\n\`\`\`\n`,
-  );
+  fake(root, "feature.review", featureReviewFile([{ severity: "HIGH", location: "somewhere in alpha", criterion: "Check the boundary" }]));
+  fake(root, "feature.review-later", featureReviewFile([]));
   const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
     cwd: root,
     env: {
@@ -423,38 +416,10 @@ test("github: a findings fix issue from the last branch, not listed yet, is stil
     },
   });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  const fix = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.title === "Fix review findings: alpha");
+  const fix = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.title === "Fix feature review findings: demo");
   assert.ok(fix, `the findings fix issue was never created\n${traceLog(root)}`);
   assert.ok(fix.labels.some((l) => l.name === "awaiting-merge"), `the fix issue was never implemented\n${traceLog(root)}`);
   assert.doesNotMatch(r.stdout, /Fix issues not implemented/);
-});
-
-test("github: a branch whose merge fails creates no findings fix issue", () => {
-  const root = githubFixtureRepo();
-  const { stub, issuesFile } = stubGh(root, [GH_ALPHA]);
-  fake(
-    root,
-    "alpha.review",
-    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "all-met", findings: [{ severity: "HIGH", location: "somewhere in alpha", criterion: "Check the boundary" }] })}\n\`\`\`\n`,
-  );
-  const scripts = privateScripts();
-  failFirstCall(scripts, "merge-branches.sh", join(root, ".scratch/merge-fail.marker"), "MERGE: forced failure for test");
-  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
-    cwd: root,
-    env: {
-      ...process.env,
-      CREW_SCRIPTS: scripts,
-      CREW_MAX_ROUNDS: "1",
-      CREW_FAKE_DISPATCH: FAKE,
-      CREW_FAKE_DIR: join(root, ".scratch/fake"),
-      MAIN_ROOT: root,
-      CREW_GITHUB_TRACKER_CLI: join(REPO, "orchestrator/lib/trackers/github.mjs"),
-      PATH: `${stub}:${process.env.PATH}`,
-    },
-  });
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  const issues = JSON.parse(readFileSync(issuesFile, "utf8"));
-  assert.ok(!issues.some((i) => i.title === "Fix review findings: alpha"), `a fix issue was created for an unmerged branch\n${traceLog(root)}`);
 });
 
 test("a gaps issue that could not be created is named in the summary, not only the trace", () => {
