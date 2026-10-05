@@ -156,10 +156,10 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   // disagree. The `## Branch:` heading is for humans; parseReviewAggregate reads only the
   // fenced json. Findings come from the feature review alone: any a branch report still
   // carries are dropped here, so none reaches a fix issue. What an earlier version's report
-  // left open for this branch is carried into the block (the rollup keeps only the last one),
-  // so it stays listed for a human — with its verdict, which is what a fix issue's
+  // left open for this branch is carried into the block, so it stays listed for a human even
+  // to a reader of this one block or report file — with its verdict, which is what a fix issue's
   // `actionable` Promoted Findings line was decided on. `criteria_only` tells the fold
-  // (foldReview) this block judged no findings, so those findings stay listed past it too.
+  // (foldReview) this block judged no findings, so the rollup keeps them listed past it too.
   mkdirSync(sprint.reviewDir, { recursive: true });
   const reviewedBranch = sidecar.branch ?? branch;
   parsed.findings = [];
