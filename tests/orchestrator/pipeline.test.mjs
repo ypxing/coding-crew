@@ -8,7 +8,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { issueFingerprint } from "../../orchestrator/lib/trackers/body-format.mjs";
-import { RESUME_MAX_CONTEXT_TOKENS, mayResumeCoderSession, resumableSession, resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
+import { CONFLICT_ROLE, RESUME_MAX_CONTEXT_TOKENS, mayResumeCoderSession, resumableSession, resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
+import { Sprint } from "../../orchestrator/lib/sprint.mjs";
 import { isTestPath } from "../../orchestrator/lib/pipeline/review.mjs";
 import { resumeNote } from "../../orchestrator/lib/prompts.mjs";
 
@@ -134,4 +135,18 @@ test("a fix round never resumes a session after a conflict dispatch ran in the s
   assert.equal(mayResumeCoderSession({ ...base, enabled: false }), false);
   assert.equal(mayResumeCoderSession({ ...base, route: "restart" }), false);
   assert.equal(mayResumeCoderSession({ ...base, runtime: "pi" }), false);
+});
+
+test("a conflict dispatch's session is recorded under its own role, so a fix round at the same tip starts fresh", () => {
+  const ledger = [
+    { slug: "alpha", role: "coder", session_id: "s-coder", head: "old", context_tokens: 10 },
+    { slug: "alpha", role: CONFLICT_ROLE, session_id: "s-conflict", head: "merged", context_tokens: 10 },
+  ];
+  const sprint = { readState: () => ({ dispatches: ledger }), lastDispatch: Sprint.prototype.lastDispatch };
+  assert.notEqual(CONFLICT_ROLE, "coder");
+  const pick = resumableSession(sprint.lastDispatch("alpha", "coder"), "merged");
+  assert.equal(pick.sessionId, undefined, "the conflict session is not resumable");
+  assert.match(pick.reason, /moved/);
+  const only = { readState: () => ({ dispatches: ledger.slice(1) }), lastDispatch: Sprint.prototype.lastDispatch };
+  assert.match(resumableSession(only.lastDispatch("alpha", "coder"), "merged").reason, /no earlier coder session/);
 });

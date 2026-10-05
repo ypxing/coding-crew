@@ -128,6 +128,37 @@ for (const [label, retained, setup] of [
   });
 }
 
+// The conflict dispatch is recorded under its own role: a fix attempt at the same tip must not
+// resume it as the coder's session. Attempt 1 is a verify route (review-not-run) whose sync
+// conflicts; its review then finds the criteria unmet, so attempt 2 is a fix round.
+test("a fix attempt after a verify-route attempt's conflict dispatch starts a fresh coder session", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.shared");
+  fake(root, "alpha.review-once", "2");
+  const first = commandLines(root, ["--max-rounds", "1"], { platform: "claude" });
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  assert.match(state(root).retention?.alpha?.reason ?? "", /^review-not-run — /);
+
+  rmSync(join(root, ".scratch/fake/alpha.review-once"), { force: true });
+  rmSync(join(root, ".scratch/fake/alpha.review-once.calls"), { force: true });
+  rmSync(join(root, ".scratch/fake/alpha.shared"), { force: true });
+  fake(root, "alpha.review", `\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "AC 1 has no test", findings: [] })}\n\`\`\`\n`);
+  addIssue(root, "00-beta.md");
+  fake(root, "beta.shared");
+  commandLines(root, ["--max-parallel", "1", "--resume-coder-session"], { platform: "claude" });
+
+  const log = traceLog(root);
+  assert.match(log, /\[SYNC-CONFLICT-KEPT\] slug=alpha /);
+  assert.match(log, /slug=01-alpha round=1 step=dispatch-conflict/);
+  assert.match(log, /\[FRESH-SESSION\] slug=alpha round=2 /, log);
+  assert.doesNotMatch(log, /\[RESUME-SESSION\] slug=alpha/);
+  const ledger = state(root).dispatches.filter((d) => d.slug === "alpha");
+  const conflict = ledger.find((d) => d.role === "conflict");
+  assert.ok(conflict?.head, "the conflict dispatch is recorded under its own role");
+  assert.equal(ledger.some((d) => d.role === "coder" && d.head === conflict.head), false, "no coder entry at the conflict's tip");
+});
+
 test("a conflict dispatch that leaves the merge unresolved is judged by git, and the original route does not run", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

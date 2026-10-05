@@ -256,6 +256,11 @@ export class Effects {
       head = GIT_HEAD_MOVING.has(sub);
       branch = head || (GIT_BRANCH_MOVING.has(sub) && !(sub === "worktree" && next !== "add"));
     } else if (cmd === "bash" && REF_MOVING_SCRIPTS.has(basename(args[0] ?? ""))) {
+      // Run inside a worktree (a sync's resolve-merge-conflicts.sh), it moves only that worktree's branch.
+      if (real(cwd) !== real(this.mainRoot)) {
+        this.touched.push(real(cwd));
+        return;
+      }
       head = branch = true;
     }
     if (head) this.mainMoves++;

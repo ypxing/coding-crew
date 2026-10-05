@@ -108,3 +108,16 @@ test("a worker in a worktree reached through a symlink is still its own branch's
   const r = await readOnlyDispatch(ctx, ALPHA, () => effects.inWorktree(join(link, "beta"), async () => commit(join(root, "beta"))));
   assert.equal(r.violation, undefined);
 });
+
+test("a sync's resolve-merge-conflicts.sh in another issue's worktree is not blamed on, nor hides, a reviewer moving the feature branch", async (t) => {
+  const { root, main, commit, ctx, effects, logs } = fixture(t);
+  const r = await readOnlyDispatch(ctx, ALPHA, async () => {
+    effects.noteRefActivity("bash", ["/x/resolve-merge-conflicts.sh"], join(root, "beta"));
+    commit(main);
+  });
+  assert.equal(effects.mainMoves, 0);
+  assert.equal(effects.branchMoves, 0);
+  assert.ok(effects.touched.some((p) => p.endsWith("/beta")));
+  assert.match(r.violation ?? "", /refs\/heads\/feature\/demo/);
+  assert.match(logs.join("\n"), /\[READONLY-VIOLATION\] reviewer alpha/);
+});

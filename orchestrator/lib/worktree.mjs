@@ -223,10 +223,11 @@ export function mergeFeatureBranch(effects, { worktree, branch, featureBranch, k
     { cwd: worktree },
   );
   if (r.code !== 0) {
-    const resolved = effects.bash("resolve-merge-conflicts.sh", [], { cwd: worktree });
+    // HEAD is the issue branch here, the reverse of merge-branches.sh's merge.
+    const resolved = effects.bash("resolve-merge-conflicts.sh", ["--head-is-branch"], { cwd: worktree });
     if (resolved.code === 0) {
       const c = effects.git(["commit", "--no-verify", "-q", "-m", `Merge '${featureBranch}' into '${branch}'`], { cwd: worktree });
-      if (c.code === 0) return { merged: true, autoResolved: true };
+      if (c.code === 0) return { merged: true, autoResolved: true, decisions: resolved.stdout.split("\n").filter(Boolean) };
     }
   }
   if (r.code !== 0 && keepConflict) {
