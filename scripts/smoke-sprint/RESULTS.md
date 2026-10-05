@@ -8,3 +8,4 @@ clean tree.
 
 | version | date | result | cost | dispatch-hours | findings |
 |---|---|---|---|---|---|
+| 2.21.0 | 2026-10-05 | PASS | $0.74 | 0.04 | 0 |
