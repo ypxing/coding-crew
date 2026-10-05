@@ -215,7 +215,8 @@ setup() {
 @test "to-issues: under github, existing milestone issues' bodies are --known files whose Implements count toward coverage" {
   grep -qF 'write its body (`gh issue view <n> --json body -q .body`) to `.scratch/<feature-slug>/.lint/known/<n>-<slug>.md`' "$SKILL_FILE"
   grep -qF 'an existing `--known` file'"'"'s `## Implements` counts toward `--prd` coverage' "$SKILL_FILE"
-  ! grep -qF 'a name only — never opened or linted' "$SKILL_FILE"
+  run grep -qF 'never opened' "$SKILL_FILE"
+  [ "$status" -ne 0 ]
 }
 
 @test "to-issues: a new parser/validator/gate gets a criterion over the repo's existing examples, as committed fixtures" {
