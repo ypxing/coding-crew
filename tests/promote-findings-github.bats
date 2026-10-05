@@ -506,6 +506,48 @@ EOF
   no_local_paths
 }
 
+# write_feature_review [prose] — a feature review of 11 promotable findings, the last 3 of which the
+# promotion cap marked report_only (feature-review.mjs's markReportOnly runs before defer).
+write_feature_review() {
+  json=$(jq -n '{branch: "feature", slug: "feature", verdict: "all-met",
+    findings: [range(1; 12) | {severity: "HIGH", location: "src/f\(.).ts:\(.)", criterion: "fix finding-\(.)-text",
+      verdict: "actionable"} + (if . > 8 then {report_only: true} else {} end)]}')
+  {
+    printf '## Branch: feature (feature)\n\n```json\n%s\n```\n\n' "$json"
+    if [ "${1:-}" = prose ]; then
+      for i in $(seq 1 11); do
+        printf '[HIGH] finding-%s-title\nFile: src/f%s.ts:%s\nIssue: finding-%s-text\nFix: fix it\n\n' "$i" "$i" "$i" "$i"
+      done
+    fi
+  } > "$REPORT"
+  for i in $(seq 1 8); do printf -- '- [ ] [HIGH] fix finding-%s-text (src/f%s.ts:%s)\n' "$i" "$i" "$i"; done > crit.md
+}
+
+@test "a feature fix issue's ## Review findings holds only the promoted 8 of 11, never the report-only overflow (prose)" {
+  configure_github
+  stub_gh
+  write_feature_review prose
+
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch feature --slug feature \
+    --title "Fix review findings: feature" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^## Review findings$' "$GH_LAST_BODY"
+  for i in $(seq 1 8); do grep -q "^<summary>\[HIGH\] finding-$i-title</summary>$" "$GH_LAST_BODY"; done
+  [ "$(grep -c '^<summary>' "$GH_LAST_BODY")" -eq 8 ]
+  for i in 9 10 11; do absent -q "finding-$i-"; absent -q "src/f$i.ts"; done
+}
+
+@test "a feature fix issue's ## Review findings holds only the promoted 8 of 11, never the report-only overflow (json)" {
+  configure_github
+  stub_gh
+  write_feature_review
+
+  bash "$PROMOTE" defer --severities "HIGH" --feature-slug feat --branch feature --slug feature \
+    --title "Fix review findings: feature" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^## Review findings$' "$GH_LAST_BODY"
+  [ "$(grep -c '^- \*\*\[HIGH\]\*\*' "$GH_LAST_BODY")" -eq 8 ]
+  for i in 9 10 11; do absent -q "finding-$i-"; absent -q "src/f$i.ts"; done
+}
+
 @test "defer scrubs absolute and .scratch paths quoted in a finding" {
   configure_github
   stub_gh

@@ -251,10 +251,12 @@ _review_branch_prose() {
 # <severities> is a list such as "CRITICAL, HIGH", or `actionable`, which keeps the blocks whose
 # location the findings triage judged actionable (that verdict sits in the block's json, not its
 # prose; a folded duplicate_of target's location lists both spots, each matched on its own). Where the prose has no block to keep, the json's one-line findings are listed instead,
-# so a promoted finding is never absent from the body.
+# so a promoted finding is never absent from the body. A finding marked `report_only` (the promotion
+# cap's overflow, marked before defer runs) is no criterion of this issue, so neither path lists it.
 _review_findings_md() {
-  local report="$1" branch="$2" severities="$3" locs="" sevs="" rollup
+  local report="$1" branch="$2" severities="$3" locs="" sevs="" ro rollup
   rollup="$(review_rollup "$report")"
+  ro="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.report_only == true) | .location | select(. != "")' <<< "$rollup" 2>/dev/null || true)"
   if [ "$severities" = "actionable" ]; then
     locs="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.verdict == "actionable") | .location | split(", ")[]' <<< "$rollup" 2>/dev/null || true)"
   else
@@ -263,15 +265,24 @@ _review_findings_md() {
 
   local out
   # locs is one location per line: passed through the environment, since BSD awk rejects a newline in a -v value.
-  out="$(_review_branch_prose "$report" "$branch" | PF_LOCS="$locs" awk -v sevs="$sevs" \
+  out="$(_review_branch_prose "$report" "$branch" | PF_LOCS="$locs" PF_RO="$ro" awk -v sevs="$sevs" \
       -v maxb="$FINDINGS_MAX_BYTES" -v maxl="$FINDING_MAX_LINES" '
-    BEGIN { locs = ENVIRON["PF_LOCS"] }
+    BEGIN { locs = ENVIRON["PF_LOCS"]; ro = ENVIRON["PF_RO"] }
+    # has(s, loc): s names loc, not a longer location it prefixes (src/x.ts:4 within src/x.ts:41).
+    function has(s, loc,   p) {
+      while ((p = index(s, loc)) > 0) {
+        if (substr(s, p + length(loc), 1) !~ /[[:alnum:]_.]/) return 1
+        s = substr(s, p + 1)
+      }
+      return 0
+    }
     function flush(   i, n, lines, m, L, ok, title, body, fences, entry) {
       if (blk == "") return
       n = split(blk, lines, "\n")
       if (sevs != "") ok = (index("," sevs ",", "," sev ",") > 0)
-      else if (locs != "") { ok = 0; m = split(locs, L, "\n"); for (i = 1; i <= m; i++) if (L[i] != "" && index(blk, L[i]) > 0) ok = 1 }
+      else if (locs != "") { ok = 0; m = split(locs, L, "\n"); for (i = 1; i <= m; i++) if (L[i] != "" && has(blk, L[i])) ok = 1 }
       else ok = 1
+      if (ok && ro != "") { m = split(ro, L, "\n"); for (i = 1; i <= m; i++) if (L[i] != "" && has(blk, L[i])) ok = 0 }
       if (ok) {
         title = lines[1]; gsub(/^[ \t]+|[ \t]+$/, "", title)
         gsub(/&/, "\\&amp;", title); gsub(/</, "\\&lt;", title); gsub(/>/, "\\&gt;", title)
@@ -297,7 +308,9 @@ _review_findings_md() {
     out="$(jq -r --arg b "$branch" --arg sevs "$sevs" --arg locs "$locs" '
       ($locs | split("\n")) as $l
       | .branches[] | select(.branch == $b) | .findings[]?
-      | select(if $sevs != "" then ((","+$sevs+",") | contains(","+.severity+","))
+      | select(.report_only != true)
+      | .severity as $s
+      | select(if $sevs != "" then ((","+$sevs+",") | contains(","+$s+","))
                elif $locs != "" then (.location as $x | any($l[]; . != "" and . == $x))
                else true end)
       | "- **[\(.severity)]** `\(.location)` — \(.criterion)"' <<< "$rollup" 2>/dev/null || true)"
