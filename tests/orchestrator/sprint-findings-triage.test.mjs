@@ -314,6 +314,32 @@ test("a pre-upgrade report's branch finding stays open after the branch is re-re
   assert.equal(alpha[0].carried, true);
 });
 
+test("a pre-upgrade report's branch finding stays open past a not_run stub and an all-met re-review", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Run 1, by an earlier version: unmet with a HIGH finding; a later dispatch left no review, so mark-not-run wrote a stub.
+  mkdirSync(join(root, ".scratch/demo/reviews"), { recursive: true });
+  const block = (obj) => `## Branch: crew/x/alpha (alpha)\n\n\`\`\`json\n${JSON.stringify(obj)}\n\`\`\`\n`;
+  writeFileSync(
+    join(root, ".scratch/demo/reviews/sprint-review-00000000-000000.md"),
+    `${block({ branch: "crew/x/alpha", slug: "alpha", verdict: "unmet", detail: "alpha exists: missing", findings: [retryHigh] })}\n` +
+      block({ branch: "crew/x/alpha", slug: "alpha", verdict: "not_run", detail: "no report.json", findings: [] }),
+  );
+  // Run 2: the same branch is re-reviewed all-met, with no findings.
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const open = JSON.parse(
+    sh("bash", [join(SCRIPTS, "promote-findings.sh"), "open", "--feature-slug", "demo"], {
+      cwd: root,
+      env: { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") },
+    }).stdout,
+  );
+  const alpha = open.filter((f) => f.branch === "crew/x/alpha");
+  assert.equal(alpha.length, 1, JSON.stringify(open));
+  assert.equal(alpha[0].severity, "HIGH");
+  assert.equal(alpha[0].carried, true);
+});
+
 test("a pre-upgrade report's actionable branch finding a fix issue took stays covered after the branch is re-reviewed all-met", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
