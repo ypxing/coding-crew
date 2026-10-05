@@ -130,8 +130,9 @@ re-verified next round with no triage and no coder (`pipeline/verify.mjs`).
 
 A retained branch is first synced with the feature branch (`pipeline.mjs`), in three steps: `mergeFeatureBranch` commits what
 `resolve-merge-conflicts.sh` resolves; any other conflict gets its own conflict-only `coder` dispatch (`conflictPrompt`, at most
-one per attempt, outside the retry cap and `MAX_DISPATCHES_PER_ISSUE`) whose success is read from git, not its report; then the
-original route (`restart`, `fix`, `verify`) runs with a prompt that has no conflict text.
+one per attempt, outside the retry cap and `MAX_DISPATCHES_PER_ISSUE`) whose success is read from git, not its report
+(no `MERGE_HEAD`, nothing unmerged, HEAD containing the feature sha the sync merge started from, not the live ref a sibling
+may have moved since); then the original route (`restart`, `fix`, `verify`) runs with a prompt that has no conflict text.
 
 A retry re-reads an issue a human edited since the attempt that retained its branch: `state.sh retain` records a `sha256`
 fingerprint of the issue's `## What to build` and `## Acceptance criteria` (checkbox marks normalised, so the `Status:` line,

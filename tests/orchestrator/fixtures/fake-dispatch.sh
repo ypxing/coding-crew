@@ -41,7 +41,11 @@
 #                         its worktree: a verify that passes on files the branch does not carry.
 #   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
 #                         of resolving it, so the branch conflicts again at the merge gate.
-#   <slug>.exit           exit with this code instead of 0
+#   <slug>.advance-feature  a worker dispatched into a merge in progress first commits
+#                         src/late.txt to the feature branch in the main checkout (a sibling
+#                         merging while the conflict dispatch runs), then resolves the merge
+#                         of the earlier tip as usual.
+#   <slug>.exit          exit with this code instead of 0
 #   <slug>.worker-sleep   "<seconds> [N]": the worker commits, then sleeps that long on its
 #                         first N calls (every call when N is absent) — with a fractional
 #                         --coder-timeout, a coder that times out after making progress.
@@ -251,6 +255,13 @@ if [ "$NOCOMMIT" -eq 0 ]; then
       if [ -f "$FAKE_DIR/$SLUG.no-resolve" ]; then
         git merge --abort >/dev/null 2>&1
         exit 0
+      fi
+      if [ -f "$FAKE_DIR/$SLUG.advance-feature" ]; then
+        MAIN="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+        mkdir -p "$MAIN/src"
+        echo "late" > "$MAIN/src/late.txt"
+        git -C "$MAIN" add src/late.txt
+        git -C "$MAIN" -c user.email=fake@test -c user.name=fake commit -q -m "feat: late sibling" >/dev/null 2>&1
       fi
       for f in $(git diff --name-only --diff-filter=U); do
         { git show ":2:$f"; git show ":3:$f"; } | awk '!seen[$0]++' > "$f"
