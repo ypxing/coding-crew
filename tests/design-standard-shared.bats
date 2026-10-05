@@ -106,6 +106,22 @@ assert_standard_absent_from() {
   done
 }
 
+@test "the reviewer role renders the standard, for every platform" {
+  for p in claude copilot pi codex; do
+    assert_standard_in "$(role_prompt reviewer "$p")"
+    ! grep -q '{{FRAGMENT' "$(role_prompt reviewer "$p")"
+  done
+  grep -q '^{{FRAGMENT:design-standard}}$' "$REPO_ROOT/orchestrator/roles/reviewer.md"
+}
+
+@test "the reviewer applies criteria 2-4, at LOW with file:line and a snippet, never as an unmet criterion" {
+  local f; f="$(role_prompt reviewer claude)"
+  grep -qF 'criteria 2–4' "$f"
+  grep -qF 'design-only finding' "$f"
+  grep -qF 'at `LOW`, only with its exact `file:line` and a snippet' "$f"
+  grep -qF 'never makes an acceptance criterion `unmet`' "$f"
+}
+
 @test "to-issues renders the standard, for every platform" {
   for p in claude copilot pi codex; do
     run rendered_skill to-issues "$p"
