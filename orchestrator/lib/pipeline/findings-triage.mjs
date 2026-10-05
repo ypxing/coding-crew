@@ -4,8 +4,8 @@
  * severity; the severity values keep their old meaning and dispatch nothing.
  *
  * The judgement is a dispatch of its own, never the reviewer's: a review does not grade its own
- * findings. The hard rules (an ADR contradiction, a protected path) are applied here, in code, after
- * triage answers (report.mjs's applyFindingVerdicts). A triage that leaves no usable verdict — a
+ * findings. The hard rules (an ADR contradiction, a protected path, a design-standard-only finding)
+ * are applied here, in code, after triage answers (report.mjs's applyFindingVerdicts). A triage that leaves no usable verdict — a
  * dead dispatch, a timeout, a spent `afk.limits.triage` cap, output that does not parse — falls
  * back to the `high` severity rule and is recorded on the sprint for the summary to say so.
  *
