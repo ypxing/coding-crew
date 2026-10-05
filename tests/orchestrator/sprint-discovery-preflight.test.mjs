@@ -304,6 +304,7 @@ test("a feature branch that fails its own checks stops the run, and no issue is 
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-(?!coder)/.test(l)).length, 0, "no reviewer or triage");
   assert.equal(lines.filter((l) => /verify-worktree\.sh --dir \S+ --stem alpha/.test(l)).length, 0, "no issue is verified before the baseline verdict");
   assert.equal(state(root).baseline.verdict, "fail");
+  assert.deepEqual([state(root).last_exit.reason, state(root).last_exit.code], ["baseline red", 1]);
   // The throwaway worktree and its branch are gone.
   assert.equal(sh("git", ["-C", root, "branch", "--list", "crew/demo/_baseline"]).stdout.trim(), "");
   assert.equal(existsSync(join(root, ".scratch/worktrees/crew/demo/_baseline")), false);

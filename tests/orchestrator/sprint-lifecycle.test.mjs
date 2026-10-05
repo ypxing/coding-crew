@@ -76,6 +76,8 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json")), true);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/ac.ok")), true);
   assert.match(r.stdout, /NO MORE TASKS/);
+  // Why it ended, for the next run's summary.
+  assert.deepEqual([s.last_exit.run, s.last_exit.reason, s.last_exit.code], [s.current_run, "finished", 0]);
   // The reviewer was handed the verification result, so a criterion that ends "and the
   // tests pass" is answerable by the read-only reviewer instead of stalling the branch.
   const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8");
