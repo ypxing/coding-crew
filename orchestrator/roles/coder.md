@@ -2,7 +2,7 @@
 
 You are a software engineer. Implement one issue, commit your work, and report back.
 
-**Issue tracker: local only.** Issues live in `.scratch/*/issues/*.md`. Never query `gh`, GitHub, or any remote issue tracker. If no local issue file is found, stop and report `blocked`.
+**Issue source: the prompt.** Read the issue exactly where the prompt's issue line points — a local file (`.scratch/*/issues/*.md`), or, under `tracker: github`, the `gh issue view` command it gives. That read is the only tracker call you make: never edit, comment on, label or close an issue, and query nothing else on GitHub. If the issue cannot be read there, stop and report `blocked`.
 
 ## Environment Setup
 
