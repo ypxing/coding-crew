@@ -313,3 +313,53 @@ H106="tests/fixtures/lint-issues/human/issues/106-enable-main-ruleset.md"
   [[ "$output" == *"no ## What to build section"* ]]
   [[ "$output" == *"no ## Implements section"* ]]
 }
+
+# shared_issue <file> <blocked-by line> <body text> — a minimal well-formed issue naming paths in its body.
+shared_issue() {
+  printf 'Status: ready-for-agent\n\n## What to build\n\n%s\n\n## Implements\n\nD1\n\n## Blocked by\n\n%s\n\n## Acceptance criteria\n\n- [ ] a\n' "$3" "$2" > "$1"
+}
+
+@test "WARN: two unlinked issues naming the same file get exactly one warning, exit 0" {
+  d="$BATS_TEST_TMPDIR/s"; mkdir -p "$d"
+  shared_issue "$d/01-a.md" "None" "Edit \`src/a.ts\` and registry.json."
+  shared_issue "$d/02-b.md" "None" "Fix the bug at src/a.ts:10, see registry.json."
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep -c '^WARN ')" -eq 1 ]
+  [[ "$output" == "WARN $d/01-a.md: "*"$d/02-b.md"*"src/a.ts"* ]]
+  [[ "$output" != *registry.json* ]]
+}
+
+@test "shared file: no warning when one is Blocked by the other, directly or through a third issue" {
+  d="$BATS_TEST_TMPDIR/s"; mkdir -p "$d"
+  shared_issue "$d/01-a.md" "None" "Edit src/a.ts."
+  shared_issue "$d/02-b.md" "- 01-a.md" "Edit src/a.ts:10."
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *src/a.ts* ]]
+  shared_issue "$d/02-b.md" "- 03-c.md" "Edit src/a.ts:10."
+  shared_issue "$d/03-c.md" "- 01-a.md" "Edit src/c.ts."
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md" --issue "$d/03-c.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *src/a.ts* ]]
+}
+
+@test "shared file: no warning against a --known issue, a PRD link or a Blocked by path" {
+  d="$BATS_TEST_TMPDIR/s"; mkdir -p "$d"
+  shared_issue "$d/00-done.md" "None" "Edit src/a.ts."
+  shared_issue "$d/01-a.md" "- ../done/00-done.md" "Edit src/a.ts. PRD: https://example.com/x/y.md
+## Context Documents
+
+- PRD: .scratch/feat/PRD.md"
+  shared_issue "$d/02-b.md" "- ../done/00-done.md" "Edit src/b.ts.
+## Context Documents
+
+- PRD: .scratch/feat/PRD.md"
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md" --known "$d/00-done.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "header comment lists the shared-file WARN" {
+  sed -n '1,/^set -uo/p' "$LINT" | grep -q -i 'same file'
+}

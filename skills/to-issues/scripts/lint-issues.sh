@@ -21,7 +21,11 @@
 #        `## Interfaces`; no `## What to build`; no `## Implements`. A `Status: ready-for-human`
 #        issue instead gets: no `## For a human` section, or that section missing one of its five
 #        `###` parts (Why a person, What changes, Steps, If skipped or done wrong, Done when); it is
-#        exempt from the `## What to build` / `## Implements` warnings.
+#        exempt from the `## What to build` / `## Implements` warnings. Two issues that name the
+#        same file (a path with a `/`, `:<line>` dropped) with neither reaching the other through
+#        `## Blocked by` (directly or via other issues in the set): parallel coders may conflict on it.
+#        One WARN per pair, on the first file. Paths under `## Blocked by` / `## Context Documents`,
+#        under `.scratch/`, and in URLs do not count; --known issues are never read.
 #
 # The PRD ID contract: a line starting `- **D<n>**` or `- **B<n>**`. Without --prd (or with a PRD
 # that has no such IDs) the coverage check is skipped silently.
@@ -301,6 +305,56 @@ if [[ -n "$EDGE_LIST" ]]; then
     }
     END { for (n in nodes) if (state[n] == 0) visit(n) }
   ')
+fi
+
+# --- same file named by two issues with no Blocked by path between them ---
+# paths_of <file> — sorted unique file paths the issue names: a token with a `/` whose last part has
+# an extension. `src/a.ts:10` counts as src/a.ts; Blocked by / Context Documents, URLs and .scratch/ do not.
+paths_of() {
+  awk '
+    /^[ \t]*```/ { fence = !fence }
+    !fence && /^##[ \t]+/ && !/^###/ {
+      h = tolower($0); sub(/^##[ \t]+/, "", h); sub(/[ \t:]+$/, "", h)
+      skip = (h == "blocked by" || h == "context documents"); next
+    }
+    !skip { print }
+  ' "$1" \
+    | sed -E 's#[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]]*##g' \
+    | grep -o -E '[A-Za-z0-9_.~-]+(/[A-Za-z0-9_.-]+)+' \
+    | sed -E 's#^(\./)+##; s#\.+$##' \
+    | grep -E '/[^/]*[^/.]\.[A-Za-z0-9]+$' \
+    | grep -v -E '^\.scratch/' \
+    | sort -u || true
+}
+
+if ((${#NAMES[@]} > 1)); then
+  # "a b" for every b reachable from a over Blocked by / --deps edges.
+  REACH=$(printf '%s' "$EDGE_LIST" | sort -u | awk '
+    NF == 2 { adj[$1] = adj[$1] " " $2; nodes[$1] = 1 }
+    END {
+      for (a in nodes) {
+        split("", seen); n = 0; q[++n] = a
+        for (i = 1; i <= n; i++) {
+          m = split(adj[q[i]], parts, " ")
+          for (j = 1; j <= m; j++) if (!(parts[j] in seen)) { seen[parts[j]] = 1; q[++n] = parts[j]; print a, parts[j] }
+        }
+      }
+    }')
+  FILE_PATHS=()
+  for idx in "${!NAMES[@]}"; do FILE_PATHS[$idx]=$(paths_of "${PATHS[$idx]}"); done
+  for i in "${!NAMES[@]}"; do
+    [[ -n "${FILE_PATHS[$i]}" ]] || continue
+    for j in "${!NAMES[@]}"; do
+      ((j > i)) || continue
+      [[ -n "${FILE_PATHS[$j]}" ]] || continue
+      shared=$(comm -12 <(printf '%s\n' "${FILE_PATHS[$i]}") <(printf '%s\n' "${FILE_PATHS[$j]}") | paste -sd, - | sed 's/,/, /g')
+      [[ -n "$shared" ]] || continue
+      if printf '%s\n' "$REACH" | grep -q -x -F -e "${NAMES[$i]} ${NAMES[$j]}" -e "${NAMES[$j]} ${NAMES[$i]}"; then
+        continue
+      fi
+      warn "${PATHS[$i]}" "names the same file as ${PATHS[$j]} with no ## Blocked by between them: $shared (parallel coders may conflict)"
+    done
+  done
 fi
 
 # --- PRD coverage ---
