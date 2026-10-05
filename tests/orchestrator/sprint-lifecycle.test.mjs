@@ -90,6 +90,17 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.ok(coderPromptText.includes(`Project config: ${join(root, ".coding-crew")} `), coderPromptText);
 });
 
+test("a run that stops at its per-issue attempt cap records `attempt cap` as why it ended, not `finished`", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review-once", "2");
+  const r = runSprint(root, ["--max-rounds", "1"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /Round cap reached/);
+  const s = state(root);
+  assert.deepEqual([s.last_exit.run, s.last_exit.reason], [s.current_run, "attempt cap"]);
+});
+
 test("openPr off, something merged, local tracker: the summary ends with ## Next naming gh pr create and --open-pr", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

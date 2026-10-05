@@ -171,3 +171,23 @@ SH
   [ "$status" -eq 1 ]
   [[ "$output" == *"SMOKE: FAIL: "*"test -f missing.txt"* ]]
 }
+
+@test "a demo run whose checkout fails leaves a smoke repo the next run rebuilds without manual cleanup" {
+  make_demo
+  echo 0000000000000000000000000000000000000000 > "$DEMO/sha"
+  run "$SMOKE" claude --demo --dir "$D" --setup-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"cannot check out"* ]]
+  echo "$PIN" > "$DEMO/sha"
+  run "$SMOKE" claude --demo --dir "$D" --setup-only
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$D" rev-list --max-parents=0 HEAD)" = "$PIN" ]
+}
+
+@test "--demo --dir <relative> records the sprint's real cost, dispatch-hours and findings" {
+  make_demo
+  cd "$BATS_TEST_TMPDIR"
+  run "$SMOKE" claude --demo --dir smoke-rel
+  [ "$status" -eq 0 ]
+  [[ "$(tail -n 1 "$RESULTS")" == "| $VERSION | "*" | PASS | \$1.50 | 1.50 | 1 |" ]]
+}

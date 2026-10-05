@@ -587,9 +587,10 @@ async function main() {
   let resolved;
   let stalled;
   let wallCapped = false;
+  let attemptCapped = false;
   let exitCode = 0;
   let runError;
-  // Set where a run ends early after run-start; the others are read off stalled/wallCapped.
+  // Set where a run ends early after run-start; the others are read off stalled/wallCapped/attemptCapped.
   let endReason;
   let runStarted = false;
   let lockPath;
@@ -800,6 +801,7 @@ async function main() {
     const sprintResult = await runSprint(ctx);
     stalled = sprintResult.stalled;
     wallCapped = Boolean(sprintResult.wallCapped);
+    attemptCapped = Boolean(sprintResult.capped);
     if (sprintResult.baselineFailed) {
       fatal(baselineFailureMessage(sprint.featureBranch, sprintResult.baselineFailed));
       endReason = "baseline red";
@@ -819,7 +821,7 @@ async function main() {
     if (runStarted) {
       const reason = runError
         ? `error: ${String(runError?.message ?? runError).split("\n")[0]}`
-        : endReason ?? (wallCapped ? "wall-clock cap" : stalled ? "stalled" : "finished");
+        : endReason ?? (wallCapped ? "wall-clock cap" : stalled ? "stalled" : attemptCapped ? "attempt cap" : "finished");
       try {
         sprint.endRun(reason, exitCode);
       } catch (err) {

@@ -11,6 +11,12 @@ Head reports each case's expected miss in at least one of its two runs, and head
 | promote-after-merge-feature | base | 2/2 | triage-diff-inverted 1/2 | 3.0 | 3.0 | $2.51 |
 | promote-after-merge-feature | head | 2/2 | triage-diff-inverted 2/2 | 7.0 | 5.5 | $4.44 |
 
+> **Case change since these runs:** `promote-after-merge-207` was a `mode: branch` replay of #207's
+> per-branch review. The per-branch review now judges criteria only and raises no findings, so no case
+> asks for a defect to be caught as a per-branch finding: the case is now a `mode: feature` replay of
+> the feature review over #207's code (`4bcc149..b221314`). Its rows above are from the old branch mode
+> and are not comparable with a re-run.
+
 Mean distinct findings, head / base: promote-after-merge-207 n/a (within max(2x, +2)); promote-after-merge-feature 1.83x (within max(2x, +2))
 
 Total cost: $8.55 (judge included). Base `main`, head `worktree`, 2 run(s) each. Reviewers on opus, judge on opus.
@@ -32,14 +38,17 @@ Total cost: $8.55 (judge included). Base `main`, head `worktree`, 2 run(s) each.
 fixed on a crew-afk PR: `- <YYYY-MM-DD> <file:line> — <one-line summary> — <commit sha>`. Each is a
 defect crew-afk's reviewer passed. To replay one:
 
-1. Find the review that should have caught it: `git log --merges` on `feature/<slug>` for the merge
-   that brought `<file:line>`'s code in (a per-branch review, `mode: branch`), or the feature review
-   when no single issue owns it (`mode: feature`).
-2. Copy `case-template.md` to `cases/<name>.md`. Set `base_sha` / `head_sha` to that review's range —
-   never the fix commit from the escaped line, which is after it — and `via` to a ref that keeps them
-   reachable.
-3. Fill `## Issue`, `## Implements` and `## Acceptance criteria` from the issue (branch cases), and
-   `## PRD` from the PRD as it was at `head_sha`.
+1. Find the review that should have caught it. A finding comes from the feature review alone, so
+   an escaped defect is a `mode: feature` replay of the feature review that ran over its code:
+   `git log --merges` on `feature/<slug>` for the merge that brought `<file:line>`'s code in, and the
+   drain's review range that covered it (the whole feature from its merge-base, or the drain's
+   `reviewed_tip..tip` increment). `mode: branch` is reserved for a defect that should have made one
+   of the issue's acceptance criteria `unmet` in its per-branch review.
+2. Copy `case-template.md` to `cases/<name>.md` (its front matter defaults to `mode: feature`). Set
+   `base_sha` / `head_sha` to that review's range — never the fix commit from the escaped line, which
+   is after it — and `via` to a ref that keeps them reachable.
+3. Fill `## PRD` from the PRD as it was at `head_sha`. Only for a `mode: branch` case, also fill
+   `## Issue`, `## Implements` and `## Acceptance criteria` from the issue; a feature case drops them.
 4. Write `## Expected misses` from the escaped line's summary and the fix commit's diff, and
    `## Reference judgement` with what a report must say to count as caught.
 5. Check it parses and builds: `node scripts/eval-reviewer-misses.mjs --case <name> --runs 1 --dry-run`.

@@ -51,3 +51,12 @@ setup() {
   grep -qF 'Expected misses' <<<"$s"
   grep -qF -- '--dry-run' <<<"$s"
 }
+
+@test "an escaped defect is a mode: feature replay: the template defaults to it and no shipped case is a branch case" {
+  d="$REPO_ROOT/scripts/eval-reviewer-misses"
+  [ "$(sed -n '2p' "$d/case-template.md")" = "mode: feature" ]
+  s=$(sed -n '/^## From an escaped.md line to a case/,/^## /p' "$d/RESULTS.md")
+  grep -qF 'mode: feature' <<<"$s"
+  grep -qF 'mode: branch` is reserved' <<<"$s"
+  ! grep -lx 'mode: branch' "$d"/cases/*.md
+}

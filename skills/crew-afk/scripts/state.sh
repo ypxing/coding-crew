@@ -274,13 +274,17 @@ case "$CMD" in
     #
     # It also counts the run (`runs`, across invocations) and keeps why the one before ended
     # (`previous_exit`, for the summary): a `current_run` that wrote no matching `last_exit`
-    # (run-end) was killed or crashed before its own exit path ran.
+    # (run-end) was killed or crashed before its own exit path ran. run-start writes a
+    # `last_exit` key (null) itself, so a state with a `current_run` and no such key at all comes
+    # from a version that never wrote one: how that run ended is unknown, not a crash.
     run_id=$(flag id "" "$@")
     [ -n "$run_id" ] || die "run-start requires --id"
-    unended=$(jq -r 'if .current_run != null and (.last_exit.run // null) != .current_run then "yes" else "" end' "$SF")
+    unended=$(jq -r 'if .current_run != null and has("last_exit") and (.last_exit.run // null) != .current_run then "yes" else "" end' "$SF")
     edit_state --arg r "$run_id" --arg unended "$unended" '
       .previous_exit = (if $unended != "" then {run: .current_run, reason: "ended without an exit (killed or crashed)"}
+                        elif .current_run != null and (has("last_exit") | not) then {run: .current_run, reason: "unknown"}
                         elif .current_run != null then .last_exit else null end)
+      | .last_exit = (.last_exit // null)
       | .runs = ((.runs // 0) + 1)
       | .current_run = $r'
     if [ -n "$unended" ]; then

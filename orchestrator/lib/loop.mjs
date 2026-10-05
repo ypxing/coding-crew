@@ -398,7 +398,7 @@ export async function runSprint(ctx) {
   held.clear();
 
   await wrapUp(ctx, { tracker, stalled, capped, wallCap, prdAudit, unlisted, integration, integrationFixes, featureReviews });
-  return { stalled, wallCapped: Boolean(wallCap), history };
+  return { stalled, capped, wallCapped: Boolean(wallCap), history };
 }
 
 /**
