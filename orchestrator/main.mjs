@@ -119,6 +119,7 @@ import {
   dirtyTrackedFiles,
   dockerDepsFailureMessage,
   checkRequires,
+  dropStaleRetained,
   lintFailureMessage,
   lintIssues,
   missingAssets,
@@ -737,6 +738,10 @@ async function main() {
       exitCode = 1;
       return exitCode;
     }
+
+    // Before anything reads retention (the claims, the summary, the PR's draft reasons): a record
+    // whose issue is closed or gone, or whose branch is gone, is one no run can retry.
+    dropStaleRetained({ sprint, effects, options, log: emit }, await getTracker(mainRoot));
 
     // Before command discovery (a model call) and any worktree: a cycle or an unmatched
     // `## Blocked by` is cheaper to fix in the issue files than after a coder ran on them.

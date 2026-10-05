@@ -273,6 +273,48 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ "$output" = "no retention record" ]
 }
 
+@test "state.sh drop-retained removes a slug's retention and leaves the others, so it no longer counts as partial" {
+  init_sprint calc
+  state retain --slug first --branch crew/calc/first --reason verification-failed:fixable >/dev/null
+  state retain --slug second --branch crew/calc/second --reason partial >/dev/null
+
+  run state drop-retained --slug first --reason "issue closed"
+  [ "$status" -eq 0 ]
+  [ "$output" = "STATE: drop-retained slug=first branch=crew/calc/first — issue closed" ]
+  [ "$(jq -r '.retained_branches.first // "gone"' .scratch/calc/sprint-state.json)" = "gone" ]
+  [ "$(jq -r '.retention.first // "gone"' .scratch/calc/sprint-state.json)" = "gone" ]
+  run state get partial
+  [ "$output" = "second" ]
+  run state get retained
+  [ "$output" = "crew/calc/second" ]
+  grep -q "drop-retained slug=first" .scratch/calc/traces/orchestrator.log
+}
+
+@test "state.sh drop-retained keeps a blocked slug unless --issue-gone says its issue left the tracker" {
+  init_sprint calc
+  state blocked --slug first --branch crew/calc/first --reason "tests red" --number 7 >/dev/null
+  state drop-retained --slug first --reason "branch gone" >/dev/null
+  [ "$(jq -r '.retention.first // "gone"' .scratch/calc/sprint-state.json)" = "gone" ]
+  run state get blocked
+  [ "$output" = "first" ]
+
+  state drop-retained --slug first --reason "issue closed" --issue-gone >/dev/null
+  run state get blocked
+  [ "$output" = "" ]
+  [ "$(jq -r '.blocked_labelled.first // "gone"' .scratch/calc/sprint-state.json)" = "gone" ]
+  [ "$(jq -r '.blocked_reasons.first // "gone"' .scratch/calc/sprint-state.json)" = "gone" ]
+}
+
+@test "state.sh drop-retained on a slug with no record is a no-op, and requires --slug" {
+  init_sprint calc
+  run state drop-retained --slug never-ran
+  [ "$status" -eq 0 ]
+  [ "$output" = "STATE: drop-retained slug=never-ran — no record" ]
+  run state drop-retained
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--slug"* ]]
+}
+
 @test "state.sh refuses to guess which sprint it is bookkeeping for" {
   mkdir -p .scratch/aaa/issues/open .scratch/zzz/issues/open
   echo '{"feature_slug":"aaa"}' > .scratch/aaa/sprint-state.json

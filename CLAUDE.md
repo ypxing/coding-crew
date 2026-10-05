@@ -156,7 +156,9 @@ are not re-linted. Polling stops when nothing is in flight; with `0`, a new issu
 
 Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the resumed feature branch gets `origin/<default>`
 merged in when it lacks it (`sync-feature-branch.sh`; a conflict beyond registry versions / CHANGELOG appends stops the
-run, `--no-sync-main` skips; runs after the dirty check, before lint and the baseline); the assets under
+run, `--no-sync-main` skips; runs after the dirty check, before lint and the baseline); a retained-branch record whose issue
+is closed or absent from `listFeatureIssues`, or whose branch is gone, is dropped and logged (`dropStaleRetained` →
+`state.sh drop-retained`; an open issue with its branch is kept, a failed or empty listing drops nothing); the assets under
 `CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
 `orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked
 changes (`--allow-dirty`), the feature branch must pass its own checks in a throwaway

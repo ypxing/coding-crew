@@ -319,6 +319,12 @@ export class Sprint {
     if (fingerprint) args.push("--fingerprint", fingerprint);
     return this.state(args);
   }
+  /** A stale retention (preflight.mjs's dropStaleRetained); `issueGone` also forgets the slug's blocked entries. */
+  dropRetained(slug, reason, { issueGone = false } = {}) {
+    const args = ["drop-retained", "--slug", slug, "--reason", reason];
+    if (issueGone) args.push("--issue-gone");
+    return this.state(args);
+  }
   blocked(slug, branch, reason, number = null, fingerprint = null) {
     const args = ["blocked", "--slug", slug];
     if (number != null) args.push("--number", String(number));
