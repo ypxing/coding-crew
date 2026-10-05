@@ -133,25 +133,6 @@ test("a mid-run issue with a lint ERROR is blocked without stopping the others; 
   await run;
 });
 
-test("a fix issue this run created is not linted", async () => {
-  const h = harness({ pollInterval: 5, initial: ["a", "b"] });
-  h.ctx.stages.runHousekeeping = async (_c, w) => {
-    h.done.add(w.issue.slug);
-    return w.issue.slug === "b" ? { status: "complete", promotedRef: 9 } : { status: "complete" };
-  };
-  const run = runSprint(h.ctx);
-  await settle();
-  h.gates.get("b")(); // b finishes and files fix issue #9 while a is still running
-  await settle();
-  h.ready.push({ slug: "fix", number: 9 });
-  h.sleeps.shift()();
-  await settle();
-  assert.deepEqual(h.linted, []);
-  assert.deepEqual(h.started, ["a", "b", "fix"]);
-  h.gates.get("a")(); h.gates.get("fix")();
-  await run;
-});
-
 test("wall-clock cap: once elapsed nothing new is claimed, the running worker finishes, run is stalled and names the cap", async () => {
   const h = harness({ pollInterval: 0, parallel: 1 });
   let t = 0;

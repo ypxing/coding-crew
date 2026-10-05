@@ -257,7 +257,7 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
     "skipped): that stops the issue for a human, since no code change can help. Else `code`.",
     "",
     // Findings come from the feature review alone (PRD D1): this gate is criteria and decisions.
-    "A per-branch review writes `findings: []`: it judges the acceptance criteria and PRD decisions only.",
+    "A per-branch review writes `findings: []`: it is the criteria gate, and nothing more.",
     "The always-on classes and the design-standard checks apply only to a `Feature review:` dispatch.",
     "",
     // Same policy as the worker's resultBlock: the file is the only thing read. No fallback

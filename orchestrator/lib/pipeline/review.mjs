@@ -1,18 +1,17 @@
 /**
- * Gate 2, the independent review, and promotion of its findings into fix issues.
+ * Gate 2, the independent review: the acceptance criteria and PRD decisions, and no findings.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
-import { criteriaFile, reviewPrompt } from "../prompts.mjs";
+import { reviewPrompt } from "../prompts.mjs";
 import { decisionsFor } from "../prd-decisions.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { allFencedJson, carryFindings, parseReviewBlocks, parseReviewReport, promoteSeverities, severityNames } from "../report.mjs";
-import { promotedAs, selectPromotable } from "./findings-triage.mjs";
-import { dispatchIssueDir, dispatchStem, issueDescriptor, issueRef, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
+import { parseReviewReport } from "../report.mjs";
+import { dispatchIssueDir, dispatchStem, issueDescriptor, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /** A path that only tests: a test/spec file by name, or anything under a test or fixture dir. */
 export function isTestPath(path) {
@@ -143,128 +142,15 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
 
   // The aggregate is built from the sidecar's bytes, not the chat reply, so the two can't
   // disagree. The `## Branch:` heading is for humans; parseReviewAggregate reads only the
-  // fenced json.
+  // fenced json. Findings come from the feature review alone: any a branch report still
+  // carries are dropped here, so none reaches the report, the summary or a fix issue.
   mkdirSync(sprint.reviewDir, { recursive: true });
   const reviewedBranch = sidecar.branch ?? branch;
-  // What an earlier review of this branch raised and this one dropped stays in the block.
-  const earlier = readdirSync(sprint.reviewDir)
-    .filter((n) => /^sprint-review-.*\.md$/.test(n))
-    .sort()
-    .flatMap((n) => parseReviewBlocks(readFileSync(join(sprint.reviewDir, n), "utf8")))
-    .filter((rec) => rec.branch === reviewedBranch);
-  const merged = carryFindings(earlier, parsed.findings ?? []);
-  const carried = merged.slice((parsed.findings ?? []).length);
-  let written = sidecar;
-  if (carried.length) {
-    parsed.findings = merged;
-    written = {
-      ...sidecar,
-      findings: [
-        ...(Array.isArray(sidecar.findings) ? sidecar.findings : []),
-        ...carried.map(({ explicit, ...f }) => f),
-      ],
-    };
-  }
+  parsed.findings = [];
+  const written = { ...sidecar, findings: [] };
   const heading = `## Branch: ${reviewedBranch} (${sidecar.slug ?? issue.slug})`;
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
   writeFileSync(reportFile, `${existsSync(reportFile) ? readFileSync(reportFile, "utf8") : ""}${prefix}${block}\n`);
   return { completed: true, reportFile, parsed, written, reviewedSha };
-}
-
-/**
- * The newest review block of `branch` in the sprint review reports, shaped like runReview's
- * result, when it is all-met: what a merge-route retry (no review this round) promotes from.
- * Null too once any report's `## Promoted Findings` names the branch: an earlier run, from before
- * promotion followed the close, already made its fix issue.
- */
-export function savedAllMetReview(sprint, branch) {
-  if (!existsSync(sprint.reviewDir)) return null;
-  let found = null;
-  for (const name of readdirSync(sprint.reviewDir).filter((n) => /^sprint-review-.*\.md$/.test(n)).sort()) {
-    const reportFile = join(sprint.reviewDir, name);
-    const text = readFileSync(reportFile, "utf8");
-    const promoted = text.split(/^## Promoted Findings$/m).slice(1).join("\n");
-    if (promoted.split("\n").some((l) => l.startsWith(`- ${branch}: `))) return null;
-    const written = allFencedJson(text, "verdict").filter((o) => o.branch === branch);
-    const recs = parseReviewBlocks(text).filter((r) => r.branch === branch);
-    if (recs.length) found = { reportFile, parsed: recs.at(-1), written: written.at(-1) };
-  }
-  return found?.parsed.verdict === "all-met" ? { completed: true, ...found } : null;
-}
-
-/**
- * The command that shows what `branch` brought into the feature branch, which it has merged into:
- * from the first parent of its (--no-ff) merge commit. Without one found (a dry run), its tip commit.
- */
-function mergedChange(effects, featureBranch, branch) {
-  const tip = effects.gitRead(["rev-parse", "--verify", "-q", `refs/heads/${branch}^{commit}`]).stdout.trim();
-  const merge = effects
-    .gitRead(["rev-list", "--first-parent", "--merges", "--parents", featureBranch])
-    .stdout.split("\n")
-    .map((l) => l.trim().split(/\s+/))
-    .find((shas) => tip && shas.slice(2).includes(tip))?.[0];
-  return merge ? `git diff ${merge}^1...${branch}` : `git show ${branch}`;
-}
-
-export async function promote(ctx, worker, review, outcome) {
-  const { sprint, effects } = ctx;
-  const { issue, branch } = worker;
-  const guard = effects.bash("promote-findings.sh", ["guard", "--issue", issueRef(issue), "--severities", promoteSeverities(sprint.fixFindings)], {
-    env: sprint.childEnv(),
-  });
-  const guardText = guard.stdout.trim();
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${guardText}`);
-  const eligible = /^guard: eligible — threshold: (.+)$/.exec(guardText);
-  if (!eligible) return; // source-guarded: the depth bound
-
-  const findings = review.parsed.findings ?? [];
-  // Under `actionable` this is crew-triage's judgement (a dispatch of its own); a severity level
-  // is a filter. Either way the verdicts land beside each finding in the review report.
-  const selected = await selectPromotable(ctx, {
-    findings,
-    label: issue.slug,
-    scope: `Findings raised against branch ${branch} (issue ${issue.slug}), which has merged.`,
-    ref: branch,
-    change: mergedChange(effects, sprint.featureBranch, branch),
-    dir: dispatchIssueDir(sprint.dispatchDir, issue),
-    dispatchSlug: `${dispatchStem(issue)}-findings`,
-    round: worker.attempt,
-    ledgerSlug: issue.slug,
-    reportFile: review.reportFile,
-    written: review.written,
-  });
-  const { promotable } = selected;
-  if (!promotable.length) {
-    let why = "no findings";
-    if (findings.length && selected.rule === "actionable") why = `none of the ${findings.length} finding(s) is Actionable`;
-    else if (findings.length) {
-      const found = [...new Set(findings.map((f) => f.severity))].join(", ");
-      why = `findings (${found}) are below the threshold (${selected.fallback ? severityNames(selected.rule) : eligible[1]})`;
-    }
-    ctx.log(`slug=${issue.slug} round=${worker.attempt} promote: none — ${why}`);
-    return;
-  }
-  const severities = [...new Set(promotable.map((f) => f.severity))].join(", ");
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} promote: ${promotable.length} finding(s) — ${severities}`);
-
-  mkdirSync(sprint.reviewDir, { recursive: true });
-  const criteriaPath = join(sprint.reviewDir, `${issue.slug}.criteria.md`);
-  writeFileSync(criteriaPath, criteriaFile({ branch, findings: promotable }));
-
-  const defer = effects.bash("promote-findings.sh", [
-    "defer",
-    "--feature-slug", sprint.featureSlug,
-    "--branch", branch,
-    "--slug", issue.slug,
-    "--title", `Fix review findings: ${issue.slug}`,
-    "--report", review.reportFile,
-    "--criteria-file", criteriaPath,
-    // Names what was promoted: a verdict, or — when triage failed — the severities of the fallback rule.
-    "--severities", promotedAs(sprint.fixFindings, selected),
-  ], { env: sprint.childEnv() });
-  ctx.log(`slug=${issue.slug} round=${worker.attempt} ${defer.stdout.trim()}`);
-  outcome.promoted = promotable.length;
-  // github's fix issue, created ready-for-agent: the loop waits for the listing to show it.
-  outcome.promotedRef = Number(/\/issues\/(\d+)\s*$/m.exec(defer.stdout)?.[1]) || null;
 }
