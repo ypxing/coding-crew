@@ -181,11 +181,31 @@ to_issues_step() {
   done
 }
 
-@test "to-issues exempts Source: review fix issues from the design-standard check, for every platform" {
+@test "to-issues exempts auto-promoted fix issues under both trackers, by promote-findings.sh's column-0 Source: rule, for every platform" {
   for p in claude copilot pi codex; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
-    grep -F '`Source: review`' "$output" | grep -qi 'not checked against the design standard'
+    line=$(grep -F 'not checked against the design standard' "$output")
+    [[ "$line" == *'column-0 `Source:` line outside a code fence'* ]]
+    [[ "$line" == *'`Source: review (<branch>)`'*'github'* ]]
+    [[ "$line" == *'`Source: <report> (<branch>)` after the title and `Status:` lines under `local`'* ]]
+    grep -F 'Fails the design standard' "$output" | grep -qF 'An auto-promoted issue (a column-0 `Source:` line, step 1) is exempt.'
+  done
+}
+
+@test "the guide's lifecycle note exempts auto-promoted fix issues by their column-0 Source: line under both trackers" {
+  note=$(grep -A3 -F 'checks the issue against the design standard' "$REPO_ROOT/docs/guide.md")
+  [[ "$note" == *'column-0 `Source:` line'* ]]
+  [[ "$note" == *'`Source: review (<branch>)`'* ]]
+  [[ "$note" == *'`Source: <report> (<branch>)`'* ]]
+}
+
+@test "to-issues creates the missing <feature-slug> milestone, list first, before the github in-place edit, for every platform" {
+  for p in claude copilot pi codex; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    line=$(grep -F 'gh issue edit <n> --body-file' "$output")
+    [[ "$line" == *'gh api --paginate repos/{owner}/{repo}/milestones --jq'*'gh api repos/{owner}/{repo}/milestones -f title=<feature-slug>'*'gh issue edit <n> --body-file'* ]]
   done
 }
 

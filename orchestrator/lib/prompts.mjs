@@ -192,6 +192,15 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
+// One finding in either review schema. `issue` carries the reviewer's design-only marker
+// (reviewer.md's "Design standard (criterion <n>):" prefix), which crew-triage reads.
+const FINDING_SHAPE = {
+  severity: "CRITICAL | HIGH | MEDIUM | LOW",
+  location: "<file:line>",
+  issue: "<what is wrong, one sentence; a design-only finding starts Design standard (criterion <n>):>",
+  criterion: "<one verifiable fix criterion>",
+};
+
 export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
@@ -263,7 +272,7 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
         verdict: "all-met | unmet",
         detail: "<which criterion, and why — required on unmet>",
         cause: "code | environment — on unmet only",
-        findings: [{ severity: "CRITICAL | HIGH | MEDIUM | LOW", location: "<file:line>", issue: "<the defect, as observed>", criterion: "<one verifiable fix criterion>" }],
+        findings: [FINDING_SHAPE],
       },
       null,
       2,
@@ -332,7 +341,7 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
         slug: FEATURE_REVIEW,
         verdict: "all-met",
         detail: "",
-        findings: [{ severity: "CRITICAL | HIGH | MEDIUM | LOW", location: "<file:line>", issue: "<the defect, as observed>", criterion: "<one verifiable fix criterion>" }],
+        findings: [FINDING_SHAPE],
       },
       null,
       2,
