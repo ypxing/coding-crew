@@ -140,7 +140,7 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
 
   # ─── guard 2: are all criteria checked off, against a fresh fetch? ──────────
   # Re-fetch live rather than trusting any body the caller might be holding from
-  # an earlier `listFeatureIssues` — a human may have edited the issue since.
+  # an earlier `listOpen` — a human may have edited the issue since.
   if ! BODY="$(gh issue view "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --json body --jq .body 2>&1)"; then
     echo "ERROR: gh issue view failed for #$ISSUE_NUMBER:" >&2
     echo "$BODY" >&2
