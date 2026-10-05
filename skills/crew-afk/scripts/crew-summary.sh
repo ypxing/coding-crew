@@ -132,6 +132,8 @@ MERGED_SLUGS=$(state get completed)
 PARTIAL_SLUGS=$(state get partial)
 BLOCKED_SLUGS=$(state get blocked)
 
+# Across invocations: how many runs this feature has taken, and why the one before this ended.
+echo "Run $(state get runs) for this feature; previous: $(state get previous-exit)"
 echo "Rounds: $(state get rounds)"
 echo "Model:  $(state get model)"
 # Claude-only for now (see extractResultMeta in dispatch.mjs) — omitted rather than
