@@ -616,3 +616,23 @@ EOF
   state feature-reviewed --tip abc123 >/dev/null
   [ "$(jq -r .feature_review.reviewed_tip .scratch/calc/sprint-state.json)" = "abc123" ]
 }
+
+@test "state.sh retain --fingerprint is stored and printed by retention; absent without it" {
+  init_sprint calc
+  run state retain --slug first --branch crew/calc/first --reason criteria-unmet --fingerprint abc123
+  [ "$status" -eq 0 ]
+  run state retention --slug first
+  [[ "$output" == *"reason: criteria-unmet"* ]]
+  [[ "$output" == *"fingerprint: abc123"* ]]
+  run state retain --slug second --branch crew/calc/second --reason criteria-unmet
+  run state retention --slug second
+  [[ "$output" != *fingerprint* ]]
+}
+
+@test "state.sh blocked --branch keeps --fingerprint in the retention record" {
+  init_sprint calc
+  state blocked --slug first --branch crew/calc/first --reason "retry limit reached" --fingerprint abc123 >/dev/null
+  run state retention --slug first
+  [[ "$output" == *"reason: blocked — retry limit reached"* ]]
+  [[ "$output" == *"fingerprint: abc123"* ]]
+}
