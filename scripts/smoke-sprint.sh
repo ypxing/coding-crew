@@ -12,7 +12,8 @@ set -uo pipefail
 #   - crew-afk exited 0
 #   - the issue is in `.scratch/subtract/issues/done/`
 #   - `feature/subtract` exports `sub` and its `node --test` passes
-# Prints `SMOKE: PASS` / `SMOKE: FAIL: <why>`; exit 0 / 1, 2 on a usage error. Every run also prints
+# Prints `SMOKE: PASS (<platform>)` (`SMOKE: PASS (<platform>, demo)` under --demo, the only PASS
+# line cut-release.sh --demo-smoke accepts) / `SMOKE: FAIL: <why>`; exit 0 / 1, 2 on a usage error. Every run also prints
 # `crew-afk-version: <v>` (this checkout's registry.json), which cut-release.sh --demo-smoke reads back.
 #
 # --demo runs the sprint on a pinned outside demo project instead, laid out in
@@ -33,6 +34,9 @@ set -uo pipefail
 # ${TMPDIR:-/tmp}/crew-smoke-<platform>) is deleted first only when it is an earlier smoke repo
 # (`.git/crew-smoke` marker); any other existing path is refused. The crew-afk log is kept at
 # <dir>/.git/crew-smoke/run.log. --setup-only stops after install (no CLI call, no API cost).
+#
+# A results row is committed by hand: cut-release.sh needs a clean tree, so write the log outside
+# the checkout (e.g. >"${TMPDIR:-/tmp}/smoke.log") and commit RESULTS.md before cutting the release.
 #
 # Maintainer-only: ships to no consumer. A real run calls the platform's CLI and costs money.
 
@@ -57,7 +61,12 @@ record() {
     const sum = (k) => d.reduce((a, x) => a + (Number(x[k]) || 0), 0);
     console.log(`$${sum("cost_usd").toFixed(2)} | ${(sum("duration_ms") / 3600000).toFixed(2)}`);
   ' "$DIR/.scratch/$SLUG/sprint-state.json" 2>/dev/null) || stats="? | ?"
-  findings=$(cat "$DIR/.scratch/$SLUG/reviews/"sprint-review-*.md 2>/dev/null | grep -o '"severity"' | wc -l | tr -d ' ')
+  # Folded as crew-afk's own summary folds them (review-rollup.mjs: one record per branch, latest
+  # wins), so a finding a later review block repeats is counted once.
+  findings=$(node "$ROOT/orchestrator/review-rollup.mjs" "$DIR/.scratch/$SLUG/reviews/"sprint-review-*.md 2>/dev/null \
+    | node -e 'let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () =>
+        console.log(JSON.parse(s).branches.reduce((n, b) => n + (b.findings || []).length, 0)))' 2>/dev/null) \
+    || findings='?'
   echo "| $VERSION | $(date -u +%Y-%m-%d) | $1 | $stats | $findings |" >>"$results" \
     || echo "SMOKE: warning: cannot append to $results" >&2
 }
@@ -157,7 +166,7 @@ if [[ $DEMO -eq 1 ]]; then
   failed=""
   while IFS= read -r cmd || [[ -n "$cmd" ]]; do
     [[ -z "${cmd// }" || "$cmd" =~ ^[[:space:]]*# ]] && continue
-    (cd "$CHECK" && bash -c "$cmd") >>.git/crew-smoke/check.log 2>&1 || { failed="$cmd (exit $?)"; break; }
+    (cd "$CHECK" && bash -c "$cmd" </dev/null) >>.git/crew-smoke/check.log 2>&1 || { failed="$cmd (exit $?)"; break; }
   done <"$DEMO_DIR/check"
   git worktree remove --force "$CHECK"
   [[ -z "$failed" ]] || fail "check \`$failed\` fails on feature/$SLUG (log: $DIR/.git/crew-smoke/check.log)"

@@ -39,15 +39,23 @@ release() { run bash "$R/scripts/cut-release.sh" --dry-run "$@"; }
 }
 
 @test "a passing log for another crew-afk version is refused" {
-  printf 'crew-afk-version: 2.19.0\nSMOKE: PASS (claude)\n' > "$LOG"
+  printf 'crew-afk-version: 2.19.0\nSMOKE: PASS (claude, demo)\n' > "$LOG"
   release --demo-smoke "$LOG"
   [ "$status" -ne 0 ]
   [[ "$output" == *"2.19.0"* ]]
   [[ "$output" == *"2.20.3"* ]]
 }
 
+@test "a passing log from a non-demo smoke run is refused" {
+  printf 'crew-afk-version: 2.20.3\nSMOKE: PASS (claude)\n' > "$LOG"
+  release --demo-smoke "$LOG"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--demo"* ]]
+  [[ "$output" != *"would tag"* ]]
+}
+
 @test "a passing log with no crew-afk version is refused" {
-  printf 'SMOKE: PASS (claude)\n' > "$LOG"
+  printf 'SMOKE: PASS (claude, demo)\n' > "$LOG"
   release --demo-smoke "$LOG"
   [ "$status" -ne 0 ]
   [[ "$output" == *"crew-afk-version"* ]]
@@ -60,7 +68,7 @@ release() { run bash "$R/scripts/cut-release.sh" --dry-run "$@"; }
 }
 
 @test "a passing log for HEAD's crew-afk version is accepted" {
-  printf 'SMOKE: repo ready\ncrew-afk-version: 2.20.3\nSMOKE: PASS (claude)\n' > "$LOG"
+  printf 'SMOKE: repo ready\ncrew-afk-version: 2.20.3\nSMOKE: PASS (claude, demo)\n' > "$LOG"
   release --demo-smoke "$LOG"
   [ "$status" -eq 0 ]
   [[ "$output" == *"would tag HEAD as v1.0.0"* ]]

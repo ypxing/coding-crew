@@ -22,7 +22,8 @@
 #     — see that test for the full story)
 #   - HEAD is not already tagged
 #   - a demo smoke (scripts/smoke-sprint.sh <platform> --demo) passed for this crew-afk version:
-#     --demo-smoke <log> names that run's output, which must hold a `SMOKE: PASS` line and a
+#     --demo-smoke <log> names that run's output, which must hold a `SMOKE: PASS (<platform>, demo)` line
+#     (a non-demo smoke's `SMOKE: PASS (<platform>)` is refused) and a
 #     `crew-afk-version:` equal to HEAD's registry.json crew-afk version; --no-demo-smoke
 #     "<reason>" releases without one and prints why. One of the two is required.
 #
@@ -92,6 +93,10 @@ if [[ -n "$DEMO_LOG" ]]; then
   [[ -n "$AFK_VERSION" ]] || { echo "Error: HEAD's registry.json has no crew-afk version." >&2; exit 1; }
   grep -q '^SMOKE: PASS' "$DEMO_LOG" || {
     echo "Error: $DEMO_LOG has no 'SMOKE: PASS' line — the demo smoke did not pass." >&2; exit 1
+  }
+  grep -Eq '^SMOKE: PASS \([a-z]+, demo\)$' "$DEMO_LOG" || {
+    echo "Error: $DEMO_LOG is not a demo run's — its PASS line lacks ', demo)'. Run scripts/smoke-sprint.sh <platform> --demo." >&2
+    exit 1
   }
   LOG_VERSIONS=$(sed -n 's/^crew-afk-version: *//p' "$DEMO_LOG" | sort -u | tr '\n' ' ' | sed 's/ $//')
   [[ -n "$LOG_VERSIONS" ]] || { echo "Error: $DEMO_LOG records no 'crew-afk-version:' line." >&2; exit 1; }
