@@ -193,6 +193,15 @@ to_issues_step() {
   done
 }
 
+@test "to-issues' in-place rewrite keeps a source issue's Source: line in the same position under both trackers, for every platform" {
+  for p in claude copilot pi codex; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    line=$(grep -F "rewrite that issue's body in place" "$output")
+    [[ "$line" == *'column-0 `Source:` line stays in the same position — the body'"'"'s first line under `github`, after the title and `Status:` lines under `local`'* ]]
+  done
+}
+
 @test "the guide's lifecycle note exempts auto-promoted fix issues by their column-0 Source: line under both trackers" {
   note=$(grep -A3 -F 'checks the issue against the design standard' "$REPO_ROOT/docs/guide.md")
   [[ "$note" == *'column-0 `Source:` line'* ]]
