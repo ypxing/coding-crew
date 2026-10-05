@@ -268,6 +268,30 @@ SH
   grep -q -- '- crew/feat/a: CRITICAL, HIGH → https://github.com/acme/widgets/issues/42' "$REPORT"
 }
 
+@test "defer's report marker carries the number of findings it promoted" {
+  configure_github
+  stub_gh
+  printf -- '- [ ] one at src/x.ts:12\n- [ ] two at src/y.ts:3\n' > crit2.md
+
+  bash "$PROMOTE" defer --severities "CRITICAL, HIGH" --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit2.md >/dev/null
+  grep -qx -- '- crew/feat/a: CRITICAL, HIGH → https://github.com/acme/widgets/issues/42 (2 finding(s))' "$REPORT"
+}
+
+@test "defer-gaps and defer-integration trace the number of criteria they queued" {
+  configure_github
+  stub_gh
+  export TRACE_LOG="$PWD/trace.log"
+  printf -- '- [ ] gap one\n- [ ] gap two\n' > gaps2.md
+  printf -- "- [ ] The project's checks pass on the merged feature branch\n" > integ.md
+
+  bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps2.md >/dev/null
+  bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/dispatch/_integration/verify.out \
+    --criteria-file integ.md >/dev/null
+  grep -q 'PROMOTE.*prd-gaps issue=https://github.com/acme/widgets/issues/42 findings=2' trace.log
+  grep -q 'PROMOTE.*integration issue=https://github.com/acme/widgets/issues/42 findings=1' trace.log
+}
+
 # ─── guard: github path ────────────────────────────────────────────────────────
 
 @test "guard live-fetches the body under github and is eligible with no Source: line" {

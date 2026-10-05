@@ -128,7 +128,7 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
   fi
 
   # Tick the criteria in the issue body, as the local backend ticks the file. Fetched
-  # live, so a human's edit since listOpen is kept. A failed fetch or edit only warns:
+  # live, so a human's edit since listFeatureIssues is kept. A failed fetch or edit only warns:
   # the ticks are bookkeeping, and the label swap below is what marks the issue done.
   REPO_ARGS=()
   [ -n "$TRACKER_CONFIG_REPO" ] && REPO_ARGS=(--repo "$TRACKER_CONFIG_REPO")

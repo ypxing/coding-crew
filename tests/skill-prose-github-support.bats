@@ -99,6 +99,11 @@ setup() {
   grep -q 'to-issues' "$ADDRESS_FINDINGS"
 }
 
+@test "crew-address-findings/SKILL.md's Promoted Findings line names the optional finding count after the reference" {
+  grep -qF '<branch>: <severities> → <fix issue reference> (<n> finding(s))' "$ADDRESS_FINDINGS"
+  grep -q 'the text before' "$ADDRESS_FINDINGS"
+}
+
 @test "crew-address-findings/SKILL.md loads the PRD from a github issue when configured" {
   grep -q 'PRD: <feature title>' "$ADDRESS_FINDINGS"
 }

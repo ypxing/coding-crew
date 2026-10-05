@@ -13,8 +13,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
 import { ASSET_DIRS, assetDir } from "./install-dir.mjs";
-import * as local from "./trackers/local.mjs";
-import { readTrackerConfig } from "./tracker-config.mjs";
+import { getTracker } from "./tracker.mjs";
 import { depsLine, parseRequiresFailures, readVerifyRecord } from "./report.mjs";
 import { sectionBody } from "./trackers/body-format.mjs";
 import { dispatchIssueDir, logVerifyOutput, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
@@ -52,37 +51,33 @@ export function missingAssetsMessage(installDir, missing) {
 
 /**
  * The set to lint, as the files lint-issues.sh takes: `{ issues, known, deps, prd }` (`deps` and
- * `prd` null when absent). Under `local` that is every open issue file, the feature's
- * `issues-deps.json` and `.scratch/<slug>/PRD.md`; under `github` each open (not done, not
- * PRD) milestone issue's body written out as `<number>-<slug>.md` — the filename is how
- * `Issue #<n>` refs resolve — and the milestone's PRD issue body, unless a local PRD.md exists.
- * `known` names the done issues (`done/` files; done milestone issues as `<number>-<slug>.md`):
- * a `## Blocked by` ref to one resolves, as it does for dispatch, but it is not linted.
+ * `prd` null when absent), all from one `listFeatureIssues` call. An open (not done, not PRD) issue
+ * the tracker keeps as a file is linted in place; any other has its body written out as
+ * `<number>-<slug>.md` — the filename is how `Issue #<n>` refs resolve. `deps` is the tracker's
+ * `issues-deps.json` (`featureDepsFile`); `prd` is `.scratch/<slug>/PRD.md`, else the PRD issue's
+ * body. `known` names the done issues by the same filenames: a `## Blocked by` ref to one
+ * resolves, as it does for dispatch, but it is not linted.
  */
 async function lintSet(sprint, mainRoot) {
   const slug = sprint.featureSlug;
   const localPrd = join(mainRoot, ".scratch", slug, "PRD.md");
   const prdFile = existsSync(localPrd) ? localPrd : null;
-  if (readTrackerConfig(mainRoot).tracker !== "github") {
-    const issues = local.listOpenIssueFiles(mainRoot, { featureSlug: slug });
-    const deps = issues.length ? local.issueDepsPath(issues[0]) : null;
-    const known = issues.length ? [...local.doneFiles(issues[0])].filter((f) => f.endsWith(".md")) : [];
-    return { issues, known, deps: deps && existsSync(deps) ? deps : null, prd: prdFile };
-  }
-  const gh = await import("./trackers/github.mjs");
-  const all = gh.listOpen(mainRoot, { featureSlug: slug });
+  const tracker = await getTracker(mainRoot);
+  const all = tracker.listFeatureIssues(mainRoot, { featureSlug: slug });
   const dir = join(sprint.dispatchDir, "_lint");
-  mkdirSync(dir, { recursive: true });
   const write = (name, text) => {
+    mkdirSync(dir, { recursive: true });
     const file = join(dir, name);
     writeFileSync(file, text);
     return file;
   };
-  const work = all.filter((i) => !gh.isPrdIssue(i));
-  const issues = work.filter((i) => i.status !== "done").map((i) => write(`${i.number}-${i.slug}.md`, i.text));
-  const known = work.filter((i) => i.status === "done").map((i) => `${i.number}-${i.slug}.md`);
-  const prdIssue = prdFile ? null : all.find((i) => gh.isPrdIssue(i));
-  return { issues, known, deps: null, prd: prdFile ?? (prdIssue ? write("PRD.md", prdIssue.text) : null) };
+  const fileName = (i) => i.file ?? `${i.number}-${i.slug}.md`;
+  const work = all.filter((i) => !tracker.isPrdIssue(i));
+  const issues = work.filter((i) => i.status !== "done").map((i) => i.path ?? write(fileName(i), i.text));
+  const known = work.filter((i) => i.status === "done").map(fileName);
+  const deps = tracker.featureDepsFile(mainRoot, { featureSlug: slug });
+  const prdIssue = prdFile ? null : all.find((i) => tracker.isPrdIssue(i));
+  return { issues, known, deps, prd: prdFile ?? (prdIssue ? write("PRD.md", prdIssue.text) : null) };
 }
 
 /**

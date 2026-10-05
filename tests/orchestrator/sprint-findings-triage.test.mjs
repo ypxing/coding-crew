@@ -362,6 +362,8 @@ test("savedAllMetReview: a branch an earlier run already promoted (pre-merge) is
   writeFileSync(report, `${reviewOf([retryHigh])}\n## Promoted Findings\n\n- crew/demo/alpha: actionable → 02-fix\n`);
   assert.equal(savedAllMetReview({ reviewDir }, "crew/demo/alpha"), null);
   assert.equal(savedAllMetReview({ reviewDir }, "crew/demo/alph"), null, "no block for that branch");
+  writeFileSync(report, `${reviewOf([retryHigh])}\n## Promoted Findings\n\n- crew/demo/alpha: actionable → https://github.com/acme/widgets/issues/42 (1 finding(s))\n`);
+  assert.equal(savedAllMetReview({ reviewDir }, "crew/demo/alpha"), null, "a marker with a count reads the same");
 });
 
 // ─── findings an earlier review raised and the latest dropped are carried forward ──

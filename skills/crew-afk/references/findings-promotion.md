@@ -136,8 +136,8 @@ After a sprint with promotion, `sprint-review-<TIMESTAMP>.md` distinguishes thre
 
 - **Promoted** — the findings the rule selected (every Actionable one, or those at the threshold
   severities), fixed in Phase 2, listed under the `## Promoted Findings` section that
-  `promote-findings.sh defer` appends (`<branch>: actionable → <issue path>` or
-  `<branch>: CRITICAL → <issue path>`).
+  `promote-findings.sh defer` appends (`<branch>: actionable → <issue ref> (<n> finding(s))` or
+  `<branch>: CRITICAL → <issue ref> (<n> finding(s))`; a marker from before the count ends at the ref).
 - **Open, needs human triage** — everything the rule did not cover on Phase 1 branches: Debatable
   and Dismissed findings (each carries its verdict and rationale in the report), or under a
   severity level LOW always, and MEDIUM unless `fixFindings` is `medium`.

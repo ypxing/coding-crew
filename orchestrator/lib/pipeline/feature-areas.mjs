@@ -5,7 +5,6 @@
  * failure to plan gives one area over the whole diff with every decision.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { dispatchPlain } from "../dispatch.mjs";
@@ -126,42 +125,30 @@ export function mergedIssues(ctx, { base, tip, idsFor = () => [] }) {
 }
 
 /**
- * `branch → ## Implements IDs`, from the tracker the run uses. A local tracker reads the issue file for
- * the branch's `<n>-<slug>` stem; any other lists the feature's issues once (every state — a merged
- * issue is `awaiting-merge` or closed) and matches the stem's leading number. A failed listing warns
- * and every branch reads as implementing none.
+ * `branch → ## Implements IDs`, from one listing of the feature's issues in every state (a merged
+ * issue is `done`: in done/, `awaiting-merge` or closed). A branch's stem is the issue's slug
+ * (local: `crew/<feature>/<slug>`) or `<number>-<slug>` (github), matched by slug first, then by
+ * the stem's leading number. A failed listing warns and every branch reads as implementing none.
  */
 export function implementsLookup(ctx, tracker) {
   const { effects, sprint } = ctx;
-  if (tracker.listOpenIssueFiles) return (branch) => localIssueIds(effects.mainRoot, sprint.featureSlug, branch);
-  let byNumber;
+  let issues;
   return (branch) => {
-    if (!byNumber) {
-      byNumber = new Map();
+    if (!issues) {
+      issues = [];
       try {
-        for (const i of tracker.listOpen(effects.mainRoot, { featureSlug: sprint.featureSlug })) byNumber.set(Number(i.number), i.text ?? "");
+        issues = tracker.listFeatureIssues(effects.mainRoot, { featureSlug: sprint.featureSlug });
       } catch (e) {
         ctx.log(`FEATURE-REVIEW: could not list the feature's issues for their ## Implements IDs — ${e.message}`, "warn");
       }
     }
-    const n = Number(/^(\d+)-/.exec(branch.split("/").pop())?.[1]);
-    return byNumber.has(n) ? implementedIds(byNumber.get(n)) : [];
+    const stem = branch.split("/").pop();
+    const n = /^(\d+)-/.exec(stem)?.[1];
+    const issue =
+      issues.find((i) => i.slug === stem || `${i.number}-${i.slug}` === stem) ??
+      (n === undefined ? undefined : issues.find((i) => i.number != null && Number(i.number) === Number(n)));
+    return issue ? implementedIds(issue.text ?? "") : [];
   };
-}
-
-/** The `## Implements` IDs of a local issue file for this branch's `<n>-<slug>` stem. */
-function localIssueIds(mainRoot, featureSlug, branch) {
-  const stem = branch.split("/").pop();
-  for (const dir of ["open", "done"]) {
-    const d = join(mainRoot, ".scratch", featureSlug, "issues", dir);
-    try {
-      const f = readdirSync(d).find((n) => n === `${stem}.md` || n.replace(/^\d+[-_]?/, "") === `${stem}.md`);
-      if (f) return implementedIds(readFileSync(join(d, f), "utf8"));
-    } catch {
-      /* no such folder */
-    }
-  }
-  return [];
 }
 
 /**
