@@ -562,6 +562,24 @@ EOF
   [[ "$output" != *"## Unreviewed Branches"* ]]
 }
 
+@test "crew-summary's Next Step names /address-pr-comments with the PR when the findings were posted to it" {
+  init_sprint calc
+  mkdir -p .scratch/calc/reviews
+  json=$(jq -n '{branch: "crew/calc/a", slug: "a", verdict: "all-met",
+    findings: [{severity: "MEDIUM", location: "a.py:1", criterion: "something worth a look"}]}')
+  cat > .scratch/calc/reviews/sprint-review-1.md <<EOF
+## Branch: crew/calc/a (a)
+
+\`\`\`json
+$json
+\`\`\`
+EOF
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc --posted-to https://github.com/o/r/pull/7
+  [[ "$output" == *"Run: /address-pr-comments https://github.com/o/r/pull/7"* ]]
+  [[ "$output" != *"Run: /crew-address-findings"* ]]
+}
+
 @test "crew-summary never lets a clean findings count hide an unreviewed branch" {
   init_sprint calc
   mkdir -p .scratch/calc/reviews

@@ -372,6 +372,7 @@ if [ -n "$OPEN_LINE" ]; then
   if [ -n "$POSTED_TO" ]; then
     # every open finding is on the PR now, whether this run or an earlier one posted it
     echo "$total finding(s) posted to $POSTED_TO"
+    echo "Run: /address-pr-comments $POSTED_TO"
   else
     echo "Run: /crew-address-findings"
   fi
