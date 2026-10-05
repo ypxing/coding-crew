@@ -246,6 +246,39 @@ test("an edited issue's retry restarts on workerPrompt on the retained branch", 
   assert.equal(sh("git", ["-C", root, "merge-base", "--is-ancestor", tip, "crew/demo/alpha"]).code, 0, "the retained commits are kept");
 });
 
+// crew-afk's own write to the issue (its ## Progress) is not a human edit: the retry stays on fixPrompt.
+test("an unedited issue's retry stays on fixPrompt though crew-afk wrote its Progress into the file", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", unmetReviewFor());
+  const first = commandLines(root, ["--max-rounds", "1"]);
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  assert.match(readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8"), /^## Progress$/m);
+  commandLines(root, ["--max-rounds", "1"]);
+  assert.doesNotMatch(traceLog(root), /issue edited/);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
+  assert.match(prompt, /do not re-read the issue/i, "fixPrompt, not workerPrompt");
+});
+
+// The retry cap's blocked record keeps the fingerprint, so a human's edit to a blocked issue restarts it.
+test("an issue blocked at the retry cap and then edited restarts on workerPrompt", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", unmetReviewFor());
+  const capped = commandLines(root);
+  assert.equal(capped.r.code, 2, `${capped.r.stdout}\n${capped.r.stderr}`);
+  const retention = state(root).retention.alpha;
+  assert.match(retention.reason, /^blocked — retry limit reached .*criteria-unmet/);
+  assert.match(retention.fingerprint ?? "", /^[0-9a-f]{64}$/);
+  const file = join(root, ".scratch/demo/issues/open/01-alpha.md");
+  writeFileSync(file, readFileSync(file, "utf8").replace("alpha exists", "alpha exists and is documented"));
+  commandLines(root, ["--max-rounds", "1"]);
+  assert.match(traceLog(root), /\[RESUME\] slug=alpha reason=blocked — .*issue edited/);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
+  assert.doesNotMatch(prompt, /do not re-read the issue/i, "workerPrompt, not fixPrompt");
+  assert.match(prompt, /alpha exists and is documented/, "the prompt carries the edited criteria");
+});
+
 test("a close-refused retry skips the worker, verify, and review, no-ops the already-merged retry, and succeeds on a retried close", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
