@@ -292,9 +292,10 @@ export const FEATURE_REVIEW = "feature";
 /**
  * Feature mode (crew-reviewer's protocol § Feature Mode), at every drain: the whole
  * feature diff or one area of it (its files only), or the commits since the last review. Same report
- * object as a branch review, but no issue and no criteria — findings only.
+ * object as a branch review, but no issue and no criteria — findings only. `otherAreas`
+ * (`[{ name, files, decisions }]`, decision lines in full) is the rest of a split review, given as reference.
  */
-export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, area = null, decisions = [], compatibility = null }) {
+export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, area = null, decisions = [], otherAreas = [], compatibility = null }) {
   return [
     "Feature review: review the feature diff across its issues before it ships.",
     ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
@@ -321,6 +322,20 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
           ...(area.files.length ? area.files.map((f) => `- ${f}`) : ["- (the whole diff)"]),
           "Decisions:",
           ...(decisions.length ? decisions : ["(none given for this area)"]),
+        ]
+      : []),
+    ...(area && otherAreas.length
+      ? [
+          "",
+          "Other areas (reference only: judge only this area's decisions, but report a defect in this area's files that one of these decisions exposes):",
+          ...otherAreas.flatMap((o, i) => [
+            ...(i ? [""] : []),
+            `Name: ${o.name}`,
+            "Files:",
+            ...o.files.map((f) => `- ${f}`),
+            "Decisions:",
+            ...(o.decisions.length ? o.decisions : ["(none given for this area)"]),
+          ]),
         ]
       : []),
     ...(!area && decisions.length ? ["", "PRD decisions:", ...decisions] : []),

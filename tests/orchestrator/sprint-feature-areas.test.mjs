@@ -105,6 +105,24 @@ test("a plan of one area reads as the whole feature: its diff has no pathspec", 
   const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8");
   assert.match(prompt, /^Gather the diff: git diff \S+\.\.feature\/demo$/m);
   assert.match(prompt, /^Files:\n- src\/alpha\.txt\n- src\/beta\.txt$/m);
+  assert.doesNotMatch(prompt, /^Other areas/m);
+});
+
+test("with 2+ areas each area's prompt lists every other area's name, files and full decision lines after its own Decisions:", () => {
+  const root = twoIssues();
+  plan(root, [
+    { name: "alpha flow", files: ["src/alpha.txt"], decisions: ["D1"] },
+    { name: "beta flow", files: ["src/beta.txt"], decisions: ["D2"] },
+  ]);
+  const { r } = commandLines(root, ["--max-parallel", "2"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const read = (i) => readFileSync(join(root, `.scratch/demo/dispatch/feature-d1-${i}/review-prompt.md`), "utf8");
+  for (const [i, own, other] of [
+    [1, "- \\*\\*D1\\*\\* — Retries are bounded\\.", "Name: beta flow\\nFiles:\\n- src\\/beta\\.txt\\nDecisions:\\n- \\*\\*D2\\*\\* — Errors name the file\\."],
+    [2, "- \\*\\*D2\\*\\* — Errors name the file\\.", "Name: alpha flow\\nFiles:\\n- src\\/alpha\\.txt\\nDecisions:\\n- \\*\\*D1\\*\\* — Retries are bounded\\."],
+  ]) {
+    assert.match(read(i), new RegExp(`^Decisions:\\n${own}\\n\\nOther areas[^\\n]*\\n${other}$`, "m"), `area ${i}`);
+  }
 });
 
 test("K valid areas give K concurrent reviewers with their own dir, report and cost; one feature block; one promotion", () => {
@@ -167,6 +185,7 @@ test("a planner that fails, or answers with no json or no areas, gives one whole
     assert.match(prompt, /- src\/beta\.txt/, label);
     assert.match(prompt, /\*\*D1\*\*[\s\S]*\*\*D2\*\*/, label);
     assert.match(traceLog(root), new RegExp(`FEATURE-REVIEW: planner fallback — .*${why.source}`), label);
+    assert.doesNotMatch(prompt, /^Other areas/m, label);
   }
 });
 
@@ -219,7 +238,9 @@ test("an incremental review dispatches no planner and one reviewer", () => {
   assert.equal(again.r.code, 0, `${again.r.stdout}\n${again.r.stderr}`);
   assert.equal(planners(again.lines).length, 0);
   assert.equal(areaReviews(again.lines).length, 1);
-  assert.doesNotMatch(readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8"), /^Area:/m);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/feature-d1-1/review-prompt.md"), "utf8");
+  assert.doesNotMatch(prompt, /^Area:/m);
+  assert.doesNotMatch(prompt, /^Other areas/m);
 });
 
 // ─── pure pieces ──────────────────────────────────────────────────────────────────────
@@ -331,6 +352,14 @@ nodeTest("featureReviewPrompt carries an Area: block with the files and the full
   const withArea = featureReviewPrompt({ ...base, area: { name: "flow", files: ["a.js"] }, decisions: ["- **D1** — Retries are bounded."] });
   assert.match(withArea, /^Area:\nName: flow\nFiles:\n- a\.js\nDecisions:\n- \*\*D1\*\* — Retries are bounded\.$/m);
   assert.doesNotMatch(featureReviewPrompt(base), /^Area:/m);
+  assert.doesNotMatch(withArea, /^Other areas/m);
+});
+
+nodeTest("featureReviewPrompt adds an Other areas block, marked reference, only when otherAreas is non-empty", () => {
+  const base = { featureBranch: "feature/x", base: "abc", reportPath: "/r.json", area: { name: "flow", files: ["a.js"] }, decisions: ["- **D1** — one."] };
+  const p = featureReviewPrompt({ ...base, otherAreas: [{ name: "errors", files: ["b.js", "c.js"], decisions: ["- **D2** — two."] }] });
+  assert.match(p, /^Decisions:\n- \*\*D1\*\* — one\.\n\nOther areas \(reference only[^\n]*\nName: errors\nFiles:\n- b\.js\n- c\.js\nDecisions:\n- \*\*D2\*\* — two\.$/m);
+  assert.doesNotMatch(featureReviewPrompt({ ...base, otherAreas: [] }), /Other areas/);
 });
 
 nodeTest("featureReviewPrompt: an increment carries every decision line and the Compatibility & Migration section; an area prompt the section; none without", () => {
