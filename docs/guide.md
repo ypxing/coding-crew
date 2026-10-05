@@ -306,8 +306,9 @@ Other platforms get the same skills under their own skill dir (see the README's 
 ```
 
 `/to-issues <ref>` checks the issue against the design standard and rewrites it in place when it is
-one slice, or splits it into child issues with `## Parent`. Auto-promoted fix issues (`Source: review`)
-skip the check.
+one slice, or splits it into child issues with `## Parent`. Auto-promoted fix issues skip the check:
+they carry a column-0 `Source:` line — `Source: review (<branch>)` first under `github`,
+`Source: <report> (<branch>)` after the title and `Status:` lines under `local`.
 
 ---
 
