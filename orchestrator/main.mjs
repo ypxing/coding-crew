@@ -761,6 +761,7 @@ async function main() {
         maxBudgetUsd: options.limitsUsd?.commandFinder,
         // Persisted too: this runs unattended, and a failure must outlive the scrollback.
         log: emit,
+        recordCost: (r) => sprint.recordDispatchCost(r, { slug: "commands", role: "commandFinder", attempt: 1 }),
       });
     }
 

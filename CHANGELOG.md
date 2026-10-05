@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `write-pr` / `crew-afk`: PR bodies are a short Why / What changes / Risk / **Tested:** note (no Evidence or Merge Danger);
+  crew-afk adds its checks line only when the writer fails. Command discovery and the PR writer now record their cost, the
+  summary's by-role line gains an `other` bucket so the roles sum to the run total, and unknown-cost dispatches read
+  "stopped dispatch(es), cost unknown" (#289).
 - `eval-reviewer-misses`: a feature case's `## Merged issues` section gives each merged issue branch its `## Implements` IDs,
   so a decision the replayed planner leaves out goes to the area holding its issue's files, as in a sprint; filled in for
   `afk-effectiveness-feature` (#284).
