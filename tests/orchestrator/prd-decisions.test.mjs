@@ -34,6 +34,20 @@ test("the parser returns the PRD's D and B lines by ID, verbatim", () => {
   assert.equal(d.get("B4"), PRD.split("\n").find((l) => l.startsWith("- **B4**")));
 });
 
+test("a decision line is any `- **<ID>**` line: `**D1**:` and `**D10** (auto):` parse, each to its full line", () => {
+  const prd = ["- **D1**: Retries are bounded.", "- **D10** (auto): Errors name the file.", "- **D2** — Dash form.", "Not **D3** a list item."].join("\n");
+  const d = parsePrdDecisions(prd);
+  assert.deepEqual([...d.keys()], ["D1", "D10", "D2"]);
+  assert.equal(d.get("D1"), "- **D1**: Retries are bounded.");
+  assert.equal(d.get("D10"), "- **D10** (auto): Errors name the file.");
+});
+
+test("every D line of the design-standard PRD (colon form) parses", () => {
+  const d = parsePrdDecisions(readFileSync(join(FIX, "colon-form-PRD.md"), "utf8"));
+  assert.deepEqual([...d.keys()].filter((k) => k[0] === "D"), Array.from({ length: 12 }, (_, i) => `D${i + 1}`));
+  assert.match(d.get("D8"), /^- \*\*D8\*\* \(auto\): The named-axes list/);
+});
+
 test("the issue's Implements IDs are read, a parenthetical is a note", () => {
   assert.deepEqual(implementedIds(ISSUE), ["D7", "D8", "B3"]);
   assert.deepEqual(implementedIds("## Implements\n\nD7, B7 (part of D11) — verified at x\n"), ["D7", "B7"]);

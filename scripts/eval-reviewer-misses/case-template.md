@@ -13,7 +13,13 @@ Copy this file to `cases/<name>.md` (outside `cases/` it is never run). An escap
 `## Implements` and `## Acceptance criteria`. Use `mode: branch` (the per-branch review of #<n>, its
 range the feature branch before the issue's merge to the branch tip the reviewer passed) only for a
 defect that should have made one of the issue's acceptance criteria `unmet`, and fill those three
-sections from the issue.
+sections from the issue. A feature case keeps `## Merged issues` instead, one line per issue branch
+merged in the range with that issue's `## Implements` IDs, so a decision the planner leaves out is
+placed where production places it; a branch case drops it.
+
+## Merged issues
+
+- crew/<slug>/<n>-<issue-slug>: <IDs from that issue's ## Implements, or empty>
 
 ## Issue
 

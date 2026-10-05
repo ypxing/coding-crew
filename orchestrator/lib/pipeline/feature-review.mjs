@@ -22,7 +22,7 @@ import { sprintReviewContext } from "../review-context.mjs";
 import { carryFindings, findingKey, parseReviewBlocks, parseReviewReport } from "../report.mjs";
 import { loadPrdDecisions, loadPrdSection } from "../prd-decisions.mjs";
 import { promotedAs, selectPromotable } from "./findings-triage.mjs";
-import { FEATURE_PLAN, planAreas } from "./feature-areas.mjs";
+import { FEATURE_PLAN, areaReviewArgs, planAreas } from "./feature-areas.mjs";
 import { defaultBranchBase, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /**
@@ -104,9 +104,7 @@ export async function runFeatureReview(ctx, { integration = null, wallCap = null
     const outFile = join(areaDir, "review.md");
     const sidecarFile = join(areaDir, "review.report.json");
     rmSync(sidecarFile, { force: true });
-    // An area gets its own decisions; an increment has no area, so it gets every one.
-    const lines = area ? area.decisions.map((id) => decisions.get(id)).filter(Boolean) : [...decisions.values()];
-    writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, exclude, reportPath: sidecarFile, reviewAssets, reviewContext, area, decisions: lines, compatibility }));
+    writeFileSync(promptFile, featureReviewPrompt({ featureBranch: sprint.featureBranch, base, exclude, reportPath: sidecarFile, reviewAssets, reviewContext, ...areaReviewArgs(areas, area, decisions), compatibility }));
     ctx.log(`[STEP] step=feature-review slug=${slug} model=${reviewer.model ?? "inherit"} runtime=${reviewer.runtime}`);
     return reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFile });
   }));

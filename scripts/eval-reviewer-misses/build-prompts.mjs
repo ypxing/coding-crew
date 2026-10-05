@@ -4,9 +4,10 @@
 // eval-reviewer-misses.mjs runs this once per ref with <tree> = that ref's checkout, so the prompt
 // builders (orchestrator/lib/prompts.mjs, pipeline/feature-areas.mjs, prd-decisions.mjs) and the
 // rendered reviewer role are the ref's, never the head's. stdin: JSON
-// {mode, base, tip, branch, slug, criteria, prdPath, prdText, implements, areas?, max}; stdout: JSON
+// {mode, base, tip, branch, slug, criteria, prdPath, prdText, implements, mergedIds?, areas?, max}; stdout: JSON
 // {role, planner?, diffFiles, reviews: [{name, prompt}]}. `areas` is the planner's raw answer;
 // without it a feature case gets one whole-feature area (what a failed planner falls back to).
+// `mergedIds` maps a merged issue branch to its ## Implements IDs, as planAreas' implementsLookup does.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -52,19 +53,19 @@ if (inp.mode === "branch") {
   out.diffFiles = diffFiles;
   const stat = git([...DIFF, "--stat=1000", "--stat-name-width=1000", `${inp.base}..${inp.tip}`]).stdout;
   const ctx = { effects: { gitRead: (a) => git(a) } };
-  out.planner = areasMod.plannerPrompt({
-    featureBranch: inp.tip, base: inp.base, max: inp.max, stat,
-    issues: areasMod.mergedIssues(ctx, { base: inp.base, tip: inp.tip }), decisions,
-  });
+  const issues = areasMod.mergedIssues(ctx, { base: inp.base, tip: inp.tip, idsFor: (branch) => inp.mergedIds?.[branch] ?? [] });
+  out.planner = areasMod.plannerPrompt({ featureBranch: inp.tip, base: inp.base, max: inp.max, stat, issues, decisions });
   let areas = [];
-  if (inp.areas) areas = areasMod.normalizeAreas(inp.areas, { diffFiles, decisionIds: ids, max: inp.max });
+  if (inp.areas) areas = areasMod.normalizeAreas(inp.areas, { diffFiles, decisionIds: ids, max: inp.max, issues });
   if (!areas.length) areas = [areasMod.wholeFeatureArea(diffFiles, ids)];
   out.areas = areas;
+  // The same area arguments runFeatureReview passes; a ref older than areaReviewArgs had no Other areas block.
+  const argsOf = areasMod.areaReviewArgs ?? ((_, area) => ({ area, decisions: area.decisions.map((id) => decisions.get(id)).filter(Boolean) }));
   out.reviews = areas.map((area, i) => ({
     name: `feature-${i + 1}`,
     prompt: prompts.featureReviewPrompt({
-      featureBranch: inp.tip, base: inp.base, reportPath: inp.reportPath, reviewAssets, area,
-      decisions: area.decisions.map((id) => decisions.get(id)).filter(Boolean),
+      featureBranch: inp.tip, base: inp.base, reportPath: inp.reportPath, reviewAssets,
+      ...argsOf(areas, area, decisions),
       compatibility: sectionBody(String(inp.prdText ?? ""), "Compatibility & Migration") || null,
     }),
   }));

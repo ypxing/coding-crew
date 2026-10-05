@@ -1,5 +1,5 @@
 /**
- * prd-decisions.mjs — the PRD's `- **D<n>** — …` / `- **B<n>** — …` lines, by ID.
+ * prd-decisions.mjs — the PRD's `- **D<n>** …` / `- **B<n>** …` lines, by ID.
  *
  * An issue names the ones it implements under `## Implements`; the per-branch review judges the
  * branch against each like a criterion. The PRD is located once per sprint: the local
@@ -17,11 +17,14 @@ import { sectionBody } from "./trackers/body-format.mjs";
 const GITHUB_CLI = fileURLToPath(new URL("./trackers/github.mjs", import.meta.url));
 const cache = new WeakMap();
 
-/** Pure: every `- **<ID>** — …` line of a PRD, ID → the line verbatim. */
+/**
+ * Pure: every `- **<ID>**` / `* **<ID>**` line of a PRD, ID → the line verbatim, whatever follows the
+ * ID (`—`, `:`, `(auto):`) — the lines `lint-issues.sh`'s PRD coverage counts.
+ */
 export function parsePrdDecisions(text) {
   const out = new Map();
   for (const line of String(text ?? "").split("\n")) {
-    const m = /^\s*[-*]\s+\*\*([A-Z]\d+)\*\*\s*[—–-]/.exec(line);
+    const m = /^\s*[-*]\s+\*\*([A-Z]\d+)\*\*/.exec(line);
     if (m && !out.has(m[1])) out.set(m[1], line.replace(/\s+$/, ""));
   }
   return out;
