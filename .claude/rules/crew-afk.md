@@ -1,0 +1,169 @@
+---
+paths:
+  - "orchestrator/**"
+  - "skills/crew-afk/**"
+  - "tests/orchestrator/**"
+  - "tests/orchestrator*.bats"
+  - "tests/crew-afk*.bats"
+---
+
+# crew-afk internals
+
+How the orchestrator and its scripts behave. Loaded when working on crew-afk; the repo-wide rules are in `CLAUDE.md`.
+
+## crew-afk's scripts (`skills/crew-afk/scripts/`)
+
+Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
+
+- `session-init.sh` — derives the feature slug **once** and writes `sprint.env`
+- `ensure-deps.sh` — makes a directory ready to run the project's own checks; delegates every
+  install decision to `dep-install`'s `detect-mode.sh` / `host-install.sh`. It is mechanism rather
+  than a worker skill read because it is the only layer that also covers `verify-worktree.sh`, which
+  is a gate and cannot invoke a skill. Always exits 0
+- `verify-worktree.sh` — the checks, and the verification receipt
+- `receipts.sh` — the two gates as facts on disk
+- `lease.sh` — the feature lease (`refs/crew-lock/<slug>` under `tracker: github`): owner, acquire, reclaim, release
+- `post-findings.sh` — posts the sprint's open review findings to the feature branch's PR as one review
+- `prd-audit.sh` — the PRD audit gate: locates the PRD and prints the prompt the `prdAuditor` dispatch uses
+- `promote-findings.sh` — findings, PRD gaps and fixable integration failures → parked fix issues → Phase 2
+- `merge-branches.sh`, `close-issue.sh` — the only writer of an issue's `Status:`
+- `resolve-merge-conflicts.sh` — called by `merge-branches.sh` on a conflicted merge: when the only conflicts are
+  `registry.json` entry `version`s (higher semver kept) and `CHANGELOG.md` entries both sides appended (both kept,
+  feature side first) it stages the resolution, which `merge-branches.sh` commits, tracing each decision; anything else exits 1
+  and the merge is aborted as before
+- `sync-feature-branch.sh` — `preflight.mjs`'s `syncFeatureBranch`, once per run: fetches `origin/<default>` and, when the
+  resumed feature branch lacks it (earlier work squash-merged), merges it in (`resolve-merge-conflicts.sh` for
+  registry versions / CHANGELOG appends; any other conflict aborts cleanly and exits 1). Never bumps versions, never
+  pushes; no `origin`/fetch/`origin/<default>` is a silent skip. `--dry-run` only reports
+- `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
+- `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
+  `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
+  `sweep` (clears a dead run's `in-progress` once the lease is held). A failed write only warns
+- `close-shipped.sh` — once per run, after the lease: closes the milestone's `awaiting-merge`
+  issues that a merged PR's body names (`Closes #n`), then the PRD once no work issue is left, and with it each open issue on the PRD's `Origin:` line.
+  It reads the bodies itself, since GitHub can fail to link a `Closes` line. Runnable by hand
+- `open-pr.sh` — `openPr` only: pushes the feature branch, creates or updates its PR with the
+  tracker's closing lines (`closingRefs`) in crew-afk's own block of the body, under the body
+  `orchestrator/lib/pipeline/pr-body.mjs` had the `prWriter` role write by following `write-pr`'s
+  SKILL.md (installed as an asset at `.coding-crew/write-pr/`), plus the checks line.
+  `--draft` (run not green: stalled, a blocked issue, capped, or an integration check that was `skipped`/red/not run)
+  creates the PR as a draft or converts a ready one (`gh pr ready --undo`); without it an open draft is marked ready.
+  `--note-file` puts the blocked list and reason inside the crew-afk block. A failed conversion, or a
+  `--draft` create the repo refuses (the PR is then created ready), prints `PR-STATE-FAILED:` and never fails the script or sprint
+
+Effects that run for minutes — a worker's `verify-worktree.sh` and `ensure-deps.sh` — go through `Effects.bashAsync`, so each
+worker loop verifies its own branch concurrently; merge and close stay on the blocking `effects.bash`, which is what keeps
+merges into the feature branch serialized.
+
+A verify that gives no verdict — killed by a signal (`Effects.exec`'s `interrupted`; a real `timeoutMs` stays 124), or
+output naming no failing check even on a second run — is retained as `verify-interrupted` / `verify-inconclusive` and
+re-verified next round with no triage and no coder (`pipeline/verify.mjs`).
+
+A retained branch is first synced with the feature branch (`pipeline.mjs`), in three steps: `mergeFeatureBranch` commits what
+`resolve-merge-conflicts.sh` resolves; any other conflict gets its own conflict-only `coder` dispatch (`conflictPrompt`, at most
+one per attempt, outside the retry cap and `MAX_DISPATCHES_PER_ISSUE`) whose success is read from git, not its report
+(no `MERGE_HEAD`, nothing unmerged, HEAD containing the feature sha the sync merge started from, not the live ref a sibling
+may have moved since); then the original route (`restart`, `fix`, `verify`) runs with a prompt that has no conflict text.
+
+A retry re-reads an issue a human edited since the attempt that retained its branch: `state.sh retain` records a `sha256`
+fingerprint of the issue's `## What to build` and `## Acceptance criteria` (checkbox marks normalised, so the `Status:` line,
+`## Progress` / `## Blocked` and ticked boxes — crew-afk's own writes — never count). At resume, a different fingerprint turns a
+`fix` or `verify` route into `restart` (`workerPrompt` on the retained branch, commits kept, `[RESUME] … issue edited` logged)
+instead of `fixPrompt`'s "do not re-read the issue". A `conflict` retry still gets its conflict-only dispatch first, then restarts
+instead of ending in `verify`. The `merge` route ignores it, as does a record with no fingerprint. An attempt whose conflict dispatch left the sync unresolved never worked from the edited issue, so it keeps the record's old fingerprint (`keepFingerprint`) and the next retry still restarts.
+
+Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
+AC receipt → merge → close. Deps sit there because that one position is before both
+consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any
+gate whose receipt already matches the branch tip (`gatesAtTip`).
+
+Soft wall-clock cap (`--max-wall <minutes>`, `afk.maxWallMinutes`, default 120, `0` = off): once elapsed `loop.mjs` claims and polls for nothing new, in-flight workers finish and merge, Phase 2 (`flush`) is skipped so fix issues stay parked, the integration check still runs; when that left an issue unclaimed or a fix issue parked, the summary names the cap and them, the run exits 2 and an `--open-pr` PR is a draft (a cap that cut nothing short is not a hit).
+
+Idle-slot polling (`--poll-interval <seconds>`, default 30, `0` = off): while work is in flight and a slot is idle,
+`loop.mjs` lists the tracker once per interval (one listing however many slots are idle) and starts any issue made
+ready mid-run. An issue not seen before is first linted (`lintMidRunIssues`, the same `lint-issues.sh`); an `ERROR`
+blocks it for this run only (named in the summary) and never stops the run or the others. Fix issues this run created
+are not re-linted. Polling stops when nothing is in flight; with `0`, a new issue is claimed only when an attempt ends.
+
+Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the resumed feature branch gets `origin/<default>`
+merged in when it lacks it (`sync-feature-branch.sh`; a conflict beyond registry versions / CHANGELOG appends stops the
+run, `--no-sync-main` skips; runs after the dirty check, before lint and the baseline); a retained-branch record whose issue
+is closed or absent from `listFeatureIssues`, or whose branch is gone, is dropped and logged (`dropStaleRetained` →
+`state.sh drop-retained`; an open issue with its branch is kept, a failed or empty listing drops nothing); the assets under
+`CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
+`orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked
+changes (`--allow-dirty`), the feature branch must pass its own checks in a throwaway
+`crew/<feature>/_baseline` worktree (`--no-baseline`) — started alongside dispatch (up to `maxParallel` coders begin meanwhile), no verify starts before its verdict, and a red one stops further claims, kills the dispatches already running and stops the run (exit 1, started branches kept for the next run); a git tree that already passed (a per-issue verify, an earlier baseline or integration — `sprint-state.json`'s `passing_trees`) reads `cached` for the baseline and the integration check alike, the feature's open issues must pass `to-issues`' `lint-issues.sh`
+(`preflight.mjs`'s `lintIssues`, before command discovery: an `ERROR` stops the run, `WARN` is logged, exit 2 or a
+failure to run it is logged and never stops; `--dry-run` reports only), and each ready, unblocked issue's `## Requires`
+runs once through solve-issue's `check-requires.sh` — a failure blocks that issue, not the run
+(an issue waiting on a blocker is probed when `loop.mjs` first claims it). A check
+that modifies the tree fails, in the baseline and every verify.
+
+At every drain of the queue (after Phase 1 and after Phase 2) the same mechanism runs once more on the merged
+feature branch under its own `_integration` stem and cache (`--no-integration-check`; `--no-baseline` does not
+turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR (a PR an earlier run opened is made a draft, nothing pushed: `open-pr.sh --no-push`). It is
+first triaged (`orchestrator/lib/integration-fix.mjs`, a `crew-triage` dispatch): a fixable failure becomes one parked
+fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, after which the next drain checks again
+— at most two per run, then the run ends stalled; exit 127 or a "not fixable" verdict queues nothing and the summary
+says why.
+
+At every drain where something merged (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
+runs in feature mode: no criteria, findings only, attributed to `feature` in the sprint
+review report and, until the feature has its one findings fix issue (counted per feature, across runs), promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
+`crew-triage`'s findings mode judges Actionable, via `orchestrator/lib/pipeline/findings-triage.mjs`; a failed triage
+falls back to the `high` rule). That fix issue holds the 8 most severe promotable findings, CRITICAL→LOW (`criteriaFile` sorts for every caller); the rest are marked `report_only` and stay open. The range (`featureReviewRange`) is the whole feature, from the merge-base with origin's default
+branch (else the local default branch; with neither the review is skipped, logged) — never this run's `base_sha`, which
+`session-init.sh` resets each run. After a review that wrote a report, `state.sh feature-reviewed` records
+`feature_review.reviewed_tip` in `sprint-state.json`; a later run whose tip equals it dispatches no reviewer ("nothing new
+since <sha>"), one whose tip descends from it reviews only `reviewed_tip..tip` minus commits on `origin/<default>` (what
+`sync-feature-branch.sh` merged in), and a `reviewed_tip` that is no ancestor (history rewritten) gives the whole-feature
+review again. Reviews after the one that created the fix issue are report-only (promotion cap): the count is `feature_review.promotions` in
+`sprint-state.json` (`state.sh feature-review-promoted`, advanced only when a fix issue was created; absent reads as 0, and an earlier version's 2 reads as capped), so a later run starts past it too; no fix issue; the findings reach the review
+report and the summary, and each one the rule would have promoted is a not-green reason, so an `--open-pr` PR is a draft naming
+them (none under `fixFindings: none`). To keep LOW findings out of fix issues
+altogether, use `afk.fixFindings: medium` / `--fix-findings medium`. Every feature review carries the PRD's `## Compatibility & Migration` section verbatim
+(`loadPrdSection`), and an increment review every PRD decision line. The summary's `## Feature Review` lists each drain's review
+(range, finding count, promoted or report-only, or why skipped). Not run when nothing merged; skipped (the summary says so) at a drain
+whose integration check is red, or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
+a dispatch that leaves no review is recorded not-run (and no `reviewed_tip`) and never fails the sprint.
+
+A whole-feature review is split into areas (`pipeline/feature-areas.mjs`): one plain `reviewer`-bound planner dispatch gets the
+`git diff --stat`, each merged issue's files (from its merge commit) and `## Implements` IDs, and the PRD decision lines, and answers
+`{"areas": [{"name", "files", "decisions"}]}` in a fenced json block. Paths not in the diff and IDs not in the PRD are dropped, more than
+`maxParallel` areas are merged down (the two smallest first), and a changed file no area holds joins the smallest. A planner that fails,
+times out, or gives no json or no usable area gives one area over the whole diff with every decision (`FEATURE-REVIEW: planner fallback — <why>`).
+`runFeatureReview` then runs one `crew-reviewer` per area concurrently (`Promise.all`), each with its own `dispatch/feature-d<drain>-<n>/` dir (unique per drain), report
+file and cost record and an `Area:` block (name, files, full decision text) in its prompt; with more than one area, each area's
+`Gather the diff:` line is limited to its files (`git --literal-pathspecs diff --no-renames … -- <quoted paths>`; the file lists are read
+with `core.quotePath=false -z --no-renames`, so a renamed file's old path is listed and its deletion seen). All areas' findings are written as one `feature`
+block and promoted once (one findings triage, at most one deferred fix issue). An area that leaves no review is marked not-run as
+`feature-<n>`, the others still count, and no `reviewed_tip` is recorded so the next run reviews the whole feature again. An incremental
+review (`increment` mode) dispatches no planner and one reviewer, without an `Area:` block.
+
+The per-branch review is a criteria gate and raises no findings: `reviewer.md`'s per-branch mode writes `findings: []` (the always-on
+classes and design-standard checks are Feature Mode only), and `pipeline/review.mjs` drops any findings a branch report still carries
+before it writes the review block, so no branch gets a fix issue of its own; findings come only from the feature review. Open branch
+findings an earlier version left in a `sprint-review-*.md` report are still listed by `promote-findings.sh open`, never promoted: a re-review of that
+branch carries them into its new block (`carried: true`), and the block `pipeline/review.mjs` writes is marked `criteria_only`, so the fold
+(`report.mjs`'s `foldReview`) also carries a branch's earlier findings past it, as past a `not_run` block.
+It also checks the PRD decisions an issue implements: `pipeline/review.mjs` reads the issue's `## Implements` IDs and
+`orchestrator/lib/prd-decisions.mjs` maps them to the PRD's `- **D<n>** — …` / `- **B<n>** — …` lines (PRD located once per run:
+`.scratch/<slug>/PRD.md`; else under `tracker: github` fetched with `trackers/github.mjs prd` and saved as `prd-issue.md`, a saved
+`prd-issue.md` read only when that fetch fails (it warns) or under another tracker; with neither, reviews proceed without). `reviewPrompt` renders them as a `PRD decisions this issue implements:` block, and the reviewer judges each like a
+criterion — a contradicted decision is `unmet`, `detail` naming its ID.
+
+Reviewer, triage (verify, findings, integration) and feature-review dispatches are mechanically read-only
+(`pipeline/shared.mjs`'s `readOnlyDispatch`): every `crew/<feature>/*` ref, the feature branch, main `HEAD` (commit
+and branch) and the main checkout's uncommitted changes are snapshotted around the dispatch; any change (or a
+snapshot git cannot take) fails it closed as not-run and logs `[READONLY-VIOLATION]`, with the dispatch's cost still
+recorded. A change the orchestrator's own concurrent effects could have made is not blamed on it (`Effects`'
+`refActivityMark`/`refActivitySince`): the feature branch and `HEAD` while a merge or other main-checkout ref move
+ran, a crew branch while its worktree was busy (its worker dispatch, a git run there). The AC receipt is written with `receipts.sh write ac --branch <b> --sha <reviewed sha>`, so a
+branch that moved during review fails `check ac --at-tip` as stale.
+
+## Adding a new crew-afk role
+
+1. `orchestrator/roles/<role>.md` — the protocol (whole-line `{{FRAGMENT:<key>}}` and `{{PLATFORM}}` expand at dispatch).
+2. Map it in `ROLE_AGENTS` (`orchestrator/lib/adapters/render.mjs`) and give it any per-CLI args in `adapters/role-args.mjs`.
+3. Bump crew-afk's `version` in `registry.json`; `TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk` and inspect `.coding-crew/crew-afk/roles/`.
