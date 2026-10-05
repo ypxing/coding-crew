@@ -548,6 +548,26 @@ write_feature_review() {
   for i in 9 10 11; do absent -q "finding-$i-"; absent -q "src/f$i.ts"; done
 }
 
+@test "a report_only finding at a promoted finding's file:line drops only its own prose block" {
+  configure_github
+  stub_gh
+  json=$(jq -n '{branch: "feature", slug: "feature", verdict: "all-met", findings: [
+    {severity: "HIGH", location: "src/x.ts:7", criterion: "fix the promoted race", verdict: "actionable"},
+    {severity: "LOW", location: "src/x.ts:7", criterion: "rename the overflow helper", verdict: "actionable", report_only: true}]}')
+  {
+    printf '## Branch: feature (feature)\n\n```json\n%s\n```\n\n' "$json"
+    printf '[HIGH] promoted-race-title\nFile: src/x.ts:7\nIssue: promoted-race-text\nFix: lock it\n\n'
+    printf '[LOW] overflow-helper-title\nFile: src/x.ts:7\nIssue: overflow-helper-text\nFix: rename it\n\n'
+  } > "$REPORT"
+  printf -- '- [ ] [HIGH] fix the promoted race (src/x.ts:7)\n' > crit.md
+
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch feature --slug feature \
+    --title "Fix review findings: feature" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^<summary>\[HIGH\] promoted-race-title</summary>$' "$GH_LAST_BODY"
+  grep -q '^Issue: promoted-race-text$' "$GH_LAST_BODY"
+  absent -q 'overflow-helper'
+}
+
 @test "defer scrubs absolute and .scratch paths quoted in a finding" {
   configure_github
   stub_gh
