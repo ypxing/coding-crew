@@ -127,13 +127,25 @@ J
   [[ "$output" == *"ERROR "*"01-store.md: "*"## Acceptance criteria"* ]]
 }
 
-@test "WARN: criteria count outside 3-8 (too few and too many); exit 0" {
+@test "criteria count: no WARN at 1-10; WARN at 11 names the context-budget check; exit 0" {
   sed -i.bak '/^- \[ \] Third criterion$/d' "$W/issues/01-store.md"
-  for i in 4 5 6 7 8 9; do sed -i.bak "s/^- \[ \] Second criterion\$/&\n- [ ] extra $i/" "$W/issues/02-cli.md"; done
-  lint_clean
+  for i in 4 5 6 7 8 9 10 11; do sed -i.bak "s/^- \[ \] Second criterion\$/&\n- [ ] extra $i/" "$W/issues/02-cli.md"; done
+  f="$BATS_TEST_TMPDIR/one.md"
+  printf '## What to build\n\nx\n\n## Implements\n\nB1\n\n## Acceptance criteria\n\n- [ ] only\n' > "$f"
+  t="$BATS_TEST_TMPDIR/ten.md"
+  { printf '## What to build\n\nx\n\n## Implements\n\nB1\n\n## Acceptance criteria\n\n'; for i in $(seq 1 10); do printf -- '- [ ] c%s\n' "$i"; done; } > "$t"
+  lint_clean --issue "$f" --issue "$t"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"WARN "*"01-store.md: "*"2 acceptance criteria"* ]]
-  [[ "$output" == *"WARN "*"02-cli.md: "*"8 acceptance criteria"* || "$output" == *"WARN "*"02-cli.md: "*"9 acceptance criteria"* ]]
+  [[ "$output" != *"01-store.md: "*"acceptance criteria"* ]]
+  [[ "$output" != *"one.md: "*"acceptance criteria"* ]]
+  [[ "$output" != *"ten.md: "*"acceptance criteria"* ]]
+  [[ "$output" == *"WARN "*"02-cli.md: 11 acceptance criteria"*"context-budget check"* ]]
+  [[ "$output" != *"expected 3-8"* ]]
+}
+
+@test "header comment states the criteria WARN as over 10, a context-budget check" {
+  grep -q '^# WARN:  more than 10 acceptance criteria (a context-budget check' "$LINT"
+  ! grep -q '3-8' "$LINT"
 }
 
 @test "WARN: PRD ID no issue Implements" {

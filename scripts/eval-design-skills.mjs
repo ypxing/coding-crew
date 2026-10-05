@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// eval-design-skills.mjs — behavioural A/B check for crew-grill / crew-brainstorm.
+// eval-design-skills.mjs — behavioural A/B check for crew-grill / crew-brainstorm / to-issues.
 //
 // Why this exists: these skills shape every PRD, and their tests can only grep that a rule's text
 // is present. Whether a rule changes what the model *does* needs a replay: run each case against
@@ -7,13 +7,16 @@
 // blind against a fixed rubric. Maintainer-only; ships to no consumer. Costs real API money — it
 // prints each run's cost — so it is run by hand after editing a design skill, never in CI.
 //
-// Usage: node scripts/eval-design-skills.mjs [--skill crew-grill|crew-brainstorm|all]
+// Usage: node scripts/eval-design-skills.mjs [--skill crew-grill|crew-brainstorm|to-issues|all]
 //          [--base <git ref>] [--head <git ref>|worktree] [--case <name>]... [--runs N]
 //          [--model sonnet] [--judge-model opus] [--parallel 4] [--dry-run]
 //
 // Cases live in scripts/eval-design-skills/cases/*.md: front matter (skill, stage, repo_ref), then
 // `## Request`, optional `## Transcript` (stage: close), and `## Reference judgement`, which only
-// the judge sees. A reference judgement is a set of claims about the repo at repo_ref: verify every
+// the judge sees. A `to-issues` case uses stage `slice` and inlines the PRD body in its Request; its
+// judge scores against rubric-to-issues.md and the to-issues metrics (SKILL_SCORING), not the
+// grill/brainstorm ones. skillText reads the raw SKILL.md: `{{FRAGMENT:…}}` lines stay unrendered,
+// since the slice stage stops before any tracker step. A reference judgement is a set of claims about the repo at repo_ref: verify every
 // fact in it against that commit before committing the case — the judge scores against it, so a
 // wrong reference silently inverts the result. State facts that live outside git (a count in a
 // gitignored dir, an open PR) in the Request, as the user would. Results land in .scratch/eval-design-skills/<timestamp>/ (summary.md,
@@ -32,11 +35,22 @@ const STAGE_INSTRUCTIONS = {
     "EVAL MODE (non-interactive): do your research read-only, then output ONLY what you would send the user at your first decision point (for a grill: your first round; for a brainstorm: the approaches you would propose, stating as assumptions anything you would otherwise ask one question at a time). Then stop. No user will answer. Modify nothing.",
   close:
     "EVAL MODE (non-interactive): the frontier is empty. Output exactly what you would send the user to close Phase 1 (everything up to and including the 'Ready to write the PRD?' line). Then assume the user answered 'y' with no other change, and output ONLY the '## Decisions' and '## Out of Scope' sections the PRD would get. You may read the repo to check facts, but modify nothing.",
+  slice:
+    "EVAL MODE (non-interactive): the ARGUMENTS above are the feature's PRD; do not look for or fetch another. Explore the repo read-only, then output ONLY your step 5 breakdown: the numbered slices, each with its title, acceptance-criteria count (criteria count), `Blocked by`, and the split reason that produced it (none when there is one slice). Then stop. No user will answer. Modify nothing and publish nothing.",
 };
 
 const METRICS = ["sized", "do_least", "asked_well", "overbuilt", "underbuilt", "false_cut", "chain_priced"];
 // Higher is better for these; lower is better for the rest.
 const GOOD_HIGH = new Set(["sized", "do_least", "asked_well", "chain_priced"]);
+const TO_ISSUES_METRICS = ["count_ok", "splits_justified", "overmerged", "oversplit"];
+
+// Per skill: the metrics its judge scores, which of them are better high, and its rubric file.
+export const SKILL_SCORING = {
+  "crew-grill": { metrics: METRICS, goodHigh: GOOD_HIGH, rubric: "rubric.md" },
+  "crew-brainstorm": { metrics: METRICS, goodHigh: GOOD_HIGH, rubric: "rubric.md" },
+  "to-issues": { metrics: TO_ISSUES_METRICS, goodHigh: new Set(["count_ok", "splits_justified"]),
+    rubric: "rubric-to-issues.md" },
+};
 
 function parseArgs(argv) {
   const o = { skill: "all", base: "main", head: "worktree", cases: [], runs: 2, model: "sonnet",
@@ -70,13 +84,15 @@ export function parseCase(name, text) {
     const i = l.indexOf(":");
     return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
   }));
+  // Only the case's own headings split it: a Request that inlines a PRD keeps the PRD's `## ` headings.
   const sections = {};
-  for (const part of m[2].split(/^## /m).slice(1)) {
+  for (const part of m[2].split(/^## (?=(?:Request|Transcript|Reference judgement)[ \t]*$)/m).slice(1)) {
     const nl = part.indexOf("\n");
     sections[part.slice(0, nl).trim()] = part.slice(nl + 1).trim();
   }
   for (const k of ["skill", "stage", "repo_ref"]) if (!meta[k]) throw new Error(`${name}: front matter needs ${k}`);
   if (!STAGE_INSTRUCTIONS[meta.stage]) throw new Error(`${name}: unknown stage ${meta.stage}`);
+  if (!SKILL_SCORING[meta.skill]) throw new Error(`${name}: skill ${meta.skill} has no metric list`);
   if (!sections.Request || !sections["Reference judgement"]) {
     throw new Error(`${name}: needs ## Request and ## Reference judgement`);
   }
@@ -97,14 +113,14 @@ export function subjectPrompt(skill, c) {
 }
 
 // Blind: outputs get shuffled letter labels; the judge never sees which version wrote what.
-export function judgePrompt(rubric, c, labelled) {
+export function judgePrompt(rubric, c, labelled, metrics = METRICS) {
   return [rubric, "", "## Case request", c.request, "",
     c.transcript ? `## Transcript the outputs continue from\n${c.transcript}\n` : "",
     "## Reference judgement (from the maintainer)", c.reference, "",
     `## Outputs (stage: ${c.stage})`,
     ...labelled.map(({ label, text }) => `### Output ${label}\n${text}\n`),
     "Reply with ONLY a JSON array, one object per output: " +
-      '{"label": "A", "scores": {' + METRICS.map((m) => `"${m}": 0|1|null`).join(", ") + '}, "note": "<one sentence>"}',
+      '{"label": "A", "scores": {' + metrics.map((m) => `"${m}": 0|1|null`).join(", ") + '}, "note": "<one sentence>"}',
   ].join("\n");
 }
 
@@ -123,7 +139,7 @@ export function parseJudge(text) {
   return JSON.parse(text.slice(s, e + 1));
 }
 
-export function summarize(rows) {
+export function summarize(rows, metrics = METRICS, goodHigh = GOOD_HIGH) {
   // rows: [{case, version, scores, cost}] → per case×version: mean per metric (nulls skipped), n, cost.
   const groups = new Map();
   for (const r of rows) {
@@ -131,19 +147,19 @@ export function summarize(rows) {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(r);
   }
-  const lines = ["| case | version | n | " + METRICS.join(" | ") + " | cost |",
-    "|---|---|---|" + METRICS.map(() => "---").join("|") + "|---|"];
+  const lines = ["| case | version | n | " + metrics.join(" | ") + " | cost |",
+    "|---|---|---|" + metrics.map(() => "---").join("|") + "|---|"];
   for (const [k, rs] of groups) {
     const [c, v] = k.split("\t");
-    const cells = METRICS.map((m) => {
+    const cells = metrics.map((m) => {
       const vals = rs.map((r) => r.scores?.[m]).filter((x) => x === 0 || x === 1);
       return vals.length ? `${vals.reduce((a, b) => a + b, 0)}/${vals.length}` : "n/a";
     });
     const cost = rs.reduce((a, r) => a + (r.cost || 0), 0);
     lines.push(`| ${c} | ${v} | ${rs.length} | ${cells.join(" | ")} | $${cost.toFixed(2)} |`);
   }
-  lines.push("", "Higher is better: " + [...GOOD_HIGH].join(", ") + ". Lower is better: " +
-    METRICS.filter((m) => !GOOD_HIGH.has(m)).join(", ") + ". n/a = not applicable to that output.");
+  lines.push("", "Higher is better: " + [...goodHigh].join(", ") + ". Lower is better: " +
+    metrics.filter((m) => !goodHigh.has(m)).join(", ") + ". n/a = not applicable to that output.");
   return lines.join("\n");
 }
 
@@ -200,7 +216,6 @@ export async function pool(tasks, n, stop) {
 
 async function main() {
   const o = parseArgs(process.argv.slice(2));
-  const rubric = fs.readFileSync(path.join(HERE, "rubric.md"), "utf8");
   let cases = fs.readdirSync(path.join(HERE, "cases")).filter((f) => f.endsWith(".md")).sort()
     .map((f) => parseCase(f.replace(/\.md$/, ""), fs.readFileSync(path.join(HERE, "cases", f), "utf8")));
   if (o.skill !== "all") cases = cases.filter((c) => c.skill === o.skill);
@@ -225,6 +240,8 @@ async function main() {
     execFileSync("git", ["worktree", "add", "-q", "--detach", dir, ref], { cwd: ROOT });
     trees.set(ref, dir);
   }
+  const rubrics = {};
+  for (const c of cases) rubrics[c.skill] ??= fs.readFileSync(path.join(HERE, SKILL_SCORING[c.skill].rubric), "utf8");
   const skills = {};
   for (const c of cases) for (const [v, ref] of Object.entries(versions)) skills[`${c.skill}@${v}`] ??= skillText(c.skill, ref);
 
@@ -258,7 +275,7 @@ async function main() {
       const labelled = shuffleLabels(mine);
       const j = await runClaude(["-p", "--model", o.judgeModel, "--output-format", "json", "--max-turns", "1",
         "--disallowedTools", "Bash,Edit,Write,NotebookEdit,Agent,Read,Grep,Glob"],
-        judgePrompt(rubric, c, labelled), ROOT);
+        judgePrompt(rubrics[c.skill], c, labelled, SKILL_SCORING[c.skill].metrics), ROOT);
       let verdicts = [];
       if (!j.ok && LIMIT_RE.test(`${j.text}\n${j.err}`)) {
         console.error(`\nSTOPPED while judging ${c.name}: "${(j.text || j.err).trim().split("\n")[0]}". ` +
@@ -277,7 +294,12 @@ async function main() {
 
     const scored = rows.filter((r) => r.version !== "judge");
     const total = rows.reduce((a, r) => a + (r.cost || 0), 0);
-    const summary = `${summarize(scored)}\n\nTotal cost: $${total.toFixed(2)} (judge included)\n\n## Notes\n` +
+    const tables = [...new Set(cases.map((c) => c.skill))].map((sk) => {
+      const { metrics, goodHigh } = SKILL_SCORING[sk];
+      const names = new Set(cases.filter((c) => c.skill === sk).map((c) => c.name));
+      return summarize(scored.filter((r) => names.has(r.case)), metrics, goodHigh);
+    });
+    const summary = `${tables.join("\n\n")}\n\nTotal cost: $${total.toFixed(2)} (judge included)\n\n## Notes\n` +
       scored.map((r) => `- ${r.case} ${r.version} #${r.run}: ${r.ok ? r.note : "run failed"}`).join("\n") + "\n";
     fs.writeFileSync(path.join(outDir, "summary.md"), summary);
     fs.writeFileSync(path.join(outDir, "results.json"), JSON.stringify(rows.map(({ text, ...r }) => r), null, 2));

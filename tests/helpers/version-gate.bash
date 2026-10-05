@@ -44,7 +44,7 @@ version_gate_failures() {
         shipped=$(_shipped_paths "$branch" "$section" "$name")
         while IFS= read -r path; do
           [ -n "$path" ] || continue
-          if grep -qxF -e "$path" "$changed" || grep -q -F -e "$path/" "$changed"; then
+          if grep -qxF -e "$path" "$changed" || awk -v p="$path/" 'index($0, p) == 1 { f = 1; exit } END { exit !f }' "$changed"; then
             reason="shipped file $path"; break
           fi
         done <<< "$shipped"

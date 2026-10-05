@@ -53,6 +53,13 @@ setup() {
   [ -z "$output" ]
 }
 
+@test "a path that only contains a shipped directory's name further down is not a change to it" {
+  cp "$FIX/bump-ok/base.json" "$BATS_TEST_TMPDIR/r.json"
+  echo "tests/skills/crew-afk/scripts/x.sh" > "$BATS_TEST_TMPDIR/c.txt"
+  run version_gate_failures "$BATS_TEST_TMPDIR/r.json" "$BATS_TEST_TMPDIR/r.json" "$BATS_TEST_TMPDIR/r.json" "$BATS_TEST_TMPDIR/c.txt"
+  [ -z "$output" ]
+}
+
 @test "registry.json versions sit strictly above origin/main's for every entry this branch changed" {
   git -C "$REPO_ROOT" rev-parse --verify -q origin/main >/dev/null || skip "origin/main was not found"
   local mb
