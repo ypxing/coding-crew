@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { shellQuote } from "./pane-host/shared.mjs";
 import { renderReviewContext } from "./review-context.mjs";
+import { SEVERITY_RANK } from "./report.mjs";
 
 /**
  * `install_mode`/`docker_service` are ensure-deps.sh's own verdict, already cached at
@@ -192,7 +193,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-// One finding in either review schema. `issue` carries the reviewer's design-only marker
+// One finding in the feature review's schema. `issue` carries the reviewer's design-only marker
 // (reviewer.md's "Design standard (criterion <n>):" prefix), which crew-triage reads.
 const FINDING_SHAPE = {
   severity: "CRITICAL | HIGH | MEDIUM | LOW",
@@ -256,11 +257,15 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
     "run lacked a precondition (a service unreachable, a credential absent, so its tests",
     "skipped): that stops the issue for a human, since no code change can help. Else `code`.",
     "",
+    // Findings come from the feature review alone (PRD D1): this gate is criteria and decisions.
+    "A per-branch review writes `findings: []`: it is the criteria gate, and nothing more.",
+    "The always-on classes and the design-standard checks apply only to a `Feature review:` dispatch.",
+    "",
     // Same policy as the worker's resultBlock: the file is the only thing read. No fallback
     // fenced block in the final message — see report.mjs's parseReviewReport. The "##
     // Branch:" heading below shapes only the transcript a human reads, never the merge gate.
     `Write your structured verdict to ${reportPath} as your last action. This file is the`,
-    "only thing that gates the merge and counts findings, so get it exactly right — nothing",
+    "only thing that gates the merge, so get it exactly right — nothing",
     "you print in your final message is parsed. In your final message, still start with",
     "`## Branch: <branch-name>`, for the human reading the transcript, then the same object:",
     "",
@@ -272,17 +277,12 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
         verdict: "all-met | unmet",
         detail: "<which criterion, and why — required on unmet>",
         cause: "code | environment — on unmet only",
-        findings: [FINDING_SHAPE],
+        findings: [],
       },
       null,
       2,
     ),
     "```",
-    "",
-    "`findings` is `[]` when there are none — never omit the block itself. Follow it with",
-    "your usual snippet-anchored explanation per finding, for the human reading the report;",
-    "the json block above is what gets counted, so a finding missing from it is a finding",
-    "nobody promotes or triages, no matter how much prose describes it.",
   ].join("\n");
 }
 
@@ -559,7 +559,6 @@ export function findingsTriagePrompt({ scope, ref, change, findings, reportPath 
   ].join("\n");
 }
 
-/** One `- [ ]` line per promotable finding, each carrying its own citation. */
 /** The PRD audit's missing requirements, as the fix issue's acceptance criteria. */
 export function prdGapsCriteria(missing) {
   const lines = ["<!-- queued from the PRD audit's missing requirements -->", ""];
@@ -567,9 +566,16 @@ export function prdGapsCriteria(missing) {
   return `${lines.join("\n")}\n`;
 }
 
+/** Promotable findings most severe first (CRITICAL→LOW); a stable sort, so one severity keeps its input order. */
+export function bySeverity(findings) {
+  const rank = (f) => SEVERITY_RANK[String(f.severity).toUpperCase()] ?? 4;
+  return [...findings].sort((a, b) => rank(a) - rank(b));
+}
+
+/** One `- [ ]` line per promotable finding, most severe first, each carrying its own citation. */
 export function criteriaFile({ branch, findings }) {
   const lines = [`<!-- promoted from review of ${branch} -->`, ""];
-  for (const f of findings) {
+  for (const f of bySeverity(findings)) {
     const where = f.location ? ` (${f.location})` : "";
     lines.push(`- [ ] [${f.severity}] ${f.criterion}${where}`);
   }

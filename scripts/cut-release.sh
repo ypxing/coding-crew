@@ -9,7 +9,7 @@
 # branch and the tag. None of that is judgement, just "read git history" or "run the existing
 # test" — so a release should cost one command, not a dozen exploratory reads and greps.
 #
-# Usage: scripts/cut-release.sh [--dry-run]
+# Usage: scripts/cut-release.sh [--dry-run] (--demo-smoke <log> | --no-demo-smoke "<reason>")
 #
 # Preconditions this enforces (fails fast, does not guess):
 #   - working tree clean, HEAD's branch has an upstream to push to
@@ -21,6 +21,13 @@
 #     silently skips any agent/skill whose shipped files changed without its own version bumping
 #     — see that test for the full story)
 #   - HEAD is not already tagged
+#   - a demo smoke (scripts/smoke-sprint.sh <platform> --demo) passed for this crew-afk version:
+#     --demo-smoke <log> names that run's output, which must hold a `SMOKE: PASS (<platform>, demo)` line
+#     (a non-demo smoke's `SMOKE: PASS (<platform>)` is refused) and a
+#     `crew-afk-version:` equal to HEAD's registry.json crew-afk version, and a `crew-afk-commit:` from a clean
+#     checkout that HEAD descends from with nothing changed since but CHANGELOG.md and the smoke's RESULTS.md
+#     (the row it appended); --no-demo-smoke
+#     "<reason>" releases without one and prints why. One of the two is required.
 #
 # --dry-run runs every check above and prints what would be tagged/pushed, without doing either.
 set -euo pipefail
@@ -28,13 +35,26 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-DRY_RUN=0
-for arg in "$@"; do
-  case "$arg" in
-    --dry-run) DRY_RUN=1 ;;
-    *) echo "Usage: $0 [--dry-run]" >&2; exit 2 ;;
+USAGE="Usage: $0 [--dry-run] (--demo-smoke <log> | --no-demo-smoke \"<reason>\")"
+DRY_RUN=0 DEMO_LOG="" NO_DEMO="" NO_DEMO_SET=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY_RUN=1; shift ;;
+    --demo-smoke) [[ $# -ge 2 ]] || { echo "$USAGE" >&2; exit 2; }; DEMO_LOG="$2"; shift 2 ;;
+    --no-demo-smoke) [[ $# -ge 2 ]] || { echo "$USAGE" >&2; exit 2; }; NO_DEMO="$2"; NO_DEMO_SET=1; shift 2 ;;
+    *) echo "$USAGE" >&2; exit 2 ;;
   esac
 done
+
+if [[ -n "$DEMO_LOG" && "$NO_DEMO_SET" -eq 1 ]]; then
+  echo "Error: --demo-smoke and --no-demo-smoke exclude each other. $USAGE" >&2; exit 2
+elif [[ -z "$DEMO_LOG" && "$NO_DEMO_SET" -eq 0 ]]; then
+  echo "Error: no demo smoke — pass --demo-smoke <log> (scripts/smoke-sprint.sh <platform> --demo output)" \
+       "or --no-demo-smoke \"<reason>\"." >&2
+  exit 2
+elif [[ "$NO_DEMO_SET" -eq 1 && -z "${NO_DEMO// }" ]]; then
+  echo "Error: --no-demo-smoke needs a reason." >&2; exit 2
+fi
 
 [[ -z "$(git status --porcelain)" ]] || {
   echo "Error: working tree not clean — commit (including the CHANGELOG.md/registry.json bumps) before releasing." >&2
@@ -68,6 +88,44 @@ if [[ -n "$PREV_TAG" ]]; then
 fi
 
 echo "Releasing $TAG (previous: ${PREV_TAG:-none})"
+
+if [[ -n "$DEMO_LOG" ]]; then
+  [[ -f "$DEMO_LOG" ]] || { echo "Error: demo smoke log $DEMO_LOG not found." >&2; exit 1; }
+  AFK_VERSION=$(git show HEAD:registry.json | jq -r '.skills["crew-afk"].version // empty')
+  [[ -n "$AFK_VERSION" ]] || { echo "Error: HEAD's registry.json has no crew-afk version." >&2; exit 1; }
+  grep -q '^SMOKE: PASS' "$DEMO_LOG" || {
+    echo "Error: $DEMO_LOG has no 'SMOKE: PASS' line — the demo smoke did not pass." >&2; exit 1
+  }
+  grep -Eq '^SMOKE: PASS \([a-z]+, demo\)$' "$DEMO_LOG" || {
+    echo "Error: $DEMO_LOG is not a demo run's — its PASS line lacks ', demo)'. Run scripts/smoke-sprint.sh <platform> --demo." >&2
+    exit 1
+  }
+  LOG_VERSIONS=$(sed -n 's/^crew-afk-version: *//p' "$DEMO_LOG" | sort -u | tr '\n' ' ' | sed 's/ $//')
+  [[ -n "$LOG_VERSIONS" ]] || { echo "Error: $DEMO_LOG records no 'crew-afk-version:' line." >&2; exit 1; }
+  [[ "$LOG_VERSIONS" == "$AFK_VERSION" ]] || {
+    echo "Error: $DEMO_LOG is for crew-afk $LOG_VERSIONS, but HEAD ships crew-afk $AFK_VERSION — re-run the demo smoke." >&2
+    exit 1
+  }
+  LOG_COMMIT=$(sed -n 's/^crew-afk-commit: *//p' "$DEMO_LOG" | tail -n 1)
+  [[ -n "$LOG_COMMIT" ]] || { echo "Error: $DEMO_LOG records no 'crew-afk-commit:' line — re-run the demo smoke." >&2; exit 1; }
+  [[ "$LOG_COMMIT" != *-dirty ]] || {
+    echo "Error: $DEMO_LOG ran on uncommitted changes (${LOG_COMMIT%-dirty}-dirty) — commit, then re-run the demo smoke." >&2
+    exit 1
+  }
+  git merge-base --is-ancestor "$LOG_COMMIT" HEAD 2>/dev/null || {
+    echo "Error: $DEMO_LOG ran at $LOG_COMMIT, which HEAD does not descend from — re-run the demo smoke." >&2
+    exit 1
+  }
+  SINCE=$(git diff --name-only "$LOG_COMMIT" HEAD -- . ':(exclude)CHANGELOG.md' ':(exclude)scripts/smoke-sprint/RESULTS.md')
+  [[ -z "$SINCE" ]] || {
+    echo "Error: $DEMO_LOG ran at ${LOG_COMMIT:0:12}; these files changed since — re-run the demo smoke:" >&2
+    printf '  %s\n' $SINCE >&2
+    exit 1
+  }
+  echo "Demo smoke: PASS for crew-afk $AFK_VERSION at ${LOG_COMMIT:0:12} ($DEMO_LOG)"
+else
+  echo "Demo smoke: skipped — $NO_DEMO"
+fi
 
 if command -v bats >/dev/null 2>&1; then
   echo "Checking registry.json version bumps against ${PREV_TAG:-<none>} ..."

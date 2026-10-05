@@ -73,10 +73,11 @@ gh auth status >/dev/null 2>&1 || { echo "Error: gh found but not authenticated 
 If the user passed a PR number or URL as an argument, use it. Otherwise run:
 
 ```
-gh pr view --json number,url,title,headRefName
+gh pr view --json number,url,title,headRefName,body
 ```
 
-Confirm the PR number with the user before proceeding if it is ambiguous.
+Confirm the PR number with the user before proceeding if it is ambiguous. Keep `headRefName` and
+`body` for Step 5.5.
 
 ## Step 2 — Fetch all review comments
 
@@ -159,9 +160,34 @@ bash "<skill-dir>/scripts/commit-changes.sh" \
 
 Do not push — leave that to the user.
 
+## Step 5.5 — Record what crew-afk missed
+
+A comment fixed on a PR crew-afk opened is a defect crew-afk's own review let through. Record it so
+it can be replayed against the reviewer later (`scripts/eval-reviewer-misses/RESULTS.md` in the
+coding-crew repo).
+
+Only when **both** hold: the PR body (Step 1) contains `<!-- crew-afk:begin -->`, and the head
+branch is `feature/<slug>`. On a PR without the crew-afk block, or with any other head branch,
+nothing is written — skip to Step 6.
+
+Otherwise append one line per comment that was accepted (**Actionable**, or a **Debatable** one the
+user told you to change) and fixed in Step 5's commit to `.scratch/<slug>/reviews/escaped.md` in the
+main checkout (create the directory and file if missing; never rewrite existing lines):
+
+```
+- <YYYY-MM-DD> <file:line> — <one-line summary> — <commit sha>
+```
+
+`<file:line>` is where the comment pointed (the file alone for a top-level comment), `<commit sha>`
+the short sha of the commit that fixed it. A comment whose body contains `crew-finding:` is
+crew-afk's own posted finding — crew-afk already caught it — so it is not recorded.
+
+Writing the file is best-effort: a failed write is reported in the Summary (Step 6) with the error
+and never stops the skill.
+
 ## Step 6 — Summary
 
-Print a markdown summary with three sections:
+Print a markdown summary with three sections, plus a fourth on a crew-afk PR (Step 5.5):
 
 ### Addressed
 
@@ -174,6 +200,11 @@ One bullet per debatable comment that was dismissed after user confirmation, wit
 ### Skipped
 
 One bullet per dismissed comment with the reason.
+
+### Escaped (crew-afk PRs only)
+
+How many lines Step 5.5 appended to `.scratch/<slug>/reviews/escaped.md`, or the error if the write
+failed.
 
 ## Unattended mode (`--auto`)
 
@@ -197,6 +228,8 @@ confirmation or question** — nobody is there to answer. Only the differences a
   `bash "<skill-dir>/scripts/reply-thread.sh" <thread-id> <body>`: what changed (with the commit sha),
   or why nothing did.
 - **Never resolve a thread.** A human resolves it.
+- **Step 5.5** — runs after `push-rework.sh` succeeds, with its commit sha; the file stays local
+  (never committed or pushed).
 - **Step 6** — print the summary; do not ask anything after it.
 
 ---

@@ -201,3 +201,7 @@ defines_term() {
 @test "CLAUDE.md's crew-coder row reads protocol + report wire" {
   grep -qE '^\| `crew-coder` +\| protocol \+ report wire +\|' "$REPO_ROOT/CLAUDE.md"
 }
+
+@test "CLAUDE.md asks a crew-afk mechanism change to cite its incident count" {
+  grep -qF 'A crew-afk mechanism change cites how many times its incident happened' "$REPO_ROOT/CLAUDE.md"
+}

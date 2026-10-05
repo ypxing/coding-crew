@@ -110,7 +110,7 @@ test("the summary is kept in the trace log too, not only printed", () => {
   addIssue(root, "01-alpha.md");
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(traceLog(root), / INFO  \[SUMMARY\]\n  Rounds: \d+\n  Model: /);
+  assert.match(traceLog(root), / INFO  \[SUMMARY\]\n  Run \d+ for this feature; previous: .*\n  Rounds: \d+\n  Model: /);
 });
 
 test("the summary names the resolved model, rendered from disk", () => {
@@ -379,6 +379,30 @@ test("the PRD audit does not run while a Phase 1 issue is still open", () => {
   assert.equal(existsSync(join(root, ".scratch/demo/prd-audit.md")), false);
   assert.match(r.stdout, /\*\*Not run:\*\* 1 Phase 1 issue\(s\) still open \(beta\)/, "the summary says so, not only the trace");
   assert.equal(readdirSync(join(root, ".scratch/demo/issues/open")).some((f) => /fix-prd-gaps/.test(f)), false);
+});
+
+test("open fix issues (a Source: line) do not stop the PRD audit; an open work issue alongside still does", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-fix-findings-feature.md", { body: "Source: review (feature)" });
+  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
+  fake(root, "fix-findings-feature.exit", "1");
+  const r = runSprint(root, ["--prd-audit", "report"]);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  const log = traceLog(root);
+  assert.doesNotMatch(log, /PRD audit: skipped/);
+  assert.match(log, /step=prd-audit mode=report/);
+
+  const work = fixtureRepo();
+  addIssue(work, "01-alpha.md");
+  addIssue(work, "02-beta.md");
+  addIssue(work, "03-fix-findings-feature.md", { body: "Source: review (feature)" });
+  writeFileSync(join(work, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
+  fake(work, "beta.exit", "1");
+  fake(work, "fix-findings-feature.exit", "1");
+  const w = runSprint(work, ["--prd-audit", "report"]);
+  assert.equal(w.code, 2, `${w.stdout}\n${w.stderr}`);
+  assert.match(traceLog(work), /PRD audit: skipped — 1 Phase 1 issue\(s\) still open \(beta\)/);
 });
 
 test("a feature slug containing 'skipped' does not silently cancel the PRD audit", () => {

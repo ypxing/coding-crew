@@ -587,8 +587,12 @@ async function main() {
   let resolved;
   let stalled;
   let wallCapped = false;
+  let attemptCapped = false;
   let exitCode = 0;
   let runError;
+  // Set where a run ends early after run-start; the others are read off stalled/wallCapped/attemptCapped.
+  let endReason;
+  let runStarted = false;
   let lockPath;
   let lease;
   // Children run in their own sessions, so neither a terminal ^C nor its hangup (the terminal
@@ -597,6 +601,14 @@ async function main() {
   const SIGNAL_EXIT = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
   const onSignal = (signal) => {
     killAllGroups();
+    // Why it ended, as the finally block below records for every other ending after run-start.
+    if (runStarted) {
+      try {
+        sprint.endRun(`signal ${signal}`, SIGNAL_EXIT[signal]);
+      } catch (err) {
+        console.error(`crew-afk: could not record why the run ended: ${err.message}`);
+      }
+    }
     if (lease) releaseLease(effects, lease);
     process.exit(SIGNAL_EXIT[signal]);
   };
@@ -704,6 +716,7 @@ async function main() {
       closeShipped({ effects, sprint, log: leaseLog });
     }
     sprint.startRun(runId);
+    runStarted = true;
 
     // Best-effort: the log file, not this tab, is the run's durable output.
     if (options.paneHost && !options.dryRun) {
@@ -720,6 +733,7 @@ async function main() {
     const sync = syncFeatureBranch({ sprint, effects, options, log: emit });
     if (sync.status === "conflict") {
       fatal(syncConflictMessage(sprint.featureBranch, sync.output));
+      endReason = "preflight: origin's default branch conflicts with the feature branch";
       exitCode = 1;
       return exitCode;
     }
@@ -729,6 +743,7 @@ async function main() {
     const lint = await lintIssues({ sprint, effects, options, log: emit });
     if (lint.status === "fail" && !options.dryRun) {
       fatal(lintFailureMessage(lint.errors));
+      endReason = "preflight: issue lint errors";
       exitCode = 1;
       return exitCode;
     }
@@ -752,6 +767,7 @@ async function main() {
       });
       if (/^DEPS: docker-failed\b/.test(deps ?? "")) {
         fatal(dockerDepsFailureMessage(deps));
+        endReason = "preflight: docker dependency install failed";
         exitCode = 1;
         return exitCode;
       }
@@ -793,8 +809,10 @@ async function main() {
     const sprintResult = await runSprint(ctx);
     stalled = sprintResult.stalled;
     wallCapped = Boolean(sprintResult.wallCapped);
+    attemptCapped = Boolean(sprintResult.capped);
     if (sprintResult.baselineFailed) {
       fatal(baselineFailureMessage(sprint.featureBranch, sprintResult.baselineFailed));
+      endReason = "baseline red";
       exitCode = 1;
       return exitCode;
     }
@@ -806,6 +824,19 @@ async function main() {
     if (sprint?.traceLog) writeLog(sprint.traceLog, `[CRASH] ${err?.stack || err}`, "fatal");
     throw err;
   } finally {
+    // Every ending after run-start, so the next run's summary can say why this one ended (a
+    // signal records its own in onSignal); a hard kill writes none, which the next run-start reads
+    // as killed or crashed.
+    if (runStarted) {
+      const reason = runError
+        ? `error: ${String(runError?.message ?? runError).split("\n")[0]}`
+        : endReason ?? (wallCapped ? "wall-clock cap" : stalled ? "stalled" : attemptCapped ? "attempt cap" : "finished");
+      try {
+        sprint.endRun(reason, exitCode);
+      } catch (err) {
+        console.error(`crew-afk: could not record why the run ended: ${err.message}`);
+      }
+    }
     // No-ops unless opened above; here so a thrown error can't leave them dangling.
     await closePaneLogTab(effects);
     await closePaneWorkspace(effects);

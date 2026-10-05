@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# promote-findings.sh's github wiring: cmd_defer's github branch, plus guard/list/flush
+# promote-findings.sh's github wiring: cmd_defer's github branch, plus list/flush
 # continuing to work under `tracker: github` — see .scratch/github-issue-tracker/issues/
 # open/07-promote-findings-github-wiring.md.
 #
@@ -292,39 +292,6 @@ SH
   grep -q 'PROMOTE.*integration issue=https://github.com/acme/widgets/issues/42 findings=1' trace.log
 }
 
-# ─── guard: github path ────────────────────────────────────────────────────────
-
-@test "guard live-fetches the body under github and is eligible with no Source: line" {
-  configure_github
-  stub_gh
-  printf 'Some body with no Source line.\n' > "$GH_VIEW_BODY_FILE"
-
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"eligible — threshold: actionable"* ]]
-  grep -q '^issue view 42' "$GH_CALLS_LOG"
-}
-
-@test "guard is still the depth bound under github, checked against the live body" {
-  configure_github
-  stub_gh
-  printf 'Source: some-report (some-branch)\n' > "$GH_VIEW_BODY_FILE"
-
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
-}
-
-@test "guard fails closed under github when the issue cannot be fetched" {
-  configure_github
-  cat > "$STUB/gh" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-  chmod +x "$STUB/gh"
-
-  run bash "$PROMOTE" guard --issue 999 --severities actionable
-  [[ "$output" == *"skip — issue not found: 999"* ]]
-}
-
 # ─── list/flush: github never parks, so both report none ─────────────────────
 
 @test "flush reports none under github - defer never parks a github issue" {
@@ -539,6 +506,68 @@ EOF
   no_local_paths
 }
 
+# write_feature_review [prose] — a feature review of 11 promotable findings, the last 3 of which the
+# promotion cap marked report_only (feature-review.mjs's markReportOnly runs before defer).
+write_feature_review() {
+  json=$(jq -n '{branch: "feature", slug: "feature", verdict: "all-met",
+    findings: [range(1; 12) | {severity: "HIGH", location: "src/f\(.).ts:\(.)", criterion: "fix finding-\(.)-text",
+      verdict: "actionable"} + (if . > 8 then {report_only: true} else {} end)]}')
+  {
+    printf '## Branch: feature (feature)\n\n```json\n%s\n```\n\n' "$json"
+    if [ "${1:-}" = prose ]; then
+      for i in $(seq 1 11); do
+        printf '[HIGH] finding-%s-title\nFile: src/f%s.ts:%s\nIssue: finding-%s-text\nFix: fix it\n\n' "$i" "$i" "$i" "$i"
+      done
+    fi
+  } > "$REPORT"
+  for i in $(seq 1 8); do printf -- '- [ ] [HIGH] fix finding-%s-text (src/f%s.ts:%s)\n' "$i" "$i" "$i"; done > crit.md
+}
+
+@test "a feature fix issue's ## Review findings holds only the promoted 8 of 11, never the report-only overflow (prose)" {
+  configure_github
+  stub_gh
+  write_feature_review prose
+
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch feature --slug feature \
+    --title "Fix review findings: feature" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^## Review findings$' "$GH_LAST_BODY"
+  for i in $(seq 1 8); do grep -q "^<summary>\[HIGH\] finding-$i-title</summary>$" "$GH_LAST_BODY"; done
+  [ "$(grep -c '^<summary>' "$GH_LAST_BODY")" -eq 8 ]
+  for i in 9 10 11; do absent -q "finding-$i-"; absent -q "src/f$i.ts"; done
+}
+
+@test "a feature fix issue's ## Review findings holds only the promoted 8 of 11, never the report-only overflow (json)" {
+  configure_github
+  stub_gh
+  write_feature_review
+
+  bash "$PROMOTE" defer --severities "HIGH" --feature-slug feat --branch feature --slug feature \
+    --title "Fix review findings: feature" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^## Review findings$' "$GH_LAST_BODY"
+  [ "$(grep -c '^- \*\*\[HIGH\]\*\*' "$GH_LAST_BODY")" -eq 8 ]
+  for i in 9 10 11; do absent -q "finding-$i-"; absent -q "src/f$i.ts"; done
+}
+
+@test "a report_only finding at a promoted finding's file:line drops only its own prose block" {
+  configure_github
+  stub_gh
+  json=$(jq -n '{branch: "feature", slug: "feature", verdict: "all-met", findings: [
+    {severity: "HIGH", location: "src/x.ts:7", criterion: "fix the promoted race", verdict: "actionable"},
+    {severity: "LOW", location: "src/x.ts:7", criterion: "rename the overflow helper", verdict: "actionable", report_only: true}]}')
+  {
+    printf '## Branch: feature (feature)\n\n```json\n%s\n```\n\n' "$json"
+    printf '[HIGH] promoted-race-title\nFile: src/x.ts:7\nIssue: promoted-race-text\nFix: lock it\n\n'
+    printf '[LOW] overflow-helper-title\nFile: src/x.ts:7\nIssue: overflow-helper-text\nFix: rename it\n\n'
+  } > "$REPORT"
+  printf -- '- [ ] [HIGH] fix the promoted race (src/x.ts:7)\n' > crit.md
+
+  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch feature --slug feature \
+    --title "Fix review findings: feature" --report "$REPORT" --criteria-file crit.md >/dev/null
+  grep -q '^<summary>\[HIGH\] promoted-race-title</summary>$' "$GH_LAST_BODY"
+  grep -q '^Issue: promoted-race-text$' "$GH_LAST_BODY"
+  absent -q 'overflow-helper'
+}
+
 @test "defer scrubs absolute and .scratch paths quoted in a finding" {
   configure_github
   stub_gh
@@ -595,7 +624,12 @@ EOF
   no_local_paths
 }
 
-@test "guard still treats every github body promote-findings.sh writes as source-guarded" {
+# The depth bound is read by the trackers' isSourceGuarded (orchestrator/lib/trackers/body-format.mjs).
+source_guarded() {
+  node --input-type=module -e "import { readFileSync } from 'node:fs'; import { isSourceGuarded } from '$REPO_ROOT/orchestrator/lib/trackers/body-format.mjs'; process.exit(isSourceGuarded(readFileSync('$1', 'utf8')) ? 0 : 1)"
+}
+
+@test "every github body promote-findings.sh writes is source-guarded" {
   configure_github
   stub_gh
   write_full_review
@@ -606,25 +640,11 @@ EOF
 
   bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-  cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
+  source_guarded "$GH_LAST_BODY"
 
   bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md >/dev/null
-  cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
+  source_guarded "$GH_LAST_BODY"
 
   bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/verify.out --criteria-file integ.md >/dev/null
-  cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
-}
-
-@test "guard ignores a Source: line inside a code fence, under github" {
-  configure_github
-  stub_gh
-  printf '## Problem\n\n```\nSource: .scratch/x/sprint-review-1.md (b)\n```\n\n~~~\nSource: y\n~~~\n' > "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"eligible"* ]]
+  source_guarded "$GH_LAST_BODY"
 }

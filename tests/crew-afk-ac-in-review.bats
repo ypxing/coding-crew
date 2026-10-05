@@ -71,9 +71,9 @@ PROTOCOL="$REPO_ROOT/orchestrator/roles/reviewer.md"
   ! grep -q 'does the implementation actually satisfy the acceptance criteria' "$PROTOCOL"
 }
 
-@test "the reviewer's findings stay advisory even though its verdict is a gate" {
-  grep -qi 'advisory' "$PROTOCOL"
-  grep -qiE 'nothing is blocked or re-queued|no branch is blocked' "$PROTOCOL"
+@test "the per-branch verdict is a gate, and the per-branch review raises no findings" {
+  grep -qF 'gates the merge, and nothing else' "$PROTOCOL"
+  grep -qF 'A per-branch review writes `findings: []`' "$PROTOCOL"
 }
 
 # ─── the verdict is read, never re-derived ───────────────────────────────────

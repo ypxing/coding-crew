@@ -113,8 +113,15 @@ run() {
 [[ -f poetry.lock        ]] && run poetry install --no-root
 [[ -f go.sum             ]] && run go mod download
 [[ -f go.mod             ]] && run go mod download
-[[ -f requirements.txt   ]] && run pip install -r requirements.txt --quiet
-[[ -f pyproject.toml     ]] && run pip install --quiet .
+# Python with no uv/poetry lockfile: python-install-cmd.sh adds the dev requirements file, extra or
+# group, which pip would otherwise leave out (and with them the tools the checks run).
+python_cmd=$(bash "$SELF_DIR/python-install-cmd.sh" "$PROJECT_ROOT")
+if [[ -n "$python_cmd" ]]; then
+  echo "Running: $python_cmd"
+  bash -c "$python_cmd"
+  _mark_installed
+  exit 0
+fi
 [[ -f Gemfile.lock       ]] && run bundle install
 [[ -f Cargo.toml         ]] && run cargo fetch
 [[ -f composer.json      ]] && run composer install --no-interaction

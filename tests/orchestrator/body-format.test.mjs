@@ -43,7 +43,6 @@ test("criteriaSection finds either heading case", () => {
 });
 
 test("isSourceGuarded counts Source: only at column 0 outside a code fence", () => {
-  // Same fixtures as tests/crew-afk-promotion-threshold.bats.
   const cases = [
     ["# t\n\nSource: r (b)\n", true],
     ["# t\n\n```\nSource: r (b)\n```\n", false],

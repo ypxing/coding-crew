@@ -85,7 +85,8 @@ PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 # should be added here too.
 _LOCKFILE_NAMES=(
   uv.lock bun.lockb pnpm-lock.yaml package-lock.json yarn.lock poetry.lock
-  go.sum go.mod requirements.txt pyproject.toml Gemfile.lock Cargo.toml
+  go.sum go.mod requirements.txt requirements-dev.txt dev-requirements.txt pyproject.toml
+  Gemfile.lock Cargo.toml
   composer.json pom.xml mix.exs
 )
 

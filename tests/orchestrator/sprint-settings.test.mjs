@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, runSprint, traceLog, state, fake, test } from "./helpers/sprint.mjs";
+import { MAIN, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, runSprint, traceLog, state, fake, featureReviewFile, test } from "./helpers/sprint.mjs";
 
 // ─── what the last prose bodies used to assert about themselves ──────────────
 //
@@ -17,21 +17,14 @@ import { MAIN, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, runSprint, traceLog, st
 // the summary rather than merely counted in the state file.
 
 test("the promotion threshold has one source: fixFindings reaches findingsAtOrAbove", () => {
+  // Findings come from the feature review alone; the Phase 2 drain's review finds nothing.
   const reviewWith = (severity) =>
-    [
-      "## Branch: crew/demo/alpha",
-      "```json",
-      JSON.stringify({
-        branch: "crew/demo/alpha",
-        verdict: "all-met",
-        findings: [{ severity, location: "src/alpha.txt:1", criterion: "Move the trust boundary check before the write" }],
-      }),
-      "```",
-    ].join("\n");
+    featureReviewFile([{ severity, location: "src/alpha.txt:1", criterion: "Move the trust boundary check before the write" }]);
   const sprintWith = (severity, extra = [], config = null) => {
     const root = fixtureRepo();
     addIssue(root, "01-alpha.md");
-    fake(root, "alpha.review", reviewWith(severity));
+    fake(root, "feature.review", reviewWith(severity));
+    fake(root, "feature.review-later", featureReviewFile([]));
     if (config) {
       mkdirSync(join(root, ".coding-crew"), { recursive: true });
       writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: config }));
@@ -46,10 +39,10 @@ test("the promotion threshold has one source: fixFindings reaches findingsAtOrAb
   // not restated anywhere. Explicitly `high` it is the same, with no triage dispatch at all.
   const high = sprintWith("HIGH");
   assert.equal(state(high.root).completed_slugs.length, 2, "the HIGH should have run as its own fix issue");
-  const criteria = readFileSync(join(high.root, ".scratch/demo/reviews/alpha.criteria.md"), "utf8");
+  const criteria = readFileSync(join(high.root, ".scratch/demo/reviews/feature.criteria.md"), "utf8");
   assert.match(criteria, /\[HIGH\] Move the trust boundary check before the write/);
   assert.match(readFileSync(join(high.root, ".scratch/demo/sprint.env"), "utf8"), /CREW_FIX_FINDINGS="actionable"/);
-  assert.match(traceLog(high.root), /slug=alpha round=\d+ promote: 1 finding\(s\) — HIGH/);
+  assert.match(traceLog(high.root), /FEATURE-REVIEW: promote: 1 finding\(s\) → /);
   const explicit = sprintWith("HIGH", ["--fix-findings", "high"]);
   assert.equal(state(explicit.root).completed_slugs.length, 2);
   assert.match(readFileSync(join(explicit.root, ".scratch/demo/sprint.env"), "utf8"), /CREW_FIX_FINDINGS="high"/);
@@ -59,11 +52,9 @@ test("the promotion threshold has one source: fixFindings reaches findingsAtOrAb
   const medium = sprintWith("MEDIUM");
   assert.deepEqual(state(medium.root).completed_slugs, ["alpha"], "no fix issue for a MEDIUM at the default");
   assert.match(medium.r.stdout, /## Next Step/);
-  // The log states what was promoted, not the threshold: a MEDIUM-only review must never
-  // read as promotable at "CRITICAL, HIGH".
   const mediumLog = traceLog(medium.root);
   assert.doesNotMatch(mediumLog, /promotable/);
-  assert.match(mediumLog, /slug=alpha round=\d+ promote: none — findings \(MEDIUM\) are below the threshold \(CRITICAL, HIGH\)/);
+  assert.match(mediumLog, /FEATURE-REVIEW: promote: none — /);
 
   // config.json's afk.fixFindings: medium promotes it.
   const onMedium = sprintWith("MEDIUM", [], { fixFindings: "medium" });
@@ -167,7 +158,8 @@ test("the sprint reports once, from disk, and the summary is the last thing prin
   assert.equal(tail.at(-1), "NO MORE TASKS");
   // The pipeline's own narration goes to stderr; stdout is the one render, so the summary
   // is the whole of it.
-  assert.equal(tail[0], "Rounds: 1", `stdout starts with something other than the summary:\n${r.stdout}`);
+  assert.match(tail[0], /^Run \d+ for this feature; previous: /, `stdout starts with something other than the summary:\n${r.stdout}`);
+  assert.equal(tail[1], "Rounds: 1", `stdout starts with something other than the summary:\n${r.stdout}`);
   assert.doesNotMatch(r.stdout, /^(RECEIPT|MERGE|Closed|Verifying)/m, "pipeline output leaked into the report");
   assert.doesNotMatch(r.stdout, /^## Issue: /m, "a worker report was echoed verbatim");
   assert.doesNotMatch(r.stdout, /^### Per-issue/m, "per-issue detail is a third copy of the state file");

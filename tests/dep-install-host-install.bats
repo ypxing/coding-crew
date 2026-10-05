@@ -154,3 +154,43 @@ MK
   [ "$status" -eq 2 ]
   [ ! -f "$PROJECT/.scratch/host-install.done" ]
 }
+
+# _stub_pip — a fake `pip` on PATH that records its argv, so the Python fallback runs without
+# touching a real interpreter.
+_stub_pip() {
+  mkdir -p "$PROJECT/.stub"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/pip.calls"\n' "$PROJECT" > "$PROJECT/.stub/pip"
+  chmod +x "$PROJECT/.stub/pip"
+  export PATH="$PROJECT/.stub:$PATH"
+}
+
+@test "a pyproject.toml project with no lockfile gets its dev dependency group installed" {
+  _stub_pip
+  printf '[project]\nname = "x"\n\n[dependency-groups]\ndev = ["pytest"]\n' > "$PROJECT/pyproject.toml"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Running: pip install --quiet . --group dev"* ]]
+  [ "$(cat "$PROJECT/pip.calls")" = "install --quiet . --group dev" ]
+}
+
+@test "a pyproject.toml dev extra reaches pip as one .[dev] argument" {
+  _stub_pip
+  printf '[project]\nname = "x"\n\n[project.optional-dependencies]\ndev = ["pytest"]\n' > "$PROJECT/pyproject.toml"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$PROJECT/pip.calls")" = "install --quiet .[dev]" ]
+}
+
+@test "a requirements.txt project gets requirements-dev.txt installed too" {
+  _stub_pip
+  touch "$PROJECT/requirements.txt" "$PROJECT/requirements-dev.txt"
+
+  run bash "$SCRIPT" --project-root "$PROJECT"
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$PROJECT/pip.calls")" = "install -r requirements.txt -r requirements-dev.txt --quiet" ]
+}

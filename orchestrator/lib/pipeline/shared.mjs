@@ -109,7 +109,11 @@ export function notifyMilestone(ctx, issue, message) {
     return;
   }
   queuePaneNotice(ctx.effects, `[${ctx.sprint.featureSlug}] ${dispatchStem(issue)}: ${message}`, (result) => {
-    if (!result.sent) ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: ${result.reason}`);
+    if (result.sent) return;
+    // One warning per run says the pane is unreachable; every later skip repeats it, so debug.
+    const level = ctx.effects._milestonePushWarned ? "debug" : "warn";
+    ctx.effects._milestonePushWarned = true;
+    ctx.log(`[MILESTONE-PUSH-SKIPPED] ${dispatchStem(issue)}: ${result.reason}`, level);
   });
 }
 

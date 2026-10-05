@@ -5,7 +5,8 @@
  * reviewed on its own diff, so what exists only across issues — a duplicated helper, inconsistent
  * error handling, a flow unsafe only combined — is seen nowhere else. Its findings join the sprint
  * review report under `feature` and flow through the same promotion (afk.fixFindings) as a branch's
- * at the feature's first two reviews that ran, across runs (loop.mjs passes `promote`: the promotion's ordinal, false past the cap); later ones only report. It is advisory and never fails the sprint.
+ * until the feature has its one fix issue, across runs (loop.mjs passes `promote`: false once it has); later ones only report.
+ * That fix issue holds the 8 most severe promotable findings; the rest stay open, report-only. It is advisory and never fails the sprint.
  *
  * A whole-feature review is split into areas (feature-areas.mjs), one concurrent reviewer each, all
  * findings joined in one `feature` block and promoted once.
@@ -16,7 +17,7 @@ import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
-import { FEATURE_REVIEW, criteriaFile, featureReviewPrompt } from "../prompts.mjs";
+import { FEATURE_REVIEW, bySeverity, criteriaFile, featureReviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
 import { carryFindings, findingKey, parseReviewBlocks, parseReviewReport } from "../report.mjs";
 import { loadPrdDecisions, loadPrdSection } from "../prd-decisions.mjs";
@@ -52,11 +53,11 @@ export function featureReviewRange(ctx) {
 }
 
 /**
- * Returns `{ report?, skipped?, failed?, findings?, promoted?, promotedRef? }`: `skipped` is why it
+ * Returns `{ report?, skipped?, failed?, findings?, promoted?, overflow?, promotedRef?, reportOnly? }`: `skipped` is why it
  * was deliberately not run, `failed` why a dispatch that was made left no review (recorded as
  * not-run in the report), `report` the review report file holding its block.
  */
-export async function runFeatureReview(ctx, { integration = null, wallCap = null, promote = 1, drain = 1 } = {}) {
+export async function runFeatureReview(ctx, { integration = null, wallCap = null, promote = true, drain = 1 } = {}) {
   const { sprint, effects } = ctx;
 
   if (wallCap) {
@@ -273,6 +274,9 @@ async function reviewArea(ctx, { reviewer, slug, promptFile, outFile, sidecarFil
   return { slug, parsed };
 }
 
+/** The most findings the feature's one fix issue holds (PRD D4). */
+const FIX_ISSUE_FINDINGS = 8;
+
 /** The same fixFindings rule as a branch's findings; the feature has no issue file, so no depth guard. */
 async function promoteFeature(ctx, { findings, reportFile, dir, written, change, promote, range }) {
   const { sprint, effects } = ctx;
@@ -296,33 +300,42 @@ async function promoteFeature(ctx, { findings, reportFile, dir, written, change,
     ctx.log(`FEATURE-REVIEW: promote: none — ${selected.rule === "actionable" ? "no Actionable finding" : "no findings at or above the threshold"}`);
     return {};
   }
+  // The report holds the unfolded findings; foldDuplicates' copies may differ in severity and location.
+  // Each promotable finding's own entry in the report, at the same position (foldDuplicates keeps the order).
+  const inReport = selected.rule === "actionable"
+    ? selected.findings.filter((f) => f.verdict === "actionable" && (f.duplicate_of === undefined || selected.findings[f.duplicate_of].verdict !== "actionable"))
+    : promotable;
   // Past the promotion cap: what the rule would have promoted is only reported, never made a fix issue.
   if (!promote) {
     ctx.log(`FEATURE-REVIEW: ${promotable.length} finding(s) the rule would promote are report-only at this drain`);
-    // The report holds the unfolded findings; foldDuplicates' copies may differ in severity and location.
-    const inReport = selected.rule === "actionable"
-      ? selected.findings.filter((f) => f.verdict === "actionable" && (f.duplicate_of === undefined || selected.findings[f.duplicate_of].verdict !== "actionable"))
-      : promotable;
     markReportOnly(reportFile, inReport);
     return { reportOnly: promotable };
   }
+  // The feature's one fix issue holds the most severe; the rest stay open, report-only (PRD D4).
+  const ranked = bySeverity(promotable.map((f, i) => ({ ...f, at: i })));
+  const fixed = ranked.slice(0, FIX_ISSUE_FINDINGS).map(({ at, ...f }) => f);
+  const over = ranked.slice(FIX_ISSUE_FINDINGS);
+  if (over.length) {
+    ctx.log(`FEATURE-REVIEW: ${over.length} finding(s) past the fix issue's ${FIX_ISSUE_FINDINGS} are report-only`);
+    markReportOnly(reportFile, over.map(({ at }) => inReport[at]));
+  }
   const criteriaPath = join(sprint.reviewDir, `${FEATURE_REVIEW}.criteria.md`);
-  writeFileSync(criteriaPath, criteriaFile({ branch: FEATURE_REVIEW, findings: promotable }));
+  writeFileSync(criteriaPath, criteriaFile({ branch: FEATURE_REVIEW, findings: fixed }));
   const defer = effects.bash("promote-findings.sh", [
     "defer",
     "--feature-slug", sprint.featureSlug,
     "--branch", FEATURE_REVIEW,
-    // A second promotion is a fix issue of its own: a reused slug would read as the finished first one.
-    "--slug", promote > 1 ? `${FEATURE_REVIEW}-${promote}` : FEATURE_REVIEW,
+    "--slug", FEATURE_REVIEW,
     "--title", `Fix feature review findings: ${sprint.featureSlug}`,
     "--report", reportFile,
     "--criteria-file", criteriaPath,
     "--severities", promotedAs(sprint.fixFindings, selected),
   ], { env: sprint.childEnv() });
-  ctx.log(`FEATURE-REVIEW: promote: ${promotable.length} finding(s) → ${defer.stdout.trim() || defer.stderr.trim()}`);
+  ctx.log(`FEATURE-REVIEW: promote: ${fixed.length} finding(s) → ${defer.stdout.trim() || defer.stderr.trim()}`);
   if (defer.code !== 0 || !/^defer: /m.test(defer.stdout)) return {};
   return {
-    promoted: promotable.length,
+    promoted: fixed.length,
+    ...(over.length ? { overflow: over.length } : {}),
     promotedRef: Number(/\/issues\/(\d+)\s*$/m.exec(defer.stdout)?.[1]) || null,
   };
 }

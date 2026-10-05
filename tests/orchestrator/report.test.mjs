@@ -29,7 +29,7 @@ function verifyRecord(obj) {
   writeFileSync(f, typeof obj === "string" ? obj : JSON.stringify(obj));
   return f;
 }
-import { conflictPrompt, featureReviewPrompt, findingsTriagePrompt, fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
+import { conflictPrompt, criteriaFile, featureReviewPrompt, findingsTriagePrompt, fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("a structured sidecar wins over prose", () => {
   const r = parseWorkerReport("## Issue: thing\nStatus: complete\n", {
@@ -402,8 +402,14 @@ test("the review prompt asks for a fenced json verdict, not a bare AC:/FINDING: 
   assert.match(p, /## Branch: <branch-name>/);
   assert.match(p, /```json/);
   assert.match(p, /"verdict": "all-met \| unmet"/);
-  assert.match(p, /"findings":/);
-  assert.match(p, /"severity": "CRITICAL \| HIGH \| MEDIUM \| LOW"/);
+  assert.match(p, /"findings": \[\]/);
+  assert.doesNotMatch(p, /"severity":/);
+});
+
+test("the review prompt asks a branch review for findings: [] and leaves findings to the feature review", () => {
+  const p = reviewPrompt({ branch: "crew/f/x", slug: "x", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/x.review.report.json" });
+  assert.match(p, /A per-branch review writes `findings: \[\]`/);
+  assert.match(p, /always-on classes and the design-standard checks apply only to a `Feature review:` dispatch/);
 });
 
 test("the review prompt makes the sidecar file the verdict channel, not an option", () => {
@@ -835,18 +841,15 @@ test("findingsTriagePrompt lists issue before criterion", async () => {
   assert.ok(!out.includes("what the reviewer wants"));
 });
 
-test("review and feature-review templates ask for each finding's issue, and a design-only prefix reaches findings triage", () => {
-  const templateFinding = (prompt) => {
+test("the feature-review template asks for each finding's issue, the branch template for none, and a design-only prefix reaches findings triage", () => {
+  const templateFindings = (prompt) => {
     const block = [...prompt.matchAll(/```json\n([\s\S]*?)\n```/g)].at(-1)[1];
-    return JSON.parse(block).findings[0];
+    return JSON.parse(block).findings;
   };
   const branchPrompt = reviewPrompt({ branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r" });
   const featurePrompt = featureReviewPrompt({ featureBranch: "feature/x", base: "abc", reportPath: "/r.json" });
-  for (const p of [branchPrompt, featurePrompt]) {
-    const item = templateFinding(p);
-    assert.ok("issue" in item, "the findings item carries an issue field");
-    assert.deepEqual(Object.keys(item), ["severity", "location", "issue", "criterion"]);
-  }
+  assert.deepEqual(templateFindings(branchPrompt), []);
+  assert.deepEqual(Object.keys(templateFindings(featurePrompt)[0]), ["severity", "location", "issue", "criterion"]);
   const r = parseReviewReport("", {
     branch: "b",
     slug: "s",
@@ -889,6 +892,15 @@ test("parseReviewAggregate: a not_run block keeps the previous findings, carried
   assert.equal(parseReviewAggregate(blk({ verdict: "all-met", findings: [{ severity: "LOW", carried: true, issue: "x" }] }))[0].findings[0].carried, true);
 });
 
+test("parseReviewAggregate: a criteria_only block keeps the previous findings, carried; a plain later block still replaces them", () => {
+  const blk = (o) => `\`\`\`json\n${JSON.stringify({ branch: "b", slug: "s", ...o })}\n\`\`\`\n`;
+  const legacy = blk({ verdict: "all-met", findings: [F("MEDIUM", "a:1", "x")] });
+  const [rec] = parseReviewAggregate(legacy + blk({ verdict: "all-met", findings: [], criteria_only: true }));
+  assert.equal(rec.verdict, "all-met");
+  assert.deepEqual(rec.findings.map((f) => [f.location, f.carried]), [["a:1", true]]);
+  assert.deepEqual(parseReviewAggregate(legacy + blk({ verdict: "all-met", findings: [] }))[0].findings, []);
+});
+
 test("foldDuplicates: a duplicate whose target is not promotable stays promotable itself", () => {
   const judged = [
     { severity: "MEDIUM", location: "a.ts:1", criterion: "x", verdict: "debatable" },
@@ -905,4 +917,14 @@ test("workerPrompt and fixPrompt carry no conflict text; conflictPrompt is the c
     assert.doesNotMatch(p, /in progress|a\.txt|git commit --no-edit/);
   }
   assert.match(conflictPrompt({ ...base, ...extra }), /^- a\.txt$/m);
+});
+
+test("criteriaFile lists findings CRITICAL, HIGH, MEDIUM, LOW, keeping the input order within a severity", () => {
+  const f = (severity, criterion) => ({ severity, criterion, location: `src/${criterion}.js:1` });
+  const text = criteriaFile({
+    branch: "feature",
+    findings: [f("LOW", "l1"), f("HIGH", "h1"), f("MEDIUM", "m1"), f("CRITICAL", "c1"), f("HIGH", "h2"), f("LOW", "l2")],
+  });
+  const order = [...text.matchAll(/^- \[ \] \[(\w+)\] (\w+)/gm)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(order, ["CRITICAL:c1", "HIGH:h1", "HIGH:h2", "MEDIUM:m1", "LOW:l1", "LOW:l2"]);
 });

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, FIXTURE_ROOTS, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, privateScripts, failFirstCall, commandLines, test } from "./helpers/sprint.mjs";
+import { REPO, MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, sprintEnv, FIXTURE_ROOTS, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, privateScripts, failFirstCall, commandLines, sprintReport, test } from "./helpers/sprint.mjs";
 
 // Spawned directly, not through sh(): sh() strips both vars, which is exactly what this
 // test needs set. `plan`, so no orca is ever called.
@@ -76,6 +76,8 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json")), true);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/ac.ok")), true);
   assert.match(r.stdout, /NO MORE TASKS/);
+  // Why it ended, for the next run's summary.
+  assert.deepEqual([s.last_exit.run, s.last_exit.reason, s.last_exit.code], [s.current_run, "finished", 0]);
   // The reviewer was handed the verification result, so a criterion that ends "and the
   // tests pass" is answerable by the read-only reviewer instead of stalling the branch.
   const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8");
@@ -86,6 +88,38 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   // Nor the coder for the project's config, which its worktree does not hold.
   const coderPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
   assert.ok(coderPromptText.includes(`Project config: ${join(root, ".coding-crew")} `), coderPromptText);
+});
+
+test("a run that stops at its per-issue attempt cap records `attempt cap` as why it ended, not `finished`", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review-once", "2");
+  const r = runSprint(root, ["--max-rounds", "1"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /Round cap reached/);
+  const s = state(root);
+  assert.deepEqual([s.last_exit.run, s.last_exit.reason], [s.current_run, "attempt cap"]);
+});
+
+test("a run ended by SIGTERM after run-start records `signal SIGTERM` as why it ended, not killed or crashed", async () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker-sleep", "30");
+  const { spawn } = await import("node:child_process");
+  const child = spawn("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
+    cwd: root,
+    env: sprintEnv({ ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root }),
+    stdio: "ignore",
+  });
+  const exited = new Promise((res) => child.on("exit", (code) => res(code)));
+  // The worker is asleep once its counter exists: run-start is long past.
+  const calls = join(root, ".scratch/fake/alpha.worker-sleep.calls");
+  for (let i = 0; i < 300 && !existsSync(calls); i++) await new Promise((res) => setTimeout(res, 100));
+  assert.ok(existsSync(calls), "the worker never started");
+  child.kill("SIGTERM");
+  assert.equal(await exited, 143);
+  const s = state(root);
+  assert.deepEqual([s.last_exit.run, s.last_exit.reason, s.last_exit.code], [s.current_run, "signal SIGTERM", 143]);
 });
 
 test("openPr off, something merged, local tracker: the summary ends with ## Next naming gh pr create and --open-pr", () => {
@@ -305,6 +339,72 @@ test("an unmet acceptance-criteria verdict retains the branch and closes nothing
   assert.match(s.retention.alpha.reason, /criteria-unmet/);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/ac.ok")), false);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/open/01-alpha.md")), true);
+});
+
+// Per-branch review is a criteria gate: findings come from the feature review alone (PRD D1).
+const branchReview = (verdict, findings) =>
+  `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict, detail: verdict === "unmet" ? "no test covers the criterion" : "", findings })}\n\`\`\`\n`;
+const strayFindings = [
+  { severity: "CRITICAL", location: "src/alpha.txt:1", issue: "Input is trusted", criterion: "Reject unsigned input before use" },
+  { severity: "LOW", location: "src/alpha.txt:2", issue: "Unclear name", criterion: "Rename the variable" },
+];
+const branchBlocks = (root) =>
+  sprintReport(root)
+    .split(/^## Branch: /m)
+    .filter((b) => b.startsWith("crew/demo/alpha "))
+    .map((b) => JSON.parse(/```json\n([\s\S]*?)\n```/.exec(b)[1]));
+
+test("a branch review whose report carries findings writes findings: [] and promotes nothing for that branch", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", branchReview("all-met", strayFindings));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const blocks = branchBlocks(root);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].verdict, "all-met");
+  assert.deepEqual(blocks[0].findings, []);
+  assert.ok(!lines.some((l) => /promote-findings\.sh.* defer /.test(l)), "no defer runs: the feature review found nothing either");
+  assert.ok(!lines.some((l) => /--agent crew-triage.* --slug \S*alpha-findings/.test(l)), "no findings triage for the branch");
+  assert.deepEqual(state(root).completed_slugs, ["alpha"], "no fix issue ran");
+  assert.equal(existsSync(join(root, ".scratch/demo/reviews/alpha.criteria.md")), false);
+});
+
+test("an unmet verdict whose report carries findings still retains the branch as criteria-unmet for its coder", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", branchReview("unmet", strayFindings));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  const s = state(root);
+  assert.deepEqual(s.merged_branches ?? [], []);
+  assert.match(s.retention.alpha.reason, /criteria-unmet/);
+  assert.ok(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length >= 2, "the coder is dispatched again on the unmet criteria");
+  for (const b of branchBlocks(root)) assert.deepEqual(b.findings, []);
+  assert.ok(!lines.some((l) => /promote-findings\.sh.* defer /.test(l)));
+});
+
+test("a resumed run's re-review of a branch keeps an earlier version's open findings listed by open, and promotes none", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // An earlier version's report: a branch block that still carried findings.
+  mkdirSync(join(root, ".scratch/demo/reviews"), { recursive: true });
+  writeFileSync(join(root, ".scratch/demo/reviews/sprint-review-20200101T000000.md"), branchReview("all-met", strayFindings));
+  fake(root, "alpha.review", branchReview("unmet", []));
+  const first = runSprint(root, [], { CREW_MAX_ROUNDS: "1" });
+  assert.equal(first.code, 0, `${first.stdout}\n${first.stderr}`);
+  assert.match(state(root).retention.alpha.reason, /criteria-unmet/);
+  fake(root, "alpha.review", branchReview("all-met", []));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(branchBlocks(root).map((b) => b.verdict), ["unmet", "all-met"], "the branch was reviewed again on resume");
+  const open = JSON.parse(sh("bash", [join(SCRIPTS, "promote-findings.sh"), "open", "--feature-slug", "demo"], { cwd: root, env: { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") } }).stdout);
+  assert.deepEqual(
+    open.filter((f) => f.branch === "crew/demo/alpha").map((f) => f.location).sort(),
+    ["src/alpha.txt:1", "src/alpha.txt:2"],
+  );
+  assert.ok(!lines.some((l) => /promote-findings\.sh.* defer /.test(l)));
+  assert.deepEqual(state(root).completed_slugs, ["alpha"], "no fix issue ran");
 });
 
 test("a review that produced nothing is a gap, not a clean pass", () => {
