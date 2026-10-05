@@ -131,10 +131,12 @@ a dispatch that leaves no review is recorded not-run (and no `reviewed_tip`) and
 A whole-feature review is split into areas (`pipeline/feature-areas.mjs`): one plain `reviewer`-bound planner dispatch gets the
 `git diff --stat`, each merged issue's files (from its merge commit) and `## Implements` IDs, and the PRD decision lines, and answers
 `{"areas": [{"name", "files", "decisions"}]}` in a fenced json block. Paths not in the diff and IDs not in the PRD are dropped, more than
-`maxParallel` areas are merged down (the two smallest first), and a changed file no area holds joins the smallest. A planner that fails,
+`maxParallel` areas are merged down (the two smallest first), a changed file no area holds joins the smallest, and a decision no area holds
+joins the area holding the most files of the merged issues implementing it (else the smallest). A planner that fails,
 times out, or gives no json or no usable area gives one area over the whole diff with every decision (`FEATURE-REVIEW: planner fallback — <why>`).
 `runFeatureReview` then runs one `crew-reviewer` per area concurrently (`Promise.all`), each with its own `dispatch/feature-d<drain>-<n>/` dir (unique per drain), report
-file and cost record and an `Area:` block (name, files, full decision text) in its prompt; with more than one area, each area's
+file and cost record and an `Area:` block (name, files, full decision text) in its prompt; with more than one area, each prompt also
+lists every other area's name, files and decision lines as an `Other areas` reference block, and each area's
 `Gather the diff:` line is limited to its files (`git --literal-pathspecs diff --no-renames … -- <quoted paths>`; the file lists are read
 with `core.quotePath=false -z --no-renames`, so a renamed file's old path is listed and its deletion seen). All areas' findings are written as one `feature`
 block and promoted once (one findings triage, at most one deferred fix issue). An area that leaves no review is marked not-run as
