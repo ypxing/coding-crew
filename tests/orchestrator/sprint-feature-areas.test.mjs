@@ -235,7 +235,7 @@ nodeTest("normalizeAreas drops unknown paths and IDs, and an area left with no f
     ctx,
   );
   assert.equal(areas.length, 1);
-  assert.deepEqual(areas[0].decisions, ["D1"]);
+  assert.deepEqual(areas[0].decisions, ["D1", "D2"], "D9 is dropped; D2, held by the dropped area, is backfilled");
   assert.deepEqual(areas[0].files.sort(), ["a.js", "b.js", "c.js"], "uncovered files are appended");
 });
 
@@ -252,6 +252,30 @@ nodeTest("normalizeAreas appends an uncovered file to the smallest area and merg
   );
   assert.equal(merged.length, 2);
   assert.deepEqual(merged.flatMap((a) => a.files).sort(), ["a.js", "b.js", "c.js"]);
+});
+
+nodeTest("normalizeAreas gives a decision no area holds to the area holding most of its implementing issue's files", () => {
+  const areas = normalizeAreas(
+    [
+      { name: "one", files: ["a.js"], decisions: ["D1"] },
+      { name: "two", files: ["b.js", "c.js"], decisions: ["D2"] },
+    ],
+    { ...ctx, decisionIds: ["D1", "D2", "D3"], issues: [{ branch: "crew/x/3-c", files: ["c.js"], ids: ["D3"] }] },
+  );
+  assert.deepEqual(areas.map((a) => a.decisions), [["D1"], ["D2", "D3"]]);
+});
+
+nodeTest("normalizeAreas gives a decision no issue implements to the area with the fewest files; without issues a covering answer is unchanged", () => {
+  const raw = [
+    { name: "one", files: ["a.js", "b.js"], decisions: ["D1"] },
+    { name: "two", files: ["c.js"], decisions: ["D2"] },
+  ];
+  const orphan = normalizeAreas(raw, { ...ctx, decisionIds: ["D1", "D2", "D3"], issues: [{ branch: "crew/x/1-a", files: ["a.js"], ids: ["D1"] }] });
+  assert.deepEqual(orphan.map((a) => a.decisions), [["D1"], ["D2", "D3"]]);
+  assert.deepEqual(normalizeAreas(raw, ctx), [
+    { name: "one", files: ["a.js", "b.js"], decisions: ["D1"] },
+    { name: "two", files: ["c.js"], decisions: ["D2"] },
+  ]);
 });
 
 nodeTest("implementsLookup reads ## Implements from a non-file tracker's listing, by the branch's issue number, listing once", () => {

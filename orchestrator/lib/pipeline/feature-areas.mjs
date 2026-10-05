@@ -41,10 +41,12 @@ const size = (a) => a.files.length;
 /**
  * Pure: the planner's `areas` made safe to dispatch. Paths not in the diff and IDs not in the PRD
  * are dropped, an area left with no file goes, more than `max` areas are merged down (the two
- * smallest first), and a changed file no area holds joins the smallest one. Empty when nothing
- * valid remains.
+ * smallest first), and a changed file no area holds joins the smallest one. A PRD decision no area
+ * holds then goes to the area holding the most files of the `issues` (`mergedIssues`) implementing
+ * it — the earlier area on a tie — else to the smallest area, so every decision is judged somewhere.
+ * Empty when nothing valid remains.
  */
-export function normalizeAreas(raw, { diffFiles, decisionIds, max }) {
+export function normalizeAreas(raw, { diffFiles, decisionIds, max, issues = [] }) {
   const inDiff = new Set(diffFiles);
   const inPrd = new Set(decisionIds);
   const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string").map((x) => x.trim()) : []);
@@ -74,6 +76,14 @@ export function normalizeAreas(raw, { diffFiles, decisionIds, max }) {
   if (left.length) {
     const smallest = areas.reduce((m, a) => (size(a) < size(m) ? a : m));
     smallest.files = [...smallest.files, ...left];
+  }
+  const held = new Set(areas.flatMap((a) => a.decisions));
+  for (const id of decisionIds.filter((d) => !held.has(d))) {
+    const files = new Set(issues.filter((i) => i.ids?.includes(id)).flatMap((i) => i.files ?? []));
+    const counts = areas.map((a) => a.files.filter((f) => files.has(f)).length);
+    const best = counts.indexOf(Math.max(...counts));
+    const home = counts[best] > 0 ? areas[best] : areas.reduce((m, a) => (size(a) < size(m) ? a : m));
+    home.decisions = [...home.decisions, id];
   }
   return areas;
 }
@@ -166,6 +176,7 @@ export async function planAreas(ctx, { base, tip, dir }) {
     return { areas: [wholeFeatureArea(diffFiles, ids)], why };
   };
 
+  const issues = mergedIssues(ctx, { base, tip, idsFor: implementsLookup(ctx, ctx.tracker ?? (await getTracker(effects.mainRoot))) });
   const prompt = plannerPrompt({
     featureBranch: sprint.featureBranch,
     base,
@@ -173,7 +184,7 @@ export async function planAreas(ctx, { base, tip, dir }) {
     // Off a tty git fits the stat to 80 columns and shortens long paths to `.../name`, which the planner
     // must answer with verbatim: give it room for every path in full.
     stat: stdoutOf(effects.gitRead([...DIFF, "--stat=1000", "--stat-name-width=1000", `${base}..${tip}`])),
-    issues: mergedIssues(ctx, { base, tip, idsFor: implementsLookup(ctx, ctx.tracker ?? (await getTracker(effects.mainRoot))) }),
+    issues,
     decisions,
   });
   const planner = roleBinding(ctx, "reviewer");
@@ -199,7 +210,7 @@ export async function planAreas(ctx, { base, tip, dir }) {
   if (r.code !== 0) return fallback(`the planner exited ${r.code}`);
   const answer = parsePlannerAnswer(r.text);
   if (!answer) return fallback("the planner's answer has no fenced json block");
-  const areas = normalizeAreas(answer.areas, { diffFiles, decisionIds: ids, max });
+  const areas = normalizeAreas(answer.areas, { diffFiles, decisionIds: ids, max, issues });
   if (!areas.length) return fallback("the planner returned no usable area");
   // One area holds every changed file (uncovered ones join it), so its diff needs no pathspec.
   if (areas.length === 1) areas[0].whole = true;
