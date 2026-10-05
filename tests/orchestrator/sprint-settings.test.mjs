@@ -158,7 +158,8 @@ test("the sprint reports once, from disk, and the summary is the last thing prin
   assert.equal(tail.at(-1), "NO MORE TASKS");
   // The pipeline's own narration goes to stderr; stdout is the one render, so the summary
   // is the whole of it.
-  assert.equal(tail[0], "Rounds: 1", `stdout starts with something other than the summary:\n${r.stdout}`);
+  assert.match(tail[0], /^Run \d+ for this feature; previous: /, `stdout starts with something other than the summary:\n${r.stdout}`);
+  assert.equal(tail[1], "Rounds: 1", `stdout starts with something other than the summary:\n${r.stdout}`);
   assert.doesNotMatch(r.stdout, /^(RECEIPT|MERGE|Closed|Verifying)/m, "pipeline output leaked into the report");
   assert.doesNotMatch(r.stdout, /^## Issue: /m, "a worker report was echoed verbatim");
   assert.doesNotMatch(r.stdout, /^### Per-issue/m, "per-issue detail is a third copy of the state file");

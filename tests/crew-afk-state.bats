@@ -305,6 +305,60 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   grep -q 'dispatch-cost slug=a role=coder attempt=1 cost=0.5' .scratch/calc/traces/orchestrator.log
 }
 
+@test "state.sh run-end writes last_exit with this run's id, the reason, the code and an ISO time" {
+  init_sprint calc
+  state run-start --id run-1 >/dev/null
+  run state run-end --reason "finished" --code 0
+  [ "$status" -eq 0 ]
+  f=.scratch/calc/sprint-state.json
+  [ "$(jq -c '.last_exit | [.run, .reason, .code]' "$f")" = '["run-1","finished",0]' ]
+  [[ "$(jq -r '.last_exit.at' "$f")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
+}
+
+@test "state.sh run-end without --reason exits non-zero with a usage message and writes nothing" {
+  init_sprint calc
+  state run-start --id run-1 >/dev/null
+  run state run-end --code 1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"usage: state.sh run-end --reason <text> --code <n>"* ]]
+  [ "$(jq -r '.last_exit // "none"' .scratch/calc/sprint-state.json)" = "none" ]
+}
+
+@test "state.sh run-start counts runs across invocations and keeps the previous run's exit" {
+  init_sprint calc
+  state run-start --id run-1 >/dev/null
+  f=.scratch/calc/sprint-state.json
+  [ "$(jq -r '.runs' "$f")" = "1" ]
+  [ "$(jq -r '.previous_exit // "none"' "$f")" = "none" ]
+  state run-end --reason "stalled" --code 2 >/dev/null
+  run state run-start --id run-2
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"without an exit"* ]]
+  [ "$(jq -r '.runs' "$f")" = "2" ]
+  [ "$(jq -r '.previous_exit.reason' "$f")" = "stalled" ]
+}
+
+@test "state.sh run-start after a run with no last_exit logs that it ended without an exit" {
+  init_sprint calc
+  state run-start --id run-1 >/dev/null
+  run state run-start --id run-2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"previous run ended without an exit (killed or crashed)"* ]]
+  grep -q 'WARN .*previous run ended without an exit (killed or crashed)' .scratch/calc/traces/orchestrator.log
+  [ "$(jq -r '.previous_exit.reason' .scratch/calc/sprint-state.json)" = "ended without an exit (killed or crashed)" ]
+}
+
+@test "crew-summary names the run count and why the previous run ended" {
+  init_sprint calc
+  state run-start --id run-1 >/dev/null
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc --no-reminder
+  [[ "$output" == *"Run 1 for this feature; previous: none"* ]]
+  state run-end --reason "wall-clock cap" --code 2 >/dev/null
+  state run-start --id run-2 >/dev/null
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc --no-reminder
+  [[ "$output" == *"Run 2 for this feature; previous: wall-clock cap"* ]]
+}
+
 @test "state.sh dispatch-cost --cost-unknown files the tokens and adds nothing to the cost total" {
   init_sprint calc
   state run-start --id r1 >/dev/null
@@ -506,6 +560,24 @@ EOF
   [[ "$output" == *"2 review finding(s) still need triage (MEDIUM=1, LOW=1)."* ]]
   [[ "$output" == *"Run: /crew-address-findings"* ]]
   [[ "$output" != *"## Unreviewed Branches"* ]]
+}
+
+@test "crew-summary's Next Step names /address-pr-comments with the PR when the findings were posted to it" {
+  init_sprint calc
+  mkdir -p .scratch/calc/reviews
+  json=$(jq -n '{branch: "crew/calc/a", slug: "a", verdict: "all-met",
+    findings: [{severity: "MEDIUM", location: "a.py:1", criterion: "something worth a look"}]}')
+  cat > .scratch/calc/reviews/sprint-review-1.md <<EOF
+## Branch: crew/calc/a (a)
+
+\`\`\`json
+$json
+\`\`\`
+EOF
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc --posted-to https://github.com/o/r/pull/7
+  [[ "$output" == *"Run: /address-pr-comments https://github.com/o/r/pull/7"* ]]
+  [[ "$output" != *"Run: /crew-address-findings"* ]]
 }
 
 @test "crew-summary never lets a clean findings count hide an unreviewed branch" {

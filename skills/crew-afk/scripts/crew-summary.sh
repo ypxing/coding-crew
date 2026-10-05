@@ -132,6 +132,8 @@ MERGED_SLUGS=$(state get completed)
 PARTIAL_SLUGS=$(state get partial)
 BLOCKED_SLUGS=$(state get blocked)
 
+# Across invocations: how many runs this feature has taken, and why the one before this ended.
+echo "Run $(state get runs) for this feature; previous: $(state get previous-exit)"
 echo "Rounds: $(state get rounds)"
 echo "Model:  $(state get model)"
 # Claude-only for now (see extractResultMeta in dispatch.mjs) — omitted rather than
@@ -370,6 +372,7 @@ if [ -n "$OPEN_LINE" ]; then
   if [ -n "$POSTED_TO" ]; then
     # every open finding is on the PR now, whether this run or an earlier one posted it
     echo "$total finding(s) posted to $POSTED_TO"
+    echo "Run: /address-pr-comments $POSTED_TO"
   else
     echo "Run: /crew-address-findings"
   fi

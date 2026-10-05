@@ -373,6 +373,11 @@ export class Sprint {
     return this.state(["run-start", "--id", id]);
   }
 
+  /** Why this run ended, for the next run's summary; one that never says was killed or crashed. */
+  endRun(reason, code) {
+    return this.state(["run-end", "--reason", reason, "--code", String(code)]);
+  }
+
   /** The latest ledger entry for `slug` in `role` (any run), or null. */
   lastDispatch(slug, role) {
     const list = this.readState().dispatches ?? [];
