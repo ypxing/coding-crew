@@ -74,10 +74,13 @@ run).
   `afk.limits.triage`), never the reviewer's self-grade. One dispatch judges a whole review's
   findings: Actionable (local, unambiguous, no public-contract change), Debatable, or Dismiss, each
   with a one-line rationale, by the rubric `/crew-address-findings` also renders (one source:
-  `skills/_shared/fragments/findings-rubric.md`). Two hard rules are applied by the
-  orchestrator after triage answers, so no verdict overrides them: a finding that contradicts an
-  ADR / `CONTEXT.md`, or whose fix touches a protected path (CI config, auth, deploy, `.env`), is
-  Debatable. The verdict and rationale are written beside each finding in the review report. It
+  `skills/_shared/fragments/findings-rubric.md`). Three hard rules are applied by the
+  orchestrator after triage answers (`applyFindingVerdicts`), so no verdict overrides them: a
+  finding that contradicts an ADR / `CONTEXT.md`, whose fix touches a protected path (CI config,
+  auth, deploy, `.env`), or whose only basis is the design standard (the reviewer reports those at
+  LOW, prefixed `Design standard (criterion <n>):`) is Debatable. The rubric names the design-only
+  rule too, so triage normally answers it `debatable` already; the code holds it either way.
+  The verdict and rationale are written beside each finding in the review report. It
   applies to the full-feature review's findings the same way.
 - `critical`, `high` (CRITICAL and HIGH), `medium` (adds MEDIUM) fix by severity alone, with no
   triage dispatch; LOW is never promoted. Unattended, that has no way to dismiss a finding that is

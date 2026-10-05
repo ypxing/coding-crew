@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# One rubric for classifying a review finding — Actionable / Debatable / Dismiss, and the two hard
+# One rubric for classifying a review finding — Actionable / Debatable / Dismiss, and the three hard
 # rules that force Debatable — rendered into both /crew-address-findings (a human's run) and
 # crew-triage's findings mode (the unattended one). It lives once, in
 # skills/_shared/fragments/findings-rubric.md; these tests read the *rendered* output of
@@ -25,11 +25,19 @@ assert_rubric_in() {
   done < "$RUBRIC"
 }
 
-@test "the rubric names the three verdicts and the two hard rules" {
+@test "the rubric names the three verdicts and the three hard rules" {
   for word in '**Actionable**' '**Debatable**' '**Dismiss**' 'ADR' 'CONTEXT.md' 'protected path' '.github/workflows/' '.env'; do
     grep -qF -- "$word" "$RUBRIC" || { echo "rubric lacks $word" >&2; return 1; }
   done
   grep -q 'local, unambiguous, and changes no public contract' "$RUBRIC"
+}
+
+@test "the third hard rule makes a design-only finding Debatable, in both rendered consumers" {
+  local rule='3. its only basis is the design standard — no failure beyond a criterion of `skills/_shared/fragments/design-standard.md` (a design-only finding).'
+  grep -qF -- "$rule" "$RUBRIC"
+  run rendered_skill crew-address-findings claude
+  grep -qF -- "$rule" "$output"
+  grep -qF -- "$rule" "$(triage_variant claude)"
 }
 
 @test "/crew-address-findings renders the rubric, for every platform" {

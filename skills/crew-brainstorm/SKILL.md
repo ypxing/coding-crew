@@ -79,7 +79,9 @@ digraph brainstorming {
 **Exploring approaches:**
 
 - Propose 2-3 different approaches with trade-offs. One is always the **do-least option** — the smallest change, down to "do it by hand" or "leave it" — with its cost in terms of the problem size
-- Size is fine; **unjustified** size is not. A component earns its place through the problem, or through the structure of what is built now (one owner per concern, no duplicated logic, a seam its tests need) — never through a need nobody has yet or completeness for its own sake. Logic that would otherwise be copied into several places gets one shared owner: that is structure, not a speculative layer, and dropping it to avoid "abstraction" leaves the design under-built
+
+{{FRAGMENT:design-standard}}
+
 - Recommending anything larger needs evidence that the do-least option falls short, on the problem or on structure; "it doesn't cover every case" is not that evidence unless the uncovered case is costly
 - Name the follow-on components each approach drags in, so its full price is visible when the user picks
 - The do-least option sits inside the question; it never replaces asking. Ask what only the user can answer, and treat what they stated as a requirement as a given: price it, never relitigate it, and challenge it only with a question

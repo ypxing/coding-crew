@@ -52,6 +52,16 @@ scripts/cut-release.sh --dry-run   # verify, then re-run without --dry-run to ta
 - One writer per issue file: don't add code paths where a worker/agent edits an issue's `Status:`/checkboxes directly — that's `close-issue.sh`'s job, gated by receipts.
 - Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; see `.coding-crew/docs/issue-tracker.md`.
 
+## Axes of variation
+
+The design standard (`skills/_shared/fragments/design-standard.md`, criterion 2) counts these as real axes, so a decision that varies along one belongs behind one abstraction even with a single implementation today:
+
+- platforms — `install.sh`'s `PLATFORMS` (claude, copilot, pi, codex)
+- trackers — local, github (`orchestrator/lib/trackers/`, `.coding-crew/docs/issue-tracker.md`)
+- crew-afk roles — `orchestrator/roles/` (`ROLE_AGENTS` in `orchestrator/lib/adapters/render.mjs`)
+- dependency-install ecosystems — `dep-install`'s detection and install scripts
+- pane hosts — `orchestrator/lib/pane-host/` (herdr, orca)
+
 ## Layer ownership
 
 The call direction is crew-afk (program) → `crew-coder` (role, `orchestrator/roles/coder.md`) → `solve-issue` (skill) → `tdd` /

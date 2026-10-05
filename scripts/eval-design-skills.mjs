@@ -15,9 +15,11 @@
 // `## Request`, optional `## Transcript` (stage: close), and `## Reference judgement`, which only
 // the judge sees. A `to-issues` case uses stage `slice` and inlines the PRD body in its Request; its
 // judge scores against rubric-to-issues.md and the to-issues metrics (SKILL_SCORING), not the
-// grill/brainstorm ones. skillText reads the raw SKILL.md: `{{FRAGMENT:…}}` lines stay unrendered,
-// since the slice stage stops before any tracker step. A reference judgement is a set of claims about the repo at repo_ref: verify every
-// fact in it against that commit before committing the case — the judge scores against it, so a
+// grill/brainstorm ones. skillText renders each version's SKILL.md as claude receives it, `{{FRAGMENT:…}}`
+// lines expanded from that version's fragments, so a rule that lives in a fragment is what the A/B
+// measures. --dry-run calls no model: it writes every subject prompt and stops. A reference
+// judgement is a set of claims about the repo at repo_ref: verify every fact in it against that
+// commit before committing the case — the judge scores against it, so a
 // wrong reference silently inverts the result. State facts that live outside git (a count in a
 // gitignored dir, an open PR) in the Request, as the user would. Results land in .scratch/eval-design-skills/<timestamp>/ (summary.md,
 // results.json, every prompt and output).
@@ -100,10 +102,27 @@ export function parseCase(name, text) {
     reference: sections["Reference judgement"] };
 }
 
+function readAt(ref, rel) {
+  if (ref === "worktree") return fs.readFileSync(path.join(ROOT, rel), "utf8");
+  return execFileSync("git", ["show", `${ref}:${rel}`], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+// The SKILL.md body as the claude platform receives it, rendered the way scripts/render-skill.sh
+// renders it: a whole `{{FRAGMENT:<key>}}` line becomes skills/_shared/fragments/<key>.md (from the
+// same ref), `{{PLATFORM}}` becomes claude, and a placeholder left over is an error.
 function skillText(skill, ref) {
   const rel = `skills/${skill}/SKILL.md`;
-  if (ref === "worktree") return fs.readFileSync(path.join(ROOT, rel), "utf8");
-  return execFileSync("git", ["show", `${ref}:${rel}`], { cwd: ROOT, encoding: "utf8" });
+  const out = readAt(ref, rel).split("\n").map((line) => {
+    const m = line.match(/^\s*\{\{FRAGMENT:([A-Za-z0-9_-]+)\}\}\s*$/);
+    if (!m) return line.replaceAll("{{PLATFORM}}", "claude");
+    const frag = `skills/_shared/fragments/${m[1]}.md`;
+    try { return readAt(ref, frag).replace(/\n+$/, ""); } catch {
+      throw new Error(`${rel} at ${ref} needs fragment '${m[1]}', but ${frag} does not exist there`);
+    }
+  }).join("\n");
+  const left = out.match(/\{\{[A-Z][^}]*\}\}/);
+  if (left) throw new Error(`unexpanded placeholder ${left[0]} in ${rel} at ${ref}`);
+  return out;
 }
 
 export function subjectPrompt(skill, c) {
@@ -227,11 +246,19 @@ async function main() {
     Array.from({ length: o.runs }, (_, i) => ({ c, v, i: i + 1 }))));
   console.log(`${plan.length} subject runs (${cases.length} cases × 2 versions × ${o.runs}) on ${o.model}, ` +
     `${cases.length} judge calls on ${o.judgeModel}; base=${o.base} head=${o.head}`);
-  if (o.dryRun) { for (const p of plan) console.log(`  ${p.c.name} ${p.v} #${p.i}`); return; }
-
+  const skills = {};
+  for (const c of cases) for (const [v, ref] of Object.entries(versions)) skills[`${c.skill}@${v}`] ??= skillText(c.skill, ref);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outDir = path.join(ROOT, ".scratch", "eval-design-skills", stamp);
   fs.mkdirSync(outDir, { recursive: true });
+  if (o.dryRun) {
+    for (const p of plan) {
+      console.log(`  ${p.c.name} ${p.v} #${p.i}`);
+      fs.writeFileSync(path.join(outDir, `${p.c.name}-${p.v}-${p.i}.prompt.txt`), subjectPrompt(skills[`${p.c.skill}@${p.v}`], p.c));
+    }
+    console.log(`Prompts: ${path.relative(ROOT, outDir)}/`);
+    return;
+  }
 
   // One read-only worktree per repo_ref, so each case researches the repo as it was when written.
   const trees = new Map();
@@ -242,8 +269,6 @@ async function main() {
   }
   const rubrics = {};
   for (const c of cases) rubrics[c.skill] ??= fs.readFileSync(path.join(HERE, SKILL_SCORING[c.skill].rubric), "utf8");
-  const skills = {};
-  for (const c of cases) for (const [v, ref] of Object.entries(versions)) skills[`${c.skill}@${v}`] ??= skillText(c.skill, ref);
 
   const stop = { hit: false, why: "" };
   try {

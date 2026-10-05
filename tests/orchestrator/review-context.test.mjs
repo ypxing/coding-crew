@@ -64,3 +64,13 @@ test("a missing script falls back without running anything", () => {
   assert.match(renderReviewContext(ctx).join("\n"), /review-context\.sh is missing/);
   assert.equal(ctx.files.length, 2);
 });
+
+test("both review schemas carry each finding's `issue`, where reviewer.md puts the design-standard marker", async () => {
+  const { featureReviewPrompt } = await import("../../orchestrator/lib/prompts.mjs");
+  const fr = featureReviewPrompt({ featureBranch: "f", base: "b", reportPath: "/r" });
+  for (const p of [reviewPrompt(base), fr]) {
+    const json = JSON.parse(p.match(/```json\n([\s\S]*?)\n```/)[1]);
+    assert.deepEqual(Object.keys(json.findings[0]), ["severity", "location", "issue", "criterion"]);
+    assert.match(json.findings[0].issue, /Design standard \(criterion <n>\):/);
+  }
+});

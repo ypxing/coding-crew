@@ -294,18 +294,18 @@ quiz() { awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
   [ "$o" -lt "$e" ]
 }
 
-@test "to-issues D6: quiz item 4 lists slices over 10 criteria as a context-budget check" {
-  quiz | grep -q '^4\. \*\*Slices over 10 criteria\*\* — .*more than 10 acceptance criteria.*context-budget check'
+@test "to-issues D6: quiz item 5 lists slices over 10 criteria as a context-budget check" {
+  quiz | grep -q '^5\. \*\*Slices over 10 criteria\*\* — .*more than 10 acceptance criteria.*context-budget check'
 }
 
-@test "to-issues D7/B2: quiz item 5 lists each split with its reason and each edge with its row; the seam-count item is gone" {
+@test "to-issues D7/B2: quiz item 6 lists each split with its reason and each edge with its row; the seam-count item is gone" {
   q=$(quiz)
-  echo "$q" | grep -q '^5\. \*\*Splits and edges\*\* — one line per split naming its reason from step 4'
+  echo "$q" | grep -q '^6\. \*\*Splits and edges\*\* — one line per split naming its reason from step 4'
   echo "$q" | grep -q 'one line per `Blocked by` edge naming the edge-rule row'
   echo "$q" | grep -q "Don't ask whether an overlap needs an edge"
   ! echo "$q" | grep -q 'Seam count'
   ! echo "$q" | grep -q 'distinct seams'
-  echo "$q" | grep -q '^6\. \*\*HITL choices\*\*'
+  echo "$q" | grep -q '^7\. \*\*HITL choices\*\*'
 }
 
 @test "the PRD coverage table exempts an ID whose line ends in (no slice)" {
