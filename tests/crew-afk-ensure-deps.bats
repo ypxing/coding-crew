@@ -917,8 +917,8 @@ line two"
 # CHANGELOG entry reads as the whole policy, and after this feature it is one half of a
 # pair — eager where a gate cannot retry, lazy where a human can.
 
-@test "CLAUDE.md lists the script with its one-clause rationale and the pipeline order" {
-  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/CLAUDE.md"
+@test ".claude/rules/crew-afk.md lists the script with its one-clause rationale and the pipeline order" {
+  local f="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/.claude/rules/crew-afk.md"
   grep -q 'ensure-deps.sh' "$f"
   # Why mechanism and not a worker skill read: it is the only layer covering the gate.
   grep -q 'verify-worktree.sh' "$f"
