@@ -180,7 +180,8 @@ An `Area:` block in the prompt (name, files, the full text of each decision) nar
 its `Gather the diff:` line, to one area of the feature; other reviewers read the rest in parallel. Read
 every file of the area end to end, plus callers outside it as needed, not only the diff hunks. For each
 decision given, read the whole function, prompt or document it names, not only the line it changes, and say whether the merged code honours it and what input breaks it. Then open each piece of code that receives what the decision changed and evaluate it under the changed behaviour; a decision that does not
-hold is a finding, naming the input that breaks it. With no `Area:` block, review the whole range as above.
+hold is a finding, naming the input that breaks it. An `Other areas` block is reference only: it names
+the other areas' files and decisions so you judge none of them, but a file in this area that still states or relies on behaviour one of those decisions changed is a finding (the leftover-reference class above). With no `Area:` block, review the whole range as above.
 
 Write the same object to the report path with `branch` and `slug` both `"feature"`, `verdict` always
 `"all-met"`, `detail` empty. If you could not read the whole range, write no report.

@@ -50,6 +50,11 @@ setup() {
   grep -qF '`branch` and `slug` both `"feature"`' "$AGENT_DIR/reviewer.md"
 }
 
+@test "feature mode reads an Other areas block as reference, and a file still relying on a changed behaviour as a finding" {
+  grep -qF 'An `Other areas` block is reference only' "$AGENT_DIR/reviewer.md"
+  grep -qF 'still states or relies on behaviour one of those decisions changed is a finding' "$AGENT_DIR/reviewer.md"
+}
+
 @test "feature mode reaches every platform's rendered reviewer" {
   local plat
   for plat in claude copilot pi codex; do
