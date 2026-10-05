@@ -93,6 +93,20 @@ export function wholeFeatureArea(diffFiles, decisionIds) {
   return { name: "whole feature", files: [...diffFiles], decisions: [...decisionIds], whole: true };
 }
 
+/**
+ * Pure: featureReviewPrompt's `area`, `decisions` and `otherAreas` for one of `areas`, `decisions`
+ * the PRD's `ID → line` map. An area gets its own decision lines and every other area's as
+ * reference; an increment has no area (`null`), so it gets every line.
+ */
+export function areaReviewArgs(areas, area, decisions) {
+  const linesOf = (a) => a.decisions.map((id) => decisions.get(id)).filter(Boolean);
+  return {
+    area,
+    decisions: area ? linesOf(area) : [...decisions.values()],
+    otherAreas: areas.filter((o) => o && o !== area).map((o) => ({ name: o.name, files: o.files, decisions: linesOf(o) })),
+  };
+}
+
 /** Pure: what the planner is told. */
 export function plannerPrompt({ featureBranch, base, max, stat, issues, decisions }) {
   return [
