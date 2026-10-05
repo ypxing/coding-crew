@@ -27,9 +27,10 @@ set -euo pipefail
 #   state.sh baseline [--slot baseline|integration] --commit <sha> --verdict <pass|fail>
 #   state.sh verified-tree --tree <git tree sha>   (a per-issue verify passed this tree)
 #   state.sh feature-reviewed --tip <sha>          (a feature review wrote a report over the branch up to this tip)
+#   state.sh feature-review-promoted               (a feature review ran with promotion on: one more toward the per-feature cap)
 #   state.sh resume --slug <slug>
 #   state.sh retention --slug <slug>
-#   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|state-file>
+#   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|feature-review-promotions|state-file>
 #   state.sh show
 #
 # Common flags: [--feature-slug <slug>] [--state-file <path>]
@@ -307,9 +308,18 @@ case "$CMD" in
     # only what came after it. Survives runs, like passing_trees.
     tip=$(flag tip "" "$@")
     [ -n "$tip" ] || die "feature-reviewed requires --tip"
-    edit_state --arg t "$tip" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.feature_review = {reviewed_tip: $t, at: $at}'
+    edit_state --arg t "$tip" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.feature_review = ((.feature_review // {}) + {reviewed_tip: $t, at: $at})'
     trace STATE "feature-reviewed tip=$tip"
     echo "STATE: feature-reviewed tip=$tip"
+    ;;
+
+  feature-review-promoted)
+    # A feature review ran with promotion on. The promotion cap (loop.mjs) counts these per
+    # feature, so it survives runs like reviewed_tip; a state file without it counts as 0.
+    edit_state '.feature_review = ((.feature_review // {}) | .promotions = ((.promotions // 0) + 1))'
+    n=$(jq -r '.feature_review.promotions' "$SF")
+    trace STATE "feature-review-promoted promotions=$n"
+    echo "STATE: feature-review-promoted promotions=$n"
     ;;
 
   resume)
@@ -360,6 +370,7 @@ case "$CMD" in
       total-dispatch-duration-ms) jq -r '.total_dispatch_duration_ms // 0' "$SF" ;;
       total-dispatch-turns) jq -r '.total_dispatch_turns // 0' "$SF" ;;
       feature-slug) jq -r '.feature_slug // empty' "$SF" ;;
+      feature-review-promotions) jq -r '.feature_review.promotions // 0' "$SF" ;;
       state-file) printf '%s\n' "$SF" ;;
       *) die "unknown field: $field" ;;
     esac

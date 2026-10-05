@@ -5,7 +5,7 @@
  * reviewed on its own diff, so what exists only across issues — a duplicated helper, inconsistent
  * error handling, a flow unsafe only combined — is seen nowhere else. Its findings join the sprint
  * review report under `feature` and flow through the same promotion (afk.fixFindings) as a branch's
- * at the first two drains it ran (loop.mjs passes `promote`: the promotion's ordinal, false past the cap); later ones only report. It is advisory and never fails the sprint.
+ * at the feature's first two reviews that ran, across runs (loop.mjs passes `promote`: the promotion's ordinal, false past the cap); later ones only report. It is advisory and never fails the sprint.
  *
  * A whole-feature review is split into areas (feature-areas.mjs), one concurrent reviewer each, all
  * findings joined in one `feature` block and promoted once.

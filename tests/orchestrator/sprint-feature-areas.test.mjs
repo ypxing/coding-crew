@@ -179,7 +179,7 @@ test("one failed area is recorded not-run as feature-<n>; the others' findings a
   assert.match(r.stdout, /- feature-1: not-reviewed/);
   assert.match(r.stdout, /\*\*Not run \(1 of 2 area reviewers\):\*\*/);
   assert.ok(readdirSync(join(root, ".scratch/demo/issues/done")).some((f) => /fix-findings-feature/.test(f)));
-  assert.equal(state(root).feature_review, undefined, "an area gap leaves no reviewed tip, so the next run reviews it again");
+  assert.equal(state(root).feature_review?.reviewed_tip, undefined, "an area gap leaves no reviewed tip, so the next run reviews it again");
 });
 
 test("an incremental review dispatches no planner and one reviewer", () => {
