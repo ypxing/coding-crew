@@ -892,6 +892,15 @@ test("parseReviewAggregate: a not_run block keeps the previous findings, carried
   assert.equal(parseReviewAggregate(blk({ verdict: "all-met", findings: [{ severity: "LOW", carried: true, issue: "x" }] }))[0].findings[0].carried, true);
 });
 
+test("parseReviewAggregate: a criteria_only block keeps the previous findings, carried; a plain later block still replaces them", () => {
+  const blk = (o) => `\`\`\`json\n${JSON.stringify({ branch: "b", slug: "s", ...o })}\n\`\`\`\n`;
+  const legacy = blk({ verdict: "all-met", findings: [F("MEDIUM", "a:1", "x")] });
+  const [rec] = parseReviewAggregate(legacy + blk({ verdict: "all-met", findings: [], criteria_only: true }));
+  assert.equal(rec.verdict, "all-met");
+  assert.deepEqual(rec.findings.map((f) => [f.location, f.carried]), [["a:1", true]]);
+  assert.deepEqual(parseReviewAggregate(legacy + blk({ verdict: "all-met", findings: [] }))[0].findings, []);
+});
+
 test("foldDuplicates: a duplicate whose target is not promotable stays promotable itself", () => {
   const judged = [
     { severity: "MEDIUM", location: "a.ts:1", criterion: "x", verdict: "debatable" },

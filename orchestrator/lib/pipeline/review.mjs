@@ -157,11 +157,12 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   // carries are dropped here, so none reaches a fix issue. What an earlier version's report
   // left open for this branch is carried into the block (the rollup keeps only the last one),
   // so it stays listed for a human — with its verdict, which is what a fix issue's
-  // `actionable` Promoted Findings line was decided on.
+  // `actionable` Promoted Findings line was decided on. `criteria_only` tells the fold
+  // (foldReview) this block judged no findings, so those findings stay listed past it too.
   mkdirSync(sprint.reviewDir, { recursive: true });
   const reviewedBranch = sidecar.branch ?? branch;
   parsed.findings = [];
-  const written = { ...sidecar, findings: carryFindings(earlierBranchReviews(sprint.reviewDir, reviewedBranch), [], { keepVerdicts: true }).map(({ explicit, ...f }) => f) };
+  const written = { ...sidecar, findings: carryFindings(earlierBranchReviews(sprint.reviewDir, reviewedBranch), [], { keepVerdicts: true }).map(({ explicit, ...f }) => f), criteria_only: true };
   const heading = `## Branch: ${reviewedBranch} (${sidecar.slug ?? issue.slug})`;
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";

@@ -210,7 +210,9 @@ review (`increment` mode) dispatches no planner and one reviewer, without an `Ar
 The per-branch review is a criteria gate and raises no findings: `reviewer.md`'s per-branch mode writes `findings: []` (the always-on
 classes and design-standard checks are Feature Mode only), and `pipeline/review.mjs` drops any findings a branch report still carries
 before it writes the review block, so no branch gets a fix issue of its own; findings come only from the feature review. Open branch
-findings an earlier version left in a `sprint-review-*.md` report are still listed by `promote-findings.sh open`, never promoted; a re-review of that branch carries them into its new block (`carried: true`), so the rollup's latest-wins fold keeps them.
+findings an earlier version left in a `sprint-review-*.md` report are still listed by `promote-findings.sh open`, never promoted: a re-review of that
+branch carries them into its new block (`carried: true`), and the block `pipeline/review.mjs` writes is marked `criteria_only`, so the fold
+(`report.mjs`'s `foldReview`) also carries a branch's earlier findings past it, as past a `not_run` block.
 It also checks the PRD decisions an issue implements: `pipeline/review.mjs` reads the issue's `## Implements` IDs and
 `orchestrator/lib/prd-decisions.mjs` maps them to the PRD's `- **D<n>** — …` / `- **B<n>** — …` lines (PRD located once per run:
 `.scratch/<slug>/PRD.md`; else under `tracker: github` fetched with `trackers/github.mjs prd` and saved as `prd-issue.md`, a saved
