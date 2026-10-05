@@ -5,7 +5,8 @@
 #   bash lint-issues.sh --issue <file> [--issue <file> …] [--known <file> …] [--deps <issues-deps.json>] [--prd <file>]
 #
 # --known names an issue outside the set being linted (already done, or published by an earlier
-# run) that a `## Blocked by` ref may resolve to. Only its basename is used: never opened, never linted.
+# run) that a `## Blocked by` ref may resolve to, by basename. It is never linted; when the file
+# exists, its `## Implements` counts toward the PRD coverage check.
 #
 # Prints one line per problem:
 #   ERROR <file>: <problem>   breaks dispatch or the gates
@@ -16,15 +17,16 @@
 # ERROR: a dependency cycle; a `## Blocked by` ref (filename, or `Issue #<n>`) matching no issue in
 #        the set; --deps edges that differ from the `## Blocked by` prose; no `## Acceptance criteria`.
 # WARN:  more than 10 acceptance criteria (a context-budget check — does it fit one coder session?
-#        never a rule to split); a **D<n>**/**B<n>** ID in --prd that no issue's
-#        `## Implements` names; an issue another issue blocks on with no `### Exposes:` under
+#        never a rule to split); a **D<n>**/**B<n>** ID in --prd that no issue's (nor --known
+#        file's) `## Implements` names, unless its PRD line ends in `(no slice)`; an issue another issue blocks on with no `### Exposes:` under
 #        `## Interfaces`; no `## What to build`; no `## Implements`. A `Status: ready-for-human`
 #        issue instead gets: no `## For a human` section, or that section missing one of its five
 #        `###` parts (Why a person, What changes, Steps, If skipped or done wrong, Done when); it is
 #        exempt from the `## What to build` / `## Implements` warnings.
 #
-# The PRD ID contract: a line starting `- **D<n>**` or `- **B<n>**`. Without --prd (or with a PRD
-# that has no such IDs) the coverage check is skipped silently.
+# The PRD ID contract: a line starting `- **D<n>**` or `- **B<n>**`. A line ending in `(no slice)`
+# marks a decision no issue needs to implement (already true, or only constrains other slices).
+# Without --prd (or with a PRD that has no such IDs) the coverage check is skipped silently.
 #
 # Issue files are data. Their text is only ever read by grep/awk/read — never evaluated — and a
 # `## Blocked by` entry is only compared, by basename, with the --issue/--known files, never opened.
@@ -34,6 +36,7 @@ set -f # no globbing of anything read from an issue file
 
 ISSUES=()
 KNOWN=()
+KNOWN_PATHS=()
 DEPS_FILE=""
 PRD_FILE=""
 
@@ -45,7 +48,7 @@ usage() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --issue) [[ $# -ge 2 ]] || usage; ISSUES+=("$2"); shift 2 ;;
-    --known) [[ $# -ge 2 ]] || usage; KNOWN+=("${2##*/}"); shift 2 ;;
+    --known) [[ $# -ge 2 ]] || usage; KNOWN+=("${2##*/}"); KNOWN_PATHS+=("$2"); shift 2 ;;
     --deps) [[ $# -ge 2 ]] || usage; DEPS_FILE="$2"; shift 2 ;;
     --prd) [[ $# -ge 2 ]] || usage; PRD_FILE="$2"; shift 2 ;;
     *) echo "lint-issues.sh: unknown argument: $1" >&2; usage ;;
@@ -305,11 +308,17 @@ fi
 
 # --- PRD coverage ---
 if [[ -n "$PRD_FILE" ]]; then
-  ids=$(grep -o -E '^[[:space:]]*[-*][[:space:]]+\*\*[DB][0-9]+\*\*' "$PRD_FILE" | grep -o -E '[DB][0-9]+' | sort -u || true)
+  # A `(no slice)` line needs no issue; it never errors when one implements it anyway.
+  ids=$(grep -E '^[[:space:]]*[-*][[:space:]]+\*\*[DB][0-9]+\*\*' "$PRD_FILE" \
+    | grep -v -E '\(no slice\)[[:space:]]*$' \
+    | grep -o -E '^[[:space:]]*[-*][[:space:]]+\*\*[DB][0-9]+\*\*' | grep -o -E '[DB][0-9]+' | sort -u || true)
   if [[ -n "$ids" ]]; then
     implemented=""
     for f in "${PATHS[@]}"; do
       implemented+="$(section "$f" "Implements")"$'\n'
+    done
+    for f in "${KNOWN_PATHS[@]+"${KNOWN_PATHS[@]}"}"; do
+      [[ -f "$f" && -r "$f" ]] && implemented+="$(section "$f" "Implements")"$'\n'
     done
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue

@@ -156,6 +156,52 @@ J
   [[ "${output//$W/}" != *D1* ]]
 }
 
+@test "a PRD ID whose line ends in (no slice) needs no Implements: no coverage WARN" {
+  printf -- '- **D9** Orphan decision, already true of the code. (no slice)\n' >> "$W/PRD.md"
+  printf -- '- **D10** Unmarked orphan.\n' >> "$W/PRD.md"
+  lint_clean --prd "$W/PRD.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *D9* ]]
+  [[ "$output" == *"WARN "*"PRD.md: D10 is not named by any issue's ## Implements"* ]]
+}
+
+@test "a (no slice) ID that an issue does implement is neither an error nor a warning" {
+  sed -i.bak 's/^- \*\*D1\*\* \(.*\)$/- **D1** \1 (no slice)/' "$W/PRD.md"
+  grep -q '^- \*\*D1\*\* .*(no slice)$' "$W/PRD.md"
+  lint_clean --deps "$W/issues/issues-deps.json" --prd "$W/PRD.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "(no slice) counts only at the end of the ID's line" {
+  printf -- '- **D9** Mentions (no slice) mid-line, then more.\n' >> "$W/PRD.md"
+  lint_clean --prd "$W/PRD.md"
+  [[ "$output" == *"WARN "*"PRD.md: D9 is not named"* ]]
+}
+
+@test "--known: an ID named only in a known file's ## Implements needs no WARN" {
+  mkdir -p "$W/issues/done"
+  mv "$W/issues/01-store.md" "$W/issues/done/"
+  grep -q 'D1' "$W/issues/done/01-store.md"
+  run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md" \
+    --known "$W/issues/done/01-store.md" --prd "$W/PRD.md"
+  [ "$status" -eq 0 ]
+  [[ "${output//$W/}" != *D1* ]]
+  # the same set without --known: D1 is uncovered (02-cli's ref also errors)
+  run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md" --prd "$W/PRD.md"
+  [[ "$output" == *"WARN "*"PRD.md: D1 is not named"* ]]
+}
+
+@test "--known naming a file that does not exist is still only a name" {
+  mkdir -p "$W/issues/done"
+  mv "$W/issues/01-store.md" "$W/issues/done/"
+  run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md" \
+    --known "$W/issues/gone/01-store.md" --prd "$W/PRD.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *ERROR* ]]
+  [[ "$output" == *"WARN "*"PRD.md: D1 is not named"* ]]
+}
+
 @test "WARN: blocked-on issue without Exposes, no What to build, no Implements" {
   sed -i.bak '/^### Exposes:$/d' "$W/issues/01-store.md"
   sed -i.bak '/^## What to build$/d' "$W/issues/03-docs.md"
