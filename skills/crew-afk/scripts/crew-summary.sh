@@ -278,15 +278,29 @@ fi
 
 # --- Promoted Findings --------------------------------------------------------
 # Read back the markers promote-findings.sh defer appended to each review report:
-#   - <branch>: <severities> → <issue path>
-# The finding count is the number of acceptance criteria in the fix issue (one per
-# promoted finding), and its state is where the issue file now lives.
+#   - <branch>: <severities> → <issue ref> (<n> finding(s))
+# A marker written before the count existed ends at the ref. A local ref is a path: its count is
+# the number of acceptance criteria in the fix issue (one per promoted finding), its state where
+# the file now lives. A github ref is a URL, rendered as #<n> with the marker's count (none on an
+# old marker) — the summary makes no network call for it.
 PROMOTED=""
 if [ -d "$REVIEW_DIR" ]; then
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     branch=${line#- }; branch=${branch%%:*}
     issue_path=${line##*→ }
+    marker_n=""
+    if [[ "$issue_path" =~ ^(.*)\ \(([0-9]+)\ finding\(s\)\)$ ]]; then
+      issue_path=${BASH_REMATCH[1]}
+      marker_n=${BASH_REMATCH[2]}
+    fi
+    if [[ "$issue_path" =~ ^https?://.*/issues/([0-9]+)/?$ ]]; then
+      count="findings"
+      [ -z "$marker_n" ] || count="$marker_n finding(s)"
+      PROMOTED="${PROMOTED}- $branch: $count → #${BASH_REMATCH[1]}
+"
+      continue
+    fi
     issue_slug=$(basename "$issue_path" .md)
     if [ -f "$issue_path" ]; then
       status=$(sed -n 's/^Status:[[:space:]]*//p' "$issue_path" | head -1)

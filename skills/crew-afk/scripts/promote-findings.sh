@@ -218,6 +218,9 @@ cmd_guard() {
 
 # --- defer -------------------------------------------------------------------
 
+# count_criteria <criteria-file> — one `- [ ]` line per promoted finding (or queued gap).
+count_criteria() { grep -c '^- \[' "$1" 2>/dev/null || true; }
+
 # _defer_local <slug> <issue-slug> <title> <criteria-file> <severities> — unchanged: still
 # hand-writes a numbered file under issues/open/. Prints the new file's path.
 _defer_local() {
@@ -493,9 +496,13 @@ cmd_defer() {
       echo ""
     } >> "$report"
   fi
-  echo "- $branch: $severities → $ref" >> "$report"
+  # The count rides on the marker so crew-summary.sh can show it without the issue file —
+  # a github ref is a URL, and the summary makes no network call to read it back.
+  local n
+  n=$(count_criteria "$criteria_file")
+  echo "- $branch: $severities → $ref ($n finding(s))" >> "$report"
 
-  _trace PROMOTE "branch=$branch issue=$ref severities=$severities"
+  _trace PROMOTE "branch=$branch issue=$ref severities=$severities findings=$n"
   echo "defer: $ref"
 }
 
@@ -576,7 +583,7 @@ _defer_feature_issue() {
     } > "$ref"
   fi
 
-  _trace PROMOTE "$label issue=$ref"
+  _trace PROMOTE "$label issue=$ref findings=$(count_criteria "$criteria_file")"
   echo "$command: $ref"
 }
 
@@ -771,7 +778,7 @@ cmd_mark_not_run() {
 # the rollup minus what a fix issue already covers: the (branch, severity) pairs, and — under
 # `actionable` — a branch's findings that triage judged Actionable (its bullet names `actionable`
 # where the severities go). Those are defer's own bash-generated "## Promoted Findings" bullets
-# ("- <branch>: SEV, SEV → <path>"), never the reviewer's free text, so a plain regex capture reads
+# ("- <branch>: SEV, SEV → <ref>", since #209 followed by " (<n> finding(s))"), never the reviewer's free text, so a plain regex capture reads
 # them exactly. Prints a JSON array of {branch, severity, location, criterion, verdict, rationale};
 # verdict and rationale are "" for a finding triage never judged. `carried: true` is added to a
 # finding an earlier review of the branch raised and the latest did not repeat. A finding marked
