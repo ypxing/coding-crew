@@ -40,9 +40,10 @@
  *
  * The feature review (runFeatureReview) runs at every drain where something merged, after the
  * integration check: crew-reviewer over the whole feature diff the first time, then over the commits
- * since the last review (no reviewer when there are none). The findings of the first two reviews that
- * ran are parked like a branch's, so the same flush sends them into Phase 2; later reviews only
- * report, and each finding the fixFindings rule would have promoted keeps the PR a draft. Each drain
+ * since the last review (no reviewer when there are none). Each review's findings are parked like a
+ * branch's, so the same flush sends them into Phase 2, until one has created the feature's single
+ * fix issue (counted across runs); later reviews only report, and each finding the fixFindings rule
+ * would have promoted keeps the PR a draft. Each drain
  * is skipped when the integration check is red or the wall-clock cap stopped claims.
  */
 
