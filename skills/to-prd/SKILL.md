@@ -59,6 +59,10 @@ Architectural and technical decisions made during design. One per line:
 
 - **D<n>** — <the decision, and the reason when it is not obvious>
 
+End the line with `(no slice)` when no issue needs to implement the decision — it is already true
+of the code, or only constrains how other work is done. `to-issues` then gives it no slice, and its
+linter does not warn that no issue's `## Implements` names it.
+
 May include:
 
 - Modules to build/modify and their interfaces

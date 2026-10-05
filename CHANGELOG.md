@@ -6,6 +6,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `to-issues`, `to-prd`, `crew-afk`: a PRD decision line ending in `(no slice)` needs no issue — `to-prd` describes the marker, `to-issues`' coverage table does not ask about it, and `lint-issues.sh --prd` gives it no coverage `WARN`. A `--known` file's `## Implements` now counts toward coverage, and preflight passes each done issue as a file (written out under `tracker: github`), so a re-run no longer warns for an ID a done issue implemented.
 - `to-issues`: merge by default. Step 4 starts from one slice for the whole PRD and splits only for a named reason — context budget (anchored to the #148–#160 reference size), human boundary, parallelism worth having, or expand–contract order. The edge rule keeps only its two `Blocked by` rows, between split slices; the small-file and shared-seam merge rules and the 3–8 criteria target are gone; the quiz lists each split with its reason and each edge with its row. `lint-issues.sh` warns only above 10 criteria, as a context-budget check. `scripts/eval-design-skills.mjs` gains a `slice` stage, per-skill metrics and rubric (`rubric-to-issues.md`), and three `to-issues` replay cases (PRDs #211, #203, #147).
 - `crew-address-findings`: the `## Promoted Findings` line format names the optional trailing ` (<n> finding(s))` count, the reference being the text before it.
 - `scripts/tracker/mark-issue-done.sh` (and its `.coding-crew/scripts/` copy) is executable, like `tracker-config.sh`.

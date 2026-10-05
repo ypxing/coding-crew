@@ -296,3 +296,7 @@ quiz() { awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
   ! echo "$q" | grep -q 'distinct seams'
   echo "$q" | grep -q '^6\. \*\*HITL choices\*\*'
 }
+
+@test "the PRD coverage table exempts an ID whose line ends in (no slice)" {
+  sed -n '/^### 4.5/,/^### 5\./p' "$SKILL_FILE" | grep -q '(no slice)'
+}

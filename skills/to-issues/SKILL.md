@@ -88,7 +88,7 @@ Otherwise split slices stay parallel: edits to separate parts of a file merge cl
 
 ### 4.5. Trace PRD IDs to slices
 
-Before the quiz, build a coverage table: one row per `D<n>` / `B<n>` ID in the PRD (lines starting `- **D<n>** — …` / `- **B<n>** — …`), with the slice(s) that implement it. An ID no slice covers is an empty row. With no IDs in the PRD (or no PRD), the table is skipped entirely. Each slice's `## Implements` in step 6 must then name the IDs the table gave it.
+Before the quiz, build a coverage table: one row per `D<n>` / `B<n>` ID in the PRD (lines starting `- **D<n>** — …` / `- **B<n>** — …`), with the slice(s) that implement it. An ID no slice covers is an empty row, except one whose PRD line ends in `(no slice)`: the PRD says it needs none, so its row reads `(no slice)` and is not asked about in step 5 (`lint-issues.sh` does not warn for it either). With no IDs in the PRD (or no PRD), the table is skipped entirely. Each slice's `## Implements` in step 6 must then name the IDs the table gave it.
 
 ### 5. Quiz the user
 
