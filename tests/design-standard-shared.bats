@@ -155,6 +155,16 @@ to_issues_step() {
   done
 }
 
+@test "to-issues' github in-place rewrite swaps the triage label for the slice's status and sets the milestone, for every platform" {
+  for p in claude copilot pi codex; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    grep -qF -- '--remove-label needs-triage --add-label <status>' "$output"
+    grep -qF -- '--milestone <feature-slug>' "$output"
+    if grep -qF 'its body is the one edit made to it' "$output"; then false; fi
+  done
+}
+
 @test "to-issues exempts Source: review fix issues from the design-standard check, for every platform" {
   for p in claude copilot pi codex; do
     run rendered_skill to-issues "$p"
