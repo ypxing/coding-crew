@@ -183,3 +183,20 @@ write_report() { # file branch findings-json
   run bash "$PROMOTE" open --feature-slug feat
   [ "$(jq -r '[.[] | .criterion] | @json' <<< "$output")" = '["report only"]' ]
 }
+
+@test "open still lists an earlier version's open branch findings, and nothing promotes them" {
+  # A real report from before per-branch review stopped raising findings (PRD D10): its
+  # branch blocks' open findings are posted or reminded, never made a fix issue.
+  rm "$REPORT"
+  mkdir -p .scratch/feat/issues/open
+  cp "$REPO_ROOT"/tests/fixtures/review-carry/sprint-review-*.md .scratch/feat/reviews/
+  run bash "$PROMOTE" open --feature-slug feat
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '[.[] | select(.branch | startswith("crew/feature-area-review/198-"))] | length == 1'
+  echo "$output" | jq -e '.[] | select(.location == "CLAUDE.md:165") | .severity == "LOW"'
+  run bash "$PROMOTE" flush --feature-slug feat
+  [ "$output" = "FLUSH: none" ]
+  [ -z "$(ls .scratch/feat/issues/open)" ]
+  # No code path promotes a branch's findings: the only defer the orchestrator runs is the feature review's.
+  ! grep -rn '"defer",' "$REPO_ROOT/orchestrator/lib" | grep -v 'pipeline/feature-review.mjs'
+}
