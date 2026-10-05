@@ -307,6 +307,15 @@ YML
   [[ "$output" == *"--rm app"* ]]
 }
 
+@test "a Python project with no lockfile installs its dev group in the container, as on the host" {
+  rm -f "$WORK/package.json" "$WORK/package-lock.json"
+  printf '[project]\nname = "x"\n\n[dependency-groups]\ndev = ["pytest"]\n' > "$WORK/pyproject.toml"
+  stub_docker 0
+  run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pip install --quiet . --group dev"* ]]
+}
+
 @test "--install-cmd overrides the per-manifest lockfile table" {
   stub_docker 0
   run bash "$SCRIPT" --project-root "$WORK" --main-root "$MAIN" --install-cmd "make deps"
