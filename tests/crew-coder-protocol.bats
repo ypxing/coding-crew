@@ -99,8 +99,8 @@ body_of() {
     local f
     f=$(coder_variant "$p")
     for phrase in \
-      'Issue tracker: local only' \
-      'Never query `gh`' \
+      'Issue source: the prompt' \
+      'the `gh issue view` command it gives' \
       'MAIN_ROOT' \
       'PROJECT_ROOT' \
       'is not a worktree' \
@@ -159,4 +159,18 @@ body_of() {
     body_of "$p" | grep -qE '`blocked` requires `cause` and `evidence`' || {
       echo "$p: cause/evidence not required for blocked" >&2; return 1; }
   done
+}
+
+@test "the protocol reads a github issue the way the prompt says, not only local files" {
+  # Under tracker: github the prompt's issue line is `gh issue view <n> …`
+  # (pipeline/shared.mjs issueDescriptor). A protocol that forbade gh made the coder
+  # report blocked on every github issue that had no stray local copy.
+  for p in "${CODER_VARIANTS[@]}"; do
+    local f
+    f=$(coder_variant "$p")
+    ! grep -qF 'local only' "$f" || { echo "$p still says local only" >&2; return 1; }
+    ! grep -qF 'Never query `gh`' "$f" || { echo "$p still forbids gh" >&2; return 1; }
+    grep -qF 'gh issue view' "$f" || { echo "$p does not name gh issue view" >&2; return 1; }
+  done
+  grep -qF 'gh issue view' "$REPO_ROOT/orchestrator/lib/pipeline/shared.mjs"
 }
