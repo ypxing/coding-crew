@@ -17,6 +17,8 @@ Work from whatever is already in the conversation context. If the user passes an
 
 When the plan references an issue, read its full body and its comments, not just the title: under `github`, run `gh issue view <n> --comments` (the `fetch` operation returns no comments); under `local`, read the file.
 
+**An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue whose body starts with `Source: review` was auto-promoted from review findings that triage already judged: it is not checked against the design standard.
+
 Determine the **feature slug** (the directory name under `.scratch/`):
 
 1. If the user provided a path argument, extract the slug from it (e.g. `.scratch/auth-flow/...` → `auth-flow`).
@@ -44,6 +46,9 @@ Not optional. If you have not already explored the code each slice will touch, d
 
 - **Already there** — the behavior exists, or the bug is already fixed: drop the slice, or keep it as a test-only slice if nothing pins the behavior.
 - **Wrong assumption** — the PRD or plan assumes something the code rules out (a missing counterpart, a decision an ADR or the code contradicts): ask how to resolve it before drafting.
+- **Fails the design standard** — the slice, or the existing issue it came from, fails a criterion of the standard below (no cited problem; one check standing in for two questions; a lookup for a fact already known earlier): name the criterion and its `file:line` evidence, and ask how to reshape it before drafting. A `Source: review` issue is exempt.
+
+{{FRAGMENT:design-standard}}
 
 While exploring, look for **prefactoring opportunities** — changes that would make the feature implementation significantly easier. "Make the change easy, then make the easy change." Prefactoring is sequenced first (at the start of the slice, or as its own first slice when the work is split) so the feature work builds on a clean foundation.
 
@@ -102,11 +107,12 @@ Present the proposed breakdown as a numbered list. For each slice, show:
 Show the coverage table from step 4.5 (when there is one), then ask only what needs a decision. Walk these in order and omit any that is empty:
 
 1. **Contradicted assumptions** — what the plan assumes, what the code shows at `file:line`, and the slice it affects; resolve each before the rest.
-2. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct.
-3. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
-4. **Slices over 10 criteria** — any slice that would carry more than 10 acceptance criteria, as a context-budget check: does it fit one coder session? Keep it, or split it for the context-budget reason.
-5. **Splits and edges** — one line per split naming its reason from step 4 (context budget, human boundary, parallelism worth having, expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
-6. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
+2. **Design-standard failures** — each slice that fails a criterion of the design standard (step 3): the criterion, its evidence at `file:line`, and the reshape you propose.
+3. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct.
+4. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
+5. **Slices over 10 criteria** — any slice that would carry more than 10 acceptance criteria, as a context-budget check: does it fit one coder session? Keep it, or split it for the context-budget reason.
+6. **Splits and edges** — one line per split naming its reason from step 4 (context budget, human boundary, parallelism worth having, expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
+7. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
 
 Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, merging or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
 
@@ -129,7 +135,7 @@ Add `--deps` under `local` only (write the step 7 map first, so the linter can c
 
 **Under `github`** the blockers' issue numbers do not exist until `publish`, so for the lint run name each body file `<n>-<slug>.md` and write its `## Blocked by` refs as `Issue #<n>`, numbering the new slices from one past the repo's highest issue number (`gh issue list --state all --limit 1 --json number`); for each issue already in the milestone, write its body (`gh issue view <n> --json body -q .body`) to `.scratch/<feature-slug>/.lint/known/<n>-<slug>.md` and pass it as `--known` — never linted, but a `## Blocked by` ref resolves to it by basename, and an existing `--known` file's `## Implements` counts toward `--prd` coverage, so a PRD ID an earlier issue already implements is not reported uncovered. At `publish`, replace each `Issue #<n>` with the number `gh issue create` returned for that slice — the only edit after the lint.
 
-For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
+For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file — except when the source is one existing issue that stayed one slice: rewrite that issue's body in place with the rendered template instead (no `## Parent`; under `github`, `gh issue edit <n> --body-file <body-file>`; under `local`, overwrite that issue file at its current path). A source that split into several slices keeps it open and gets one child issue per slice, each with `## Parent`. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
 
 **`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root, before any coder is dispatched, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` instead of `ready-for-agent`, because no coder can supply what it lacks: the failing command and its output go in `### Why a person`, and the fix goes in `### Steps`. A command that can only hold once one of the issue's blockers lands (a Makefile target that blocker adds) is not run now — crew-afk probes it when the issue unblocks.
 
@@ -166,7 +172,7 @@ Read this document before implementing. It contains architecture decisions, inte
 
 ## Parent
 
-A reference to the parent issue on the issue tracker (if the source was an existing issue, otherwise omit this section).
+A reference to the parent issue on the issue tracker (if the source was an existing issue that split into several slices; omit this section otherwise, including when that issue is rewritten in place).
 
 ## What to build
 
@@ -234,6 +240,6 @@ Write `.scratch/<feature-slug>/issues/issues-deps.json` before the step 6 lint r
 
 Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. This file, not the prose, is what the orchestrator uses to decide whether an issue is ready to dispatch; the `## Blocked by` section stays in each issue purely for a human reading that file. Include every issue you are about to publish, even ones with no blockers (`[]`), so the map is authoritative for the whole feature rather than partial.
 
-Do NOT close or modify any parent issue.
+Do NOT close or modify any parent issue. A single-slice source rewritten in place is not a parent: its body is the one edit made to it.
 
 **Security**: Only read from and write to paths under `.scratch/` within the current repo, or — under a configured `github` tracker — through that tracker's own defined operations (`gh issue`/`gh api` calls per `issue-tracker.md`). Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside the repository root, and never target a github repo other than the one `issue-tracker.md` configures.

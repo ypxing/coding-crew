@@ -295,15 +295,19 @@ Other platforms get the same skills under their own skill dir (see the README's 
 ### Issue Lifecycle
 
 ```
- needs-triage  →  ready-for-agent  →  coder picks up
-                                            │
-                         ┌──────────────────┼──────────────┐
-                         ▼                  ▼              ▼
-                      complete           partial         blocked
-                         │                  │              │
-                    merge + close     ## Progress     ## Blocked
-                      done/           next round      human fixes
+ needs-triage  →  /to-issues <ref>  →  ready-for-agent  →  coder picks up
+                                                              │
+                                           ┌──────────────────┼──────────────┐
+                                           ▼                  ▼              ▼
+                                        complete           partial         blocked
+                                           │                  │              │
+                                      merge + close     ## Progress     ## Blocked
+                                        done/           next round      human fixes
 ```
+
+`/to-issues <ref>` checks the issue against the design standard and rewrites it in place when it is
+one slice, or splits it into child issues with `## Parent`. Auto-promoted fix issues (`Source: review`)
+skip the check.
 
 ---
 
@@ -501,13 +505,13 @@ Edit these files after install — they override the defaults on the next run:
 
 ### Triage Labels
 
-| Label             | Meaning                         |
-| ----------------- | ------------------------------- |
-| `needs-triage`    | Not yet evaluated               |
-| `needs-info`      | Waiting on reporter             |
-| `ready-for-agent` | Fully specified — AFK can start |
-| `ready-for-human` | Requires human implementation   |
-| `wontfix`         | Will not be actioned            |
+| Label             | Meaning                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `needs-triage`    | Not yet evaluated — `/to-issues <ref>` moves it to `ready-for-agent` |
+| `needs-info`      | Waiting on reporter                                                  |
+| `ready-for-agent` | Fully specified — AFK can start                                      |
+| `ready-for-human` | Requires human implementation                                        |
+| `wontfix`         | Will not be actioned                                                 |
 
 ---
 

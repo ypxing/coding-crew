@@ -121,3 +121,66 @@ assert_standard_absent_from() {
   grep -qF 'at `LOW`, only with its exact `file:line` and a snippet' "$f"
   grep -qF 'never makes an acceptance criterion `unmet`' "$f"
 }
+
+@test "to-issues renders the standard, for every platform" {
+  for p in claude copilot pi codex; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    assert_standard_in "$output"
+    ! grep -q '{{FRAGMENT' "$output"
+  done
+}
+
+# Step 3's section of a rendered to-issues body: from its heading to step 4's.
+to_issues_step() {
+  awk -v n="$2" '$0 ~ "^### "n"\\. "{f=1;print;next} /^### [0-9]/{f=0} f' "$1"
+}
+
+@test "to-issues step 3 checks each slice against the standard beside its other two checks, for every platform" {
+  local step3
+  for p in claude copilot pi codex; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    step3=$(to_issues_step "$output" 3)
+    grep -qF -- '- **Already there**' <<<"$step3"
+    grep -qF -- '- **Wrong assumption**' <<<"$step3"
+    grep -qF -- '- **Fails the design standard**' <<<"$step3"
+    grep -qF 'Necessary' <<<"$step3"
+  done
+}
+
+@test "to-issues step 5's quiz lists design-standard failures with file:line evidence, for every platform" {
+  local step5
+  for p in claude copilot pi codex; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    step5=$(to_issues_step "$output" 5)
+    grep -E '^[0-9]+\. \*\*Design-standard failures\*\*' <<<"$step5" | grep -qF '`file:line`'
+  done
+}
+
+@test "to-issues rewrites a single-slice source issue in place and keeps ## Parent for a split one, for every platform" {
+  for p in claude copilot pi codex; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    grep -qF 'gh issue edit <n> --body-file' "$output"
+    grep -qi 'rewrit.* in place' "$output"
+    grep -qF 'under `local`, overwrite that issue file' "$output"
+    grep -qF 'several slices' "$output"
+    grep -qF '## Parent' "$output"
+  done
+}
+
+@test "to-issues exempts Source: review fix issues from the design-standard check, for every platform" {
+  for p in claude copilot pi codex; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    grep -F '`Source: review`' "$output" | grep -qi 'not checked against the design standard'
+  done
+}
+
+@test "the guide names /to-issues <ref> as the needs-triage to ready-for-agent step" {
+  local guide="$REPO_ROOT/docs/guide.md"
+  grep -qF 'needs-triage  →  /to-issues <ref>  →  ready-for-agent' "$guide"
+  awk '/^### Triage Labels/{f=1;next} /^---/{f=0} f' "$guide" | grep -qF '`/to-issues <ref>`'
+}
