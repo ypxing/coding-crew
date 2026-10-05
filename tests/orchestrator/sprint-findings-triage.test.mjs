@@ -113,6 +113,26 @@ test("a first feature review with 11 promotable findings: one fix issue with the
   assert.match(r.stdout, /Drain 1: .*11 finding\(s\); 8 Actionable went to Phase 2, 3 more report-only \(past the fix issue's limit\)/);
 });
 
+test("a duplicate_of a finding past the fix issue's 8 stays open, folded into its report_only target", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const at = (severity, n) => ({ severity, location: `src/alpha.txt:${n}`, issue: `Defect ${n}`, criterion: `Fix defect ${n}` });
+  // 8 HIGHs fill the fix issue; LOW 9 overflows, and LOW 10 is triage's duplicate of it.
+  const ten = [...Array.from({ length: 8 }, (_, i) => at("HIGH", i + 1)), at("LOW", 9), at("LOW", 10)];
+  fake(root, "feature.review", featureReviewFile(ten));
+  fake(root, "feature.review-later", featureReviewFile([]));
+  fake(root, "feature-findings.triage", findingVerdicts(ten.map((_, i) => (i === 9
+    ? { verdict: "actionable", rationale: "same defect", duplicate_of: 8 }
+    : { verdict: "actionable", rationale: "a real defect" }))));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/feature.criteria.md"), "utf8");
+  assert.doesNotMatch(criteria, /defect (9|10)\b/);
+  const env = { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") };
+  const open = JSON.parse(sh("bash", [join(SCRIPTS, "promote-findings.sh"), "open", "--feature-slug", "demo"], { cwd: root, env }).stdout);
+  assert.deepEqual(open.map((f) => [f.criterion, f.location]), [["Fix defect 9 (also at src/alpha.txt:10)", "src/alpha.txt:9, src/alpha.txt:10"]]);
+});
+
 test("actionable: a duplicate_of pair at a report-only feature drain leaves its target report_only, open and not green", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

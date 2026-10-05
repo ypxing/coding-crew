@@ -127,6 +127,7 @@ SH
   [ "$status" -eq 0 ]
   [[ "$output" == *"SMOKE: PASS"* ]]
   [[ "$output" == *"crew-afk-version: $VERSION"* ]]
+  [[ "$output" =~ crew-afk-commit:\ [0-9a-f]{40}(-dirty)? ]]
   [ "$(wc -l < "$RESULTS")" -eq 3 ]
   row=$(tail -n 1 "$RESULTS")
   [[ "$row" == "| $VERSION | "*" | PASS | \$1.50 | 1.50 | 1 |" ]]

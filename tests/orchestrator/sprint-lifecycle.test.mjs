@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { REPO, MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, FIXTURE_ROOTS, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, privateScripts, failFirstCall, commandLines, sprintReport, test } from "./helpers/sprint.mjs";
+import { REPO, MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, sprintEnv, FIXTURE_ROOTS, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, privateScripts, failFirstCall, commandLines, sprintReport, test } from "./helpers/sprint.mjs";
 
 // Spawned directly, not through sh(): sh() strips both vars, which is exactly what this
 // test needs set. `plan`, so no orca is ever called.
@@ -99,6 +99,27 @@ test("a run that stops at its per-issue attempt cap records `attempt cap` as why
   assert.match(traceLog(root), /Round cap reached/);
   const s = state(root);
   assert.deepEqual([s.last_exit.run, s.last_exit.reason], [s.current_run, "attempt cap"]);
+});
+
+test("a run ended by SIGTERM after run-start records `signal SIGTERM` as why it ended, not killed or crashed", async () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.worker-sleep", "30");
+  const { spawn } = await import("node:child_process");
+  const child = spawn("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
+    cwd: root,
+    env: sprintEnv({ ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root }),
+    stdio: "ignore",
+  });
+  const exited = new Promise((res) => child.on("exit", (code) => res(code)));
+  // The worker is asleep once its counter exists: run-start is long past.
+  const calls = join(root, ".scratch/fake/alpha.worker-sleep.calls");
+  for (let i = 0; i < 300 && !existsSync(calls); i++) await new Promise((res) => setTimeout(res, 100));
+  assert.ok(existsSync(calls), "the worker never started");
+  child.kill("SIGTERM");
+  assert.equal(await exited, 143);
+  const s = state(root);
+  assert.deepEqual([s.last_exit.run, s.last_exit.reason, s.last_exit.code], [s.current_run, "signal SIGTERM", 143]);
 });
 
 test("openPr off, something merged, local tracker: the summary ends with ## Next naming gh pr create and --open-pr", () => {

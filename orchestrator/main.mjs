@@ -601,6 +601,14 @@ async function main() {
   const SIGNAL_EXIT = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
   const onSignal = (signal) => {
     killAllGroups();
+    // Why it ended, as the finally block below records for every other ending after run-start.
+    if (runStarted) {
+      try {
+        sprint.endRun(`signal ${signal}`, SIGNAL_EXIT[signal]);
+      } catch (err) {
+        console.error(`crew-afk: could not record why the run ended: ${err.message}`);
+      }
+    }
     if (lease) releaseLease(effects, lease);
     process.exit(SIGNAL_EXIT[signal]);
   };
@@ -816,8 +824,9 @@ async function main() {
     if (sprint?.traceLog) writeLog(sprint.traceLog, `[CRASH] ${err?.stack || err}`, "fatal");
     throw err;
   } finally {
-    // Every ending after run-start, so the next run's summary can say why this one ended; a
-    // signal or a hard kill writes none, which the next run-start reads as killed or crashed.
+    // Every ending after run-start, so the next run's summary can say why this one ended (a
+    // signal records its own in onSignal); a hard kill writes none, which the next run-start reads
+    // as killed or crashed.
     if (runStarted) {
       const reason = runError
         ? `error: ${String(runError?.message ?? runError).split("\n")[0]}`

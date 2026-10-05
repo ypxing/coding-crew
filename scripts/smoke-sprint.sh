@@ -14,7 +14,8 @@ set -uo pipefail
 #   - `feature/subtract` exports `sub` and its `node --test` passes
 # Prints `SMOKE: PASS (<platform>)` (`SMOKE: PASS (<platform>, demo)` under --demo, the only PASS
 # line cut-release.sh --demo-smoke accepts) / `SMOKE: FAIL: <why>`; exit 0 / 1, 2 on a usage error. Every run also prints
-# `crew-afk-version: <v>` (this checkout's registry.json), which cut-release.sh --demo-smoke reads back.
+# `crew-afk-version: <v>` (this checkout's registry.json) and `crew-afk-commit: <sha>` (this checkout's HEAD, `<sha>-dirty`
+# when it has uncommitted or untracked changes), which cut-release.sh --demo-smoke reads back.
 #
 # --demo runs the sprint on a pinned outside demo project instead, laid out in
 # scripts/smoke-sprint/demo/ (CREW_DEMO_DIR overrides the directory):
@@ -91,6 +92,9 @@ DIR="${DIR:-${TMPDIR:-/tmp}/crew-smoke-$PLATFORM$([[ $DEMO -eq 1 ]] && echo -dem
 VERSION=$(node -p 'require(process.argv[1]).skills["crew-afk"].version' "$ROOT/registry.json" 2>/dev/null) \
   || VERSION=unknown
 echo "crew-afk-version: $VERSION"
+COMMIT=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null) || COMMIT=unknown
+[[ -z "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]] || COMMIT="$COMMIT-dirty"
+echo "crew-afk-commit: $COMMIT"
 
 if [[ $DEMO -eq 1 ]]; then
   DEMO_DIR="${CREW_DEMO_DIR:-$FIXTURES/demo}"

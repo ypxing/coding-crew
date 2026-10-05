@@ -39,7 +39,7 @@
     "crew-afk": {
       "version": "2.21.0",
       "source-dir": "crew-afk",
-      "description": "Orchestrator that dispatches each ready-for-agent issue to a coder CLI process in its own worktree, reviews and merges every branch, promotes every Actionable review finding into a second fix phase, and loops until all ready-for-agent issues are done.",
+      "description": "Orchestrator that dispatches each ready-for-agent issue to a coder CLI process in its own worktree, reviews and merges every branch, turns the feature review's most severe Actionable findings (at most 8) into one fix issue for a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
       "install-copilot": ".copilot/skills/crew-afk",
       "install-pi": ".pi/skills/crew-afk",

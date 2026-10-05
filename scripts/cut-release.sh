@@ -24,7 +24,9 @@
 #   - a demo smoke (scripts/smoke-sprint.sh <platform> --demo) passed for this crew-afk version:
 #     --demo-smoke <log> names that run's output, which must hold a `SMOKE: PASS (<platform>, demo)` line
 #     (a non-demo smoke's `SMOKE: PASS (<platform>)` is refused) and a
-#     `crew-afk-version:` equal to HEAD's registry.json crew-afk version; --no-demo-smoke
+#     `crew-afk-version:` equal to HEAD's registry.json crew-afk version, and a `crew-afk-commit:` from a clean
+#     checkout that HEAD descends from with nothing changed since but CHANGELOG.md and the smoke's RESULTS.md
+#     (the row it appended); --no-demo-smoke
 #     "<reason>" releases without one and prints why. One of the two is required.
 #
 # --dry-run runs every check above and prints what would be tagged/pushed, without doing either.
@@ -104,7 +106,23 @@ if [[ -n "$DEMO_LOG" ]]; then
     echo "Error: $DEMO_LOG is for crew-afk $LOG_VERSIONS, but HEAD ships crew-afk $AFK_VERSION — re-run the demo smoke." >&2
     exit 1
   }
-  echo "Demo smoke: PASS for crew-afk $AFK_VERSION ($DEMO_LOG)"
+  LOG_COMMIT=$(sed -n 's/^crew-afk-commit: *//p' "$DEMO_LOG" | tail -n 1)
+  [[ -n "$LOG_COMMIT" ]] || { echo "Error: $DEMO_LOG records no 'crew-afk-commit:' line — re-run the demo smoke." >&2; exit 1; }
+  [[ "$LOG_COMMIT" != *-dirty ]] || {
+    echo "Error: $DEMO_LOG ran on uncommitted changes (${LOG_COMMIT%-dirty}-dirty) — commit, then re-run the demo smoke." >&2
+    exit 1
+  }
+  git merge-base --is-ancestor "$LOG_COMMIT" HEAD 2>/dev/null || {
+    echo "Error: $DEMO_LOG ran at $LOG_COMMIT, which HEAD does not descend from — re-run the demo smoke." >&2
+    exit 1
+  }
+  SINCE=$(git diff --name-only "$LOG_COMMIT" HEAD -- . ':(exclude)CHANGELOG.md' ':(exclude)scripts/smoke-sprint/RESULTS.md')
+  [[ -z "$SINCE" ]] || {
+    echo "Error: $DEMO_LOG ran at ${LOG_COMMIT:0:12}; these files changed since — re-run the demo smoke:" >&2
+    printf '  %s\n' $SINCE >&2
+    exit 1
+  }
+  echo "Demo smoke: PASS for crew-afk $AFK_VERSION at ${LOG_COMMIT:0:12} ($DEMO_LOG)"
 else
   echo "Demo smoke: skipped — $NO_DEMO"
 fi

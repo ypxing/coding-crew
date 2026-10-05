@@ -45,7 +45,7 @@ node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's p
 scripts/sync-pr-with-main.sh <branch>
 
 # Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed;
-# needs a passing demo smoke log (`SMOKE: PASS (<platform>, demo)`) for HEAD's crew-afk version, or an explicit opt-out; the tree must be clean, RESULTS.md row included
+# needs a passing demo smoke log (`SMOKE: PASS (<platform>, demo)`) for HEAD's crew-afk version, run on a clean checkout with nothing but CHANGELOG.md and RESULTS.md committed since, or an explicit opt-out; the tree must be clean, RESULTS.md row included
 scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-smoke "<reason>"; verify, then re-run without --dry-run to tag and push
 ```
 
