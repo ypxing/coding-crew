@@ -84,8 +84,9 @@ finding with no verdict was never triaged (a fix branch's, or a run where triage
 it from scratch.
 
 **Skip findings crew-afk already fixed.** If the report has a `## Promoted Findings` section, each
-line reads `<branch>: <severities> → <fix issue reference>` — a local file path under a `local`
-tracker, or the created issue's URL under a configured `github` tracker (`promote-findings.sh`
+line reads `<branch>: <severities> → <fix issue reference> (<n> finding(s))` — the trailing count is
+optional (a marker from before it ends at the reference), and the reference is the text before it: a
+local file path under a `local` tracker, or the created issue's URL under a configured `github` tracker (`promote-findings.sh`
 writes whichever `issue-tracker.md` configures; see `to-issues`'s "Write the issues" step for the
 same backend branch, reused here rather than reinvented). Those findings were auto-promoted to fix
 issues and implemented in a later round of the same sprint, so exclude every finding matching a
