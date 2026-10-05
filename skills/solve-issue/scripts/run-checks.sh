@@ -23,8 +23,12 @@
 #                                          with CREW_DEFER_FULL_CHECKS=1 and --targeted: only the test
 #                                          files changed on the branch since its merge-base (plus
 #                                          uncommitted ones) ran, as the cached test command with its
-#                                          path/glob arguments swapped for those files
+#                                          path/glob arguments swapped for those files — only the
+#                                          ones an argument it replaces would have selected
 #   test: deferred (no changed test files) with --targeted and no changed test file: nothing ran
+#   test: deferred (no changed test file the test command's suite arguments select)
+#                                          with --targeted: changed test files, none the runner's
+#                                          suite arguments cover (a *.test.mjs for tests/*.bats)
 #   test: deferred (the test command takes no test file arguments)
 #                                          with --targeted and a runner such as make, go or cargo
 #   <key>: deferred …                      with CREW_DEFER_FULL_CHECKS=1 only: every check other than
@@ -178,14 +182,54 @@ _takes_test_files() {
   return 0
 }
 
+# _norm_path <path> — the path with `.` segments and `<dir>/..` pairs collapsed, textually.
+_norm_path() {
+  local p="$1" seg out=() n noglob=0 IFS=/
+  case "$-" in *f*) noglob=1 ;; esac
+  set -f # a glob's segments are kept as written
+  for seg in $p; do
+    n=${#out[@]}
+    case "$seg" in
+      ''|.) ;;
+      ..) if [ "$n" -gt 0 ] && [ "${out[$((n - 1))]}" != .. ]; then unset "out[$((n - 1))]"; else out+=(..); fi ;;
+      *) out+=("$seg") ;;
+    esac
+  done
+  [ "$noglob" = 1 ] || set +f
+  case "$p" in /*) printf '/%s' "${out[*]}" ;; *) printf '%s' "${out[*]}" ;; esac
+}
+
+# _suite_selects <suite word, absolute> <file, absolute> — whether the suite argument would have
+# selected the file: a glob the way the shell expands it (`*`, `?`, `[…]` stay inside one directory;
+# `**` spans directories, and `**/` may be none — the runners that take quoted globs read it so), a
+# directory any file under it, a file itself.
+_suite_selects() {
+  local s="$1" f="$2" sd fd
+  case "$s" in
+    *[\*\?\[]*)
+      if [[ "$s" == *'**'* ]]; then
+        # shellcheck disable=SC2053 # $s is the pattern
+        [[ "$f" == $s ]] || [[ "$f" == ${s//\*\*\//} ]]
+      else
+        sd="${s//[^\/]/}"; fd="${f//[^\/]/}"
+        # shellcheck disable=SC2053
+        [ "${#sd}" = "${#fd}" ] && [[ "$f" == $s ]]
+      fi ;;
+    *) [ "$f" = "$s" ] || [[ "$f" == "${s%/}"/* ]] ;;
+  esac
+}
+
 # _targeted_command <cached test command> <files…> — the test command with only its suite
 # path/glob arguments replaced by the files. The runner's own words stay: the program, a `cd`
 # target, and a repo script it runs (`bash scripts/test.sh`). A word is a suite argument when it
 # has a glob character, or names an existing directory or test file (not in program position).
-# After a `cd`, words resolve from its target, and the files are passed relative to it (absolute
-# when outside it).
+# Only the files a replaced suite argument would have selected are passed (bats is not handed a
+# `*.test.mjs` for `tests/*.bats`); with no suite argument, every file is. None left: prints
+# nothing and returns 1. After a `cd`, words resolve from its target, and the files are passed
+# relative to it (absolute when outside it).
 _targeted_command() {
-  local cmd="$1" w out="" q prev="" keep cwd="$PROJECT_ROOT" abs; shift
+  local cmd="$1" w out="" q prev="" keep cwd="$PROJECT_ROOT" abs s passed=0; shift
+  local suites=()
   set -f # the words are inspected, never expanded
   for w in $cmd; do
     keep=1
@@ -205,15 +249,30 @@ _targeted_command() {
     # program position, or the target of `cd`: always the runner's own
     case "$prev" in ""|"&&"|";"|"||"|"|"|cd) keep=1 ;; esac
     [ "$prev" = cd ] && case "$w" in /*) cwd="$w" ;; *) cwd="$cwd/$w" ;; esac
-    [ "$keep" = 1 ] && out="$out $w"
+    if [ "$keep" = 1 ]; then
+      out="$out $w"
+    else
+      s="${w//[\'\"]/}" # a quoted glob (`'src/**/*.test.ts'`) is matched without its quotes
+      case "$s" in /*) ;; *) s="$cwd/$s" ;; esac
+      suites+=("$(_norm_path "$s")")
+    fi
     prev="$w"
   done
   set +f
   for q in "$@"; do
     abs="$PROJECT_ROOT/$q"
+    if [ "${#suites[@]}" -gt 0 ]; then
+      keep=0
+      for s in "${suites[@]}"; do
+        if _suite_selects "$s" "$(_norm_path "$abs")"; then keep=1; break; fi
+      done
+      [ "$keep" = 1 ] || continue
+    fi
     case "$abs" in "$cwd"/*) q="${abs#"$cwd"/}" ;; *) [ "$cwd" = "$PROJECT_ROOT" ] || q="$abs" ;; esac
     out="$out $(printf '%q' "$q")"
+    passed=1
   done
+  [ "$passed" = 1 ] || return 1
   printf '%s' "${out# }"
 }
 
@@ -241,16 +300,22 @@ for key in "${KEYS[@]}"; do
       echo "test: deferred (no changed test files) — nothing ran; the verify gate runs the full suite"
       continue
     fi
-    cmd="$(_targeted_command "$cmd" "${tfiles[@]}")"
+    if ! cmd="$(_targeted_command "$cmd" "${tfiles[@]}")"; then
+      echo "test: deferred (no changed test file the test command's suite arguments select) — nothing ran; the verify gate runs the full suite"
+      continue
+    fi
     label=1
   fi
   log="$LOG_DIR/$key.log"
   echo "=== $key: $cmd"
   before="$(_tree_state)"
   # stdin from /dev/null: a `docker compose run` would otherwise read the rest of this loop.
+  # The log is written through a pipe, never by the check itself: on overlayfs a check writing
+  # straight to a file under /tmp has hung forever (bats-gather-tests' load-error header, #266).
+  # rc is the check's own exit, not cat's.
   bash "$RUN_SCRIPT" --project-root "$PROJECT_ROOT" ${MAIN_ROOT:+--main-root "$MAIN_ROOT"} -- "$cmd" \
-    </dev/null >"$log" 2>&1
-  rc=$?
+    </dev/null 2>&1 | cat >"$log"
+  rc=${PIPESTATUS[0]}
   after="$(_tree_state)"
   changed=""
   [ "$before" = "$after" ] || changed="$(_changed_files "$before" "$after")"

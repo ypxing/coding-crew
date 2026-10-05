@@ -86,7 +86,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.12.1",
+      "version": "1.12.2",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "install": ".claude/skills/solve-issue",
