@@ -98,15 +98,21 @@ test("isTestPath recognises test files by name and by directory", () => {
 
 // ─── an edited issue restarts instead of fixing ────────────────────────────────────────
 
-test("an edited issue restarts on workerPrompt for fix and verify routes", () => {
-  for (const reason of ["criteria-unmet — AC 2", "verification-failed:fixable — lint: x", "review-not-run", "verification-failed:not-fixable — x"]) {
+test("an edited issue restarts on workerPrompt for fix, conflict and verify routes", () => {
+  for (const reason of [
+    "criteria-unmet — AC 2",
+    "verification-failed:fixable — lint: x",
+    "review-not-run",
+    "verification-failed:not-fixable — x",
+    "merge-conflict — x",
+    "blocked — retry limit reached (2 attempts) — merge-conflict — x",
+  ]) {
     assert.deepEqual(resumeRoute(reason, { edited: true }), { route: "restart", edited: true }, reason);
   }
 });
 
-test("an edited issue leaves the merge and conflict routes alone", () => {
+test("an edited issue leaves the merge route alone", () => {
   assert.deepEqual(resumeRoute("merge-failed", { edited: true }), { route: "merge" });
-  assert.equal(resumeRoute("merge-conflict — x", { edited: true }).kind, "conflict");
 });
 
 test("an unedited issue takes today's route", () => {

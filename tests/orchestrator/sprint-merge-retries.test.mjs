@@ -199,6 +199,35 @@ test("an unresolved conflict dispatch on an edited issue keeps the retained fing
   assert.equal(state(root).retention.alpha.fingerprint, before, "the edit was not worked from, so the record keeps the old fingerprint");
 });
 
+test("an edited issue's conflict retry resolves the conflict, then restarts on workerPrompt instead of verify", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.shared");
+  fake(root, "alpha.review-once", "2");
+  const first = commandLines(root, ["--max-rounds", "1"]);
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  rmSync(join(root, ".scratch/fake/alpha.shared"), { force: true });
+  addIssue(root, "00-beta.md");
+  fake(root, "beta.shared");
+  fake(root, "alpha.no-resolve");
+  const file = join(root, ".scratch/demo/issues/open/01-alpha.md");
+  writeFileSync(file, readFileSync(file, "utf8").replace("alpha exists", "alpha exists and is documented"));
+  commandLines(root, ["--max-parallel", "1"]);
+  assert.match(state(root).retention?.alpha?.reason ?? "", /merge-conflict/);
+
+  // The conflict dispatch now resolves: the edit, not conflict-merged-clean verify, decides the route.
+  rmSync(join(root, ".scratch/fake/alpha.no-resolve"), { force: true });
+  const third = commandLines(root, ["--max-rounds", "1"]);
+  const log = traceLog(root);
+  assert.match(log, /\[RESUME\] slug=alpha .*merge-conflict.*issue edited/, `${third.r.stdout}\n${log}`);
+  assert.doesNotMatch(log, /\[SKIP-WORKER\] slug=alpha reason=conflict-merged-clean/);
+  assert.match(log, /slug=01-alpha round=\d+ step=dispatch-conflict/);
+  assert.match(log, /slug=01-alpha round=\d+ step=dispatch-coder/, "a coder works from the edited issue");
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
+  assert.doesNotMatch(prompt, /do not re-read the issue/i, "workerPrompt, not fixPrompt");
+  assert.match(prompt, /alpha exists and is documented/, "the prompt carries the edited criteria");
+});
+
 test("an edited issue's retry restarts on workerPrompt on the retained branch", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

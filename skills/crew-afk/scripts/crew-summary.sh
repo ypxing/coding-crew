@@ -140,7 +140,8 @@ echo "Model:  $(state get model)"
 #
 # The totals span every run of this feature (state persists across re-runs); `.dispatches`
 # entries tagged with `.current_run` are this run alone, so both are printed, and this run
-# is split by role and by first attempt vs retry — where a stalled feature's money goes.
+# is split by role and by first attempt vs retry — where a stalled feature's money goes. A
+# conflict-only dispatch (role `conflict`) is coder work, so it counts under coder.
 #
 # A dispatch killed on timeout has no cost to add (state.sh dispatch-cost --cost-unknown); it is
 # counted after the figures rather than silently priced at $0.
@@ -159,7 +160,7 @@ if awk -v c="$TOTAL_COST_USD" 'BEGIN { exit !(c > 0) }' || [ "$UNKNOWN_COST_N" -
       def by(p): ($d | map(select(p) | .cost_usd // 0) | add // 0);
     if ($d | length) == 0 then empty else
       [($d | length), sum(.cost_usd), sum(.duration_ms), sum(.turns),
-       by(.role == "coder"), by(.role == "reviewer"), by(.role == "triage"),
+       by(.role == "coder" or .role == "conflict"), by(.role == "reviewer"), by(.role == "triage"),
        by((.attempt // 0) <= 1), by((.attempt // 0) > 1)] | @tsv end' "$SF" 2>/dev/null || true)
   if [ -n "$RUN_ROW" ]; then
     printf '%s\t%s\n' "$RUN_ROW" "$TOTAL_COST_USD" | awk -F'\t' -v note="$UNKNOWN_NOTE" '{

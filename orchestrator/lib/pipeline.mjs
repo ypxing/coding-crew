@@ -110,12 +110,14 @@ export function resumableSession(prior, tip) {
  *           the sync merges cleanly after all, no coder runs and only verify + review re-run.
  *           Also the route once a human reruns after the retry cap blocked it: a restart
  *           would only hit the same conflict at the sync step.
- *   An edited issue overrides `fix` (but not `conflict`) and `verify`: when the issue's
+ *   An edited issue overrides `fix` (`conflict` included) and `verify`: when the issue's
  *   fingerprint (What to build + Acceptance criteria, checkboxes normalised; crew-afk's own
  *   writes are outside it) differs from the one recorded when the branch was retained, a human
  *   changed what the coder works from, so the route is `restart` — workerPrompt on the
- *   retained branch, commits kept — never fixPrompt's "do not re-read the issue". A record
- *   with no fingerprint, and the `merge` route, ignore it.
+ *   retained branch, commits kept — never fixPrompt's "do not re-read the issue". A kept sync
+ *   conflict still gets its conflict-only dispatch first; the restart replaces the verify a
+ *   conflict retry would otherwise end in. A record with no fingerprint, and the `merge`
+ *   route, ignore it.
  *
  *   restart anything else, including no reason — the coder runs on workerPrompt. An issue
  *           blocked as `requires-failed` retains no branch, so it has no reason here and
@@ -130,7 +132,7 @@ export function resumableSession(prior, tip) {
  */
 export function resumeRoute(reason, { edited = false } = {}) {
   const route = baseRoute(reason);
-  if (edited && (route.route === "verify" || (route.route === "fix" && route.kind !== "conflict"))) {
+  if (edited && (route.route === "verify" || route.route === "fix")) {
     return { route: "restart", edited: true };
   }
   return route;
@@ -402,12 +404,14 @@ export async function runWorker(ctx, issue, attempt) {
   const issueDir = dispatchIssueDir(dispatchDir, issue);
   mkdirSync(issueDir, { recursive: true });
   // A red baseline (loop.mjs) stopped this attempt before any coder (the conflict one included) started — during deps, whose
-  // kill leaves no DEPS line to stop on. runHousekeeping keeps the branch for the next run.
+  // kill leaves no DEPS line to stop on. runHousekeeping keeps the branch for the next run; a coder-free retry
+  // (skippedWorker) keeps the reason that routed it, so the next run is not handed to a coder.
   const baselineRedWorker = () => ({
     issue,
     branch,
     attempt,
     worktree,
+    skippedWorker: resume.route === "verify",
     dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
     report: { parsedFrom: "baseline-red", status: "blocked", checks: {}, branch, workingDirectory: worktree, progress: null, notes: "baseline failed", criteria: [], raw: "" },
   });
@@ -447,7 +451,7 @@ export async function runWorker(ctx, issue, attempt) {
         },
         conflictUnresolved: resolved.why,
         // The edited issue was never worked from this attempt: keep the record's fingerprint so the
-        // next retry still sees the edit (a conflict route would otherwise end in `verify`).
+        // next retry still sees the edit and restarts once the conflict is resolved.
         keepFingerprint: retention.fingerprint,
       };
     }
@@ -536,8 +540,8 @@ export async function runWorker(ctx, issue, attempt) {
   const coder = roleBinding(ctx, "coder");
   // Opt-in (afk.resumeCoderSession): a fix round continues the session that wrote the branch
   // instead of re-exploring it, when that session is small and the branch has not moved.
-  // Not after a conflict dispatch: it is recorded as a coder dispatch at the merged tip, so
-  // it would be picked, yet its session only saw the conflict, not this branch's work.
+  // Not after a conflict dispatch: it is recorded under CONFLICT_ROLE, so its session is never
+  // picked, and the merge it committed moved the branch on under the coder's last session.
   let resumeSessionId = null;
   if (mayResumeCoderSession({ enabled: options.resumeCoderSession, route: resume.route, runtime: coder.runtime, conflictDispatched: Boolean(pendingConflict) })) {
     const tip = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
@@ -605,8 +609,8 @@ export const CONFLICT_ROLE = "conflict";
 
 /**
  * Whether a fix round may continue the coder's recorded session. Never after a conflict
- * dispatch ran this attempt: it is recorded under role "coder" at the merged tip, so it
- * would be picked, though its session saw only the conflict.
+ * dispatch ran this attempt: that dispatch is recorded under CONFLICT_ROLE (its session saw
+ * only the conflict), and the merge it committed moved the branch on under the coder's.
  */
 export function mayResumeCoderSession({ enabled, route, runtime, conflictDispatched }) {
   return Boolean(enabled) && route === "fix" && runtime === "claude" && !conflictDispatched;
