@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# One rubric for classifying a review finding — Actionable / Debatable / Dismiss, and the three hard
+# One rubric for classifying a review finding — Actionable / Debatable / Dismiss, and the four hard
 # rules that force Debatable — rendered into both /crew-address-findings (a human's run) and
 # crew-triage's findings mode (the unattended one). It lives once, in
 # skills/_shared/fragments/findings-rubric.md; these tests read the *rendered* output of
@@ -25,7 +25,7 @@ assert_rubric_in() {
   done < "$RUBRIC"
 }
 
-@test "the rubric names the three verdicts and the three hard rules" {
+@test "the rubric names the three verdicts and the hard rules" {
   for word in '**Actionable**' '**Debatable**' '**Dismiss**' 'ADR' 'CONTEXT.md' 'protected path' '.github/workflows/' '.env'; do
     grep -qF -- "$word" "$RUBRIC" || { echo "rubric lacks $word" >&2; return 1; }
   done
@@ -33,7 +33,7 @@ assert_rubric_in() {
 }
 
 @test "the third hard rule makes a design-only finding Debatable, in both rendered consumers" {
-  local rule='3. its only basis is the design standard — no failure beyond a criterion of `skills/_shared/fragments/design-standard.md` (a design-only finding).'
+  local rule='3. its only basis is the design standard — no failure beyond a criterion of `skills/_shared/fragments/design-standard.md` (a design-only finding); or'
   grep -qF -- "$rule" "$RUBRIC"
   run rendered_skill crew-address-findings claude
   grep -qF -- "$rule" "$output"
@@ -76,4 +76,14 @@ assert_rubric_in() {
   grep -q '^## Findings Mode' "$f"
   grep -q '"verdict": "actionable"' "$f"
   grep -q 'falls back to promoting by severity' "$f"
+}
+
+@test "the fourth hard rule (Necessary) makes a finding no real caller can trigger Debatable, in both rendered consumers, for every platform" {
+  local rule='4. its failure needs an input or state that no current caller, user or documented contract produces (it is not Necessary).'
+  grep -qF -- "$rule" "$RUBRIC"
+  for p in claude copilot pi codex; do
+    run rendered_skill crew-address-findings "$p"
+    grep -qF -- "$rule" "$output"
+    grep -qF -- "$rule" "$(triage_variant "$p")"
+  done
 }

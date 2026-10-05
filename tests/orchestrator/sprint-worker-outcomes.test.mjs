@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, SCRIPTS, FAKE, sprintEnv, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, workerReport, triageVerdict, coderSpawns, privateScripts, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, test } from "./helpers/sprint.mjs";
+import { MAIN, SCRIPTS, FAKE, sprintEnv, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, workerReport, triageVerdict, coderSpawns, privateScripts, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, featureReviewFile, test } from "./helpers/sprint.mjs";
 
 // ─── a coder that stops short with commits: its report is a claim, the gates decide ───────
 
@@ -400,22 +400,18 @@ test("CREW_MAX_ROUNDS caps attempts per issue, not the sprint's total dispatch c
   );
 });
 
-test("CRITICAL findings are promoted into a Phase 2 fix issue and run again", () => {
+test("a feature review's CRITICAL findings are promoted into a Phase 2 fix issue and run again", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(
     root,
-    "alpha.review",
-    `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({
-      branch: "crew/demo/alpha",
-      slug: "alpha",
-      verdict: "all-met",
-      findings: [
-        { severity: "CRITICAL", location: "src/alpha.txt:1", criterion: "Reject unsigned input before use" },
-        { severity: "MEDIUM", location: "src/alpha.txt:2", criterion: "Rename the variable" },
-      ],
-    })}\n\`\`\`\n`,
+    "feature.review",
+    featureReviewFile([
+      { severity: "CRITICAL", location: "src/alpha.txt:1", criterion: "Reject unsigned input before use" },
+      { severity: "MEDIUM", location: "src/alpha.txt:2", criterion: "Rename the variable" },
+    ]),
   );
+  fake(root, "feature.review-later", featureReviewFile([]));
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const s = state(root);
@@ -423,7 +419,7 @@ test("CRITICAL findings are promoted into a Phase 2 fix issue and run again", ()
   // The promoted fix issue ran as its own issue in Phase 2.
   const fixIssues = s.completed_slugs.filter((x) => x !== "alpha");
   assert.equal(fixIssues.length, 1, `expected one promoted fix issue, got ${JSON.stringify(s.completed_slugs)}`);
-  const criteria = join(root, ".scratch/demo/reviews/alpha.criteria.md");
+  const criteria = join(root, ".scratch/demo/reviews/feature.criteria.md");
   assert.equal(existsSync(criteria), true);
   const text = readFileSync(criteria, "utf8");
   assert.match(text, /\[CRITICAL\] Reject unsigned input before use \(src\/alpha\.txt:1\)/);

@@ -15,7 +15,7 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-addr
 - `orchestrator/roles/` — the role protocols crew-afk dispatches (`coder.md`, `reviewer.md` + `reviewer/` checklists and scripts, `triage.md`). They ship with the orchestrator to `.coding-crew/crew-afk/roles/` (crew-afk also installs `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/` for their `{{FRAGMENT:…}}` lines) and are rendered per dispatch; no platform gets an agent file. `registry.json`'s `retired-agents` lists the agent files older installs wrote, which install and uninstall remove.
 - `registry.json` — source of truth for install paths per skill/platform, `deps`, `assets`, `retired-agents`, and doc templates.
 - `install.sh` / `uninstall.sh` — installer; `PLATFORMS=(claude copilot pi codex)`.
-- `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`), skill-local runtime scripts (e.g. `skills/crew-afk/scripts/`), and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`, `eval-design-skills.mjs` with its `eval-design-skills/` cases and per-skill rubrics, `eval-reviewer-misses.mjs` with its `eval-reviewer-misses/` cases, rubric, `build-prompts.mjs` and `RESULTS.md`, `smoke-sprint.sh` with its `smoke-sprint/` fixture repo and issue).
+- `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`), skill-local runtime scripts (e.g. `skills/crew-afk/scripts/`), and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`, `eval-design-skills.mjs` with its `eval-design-skills/` cases and per-skill rubrics, `eval-reviewer-misses.mjs` with its `eval-reviewer-misses/` cases, rubric, `build-prompts.mjs` and `RESULTS.md`, `smoke-sprint.sh` with its `smoke-sprint/` fixture repo and issue, `smoke-sprint/demo/` (`repo`, `sha`, `check`, `feature/`) for `--demo` and `smoke-sprint/RESULTS.md`).
 - `tests/` — bats tests, run against **rendered/installed** output via `tests/helpers/render.bash`, not source variants.
 - `docs/` — the dev team guide (`guide.md`) and issue-tracker templates.
 
@@ -36,6 +36,7 @@ node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # dr
 
 # One real crew-afk sprint on one platform, in a repo rebuilt fresh from scripts/smoke-sprint/ each run; costs API money
 scripts/smoke-sprint.sh copilot              # --setup-only builds the repo without calling the CLI
+scripts/smoke-sprint.sh claude --demo > /tmp/smoke.log   # the same on the pinned demo repo (scripts/smoke-sprint/demo/); appends a row to scripts/smoke-sprint/RESULTS.md — commit it before cutting the release
 
 # After editing orchestrator/roles/reviewer.md: replay the two bugs PR #208 shipped with against base and head, judged blind; costs API money
 node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's prompts, calls no model; drop --dry-run to run
@@ -43,12 +44,14 @@ node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's p
 # Bring a PR branch up to date with origin/main (local only, never pushes): merge it, resolve registry version / CHANGELOG append conflicts, bump versions to sit above main's
 scripts/sync-pr-with-main.sh <branch>
 
-# Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed
-scripts/cut-release.sh --dry-run   # verify, then re-run without --dry-run to tag and push
+# Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed;
+# needs a passing demo smoke log (`SMOKE: PASS (<platform>, demo)`) for HEAD's crew-afk version, or an explicit opt-out; the tree must be clean, RESULTS.md row included
+scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-smoke "<reason>"; verify, then re-run without --dry-run to tag and push
 ```
 
 - Version bump (D4): a change to any file a `skills.*` entry in `registry.json` ships (its `source-dir` tree, `assets.source` tree, `scripts[]`, `platform-files`) or to that entry's own registry fields needs that entry's `version` in `registry.json` strictly above `origin/main`'s version for it — `install.sh --update` skips an entry whose version is unchanged, and two branches bumping to the same number would collide. An entry the branch did not change (measured from the merge-base) is exempt even if main bumped it. `tests/registry-version-bump.bats` enforces it against `origin/main` (skips when it is not found) and fails the verify gate otherwise.
   In an issue's acceptance criteria, state it as the invariant ("`<entry>`'s version is above origin/main's"), never as "version bumped": issues in one sprint run in parallel, and once a sibling has bumped the entry, the bump drops out of a later branch's diff after it syncs with the feature branch, so the reviewer finds it unmet.
+- A crew-afk mechanism change cites how many times its incident happened (from the logs or the tracker): a gate, retry or promotion rule added for one incident costs every sprint, so the count is what justifies it.
 - One writer per issue file: don't add code paths where a worker/agent edits an issue's `Status:`/checkboxes directly — that's `close-issue.sh`'s job, gated by receipts.
 - Issues (this repo's own dev use) live in `.scratch/<feature-slug>/issues/{open,done}/`; see `.coding-crew/docs/issue-tracker.md`.
 
@@ -138,7 +141,7 @@ instead of `fixPrompt`'s "do not re-read the issue". A `conflict` retry still ge
 instead of ending in `verify`. The `merge` route ignores it, as does a record with no fingerprint. An attempt whose conflict dispatch left the sync unresolved never worked from the edited issue, so it keeps the record's old fingerprint (`keepFingerprint`) and the next retry still restarts.
 
 Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
-AC receipt → merge → close → promote. Deps sit there because that one position is before both
+AC receipt → merge → close. Deps sit there because that one position is before both
 consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any
 gate whose receipt already matches the branch tip (`gatesAtTip`).
 
@@ -173,16 +176,16 @@ says why.
 
 At every drain where something merged (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
 runs in feature mode: no criteria, findings only, attributed to `feature` in the sprint
-review report and, at the feature's first two reviews that ran (counted per feature, across runs), promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
+review report and, until the feature has its one findings fix issue (counted per feature, across runs), promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
 `crew-triage`'s findings mode judges Actionable, via `orchestrator/lib/pipeline/findings-triage.mjs`; a failed triage
-falls back to the `high` rule). The range (`featureReviewRange`) is the whole feature, from the merge-base with origin's default
+falls back to the `high` rule). That fix issue holds the 8 most severe promotable findings, CRITICAL→LOW (`criteriaFile` sorts for every caller); the rest are marked `report_only` and stay open. The range (`featureReviewRange`) is the whole feature, from the merge-base with origin's default
 branch (else the local default branch; with neither the review is skipped, logged) — never this run's `base_sha`, which
 `session-init.sh` resets each run. After a review that wrote a report, `state.sh feature-reviewed` records
 `feature_review.reviewed_tip` in `sprint-state.json`; a later run whose tip equals it dispatches no reviewer ("nothing new
 since <sha>"), one whose tip descends from it reviews only `reviewed_tip..tip` minus commits on `origin/<default>` (what
 `sync-feature-branch.sh` merged in), and a `reviewed_tip` that is no ancestor (history rewritten) gives the whole-feature
-review again. Reviews after the feature's second are report-only (promotion cap, PRD D5): the count is `feature_review.promotions` in
-`sprint-state.json` (`state.sh feature-review-promoted`; absent reads as 0), so a later run starts past it too; no fix issue; the findings reach the review
+review again. Reviews after the one that created the fix issue are report-only (promotion cap): the count is `feature_review.promotions` in
+`sprint-state.json` (`state.sh feature-review-promoted`, advanced only when a fix issue was created; absent reads as 0, and an earlier version's 2 reads as capped), so a later run starts past it too; no fix issue; the findings reach the review
 report and the summary, and each one the rule would have promoted is a not-green reason, so an `--open-pr` PR is a draft naming
 them (none under `fixFindings: none`). To keep LOW findings out of fix issues
 altogether, use `afk.fixFindings: medium` / `--fix-findings medium`. Every feature review carries the PRD's `## Compatibility & Migration` section verbatim
@@ -204,7 +207,11 @@ block and promoted once (one findings triage, at most one deferred fix issue). A
 `feature-<n>`, the others still count, and no `reviewed_tip` is recorded so the next run reviews the whole feature again. An incremental
 review (`increment` mode) dispatches no planner and one reviewer, without an `Area:` block.
 
-The per-branch review also checks the PRD decisions an issue implements: `pipeline/review.mjs` reads the issue's `## Implements` IDs and
+The per-branch review is a criteria gate and raises no findings: `reviewer.md`'s per-branch mode writes `findings: []` (the always-on
+classes and design-standard checks are Feature Mode only), and `pipeline/review.mjs` drops any findings a branch report still carries
+before it writes the review block, so no branch gets a fix issue of its own; findings come only from the feature review. Open branch
+findings an earlier version left in a `sprint-review-*.md` report are still listed by `promote-findings.sh open`, never promoted.
+It also checks the PRD decisions an issue implements: `pipeline/review.mjs` reads the issue's `## Implements` IDs and
 `orchestrator/lib/prd-decisions.mjs` maps them to the PRD's `- **D<n>** — …` / `- **B<n>** — …` lines (PRD located once per run:
 `.scratch/<slug>/PRD.md`; else under `tracker: github` fetched with `trackers/github.mjs prd` and saved as `prd-issue.md`, a saved
 `prd-issue.md` read only when that fetch fails (it warns) or under another tracker; with neither, reviews proceed without). `reviewPrompt` renders them as a `PRD decisions this issue implements:` block, and the reviewer judges each like a

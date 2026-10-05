@@ -28,7 +28,7 @@ set -euo pipefail
 #   state.sh baseline [--slot baseline|integration] --commit <sha> --verdict <pass|fail>
 #   state.sh verified-tree --tree <git tree sha>   (a per-issue verify passed this tree)
 #   state.sh feature-reviewed --tip <sha>          (a feature review wrote a report over the branch up to this tip)
-#   state.sh feature-review-promoted               (a feature review ran with promotion on: one more toward the per-feature cap)
+#   state.sh feature-review-promoted               (a feature review created a fix issue: one more toward the per-feature cap)
 #   state.sh resume --slug <slug>
 #   state.sh retention --slug <slug>
 #   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|feature-review-promotions|runs|previous-exit|state-file>
@@ -341,7 +341,7 @@ case "$CMD" in
     ;;
 
   feature-review-promoted)
-    # A feature review ran with promotion on. The promotion cap (loop.mjs) counts these per
+    # A feature review created the feature's fix issue. The promotion cap (loop.mjs) counts these per
     # feature, so it survives runs like reviewed_tip; a state file without it counts as 0.
     edit_state '.feature_review = ((.feature_review // {}) | .promotions = ((.promotions // 0) + 1))'
     n=$(jq -r '.feature_review.promotions' "$SF")

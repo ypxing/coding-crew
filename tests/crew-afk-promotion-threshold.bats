@@ -61,36 +61,18 @@ teardown() {
 
 # ─── the default ─────────────────────────────────────────────────────────────
 
-@test "guard names the severities it is given, and keeps no level table of its own" {
-  G=.scratch/feat/issues/open/01-a.md
-  run bash "$PROMOTE" guard --issue $G --severities actionable
-  [[ "$output" == "guard: eligible — threshold: actionable" ]]
-  run bash "$PROMOTE" guard --issue $G --severities "CRITICAL, HIGH"
-  [[ "$output" == "guard: eligible — threshold: CRITICAL, HIGH" ]]
-  run bash "$PROMOTE" guard --issue $G --severities ""
-  [[ "$output" == "guard: skip — fixFindings is none" ]]
-  ! grep -qE 'critical\)|medium\)|CREW_PROMOTE|CREW_FIX_FINDINGS' "$PROMOTE"
-}
-
-@test "guard and defer without a severity list fail naming the missing argument" {
-  run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"missing required argument --severities"* ]]
+@test "defer without a severity list fails naming the missing argument" {
   run bash "$PROMOTE" defer --feature-slug feat --branch crew/feat/a --slug a \
     --title t --report "$REPORT" --criteria-file crit.md
   [ "$status" -ne 0 ]
   [[ "$output" == *"missing required argument --severities"* ]]
+  ! grep -qE 'critical\)|medium\)|CREW_PROMOTE|CREW_FIX_FINDINGS' "$PROMOTE"
 }
 
-@test "CREW_PROMOTE and CREW_FIX_FINDINGS change nothing in the script" {
-  CREW_PROMOTE=critical CREW_FIX_FINDINGS=none run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md --severities actionable
-  [[ "$output" == "guard: eligible — threshold: actionable" ]]
-}
-
-@test "guard is still the depth bound regardless of threshold" {
-  printf '# fix\n\nStatus: deferred-findings\nSource: r (b)\n' > .scratch/feat/issues/open/02-fix.md
-  run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/02-fix.md --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
+@test "guard is gone: the script has no guard subcommand" {
+  run bash "$PROMOTE" guard --issue .scratch/feat/issues/open/01-a.md --severities actionable
+  [ "$status" -ne 0 ]
+  ! grep -q 'cmd_guard' "$PROMOTE"
 }
 
 @test "defer marks actionable by default, CRITICAL, HIGH at fixFindings high, and CRITICAL alone at critical" {
@@ -111,7 +93,7 @@ teardown() {
 
 # ─── defer-gaps: the PRD audit's missing requirements ────────────────────────
 
-@test "defer-gaps parks one source-guarded fix issue, and never a second while it is open" {
+@test "defer-gaps parks one fix issue with a Source: line, and never a second while it is open" {
   printf -- '- [ ] Users can export to CSV\n' > gaps.md
   : > .scratch/feat/prd-audit.md
   run bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md
@@ -121,9 +103,6 @@ teardown() {
   grep -q '^Status: deferred-findings$' "$f"
   grep -q '^Source: .scratch/feat/prd-audit.md (prd-audit)$' "$f"
   grep -q '^- \[ \] Users can export to CSV$' "$f"
-
-  run bash "$PROMOTE" guard --issue "$f" --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
 
   run bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md
   [[ "$output" == "defer-gaps: skip — already queued: $f" ]]
@@ -193,7 +172,7 @@ EOF
 # ─── one source for the threshold ────────────────────────────────────────────
 
 @test "nothing outside this script and sprint.env states the promotion threshold" {
-  # The threshold is printed by guard and read from CREW_FIX_FINDINGS. A second statement of
+  # The threshold is passed to defer as --severities and read from CREW_FIX_FINDINGS. A second statement of
   # it — in a launcher, or hard-coded in the pipeline — is a source that can disagree with the
   # script the moment the default changes again. The wiring end to end (the default promotes
   # a HIGH into a Phase 2 fix issue, `medium` a MEDIUM) is asserted in
@@ -281,17 +260,6 @@ verdict_report() {
   [[ "$output" == *"1 Debatable — decide these first"* ]]
   [[ "$output" == *"- crew/feat/a [HIGH] src/y.ts:40 — Rename the exported helper — why: public contract change"* ]]
   [[ "$output" == *"triage judged them Debatable or Dismissed"* ]]
-}
-
-# Fixture set shared with tests/orchestrator/body-format.test.mjs (isSourceGuarded).
-@test "guard counts Source: only at column 0 outside a code fence" {
-  g() { printf '%b' "$1" > .scratch/feat/issues/open/03-fx.md; bash "$PROMOTE" guard --issue .scratch/feat/issues/open/03-fx.md --severities actionable; }
-  run g '# t\n\nSource: r (b)\n';                       [[ "$output" == *"source-guarded"* ]]
-  run g '# t\n\n```\nSource: r (b)\n```\n';             [[ "$output" == *"eligible"* ]]
-  run g '# t\n\n~~~\nSource: r (b)\n~~~\n';             [[ "$output" == *"eligible"* ]]
-  run g '# t\n\n```\nx\n```\n\nSource: r (b)\n';        [[ "$output" == *"source-guarded"* ]]
-  run g '# t\n\n  Source: r (b)\n';                     [[ "$output" == *"eligible"* ]]
-  run g '# t\n\n**Source:** r (b)\n';                   [[ "$output" == *"eligible"* ]]
 }
 
 @test "remind counts a carried finding and labels it (earlier review)" {

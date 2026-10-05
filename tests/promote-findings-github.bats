@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# promote-findings.sh's github wiring: cmd_defer's github branch, plus guard/list/flush
+# promote-findings.sh's github wiring: cmd_defer's github branch, plus list/flush
 # continuing to work under `tracker: github` — see .scratch/github-issue-tracker/issues/
 # open/07-promote-findings-github-wiring.md.
 #
@@ -292,39 +292,6 @@ SH
   grep -q 'PROMOTE.*integration issue=https://github.com/acme/widgets/issues/42 findings=1' trace.log
 }
 
-# ─── guard: github path ────────────────────────────────────────────────────────
-
-@test "guard live-fetches the body under github and is eligible with no Source: line" {
-  configure_github
-  stub_gh
-  printf 'Some body with no Source line.\n' > "$GH_VIEW_BODY_FILE"
-
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"eligible — threshold: actionable"* ]]
-  grep -q '^issue view 42' "$GH_CALLS_LOG"
-}
-
-@test "guard is still the depth bound under github, checked against the live body" {
-  configure_github
-  stub_gh
-  printf 'Source: some-report (some-branch)\n' > "$GH_VIEW_BODY_FILE"
-
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
-}
-
-@test "guard fails closed under github when the issue cannot be fetched" {
-  configure_github
-  cat > "$STUB/gh" <<'SH'
-#!/usr/bin/env bash
-exit 1
-SH
-  chmod +x "$STUB/gh"
-
-  run bash "$PROMOTE" guard --issue 999 --severities actionable
-  [[ "$output" == *"skip — issue not found: 999"* ]]
-}
-
 # ─── list/flush: github never parks, so both report none ─────────────────────
 
 @test "flush reports none under github - defer never parks a github issue" {
@@ -595,7 +562,12 @@ EOF
   no_local_paths
 }
 
-@test "guard still treats every github body promote-findings.sh writes as source-guarded" {
+# The depth bound is read by the trackers' isSourceGuarded (orchestrator/lib/trackers/body-format.mjs).
+source_guarded() {
+  node --input-type=module -e "import { readFileSync } from 'node:fs'; import { isSourceGuarded } from '$REPO_ROOT/orchestrator/lib/trackers/body-format.mjs'; process.exit(isSourceGuarded(readFileSync('$1', 'utf8')) ? 0 : 1)"
+}
+
+@test "every github body promote-findings.sh writes is source-guarded" {
   configure_github
   stub_gh
   write_full_review
@@ -606,25 +578,11 @@ EOF
 
   bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-  cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
+  source_guarded "$GH_LAST_BODY"
 
   bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md >/dev/null
-  cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
+  source_guarded "$GH_LAST_BODY"
 
   bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/verify.out --criteria-file integ.md >/dev/null
-  cp "$GH_LAST_BODY" "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"skip — source-guarded"* ]]
-}
-
-@test "guard ignores a Source: line inside a code fence, under github" {
-  configure_github
-  stub_gh
-  printf '## Problem\n\n```\nSource: .scratch/x/sprint-review-1.md (b)\n```\n\n~~~\nSource: y\n~~~\n' > "$GH_VIEW_BODY_FILE"
-  run bash "$PROMOTE" guard --issue 42 --severities actionable
-  [[ "$output" == *"eligible"* ]]
+  source_guarded "$GH_LAST_BODY"
 }

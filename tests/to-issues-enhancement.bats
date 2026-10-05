@@ -311,3 +311,13 @@ quiz() { awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
 @test "the PRD coverage table exempts an ID whose line ends in (no slice)" {
   sed -n '/^### 4.5/,/^### 5\./p' "$SKILL_FILE" | grep -q '(no slice)'
 }
+
+@test "to-issues sends a criterion needing a paid run, a manual measurement or a person to the PRD's human steps or a ready-for-human issue, for every platform" {
+  local p
+  for p in claude copilot pi codex; do
+    run rendered_skill to-issues "$p"
+    [ "$status" -eq 0 ]
+    grep -qF 'A criterion that needs a paid run, a manual measurement or a person is not an acceptance criterion' "$output"
+    grep -qF "It goes to the PRD's human steps or a \`ready-for-human\` issue" "$output"
+  done
+}

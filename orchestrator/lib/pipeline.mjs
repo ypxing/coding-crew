@@ -2,7 +2,7 @@
  * pipeline.mjs — the per-branch gate chain, in one place, in one order:
  *
  *     worktree → include → deps → dispatch → prefilter → verify → review → AC receipt
- *     → merge → close → promote
+ *     → merge → close
  *
  * The order is a function body, so no model can reorder or skip it, and each gate's
  * refusal is a return value rather than a paragraph asking to be obeyed.
@@ -11,7 +11,7 @@
  * absent check.
  *
  * The order lives here (runWorker, runHousekeeping); each stage's body lives in
- * pipeline/: verify.mjs (triage), review.mjs (review + promotion), merge.mjs (merge +
+ * pipeline/: verify.mjs (triage), review.mjs (review), merge.mjs (merge +
  * close), finish.mjs (partial/blocked endings), shared.mjs (reason tags, helpers).
  */
 
@@ -27,7 +27,7 @@ import { dispatch } from "./dispatch.mjs";
 import { flagFullSuiteRuns } from "./pipeline/deviation.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./pipeline/finish.mjs";
 import { mergeAndClose } from "./pipeline/merge.mjs";
-import { promote, runReview, savedAllMetReview } from "./pipeline/review.mjs";
+import { runReview } from "./pipeline/review.mjs";
 import {
   AC_RECEIPT_FAILED_TAG,
   CRITERIA_ENVIRONMENT_TAG,
@@ -706,14 +706,7 @@ export async function runHousekeeping(ctx, worker) {
   }
 
   // The merge route (see resumeRoute): straight to merge/close, which re-checks both receipts.
-  // The findings of the review that passed were not promoted (promotion follows a merge that
-  // closed), so a retry that completes the merge promotes them from the saved report.
-  if (worker.resumeAtMerge) {
-    const merged = await mergeAndClose(ctx, worker, outcome);
-    const saved = merged.status === "complete" ? savedAllMetReview(sprint, branch) : null;
-    if (saved) await promote(ctx, worker, saved, merged);
-    return merged;
-  }
+  if (worker.resumeAtMerge) return mergeAndClose(ctx, worker, outcome);
 
   // The conflict dispatch left the merge unresolved: retained as a conflict, whatever it reported.
   if (worker.conflictUnresolved) {
@@ -854,7 +847,7 @@ export async function runHousekeeping(ctx, worker) {
     }
   }
 
-  // --- gate 2: independent review (findings + acceptance-criteria verdict) ---
+  // --- gate 2: independent review (acceptance-criteria verdict; no findings) ---
   // The worktree stays alive across review (which needs none of it): an `AC: unmet`
   // verdict sends the coder back to fix this branch.
   // The gate's own record, not its stdout: the reviewer is pointed at the same file.
@@ -882,7 +875,6 @@ export async function runHousekeeping(ctx, worker) {
     ], { env: sprint.childEnv() });
     return finishRetryOrBlock(ctx, worker, outcome, taggedReason(REVIEW_NOT_RUN_TAG, review.reason));
   }
-  outcome.findings = review.parsed.findings;
 
   // Not the code's fault: no coder round can start a service or supply a credential.
   if (review.parsed.verdict !== "all-met" && review.parsed.cause === "environment") {
@@ -909,13 +901,6 @@ export async function runHousekeeping(ctx, worker) {
     return finishRetryOrBlock(ctx, worker, outcome, taggedReason(AC_RECEIPT_FAILED_TAG, detail));
   }
 
-  const merged = await mergeAndClose(ctx, worker, outcome);
-
-  // --- findings promotion (advisory findings routed back into the sprint) ----
-  // Only once the branch has merged and its issue closed: a fix issue for an unmerged branch
-  // would be claimed against code that is not on the feature branch, and every re-review of a
-  // conflicted branch would promote again.
-  if (merged.status === "complete") await promote(ctx, worker, review, merged);
-  return merged;
+  return mergeAndClose(ctx, worker, outcome);
 }
 

@@ -77,3 +77,13 @@ setup() {
   ! grep -qF 'report it only if CRITICAL' "$f"
   grep -qF "2000-line / top-10-files cap does not" "$f"
 }
+
+@test "a per-branch review writes findings: [], and the always-on classes and design standard are Feature Mode only, on every platform" {
+  local plat f
+  for plat in claude copilot pi codex; do
+    f="$(role_prompt reviewer "$plat")"
+    grep -qF 'A per-branch review writes `findings: []`' "$f"
+    grep -qF 'Step 3 (the always-on classes) and the design-standard checks apply only to a `Feature review:` dispatch' "$f"
+    ! grep -qF 'findings are still reported — the branch returns to a worker with them' "$f"
+  done
+}
