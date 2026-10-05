@@ -300,6 +300,8 @@ test("a criteria-unmet retry still redispatches the full worker, not just review
   assert.equal(r.code, 2, "unmet criteria never resolve on their own, so the sprint stalls");
   const s = state(root);
   assert.match(s.retention.alpha.reason, /criteria-unmet/);
+  assert.match(s.retention.alpha.reason, /^blocked — retry limit reached/, "the retry cap blocks it");
+  assert.match(s.retention.alpha.fingerprint ?? "", /^[0-9a-f]{64}$/, "a blocked retention keeps the issue fingerprint");
   assert.equal(
     lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length,
     2,

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /**
  * body-format.mjs — the backend-agnostic markdown-body helpers.
  *
@@ -156,4 +158,16 @@ export function uncheckedCriteria(text) {
  */
 export function extractBlockedByNumbers(section) {
   return [...section.matchAll(/\bissue[\s-]*#?0*([0-9]+)\b/gi)].map((m) => m[1]);
+}
+
+/**
+ * A hash of what the coder works from — `## What to build` and `## Acceptance criteria` —
+ * with checkbox marks normalised. Everything crew-afk writes itself (the `Status:` line,
+ * `## Progress` / `## Blocked`, ticked boxes) is outside it, so only a human edit changes it.
+ */
+export function issueFingerprint(text) {
+  const parts = ["What to build", "Acceptance criteria"].map((h) =>
+    (sectionBody(String(text ?? ""), h) ?? "").replace(/^(\s*[-*]\s*)\[[xX ]\]/gm, "$1[ ]").trim(),
+  );
+  return createHash("sha256").update(parts.join("\n\u0000\n")).digest("hex");
 }

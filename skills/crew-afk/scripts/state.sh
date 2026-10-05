@@ -14,7 +14,7 @@ set -euo pipefail
 #   state.sh model <alias>
 #   state.sh attempt --slug <slug> --n <n>
 #   state.sh complete --slug <slug> --branch <branch>
-#   state.sh retain   --slug <slug> --branch <branch> --reason <reason>
+#   state.sh retain   --slug <slug> --branch <branch> --reason <reason> [--fingerprint <sha256>]
 #   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>] [--number <n>]
 #   state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
 #   state.sh coverage-clear --slug <slug>
@@ -165,12 +165,15 @@ case "$CMD" in
 
   retain)
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@"); reason=$(flag reason "" "$@")
+    fingerprint=$(flag fingerprint "" "$@")
     [ -n "$slug" ] || die "retain requires --slug"
     [ -n "$branch" ] || die "retain requires --branch"
     [ -n "$reason" ] || die "retain requires --reason (partial | verification-failed | criteria-unmet | review-not-run | merge-failed | blocked)"
-    edit_state --arg s "$slug" --arg b "$branch" --arg r "$reason" '
+    # --fingerprint: a hash of the issue's What to build / Acceptance criteria when the
+    # attempt ended; a later run that sees a different one knows a human edited the issue.
+    edit_state --arg s "$slug" --arg b "$branch" --arg r "$reason" --arg f "$fingerprint" '
       .retained_branches[$s] = $b
-      | .retention[$s] = {branch: $b, reason: $r}
+      | .retention[$s] = ({branch: $b, reason: $r} + (if $f == "" then {} else {fingerprint: $f} end))
       | .completed_slugs = ((.completed_slugs // []) - [$s])
       | .merged_branches = ((.merged_branches // []) - [$b])'
     trace --level warn STATE "retain slug=$slug branch=$branch reason=$reason"
@@ -179,7 +182,7 @@ case "$CMD" in
 
   blocked)
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@"); reason=$(flag reason "blocked" "$@")
-    number=$(flag number "" "$@")
+    number=$(flag number "" "$@"); fingerprint=$(flag fingerprint "" "$@")
     [ -n "$slug" ] || die "blocked requires --slug"
     edit_state --arg s "$slug" --arg r "$reason" '.blocked_slugs = ((.blocked_slugs // []) + [$s] | unique) | .blocked_reasons[$s] = $r'
     # --number: the issue got the `blocked` label; crew-summary prints how to remove it.
@@ -187,8 +190,9 @@ case "$CMD" in
       edit_state --arg s "$slug" --argjson n "$number" '.blocked_labelled = ((.blocked_labelled // {}) + {($s): $n})'
     fi
     if [ -n "$branch" ]; then
-      edit_state --arg s "$slug" --arg b "$branch" --arg r "blocked — $reason" '
-        .retained_branches[$s] = $b | .retention[$s] = {branch: $b, reason: $r}'
+      edit_state --arg s "$slug" --arg b "$branch" --arg r "blocked — $reason" --arg f "$fingerprint" '
+        .retained_branches[$s] = $b
+        | .retention[$s] = ({branch: $b, reason: $r} + (if $f == "" then {} else {fingerprint: $f} end))'
     fi
     trace --level error STATE "blocked slug=$slug${branch:+ branch=$branch}"
     echo "STATE: blocked slug=$slug${branch:+ branch=$branch}"
@@ -334,6 +338,8 @@ case "$CMD" in
     reason=$(jq -r --arg s "$slug" '.retention[$s].reason // empty' "$SF")
     if [ -n "$reason" ]; then
       echo "reason: $reason"
+      fp=$(jq -r --arg s "$slug" '.retention[$s].fingerprint // empty' "$SF")
+      [ -z "$fp" ] || echo "fingerprint: $fp"
     else
       echo "no retention record"
     fi

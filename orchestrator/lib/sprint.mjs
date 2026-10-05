@@ -314,14 +314,17 @@ export class Sprint {
   complete(slug, branch) {
     return this.state(["complete", "--slug", slug, "--branch", branch]);
   }
-  retain(slug, branch, reason) {
-    return this.state(["retain", "--slug", slug, "--branch", branch, "--reason", reason]);
+  retain(slug, branch, reason, fingerprint = null) {
+    const args = ["retain", "--slug", slug, "--branch", branch, "--reason", reason];
+    if (fingerprint) args.push("--fingerprint", fingerprint);
+    return this.state(args);
   }
-  blocked(slug, branch, reason, number = null) {
+  blocked(slug, branch, reason, number = null, fingerprint = null) {
     const args = ["blocked", "--slug", slug];
     if (number != null) args.push("--number", String(number));
     if (branch) args.push("--branch", branch);
     if (reason) args.push("--reason", reason);
+    if (fingerprint && branch) args.push("--fingerprint", fingerprint);
     return this.state(args);
   }
   coverageGap(slug, categories) {
@@ -397,13 +400,19 @@ export class Sprint {
    * needs another worker pass or only another review attempt.
    */
   retentionReason(slug) {
+    return this.retentionRecord(slug).reason;
+  }
+
+  /** The retention record's `reason` and `fingerprint` (the issue's, when it was retained); each `null` when absent. */
+  retentionRecord(slug) {
     const r = this.effects.exec(
       "bash",
       [this.effects.script("state.sh"), "retention", "--slug", slug],
       { env: this.childEnv(), mutating: false },
     );
-    const m = /^reason:\s*(.+)$/m.exec(r.stdout || "");
-    return m ? m[1].trim() : null;
+    const reason = /^reason:\s*(.+)$/m.exec(r.stdout || "");
+    const fingerprint = /^fingerprint:\s*(\S+)$/m.exec(r.stdout || "");
+    return { reason: reason ? reason[1].trim() : null, fingerprint: fingerprint ? fingerprint[1] : null };
   }
 
   trace(marker, text = "") {
