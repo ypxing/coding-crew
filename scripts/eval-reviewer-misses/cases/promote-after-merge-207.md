@@ -1,26 +1,16 @@
 ---
-mode: branch
+mode: feature
 base_sha: 4bcc149
-head_sha: 3a4d772
+head_sha: b221314
 slug: promote-after-merge
 via: origin/feature/promote-after-merge
 ---
-Replay of the per-branch review of #207 ("Fix feature review findings: promote-after-merge"), range
-`4bcc149..3a4d772`. The SHAs are reachable through `origin/feature/promote-after-merge`; fetch it
-before running if they do not resolve.
-
-## Issue
-
-207-fix-feature-review-findings-promote-after-merge
-
-## Implements
-
-D1, D2
-
-## Acceptance criteria
-
-- [ ] An all-met branch with promotable findings whose first close-issue.sh (or non-conflict merge-branches.sh) call fails and whose retry completes via the merge route produces exactly one `promote-findings.sh defer` call, after the successful close-issue.sh; a sprint test with failFirstCall and --max-rounds 2 asserts it, and findings-promotion.md's 'a branch whose merge conflicts or whose close is refused promotes nothing' is reworded to say promotion happens at the retry's merge.
-- [ ] CHANGELOG.md's [Unreleased] section has a `crew-afk:` entry stating that review findings are promoted only after their branch merges and its issue closes.
+Replay of the feature review over #207's code ("Fix feature review findings: promote-after-merge"):
+the drain that merged it reviews the feature's new commits, `4bcc149..b221314` (#207's branch and its
+merge), split into areas by the planner, one reviewer per area. Findings come from the feature review
+alone (the per-branch review judges criteria and raises none), so this is where the miss had to be
+caught. The SHAs are reachable through `origin/feature/promote-after-merge`; fetch it before running
+if they do not resolve.
 
 ## Expected misses
 
