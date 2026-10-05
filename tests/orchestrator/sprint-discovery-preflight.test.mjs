@@ -484,6 +484,7 @@ test("every dispatch is filed in this run's ledger with its slug, role and attem
   assert.ok(s.current_run, "run-start tagged the run");
   const rows = s.dispatches.map((d) => [d.role, d.attempt, d.run === s.current_run]);
   assert.deepEqual(rows, [
+    ["commandFinder", 1, true], // command discovery, before any worktree
     ["coder", 1, true],
     ["reviewer", 1, true],
     ["reviewer", 1, true],
@@ -493,7 +494,7 @@ test("every dispatch is filed in this run's ledger with its slug, role and attem
   ]);
   // The coder's entry keeps the tip it left: the commit verify then checked.
   const verified = JSON.parse(readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json"), "utf8")).commit;
-  assert.equal(s.dispatches[0].head, verified);
+  assert.equal(s.dispatches[1].head, verified);
 });
 
 // ─── the issue-set lint (lint-issues.sh, once, before discovery and any worktree) ──────────────
