@@ -6,137 +6,230 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
-- `crew-afk`: at run start (`preflight.mjs`'s `dropStaleRetained`, after the feature-branch sync), a `retained_branches` / `retention` record is dropped and logged (`[RETAINED-DROPPED] slug=… — <why>`) when its issue is closed (`done`) or no longer in the tracker, or its branch no longer exists, through the tracker's `listFeatureIssues` under `local` and `github` alike. A dropped record no longer counts toward `Partial`, `## Retained Branches`, the stall verdict or the PR's draft reasons; a closed or absent issue's `blocked` entries go with it. An open issue whose branch exists is kept, ready or not; a listing that fails or comes back empty drops nothing; `--dry-run` only reports. New `state.sh drop-retained --slug <s> [--reason <text>] [--issue-gone]`, runnable by hand (#246; once, sprint `crew-afk-maintenance`, 2026-10-05: #142 shipped in #145, and its record kept two runs `STALLED` and PR #244 a draft).
-- `solve-issue`: `run-checks.sh --targeted` passes only the changed test files a suite argument it replaces would have selected (`*`/`?`/`[…]` within one directory, `**/` across any number, a directory by what it holds), so `bats tests/*.bats` is no longer handed a `tests/orchestrator/*.test.mjs`; when none is left the test check is `deferred (no changed test file the test command's suite arguments select)` and nothing runs. A command with no suite argument still gets every changed test file. Each check's output now reaches its log through a pipe (`… 2>&1 | cat >"$log"`, the exit code taken from `PIPESTATUS`): on overlayfs, bats writing its load-error header straight to the log file hung forever, which held coders in `run-checks.sh --targeted` until their dispatch timeout (#266).
-- `crew-afk`: a conflict-only coder dispatch is judged resolved when HEAD contains the feature-branch commit its sync merge started from (`mergeFeatureBranch` records `MERGE_HEAD` before the dispatch), not the live feature-branch ref. A sibling that merged while the dispatch ran no longer turns a correct resolution into `[CONFLICT-UNRESOLVED]` and a spent retry; the newer commit is the next sync's job. MERGE_HEAD left, unmerged paths, or a HEAD without that commit are still unresolved (#269; once, sprint `afk-effectiveness`, #268 blocked at its retry limit).
-- `crew-afk`: a run ended by SIGINT, SIGTERM or SIGHUP after `run-start` records `signal <SIG>` as its run-end reason (code 130/143/129), so the next run's summary no longer reports it killed or crashed. `scripts/smoke-sprint.sh` prints `crew-afk-commit: <sha>` (`<sha>-dirty` on a checkout with uncommitted or untracked changes), and `scripts/cut-release.sh --demo-smoke` refuses a log with none, a dirty one, one HEAD does not descend from, or one with any file changed since but `CHANGELOG.md` and `scripts/smoke-sprint/RESULTS.md`. crew-afk's registry description no longer says every Actionable finding is promoted.
-- `dep-install`: a Python project with no uv/poetry lockfile gets its dev tools installed, on the host and in docker alike (`python-install-cmd.sh`). `requirements.txt` adds `-r requirements-dev.txt` / `-r dev-requirements.txt` when present; `pyproject.toml` installs `'.[dev]'` for a `dev` optional-dependencies extra and `--group dev` (pip ≥ 25.1) for a `dev` dependency group. Both dev requirements files now count toward the reinstall fingerprint. Before, `pip install .` / `-r requirements.txt` left pytest, ruff, mypy… uninstalled, so every check failed with `command not found` (#273).
-- `crew-afk`, `add-tests`: command discovery reads `README.md` too (after `Makefile`, before the manifests), and its prompt asks for a project's tools through the runner its install leaves them under: `uv run` with a `uv.lock` (else `poetry run` with a `poetry.lock`), `vendor/bin/` with a `composer.json`. The first demo smoke sprint discovered bare `pytest`, `ruff check .`, `mypy`, which `uv sync --frozen` leaves off PATH, so its baseline was red before any coder ran.
-- `crew-afk`: feature-review fixes. A branch re-reviewed all-met keeps the findings an earlier version's report left on it (carried into the new block, still listed by `promote-findings.sh open`, never promoted). `state.sh run-start` on a state from a version that wrote no `last_exit` records `previous_exit` as `unknown` instead of claiming a crash (run-start now writes the key itself, so a later unended run is still reported killed or crashed). A `report_only` finding drops only its own prose block from a fix issue's `## Review findings` (its severity and exact `File:` location), not a promoted finding's at the same spot. A run that stops at its per-issue attempt cap records `attempt cap` as its run-end reason, not `finished`. `scripts/eval-reviewer-misses/`: an escaped defect is a `mode: feature` replay (the template's default; `mode: branch` is for a defect that should have made a criterion unmet), and `promote-after-merge-207` is now a feature case. `scripts/smoke-sprint.sh` makes `--dir` absolute (a relative `--demo --dir` recorded `?` for cost and findings) and marks a demo clone before its checkout, so a failed checkout no longer blocks the next run.
-- `crew-afk`: a branch re-reviewed after an earlier version's review raised findings on it no longer hides them. The per-branch review block is written with `criteria_only: true`, and `foldReview` carries the branch's earlier findings past such a block (marked carried, as past `not_run`), so `promote-findings.sh open`, `post-findings.sh` and the summary still list them; nothing promotes them.
-- `crew-afk`: a feature gets one findings fix issue. `FEATURE_REVIEW_PROMOTIONS` is 1, and `feature_review.promotions` advances only when a feature review created the fix issue (a clean first review leaves the feature its one); an earlier version's count of 2 reads as capped. The fix issue holds the 8 most severe promotable findings; the rest are marked `report_only`, so `promote-findings.sh open`, `post-findings.sh` and the summary still see them. A github fix issue's `## Review findings` lists none of them (prose or json fallback), and the json fallback lists findings under a severity list again (it listed none). `criteriaFile` lists findings CRITICAL→LOW (stable) for every caller. The PRD audit no longer waits on open fix issues (any with a `Source:` line); an open work issue still skips it.
-- `crew-afk`, `crew-address-findings`, `to-issues`: per-issue review is a criteria-and-PRD-decisions gate with no findings. `reviewer.md`'s per-branch mode and `reviewPrompt` ask for `findings: []`; the always-on classes and the design-standard checks apply only to a `Feature review:` dispatch; the orchestrator drops any findings a branch report still carries before it writes the review block, so no branch gets its own fix issue (an `unmet` verdict still returns the branch to its coder). Per-branch promotion (`promote()`, the merge-route `savedAllMetReview`, carrying a branch's earlier findings forward) and `promote-findings.sh guard` are removed; open branch findings already in a `sprint-review-*.md` report are still listed by `promote-findings.sh open` and never promoted. The findings rubric gains a fourth hard rule ("Necessary"): a finding whose failure needs an input or state no current caller, user or documented contract produces is Debatable. `to-issues` sends a criterion that needs a paid run, a manual measurement or a person to the PRD's human steps or a `ready-for-human` issue. This repo's `CLAUDE.md` asks a crew-afk mechanism change to cite its incident count.
-- `address-pr-comments`: on a crew-afk PR (body has `<!-- crew-afk:begin -->`, head `feature/<slug>`), each accepted and fixed comment is appended to `.scratch/<slug>/reviews/escaped.md` as `- <YYYY-MM-DD> <file:line> — <one-line summary> — <commit sha>`, a defect crew-afk's review let through. Comments containing `crew-finding:` (crew-afk's own findings) are not recorded; any other PR writes nothing; a failed write is reported in the Summary and never stops the skill. `scripts/eval-reviewer-misses/` gains `case-template.md`, and `RESULTS.md` the steps from an `escaped.md` line to a replay case.
-- `scripts/smoke-sprint.sh --demo` runs one crew-afk sprint on a pinned outside demo repo (`scripts/smoke-sprint/demo/`: `repo` — or `CREW_DEMO_REPO` — `sha`, `check`, `feature/`, optional `slug`), passing only when crew-afk exits 0, every issue is done and every `check` command passes on `feature/<slug>`; every run prints `crew-afk-version: <v>`, and a real demo run appends a row to `scripts/smoke-sprint/RESULTS.md`. `scripts/cut-release.sh` refuses to tag without `--demo-smoke <log>` (a `SMOKE: PASS (<platform>, demo)` log for HEAD's crew-afk version; a non-demo PASS is refused) or `--no-demo-smoke "<reason>"`. Both stay maintainer-only.
-- `crew-afk`: the summary says how the run before this one ended and names the command for its findings. `state.sh run-end --reason <text> --code <n>` writes `last_exit {run, reason, code, at}`, called from every orchestrator exit after `run-start` (finished, stalled, wall-clock cap, baseline red, a preflight stop, an error); `run-start` counts `runs` across invocations, keeps the previous `last_exit` as `previous_exit`, and logs `previous run ended without an exit (killed or crashed)` when the last run wrote none. The summary prints `Run <n> for this feature; previous: <reason>`, and its Next Step names `/address-pr-comments <PR url>` when the findings were posted to a PR (`/crew-address-findings` otherwise). Only a run's first `[MILESTONE-PUSH-SKIPPED]` is a warning; later ones are debug.
-- `to-issues`, `crew-afk`: review fixes for the design standard. `to-issues` exempts an auto-promoted fix issue by any column-0 `Source:` line outside a fence — `Source: review (<branch>)` first under `github`, `Source: <report> (<branch>)` after the title and `Status:` under `local` — as `promote-findings.sh`'s guard does, and creates a missing `<feature-slug>` milestone (list first) before the `github` in-place `gh issue edit`; the in-place rewrite keeps a source issue's column-0 `Source:` line where it was (first body line under `github`, after the title and `Status:` under `local`), so the rewritten issue stays exempt. Both review JSON schemas in `orchestrator/lib/prompts.mjs` carry each finding's `issue`, where the reviewer puts its `Design standard (criterion <n>):` marker for crew-triage. `scripts/eval-design-skills.mjs` renders `{{FRAGMENT:…}}` lines (from each version's own fragments) into the subject prompt, and `--dry-run` writes every prompt.
-- `to-issues`: step 3 checks every slice — and an existing issue handed over as `/to-issues <ref>` — against the design standard (`{{FRAGMENT:design-standard}}`), beside "Already there" and "Wrong assumption"; a failure reaches the quiz (step 5, new item 2) with its `file:line` evidence. A source issue that stays one slice is rewritten in place (`gh issue edit <n> --body-file` under `github`, the file under `local`) instead of gaining a `## Parent` child; one that splits still gets children. `Source: review` fix issues are exempt. `docs/guide.md` names `/to-issues <ref>` as the `needs-triage → ready-for-agent` step.
-- `crew-afk`, `crew-address-findings`: the reviewer role renders the design standard (`{{FRAGMENT:design-standard}}`) and applies criteria 2–4 to the diff; a design-only finding is reported at LOW only with its `file:line` and a snippet, prefixed `Design standard (criterion <n>):`, and never makes an acceptance criterion unmet. The findings rubric gains a third hard rule — a finding whose only basis is the design standard is Debatable — so no `fixFindings` mode promotes one.
-- `crew-grill`, `crew-brainstorm`, `crew-afk`: one design standard, `skills/_shared/fragments/design-standard.md` (`{{FRAGMENT:design-standard}}`), replaces the size paragraph both skills had copied and let drift. Four criteria in priority order (necessary > correct > reusable along real axes > fewest moving parts > says what it does), each with its failure signals, and the guard against cutting structure the design needs now. Criterion 2 counts the axes of variation the project's `CLAUDE.md` names, else only two or more real callers or implementations now; this repo's `CLAUDE.md` gains its `## Axes of variation`. `tests/design-standard-shared.bats` asserts every line in the rendered skills and none in the coder role or solve-issue.
-- `crew-afk`: the coder role reads the issue where the prompt points — a local file, or under `tracker: github` the `gh issue view` command the prompt gives — instead of "local only, never query `gh`", which made a coder report `blocked` on every GitHub issue with no local copy. Reading the issue stays its only tracker call.
-- `to-issues`: `lint-issues.sh` warns when two issues name the same file (a path with a `/`; `src/a.ts:10` counts as `src/a.ts`) and neither reaches the other through `## Blocked by`, directly or via another issue in the set. The `WARN` is advisory: it names `to-issues`' edge rule (rows 1–2) as the only grounds for a `Blocked by`, and `SKILL.md` says the same. One `WARN` per pair; paths under `## Blocked by` / `## Context Documents`, under `.scratch/` or in URLs, and `--known` issues, never count. Exit status is unchanged.
-- `to-issues`, `to-prd`, `crew-afk`: a PRD decision line ending in `(no slice)` needs no issue — `to-prd` describes the marker, `to-issues`' coverage table does not ask about it, and `lint-issues.sh --prd` gives it no coverage `WARN`. A `--known` file's `## Implements` now counts toward coverage, and preflight passes each done issue as a file (written out under `tracker: github`), so a re-run no longer warns for an ID a done issue implemented. Under `tracker: github`, `to-issues`' own lint run writes each existing milestone issue's body as a `--known` file too.
-- `to-issues`: merge by default. Step 4 starts from one slice for the whole PRD and splits only for a named reason — context budget (anchored to the #148–#160 reference size), human boundary, parallelism worth having, or expand–contract order. The edge rule keeps only its two `Blocked by` rows, between split slices; the small-file and shared-seam merge rules and the 3–8 criteria target are gone; the quiz lists each split with its reason and each edge with its row. `lint-issues.sh` warns only above 10 criteria, as a context-budget check. `scripts/eval-design-skills.mjs` gains a `slice` stage, per-skill metrics and rubric (`rubric-to-issues.md`), and three `to-issues` replay cases (PRDs #211, #203, #147).
-- `crew-address-findings`: the `## Promoted Findings` line format names the optional trailing ` (<n> finding(s))` count, the reference being the text before it.
-- `scripts/tracker/mark-issue-done.sh` (and its `.coding-crew/scripts/` copy) is executable, like `tracker-config.sh`.
-- `crew-afk`: both tracker backends export `listFeatureIssues(mainRoot, { featureSlug })` — every issue of the feature in every state, one entry shape (github's `listOpen` is renamed to it; local lists `issues/open/` and `issues/done/`, a done file reading `done`) — and `fixIssuesCreatedReady`. The loop, the feature-review planner's `## Implements` lookup and preflight's lint set read issues only through them; `tests/orchestrator/tracker-boundary.test.mjs` fails on any orchestrator file but `trackers/local.mjs` reading `.scratch/<slug>/issues/`, or outside `trackers/` probing for `listOpenIssueFiles`. No behaviour change under either tracker.
-- `crew-afk`: each `## Promoted Findings` marker `promote-findings.sh defer` writes ends with the number of findings it promoted (`→ <ref> (<n> finding(s))`), and its `PROMOTE` trace, like `defer-gaps`' and `defer-integration`'s, carries `findings=<n>`. The summary renders a github fix issue as `- <branch>: <n> finding(s) → #<n>` with no network call, instead of `0 finding(s) → <n> (missing)`; an older marker with no count still renders (local: counted from the issue file as before; github: no count).
-- `crew-afk`: the feature-review promotion cap counts per feature, not per run. `sprint-state.json` records `feature_review.promotions` (`state.sh feature-review-promoted`, `get feature-review-promotions`; absent reads as 0), so a run after the feature's two promoting reviews is report-only. `--fix-findings medium` keeps LOW findings out of fix issues.
-- `crew-afk`: sync fixes — a conflict dispatch is recorded under its own `conflict` role (never resumed as the coder's session), a red baseline is re-checked after it returns, `resolve-merge-conflicts.sh` run in a worktree no longer counts as a main-checkout move (it was hiding a reviewer's feature-branch change), and `--head-is-branch` makes a sync keep the feature branch's CHANGELOG entries first and label decisions by side; the decisions are logged as `[SYNC-AUTO-RESOLVED]`.
-- `crew-afk`: a retry of a retained branch re-reads an issue a human edited since the attempt that left it. `state.sh retain` records a fingerprint of `## What to build` and `## Acceptance criteria` (checkbox marks normalised; crew-afk's own writes excluded); a different one at resume sends a `fix` or `verify` route to `restart` (`workerPrompt` on the retained branch) instead of `fixPrompt`. `merge`, `conflict` and a record without a fingerprint are unchanged.
-- `crew-afk`: a merge conflict on a retained branch's sync gets its own coder dispatch, never a step of another prompt. The sync first runs `resolve-merge-conflicts.sh` (registry versions, CHANGELOG appends: committed, no dispatch); any other conflict gets a conflict-only dispatch checked from git (no `MERGE_HEAD`, no unmerged paths, the feature branch in `HEAD`), outside the retry and dispatch caps; then the original route runs with a prompt that has no conflict text.
-- `crew-afk`: the reviewer protocol opens with the goal-first question (does the change do what the issue and PRD intend, and what does it break, wherever that code lives), puts unchanged code whose correctness the change affects in scope at any severity, and reads callers, callees and the state the change reads or writes. `scripts/eval-reviewer-misses.mjs` replays the two bugs PR #208 shipped with against a base ref and the head, judged blind (`RESULTS.md` holds a real run).
-- `to-prd`: each decision that changes existing behaviour records, as `path:line` facts, what relies on what it changes (callers, callees, state read or written, state older versions left behind); an uncited claim about existing behaviour is not a fact.
-- `crew-afk`: at a report-only feature drain, the finding a `duplicate_of` was folded into is marked `report_only` in the report (the fold's copy no longer differs from it in severity and location), so it stays open and keeps the run from green.
-- `crew-afk`: review findings are promoted only after their branch merges and its issue closes; a branch whose close was refused promotes on the retry that completes the merge, from its saved review (not when an earlier run already promoted it). Findings triage reads a branch's change from its merge commit's first parent, and the feature review's from its own range, instead of a diff against the feature branch.
-- `crew-afk`: a branch's newest review block carries the findings its earlier blocks (any `sprint-review-*.md`, including an earlier run's) raised and it does not repeat, marked `"carried": true`; a `not_run` block keeps the previous findings carried. The summary counts them, and `remind` and the PR's posted findings label them `(earlier review)`.
-- `crew-afk`, `to-issues`, `to-prd`, `upgrade-deps`, `crew-address-findings`: shared fragments live flat at `skills/_shared/fragments/<key>.md`; the `common/` and per-platform lookups are gone (the four per-platform `tracker-configuration.md` copies were identical), as is the unused skill-local `fragments/<platform>/` lookup. Installing crew-afk removes the old `common/` and per-platform fragment directories.
-- `crew-afk`: a later feature review that writes its `feature` block closes an earlier run's not-run `feature-<n>` area in `review-rollup.mjs`, so `remind` and the summary no longer report it; a gap from the same run is written after the block and still shows.
-- `crew-afk`: a whole-feature review is split by a planner into up to `maxParallel` areas, each read end to end by its own concurrent `crew-reviewer` (`feature-<n>`) given an `Area:` block of its files and the full text of its PRD decisions; findings join one `feature` block and are promoted once. A failed planner gives one whole-diff area; a failed area is recorded not-run as `feature-<n>`. An incremental review stays one reviewer.
-- `crew-afk`: the feature review covers the whole feature (merge-base with origin's default branch, else the local one) instead of only the run's `base_sha`, then only the commits added since (`feature_review.reviewed_tip`, `state.sh feature-reviewed`); an unchanged tip dispatches no reviewer, and the wall-clock cap with a claimable issue left skips it.
-- `crew-afk`: the per-branch review checks the PRD decisions an issue implements. The review prompt gains a `PRD decisions this issue implements:` block — the PRD's `- **D<n>** — …` / `- **B<n>** — …` lines for the IDs under the issue's `## Implements` (PRD from `.scratch/<slug>/PRD.md`, `prd-issue.md`, or fetched once per run under `tracker: github`) — and a branch contradicting one is `unmet` with `detail` naming the ID. An ID with no PRD line, or a failed fetch, only warns.
-- `crew-afk`, `solve-issue`: codex's plain roles run read-only (only their result directory writable). `--targeted` sees through env assignments, `env`/`time` and `bundle exec`/`poetry run`-style wrappers and a `;` with no space when deciding a runner takes no file arguments, and counts mocha's `test/*.js`, phpunit's `*Test.php`, nested `__tests__/` and colocated tests under a `helpers/` source dir as test files. The full-suite deviation is also spotted inside a subshell or a quoted `bash -lc '…'`. `ORCHESTRATOR_PREFETCH=1` starts the node-suite prefetch only for a bats run that includes an orchestrator wrapper.
-- `crew-afk`: a red baseline also stops a worker still installing deps before its coder starts, and an attempt whose coder it stopped is retried by a coder next run (not routed to verify-only). The read-only guard excuses a feature-branch or `HEAD` move only for a git that can move them (a merge, not a `worktree prune`), a crew branch's only for a branch-moving git or its worktree's own activity, and compares worktree paths by realpath. `open-pr.sh --no-push` sets only the draft state, leaving the PR's body and closing lines; a `--draft` create falls back to a ready PR only when the repo refuses drafts. Under `tracker: github` a fix issue created but not yet listed past the cap still counts as work the cap left undone.
-- install: the retired agent files are removed on every platform by any install (not only crew-afk's, for its platform), so dropping the manifest's `agents` strands none. crew-afk's shared fragments are a registry `more-assets` entry, which install, uninstall and the version gate all see. `unbootstrap.sh --agent` is gone with `uninstall.sh --agent`.
-- `crew-afk`: an integration-red run still pushes nothing and opens no PR, but a PR an earlier run opened for the branch is turned into a draft with the reason in its crew-afk block (`open-pr.sh --no-push`, which updates only an open PR).
-- `crew-afk`: an issue blocked without a branch (a failing `## Requires`) is listed with its reason in the `--open-pr` note (`state.sh blocked` records `blocked_reasons` for every blocked issue). A repo that refuses draft PRs gets a ready PR, with `PR-STATE-FAILED:` naming why, instead of none.
-- `crew-afk`: codex reads its prompt (protocol and task) on stdin again (`codex exec … -`), so no codex prompt hits an argv limit. The argv guard checks each argv string against the 128 KiB cap (pi's protocol and prompt are separate strings) and, on Windows, the whole command line against 32,767 characters. The plain roles (command finder, PRD auditor, PR writer) dispatch through their platform's adapter like every other role (codex with its sandbox flags, pi with `--mode json`, final text and cost read from the event stream). Every claude dispatch runs with auto-memory off. A pane-hosted worker leads its own process group, so a timeout or interrupt kills its children too.
-- `solve-issue`, `crew-afk`: a coder's `run-checks.sh --targeted` runs only the tests its own branch changed — crew-afk sets `CREW_BASE_REF` to the feature branch, which the merge-base used to miss — and only real test files (a helper, fixture or other file under `tests/` is no longer handed to the runner). A test command whose runner takes no file arguments (`make`, `go`, `cargo`, `gradle`, `mvn`, …) reports `test: deferred (the test command takes no test file arguments)` instead of running with paths appended.
-- `crew-afk`: a red baseline now also kills the dispatches already running (`[BASELINE-RED]`), so the run exits 1 at once instead of after the coders' timeouts; their branches are kept, unverified, for the next run (a free attempt). Past the wall-clock cap or a red baseline the idle-slot poller lists the tracker no more. The cap counts as hit only when it left an issue unclaimed or a fix issue parked, so a run that finished everything after minute 120 is green; a cap hit exits 2 even when the attempt cap also ended the run.
-- `crew-afk`: a SIGHUP to the orchestrator (terminal closed, SSH dropped) kills every worker's process group and exits 129, as SIGINT/SIGTERM already did; `doctor` reads a flag folded into brackets in a CLI's `--help` (claude's `--append-system-prompt[-file]`), so it no longer fails on every claude install.
-- `crew-afk`: the read-only guard snapshots every `crew/<feature>/*` ref, the feature branch and the branch `HEAD` is on for every reviewer and triage dispatch, not only the dispatch's own branch. A concurrent effect no longer switches the `HEAD` and feature-branch checks off: only a main-checkout ref move (a merge) excuses those, and only a busy worktree excuses its own branch. A violated dispatch's cost is still recorded. A per-issue verify that ran with uncommitted files in the worktree no longer caches its tree as passing (`[TREE-NOT-CACHED]`).
-- `crew-afk`: its roles are no longer agents. `crew-coder`, `crew-reviewer` and `crew-triage` leave `registry.json` (with crew-afk's `agent-deps`); their protocols move to `orchestrator/roles/{coder,reviewer,triage}.md` and the reviewer's checklists and scripts to `orchestrator/roles/reviewer/`, all shipped with the orchestrator to `.coding-crew/crew-afk/roles/`. Installing crew-afk removes every file listed in the new `retired-agents` (the old per-platform agent files, `.coding-crew/agents/`, `.coding-crew/code-review/`); `--update` of an install whose manifest lists agents installs crew-afk and drops them; `./install.sh <platform> crew-coder` installs crew-afk with a note; `uninstall.sh --agent` and unknown `uninstall.sh` arguments are refused instead of removing everything. The coder's prompt now ends with each named skill's installed SKILL.md path (`solve-issue`, `dep-install`, `tdd`), and the report JSON is defined once, in the coder protocol, which the worker prompt points at.
-- `crew-afk`: the four launchers render from one `SKILL.md` with `{{PLATFORM}}` and no per-platform fragments; every platform's frontmatter pre-approves the shell (`allowed-tools: Bash, shell`). The unused `skills/crew-afk/references/test-*.sh` scripts are deleted, and `install.sh --update` removes them from installs.
-- `crew-afk`: the `--open-pr` PR body describes the PR's whole range — from the feature branch's merge-base with origin's default branch (`origin/HEAD`, else `origin/main`, else `origin/master`) — instead of only the latest run's commits; the run's recorded `base_sha` is used only when there is no origin default branch.
-- `crew-afk`: `doctor` runs each active platform CLI's `--help` (`codex exec --help` for codex) and reports a PROBLEM, exit 1, when the output lacks a flag its adapter declares in `requiredFlags` for a full-permission headless run.
-- `crew-afk`: every spawned child runs in its own process group; a timeout (`exec`, `bashAsync`, `spawnWithTimeout`) or SIGINT/SIGTERM to the orchestrator kills the whole group, grandchildren included (exit codes unchanged: 124, 128+signal). Script lookup also checks `CLAUDE_CONFIG_DIR`, `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, `CODEX_HOME` (after the project install, before the `$HOME` defaults).
-- `crew-coder`, `crew-reviewer`, `crew-triage`, `crew-afk`: the per-platform agent files (`claude.*`, `copilot.agent.md`, `pi.*`, `codex.agent.toml`) and the shim install are gone; `agents/<name>/` holds only `protocol.md` (and `assets/`). Install writes each protocol to `.coding-crew/agents/<name>/protocol.md` plus the shared fragments under `.coding-crew/skills/_shared/fragments/`, writes nothing under `.claude/agents`, `.github/agents`, `.pi/agents` or `.codex/agents`, and `install.sh --update` removes the shims an older install wrote there (those exact files only). The crew-afk launchers no longer name an agent file or `--agent`. CLAUDE.md's `crew-coder` layer row reads protocol + report wire.
-- `crew-afk`: the `fixFindings` level → severities list is resolved only in `orchestrator/lib/report.mjs` and passed to `promote-findings.sh` as `--severities` (now required by `guard` and `defer`, exit 2 naming it when missing); the script keeps no level table, its `policy` subcommand is gone (`crew-summary.sh` takes `--promoted <list>`), and the legacy `CREW_PROMOTE` is no longer read.
-- `solve-issue`, `crew-afk`: under `CREW_DEFER_FULL_CHECKS=1` a coder runs tests through `run-checks.sh --targeted` — only the test files changed on the branch since its merge-base, reported `test: pass|fail (targeted)`, or `test: deferred` when none changed; the full suite stays the verify gate's. crew-afk logs `[DEVIATION]` when a coder's trace shows the `dev-commands.json` `test` command run in full and names it under `## Deviations` in the summary; the issue is not failed.
-- `crew-afk`: on pi and codex every role is dispatched through `orchestrator/lib/adapters/` (`pi.mjs`, `codex.mjs`) from the rendered protocol, like claude and copilot; no `.pi/agents/` or `.codex/agents/` file is read. pi gets the protocol via `--append-system-prompt` and the role's `--tools`; codex gets it prepended to the prompt, the role's `-c model_reasoning_effort=…` and sandbox (read-only roles run workspace-write rooted at their result file's directory). A missing `pi`/`codex` CLI fails the dispatch with exit 127 naming it. `dispatch-agent.sh` and `dispatch-codex-agent.sh` are deleted from source and registry, and `install.sh --update` removes them from installs; preflight no longer looks for a dispatcher or an agent file.
-- `crew-afk`: on claude and copilot every role is dispatched through `orchestrator/lib/adapters/` with its prompt rendered from `agents/<role>/protocol.md` (`{{FRAGMENT:…}}` expanded, a missing one fails the dispatch before spawning); no `.claude/agents/` or `.github/agents/` file is read, and copilot's committed-agent preflight check is gone. claude gets the protocol via `--append-system-prompt-file` and the coder `--disallowedTools Agent`; an argv prompt over 128 KiB fails instead of being truncated.
-- `crew-reviewer`, `crew-afk`: every review finding carries `issue` (what is wrong) beside `criterion` (what the fix must achieve). Findings triage sees both, `issue` first, and `post-findings.sh` posts `issue` before `criterion` with triage's verdict and rationale; the PR's separate "Dismissed by triage" section is gone. A finding already posted under the old format is not posted again.
-- `crew-triage`, `crew-afk`: crew-afk's findings triage answers only `actionable` or `debatable` — auto has no human to confirm a dismissal, so a doubted finding goes to the coder's premise check. A `dismiss` returned anyway is recorded as `actionable` (rationale notes the remap); the ADR / protected-path rules still force Debatable. `/crew-address-findings` keeps all three verdicts.
-- `crew-afk`: `--poll-interval <seconds>` (default 30, `0` = off) — idle slots poll the tracker for issues made ready mid-run (one listing per interval), lint them first and block a bad one for the run only.
-- `crew-afk`: a resumed feature branch that lacks `origin/<default>` (its earlier work was squash-merged) gets it merged in once per run, before the baseline, by `sync-feature-branch.sh`. Registry version / CHANGELOG-append conflicts are auto-resolved; any other conflict aborts the merge and stops the run. No `origin` or no fetch skips silently; `--no-sync-main` opts out and `--dry-run` only reports.
-- `to-issues`: step 4 states the per-slice overhead and a first-match-wins edge rule (consumes / same meaning → `Blocked by`; same small file within 8 criteria → merge; else parallel); step 3 applies it, and the quiz lists each edge/merge with its reason and asks about >2 distinct seams.
-- `to-issues`, `upgrade-deps`: a shared `human-issue` fragment defines the `## For a human` block, inlined where each writes a `ready-for-human` issue (Kind A / Kind B, `Check:` / `Undo:` per step).
-- `to-issues` lint: `lint-issues.sh` warns when a `Status: ready-for-human` issue lacks the `## For a human` block or any of its five `###` parts, and no longer asks such issues for `## What to build` / `## Implements`. Adds the rewritten #106 as the `human/` fixture.
-- `write-pr` (new skill): writes a PR title (what the change does, not a slug) and body for a human reviewer, adapted from mattpocock/skills' `pr`. It has three
-  sections: Summary (the smallest pseudocode, call tree, file tree, Mermaid diagram or diff-sketch that makes the
-  change clear), Evidence (before/after) and Merge Danger (one-way or two-way door, blast radius). Run it by hand as
-  `/write-pr`.
-- `crew-afk`: with `--open-pr`, a new `prWriter` role (plain dispatch; default timeout 10 min) follows `write-pr` over
-  `base..feature` with the PRD and the review report. Its body goes at the top of crew-afk's block in the PR, above a
-  checks line taken from the integration check's own record and the `Closes` lines. The PR takes the writer's title
-  (else the PRD's, else the slug as before); an open PR still titled with the slug is renamed, a title a human set is kept.
-  If the writer leaves no `## Summary`, the PR still opens and the run summary says why.
-  `open-pr.sh` gains `--body-file` and `--title`.
-
-- `solve-issue`: with `CREW_DEFER_FULL_CHECKS=1`, `run-checks.sh` runs only `typecheck` and `lint`; `test` and the
-  other checks print `<key>: deferred …` and are left to the verify gate. Step 4 now says to run the affected tests
-  before committing; Step 5 says to report a deferred check as `deferred`.
-
-- `to-prd` / `crew-afk`: a PRD may carry `Origin: #<n>[, #<n>…]` under its `Actor:` line; `closingRefs` adds `Closes #n` for each exactly when it adds the PRD's own, and `close-shipped.sh` closes each open origin issue (commenting the PRD and PR) in the run that closes the PRD.
-- `crew-afk`: under `tracker: github`, the fix issues `promote-findings.sh` creates carry their evidence instead of a
-  pointer to a gitignored local report — `defer` embeds each promoted finding's full reviewer text under
-  `## Review findings`, `defer-gaps` the audit's per-requirement evidence, `defer-integration` the tail of the failing
-  output. `Source:` now names the kind (`review (<branch>)`, `PRD audit (prd-audit)`, `integration check
-  (integration)`), `guard` reads it as before, and absolute and `.scratch/` paths are scrubbed from the body.
-- `crew-grill`, `crew-brainstorm`: keep the design proportionate to the problem — size must be justified, by the
-  problem or by the structure of what is built now (one owner per concern, no duplication, a needed test seam), never
-  by needs nobody has yet. The problem is sized first (how often,
-  the manual workaround's cost, what breaks if nothing is done — looked up, not asked), and solutions the user brings
-  are inputs, not the menu. Every question deciding how much to build includes the do-least option (down to "by hand" or "leave it"); a larger
-  recommendation needs evidence it falls short, not completeness alone, and names the follow-on components it drags
-  in. A subtraction pass before the summary/approval proposes cutting any decision or component nothing depends on,
-  and shows the cut list; `crew-grill` carries what stays cut into the PRD's Out of Scope.
-  Sizing never replaces asking: good questions are kept, a requirement the user stated is priced and never relitigated,
-  logic that would be copied into several places gets one shared owner, and frequency/cost are looked up, not asked.
-- `crew-afk`: a worker's `verify-worktree.sh` and per-worktree `ensure-deps.sh` now run asynchronously, so two branches
-  verify concurrently and a slow verify no longer stalls the other worker loops or a free slot's next dispatch. Merge
-  and close stay blocking, and so serialized; timeouts still map to exit 124.
-- `crew-afk`: a verify ended by a signal (not the call's own timeout) is *interrupted*, not failed — no triage, no
-  coder, no failure logged, and the issue is verified again next round for free. Verify output that names no failing
-  check is run a second time before triage; if still empty the issue is re-verified next round, never recoded.
-- `crew-afk`: `merge-branches.sh` no longer fails a merge whose only conflicts are parallel issue branches bumping
-  the same `registry.json` entry or appending to the same `CHANGELOG.md` heading. New
-  `resolve-merge-conflicts.sh` keeps the higher semver per entry's `version` and both sides' appended entries
-  (feature side first), completes the merge commit, and prints and traces each decision (entries and versions
-  kept), so no coder is redispatched. Any other conflict, including any other `registry.json` field, still
-  aborts the merge as before.
-- `crew-reviewer`: new HIGH class, *second reader of the same input* — when a diff adds code that parses, validates
-  or gates an input existing code already interprets, the reviewer compares the two by reading and reports any input
-  the existing reader accepts that the new one rejects or reads differently, citing both sides.
-- `to-issues`: a slice that adds a parser, validator or gate for an input the repo already holds examples of carries
-  one criterion that it accepts them, naming the examples to copy into committed fixtures (never a live or gitignored
-  directory); no examples, no criterion. `to-prd`'s `## Compatibility & Migration` names where that data lives.
-- `to-issues`: slices are one externally observable behaviour verified at the highest existing test seam (first
-  slice = thinnest end-to-end path), merged when they share a seam and neither is reviewable or demoable alone,
-  with 3–8 acceptance criteria as the soft target. A coverage table traces every PRD `D<n>`/`B<n>` to its slices;
-  the quiz asks only about outliers (contradicted assumptions, PRD `## Assumptions`, uncovered IDs, criteria-range
-  outliers, shared surfaces, HITL choices) then one approve/adjust prompt; expand–contract sequencing comes from
-  `## Compatibility & Migration`; `lint-issues.sh` runs before any `publish` and an `ERROR` publishes nothing.
-- `crew-afk`: preflight runs `to-issues`' `lint-issues.sh` over the feature's open issues (and `issues-deps.json` /
-  PRD when present) before command discovery or any worktree. An `ERROR` stops the run, quoting each line; `WARN`
-  lines are logged; a linter that exits 2 or cannot run is logged without stopping. `--dry-run` reports without
-  stopping. The `to-issues` assets are now a `crew-afk` dep, and a missing `lint-issues.sh` joins the
+- `crew-afk`: at run start (`preflight.mjs`'s `dropStaleRetained`, after the feature-branch sync), a retained-branch
+  record is dropped and logged (`[RETAINED-DROPPED] slug=… — <why>`) when its issue is closed or no longer in the tracker
+  (`listFeatureIssues`, `local` and `github` alike), or its branch no longer exists. A dropped record no longer counts
+  toward `Partial`, `## Retained Branches`, the stall verdict or the PR's draft reasons. An open issue whose branch exists
+  is kept; a failed or empty listing drops nothing; `--dry-run` only reports. New `state.sh drop-retained`, runnable by
+  hand (#246; once, sprint `crew-afk-maintenance`: a shipped issue's record kept two runs `STALLED` and PR #244 a draft).
+- `write-pr` (new skill): writes a PR title (what the change does, not a slug) and a body for a human reviewer, adapted
+  from mattpocock/skills' `pr`: Summary (the smallest pseudocode, call tree, file tree, Mermaid diagram or diff-sketch
+  that makes the change clear), Evidence (before/after) and Merge Danger (one-way or two-way door, blast radius). Run it
+  by hand as `/write-pr`; crew-afk's `--open-pr` uses it too.
+- `to-issues`: `lint-issues.sh`, a read-only checker for an issue set, installed at `.coding-crew/to-issues/scripts/`
+  (see `crew-afk` and `to-issues` below for where it runs and what it checks).
+- `crew-afk`: the roles are no longer agents. `crew-coder`, `crew-reviewer` and `crew-triage` leave `registry.json` (with
+  crew-afk's `agent-deps`); their protocols live in `orchestrator/roles/{coder,reviewer,triage}.md` (reviewer checklists
+  and scripts in `orchestrator/roles/reviewer/`), ship with the orchestrator to `.coding-crew/crew-afk/roles/`, and are
+  rendered per dispatch (`{{FRAGMENT:…}}` expanded; a missing fragment fails the dispatch before spawning). No
+  `.claude/agents/`, `.github/agents/`, `.pi/agents/` or `.codex/agents/` file is written or read. Installing crew-afk
+  removes every file in the new `retired-agents` list (old per-platform agent files and shims, `.coding-crew/agents/`,
+  `.coding-crew/code-review/`); `--update` of an install whose manifest lists agents installs crew-afk and drops them;
+  `./install.sh <platform> crew-coder` installs crew-afk with a note. `dispatch-agent.sh`, `dispatch-codex-agent.sh` and
+  the unused `references/test-*.sh` are deleted and removed from installs.
+- `crew-afk`: every role, plain roles included (command finder, PRD auditor, PR writer), dispatches through its platform's adapter
+  in `orchestrator/lib/adapters/`. claude: protocol via `--append-system-prompt-file`, coder `--disallowedTools Agent`,
+  auto-memory off. pi: `--append-system-prompt`, the role's `--tools`, `--mode json` (final text and cost read from the
+  event stream). codex: protocol and task on stdin (`codex exec … -`), the role's `-c model_reasoning_effort=…`; read-only
+  and plain roles run sandboxed with only their result directory writable. A missing `pi`/`codex` CLI fails with exit 127
+  naming it. Each argv string is checked against 128 KiB (and, on Windows, the command line against 32,767 characters)
+  instead of being truncated.
+- `crew-afk`: the four launchers render from one `SKILL.md` with `{{PLATFORM}}`; every platform's frontmatter pre-approves the shell
+  (`allowed-tools: Bash, shell`).
+- `crew-afk`: the coder's prompt ends with each named skill's installed SKILL.md path (`solve-issue`, `dep-install`, `tdd`); the
+  report JSON is defined once, in the coder protocol. The coder reads the issue where the prompt points — a local file, or
+  under `tracker: github` the `gh issue view` command it gives (it used to report `blocked` on every GitHub issue with no
+  local copy).
+- `crew-afk`: `doctor` runs each active platform CLI's `--help` (`codex exec --help` for codex) and reports a PROBLEM, exit 1, when a
+  flag its adapter declares in `requiredFlags` is missing; a flag folded into brackets (`--append-system-prompt[-file]`)
+  counts.
+- `crew-afk`: script lookup also checks `CLAUDE_CONFIG_DIR`, `COPILOT_HOME`, `PI_CODING_AGENT_DIR`, `CODEX_HOME` (after the project
+  install, before the `$HOME` defaults).
+- `crew-afk`: process groups — every spawned child (a pane-hosted worker too) leads its own group; a timeout (`exec`, `bashAsync`,
+  `spawnWithTimeout`) or SIGINT/SIGTERM/SIGHUP to the orchestrator kills the whole group, grandchildren included (exit
+  124, or 128+signal: SIGHUP — terminal closed, SSH dropped — exits 129).
+- `crew-afk`: run history — `state.sh run-end --reason <text> --code <n>` writes `last_exit {run, reason, code, at}` from every exit
+  after `run-start` (finished, stalled, `attempt cap`, wall-clock cap, baseline red, a preflight stop, an error,
+  `signal <SIG>`); `run-start` counts `runs`, keeps the previous `last_exit` as `previous_exit` (`unknown` for a state from
+  a version that wrote none) and logs `previous run ended without an exit (killed or crashed)` when the last run wrote
+  none. The summary prints `Run <n> for this feature; previous: <reason>`, and its Next Step names
+  `/address-pr-comments <PR url>` when findings were posted to a PR (`/crew-address-findings` otherwise). Only a run's
+  first `[MILESTONE-PUSH-SKIPPED]` is a warning.
+- `crew-afk`: preflight runs `to-issues`' `lint-issues.sh` over the feature's open issues (with `issues-deps.json` / PRD when present,
+  and each done issue as a `--known` file, written out under `tracker: github`) before command discovery or any worktree:
+  an `ERROR` stops the run, quoting each line; `WARN` is logged; a linter that exits 2 or cannot run is logged without
+  stopping; `--dry-run` only reports. The `to-issues` assets are a crew-afk dep, and a missing `lint-issues.sh` joins the
   missing-assets stop.
-- `to-issues`: add `lint-issues.sh`, a read-only checker for an issue set (ERROR for cycles, unmatched
-  `## Blocked by` refs, `--deps` drift and missing acceptance criteria; WARN for advisory problems).
-  Installed at `.coding-crew/to-issues/scripts/`. `--known` names issues outside the set (preflight passes the
-  done ones) so a resumed sprint's refs to them resolve; a ref resolves by its basename (path citations and
-  markdown links included), prose like `schema/API` is not a ref, and `_None_` / `—` placeholders mean no blocker.
+- `crew-afk`: a resumed feature branch that lacks `origin/<default>` (earlier work squash-merged) gets it merged in once per run,
+  before the baseline (`sync-feature-branch.sh`). Registry-version / CHANGELOG-append conflicts are auto-resolved; any
+  other conflict aborts the merge and stops the run. No `origin` or no fetch skips silently; `--no-sync-main` opts out,
+  `--dry-run` only reports.
+- `crew-afk`: `--poll-interval <seconds>` (default 30, `0` = off): idle slots poll the tracker for issues made ready mid-run (one
+  listing per interval), lint them first and block a bad one for this run only.
+- `crew-afk`: a red baseline kills the dispatches already running and stops workers still installing deps (`[BASELINE-RED]`), so the
+  run exits 1 at once; their branches are kept, unverified, and retried by a coder next run (a free attempt). A red
+  baseline is re-checked after a sync conflict dispatch returns.
+- `crew-afk`: the wall-clock cap counts as hit only when it left an issue unclaimed or a fix issue parked (a run that finished
+  everything after minute 120 is green); a hit exits 2 even when the attempt cap also ended the run. Past the cap or a red
+  baseline the poller lists the tracker no more.
+- `crew-afk`, `add-tests`: command discovery reads `README.md` (after `Makefile`, before the manifests) and asks for tools through the runner
+  their install leaves them under: `uv run` with a `uv.lock` (else `poetry run` with a `poetry.lock`), `vendor/bin/` with
+  a `composer.json` (also `add-tests`). Bare `pytest` / `ruff` / `mypy` left the first demo sprint's baseline red.
+- `crew-afk`: a worker's `verify-worktree.sh` and per-worktree `ensure-deps.sh` run asynchronously, so branches verify concurrently;
+  merge and close stay blocking and serialized; timeouts still map to exit 124.
+- `crew-afk`: a verify ended by a signal (not its own timeout) is *interrupted*, not failed: no triage, no coder, re-verified next
+  round for free. Output naming no failing check is run a second time before triage; if still empty the issue is
+  re-verified next round, never recoded. A verify that ran with uncommitted files in the worktree no longer caches its
+  tree as passing (`[TREE-NOT-CACHED]`).
+- `crew-afk`: `resolve-merge-conflicts.sh` (new): a merge whose only conflicts are `registry.json` entry `version`s (higher semver
+  kept) and `CHANGELOG.md` entries both sides appended (both kept, feature side first; `--head-is-branch` labels
+  decisions by side) is completed and each decision printed and traced (`[SYNC-AUTO-RESOLVED]`), so no coder is
+  redispatched. Any other conflict still aborts. Used by `merge-branches.sh`, `sync-feature-branch.sh` and a retained
+  branch's sync.
+- `crew-afk`: a retained branch's sync conflict that script cannot resolve gets its own conflict-only coder dispatch (recorded under
+  a `conflict` role, never resumed as the coder's session), outside the retry and dispatch caps, judged from git: no
+  `MERGE_HEAD`, no unmerged paths, and HEAD containing the feature-branch commit the sync merge started from (not the live
+  ref a sibling may have moved since, #269). The original route then runs with a prompt that has no conflict text.
+- `crew-afk`: a retry of a retained branch re-reads an issue a human edited since: `state.sh retain` records a fingerprint of
+  `## What to build` and `## Acceptance criteria` (checkbox marks normalised; crew-afk's own writes excluded), and a
+  different one at resume turns `fix` / `verify` into `restart` (`workerPrompt` on the retained branch). `merge` and a
+  record without a fingerprint are unchanged.
+- `crew-afk`: a coder's `[DEVIATION]` (its trace shows the `dev-commands.json` `test` command run in full, also inside a subshell or
+  a quoted `bash -lc '…'`) is logged and listed under `## Deviations` in the summary; the issue is not failed. crew-afk
+  sets `CREW_BASE_REF` to the feature branch for `run-checks.sh --targeted` (see `solve-issue`).
+- `crew-afk`: the read-only guard snapshots every `crew/<feature>/*` ref, the feature branch, `HEAD` and the main checkout's
+  uncommitted changes around every reviewer and triage dispatch. A move is excused only when the orchestrator's own git
+  could have made it (a merge moving the feature branch or `HEAD`, a branch-moving git or worktree activity for a crew
+  branch; worktree paths compared by realpath; `resolve-merge-conflicts.sh` in a worktree is not a main-checkout move). A
+  violated dispatch's cost is still recorded.
+- `crew-afk`: per-branch review is a criteria-and-PRD-decisions gate with no findings: `reviewer.md`'s per-branch mode and
+  `reviewPrompt` ask for `findings: []`, and the orchestrator drops any a branch report still carries, so no branch gets
+  its own fix issue (an `unmet` verdict still returns the branch to its coder). The prompt carries a
+  `PRD decisions this issue implements:` block (the PRD's `- **D<n>** —` / `- **B<n>** —` lines for the issue's
+  `## Implements`; PRD from `.scratch/<slug>/PRD.md`, else fetched once per run under `tracker: github`, else
+  `prd-issue.md`); a contradicted decision is `unmet`, `detail` naming its ID. Per-branch promotion and
+  `promote-findings.sh guard` are removed. Open branch findings an earlier version left in a `sprint-review-*.md` report
+  are carried into the branch's new block (`"carried": true`, `criteria_only: true`, also past a `not_run` block), still
+  listed by `promote-findings.sh open`, `post-findings.sh` (as `(earlier review)`) and the summary, and never promoted.
+- `crew-afk`: the feature review covers the whole feature (merge-base with origin's default branch, else the local one), then only
+  commits added since its last review (`feature_review.reviewed_tip`, `state.sh feature-reviewed`); an unchanged tip
+  dispatches no reviewer, and the wall-clock cap with a claimable issue left skips it. A whole-feature review is split by
+  a planner into up to `maxParallel` areas, each read by its own concurrent reviewer given an `Area:` block of its files
+  and its PRD decisions' full text; findings join one `feature` block and are promoted once. A failed planner gives one
+  whole-diff area; a failed area is recorded not-run as `feature-<n>`, and a later feature review closes an earlier
+  run's not-run area. An incremental review stays one reviewer.
+- `crew-afk`: a feature gets one findings fix issue (`feature_review.promotions` in `sprint-state.json`, counted per feature across
+  runs, advanced only when a fix issue was created; an earlier version's 2 reads as capped). It holds the 8 most severe
+  promotable findings (`criteriaFile` sorts CRITICAL→LOW for every caller); the rest, and a `duplicate_of` target at a
+  report-only drain, are marked `report_only` and stay open, so the run is not green. `--fix-findings medium` keeps LOW
+  findings out of fix issues.
+- `crew-afk`: the reviewer protocol opens with the goal-first question (does the change do what the issue and PRD intend, and what
+  does it break, wherever that code lives), puts unchanged code whose correctness the change affects in scope at any
+  severity, reads callers, callees and the state the change touches, and gains a HIGH class, *second reader of the same
+  input* (new code parsing an input existing code already interprets is compared with it). In feature mode it applies
+  the design standard's criteria 2–4: a design-only finding is LOW, cites `file:line`, is prefixed
+  `Design standard (criterion <n>):`, and never makes a criterion unmet.
+- `crew-afk`: every finding carries `issue` (what is wrong) beside `criterion` (what the fix must achieve); triage sees `issue` first,
+  and `post-findings.sh` posts `issue`, `criterion`, triage's verdict and rationale (the separate "Dismissed by triage"
+  section is gone; a finding posted under the old format is not posted again).
+- `crew-afk`, `crew-address-findings`: crew-afk's findings triage answers only `actionable` or `debatable` (a `dismiss` is recorded as `actionable`; ADR /
+  protected-path rules still force Debatable); `/crew-address-findings` keeps all three. The rubric gains two hard rules:
+  a finding based only on the design standard is Debatable, and so is one whose failure needs an input or state no
+  current caller, user or documented contract produces ("Necessary").
+- `crew-afk`: the `fixFindings` level → severities is resolved only in `orchestrator/lib/report.mjs` and passed to
+  `promote-findings.sh defer` as the required `--severities`; the script's level table and `policy` subcommand are gone
+  (`crew-summary.sh` takes `--promoted <list>`), and `CREW_PROMOTE` is no longer read.
+- `crew-afk`: under `tracker: github`, fix issues carry their evidence instead of a pointer to a gitignored report: `defer` embeds
+  each promoted finding's reviewer text under `## Review findings` (none of the `report_only` ones), `defer-gaps` the
+  audit's per-requirement evidence, `defer-integration` the failing output's tail. `Source:` names the kind
+  (`review (<branch>)`, `PRD audit (prd-audit)`, `integration check (integration)`); absolute and `.scratch/` paths are
+  scrubbed. Each `## Promoted Findings` marker ends with its count (`→ <ref> (<n> finding(s))`, also in the `PROMOTE`
+  trace), so the summary renders a github fix issue with no network call.
+- `crew-afk`: the PRD audit no longer waits on open fix issues (any with a `Source:` line); an open work issue still skips it.
+- `crew-afk`: with `--open-pr`, a `prWriter` role (default timeout 10 min) follows `write-pr` over the PR's whole range (merge-base
+  with origin's default branch, the run's `base_sha` only when there is none) with the PRD and review report. Its body
+  goes at the top of crew-afk's block, above a checks line from the integration check's record and the `Closes` lines.
+  The PR takes the writer's title (else the PRD's, else the slug); an open PR still titled with the slug is renamed, a
+  title a human set is kept. No `## Summary` from the writer still opens the PR, and the summary says why. `open-pr.sh`
+  gains `--body-file` and `--title`.
+- `crew-afk`: an integration-red run pushes nothing and opens no PR, but turns a PR an earlier run opened into a draft with the
+  reason in its crew-afk block (`open-pr.sh --no-push`, draft state only). An issue blocked without a branch (a failing
+  `## Requires`) is listed with its reason in the note (`state.sh blocked` records `blocked_reasons`). A repo that
+  refuses drafts gets a ready PR, with `PR-STATE-FAILED:` naming why. Under `tracker: github` a fix issue created but not
+  yet listed past the cap still counts as work left undone.
+- `to-prd`, `crew-afk`: a PRD may carry `Origin: #<n>[, #<n>…]` under its `Actor:` line; `closingRefs` adds `Closes #n`
+  for each when it adds the PRD's own, and `close-shipped.sh` closes each open origin issue in the run that closes the
+  PRD.
+- `crew-afk`: both tracker backends export `listFeatureIssues(mainRoot, { featureSlug })` (every issue in every state, one shape) and
+  `fixIssuesCreatedReady`; the orchestrator reads issues only through them (`tests/orchestrator/tracker-boundary.test.mjs`).
+  No behaviour change.
+- `crew-grill`, `crew-brainstorm`, `to-issues`, `crew-afk`: one design standard, `skills/_shared/fragments/design-standard.md` (`{{FRAGMENT:design-standard}}`), rendered into
+  `crew-grill`, `crew-brainstorm`, `to-issues` and the reviewer: four criteria in priority order (necessary > correct >
+  reusable along real axes > fewest moving parts > says what it does), with failure signals and a guard against cutting
+  structure the design needs now. Criterion 2 counts the axes of variation the project's `CLAUDE.md` names, else only two
+  or more real callers or implementations now.
+- `crew-grill`, `crew-brainstorm`: the design stays proportionate to the problem. The problem is sized first (how often,
+  the manual workaround's cost, what breaks if nothing is done — looked up, not asked); every question deciding how much
+  to build includes the do-least option, and a larger recommendation needs evidence it falls short and names the
+  follow-on components it drags in. A subtraction pass before approval proposes cutting what nothing depends on;
+  `crew-grill` carries the cuts into the PRD's Out of Scope. Sizing never replaces asking, and a stated requirement is
+  priced, never relitigated.
+- `to-prd`: each decision that changes existing behaviour records, as `path:line` facts, what relies on what it changes;
+  `## Compatibility & Migration` names where existing data of a changed format lives. A decision line ending in
+  `(no slice)` needs no issue.
+- `to-issues`: merge by default — one slice for the whole PRD, split only for a named reason (context budget, human
+  boundary, parallelism worth having, expand–contract order from `## Compatibility & Migration`). `Blocked by` edges come
+  only from its two edge rows. A coverage table traces every PRD `D<n>`/`B<n>` to its slices; the quiz asks only about
+  outliers (each split and edge with its reason, design-standard failures with `file:line`, uncovered IDs, HITL choices)
+  then one approve/adjust prompt. A slice adding a parser, validator or gate for an input the repo already holds examples
+  of carries a criterion that it accepts them, as committed fixtures. A criterion needing a paid run, a manual
+  measurement or a person goes to the PRD's human steps or a `ready-for-human` issue.
+- `to-issues`: `/to-issues <ref>` checks an existing issue against the design standard; one that stays one slice is
+  rewritten in place (`gh issue edit` under `github`, the file under `local`, its column-0 `Source:` line kept), one that
+  splits gets children. Auto-promoted fix issues (a column-0 `Source:` line outside a fence) are exempt. A missing
+  `<feature-slug>` milestone is created first. `docs/guide.md` names it the `needs-triage → ready-for-agent` step.
+- `to-issues`, `upgrade-deps`: a shared `human-issue` fragment defines the `## For a human` block (Kind A / Kind B,
+  `Check:` / `Undo:` per step) for `ready-for-human` issues.
+- `to-issues`: `lint-issues.sh` runs before any `publish` (an `ERROR` publishes nothing; under `tracker: github` existing milestone
+  issues are passed as `--known`). `ERROR`: cycles, unmatched `## Blocked by` refs (resolved by basename, `--known`
+  included; prose like `schema/API` and `_None_` / `—` placeholders are not refs), `--deps` drift, no acceptance
+  criteria. `WARN`: more than 10 criteria; a `ready-for-human` issue missing `## For a human` or any of its five parts
+  (and not asked for `## What to build` / `## Implements`); two issues naming the same file with no `Blocked by` path
+  between them; a PRD ID no issue implements (a `--known` file's `## Implements` counts, `(no slice)` exempt).
+- `solve-issue`: under `CREW_DEFER_FULL_CHECKS=1`, `run-checks.sh` runs `typecheck` and `lint`, and tests through
+  `--targeted`: only the real test files the branch changed since `CREW_BASE_REF` (else the merge-base), and only those a
+  suite argument they replace would have selected (`*`/`?`/`[…]` within a directory, `**/` across any number, a directory
+  by what it holds). It reports `test: pass|fail (targeted)`, or `test: deferred (…)` when none is left or the runner
+  takes no file arguments (`make`, `go`, `cargo`, `gradle`, `mvn`, …; seen through env assignments, `env`/`time` and
+  `bundle exec`/`poetry run`-style wrappers). Other checks print `<key>: deferred …` for the verify gate. Each check's
+  output reaches its log through a pipe, which fixes bats hanging on overlayfs (#266).
+- `dep-install`: a Python project with no uv/poetry lockfile gets its dev tools installed, on the host and in docker
+  (`python-install-cmd.sh`): `requirements.txt` adds `requirements-dev.txt` / `dev-requirements.txt` when present,
+  `pyproject.toml` installs `'.[dev]'` and `--group dev` (pip ≥ 25.1) when defined; both dev files count toward the
+  reinstall fingerprint (#273).
+- `address-pr-comments`: on a crew-afk PR, each accepted and fixed comment (not crew-afk's own `crew-finding:` ones) is
+  appended to `.scratch/<slug>/reviews/escaped.md` as a defect crew-afk's review let through; a failed write is reported
+  and never stops the skill.
+- `crew-address-findings`: the `## Promoted Findings` line format names the optional trailing ` (<n> finding(s))` count.
+- install: shared fragments live flat at `skills/_shared/fragments/<key>.md` (the `common/`, per-platform and skill-local
+  `fragments/<platform>/` lookups are gone), installed as a registry `more-assets` entry that install, uninstall and the
+  version gate all see. Installing removes the old fragment directories.
+- install: any install removes the retired agent files on every platform. `uninstall.sh --agent` / `unbootstrap.sh --agent` are
+  gone, and unknown `uninstall.sh` arguments are refused instead of removing everything.
+- `scripts/tracker/mark-issue-done.sh` (and its `.coding-crew/scripts/` copy) is executable.
+- `scripts/smoke-sprint.sh --demo` runs one sprint on a pinned outside demo repo (`scripts/smoke-sprint/demo/`), passing
+  only when crew-afk exits 0, every issue is done and every `check` passes on `feature/<slug>`; it prints
+  `crew-afk-version:` and `crew-afk-commit: <sha>` (`-dirty` when uncommitted), makes `--dir` absolute, and appends a
+  row to `scripts/smoke-sprint/RESULTS.md`. `scripts/cut-release.sh` refuses to tag without `--demo-smoke <log>` (a
+  clean demo PASS for HEAD's crew-afk version that HEAD descends from, nothing but `CHANGELOG.md` / `RESULTS.md` changed
+  since) or `--no-demo-smoke "<reason>"`.
+- `scripts/eval-reviewer-misses.mjs` replays the two bugs PR #208 shipped with against a base ref and the head, judged
+  blind; escaped defects are `mode: feature` replays from `case-template.md`, and `RESULTS.md` gives the steps from an
+  `escaped.md` line to a case.
+- `scripts/eval-design-skills.mjs` renders `{{FRAGMENT:…}}` lines, writes every prompt on `--dry-run`, and gains a
+  `slice` stage with a `to-issues` rubric and three replay cases.
+- `CLAUDE.md` gains `## Axes of variation` and asks a crew-afk mechanism change to cite its incident count.
+  `ORCHESTRATOR_PREFETCH=1` starts the node-suite prefetch only for a bats run that includes an orchestrator wrapper.
 
 ## [2.0.0]
 
