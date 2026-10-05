@@ -178,6 +178,34 @@ test("a conflict dispatch that leaves the merge unresolved is judged by git, and
   assert.doesNotMatch(log, /slug=01-alpha round=\d+ step=dispatch-coder/, "the original route's coder never ran");
 });
 
+// The feature branch moves on while the conflict dispatch runs (a sibling merges): the dispatch
+// concluded the merge of the tip it was given, so it is resolved. The newer commit is the next
+// sync's job (here the merge gate's), not a failed resolution.
+test("a conflict dispatch that concludes the merge it was given is resolved even when the feature branch moved on meanwhile", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.shared");
+  fake(root, "alpha.review-once", "2");
+  const first = commandLines(root, ["--max-rounds", "1"]);
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  rmSync(join(root, ".scratch/fake/alpha.shared"), { force: true });
+  addIssue(root, "00-beta.md");
+  fake(root, "beta.shared");
+  fake(root, "alpha.advance-feature");
+  const second = commandLines(root, ["--max-parallel", "1"]);
+  const log = traceLog(root);
+  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}\n${log}`);
+  assert.match(log, /\[SYNC-CONFLICT-KEPT\] slug=alpha /);
+  assert.match(log, /slug=01-alpha round=\d+ step=dispatch-conflict/);
+  assert.doesNotMatch(log, /\[CONFLICT-UNRESOLVED\]/, log);
+  // The original route (review-only) ran on the resolution.
+  assert.match(log, /\[SKIP-WORKER\] slug=alpha /);
+  assert.deepEqual([...state(root).completed_slugs].sort(), ["alpha", "beta"], log);
+  const shared = sh("git", ["-C", root, "show", "feature/demo:src/shared.txt"]).stdout;
+  assert.deepEqual(shared.trim().split("\n").sort(), ["alpha", "beta"]);
+  assert.equal(sh("git", ["-C", root, "show", "feature/demo:src/late.txt"]).stdout.trim(), "late", "the sibling's later commit is kept");
+});
+
 test("an unresolved conflict dispatch on an edited issue keeps the retained fingerprint, so the next retry still restarts", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
