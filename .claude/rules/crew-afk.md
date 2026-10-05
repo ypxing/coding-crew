@@ -110,7 +110,8 @@ fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, aft
 says why.
 
 Once per run, at the first drain where something merged (`orchestrator/lib/pipeline/feature-review.mjs`; `loop.mjs`'s
-`featureReviewed` flag, so a later drain in the same run — after Phase 2 merged the fix issue — skips it with no log line), after
+`featureReviewed` flag, so a later drain in the same run — after Phase 2 merged the fix issue — skips it with no log line; a drain
+whose integration check is red does not set it, so the next drain whose check passes retries the review), after
 the integration check, one `crew-reviewer` dispatch (slug `feature`, dir `dispatch/feature-d<drain>/`) runs in feature mode: no criteria, findings only, attributed to `feature` in the sprint
 review report and, until the feature has its one findings fix issue (counted per feature, across runs), promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
 `crew-triage`'s findings mode judges Actionable, via `orchestrator/lib/pipeline/findings-triage.mjs`; a failed triage
@@ -129,7 +130,7 @@ altogether, use `afk.fixFindings: medium` / `--fix-findings medium`. Its prompt 
 `reviewer.md`'s Feature Mode makes a PRD requirement the merged code does not implement, a multi-issue flow it does not connect, and
 a cross-cutting concern no issue owned findings, while a requirement a later ADR, `CONTEXT.md` entry or commit replaced is not. The
 summary's `## Feature Review` gives the review (range, finding count, promoted or report-only, or why skipped). Not run when nothing merged; skipped (the summary says so) at a drain
-whose integration check is red, or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
+whose integration check is red (that skip gives way to the next green drain's review, and only the last entry is kept), or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
 a dispatch that leaves no review is recorded not-run as `feature` (and no `reviewed_tip`) and never fails the sprint.
 
 `prdPath(ctx)` (`orchestrator/lib/prd.mjs`) is the one owner of where the PRD is, located once per run: `.scratch/<slug>/PRD.md`;
