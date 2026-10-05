@@ -1,12 +1,12 @@
 /**
- * Sprint suite — the gate order, the per-role config, and the PRD audit.
+ * Sprint suite — the gate order, the per-role config, and the retired PRD audit's settings.
  * Shared helpers: ./helpers/sprint.mjs.
  */
 
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, markerAt, reviewReports, state, fake, AUDIT_WITH_GAP, commandLines, test } from "./helpers/sprint.mjs";
+import { MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, markerAt, reviewReports, state, fake, commandLines, test } from "./helpers/sprint.mjs";
 
 // ─── what the deleted claude prose used to assert about itself ───────────────
 //
@@ -272,172 +272,32 @@ test("an invalid config.json is a setup error naming every problem", () => {
 
 const lineOf = (log, text) => log.split("\n").findIndex((l) => l.includes(text));
 
-test("the PRD audit runs by default after Phase 1, before the flush and the squash", () => {
-  const root = fixtureRepo();
-  addIssue(root, "01-alpha.md");
-  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
-  const r = runSprint(root, ["--squash"]);
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(existsSync(join(root, ".scratch/demo/prd-audit.md")), true);
-  assert.match(r.stdout, /## PRD Audit/);
-  const log = traceLog(root);
-  const audit = lineOf(log, "step=prd-audit mode=fix");
-  assert.notEqual(audit, -1, log);
-  assert.ok(markerAt(log, "MERGE") < audit, "the audit follows Phase 1's merges");
-  assert.ok(audit < markerAt(log, "FLUSH"), "…and precedes the flush that starts Phase 2");
-  assert.ok(audit < markerAt(log, "SQUASH"));
-  assert.match(log, /PRD audit: no missing requirements\./);
-
-  // off: never runs, however much PRD there is.
-  const root2 = fixtureRepo();
-  addIssue(root2, "01-alpha.md");
-  writeFileSync(join(root2, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
-  const off = runSprint(root2, ["--prd-audit", "off"]);
-  assert.equal(off.code, 0, `${off.stdout}\n${off.stderr}`);
-  assert.equal(existsSync(join(root2, ".scratch/demo/prd-audit.md")), false);
-  assert.doesNotMatch(off.stdout, /## PRD Audit/);
-});
-
-test("PRDAudit fix: missing requirements become one Phase 2 fix issue, audited no further", () => {
+test("a sprint that merged an issue runs no PRD audit, and a config still setting one loads with a notice", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
-  fake(root, "prd-audit.response", AUDIT_WITH_GAP);
-  const r = runSprint(root);
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.deepEqual(state(root).completed_slugs, ["alpha", "fix-prd-gaps"]);
-  const issue = readFileSync(join(root, ".scratch/demo/issues/done/02-fix-prd-gaps.md"), "utf8");
-  assert.match(issue, /^Source: .*prd-audit\.md \(prd-audit\)$/m, "the Source: line is the depth bound");
-  assert.match(issue, /- \[[ x]\] Users can export to CSV — PRD: Export/);
-  const log = traceLog(root);
-  assert.equal(log.split("step=prd-audit").length - 1, 1, "one audit per sprint, none after Phase 2");
-});
-
-test("PRDAudit report: the audit runs, and its gaps are left for a human", () => {
-  const root = fixtureRepo();
-  addIssue(root, "01-alpha.md");
-  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
-  fake(root, "prd-audit.response", AUDIT_WITH_GAP);
   mkdirSync(join(root, ".coding-crew"), { recursive: true });
-  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { PRDAudit: "report" } }));
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { PRDAudit: "fix", timeouts: { prdAuditor: 20 } } }));
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.deepEqual(state(root).completed_slugs, ["alpha"]);
-  assert.match(r.stdout, /## PRD Audit/);
-});
-
-test("PRDAudit: a superseded requirement is named in the summary and never queued", () => {
-  const audit = [
-    "⊘ Sessions expire after 30 minutes: docs/adr/0007-no-session-expiry.md",
-    "```json",
-    JSON.stringify({
-      covered: 1,
-      partial: 0,
-      missing: [],
-      superseded: [{ requirement: "Sessions expire after 30 minutes", by: "docs/adr/0007-no-session-expiry.md" }],
-    }),
-    "```",
-  ].join("\n");
-  for (const mode of ["fix", "report"]) {
-    const root = fixtureRepo();
-    addIssue(root, "01-alpha.md");
-    writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Sessions expire after 30 minutes\n");
-    fake(root, "prd-audit.response", audit);
-    const r = runSprint(root, ["--prd-audit", mode]);
-    assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-    assert.deepEqual(state(root).completed_slugs, ["alpha"], `${mode}: nothing queued`);
-    assert.match(
-      r.stdout,
-      /\*\*Superseded — update the PRD, nothing queued:\*\*\n- Sessions expire after 30 minutes — docs\/adr\/0007-no-session-expiry\.md/,
-      mode,
-    );
-  }
-});
-
-test("a PRD audit that fails is named in the summary, not only the trace", () => {
-  const root = fixtureRepo();
-  addIssue(root, "01-alpha.md");
-  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
-  fake(root, "prd-audit.md.exit", "1");
-  const r = runSprint(root);
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stdout, /## PRD Audit\n\n\*\*Failed:\*\* the audit did not complete \(exit 1\)/);
-});
-
-test("the PRD audit does not run while a Phase 1 issue is still open", () => {
-  const root = fixtureRepo();
-  addIssue(root, "01-alpha.md");
-  addIssue(root, "02-beta.md");
-  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
-  fake(root, "prd-audit.response", AUDIT_WITH_GAP);
-  fake(root, "beta.exit", "1");
-  const r = runSprint(root);
-  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.stderr.split("`afk.PRDAudit` no longer does anything").length - 1, 1, r.stderr);
+  assert.equal(r.stderr.split("`afk.timeouts.prdAuditor` no longer does anything").length - 1, 1, r.stderr);
   const log = traceLog(root);
-  assert.match(log, /PRD audit: skipped — 1 Phase 1 issue\(s\) still open \(beta\)/);
   assert.equal(log.includes("step=prd-audit"), false, "no auditor is dispatched");
   assert.equal(existsSync(join(root, ".scratch/demo/prd-audit.md")), false);
-  assert.match(r.stdout, /\*\*Not run:\*\* 1 Phase 1 issue\(s\) still open \(beta\)/, "the summary says so, not only the trace");
-  assert.equal(readdirSync(join(root, ".scratch/demo/issues/open")).some((f) => /fix-prd-gaps/.test(f)), false);
+  assert.doesNotMatch(r.stdout, /## PRD Audit/);
+  const issues = ["open", "done"].flatMap((d) => (existsSync(join(root, ".scratch/demo/issues", d)) ? readdirSync(join(root, ".scratch/demo/issues", d)) : []));
+  assert.equal(issues.some((f) => /fix-prd-gaps/.test(f)), false, issues.join(", "));
 });
 
-test("open fix issues (a Source: line) do not stop the PRD audit; an open work issue alongside still does", () => {
-  const root = fixtureRepo();
-  addIssue(root, "01-alpha.md");
-  addIssue(root, "02-fix-findings-feature.md", { body: "Source: review (feature)" });
-  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
-  fake(root, "fix-findings-feature.exit", "1");
-  const r = runSprint(root, ["--prd-audit", "report"]);
-  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
-  const log = traceLog(root);
-  assert.doesNotMatch(log, /PRD audit: skipped/);
-  assert.match(log, /step=prd-audit mode=report/);
-
-  const work = fixtureRepo();
-  addIssue(work, "01-alpha.md");
-  addIssue(work, "02-beta.md");
-  addIssue(work, "03-fix-findings-feature.md", { body: "Source: review (feature)" });
-  writeFileSync(join(work, ".scratch/demo/PRD.md"), "# PRD\n\n- The widget exists\n");
-  fake(work, "beta.exit", "1");
-  fake(work, "fix-findings-feature.exit", "1");
-  const w = runSprint(work, ["--prd-audit", "report"]);
-  assert.equal(w.code, 2, `${w.stdout}\n${w.stderr}`);
-  assert.match(traceLog(work), /PRD audit: skipped — 1 Phase 1 issue\(s\) still open \(beta\)/);
-});
-
-test("a feature slug containing 'skipped' does not silently cancel the PRD audit", () => {
-  // Regression: loop.mjs used to test /skipped/i against the audit script's *entire*
-  // stdout, not just its one-line skip message. That stdout embeds $PRD_PATH (which embeds
-  // $FEATURE_SLUG) on every non-skip line ("PRD found at .scratch/<slug>/PRD.md", "Extract
-  // all requirements from ...", "Completed issues in .scratch/<slug>/issues/done/"), so a
-  // feature slug that happens to contain the substring "skipped" — a perfectly ordinary name
-  // for a feature about skip logic — made that regex match and cancelled a validation the
-  // user explicitly asked for. The same bug as command discovery's, just
-  // triggered through the slug instead of a quoted file's content.
-  const root = mkdtempSync(join(TMPDIR, "crew-sprint-"));
-  const git = (...args) => sh("git", ["-C", root, ...args]);
-  git("init", "-q", "-b", "main");
-  git("config", "user.email", "t@test");
-  git("config", "user.name", "T");
-  writeFileSync(join(root, "Makefile"), "test:\n\t@echo ok\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
-  writeFileSync(join(root, ".gitignore"), ".scratch/\n");
-  git("add", "-A");
-  git("commit", "-q", "-m", "init");
-  git("checkout", "-q", "-b", "feature/skipped-flow");
-  mkdirSync(join(root, ".scratch/skipped-flow/issues/open"), { recursive: true });
-  mkdirSync(join(root, ".scratch/fake"), { recursive: true });
-  writeFileSync(
-    join(root, ".scratch/skipped-flow/issues/open/01-alpha.md"),
-    "# alpha\n\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] alpha exists\n",
-  );
-  writeFileSync(join(root, ".scratch/skipped-flow/PRD.md"), "# PRD\n\n- The widget exists\n");
-
-  const r = runSprint(root, ["--prd-audit", "report", "--feature-slug", "skipped-flow"]);
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(
-    existsSync(join(root, ".scratch/skipped-flow/prd-audit.md")),
-    true,
-    "a feature slug containing 'skipped' must not cancel a requested PRD audit",
-  );
-  assert.match(r.stdout, /## PRD Audit/);
+test("--prd-audit is accepted with any value, prints the notice, and the run proceeds", () => {
+  for (const value of ["fix", "nonsense"]) {
+    const root = fixtureRepo();
+    addIssue(root, "01-alpha.md");
+    const r = runSprint(root, ["--prd-audit", value]);
+    assert.equal(r.code, 0, `${value}: ${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /`--prd-audit` no longer does anything: the feature review checks PRD coverage/, value);
+    assert.deepEqual(state(root).completed_slugs, ["alpha"], value);
+  }
 });

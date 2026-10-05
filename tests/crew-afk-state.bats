@@ -102,6 +102,16 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ "$output" = "zzz-current" ]
 }
 
+@test "session-init accepts the retired --prd-audit and --coverage, with a notice, and records no PRD audit" {
+  mkdir -p .scratch/calc/issues/open
+  echo "Status: ready-for-agent" > .scratch/calc/issues/open/01-first.md
+  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc --prd-audit fix --coverage
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'`--prd-audit` no longer does anything'* ]]
+  [[ "$output" == *'`--coverage` no longer does anything'* ]]
+  ! grep -q PRD_AUDIT .scratch/calc/sprint.env
+}
+
 @test "session-init traces the SESSION line" {
   init_sprint calc
   grep -q '\[SESSION\] feature=calc branch=' .scratch/calc/traces/orchestrator.log

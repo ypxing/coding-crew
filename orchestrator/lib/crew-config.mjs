@@ -12,13 +12,17 @@
  *   { "afk": {
  *       "runtime": { "reviewer": "codex" },
  *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
- *       "fixFindings": "actionable", "PRDAudit": "fix",
+ *       "fixFindings": "actionable",
  *       "timeouts": { "coder": 45 }, "maxParallel": 3, "maxWallMinutes": 120, "installDeps": true, "squashCommits": false,
  *       "openPr": false,
  *       "baselineCheck": true, "integrationCheck": true, "resumeCoderSession": false,
  *       "limits": { "coder": { "usd": 5 } } } }
  *
  * Every setting but runtime/models/limits has a flag that wins for one run (resolveSettings).
+ *
+ * The PRD audit's settings (afk.PRDAudit, and the prdAuditor role under runtime/models/timeouts/
+ * limits) are accepted and ignored, one notice each (dropRetired): the feature review checks PRD
+ * coverage now, and a config written for the audit keeps loading.
  *
  * `limits.<role>.usd` caps one dispatch of that role in dollars — claude's --max-budget-usd, a
  * backstop, off by default. Only claude has the flag; a role on another runtime ignores it, and
@@ -57,16 +61,14 @@ export const CONFIG_REL = ".coding-crew/config.json";
 export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
 export const LEGACY_REL = ".coding-crew/afk-models.json";
 
-export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prdAuditor", "prWriter"];
+export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prWriter"];
 const SECTIONS = ["afk"];
 
 // What review findings are fixed automatically — `actionable`: every finding crew-triage judges
-// Actionable, whatever its severity; the others: the lowest severity — and what the PRD audit does
-// with its gaps.
+// Actionable, whatever its severity; the others: the lowest severity.
 export const FIX_FINDINGS = ["actionable", "critical", "high", "medium", "none"];
-export const PRD_AUDIT = ["off", "report", "fix"];
 /** Minutes. Every LLM role, plus the merge/close step, which blocks the event loop. */
-export const DEFAULT_TIMEOUTS = { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prdAuditor: 20, prWriter: 10, merge: 5 };
+export const DEFAULT_TIMEOUTS = { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prWriter: 10, merge: 5 };
 // setTimeout fires at once past 2^31-1 ms, so a longer timeout would kill every dispatch.
 export const MAX_TIMEOUT_MINUTES = Math.floor((2 ** 31 - 1) / 60_000);
 const timeoutProblem = (min) =>
@@ -76,7 +78,6 @@ const timeoutProblem = (min) =>
 export const PANE_HOSTS = ["orca", "herdr", "auto", "none"];
 export const DEFAULT_SETTINGS = {
   fixFindings: "actionable",
-  PRDAudit: "fix",
   installDeps: true,
   squashCommits: false,
   openPr: false,
@@ -89,7 +90,6 @@ export const DEFAULT_SETTINGS = {
 // Settings that are one value each, merged by replacement; `check` returns a problem or null.
 const SCALARS = {
   fixFindings: (v) => (FIX_FINDINGS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${FIX_FINDINGS.join(", ")})`),
-  PRDAudit: (v) => (PRD_AUDIT.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PRD_AUDIT.join(", ")})`),
   maxParallel: (v) => (Number.isInteger(v) && v > 0 ? null : "must be a positive integer"),
   maxWallMinutes: (v) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? null : "must be a number of minutes, 0 or more (0 disables the cap)"),
   installDeps: (v) => (typeof v === "boolean" ? null : "must be true or false"),
@@ -106,7 +106,11 @@ const USER_ONLY = ["paneHost"];
 const AFK_KEYS = ["runtime", "models", "timeouts", "limits", ...Object.keys(SCALARS)];
 
 // afk-models.json's role names, before the plain-dispatch roles were renamed.
-const LEGACY_ROLE_NAMES = { commandsDiscovery: "commandFinder", coverageValidation: "prdAuditor" };
+const LEGACY_ROLE_NAMES = { commandsDiscovery: "commandFinder" };
+
+// The PRD audit's role, gone with it; its settings still load (dropRetired).
+const RETIRED_ROLE = "prdAuditor";
+export const retiredNotice = (name) => `\`${name}\` no longer does anything: the feature review checks PRD coverage.`;
 
 // A runtime's model when nothing names one. Resolved here rather than left to the agent file,
 // so that an unconfigured sprint's reviewer/triage genuinely match what the coder runs on —
@@ -215,6 +219,32 @@ export function validateConfig(config, label = CONFIG_REL, { userLevel = label =
   if (problems.length) throw new ConfigError(`${label}: ${problems.join("; ")}`);
 }
 
+/**
+ * `config` without the retired PRD audit's settings, one notice in `notices` per setting dropped,
+ * so a config written for the audit loads instead of failing as an unknown key.
+ */
+function dropRetired(config, label, notices) {
+  if (!isObject(config) || !isObject(config.afk)) return config;
+  const afk = { ...config.afk };
+  const named = [];
+  const without = (byRole, path) => {
+    if (!isObject(byRole) || !Object.hasOwn(byRole, RETIRED_ROLE)) return byRole;
+    named.push(`${path}.${RETIRED_ROLE}`);
+    const { [RETIRED_ROLE]: _, ...rest } = byRole;
+    return rest;
+  };
+  if (Object.hasOwn(afk, "PRDAudit")) {
+    delete afk.PRDAudit;
+    named.push("afk.PRDAudit");
+  }
+  for (const k of ["runtime", "timeouts", "limits"]) if (afk[k] !== undefined) afk[k] = without(afk[k], `afk.${k}`);
+  if (isObject(afk.models)) {
+    afk.models = Object.fromEntries(Object.entries(afk.models).map(([rt, byRole]) => [rt, without(byRole, `afk.models.${rt}`)]));
+  }
+  for (const n of named) notices.push(`${label}: ${retiredNotice(n)}`);
+  return { ...config, afk };
+}
+
 /** Every afk leaf a file sets: "runtime.<role>", "models.<runtime>.<role>", "timeouts.<k>", "limits.<role>.usd", "<scalar>". */
 function afkLeaves(afk = {}) {
   const leaves = Object.keys(afk.runtime ?? {}).map((role) => `runtime.${role}`);
@@ -294,6 +324,7 @@ function loadProjectConfig(mainRoot, notices, { userLevel = false } = {}) {
     }
   }
 
+  config = dropRetired(config, CONFIG_REL, notices);
   validateConfig(config, CONFIG_REL, { userLevel });
   return { config, legacyMove };
 }
@@ -314,7 +345,7 @@ export function loadConfig(mainRoot, { write = false, home = process.env.HOME ||
   let user = {};
   const atHome = resolve(userPath) === resolve(join(mainRoot, CONFIG_REL));
   if (!atHome && existsSync(userPath)) {
-    user = readJson(userPath, USER_CONFIG_LABEL);
+    user = dropRetired(readJson(userPath, USER_CONFIG_LABEL), USER_CONFIG_LABEL, notices);
     validateConfig(user, USER_CONFIG_LABEL);
   }
   const { config: project, legacyMove } = loadProjectConfig(mainRoot, notices, { userLevel: atHome });
@@ -384,17 +415,14 @@ export function describeModel(runtime, model, env = process.env) {
   return envName && env[envName] ? `${model} (→ ${env[envName]}, ${envName})` : model;
 }
 
-/** The roles a run dispatches: the command finder, the PRD audit and the PR writer are each optional. */
-export function activeRoles({ commands = true, PRDAudit = DEFAULT_SETTINGS.PRDAudit, openPr = DEFAULT_SETTINGS.openPr } = {}) {
-  return ROLES.filter(
-    (r) => (r !== "commandFinder" || commands) && (r !== "prdAuditor" || PRDAudit !== "off") && (r !== "prWriter" || openPr),
-  );
+/** The roles a run dispatches: the command finder and the PR writer are each optional. */
+export function activeRoles({ commands = true, openPr = DEFAULT_SETTINGS.openPr } = {}) {
+  return ROLES.filter((r) => (r !== "commandFinder" || commands) && (r !== "prWriter" || openPr));
 }
 
 // The flag that overrides each setting, for error text.
 const FLAG_FOR = {
   fixFindings: "--fix-findings",
-  PRDAudit: "--prd-audit",
   maxParallel: "--max-parallel",
   maxWallMinutes: "--max-wall",
   paneHost: "--pane-host",
@@ -428,7 +456,7 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
  * The sprint's settings: each flag (`cli`, undefined when not given) over config.json's
  * afk section over the defaults. `origin` gains "--flag" for each setting a flag decided,
  * so `plan` credits the right source.
- * @returns {{fixFindings, PRDAudit, installDeps, squashCommits, openPr, baselineCheck, integrationCheck, resumeCoderSession,
+ * @returns {{fixFindings, installDeps, squashCommits, openPr, baselineCheck, integrationCheck, resumeCoderSession,
  *   maxParallel: number|null,
  *   timeouts: Record<string, number>,  timeouts in minutes
  *   limitsUsd: Record<string, number>}}  each capped role's dollar cap; no key, no cap
@@ -448,7 +476,6 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
   }
   return {
     fixFindings: pick("fixFindings"),
-    PRDAudit: pick("PRDAudit"),
     installDeps: pick("installDeps"),
     squashCommits: pick("squashCommits"),
     openPr: pick("openPr"),

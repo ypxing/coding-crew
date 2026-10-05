@@ -3,7 +3,7 @@
  *
  * An issue names the ones it implements under `## Implements`; the per-branch review judges the
  * branch against each like a criterion. The PRD is located once per sprint: the local
- * `.scratch/<slug>/PRD.md`, else — under `tracker: github` — fetched with `trackers/github.mjs prd` (the CLI prd-audit.sh uses)
+ * `.scratch/<slug>/PRD.md`, else — under `tracker: github` — fetched with `trackers/github.mjs prd`
  * and saved as `prd-issue.md`, which is read back only when the fetch fails (or under another tracker).
  */
 

@@ -2,8 +2,8 @@
 
 # Tests for discover-commands.sh — the mechanical prompt-builder half of command discovery.
 #
-# This script never calls a model. It only decides whether a model call is needed (mirroring
-# prd-audit.sh's skip/not-skip stdout contract) and, when it is, assembles the
+# This script never calls a model. It only decides whether a model call is needed (a
+# skip/not-skip stdout contract) and, when it is, assembles the
 # discovery prompt. Writing the model's response into .coding-crew/dev-commands.json is a
 # separate script (write-commands-cache.sh).
 

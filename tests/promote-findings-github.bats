@@ -278,17 +278,14 @@ SH
   grep -qx -- '- crew/feat/a: CRITICAL, HIGH → https://github.com/acme/widgets/issues/42 (2 finding(s))' "$REPORT"
 }
 
-@test "defer-gaps and defer-integration trace the number of criteria they queued" {
+@test "defer-integration traces the number of criteria it queued" {
   configure_github
   stub_gh
   export TRACE_LOG="$PWD/trace.log"
-  printf -- '- [ ] gap one\n- [ ] gap two\n' > gaps2.md
   printf -- "- [ ] The project's checks pass on the merged feature branch\n" > integ.md
 
-  bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps2.md >/dev/null
   bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/dispatch/_integration/verify.out \
     --criteria-file integ.md >/dev/null
-  grep -q 'PROMOTE.*prd-gaps issue=https://github.com/acme/widgets/issues/42 findings=2' trace.log
   grep -q 'PROMOTE.*integration issue=https://github.com/acme/widgets/issues/42 findings=1' trace.log
 }
 
@@ -580,29 +577,6 @@ write_feature_review() {
   no_local_paths
 }
 
-@test "defer-gaps embeds the audit's evidence for each missing requirement, with no local path" {
-  configure_github
-  stub_gh
-  printf -- '- [ ] Users can export to CSV\n' > gaps.md
-  cat > .scratch/feat/prd-audit.md <<'EOF'
-Audit of the PRD against the merged work.
-
-```json
-{"covered": ["login"], "partial": [], "missing": [{"requirement": "CSV export", "detail": "No exporter exists under src/export/; grep for csv finds nothing"}], "superseded": []}
-```
-EOF
-
-  run bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md
-  [ "$status" -eq 0 ]
-  [[ "$output" == "defer-gaps: https://github.com/acme/widgets/issues/42" ]]
-  grep -q '^Source: PRD audit (prd-audit)$' "$GH_LAST_BODY"
-  grep -q '^## PRD audit evidence$' "$GH_LAST_BODY"
-  grep -q 'CSV export' "$GH_LAST_BODY"
-  grep -q 'No exporter exists under src/export/' "$GH_LAST_BODY"
-  grep -q '^- \[ \] Users can export to CSV$' "$GH_LAST_BODY"
-  no_local_paths
-}
-
 @test "defer-integration embeds the tail of the failing output, truncated, with no local path" {
   configure_github
   stub_gh
@@ -633,16 +607,11 @@ source_guarded() {
   configure_github
   stub_gh
   write_full_review
-  printf -- '- [ ] gap\n' > gaps.md
   printf -- '- [ ] integ\n' > integ.md
-  : > .scratch/feat/prd-audit.md
   : > .scratch/feat/verify.out
 
   bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-  source_guarded "$GH_LAST_BODY"
-
-  bash "$PROMOTE" defer-gaps --feature-slug feat --report .scratch/feat/prd-audit.md --criteria-file gaps.md >/dev/null
   source_guarded "$GH_LAST_BODY"
 
   bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/verify.out --criteria-file integ.md >/dev/null

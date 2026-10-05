@@ -463,7 +463,7 @@ test("a plain role dispatches through its platform's adapter, with its prompt an
   for (const platform of ["pi", "codex", "claude", "copilot"]) {
     const { root, rec } = await recordedDispatch(platform);
     const promptFile = join(root, "plain.md.prompt.md");
-    const built = buildDispatch(platform, { agent: "prd-audit", cwd: root, mainRoot: root, promptFile, outFile: join(root, "plain.md") });
+    const built = buildDispatch(platform, { agent: "plain", cwd: root, mainRoot: root, promptFile, outFile: join(root, "plain.md") });
     assert.deepEqual(rec.argv, [built.cmd, ...built.args], platform);
     assert.doesNotMatch(rec.argv.join(" "), /# Coder|# Reviewer|# Triage/, `${platform}: no protocol`);
     if (platform !== "codex") assert.ok(rec.argv.includes("the whole prompt"), platform);
@@ -948,7 +948,7 @@ test("the coder's protocol ends with each named skill's installed SKILL.md, per 
   }
 });
 
-test("codex: a plain role (command finder, PRD auditor, PR writer) runs read-only, writing only its result", () => {
+test("codex: a plain role (command finder, feature planner, PR writer) runs read-only, writing only its result", () => {
   const { root, promptFile } = fixture();
   const b = buildDispatch("codex", { agent: "pr-writer", cwd: root, mainRoot: root, promptFile, outFile: join(root, "dispatch/pr-writer.md") });
   assert.equal(b.args.includes("sandbox_workspace_write.network_access=true"), false);

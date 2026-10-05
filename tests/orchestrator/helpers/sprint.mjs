@@ -258,13 +258,6 @@ export function triageVerdict(fixable, category, detail) {
 
 export const coderSpawns = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length;
 
-export const AUDIT_WITH_GAP = [
-  "✗ Users can export to CSV: no evidence",
-  "```json",
-  JSON.stringify({ covered: 1, partial: 0, missing: [{ requirement: "Users can export to CSV", detail: "PRD: Export" }] }),
-  "```",
-].join("\n");
-
 export function githubFixtureRepo() {
   const root = mkdtempSync(join(TMPDIR, "crew-sprint-gh-"));
   FIXTURE_ROOTS.push(root);

@@ -13,9 +13,8 @@ set -euo pipefail
 # broke the pattern-matched approach this replaces).
 #
 # This script only ever decides whether a model call is needed and, if so, assembles the
-# prompt for it — mirroring prd-audit.sh's shape exactly, down to the "skipped" /
-# not-skipped stdout contract loop.mjs already knows how to read (the whole of stdout becomes
-# the prompt, informational preamble included, exactly as it does there). It never calls a
+# prompt for it, with a "skipped" / not-skipped stdout contract commands.mjs reads (the whole
+# of stdout becomes the prompt, informational preamble included). It never calls a
 # model itself, and it never writes a result anywhere; a sibling script owns turning the
 # model's response into .coding-crew/dev-commands.json.
 #

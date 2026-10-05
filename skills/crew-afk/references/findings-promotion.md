@@ -29,8 +29,7 @@ original queue at its normal pace.
 
 **Github bodies are self-contained.** Under `tracker: github` a fix issue is read where the sprint's
 `.scratch/` reports do not exist, so `defer` embeds each promoted finding's full reviewer text
-(`## Review findings`), `defer-gaps` the audit's evidence per missing requirement, and
-`defer-integration` the tail of the failing output — each truncated, with absolute and `.scratch/`
+(`## Review findings`), and `defer-integration` the tail of the failing output — each truncated, with absolute and `.scratch/`
 paths scrubbed. `Source:` names the kind and branch rather than a report path; it is still the depth
 bound. The local tracker keeps naming the report path.
 
@@ -39,25 +38,16 @@ bound. The local tracker keeps naming the report path.
 get a worktree, TDD, `verify-worktree.sh`, AC verification, and their own code review before
 merging. The squash runs after both phases, so fixes are included.
 
-**PRD gaps join the same flush.** When Phase 1 drains, the PRD audit (afk.PRDAudit, default
-`fix`) runs once, before the flush. Its ✗ missing requirements — ones no issue carried, so no
-review ever checked — become one parked fix issue (`promote-findings.sh defer-gaps`), which
-Phase 2 implements alongside the findings fixes. Its `Source:` line is the same depth bound, and
-nothing after Phase 2 is audited again. While a Phase 1 issue is still open (blocked, retained),
-the audit does not run at all: that issue's requirements would read as missing. The re-run that
-finishes it audits then.
-
 **A fixable integration failure joins the same flush.** At every drain of the queue the project's
 checks run on the merged feature branch (the integration check), which no per-branch verify saw. A
 red result is triaged by `crew-triage` — a dispatch of its own, never the coder — the same way a
 failed per-branch verify is. Fixable, it becomes one parked fix issue
 (`promote-findings.sh defer-integration`), which the flush sends into Phase 2 beside the findings
-and PRD-gaps fixes; its criterion is "the project's checks pass on the merged feature branch", with
+fixes; its criterion is "the project's checks pass on the merged feature branch", with
 triage's detail and the failing output's tail. The next drain's check then runs on the fixed branch.
 Not fixable — a missing command (exit 127, no triage at all), a failed dependency install, or
 triage's own verdict — queues nothing: the summary's `## Integration check` section gives the
-reason, and the drain's remaining checks (the PRD audit, if it has not run) are skipped, with the
-summary saying so. A triage dispatch that itself fails counts as fixable, once. Its `Source:` line is
+reason, and the feature review is skipped for that drain. A triage dispatch that itself fails counts as fixable, once. Its `Source:` line is
 the same depth bound. At most two integration fix issues are created per run: a third red drain is
 reported and the run ends stalled, with no third fix issue. The same commit red again (its fix
 issue blocked) is not a new drain — it is not re-triaged and gets no second fix issue.
@@ -183,12 +173,6 @@ bash "<skill-dir>/scripts/promote-findings.sh" defer \
   --report ".scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md" \
   --criteria-file "<tmp criteria file>" --severities "actionable" # or "CRITICAL, HIGH": the list report.mjs resolves
 # → "defer: .scratch/<slug>/issues/open/<NN>-fix-findings-<issue-slug>.md"
-
-# The PRD audit's missing requirements → one parked fix issue (no audit while one is still open)
-bash "<skill-dir>/scripts/promote-findings.sh" defer-gaps \
-  --feature-slug "$FEATURE_SLUG" --report ".scratch/$FEATURE_SLUG/prd-audit.md" \
-  --criteria-file "<tmp criteria file>"
-# → "defer-gaps: .scratch/<slug>/issues/open/<NN>-fix-prd-gaps.md" | "defer-gaps: skip — already queued: <path>"
 
 # A fixable red integration check on the merged feature branch → one parked fix issue
 bash "<skill-dir>/scripts/promote-findings.sh" defer-integration \

@@ -7,13 +7,12 @@ set -euo pipefail
 
 # Parse --feature-slug flag (consumed here; remaining args forwarded to feature-branch-setup.sh)
 #
-# --prd-audit and --fix-findings are the sprint's two policy settings (config.json's afk
-# PRDAudit / fixFindings, resolved by the orchestrator). They are captured here, once, and
-# written into sprint.env — so the step that acts on them reads a variable instead of the
-# orchestrator remembering a flag for a whole sprint. --coverage and --promote are their old
-# names, still accepted from a hand run.
+# --fix-findings is the sprint's policy setting (config.json's afk fixFindings, resolved by the
+# orchestrator). It is captured here, once, and written into sprint.env — so the step that acts on
+# it reads a variable instead of the orchestrator remembering a flag for a whole sprint. --promote
+# is its old name, still accepted from a hand run. --prd-audit <value> and --coverage set the
+# retired PRD audit: accepted and ignored, with a notice.
 FEATURE_SLUG_ARG=""
-PRD_AUDIT_OPT="fix"
 FIX_FINDINGS_OPT="actionable"
 REMAINING_ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -22,17 +21,9 @@ while [[ $# -gt 0 ]]; do
       FEATURE_SLUG_ARG="${2:?--feature-slug requires a value}"
       shift 2
       ;;
-    --prd-audit)
-      PRD_AUDIT_OPT="${2:?--prd-audit requires off, report or fix}"
-      case "$PRD_AUDIT_OPT" in
-        off|report|fix) ;;
-        *) echo "ERROR: --prd-audit must be 'off', 'report' or 'fix' (got '$PRD_AUDIT_OPT')" >&2; exit 1 ;;
-      esac
-      shift 2
-      ;;
-    --coverage)
-      PRD_AUDIT_OPT="report"
-      shift
+    --prd-audit|--coverage)
+      echo "session-init: \`$1\` no longer does anything: the feature review checks PRD coverage." >&2
+      if [[ "$1" == --prd-audit && $# -gt 1 ]]; then shift 2; else shift; fi
       ;;
     --fix-findings|--promote)
       FIX_FINDINGS_OPT="${2:?$1 requires actionable, critical, high, medium or none}"
@@ -318,7 +309,6 @@ export TRACE_LOG="$MAIN_ROOT/.scratch/$FEATURE_SLUG/traces/orchestrator.log"
 export DISPATCH_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/dispatch"
 export REVIEW_DIR="$MAIN_ROOT/.scratch/$FEATURE_SLUG/reviews"
 export CREW_SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
-export CREW_PRD_AUDIT="$PRD_AUDIT_OPT"
 export CREW_FIX_FINDINGS="$FIX_FINDINGS_OPT"
 ENV
 # The .coding-crew/ this run's assets are read from — resolved once by the orchestrator, which

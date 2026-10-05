@@ -457,10 +457,7 @@ function fixLines(fix) {
     case "limit":
       return [`**Not fixed:** ${fix.reason}. The run ends stalled; read the failure above.`];
     default:
-      return [
-        `**Not fixable by a code change, no fix issue queued:** ${fix.reason}.`,
-        ...(fix.skippedRest ? ["The rest of the drain-time checks (the PRD audit) were skipped."] : []),
-      ];
+      return [`**Not fixable by a code change, no fix issue queued:** ${fix.reason}.`];
   }
 }
 
