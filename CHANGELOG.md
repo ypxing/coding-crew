@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `eval-reviewer-misses`: a replayed feature case with 2+ areas now builds each area's prompt with the same `Other areas` block
+  the sprint's feature review writes (one shared `areaReviewArgs` helper), and normalizes the planner's answer against the
+  merged issues as `planAreas` does (#283).
 - `crew-afk`: every PRD decision reaches a feature-review area, and each area sees the others. `parsePrdDecisions` reads any
   `- **<ID>**` line (`**D1**:` and `**D1** (auto):` were dropped); a decision the planner gives no area joins the area holding
   most of its issues' files, else the smallest; with 2+ areas each reviewer's prompt carries an `Other areas` reference block,

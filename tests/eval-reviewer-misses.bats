@@ -282,3 +282,20 @@ EOS
   [ "$status" -eq 0 ]
   [ "$(cat "$T/n")" -gt 2 ]
 }
+
+@test "with 2+ planned areas each area's prompt carries the Other areas block runFeatureReview writes" {
+  printf 'a\n' > "$R/a.js"; printf 'b\n' > "$R/b.js"
+  git -C "$R" add a.js b.js
+  git -C "$R" -c user.email=t@t -c user.name=t commit -qm three
+  C3=$(git -C "$R" rev-parse HEAD)
+  in=$(jq -n --arg b "$C2" --arg t "$C3" '{mode:"feature", base:$b, tip:$t, max:3, reportPath:"r.json",
+    prdText:"- **D1** — Retries are bounded.\n- **D2** — Errors name the file.\n",
+    areas:[{name:"alpha", files:["a.js"], decisions:["D1"]}, {name:"beta", files:["b.js"], decisions:["D2"]}]}')
+  run bash -c "node '$REPO_ROOT/scripts/eval-reviewer-misses/build-prompts.mjs' '$R' <<<'$in'"
+  [ "$status" -eq 0 ]
+  p1=$(jq -r '.reviews[0].prompt' <<<"$output"); p2=$(jq -r '.reviews[1].prompt' <<<"$output")
+  grep -qF $'Other areas (reference only' <<<"$p1"
+  grep -qzF $'Name: beta\nFiles:\n- b.js\nDecisions:\n- **D2** — Errors name the file.' <<<"$p1"
+  grep -qzF $'Name: alpha\nFiles:\n- a.js\nDecisions:\n- **D1** — Retries are bounded.' <<<"$p2"
+  ! grep -qF 'Name: alpha' <<<"$(sed -n '/^Other areas/,$p' <<<"$p1")"
+}
