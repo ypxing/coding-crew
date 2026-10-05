@@ -235,7 +235,7 @@ do not re-check CLAUDE.md/Makefile.
 `dev-commands.json` `test` command (or any whole-suite glob) yourself, at any point. To run tests,
 pass `--targeted` to `run-checks.sh`: it runs only the test files changed on the branch against its
 merge-base and reports `test: pass (targeted)` / `test: fail (targeted, exit N)`, or
-`test: deferred` when no test file changed (report `deferred`). Between edits run one test file by hand.
+`test: deferred` when no changed test file is one the test command's suite argument selects (report `deferred`). Between edits run one test file by hand.
 
 - `CHECKS: pass` — continue.
 - `CHECKS: fail` — fix and re-run, per `references/verification.md`'s "Interpreting failures".
