@@ -337,11 +337,12 @@ export async function runSprint(ctx) {
         if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
       }
     }
-    // At every drain with something merged. Only the first two reviews that ran promote (PRD D5):
-    // Phase 2's fix of a fix is not chased further, later findings are reported.
+    // At every drain with something merged. Only the feature's first two reviews that ran promote
+    // (PRD D5, counted per feature in sprint-state.json, across runs): Phase 2's fix of a fix is
+    // not chased further, later findings are reported.
     if (!options.dryRun && sprint.get("merged")) {
       const unclaimed = unclaimedByCap();
-      const ran = featureReviews.filter((r) => r.findings).length;
+      const ran = Number(sprint.get("feature-review-promotions")) || 0;
       const promote = ran < FEATURE_REVIEW_PROMOTIONS ? ran + 1 : false;
       const review = await runFeatureReview(ctx, {
         integration,
@@ -349,6 +350,7 @@ export async function runSprint(ctx) {
         promote,
         drain: featureReviews.length + 1,
       });
+      if (review.findings && promote) sprint.state(["feature-review-promoted"]);
       featureReviews.push(review);
       if (review.promotedRef) ownRefs.add(review.promotedRef);
       if (review.promotedRef && !tracker.listOpenIssueFiles) unseen.add(review.promotedRef);
@@ -611,7 +613,11 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
   ctx.out("NO MORE TASKS");
 }
 
-/** Feature reviews promote at the first two drains whose review ran; later ones are report-only. */
+/**
+ * Feature reviews promote at the feature's first two reviews that ran — per feature, not per run:
+ * the count lives in sprint-state.json (`feature_review.promotions`), so a later run past it is
+ * report-only too. To keep LOW findings out of fix issues altogether, use `fixFindings: medium`.
+ */
 const FEATURE_REVIEW_PROMOTIONS = 2;
 
 /** The findings a report-only feature review left that the fixFindings rule would have promoted, read from the review report on disk (an earlier run's count too). */

@@ -630,6 +630,20 @@ EOF
   [ "$(jq -r .feature_review.reviewed_tip .scratch/calc/sprint-state.json)" = "abc123" ]
 }
 
+@test "state.sh feature-review-promoted counts per feature: 0 when unrecorded, kept across feature-reviewed" {
+  init_sprint calc
+  [ "$(state get feature-review-promotions)" = "0" ]
+  state feature-reviewed --tip abc123 >/dev/null
+  [ "$(state get feature-review-promotions)" = "0" ]
+  run state feature-review-promoted
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"promotions=1"* ]]
+  state feature-reviewed --tip def456 >/dev/null
+  state feature-review-promoted >/dev/null
+  [ "$(state get feature-review-promotions)" = "2" ]
+  [ "$(jq -r .feature_review.reviewed_tip .scratch/calc/sprint-state.json)" = "def456" ]
+}
+
 @test "state.sh retain --fingerprint is stored and printed by retention; absent without it" {
   init_sprint calc
   run state retain --slug first --branch crew/calc/first --reason criteria-unmet --fingerprint abc123
