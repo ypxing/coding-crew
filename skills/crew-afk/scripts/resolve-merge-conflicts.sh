@@ -10,7 +10,12 @@ set -uo pipefail
 #   - CHANGELOG.md: entries both sides appended at the same place. Both are kept, the side being
 #     merged INTO (the feature branch) first. A conflict that changes existing lines is not one.
 #
-# Usage: resolve-merge-conflicts.sh        (run inside the repo, mid-merge)
+# Usage: resolve-merge-conflicts.sh [--head-is-branch]   (run inside the repo, mid-merge)
+#
+# By default HEAD is the feature branch and the branch being merged in is the issue branch
+# (merge-branches.sh). With --head-is-branch the merge runs the other way — the feature branch
+# is merged INTO an issue branch's worktree (a sync) — so "ours" is the issue branch: the
+# decision labels and the CHANGELOG order (feature entries first) follow the sides, not the stages.
 #
 # All-or-nothing: if any unmerged path is not resolvable, nothing is written or staged and the
 # exit code is 1, so the caller aborts the merge exactly as it would have without this script.
@@ -20,6 +25,13 @@ set -uo pipefail
 #   CHANGELOG.md: kept 1 entry from the feature side and 2 from the branch side
 #
 # Exit code: 0 resolved and staged; 1 not resolvable (or nothing is unmerged).
+
+HEAD_IS_BRANCH=0
+case "${1:-}" in
+  --head-is-branch) HEAD_IS_BRANCH=1; shift ;;
+  "") ;;
+  *) echo "usage: resolve-merge-conflicts.sh [--head-is-branch]" >&2; exit 2 ;;
+esac
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 UNMERGED=$(git diff --name-only --diff-filter=U 2>/dev/null)
@@ -38,18 +50,19 @@ while IFS= read -r f; do
   done
 done <<<"$UNMERGED"
 
-node - "$TMP" $UNMERGED <<'JS' || exit 1
+HEAD_IS_BRANCH=$HEAD_IS_BRANCH node - "$TMP" $UNMERGED <<'JS' || exit 1
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const [dir, ...files] = process.argv.slice(2);
 const read = (f, n) => fs.readFileSync(`${dir}/${f}.${n}`, 'utf8');
 const fail = () => process.exit(1);
+const swap = process.env.HEAD_IS_BRANCH === '1';   // stage 2 (ours) is the issue branch, stage 3 the feature
 
 // git merge-file <ours> <base> <theirs>, to stdout; status = number of conflicts (<0 on error).
 function mergeFile(f, ours, base, theirs, diff3) {
   for (const [n, t] of [[2, ours], [1, base], [3, theirs]]) fs.writeFileSync(`${dir}/${f}.m${n}`, t);
   const r = spawnSync('git', ['merge-file', '-p', ...(diff3 ? ['--diff3'] : []),
-    '-L', 'feature', '-L', 'base', '-L', 'branch', `${dir}/${f}.m2`, `${dir}/${f}.m1`, `${dir}/${f}.m3`],
+    '-L', swap ? 'branch' : 'feature', '-L', 'base', '-L', swap ? 'feature' : 'branch', `${dir}/${f}.m2`, `${dir}/${f}.m1`, `${dir}/${f}.m3`],
     { encoding: 'utf8' });
   return { conflicts: r.status, text: r.stdout };
 }
@@ -96,7 +109,7 @@ function registry(f) {
     const pick = a !== undefined && b !== undefined ? higher(a, b) : (a ?? b ?? c);
     if (pick === undefined) fail();
     if (a !== undefined && b !== undefined && a !== b)
-      log.push(`registry.json: ${s}.${n} version ${a} (feature) vs ${b} (branch) -> ${pick}`);
+      log.push(`registry.json: ${s}.${n} version ${swap ? b : a} (feature) vs ${swap ? a : b} (branch) -> ${pick}`);
     e.version = pick;
   }
   out[f] = fmt(merged);
@@ -119,8 +132,8 @@ function changelog(f) {
       else cur.push(lines[i]);
     }
     if (i >= lines.length || b.length > 0) fail();   // changed existing lines: not an append
-    feat += entryCount(a); br += entryCount(c);
-    res.push(...a, ...c);
+    feat += entryCount(swap ? c : a); br += entryCount(swap ? a : c);
+    res.push(...(swap ? [...c, ...a] : [...a, ...c]));   // feature side first
   }
   if (m.conflicts > 0) log.push(`CHANGELOG.md: kept ${feat} entr${feat === 1 ? 'y' : 'ies'} from the feature side and ${br} from the branch side`);
   out[f] = res.join('\n');

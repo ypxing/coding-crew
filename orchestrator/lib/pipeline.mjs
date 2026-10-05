@@ -283,6 +283,7 @@ export async function runWorker(ctx, issue, attempt) {
     ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${attempt} step=sync-feature-branch`);
     const conflictRetry = resume.kind === "conflict";
     const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch: sprint.featureBranch, keepConflict: true });
+    for (const line of sync.decisions ?? []) ctx.log(`[SYNC-AUTO-RESOLVED] slug=${issue.slug} branch=${branch} — ${line}`);
     if (sync.kept) {
       ctx.log(`[SYNC-CONFLICT-KEPT] slug=${issue.slug} branch=${branch} files=${sync.files.join(",")} — left for a conflict-only coder dispatch`);
       pendingConflict = {
@@ -381,16 +382,15 @@ export async function runWorker(ctx, issue, attempt) {
   mkdirSync(issueDir, { recursive: true });
   // A red baseline (loop.mjs) stopped this attempt before any coder (the conflict one included) started — during deps, whose
   // kill leaves no DEPS line to stop on. runHousekeeping keeps the branch for the next run.
-  if (ctx.baselineRed) {
-    return {
-      issue,
-      branch,
-      attempt,
-      worktree,
-      dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
-      report: { parsedFrom: "baseline-red", status: "blocked", checks: {}, branch, workingDirectory: worktree, progress: null, notes: "baseline failed", criteria: [], raw: "" },
-    };
-  }
+  const baselineRedWorker = () => ({
+    issue,
+    branch,
+    attempt,
+    worktree,
+    dispatch: { code: 0, timedOut: false, dryRun: false, text: "", stderr: "" },
+    report: { parsedFrom: "baseline-red", status: "blocked", checks: {}, branch, workingDirectory: worktree, progress: null, notes: "baseline failed", criteria: [], raw: "" },
+  });
+  if (ctx.baselineRed) return baselineRedWorker();
 
   if (pendingConflict) {
     const resolved = await dispatchConflict(ctx, {
@@ -403,6 +403,8 @@ export async function runWorker(ctx, issue, attempt) {
       files: pendingConflict.files,
       context: pendingConflict.context,
     });
+    // The baseline can go red while the conflict coder runs (its kill is why it left the merge open).
+    if (ctx.baselineRed) return baselineRedWorker();
     if (!resolved.ok) {
       ctx.log(`[CONFLICT-UNRESOLVED] slug=${issue.slug} round=${attempt} branch=${branch} — ${resolved.why}; the original route did not run`, "warn");
       return {
@@ -574,6 +576,9 @@ export async function runWorker(ctx, issue, attempt) {
   return { issue, branch, attempt, worktree, dispatch: result, report, head, startTip, reviewedTip, verifyFailedTip, priorVerdict: reviewedTip || verifyFailedTip ? resume.context : null };
 }
 
+/** The ledger role of a conflict-only dispatch, apart from "coder" so a fix round never resumes its session. */
+export const CONFLICT_ROLE = "conflict";
+
 /**
  * Whether a fix round may continue the coder's recorded session. Never after a conflict
  * dispatch ran this attempt: it is recorded under role "coder" at the merged tip, so it
@@ -636,7 +641,8 @@ async function dispatchConflict(ctx, { issue, worktree, branch, attempt, issueDi
     },
   );
   const head = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
-  sprint.recordDispatchCost(result, { slug: issue.slug, role: "coder", attempt, head });
+  // Its own role: its session saw only the conflict, so lastDispatch(slug, "coder") must never return it.
+  sprint.recordDispatchCost(result, { slug: issue.slug, role: CONFLICT_ROLE, attempt, head });
   return { ...conflictResolved(effects, worktree, sprint.featureBranch), dispatch: result };
 }
 
