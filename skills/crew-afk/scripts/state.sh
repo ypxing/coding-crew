@@ -182,7 +182,7 @@ case "$CMD" in
 
   blocked)
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@"); reason=$(flag reason "blocked" "$@")
-    number=$(flag number "" "$@")
+    number=$(flag number "" "$@"); fingerprint=$(flag fingerprint "" "$@")
     [ -n "$slug" ] || die "blocked requires --slug"
     edit_state --arg s "$slug" --arg r "$reason" '.blocked_slugs = ((.blocked_slugs // []) + [$s] | unique) | .blocked_reasons[$s] = $r'
     # --number: the issue got the `blocked` label; crew-summary prints how to remove it.
@@ -190,8 +190,9 @@ case "$CMD" in
       edit_state --arg s "$slug" --argjson n "$number" '.blocked_labelled = ((.blocked_labelled // {}) + {($s): $n})'
     fi
     if [ -n "$branch" ]; then
-      edit_state --arg s "$slug" --arg b "$branch" --arg r "blocked — $reason" '
-        .retained_branches[$s] = $b | .retention[$s] = {branch: $b, reason: $r}'
+      edit_state --arg s "$slug" --arg b "$branch" --arg r "blocked — $reason" --arg f "$fingerprint" '
+        .retained_branches[$s] = $b
+        | .retention[$s] = ({branch: $b, reason: $r} + (if $f == "" then {} else {fingerprint: $f} end))'
     fi
     trace --level error STATE "blocked slug=$slug${branch:+ branch=$branch}"
     echo "STATE: blocked slug=$slug${branch:+ branch=$branch}"

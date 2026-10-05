@@ -319,11 +319,12 @@ export class Sprint {
     if (fingerprint) args.push("--fingerprint", fingerprint);
     return this.state(args);
   }
-  blocked(slug, branch, reason, number = null) {
+  blocked(slug, branch, reason, number = null, fingerprint = null) {
     const args = ["blocked", "--slug", slug];
     if (number != null) args.push("--number", String(number));
     if (branch) args.push("--branch", branch);
     if (reason) args.push("--reason", reason);
+    if (fingerprint && branch) args.push("--fingerprint", fingerprint);
     return this.state(args);
   }
   coverageGap(slug, categories) {

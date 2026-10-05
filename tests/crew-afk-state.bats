@@ -628,3 +628,11 @@ EOF
   run state retention --slug second
   [[ "$output" != *fingerprint* ]]
 }
+
+@test "state.sh blocked --branch keeps --fingerprint in the retention record" {
+  init_sprint calc
+  state blocked --slug first --branch crew/calc/first --reason "retry limit reached" --fingerprint abc123 >/dev/null
+  run state retention --slug first
+  [[ "$output" == *"reason: blocked — retry limit reached"* ]]
+  [[ "$output" == *"fingerprint: abc123"* ]]
+}
