@@ -15,6 +15,7 @@ set -euo pipefail
 #   state.sh attempt --slug <slug> --n <n>
 #   state.sh complete --slug <slug> --branch <branch>
 #   state.sh retain   --slug <slug> --branch <branch> --reason <reason> [--fingerprint <sha256>]
+#   state.sh drop-retained --slug <slug> [--reason <text>] [--issue-gone]   (a stale retention: issue closed or gone, or branch gone)
 #   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>] [--number <n>]
 #   state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
 #   state.sh coverage-clear --slug <slug>
@@ -180,6 +181,34 @@ case "$CMD" in
       | .merged_branches = ((.merged_branches // []) - [$b])'
     trace --level warn STATE "retain slug=$slug branch=$branch reason=$reason"
     echo "STATE: retain slug=$slug branch=$branch reason=$reason"
+    ;;
+
+  drop-retained)
+    # The one way a retention ends without a merge: its issue was closed or left the tracker, or
+    # its branch was deleted, so no run can retry it — and every run would otherwise list it
+    # under Partial and ## Retained Branches. The orchestrator decides staleness (preflight.mjs's
+    # dropStaleRetained); this only writes it. --issue-gone also forgets the slug's blocked
+    # entries: a closed issue has nothing left to unblock.
+    slug=$(flag slug "" "$@"); reason=$(flag reason "stale" "$@")
+    [ -n "$slug" ] || die "drop-retained requires --slug"
+    issue_gone=false
+    for a in "$@"; do [ "$a" = "--issue-gone" ] && issue_gone=true; done
+    branch=$(jq -r --arg s "$slug" '(.retention[$s].branch // .retained_branches[$s]) // empty' "$SF")
+    had=$(jq -r --arg s "$slug" 'if ((.retention // {}) | has($s)) or ((.retained_branches // {}) | has($s)) then "yes" else "" end' "$SF")
+    edit_state --arg s "$slug" --argjson gone "$issue_gone" '
+      .retained_branches = ((.retained_branches // {}) | del(.[$s]))
+      | .retention = ((.retention // {}) | del(.[$s]))
+      | if $gone then
+          .blocked_slugs = ((.blocked_slugs // []) - [$s])
+          | .blocked_reasons = ((.blocked_reasons // {}) | del(.[$s]))
+          | .blocked_labelled = ((.blocked_labelled // {}) | del(.[$s]))
+        else . end'
+    if [ -z "$had" ]; then
+      echo "STATE: drop-retained slug=$slug — no record"
+    else
+      trace --level warn STATE "drop-retained slug=$slug${branch:+ branch=$branch} — $reason"
+      echo "STATE: drop-retained slug=$slug${branch:+ branch=$branch} — $reason"
+    fi
     ;;
 
   blocked)

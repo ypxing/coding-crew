@@ -158,6 +158,54 @@ export async function lintMidRunIssues(ctx, issues) {
   return blocked;
 }
 
+/**
+ * Once, at run start: drop each retained-branch record no run can retry — its issue is closed
+ * (`done`) or no longer in the tracker at all, or its branch no longer exists — so it stops
+ * counting toward Partial, ## Retained Branches, the stall verdict and the PR's draft reasons.
+ * Seen once (crew-afk-maintenance, 2026-10-05: #142 shipped in #145, its record kept two runs
+ * STALLED and their PR a draft). An open issue whose branch exists is kept, ready or not, blocked
+ * or not. A listing that fails or comes back empty drops nothing: it cannot tell a closed issue
+ * from one it did not see. `--dry-run` reports only. Returns `[{ slug, branch, reason, issueGone }]`.
+ */
+export function dropStaleRetained(ctx, tracker) {
+  const { sprint, effects, options } = ctx;
+  const st = sprint.readState();
+  const branches = { ...(st.retained_branches ?? {}) };
+  for (const [slug, rec] of Object.entries(st.retention ?? {})) branches[slug] = rec?.branch ?? branches[slug];
+  const slugs = Object.keys(branches);
+  if (!slugs.length) return [];
+  let issues;
+  try {
+    issues = tracker.listFeatureIssues(effects.mainRoot, { featureSlug: sprint.featureSlug });
+  } catch (err) {
+    ctx.log(`RETAINED: kept every record — could not list the tracker: ${err.message}`, "warn");
+    return [];
+  }
+  if (!issues.length) return [];
+  const stale = [];
+  for (const slug of slugs) {
+    const branch = branches[slug];
+    const matches = issues.filter((i) => i.slug === slug);
+    let reason = null;
+    let issueGone = false;
+    if (!matches.length) [reason, issueGone] = ["issue no longer in the tracker", true];
+    else if (matches.every((i) => i.status === "done")) [reason, issueGone] = ["issue closed", true];
+    // show-ref exits 1 for a ref that is not there; any other failure says nothing about it.
+    else if (branch && effects.gitRead(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).code === 1) {
+      reason = `branch ${branch} no longer exists`;
+    }
+    if (!reason) continue;
+    stale.push({ slug, branch, reason, issueGone });
+    if (options?.dryRun) {
+      ctx.log(`RETAINED: would drop slug=${slug}${branch ? ` branch=${branch}` : ""} — ${reason}`);
+      continue;
+    }
+    ctx.log(`[RETAINED-DROPPED] slug=${slug}${branch ? ` branch=${branch}` : ""} — ${reason}`, "warn");
+    sprint.dropRetained(slug, reason, { issueGone });
+  }
+  return stale;
+}
+
 /** The stop message for a structurally broken issue set: each ERROR line verbatim. */
 export function lintFailureMessage(errors) {
   return [
