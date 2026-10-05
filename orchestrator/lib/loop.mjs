@@ -411,9 +411,12 @@ function openIssues(tracker, mainRoot, featureSlug) {
   return tracker.listFeatureIssues(mainRoot, { featureSlug }).filter((i) => i.status !== "done" && !tracker.isPrdIssue(i));
 }
 
-/** Issues this sprint hasn't finished, other than parked fix issues. */
+/**
+ * Work issues this sprint hasn't finished. Fix issues — parked, or any with a `Source:` line (review,
+ * integration, PRD gaps) — are left out: none of them carries a PRD requirement.
+ */
 function unfinishedIssues(tracker, mainRoot, featureSlug) {
-  return openIssues(tracker, mainRoot, featureSlug).filter((i) => i.status !== "deferred-findings");
+  return openIssues(tracker, mainRoot, featureSlug).filter((i) => i.status !== "deferred-findings" && !i.sourceGuarded);
 }
 
 /**
