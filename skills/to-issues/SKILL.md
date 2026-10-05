@@ -45,35 +45,41 @@ Not optional. If you have not already explored the code each slice will touch, d
 - **Already there** — the behavior exists, or the bug is already fixed: drop the slice, or keep it as a test-only slice if nothing pins the behavior.
 - **Wrong assumption** — the PRD or plan assumes something the code rules out (a missing counterpart, a decision an ADR or the code contradicts): ask how to resolve it before drafting.
 
-While exploring, look for **prefactoring opportunities** — changes that would make the feature implementation significantly easier. "Make the change easy, then make the easy change." Prefactoring issues must be sliced and sequenced first so downstream feature issues can build on a clean foundation.
+While exploring, look for **prefactoring opportunities** — changes that would make the feature implementation significantly easier. "Make the change easy, then make the easy change." Prefactoring is sequenced first (at the start of the slice, or as its own first slice when the work is split) so the feature work builds on a clean foundation.
 
 Also note any **shared surfaces**: a schema/table, a shared type, or an existing function/module that more than one slice would need to modify. This is a narrower thing than "touches the same file": two slices adding code to separate parts of a file merge cleanly, while a shared surface is where two slices would plausibly change the *same specific behavior*. Carry any you find into step 4, and apply its edge rule to each one.
 
 ### 4. Draft vertical slices
 
-Break the plan into **tracer bullet** issues. Each issue is a thin vertical slice that cuts through ALL integration layers end-to-end, NOT a horizontal slice of one layer.
+Start from **one slice for the whole PRD**. Split it only for one of these reasons, and name the reason on every split:
+
+1. **Context budget** — one coder cannot hold it in one fresh session. The reference size: the `crew-afk-review` slices (#148–#160: 7–44 files, ~100–1600 lines each) each landed in one coder session and were judged well sized. There is no line limit; judge against that reference.
+2. **Human boundary** — part is HITL, the rest AFK.
+3. **Parallelism worth having** — both halves are large and independent; a half of a few criteria does not qualify.
+4. **Expand–contract order** — steps from the PRD's `## Compatibility & Migration` (or `references/expand-contract.md`) that must land in sequence.
+
+Unrelated modules or test seams are not a reason on their own: they only cost the coder context, which reason 1 covers. One slice may deliver several behaviours.
+
+Each issue is a **tracer bullet**: a vertical slice that cuts through every integration layer its behaviour needs end-to-end, NOT a horizontal slice of one layer.
 
 Slices may be 'HITL' or 'AFK'. HITL slices require human interaction, such as an architectural decision or a design review. AFK slices can be implemented and merged without human interaction. Prefer AFK over HITL where possible.
 
-Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge. Many thin slices pay it many times, so do not split below the floor in the rules.
+Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge. Every `Blocked by` edge also adds a serial round: the dependent cannot start until its blocker has merged, so it pays the blocker's whole run in wall-clock time before its own. A split is worth making only when its reason outweighs both.
 
-**Edge rule.** For each pair of slices that share a surface or a file, take the first row that matches (first match wins):
+**Edge rule.** Between slices that remain split, add `Blocked by` only when one of these rows matches:
 
 1. One slice consumes what the other produces (a signature, shape or output) → `Blocked by`.
 2. The two change the same meaning (the same behaviour, function or rule) → `Blocked by`.
-3. They edit the same small file and together carry at most 8 acceptance criteria → merge them into one slice.
-4. Anything else → leave them parallel.
 
-A small file is one a coder can read whole in a single pass alongside its tests, without scrolling or searching (no line count). Parallel is the default because edits to separate parts of a file merge cleanly, and a needless edge serializes work. Same-meaning edits are sequenced because a conflict is retried only for the conflict, run one at a time, and each retry is spent from the retry cap.
+Otherwise split slices stay parallel: edits to separate parts of a file merge cleanly, and a needless edge serializes work. Same-meaning edits are sequenced because a conflict is retried only for the conflict, run one at a time, and each retry is spent from the retry cap. A split for parallelism worth having (reason 3) never yields an edge; an edge appears only under reasons 1, 2 or 4.
 
 <vertical-slice-rules>
-- A slice is one externally observable behaviour, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a rendered output, a bats run). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviour needs
-- The first slice is the thinnest end-to-end path: the narrowest behaviour that proves the layers connect. Later slices widen it
+- Each behaviour a slice delivers is externally observable, verified at the highest existing seam (the outermost place a test can already exercise it: a CLI invocation, an HTTP call, a rendered output, a bats run). "Schema / API / UI" is only an example of the layers such a behaviour may cut through, not a required shape — a slice touches whichever layers its behaviours need
+- If the work is split, the first slice is the thinnest end-to-end path: the narrowest behaviour that proves the layers connect. Later slices widen it
 - A completed slice is demoable or verifiable on its own
-- Each slice is sized to fit in a single fresh context window — if a slice requires multiple agent sessions it must be split further
-- Merge rule: merge two slices when they share a test seam and neither is reviewable or demoable alone. Do not split below that floor — a fragment nobody can review or demo on its own is not a slice
-- Aim for 3–8 acceptance criteria per slice (a soft target, not a gate): fewer usually means a fragment to merge, more usually means two behaviours to split
-- Any prefactoring should be sequenced first
+- Each slice is sized to fit in a single fresh context window — the context-budget reason above is the only size rule
+- A slice with more than 10 acceptance criteria is a context-budget check (does it still fit one coder session against the reference size?), never on its own a rule to split
+- Any prefactoring is sequenced first: at the start of the slice, or as the first slice when the work is split
 </vertical-slice-rules>
 
 **Wide refactor?** One mechanical change — rename a column, retype a shared symbol — whose blast radius fans across the whole codebase, so no vertical slice can land green on its own: read `references/expand-contract.md` before slicing it.
@@ -98,10 +104,9 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 1. **Contradicted assumptions** — what the plan assumes, what the code shows at `file:line`, and the slice it affects; resolve each before the rest.
 2. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct.
 3. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
-4. **Slices outside the criteria range** — any slice that would carry fewer than 3 or more than 8 acceptance criteria: merge it, split it, or keep it as is.
-5. **Edges and merges the edge rule produced** — one line per edge or merge from step 4, naming the slices and the rule row (reason) that produced it, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
-6. **Seam count** — when the slices' `## Implements` name more than two distinct seams, ask whether some slices can share one seam (and so merge or share a test).
-7. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
+4. **Slices over 10 criteria** — any slice that would carry more than 10 acceptance criteria, as a context-budget check: does it fit one coder session? Keep it, or split it for the context-budget reason.
+5. **Splits and edges** — one line per split naming its reason from step 4 (context budget, human boundary, parallelism worth having, expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
+6. **HITL choices** — each slice marked HITL, and why a human is needed (that reason becomes the block's `### Why a person`); the rest are AFK.
 
 Then one approve/adjust prompt: approve the breakdown as shown, or say what to adjust. Iterate until the user approves. Do not ask generic questions about granularity, blocking edges, merging or HITL/AFK — a breakdown with nothing to list above needs only the approve/adjust prompt.
 
