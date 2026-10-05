@@ -29,7 +29,7 @@ function verifyRecord(obj) {
   writeFileSync(f, typeof obj === "string" ? obj : JSON.stringify(obj));
   return f;
 }
-import { conflictPrompt, fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
+import { conflictPrompt, featureReviewPrompt, findingsTriagePrompt, fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("a structured sidecar wins over prose", () => {
   const r = parseWorkerReport("## Issue: thing\nStatus: complete\n", {
@@ -745,6 +745,24 @@ test("applyFindingVerdicts: an ADR clash or a protected path forces Debatable ov
   assert.match(out[3].rationale, /^noise \[remapped dismiss → actionable/, "auto never dismisses");
 });
 
+test("applyFindingVerdicts: a design-only finding is Debatable whatever triage answered", () => {
+  const out = applyFindingVerdicts(
+    [
+      { severity: "LOW", location: "src/a.ts:1", issue: "Design standard (criterion 3): the fact was known earlier", criterion: "a" },
+      { severity: "LOW", location: "src/b.ts:1", issue: "Design standard (criterion 2): decided twice", criterion: "b" },
+      { severity: "LOW", location: "src/c.ts:1", issue: "leaks the handle; Design standard (criterion 2) aside", criterion: "c" },
+    ],
+    [
+      { verdict: "actionable", rationale: "clear fix", adr: false, protected: false },
+      { verdict: "dismiss", rationale: "noise", adr: false, protected: false },
+      { verdict: "actionable", rationale: "ok", adr: false, protected: false },
+    ],
+  );
+  assert.deepEqual(out.map((f) => f.verdict), ["debatable", "debatable", "actionable"]);
+  assert.match(out[0].rationale, /^clear fix \[forced Debatable: .*design standard/i);
+  assert.match(out[1].rationale, /\[forced Debatable: .*design standard/i);
+});
+
 test("applyFindingVerdicts: a dismiss on a protected path or with adr still ends up Debatable", () => {
   const out = applyFindingVerdicts(
     [
@@ -815,6 +833,28 @@ test("findingsTriagePrompt lists issue before criterion", async () => {
   });
   assert.ok(out.indexOf("PROBLEM-TEXT") > -1 && out.indexOf("PROBLEM-TEXT") < out.indexOf("FIX-TEXT"));
   assert.ok(!out.includes("what the reviewer wants"));
+});
+
+test("review and feature-review templates ask for each finding's issue, and a design-only prefix reaches findings triage", () => {
+  const templateFinding = (prompt) => {
+    const block = [...prompt.matchAll(/```json\n([\s\S]*?)\n```/g)].at(-1)[1];
+    return JSON.parse(block).findings[0];
+  };
+  const branchPrompt = reviewPrompt({ branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r" });
+  const featurePrompt = featureReviewPrompt({ featureBranch: "feature/x", base: "abc", reportPath: "/r.json" });
+  for (const p of [branchPrompt, featurePrompt]) {
+    const item = templateFinding(p);
+    assert.ok("issue" in item, "the findings item carries an issue field");
+    assert.deepEqual(Object.keys(item), ["severity", "location", "issue", "criterion"]);
+  }
+  const r = parseReviewReport("", {
+    branch: "b",
+    slug: "s",
+    verdict: "all-met",
+    findings: [{ severity: "LOW", location: "a.ts:1", issue: "Design standard (criterion 2): the mode is decided twice", criterion: "decide it once" }],
+  });
+  const out = findingsTriagePrompt({ scope: "s", ref: "r", change: "git diff c", findings: r.findings, reportPath: "/p" });
+  assert.match(out, /Design standard \(criterion 2\): the mode is decided twice/);
 });
 
 test("findingsTriagePrompt does not offer dismiss", async () => {

@@ -113,7 +113,8 @@ downgraded or dropped.
 
    When the dispatch marks the diff test-only, read each test and the code it exercises, and skip
    caller tracing: tests have no callers.
-4. **Apply Step 3 plus every loaded reference**, CRITICAL to LOW, then report in the format below.
+4. **Apply Step 3, the design standard below, and every loaded reference**, CRITICAL to LOW, then
+   report in the format below.
 
 ### Step 3 — Always-on classes
 
@@ -144,6 +145,20 @@ Stack-agnostic, flag whenever the **diff** introduces them:
 
 Thresholds for size/nesting/error-handling/test-coverage live in `quality.md`; framework-specific
 classes live in the references Step 1 named.
+
+### Design standard — advisory, LOW only
+
+{{FRAGMENT:design-standard}}
+
+Apply criteria 2–4 to the code the diff adds or changes. Criterion 1 (is it necessary at all) is
+the issue's question, settled before any code was written, so it is not yours.
+A design-only finding — one whose only basis is a criterion above, with no failure Step 3 or a
+reference names — is reported at `LOW`, only with its exact `file:line` and a snippet, and only once
+it passes the Pre-Report Gate (the "concrete failure mode" question is answered by the criterion's
+failure signal and its evidence: the second place the decision is coded, the unused parameter, the
+earlier point the fact was known). Start its `issue` with `Design standard (criterion <n>):`.
+A design-only finding never makes an acceptance criterion `unmet` and never raises a severity: the
+`AC:` verdict is judged on the criteria and PRD decisions alone.
 
 ## Feature Mode
 

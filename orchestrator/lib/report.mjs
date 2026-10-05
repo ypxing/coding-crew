@@ -526,6 +526,11 @@ function locationPath(location) {
   return String(location ?? "").trim().replace(/:\d+(-\d+)?(:\d+)?$/, "").replace(/^\.\//, "");
 }
 
+/** Whether a finding's only basis is the design standard: crew-reviewer starts its `issue` so. */
+function isDesignOnly(finding) {
+  return String(finding.issue ?? "").trim().startsWith("Design standard (criterion");
+}
+
 /** Whether a finding's `location` names a protected path. */
 export function touchesProtectedPath(location) {
   const path = locationPath(location);
@@ -534,8 +539,10 @@ export function touchesProtectedPath(location) {
 
 /**
  * Findings with triage's verdicts applied, the hard rules last: a finding that contradicts an
- * ADR / CONTEXT.md (triage's `adr` flag), or whose fix touches a protected path (triage's
- * `protected` flag, or the finding's own location), is Debatable whatever triage said.
+ * ADR / CONTEXT.md (triage's `adr` flag), whose fix touches a protected path (triage's
+ * `protected` flag, or the finding's own location), or whose only basis is the design standard
+ * (its `issue` starts `Design standard (criterion`, as crew-reviewer is told to write it) is
+ * Debatable whatever triage said.
  * Returns the findings with `verdict` and `rationale` written beside them.
  */
 export function applyFindingVerdicts(findings, verdicts) {
@@ -550,6 +557,7 @@ export function applyFindingVerdicts(findings, verdicts) {
     const forced = [];
     if (t.adr) forced.push("contradicts a documented decision (ADR / CONTEXT.md)");
     if (t.protected || touchesProtectedPath(f.location)) forced.push("its fix touches a protected path (CI config, auth, deploy, .env)");
+    if (isDesignOnly(f)) forced.push("its only basis is the design standard, which is advisory");
     if (forced.length && verdict !== "debatable") {
       verdict = "debatable";
       rationale = `${rationale ? `${rationale} ` : ""}[forced Debatable: ${forced.join("; ")}]`;

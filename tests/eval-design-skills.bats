@@ -63,6 +63,17 @@ teardown() {
   rm -rf "$T"
 }
 
+# The dry run's `Prompts:` dir under the real repo, refused unless it is a non-empty path inside
+# <scratch>/eval-design-skills/ — a missing or stray line must never reach `rm -r`.
+prompts_dir() {
+  local rel d
+  rel=$(sed -n 's/^Prompts: //p' <<<"$1")
+  d="$REPO_ROOT/$rel"
+  [ -n "$rel" ] && [[ "$rel" != *..* ]] && [[ "$d" == "$REPO_ROOT/.scratch/eval-design-skills/"?* ]] || {
+    echo "unexpected Prompts dir: '$rel'" >&2; return 1; }
+  printf '%s' "$d"
+}
+
 run_eval() {
   (cd "$R" && node scripts/eval-design-skills.mjs "$@")
 }
@@ -72,6 +83,46 @@ run_eval() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"6 subject runs (1 cases × 2 versions × 3)"* ]]
   [ "$(grep -c '  c1 ' <<<"$output")" -eq 6 ]
+}
+
+@test "dry run writes each version's prompt with fragments rendered: base from the ref, head from the worktree" {
+  mkdir -p "$R/skills/_shared/fragments"
+  echo "FRAG-V1-LINE" > "$R/skills/_shared/fragments/design-standard.md"
+  printf 'SKILL-V1-SECRET\n{{FRAGMENT:design-standard}}\nend {{PLATFORM}}\n' > "$R/skills/crew-grill/SKILL.md"
+  git -C "$R" add -A
+  git -C "$R" -c user.email=t@t -c user.name=t commit -qm frag
+  echo "FRAG-V2-LINE" > "$R/skills/_shared/fragments/design-standard.md"
+  printf 'SKILL-V2-SECRET\n  {{FRAGMENT:design-standard}}\n' > "$R/skills/crew-grill/SKILL.md"
+  run run_eval --skill crew-grill --dry-run --runs 1
+  [ "$status" -eq 0 ]
+  [ ! -e "$T/judge-prompt.txt" ]
+  d=$(ls -d "$R"/.scratch/eval-design-skills/*/)
+  [[ "$output" == *"Prompts: .scratch/eval-design-skills/"* ]]
+  grep -qx 'FRAG-V1-LINE' "$d/c1-base-1.prompt.txt"
+  grep -qx 'end claude' "$d/c1-base-1.prompt.txt"
+  grep -qx 'FRAG-V2-LINE' "$d/c1-head-1.prompt.txt"
+  ! grep -q '{{' "$d/c1-base-1.prompt.txt" "$d/c1-head-1.prompt.txt"
+  [ "$(git -C "$R" worktree list | wc -l)" -eq 1 ]
+}
+
+@test "a skill naming a fragment that does not exist fails, naming it" {
+  printf 'x\n{{FRAGMENT:nope}}\n' > "$R/skills/crew-grill/SKILL.md"
+  run run_eval --skill crew-grill --dry-run --runs 1
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"nope"* ]]
+}
+
+@test "the committed crew-grill dry run renders the design-standard fragment" {
+  run bash -c "cd '$REPO_ROOT' && node scripts/eval-design-skills.mjs --skill crew-grill --base HEAD --dry-run --runs 1"
+  [ "$status" -eq 0 ]
+  d=$(prompts_dir "$output")
+  first=$(grep -m1 -v '^[[:space:]]*$' "$REPO_ROOT/skills/_shared/fragments/design-standard.md")
+  ls "$d"/*.prompt.txt >/dev/null
+  for f in "$d"/*.prompt.txt; do
+    grep -qF -- "$first" "$f"
+    ! grep -q '{{FRAGMENT:' "$f"
+  done
+  rm -r "$d"
 }
 
 @test "base reads the committed skill, head reads the worktree" {
@@ -244,8 +295,10 @@ EOF
 }
 
 @test "the committed to-issues cases dry-run as 3 cases x 2 versions x runs" {
-  run bash -c "cd '$REPO_ROOT' && node scripts/eval-design-skills.mjs --skill to-issues --dry-run --runs 2"
+  run bash -c "cd '$REPO_ROOT' && node scripts/eval-design-skills.mjs --skill to-issues --base HEAD --dry-run --runs 2"
   [ "$status" -eq 0 ]
+  d=$(prompts_dir "$output")
+  rm -r "$d"
   [[ "$output" == *"12 subject runs (3 cases × 2 versions × 2)"* ]]
   for c in slice-review-catches slice-promote-after-merge slice-crew-afk-review; do
     [ "$(grep -c "  $c " <<<"$output")" -eq 4 ]
