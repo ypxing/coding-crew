@@ -110,7 +110,7 @@ test("the summary is kept in the trace log too, not only printed", () => {
   addIssue(root, "01-alpha.md");
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(traceLog(root), / INFO  \[SUMMARY\]\n  Rounds: \d+\n  Model: /);
+  assert.match(traceLog(root), / INFO  \[SUMMARY\]\n  Run \d+ for this feature; previous: .*\n  Rounds: \d+\n  Model: /);
 });
 
 test("the summary names the resolved model, rendered from disk", () => {
