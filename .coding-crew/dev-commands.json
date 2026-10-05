@@ -1,0 +1,1 @@
+{"test": "ORCHESTRATOR_PREFETCH=1 bats tests/*.bats", "lint": null, "typecheck": null, "install": null, "env": null, "credential_target": null, "coverage": null, "integration": null}

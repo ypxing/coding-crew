@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, FIXTURE_ROOTS, sh, fixtureRepo, githubFixtureRepo, stubGh, GH_ALPHA, addIssue, runSprint, traceLog, state, fake, workerReport, coderSpawns, commandLines, test } from "./helpers/sprint.mjs";
+import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, FIXTURE_ROOTS, sh, fixtureRepo, githubFixtureRepo, stubGh, GH_ALPHA, addIssue, runSprint, traceLog, state, fake, workerReport, coderSpawns, commandLines, privateScripts, test } from "./helpers/sprint.mjs";
 
 // ─── one-time command discovery ───────────────────────────────────────────────
 //
@@ -161,7 +161,7 @@ test("CREW_COMMANDS_REFRESH=1 forces rediscovery and overwrites an existing cach
   assert.match(cacheAfterSecond, /make totally-different-now/);
 });
 
-test("--no-commands skips command discovery entirely", () => {
+test("CREW_NO_COMMANDS skips command discovery entirely", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
 
@@ -288,7 +288,7 @@ test("plan names a dirty main checkout", () => {
   assert.match(r.stdout, /main tree: 1 tracked file\(s\) with uncommitted changes .*Makefile/);
 });
 
-test("a feature branch that fails its own checks stops the run before any coder is dispatched", () => {
+test("a feature branch that fails its own checks stops the run, and no issue is verified past it", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
@@ -301,11 +301,71 @@ test("a feature branch that fails its own checks stops the run before any coder 
   assert.match(traceLog(root), /^\S+Z ERROR \[VERIFY-OUTPUT\] step=baseline result=fail file=\S+\/_baseline\/verify\.out$/m);
   assert.match(r.stderr, /^  test: fail — \S+\/dispatch\/_baseline\/verify-test\.log$/m);
   assert.match(r.stderr, /--no-baseline/);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "no coder, no reviewer");
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-(?!coder)/.test(l)).length, 0, "no reviewer or triage");
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir \S+ --stem alpha/.test(l)).length, 0, "no issue is verified before the baseline verdict");
   assert.equal(state(root).baseline.verdict, "fail");
   // The throwaway worktree and its branch are gone.
   assert.equal(sh("git", ["-C", root, "branch", "--list", "crew/demo/_baseline"]).stdout.trim(), "");
   assert.equal(existsSync(join(root, ".scratch/worktrees/crew/demo/_baseline")), false);
+});
+
+test("a red baseline with two issues: coders start alongside it, no issue is verified, branches are kept, exit 1", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red"]);
+  const { r, lines } = commandLines(root, ["--max-parallel", "2"], { baseline: true });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /feature\/demo fails its own checks before any issue has touched it/);
+  const coders = lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length;
+  assert.ok(coders >= 1 && coders <= 2, `coders start alongside the baseline, not behind it (${coders} spawned)`);
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir \S+ --stem (alpha|beta)/.test(l)).length, 0);
+  assert.equal(state(root).baseline.verdict, "fail");
+});
+
+test("a red baseline stops the coders already running: the run ends at once, their branches kept for the next run", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red"]);
+  // The coder commits, then would run for a minute: the red baseline must not wait for it.
+  fake(root, "alpha.worker-sleep", "60\n");
+  const t0 = Date.now();
+  const { r } = commandLines(root, [], { baseline: true });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.ok(Date.now() - t0 < 30_000, `the run ended after ${Date.now() - t0} ms`);
+  assert.match(traceLog(root), /\[BASELINE-RED\] .*stopping \d+ running dispatch/);
+  assert.match(state(root).retention.alpha.reason, /baseline failed/);
+  // Its coder was stopped mid-work: the next run sends a coder, not a verify-only retry.
+  assert.doesNotMatch(state(root).retention.alpha.reason, /verify-interrupted/);
+});
+
+test("a red baseline that stops a review-only retry keeps its reason, so the next run still sends no coder", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review-once", "2");
+  const first = commandLines(root, ["--max-rounds", "1"]);
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  assert.match(state(root).retention.alpha.reason, /^review-not-run — /);
+
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red"]);
+  // alpha's deps outlast the baseline, so the red verdict lands before its review-only retry returns.
+  const scripts = privateScripts();
+  renameSync(join(scripts, "ensure-deps.sh"), join(scripts, "ensure-deps.real.sh"));
+  writeFileSync(
+    join(scripts, "ensure-deps.sh"),
+    '#!/usr/bin/env bash\ncase " $* " in *" --slug alpha "*) sleep 6 ;; esac\nexec bash "$(dirname "$0")/ensure-deps.real.sh" "$@"\n',
+  );
+  chmodSync(join(scripts, "ensure-deps.sh"), 0o755);
+  const { r } = commandLines(root, [], { baseline: true, scripts });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[BASELINE-RED\] slug=alpha /);
+  assert.match(state(root).retention.alpha.reason, /^review-not-run — /, "not re-retained as a stopped coder");
 });
 
 // A check command that is not installed exits 127: an environment problem, never the branch's.
@@ -331,7 +391,8 @@ test("a baseline check whose command is not installed is reported as the environ
   assert.match(r.stderr, /Install it where the checks run \(or give \.coding-crew\/dev-commands\.json an `install` command that does\), then re-run\./);
   assert.doesNotMatch(r.stderr, /Fix it on the feature branch/);
   assert.match(r.stderr, /--no-baseline/);
-  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "no coder, no reviewer");
+  assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-(?!coder)/.test(l)).length, 0, "no reviewer or triage");
+  assert.equal(lines.filter((l) => /verify-worktree\.sh --dir \S+ --stem alpha/.test(l)).length, 0, "no issue is verified before the baseline verdict");
 });
 
 test("an issue's verify failing on a command that is not installed skips triage and never re-dispatches the coder", () => {
@@ -405,7 +466,7 @@ test("a merge refused by uncommitted changes in the main checkout blocks at once
   assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
   assert.deepEqual(state(root).completed_slugs, ["alpha"]);
   // Nothing of alpha's is re-dispatched; the merge it resumes at is a first drain's feature review.
-  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-/.test(l) && !/ --slug feature( |$)/.test(l)).length, 0);
+  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-/.test(l) && !/ --slug feature(-\d+)?( |$)/.test(l)).length, 0);
   assert.equal(second.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
   assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=blocked — main-tree-dirty/);
 });
@@ -426,7 +487,8 @@ test("every dispatch is filed in this run's ledger with its slug, role and attem
     ["reviewer", 1, true],
     ["reviewer", 1, true],
     ["reviewer", 2, true],
-    ["reviewer", 1, true], // the feature review, once, at the drain
+    ["reviewer", 1, true], // the feature review's planner, once, at the drain
+    ["reviewer", 1, true], // the feature review's one area reviewer
   ]);
   // The coder's entry keeps the tip it left: the commit verify then checked.
   const verified = JSON.parse(readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json"), "utf8")).commit;

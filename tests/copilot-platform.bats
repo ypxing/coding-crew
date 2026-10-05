@@ -8,13 +8,9 @@
 # `copilot skill list`, and an agent under .copilot/agents/ does not resolve, while the same
 # file under .github/agents/ does.
 #
-# The dispatch half of this file is gone with the launcher cutover. It asserted prose in
-# `fragments/copilot/`: dispatch with the `task` tool and never `#runSubagent`, the agent
-# locations Copilot scans, `Unknown agent_type` reported rather than self-implemented, and
-# "--model is accepted but ignored". Dispatch is `copilot -p --agent crew-coder` in a
-# worktree now, so those are adapter facts, asserted in tests/orchestrator/dispatch.test.mjs
-# — including the one only a probe found: Copilot resolves `--agent` from the worker's own
-# cwd, so a definition that is not in HEAD (or user-level) fails preflight before round 1.
+# Dispatch is not asserted here: every role runs as `copilot -p` in its worktree with the
+# role's protocol prepended to the prompt and no agent file (orchestrator/lib/adapters/copilot.mjs),
+# which tests/orchestrator/dispatch.test.mjs pins.
 
 load helpers/render
 
@@ -29,15 +25,6 @@ teardown() {
 
 # ─── install locations ────────────────────────────────────────────────────────
 
-@test "copilot project install writes agents to .github/agents, not .copilot/agents" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
-
-  [ -f "$TEMP_DIR/.github/agents/crew-coder.agent.md" ]
-  [ -f "$TEMP_DIR/.github/agents/crew-reviewer.agent.md" ]
-  [ ! -e "$TEMP_DIR/.copilot/agents/crew-coder.agent.md" ]
-}
-
 @test "copilot project install writes skills to .github/skills, not .copilot/skills" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
@@ -48,36 +35,13 @@ teardown() {
   [ ! -d "$TEMP_DIR/.copilot" ]
 }
 
-@test "copilot project install still expands {{PROTOCOL}} at the new location" {
+@test "copilot project install renders crew-afk at .github/skills with no placeholder left" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
 
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.github/agents/crew-reviewer.agent.md"
-  ! grep -q '{{FRAGMENT' "$TEMP_DIR/.github/skills/crew-afk/SKILL.md"
-}
-
-@test "a user-level copilot install keeps ~/.copilot paths" {
-  cd "$SCRIPT_DIR"
-  # A user-level install is TARGET_REPO=$HOME; fake HOME so the real one is untouched.
-  run env HOME="$TEMP_DIR" TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
-  [ "$status" -eq 0 ]
-
-  [ -f "$TEMP_DIR/.copilot/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.copilot/agents/crew-coder.agent.md" ]
-  [ ! -d "$TEMP_DIR/.github/agents" ]
-}
-
-@test "re-install removes a legacy .copilot/ project copy left by an older install" {
-  cd "$SCRIPT_DIR"
-  mkdir -p "$TEMP_DIR/.copilot/agents" "$TEMP_DIR/.copilot/skills/crew-afk"
-  echo "stale agent" > "$TEMP_DIR/.copilot/agents/crew-coder.agent.md"
-  echo "stale body" > "$TEMP_DIR/.copilot/skills/crew-afk/SKILL.md"
-
-  TARGET_REPO="$TEMP_DIR" ./install.sh copilot --skill crew-afk
-
-  [ ! -e "$TEMP_DIR/.copilot/agents/crew-coder.agent.md" ]
-  [ ! -e "$TEMP_DIR/.copilot/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.github/agents/crew-coder.agent.md" ]
+  [ -f "$TEMP_DIR/.github/skills/crew-afk/SKILL.md" ]
+  ! grep -q '{{' "$TEMP_DIR/.github/skills/crew-afk/SKILL.md"
+  [ ! -e "$TEMP_DIR/.github/agents" ]
 }
 
 @test "uninstall sweeps both the current and the legacy copilot locations" {
@@ -101,7 +65,7 @@ teardown() {
 # exercises the argv and the preflight instead of grepping a body for the promise of them.
 # What stays here is the one dispatch fact that is still the *body's* to carry.
 
-@test "the copilot launcher pre-approves the shell, and no longer the task tool" {
+@test "the launcher pre-approves the shell on every platform, and no longer the task tool" {
   body=$(afk_variant copilot)
   run grep -m1 '^allowed-tools:' "$body"
   [ "$status" -eq 0 ]

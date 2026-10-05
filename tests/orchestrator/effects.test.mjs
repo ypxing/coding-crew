@@ -3,6 +3,7 @@
  */
 
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
@@ -84,4 +85,91 @@ test("execAsync reports an outside signal as interrupted (128+signal), a timeout
   const t = await e.execAsync("sleep", ["5"], { mutating: false, timeoutMs: 100 });
   assert.equal(t.code, 124);
   assert.equal(t.interrupted, false);
+});
+
+// --- timeouts kill the whole process group ---
+import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const gone = async (pid) => {
+  for (let i = 0; i < 40 && alive(pid); i++) await new Promise((r) => setTimeout(r, 50));
+  return !alive(pid);
+};
+const grandchildScript = () => {
+  const dir = mkdtempSync(join(tmpdir(), "gc-"));
+  const f = join(dir, "pid");
+  return { dir, f, sh: `sleep 30 & echo $! > ${f}; wait` };
+};
+const readPid = async (f) => {
+  for (let i = 0; i < 40 && !existsSync(f); i++) await new Promise((r) => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, 50));
+  return Number(readFileSync(f, "utf8"));
+};
+
+test("spawnWithTimeout timeout leaves no grandchild", async () => {
+  const { dir, f, sh } = grandchildScript();
+  const r = await mk().spawnWithTimeout("sh", ["-c", sh], { cwd: process.cwd(), timeoutMs: 500 });
+  assert.equal(r.code, 124);
+  assert.ok(await gone(await readPid(f)));
+  rmSync(dir, { recursive: true });
+});
+
+test("execAsync timeout leaves no grandchild", async () => {
+  const { dir, f, sh } = grandchildScript();
+  const r = await mk().execAsync("sh", ["-c", sh], { timeoutMs: 500 });
+  assert.equal(r.code, 124);
+  assert.ok(await gone(await readPid(f)));
+  rmSync(dir, { recursive: true });
+});
+
+test("a blocking timed exec interrupted by a signal returns at once with interrupted and 128+signal", () => {
+  const t = Date.now();
+  const r = mk().exec("sh", ["-c", "kill -INT $$; sleep 30"], { timeoutMs: 20000 });
+  assert.ok(Date.now() - t < 5000);
+  assert.equal(r.interrupted, true);
+  assert.equal(r.code, 130);
+});
+
+test("a blocking timed exec stays in the caller's process group (not detached)", () => {
+  const r = mk().exec("sh", ["-c", "ps -o pgid= -p $$"], { timeoutMs: 20000 });
+  assert.equal(r.code, 0);
+  const mine = execFileSync("ps", ["-o", "pgid=", "-p", String(process.pid)]).toString().trim();
+  assert.equal(r.stdout.trim(), mine);
+});
+
+test("a blocking timed exec that times out still returns 124", () => {
+  const r = mk().exec("sh", ["-c", "sleep 5"], { timeoutMs: 200 });
+  assert.equal(r.code, 124);
+  assert.equal(r.interrupted, false);
+});
+
+test("register/unregister put an external pid on the interrupt path", async () => {
+  const { registerExternalPid, unregisterExternalPid, registeredPids, killAllGroups } = await import("../../orchestrator/lib/effects.mjs");
+  const { spawn } = await import("node:child_process");
+  const c = spawn("sleep", ["30"], { stdio: "ignore" });
+  registerExternalPid(c.pid);
+  assert.ok(registeredPids().includes(c.pid));
+  killAllGroups();
+  assert.ok(await gone(c.pid));
+  unregisterExternalPid(c.pid);
+});
+
+test("killAllGroups kills live dispatch groups", async () => {
+  const { killAllGroups } = await import("../../orchestrator/lib/effects.mjs");
+  const { dir, f, sh } = grandchildScript();
+  const p = mk().spawnWithTimeout("sh", ["-c", sh], { cwd: process.cwd() });
+  const pid = await readPid(f);
+  killAllGroups();
+  await p;
+  assert.ok(await gone(pid));
+  rmSync(dir, { recursive: true });
 });

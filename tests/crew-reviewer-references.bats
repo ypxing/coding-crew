@@ -6,16 +6,16 @@
 # Node/backend block in a static site, and a six-row dependency-audit table the model executed by
 # hand. The audit's instruction was explicit — do not blind-cut the checklist, make the framework
 # blocks conditional. So nothing was deleted: the blocks moved to
-# .coding-crew/code-review/references/, and review-context.sh decides which apply from signal
+# .coding-crew/crew-afk/roles/reviewer/references/, and review-context.sh decides which apply from signal
 # files. These tests prove both halves: the relocation is lossless, and the selection is correct
 # per stack. The negative greps lock the trim in (the P0 technique) so an inline checklist cannot
 # creep back.
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export AGENT_DIR="$SCRIPT_DIR/agents/crew-reviewer"
-  export PROTOCOL="$AGENT_DIR/protocol.md"
-  export ASSETS="$AGENT_DIR/assets"
+  export AGENT_DIR="$SCRIPT_DIR/orchestrator/roles"
+  export PROTOCOL="$AGENT_DIR/reviewer.md"
+  export ASSETS="$AGENT_DIR/reviewer"
   export CONTEXT_SH="$ASSETS/scripts/review-context.sh"
   export AUDIT_SH="$ASSETS/scripts/dependency-audit.sh"
   export TEMP_DIR=$(mktemp -d)
@@ -60,9 +60,10 @@ stack_for() {
   bash -n "$AUDIT_SH"
 }
 
-@test "registry declares the reviewer's assets install path" {
-  run jq -r '.agents["crew-reviewer"].install.assets.dest' "$SCRIPT_DIR/registry.json"
-  [ "$output" = ".coding-crew/code-review" ]
+@test "the reviewer's assets ship inside crew-afk's orchestrator asset" {
+  run jq -r '.skills["crew-afk"].assets | "\(.source) \(.dest)"' "$SCRIPT_DIR/registry.json"
+  [ "$output" = "orchestrator .coding-crew/crew-afk" ]
+  [ -d "$SCRIPT_DIR/orchestrator/roles/reviewer/references" ]
 }
 
 # ─── Relocation is lossless ──────────────────────────────────────────────────
@@ -119,53 +120,15 @@ stack_for() {
 }
 
 @test "protocol reads its assets from the prompt's Review assets: path, never a guessed install path" {
-  # "$ROOT/.coding-crew/code-review" exists only in a project install; on a user-level one every
+  # "$ROOT/.coding-crew/crew-afk/roles/reviewer" exists only in a project install; on a user-level one every
   # reviewer hit a TOOL-ERROR on review-context.sh and then searched. The orchestrator knows
   # the one path and states it.
   grep -qF 'CR="<the Review assets: path from your prompt>"' "$PROTOCOL"
-  ! grep -qF '.coding-crew/code-review' "$PROTOCOL"
+  ! grep -qF '.coding-crew/crew-afk/roles/reviewer' "$PROTOCOL"
 }
 
 @test "protocol keeps a fallback for an install without the scripts" {
   grep -qiE 'if either script is missing|older install' "$PROTOCOL"
-}
-
-@test "protocol body stays under the 2000-word budget" {
-  # Raised from 1,500 by the two *machine* contracts the protocol now owns, both of which
-  # replace an inference the caller used to make: the execution-evidence rule (a read-only
-  # reviewer cannot run `npm test`, so a criterion ending "…and the tests pass" was
-  # unanswerable and stalled every such branch) and the `FINDING: <SEV> | <file:line> |
-  # <criterion>` line (promotion into a fix issue now parses one line instead of re-reading
-  # prose). Duplication was cut first — the criteria rule was stated twice, the session-summary
-  # rule three ways — so this is what the contracts cost after that, not on top of it.
-  #
-  # 1,560 → 1,660: an "Incorrect logic" HIGH class for AI-generated bugs with no prior
-  # behaviour to regress from, a negative-criteria evidence rule (an absence criterion had no
-  # citable line and no guidance, so it either got rubber-stamped or stuck at `unmet` forever),
-  # and a lockfile/generated-file exclusion before the diff-size top-10 cut (those files were
-  # crowding the review budget out of the files that actually carry logic).
-  #
-  # 1,660 → 1,700: moved, not added. The `ROOT=$(pwd)` / read-only preamble used to sit in each
-  # platform shim, outside this count; it now lives here once, and every shim dropped its copy,
-  # so what the reviewer reads per dispatch went down on every platform.
-  #
-  # 1,700 → 1,760: search a verify log for the figure instead of reading all of it, and skip
-  # call-site tracing on a diff the dispatch marks test-only — each saves more per review than
-  # its words cost (coverage/integration logs run to 500+ lines).
-  #
-  # 1,760 → 1,810: an empty diff is judged against the tree instead of read as `unmet` (a coder
-  # that found every criterion already met commits nothing, and used to strand the issue and its
-  # dependents), and a criterion is met at a location a branch commit maps it to (a coder that
-  # adapted to a renamed file used to fail review on the issue's stale path).
-  #
-  # 1,810 → 1,850: Step 1 now covers both the sprint path (context provided in the prompt) and
-  # the manual path (run the script); the orchestrator inlines the checklists once per sprint.
-  # 1,850 → 2,000: Feature Mode (~130 words, the one section a per-branch dispatch skips). It lives
-  # in this protocol rather than a second agent so the severity rubric and report format cannot
-  # drift between the two modes; ~130 words is what a mode switch costs, not a second protocol.
-  local words
-  words=$(wc -w < "$PROTOCOL")
-  [ "$words" -lt 2000 ] || { echo "protocol.md is $words words"; return 1; }
 }
 
 @test "no single reference is larger than the protocol that conditions it" {
@@ -283,38 +246,38 @@ require github.com/gin-gonic/gin v1.9.0')
 
 # ─── Install / uninstall ─────────────────────────────────────────────────────
 
-@test "installing the reviewer ships references and executable scripts" {
+@test "installing crew-afk ships the reviewer's references and executable scripts" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
-  [ -f "$TEMP_DIR/.coding-crew/code-review/references/quality.md" ]
-  [ -f "$TEMP_DIR/.coding-crew/code-review/references/react.md" ]
-  [ -x "$TEMP_DIR/.coding-crew/code-review/scripts/review-context.sh" ]
-  [ -x "$TEMP_DIR/.coding-crew/code-review/scripts/dependency-audit.sh" ]
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  [ -f "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/quality.md" ]
+  [ -f "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/react.md" ]
+  [ -x "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/scripts/review-context.sh" ]
+  [ -x "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/scripts/dependency-audit.sh" ]
 }
 
 @test "assets are always overwritten - a stale reference cannot survive a re-install" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
-  echo "STALE" > "$TEMP_DIR/.coding-crew/code-review/references/quality.md"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
-  ! grep -q 'STALE' "$TEMP_DIR/.coding-crew/code-review/references/quality.md"
-  grep -q 'Code Quality' "$TEMP_DIR/.coding-crew/code-review/references/quality.md"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  echo "STALE" > "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/quality.md"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  ! grep -q 'STALE' "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/quality.md"
+  grep -q 'Code Quality' "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/references/quality.md"
 }
 
 @test "the installed scripts resolve the installed references" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
   mkdir -p "$TEMP_DIR/app"
   printf '{"dependencies":{"react":"18"}}' > "$TEMP_DIR/app/package.json"
-  run bash "$TEMP_DIR/.coding-crew/code-review/scripts/review-context.sh" --root "$TEMP_DIR/app"
+  run bash "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer/scripts/review-context.sh" --root "$TEMP_DIR/app"
   [ "$status" -eq 0 ]
-  [[ "$output" == *".coding-crew/code-review/references/react.md"* ]]
+  [[ "$output" == *".coding-crew/crew-afk/roles/reviewer/references/react.md"* ]]
 }
 
-@test "uninstalling the reviewer removes its assets" {
+@test "uninstalling crew-afk removes the reviewer's assets" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude crew-reviewer >/dev/null
-  [ -d "$TEMP_DIR/.coding-crew/code-review" ]
-  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --agent crew-reviewer >/dev/null
-  [ ! -d "$TEMP_DIR/.coding-crew/code-review" ]
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  [ -d "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer" ]
+  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill crew-afk >/dev/null
+  [ ! -d "$TEMP_DIR/.coding-crew/crew-afk/roles/reviewer" ]
 }

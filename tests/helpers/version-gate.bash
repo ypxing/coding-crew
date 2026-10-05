@@ -9,8 +9,9 @@ _shipped_paths() {
   assets_source=$(jq -r --arg s "$section" --arg n "$name" '
     .[$s][$n] as $e
     | ($e.assets.source // empty),
-      (if ($e.install | type) == "object" then ($e.install.assets.source // empty) else empty end)
-  ' "$cur_file" | grep -v '^$' | head -1)
+      (if ($e.install | type) == "object" then ($e.install.assets.source // empty) else empty end),
+      (($e["more-assets"] // [])[] | .source)
+  ' "$cur_file" | grep -v '^$')
   [ -n "$source_dir" ] && [ "$section" = "skills" ] && echo "skills/$source_dir"
   [ -n "$source_dir" ] && [ "$section" = "agents" ] && echo "agents/$source_dir"
   [ -n "$assets_source" ] && echo "$assets_source"
@@ -54,6 +55,6 @@ version_gate_failures() {
       if [ "$branch_v" = "$main_v" ] || [ "$top" != "$branch_v" ]; then
         echo "  $section.$name changed ($reason) but branch version $branch_v is not above origin/main's $main_v"
       fi
-    done < <(jq -r --arg s "$section" '.[$s] | keys[]' "$branch")
+    done < <(jq -r --arg s "$section" '.[$s] // {} | keys[]' "$branch")
   done
 }

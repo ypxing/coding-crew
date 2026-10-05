@@ -69,6 +69,12 @@ May include:
   rather than reinvent — the exploration this skill already does once, so each issue's implementer
   does not have to re-grep for it
 
+For each decision that changes existing behaviour, record what relies on the thing it changes, as
+facts with `path:line`: its callers, what it calls, the state it reads or writes, and state older
+versions left behind (saved files, records, config an earlier release wrote). How you find them is
+up to you; the implementer and the reviewer read these instead of rediscovering them. A claim about
+existing behaviour without a `path:line` is not a fact: cite it or leave it out.
+
 Module design: prefer deep modules (a small interface over substantial behaviour), give each module
 one owner, and state the dependency direction (which module depends on which, never the reverse).
 

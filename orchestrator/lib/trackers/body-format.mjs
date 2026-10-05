@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /**
  * body-format.mjs — the backend-agnostic markdown-body helpers.
  *
@@ -8,16 +10,30 @@
  * (no behavior change) rather than duplicated per backend.
  */
 
+/** The code fence open after `line`, given the one open before it: "" when none (``` / ~~~, closed by the same mark). */
+function fenceAfter(fence, line) {
+  if (fence) {
+    const c = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(line);
+    return c && c[1][0] === fence[0] && c[1].length >= fence.length ? "" : fence;
+  }
+  const m = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+  return m ? m[1] : "";
+}
+
 /**
  * Extract one `## <heading>` section's body. Stops at the next heading of the
- * same or higher level, so a `### Sub` inside the section is kept.
+ * same or higher level, so a `### Sub` inside the section is kept. Lines inside a
+ * ``` / ~~~ fence are never headings.
  */
 export function sectionBody(text, heading) {
   const lines = text.split("\n");
   const want = heading.trim().toLowerCase();
   let start = -1;
   let level = 0;
+  let fence = "";
   for (let i = 0; i < lines.length; i++) {
+    fence = fenceAfter(fence, lines[i]);
+    if (fence || /^ {0,3}(`{3,}|~{3,})/.test(lines[i])) continue;
     const m = /^(#{1,6})\s+(.*?)\s*$/.exec(lines[i]);
     if (m && m[2].toLowerCase() === want) {
       start = i + 1;
@@ -27,8 +43,11 @@ export function sectionBody(text, heading) {
   }
   if (start === -1) return null;
   const body = [];
+  fence = "";
   for (let i = start; i < lines.length; i++) {
-    const m = /^(#{1,6})\s+/.exec(lines[i]);
+    const inFence = fence !== "";
+    fence = fenceAfter(fence, lines[i]);
+    const m = !inFence && !fence ? /^(#{1,6})\s+/.exec(lines[i]) : null;
     if (m && m[1].length <= level) break;
     body.push(lines[i]);
   }
@@ -44,7 +63,10 @@ export function spliceSection(text, heading, body) {
   const want = heading.trim().toLowerCase();
   let start = -1;
   let level = 2;
+  let fence = "";
   for (let i = 0; i < lines.length; i++) {
+    fence = fenceAfter(fence, lines[i]);
+    if (fence || /^ {0,3}(`{3,}|~{3,})/.test(lines[i])) continue;
     const m = /^(#{1,6})\s+(.*?)\s*$/.exec(lines[i]);
     if (m && m[2].toLowerCase() === want) {
       start = i;
@@ -58,8 +80,11 @@ export function spliceSection(text, heading, body) {
     return `${text}${sep}${block}\n`;
   }
   let end = lines.length;
+  fence = "";
   for (let i = start + 1; i < lines.length; i++) {
-    const m = /^(#{1,6})\s+/.exec(lines[i]);
+    const inFence = fence !== "";
+    fence = fenceAfter(fence, lines[i]);
+    const m = !inFence && !fence ? /^(#{1,6})\s+/.exec(lines[i]) : null;
     if (m && m[1].length <= level) {
       end = i;
       break;
@@ -133,4 +158,16 @@ export function uncheckedCriteria(text) {
  */
 export function extractBlockedByNumbers(section) {
   return [...section.matchAll(/\bissue[\s-]*#?0*([0-9]+)\b/gi)].map((m) => m[1]);
+}
+
+/**
+ * A hash of what the coder works from — `## What to build` and `## Acceptance criteria` —
+ * with checkbox marks normalised. Everything crew-afk writes itself (the `Status:` line,
+ * `## Progress` / `## Blocked`, ticked boxes) is outside it, so only a human edit changes it.
+ */
+export function issueFingerprint(text) {
+  const parts = ["What to build", "Acceptance criteria"].map((h) =>
+    (sectionBody(String(text ?? ""), h) ?? "").replace(/^(\s*[-*]\s*)\[[xX ]\]/gm, "$1[ ]").trim(),
+  );
+  return createHash("sha256").update(parts.join("\n\u0000\n")).digest("hex");
 }

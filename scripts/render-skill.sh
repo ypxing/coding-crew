@@ -10,13 +10,11 @@
 #   3. skills/<source-dir>/SKILL.md                      — shared fallback
 #
 # Expansion inside the body:
-#   {{FRAGMENT:<key>}}  → skills/<source-dir>/fragments/<platform>/<key>.md (whole line),
-#                          falling back to skills/_shared/fragments/<platform>/<key>.md when
-#                          no skill-local fragment of that key exists — one canonical source
-#                          for a fragment several skills share, instead of one copy each; then
-#                          to skills/_shared/fragments/common/<key>.md, the one file of a fragment
-#                          that reads the same on every platform (install.sh expands the same
-#                          line inside an agent's protocol.md, so a skill and an agent can share it).
+#   {{FRAGMENT:<key>}}  → skills/_shared/fragments/<key>.md (whole line) — one source for text
+#                          several skills share, instead of one copy each (orchestrator/lib/adapters/
+#                          render.mjs expands the same line in a role's protocol, so a skill and a
+#                          role can share it). Fragments read the same on every platform; use
+#                          {{PLATFORM}} in the body for anything that differs.
 #   {{PLATFORM}}        → the platform name
 #
 # A missing fragment, or any placeholder left unexpanded, is a hard error: a body
@@ -76,13 +74,9 @@ render() {
   while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" =~ ^[[:space:]]*\{\{FRAGMENT:([A-Za-z0-9_-]+)\}\}[[:space:]]*$ ]]; then
       key="${BASH_REMATCH[1]}"
-      fragment="$SKILL_SRC/fragments/$PLATFORM/$key.md"
-      [[ -f "$fragment" ]] || fragment="$SCRIPT_DIR/skills/_shared/fragments/$PLATFORM/$key.md"
-      [[ -f "$fragment" ]] || fragment="$SCRIPT_DIR/skills/_shared/fragments/common/$key.md"
+      fragment="$SCRIPT_DIR/skills/_shared/fragments/$key.md"
       if [[ ! -f "$fragment" ]]; then
-        echo "Error: $SKILL/$BODY needs fragment '$key' for platform '$PLATFORM'," \
-             "but neither skills/$SOURCE_DIR/fragments/$PLATFORM/$key.md nor" \
-             "skills/_shared/fragments/$PLATFORM/$key.md (or .../common/$key.md) exists" >&2
+        echo "Error: $SKILL/$BODY needs fragment '$key', but skills/_shared/fragments/$key.md does not exist" >&2
         exit 1
       fi
       # Fragments are stored with a trailing newline; strip it so the body's own

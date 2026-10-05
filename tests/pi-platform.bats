@@ -25,23 +25,11 @@ teardown() {
   [[ "$output" == *"invalid platform"* ]]
 }
 
-@test "pi crew-afk installs both agent-deps as pi agent files" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
-
-  [ -f "$TEMP_DIR/.pi/agents/crew-coder.md" ]
-  [ -f "$TEMP_DIR/.pi/agents/crew-reviewer.md" ]
-  [ -f "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md" ]
-
-  # protocol placeholder must be expanded
-  ! grep -q '{{PROTOCOL}}' "$TEMP_DIR/.pi/agents/crew-reviewer.md"
-}
-
 @test "pi crew-afk SKILL.md is the pi variant, not the claude or copilot one" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
 
-  grep -q "AFK Issue Sprint — pi" "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md"
+  grep -q "run --platform pi " "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md"
   # no unselected platform variants left behind
   [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/pi.SKILL.md" ]
   [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/copilot.SKILL.md" ]
@@ -51,79 +39,19 @@ teardown() {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
 
-  grep -q "AFK Issue Sprint — Claude Code" "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md"
+  grep -q "run --platform claude " "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md"
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/pi.SKILL.md" ]
 }
 
-@test "platform=all installs pi alongside claude and copilot" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh all --skill crew-afk
-
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.github/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.pi/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.pi/agents/crew-coder.md" ]
-}
-
-@test "pi agent definitions declare pi built-in tool names" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
-
-  run grep -m1 '^tools:' "$TEMP_DIR/.pi/agents/crew-coder.md"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"read"* ]]
-  [[ "$output" == *"bash"* ]]
-  # Claude/Copilot-only tool names must not leak into the pi definition
-  [[ "$output" != *"Agent"* ]]
-  [[ "$output" != *"execute"* ]]
-}
-
-@test "crew-afk ships the pi dispatch script, executable" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
-
-  [ -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh" ]
-  run bash -n "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh"
-  [ "$status" -eq 0 ]
-}
-
-@test "dispatch-agent.sh requires its arguments" {
-  cd "$SCRIPT_DIR"
-  run bash skills/crew-afk/scripts/dispatch-agent.sh --agent crew-coder
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"--dir is required"* ]]
-}
-
-@test "dispatch-agent.sh reports a missing agent definition" {
-  cd "$SCRIPT_DIR"
-  mkdir -p "$TEMP_DIR/wt"
-  echo "task" > "$TEMP_DIR/prompt.md"
-  run env HOME="$TEMP_DIR" MAIN_ROOT="$TEMP_DIR" \
-    bash skills/crew-afk/scripts/dispatch-agent.sh \
-      --agent does-not-exist --dir "$TEMP_DIR/wt" --prompt-file "$TEMP_DIR/prompt.md"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"agent definition not found"* || "$output" == *"pi CLI not found"* ]]
-}
-
-@test "user-level pi install uses ~/.pi/agent/ paths" {
-  cd "$SCRIPT_DIR"
-  # bootstrap installs with TARGET_REPO=$HOME; pi only scans ~/.pi/agent/skills there
-  run env HOME="$TEMP_DIR" TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
-  [ "$status" -eq 0 ]
-  [ -f "$TEMP_DIR/.pi/agent/skills/crew-afk/SKILL.md" ]
-  [ -f "$TEMP_DIR/.pi/agent/agents/crew-coder.md" ]
-  [ ! -d "$TEMP_DIR/.pi/skills" ]
-}
-
-@test "uninstall removes pi-installed skills and agents" {
+@test "uninstall removes the pi-installed crew-afk" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
   [ -d "$TEMP_DIR/.pi/skills/crew-afk" ]
 
   TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill crew-afk
-  TARGET_REPO="$TEMP_DIR" ./uninstall.sh --agent crew-coder
 
   [ ! -d "$TEMP_DIR/.pi/skills/crew-afk" ]
+  [ ! -d "$TEMP_DIR/.coding-crew/crew-afk" ]
   [ ! -f "$TEMP_DIR/.pi/agents/crew-coder.md" ]
 }
 
@@ -133,10 +61,12 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "pi install excludes codex's dispatch-codex-agent.sh" {
+@test "pi install ships no bash dispatcher, and an update prunes one an older install left" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
+  [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh" ]
+  touch "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh"
 
-  [ -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh" ]
-  [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
+  TARGET_REPO="$TEMP_DIR" ./install.sh pi --skill crew-afk
+  [ ! -f "$TEMP_DIR/.pi/skills/crew-afk/scripts/dispatch-agent.sh" ]
 }

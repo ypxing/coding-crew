@@ -250,7 +250,7 @@ export class Sprint {
 
   /**
    * Read-only peek at the same in-memory counter, before spending another attempt — what
-   * claimNext() (loop.mjs) uses to enforce `--max-rounds` per issue: every issue may reach
+   * claimNext() (loop.mjs) uses to enforce the per-issue attempt cap (CREW_MAX_ROUNDS) per issue: every issue may reach
    * that many attempts, the same way a round-batch sprint gave every issue one attempt per
    * round. Checking a global dispatch count instead would let the first issue claimed
    * exhaust the whole budget while its siblings never ran even once.
@@ -314,18 +314,26 @@ export class Sprint {
   complete(slug, branch) {
     return this.state(["complete", "--slug", slug, "--branch", branch]);
   }
-  retain(slug, branch, reason) {
-    return this.state(["retain", "--slug", slug, "--branch", branch, "--reason", reason]);
+  retain(slug, branch, reason, fingerprint = null) {
+    const args = ["retain", "--slug", slug, "--branch", branch, "--reason", reason];
+    if (fingerprint) args.push("--fingerprint", fingerprint);
+    return this.state(args);
   }
-  blocked(slug, branch, reason, number = null) {
+  blocked(slug, branch, reason, number = null, fingerprint = null) {
     const args = ["blocked", "--slug", slug];
     if (number != null) args.push("--number", String(number));
     if (branch) args.push("--branch", branch);
     if (reason) args.push("--reason", reason);
+    if (fingerprint && branch) args.push("--fingerprint", fingerprint);
     return this.state(args);
   }
   coverageGap(slug, categories) {
     return this.state(["coverage-gap", "--slug", slug, "--categories", categories.join(",")]);
+  }
+
+  /** A coder-side departure from the procedure (a full-suite run): named in the summary, never a failure. */
+  deviation(slug, reason) {
+    return this.state(["deviation", "--slug", slug, "--reason", reason]);
   }
 
   /** Drops a slug's recorded gap: the latest verify reported none. */
@@ -392,13 +400,19 @@ export class Sprint {
    * needs another worker pass or only another review attempt.
    */
   retentionReason(slug) {
+    return this.retentionRecord(slug).reason;
+  }
+
+  /** The retention record's `reason` and `fingerprint` (the issue's, when it was retained); each `null` when absent. */
+  retentionRecord(slug) {
     const r = this.effects.exec(
       "bash",
       [this.effects.script("state.sh"), "retention", "--slug", slug],
       { env: this.childEnv(), mutating: false },
     );
-    const m = /^reason:\s*(.+)$/m.exec(r.stdout || "");
-    return m ? m[1].trim() : null;
+    const reason = /^reason:\s*(.+)$/m.exec(r.stdout || "");
+    const fingerprint = /^fingerprint:\s*(\S+)$/m.exec(r.stdout || "");
+    return { reason: reason ? reason[1].trim() : null, fingerprint: fingerprint ? fingerprint[1] : null };
   }
 
   trace(marker, text = "") {

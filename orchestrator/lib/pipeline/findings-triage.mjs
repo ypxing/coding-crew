@@ -17,20 +17,20 @@ import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { findingsTriagePrompt } from "../prompts.mjs";
-import { annotateFindings, applyFindingVerdicts, findingsAtOrAbove, parseFindingsTriage, severityNames } from "../report.mjs";
-import { limitExceeded, readSidecar, roleBinding } from "./shared.mjs";
+import { annotateFindings, applyFindingVerdicts, findingsAtOrAbove, foldDuplicates, parseFindingsTriage, promoteSeverities, severityNames } from "../report.mjs";
+import { limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /** The severity rule a failed triage falls back to. */
 export const FALLBACK_LEVEL = "high";
 
 /**
  * What `defer --severities` records for a promotion made under `selected` (selectPromotable's
- * result): the verdict `actionable`, or — triage having failed — the severities of the fallback.
- * Null for a severity level, where `defer` already names its own.
+ * result): the level's own severities, the verdict `actionable`, or — triage having failed — the
+ * severities of the fallback.
  */
 export function promotedAs(fixFindings, selected) {
-  if (fixFindings !== "actionable") return null;
-  return selected.fallback ? severityNames(FALLBACK_LEVEL) : "actionable";
+  if (fixFindings === "actionable" && selected.fallback) return severityNames(FALLBACK_LEVEL);
+  return promoteSeverities(fixFindings);
 }
 
 /**
@@ -42,6 +42,7 @@ export function promotedAs(fixFindings, selected) {
  * @param {string} args.label       what is being triaged, for logs and the summary ("alpha", "feature")
  * @param {string} args.scope       one prompt line saying where the findings came from
  * @param {string} args.ref         the branch holding the code under review
+ * @param {string} args.change      the git command that shows the reviewed change
  * @param {string} args.dir         where this review's dispatch files live
  * @param {string} args.dispatchSlug  the dispatch's slug (and its fake-dispatch fixture name)
  * @param {number} args.round
@@ -52,14 +53,14 @@ export function promotedAs(fixFindings, selected) {
  *   `rule` names what decided: "actionable", or the severity level; `findings` carry
  *   `verdict` and `rationale` when triage judged them.
  */
-export async function selectPromotable(ctx, { findings, label, scope, ref, dir, dispatchSlug, round, ledgerSlug, reportFile, written }) {
+export async function selectPromotable(ctx, { findings, label, scope, ref, change, dir, dispatchSlug, round, ledgerSlug, reportFile, written }) {
   const { sprint } = ctx;
   const level = sprint.fixFindings;
   if (level !== "actionable") return { promotable: findingsAtOrAbove(findings, level), findings, rule: level };
   // Nothing to judge: no dispatch, and no reason to call it a fallback.
   if (!findings.length) return { promotable: [], findings, rule: "actionable" };
 
-  const triage = await runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug, round, ledgerSlug });
+  const triage = await runFindingsTriage(ctx, { findings, scope, ref, change, dir, dispatchSlug, round, ledgerSlug });
   if (triage.failed) {
     sprint.triageFallbacks.push({ scope: label, reason: triage.failed });
     ctx.log(`FINDINGS-TRIAGE: ${label}: no usable verdict — ${triage.failed}; the ${FALLBACK_LEVEL} rule applies`, "warn");
@@ -69,12 +70,12 @@ export async function selectPromotable(ctx, { findings, label, scope, ref, dir, 
   const judged = applyFindingVerdicts(findings, triage.verdicts);
   writeVerdicts(reportFile, written, annotateFindings(written, judged));
   const count = (v) => judged.filter((f) => f.verdict === v).length;
-  ctx.log(`FINDINGS-TRIAGE: ${label}: ${count("actionable")} actionable, ${count("debatable")} debatable, ${count("dismiss")} dismissed`);
-  return { promotable: judged.filter((f) => f.verdict === "actionable"), findings: judged, rule: "actionable" };
+  ctx.log(`FINDINGS-TRIAGE: ${label}: ${count("actionable")} actionable, ${count("debatable")} debatable`);
+  return { promotable: foldDuplicates(judged, judged.filter((f) => f.verdict === "actionable")), findings: judged, rule: "actionable" };
 }
 
 /** Dispatched to `crew-triage` in findings mode. Returns `{verdicts}` or `{failed: reason}`. */
-async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug, round, ledgerSlug }) {
+async function runFindingsTriage(ctx, { findings, scope, ref, change, dir, dispatchSlug, round, ledgerSlug }) {
   const { sprint, effects, options } = ctx;
   mkdirSync(dir, { recursive: true });
   const promptFile = join(dir, "findings-triage-prompt.md");
@@ -82,11 +83,11 @@ async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug,
   const sidecarFile = join(dir, "findings-triage.report.json");
   // A stale sidecar at this fixed path must not be read back as this dispatch's verdicts.
   rmSync(sidecarFile, { force: true });
-  writeFileSync(promptFile, findingsTriagePrompt({ scope, ref, featureBranch: sprint.featureBranch, findings, reportPath: sidecarFile }));
+  writeFileSync(promptFile, findingsTriagePrompt({ scope, ref, change, findings, reportPath: sidecarFile }));
 
   const triage = roleBinding(ctx, "triage");
   ctx.log(`[STEP] slug=${dispatchSlug} round=${round} step=dispatch-findings-triage model=${triage.model ?? "inherit"} runtime=${triage.runtime}`);
-  const result = await dispatch(
+  const guarded = await readOnlyDispatch(ctx, { label: `findings-triage ${dispatchSlug}`, ...(ref === sprint.featureBranch ? {} : { branches: [ref] }) }, () => dispatch(
     effects,
     triage.runtime,
     {
@@ -98,7 +99,6 @@ async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug,
       mainRoot: effects.mainRoot,
       logFile: sprint.traceLog,
       featureSlug: sprint.featureSlug,
-      scriptsDir: triage.scriptsDir,
       slug: dispatchSlug,
       round,
       reportPath: sidecarFile,
@@ -108,8 +108,10 @@ async function runFindingsTriage(ctx, { findings, scope, ref, dir, dispatchSlug,
       timeoutMs: options.timeoutMs.triage,
       onTrace: (line) => ctx.heartbeat(`slug=${dispatchSlug} round=${round} ${line}`),
     },
-  );
-  sprint.recordDispatchCost(result, { slug: ledgerSlug, role: "triage", attempt: round });
+  ));
+  const result = guarded.result;
+  if (result) sprint.recordDispatchCost(result, { slug: ledgerSlug, role: "triage", attempt: round });
+  if (guarded.violation) return { failed: guarded.violation };
 
   const capped = limitExceeded(result, "triage", triage);
   if (capped) return { failed: capped };

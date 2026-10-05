@@ -68,6 +68,32 @@ lint_clean() { # extra args
   [[ "$output" == *"ERROR "*"02-cli.md: "*"Issue #77"* ]]
 }
 
+@test "Blocked by bare #n and 'Issue #a, #b' resolve like github.mjs's blockerNumbers" {
+  printf '\n- #1\n' >> "$W/issues/02-cli.md"
+  lint_clean
+  [[ "$output" != *"ERROR "*"02-cli.md"* ]]
+  printf '\n- Issue #1, #77\n' >> "$W/issues/02-cli.md"
+  lint_clean
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ERROR "*"02-cli.md: "*"Issue #77"* ]]
+}
+
+@test "Blocked by 'Issue #a, #b' contributes both edges to the cycle check" {
+  # 04 blocks on nothing, so only the second ref (#3 -> 02 -> 01) closes the cycle.
+  cp "$W/issues/01-store.md" "$W/issues/04-extra.md"
+  sed -i.bak '/^## Blocked by/,$d' "$W/issues/01-store.md"
+  printf '## Blocked by\n\n- Issue #4, #3\n' >> "$W/issues/01-store.md"
+  lint_clean
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"ERROR "*"cycle"* ]]
+}
+
+@test "Blocked by PR #n / pull request #n is prose, not a ref, like github.mjs's blockerNumbers" {
+  printf '\n- 01-store.md (needs the parser from PR #40, pull request #41, pull #42)\n' >> "$W/issues/02-cli.md"
+  lint_clean
+  [[ "$output" != *"ERROR "*"02-cli.md"* ]]
+}
+
 @test "Blocked by filename containing issue-<n> is not also parsed as an Issue #<n> reference" {
   cp "$W/issues/01-store.md" "$W/issues/fix-issue-3-thing.md"
   printf '\n- fix-issue-3-thing.md\n' >> "$W/issues/02-cli.md"
@@ -115,7 +141,7 @@ J
   lint_clean --prd "$W/PRD.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"WARN "*"PRD.md: "*D9* ]]
-  [[ "$output" != *D1* ]]
+  [[ "${output//$W/}" != *D1* ]]
 }
 
 @test "WARN: blocked-on issue without Exposes, no What to build, no Implements" {
@@ -133,7 +159,7 @@ J
 @test "coverage check skipped silently without --prd, and for a PRD with no IDs" {
   sed -i.bak '/^## Implements$/,/^## Acceptance criteria$/{/^## Acceptance criteria$/!d;}' "$W/issues/01-store.md"
   lint_clean
-  [[ "$output" != *D1* ]]
+  [[ "${output//$W/}" != *D1* ]]
   printf '# PRD\n\nNo ids here, D1 mentioned inline.\n' > "$W/bare.md"
   lint_clean --prd "$W/bare.md"
   [[ "$output" != *bare.md* ]]

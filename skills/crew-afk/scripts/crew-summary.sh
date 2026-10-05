@@ -5,7 +5,7 @@ set -uo pipefail
 # sprint-state.json and the review reports.
 #
 # Usage:
-#   crew-summary.sh [--feature-slug <slug>] [--stalled] [--no-reminder] [--posted-to <pr-url>]
+#   crew-summary.sh [--feature-slug <slug>] [--stalled] [--capped] [--no-reminder] [--posted-to <pr-url>] [--promoted <severities>]
 #
 # The summary used to be ~430 words of print template that the orchestrator filled in
 # from lists it had been carrying in its context since round 1. That is the one part of
@@ -20,15 +20,19 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 STALLED=0
+CAPPED=0
 REMINDER=1
 POSTED_TO=""
+PROMOTE_POLICY=""   # what the sprint promoted, resolved by the orchestrator (report.mjs)
 FEATURE_SLUG_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --feature-slug) FEATURE_SLUG_ARG="${2:-}"; shift 2 ;;
     --stalled) STALLED=1; shift ;;
+    --capped) CAPPED=1; shift ;;
     --no-reminder) REMINDER=0; shift ;;
     --posted-to) POSTED_TO="${2:-}"; shift 2 ;;
+    --promoted) PROMOTE_POLICY="${2:-}"; shift 2 ;;
     *) echo "crew-summary.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -136,7 +140,8 @@ echo "Model:  $(state get model)"
 #
 # The totals span every run of this feature (state persists across re-runs); `.dispatches`
 # entries tagged with `.current_run` are this run alone, so both are printed, and this run
-# is split by role and by first attempt vs retry — where a stalled feature's money goes.
+# is split by role and by first attempt vs retry — where a stalled feature's money goes. A
+# conflict-only dispatch (role `conflict`) is coder work, so it counts under coder.
 #
 # A dispatch killed on timeout has no cost to add (state.sh dispatch-cost --cost-unknown); it is
 # counted after the figures rather than silently priced at $0.
@@ -155,7 +160,7 @@ if awk -v c="$TOTAL_COST_USD" 'BEGIN { exit !(c > 0) }' || [ "$UNKNOWN_COST_N" -
       def by(p): ($d | map(select(p) | .cost_usd // 0) | add // 0);
     if ($d | length) == 0 then empty else
       [($d | length), sum(.cost_usd), sum(.duration_ms), sum(.turns),
-       by(.role == "coder"), by(.role == "reviewer"), by(.role == "triage"),
+       by(.role == "coder" or .role == "conflict"), by(.role == "reviewer"), by(.role == "triage"),
        by((.attempt // 0) <= 1), by((.attempt // 0) > 1)] | @tsv end' "$SF" 2>/dev/null || true)
   if [ -n "$RUN_ROW" ]; then
     printf '%s\t%s\n' "$RUN_ROW" "$TOTAL_COST_USD" | awk -F'\t' -v note="$UNKNOWN_NOTE" '{
@@ -176,7 +181,10 @@ if [ -n "$UNBLOCK" ]; then
   echo "Labelled blocked — later runs skip these until a human puts them back in the queue:"
   printf '%s\n' "$UNBLOCK"
 fi
-[ "$STALLED" -eq 1 ] && echo "STALLED: resolve blockers and re-run (/crew-afk)"
+# --capped: the wall-clock cap, not a blocker, is what left work undone.
+if [ "$CAPPED" -eq 1 ]; then echo "CAPPED: the wall-clock cap stopped new claims — re-run (/crew-afk) to continue"
+elif [ "$STALLED" -eq 1 ]; then echo "STALLED: resolve blockers and re-run (/crew-afk)"
+fi
 
 echo ""
 echo "## Code Review"
@@ -199,6 +207,15 @@ if [ -n "$GAPS" ]; then
   echo "## Coverage Gaps"
   echo "Checks with no discoverable command — these did not pass, they never ran."
   printf '%s\n' "$GAPS"
+fi
+
+# --- Deviations ---------------------------------------------------------------
+DEVIATIONS=$(jq -r '(.deviations // {}) | to_entries[] | .key as $k | .value[] | "- \($k): \(.)"' "$SF" 2>/dev/null || true)
+if [ -n "$DEVIATIONS" ]; then
+  echo ""
+  echo "## Deviations"
+  echo "Coders that ran the full test suite themselves — logged, not failed; the verify gate owns it."
+  printf '%s\n' "$DEVIATIONS"
 fi
 
 # --- Retained Branches --------------------------------------------------------
@@ -324,7 +341,6 @@ fi
 # branches. Everything else — Debatable and Dismissed findings, what a severity level leaves out,
 # and any finding raised against a Phase 2 fix branch — still needs a human.
 REMIND=$(cd "$MAIN_ROOT" && bash "$SCRIPT_DIR/promote-findings.sh" remind --feature-slug "$FEATURE_SLUG" 2>/dev/null || true)
-PROMOTE_POLICY=$(bash "$SCRIPT_DIR/promote-findings.sh" policy 2>/dev/null | sed -n 's/^promote: //p')
 
 OPEN_LINE=$(printf '%s\n' "$REMIND" | grep '^FINDINGS: open=' || true)
 REPORTS=$(printf '%s\n' "$REMIND" | sed -n 's/^report: //p' | paste -sd ', ' - 2>/dev/null || true)

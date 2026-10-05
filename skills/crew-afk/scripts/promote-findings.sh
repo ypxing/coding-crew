@@ -10,7 +10,7 @@ set -euo pipefail
 # This script owns only the deterministic parts, so all four platform variants behave
 # identically:
 #
-#   policy  — which severities this sprint promotes (CRITICAL by default)
+#   (the severity list comes from the orchestrator as --severities; no level table here)
 #   guard   — may findings from this issue's branch be promoted, or is it already a fix issue?
 #   defer   — write a parked fix issue (Status: deferred-findings) + annotate the review report
 #   defer-gaps — the same for the PRD audit's ✗ missing requirements: one parked issue
@@ -96,45 +96,21 @@ DEFERRED_STATUS="deferred-findings"
 READY_STATUS="ready-for-agent"
 
 # --- promotion threshold -----------------------------------------------------
-# What is fixed automatically: CREW_FIX_FINDINGS (config.json's afk.fixFindings, recorded in
-# sprint.env by session-init.sh), default actionable — every finding crew-triage judges Actionable,
-# whatever its severity. critical | high | medium name the lowest severity instead. Each promoted
-# branch costs a full coder + verify + review + merge cycle, which is why a severity level below
-# HIGH is opt-in. Nothing unpromoted is dropped: `remind` counts and names it for
-# /crew-address-findings. CREW_PROMOTE is the old name (critical | critical-high).
-fix_findings_level() {
-  local level="${CREW_FIX_FINDINGS:-}"
-  if [ -z "$level" ]; then
-    case "${CREW_PROMOTE:-}" in
-      "") level="actionable" ;;
-      critical) level="critical" ;;
-      *) level="high" ;;
-    esac
-  fi
-  echo "$level"
-}
-
-# What `defer` records as promoted: the severities, or `actionable` — the verdict triage wrote
-# beside each finding. The orchestrator passes --severities when triage failed and the high rule
-# applied, so the record always names what really decided.
-promote_severities() {
-  case "$(fix_findings_level)" in
-    actionable) echo "actionable" ;;
-    critical) echo "CRITICAL" ;;
-    medium) echo "CRITICAL, HIGH, MEDIUM" ;;
-    none) echo "" ;;
-    *) echo "CRITICAL, HIGH" ;;
-  esac
+# The orchestrator resolves afk.fixFindings to the severities a sprint promotes
+# (orchestrator/lib/report.mjs) and passes them as --severities: "actionable", or a list such as
+# "CRITICAL, HIGH"; empty means nothing is promoted. This script keeps no level table of its own.
+need_severities() {
+  echo "promote-findings.sh $1: missing required argument --severities <list>" >&2
+  exit 2
 }
 
 usage() {
   cat >&2 <<'USAGE'
 Usage:
-  promote-findings.sh policy
-  promote-findings.sh guard --issue <issue-file>
+  promote-findings.sh guard --issue <issue-file> --severities <list>
   promote-findings.sh defer --feature-slug <slug> --branch <branch> --slug <issue-slug>
                             --title <title> --report <review-report> --criteria-file <file>
-                            [--severities CRITICAL,HIGH] [--blocked-by <issue-number>]
+                            --severities <list> [--blocked-by <issue-number>]
   promote-findings.sh defer-gaps --feature-slug <slug> --report <prd-audit-report>
                             --criteria-file <file>
   promote-findings.sh defer-integration --feature-slug <slug> --report <integration-verify-output>
@@ -186,14 +162,16 @@ next_issue_number() {
 # issue's own branch are reported only, never promoted again. That caps the sprint at
 # two phases without any counter or state flag.
 cmd_guard() {
-  local issue=""
+  local issue="" severities="" have_sev=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --issue) issue="${2:-}"; shift 2 ;;
+      --severities) severities="${2:-}"; have_sev=1; shift 2 ;;
       *) usage ;;
     esac
   done
   [ -n "$issue" ] || usage
+  [ "$have_sev" -eq 1 ] || need_severities guard
 
   local body
   if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
@@ -208,6 +186,10 @@ cmd_guard() {
       exit 0
     fi
   else
+    # Promotion follows the close, which moves the file from open/ to done/ beside it.
+    if [ ! -f "$issue" ] && [ -f "$(dirname "$(dirname "$issue")")/done/$(basename "$issue")" ]; then
+      issue="$(dirname "$(dirname "$issue")")/done/$(basename "$issue")"
+    fi
     # A missing file cannot be shown to be a fix issue. Fail closed: no promotion.
     if [ ! -f "$issue" ]; then
       echo "guard: skip — issue file not found: $issue"
@@ -224,22 +206,14 @@ cmd_guard() {
       /^Source:/ { found = 1 }
       END { exit !found }'; then
     echo "guard: skip — source-guarded (this issue was itself promoted from a review)"
-  elif [ -z "$(promote_severities)" ]; then
+  elif [ -z "$severities" ]; then
     echo "guard: skip — fixFindings is none"
   else
     # Eligible names the threshold, not what the review found: the branch is promoted only if
     # a finding at one of these severities (or, under `actionable`, one triage judges Actionable)
     # exists, which the caller decides from the review.
-    echo "guard: eligible — threshold: $(promote_severities)"
+    echo "guard: eligible — threshold: $severities"
   fi
-}
-
-# --- policy ------------------------------------------------------------------
-# One place any caller can ask what this sprint promotes — used by the end-of-sprint reminder
-# so it can state the threshold that left a HIGH finding open.
-cmd_policy() {
-  [ $# -eq 0 ] || usage
-  echo "promote: $(promote_severities)"
 }
 
 # --- defer -------------------------------------------------------------------
@@ -334,20 +308,22 @@ _review_branch_prose() {
 # promotes: each one's full prose block (title, File:, Snippet:, Issue:, Fix:) in a <details>.
 # <severities> is a list such as "CRITICAL, HIGH", or `actionable`, which keeps the blocks whose
 # location the findings triage judged actionable (that verdict sits in the block's json, not its
-# prose). Where the prose has no block to keep, the json's one-line findings are listed instead,
+# prose; a folded duplicate_of target's location lists both spots, each matched on its own). Where the prose has no block to keep, the json's one-line findings are listed instead,
 # so a promoted finding is never absent from the body.
 _review_findings_md() {
   local report="$1" branch="$2" severities="$3" locs="" sevs="" rollup
   rollup="$(review_rollup "$report")"
   if [ "$severities" = "actionable" ]; then
-    locs="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.verdict == "actionable") | .location' <<< "$rollup" 2>/dev/null || true)"
+    locs="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.verdict == "actionable") | .location | split(", ")[]' <<< "$rollup" 2>/dev/null || true)"
   else
     sevs="$(printf '%s' "$severities" | tr -d ' ')"
   fi
 
   local out
-  out="$(_review_branch_prose "$report" "$branch" | awk -v sevs="$sevs" -v locs="$locs" \
+  # locs is one location per line: passed through the environment, since BSD awk rejects a newline in a -v value.
+  out="$(_review_branch_prose "$report" "$branch" | PF_LOCS="$locs" awk -v sevs="$sevs" \
       -v maxb="$FINDINGS_MAX_BYTES" -v maxl="$FINDING_MAX_LINES" '
+    BEGIN { locs = ENVIRON["PF_LOCS"] }
     function flush(   i, n, lines, m, L, ok, title, body, fences, entry) {
       if (blk == "") return
       n = split(blk, lines, "\n")
@@ -471,8 +447,7 @@ _defer_github() {
 }
 
 cmd_defer() {
-  local slug="" branch="" issue_slug="" title="" report="" criteria_file="" severities blocked_by=""
-  severities="$(promote_severities)"
+  local slug="" branch="" issue_slug="" title="" report="" criteria_file="" severities="" blocked_by="" have_sev=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --feature-slug) slug="${2:-}"; shift 2 ;;
@@ -481,13 +456,14 @@ cmd_defer() {
       --title) title="${2:-}"; shift 2 ;;
       --report) report="${2:-}"; shift 2 ;;
       --criteria-file) criteria_file="${2:-}"; shift 2 ;;
-      --severities) severities="${2:-}"; shift 2 ;;
+      --severities) severities="${2:-}"; have_sev=1; shift 2 ;;
       --blocked-by) blocked_by="${2:-}"; shift 2 ;;
       *) usage ;;
     esac
   done
   [ -n "$slug" ] && [ -n "$branch" ] && [ -n "$issue_slug" ] || usage
   [ -n "$title" ] && [ -n "$report" ] && [ -n "$criteria_file" ] || usage
+  [ "$have_sev" -eq 1 ] && [ -n "$severities" ] || need_severities defer
   [ -f "$criteria_file" ] || die "criteria file not found: $criteria_file"
   [ -f "$report" ] || die "review report not found: $report"
   [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to promote)"
@@ -797,7 +773,9 @@ cmd_mark_not_run() {
 # where the severities go). Those are defer's own bash-generated "## Promoted Findings" bullets
 # ("- <branch>: SEV, SEV → <path>"), never the reviewer's free text, so a plain regex capture reads
 # them exactly. Prints a JSON array of {branch, severity, location, criterion, verdict, rationale};
-# verdict and rationale are "" for a finding triage never judged.
+# verdict and rationale are "" for a finding triage never judged. `carried: true` is added to a
+# finding an earlier review of the branch raised and the latest did not repeat. A finding marked
+# `report_only` (a feature review past the promotion cap) is never covered: no fix issue took it.
 open_findings_json() {
   local rollup="$1" promoted
   shift
@@ -812,10 +790,12 @@ open_findings_json() {
   jq -n --argjson rollup "$rollup" --argjson promoted "$promoted" '
     ($promoted | map(.branch as $b | .sevs[] as $s | {(($b + " " + $s)): true}) | add // {}) as $pset
     | [$rollup.branches[] | .branch as $b | .findings[]
-       | select((($pset[$b + " " + .severity] // false)
-                 or ((.verdict // "") == "actionable" and ($pset[$b + " actionable"] // false))) | not)
-       | {branch: $b, severity, location: (.location // ""), criterion: (.criterion // ""),
-          verdict: (.verdict // ""), rationale: (.rationale // "")}]
+       | select((.report_only == true)
+                 or ((($pset[$b + " " + .severity] // false)
+                 or ((.verdict // "") == "actionable" and ($pset[$b + " actionable"] // false))) | not))
+       | {branch: $b, severity, location: (.location // ""), issue: (.issue // ""), criterion: (.criterion // ""),
+          verdict: (.verdict // ""), rationale: (.rationale // "")}
+          + (if .carried == true then {carried: true} else {} end)]
   '
 }
 
@@ -849,7 +829,7 @@ verdict_lines() {
   echo "$heading: $n ($note)"
   jq -r --arg v "$verdict" --arg h "$(printf '%s' "$heading" | tr '[:upper:]' '[:lower:]')" '
     .[] | select(.verdict == $v)
-    | "\($h): \(.branch) [\(.severity)] \(.location) — \(.criterion)\(if .rationale != "" then " — why: " + .rationale else "" end)"
+    | "\($h): \(.branch) [\(.severity)] \(.location) — \(.criterion)\(if .carried == true then " (earlier review)" else "" end)\(if .rationale != "" then " — why: " + .rationale else "" end)"
   ' <<< "$json"
 }
 
@@ -926,6 +906,10 @@ cmd_remind() {
     verdict_lines debatable DEBATABLE "decide these first" <<< "$open_json"
     verdict_lines actionable ACTIONABLE "not promoted" <<< "$open_json"
     verdict_lines dismiss DISMISSED "triage's rationale, collapsed" <<< "$open_json"
+    # Carried findings triage never judged have no line above to carry the label; they are counted
+    # in the total already.
+    jq -r '.[] | select(.carried == true and .verdict == "")
+      | "earlier: \(.branch) [\(.severity)] \(.location) — \(.criterion) (earlier review)"' <<< "$open_json"
     printf 'report: %s\n' "${reports[@]}"
   fi
 
@@ -956,7 +940,6 @@ COMMAND="${1:-}"
 shift || true
 
 case "$COMMAND" in
-  policy) cmd_policy "$@" ;;
   guard) cmd_guard "$@" ;;
   defer) cmd_defer "$@" ;;
   defer-gaps) cmd_defer_gaps "$@" ;;

@@ -33,12 +33,10 @@ usage() {
   echo "Usage: ./uninstall.sh [--user]"
   echo "       ./uninstall.sh [--user] --skill <skill-name>"
   echo "       ./uninstall.sh [--user] --skills <a,b,c>"
-  echo "       ./uninstall.sh [--user] --agent <agent-name>"
   echo ""
   echo "  --user:   uninstall from \$HOME; default uninstalls from current project repo"
   echo "  --skill:  remove a single skill"
   echo "  --skills: remove multiple skills (comma-separated)"
-  echo "  --agent:  remove a single agent"
   echo "  (no args) remove everything listed in .coding-crew/manifest.json"
   echo ""
   echo "Examples:"
@@ -162,22 +160,20 @@ removal_candidates() {
   return 0
 }
 
-remove_agent() {
-  local name="$1"
-  local removed=0
-  local platform path full candidate old
-  # A renamed agent's old names (registry.json `replaces`) share its paths with the name swapped,
-  # and an install that predates the rename still has them on disk.
-  local -a names=("$name")
-  while IFS= read -r old; do
-    old="${old%$'\r'}"
-    [[ -n "$old" ]] && names+=("$old")
-  done < <(jq -r --arg n "$name" '.agents[$n].replaces // [] | .[]' "$SCRIPT_DIR/registry.json")
+# crew-afk's roles used to install as per-platform agent files (registry.json `retired-agents`),
+# with their protocols and assets under .coding-crew/. Removed with crew-afk, or on a full uninstall.
+REMOVED_RETIRED=0
+remove_retired_agents() {
+  [[ "$REMOVED_RETIRED" -eq 0 ]] || return 0
+  REMOVED_RETIRED=1
+  local platform name raw candidate full dir
   for platform in "${PLATFORMS[@]}"; do
-    path=$(jq -r --arg n "$name" --arg p "$platform" '.agents[$n].install.shims[$p] // empty' "$SCRIPT_DIR/registry.json")
-    path="${path%$'\r'}"
-    [[ -z "$path" ]] && continue
-    for old in "${names[@]}"; do
+    raw=$(jq -r --arg p "$platform" '."retired-agents".paths[$p] // empty' "$SCRIPT_DIR/registry.json")
+    raw="${raw%$'\r'}"
+    [[ -n "$raw" ]] || continue
+    while IFS= read -r name; do
+      name="${name%$'\r'}"
+      [[ -n "$name" ]] || continue
       while IFS= read -r candidate; do
         [[ -n "$candidate" ]] || continue
         resolve_dest "$platform" "$candidate"
@@ -186,23 +182,17 @@ remove_agent() {
           rm -f "$full"
           echo "  removed $candidate"
           prune_empty_dirs "$_DEST_ROOT" "$_DEST_REL"
-          removed=1
         fi
-      done < <(removal_candidates "$platform" "${path//$name/$old}")
-    done
+      done < <(removal_candidates "$platform" "${raw//\{name\}/$name}")
+    done < <(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json")
   done
-  # Agent assets install once to a platform-neutral path and are always overwritten by
-  # install.sh, so uninstall owns them too.
-  local assets_dest
-  assets_dest=$(jq -r --arg n "$name" '.agents[$n].install.assets.dest // empty' "$SCRIPT_DIR/registry.json")
-  assets_dest="${assets_dest%$'\r'}"
-  if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
-    rm -rf "$REPO_ROOT/$assets_dest"
-    echo "  removed $assets_dest/"
-    prune_empty_dirs "$REPO_ROOT" "$assets_dest"
-    removed=1
-  fi
-  if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
+  while IFS= read -r dir; do
+    dir="${dir%$'\r'}"
+    [[ -n "$dir" && -d "$REPO_ROOT/$dir" ]] || continue
+    rm -rf "$REPO_ROOT/$dir"
+    echo "  removed $dir/"
+    prune_empty_dirs "$REPO_ROOT" "$dir"
+  done < <(jq -r '."retired-agents".dirs // [] | .[]' "$SCRIPT_DIR/registry.json")
 }
 
 remove_skill() {
@@ -241,16 +231,19 @@ remove_skill() {
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 
   # Skill assets install once to a platform-neutral path and are always overwritten, so
-  # they are removed here for the same reason agent assets are: a stale orchestrator left
-  # behind is an executable no installed skill body matches any more.
+  # uninstall owns them: a stale orchestrator left behind is an executable no installed skill
+  # body matches any more.
   local assets_dest
-  assets_dest=$(jq -r --arg s "$name" '.skills[$s].assets.dest // empty' "$SCRIPT_DIR/registry.json")
-  assets_dest="${assets_dest%$'\r'}"
-  if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
-    rm -rf "$REPO_ROOT/$assets_dest"
-    echo "  removed $assets_dest/"
-    prune_empty_dirs "$REPO_ROOT" "$assets_dest"
-  fi
+  while IFS= read -r assets_dest; do
+    assets_dest="${assets_dest%$'\r'}"
+    if [[ -n "$assets_dest" && -d "$REPO_ROOT/$assets_dest" ]]; then
+      rm -rf "$REPO_ROOT/$assets_dest"
+      echo "  removed $assets_dest/"
+      prune_empty_dirs "$REPO_ROOT" "$assets_dest"
+    fi
+  done < <(jq -r --arg s "$name" '.skills[$s] | (.assets.dest // empty), ((.["more-assets"] // [])[] | .dest)' "$SCRIPT_DIR/registry.json")
+  # Stale on any install, so any uninstall removes them (once).
+  remove_retired_agents
 }
 
 echo "Target: $REPO_ROOT ($INSTALL_LEVEL-level)"
@@ -274,38 +267,19 @@ elif [[ "$MODE" == "--skills" ]]; then
   done
 
 elif [[ "$MODE" == "--agent" ]]; then
-  name="${2:-}"
-  [[ -z "$name" ]] && { echo "Error: --agent requires an agent name" >&2; usage; }
-  echo "---"
-  # An agent's old name (registry.json `replaces`) means its replacement, which removes both.
-  replacement=$(jq -r --arg n "$name" '[.agents | to_entries[] | select((.value.replaces // []) | index($n)) | .key][0] // empty' "$SCRIPT_DIR/registry.json")
-  replacement="${replacement%$'\r'}"
-  if [[ -n "$replacement" ]]; then
-    echo "  $name was renamed to $replacement — removing $replacement and its old name"
-    name="$replacement"
-  fi
-  remove_agent "$name"
+  # crew-coder / crew-reviewer / crew-triage are roles inside crew-afk now: nothing to remove alone.
+  echo "Error: agents are no longer installed separately; they are crew-afk's roles — use --skill crew-afk" >&2
+  exit 1
+
+elif [[ "$MODE" != "all" ]]; then
+  echo "Error: unknown argument '$MODE'" >&2
+  usage
 
 else
   # Remove everything — union of manifest (if present) and full registry
   echo "---"
 
-  # Collect agent names: manifest + registry, deduped via sort -u.
-  # jq on Windows emits CRLF, so every line is stripped of a trailing \r before use.
-  _agent_names=()
-  while IFS= read -r name; do
-    name="${name%$'\r'}"
-    [[ -n "$name" ]] && _agent_names+=("$name")
-  done < <(
-    # A name some registry agent `replaces` is removed along with that agent, not on its own.
-    # Filtered in jq: `grep -vxF -f` needs a non-empty pattern list, and BSD grep reads an
-    # empty pattern as match-all even under -x.
-    { if [[ -f "$MANIFEST" ]]; then jq -r '.agents | keys[]' "$MANIFEST"; fi
-      jq -r '.agents | keys[]' "$SCRIPT_DIR/registry.json"; } | tr -d '\r' | sort -u |
-      jq -R -r --slurpfile reg "$SCRIPT_DIR/registry.json" \
-        'select(. as $n | [$reg[0].agents[].replaces // [] | .[]] | index($n) | not)'
-  )
-  for name in "${_agent_names[@]+"${_agent_names[@]}"}"; do remove_agent "$name"; done
+  remove_retired_agents
 
   # Collect skill names: manifest + registry, deduped via sort -u
   _skill_names=()

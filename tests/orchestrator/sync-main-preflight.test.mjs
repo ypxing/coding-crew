@@ -69,7 +69,7 @@ test("main.mjs syncs after the dirty check and before the baseline, stopping wit
   };
   const dirty = at("const dirty = dirtyTrackedFiles(effects);\n      if (dirty.length)");
   const sync = at("syncFeatureBranch({ sprint");
-  const baseline = at("runBaseline(ctx)");
+  const baseline = at("runBaselineAsync(ctx)");
   assert.ok(dirty < sync && sync < baseline);
   assert.match(src.slice(sync, baseline), /sync\.status === "conflict"[\s\S]*?exitCode = 1/);
 });

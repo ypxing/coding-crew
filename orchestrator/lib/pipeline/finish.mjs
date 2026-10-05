@@ -4,6 +4,7 @@
  */
 
 import { removeWorktree } from "../worktree.mjs";
+import { issueFingerprint } from "../trackers/body-format.mjs";
 import { notifyMilestone, writeTrackerSection } from "./shared.mjs";
 
 // Every non-complete outcome spends an attempt. One retry covers "might have been
@@ -34,6 +35,13 @@ export function finishRetryOrBlock(ctx, worker, outcome, reason, { free = false 
   return finishPartial(ctx, worker, outcome, reason);
 }
 
+// The fingerprint a retention record is written with: the issue's current one, except after an
+// attempt that never got to work from it (worker.keepFingerprint, set by a conflict dispatch left unresolved).
+function recordFingerprint(worker) {
+  if (worker.keepFingerprint) return worker.keepFingerprint;
+  return worker.issue.text ? issueFingerprint(worker.issue.text) : null;
+}
+
 export async function finishPartial(ctx, worker, outcome, reason) {
   const { sprint, effects } = ctx;
   const { issue, branch } = worker;
@@ -51,7 +59,7 @@ export async function finishPartial(ctx, worker, outcome, reason) {
     `Round ${worker.attempt}: ${progress}${unmetBlock}\n\nDemotion reason: ${reason}`,
   );
   removeWorktree(effects, { mainRoot: effects.mainRoot, path: worker.worktree });
-  sprint.retain(issue.slug, branch, reason);
+  sprint.retain(issue.slug, branch, reason, recordFingerprint(worker));
   outcome.status = "partial";
   outcome.reason = reason;
   notifyMilestone(ctx, issue, `partial — retrying (round ${worker.attempt}) — ${reason}`);
@@ -82,7 +90,8 @@ export async function finishBlocked(ctx, worker, outcome, reason) {
   const labelled = labelBlocked(ctx, issue);
   // A branch refused as stale is someone else's leftover, not this issue's: retaining it
   // would make the next run resume on it (runWorker's priorBranch) and skip the refusal.
-  sprint.blocked(issue.slug, worker.report.parsedFrom === "stale-branch" ? null : branch, reason, labelled ? issue.number : null);
+  sprint.blocked(issue.slug, worker.report.parsedFrom === "stale-branch" ? null : branch, reason, labelled ? issue.number : null,
+    recordFingerprint(worker));
   // In-memory only: persisted `blocked_slugs` feeds the summary, and must not stop a
   // future run retrying once a human has fixed the blocker.
   sprint.markBlockedThisRun(issue.slug);

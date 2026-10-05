@@ -3,23 +3,16 @@
 # One rubric for classifying a review finding — Actionable / Debatable / Dismiss, and the two hard
 # rules that force Debatable — rendered into both /crew-address-findings (a human's run) and
 # crew-triage's findings mode (the unattended one). It lives once, in
-# skills/_shared/fragments/common/findings-rubric.md; these tests read the *rendered* output of
+# skills/_shared/fragments/findings-rubric.md; these tests read the *rendered* output of
 # each, so the two can never describe different rubrics.
 
 load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-RUBRIC="$REPO_ROOT/skills/_shared/fragments/common/findings-rubric.md"
+RUBRIC="$REPO_ROOT/skills/_shared/fragments/findings-rubric.md"
 
 triage_variant() {
-  local platform="$1" root
-  root=$(installed_agents_root) || return 1
-  case "$platform" in
-    claude)  printf '%s\n' "$root/.claude/agents/crew-triage.md" ;;
-    copilot) printf '%s\n' "$root/.github/agents/crew-triage.agent.md" ;;
-    pi)      printf '%s\n' "$root/.pi/agents/crew-triage.md" ;;
-    codex)   printf '%s\n' "$root/.codex/agents/crew-triage.toml" ;;
-  esac
+  role_prompt triage "$1"
 }
 
 # The rubric's lines, each of which must appear verbatim in a rendered body.
@@ -57,7 +50,7 @@ assert_rubric_in() {
 
 @test "the rubric is not restated by hand in either body's source" {
   # A copy in a source file is a second rubric that can drift from the fragment.
-  for f in "$REPO_ROOT/skills/crew-address-findings/SKILL.md" "$REPO_ROOT/agents/crew-triage/protocol.md"; do
+  for f in "$REPO_ROOT/skills/crew-address-findings/SKILL.md" "$REPO_ROOT/orchestrator/roles/triage.md"; do
     grep -q '{{FRAGMENT:findings-rubric}}' "$f"
     ! grep -qF 'changes no public contract' "$f"
   done

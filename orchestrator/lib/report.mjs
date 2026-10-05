@@ -42,7 +42,7 @@ function normaliseCheck(value) {
  * parseReviewReport, parseTriageReport) reads the sidecar object directly and never
  * scans text for a fence.
  */
-function allFencedJson(text, requiredField) {
+export function allFencedJson(text, requiredField) {
   const re = /[ \t]*```(?:json)?[ \t]*\n([\s\S]*?)\n[ \t]*```/g;
   const out = [];
   let m;
@@ -256,7 +256,7 @@ export function parseRequiresFailures(stdout, files) {
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const VERDICTS = new Set(["all-met", "unmet", "not_run"]);
-/** Findings triage's answer per finding (the shared rubric: skills/_shared/fragments/common/findings-rubric.md). */
+/** Findings triage's answer per finding (the shared rubric: skills/_shared/fragments/findings-rubric.md). */
 export const FINDING_VERDICTS = ["actionable", "debatable", "dismiss"];
 
 function findingsFromStructured(list) {
@@ -266,12 +266,19 @@ function findingsFromStructured(list) {
     .map((f) => ({
       severity: String(f.severity).toUpperCase(),
       location: f.location ? String(f.location).trim() : "",
+      issue: f.issue ? String(f.issue).trim() : "",
       criterion: f.criterion ? String(f.criterion).trim() : "",
       explicit: true,
+      // Set by carryFindings: raised by an earlier review of the branch, not repeated by the latest.
+      ...(f.carried === true ? { carried: true } : {}),
+      // Set on a feature-review finding the promotion cap left report-only: no fix issue covers it.
+      ...(f.report_only === true ? { report_only: true } : {}),
       // Written beside the finding once findings triage has judged it (annotateFindings below).
       ...(FINDING_VERDICTS.includes(String(f.verdict).toLowerCase())
         ? { verdict: String(f.verdict).toLowerCase(), rationale: f.rationale ? String(f.rationale).trim() : "" }
         : {}),
+      // Written by annotateFindings: triage folded this finding into finding `duplicate_of` of the same review.
+      ...(Number.isInteger(f.duplicate_of) && f.duplicate_of >= 0 ? { duplicate_of: f.duplicate_of } : {}),
     }));
 }
 
@@ -330,16 +337,58 @@ export function parseReviewReport(text, sidecar = null) {
  * orchestrator/review-rollup.mjs) instead of re-parsing the file themselves.
  */
 export function parseReviewAggregate(text) {
-  const raw = text ?? "";
   const order = [];
   const byBranch = new Map();
-  for (const obj of allFencedJson(raw, "verdict")) {
-    const rec = reviewFromStructured(raw, obj);
+  for (const rec of parseReviewBlocks(text)) {
     const key = rec.branch ?? `#${order.length}`;
     if (!byBranch.has(key)) order.push(key);
-    byBranch.set(key, rec);
+    byBranch.set(key, foldReview(byBranch.get(key), rec));
   }
   return order.map((key) => byBranch.get(key));
+}
+
+/** Every review block in `text`, in file order and unfolded (parseReviewAggregate folds them). */
+export function parseReviewBlocks(text) {
+  const raw = text ?? "";
+  return allFencedJson(raw, "verdict").map((obj) => reviewFromStructured(raw, obj));
+}
+
+/**
+ * The one fold step, shared by parseReviewAggregate and review-rollup.mjs: `rec` replaces `prev`
+ * (later block wins), except that a `not_run` block says nothing about the code, so the previous
+ * record's findings stay, marked carried, under the `not_run` verdict.
+ */
+export function foldReview(prev, rec) {
+  if (!prev || rec.verdict !== "not_run" || !prev.findings?.length) return rec;
+  return { ...rec, findings: prev.findings.map((f) => ({ ...f, carried: true })) };
+}
+
+/** What makes two findings the same: severity, path (line dropped), whitespace-normalised case-folded issue (the criterion when a finding has none). */
+export function findingKey(f) {
+  const path = String(f.location ?? "").trim().replace(/(?::\d+(?:-\d+)?|#L\d+(?:-L?\d+)?)$/, "");
+  const issue = String(f.issue || f.criterion || "").replace(/\s+/g, " ").trim().toLowerCase();
+  return `${f.severity}\u0000${path}\u0000${issue}`;
+}
+
+/**
+ * `latestFindings` followed by each finding of `earlierRecords` (one branch's earlier review
+ * blocks, oldest first) that the latest does not repeat, marked `carried: true` and deduped among
+ * themselves. A carried finding drops any triage verdict (the new round judges it afresh) unless
+ * `keepVerdicts`: the feature review's verdicts are what its promotion was decided on.
+ */
+export function carryFindings(earlierRecords, latestFindings, { keepVerdicts = false } = {}) {
+  const seen = new Set(latestFindings.map(findingKey));
+  const carried = [];
+  for (const rec of earlierRecords) {
+    for (const f of rec.findings ?? []) {
+      const key = findingKey(f);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const { verdict, rationale, ...rest } = keepVerdicts ? { ...f } : f;
+      carried.push({ ...(keepVerdicts ? f : rest), carried: true });
+    }
+  }
+  return [...latestFindings, ...carried];
 }
 
 const SEVERITY_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
@@ -357,6 +406,15 @@ export function findingsAtOrAbove(findings, level) {
 /** The severities `level` promotes, as `defer` records them: "CRITICAL, HIGH" for `high`. */
 export function severityNames(level) {
   return [...new Set(findingsAtOrAbove(SEVERITY_ORDER.map((severity) => ({ severity })), level).map((f) => f.severity))].join(", ");
+}
+
+/**
+ * What a sprint promotes under \`level\` (afk.fixFindings), as the scripts take and record it:
+ * "actionable", or the severities ("CRITICAL, HIGH"); "" for \`none\`. The one level → severities
+ * table — promote-findings.sh keeps none and takes this as --severities.
+ */
+export function promoteSeverities(level) {
+  return level === "actionable" ? "actionable" : severityNames(level);
 }
 
 /**
@@ -407,14 +465,14 @@ const isYes = (v) => v === true || ["true", "yes"].includes(String(v).trim().toL
 
 /**
  * Findings triage (crew-triage's findings mode): `{"findings": [{index, verdict, rationale, adr?,
- * protected?}]}` — one entry per finding, `index` the 0-based position in the prompt's list. Only
+ * protected?, duplicate_of?}]}` — one entry per finding, `index` the 0-based position in the prompt's list. Only
  * the sidecar is read. All-or-nothing: a missing, unknown or duplicate entry makes the whole
  * answer `ok: false` — the caller falls back to the severity rule, as it does for no sidecar at
  * all, rather than promoting on a half-read verdict.
  *
  * @param {object|null} sidecar  parsed findings-triage.report.json
  * @param {number} count  how many findings were sent
- * @returns {{ok: true, verdicts: {verdict, rationale, adr, protected}[]} | {ok: false, detail: string}}
+ * @returns {{ok: true, verdicts: {verdict, rationale, adr, protected, duplicate_of?}[]} | {ok: false, detail: string}}
  */
 export function parseFindingsTriage(sidecar, count) {
   if (!sidecar) return { ok: false, detail: "no report.json — triage never wrote its verdict file" };
@@ -426,15 +484,22 @@ export function parseFindingsTriage(sidecar, count) {
     if (!Number.isInteger(i) || i < 0 || i >= count) return { ok: false, detail: `the triage report.json names finding ${JSON.stringify(e?.index)}, outside 0..${count - 1}` };
     if (!FINDING_VERDICTS.includes(verdict)) return { ok: false, detail: `the triage report.json gives finding ${i} the verdict ${JSON.stringify(e?.verdict)}` };
     if (verdicts[i]) return { ok: false, detail: `the triage report.json judges finding ${i} twice` };
+    const dup = e.duplicate_of;
+    const hasDup = dup !== undefined && dup !== null;
+    if (hasDup && (!Number.isInteger(dup) || dup < 0 || dup >= count)) return { ok: false, detail: `the triage report.json gives finding ${i} a duplicate_of ${JSON.stringify(dup)}, outside 0..${count - 1}` };
+    if (hasDup && dup === i) return { ok: false, detail: `the triage report.json makes finding ${i} a duplicate of itself` };
     verdicts[i] = {
       verdict,
       rationale: e.rationale ? String(e.rationale).trim() : "",
       adr: isYes(e.adr),
       protected: isYes(e.protected),
+      ...(hasDup ? { duplicate_of: dup } : {}),
     };
   }
   const missing = verdicts.findIndex((v) => !v);
   if (missing >= 0) return { ok: false, detail: `the triage report.json leaves finding ${missing} unjudged` };
+  const chained = verdicts.findIndex((v) => v.duplicate_of !== undefined && verdicts[v.duplicate_of].duplicate_of !== undefined);
+  if (chained >= 0) return { ok: false, detail: `the triage report.json makes finding ${chained} a duplicate of finding ${verdicts[chained].duplicate_of}, which is itself a duplicate` };
   return { ok: true, verdicts };
 }
 
@@ -477,6 +542,11 @@ export function applyFindingVerdicts(findings, verdicts) {
   return findings.map((f, i) => {
     const t = verdicts[i];
     let { verdict, rationale } = t;
+    // Auto never dismisses: a doubted finding goes to the coder's premise check instead.
+    if (verdict === "dismiss") {
+      verdict = "actionable";
+      rationale = `${rationale ? `${rationale} ` : ""}[remapped dismiss → actionable: auto triage does not dismiss]`;
+    }
     const forced = [];
     if (t.adr) forced.push("contradicts a documented decision (ADR / CONTEXT.md)");
     if (t.protected || touchesProtectedPath(f.location)) forced.push("its fix touches a protected path (CI config, auth, deploy, .env)");
@@ -484,8 +554,33 @@ export function applyFindingVerdicts(findings, verdicts) {
       verdict = "debatable";
       rationale = `${rationale ? `${rationale} ` : ""}[forced Debatable: ${forced.join("; ")}]`;
     }
-    return { ...f, verdict, rationale };
+    return { ...f, verdict, rationale, ...(t.duplicate_of !== undefined ? { duplicate_of: t.duplicate_of } : {}) };
   });
+}
+
+const SEVERITY_RANK = Object.fromEntries(SEVERITIES.map((s, i) => [s, i]));
+
+/**
+ * Fold the findings triage marked `duplicate_of` into their targets, for promotion. `judged` is
+ * applyFindingVerdicts' list and `promotable` the subset selected from it. A duplicate is never
+ * promoted itself while its target is; then the target takes the higher severity and its
+ * criterion names both locations. A duplicate whose target is not promotable stays promotable
+ * itself, so the defect is not lost. Returns the promotable list, folded.
+ */
+export function foldDuplicates(judged, promotable) {
+  const folded = new Map();
+  judged.forEach((f, i) => {
+    if (f.duplicate_of === undefined || !promotable.includes(judged[f.duplicate_of])) return;
+    const t = folded.get(f.duplicate_of) ?? { ...judged[f.duplicate_of] };
+    if (SEVERITY_RANK[f.severity] < SEVERITY_RANK[t.severity]) t.severity = f.severity;
+    if (f.location && f.location !== t.location) {
+      t.criterion = `${t.criterion} (also at ${f.location})`;
+      t.location = t.location ? `${t.location}, ${f.location}` : f.location;
+    }
+    folded.set(f.duplicate_of, t);
+  });
+  const folds = (f) => f.duplicate_of !== undefined && promotable.includes(judged[f.duplicate_of]);
+  return promotable.filter((f) => !folds(f)).map((f) => folded.get(judged.indexOf(f)) ?? f);
 }
 
 /**
@@ -499,7 +594,7 @@ export function annotateFindings(sidecar, findings) {
   const annotated = (Array.isArray(sidecar.findings) ? sidecar.findings : []).map((f) => {
     if (!f || !SEVERITIES.includes(String(f.severity).toUpperCase())) return f;
     const v = findings[k++];
-    return v ? { ...f, verdict: v.verdict, rationale: v.rationale } : f;
+    return v ? { ...f, verdict: v.verdict, rationale: v.rationale, ...(v.duplicate_of !== undefined ? { duplicate_of: v.duplicate_of } : {}) } : f;
   });
   return { ...sidecar, findings: annotated };
 }

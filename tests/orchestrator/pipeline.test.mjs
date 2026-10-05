@@ -7,7 +7,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { RESUME_MAX_CONTEXT_TOKENS, resumableSession, resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
+import { issueFingerprint } from "../../orchestrator/lib/trackers/body-format.mjs";
+import { CONFLICT_ROLE, RESUME_MAX_CONTEXT_TOKENS, mayResumeCoderSession, resumableSession, resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
+import { Sprint } from "../../orchestrator/lib/sprint.mjs";
 import { isTestPath } from "../../orchestrator/lib/pipeline/review.mjs";
 import { resumeNote } from "../../orchestrator/lib/prompts.mjs";
 
@@ -92,4 +94,65 @@ test("isTestPath recognises test files by name and by directory", () => {
   for (const p of ["src/a.ts", "src/latest.ts", "src/contest/x.ts", "README.md", "package.json"]) {
     assert.equal(isTestPath(p), false, p);
   }
+});
+
+// ─── an edited issue restarts instead of fixing ────────────────────────────────────────
+
+test("an edited issue restarts on workerPrompt for fix, conflict and verify routes", () => {
+  for (const reason of [
+    "criteria-unmet — AC 2",
+    "verification-failed:fixable — lint: x",
+    "review-not-run",
+    "verification-failed:not-fixable — x",
+    "merge-conflict — x",
+    "blocked — retry limit reached (2 attempts) — merge-conflict — x",
+  ]) {
+    assert.deepEqual(resumeRoute(reason, { edited: true }), { route: "restart", edited: true }, reason);
+  }
+});
+
+test("an edited issue leaves the merge route alone", () => {
+  assert.deepEqual(resumeRoute("merge-failed", { edited: true }), { route: "merge" });
+});
+
+test("an unedited issue takes today's route", () => {
+  assert.deepEqual(resumeRoute("criteria-unmet — AC 2", { edited: false }), { route: "fix", kind: "review", context: "AC 2" });
+});
+
+const ISSUE = "Status: ready-for-agent\n\n## What to build\n\nA thing.\n\n## Acceptance criteria\n\n- [ ] one\n- [ ] two\n\n## Blocked by\n\nNone\n";
+
+test("the fingerprint ignores crew-afk's own writes", () => {
+  const fp = issueFingerprint(ISSUE);
+  const own = ISSUE.replace("ready-for-agent", "in-progress").replace("- [ ] one", "- [x] one") + "\n## Progress\n\nRound 1\n\n## Blocked\n\nwhy\n";
+  assert.equal(issueFingerprint(own), fp);
+});
+
+test("the fingerprint changes when What to build or a criterion is edited", () => {
+  const fp = issueFingerprint(ISSUE);
+  assert.notEqual(issueFingerprint(ISSUE.replace("two", "three")), fp);
+  assert.notEqual(issueFingerprint(ISSUE.replace("A thing.", "Another thing.")), fp);
+  assert.notEqual(issueFingerprint(ISSUE.replace("- [ ] two\n", "- [ ] two\n- [ ] new\n")), fp);
+});
+
+test("a fix round never resumes a session after a conflict dispatch ran in the same attempt", () => {
+  const base = { enabled: true, route: "fix", runtime: "claude", conflictDispatched: false };
+  assert.equal(mayResumeCoderSession(base), true);
+  assert.equal(mayResumeCoderSession({ ...base, conflictDispatched: true }), false);
+  assert.equal(mayResumeCoderSession({ ...base, enabled: false }), false);
+  assert.equal(mayResumeCoderSession({ ...base, route: "restart" }), false);
+  assert.equal(mayResumeCoderSession({ ...base, runtime: "pi" }), false);
+});
+
+test("a conflict dispatch's session is recorded under its own role, so a fix round at the same tip starts fresh", () => {
+  const ledger = [
+    { slug: "alpha", role: "coder", session_id: "s-coder", head: "old", context_tokens: 10 },
+    { slug: "alpha", role: CONFLICT_ROLE, session_id: "s-conflict", head: "merged", context_tokens: 10 },
+  ];
+  const sprint = { readState: () => ({ dispatches: ledger }), lastDispatch: Sprint.prototype.lastDispatch };
+  assert.notEqual(CONFLICT_ROLE, "coder");
+  const pick = resumableSession(sprint.lastDispatch("alpha", "coder"), "merged");
+  assert.equal(pick.sessionId, undefined, "the conflict session is not resumable");
+  assert.match(pick.reason, /moved/);
+  const only = { readState: () => ({ dispatches: ledger.slice(1) }), lastDispatch: Sprint.prototype.lastDispatch };
+  assert.match(resumableSession(only.lastDispatch("alpha", "coder"), "merged").reason, /no earlier coder session/);
 });

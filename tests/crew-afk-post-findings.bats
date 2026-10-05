@@ -121,12 +121,59 @@ write_report() { # file branch findings-json
   [ ! -s "$GH_STORE" ]
 }
 
-@test "a Dismissed finding goes under 'Dismissed by triage' with its rationale, and is not re-posted" {
+@test "a triaged finding names its verdict and rationale inline and in the body; an untriaged one names neither" {
   write_report "$REPORT" crew/feat/a '[
-    {"severity":"CRITICAL","location":"src/x.ts:12","criterion":"dismissed one","verdict":"dismiss","rationale":"already guarded"}]'
+    {"severity":"HIGH","location":"src/x.ts:11","criterion":"inline one","verdict":"debatable","rationale":"renames an export"},
+    {"severity":"HIGH","location":"nowhere","criterion":"body one","verdict":"dismiss","rationale":"already guarded"},
+    {"severity":"LOW","location":"nowhere","criterion":"no-verdict one"}]'
   run bash "$POST"
-  [ "$output" = "POSTED: 1 (0 inline)" ]
-  jq -e '.body | contains("### Dismissed by triage") and contains("already guarded") and (contains("### CRITICAL") | not)' "$GH_STORE"
+  [ "$output" = "POSTED: 3 (1 inline)" ]
+  jq -e '.comments[0].body | contains("triage: debatable — renames an export")' "$GH_STORE"
+  jq -e '.body | contains("body one (`crew/feat/a`) — triage: dismiss — already guarded")' "$GH_STORE"
+  jq -e '.body | contains("Dismissed by triage") | not' "$GH_STORE"
+  jq -e '[.body | split("\n")[] | select(contains("no-verdict one"))] | length == 1 and (.[0] | contains("triage") | not)' "$GH_STORE"
   run bash "$POST"
   [ "$output" = "POSTED: 0 (0 inline)" ]
+}
+
+@test "a finding's issue text precedes its criterion in the inline comment and the body" {
+  write_report .scratch/feat/reviews/sprint-review-3.md crew/feat/c '[
+    {"severity":"MEDIUM","location":"src/x.ts:11","issue":"PROBLEM-A","criterion":"FIX-A"},
+    {"severity":"MEDIUM","location":"nowhere","issue":"PROBLEM-B","criterion":"FIX-B"}]'
+  run bash "$POST"
+  [ "$status" -eq 0 ]
+  jq -e '.comments | map(select(.body | test("PROBLEM-A.*FIX-A"))) | length == 1' "$GH_STORE"
+  jq -e '.body | test("PROBLEM-B.*FIX-B")' "$GH_STORE"
+}
+
+@test "a finding already posted under the old body format is not posted again" {
+  key="crew/feat/a|CRITICAL|src/x.ts:12|unchecked input"
+  marker="crew-finding:$(printf '%s' "$key" | { if command -v sha1sum >/dev/null 2>&1; then sha1sum; else shasum -a 1; fi; } | cut -c1-12)"
+  jq -nc --arg b "- \`src/x.ts:12\` — unchecked input (\`crew/feat/a\`) <!-- $marker -->" '{event:"COMMENT",body:$b,comments:[]}' > "$GH_STORE"
+  write_report "$REPORT" crew/feat/a '[{"severity":"CRITICAL","location":"src/x.ts:12","issue":"new issue text","criterion":"unchecked input"}]'
+  run bash "$POST"
+  [ "$output" = "POSTED: 0 (0 inline)" ]
+}
+
+@test "a carried finding is passed through by open and labelled (earlier review) in the posted review" {
+  write_report "$REPORT" crew/feat/a '[
+    {"severity":"LOW","location":"free text","criterion":"a nit","carried":true},
+    {"severity":"HIGH","location":"free text two","criterion":"a fresh one"}]'
+  run bash "$PROMOTE" open --feature-slug feat
+  [ "$(jq -r '[.[] | .carried] | @json' <<< "$output")" = "[true,null]" ]
+
+  PATH="$TEMP_DIR/stub:$PATH" run bash "$POST"
+  [ "$status" -eq 0 ]
+  body=$(jq -r '.body' "$GH_STORE")
+  [[ "$body" == *"a nit (earlier review)"* ]]
+  [[ "$body" != *"a fresh one (earlier review)"* ]]
+}
+
+@test "a report_only feature finding stays open though a '- feature: actionable' bullet covers its verdict" {
+  write_report "$REPORT" feature '[
+    {"severity":"HIGH","location":"a.ts:1","criterion":"promoted","verdict":"actionable"},
+    {"severity":"HIGH","location":"b.ts:2","criterion":"report only","verdict":"actionable","report_only":true}]'
+  printf '\n## Promoted Findings\n\n- feature: actionable → #9\n' >> "$REPORT"
+  run bash "$PROMOTE" open --feature-slug feat
+  [ "$(jq -r '[.[] | .criterion] | @json' <<< "$output")" = '["report only"]' ]
 }

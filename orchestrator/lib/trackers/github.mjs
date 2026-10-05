@@ -35,7 +35,6 @@ import { fileURLToPath } from "node:url";
 import { readTrackerConfig } from "../tracker-config.mjs";
 import {
   criteriaSection,
-  extractBlockedByNumbers,
   isSourceGuarded,
   sectionBody,
 } from "./body-format.mjs";
@@ -103,6 +102,13 @@ function titleSlug(title) {
     .replace(/^-+|-+$/g, "");
 }
 
+/** Blocker numbers in a `## Blocked by` section: `Issue NN` / `Issue #NN` entries and bare `#NN` refs, in order.
+ * A `PR #NN` / `pull #NN` / `pull request #NN` mention is prose, not a blocker (lint-issues.sh strips the same). */
+function blockerNumbers(section) {
+  const prose = section.replace(/(^|[^a-z0-9])(?:pr|pull(?:\s+request)?)\s*#[0-9]+/gi, "$1");
+  return [...prose.matchAll(/(?:\bissue[\s-]*#?|#)0*([0-9]+)\b/gi)].map((m) => Number(m[1]));
+}
+
 /** `done` is a closed issue or an open one labelled `awaiting-merge`; other open issues take
  * their status from whichever triage label is present, or "" when none is (matches local's
  * untriaged issues). */
@@ -126,7 +132,7 @@ export const isPrdIssue = (issue) => /^PRD:/.test(issue.title ?? "");
 export function parseIssue(json) {
   const text = json.body ?? "";
   const blockedBySection = sectionBody(text, "Blocked by") ?? "";
-  const blockedBy = extractBlockedByNumbers(blockedBySection).map(Number);
+  const blockedBy = blockerNumbers(blockedBySection);
   return {
     ref: json.number,
     slug: titleSlug(json.title ?? ""),
@@ -272,7 +278,7 @@ export function linkBlockers(number, { mainRoot, exec = shellOut, body, warn = (
       }
       text = view.stdout ?? "";
     }
-    const blockers = extractBlockedByNumbers(sectionBody(text, "Blocked by") ?? "").map(Number);
+    const blockers = blockerNumbers(sectionBody(text, "Blocked by") ?? "");
     let linked = 0;
     for (const blocker of blockers) {
       const idr = exec("gh", ["api", `${apiBase}/issues/${blocker}`, "--jq", ".id"]);

@@ -14,19 +14,23 @@ set -euo pipefail
 #   state.sh model <alias>
 #   state.sh attempt --slug <slug> --n <n>
 #   state.sh complete --slug <slug> --branch <branch>
-#   state.sh retain   --slug <slug> --branch <branch> --reason <reason>
+#   state.sh retain   --slug <slug> --branch <branch> --reason <reason> [--fingerprint <sha256>]
 #   state.sh blocked  --slug <slug> [--branch <branch>] [--reason <text>] [--number <n>]
 #   state.sh coverage-gap --slug <slug> --categories <lint,typecheck>
 #   state.sh coverage-clear --slug <slug>
+#   state.sh deviation --slug <slug> --reason <text>
 #   state.sh dispatch-cost [--cost <usd>] [--duration-ms <ms>] [--turns <n>]
 #                          [--slug <slug> --role <role> --attempt <n>]
 #                          [--session-id <id>] [--context-tokens <n>] [--head <sha>]
 #                          [--cost-unknown --tokens <n>]
 #   state.sh run-start --id <run-id>
 #   state.sh baseline [--slot baseline|integration] --commit <sha> --verdict <pass|fail>
+#   state.sh verified-tree --tree <git tree sha>   (a per-issue verify passed this tree)
+#   state.sh feature-reviewed --tip <sha>          (a feature review wrote a report over the branch up to this tip)
+#   state.sh feature-review-promoted               (a feature review ran with promotion on: one more toward the per-feature cap)
 #   state.sh resume --slug <slug>
 #   state.sh retention --slug <slug>
-#   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|state-file>
+#   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|feature-review-promotions|state-file>
 #   state.sh show
 #
 # Common flags: [--feature-slug <slug>] [--state-file <path>]
@@ -162,12 +166,15 @@ case "$CMD" in
 
   retain)
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@"); reason=$(flag reason "" "$@")
+    fingerprint=$(flag fingerprint "" "$@")
     [ -n "$slug" ] || die "retain requires --slug"
     [ -n "$branch" ] || die "retain requires --branch"
     [ -n "$reason" ] || die "retain requires --reason (partial | verification-failed | criteria-unmet | review-not-run | merge-failed | blocked)"
-    edit_state --arg s "$slug" --arg b "$branch" --arg r "$reason" '
+    # --fingerprint: a hash of the issue's What to build / Acceptance criteria when the
+    # attempt ended; a later run that sees a different one knows a human edited the issue.
+    edit_state --arg s "$slug" --arg b "$branch" --arg r "$reason" --arg f "$fingerprint" '
       .retained_branches[$s] = $b
-      | .retention[$s] = {branch: $b, reason: $r}
+      | .retention[$s] = ({branch: $b, reason: $r} + (if $f == "" then {} else {fingerprint: $f} end))
       | .completed_slugs = ((.completed_slugs // []) - [$s])
       | .merged_branches = ((.merged_branches // []) - [$b])'
     trace --level warn STATE "retain slug=$slug branch=$branch reason=$reason"
@@ -176,16 +183,17 @@ case "$CMD" in
 
   blocked)
     slug=$(flag slug "" "$@"); branch=$(flag branch "" "$@"); reason=$(flag reason "blocked" "$@")
-    number=$(flag number "" "$@")
+    number=$(flag number "" "$@"); fingerprint=$(flag fingerprint "" "$@")
     [ -n "$slug" ] || die "blocked requires --slug"
-    edit_state --arg s "$slug" '.blocked_slugs = ((.blocked_slugs // []) + [$s] | unique)'
+    edit_state --arg s "$slug" --arg r "$reason" '.blocked_slugs = ((.blocked_slugs // []) + [$s] | unique) | .blocked_reasons[$s] = $r'
     # --number: the issue got the `blocked` label; crew-summary prints how to remove it.
     if [ -n "$number" ]; then
       edit_state --arg s "$slug" --argjson n "$number" '.blocked_labelled = ((.blocked_labelled // {}) + {($s): $n})'
     fi
     if [ -n "$branch" ]; then
-      edit_state --arg s "$slug" --arg b "$branch" --arg r "blocked — $reason" '
-        .retained_branches[$s] = $b | .retention[$s] = {branch: $b, reason: $r}'
+      edit_state --arg s "$slug" --arg b "$branch" --arg r "blocked — $reason" --arg f "$fingerprint" '
+        .retained_branches[$s] = $b
+        | .retention[$s] = ({branch: $b, reason: $r} + (if $f == "" then {} else {fingerprint: $f} end))'
     fi
     trace --level error STATE "blocked slug=$slug${branch:+ branch=$branch}"
     echo "STATE: blocked slug=$slug${branch:+ branch=$branch}"
@@ -198,6 +206,15 @@ case "$CMD" in
     edit_state --arg s "$slug" --arg c "$cats" '.coverage_gaps[$s] = $c'
     trace --level warn STATE "coverage-gap slug=$slug categories=$cats"
     echo "STATE: coverage-gap slug=$slug categories=$cats"
+    ;;
+
+  deviation)
+    slug=$(flag slug "" "$@"); reason=$(flag reason "" "$@")
+    [ -n "$slug" ] || die "deviation requires --slug"
+    [ -n "$reason" ] || die "deviation requires --reason"
+    edit_state --arg s "$slug" --arg r "$reason" '.deviations[$s] = ((.deviations[$s] // []) + [$r] | unique)'
+    trace --level warn DEVIATION "slug=$slug $reason"
+    echo "STATE: deviation slug=$slug"
     ;;
 
   coverage-clear)
@@ -265,13 +282,44 @@ case "$CMD" in
     # on the merged branch at each drain (`--slot integration`). Only a pass is ever reused, and
     # only for the same commit; each slot caches on its own.
     commit=$(flag commit "" "$@"); verdict=$(flag verdict "" "$@"); slot=$(flag slot baseline "$@")
+    tree=$(flag tree "" "$@")
     [ -n "$commit" ] || die "baseline requires --commit"
     case "$verdict" in pass|fail) : ;; *) die "baseline requires --verdict pass|fail" ;; esac
     case "$slot" in baseline|integration) : ;; *) die "baseline requires --slot baseline|integration" ;; esac
-    edit_state --arg k "$slot" --arg c "$commit" --arg v "$verdict" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      '.[$k] = {commit: $c, verdict: $v, at: $at}'
+    # A passing tree is also added to the run-independent `passing_trees` set: the same tree needs no second check.
+    edit_state --arg k "$slot" --arg c "$commit" --arg v "$verdict" --arg t "$tree" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '.[$k] = ({commit: $c, verdict: $v, at: $at} + (if $t == "" then {} else {tree: $t} end))
+       | if $v == "pass" and $t != "" then .passing_trees = (((.passing_trees // []) + [$t]) | unique) else . end'
     trace --level "$([ "$verdict" = pass ] && echo info || echo error)" STATE "$slot commit=$commit verdict=$verdict"
     echo "STATE: $slot commit=$commit verdict=$verdict"
+    ;;
+
+  verified-tree)
+    # A per-issue verify passed this git tree: runFeatureChecks reuses it for a feature branch of the same tree.
+    tree=$(flag tree "" "$@")
+    [ -n "$tree" ] || die "verified-tree requires --tree"
+    edit_state --arg t "$tree" '.passing_trees = (((.passing_trees // []) + [$t]) | unique)'
+    trace STATE "verified-tree tree=$tree"
+    echo "STATE: verified-tree tree=$tree"
+    ;;
+
+  feature-reviewed)
+    # The feature branch tip a feature review that wrote a report covered: the next run reviews
+    # only what came after it. Survives runs, like passing_trees.
+    tip=$(flag tip "" "$@")
+    [ -n "$tip" ] || die "feature-reviewed requires --tip"
+    edit_state --arg t "$tip" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.feature_review = ((.feature_review // {}) + {reviewed_tip: $t, at: $at})'
+    trace STATE "feature-reviewed tip=$tip"
+    echo "STATE: feature-reviewed tip=$tip"
+    ;;
+
+  feature-review-promoted)
+    # A feature review ran with promotion on. The promotion cap (loop.mjs) counts these per
+    # feature, so it survives runs like reviewed_tip; a state file without it counts as 0.
+    edit_state '.feature_review = ((.feature_review // {}) | .promotions = ((.promotions // 0) + 1))'
+    n=$(jq -r '.feature_review.promotions' "$SF")
+    trace STATE "feature-review-promoted promotions=$n"
+    echo "STATE: feature-review-promoted promotions=$n"
     ;;
 
   resume)
@@ -300,6 +348,8 @@ case "$CMD" in
     reason=$(jq -r --arg s "$slug" '.retention[$s].reason // empty' "$SF")
     if [ -n "$reason" ]; then
       echo "reason: $reason"
+      fp=$(jq -r --arg s "$slug" '.retention[$s].fingerprint // empty' "$SF")
+      [ -z "$fp" ] || echo "fingerprint: $fp"
     else
       echo "no retention record"
     fi
@@ -320,6 +370,7 @@ case "$CMD" in
       total-dispatch-duration-ms) jq -r '.total_dispatch_duration_ms // 0' "$SF" ;;
       total-dispatch-turns) jq -r '.total_dispatch_turns // 0' "$SF" ;;
       feature-slug) jq -r '.feature_slug // empty' "$SF" ;;
+      feature-review-promotions) jq -r '.feature_review.promotions // 0' "$SF" ;;
       state-file) printf '%s\n' "$SF" ;;
       *) die "unknown field: $field" ;;
     esac

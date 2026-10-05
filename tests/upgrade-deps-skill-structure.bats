@@ -26,7 +26,7 @@ setup() {
 }
 
 @test "upgrade-deps SKILL.md references the issue-tracker.md lookup chain" {
-  # The preamble now comes from the shared fragment (skills/_shared/fragments/<platform>/
+  # The preamble now comes from the shared fragment (skills/_shared/fragments/
   # tracker-configuration.md) via {{FRAGMENT:...}}, so assert against the rendered body.
   local f="$(rendered_skill upgrade-deps claude)"
   grep -q 'issue-tracker.md' "$f"

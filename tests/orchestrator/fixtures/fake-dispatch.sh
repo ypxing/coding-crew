@@ -18,8 +18,15 @@
 #                         behaviour this fixture exists to pin down.
 #                         Mutually exclusive with <slug>.review and <slug>.review-once; shares
 #                         the same <slug>.review-once.calls counter file.
+#   <slug>.review-later  the review report from a slug's second call on, instead of <slug>.review (a
+#                         later drain's feature review); counter at <slug>.review.calls.
 #   <slug>.review-sleep   the reviewer sleeps this many seconds before answering — with a
 #                         fractional --reviewer-timeout, a review dispatch that times out.
+#   feature-planner.sleep  the feature review's planner sleeps this many seconds before answering — with a
+#                         fractional --reviewer-timeout, a planner that times out.
+#   <slug>.misbehave      a reviewer/triage dispatch that breaks its read-only contract; the content
+#                         is `commit` (a commit on the crew/*/<slug> branch) or `edit` (an uncommitted
+#                         file in the main checkout). Applies to every reviewer/triage call for the slug.
 #   <slug>.nocommit       do not create a commit in the worktree
 #   <slug>.commit-once    commit only on this slug's first N worker calls (N is the file's
 #                         content, 1 when empty), none after: a fix round that changed nothing.
@@ -28,6 +35,10 @@
 #                         so two such issues conflict when the second one merges. A worker
 #                         dispatched into a worktree with a merge in progress resolves it
 #                         first, keeping both sides' lines (ours first), as crew-coder is told to.
+#   <slug>.rename         "<from> <to>": the worker also `git mv`s <from> to <to> in its commit
+#                         (when <from> still exists), so the issue's merge carries a rename.
+#   <slug>.untracked      after committing, the worker leaves src/<slug>.untracked uncommitted in
+#                         its worktree: a verify that passes on files the branch does not carry.
 #   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
 #                         of resolving it, so the branch conflicts again at the merge gate.
 #   <slug>.exit           exit with this code instead of 0
@@ -115,11 +126,13 @@ trap mirror_sidecar EXIT
 SLUG="${SLUG_ARG:-$(basename "$OUT" | sed -E 's/\.(report|review)\.md$//')}"
 SLUG="$(printf '%s' "$SLUG" | sed -E 's/^[0-9]+-//')"
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
+# A feature review area reviewer (`feature-<n>`) answers from its own fixtures, else from the
+# plain `feature.*` ones, so a test that does not care about areas writes `feature.review`.
+if [[ "$SLUG" =~ ^feature-[0-9]+$ ]] && ! compgen -G "$FAKE_DIR/$SLUG.*" >/dev/null; then SLUG=feature; fi
 mkdir -p "$(dirname "$OUT")"
 
-# Stands in for the real bash dispatchers' own throttled [TOOL] line on stdout (see
-# dispatch-agent.sh/dispatch-codex-agent.sh's maybe_heartbeat), so PR 2's dispatch.mjs ->
-# onTrace plumbing is exercisable for zero tokens.
+# Stands in for a CLI's own tool-call event on stdout, so dispatch.mjs's onTrace heartbeat
+# plumbing is exercisable for zero tokens.
 if [ -f "$FAKE_DIR/$SLUG.heartbeat" ]; then
   echo "[TOOL] agent=$AGENT tool=fake-heartbeat-1 \$ echo one"
   echo "[TOOL] agent=$AGENT tool=fake-heartbeat-2 \$ echo two"
@@ -128,6 +141,26 @@ fi
 if [ -f "$FAKE_DIR/$SLUG.exit" ]; then
   : > "$OUT"
   exit "$(cat "$FAKE_DIR/$SLUG.exit")"
+fi
+
+if [ -f "$FAKE_DIR/$SLUG.misbehave" ] && { [ "$AGENT" = "crew-reviewer" ] || [ "$AGENT" = "crew-triage" ]; }; then
+  case "$(cat "$FAKE_DIR/$SLUG.misbehave")" in
+    commit)
+      ref=$(git -C "$DIR" for-each-ref --format='%(refname)' "refs/heads/crew/*/$SLUG" | head -1)
+      [ -n "$ref" ] || ref="refs/heads/$SLUG"
+      new=$(git -C "$DIR" -c user.email=fake@test -c user.name=fake commit-tree "$ref^{tree}" -p "$ref" -m "reviewer wrote this")
+      git -C "$DIR" update-ref "$ref" "$new" ;;
+    edit) echo "stray" >> "$DIR/stray-edit.txt" ;;
+  esac
+fi
+
+# `--agent feature-planner` stands in for the feature review's planner: $CREW_FAKE_DIR/feature-planner.response
+# verbatim when present, else an answer with no json block (the one-area fallback).
+if [ "$AGENT" = "feature-planner" ]; then
+  [ -f "$FAKE_DIR/feature-planner.sleep" ] && sleep "$(cat "$FAKE_DIR/feature-planner.sleep")"
+  if [ -f "$FAKE_DIR/feature-planner.response" ]; then cat "$FAKE_DIR/feature-planner.response" > "$OUT"; else echo "No plan." > "$OUT"; fi
+  [ -f "$FAKE_DIR/feature-planner.exit" ] && exit "$(cat "$FAKE_DIR/feature-planner.exit")"
+  exit 0
 fi
 
 if [ "$AGENT" = "prd-audit" ]; then
@@ -181,6 +214,13 @@ if [ "$AGENT" = "crew-reviewer" ]; then
     fi
     exit 0
   fi
+  if [ -f "$FAKE_DIR/$SLUG.review-later" ]; then
+    LATER_COUNT=0
+    [ -f "$FAKE_DIR/$SLUG.review.calls" ] && LATER_COUNT=$(cat "$FAKE_DIR/$SLUG.review.calls")
+    LATER_COUNT=$((LATER_COUNT + 1))
+    echo "$LATER_COUNT" > "$FAKE_DIR/$SLUG.review.calls"
+    if [ "$LATER_COUNT" -gt 1 ]; then cat "$FAKE_DIR/$SLUG.review-later" > "$OUT"; exit 0; fi
+  fi
   if [ -f "$FAKE_DIR/$SLUG.review" ]; then
     cat "$FAKE_DIR/$SLUG.review" > "$OUT"
   else
@@ -225,8 +265,14 @@ if [ "$NOCOMMIT" -eq 0 ]; then
     else
       echo "// $SLUG" >> "src/$SLUG.txt"
     fi
+    if [ -f "$FAKE_DIR/$SLUG.rename" ]; then
+      read -r FROM TO < "$FAKE_DIR/$SLUG.rename"
+      [ -e "$FROM" ] && git mv "$FROM" "$TO"
+    fi
     git add -A >/dev/null 2>&1
     git -c user.email=fake@test -c user.name=fake commit -q -m "feat: $SLUG" >/dev/null 2>&1
+    [ -f "$FAKE_DIR/$SLUG.untracked" ] && echo "// $SLUG helper" > "src/$SLUG.untracked"
+    exit 0
   )
 fi
 

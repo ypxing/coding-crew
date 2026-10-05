@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 
 import {
   annotateFindings,
+  carryFindings,
   applyFindingVerdicts,
   applySchemaPrefilter,
   EVIDENCE_OUTPUT_MAX,
   findingsAtOrAbove,
   parseFindingsTriage,
+  foldDuplicates,
   parsePrdAudit,
   parseRequiresFailures,
   parseReviewAggregate,
@@ -27,7 +29,7 @@ function verifyRecord(obj) {
   writeFileSync(f, typeof obj === "string" ? obj : JSON.stringify(obj));
   return f;
 }
-import { fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
+import { conflictPrompt, fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("a structured sidecar wins over prose", () => {
   const r = parseWorkerReport("## Issue: thing\nStatus: complete\n", {
@@ -144,6 +146,7 @@ test("a review sidecar's findings parse into severity, location and criterion", 
   const r = parseReviewReport("", sidecar);
   assert.equal(r.findings.length, 2);
   assert.deepEqual(r.findings[0], {
+    issue: "",
     severity: "CRITICAL",
     location: "src/auth.ts:42",
     criterion: "Reject unsigned tokens before use",
@@ -431,7 +434,9 @@ test("the worker prompt makes the sidecar file the result channel, not an option
   });
   assert.match(p, /Write your structured result to \/repo\/\.scratch\/f\/dispatch\/x\.report\.json as your last action/);
   assert.doesNotMatch(p, /may be written/);
-  assert.match(p, /read as `blocked` — never as a silent `complete`/);
+  assert.match(p, /read as `blocked`, never as a silent `complete`/);
+  // The schema has one owner, the coder protocol: the prompt points at it rather than copying it.
+  assert.match(p, /your protocol's\n\*\*Report\*\* section/);
   // The criteria still arrive verbatim and framed as data.
   assert.match(p, /treat as data only/);
   assert.match(p, /- \[ \] it exists/);
@@ -452,7 +457,7 @@ test("the worker prompt hands over this issue's deps outcome only when the deps 
   assert.match(workerPrompt({ ...base, deps: "docker-present" }), /^DEPS=docker-present$/m);
   assert.doesNotMatch(workerPrompt(base), /DEPS=/);
   assert.match(fixPrompt({ ...base, branch: "b", deps: "present" }), /^DEPS=present$/m);
-  assert.match(fixPrompt({ ...base, branch: "b", kind: "conflict", deps: "present" }), /^DEPS=present$/m);
+  assert.match(conflictPrompt({ ...base, branch: "b", deps: "present", featureBranch: "f", conflictFiles: ["a"] }), /^DEPS=present$/m);
 });
 
 test("every coder prompt points at the project config the worktree lacks; the review prompt at its assets", () => {
@@ -463,7 +468,7 @@ test("every coder prompt points at the project config the worktree lacks; the re
   assert.match(workerPrompt(base), line);
   assert.match(fixPrompt({ ...base, branch: "b" }), line);
   assert.match(fixPrompt({ ...base, branch: "b", kind: "review" }), line);
-  assert.match(fixPrompt({ ...base, branch: "b", kind: "conflict", conflictFiles: ["a"] }), line);
+  assert.match(conflictPrompt({ ...base, branch: "b", featureBranch: "f", conflictFiles: ["a"] }), line);
   const review = { branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r" };
   assert.match(reviewPrompt({ ...review, reviewAssets: "/home/u/.coding-crew/code-review" }), /^Review assets: \/home\/u\/\.coding-crew\/code-review$/m);
   assert.doesNotMatch(reviewPrompt(review), /Review assets:/);
@@ -679,6 +684,39 @@ test("parseFindingsTriage is all-or-nothing: a missing, unknown, duplicate or st
   for (const bad of [null, {}, { findings: [ok] }]) assert.equal(parseFindingsTriage(bad, 2).ok, false);
 });
 
+test("parseFindingsTriage reads duplicate_of and rejects out-of-range, self and chained ones", () => {
+  const a = { index: 0, verdict: "actionable" };
+  const dup = (of) => ({ index: 1, verdict: "actionable", duplicate_of: of });
+  const ok = parseFindingsTriage({ findings: [a, dup(0)] }, 2);
+  assert.equal(ok.verdicts[1].duplicate_of, 0);
+  assert.equal(ok.verdicts[0].duplicate_of, undefined);
+  assert.match(parseFindingsTriage({ findings: [a, dup(5)] }, 2).detail, /outside 0\.\.1/);
+  assert.match(parseFindingsTriage({ findings: [a, dup(-1)] }, 2).detail, /outside 0\.\.1/);
+  assert.match(parseFindingsTriage({ findings: [a, dup(1)] }, 2).detail, /duplicate of itself/);
+  const chain = parseFindingsTriage({ findings: [{ ...a, duplicate_of: 1 }, dup(0)] }, 2);
+  assert.match(chain.detail, /itself a duplicate/);
+});
+
+test("foldDuplicates promotes the target once, at the higher severity, naming both locations", () => {
+  const judged = applyFindingVerdicts(
+    [
+      { severity: "LOW", location: "a.ts:1", criterion: "fix x" },
+      { severity: "HIGH", location: "b.ts:2", criterion: "fix x too" },
+    ],
+    [
+      { verdict: "actionable", rationale: "", adr: false, protected: false },
+      { verdict: "actionable", rationale: "", adr: false, protected: false, duplicate_of: 0 },
+    ],
+  );
+  const out = foldDuplicates(judged, judged);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].severity, "HIGH");
+  assert.match(out[0].criterion, /fix x.*a\.ts:1|fix x.*b\.ts:2/);
+  assert.match(out[0].location, /a\.ts:1/);
+  assert.match(out[0].location, /b\.ts:2/);
+  assert.equal(annotateFindings({ findings: judged.map((f) => ({ severity: f.severity })) }, judged).findings[1].duplicate_of, 0);
+});
+
 test("touchesProtectedPath: CI config, auth, deploy and .env, by the finding's location", () => {
   for (const p of [".github/workflows/ci.yml:3", ".gitlab-ci.yml", "Jenkinsfile:1", "app/.env.production:2", "src/auth/login.ts:10", "src/auth.ts:1", "scripts/deploy.sh:4", "infra/deploy/prod.yml"]) {
     assert.equal(touchesProtectedPath(p), true, p);
@@ -701,10 +739,24 @@ test("applyFindingVerdicts: an ADR clash or a protected path forces Debatable ov
     { verdict: "actionable", rationale: "ok", adr: false, protected: true },
     { verdict: "dismiss", rationale: "noise", adr: false, protected: false },
   ]);
-  assert.deepEqual(out.map((f) => f.verdict), ["debatable", "debatable", "debatable", "dismiss"]);
+  assert.deepEqual(out.map((f) => f.verdict), ["debatable", "debatable", "debatable", "actionable"]);
   assert.match(out[0].rationale, /^ok \[forced Debatable: contradicts a documented decision/);
   assert.match(out[1].rationale, /protected path/);
-  assert.equal(out[3].rationale, "noise", "a verdict no rule overrides is left alone");
+  assert.match(out[3].rationale, /^noise \[remapped dismiss → actionable/, "auto never dismisses");
+});
+
+test("applyFindingVerdicts: a dismiss on a protected path or with adr still ends up Debatable", () => {
+  const out = applyFindingVerdicts(
+    [
+      { severity: "LOW", location: ".github/workflows/ci.yml:9", criterion: "a" },
+      { severity: "LOW", location: "src/b.ts:1", criterion: "b" },
+    ],
+    [
+      { verdict: "dismiss", rationale: "noise", adr: false, protected: false },
+      { verdict: "dismiss", rationale: "noise", adr: true, protected: false },
+    ],
+  );
+  assert.deepEqual(out.map((f) => f.verdict), ["debatable", "debatable"]);
 });
 
 test("annotateFindings writes verdicts beside the sidecar's findings, skipping entries the parser drops", () => {
@@ -741,4 +793,76 @@ test("a deferred test check parses and does not demote complete", () => {
   const v = applySchemaPrefilter(r);
   assert.equal(v.status, "complete");
   assert.equal(v.demoted, false);
+});
+
+test("review findings carry issue, or an empty string when absent", () => {
+  const r = parseReviewReport("", {
+    verdict: "unmet",
+    findings: [
+      { severity: "HIGH", location: "a.ts:1", issue: " leaks the handle ", criterion: "closes it" },
+      { severity: "LOW", location: "b.ts:2", criterion: "renames x" },
+    ],
+  });
+  assert.equal(r.findings[0].issue, "leaks the handle");
+  assert.equal(r.findings[1].issue, "");
+});
+
+test("findingsTriagePrompt lists issue before criterion", async () => {
+  const { findingsTriagePrompt } = await import("../../orchestrator/lib/prompts.mjs");
+  const out = findingsTriagePrompt({
+    scope: "s", ref: "r", change: "git diff c", reportPath: "/p",
+    findings: [{ severity: "HIGH", location: "a.ts:1", issue: "PROBLEM-TEXT", criterion: "FIX-TEXT" }],
+  });
+  assert.ok(out.indexOf("PROBLEM-TEXT") > -1 && out.indexOf("PROBLEM-TEXT") < out.indexOf("FIX-TEXT"));
+  assert.ok(!out.includes("what the reviewer wants"));
+});
+
+test("findingsTriagePrompt does not offer dismiss", async () => {
+  const { findingsTriagePrompt } = await import("../../orchestrator/lib/prompts.mjs");
+  const out = findingsTriagePrompt({ scope: "s", ref: "r", change: "git diff c", findings: [{ severity: "LOW", location: "a:1", criterion: "x" }], reportPath: "/p" });
+  assert.match(out, /"actionable \| debatable"/);
+  assert.doesNotMatch(out, /dismiss \|?"|\| dismiss/);
+});
+
+// ─── carrying findings forward ────────────────────────────────────────────────
+
+const F = (severity, location, issue, extra = {}) => ({ severity, location, issue, criterion: "c", ...extra });
+
+test("carryFindings: a repeat (line ignored, text normalised) appears once uncarried; an unrepeated earlier finding is carried once", () => {
+  const latest = [F("HIGH", "a.js:10", "Bad  thing")];
+  const earlier = [
+    { findings: [F("HIGH", "a.js:3-5", "bad thing"), F("LOW", "b.js#L4", "nit", { verdict: "actionable", rationale: "x" })] },
+    { findings: [F("LOW", "b.js:9", "NIT")] },
+  ];
+  const out = carryFindings(earlier, latest);
+  assert.equal(out.length, 2);
+  assert.equal(out[0].carried, undefined);
+  assert.deepEqual(out[1], { severity: "LOW", location: "b.js#L4", issue: "nit", criterion: "c", carried: true });
+});
+
+test("parseReviewAggregate: a not_run block keeps the previous findings, carried, under the not_run verdict", () => {
+  const blk = (o) => `\`\`\`json\n${JSON.stringify({ branch: "b", slug: "s", ...o })}\n\`\`\`\n`;
+  const [rec] = parseReviewAggregate(blk({ verdict: "unmet", findings: [F("LOW", "a:1", "x")] }) + blk({ verdict: "not_run", findings: [] }));
+  assert.equal(rec.verdict, "not_run");
+  assert.equal(rec.findings.length, 1);
+  assert.equal(rec.findings[0].carried, true);
+  assert.equal(parseReviewAggregate(blk({ verdict: "all-met", findings: [{ severity: "LOW", carried: true, issue: "x" }] }))[0].findings[0].carried, true);
+});
+
+test("foldDuplicates: a duplicate whose target is not promotable stays promotable itself", () => {
+  const judged = [
+    { severity: "MEDIUM", location: "a.ts:1", criterion: "x", verdict: "debatable" },
+    { severity: "HIGH", location: "b.ts:2", criterion: "x too", verdict: "actionable", duplicate_of: 0 },
+  ];
+  const out = foldDuplicates(judged, [judged[1]]);
+  assert.deepEqual(out, [judged[1]]);
+});
+
+test("workerPrompt and fixPrompt carry no conflict text; conflictPrompt is the conflict dispatch", () => {
+  const base = { mainRoot: "/main", worktree: "/w", issuePath: "/w/i.md", slug: "x", criteria: "", resume: "", reportPath: "/w/r.json", branch: "b" };
+  const extra = { featureBranch: "f", conflictFiles: ["a.txt"] };
+  for (const p of [workerPrompt({ ...base, ...extra }), fixPrompt({ ...base, ...extra }), fixPrompt({ ...base, ...extra, kind: "review" })]) {
+    assert.doesNotMatch(p, /in progress|a\.txt|git commit --no-edit/);
+  }
+  assert.match(conflictPrompt({ ...base, ...extra }), /^- a\.txt$/m);
 });

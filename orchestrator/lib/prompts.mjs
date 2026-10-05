@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { shellQuote } from "./pane-host/shared.mjs";
 import { renderReviewContext } from "./review-context.mjs";
 
 /**
@@ -54,7 +55,7 @@ function projectConfigLine(mainRoot) {
   return `Project config: ${join(mainRoot, ".coding-crew")} (dev-commands.json, docs/test-conventions.md) — not in the worktree`;
 }
 
-export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criteria, resume, reportPath, featureBranch, conflictFiles = [] }) {
+export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criteria, resume, reportPath }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
     ...installModeLines(mainRoot, deps),
@@ -69,40 +70,21 @@ export function workerPrompt({ mainRoot, deps, worktree, issuePath, slug, criter
     "---",
   ];
   if (resume) lines.push("", resume);
-  if (conflictFiles.length) lines.push("", ...conflictLines(featureBranch, conflictFiles));
   lines.push("", ...resultBlock(worktree, reportPath));
   return `${lines.join("\n")}\n`;
 }
 
 /**
- * The structured-result instruction, verbatim, shared by every prompt that ends in a
- * `crew-coder` dispatch (a first attempt, and a fix retry alike) — report.mjs parses one
- * schema regardless of which prompt produced it, so the two must never drift apart.
+ * The structured-result instruction, shared by every prompt that ends in a `crew-coder` dispatch
+ * (a first attempt, and a fix retry alike). The schema itself has one owner, the coder protocol's
+ * **Report** section (orchestrator/roles/coder.md): a second copy here is one that drifts.
  */
 function resultBlock(worktree, reportPath) {
   return [
-    `Write your structured result to ${reportPath} as your last action. This file is the`,
-    "only thing the orchestrator reads — nothing you print in your final message is parsed,",
-    "so a summary sentence with no file write is",
-    "read as `blocked` — never as a silent `complete` — no matter how the work actually went:",
-    "",
-    "```json",
-    JSON.stringify(
-      {
-        status: "complete | partial | blocked",
-        branch: "<branch you committed to>",
-        working_directory: worktree,
-        checks: { test: "pass | fail | not_run", lint: "pass | fail | not_run", typecheck: "pass | fail | not_run", "<each other dev-commands.json check you ran, e.g. coverage>": "pass | fail | not_run" },
-        criteria: [{ text: "<criterion>", met: true }],
-        progress: "<what remains — required for partial>",
-        notes: "<anything a human needs>",
-        cause: "environment | code — required for blocked, optional for partial",
-        evidence: { command: "<the one command that shows why you stopped>", exit: 1, output: "<its verbatim output>" },
-      },
-      null,
-      2,
-    ),
-    "```",
+    `Write your structured result to ${reportPath} as your last action, in the JSON your protocol's`,
+    `**Report** section defines (\`working_directory\`: ${worktree}). This file is the only thing the`,
+    "orchestrator reads — nothing you print in your final message is parsed, so a summary sentence",
+    "with no file write is read as `blocked`, never as a silent `complete`.",
   ];
 }
 
@@ -116,10 +98,7 @@ function resultBlock(worktree, reportPath) {
  * is already accepted — the only job is to make the stated problem go away with the
  * smallest change that does it.
  */
-export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify", featureBranch, conflictFiles = [] }) {
-  if (kind === "conflict") {
-    return conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles });
-  }
+export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, checkOutput, reportPath, kind = "verify" }) {
   const isReview = kind === "review";
   const judged = isReview
     ? "This branch's code was already reviewed and accepted overall — it only failed on one or\n" +
@@ -154,15 +133,11 @@ export function fixPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, c
       "---",
     );
   }
-  if (conflictFiles.length) lines.push("", ...conflictLines(featureBranch, conflictFiles));
   lines.push("", ...resultBlock(worktree, reportPath));
   return `${lines.join("\n")}\n`;
 }
 
-/**
- * A merge of the feature branch into this one, left conflicted in the worktree: the
- * whole task of a conflict retry, and one more step of any other retry that hit it.
- */
+/** A merge of the feature branch into this one, left conflicted in the worktree. */
 function conflictLines(featureBranch, conflictFiles) {
   return [
     `A merge of \`${featureBranch}\` into this branch is in progress in the working directory, with`,
@@ -175,8 +150,8 @@ function conflictLines(featureBranch, conflictFiles) {
   ];
 }
 
-/** A retry whose only job is the conflicted merge. */
-function conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles }) {
+/** The conflict-only dispatch: its one job is the conflicted merge, never a step of another prompt. */
+export function conflictPrompt({ mainRoot, deps, worktree, issuePath, slug, branch, context, reportPath, featureBranch, conflictFiles }) {
   const lines = [
     `MAIN_ROOT=${mainRoot}`,
     ...installModeLines(mainRoot, deps),
@@ -217,7 +192,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
   // A size tells the reviewer to search the file for its figure rather than read it whole.
@@ -238,6 +213,9 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     "---",
     criteria.trim() || "(none listed in the issue)",
     "---",
+    ...(prdDecisions?.length
+      ? ["PRD decisions this issue implements:", "---", ...prdDecisions, "---"]
+      : []),
     "",
     `Gather the diff: git diff $(git merge-base ${featureBranch} ${branch})..${branch}`,
     ...(testOnly ? ["Diff scope: test-only — every changed file is a test, spec or fixture file."] : []),
@@ -303,12 +281,13 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
 export const FEATURE_REVIEW = "feature";
 
 /**
- * Feature mode (crew-reviewer's protocol § Feature Mode): the whole feature diff, once, at the first
- * drain. Same report object as a branch review, but no issue and no criteria — findings only.
+ * Feature mode (crew-reviewer's protocol § Feature Mode), at every drain: the whole
+ * feature diff or one area of it (its files only), or the commits since the last review. Same report
+ * object as a branch review, but no issue and no criteria — findings only.
  */
-export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAssets, reviewContext }) {
+export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, area = null, decisions = [], compatibility = null }) {
   return [
-    "Feature review: review the whole feature diff, once, before it ships.",
+    "Feature review: review the feature diff across its issues before it ships.",
     ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
     ...renderReviewContext(reviewContext),
     `Feature branch: ${featureBranch}`,
@@ -316,11 +295,32 @@ export function featureReviewPrompt({ featureBranch, base, reportPath, reviewAss
     `Branch: ${FEATURE_REVIEW}`,
     `Slug: ${FEATURE_REVIEW}`,
     "",
-    `Gather the diff: git diff ${base}..${featureBranch}`,
+    exclude
+      ? `Gather the diff: git log -p --reverse ${base}..${featureBranch} --not ${exclude}`
+      : area && !area.whole
+        ? // Paths are repo data: shell-quoted, and literal so `[id].js` or `:x` is no glob or pathspec magic.
+          // --no-renames keeps a renamed file's old path, and so its deletion, in view.
+          `Gather the diff: git --literal-pathspecs diff --no-renames ${base}..${featureBranch} -- ${area.files.map(shellQuote).join(" ")}`
+        : `Gather the diff: git diff ${base}..${featureBranch}`,
+    ...(exclude ? ["", `An earlier run already reviewed up to ${base}; this range holds only the commits added since, without anything merged in from ${exclude}.`] : []),
+    ...(area
+      ? [
+          "",
+          "Area:",
+          `Name: ${area.name}`,
+          "Files:",
+          ...(area.files.length ? area.files.map((f) => `- ${f}`) : ["- (the whole diff)"]),
+          "Decisions:",
+          ...(decisions.length ? decisions : ["(none given for this area)"]),
+        ]
+      : []),
+    ...(!area && decisions.length ? ["", "PRD decisions:", ...decisions] : []),
+    ...(compatibility ? ["", "PRD ## Compatibility & Migration (verbatim):", "", compatibility] : []),
     "",
     "Every issue's branch was already reviewed on its own diff, and the checks passed on the merged",
-    "branch. Look for what only the whole diff shows (crew-reviewer's Feature Mode). There is no issue and",
-    "no acceptance criteria: give no AC verdict, only findings.",
+    `branch. Look first for what only ${area && !area.whole ? "this area's diff, across its issues," : "the whole diff"} shows, but report a defect inside one`,
+    "issue's diff too, at any severity (crew-reviewer's Feature Mode). There is no issue and no acceptance",
+    "criteria: give no AC verdict, only findings.",
     "",
     `Write your structured result to ${reportPath} as your last action. This file is the only thing`,
     "counted — nothing you print in your final message is parsed:",
@@ -499,27 +499,35 @@ function coderEvidenceLines(e) {
 }
 
 /**
- * crew-triage's findings mode: judge each review finding Actionable / Debatable / Dismiss, by the
- * shared rubric (inlined in the agent from skills/_shared/fragments/common/findings-rubric.md).
+ * crew-triage's findings mode: judge each review finding Actionable / Debatable, by the shared
+ * rubric (inlined in the agent from skills/_shared/fragments/findings-rubric.md). Never
+ * Dismiss: a doubted finding goes to the coder's premise check.
  * Dispatched apart from the reviewer that raised them — a review never grades its own findings.
  * `scope` says where the findings came from; `findings` are report.mjs's normalised findings.
  */
-export function findingsTriagePrompt({ scope, ref, featureBranch, findings, reportPath }) {
+/**
+ * `change` is the command that shows the reviewed change: a branch is triaged after it merged, so
+ * a diff against the feature branch would show the other branches' work, inverted, and not its own.
+ */
+export function findingsTriagePrompt({ scope, ref, change, findings, reportPath }) {
   return [
     "Findings mode: judge each code-review finding below by your Findings rubric, and answer",
     "per finding. You are not fixing anything, and you are not the reviewer that raised them.",
     scope,
-    `The code under review is on ${ref}, which the main checkout is not on: read it with`,
-    `git show ${ref}:<path>, and the change with git diff ${featureBranch}..${ref}.`,
+    `Read the code under review with git show ${ref}:<path>, and the change with ${change}.`,
     "Read each cited location before you judge its finding, and CONTEXT.md and docs/adr/ (when",
     "they exist) for any decision a fix would contradict.",
     "",
-    "Findings (index — severity — location — what the reviewer wants):",
-    ...findings.map((f, i) => `${i} — ${f.severity} — ${f.location || "(no location)"} — ${f.criterion}`),
+    "Findings (index — severity — location — problem — fix criterion):",
+    ...findings.map((f, i) => `${i} — ${f.severity} — ${f.location || "(no location)"} — ${f.issue ? `${f.issue} — ` : ""}${f.criterion}`),
     "",
     `Write your structured verdicts to ${reportPath} as your last action. This file is the only`,
     "thing the orchestrator reads — nothing you print in your final message is parsed. One entry",
     "per finding, `index` as listed above:",
+    "",
+    "`duplicate_of` is only for two findings naming the same defect (one fix resolves both); it must",
+    "name a finding that is not itself a duplicate. Findings that merely touch the same file or theme",
+    "are not duplicates.",
     "",
     "```json",
     JSON.stringify(
@@ -527,10 +535,11 @@ export function findingsTriagePrompt({ scope, ref, featureBranch, findings, repo
         findings: [
           {
             index: 0,
-            verdict: "actionable | debatable | dismiss",
+            verdict: "actionable | debatable",
             rationale: "one line: why this verdict",
             adr: "true when the fix would contradict an ADR or CONTEXT.md, else false",
             protected: "true when the fix would touch CI config, auth, deploy or .env, else false",
+            duplicate_of: "optional: the index of an earlier-listed finding describing the same defect; omit otherwise",
           },
         ],
       },
