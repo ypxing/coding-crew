@@ -127,13 +127,25 @@ J
   [[ "$output" == *"ERROR "*"01-store.md: "*"## Acceptance criteria"* ]]
 }
 
-@test "WARN: criteria count outside 3-8 (too few and too many); exit 0" {
+@test "criteria count: no WARN at 1-10; WARN at 11 names the context-budget check; exit 0" {
   sed -i.bak '/^- \[ \] Third criterion$/d' "$W/issues/01-store.md"
-  for i in 4 5 6 7 8 9; do sed -i.bak "s/^- \[ \] Second criterion\$/&\n- [ ] extra $i/" "$W/issues/02-cli.md"; done
-  lint_clean
+  for i in 4 5 6 7 8 9 10 11; do sed -i.bak "s/^- \[ \] Second criterion\$/&\n- [ ] extra $i/" "$W/issues/02-cli.md"; done
+  f="$BATS_TEST_TMPDIR/one.md"
+  printf '## What to build\n\nx\n\n## Implements\n\nB1\n\n## Acceptance criteria\n\n- [ ] only\n' > "$f"
+  t="$BATS_TEST_TMPDIR/ten.md"
+  { printf '## What to build\n\nx\n\n## Implements\n\nB1\n\n## Acceptance criteria\n\n'; for i in $(seq 1 10); do printf -- '- [ ] c%s\n' "$i"; done; } > "$t"
+  lint_clean --issue "$f" --issue "$t"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"WARN "*"01-store.md: "*"2 acceptance criteria"* ]]
-  [[ "$output" == *"WARN "*"02-cli.md: "*"8 acceptance criteria"* || "$output" == *"WARN "*"02-cli.md: "*"9 acceptance criteria"* ]]
+  [[ "$output" != *"01-store.md: "*"acceptance criteria"* ]]
+  [[ "$output" != *"one.md: "*"acceptance criteria"* ]]
+  [[ "$output" != *"ten.md: "*"acceptance criteria"* ]]
+  [[ "$output" == *"WARN "*"02-cli.md: 11 acceptance criteria"*"context-budget check"* ]]
+  [[ "$output" != *"expected 3-8"* ]]
+}
+
+@test "header comment states the criteria WARN as over 10, a context-budget check" {
+  grep -q '^# WARN:  more than 10 acceptance criteria (a context-budget check' "$LINT"
+  ! grep -q '3-8' "$LINT"
 }
 
 @test "WARN: PRD ID no issue Implements" {
@@ -142,6 +154,52 @@ J
   [ "$status" -eq 0 ]
   [[ "$output" == *"WARN "*"PRD.md: "*D9* ]]
   [[ "${output//$W/}" != *D1* ]]
+}
+
+@test "a PRD ID whose line ends in (no slice) needs no Implements: no coverage WARN" {
+  printf -- '- **D9** Orphan decision, already true of the code. (no slice)\n' >> "$W/PRD.md"
+  printf -- '- **D10** Unmarked orphan.\n' >> "$W/PRD.md"
+  lint_clean --prd "$W/PRD.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *D9* ]]
+  [[ "$output" == *"WARN "*"PRD.md: D10 is not named by any issue's ## Implements"* ]]
+}
+
+@test "a (no slice) ID that an issue does implement is neither an error nor a warning" {
+  sed -i.bak 's/^- \*\*D1\*\* \(.*\)$/- **D1** \1 (no slice)/' "$W/PRD.md"
+  grep -q '^- \*\*D1\*\* .*(no slice)$' "$W/PRD.md"
+  lint_clean --deps "$W/issues/issues-deps.json" --prd "$W/PRD.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "(no slice) counts only at the end of the ID's line" {
+  printf -- '- **D9** Mentions (no slice) mid-line, then more.\n' >> "$W/PRD.md"
+  lint_clean --prd "$W/PRD.md"
+  [[ "$output" == *"WARN "*"PRD.md: D9 is not named"* ]]
+}
+
+@test "--known: an ID named only in a known file's ## Implements needs no WARN" {
+  mkdir -p "$W/issues/done"
+  mv "$W/issues/01-store.md" "$W/issues/done/"
+  grep -q 'D1' "$W/issues/done/01-store.md"
+  run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md" \
+    --known "$W/issues/done/01-store.md" --prd "$W/PRD.md"
+  [ "$status" -eq 0 ]
+  [[ "${output//$W/}" != *D1* ]]
+  # the same set without --known: D1 is uncovered (02-cli's ref also errors)
+  run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md" --prd "$W/PRD.md"
+  [[ "$output" == *"WARN "*"PRD.md: D1 is not named"* ]]
+}
+
+@test "--known naming a file that does not exist is still only a name" {
+  mkdir -p "$W/issues/done"
+  mv "$W/issues/01-store.md" "$W/issues/done/"
+  run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md" \
+    --known "$W/issues/gone/01-store.md" --prd "$W/PRD.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *ERROR* ]]
+  [[ "$output" == *"WARN "*"PRD.md: D1 is not named"* ]]
 }
 
 @test "WARN: blocked-on issue without Exposes, no What to build, no Implements" {
@@ -300,4 +358,65 @@ H106="tests/fixtures/lint-issues/human/issues/106-enable-main-ruleset.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"no ## What to build section"* ]]
   [[ "$output" == *"no ## Implements section"* ]]
+}
+
+# shared_issue <file> <blocked-by line> <body text> — a minimal well-formed issue naming paths in its body.
+shared_issue() {
+  printf 'Status: ready-for-agent\n\n## What to build\n\n%s\n\n## Implements\n\nD1\n\n## Blocked by\n\n%s\n\n## Acceptance criteria\n\n- [ ] a\n' "$3" "$2" > "$1"
+}
+
+@test "WARN: two unlinked issues naming the same file get exactly one warning, exit 0" {
+  d="$BATS_TEST_TMPDIR/s"; mkdir -p "$d"
+  shared_issue "$d/01-a.md" "None" "Edit \`src/a.ts\` and registry.json."
+  shared_issue "$d/02-b.md" "None" "Fix the bug at src/a.ts:10, see registry.json."
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep -c '^WARN ')" -eq 1 ]
+  [[ "$output" == "WARN $d/01-a.md: "*"$d/02-b.md"*"src/a.ts"* ]]
+  [[ "$output" != *registry.json* ]]
+}
+
+@test "shared file: no warning when one is Blocked by the other, directly or through a third issue" {
+  d="$BATS_TEST_TMPDIR/s"; mkdir -p "$d"
+  shared_issue "$d/01-a.md" "None" "Edit src/a.ts."
+  shared_issue "$d/02-b.md" "- 01-a.md" "Edit src/a.ts:10."
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *src/a.ts* ]]
+  shared_issue "$d/02-b.md" "- 03-c.md" "Edit src/a.ts:10."
+  shared_issue "$d/03-c.md" "- 01-a.md" "Edit src/c.ts."
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md" --issue "$d/03-c.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *src/a.ts* ]]
+}
+
+@test "shared file: no warning against a --known issue, a PRD link or a Blocked by path" {
+  d="$BATS_TEST_TMPDIR/s"; mkdir -p "$d"
+  shared_issue "$d/00-done.md" "None" "Edit src/a.ts."
+  shared_issue "$d/01-a.md" "- ../done/00-done.md" "Edit src/a.ts. PRD: https://example.com/x/y.md
+## Context Documents
+
+- PRD: .scratch/feat/PRD.md"
+  shared_issue "$d/02-b.md" "- ../done/00-done.md" "Edit src/b.ts.
+## Context Documents
+
+- PRD: .scratch/feat/PRD.md"
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md" --known "$d/00-done.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "shared-file WARN is advisory and points at to-issues' edge rule, not at a conflict" {
+  d="$BATS_TEST_TMPDIR/s"; mkdir -p "$d"
+  shared_issue "$d/01-a.md" "None" "Edit src/a.ts."
+  shared_issue "$d/02-b.md" "None" "Edit src/a.ts:10."
+  run bash "$LINT" --issue "$d/01-a.md" --issue "$d/02-b.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"src/a.ts (advisory: add a Blocked by only if to-issues' edge rule row 1 or 2 matches)" ]]
+  [[ "$output" != *"may conflict"* ]]
+  ! grep -q 'may conflict' "$LINT"
+}
+
+@test "header comment lists the shared-file WARN" {
+  sed -n '1,/^set -uo/p' "$LINT" | grep -q -i 'same file'
 }

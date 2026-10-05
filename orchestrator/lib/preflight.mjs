@@ -55,8 +55,9 @@ export function missingAssetsMessage(installDir, missing) {
  * the tracker keeps as a file is linted in place; any other has its body written out as
  * `<number>-<slug>.md` — the filename is how `Issue #<n>` refs resolve. `deps` is the tracker's
  * `issues-deps.json` (`featureDepsFile`); `prd` is `.scratch/<slug>/PRD.md`, else the PRD issue's
- * body. `known` names the done issues by the same filenames: a `## Blocked by` ref to one
- * resolves, as it does for dispatch, but it is not linted.
+ * body. `known` is the done issues, as files the same way: a `## Blocked by` ref to one resolves
+ * by its filename, as it does for dispatch, and its `## Implements` counts toward PRD coverage, but
+ * it is not linted.
  */
 async function lintSet(sprint, mainRoot) {
   const slug = sprint.featureSlug;
@@ -73,8 +74,9 @@ async function lintSet(sprint, mainRoot) {
   };
   const fileName = (i) => i.file ?? `${i.number}-${i.slug}.md`;
   const work = all.filter((i) => !tracker.isPrdIssue(i));
-  const issues = work.filter((i) => i.status !== "done").map((i) => i.path ?? write(fileName(i), i.text));
-  const known = work.filter((i) => i.status === "done").map(fileName);
+  const asFile = (i) => i.path ?? write(fileName(i), i.text);
+  const issues = work.filter((i) => i.status !== "done").map(asFile);
+  const known = work.filter((i) => i.status === "done").map(asFile);
   const deps = tracker.featureDepsFile(mainRoot, { featureSlug: slug });
   const prdIssue = prdFile ? null : all.find((i) => tracker.isPrdIssue(i));
   return { issues, known, deps, prd: prdFile ?? (prdIssue ? write("PRD.md", prdIssue.text) : null) };

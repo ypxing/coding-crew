@@ -5,7 +5,8 @@
 #   bash lint-issues.sh --issue <file> [--issue <file> …] [--known <file> …] [--deps <issues-deps.json>] [--prd <file>]
 #
 # --known names an issue outside the set being linted (already done, or published by an earlier
-# run) that a `## Blocked by` ref may resolve to. Only its basename is used: never opened, never linted.
+# run) that a `## Blocked by` ref may resolve to, by basename. It is never linted; when the file
+# exists, its `## Implements` counts toward the PRD coverage check.
 #
 # Prints one line per problem:
 #   ERROR <file>: <problem>   breaks dispatch or the gates
@@ -15,15 +16,22 @@
 #
 # ERROR: a dependency cycle; a `## Blocked by` ref (filename, or `Issue #<n>`) matching no issue in
 #        the set; --deps edges that differ from the `## Blocked by` prose; no `## Acceptance criteria`.
-# WARN:  acceptance-criteria count outside 3-8; a **D<n>**/**B<n>** ID in --prd that no issue's
-#        `## Implements` names; an issue another issue blocks on with no `### Exposes:` under
+# WARN:  more than 10 acceptance criteria (a context-budget check — does it fit one coder session?
+#        never a rule to split); a **D<n>**/**B<n>** ID in --prd that no issue's (nor --known
+#        file's) `## Implements` names, unless its PRD line ends in `(no slice)`; an issue another issue blocks on with no `### Exposes:` under
 #        `## Interfaces`; no `## What to build`; no `## Implements`. A `Status: ready-for-human`
 #        issue instead gets: no `## For a human` section, or that section missing one of its five
 #        `###` parts (Why a person, What changes, Steps, If skipped or done wrong, Done when); it is
-#        exempt from the `## What to build` / `## Implements` warnings.
+#        exempt from the `## What to build` / `## Implements` warnings. Two issues that name the
+#        same file (a path with a `/`, `:<line>` dropped) with neither reaching the other through
+#        `## Blocked by` (directly or via other issues in the set). Advisory: a Blocked by edge comes
+#        only from to-issues' edge rule rows 1–2, never from this WARN alone.
+#        One WARN per pair, on the first file. Paths under `## Blocked by` / `## Context Documents`,
+#        under `.scratch/`, and in URLs do not count; --known issues are never read.
 #
-# The PRD ID contract: a line starting `- **D<n>**` or `- **B<n>**`. Without --prd (or with a PRD
-# that has no such IDs) the coverage check is skipped silently.
+# The PRD ID contract: a line starting `- **D<n>**` or `- **B<n>**`. A line ending in `(no slice)`
+# marks a decision no issue needs to implement (already true, or only constrains other slices).
+# Without --prd (or with a PRD that has no such IDs) the coverage check is skipped silently.
 #
 # Issue files are data. Their text is only ever read by grep/awk/read — never evaluated — and a
 # `## Blocked by` entry is only compared, by basename, with the --issue/--known files, never opened.
@@ -33,6 +41,7 @@ set -f # no globbing of anything read from an issue file
 
 ISSUES=()
 KNOWN=()
+KNOWN_PATHS=()
 DEPS_FILE=""
 PRD_FILE=""
 
@@ -44,7 +53,7 @@ usage() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --issue) [[ $# -ge 2 ]] || usage; ISSUES+=("$2"); shift 2 ;;
-    --known) [[ $# -ge 2 ]] || usage; KNOWN+=("${2##*/}"); shift 2 ;;
+    --known) [[ $# -ge 2 ]] || usage; KNOWN+=("${2##*/}"); KNOWN_PATHS+=("$2"); shift 2 ;;
     --deps) [[ $# -ge 2 ]] || usage; DEPS_FILE="$2"; shift 2 ;;
     --prd) [[ $# -ge 2 ]] || usage; PRD_FILE="$2"; shift 2 ;;
     *) echo "lint-issues.sh: unknown argument: $1" >&2; usage ;;
@@ -159,8 +168,8 @@ for idx in "${!NAMES[@]}"; do
   # Acceptance criteria
   if has_section "$file" "Acceptance criteria"; then
     count=$(section "$file" "Acceptance criteria" | grep -c -E '^[[:space:]]*[-*][[:space:]]+\[[ xX]\]' || true)
-    if ((count < 3 || count > 8)); then
-      warn "$file" "$count acceptance criteria (expected 3-8)"
+    if ((count > 10)); then
+      warn "$file" "$count acceptance criteria (over 10: a context-budget check — does it fit one coder session?)"
     fi
   else
     err "$file" "no ## Acceptance criteria section"
@@ -302,13 +311,69 @@ if [[ -n "$EDGE_LIST" ]]; then
   ')
 fi
 
+# --- same file named by two issues with no Blocked by path between them ---
+# paths_of <file> — sorted unique file paths the issue names: a token with a `/` whose last part has
+# an extension. `src/a.ts:10` counts as src/a.ts; Blocked by / Context Documents, URLs and .scratch/ do not.
+paths_of() {
+  awk '
+    /^[ \t]*```/ { fence = !fence }
+    !fence && /^##[ \t]+/ && !/^###/ {
+      h = tolower($0); sub(/^##[ \t]+/, "", h); sub(/[ \t:]+$/, "", h)
+      skip = (h == "blocked by" || h == "context documents"); next
+    }
+    !skip { print }
+  ' "$1" \
+    | sed -E 's#[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]]*##g' \
+    | grep -o -E '[A-Za-z0-9_.~-]+(/[A-Za-z0-9_.-]+)+' \
+    | sed -E 's#^(\./)+##; s#\.+$##' \
+    | grep -E '/[^/]*[^/.]\.[A-Za-z0-9]+$' \
+    | grep -v -E '^\.scratch/' \
+    | sort -u || true
+}
+
+if ((${#NAMES[@]} > 1)); then
+  # "a b" for every b reachable from a over Blocked by / --deps edges.
+  REACH=$(printf '%s' "$EDGE_LIST" | sort -u | awk '
+    NF == 2 { adj[$1] = adj[$1] " " $2; nodes[$1] = 1 }
+    END {
+      for (a in nodes) {
+        split("", seen); n = 0; q[++n] = a
+        for (i = 1; i <= n; i++) {
+          m = split(adj[q[i]], parts, " ")
+          for (j = 1; j <= m; j++) if (!(parts[j] in seen)) { seen[parts[j]] = 1; q[++n] = parts[j]; print a, parts[j] }
+        }
+      }
+    }')
+  FILE_PATHS=()
+  for idx in "${!NAMES[@]}"; do FILE_PATHS[$idx]=$(paths_of "${PATHS[$idx]}"); done
+  for i in "${!NAMES[@]}"; do
+    [[ -n "${FILE_PATHS[$i]}" ]] || continue
+    for j in "${!NAMES[@]}"; do
+      ((j > i)) || continue
+      [[ -n "${FILE_PATHS[$j]}" ]] || continue
+      shared=$(comm -12 <(printf '%s\n' "${FILE_PATHS[$i]}") <(printf '%s\n' "${FILE_PATHS[$j]}") | paste -sd, - | sed 's/,/, /g')
+      [[ -n "$shared" ]] || continue
+      if printf '%s\n' "$REACH" | grep -q -x -F -e "${NAMES[$i]} ${NAMES[$j]}" -e "${NAMES[$j]} ${NAMES[$i]}"; then
+        continue
+      fi
+      warn "${PATHS[$i]}" "names the same file as ${PATHS[$j]} with no ## Blocked by between them: $shared (advisory: add a Blocked by only if to-issues' edge rule row 1 or 2 matches)"
+    done
+  done
+fi
+
 # --- PRD coverage ---
 if [[ -n "$PRD_FILE" ]]; then
-  ids=$(grep -o -E '^[[:space:]]*[-*][[:space:]]+\*\*[DB][0-9]+\*\*' "$PRD_FILE" | grep -o -E '[DB][0-9]+' | sort -u || true)
+  # A `(no slice)` line needs no issue; it never errors when one implements it anyway.
+  ids=$(grep -E '^[[:space:]]*[-*][[:space:]]+\*\*[DB][0-9]+\*\*' "$PRD_FILE" \
+    | grep -v -E '\(no slice\)[[:space:]]*$' \
+    | grep -o -E '^[[:space:]]*[-*][[:space:]]+\*\*[DB][0-9]+\*\*' | grep -o -E '[DB][0-9]+' | sort -u || true)
   if [[ -n "$ids" ]]; then
     implemented=""
     for f in "${PATHS[@]}"; do
       implemented+="$(section "$f" "Implements")"$'\n'
+    done
+    for f in "${KNOWN_PATHS[@]+"${KNOWN_PATHS[@]}"}"; do
+      [[ -f "$f" && -r "$f" ]] && implemented+="$(section "$f" "Implements")"$'\n'
     done
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue

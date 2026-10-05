@@ -131,29 +131,32 @@ setup() {
 
 # --- Slicing, quiz, coverage trace, lint gate (rendered skill) ---
 
-@test "to-issues slice rules: a slice is one observable behaviour at the highest existing seam; first slice is the thinnest end-to-end path" {
-  grep -qF 'one externally observable behaviour' "$SKILL_FILE"
+@test "to-issues slice rules: behaviours observable at the highest existing seam; thinnest first slice only when split" {
+  grep -qF 'externally observable' "$SKILL_FILE"
   grep -qF 'highest existing seam' "$SKILL_FILE"
   grep -qiE 'schema / API / UI.*(only )?(as )?an example|example.*schema / API / UI' "$SKILL_FILE"
-  grep -qiE 'first slice is the thinnest end-to-end path' "$SKILL_FILE"
+  rules=$(awk '/<vertical-slice-rules>/{f=1;next} /<\/vertical-slice-rules>/{f=0} f' "$SKILL_FILE")
+  echo "$rules" | grep -qE '^- If the work is split, the first slice is the thinnest end-to-end path'
+  ! echo "$rules" | grep -qE '^- The first slice is the thinnest'
 }
 
-@test "to-issues size rules: context-window ceiling kept, merge rule replaces 'many thin slices', 3-8 criteria soft target" {
+@test "to-issues size rules (D6): no 3-8 target, no merge rule; over 10 criteria is a context-budget check, never a split rule" {
   grep -qF 'single fresh context window' "$SKILL_FILE"
   ! grep -qF 'Prefer many thin slices' "$SKILL_FILE"
-  grep -qiE 'merge.*share a test seam|share a test seam.*merge' "$SKILL_FILE"
-  grep -qiE 'neither is reviewable or demoable alone' "$SKILL_FILE"
-  grep -qE '3(–|-)8 acceptance criteria' "$SKILL_FILE"
+  ! grep -qiE 'share a test seam' "$SKILL_FILE"
+  ! grep -qiE 'neither is reviewable or demoable alone' "$SKILL_FILE"
+  ! grep -qE '3(–|-)8 acceptance criteria' "$SKILL_FILE"
+  rules=$(awk '/<vertical-slice-rules>/{f=1;next} /<\/vertical-slice-rules>/{f=0} f' "$SKILL_FILE")
+  echo "$rules" | grep -qE 'more than 10 acceptance criteria.*context-budget check.*never.*rule to split'
 }
 
 @test "to-issues quiz: ordered outlier list then one approve/adjust prompt; the five generic questions are gone" {
-  local a b c d e f g
+  local a b c d e g
   a=$(grep -n 'Contradicted assumptions' "$SKILL_FILE" | head -1 | cut -d: -f1)
   b=$(grep -n "PRD's \`## Assumptions\`" "$SKILL_FILE" | head -1 | cut -d: -f1)
   c=$(grep -n 'PRD IDs no slice covers' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  d=$(grep -n 'Slices outside the criteria range' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  e=$(grep -n 'Edges and merges the edge rule produced' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  f=$(grep -n '\*\*Seam count\*\*' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  d=$(grep -n 'Slices over 10 criteria' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  e=$(grep -n 'Splits and edges' "$SKILL_FILE" | head -1 | cut -d: -f1)
   g=$(grep -n 'HITL choices' "$SKILL_FILE" | head -1 | cut -d: -f1)
   # One check per line: bats fails only on the last command of an && list, so a chained
   # empty match here passed silently.
@@ -162,20 +165,15 @@ setup() {
   [ -n "$c" ]
   [ -n "$d" ]
   [ -n "$e" ]
-  [ -n "$f" ]
   [ -n "$g" ]
   [ "$a" -lt "$b" ]
   [ "$b" -lt "$c" ]
   [ "$c" -lt "$d" ]
   [ "$d" -lt "$e" ]
-  [ "$e" -lt "$f" ]
-  [ "$f" -lt "$g" ]
-  grep -qiE 'one approve/adjust prompt' "$SKILL_FILE"
-  ! grep -qF 'Does the granularity feel right' "$SKILL_FILE"
-  ! grep -qF 'Are the blocking edges correct' "$SKILL_FILE"
-  ! grep -qF 'Should any slices be merged or split further' "$SKILL_FILE"
-  ! grep -qF 'Are the correct slices marked as HITL and AFK' "$SKILL_FILE"
-  ! grep -qF 'For any shared surface listed above' "$SKILL_FILE"
+  [ "$e" -lt "$g" ]
+  ! grep -q 'Slices outside the criteria range' "$SKILL_FILE"
+  ! grep -q 'Edges and merges the edge rule produced' "$SKILL_FILE"
+  grep -q 'gh issue view <n> --comments' "$SKILL_FILE"
 }
 
 @test "to-issues: a coverage table maps every D<n>/B<n> to its slices before the quiz; skipped with no IDs" {
@@ -206,8 +204,19 @@ setup() {
 }
 
 @test "to-issues: under github the lint run uses provisional Issue #<n> numbers and --known for existing milestone issues" {
-  grep -qF -- '--known <number>-<slug>.md' "$SKILL_FILE"
+  grep -qF -- 'and pass it as `--known`' "$SKILL_FILE"
   grep -qiE 'replace each `Issue #<n>` with the number `gh issue create` returned' "$SKILL_FILE"
+}
+
+@test "to-issues: the shared-file WARN is advisory, never by itself grounds for a Blocked by edge" {
+  grep -qF 'The shared-file `WARN` (two issues naming the same file with no `## Blocked by` path between them) is advisory: it is never by itself grounds for a `Blocked by` edge — only the edge rule'"'"'s rows 1–2 are' "$SKILL_FILE"
+}
+
+@test "to-issues: under github, existing milestone issues' bodies are --known files whose Implements count toward coverage" {
+  grep -qF 'write its body (`gh issue view <n> --json body -q .body`) to `.scratch/<feature-slug>/.lint/known/<n>-<slug>.md`' "$SKILL_FILE"
+  grep -qF 'an existing `--known` file'"'"'s `## Implements` counts toward `--prd` coverage' "$SKILL_FILE"
+  run grep -qF 'never opened' "$SKILL_FILE"
+  [ "$status" -ne 0 ]
 }
 
 @test "to-issues: a new parser/validator/gate gets a criterion over the repo's existing examples, as committed fixtures" {
@@ -234,37 +243,71 @@ setup() {
   grep -q 'gh issue view <number> \[--repo owner/name\] --json number,title,body,labels,state$' "$SCRIPT_DIR/docs/templates/trackers/github.md"
 }
 
-# --- Edge rule, overhead, quiz items (B1-B3, D3), anchored on the skill's own headings ---
+# --- Merge by default, split reasons, edge rule, overhead, quiz items, anchored on the skill's own headings ---
 
-@test "to-issues B1: edge rule has four rows in order, with 'at most 8' criteria and small-file merge" {
-  section=$(awk '/^### 4\. Draft vertical slices/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
-  rows=$(echo "$section" | awk '/^\*\*Edge rule\.\*\*/{f=1;next} f && /^[0-9]+\. /{print} f && /^$/ && n++>0{exit}')
-  [ "$(echo "$rows" | wc -l | tr -d ' ')" = 4 ]
-  echo "$rows" | sed -n 1p | grep -q '^1\. One slice consumes what the other produces.*`Blocked by`'
-  echo "$rows" | sed -n 2p | grep -q '^2\. The two change the same meaning.*`Blocked by`'
-  echo "$rows" | sed -n 3p | grep -q '^3\. They edit the same small file.*at most 8 acceptance criteria.*merge them into one slice'
-  echo "$rows" | sed -n 4p | grep -q '^4\. Anything else.*parallel'
-  echo "$section" | grep -q 'first match wins'
+step4() { awk '/^### 4\. Draft vertical slices/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
+quiz() { awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
+
+@test "to-issues D1/B1: step 4 starts from one slice for the whole PRD and splits only for a named reason" {
+  section=$(step4)
+  echo "$section" | head -5 | grep -qF 'Start from **one slice for the whole PRD**'
+  echo "$section" | grep -qiF 'name the reason on every split'
 }
 
-@test "to-issues D3: per-slice overhead sentence precedes the edge rule" {
-  section=$(awk '/^### 4\. Draft vertical slices/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
+@test "to-issues D2: the four split reasons, each named, in order; unrelated modules or seams are not one" {
+  section=$(step4)
+  reasons=$(echo "$section" | awk '/^Start from \*\*one slice/{f=1;next} f && /^[0-9]+\. /{print} f && /^[^0-9]/ && n++>1{exit}')
+  [ "$(echo "$reasons" | wc -l | tr -d ' ')" = 4 ]
+  echo "$reasons" | sed -n 1p | grep -q '^1\. \*\*Context budget\*\* — one coder cannot hold it in one fresh session'
+  echo "$reasons" | sed -n 2p | grep -q '^2\. \*\*Human boundary\*\* — part is HITL, the rest AFK'
+  echo "$reasons" | sed -n 3p | grep -q '^3\. \*\*Parallelism worth having\*\* — both halves are large and independent'
+  echo "$reasons" | sed -n 3p | grep -q 'a half of a few criteria does not qualify'
+  echo "$reasons" | sed -n 4p | grep -q "^4\. \*\*Expand–contract order\*\* — .*\`## Compatibility & Migration\`.*\`references/expand-contract.md\`.*must land in sequence"
+  echo "$section" | grep -qi 'unrelated modules or test seams are not a reason on their own'
+}
+
+@test "to-issues D3: context budget is anchored to the crew-afk-review reference size, no line limit" {
+  section=$(step4)
+  echo "$section" | grep -qF '#148–#160: 7–44 files, ~100–1600 lines'
+  echo "$section" | grep -qi 'no line limit'
+}
+
+@test "to-issues D4: edge rule has only the two Blocked by rows, between split slices; row 3, the parallel row and first-match are gone" {
+  section=$(step4)
+  echo "$section" | grep -q '^\*\*Edge rule\.\*\* Between slices that remain split'
+  rows=$(echo "$section" | awk '/^\*\*Edge rule\.\*\*/{f=1;next} f && /^[0-9]+\. /{print} f && /^$/ && n++>0{exit}')
+  [ "$(echo "$rows" | wc -l | tr -d ' ')" = 2 ]
+  echo "$rows" | sed -n 1p | grep -q '^1\. One slice consumes what the other produces.*`Blocked by`'
+  echo "$rows" | sed -n 2p | grep -q '^2\. The two change the same meaning.*`Blocked by`'
+  ! echo "$section" | grep -q 'first match wins'
+  ! echo "$section" | grep -q 'same small file'
+  ! echo "$section" | grep -q 'Anything else'
+  echo "$section" | grep -qi 'parallelism worth having.*never.*edge\|never yields an edge'
+}
+
+@test "to-issues D8: overhead sentence precedes the edge rule and names the serial-round cost of an edge" {
+  section=$(step4)
   echo "$section" | grep -q 'Every slice costs fixed overhead before and after its code: a worktree, a deps install, a coder dispatch, verify, review and merge'
+  echo "$section" | grep -q 'Every `Blocked by` edge also adds a serial round'
   o=$(echo "$section" | grep -n 'Every slice costs fixed overhead' | cut -d: -f1)
   e=$(echo "$section" | grep -n 'Edge rule\.' | cut -d: -f1)
   [ "$o" -lt "$e" ]
 }
 
-@test "to-issues B2: quiz lists each edge/merge with its reason, not a question per shared surface" {
-  quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
-  echo "$quiz" | grep -q '^5\. \*\*Edges and merges the edge rule produced\*\* — one line per edge or merge'
-  echo "$quiz" | grep -q 'naming the slices and the rule row (reason)'
-  echo "$quiz" | grep -q "Don't ask whether an overlap needs an edge"
+@test "to-issues D6: quiz item 4 lists slices over 10 criteria as a context-budget check" {
+  quiz | grep -q '^4\. \*\*Slices over 10 criteria\*\* — .*more than 10 acceptance criteria.*context-budget check'
 }
 
-@test "to-issues B3: quiz asks whether slices can share a seam when more than two distinct seams are named" {
-  quiz=$(awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE")
-  echo "$quiz" | grep -q '^6\. \*\*Seam count\*\*'
-  echo "$quiz" | grep -q 'name more than two distinct seams'
-  echo "$quiz" | grep -q 'whether some slices can share one seam'
+@test "to-issues D7/B2: quiz item 5 lists each split with its reason and each edge with its row; the seam-count item is gone" {
+  q=$(quiz)
+  echo "$q" | grep -q '^5\. \*\*Splits and edges\*\* — one line per split naming its reason from step 4'
+  echo "$q" | grep -q 'one line per `Blocked by` edge naming the edge-rule row'
+  echo "$q" | grep -q "Don't ask whether an overlap needs an edge"
+  ! echo "$q" | grep -q 'Seam count'
+  ! echo "$q" | grep -q 'distinct seams'
+  echo "$q" | grep -q '^6\. \*\*HITL choices\*\*'
+}
+
+@test "the PRD coverage table exempts an ID whose line ends in (no slice)" {
+  sed -n '/^### 4.5/,/^### 5\./p' "$SKILL_FILE" | grep -q '(no slice)'
 }

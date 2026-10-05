@@ -83,3 +83,7 @@ Further Notes"
 @test "Compatibility & Migration names where existing data lives for a new reader or gate" {
   printf '%s\n' "$TEMPLATE" | grep -qF 'name where that data lives'
 }
+
+@test "Decisions describes the (no slice) marker for a decision no issue implements" {
+  printf '%s\n' "$TEMPLATE" | sed -n '/^## Decisions/,/^## Trust Boundaries/p' | grep -q '(no slice)'
+}
