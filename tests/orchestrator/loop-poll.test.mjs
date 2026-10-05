@@ -19,9 +19,9 @@ function harness({ pollInterval, parallel = 2, initial = ["a"], lintBlocks = [] 
       listings.n++;
       return ready.filter((i) => !done.has(i.slug));
     },
-    listOpen: () => [],
-    listOpenIssueFiles: () => [],
-    parseIssue: () => ({}),
+    listFeatureIssues: () => [],
+    isPrdIssue: () => false,
+    fixIssuesCreatedReady: false,
   };
   const attempts = new Map();
   const blocked = new Set();

@@ -6,7 +6,7 @@
  * `exec` is an injectable `(cmd, args) => {code, stdout, stderr}` so tests stub `gh`
  * without touching `PATH`; it defaults to a real `execFileSync`-backed shell-out.
  *
- * Read path (issue 04): `listOpen` is the one place a network round trip happens for
+ * Read path (issue 04): `listFeatureIssues` is the one place a network round trip happens for
  * dispatchability: exactly one `gh issue list` call per invocation, `--state all` and
  * parsed client-side, never a call per issue — the N+1 this design exists to avoid (see
  * `.scratch/github-issue-tracker/PRD.md`). `parseIssue` stays pure and I/O-free over one
@@ -40,6 +40,10 @@ import {
 } from "./body-format.mjs";
 
 export const READY_STATUS = "ready-for-agent";
+
+/** promote-findings.sh creates a fix issue `ready-for-agent` (no parked state to flush), and the
+ * milestone listing lags the create, so the loop waits for it to appear. */
+export const fixIssuesCreatedReady = true;
 
 /** "Done" short of shipped: implemented and merged into the feature branch, closed only by the
  * `Closes #n` in the feature's PR once that merges. An open issue carrying it reads as `done`. */
@@ -155,7 +159,7 @@ export function parseIssue(json) {
  * `--repo` is passed only when `readTrackerConfig` names one; omitted, `gh` infers it from
  * the git remote. A milestone that does not exist yet is an empty sprint, not an error.
  */
-export function listOpen(mainRoot, { featureSlug, exec = shellOut } = {}) {
+export function listFeatureIssues(mainRoot, { featureSlug, exec = shellOut } = {}) {
   const { repo } = readTrackerConfig(mainRoot);
   const args = ["issue", "list"];
   if (repo) args.push("--repo", repo);
@@ -173,8 +177,11 @@ export function listOpen(mainRoot, { featureSlug, exec = shellOut } = {}) {
   return raw.map(parseIssue);
 }
 
+/** GitHub has no `issues-deps.json`: `## Blocked by` prose (mirrored as native links) is the map. */
+export const featureDepsFile = () => null;
+
 /**
- * Ready and unblocked. One `listOpen` fetch (all states) builds an in-memory
+ * Ready and unblocked. One `listFeatureIssues` fetch (all states) builds an in-memory
  * `number → status` map reused to resolve every candidate's blockers — mirrors how local's
  * `doneFiles()` is one directory read reused across every issue in the same call. A blocker
  * counts as resolved once its own status is `done` (closed); anything else, including a
@@ -182,7 +189,7 @@ export function listOpen(mainRoot, { featureSlug, exec = shellOut } = {}) {
  * ready issues still waiting on one, as local's does.
  */
 export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlug, exec, includeBlocked = false } = {}) {
-  const issues = listOpen(mainRoot, { featureSlug, exec });
+  const issues = listFeatureIssues(mainRoot, { featureSlug, exec });
   const statusByNumber = new Map(issues.map((i) => [i.number, i.status]));
   // `blocked` is a human's to remove, so it also keeps the issue out of `includeBlocked` (plan/preflight).
   const ready = issues.filter((i) => i.status === status && !i.labels.includes(BLOCKED_LABEL));
@@ -421,7 +428,7 @@ function cliPrd(argv) {
     }
   }
   if (!opts.featureSlug) throw new Error("prd requires --feature-slug");
-  const prd = listOpen(opts.mainRoot ?? process.cwd(), { featureSlug: opts.featureSlug }).find(isPrdIssue);
+  const prd = listFeatureIssues(opts.mainRoot ?? process.cwd(), { featureSlug: opts.featureSlug }).find(isPrdIssue);
   if (!prd) {
     process.exitCode = 3;
     return;

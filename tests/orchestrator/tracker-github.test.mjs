@@ -4,9 +4,9 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { closingRefs, createIssue, linkBlockers, listOpen, parseIssue, selectDispatchable, writeProgress } from "../../orchestrator/lib/trackers/github.mjs";
+import { closingRefs, createIssue, linkBlockers, listFeatureIssues, parseIssue, selectDispatchable, writeProgress } from "../../orchestrator/lib/trackers/github.mjs";
 
-// github.mjs's read path (issue 04): listOpen/parseIssue/selectDispatchable, all `gh`
+// github.mjs's read path (issue 04): listFeatureIssues/parseIssue/selectDispatchable, all `gh`
 // calls stubbed via an injected fake exec — no real network access, no PATH stubbing.
 // See tests/orchestrator/tracker.test.mjs for the equivalent local-backend coverage and
 // tests/orchestrator/body-format.test.mjs for the shared markdown-body helpers this reuses.
@@ -45,10 +45,10 @@ function failingExec(stderr, code = 1) {
   return exec;
 }
 
-test("listOpen issues exactly one gh issue list call, scoped to the milestone, all states", () => {
+test("listFeatureIssues issues exactly one gh issue list call, scoped to the milestone, all states", () => {
   const root = repo();
   const exec = fakeExec([]);
-  listOpen(root, { featureSlug: "my-feature", exec });
+  listFeatureIssues(root, { featureSlug: "my-feature", exec });
   assert.equal(exec.calls.length, 1);
   const argv = exec.calls[0].join(" ");
   assert.equal(exec.calls[0][0], "gh");
@@ -59,30 +59,30 @@ test("listOpen issues exactly one gh issue list call, scoped to the milestone, a
   assert.doesNotMatch(argv, /--repo/);
 });
 
-test("listOpen includes --repo only when readTrackerConfig names one", () => {
+test("listFeatureIssues includes --repo only when readTrackerConfig names one", () => {
   const root = repo();
   writeTrackerConfig(root, "---\ntracker: github\nrepo: owner/name\n---\n");
   const exec = fakeExec([]);
-  listOpen(root, { featureSlug: "my-feature", exec });
+  listFeatureIssues(root, { featureSlug: "my-feature", exec });
   assert.match(exec.calls[0].join(" "), /--repo owner\/name/);
 });
 
-test("listOpen returns an empty list for a milestone that does not exist yet, not an error", () => {
+test("listFeatureIssues returns an empty list for a milestone that does not exist yet, not an error", () => {
   const root = repo();
   const exec = failingExec("gh: could not resolve to a Milestone with the name 'my-feature'.");
-  assert.deepEqual(listOpen(root, { featureSlug: "my-feature", exec }), []);
+  assert.deepEqual(listFeatureIssues(root, { featureSlug: "my-feature", exec }), []);
 });
 
-test("listOpen returns an empty list when gh succeeds with an empty milestone", () => {
+test("listFeatureIssues returns an empty list when gh succeeds with an empty milestone", () => {
   const root = repo();
   const exec = fakeExec([]);
-  assert.deepEqual(listOpen(root, { featureSlug: "my-feature", exec }), []);
+  assert.deepEqual(listFeatureIssues(root, { featureSlug: "my-feature", exec }), []);
 });
 
-test("listOpen throws on a real gh failure unrelated to the milestone", () => {
+test("listFeatureIssues throws on a real gh failure unrelated to the milestone", () => {
   const root = repo();
   const exec = failingExec("gh: authentication required");
-  assert.throws(() => listOpen(root, { featureSlug: "my-feature", exec }), /gh issue list failed/);
+  assert.throws(() => listFeatureIssues(root, { featureSlug: "my-feature", exec }), /gh issue list failed/);
 });
 
 test("parseIssue is a pure transform producing local.mjs's exact output shape", () => {
