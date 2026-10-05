@@ -63,6 +63,17 @@ teardown() {
   rm -rf "$T"
 }
 
+# The dry run's `Prompts:` dir under the real repo, refused unless it is a non-empty path inside
+# <scratch>/eval-design-skills/ — a missing or stray line must never reach `rm -r`.
+prompts_dir() {
+  local rel d
+  rel=$(sed -n 's/^Prompts: //p' <<<"$1")
+  d="$REPO_ROOT/$rel"
+  [ -n "$rel" ] && [[ "$rel" != *..* ]] && [[ "$d" == "$REPO_ROOT/.scratch/eval-design-skills/"?* ]] || {
+    echo "unexpected Prompts dir: '$rel'" >&2; return 1; }
+  printf '%s' "$d"
+}
+
 run_eval() {
   (cd "$R" && node scripts/eval-design-skills.mjs "$@")
 }
@@ -104,7 +115,7 @@ run_eval() {
 @test "the committed crew-grill dry run renders the design-standard fragment" {
   run bash -c "cd '$REPO_ROOT' && node scripts/eval-design-skills.mjs --skill crew-grill --base HEAD --dry-run --runs 1"
   [ "$status" -eq 0 ]
-  d="$REPO_ROOT/$(sed -n 's/^Prompts: //p' <<<"$output")"
+  d=$(prompts_dir "$output")
   first=$(grep -m1 -v '^[[:space:]]*$' "$REPO_ROOT/skills/_shared/fragments/design-standard.md")
   ls "$d"/*.prompt.txt >/dev/null
   for f in "$d"/*.prompt.txt; do
@@ -286,7 +297,8 @@ EOF
 @test "the committed to-issues cases dry-run as 3 cases x 2 versions x runs" {
   run bash -c "cd '$REPO_ROOT' && node scripts/eval-design-skills.mjs --skill to-issues --base HEAD --dry-run --runs 2"
   [ "$status" -eq 0 ]
-  rm -r "$REPO_ROOT/$(sed -n 's/^Prompts: //p' <<<"$output")"
+  d=$(prompts_dir "$output")
+  rm -r "$d"
   [[ "$output" == *"12 subject runs (3 cases × 2 versions × 2)"* ]]
   for c in slice-review-catches slice-promote-after-merge slice-crew-afk-review; do
     [ "$(grep -c "  $c " <<<"$output")" -eq 4 ]
