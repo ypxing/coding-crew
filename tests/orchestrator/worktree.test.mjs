@@ -568,3 +568,55 @@ test("mergeFeatureBranch is a no-op when the branch is itself the feature branch
 
   assert.deepEqual(result, { merged: false });
 });
+
+test("mergeFeatureBranch runs resolve-merge-conflicts.sh on a conflict and commits what it resolved", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  writeFileSync(join(mainRoot, "resolve-merge-conflicts.sh"), "#!/usr/bin/env bash\ngit checkout --theirs shared.txt && git add shared.txt && echo resolved\n");
+  const featureBranch = "feature/x";
+  git("checkout", "-q", "-b", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "base\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "shared");
+  const branch = "crew/x/a";
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "shared.txt"), "issue\n");
+  git("commit", "-q", "-am", "issue edit");
+  git("checkout", "-q", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "feature\n");
+  git("commit", "-q", "-am", "feature edit");
+  const worktree = join(mainRoot, "wt-a");
+  git("worktree", "add", worktree, branch);
+
+  const result = mergeFeatureBranch(effects, { worktree, branch, featureBranch, keepConflict: true });
+
+  assert.equal(result.merged, true);
+  assert.equal(result.kept, undefined);
+  assert.equal(execFileSync("git", ["-C", worktree, "status", "--porcelain=v1", "--untracked-files=no"], { encoding: "utf8" }).trim(), "");
+  assert.equal(execFileSync("git", ["-C", worktree, "merge-base", "--is-ancestor", featureBranch, "HEAD"]).length, 0);
+});
+
+test("an auto-resolved sync keeps the feature branch's CHANGELOG entries first, with the sides labelled by merge direction", () => {
+  const { mainRoot, git } = gitRoot();
+  const effects = new Effects({ scriptsDir: join(import.meta.dirname, "../../skills/crew-afk/scripts"), mainRoot, dryRun: false });
+  const featureBranch = "feature/x";
+  git("checkout", "-q", "-b", featureBranch);
+  writeFileSync(join(mainRoot, "CHANGELOG.md"), "# Changelog\n\n- old\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "changelog");
+  const branch = "crew/x/a";
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "CHANGELOG.md"), "# Changelog\n\n- old\n- issue entry\n");
+  git("commit", "-q", "-am", "issue appends");
+  git("checkout", "-q", featureBranch);
+  writeFileSync(join(mainRoot, "CHANGELOG.md"), "# Changelog\n\n- old\n- feature entry\n");
+  git("commit", "-q", "-am", "feature appends");
+
+  const worktree = join(mainRoot, "wt-a");
+  git("worktree", "add", worktree, branch);
+  const result = mergeFeatureBranch(effects, { worktree, branch, featureBranch });
+
+  assert.equal(result.merged, true);
+  assert.equal(result.autoResolved, true);
+  assert.equal(readFileSync(join(worktree, "CHANGELOG.md"), "utf8"), "# Changelog\n\n- old\n- feature entry\n- issue entry\n");
+  assert.deepEqual(result.decisions, ["CHANGELOG.md: kept 1 entry from the feature side and 1 from the branch side"]);
+});

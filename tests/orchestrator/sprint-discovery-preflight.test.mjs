@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, FIXTURE_ROOTS, sh, fixtureRepo, githubFixtureRepo, stubGh, GH_ALPHA, addIssue, runSprint, traceLog, state, fake, workerReport, coderSpawns, commandLines, test } from "./helpers/sprint.mjs";
+import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, FIXTURE_ROOTS, sh, fixtureRepo, githubFixtureRepo, stubGh, GH_ALPHA, addIssue, runSprint, traceLog, state, fake, workerReport, coderSpawns, commandLines, privateScripts, test } from "./helpers/sprint.mjs";
 
 // ─── one-time command discovery ───────────────────────────────────────────────
 //
@@ -341,6 +341,31 @@ test("a red baseline stops the coders already running: the run ends at once, the
   assert.match(state(root).retention.alpha.reason, /baseline failed/);
   // Its coder was stopped mid-work: the next run sends a coder, not a verify-only retry.
   assert.doesNotMatch(state(root).retention.alpha.reason, /verify-interrupted/);
+});
+
+test("a red baseline that stops a review-only retry keeps its reason, so the next run still sends no coder", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review-once", "2");
+  const first = commandLines(root, ["--max-rounds", "1"]);
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  assert.match(state(root).retention.alpha.reason, /^review-not-run — /);
+
+  writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red"]);
+  // alpha's deps outlast the baseline, so the red verdict lands before its review-only retry returns.
+  const scripts = privateScripts();
+  renameSync(join(scripts, "ensure-deps.sh"), join(scripts, "ensure-deps.real.sh"));
+  writeFileSync(
+    join(scripts, "ensure-deps.sh"),
+    '#!/usr/bin/env bash\ncase " $* " in *" --slug alpha "*) sleep 6 ;; esac\nexec bash "$(dirname "$0")/ensure-deps.real.sh" "$@"\n',
+  );
+  chmodSync(join(scripts, "ensure-deps.sh"), 0o755);
+  const { r } = commandLines(root, [], { baseline: true, scripts });
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[BASELINE-RED\] slug=alpha /);
+  assert.match(state(root).retention.alpha.reason, /^review-not-run — /, "not re-retained as a stopped coder");
 });
 
 // A check command that is not installed exits 127: an environment problem, never the branch's.

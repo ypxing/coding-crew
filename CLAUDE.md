@@ -115,6 +115,18 @@ A verify that gives no verdict — killed by a signal (`Effects.exec`'s `interru
 output naming no failing check even on a second run — is retained as `verify-interrupted` / `verify-inconclusive` and
 re-verified next round with no triage and no coder (`pipeline/verify.mjs`).
 
+A retained branch is first synced with the feature branch (`pipeline.mjs`), in three steps: `mergeFeatureBranch` commits what
+`resolve-merge-conflicts.sh` resolves; any other conflict gets its own conflict-only `coder` dispatch (`conflictPrompt`, at most
+one per attempt, outside the retry cap and `MAX_DISPATCHES_PER_ISSUE`) whose success is read from git, not its report; then the
+original route (`restart`, `fix`, `verify`) runs with a prompt that has no conflict text.
+
+A retry re-reads an issue a human edited since the attempt that retained its branch: `state.sh retain` records a `sha256`
+fingerprint of the issue's `## What to build` and `## Acceptance criteria` (checkbox marks normalised, so the `Status:` line,
+`## Progress` / `## Blocked` and ticked boxes — crew-afk's own writes — never count). At resume, a different fingerprint turns a
+`fix` or `verify` route into `restart` (`workerPrompt` on the retained branch, commits kept, `[RESUME] … issue edited` logged)
+instead of `fixPrompt`'s "do not re-read the issue". A `conflict` retry still gets its conflict-only dispatch first, then restarts
+instead of ending in `verify`. The `merge` route ignores it, as does a record with no fingerprint. An attempt whose conflict dispatch left the sync unresolved never worked from the edited issue, so it keeps the record's old fingerprint (`keepFingerprint`) and the next retry still restarts.
+
 Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
 AC receipt → merge → close → promote. Deps sit there because that one position is before both
 consumers of them — the worker and the verify gate. `--no-deps` removes it. A retry skips any

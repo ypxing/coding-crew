@@ -357,6 +357,19 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [[ "$output" == *'by role: coder $0.60 · reviewer $0.30 · triage $0.10 — first attempts $0.90 · retries $0.10'* ]]
 }
 
+@test "crew-summary counts a conflict-only dispatch's cost under coder, so the roles add up to the run total" {
+  init_sprint calc
+  state run-start --id now >/dev/null
+  state dispatch-cost --cost 0.6 --turns 40 --slug a --role coder --attempt 1 >/dev/null
+  state dispatch-cost --cost 0.2 --turns 10 --slug a --role conflict --attempt 2 >/dev/null
+  state dispatch-cost --cost 0.3 --turns 20 --slug a --role reviewer --attempt 1 >/dev/null
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Cost:   this run $1.10 · 3 dispatches'* ]]
+  [[ "$output" == *'by role: coder $0.80 · reviewer $0.30 · triage $0.00'* ]]
+}
+
 @test "crew-summary falls back to the feature total when this run has no ledger" {
   init_sprint calc
   state dispatch-cost --cost 2.5 --duration-ms 60000 --turns 7 >/dev/null
@@ -615,4 +628,24 @@ EOF
   [ "$status" -ne 0 ]
   state feature-reviewed --tip abc123 >/dev/null
   [ "$(jq -r .feature_review.reviewed_tip .scratch/calc/sprint-state.json)" = "abc123" ]
+}
+
+@test "state.sh retain --fingerprint is stored and printed by retention; absent without it" {
+  init_sprint calc
+  run state retain --slug first --branch crew/calc/first --reason criteria-unmet --fingerprint abc123
+  [ "$status" -eq 0 ]
+  run state retention --slug first
+  [[ "$output" == *"reason: criteria-unmet"* ]]
+  [[ "$output" == *"fingerprint: abc123"* ]]
+  run state retain --slug second --branch crew/calc/second --reason criteria-unmet
+  run state retention --slug second
+  [[ "$output" != *fingerprint* ]]
+}
+
+@test "state.sh blocked --branch keeps --fingerprint in the retention record" {
+  init_sprint calc
+  state blocked --slug first --branch crew/calc/first --reason "retry limit reached" --fingerprint abc123 >/dev/null
+  run state retention --slug first
+  [[ "$output" == *"reason: blocked — retry limit reached"* ]]
+  [[ "$output" == *"fingerprint: abc123"* ]]
 }
