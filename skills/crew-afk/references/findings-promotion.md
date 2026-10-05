@@ -77,7 +77,10 @@ run).
   `skills/_shared/fragments/findings-rubric.md`). Two hard rules are applied by the
   orchestrator after triage answers, so no verdict overrides them: a finding that contradicts an
   ADR / `CONTEXT.md`, or whose fix touches a protected path (CI config, auth, deploy, `.env`), is
-  Debatable. The verdict and rationale are written beside each finding in the review report. It
+  Debatable. A third, a finding whose only basis is the design standard (the reviewer reports those
+  at LOW, prefixed `Design standard (criterion <n>):`), is in the rubric itself, so triage answers
+  it `debatable` and no mode promotes it.
+  The verdict and rationale are written beside each finding in the review report. It
   applies to the full-feature review's findings the same way.
 - `critical`, `high` (CRITICAL and HIGH), `medium` (adds MEDIUM) fix by severity alone, with no
   triage dispatch; LOW is never promoted. Unattended, that has no way to dismiss a finding that is
