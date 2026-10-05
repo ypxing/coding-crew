@@ -29,7 +29,7 @@ function verifyRecord(obj) {
   writeFileSync(f, typeof obj === "string" ? obj : JSON.stringify(obj));
   return f;
 }
-import { conflictPrompt, featureReviewPrompt, findingsTriagePrompt, fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
+import { conflictPrompt, criteriaFile, featureReviewPrompt, findingsTriagePrompt, fixPrompt, reviewPrompt, triagePrompt, workerPrompt } from "../../orchestrator/lib/prompts.mjs";
 
 test("a structured sidecar wins over prose", () => {
   const r = parseWorkerReport("## Issue: thing\nStatus: complete\n", {
@@ -905,4 +905,14 @@ test("workerPrompt and fixPrompt carry no conflict text; conflictPrompt is the c
     assert.doesNotMatch(p, /in progress|a\.txt|git commit --no-edit/);
   }
   assert.match(conflictPrompt({ ...base, ...extra }), /^- a\.txt$/m);
+});
+
+test("criteriaFile lists findings CRITICAL, HIGH, MEDIUM, LOW, keeping the input order within a severity", () => {
+  const f = (severity, criterion) => ({ severity, criterion, location: `src/${criterion}.js:1` });
+  const text = criteriaFile({
+    branch: "feature",
+    findings: [f("LOW", "l1"), f("HIGH", "h1"), f("MEDIUM", "m1"), f("CRITICAL", "c1"), f("HIGH", "h2"), f("LOW", "l2")],
+  });
+  const order = [...text.matchAll(/^- \[ \] \[(\w+)\] (\w+)/gm)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(order, ["CRITICAL:c1", "HIGH:h1", "HIGH:h2", "MEDIUM:m1", "LOW:l1", "LOW:l2"]);
 });

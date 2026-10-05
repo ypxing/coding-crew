@@ -86,6 +86,29 @@ test("actionable: a finding triage marks duplicate_of is folded into its target:
   assert.match(remindOf(root), /^FINDINGS: none$/m);
 });
 
+test("a first feature review with 11 promotable findings: one fix issue with the 8 most severe, CRITICAL→LOW; the other 3 report_only and open", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const at = (severity, n) => ({ severity, location: `src/alpha.txt:${n}`, issue: `Defect ${n}`, criterion: `Fix defect ${n}` });
+  const eleven = [at("LOW", 1), at("MEDIUM", 2), at("HIGH", 3), at("CRITICAL", 4), at("LOW", 5), at("MEDIUM", 6), at("HIGH", 7), at("LOW", 8), at("MEDIUM", 9), at("LOW", 10), at("CRITICAL", 11)];
+  fake(root, "feature.review", featureReviewFile(eleven));
+  fake(root, "feature.review-later", featureReviewFile([]));
+  fake(root, "feature-findings.triage", findingVerdicts(eleven.map(() => ({ verdict: "actionable", rationale: "a real defect" }))));
+  const { r } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const fixes = readdirSync(join(root, ".scratch/demo/issues/done")).filter((f) => /fix-findings-feature/.test(f));
+  assert.equal(fixes.length, 1, `one fix issue: ${fixes}`);
+  const criteria = readFileSync(join(root, ".scratch/demo/reviews/feature.criteria.md"), "utf8");
+  const listed = [...criteria.matchAll(/^- \[ \] \[(\w+)\] Fix defect (\d+)/gm)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(listed, ["CRITICAL:4", "CRITICAL:11", "HIGH:3", "HIGH:7", "MEDIUM:2", "MEDIUM:6", "MEDIUM:9", "LOW:1"]);
+  const env = { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") };
+  const open = JSON.parse(sh("bash", [join(SCRIPTS, "promote-findings.sh"), "open", "--feature-slug", "demo"], { cwd: root, env }).stdout);
+  assert.deepEqual(open.map((f) => f.criterion).sort(), ["Fix defect 10", "Fix defect 5", "Fix defect 8"]);
+  // Open only because they are report_only: the fix issue's bullet covers the feature's Actionable findings.
+  assert.deepEqual(reportOnlyFeatureFindings(join(root, ".scratch/demo/reviews")).map((f) => f.criterion).sort(), ["Fix defect 10", "Fix defect 5", "Fix defect 8"]);
+  assert.match(r.stdout, /Drain 1: .*11 finding\(s\); 8 Actionable went to Phase 2, 3 more report-only \(past the fix issue's limit\)/);
+});
+
 test("actionable: a duplicate_of pair at a report-only feature drain leaves its target report_only, open and not green", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -106,7 +129,7 @@ test("actionable: a duplicate_of pair at a report-only feature drain leaves its 
   // reportOnlyFeatureFindings is what notGreenReasons' unfixedFindings is read from: the run is not green.
   assert.deepEqual(reportOnlyFeatureFindings(join(root, ".scratch/demo/reviews")).map((f) => [f.location, f.severity]), [["src/alpha.txt:1", "MEDIUM"]]);
   assert.match(remindOf(root), /^FINDINGS: open=1 \(HIGH=1\)$/m);
-  assert.match(r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
+  assert.match(r.stdout, /Drain 2: .*report-only \(past the promotion cap\)/);
 });
 
 test("actionable: an actionable duplicate_of a debatable target at a report-only feature drain is report_only and not green", () => {
@@ -127,7 +150,7 @@ test("actionable: an actionable duplicate_of a debatable target at a report-only
   const last = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(blocks)[1]).findings;
   assert.equal(last.find((f) => f.issue === dup.issue).report_only, true);
   assert.notEqual(last.find((f) => f.issue === target.issue).report_only, true);
-  assert.match(r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
+  assert.match(r.stdout, /Drain 2: .*report-only \(past the promotion cap\)/);
 });
 
 test("actionable: a dismiss verdict is remapped to actionable and promoted to a fix issue", () => {
