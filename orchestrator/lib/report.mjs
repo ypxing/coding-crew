@@ -301,6 +301,7 @@ function reviewFromStructured(raw, obj) {
     // environment did not provide. Anything else, or absent, is the code's to fix.
     cause: String(obj.cause ?? "").trim().toLowerCase() === "environment" ? "environment" : null,
     findings: findingsFromStructured(obj.findings),
+    criteriaOnly: obj.criteria_only === true,
     raw,
   };
 }
@@ -355,11 +356,12 @@ export function parseReviewBlocks(text) {
 
 /**
  * The one fold step, shared by parseReviewAggregate and review-rollup.mjs: `rec` replaces `prev`
- * (later block wins), except that a `not_run` block says nothing about the code, so the previous
- * record's findings stay, marked carried, under the `not_run` verdict.
+ * (later block wins), except that a `not_run` block says nothing about the code, and a
+ * `criteria_only` block (a per-branch review, which raises no findings) says nothing about
+ * findings, so the previous record's findings stay, marked carried, under the new verdict.
  */
 export function foldReview(prev, rec) {
-  if (!prev || rec.verdict !== "not_run" || !prev.findings?.length) return rec;
+  if (!prev || (rec.verdict !== "not_run" && !rec.criteriaOnly) || !prev.findings?.length) return rec;
   return { ...rec, findings: prev.findings.map((f) => ({ ...f, carried: true })) };
 }
 

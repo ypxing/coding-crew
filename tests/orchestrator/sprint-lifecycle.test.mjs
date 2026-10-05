@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, FIXTURE_ROOTS, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, privateScripts, failFirstCall, commandLines, sprintReport, test } from "./helpers/sprint.mjs";
+import { REPO, MAIN, TMPDIR, SCRIPTS, INSTALL_DIR, FAKE, EMPTY_HOME, sh, FIXTURE_ROOTS, fixtureRepo, addIssue, BRANCH_REVIEW, runSprint, traceLog, state, fake, privateScripts, failFirstCall, commandLines, sprintReport, test } from "./helpers/sprint.mjs";
 
 // Spawned directly, not through sh(): sh() strips both vars, which is exactly what this
 // test needs set. `plan`, so no orca is ever called.
@@ -348,6 +348,29 @@ test("an unmet verdict whose report carries findings still retains the branch as
   assert.ok(lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length >= 2, "the coder is dispatched again on the unmet criteria");
   for (const b of branchBlocks(root)) assert.deepEqual(b.findings, []);
   assert.ok(!lines.some((l) => /promote-findings\.sh.* defer /.test(l)));
+});
+
+test("a resumed run's re-review of a branch keeps an earlier version's open findings listed by open, and promotes none", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // An earlier version's report: a branch block that still carried findings.
+  mkdirSync(join(root, ".scratch/demo/reviews"), { recursive: true });
+  writeFileSync(join(root, ".scratch/demo/reviews/sprint-review-20200101T000000.md"), branchReview("all-met", strayFindings));
+  fake(root, "alpha.review", branchReview("unmet", []));
+  const first = runSprint(root, [], { CREW_MAX_ROUNDS: "1" });
+  assert.equal(first.code, 0, `${first.stdout}\n${first.stderr}`);
+  assert.match(state(root).retention.alpha.reason, /criteria-unmet/);
+  fake(root, "alpha.review", branchReview("all-met", []));
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(branchBlocks(root).map((b) => b.verdict), ["unmet", "all-met"], "the branch was reviewed again on resume");
+  const open = JSON.parse(sh("bash", [join(SCRIPTS, "promote-findings.sh"), "open", "--feature-slug", "demo"], { cwd: root, env: { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") } }).stdout);
+  assert.deepEqual(
+    open.filter((f) => f.branch === "crew/demo/alpha").map((f) => f.location).sort(),
+    ["src/alpha.txt:1", "src/alpha.txt:2"],
+  );
+  assert.ok(!lines.some((l) => /promote-findings\.sh.* defer /.test(l)));
+  assert.deepEqual(state(root).completed_slugs, ["alpha"], "no fix issue ran");
 });
 
 test("a review that produced nothing is a gap, not a clean pass", () => {

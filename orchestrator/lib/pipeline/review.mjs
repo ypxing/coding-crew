@@ -144,10 +144,12 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   // disagree. The `## Branch:` heading is for humans; parseReviewAggregate reads only the
   // fenced json. Findings come from the feature review alone: any a branch report still
   // carries are dropped here, so none reaches the report, the summary or a fix issue.
+  // `criteria_only` tells the fold (foldReview) this block judged no findings, so an earlier
+  // version's open findings for the branch stay listed past it.
   mkdirSync(sprint.reviewDir, { recursive: true });
   const reviewedBranch = sidecar.branch ?? branch;
   parsed.findings = [];
-  const written = { ...sidecar, findings: [] };
+  const written = { ...sidecar, findings: [], criteria_only: true };
   const heading = `## Branch: ${reviewedBranch} (${sidecar.slug ?? issue.slug})`;
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
