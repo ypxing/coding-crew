@@ -192,7 +192,7 @@ export function resumeNote({ priorBranch, hasProgress, hasBlocked }) {
   return parts.join("\n\n");
 }
 
-// One finding in either review schema. `issue` carries the reviewer's design-only marker
+// One finding in the feature review's schema. `issue` carries the reviewer's design-only marker
 // (reviewer.md's "Design standard (criterion <n>):" prefix), which crew-triage reads.
 const FINDING_SHAPE = {
   severity: "CRITICAL | HIGH | MEDIUM | LOW",
@@ -256,11 +256,15 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
     "run lacked a precondition (a service unreachable, a credential absent, so its tests",
     "skipped): that stops the issue for a human, since no code change can help. Else `code`.",
     "",
+    // Findings come from the feature review alone (PRD D1): this gate is criteria and decisions.
+    "A per-branch review writes `findings: []`: it judges the acceptance criteria and PRD decisions only.",
+    "The always-on classes and the design-standard checks apply only to a `Feature review:` dispatch.",
+    "",
     // Same policy as the worker's resultBlock: the file is the only thing read. No fallback
     // fenced block in the final message — see report.mjs's parseReviewReport. The "##
     // Branch:" heading below shapes only the transcript a human reads, never the merge gate.
     `Write your structured verdict to ${reportPath} as your last action. This file is the`,
-    "only thing that gates the merge and counts findings, so get it exactly right — nothing",
+    "only thing that gates the merge, so get it exactly right — nothing",
     "you print in your final message is parsed. In your final message, still start with",
     "`## Branch: <branch-name>`, for the human reading the transcript, then the same object:",
     "",
@@ -272,17 +276,12 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
         verdict: "all-met | unmet",
         detail: "<which criterion, and why — required on unmet>",
         cause: "code | environment — on unmet only",
-        findings: [FINDING_SHAPE],
+        findings: [],
       },
       null,
       2,
     ),
     "```",
-    "",
-    "`findings` is `[]` when there are none — never omit the block itself. Follow it with",
-    "your usual snippet-anchored explanation per finding, for the human reading the report;",
-    "the json block above is what gets counted, so a finding missing from it is a finding",
-    "nobody promotes or triages, no matter how much prose describes it.",
   ].join("\n");
 }
 

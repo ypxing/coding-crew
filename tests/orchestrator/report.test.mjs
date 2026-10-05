@@ -402,8 +402,14 @@ test("the review prompt asks for a fenced json verdict, not a bare AC:/FINDING: 
   assert.match(p, /## Branch: <branch-name>/);
   assert.match(p, /```json/);
   assert.match(p, /"verdict": "all-met \| unmet"/);
-  assert.match(p, /"findings":/);
-  assert.match(p, /"severity": "CRITICAL \| HIGH \| MEDIUM \| LOW"/);
+  assert.match(p, /"findings": \[\]/);
+  assert.doesNotMatch(p, /"severity":/);
+});
+
+test("the review prompt asks a branch review for findings: [] and leaves findings to the feature review", () => {
+  const p = reviewPrompt({ branch: "crew/f/x", slug: "x", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r/x.review.report.json" });
+  assert.match(p, /A per-branch review writes `findings: \[\]`/);
+  assert.match(p, /always-on classes and the design-standard checks apply only to a `Feature review:` dispatch/);
 });
 
 test("the review prompt makes the sidecar file the verdict channel, not an option", () => {
@@ -835,18 +841,15 @@ test("findingsTriagePrompt lists issue before criterion", async () => {
   assert.ok(!out.includes("what the reviewer wants"));
 });
 
-test("review and feature-review templates ask for each finding's issue, and a design-only prefix reaches findings triage", () => {
-  const templateFinding = (prompt) => {
+test("the feature-review template asks for each finding's issue, the branch template for none, and a design-only prefix reaches findings triage", () => {
+  const templateFindings = (prompt) => {
     const block = [...prompt.matchAll(/```json\n([\s\S]*?)\n```/g)].at(-1)[1];
-    return JSON.parse(block).findings[0];
+    return JSON.parse(block).findings;
   };
   const branchPrompt = reviewPrompt({ branch: "b", slug: "s", issuePath: "p", criteria: "", featureBranch: "f", reportPath: "/r" });
   const featurePrompt = featureReviewPrompt({ featureBranch: "feature/x", base: "abc", reportPath: "/r.json" });
-  for (const p of [branchPrompt, featurePrompt]) {
-    const item = templateFinding(p);
-    assert.ok("issue" in item, "the findings item carries an issue field");
-    assert.deepEqual(Object.keys(item), ["severity", "location", "issue", "criterion"]);
-  }
+  assert.deepEqual(templateFindings(branchPrompt), []);
+  assert.deepEqual(Object.keys(templateFindings(featurePrompt)[0]), ["severity", "location", "issue", "criterion"]);
   const r = parseReviewReport("", {
     branch: "b",
     slug: "s",
