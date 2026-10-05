@@ -124,7 +124,7 @@ A retry re-reads an issue a human edited since the attempt that retained its bra
 fingerprint of the issue's `## What to build` and `## Acceptance criteria` (checkbox marks normalised, so the `Status:` line,
 `## Progress` / `## Blocked` and ticked boxes — crew-afk's own writes — never count). At resume, a different fingerprint turns a
 `fix` or `verify` route into `restart` (`workerPrompt` on the retained branch, commits kept, `[RESUME] … issue edited` logged)
-instead of `fixPrompt`'s "do not re-read the issue". The `merge` and `conflict` routes ignore it, as does a record with no fingerprint.
+instead of `fixPrompt`'s "do not re-read the issue". The `merge` and `conflict` routes ignore it, as does a record with no fingerprint. An attempt whose conflict dispatch left the sync unresolved never worked from the edited issue, so it keeps the record's old fingerprint (`keepFingerprint`) and the next retry still restarts.
 
 Per-issue order: worktree → `.worktreeinclude` → **deps** → worker dispatch → verify → review →
 AC receipt → merge → close → promote. Deps sit there because that one position is before both
