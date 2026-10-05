@@ -38,7 +38,8 @@ In your project, inside your AI coding tool:
 /crew-afk rate-limit --open-pr                    # build that feature unattended, then open the PR
 ```
 
-Come back to a PR whose every branch passed your checks and a review.
+Go to lunch. Come back to a PR whose every branch passed your checks, with the whole feature reviewed
+against your PRD — and a summary of what each step cost.
 
 ## How it works
 
@@ -49,14 +50,14 @@ flowchart LR
 
     subgraph sprint["🤖 sprint"]
         direction TB
-        build["code → verify → review → merge<br/><i>per issue, in parallel</i>"]
-        check["check + review<br/>the whole feature"]
-        fix["fix findings"]
+        build["code → verify → criteria check → merge<br/><i>per issue, in parallel</i>"]
+        check["integration check +<br/>one review of the whole feature<br/><i>against the PRD</i>"]
+        fix["one fix issue<br/>for its findings"]
         build --> check --> fix
         fix -. "once" .-> build
     end
 
-    afk --> sprint --> pr["👤 review the PR"]
+    afk --> sprint --> pr["👤 review a short PR"]
 
     classDef human fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
     classDef bot fill:#f1f5f9,stroke:#64748b,color:#0f172a
@@ -66,12 +67,17 @@ flowchart LR
 
 What you can rely on:
 
-- ✅ **Test-first** — every coder uses TDD in its own worktree.
-- 🚦 **Nothing red merges** — each branch must pass your project's own checks.
-- 🔍 **Independent review** — a separate reviewer reviews every branch, then the whole feature.
-- 🔁 **Self-correcting** — failed checks, unmet criteria and actionable findings go back for a fix.
-- 📋 **PRD-checked** — the feature review checks every PRD decision against the merged code.
-- 🔒 **Nothing pushed unless you ask** — `--open-pr` opens the PR; otherwise you get the command.
+- ✅ **Test-first** — every coder uses TDD in its own git worktree.
+- 🚦 **Nothing red merges** — each branch must pass your project's own checks and its acceptance criteria.
+- 🔍 **A reviewer that sees the whole picture** — one independent reviewer reads the full PRD and the whole
+  feature diff, catching what no single branch shows: missing requirements, unconnected flows, duplicated code.
+- 🔁 **Self-correcting, never looping** — failed checks go back to the coder; review findings become one
+  fix issue, built in the same run. Then it stops.
+- 💸 **Every dollar accounted for** — the summary prices every dispatch, by role.
+- 👀 **Watch it live, or don't** — stream each worker into [orca](https://www.onorca.dev) or
+  [herdr](https://herdr.dev) panes with `--pane-host` (orca even pings your session when the sprint ends).
+- 🔒 **Nothing pushed unless you ask** — `--open-pr` opens the PR (Why · What changes · Risk · Tested);
+  otherwise you get the command.
 
 Full pipeline, gates and retry rules: [user guide](docs/guide.md#system-overview).
 
@@ -79,6 +85,7 @@ Full pipeline, gates and retry rules: [user guide](docs/guide.md#system-overview
 
 ```bash
 /crew-afk --open-pr             # push and open the PR at the end
+/crew-afk --pane-host auto      # watch workers live in orca or herdr panes
 /crew-afk --model opus          # coder model (default: sonnet)
 /crew-afk --max-parallel 2      # fewer concurrent coders
 /crew-afk --fix-findings none   # don't auto-fix review findings
