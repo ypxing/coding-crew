@@ -101,7 +101,7 @@ Workers run with full permissions on the host, in per-issue worktrees — not in
 | `/solve-issue`           | Implement one issue yourself, end to end                                                |
 | `/to-prd`, `/to-issues`  | Run just the PRD step or just the issue-splitting step                                  |
 | `/address-pr-comments`   | Fix sensible GitHub PR review comments and reply to them                                |
-| `/write-pr`              | Write a PR body for reviewers: Summary diagram, before/after Evidence, Merge Danger     |
+| `/write-pr`              | Write a short PR body for reviewers: Why, What changes, Risk, Tested                    |
 | `/configure-tracker`     | Choose where issues live: local markdown files (default) or GitHub Issues               |
 
 Optional: auto-fix PR review comments with [GitHub Actions](docs/guide.md#pr-rework-with-github-actions-optional).

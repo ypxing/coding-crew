@@ -37,7 +37,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.21.3",
+      "version": "2.22.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that dispatches each ready-for-agent issue to a coder CLI process in its own worktree, reviews and merges every branch, turns the feature review's most severe Actionable findings (at most 8) into one fix issue for a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -219,9 +219,9 @@
       "install": ".claude/skills/domain-modeling"
     },
     "write-pr": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source-dir": "write-pr",
-      "description": "Write a PR body for a human reviewer: Summary (smallest diagram or diff-sketch), Evidence (before/after), Merge Danger (door, blast radius).",
+      "description": "Write a short PR body for a human reviewer: Why, What changes, Risk and Tested.",
       "source": "mattpocock/skills",
       "install": ".claude/skills/write-pr",
       "assets": {

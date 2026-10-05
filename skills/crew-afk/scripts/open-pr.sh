@@ -8,8 +8,8 @@ set -euo pipefail
 #   FEATURE_BRANCH and FEATURE_SLUG come from the environment (the orchestrator's childEnv).
 #   --closes-file holds the tracker's closing lines (`Closes #n`), one per line; absent or
 #   empty, the PR closes nothing.
-#   --body-file holds the body for a reviewer (pipeline/pr-body.mjs: write-pr's Summary,
-#   Evidence, Merge Danger, and the checks line); it opens the block, above the closing lines.
+#   --body-file holds the body for a reviewer (pipeline/pr-body.mjs: write-pr's Why, What
+#   changes, Risk and Tested, else the checks line alone); it opens the block, above the closing lines.
 #   --title is the PR's title (the writer's, else the PRD's); default the slug. An open PR keeps
 #   a title a human gave it — one other than the slug this script used to default to.
 #
