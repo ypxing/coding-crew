@@ -204,14 +204,19 @@ setup() {
 }
 
 @test "to-issues: under github the lint run uses provisional Issue #<n> numbers and --known for existing milestone issues" {
-  grep -qF -- '--known .scratch/<feature-slug>/.lint/<number>-<slug>.md' "$SKILL_FILE"
+  grep -qF -- 'and pass it as `--known`' "$SKILL_FILE"
   grep -qiE 'replace each `Issue #<n>` with the number `gh issue create` returned' "$SKILL_FILE"
 }
 
-@test "to-issues: under github the existing milestone issues' bodies are written out for --known, so their ## Implements counts toward --prd coverage" {
+@test "to-issues: the shared-file WARN is advisory, never by itself grounds for a Blocked by edge" {
+  grep -qF 'The shared-file `WARN` (two issues naming the same file with no `## Blocked by` path between them) is advisory: it is never by itself grounds for a `Blocked by` edge — only the edge rule'"'"'s rows 1–2 are' "$SKILL_FILE"
+}
+
+@test "to-issues: under github, existing milestone issues' bodies are --known files whose Implements count toward coverage" {
+  grep -qF 'write its body (`gh issue view <n> --json body -q .body`) to `.scratch/<feature-slug>/.lint/known/<n>-<slug>.md`' "$SKILL_FILE"
+  grep -qF 'an existing `--known` file'"'"'s `## Implements` counts toward `--prd` coverage' "$SKILL_FILE"
   run grep -qF 'never opened' "$SKILL_FILE"
   [ "$status" -ne 0 ]
-  grep -qF 'its `## Implements` counts toward `--prd` coverage' "$SKILL_FILE"
 }
 
 @test "to-issues: a new parser/validator/gate gets a criterion over the repo's existing examples, as committed fixtures" {

@@ -5,7 +5,7 @@ repo_ref: 3bec757
 ---
 <!-- repo_ref 3bec757 is on main, before PRD #147's work merged. The PRD body below is frozen as published. -->
 ## Request
-PRD #147 (below) is approved; the feature slug is `crew-afk-review`, under `tracker: github`. Break it into issues. The PRD body, as published:
+The PRD below is approved; the feature slug is `afk-overhaul`, under `tracker: github`. Break it into issues. The PRD body, as published:
 
 ## Problem Statement
 
