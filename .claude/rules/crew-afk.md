@@ -108,8 +108,9 @@ fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, aft
 — at most two per run, then the run ends stalled; exit 127 or a "not fixable" verdict queues nothing and the summary
 says why.
 
-At every drain where something merged (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
-runs in feature mode: no criteria, findings only, attributed to `feature` in the sprint
+Once per run, at the first drain where something merged (`orchestrator/lib/pipeline/feature-review.mjs`; `loop.mjs`'s
+`featureReviewed` flag, so a later drain in the same run — after Phase 2 merged the fix issue — skips it with no log line), after
+the integration check, one `crew-reviewer` dispatch (slug `feature`, dir `dispatch/feature-d<drain>/`) runs in feature mode: no criteria, findings only, attributed to `feature` in the sprint
 review report and, until the feature has its one findings fix issue (counted per feature, across runs), promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
 `crew-triage`'s findings mode judges Actionable, via `orchestrator/lib/pipeline/findings-triage.mjs`; a failed triage
 falls back to the `high` rule). That fix issue holds the 8 most severe promotable findings, CRITICAL→LOW (`criteriaFile` sorts for every caller); the rest are marked `report_only` and stay open. The range (`featureReviewRange`) is the whole feature, from the merge-base with origin's default
@@ -122,26 +123,17 @@ review again. Reviews after the one that created the fix issue are report-only (
 `sprint-state.json` (`state.sh feature-review-promoted`, advanced only when a fix issue was created; absent reads as 0, and an earlier version's 2 reads as capped), so a later run starts past it too; no fix issue; the findings reach the review
 report and the summary, and each one the rule would have promoted is a not-green reason, so an `--open-pr` PR is a draft naming
 them (none under `fixFindings: none`). To keep LOW findings out of fix issues
-altogether, use `afk.fixFindings: medium` / `--fix-findings medium`. Every feature review carries the PRD's `## Compatibility & Migration` section verbatim
-(`loadPrdSection`), and an increment review every PRD decision line. The summary's `## Feature Review` lists each drain's review
-(range, finding count, promoted or report-only, or why skipped). Not run when nothing merged; skipped (the summary says so) at a drain
+altogether, use `afk.fixFindings: medium` / `--fix-findings medium`. Its prompt names the PRD file to read whole
+(`PRD (read it whole; the feature's intent): <path>`, from `orchestrator/lib/prd.mjs`'s `prdPath`; no PRD, no line), and
+`reviewer.md`'s Feature Mode makes a PRD requirement the merged code does not implement, a multi-issue flow it does not connect, and
+a cross-cutting concern no issue owned findings, while a requirement a later ADR, `CONTEXT.md` entry or commit replaced is not. The
+summary's `## Feature Review` gives the review (range, finding count, promoted or report-only, or why skipped). Not run when nothing merged; skipped (the summary says so) at a drain
 whose integration check is red, or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
-a dispatch that leaves no review is recorded not-run (and no `reviewed_tip`) and never fails the sprint.
+a dispatch that leaves no review is recorded not-run as `feature` (and no `reviewed_tip`) and never fails the sprint.
 
-A whole-feature review is split into areas (`pipeline/feature-areas.mjs`): one plain `reviewer`-bound planner dispatch gets the
-`git diff --stat`, each merged issue's files (from its merge commit) and `## Implements` IDs, and the PRD decision lines, and answers
-`{"areas": [{"name", "files", "decisions"}]}` in a fenced json block. Paths not in the diff and IDs not in the PRD are dropped, more than
-`maxParallel` areas are merged down (the two smallest first), a changed file no area holds joins the smallest, and a decision no area holds
-joins the area holding the most files of the merged issues implementing it (else the smallest). A planner that fails,
-times out, or gives no json or no usable area gives one area over the whole diff with every decision (`FEATURE-REVIEW: planner fallback — <why>`).
-`runFeatureReview` then runs one `crew-reviewer` per area concurrently (`Promise.all`), each with its own `dispatch/feature-d<drain>-<n>/` dir (unique per drain), report
-file and cost record and an `Area:` block (name, files, full decision text) in its prompt; with more than one area, each prompt also
-lists every other area's name, files and decision lines as an `Other areas` reference block, and each area's
-`Gather the diff:` line is limited to its files (`git --literal-pathspecs diff --no-renames … -- <quoted paths>`; the file lists are read
-with `core.quotePath=false -z --no-renames`, so a renamed file's old path is listed and its deletion seen). All areas' findings are written as one `feature`
-block and promoted once (one findings triage, at most one deferred fix issue). An area that leaves no review is marked not-run as
-`feature-<n>`, the others still count, and no `reviewed_tip` is recorded so the next run reviews the whole feature again. An incremental
-review (`increment` mode) dispatches no planner and one reviewer, without an `Area:` block.
+`prdPath(ctx)` (`orchestrator/lib/prd.mjs`) is the one owner of where the PRD is, located once per run: `.scratch/<slug>/PRD.md`;
+else under `tracker: github` fetched with `trackers/github.mjs prd` and saved as `prd-issue.md` (the saved copy when that fetch
+fails, with a warning); else a saved `prd-issue.md`; else null. `pipeline/pr-body.mjs` gets the PR writer's PRD from it too.
 
 The per-branch review is a criteria gate and raises no findings: `reviewer.md`'s per-branch mode writes `findings: []` (the always-on
 classes and design-standard checks are Feature Mode only), and `pipeline/review.mjs` drops any findings a branch report still carries
@@ -149,11 +141,8 @@ before it writes the review block, so no branch gets a fix issue of its own; fin
 findings an earlier version left in a `sprint-review-*.md` report are still listed by `promote-findings.sh open`, never promoted: a re-review of that
 branch carries them into its new block (`carried: true`), and the block `pipeline/review.mjs` writes is marked `criteria_only`, so the fold
 (`report.mjs`'s `foldReview`) also carries a branch's earlier findings past it, as past a `not_run` block.
-It also checks the PRD decisions an issue implements: `pipeline/review.mjs` reads the issue's `## Implements` IDs and
-`orchestrator/lib/prd-decisions.mjs` maps them to the PRD's `- **D<n>** — …` / `- **B<n>** — …` lines (PRD located once per run:
-`.scratch/<slug>/PRD.md`; else under `tracker: github` fetched with `trackers/github.mjs prd` and saved as `prd-issue.md`, a saved
-`prd-issue.md` read only when that fetch fails (it warns) or under another tracker; with neither, reviews proceed without). `reviewPrompt` renders them as a `PRD decisions this issue implements:` block, and the reviewer judges each like a
-criterion — a contradicted decision is `unmet`, `detail` naming its ID.
+It judges the acceptance criteria only: `reviewPrompt` carries no PRD decisions, and an issue's `## Implements` is not read by
+the orchestrator (`to-issues` and `lint-issues.sh` still use it).
 
 Reviewer, triage (verify, findings, integration) and feature-review dispatches are mechanically read-only
 (`pipeline/shared.mjs`'s `readOnlyDispatch`): every `crew/<feature>/*` ref, the feature branch, main `HEAD` (commit
