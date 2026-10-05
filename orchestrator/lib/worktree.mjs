@@ -233,9 +233,13 @@ export function mergeFeatureBranch(effects, { worktree, branch, featureBranch, k
   if (r.code !== 0 && keepConflict) {
     // Left in progress for the coder to resolve; the files are what it is told to fix. A
     // merge that failed with nothing conflicted (e.g. an untracked file in the way) has
-    // nothing to resolve, and is aborted below like any other.
+    // nothing to resolve, and is aborted below like any other. featureSha is the commit this
+    // merge was started from (MERGE_HEAD): the feature branch can move on while the coder works.
     const files = effects.gitRead(["diff", "--name-only", "--diff-filter=U"], { cwd: worktree }).stdout.trim().split("\n").filter(Boolean);
-    if (files.length) return { merged: false, conflict: true, kept: true, files };
+    if (files.length) {
+      const featureSha = effects.gitRead(["rev-parse", "-q", "--verify", "MERGE_HEAD"], { cwd: worktree }).stdout.trim();
+      return { merged: false, conflict: true, kept: true, files, featureSha };
+    }
   }
   if (r.code !== 0) {
     effects.git(["merge", "--abort"], { cwd: worktree });

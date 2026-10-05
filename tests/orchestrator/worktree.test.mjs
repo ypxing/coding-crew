@@ -12,6 +12,7 @@ import {
   worktreePath,
 } from "../../orchestrator/lib/worktree.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
+import { conflictResolved } from "../../orchestrator/lib/pipeline.mjs";
 
 function tmpRoot() {
   return mkdtempSync(join(tmpdir(), "worktreeinclude-"));
@@ -557,6 +558,93 @@ test("mergeFeatureBranch aborts cleanly and reports a conflict instead of resolv
   assert.match(result.reason, /conflicted/);
   const status = execFileSync("git", ["-C", worktree, "status", "--porcelain=v1"], { encoding: "utf8" });
   assert.equal(status.trim(), "", "the merge was aborted — the worktree is left clean");
+});
+
+test("mergeFeatureBranch with keepConflict leaves the merge in progress and records the feature sha it merged", () => {
+  const { mainRoot, git, effects } = gitRoot();
+  const featureBranch = "feature/x";
+  git("checkout", "-q", "-b", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "base\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "shared");
+  const branch = "crew/x/a";
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "shared.txt"), "issue\n");
+  git("commit", "-q", "-am", "issue edit");
+  git("checkout", "-q", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "feature\n");
+  git("commit", "-q", "-am", "feature edit");
+  const tip = execFileSync("git", ["-C", mainRoot, "rev-parse", featureBranch], { encoding: "utf8" }).trim();
+  const worktree = join(mainRoot, "wt-a");
+  git("worktree", "add", worktree, branch);
+
+  const result = mergeFeatureBranch(effects, { worktree, branch, featureBranch, keepConflict: true });
+
+  assert.equal(result.kept, true);
+  assert.deepEqual(result.files, ["shared.txt"]);
+  assert.equal(result.featureSha, tip, "the sha the merge was started from, not a ref to re-read later");
+  assert.equal(execFileSync("git", ["-C", worktree, "rev-parse", "MERGE_HEAD"], { encoding: "utf8" }).trim(), tip);
+});
+
+// conflictResolved (pipeline.mjs) judges a conflict-only dispatch from git, against the sha
+// mergeFeatureBranch recorded, never the live feature-branch ref.
+function keptConflict() {
+  const { mainRoot, git, effects } = gitRoot();
+  const featureBranch = "feature/x";
+  git("checkout", "-q", "-b", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "base\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "shared");
+  const branch = "crew/x/a";
+  git("checkout", "-q", "-b", branch);
+  writeFileSync(join(mainRoot, "shared.txt"), "issue\n");
+  git("commit", "-q", "-am", "issue edit");
+  git("checkout", "-q", featureBranch);
+  writeFileSync(join(mainRoot, "shared.txt"), "feature\n");
+  git("commit", "-q", "-am", "feature edit");
+  const worktree = join(mainRoot, "wt-a");
+  git("worktree", "add", worktree, branch);
+  const sync = mergeFeatureBranch(effects, { worktree, branch, featureBranch, keepConflict: true });
+  assert.equal(sync.kept, true);
+  const wt = (...args) => execFileSync("git", ["-C", worktree, ...args], { encoding: "utf8" });
+  return { mainRoot, git, wt, effects, worktree, featureBranch, featureSha: sync.featureSha };
+}
+
+function concludeMerge(wt, worktree) {
+  writeFileSync(join(worktree, "shared.txt"), "issue\nfeature\n");
+  wt("add", "shared.txt");
+  wt("-c", "user.email=t@t", "-c", "user.name=T", "commit", "-q", "--no-edit");
+}
+
+test("conflictResolved: a concluded merge of the recorded sha is resolved though the feature branch moved on", () => {
+  const { mainRoot, git, wt, effects, worktree, featureBranch, featureSha } = keptConflict();
+  concludeMerge(wt, worktree);
+  // A sibling merges into the feature branch while the dispatch ran.
+  writeFileSync(join(mainRoot, "late.txt"), "late\n");
+  git("add", "late.txt");
+  git("commit", "-q", "-m", "sibling");
+
+  assert.deepEqual(conflictResolved(effects, worktree, featureBranch, featureSha), { ok: true });
+  assert.equal(conflictResolved(effects, worktree, featureBranch).ok, false, "the live ref would have failed it");
+});
+
+test("conflictResolved: a merge still in progress is unresolved", () => {
+  const { effects, worktree, featureBranch, featureSha } = keptConflict();
+  assert.deepEqual(conflictResolved(effects, worktree, featureBranch, featureSha), { ok: false, why: "the merge is still in progress (MERGE_HEAD)" });
+});
+
+test("conflictResolved: unmerged paths left without MERGE_HEAD are unresolved", () => {
+  const { wt, effects, worktree, featureBranch, featureSha } = keptConflict();
+  rmSync(wt("rev-parse", "--path-format=absolute", "--git-path", "MERGE_HEAD").trim());
+  assert.deepEqual(conflictResolved(effects, worktree, featureBranch, featureSha), { ok: false, why: "unmerged paths remain" });
+});
+
+test("conflictResolved: a HEAD missing the recorded sha is unresolved", () => {
+  const { wt, effects, worktree, featureBranch, featureSha } = keptConflict();
+  wt("merge", "--abort");
+  const r = conflictResolved(effects, worktree, featureBranch, featureSha);
+  assert.equal(r.ok, false);
+  assert.match(r.why, new RegExp(`HEAD does not contain ${featureSha.slice(0, 12)}`));
 });
 
 test("mergeFeatureBranch is a no-op when the branch is itself the feature branch", () => {

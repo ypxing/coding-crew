@@ -311,6 +311,7 @@ export async function runWorker(ctx, issue, attempt) {
       ctx.log(`[SYNC-CONFLICT-KEPT] slug=${issue.slug} branch=${branch} files=${sync.files.join(",")} — left for a conflict-only coder dispatch`);
       pendingConflict = {
         files: sync.files,
+        featureSha: sync.featureSha,
         context: resume.kind === "conflict" && resume.context ? resume.context : `'${sprint.featureBranch}' moved on under this branch`,
       };
       // A conflict retry's only job was the merge: once resolved, verify and review re-run.
@@ -426,6 +427,7 @@ export async function runWorker(ctx, issue, attempt) {
       issueDir,
       deps: depsOutcome,
       files: pendingConflict.files,
+      featureSha: pendingConflict.featureSha,
       context: pendingConflict.context,
     });
     // The baseline can go red while the conflict coder runs (its kill is why it left the merge open).
@@ -621,7 +623,7 @@ export function mayResumeCoderSession({ enabled, route, runtime, conflictDispatc
  * attempt, outside the retry cap and MAX_DISPATCHES_PER_ISSUE (it is not a worker round). Its
  * success is read from git, never from its report.
  */
-async function dispatchConflict(ctx, { issue, worktree, branch, attempt, issueDir, deps, files, context }) {
+async function dispatchConflict(ctx, { issue, worktree, branch, attempt, issueDir, deps, files, featureSha, context }) {
   const { sprint, effects, options } = ctx;
   const promptFile = join(issueDir, "conflict-prompt.md");
   const outFile = join(issueDir, "conflict-report.md");
@@ -671,15 +673,24 @@ async function dispatchConflict(ctx, { issue, worktree, branch, attempt, issueDi
   const head = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
   // Its own role: its session saw only the conflict, so lastDispatch(slug, "coder") must never return it.
   sprint.recordDispatchCost(result, { slug: issue.slug, role: CONFLICT_ROLE, attempt, head });
-  return { ...conflictResolved(effects, worktree, sprint.featureBranch), dispatch: result };
+  return { ...conflictResolved(effects, worktree, sprint.featureBranch, featureSha), dispatch: result };
 }
 
-/** Is the merge really concluded: no MERGE_HEAD, nothing unmerged, the feature branch inside HEAD. */
-function conflictResolved(effects, worktree, featureBranch) {
+/**
+ * Is the merge really concluded: no MERGE_HEAD, nothing unmerged, and HEAD contains the
+ * feature-branch commit the sync merge was started from (featureSha, recorded before the
+ * dispatch). Never the live ref: a sibling can merge into the feature branch while the
+ * dispatch runs, and that newer commit is the next sync's job, not a failed resolution.
+ */
+export function conflictResolved(effects, worktree, featureBranch, featureSha) {
   const git = (args) => effects.gitRead(args, { cwd: worktree });
   if (git(["rev-parse", "-q", "--verify", "MERGE_HEAD"]).code === 0) return { ok: false, why: "the merge is still in progress (MERGE_HEAD)" };
   if (git(["diff", "--name-only", "--diff-filter=U"]).stdout.trim()) return { ok: false, why: "unmerged paths remain" };
-  if (git(["merge-base", "--is-ancestor", featureBranch, "HEAD"]).code !== 0) return { ok: false, why: `HEAD does not contain '${featureBranch}'` };
+  const merged = featureSha || featureBranch;
+  if (git(["merge-base", "--is-ancestor", merged, "HEAD"]).code !== 0) {
+    const what = featureSha ? `${featureSha.slice(0, 12)} ('${featureBranch}' when the sync merge started)` : `'${featureBranch}'`;
+    return { ok: false, why: `HEAD does not contain ${what}` };
+  }
   return { ok: true };
 }
 
