@@ -36,7 +36,7 @@ node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # dr
 
 # One real crew-afk sprint on one platform, in a repo rebuilt fresh from scripts/smoke-sprint/ each run; costs API money
 scripts/smoke-sprint.sh copilot              # --setup-only builds the repo without calling the CLI
-scripts/smoke-sprint.sh claude --demo > smoke.log   # the same on the pinned demo repo (scripts/smoke-sprint/demo/); appends a row to RESULTS.md
+scripts/smoke-sprint.sh claude --demo > /tmp/smoke.log   # the same on the pinned demo repo (scripts/smoke-sprint/demo/); appends a row to scripts/smoke-sprint/RESULTS.md — commit it before cutting the release
 
 # After editing orchestrator/roles/reviewer.md: replay the two bugs PR #208 shipped with against base and head, judged blind; costs API money
 node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's prompts, calls no model; drop --dry-run to run
@@ -45,8 +45,8 @@ node scripts/eval-reviewer-misses.mjs --runs 2 --dry-run   # writes each ref's p
 scripts/sync-pr-with-main.sh <branch>
 
 # Cut a milestone release (not per merge) once CHANGELOG.md's top version entry and any registry.json version bumps are committed;
-# needs a passing demo smoke log for HEAD's crew-afk version, or an explicit opt-out
-scripts/cut-release.sh --dry-run --demo-smoke smoke.log   # or --no-demo-smoke "<reason>"; verify, then re-run without --dry-run to tag and push
+# needs a passing demo smoke log (`SMOKE: PASS (<platform>, demo)`) for HEAD's crew-afk version, or an explicit opt-out; the tree must be clean, RESULTS.md row included
+scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-smoke "<reason>"; verify, then re-run without --dry-run to tag and push
 ```
 
 - Version bump (D4): a change to any file a `skills.*` entry in `registry.json` ships (its `source-dir` tree, `assets.source` tree, `scripts[]`, `platform-files`) or to that entry's own registry fields needs that entry's `version` in `registry.json` strictly above `origin/main`'s version for it — `install.sh --update` skips an entry whose version is unchanged, and two branches bumping to the same number would collide. An entry the branch did not change (measured from the merge-base) is exempt even if main bumped it. `tests/registry-version-bump.bats` enforces it against `origin/main` (skips when it is not found) and fails the verify gate otherwise.
