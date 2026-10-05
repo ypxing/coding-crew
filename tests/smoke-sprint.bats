@@ -88,7 +88,7 @@ SH
   make_demo
   run env CREW_DEMO_REPO="$UP" "$SMOKE" claude --demo --dir "$D" --setup-only
   [ "$status" -eq 0 ]
-  [ "$(git -C "$D" rev-parse HEAD~1)" = "$PIN" ]
+  [ "$(git -C "$D" rev-list --max-parents=0 HEAD)" = "$PIN" ]
   [ ! -e "$D/b.txt" ]
   [ -f "$D/.scratch/demo/issues/open/01-one.md" ]
   [ -f "$D/.scratch/demo/PRD.md" ]
@@ -145,7 +145,8 @@ SH
 
 @test "a demo run fails when an issue is left open" {
   make_demo
-  sed -i.bak 's#^mv .*#echo "# two" > ".scratch/$slug/issues/done/01-one.md"; rm ".scratch/$slug/issues/open/01-one.md"; echo x > ".scratch/$slug/issues/open/02-left.md"#' "$STUB"
+  echo x > "$DEMO/feature/issues/open/02-left.md"
+  sed -i.bak 's|^mv .*|mv ".scratch/$slug/issues/open/01-one.md" ".scratch/$slug/issues/done/"|' "$STUB"
   run "$SMOKE" claude --demo --dir "$D"
   [ "$status" -eq 1 ]
   [[ "$output" == *"SMOKE: FAIL: "*"02-left.md"* ]]
