@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { dispatchPlain } from "./dispatch.mjs";
 
-export async function discoverCommands(effects, { platform, model, timeoutMs, maxBudgetUsd = null, log = () => {} }) {
+export async function discoverCommands(effects, { platform, model, timeoutMs, maxBudgetUsd = null, log = () => {}, recordCost = () => {} }) {
   // Read-only — safe (and informative) to actually run under --dry-run/plan, unlike the
   // model dispatch and cache write below.
   const d = effects.bash("discover-commands.sh", [], { mutating: false });
@@ -74,6 +74,8 @@ export async function discoverCommands(effects, { platform, model, timeoutMs, ma
     log(`Command discovery: dispatch failed (${e.message}) — falling back to per-check discovery.`);
     return;
   }
+  // Spent whether or not the answer is usable.
+  recordCost(r);
 
   if (r.code !== 0 || r.timedOut) {
     const detail = (r.stderr || r.text || "").trim();

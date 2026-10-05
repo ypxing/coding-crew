@@ -301,10 +301,20 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
   const body = readFileSync(join(root, "pr-body.md"), "utf8");
   assert.match(body, /^Closes #1$/m);
   assert.doesNotMatch(body, /^# Fake title/m, "the title is the PR's title, not a line of its body");
-  // The PR writer's body opens the block, preamble dropped; the checks line is the sprint's own.
-  assert.match(body, /<!-- crew-afk:begin -->\n## Summary\n\nFake summary\.[\s\S]*## Merge Danger[\s\S]*\*\*Checks on the merged branch:\*\* [\s\S]*Implemented by a crew-afk sprint[\s\S]*Closes #1/);
+  // The PR writer's body opens the block, preamble dropped; its own **Tested:** line carries the
+  // checks, so the sprint's mechanical checks line is not added beside it.
+  assert.match(body, /<!-- crew-afk:begin -->\n## Why\n\nFake why\.[\s\S]*## Risk[\s\S]*\*\*Tested:\*\* [\s\S]*Implemented by a crew-afk sprint[\s\S]*Closes #1/);
+  assert.doesNotMatch(body, /\*\*Checks on the merged branch:\*\*/);
   assert.doesNotMatch(body, /Here is the body/);
   assert.doesNotMatch(r.stdout, /PR body has no summary/);
+  // Command discovery (uncached here) and the PR writer are dispatches too: both are in this
+  // run's cost ledger, which is what the summary's run total sums.
+  const trace = traceLog(root);
+  assert.match(trace, /dispatch-cost slug=\S+ role=commandFinder /);
+  assert.match(trace, /dispatch-cost slug=\S+ role=prWriter /);
+  const s = state(root);
+  const roles = (s.dispatches ?? []).filter((d) => d.run === s.current_run).map((d) => d.role);
+  assert.ok(roles.includes("commandFinder") && roles.includes("prWriter"), `this run's ledger: ${roles}`);
   assert.equal(sh("git", ["-C", remote, "rev-parse", "feature/demo"]).stdout.trim(), sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim());
   assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+\*\*Ready:\*\* the run finished green\.\s+1 finding\(s\) posted \(0 inline\)/);
   assert.doesNotMatch(r.stdout, /^## Next$/m, "openPr on: the PR is opened, nothing is left to tell the human");
@@ -316,7 +326,7 @@ test("github --open-pr: the sprint pushes the feature branch and opens a PR whos
   assert.doesNotMatch(r.stdout, /\/crew-address-findings/);
 });
 
-test("github --open-pr: a PR writer with no ## Summary still opens the PR, with the checks line, and the summary says why", () => {
+test("github --open-pr: a PR writer with no ## Why still opens the PR, with the checks line, and the summary says why", () => {
   const root = githubFixtureRepo();
   const { stub, log } = stubGh(root, [GH_ALPHA]);
   const remote = join(root, ".scratch/remote.git");
@@ -337,9 +347,9 @@ test("github --open-pr: a PR writer with no ## Summary still opens the PR, with 
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(readFileSync(log, "utf8"), /pr create --head feature\/demo/);
   const body = readFileSync(join(root, "pr-body.md"), "utf8");
-  assert.doesNotMatch(body, /## Summary|could not read/);
+  assert.doesNotMatch(body, /## Why|could not read/);
   assert.match(body, /<!-- crew-afk:begin -->\n\*\*Checks on the merged branch:\*\* [\s\S]*Closes #1/);
-  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+\*\*Ready:\*\* the run finished green\.\s+\*\*PR body has no summary:\*\* the writer's answer has no `## Summary` section\./);
+  assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+\*\*Ready:\*\* the run finished green\.\s+\*\*PR body has no summary:\*\* the writer's answer has no `## Why` section\./);
 });
 
 test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implemented in Phase 2", () => {

@@ -336,16 +336,15 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
 /**
  * The PR writer (role prWriter, a plain dispatch): write-pr's own SKILL.md is the procedure, so a
  * human's /write-pr and the sprint's PR follow one text. Its final message is the `# <title>` line
- * and the body; the caller keeps the body from the first `## Summary` line and the title from the
+ * and the body; the caller keeps the body from the first `## Why` line and the title from the
  * `# ` line before it, so a preamble costs nothing.
  */
-export function prBodyPrompt({ skillFile, featureBranch, base, prd, reviewReport, checks }) {
+export function prBodyPrompt({ skillFile, featureBranch, base, prd, checks }) {
   return [
     `Write the pull request body for ${featureBranch}. Read ${skillFile} first and follow it.`,
     "",
     `Range: ${base}..${featureBranch}`,
     ...(prd ? [`PRD (the feature's intent): ${prd}`] : []),
-    ...(reviewReport ? [`Review report (the sprint's reviewer findings; Merge Danger may draw on it): ${reviewReport}`] : []),
     `Checks on the merged branch: ${checks || "not run"}`,
     "",
     "Output: print the `# <title>` line and the body as your final message — nothing before the",
