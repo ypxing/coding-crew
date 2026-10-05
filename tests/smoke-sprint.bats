@@ -74,7 +74,7 @@ while [[ $# -gt 0 ]]; do [[ "$1" == --feature-slug ]] && slug="$2"; shift; done
 mkdir -p ".scratch/$slug/issues/done" ".scratch/$slug/reviews"
 mv ".scratch/$slug/issues/open/"*.md ".scratch/$slug/issues/done/"
 echo '{"dispatches":[{"cost_usd":1.25,"duration_ms":3600000},{"cost_usd":0.25,"duration_ms":1800000}]}' > ".scratch/$slug/sprint-state.json"
-printf '```json\n{"findings": [{"severity": "low"}]}\n```\n' > ".scratch/$slug/reviews/sprint-review-1.md"
+printf '```json\n{"branch": "b1", "verdict": "met", "findings": [{"severity": "LOW", "location": "a.txt:1", "issue": "x"}]}\n```\n' > ".scratch/$slug/reviews/sprint-review-1.md"
 git checkout -q -b "feature/$slug" && touch ok.txt && git add ok.txt && git commit -qm ok && git checkout -q main
 SH
   chmod +x "$STUB"
@@ -150,4 +150,24 @@ SH
   run "$SMOKE" claude --demo --dir "$D"
   [ "$status" -eq 1 ]
   [[ "$output" == *"SMOKE: FAIL: "*"02-left.md"* ]]
+}
+
+@test "the findings value folds the review reports one record per branch, latest wins" {
+  make_demo
+  cat >> "$STUB" <<'SH'
+r=".scratch/demo/reviews"
+printf '```json\n{"branch": "b1", "verdict": "unmet", "findings": [{"severity": "LOW", "location": "a.txt:1", "issue": "x"}, {"severity": "HIGH", "location": "b.txt", "issue": "y"}]}\n```\n' > "$r/sprint-review-1.md"
+printf '```json\n{"branch": "b1", "verdict": "met", "findings": [{"severity": "LOW", "location": "a.txt:1", "issue": "x"}]}\n```\n' > "$r/sprint-review-2.md"
+SH
+  run "$SMOKE" claude --demo --dir "$D"
+  [ "$status" -eq 0 ]
+  [[ "$(tail -n 1 "$RESULTS")" == *"| PASS | "*" | 1 |" ]]
+}
+
+@test "a check that reads stdin does not swallow the later checks" {
+  make_demo
+  printf 'cat\ntest -f missing.txt\n' > "$DEMO/check"
+  run "$SMOKE" claude --demo --dir "$D"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"SMOKE: FAIL: "*"test -f missing.txt"* ]]
 }
