@@ -559,7 +559,6 @@ export function findingsTriagePrompt({ scope, ref, change, findings, reportPath 
   ].join("\n");
 }
 
-/** One `- [ ]` line per promotable finding, each carrying its own citation. */
 /** The PRD audit's missing requirements, as the fix issue's acceptance criteria. */
 export function prdGapsCriteria(missing) {
   const lines = ["<!-- queued from the PRD audit's missing requirements -->", ""];
@@ -567,9 +566,18 @@ export function prdGapsCriteria(missing) {
   return `${lines.join("\n")}\n`;
 }
 
+const SEVERITY_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+/** Promotable findings most severe first (CRITICAL→LOW); a stable sort, so one severity keeps its input order. */
+export function bySeverity(findings) {
+  const rank = (f) => SEVERITY_RANK[String(f.severity).toUpperCase()] ?? 4;
+  return [...findings].sort((a, b) => rank(a) - rank(b));
+}
+
+/** One `- [ ]` line per promotable finding, most severe first, each carrying its own citation. */
 export function criteriaFile({ branch, findings }) {
   const lines = [`<!-- promoted from review of ${branch} -->`, ""];
-  for (const f of findings) {
+  for (const f of bySeverity(findings)) {
     const where = f.location ? ` (${f.location})` : "";
     lines.push(`- [ ] [${f.severity}] ${f.criterion}${where}`);
   }

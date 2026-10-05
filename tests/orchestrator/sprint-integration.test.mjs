@@ -215,21 +215,21 @@ test("feature findings at or above fixFindings become a Phase 2 fix issue; the r
   assert.match(remind.stdout, /^FINDINGS: open=1 \(LOW=1\)$/m);
 });
 
-test("the second drain's findings become a second fix issue; a third drain's are report-only and keep the run from green", () => {
+test("after the feature's fix issue, a later drain's findings make no second fix issue: report-only, keeping the run from green", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "feature.review", featureReviewFile([crossIssue("HIGH", "Share one retry helper")]));
   fake(root, "feature.review-later", featureReviewFile([crossIssue("HIGH", "Bound the retry loop")]));
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.equal(featureReviews(lines), 3);
+  assert.equal(featureReviews(lines), 2);
   const fixes = readdirSync(join(root, ".scratch/demo/issues/done")).filter((f) => /fix-findings-feature/.test(f));
-  assert.equal(fixes.length, 2, `two fix issues, no third: ${fixes}`);
+  assert.equal(fixes.length, 1, `one fix issue, no second: ${fixes}`);
   assert.match(r.stdout, /Drain 1: The feature was reviewed in 1 area\(s\): 1 finding\(s\); 1 Actionable went to Phase 2/);
-  assert.match(r.stdout, /Drain 2: The commits since the last review were reviewed in 1 area\(s\): 1 finding\(s\); 1 Actionable went to Phase 2/);
-  assert.match(r.stdout, /Drain 3: .*1 finding\(s\); report-only \(past the promotion cap\)/);
+  assert.match(r.stdout, /Drain 2: .*1 finding\(s\); report-only \(past the promotion cap\)/);
   assert.match(traceLog(root), /FEATURE-REVIEW: 1 finding\(s\) the rule would promote are report-only/);
   assert.match(sprintReport(root), /Bound the retry loop/);
+  assert.equal(state(root).feature_review.promotions, 1);
 });
 
 // The cap counts per feature (sprint-state.json's feature_review.promotions), not per run.
@@ -240,62 +240,63 @@ const nextRunReviews = (root, first, later = first) => {
   fake(root, "feature.review-later", featureReviewFile(later));
 };
 
-test("a run after the feature's two promoting reviews is report-only: no fix issue, its would-be promotions keep the PR a draft", () => {
+test("a run after the feature's fix issue is report-only: no fix issue, its would-be promotions keep the PR a draft", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "feature.review", featureReviewFile([crossIssue("HIGH", "Share one retry helper")]));
-  fake(root, "feature.review-later", featureReviewFile([crossIssue("HIGH", "Bound the retry loop")]));
+  fake(root, "feature.review-later", featureReviewFile([]));
   const first = commandLines(root);
   assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
-  assert.equal(featureFixes(root).length, 2);
-  assert.equal(state(root).feature_review.promotions, 2);
+  assert.equal(featureFixes(root).length, 1);
+  assert.equal(state(root).feature_review.promotions, 1);
 
   addIssue(root, "02-beta.md");
   nextRunReviews(root, [{ severity: "HIGH", location: "src/beta.txt:9", criterion: "Cap the beta retries" }]);
   const second = commandLines(root, ["--open-pr"], { scripts: scriptsWithFakeOpenPr(root) });
   assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
   assert.equal(featureReviews(second.lines), 1);
-  assert.equal(featureFixes(root).length, 2, "no fix issue in the second run");
+  assert.equal(featureFixes(root).length, 1, "no fix issue in the second run");
   assert.match(second.r.stdout, /report-only \(past the promotion cap\)/);
   assert.doesNotMatch(second.r.stdout, /went to Phase 2/);
   assert.match(readFileSync(join(root, "open-pr.args"), "utf8"), /--draft/);
   assert.match(readFileSync(join(root, ".scratch/demo/pr-note.md"), "utf8"), /past the promotion cap[^\n]*src\/beta\.txt:9 \(HIGH\)/);
 });
 
-test("a run with one promoting feature review leaves the next run one promotion; a state file with no count is 0", () => {
+test("an earlier version's feature_review.promotions of 2 reads as capped: no fix issue", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  assert.equal(commandLines(root).r.code, 0);
+  const sf = join(root, ".scratch/demo/sprint-state.json");
+  writeFileSync(sf, JSON.stringify({ ...state(root), feature_review: { ...state(root).feature_review, promotions: 2 } }));
+
+  addIssue(root, "02-beta.md");
+  nextRunReviews(root, [crossIssue("HIGH", "Share one retry helper")]);
+  const next = commandLines(root);
+  assert.equal(next.r.code, 0, `${next.r.stdout}\n${next.r.stderr}`);
+  assert.equal(featureReviews(next.lines), 1);
+  assert.equal(featureFixes(root).length, 0);
+  assert.match(next.r.stdout, /report-only \(past the promotion cap\)/);
+  assert.equal(state(root).feature_review.promotions, 2);
+});
+
+test("a review with nothing promotable leaves promotions at 0; a later run's promotable finding makes the feature's fix issue", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   const first = commandLines(root);
   assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
   assert.equal(featureReviews(first.lines), 1);
-  // As an older version wrote it: a reviewed tip, no count — the clean review above is still the one that counts.
-  const sf = join(root, ".scratch/demo/sprint-state.json");
-  const written = state(root);
-  assert.equal(written.feature_review.promotions, 1);
-  delete written.feature_review.promotions;
-  writeFileSync(sf, JSON.stringify(written));
+  assert.equal(state(root).feature_review.promotions ?? 0, 0, "a clean review creates no fix issue, so it does not count");
 
   addIssue(root, "02-beta.md");
   nextRunReviews(root, [crossIssue("HIGH", "Share one retry helper")], [crossIssue("HIGH", "Bound the retry loop")]);
-  const second = commandLines(root);
-  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
-  // With no count recorded the cap starts at 0: two promotions, the third review report-only.
-  assert.equal(featureFixes(root).length, 2);
-  assert.match(second.r.stdout, /Drain 3: .*report-only \(past the promotion cap\)/);
-
-  // A second feature: one clean review recorded, so the next run promotes once and then reports.
-  const other = fixtureRepo();
-  addIssue(other, "01-alpha.md");
-  assert.equal(commandLines(other).r.code, 0);
-  addIssue(other, "02-beta.md");
-  nextRunReviews(other, [crossIssue("HIGH", "Share one retry helper")], [crossIssue("HIGH", "Bound the retry loop")]);
-  const next = commandLines(other);
+  const next = commandLines(root);
   assert.equal(next.r.code, 0, `${next.r.stdout}\n${next.r.stderr}`);
   assert.equal(featureReviews(next.lines), 2);
-  assert.equal(featureFixes(other).length, 1);
+  assert.equal(featureFixes(root).length, 1);
   assert.match(next.r.stdout, /Drain 1: .*1 Actionable went to Phase 2/);
   assert.match(next.r.stdout, /Drain 2: .*report-only \(past the promotion cap\)/);
-  assert.equal(state(other).feature_review.promotions, 2);
+  assert.equal(state(root).feature_review.promotions, 1);
+
 });
 
 /** A copy of the crew-afk scripts whose open-pr.sh records its arguments instead of touching a remote. */
@@ -306,15 +307,15 @@ function scriptsWithFakeOpenPr(root) {
   return dir;
 }
 
-const thirdDrain = (root) => {
+const laterDrain = (root) => {
   fake(root, "feature.review", featureReviewFile([crossIssue("HIGH", "Share one retry helper")]));
   fake(root, "feature.review-later", featureReviewFile([{ severity: "HIGH", location: "src/beta.txt:9", criterion: "Bound the retry loop" }]));
 };
 
-test("--open-pr with a third-drain report-only finding: open-pr.sh gets --draft and the note names the finding", () => {
+test("--open-pr with a later drain's report-only finding: open-pr.sh gets --draft and the note names the finding", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  thirdDrain(root);
+  laterDrain(root);
   const { r } = commandLines(root, ["--open-pr"], { scripts: scriptsWithFakeOpenPr(root) });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(readFileSync(join(root, "open-pr.args"), "utf8"), /--draft/);
@@ -325,7 +326,7 @@ test("--open-pr with a third-drain report-only finding: open-pr.sh gets --draft 
 test("a later --open-pr run that merges nothing still passes --draft and names the report-only finding from the report on disk", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  thirdDrain(root);
+  laterDrain(root);
   const scripts = scriptsWithFakeOpenPr(root);
   const first = commandLines(root, ["--open-pr"], { scripts });
   assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
@@ -340,7 +341,7 @@ test("a later --open-pr run that merges nothing still passes --draft and names t
 test("--fix-findings none: no promotion-cap reason reaches the PR", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  thirdDrain(root);
+  laterDrain(root);
   const { r } = commandLines(root, ["--open-pr", "--fix-findings", "none"], { scripts: scriptsWithFakeOpenPr(root) });
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.doesNotMatch(r.stdout, /promotion cap/);
@@ -362,10 +363,10 @@ test("a finding repeated at a shifted line across drains appears once in the fea
   assert.equal(findings[0].location, "src/alpha.txt:7");
 });
 
-test("a third-drain report-only finding stays open for promote-findings open/remind despite earlier promoted bullets", () => {
+test("a later drain's report-only finding stays open for promote-findings open/remind despite earlier promoted bullets", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  thirdDrain(root);
+  laterDrain(root);
   const { r } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const env = { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") };

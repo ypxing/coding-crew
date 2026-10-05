@@ -337,20 +337,20 @@ export async function runSprint(ctx) {
         if (prdAudit.queuedReady && prdAudit.queuedRef) unseen.add(prdAudit.queuedRef);
       }
     }
-    // At every drain with something merged. Only the feature's first two reviews that ran promote
-    // (PRD D5, counted per feature in sprint-state.json, across runs): Phase 2's fix of a fix is
+    // At every drain with something merged. Reviews promote until one has created the feature's
+    // fix issue (counted per feature in sprint-state.json, across runs): Phase 2's fix of a fix is
     // not chased further, later findings are reported.
     if (!options.dryRun && sprint.get("merged")) {
       const unclaimed = unclaimedByCap();
-      const ran = Number(sprint.get("feature-review-promotions")) || 0;
-      const promote = ran < FEATURE_REVIEW_PROMOTIONS ? ran + 1 : false;
+      const promote = (Number(sprint.get("feature-review-promotions")) || 0) < FEATURE_REVIEW_PROMOTIONS;
       const review = await runFeatureReview(ctx, {
         integration,
         wallCap: unclaimed.length ? { minutes: options.maxWallMinutes, unclaimed: unclaimed.length } : null,
         promote,
         drain: featureReviews.length + 1,
       });
-      if (review.findings && promote) sprint.state(["feature-review-promoted"]);
+      // A review that created no fix issue leaves the feature its one.
+      if (review.promoted && promote) sprint.state(["feature-review-promoted"]);
       featureReviews.push(review);
       if (review.promotedRef) ownRefs.add(review.promotedRef);
       if (review.promotedRef && tracker.fixIssuesCreatedReady) unseen.add(review.promotedRef);
@@ -411,9 +411,12 @@ function openIssues(tracker, mainRoot, featureSlug) {
   return tracker.listFeatureIssues(mainRoot, { featureSlug }).filter((i) => i.status !== "done" && !tracker.isPrdIssue(i));
 }
 
-/** Issues this sprint hasn't finished, other than parked fix issues. */
+/**
+ * Work issues this sprint hasn't finished. Fix issues — parked, or any with a `Source:` line (review,
+ * integration, PRD gaps) — are left out: none of them carries a PRD requirement.
+ */
 function unfinishedIssues(tracker, mainRoot, featureSlug) {
-  return openIssues(tracker, mainRoot, featureSlug).filter((i) => i.status !== "deferred-findings");
+  return openIssues(tracker, mainRoot, featureSlug).filter((i) => i.status !== "deferred-findings" && !i.sourceGuarded);
 }
 
 /**
@@ -608,11 +611,12 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, p
 }
 
 /**
- * Feature reviews promote at the feature's first two reviews that ran — per feature, not per run:
- * the count lives in sprint-state.json (`feature_review.promotions`), so a later run past it is
- * report-only too. To keep LOW findings out of fix issues altogether, use `fixFindings: medium`.
+ * A feature gets one findings fix issue — per feature, not per run: the count of reviews that created
+ * one lives in sprint-state.json (`feature_review.promotions`), so a later run is report-only too, and
+ * an earlier version's count of 2 reads as capped. To keep LOW findings out of fix issues altogether,
+ * use `fixFindings: medium`.
  */
-const FEATURE_REVIEW_PROMOTIONS = 2;
+const FEATURE_REVIEW_PROMOTIONS = 1;
 
 /** The findings a report-only feature review left that the fixFindings rule would have promoted, read from the review report on disk (an earlier run's count too). */
 function unfixedFeatureFindings(sprint) {
@@ -627,7 +631,7 @@ function featureReviewLine(sprint, r, n, total) {
   const count = r.findings?.length ?? 0;
   const rule = sprint.fixFindings === "actionable" ? "Actionable" : "at or above the fix threshold";
   const fate = r.promoted
-    ? `; ${r.promoted} ${rule} went to Phase 2`
+    ? `; ${r.promoted} ${rule} went to Phase 2${r.overflow ? `, ${r.overflow} more report-only (past the fix issue's limit)` : ""}`
     : r.reportOnly?.length
       ? `; report-only (past the promotion cap): ${r.reportOnly.length} ${rule} not sent to Phase 2`
       : "";
@@ -653,7 +657,7 @@ function notGreenReasons({ exitCode = 0, blocked = [], integration = null, cappe
   else if (integration && !["pass", "cached"].includes(integration.status)) reasons.push(`the integration check ${integration.status}`);
   if (unfixedFindings.length) {
     const names = unfixedFindings.slice(0, 5).map((f) => `${f.location} (${f.severity})`).join(", ");
-    reasons.push(`${unfixedFindings.length} feature review finding(s) past the promotion cap were reported, not fixed: ${names}${unfixedFindings.length > 5 ? ", …" : ""}`);
+    reasons.push(`${unfixedFindings.length} feature review finding(s) past the promotion cap or the fix issue's limit were reported, not fixed: ${names}${unfixedFindings.length > 5 ? ", …" : ""}`);
   }
   return reasons;
 }

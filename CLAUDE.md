@@ -175,16 +175,16 @@ says why.
 
 At every drain where something merged (`orchestrator/lib/pipeline/feature-review.mjs`), after the integration check, `crew-reviewer`
 runs in feature mode: no criteria, findings only, attributed to `feature` in the sprint
-review report and, at the feature's first two reviews that ran (counted per feature, across runs), promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
+review report and, until the feature has its one findings fix issue (counted per feature, across runs), promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
 `crew-triage`'s findings mode judges Actionable, via `orchestrator/lib/pipeline/findings-triage.mjs`; a failed triage
-falls back to the `high` rule). The range (`featureReviewRange`) is the whole feature, from the merge-base with origin's default
+falls back to the `high` rule). That fix issue holds the 8 most severe promotable findings, CRITICAL→LOW (`criteriaFile` sorts for every caller); the rest are marked `report_only` and stay open. The range (`featureReviewRange`) is the whole feature, from the merge-base with origin's default
 branch (else the local default branch; with neither the review is skipped, logged) — never this run's `base_sha`, which
 `session-init.sh` resets each run. After a review that wrote a report, `state.sh feature-reviewed` records
 `feature_review.reviewed_tip` in `sprint-state.json`; a later run whose tip equals it dispatches no reviewer ("nothing new
 since <sha>"), one whose tip descends from it reviews only `reviewed_tip..tip` minus commits on `origin/<default>` (what
 `sync-feature-branch.sh` merged in), and a `reviewed_tip` that is no ancestor (history rewritten) gives the whole-feature
-review again. Reviews after the feature's second are report-only (promotion cap, PRD D5): the count is `feature_review.promotions` in
-`sprint-state.json` (`state.sh feature-review-promoted`; absent reads as 0), so a later run starts past it too; no fix issue; the findings reach the review
+review again. Reviews after the one that created the fix issue are report-only (promotion cap): the count is `feature_review.promotions` in
+`sprint-state.json` (`state.sh feature-review-promoted`, advanced only when a fix issue was created; absent reads as 0, and an earlier version's 2 reads as capped), so a later run starts past it too; no fix issue; the findings reach the review
 report and the summary, and each one the rule would have promoted is a not-green reason, so an `--open-pr` PR is a draft naming
 them (none under `fixFindings: none`). To keep LOW findings out of fix issues
 altogether, use `afk.fixFindings: medium` / `--fix-findings medium`. Every feature review carries the PRD's `## Compatibility & Migration` section verbatim
