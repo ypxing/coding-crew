@@ -17,6 +17,8 @@ import {
   preflightPaneHost,
   queuePaneNotice,
 } from "../../orchestrator/lib/pane-host/index.mjs";
+import { levelFor } from "../../orchestrator/lib/log.mjs";
+import { notifyMilestone } from "../../orchestrator/lib/pipeline/shared.mjs";
 
 // A real herdr/orca session injects these, and this suite may itself run inside one. Left
 // ambient, they leak into every "not inside a pane host" assertion below. Cleared for the
@@ -715,6 +717,23 @@ test("queuePaneNotice returns before the push lands, sends one at a time in orde
   assert.deepEqual(sent, ["one", "two"]);
   assert.equal(maxInFlight, 1, "pushes into one pane never overlap");
   assert.deepEqual(reasons.map((r) => r.sent), [true, true]);
+});
+
+test("of several MILESTONE-PUSH-SKIPPED in one run only the first is a warning; the rest are debug", async () => {
+  const lines = [];
+  const effects = {
+    paneHost: "herdr",
+    mainRoot: "/root",
+    spawnWithTimeout: async () => ({ code: 1, stdout: "", stderr: "herdr: no such pane" }),
+  };
+  const ctx = { effects, sprint: { featureSlug: "demo" }, log: (text, level = levelFor(text)) => lines.push({ text, level }) };
+  await withHerdrPaneId("w1:p1", async () => {
+    for (const slug of ["alpha", "beta", "gamma"]) notifyMilestone(ctx, { slug }, "coder finished");
+    await drainPaneNotices(effects);
+  });
+  const skipped = lines.filter((l) => /\[MILESTONE-PUSH-SKIPPED\]/.test(l.text));
+  assert.equal(skipped.length, 3, JSON.stringify(lines));
+  assert.deepEqual(skipped.map((l) => l.level), ["warn", "debug", "debug"]);
 });
 
 test("drainPaneNotices is a no-op when nothing was queued", async () => {

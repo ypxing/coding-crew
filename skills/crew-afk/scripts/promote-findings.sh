@@ -252,11 +252,13 @@ _review_branch_prose() {
 # location the findings triage judged actionable (that verdict sits in the block's json, not its
 # prose; a folded duplicate_of target's location lists both spots, each matched on its own). Where the prose has no block to keep, the json's one-line findings are listed instead,
 # so a promoted finding is never absent from the body. A finding marked `report_only` (the promotion
-# cap's overflow, marked before defer runs) is no criterion of this issue, so neither path lists it.
+# cap's overflow, marked before defer runs) is no criterion of this issue, so neither path lists it:
+# a prose block is dropped for one only when its own severity and exact `File:` location are that
+# finding's, so a promoted finding at the same spot keeps its block.
 _review_findings_md() {
   local report="$1" branch="$2" severities="$3" locs="" sevs="" ro rollup
   rollup="$(review_rollup "$report")"
-  ro="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.report_only == true) | .location | select(. != "")' <<< "$rollup" 2>/dev/null || true)"
+  ro="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.report_only == true) | select(.location != "") | "\(.severity)\t\(.location)"' <<< "$rollup" 2>/dev/null || true)"
   if [ "$severities" = "actionable" ]; then
     locs="$(jq -r --arg b "$branch" '.branches[] | select(.branch == $b) | .findings[]? | select(.verdict == "actionable") | .location | split(", ")[]' <<< "$rollup" 2>/dev/null || true)"
   else
@@ -276,13 +278,20 @@ _review_findings_md() {
       }
       return 0
     }
-    function flush(   i, n, lines, m, L, ok, title, body, fences, entry) {
+    # fileloc(lines, n): the location on the File: line of the block, trimmed, backticks dropped.
+    function fileloc(lines, n,   i, f) {
+      for (i = 1; i <= n; i++) if (lines[i] ~ /^[ \t]*File:/) {
+        f = lines[i]; sub(/^[ \t]*File:[ \t]*/, "", f); gsub(/`/, "", f); gsub(/^[ \t]+|[ \t]+$/, "", f); return f
+      }
+      return ""
+    }
+    function flush(   i, n, lines, m, L, ok, title, body, fences, entry, floc) {
       if (blk == "") return
       n = split(blk, lines, "\n")
       if (sevs != "") ok = (index("," sevs ",", "," sev ",") > 0)
       else if (locs != "") { ok = 0; m = split(locs, L, "\n"); for (i = 1; i <= m; i++) if (L[i] != "" && has(blk, L[i])) ok = 1 }
       else ok = 1
-      if (ok && ro != "") { m = split(ro, L, "\n"); for (i = 1; i <= m; i++) if (L[i] != "" && has(blk, L[i])) ok = 0 }
+      if (ok && ro != "") { floc = fileloc(lines, n); m = split(ro, L, "\n"); for (i = 1; i <= m; i++) if (L[i] != "" && L[i] == sev "\t" floc) ok = 0 }
       if (ok) {
         title = lines[1]; gsub(/^[ \t]+|[ \t]+$/, "", title)
         gsub(/&/, "\\&amp;", title); gsub(/</, "\\&lt;", title); gsub(/>/, "\\&gt;", title)

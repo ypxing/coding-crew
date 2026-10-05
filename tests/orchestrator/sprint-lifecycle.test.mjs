@@ -76,6 +76,8 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/verify.json")), true);
   assert.equal(existsSync(join(root, ".scratch/demo/dispatch/01-alpha/ac.ok")), true);
   assert.match(r.stdout, /NO MORE TASKS/);
+  // Why it ended, for the next run's summary.
+  assert.deepEqual([s.last_exit.run, s.last_exit.reason, s.last_exit.code], [s.current_run, "finished", 0]);
   // The reviewer was handed the verification result, so a criterion that ends "and the
   // tests pass" is answerable by the read-only reviewer instead of stalling the branch.
   const reviewPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8");
@@ -86,6 +88,17 @@ test("a clean issue is verified, reviewed, merged and closed", () => {
   // Nor the coder for the project's config, which its worktree does not hold.
   const coderPromptText = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
   assert.ok(coderPromptText.includes(`Project config: ${join(root, ".coding-crew")} `), coderPromptText);
+});
+
+test("a run that stops at its per-issue attempt cap records `attempt cap` as why it ended, not `finished`", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review-once", "2");
+  const r = runSprint(root, ["--max-rounds", "1"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /Round cap reached/);
+  const s = state(root);
+  assert.deepEqual([s.last_exit.run, s.last_exit.reason], [s.current_run, "attempt cap"]);
 });
 
 test("openPr off, something merged, local tracker: the summary ends with ## Next naming gh pr create and --open-pr", () => {

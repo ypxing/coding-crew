@@ -24,13 +24,14 @@ set -euo pipefail
 #                          [--session-id <id>] [--context-tokens <n>] [--head <sha>]
 #                          [--cost-unknown --tokens <n>]
 #   state.sh run-start --id <run-id>
+#   state.sh run-end --reason <text> --code <n>   (why this run ended: every orchestrator exit path)
 #   state.sh baseline [--slot baseline|integration] --commit <sha> --verdict <pass|fail>
 #   state.sh verified-tree --tree <git tree sha>   (a per-issue verify passed this tree)
 #   state.sh feature-reviewed --tip <sha>          (a feature review wrote a report over the branch up to this tip)
 #   state.sh feature-review-promoted               (a feature review created a fix issue: one more toward the per-feature cap)
 #   state.sh resume --slug <slug>
 #   state.sh retention --slug <slug>
-#   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|feature-review-promotions|state-file>
+#   state.sh get <merged|retained|completed|partial|blocked|model|round|feature-slug|feature-review-promotions|runs|previous-exit|state-file>
 #   state.sh show
 #
 # Common flags: [--feature-slug <slug>] [--state-file <path>]
@@ -270,11 +271,41 @@ case "$CMD" in
   run-start)
     # Marks the start of one crew-afk invocation: every dispatch-cost entry after this is
     # tagged with it. The feature-wide totals keep accumulating across runs.
+    #
+    # It also counts the run (`runs`, across invocations) and keeps why the one before ended
+    # (`previous_exit`, for the summary): a `current_run` that wrote no matching `last_exit`
+    # (run-end) was killed or crashed before its own exit path ran. run-start writes a
+    # `last_exit` key (null) itself, so a state with a `current_run` and no such key at all comes
+    # from a version that never wrote one: how that run ended is unknown, not a crash.
     run_id=$(flag id "" "$@")
     [ -n "$run_id" ] || die "run-start requires --id"
-    edit_state --arg r "$run_id" '.current_run = $r'
+    unended=$(jq -r 'if .current_run != null and has("last_exit") and (.last_exit.run // null) != .current_run then "yes" else "" end' "$SF")
+    edit_state --arg r "$run_id" --arg unended "$unended" '
+      .previous_exit = (if $unended != "" then {run: .current_run, reason: "ended without an exit (killed or crashed)"}
+                        elif .current_run != null and (has("last_exit") | not) then {run: .current_run, reason: "unknown"}
+                        elif .current_run != null then .last_exit else null end)
+      | .last_exit = (.last_exit // null)
+      | .runs = ((.runs // 0) + 1)
+      | .current_run = $r'
+    if [ -n "$unended" ]; then
+      trace --level warn STATE "previous run ended without an exit (killed or crashed)"
+      echo "STATE: previous run ended without an exit (killed or crashed)"
+    fi
     trace STATE "run-start id=$run_id"
     echo "STATE: run-start id=$run_id"
+    ;;
+
+  run-end)
+    # Why this run ended, written by every orchestrator exit path (main.mjs). The next
+    # run-start reads it back: a run that never wrote one was killed or crashed.
+    reason=$(flag reason "" "$@"); code=$(flag code "" "$@")
+    if [ -z "$reason" ] || ! [[ "$code" =~ ^[0-9]+$ ]]; then
+      die "usage: state.sh run-end --reason <text> --code <n>"
+    fi
+    edit_state --arg reason "$reason" --argjson code "$code" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '.last_exit = {run: (.current_run // null), reason: $reason, code: $code, at: $at}'
+    trace --level "$([ "$code" = 0 ] && echo info || echo warn)" STATE "run-end code=$code reason=$reason"
+    echo "STATE: run-end code=$code reason=$reason"
     ;;
 
   baseline)
@@ -371,6 +402,8 @@ case "$CMD" in
       total-dispatch-turns) jq -r '.total_dispatch_turns // 0' "$SF" ;;
       feature-slug) jq -r '.feature_slug // empty' "$SF" ;;
       feature-review-promotions) jq -r '.feature_review.promotions // 0' "$SF" ;;
+      runs) jq -r '.runs // 1' "$SF" ;;
+      previous-exit) jq -r '.previous_exit.reason // "none"' "$SF" ;;
       state-file) printf '%s\n' "$SF" ;;
       *) die "unknown field: $field" ;;
     esac

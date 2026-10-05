@@ -85,6 +85,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 DIR="${DIR:-${TMPDIR:-/tmp}/crew-smoke-$PLATFORM$([[ $DEMO -eq 1 ]] && echo -demo)}"
+# Absolute from here on: the script cds into the repo, and record() and install.sh read paths under it.
+[[ "$DIR" == /* ]] || DIR="$PWD/$DIR"
 
 VERSION=$(node -p 'require(process.argv[1]).skills["crew-afk"].version' "$ROOT/registry.json" 2>/dev/null) \
   || VERSION=unknown
@@ -114,11 +116,12 @@ fi
 # --- build the repo -----------------------------------------------------------------------------
 if [[ $DEMO -eq 1 ]]; then
   git clone -q --no-checkout "$DEMO_REPO" "$DIR" || fail "cannot clone $DEMO_REPO"
+  # The marker first: a checkout that fails below still leaves a repo the next run may delete.
+  mkdir -p "$DIR/.git/crew-smoke"
   cd "$DIR" || exit 1
   git checkout -q -B main "$DEMO_SHA" || fail "cannot check out $DEMO_SHA from $DEMO_REPO"
   git for-each-ref --format='%(refname:short)' refs/heads | grep -vx main | xargs -r git branch -q -D
   git remote remove origin || fail "cannot remove the clone's remote"
-  mkdir -p .git/crew-smoke
   git config user.email crew-smoke@example.invalid
   git config user.name crew-smoke
   mkdir -p ".scratch/$SLUG" && cp -R "$DEMO_DIR/feature/." ".scratch/$SLUG/" || fail "cannot copy the feature"

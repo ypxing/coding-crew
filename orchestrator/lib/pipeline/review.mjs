@@ -2,7 +2,7 @@
  * Gate 2, the independent review: the acceptance criteria and PRD decisions, and no findings.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
@@ -10,7 +10,7 @@ import { assetDir } from "../install-dir.mjs";
 import { reviewPrompt } from "../prompts.mjs";
 import { decisionsFor } from "../prd-decisions.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
-import { parseReviewReport } from "../report.mjs";
+import { carryFindings, parseReviewBlocks, parseReviewReport } from "../report.mjs";
 import { dispatchIssueDir, dispatchStem, issueDescriptor, limitExceeded, readOnlyDispatch, readSidecar, roleBinding } from "./shared.mjs";
 
 /** A path that only tests: a test/spec file by name, or anything under a test or fixture dir. */
@@ -44,6 +44,17 @@ function safeDecisions(ctx, issue) {
     ctx.log(`[WARN] PRD decisions: ${err.message} — review proceeds without them`, "warn");
     return [];
   }
+}
+
+/** The last review block on disk for `branch`, across the sprint review reports (empty when none). */
+function earlierBranchReviews(reviewDir, branch) {
+  if (!existsSync(reviewDir)) return [];
+  const recs = readdirSync(reviewDir)
+    .filter((n) => /^sprint-review-.*\.md$/.test(n))
+    .sort()
+    .flatMap((n) => parseReviewBlocks(readFileSync(join(reviewDir, n), "utf8")))
+    .filter((rec) => rec.branch === branch);
+  return recs.slice(-1);
 }
 
 export async function runReview(ctx, worker, { checks, logs, notConfigured, file } = {}) {
@@ -143,13 +154,15 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
   // The aggregate is built from the sidecar's bytes, not the chat reply, so the two can't
   // disagree. The `## Branch:` heading is for humans; parseReviewAggregate reads only the
   // fenced json. Findings come from the feature review alone: any a branch report still
-  // carries are dropped here, so none reaches the report, the summary or a fix issue.
-  // `criteria_only` tells the fold (foldReview) this block judged no findings, so an earlier
-  // version's open findings for the branch stay listed past it.
+  // carries are dropped here, so none reaches a fix issue. What an earlier version's report
+  // left open for this branch is carried into the block (the rollup keeps only the last one),
+  // so it stays listed for a human — with its verdict, which is what a fix issue's
+  // `actionable` Promoted Findings line was decided on. `criteria_only` tells the fold
+  // (foldReview) this block judged no findings, so those findings stay listed past it too.
   mkdirSync(sprint.reviewDir, { recursive: true });
   const reviewedBranch = sidecar.branch ?? branch;
   parsed.findings = [];
-  const written = { ...sidecar, findings: [], criteria_only: true };
+  const written = { ...sidecar, findings: carryFindings(earlierBranchReviews(sprint.reviewDir, reviewedBranch), [], { keepVerdicts: true }).map(({ explicit, ...f }) => f), criteria_only: true };
   const heading = `## Branch: ${reviewedBranch} (${sidecar.slug ?? issue.slug})`;
   const block = `${heading}\n\n\`\`\`json\n${JSON.stringify(written)}\n\`\`\``;
   const prefix = existsSync(reportFile) ? "\n\n" : "";
