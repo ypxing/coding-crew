@@ -1,7 +1,7 @@
 /**
  * The feature review's areas: a whole-feature review is split by a planner into up to `maxParallel`
- * areas, each read end to end by its own reviewer. The planner is one plain dispatch (like the PRD
- * audit) on the reviewer's binding; its answer is validated against the diff and the PRD, and any
+ * areas, each read end to end by its own reviewer. The planner is one plain dispatch on the
+ * reviewer's binding; its answer is validated against the diff and the PRD, and any
  * failure to plan gives one area over the whole diff with every decision.
  */
 

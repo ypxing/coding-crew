@@ -31,7 +31,6 @@ const ENV_KEYS = [
   "REVIEW_DIR",
   "CREW_SCRIPTS",
   "CREW_INSTALL_DIR",
-  "CREW_PRD_AUDIT",
   "CREW_FIX_FINDINGS",
 ];
 
@@ -89,10 +88,9 @@ export class Sprint {
     this._requiresProbed = new Set();
   }
 
-  static async init(effects, { featureSlug, fixFindings, PRDAudit, passthrough = [], deps = true, log = () => {} }) {
+  static async init(effects, { featureSlug, fixFindings, passthrough = [], deps = true, log = () => {} }) {
     const args = [];
     if (featureSlug) args.push("--feature-slug", featureSlug);
-    if (PRDAudit) args.push("--prd-audit", PRDAudit);
     if (fixFindings) args.push("--fix-findings", fixFindings);
     args.push(...passthrough);
     const r = effects.bash("session-init.sh", args);
@@ -180,10 +178,6 @@ export class Sprint {
   /** The `.coding-crew/` this run's assets are read from (install-dir.mjs); null on a hand-made sprint.env. */
   get installDir() {
     return this.env.CREW_INSTALL_DIR || null;
-  }
-  /** "off" | "report" | "fix" — see crew-config.mjs's PRD_AUDIT. */
-  get PRDAudit() {
-    return this.env.CREW_PRD_AUDIT || "fix";
   }
   /** What is auto-fixed: "actionable" (triage's verdict) | "critical" | "high" | "medium" (lowest severity) | "none". */
   get fixFindings() {

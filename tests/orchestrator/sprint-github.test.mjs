@@ -7,7 +7,7 @@ import { after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO, MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog, state, fake, workerReport, AUDIT_WITH_GAP, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, featureReviewFile, test } from "./helpers/sprint.mjs";
+import { REPO, MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog, state, fake, workerReport, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, featureReviewFile, test } from "./helpers/sprint.mjs";
 
 // ─── GitHub tracker backend wiring ────────────────────────────────────────────
 //
@@ -32,14 +32,6 @@ import { REPO, MAIN, TMPDIR, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog,
  * (already covered by tracker-github.test.mjs / tracker-mark-done-github.bats).
  */
 
-
-const GH_PRD = {
-  number: 9,
-  title: "PRD: Demo",
-  body: "# PRD\n\n- Export to CSV\n",
-  labels: [],
-  state: "OPEN",
-};
 
 test("plan resolves the github backend and lists a milestone issue instead of silently finding nothing", () => {
   const root = githubFixtureRepo();
@@ -352,59 +344,6 @@ test("github --open-pr: a PR writer with no ## Why still opens the PR, with the 
   assert.match(r.stdout, /## Pull Request\s+https:\/\/github.com\/o\/r\/pull\/7\s+\*\*Ready:\*\* the run finished green\.\s+\*\*PR body has no summary:\*\* the writer's answer has no `## Why` section\./);
 });
 
-test("github PRDAudit fix: the gaps issue, created ready-for-agent, is implemented in Phase 2", () => {
-  // github has no parked state, so flush promotes nothing: the loop must go round on the
-  // audit's own word, or the sprint ends stalled with the gaps issue open.
-  // As to-prd publishes it: the milestone's open "PRD:" issue, and no local PRD.md.
-  const root = githubFixtureRepo();
-  const { stub, issuesFile } = stubGh(root, [GH_PRD, GH_ALPHA]);
-  writeFileSync(join(root, ".scratch/fake/prd-audit.response"), AUDIT_WITH_GAP);
-  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
-    cwd: root,
-    env: {
-      ...process.env,
-      CREW_SCRIPTS: SCRIPTS,
-      CREW_FAKE_DISPATCH: FAKE,
-      CREW_FAKE_DIR: join(root, ".scratch/fake"),
-      MAIN_ROOT: root,
-      CREW_GITHUB_TRACKER_CLI: join(REPO, "orchestrator/lib/trackers/github.mjs"),
-      PATH: `${stub}:${process.env.PATH}`,
-    },
-  });
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  const gaps = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.title === "Fix PRD gaps: demo");
-  assert.ok(gaps, `defer-gaps never created the issue\n${traceLog(root)}`);
-  assert.ok(gaps.labels.some((l) => l.name === "awaiting-merge"), "the gaps issue was never implemented");
-  assert.equal(traceLog(root).split("step=prd-audit").length - 1, 1, "one audit per sprint");
-  assert.match(readFileSync(join(root, ".scratch/demo/prd-issue.md"), "utf8"), /Export to CSV/);
-  assert.doesNotMatch(r.stdout, /Gaps not queued/);
-});
-
-test("github PRDAudit fix: a gaps issue the listing does not show yet is still implemented in Phase 2", () => {
-  // The listing lags the create: without a wait, the round the audit starts claims nothing and
-  // the sprint ends with the gaps issue open and ready.
-  const root = githubFixtureRepo();
-  const { stub, issuesFile } = stubGh(root, [GH_PRD, GH_ALPHA]);
-  writeFileSync(join(root, ".scratch/fake/prd-audit.response"), AUDIT_WITH_GAP);
-  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
-    cwd: root,
-    env: {
-      ...process.env,
-      CREW_SCRIPTS: SCRIPTS,
-      CREW_FAKE_DISPATCH: FAKE,
-      CREW_FAKE_DIR: join(root, ".scratch/fake"),
-      MAIN_ROOT: root,
-      CREW_GITHUB_TRACKER_CLI: join(REPO, "orchestrator/lib/trackers/github.mjs"),
-      GH_LIST_LAG_MS: "3000",
-      PATH: `${stub}:${process.env.PATH}`,
-    },
-  });
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  const gaps = JSON.parse(readFileSync(issuesFile, "utf8")).find((i) => i.title === "Fix PRD gaps: demo");
-  assert.ok(gaps.labels.some((l) => l.name === "awaiting-merge"), `the gaps issue was never implemented\n${traceLog(root)}`);
-  assert.match(traceLog(root), /fix issue\(s\) listed after \d+ poll/);
-});
-
 test("github: a feature-review fix issue, not listed yet, is still implemented", () => {
   // The fix issue is created ready-for-agent as the queue drains; a listing that lags the
   // create must not end the sprint with it open.
@@ -430,31 +369,7 @@ test("github: a feature-review fix issue, not listed yet, is still implemented",
   assert.ok(fix, `the findings fix issue was never created\n${traceLog(root)}`);
   assert.ok(fix.labels.some((l) => l.name === "awaiting-merge"), `the fix issue was never implemented\n${traceLog(root)}`);
   assert.doesNotMatch(r.stdout, /Fix issues not implemented/);
-});
-
-test("a gaps issue that could not be created is named in the summary, not only the trace", () => {
-  const root = githubFixtureRepo();
-  const { stub } = stubGh(root, [GH_ALPHA]);
-  mkdirSync(join(root, ".scratch/demo"), { recursive: true });
-  writeFileSync(join(root, ".scratch/demo/PRD.md"), "# PRD\n\n- Export to CSV\n");
-  writeFileSync(join(root, ".scratch/fake/prd-audit.response"), AUDIT_WITH_GAP);
-  // No CREW_GITHUB_TRACKER_CLI and no install: defer-gaps cannot find github.mjs.
-  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
-    cwd: root,
-    env: {
-      ...process.env,
-      CREW_SCRIPTS: SCRIPTS,
-      CREW_FAKE_DISPATCH: FAKE,
-      CREW_FAKE_DIR: join(root, ".scratch/fake"),
-      MAIN_ROOT: root,
-      HOME: mkdtempSync(join(TMPDIR, "crew-home-")),
-      CREW_GITHUB_TRACKER_CLI: "",
-      PATH: `${stub}:${process.env.PATH}`,
-    },
-  });
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stdout, /## PRD Audit/);
-  assert.match(r.stdout, /\*\*Gaps not queued:\*\* 1 missing requirement\(s\), but the fix issue was not created: .*github\.mjs/);
+  assert.match(traceLog(root), /fix issue\(s\) listed after \d+ poll/);
 });
 
 test("github --open-pr: a run with a blocked issue opens a draft PR naming it, and the summary says why", () => {

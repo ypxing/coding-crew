@@ -51,7 +51,7 @@ flowchart LR
         direction TB
         build["code → verify → review → merge<br/><i>per issue, in parallel</i>"]
         check["check + review<br/>the whole feature"]
-        fix["fix findings &<br/>PRD gaps"]
+        fix["fix findings"]
         build --> check --> fix
         fix -. "once" .-> build
     end
@@ -70,7 +70,7 @@ What you can rely on:
 - 🚦 **Nothing red merges** — each branch must pass your project's own checks.
 - 🔍 **Independent review** — a separate reviewer reviews every branch, then the whole feature.
 - 🔁 **Self-correcting** — failed checks, unmet criteria and actionable findings go back for a fix.
-- 📋 **PRD-audited** — requirements no issue covered become new issues.
+- 📋 **PRD-checked** — the feature review checks every PRD decision against the merged code.
 - 🔒 **Nothing pushed unless you ask** — `--open-pr` opens the PR; otherwise you get the command.
 
 Full pipeline, gates and retry rules: [user guide](docs/guide.md#system-overview).

@@ -17,7 +17,7 @@ function gitPath(dir, flag) {
   return isAbsolute(p) || /^[A-Za-z]:/.test(p) ? p : `${dir}/${p}`;
 }
 
-/** A role's sandbox; a plain role (no protocol: command finder, PRD auditor, PR writer) only reads. */
+/** A role's sandbox; a plain role (no protocol: command finder, feature planner, PR writer) only reads. */
 function sandboxFor(role) {
   if (!role) return "read-only";
   return CODEX_SANDBOX[role] || process.env.CREW_CODEX_SANDBOX || "workspace-write";

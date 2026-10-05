@@ -27,7 +27,6 @@ function harness({ pollInterval, parallel = 2, initial = ["a"], lintBlocks = [] 
   const blocked = new Set();
   const sprint = {
     featureSlug: "demo",
-    PRDAudit: "off",
     fixFindings: "actionable",
     triageFallbacks: [],
     env: {},

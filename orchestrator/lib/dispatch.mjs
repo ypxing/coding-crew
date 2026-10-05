@@ -316,14 +316,14 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
 }
 
 /**
- * A role with no protocol (commandFinder, prdAuditor, prWriter): one reasoning pass through the
+ * A role with no protocol (commandFinder, prWriter, the feature planner): one reasoning pass through the
  * platform's adapter like every other role, its prompt alone. `fakeAgent` names the role to the
  * CREW_FAKE_DISPATCH seam (fake-dispatch.sh's canned answers) and in the trace.
  */
 export async function dispatchPlain(
   effects,
   platform,
-  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "prd-audit", maxBudgetUsd = null, logFile },
+  { prompt, cwd, mainRoot, model, outFile, timeoutMs, fakeAgent = "plain", maxBudgetUsd = null, logFile },
 ) {
   mkdirSync(dirname(outFile), { recursive: true });
   const promptFile = `${outFile}.prompt.md`;
