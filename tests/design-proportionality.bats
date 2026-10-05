@@ -9,6 +9,8 @@
 # and nothing pruned the tree — the PRD came out an Action, a selector, a label
 # protocol and a CI re-trigger where a CI check and a hand-run script sufficed.
 
+load helpers/render
+
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export GRILL="$SCRIPT_DIR/skills/crew-grill/SKILL.md"
@@ -97,10 +99,15 @@ setup() {
 @test "P5: size is justified by the problem or by structure, not minimised for its own sake" {
   # Intent: well-architected, not overengineered. A shared helper that removes
   # duplication must survive the subtraction pass; a hypothetical need must not.
-  grep -qi 'unjustified\*\* size is not' "$GRILL"
-  grep -qi 'unjustified\*\* size is not' "$BRAINSTORM"
-  grep -qi 'no duplicated logic' "$GRILL"
-  grep -qi 'need nobody has yet' "$GRILL"
+  # The size rule lives in the design-standard fragment, so it is asserted where
+  # it reaches the model: the rendered skills.
+  local grill brainstorm
+  grill=$(rendered_skill crew-grill claude)
+  brainstorm=$(rendered_skill crew-brainstorm claude)
+  grep -qi 'unjustified\*\* size is not' "$grill"
+  grep -qi 'unjustified\*\* size is not' "$brainstorm"
+  grep -qi 'no duplicated logic' "$grill"
+  grep -qi 'need nobody has yet' "$grill"
   grep -qi 'structural property of what is built now' "$GRILL"
   grep -qi 'structural property of what is built now' "$BRAINSTORM"
 }
@@ -115,7 +122,7 @@ setup() {
 }
 
 @test "P7: shared logic gets one owner; frequency is looked up, not asked" {
-  grep -qi 'gets one shared owner' "$GRILL"
-  grep -qi 'gets one shared owner' "$BRAINSTORM"
+  grep -qi 'gets one shared owner' "$(rendered_skill crew-grill claude)"
+  grep -qi 'gets one shared owner' "$(rendered_skill crew-brainstorm claude)"
   grep -qi 'how often something happens when the history can count it' "$GRILL"
 }
