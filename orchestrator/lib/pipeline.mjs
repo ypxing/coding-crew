@@ -444,6 +444,9 @@ export async function runWorker(ctx, issue, attempt) {
           raw: "",
         },
         conflictUnresolved: resolved.why,
+        // The edited issue was never worked from this attempt: keep the record's fingerprint so the
+        // next retry still sees the edit (a conflict route would otherwise end in `verify`).
+        keepFingerprint: retention.fingerprint,
       };
     }
     synced = true;

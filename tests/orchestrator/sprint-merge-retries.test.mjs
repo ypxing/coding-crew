@@ -147,6 +147,45 @@ test("a conflict dispatch that leaves the merge unresolved is judged by git, and
   assert.doesNotMatch(log, /slug=01-alpha round=\d+ step=dispatch-coder/, "the original route's coder never ran");
 });
 
+test("an unresolved conflict dispatch on an edited issue keeps the retained fingerprint, so the next retry still restarts", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.shared");
+  fake(root, "alpha.review-once", "2");
+  const first = commandLines(root, ["--max-rounds", "1"]);
+  assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
+  const before = state(root).retention.alpha.fingerprint;
+  assert.match(before ?? "", /^[0-9a-f]{64}$/);
+  rmSync(join(root, ".scratch/fake/alpha.shared"), { force: true });
+  addIssue(root, "00-beta.md");
+  fake(root, "beta.shared");
+  fake(root, "alpha.no-resolve");
+  // A human edits the acceptance criteria while the branch waits.
+  writeFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), readFileSync(join(root, ".scratch/demo/issues/open/01-alpha.md"), "utf8").replace("alpha exists", "alpha exists and is documented"));
+  const second = commandLines(root, ["--max-parallel", "1"]);
+  const log = traceLog(root);
+  assert.match(log, /\[CONFLICT-UNRESOLVED\] slug=alpha /, `${second.r.stdout}\n${log}`);
+  assert.equal(state(root).retention.alpha.fingerprint, before, "the edit was not worked from, so the record keeps the old fingerprint");
+});
+
+test("an edited issue's retry restarts on workerPrompt on the retained branch", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.review", unmetReviewFor());
+  const first = commandLines(root);
+  assert.equal(first.r.code, 2, `${first.r.stdout}\n${first.r.stderr}`);
+  assert.match(state(root).retention.alpha.fingerprint ?? "", /^[0-9a-f]{64}$/);
+  const tip = sh("git", ["-C", root, "rev-parse", "crew/demo/alpha"]).stdout.trim();
+  const file = join(root, ".scratch/demo/issues/open/01-alpha.md");
+  writeFileSync(file, readFileSync(file, "utf8").replace("alpha exists", "alpha exists and is documented"));
+  fake(root, "alpha.review", unmetReviewFor());
+  commandLines(root, ["--max-rounds", "1"]);
+  assert.match(traceLog(root), /\[RESUME\] slug=alpha .*issue edited/);
+  const prompt = readFileSync(join(root, ".scratch/demo/dispatch/01-alpha/prompt.md"), "utf8");
+  assert.doesNotMatch(prompt, /do not re-read the issue/i, "workerPrompt, not fixPrompt");
+  assert.equal(sh("git", ["-C", root, "merge-base", "--is-ancestor", tip, "crew/demo/alpha"]).code, 0, "the retained commits are kept");
+});
+
 test("a close-refused retry skips the worker, verify, and review, no-ops the already-merged retry, and succeeds on a retried close", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -308,6 +347,9 @@ test("a criteria-unmet retry still redispatches the full worker, not just review
     "the coder must run again — a criteria-unmet retention means the branch's content needs work, not just another review",
   );
 });
+
+const unmetReviewFor = () =>
+  `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "no test covers the criterion", findings: [] })}\n\`\`\`\n`;
 
 const unmetReview = (extra = {}) =>
   `## Branch: crew/demo/alpha\n\`\`\`json\n${JSON.stringify({ branch: "crew/demo/alpha", slug: "alpha", verdict: "unmet", detail: "no test covers the criterion", findings: [], ...extra })}\n\`\`\`\n`;
