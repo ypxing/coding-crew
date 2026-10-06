@@ -11,7 +11,7 @@
 //
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
 //          [--case <name>]... [--runs N] [--model opus] [--judge-model opus] [--parallel 4]
-//          [--dry-run]
+//          [--dry-run] [--resume <out dir>]
 //
 // Each ref builds its prompts from its OWN files (build-prompts.mjs runs inside that ref's checkout):
 // reviewPrompt / featureReviewPrompt and the rendered orchestrator/roles/reviewer.md. The reviewer
@@ -25,7 +25,8 @@
 // `## Acceptance criteria`. A SHA that does not resolve names the case and skips
 // only it (exit 1). Results land in .scratch/eval-reviewer-misses/<timestamp>/ (summary.md,
 // results.json, every prompt and output). A reviewer or judge CLI failure is a failed run, never
-// "not caught".
+// "not caught". --resume <out dir> reruns into a stopped run's directory: a reviewer output already
+// there (not a RUN FAILED one) is reused, not re-run, and counts $0 toward the cost.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -42,7 +43,7 @@ const EVAL_NOTE = (prdPath) =>
 
 function parseArgs(argv) {
   const o = { base: "main", head: "worktree", cases: [], runs: 2, model: "opus", judgeModel: "opus",
-    parallel: 4, dryRun: false };
+    parallel: 4, dryRun: false, resume: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = () => {
       if (i + 1 >= argv.length) throw new Error(`${a} needs a value`);
@@ -57,6 +58,7 @@ function parseArgs(argv) {
       case "--judge-model": o.judgeModel = v(); break;
       case "--parallel": o.parallel = Number(v()); break;
       case "--dry-run": o.dryRun = true; break;
+      case "--resume": o.resume = path.resolve(v()); break;
       default: throw new Error(`unknown argument: ${a}`);
     }
   }
@@ -207,7 +209,8 @@ async function main() {
   const versions = { base: o.base, head: o.head };
   console.log(`cases: ${cases.map((c) => c.name).join(", ") || "(none)"}; ${o.runs} run(s) each on base=${o.base} head=${o.head}`);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const outDir = path.join(ROOT, ".scratch", "eval-reviewer-misses", stamp);
+  const outDir = o.resume ?? path.join(ROOT, ".scratch", "eval-reviewer-misses", stamp);
+  if (o.resume && !fs.existsSync(outDir)) throw new Error(`--resume: ${outDir} does not exist`);
   fs.mkdirSync(outDir, { recursive: true });
 
   const trees = new Map(); // dir → removable
@@ -255,21 +258,24 @@ async function main() {
 
     const runs = await pool(plan.map(({ c, v, i }) => async () => {
       const id = `${c.name}-${v}-${i}`;
-      let cost = 0, failure = null;
+      let cost = 0, failure = null, reused = false;
       const b = buildPrompts(refTree[v], input(c));
       const outs = await Promise.all(b.reviews.map(async (r) => {
         const text = prompt(c, r.name, r.prompt, b.role);
+        const outFile = path.join(outDir, `${id}.${r.name}.out.md`);
+        const prior = o.resume && fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : null;
+        if (prior !== null && !prior.startsWith("RUN FAILED")) { reused = true; return prior; }
         fs.writeFileSync(path.join(outDir, `${id}.${r.name}.prompt.md`), text);
         const res = await claude(o.model, 40, text, caseTree[c.name]);
         cost += res.cost; note(res);
-        fs.writeFileSync(path.join(outDir, `${id}.${r.name}.out.md`), res.ok ? res.text : `RUN FAILED: ${res.err}\n${res.text}`);
+        fs.writeFileSync(outFile, res.ok ? res.text : `RUN FAILED: ${res.err}\n${res.text}`);
         if (!res.ok) failure ??= (res.err || res.text).trim().split("\n")[0];
         return res.text;
       }));
       const ok = !failure;
       const counts = outs.map(countFindings);
       const findings = ok && counts.every((n) => n !== null) ? counts.reduce((a, n) => a + n, 0) : null;
-      console.log(`  ${id}: ${stop.hit && !ok ? "LIMIT" : ok ? "ok" : "FAILED"} $${cost.toFixed(2)}`);
+      console.log(`  ${id}: ${stop.hit && !ok ? "LIMIT" : !ok ? "FAILED" : reused ? "reused" : "ok"} $${cost.toFixed(2)}`);
       return { case: c.name, version: v, run: i, ok, failure, text: outs.join("\n\n"), findings, cost };
     }), o.parallel, stop);
     if (stop.hit) {

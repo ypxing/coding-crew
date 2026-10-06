@@ -103,14 +103,14 @@ that modifies the tree fails, in the baseline and every verify.
 
 At every drain of the queue (after Phase 1 and after Phase 2) the same mechanism runs once more on the merged
 feature branch under its own `_integration` stem and cache (`--no-integration-check`; `--no-baseline` does not
-turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR (a PR an earlier run opened is made a draft, nothing pushed: `open-pr.sh --no-push`). It is
+turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR (a PR an earlier run opened is made a draft, nothing pushed: `open-pr.sh --no-push`, whose `--draft-marker` rewrites the block's `<!-- crew-afk:draft … -->` line so it names `integration`). It is
 first triaged (`orchestrator/lib/integration-fix.mjs`, a `crew-triage` dispatch): a fixable failure becomes one parked
 fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, after which the next drain checks again
 — at most two per run, then the run ends stalled; exit 127 or a "not fixable" verdict queues nothing and the summary
 says why.
 
-Once per run, at the first drain where something merged (`orchestrator/lib/pipeline/feature-review.mjs`; `loop.mjs`'s
-`featureReviewed` flag, so a later drain in the same run — after Phase 2 merged the fix issue — skips it with no log line; a drain
+Once per drain loop, at the first drain where something merged (`orchestrator/lib/pipeline/feature-review.mjs`; `loop.mjs`'s
+`featureReviewed` flag, so a later drain in the same run — after Phase 2 merged the fix issue — skips it with no log line, leaving that code to the closing review below; a drain
 whose integration check is red does not set it, so the next drain whose check passes retries the review), after
 the integration check, one `crew-reviewer` dispatch (slug `feature`, dir `dispatch/feature-d<drain>/`) runs in feature mode: no criteria, findings only, attributed to `feature` in the sprint
 review report and, until the feature has its one findings fix issue (counted per feature, across runs), promoted into Phase 2 by the same `fixFindings` rule (default `actionable`: every finding
@@ -132,6 +132,24 @@ a cross-cutting concern no issue owned findings, while a requirement a later ADR
 summary's `## Feature Review` gives the review (range, finding count, promoted or report-only, or why skipped). Not run when nothing merged; skipped (the summary says so) at a drain
 whose integration check is red (that skip gives way to the next green drain's review, and only the last entry is kept), or when the wall-clock cap stopped claims with a claimable issue left (`FEATURE-REVIEW: skipped — …` names the cap);
 a dispatch that leaves no review is recorded not-run as `feature` (and no `reviewed_tip`) and never fails the sprint.
+
+The closing review (`loop.mjs`, after the drain loop, before `wrapUp`): when this run's feature review completed, one more
+`runFeatureReview` with `promote: false` (`dispatch/feature-d<n>/`) covers what merged after it — the fix issue, integration
+fixes — over `reviewed_tip..tip` (`increment`). Its findings the rule would promote are marked `report_only`, so they reach
+`unfixedFeatureFindings` (the PR's draft reason), `post-findings.sh` and the summary's `## Feature Review` as their own
+`Drain <n>:` entry; it never creates a second fix issue. Not dispatched when nothing merged since (unchanged tip, no entry),
+when no review completed earlier in the run, under `--dry-run`, under a red last integration check, or once the wall-clock
+cap has elapsed.
+
+`reviewer.md`'s Feature Mode asks two questions (Coverage, Correctness) in two passes: Pass 1 collects every candidate,
+unsure ones included, Pass 2 verifies each and is where the Pre-Report Gate, Common False Positives and "Zero Findings Is
+Valid" apply. Dropped candidates go under `### Dropped` in the prose after the JSON; nothing parses it.
+
+A not-green PR's crew-afk block carries `<!-- crew-afk:draft <kinds> -->` (`draftMarker` in `loop.mjs`, written into
+`pr-note.md` beside `**Not green:**`), `<kinds>` a comma-separated subset of `findings,blocked,stalled,capped,wall-cap,integration`;
+a green PR has none. `/address-pr-comments` on a crew-afk PR (body has `<!-- crew-afk:begin -->`, head `feature/<slug>`) runs
+`solve-issue`'s `run-checks.sh` after its fix commit and a plain `git push` (never forced) only on `CHECKS: pass`; when the
+marker names only `findings` and every `crew-finding:` comment was handled, its summary prints `once CI is green: gh pr ready <n>`.
 
 `prdPath(ctx)` (`orchestrator/lib/prd.mjs`) is the one owner of where the PRD is, located once per run: `.scratch/<slug>/PRD.md`;
 else under `tracker: github` fetched with `trackers/github.mjs prd` and saved as `prd-issue.md` (the saved copy when that fetch

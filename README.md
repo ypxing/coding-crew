@@ -72,7 +72,10 @@ What you can rely on:
 - 🔍 **A reviewer that sees the whole picture** — one independent reviewer reads the full PRD and the whole
   feature diff, catching what no single branch shows: missing requirements, unconnected flows, duplicated code.
 - 🔁 **Self-correcting, never looping** — failed checks go back to the coder; review findings become one
-  fix issue, built in the same run. Then it stops.
+  fix issue, built in the same run. A closing review then checks what that fix merged, before the PR;
+  what it finds is posted to the PR, which stays a draft. Then it stops.
+- 📬 **One command to finish** — `/address-pr-comments` on a crew-afk PR fixes the posted findings, pushes once
+  your checks pass, and tells you when `gh pr ready` is safe.
 - 💸 **Every dollar accounted for** — the summary prices every dispatch, by role.
 - 👀 **Watch it live, or don't** — stream each worker into [orca](https://www.onorca.dev) or
   [herdr](https://herdr.dev) panes with `--pane-host` (orca even pings your session when the sprint ends).
@@ -107,7 +110,7 @@ Workers run with full permissions on the host, in per-issue worktrees — not in
 | `/crew-address-findings` | Triage and fix the sprint's review findings                                             |
 | `/solve-issue`           | Implement one issue yourself, end to end                                                |
 | `/to-prd`, `/to-issues`  | Run just the PRD step or just the issue-splitting step                                  |
-| `/address-pr-comments`   | Fix sensible GitHub PR review comments and reply to them                                |
+| `/address-pr-comments`   | Fix sensible GitHub PR review comments and reply to them; on a crew-afk PR, push once checks pass |
 | `/write-pr`              | Write a short PR body for reviewers: Why, What changes, Risk, Tested                    |
 | `/configure-tracker`     | Choose where issues live: local markdown files (default) or GitHub Issues               |
 

@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { isGreen } from "../../orchestrator/lib/loop.mjs";
+import { draftMarker, isGreen } from "../../orchestrator/lib/loop.mjs";
 import { cpSync, mkdirSync, rmSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { REPO, MAIN, SCRIPTS, FAKE, sh, fixtureRepo, addIssue, traceLog, state, fake, triageVerdict, githubFixtureRepo, stubGh, GH_ALPHA, commandLines, featureReviewFile, crossIssue, sprintReport, test } from "./helpers/sprint.mjs";
@@ -102,6 +102,8 @@ test("a red final integration check keeps --open-pr from opening the PR, and the
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   // Only the no-push call that turns an already-open PR into a draft (there is none here).
   assert.deepEqual(lines.filter((l) => /open-pr\.sh/.test(l)).map((l) => /--no-push/.test(l)), [true], "nothing was pushed");
+  // An open PR's block must not keep an earlier run's marker (`findings` alone) past a red branch.
+  assert.match(lines.find((l) => /open-pr\.sh/.test(l)), /--draft-marker '?<!-- crew-afk:draft [a-z,-]*\bintegration\b[a-z,-]* -->/);
   assert.match(r.stdout, /## Pull Request\s+\*\*Not opened:\*\* the integration check failed on feature\/demo — see ## Integration check above\./);
 });
 
@@ -227,6 +229,7 @@ test("feature findings at or above fixFindings become a Phase 2 fix issue; the r
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "feature.review", featureReviewFile([crossIssue("HIGH"), crossIssue("LOW", "Name the two retry loops alike")]));
+  fake(root, "feature.review-later", featureReviewFile([]));
   const { r, lines } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const files = readdirSync(join(root, ".scratch/demo/issues/done"));
@@ -235,8 +238,8 @@ test("feature findings at or above fixFindings become a Phase 2 fix issue; the r
   const criteria = readFileSync(join(root, ".scratch/demo/reviews/feature.criteria.md"), "utf8");
   assert.match(criteria, /\[HIGH\] Share one retry helper between alpha and beta \(src\/alpha\.txt:1\)/);
   assert.doesNotMatch(criteria, /LOW/);
-  // Once per run: the Phase 2 drain that merged the fix issue reviews nothing.
-  assert.equal(featureReviews(lines), 1);
+  // Mid-run drains review once; the closing review covers the merged fix issue, and finds nothing.
+  assert.equal(featureReviews(lines), 2);
   // The LOW is below the threshold: still open, so remind counts it (the HIGH is covered by the fix issue).
   const remind = sh("bash", [join(SCRIPTS, "promote-findings.sh"), "remind", "--feature-slug", "demo"], {
     cwd: root,
@@ -245,20 +248,110 @@ test("feature findings at or above fixFindings become a Phase 2 fix issue; the r
   assert.match(remind.stdout, /^FINDINGS: open=1 \(LOW=1\)$/m);
 });
 
-test("the feature review runs once per run: at the Phase 1 drain, not again after Phase 2 merges the fix issue", () => {
+test("a closing review covers what merged after the first: increment, report-only, before the PR", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "feature.review", featureReviewFile([crossIssue("HIGH", "Share one retry helper")]));
+  fake(root, "feature.review-later", featureReviewFile([{ severity: "HIGH", location: "src/fix.txt:3", issue: "The retry loop is unbounded", criterion: "Bound the retry loop" }]));
+  const firstTip = () => sh("git", ["-C", root, "rev-parse", "feature/demo"]).stdout.trim();
+  const { r, lines } = commandLines(root, ["--open-pr"], { scripts: scriptsWithFakeOpenPr(root) });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(state(root).completed_slugs.length, 2, "Phase 2 merged the fix issue");
+  // Mid-run drains still review once: the second dispatch is the closing review, after the drain loop.
+  assert.equal(featureReviews(lines), 2);
+  const closing = readFileSync(join(root, ".scratch/demo/dispatch/feature-d2/review-prompt.md"), "utf8");
+  assert.match(closing, /Gather the diff: git log -p --reverse [0-9a-f]{40}\.\.feature\/demo --not /, "increment: reviewed_tip..tip");
+  assert.equal(state(root).feature_review.reviewed_tip, firstTip(), "the closing review recorded the tip it covered");
+  assert.equal(state(root).feature_review.promotions, 1, "promote: false — no second fix issue");
+  assert.equal(featureFixes(root).length, 1);
+  // Its findings are report-only: in the report, the summary, the draft reason and what post-findings.sh posts.
+  const last = [...sprintReport(root).matchAll(/## Branch: feature \(feature\)\n\n?```json\n(.*)\n```/g)].at(-1);
+  const closingFinding = JSON.parse(last[1]).findings.find((f) => f.criterion === "Bound the retry loop");
+  assert.equal(closingFinding?.report_only, true, last[1]);
+  assert.match(r.stdout, /## Feature Review\s+Drain 1: The feature was reviewed: 1 finding\(s\); 1 Actionable went to Phase 2/);
+  assert.match(r.stdout, /Drain 2: The commits since the last review were reviewed: 1 finding\(s\); report-only/);
+  assert.match(readFileSync(join(root, "open-pr.args"), "utf8"), /--draft/);
+  const note = readFileSync(join(root, ".scratch/demo/pr-note.md"), "utf8");
+  assert.match(note, /src\/fix\.txt:3 \(HIGH\)/);
+  assert.match(note, /^<!-- crew-afk:draft findings -->$/m);
+  const env = { ...process.env, MAIN_ROOT: root, CREW_REVIEW_ROLLUP: join(REPO, "orchestrator/review-rollup.mjs") };
+  const open = JSON.parse(sh("bash", [join(SCRIPTS, "promote-findings.sh"), "open", "--feature-slug", "demo"], { cwd: root, env }).stdout);
+  assert.deepEqual(open.map((f) => f.criterion), ["Bound the retry loop"]);
+});
+
+test("no closing review when nothing merged after the first review", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-beta.md");
+  const { r, lines } = commandLines(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(featureReviews(lines), 1);
+  assert.ok(!existsSync(join(root, ".scratch/demo/dispatch/feature-d2")));
+  assert.doesNotMatch(r.stdout, /Drain 2|\*\*Not run:\*\* nothing new/);
+});
+
+test("no closing review when no feature review ran earlier in the run, or under --dry-run", () => {
+  // The run's one review found the tip unchanged; an integration fix then merged nothing new to it.
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  assert.equal(commandLines(root).r.code, 0);
+  const again = commandLines(root);
+  assert.equal(again.r.code, 0, `${again.r.stdout}\n${again.r.stderr}`);
+  assert.equal(featureReviews(again.lines), 0);
+
+  const dry = fixtureRepo();
+  addIssue(dry, "01-alpha.md");
+  const d = commandLines(dry, ["--dry-run"]);
+  assert.equal(featureReviews(d.lines), 0);
+});
+
+test("no closing review after the wall-clock cap, even when the fix issue merged and nothing is left unclaimed", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "feature.review", featureReviewFile([crossIssue("HIGH", "Share one retry helper")]));
   fake(root, "feature.review-later", featureReviewFile([crossIssue("HIGH", "Bound the retry loop")]));
-  const { r, lines } = commandLines(root);
-  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
-  assert.deepEqual(state(root).completed_slugs.length, 2, "Phase 2 merged the fix issue");
+  // The first drain reviews inside the 6 s cap; the fix issue's worker runs past it, then merges.
+  fake(root, "fix-findings-feature.worker-sleep", "8\n");
+  const { r, lines } = commandLines(root, ["--max-wall", "0.1"]);
+  assert.equal(state(root).completed_slugs.length, 2, `the fix issue merged\n${r.stdout}\n${r.stderr}`);
   assert.equal(featureReviews(lines), 1);
   assert.ok(!existsSync(join(root, ".scratch/demo/dispatch/feature-d2")));
-  assert.equal((traceLog(root).match(/FEATURE-REVIEW: \d+ finding\(s\) \(/g) ?? []).length, 1);
-  assert.doesNotMatch(r.stdout, /Drain 2/);
-  assert.doesNotMatch(sprintReport(root), /Bound the retry loop/);
-  assert.equal(state(root).feature_review.promotions, 1);
+});
+
+test("no closing review when the last drain's integration check is red", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  // Red only on the merged branch (the _integration worktree) once the fix issue's file (the fake
+  // coder commits src/<slug>.txt) lands: the fix branch's own verify passes, so it merges.
+  writeFileSync(join(root, "Makefile"), "test:\n\t@if [ -f src/fix-findings-feature.txt ] && pwd | grep -q _integration; then echo 'fix broke it' >&2; exit 1; fi\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
+  sh("git", ["-C", root, "add", "-A"]);
+  sh("git", ["-C", root, "commit", "-q", "-m", "red once fixed"]);
+  // Its verify does not stand in for the merged branch's check (an uncommitted file), so the check runs.
+  fake(root, "fix-findings-feature.untracked", "");
+  fake(root, "_integration.triage", triageVerdict("no", "clashing changes", "nothing a coder can do here"));
+  fake(root, "feature.review", featureReviewFile([crossIssue("HIGH", "Share one retry helper")]));
+  fake(root, "feature.review-later", featureReviewFile([crossIssue("HIGH", "Bound the retry loop")]));
+  const { r, lines } = commandLines(root, [], { integration: true });
+  assert.equal(state(root).completed_slugs.length, 2, `the fix issue merged\n${r.stdout}\n${r.stderr}`);
+  assert.equal(state(root).integration.verdict, "fail");
+  assert.equal(featureReviews(lines), 1);
+  assert.ok(!existsSync(join(root, ".scratch/demo/dispatch/feature-d2")));
+});
+
+test("draftMarker: one token per not-green reason kind, none for a green run", () => {
+  const all = draftMarker({
+    exitCode: 2,
+    blocked: ["a"],
+    capped: true,
+    integration: { status: "skipped", reason: "x" },
+    unfixedFindings: [{ severity: "HIGH", location: "src/a.js:1" }],
+  });
+  assert.equal(all, "<!-- crew-afk:draft stalled,blocked,capped,integration,findings -->");
+  assert.equal(draftMarker({ wallCap: { minutes: 5, unclaimed: [] }, integration: { status: "pass" } }), "<!-- crew-afk:draft wall-cap -->");
+  assert.equal(draftMarker({ integrationEnabled: true }), "<!-- crew-afk:draft integration -->");
+  assert.equal(draftMarker({ integration: { status: "fail" } }), "<!-- crew-afk:draft integration -->");
+  assert.equal(draftMarker({ integration: { status: "pass" }, unfixedFindings: [{ severity: "LOW", location: "x:1" }] }), "<!-- crew-afk:draft findings -->");
+  assert.equal(draftMarker({ integration: { status: "cached" } }), "");
 });
 
 // The cap counts per feature (sprint-state.json's feature_review.promotions), not per run.
@@ -317,10 +410,10 @@ test("a review with nothing promotable leaves promotions at 0; a later run's pro
   assert.equal(state(root).feature_review.promotions ?? 0, 0, "a clean review creates no fix issue, so it does not count");
 
   addIssue(root, "02-beta.md");
-  nextRunReviews(root, [crossIssue("HIGH", "Share one retry helper")]);
+  nextRunReviews(root, [crossIssue("HIGH", "Share one retry helper")], []);
   const next = commandLines(root);
   assert.equal(next.r.code, 0, `${next.r.stdout}\n${next.r.stderr}`);
-  assert.equal(featureReviews(next.lines), 1);
+  assert.equal(featureReviews(next.lines), 2, "the review, and the closing review over the merged fix issue");
   assert.equal(featureFixes(root).length, 1);
   assert.match(next.r.stdout, /The commits since the last review were reviewed: 1 finding\(s\); 1 Actionable went to Phase 2/);
   assert.equal(state(root).feature_review.promotions, 1);
@@ -338,6 +431,7 @@ function scriptsWithFakeOpenPr(root) {
 const laterRun = (root, args = [], opts = {}) => {
   addIssue(root, "01-alpha.md");
   fake(root, "feature.review", featureReviewFile([crossIssue("HIGH", "Share one retry helper")]));
+  fake(root, "feature.review-later", featureReviewFile([]));
   const first = commandLines(root, args, opts);
   assert.equal(first.r.code, 0, `${first.r.stdout}\n${first.r.stderr}`);
   addIssue(root, "02-beta.md");

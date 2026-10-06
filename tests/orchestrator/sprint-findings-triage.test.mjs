@@ -12,7 +12,11 @@ import { reportOnlyFeatureFindings } from "../../orchestrator/lib/pipeline/featu
 // ─── fixFindings actionable (the default): crew-triage judges each finding, whatever its severity ──
 
 // Findings come from the feature review alone, once per run.
-const featureFindings = (root, findings) => fake(root, "feature.review", featureReviewFile(findings));
+// The run's first feature review answers with these; the closing review over the merged fix issue finds nothing.
+const featureFindings = (root, findings) => {
+  fake(root, "feature.review", featureReviewFile(findings));
+  fake(root, "feature.review-later", featureReviewFile([]));
+};
 const findingVerdicts = (list) => ["```json", JSON.stringify({ findings: list.map((f, index) => ({ index, ...f })) }), "```"].join("\n");
 const findingsTriageSpawns = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-triage.* --slug \S*-findings( |$)/.test(l)).length;
 const remindOf = (root) =>
@@ -58,7 +62,8 @@ test("actionable: an Actionable LOW is fixed in Phase 2, a Debatable HIGH is not
   const remind = remindOf(root);
   assert.match(remind, /^FINDINGS: open=1 \(HIGH=1\)$/m);
   assert.match(remind, /^DEBATABLE: 1 \(decide these first\)$/m);
-  assert.match(remind, /^debatable: feature \[HIGH\] src\/alpha\.txt:1 — Redesign the retry contract — why: the fix changes the public retry contract$/m);
+  // The closing review over the merged fix issue carries it forward from the run's first review.
+  assert.match(remind, /^debatable: feature \[HIGH\] src\/alpha\.txt:1 — Redesign the retry contract \(earlier review\) — why: the fix changes the public retry contract$/m);
   assert.ok(remind.indexOf("DEBATABLE:") < remind.indexOf("report:"), "Debatable leads");
   assert.match(r.stdout, /1 Debatable — decide these first/);
 });
@@ -91,7 +96,7 @@ test("a first feature review with 11 promotable findings: one fix issue with the
   addIssue(root, "01-alpha.md");
   const at = (severity, n) => ({ severity, location: `src/alpha.txt:${n}`, issue: `Defect ${n}`, criterion: `Fix defect ${n}` });
   const eleven = [at("LOW", 1), at("MEDIUM", 2), at("HIGH", 3), at("CRITICAL", 4), at("LOW", 5), at("MEDIUM", 6), at("HIGH", 7), at("LOW", 8), at("MEDIUM", 9), at("LOW", 10), at("CRITICAL", 11)];
-  fake(root, "feature.review", featureReviewFile(eleven));
+  featureFindings(root, eleven);
   fake(root, "feature-findings.triage", findingVerdicts(eleven.map(() => ({ verdict: "actionable", rationale: "a real defect" }))));
   const { r } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
@@ -114,7 +119,7 @@ test("a duplicate_of a finding past the fix issue's 8 stays open, folded into it
   const at = (severity, n) => ({ severity, location: `src/alpha.txt:${n}`, issue: `Defect ${n}`, criterion: `Fix defect ${n}` });
   // 8 HIGHs fill the fix issue; LOW 9 overflows, and LOW 10 is triage's duplicate of it.
   const ten = [...Array.from({ length: 8 }, (_, i) => at("HIGH", i + 1)), at("LOW", 9), at("LOW", 10)];
-  fake(root, "feature.review", featureReviewFile(ten));
+  featureFindings(root, ten);
   fake(root, "feature-findings.triage", findingVerdicts(ten.map((_, i) => (i === 9
     ? { verdict: "actionable", rationale: "same defect", duplicate_of: 8 }
     : { verdict: "actionable", rationale: "a real defect" }))));
@@ -218,7 +223,7 @@ test("actionable: a finding that contradicts an ADR, or whose fix touches a prot
 test("actionable: the feature review's findings are triaged and promoted the same way", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
-  fake(root, "feature.review", featureReviewFile([crossIssue("LOW", "Name the two retry loops alike"), crossIssue("HIGH", "Merge the retry helpers into a new public module")]));
+  featureFindings(root, [crossIssue("LOW", "Name the two retry loops alike"), crossIssue("HIGH", "Merge the retry helpers into a new public module")]);
   fake(
     root,
     "feature-findings.triage",

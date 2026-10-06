@@ -6,6 +6,19 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: the incremental feature review's prompt no longer tells the closing review that "an earlier run"
+  reviewed up to its base — the base is the last feature review's tip, often from this same run (#297).
+- `crew-afk`: a red integration check that turns an open PR back into a draft now rewrites its crew-afk block's
+  `<!-- crew-afk:draft … -->` marker to name `integration`, so `/address-pr-comments` no longer reads a stale
+  `findings`-only marker and suggests marking a red PR ready (#296).
+- `crew-afk`: the feature reviewer answers Coverage and Correctness in two passes — it collects every candidate defect,
+  unsure ones included, then verifies each before it becomes a finding, listing dropped ones under `### Dropped`. A
+  report-only closing review covers what merged after the run's feature review (the fix issue, integration fixes) before
+  the PR; its findings are posted to the PR and keep it a draft. A not-green PR's block names its draft reasons in a
+  `<!-- crew-afk:draft <kinds> -->` marker (#294).
+- `address-pr-comments`: on a crew-afk PR it pushes its fix commit (plain `git push`, never forced) once `solve-issue`'s
+  checks pass, and prints `once CI is green: gh pr ready <n>` when findings were the PR's only draft reason and every
+  posted finding was handled. Other PRs are still not pushed (#294).
 - `crew-afk`: a feature review skipped because the integration check was red no longer uses up the run's one review —
   the next drain whose integration check passes runs it (#290).
 - `crew-afk`: the feature review is one reviewer that reads the whole PRD, once per run (at the first drain that merged

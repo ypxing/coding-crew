@@ -114,3 +114,35 @@ setup() {
     ! grep -qF 'A per-branch review stops after item 2' "$f"
   done
 }
+
+@test "feature mode asks Coverage and Correctness in two passes: Pass 1 collects without judging, Pass 2 applies the gate, on every platform" {
+  local plat f mode pass1
+  for plat in claude copilot pi codex; do
+    f="$(role_prompt reviewer "$plat")"
+    mode="$(sed -n '/^## Feature Mode$/,/^## Precision$/p' "$f")"
+    grep -qF '**Coverage.**' <<<"$mode"
+    grep -qF '**Correctness.**' <<<"$mode"
+    grep -qF '**Pass 1 — Collect candidates.**' <<<"$mode"
+    grep -qF '**Pass 2 — Verify each candidate.**' <<<"$mode"
+    pass1="$(sed -n '/Pass 1 — Collect candidates/,/Pass 2 — Verify each candidate/p' <<<"$mode")"
+    grep -qF 'including ones you are not yet sure of' <<<"$pass1"
+    grep -qF 'Do not judge yet' <<<"$pass1"
+    sed -n '/Pass 2 — Verify each candidate/,$p' <<<"$mode" | grep -qF 'Apply the Pre-Report Gate and Common False Positives'
+    # The drop-early rules are Pass 2's, never applied before the candidates are collected.
+    grep -qF 'In Feature Mode the gate is Pass 2' "$f"
+    grep -qF 'never before Pass 1 has collected every candidate' "$f"
+  done
+}
+
+@test "feature mode lists dropped candidates under ### Dropped after the JSON; the report JSON and branch mode are unchanged" {
+  local plat f mode
+  for plat in claude copilot pi codex; do
+    f="$(role_prompt reviewer "$plat")"
+    mode="$(sed -n '/^## Feature Mode$/,/^## Precision$/p' "$f")"
+    grep -qF '### Dropped' <<<"$mode"
+    grep -qF 'location, suspicion, why dropped' <<<"$mode"
+    grep -qF 'in the prose after the JSON' <<<"$mode"
+    grep -qF '{"severity": "CRITICAL", "location": "<path>:<line>", "issue": "<what is wrong, one sentence>", "criterion": "<one verifiable fix criterion>"}' "$f"
+    grep -qF 'A per-branch review writes `findings: []`' "$f"
+  done
+}
