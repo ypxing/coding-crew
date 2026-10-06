@@ -1,0 +1,6 @@
+{
+  "claude": { "projectSkills": ".claude/skills", "userSkills": ".claude/skills", "configDir": ".claude", "configDirEnv": "CLAUDE_CONFIG_DIR" },
+  "copilot": { "projectSkills": ".github/skills", "userSkills": ".copilot/skills", "configDir": ".copilot", "configDirEnv": "COPILOT_HOME" },
+  "pi": { "projectSkills": ".pi/skills", "userSkills": ".pi/agent/skills", "configDir": ".pi/agent", "configDirEnv": "PI_CODING_AGENT_DIR" },
+  "codex": { "projectSkills": ".agents/skills", "userSkills": ".agents/skills", "configDir": ".codex", "configDirEnv": "CODEX_HOME" }
+}

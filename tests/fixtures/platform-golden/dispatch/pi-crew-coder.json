@@ -1,0 +1,24 @@
+{
+  "cmd": "pi",
+  "args": [
+    "-p",
+    "-n",
+    "crew-coder: alpha",
+    "--mode",
+    "json",
+    "--model",
+    "golden-model",
+    "--tools",
+    "read,bash,edit,write",
+    "--append-system-prompt",
+    "<PROTOCOL crew-coder sha256:50fb747bf203aea3>",
+    "Implement the alpha issue.\n"
+  ],
+  "input": null,
+  "env": {
+    "MAIN_ROOT": "<TMP>/repo",
+    "CREW_ORCHESTRATED": "1",
+    "CREW_DEFER_FULL_CHECKS": "1",
+    "CREW_BASE_REF": "crew/golden"
+  }
+}

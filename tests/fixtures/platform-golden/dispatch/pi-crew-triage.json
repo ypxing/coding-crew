@@ -1,0 +1,22 @@
+{
+  "cmd": "pi",
+  "args": [
+    "-p",
+    "-n",
+    "crew-triage: alpha",
+    "--mode",
+    "json",
+    "--model",
+    "golden-model",
+    "--tools",
+    "read,bash",
+    "--append-system-prompt",
+    "<PROTOCOL crew-triage sha256:0f4205e339158b22>",
+    "Implement the alpha issue.\n"
+  ],
+  "input": null,
+  "env": {
+    "MAIN_ROOT": "<TMP>/repo",
+    "CREW_ORCHESTRATED": "1"
+  }
+}
