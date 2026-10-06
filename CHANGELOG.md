@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `write-pr`: What changes describes only what the range contains — a bullet naming a file, doc or setting needs a
+  matching path in the `--stat`, so a PRD decision the branch left out is no longer reported as done (seen once, #302).
 - `crew-afk`: `session-init.sh` no longer warns that `--jira` was ignored when the resumed or kept branch is
   already the one `--jira` would name (#301).
 - `crew-afk`: the feature branch is named `<afk.branchPrefix><KEY>-<feature-slug>` — `afk.branchPrefix` in

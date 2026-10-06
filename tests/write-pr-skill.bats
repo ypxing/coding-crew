@@ -22,3 +22,10 @@ load helpers/render
   [[ "$d" == *Why* && "$d" == *"What changes"* && "$d" == *Risk* && "$d" == *Tested* ]]
   [[ "$d" != *"Merge Danger"* && "$d" != *Evidence* ]]
 }
+
+@test "write-pr: What changes claims only what the --stat shows, not the PRD's decisions" {
+  local f
+  f="$(rendered_skill write-pr claude)"
+  grep -q 'not what the PRD asked for' "$f"
+  grep -q 'matching path in the `--stat`' "$f"
+}

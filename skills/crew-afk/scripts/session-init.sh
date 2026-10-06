@@ -207,6 +207,11 @@ else
   fi
   FEATURE_SLUG=$(printf '%s' "$FIRST_ISSUE" | sed 's|^\./||' | sed 's|^\.scratch/||' | sed 's|/.*||')
 fi
+# Before any branch is named from it: an empty slug would make feature_branch_name blame the prefix.
+if [ -z "$FEATURE_SLUG" ]; then
+  echo "ERROR: Could not derive the feature slug from the first issue's path '${FIRST_ISSUE:-}'" >&2
+  exit 1
+fi
 
 if resume_feature_branch "$FEATURE_SLUG"; then
   warn_jira_ignored "sprint '$FEATURE_SLUG' resumes on its recorded branch '$(git rev-parse --abbrev-ref HEAD)'."
@@ -246,12 +251,6 @@ fi
 
 # Get current branch after setup
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-# Validate feature-slug is non-empty after stripping
-if [ -z "$FEATURE_SLUG" ]; then
-  echo "ERROR: Could not derive feature slug from branch name '$CURRENT_BRANCH'"
-  exit 1
-fi
 
 # Auto-create .scratch/<feature-slug>/issues/open/ directory structure if needed
 mkdir -p ".scratch/$FEATURE_SLUG/issues/open"
