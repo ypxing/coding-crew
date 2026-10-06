@@ -107,27 +107,18 @@ teardown() {
   done
 }
 
-@test "squash-commits.sh gives every platform its own co-author trailer" {
-  local squash="$SCRIPT_DIR/skills/crew-afk/scripts/squash-commits.sh" p repo trailers=""
+@test "every platform's adapter has its own co-author trailer, and codex's credits Codex" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  # squash-commits.sh writes whatever --co-author it is given (tests/squash-commits.bats);
+  # the trailer itself is the adapter's.
+  local p trailers=""
+  cd "$SCRIPT_DIR"
   for p in "${PLATFORMS[@]}"; do
-    repo="$TEMP_DIR/squash-$p"
-    git init -q "$repo"
-    (
-      cd "$repo"
-      git config user.email t@t; git config user.name t
-      git commit -q --allow-empty -m initial
-      base=$(git rev-parse HEAD)
-      git checkout -q -b feature/f
-      echo x > x.txt && git add x.txt && git commit -q -m work
-      mkdir -p .scratch/f/issues/done
-      printf 'Status: done\n\n## What to build\n\nThing\n' > .scratch/f/issues/done/01-a.md
-      jq -n --arg sha "$base" '{branches: {"feature/f": {base_sha: $sha}}, completed_slugs: ["a"]}' > .scratch/f/sprint-state.json
-      FEATURE_SLUG=f bash "$squash" --platform "$p" >/dev/null
-    ) || { echo "$p: squash failed" >&2; return 1; }
-    trailers+="$(git -C "$repo" log -1 --format=%B | grep '^Co-authored-by:')"$'\n'
+    trailers+="$(node -e 'import("./orchestrator/lib/adapters/index.mjs").then(({ ADAPTERS }) => console.log(ADAPTERS[process.argv[1]].coAuthor))' "$p")"$'\n'
   done
-  [ "$(printf '%s' "$trailers" | grep -c .)" -eq "${#PLATFORMS[@]}" ]
+  [ "$(printf '%s' "$trailers" | grep -c '^Co-authored-by: ')" -eq "${#PLATFORMS[@]}" ]
   [ "$(printf '%s' "$trailers" | sort -u | grep -c .)" -eq "${#PLATFORMS[@]}" ]
+  printf '%s' "$trailers" | grep -qx 'Co-authored-by: Codex <noreply@openai.com>'
 }
 
 # --- the installer learns a platform from platforms.json alone ---

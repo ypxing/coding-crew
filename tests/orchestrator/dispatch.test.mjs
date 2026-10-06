@@ -37,8 +37,8 @@ import {
   extractFinalText,
   extractResultMeta,
   preflight,
-  DEFAULT_PARALLEL,
 } from "../../orchestrator/lib/dispatch.mjs";
+import { DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
 import { formatJsonTraceLine } from "../../orchestrator/lib/adapters/trace.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
@@ -113,7 +113,7 @@ test("codex: the coder is workspace-write with network and the git dirs writable
   assert.deepEqual(a.slice(a.indexOf("--add-dir"), a.indexOf("--add-dir") + 2), ["--add-dir", root]);
   assert.equal(a.at(-1), "-", "codex reads the prompt from stdin");
   assert.match(b.input, /^# Coder[\s\S]*# Task\n\nprompt body$/);
-  assert.equal(a.at(a.indexOf("--output-last-message") + 1), join(root, "dispatch/alpha.report.md"));
+  assert.equal(a.includes("--output-last-message"), false, "the final message is read from the stream");
 });
 
 test("codex: a read-only role runs workspace-write rooted at its result file's directory", () => {
@@ -190,17 +190,34 @@ test("codex's trace lines and final text match what the bash dispatcher produced
   assert.equal(extractFinalText("codex", stream), "all done");
 });
 
-test("a codex dispatch falls back to the final message codex wrote itself (-o) when the stream has none", async () => {
+test("a codex dispatch's report is the stream's final agent_message, never a stale outFile", async () => {
   const { root, promptFile } = fixture();
   const outFile = join(root, "dispatch", "alpha.report.md");
-  const fakeEffects = {
-    spawnWithTimeout: async (cmd, args) => {
-      writeFileSync(args[args.indexOf("--output-last-message") + 1], "from -o");
-      return { code: 0, stdout: "", stderr: "", timedOut: false, dryRun: false };
+  mkdirSync(join(root, "dispatch"), { recursive: true });
+  writeFileSync(outFile, "stale report from an earlier attempt");
+  const stream = `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "from the stream" } })}\n`;
+  const effects = (onLine) => ({
+    spawnWithTimeout: async (cmd, args, opts) => {
+      opts.onLine?.(onLine);
+      return { code: 0, stdout: onLine, stderr: "", timedOut: false, dryRun: false };
     },
-  };
-  const r = await dispatch(fakeEffects, "codex", { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root }, {});
-  assert.equal(r.text, "from -o");
+  });
+  const spec = { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root };
+  assert.equal((await dispatch(effects(stream), "codex", spec, {})).text, "from the stream");
+  assert.equal((await dispatch(effects(""), "codex", spec, {})).text, "", "no agent_message is an empty report");
+});
+
+test("every platform's protocol dispatch writes <outFile>.protocol.md; a plain one writes none", () => {
+  const { root, promptFile } = fixture();
+  mkdirSync(join(root, "worktree"), { recursive: true });
+  for (const platform of PLATFORMS) {
+    const outFile = join(root, `dispatch/${platform}.report.md`);
+    buildDispatch(platform, spec(root, promptFile, { outFile }));
+    assert.match(readFileSync(`${outFile}.protocol.md`, "utf8"), /^# Coder/, platform);
+    const plainOut = join(root, `dispatch/${platform}.plain.md`);
+    buildDispatch(platform, spec(root, promptFile, { agent: "plain", outFile: plainOut }));
+    assert.equal(existsSync(`${plainOut}.protocol.md`), false, platform);
+  }
 });
 
 test("a missing pi or codex CLI fails the dispatch with 127 and a message naming it", async () => {

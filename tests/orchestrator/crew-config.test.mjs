@@ -599,7 +599,7 @@ test("afk.limits merges one role at a time and is off by default", () => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test("ignoredLimitsNotice names each capped role not on claude, in one line", () => {
+test("ignoredLimitsNotice names each capped role on a runtime with no budget flag, in one line", () => {
   const crew = { coder: { runtime: "claude" }, reviewer: { runtime: "codex" }, triage: { runtime: "pi" } };
   assert.equal(ignoredLimitsNotice({ coder: 5 }, crew), null);
   assert.equal(ignoredLimitsNotice({}, crew), null);
@@ -616,4 +616,38 @@ test("maxWallMinutes: default 120, flag over config, 0 allowed, non-number rejec
   assert.equal(resolveSettings({ afk: { maxWallMinutes: 30 }, cli: { maxWallMinutes: 0 } }).maxWallMinutes, 0);
   assert.deepEqual(validateFlags({ maxWallMinutes: 0 }), []);
   assert.match(validateFlags({ maxWallMinutes: NaN })[0], /--max-wall/);
+});
+
+// ─── capabilities: decided by the runtime's adapter, not its name ────────────
+
+// `full` has every optional capability crew-config reads; `bare` has none.
+const FAKE_ADAPTERS = {
+  full: { defaultModel: "mid", modelTiers: { low: 0, mid: 1, high: 2 }, modelAliasEnv: { mid: "FULL_MID_MODEL" }, budget: (usd) => ["--cap", String(usd)] },
+  bare: {},
+};
+
+test("resolveCrew takes a runtime's default model and tier order from its adapter", () => {
+  const full = resolveCrew({ cliPlatform: "full", afk: { models: { full: { coder: "high", reviewer: "low" } } }, adapters: FAKE_ADAPTERS });
+  assert.equal(resolveCrew({ cliPlatform: "full", adapters: FAKE_ADAPTERS }).roles.coder.model, "mid");
+  assert.equal(full.roles.reviewer.model, "low");
+  assert.equal(full.warnings.length, 1);
+  assert.match(full.warnings[0], /reviewer model "low" is a weaker tier than coder model "high"/);
+  const bare = resolveCrew({ cliPlatform: "bare", afk: { models: { bare: { coder: "high", reviewer: "low" } } }, adapters: FAKE_ADAPTERS });
+  assert.equal(resolveCrew({ cliPlatform: "bare", adapters: FAKE_ADAPTERS }).roles.coder.model, null);
+  assert.deepEqual(bare.warnings, [], "no modelTiers, no tier warning");
+});
+
+test("describeModel shows an alias mapping only on an adapter with modelAliasEnv", () => {
+  const env = { FULL_MID_MODEL: "vendor/mid-7" };
+  assert.equal(describeModel("full", "mid", env, FAKE_ADAPTERS), "mid (→ vendor/mid-7, FULL_MID_MODEL)");
+  assert.equal(describeModel("bare", "mid", env, FAKE_ADAPTERS), "mid");
+});
+
+test("ignoredLimitsNotice: a cap on a runtime whose adapter has no budget is ignored, naming the runtime", () => {
+  const crew = { coder: { runtime: "full" }, reviewer: { runtime: "bare" } };
+  assert.equal(ignoredLimitsNotice({ coder: 5 }, crew, FAKE_ADAPTERS), null);
+  const notice = ignoredLimitsNotice({ coder: 5, reviewer: 1 }, crew, FAKE_ADAPTERS);
+  assert.match(notice, /^afk\.limits ignored for reviewer \(bare\) — /);
+  assert.match(notice, /not supported by bare/);
+  assert.doesNotMatch(notice, /claude/);
 });

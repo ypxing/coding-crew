@@ -87,6 +87,19 @@ test("by default the sprint is not squashed: each issue's merge stays its own co
   assert.match(log, /Merge/);
 });
 
+test("a squashed sprint whose coder ran on codex credits Codex, the coder runtime's adapter trailer", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  mkdirSync(join(root, ".coding-crew"), { recursive: true });
+  writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: { runtime: { coder: "codex" } } }));
+  const r = runSprint(root, ["--squash"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[SQUASH\]/);
+  const body = sh("git", ["-C", root, "log", "-1", "--format=%B"]).stdout;
+  assert.match(body, /^Co-authored-by: Codex <noreply@openai\.com>$/m);
+  assert.doesNotMatch(body, /Claude|pi <|Copilot/);
+});
+
 test("config.json's squashCommits and installDeps turn those steps off, as their flags do", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

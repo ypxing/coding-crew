@@ -3,31 +3,29 @@
  * the `-p` argument, so it is the one platform whose prompt must go via argv.
  */
 import { lastEvent, normalized, safePreview, str } from "./common.mjs";
-import { ROLE_ARGS } from "./role-args.mjs";
 
 export default {
   cmd: "copilot",
   defaultParallel: 2,
   defaultModel: undefined,
-  promptVia: "argv",
-  // No system-prompt flag: the protocol is prepended to the prompt.
-  protocolVia: "prompt",
+  coAuthor: "Co-authored-by: GitHub Copilot <noreply@github.com>",
   requiredFlags: ["--allow-all-tools", "--output-format", "--add-dir"],
 
   /**
    * --allow-all-tools removes the confirmation prompt. --add-dir: the worker reads the issue and
-   * writes its report under .scratch/ in the main checkout, outside its worktree cwd. `prompt` is
-   * the full text (role protocol prepended: copilot has no system-prompt file). The json schema is
+   * writes its report under .scratch/ in the main checkout, outside its worktree cwd. copilot has
+   * no system-prompt flag, so the role's protocol is prepended to the prompt. The json schema is
    * copilot-sdk's session-events.d.ts.
    */
-  argv({ cwd, mainRoot, model, role, prompt }) {
-    const args = ["-p", prompt, "-C", cwd, "--add-dir", mainRoot, "--allow-all-tools", "--no-color", "--output-format", "json"];
+  build({ cwd, mainRoot, model, policy, protocol, prompt }) {
+    const text = protocol ? `${protocol}\n\n---\n\n${prompt}` : prompt;
+    const args = ["-p", text, "-C", cwd, "--add-dir", mainRoot, "--allow-all-tools", "--no-color", "--output-format", "json"];
     if (model) args.push("--model", model);
-    args.push(...this.roleArgs(role));
-    return args;
+    if (policy) args.push(...this.policyArgs(policy));
+    return { args };
   },
 
-  roleArgs: (role) => ROLE_ARGS.copilot[role] ?? [],
+  policyArgs: ({ readOnly }) => (readOnly ? ["--deny-tool", "write"] : []),
 
   /** A tool start, a failed tool, a `session.error`, or an `assistant.message`'s text. */
   normalize(evt) {

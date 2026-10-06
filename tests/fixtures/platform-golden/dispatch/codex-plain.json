@@ -13,8 +13,6 @@
     "sandbox_workspace_write.exclude_tmpdir_env_var=true",
     "--model",
     "golden-model",
-    "--output-last-message",
-    "<TMP>/repo/.scratch/golden/dispatch/alpha.report.md",
     "-"
   ],
   "input": "Your shell starts in <TMP>/repo/.scratch/golden/dispatch, the only writable directory, where your result file goes. The repository is <TMP>/repo/.scratch/worktrees/alpha: run your commands there (`cd <TMP>/repo/.scratch/worktrees/alpha && ...`).\n\nImplement the alpha issue.\n",

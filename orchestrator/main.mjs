@@ -9,7 +9,7 @@
  *   crew-afk doctor [options]   check this platform can dispatch at all
  *
  * Options:
- *   --platform <pi|codex|claude|copilot>   default: $CREW_PLATFORM, else pi
+ *   --platform <name>                      required: one of lib/adapters/index.mjs's PLATFORMS
  *   --pane-host <orca|herdr|auto|none>     [paneHost, ~/.coding-crew/config.json only; default
  *                                           none] or $CREW_PANE_HOST, which beats the file, as
  *                                           do the legacy $ORCA_ENV=1 / $HERDR_ENV=1 (orca
@@ -91,7 +91,7 @@ import { Effects, killAllGroups } from "./lib/effects.mjs";
 import { atLeast, levelFor, stderrThreshold, writeLog } from "./lib/log.mjs";
 import { Sprint } from "./lib/sprint.mjs";
 import { discoverCommands } from "./lib/commands.mjs";
-import { DEFAULT_PARALLEL, PLATFORMS } from "./lib/dispatch.mjs";
+import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "./lib/adapters/index.mjs";
 import {
   ConfigError,
   ROLES,
@@ -137,7 +137,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 function parseArgs(argv) {
   const o = {
     command: "run",
-    platform: process.env.CREW_PLATFORM || "pi",
+    platform: null, // required: every launcher passes --platform
     paneHost: null, // resolved with the config (resolvePaneHost)
     model: null,
     featureSlug: null,
@@ -402,7 +402,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.command === "help") {
     console.log(
-      "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
+      `crew-afk run|plan|status|doctor --platform ${PLATFORMS.join("|")} [--model X]\n` +
         "  [--feature-slug S] [--jira KEY] [--fix-findings actionable|critical|high|medium|none]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN]\n" +
         "  [--max-wall MIN] [--poll-interval SEC] [--no-deps] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
@@ -420,9 +420,13 @@ async function main() {
         "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).\n" +
         "  A new feature branch is <branchPrefix><KEY>-<slug>: config.json's afk.branchPrefix\n" +
         "  (default feature/, \"\" for none; no flag) and --jira KEY (e.g. PROJ-12; omitted, no KEY-).\n" +
-        "  No flag: limits.<role>.usd caps one claude dispatch of that role in dollars (off).",
+        "  No flag: limits.<role>.usd caps one dispatch of that role in dollars (off), on a runtime that supports a cap.",
     );
     return 0;
+  }
+  if (!options.platform) {
+    console.error(`crew-afk: --platform is required (expected ${PLATFORMS.join(", ")})`);
+    return 1;
   }
   if (!PLATFORMS.includes(options.platform)) {
     console.error(`crew-afk: unknown --platform ${options.platform} (expected ${PLATFORMS.join(", ")})`);
@@ -549,7 +553,7 @@ async function main() {
     console.log(`findings:  fix ${{ none: "none", actionable: "every Actionable finding" }[options.fixFindings] ?? `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
     const caps = Object.entries(options.limitsUsd ?? {});
-    console.log(`limits:    ${caps.length ? caps.map(([r, usd]) => `${r} $${usd}${options.crew[r]?.runtime === "claude" ? "" : " (ignored: not claude)"}`).join(", ") : "none (afk.limits.<role>.usd caps one dispatch)"}`);
+    console.log(`limits:    ${caps.length ? caps.map(([r, usd]) => `${r} $${usd}${ADAPTERS[options.crew[r]?.runtime]?.budget ? "" : ` (ignored: not supported by ${options.crew[r]?.runtime})`}`).join(", ") : "none (afk.limits.<role>.usd caps one dispatch)"}`);
     console.log(`pane host: ${options.paneHost ?? "none"}${tag("paneHost")}`);
     console.log(`worktrees: ${options.worktreeRoot}${tag("worktreeRoot")}`);
     console.log(`scripts:   ${scriptsDir}`);

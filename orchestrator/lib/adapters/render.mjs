@@ -22,6 +22,17 @@ const FRAGMENT_ROOT = resolve(HERE, "../../..");
 /** role → the dispatch's agent label; the plain roles have no protocol. */
 export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", triage: "crew-triage" };
 
+/**
+ * role → what it may do, declared once; each adapter's `policyArgs` turns it into its CLI's flags.
+ * The reviewer and triage are read-only, and no role spawns sub-agents. Effort: review and triage
+ * are correctness judgements, the coder is steadier work. A plain role (no protocol) has none.
+ */
+export const ROLE_POLICY = {
+  coder: { readOnly: false, subagents: false, effort: "medium" },
+  reviewer: { readOnly: true, subagents: false, effort: "high" },
+  triage: { readOnly: true, subagents: false, effort: "high" },
+};
+
 const NAMED_SKILLS = ["solve-issue", "dep-install", "tdd"];
 
 export function roleOfAgent(agent) {

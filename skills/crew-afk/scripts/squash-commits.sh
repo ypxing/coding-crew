@@ -2,12 +2,13 @@
 set -euo pipefail
 
 # Squash commits for afk-run
-# Usage: squash-commits.sh [--no-squash] [--platform claude|copilot|pi|codex] [completed_slug1 completed_slug2 ...]
-# Completed slugs should be passed as remaining arguments after flags
+# Usage: squash-commits.sh [--no-squash] [--co-author "<trailer>"] [completed_slug1 completed_slug2 ...]
+# --co-author is the commit's trailer line verbatim (the orchestrator passes the coder runtime's);
+# without it the commit has none. Completed slugs should be passed as remaining arguments after flags
 
 # Parse arguments
 NO_SQUASH=false
-PLATFORM="claude"
+COAUTHOR_TRAILER=""
 COMPLETED_SLUGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -16,9 +17,13 @@ while [[ $# -gt 0 ]]; do
       NO_SQUASH=true
       shift
       ;;
-    --platform)
-      PLATFORM="$2"
+    --co-author)
+      COAUTHOR_TRAILER="${2:-}"
       shift 2
+      ;;
+    -*)
+      echo "squash-commits.sh: unknown flag: $1" >&2
+      exit 2
       ;;
     *)
       COMPLETED_SLUGS+=("$1")
@@ -128,17 +133,6 @@ else
   SUMMARY_LINE="$FEATURE_LABEL: ${ISSUE_TITLES[0]} (+$((ISSUE_COUNT - 1)) more)"
 fi
 
-# Co-authored-by trailer (platform-appropriate)
-if [ "$PLATFORM" = "claude" ]; then
-  COAUTHOR_TRAILER="Co-authored-by: Claude Code <claude@anthropic.com>"
-elif [ "$PLATFORM" = "pi" ]; then
-  COAUTHOR_TRAILER="Co-authored-by: pi <noreply@earendil.works>"
-elif [ "$PLATFORM" = "codex" ]; then
-  COAUTHOR_TRAILER="Co-authored-by: Codex <noreply@openai.com>"
-else
-  COAUTHOR_TRAILER="Co-authored-by: GitHub Copilot <noreply@github.com>"
-fi
-
 # Verify there are commits to squash
 COMMIT_COUNT=$(git rev-list ${BASE_SHA}..HEAD --count)
 
@@ -160,14 +154,14 @@ fi
 ORIG_TIP=$(git rev-parse HEAD)
 git reset --soft "$BASE_SHA"
 
-# Create squashed commit with safe message handling
-# Use git commit -F with here-doc for safe literal interpolation
-if ! git commit -F - << EOF
-$SUMMARY_LINE
+# Create squashed commit with safe message handling: the message goes in on stdin, never through
+# a shell-expanded argument. The trailer, when given, is the last paragraph.
+MESSAGE="$SUMMARY_LINE
 
-$ISSUE_BULLETS
-$COAUTHOR_TRAILER
-EOF
+$ISSUE_BULLETS"
+[ -n "$COAUTHOR_TRAILER" ] && MESSAGE="$MESSAGE
+$COAUTHOR_TRAILER"
+if ! printf '%s\n' "$MESSAGE" | git commit -F -
 then
   git reset --soft "$ORIG_TIP"
   echo "ERROR: squash commit failed; branch restored to $ORIG_TIP, unsquashed." >&2

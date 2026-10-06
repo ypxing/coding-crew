@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: platform facts come only from `orchestrator/platforms.json` and the adapters — each adapter has one `build()`,
+  a `coAuthor` trailer and `policyArgs` for the one `ROLE_POLICY`; resume, `afk.limits` and the model-tier warning follow the
+  runtime adapter's capabilities instead of `"claude"` checks (an ignored cap now says "not supported by <runtime>"). `--platform`
+  is required (`CREW_PLATFORM` and the `pi` default are gone); `squash-commits.sh --platform` is replaced by `--co-author "<trailer>"`
+  (no trailer when omitted); codex no longer passes `--output-last-message`; every protocol dispatch writes `<outFile>.protocol.md` (#310).
 - installer: `uninstall.sh` again sweeps only the legacy paths an earlier install wrote (Copilot's `.copilot/` at project
   scope, pi's `.pi/` at user scope); a user uninstall no longer removes `~/.github/skills/<skill>`, nor a project
   uninstall `<repo>/.pi/agent/skills/<skill>` (#313).

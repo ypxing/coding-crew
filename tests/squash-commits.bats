@@ -63,7 +63,7 @@ EOF
   _add_slug_to_state "my-issue"
   _write_issue "my-issue" "My issue title"
 
-  run bash "$SQUASH_SCRIPT" --platform claude
+  run bash "$SQUASH_SCRIPT"
   [ "$status" -eq 0 ]
 
   # Squashed commit body should contain issue bullet
@@ -84,7 +84,7 @@ EOF
   _add_slug_to_state "my-issue"
   _write_issue "my-issue" "My issue title"
 
-  run bash "$SQUASH_SCRIPT" --platform claude
+  run bash "$SQUASH_SCRIPT"
   [ "$status" -eq 0 ]
 
   [ "$(git log -1 --format=%s)" = "Test Feature: My issue title" ]
@@ -104,7 +104,7 @@ EOF
   _write_issue "first-issue" "First issue title"
   _write_issue "second-issue" "Second issue title"
 
-  run bash "$SQUASH_SCRIPT" --platform claude
+  run bash "$SQUASH_SCRIPT"
   [ "$status" -eq 0 ]
 
   run git log -1 --format="%B"
@@ -122,7 +122,7 @@ EOF
   _write_state "feature/$FEATURE_SLUG" "$base_sha"
   # No completed_slugs written
 
-  run bash "$SQUASH_SCRIPT" --platform claude
+  run bash "$SQUASH_SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"No completed issues"* ]]
 }
@@ -137,7 +137,7 @@ EOF
   _write_state "feature/$FEATURE_SLUG" "$base_sha"
   _add_slug_to_state "some-issue"
 
-  run bash "$SQUASH_SCRIPT" --no-squash --platform claude
+  run bash "$SQUASH_SCRIPT" --no-squash
   [ "$status" -eq 0 ]
   [[ "$output" == *"Skipping squash"* ]]
 }
@@ -157,7 +157,7 @@ EOF
   printf '#!/bin/sh\necho "commit-msg: rejected" >&2\nexit 1\n' > .git/hooks/commit-msg
   chmod +x .git/hooks/commit-msg
 
-  run bash "$SQUASH_SCRIPT" --platform claude
+  run bash "$SQUASH_SCRIPT"
   [ "$status" -ne 0 ]
   [[ "$output" == *"branch restored to $orig_tip"* ]]
 
@@ -165,4 +165,47 @@ EOF
   [ -z "$(git status --porcelain --untracked-files=no)" ]
   # The state's base is untouched, so a re-run squashes the same range.
   [ "$(jq -r --arg b "feature/$FEATURE_SLUG" '.branches[$b].base_sha' ".scratch/$FEATURE_SLUG/sprint-state.json")" = "$base_sha" ]
+}
+
+# The trailer is the caller's to choose (loop.mjs passes the coder runtime's adapter coAuthor).
+@test "--co-author adds that trailer to the squash commit" {
+  local base_sha
+  base_sha=$(git rev-parse HEAD)
+
+  git checkout -q -b "feature/$FEATURE_SLUG"
+  echo "change1" > work.txt && git add work.txt && git commit -q -m "work commit"
+
+  _write_state "feature/$FEATURE_SLUG" "$base_sha"
+  _add_slug_to_state "my-issue"
+  _write_issue "my-issue" "My issue title"
+
+  run bash "$SQUASH_SCRIPT" --co-author "Co-authored-by: Codex <noreply@openai.com>"
+  [ "$status" -eq 0 ]
+
+  [ "$(git log -1 --format='%(trailers:key=Co-authored-by,valueonly)' | sed '/^$/d')" = "Codex <noreply@openai.com>" ]
+}
+
+@test "with no --co-author the squash commit carries no trailer" {
+  local base_sha
+  base_sha=$(git rev-parse HEAD)
+
+  git checkout -q -b "feature/$FEATURE_SLUG"
+  echo "change1" > work.txt && git add work.txt && git commit -q -m "work commit"
+
+  _write_state "feature/$FEATURE_SLUG" "$base_sha"
+  _add_slug_to_state "my-issue"
+  _write_issue "my-issue" "My issue title"
+
+  run bash "$SQUASH_SCRIPT"
+  [ "$status" -eq 0 ]
+
+  run git log -1 --format="%B"
+  [[ "$output" == *"My issue title"* ]]
+  [[ "$output" != *"Co-authored-by"* ]]
+}
+
+@test "--platform is an unknown flag" {
+  run bash "$SQUASH_SCRIPT" --platform claude
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unknown flag: --platform"* ]]
 }

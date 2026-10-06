@@ -25,9 +25,9 @@
  * limits) are accepted and ignored, one notice each (dropRetired): the feature review checks PRD
  * coverage now, and a config written for the audit keeps loading.
  *
- * `limits.<role>.usd` caps one dispatch of that role in dollars — claude's --max-budget-usd, a
- * backstop, off by default. Only claude has the flag; a role on another runtime ignores it, and
- * main.mjs says so once per run. A dispatch that hits it blocks its issue as `limit-exceeded`.
+ * `limits.<role>.usd` caps one dispatch of that role in dollars — the runtime adapter's `budget`
+ * flag (claude's --max-budget-usd), a backstop, off by default. A role on a runtime whose adapter
+ * has no `budget` ignores it, and main.mjs says so once per run. A dispatch that hits it blocks its issue as `limit-exceeded`.
  *
  * `paneHost` ("orca" | "herdr" | "auto" | "none") describes this machine, not the team, so only
  * ~/.coding-crew/config.json may set it; the repo's file is rejected for it. It also has an env
@@ -51,8 +51,8 @@
  * ANTHROPIC_DEFAULT_*_MODEL env or settings, which every dispatch inherits. So a committed
  * config.json names aliases, and per-machine provider IDs stay in env.
  *
- * Deliberately no capability ranking across arbitrary model strings. The one real order this
- * file knows — Claude Code's aliases — is used only for an advisory warning.
+ * Deliberately no capability ranking across arbitrary model strings. The only order used is an
+ * adapter's own `modelTiers` (Claude Code's aliases), for an advisory warning.
  *
  * .coding-crew/afk-models.json, the claude-only file this replaces, is moved into
  * `afk.models.claude` the first time `run` sees it. Its values only ever applied on claude, so
@@ -61,7 +61,8 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { PLATFORMS, preflight } from "./dispatch.mjs";
+import { preflight } from "./dispatch.mjs";
+import { ADAPTERS, PLATFORMS } from "./adapters/index.mjs";
 
 export const CONFIG_REL = ".coding-crew/config.json";
 export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
@@ -119,17 +120,10 @@ const LEGACY_ROLE_NAMES = { commandsDiscovery: "commandFinder" };
 const RETIRED_ROLE = "prdAuditor";
 export const retiredNotice = (name) => `\`${name}\` no longer does anything: the feature review checks PRD coverage.`;
 
-// A runtime's model when nothing names one. Resolved here rather than left to the agent file,
-// so that an unconfigured sprint's reviewer/triage genuinely match what the coder runs on —
-// a default living only in claude.agent.md's frontmatter is invisible to the tier check below.
-export const RUNTIME_DEFAULT_MODEL = { claude: "sonnet" };
-
-const CLAUDE_TIER_RANK = { haiku: 0, sonnet: 1, opus: 2 };
-const CLAUDE_ALIAS_ENV = {
-  haiku: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-  sonnet: "ANTHROPIC_DEFAULT_SONNET_MODEL",
-  opus: "ANTHROPIC_DEFAULT_OPUS_MODEL",
-};
+// A runtime's model when nothing names one is its adapter's `defaultModel`, resolved here so
+// that an unconfigured sprint's reviewer/triage genuinely match what the coder runs on, and the
+// tier check below sees it.
+const defaultModel = (adapters, runtime) => adapters[runtime]?.defaultModel ?? null;
 
 export class ConfigError extends Error {}
 
@@ -370,19 +364,19 @@ export function loadConfig(mainRoot, { write = false, home = process.env.HOME ||
  * Each role's runtime and model.
  * @returns {{roles: Record<string, {runtime: string, model: string|null}>, warnings: string[]}}
  */
-export function resolveCrew({ afk = {}, cliPlatform, cliModel = null }) {
+export function resolveCrew({ afk = {}, cliPlatform, cliModel = null, adapters = ADAPTERS }) {
   const warnings = [];
   const models = afk.models ?? {};
   const runtimeOf = (role) => afk.runtime?.[role] ?? cliPlatform;
   const coderRuntime = runtimeOf("coder");
 
   const onLauncher = (rt) => (rt === cliPlatform ? cliModel : null);
-  const coderModel = onLauncher(coderRuntime) ?? models[coderRuntime]?.coder ?? RUNTIME_DEFAULT_MODEL[coderRuntime] ?? null;
+  const coderModel = onLauncher(coderRuntime) ?? models[coderRuntime]?.coder ?? defaultModel(adapters, coderRuntime);
 
   const roles = { coder: { runtime: coderRuntime, model: coderModel } };
   for (const role of ROLES.slice(1)) {
     const runtime = runtimeOf(role);
-    const inherited = runtime === coderRuntime ? coderModel : (onLauncher(runtime) ?? RUNTIME_DEFAULT_MODEL[runtime] ?? null);
+    const inherited = runtime === coderRuntime ? coderModel : (onLauncher(runtime) ?? defaultModel(adapters, runtime));
     roles[role] = { runtime, model: models[runtime]?.[role] ?? inherited };
   }
 
@@ -396,15 +390,17 @@ export function resolveCrew({ afk = {}, cliPlatform, cliModel = null }) {
     );
   }
 
+  // Tiers compare only within the coder's runtime, and only where its adapter ranks its models.
+  const tiers = adapters[coderRuntime]?.modelTiers;
   for (const role of ROLES.slice(1)) {
     const { runtime, model } = roles[role];
     if (
-      runtime === "claude" &&
-      coderRuntime === "claude" &&
+      tiers &&
+      runtime === coderRuntime &&
       model !== coderModel &&
-      Object.hasOwn(CLAUDE_TIER_RANK, model) &&
-      Object.hasOwn(CLAUDE_TIER_RANK, coderModel) &&
-      CLAUDE_TIER_RANK[model] < CLAUDE_TIER_RANK[coderModel]
+      Object.hasOwn(tiers, model) &&
+      Object.hasOwn(tiers, coderModel) &&
+      tiers[model] < tiers[coderModel]
     ) {
       warnings.push(
         `${role} model "${model}" is a weaker tier than coder model "${coderModel}" — the ` +
@@ -415,10 +411,10 @@ export function resolveCrew({ afk = {}, cliPlatform, cliModel = null }) {
   return { roles, warnings };
 }
 
-/** "sonnet (→ <id>, ANTHROPIC_DEFAULT_SONNET_MODEL)" when this process can see the mapping. */
-export function describeModel(runtime, model, env = process.env) {
+/** "sonnet (→ <id>, ANTHROPIC_DEFAULT_SONNET_MODEL)" when this process can see the runtime adapter's alias mapping. */
+export function describeModel(runtime, model, env = process.env, adapters = ADAPTERS) {
   if (!model) return "runtime default";
-  const envName = runtime === "claude" ? CLAUDE_ALIAS_ENV[model] : undefined;
+  const envName = adapters[runtime]?.modelAliasEnv?.[model];
   return envName && env[envName] ? `${model} (→ ${env[envName]}, ${envName})` : model;
 }
 
@@ -499,14 +495,15 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
 }
 
 /**
- * The one line a run prints for the dollar caps it cannot apply: `--max-budget-usd` is claude's
- * alone, so a capped role on any other runtime runs uncapped. Null when every cap applies.
+ * The one line a run prints for the dollar caps it cannot apply: a capped role on a runtime whose
+ * adapter has no `budget` runs uncapped. Null when every cap applies.
  */
-export function ignoredLimitsNotice(limitsUsd = {}, crew) {
-  const ignored = Object.keys(limitsUsd).filter((role) => crew[role] && crew[role].runtime !== "claude");
+export function ignoredLimitsNotice(limitsUsd = {}, crew, adapters = ADAPTERS) {
+  const ignored = Object.keys(limitsUsd).filter((role) => crew[role] && !adapters[crew[role].runtime]?.budget);
   if (!ignored.length) return null;
   const which = ignored.map((role) => `${role} (${crew[role].runtime})`).join(", ");
-  return `afk.limits ignored for ${which} — a dollar cap is claude's --max-budget-usd, and no other runtime has one.`;
+  const runtimes = [...new Set(ignored.map((role) => crew[role].runtime))].join(", ");
+  return `afk.limits ignored for ${which} — a per-dispatch dollar cap is not supported by ${runtimes}.`;
 }
 
 /**

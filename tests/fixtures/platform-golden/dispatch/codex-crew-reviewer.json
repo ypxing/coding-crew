@@ -15,8 +15,6 @@
     "golden-model",
     "-c",
     "model_reasoning_effort=\"high\"",
-    "--output-last-message",
-    "<TMP>/repo/.scratch/golden/dispatch/alpha.report.md",
     "-"
   ],
   "input": "<PROTOCOL crew-reviewer sha256:ed7d4b0f883b819f>\n\n---\n\n# Task\n\nYour shell starts in <TMP>/repo/.scratch/golden/dispatch, the only writable directory, where your result file goes. The repository is <TMP>/repo/.scratch/worktrees/alpha: run your commands there (`cd <TMP>/repo/.scratch/worktrees/alpha && ...`).\n\nImplement the alpha issue.\n",
