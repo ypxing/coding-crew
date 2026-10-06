@@ -11,8 +11,8 @@ setup() {
 }
 
 @test "on a crew-afk PR Step 5 runs solve-issue's run-checks.sh after the commit, then a plain git push only on CHECKS: pass" {
-  grep -qF '<!-- crew-afk:begin -->' <<<"$STEP5"
-  grep -qF 'feature/<slug>' <<<"$STEP5"
+  # Which PR is crew-afk's is Step 1's one definition (address-pr-comments-escaped.bats).
+  grep -qF "crew-afk PRs only** (Step 1's test)" <<<"$STEP5"
   grep -qF '../solve-issue/scripts/run-checks.sh' <<<"$STEP5"
   grep -qF 'CHECKS: pass' <<<"$STEP5"
   grep -qF 'git push' <<<"$STEP5"

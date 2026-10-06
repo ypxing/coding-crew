@@ -120,9 +120,22 @@ teardown() {
   [ ! -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/feature-branch-setup.sh" ]
   [ -f "$TEMP_DIR/.claude/skills/solve-issue/scripts/commit-changes.sh" ]
   ! grep -q 'feature-branch-setup\.sh' "$TEMP_DIR/.claude/skills/solve-issue/SKILL.md"
+}
 
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
-  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/feature-branch-setup.sh" ]
+@test "crew-afk ships no feature-branch-setup.sh, and --update removes an older install's copy" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  # session-init.sh names the feature branch itself (feature_branch_name).
+  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/feature-branch-setup.sh" ]
+
+  # An install from before it was retired: the script beside session-init.sh, an older version.
+  echo "stale branch setup" > "$TEMP_DIR/.claude/skills/crew-afk/scripts/feature-branch-setup.sh"
+  local m="$TEMP_DIR/.coding-crew/manifest.json"
+  jq '.skills["crew-afk"].version = "0.0.0"' "$m" > "$m.tmp" && mv "$m.tmp" "$m"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
+  [ "$status" -eq 0 ]
+  [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/feature-branch-setup.sh" ]
+  [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/session-init.sh" ]
 }
 
 @test "solve-issue and crew-afk both get write-commands-cache.sh; only crew-afk gets discover-commands.sh" {

@@ -63,6 +63,9 @@ _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/
 
 BEGIN_MARK="<!-- crew-afk:begin -->"
 END_MARK="<!-- crew-afk:end -->"
+# Names the sprint the PR belongs to: the head branch's name (afk.branchPrefix, --jira) no longer
+# says which .scratch/<slug>/ it is, so address-pr-comments reads the slug from here.
+SLUG_MARK="<!-- crew-afk:slug $FEATURE_SLUG -->"
 
 state_failed=""
 TMP=$(mktemp -d)
@@ -86,6 +89,7 @@ trap 'rm -rf "$TMP"' EXIT
     echo ""
     cat "$CLOSES_FILE"
   fi
+  echo "$SLUG_MARK"
   echo "$END_MARK"
 } > "$TMP/block.md"
 

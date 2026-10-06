@@ -24,6 +24,11 @@
  *                                           afk.models names one (see lib/crew-config.mjs,
  *                                           which also lets a role run on another runtime)
  *   --feature-slug <slug>                  or derived from the first issue's dir
+ *   --jira <KEY>                           e.g. PROJ-12: a feature branch this run creates is
+ *                                           <afk.branchPrefix, default feature/><KEY>-<slug>.
+ *                                           Ignored, with a warning, when the branch is already
+ *                                           chosen (a sprint.env to resume, or a local-tracker
+ *                                           run started off the default branch)
  *
  * Each flag below overrides the config.json setting in brackets for one run (lib/crew-config.mjs):
  *   --fix-findings <actionable|critical|high|medium|none>  [fixFindings, default actionable]
@@ -190,7 +195,7 @@ function parseArgs(argv) {
       case "--no-sync-main": o.syncMain = false; break;
       case "--reclaim": o.reclaim = true; break;
       case "--dry-run": o.dryRun = true; break;
-      case "--jira": o.passthrough.push("--jira", args.shift()); break;
+      case "--jira": o.passthrough.push("--jira", value()); break;
       case "-h": case "--help": o.command = "help"; break;
       default:
         if (a.startsWith(".scratch/")) {
@@ -398,7 +403,7 @@ async function main() {
   if (options.command === "help") {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
-        "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none]\n" +
+        "  [--feature-slug S] [--jira KEY] [--fix-findings actionable|critical|high|medium|none]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN]\n" +
         "  [--max-wall MIN] [--poll-interval SEC] [--no-deps] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
         "  [--allow-dirty] [--no-sync-main] [--dry-run]\n" +
@@ -413,6 +418,8 @@ async function main() {
         "  maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits\n" +
         "  (false), openPr (false), baselineCheck (true), integrationCheck (true), resumeCoderSession (false),\n" +
         "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).\n" +
+        "  A new feature branch is <branchPrefix><KEY>-<slug>: config.json's afk.branchPrefix\n" +
+        "  (default feature/, \"\" for none; no flag) and --jira KEY (e.g. PROJ-12; omitted, no KEY-).\n" +
         "  No flag: limits.<role>.usd caps one claude dispatch of that role in dollars (off).",
     );
     return 0;
@@ -679,6 +686,7 @@ async function main() {
     sprint = await Sprint.init(effects, {
       featureSlug: resolved.slug,
       fixFindings: options.fixFindings,
+      branchPrefix: options.branchPrefix,
       passthrough: options.passthrough,
       // Installed below, after command discovery has cached any install override.
       deps: false,

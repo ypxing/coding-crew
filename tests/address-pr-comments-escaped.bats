@@ -60,3 +60,14 @@ setup() {
   grep -qF 'mode: branch` is reserved' <<<"$s"
   ! grep -lx 'mode: branch' "$d"/cases/*.md
 }
+
+@test "a crew-afk PR is one whose body has the crew-afk block; its slug comes from the slug marker, else a feature/<slug> head branch" {
+  local s1; s1="$(sed -n '/^## Step 1/,/^## Step 2/p' "$SKILL")"
+  grep -qF "A PR whose body has the crew-afk block" <<<"$s1"
+  grep -qF '<!-- crew-afk:slug <slug> -->' <<<"$s1"
+  grep -qF 'no slug marker' <<<"$s1"
+  grep -qF 'feature/<slug>' <<<"$s1"
+  # Steps 5 and 5.5 use that definition rather than restating a head-branch test.
+  ! grep -qF 'and the head branch is `feature/<slug>`' "$SKILL"
+  ! grep -qF 'branch is `feature/<slug>`. On a PR without' "$SKILL"
+}

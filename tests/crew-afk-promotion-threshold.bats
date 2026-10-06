@@ -137,7 +137,6 @@ EOF
   scripts="$TEMP_DIR/installed"
   mkdir -p "$scripts"
   cp "$AFK_SCRIPTS"/*.sh "$scripts/"
-  cp "$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$scripts/"
   bash "$scripts/session-init.sh" --feature-slug feat --fix-findings critical >/dev/null
   bash "$scripts/state.sh" complete --slug a --branch crew/feat/a --feature-slug feat >/dev/null
   bash "$PROMOTE" defer --severities "CRITICAL" --feature-slug feat --branch crew/feat/a --slug a \
@@ -231,7 +230,6 @@ verdict_report() {
   scripts="$TEMP_DIR/installed"
   mkdir -p "$scripts"
   cp "$AFK_SCRIPTS"/*.sh "$scripts/"
-  cp "$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$scripts/"
   bash "$scripts/session-init.sh" --feature-slug feat >/dev/null
   bash "$scripts/state.sh" complete --slug a --branch crew/feat/a --feature-slug feat >/dev/null
   verdict_report

@@ -88,15 +88,19 @@ export class Sprint {
     this._requiresProbed = new Set();
   }
 
-  static async init(effects, { featureSlug, fixFindings, passthrough = [], deps = true, log = () => {} }) {
+  static async init(effects, { featureSlug, fixFindings, branchPrefix = null, passthrough = [], deps = true, log = () => {} }) {
     const args = [];
     if (featureSlug) args.push("--feature-slug", featureSlug);
     if (fixFindings) args.push("--fix-findings", fixFindings);
+    // Only when set: "" is a real prefix (none), and unset leaves session-init.sh's default.
+    if (branchPrefix != null) args.push("--branch-prefix", branchPrefix);
     args.push(...passthrough);
     const r = effects.bash("session-init.sh", args);
     if (r.code !== 0) {
       throw new Error(`session-init.sh failed (${r.code}): ${r.stderr || r.stdout}`);
     }
+    // A run that succeeds can still have been told something worth hearing (`--jira` ignored).
+    for (const line of (r.stderr ?? "").split("\n")) if (/^WARNING:/.test(line)) log(`session-init: ${line}`);
     const env = readSprintEnv(effects.mainRoot);
     if (!env) throw new Error("session-init.sh did not produce a readable .scratch/sprint.env");
     const sprint = new Sprint(effects, env);

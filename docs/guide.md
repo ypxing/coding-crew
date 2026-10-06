@@ -434,6 +434,15 @@ elsewhere, or `CREW_WORKTREE_ROOT`, which wins over both. A path outside the rep
 resolution, CLAUDE.md loading) from falling back to the main checkout. A path inside the repo isn't
 covered by the default `.scratch/` gitignore entry; `crew-afk` warns until you add it.
 
+**Feature branch name.** A run started on the default branch creates `<prefix><KEY>-<feature-slug>`:
+`afk.branchPrefix` in either `config.json` (any string, `""` for none; default `feature/`, the repo's
+winning) and `--jira <KEY>` (`PROJ-12`, matching `^[A-Z][A-Z0-9]+-[0-9]+$`; omitted, no `<KEY>-`).
+`--jira PROJ-12` gives `feature/PROJ-12-<feature-slug>`. A name git refuses (`git check-ref-format
+--branch`) stops the run before any branch is made. A sprint that already has a `sprint.env` resumes
+on the branch it recorded, and a local-tracker run started off the default branch keeps that branch;
+both warn that `--jira` was ignored. Under `tracker: github` a run off the default branch must be on
+the branch this name gives.
+
 ---
 
 ### PR rework with GitHub Actions (optional)

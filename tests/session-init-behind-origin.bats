@@ -33,7 +33,6 @@ installed_scripts() {
   if [ ! -d "$dir" ]; then
     mkdir -p "$dir"
     cp "$AFK_SCRIPTS"/*.sh "$dir/"
-    cp "$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$dir/"
   fi
   echo "$dir"
 }

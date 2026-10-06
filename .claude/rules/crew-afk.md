@@ -15,7 +15,10 @@ How the orchestrator and its scripts behave. Loaded when working on crew-afk; th
 
 Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
 
-- `session-init.sh` — derives the feature slug **once** and writes `sprint.env`
+- `session-init.sh` — derives the feature slug **once** and writes `sprint.env`; names the feature branch
+  `<--branch-prefix><--jira KEY>-<slug>` in one function (`feature_branch_name`, validated with `git check-ref-format
+  --branch`) for create/switch, the `tracker: github` expected-branch check and the no-slug path. `main.mjs` passes
+  `afk.branchPrefix` as `--branch-prefix` only when set; `--jira` on a resume or a kept local branch only warns
 - `ensure-deps.sh` — makes a directory ready to run the project's own checks; delegates every
   install decision to `dep-install`'s `detect-mode.sh` / `host-install.sh`. It is mechanism rather
   than a worker skill read because it is the only layer that also covers `verify-worktree.sh`, which
@@ -147,13 +150,16 @@ Valid" apply. Dropped candidates go under `### Dropped` in the prose after the J
 
 A not-green PR's crew-afk block carries `<!-- crew-afk:draft <kinds> -->` (`draftMarker` in `loop.mjs`, written into
 `pr-note.md` beside `**Not green:**`), `<kinds>` a comma-separated subset of `findings,blocked,stalled,capped,wall-cap,integration`;
-a green PR has none. `/address-pr-comments` on a crew-afk PR (body has `<!-- crew-afk:begin -->`, head `feature/<slug>`) runs
+a green PR has none. `/address-pr-comments` on a crew-afk PR (body has `<!-- crew-afk:begin -->`; `<slug>` from the block's
+`<!-- crew-afk:slug <slug> -->`, which `open-pr.sh` writes, else a `feature/<slug>` head branch) runs
 `solve-issue`'s `run-checks.sh` after its fix commit and a plain `git push` (never forced) only on `CHECKS: pass`; when the
 marker names only `findings` and every `crew-finding:` comment was handled, its summary prints `once CI is green: gh pr ready <n>`.
 
 `prdPath(ctx)` (`orchestrator/lib/prd.mjs`) is the one owner of where the PRD is, located once per run: `.scratch/<slug>/PRD.md`;
 else under `tracker: github` fetched with `trackers/github.mjs prd` and saved as `prd-issue.md` (the saved copy when that fetch
-fails, with a warning); else a saved `prd-issue.md`; else null. `pipeline/pr-body.mjs` gets the PR writer's PRD from it too.
+fails, with a warning); else a saved `prd-issue.md`; else null. `pipeline/pr-body.mjs` gets the PR writer's PRD from it too,
+and `pipeline/review.mjs` puts it on the per-branch review prompt's `PRD: <path>` line, which `reviewer.md` reads instead of
+deriving a path from the branch name (configurable: `afk.branchPrefix`, `--jira`).
 
 The per-branch review is a criteria gate and raises no findings: `reviewer.md`'s per-branch mode writes `findings: []` (the always-on
 classes and design-standard checks are Feature Mode only), and `pipeline/review.mjs` drops any findings a branch report still carries

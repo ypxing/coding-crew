@@ -34,7 +34,7 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-# session-init.sh calls feature-branch-setup.sh, trace.sh and tracker-config.sh as
+# session-init.sh calls trace.sh and tracker-config.sh as
 # siblings/fixed-path helpers only after install.sh copies them into place. Reproduce
 # both: the skill's own scripts/ dir, and tracker-config.sh's fixed install
 # location (.coding-crew/scripts/, per registry.json's docs.scripts entry).
@@ -43,7 +43,6 @@ installed_scripts() {
   if [ ! -d "$dir" ]; then
     mkdir -p "$dir"
     cp "$AFK_SCRIPTS"/*.sh "$dir/"
-    cp "$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$dir/"
   fi
   echo "$dir"
 }
@@ -89,9 +88,8 @@ write_tracker_config() {
 
   run bash "$(installed_scripts)/session-init.sh"
   [ "$status" -eq 0 ]
-  # feature-branch-setup.sh names the branch after the first issue file, not the
-  # directory slug — this test only asserts the (unrelated) local-scan fallback ran.
-  [[ "$(git rev-parse --abbrev-ref HEAD)" == feature/* ]]
+  # The branch is named after the directory the first issue lives in.
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/some-slug" ]
 }
 
 @test "local tracker: --feature-slug on a mismatched non-default branch with no sprint.env still silently adopts it (unchanged)" {

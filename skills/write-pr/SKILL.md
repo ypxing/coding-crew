@@ -59,6 +59,10 @@ Each bullet is one thing a reviewer would notice — a behaviour, a contract, a 
 responsibility — not one per file. A diagram earns its place only when the change is a flow or a
 shape a sentence cannot hold; keep it to the few nodes the point needs.
 
+Describe what the range does, not what the PRD asked for: a bullet that names a file, doc or
+setting needs a matching path in the `--stat`, and a PRD decision with nothing there is left out,
+not claimed done.
+
 ### Risk
 
 One line. Say whether a revert fully undoes it (it does not when it migrates data, deletes,

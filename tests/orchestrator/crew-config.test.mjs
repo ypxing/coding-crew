@@ -539,6 +539,25 @@ test("loadConfig: afk.worktreeRoot is accepted from either file, the repo's winn
   for (const d of [home, root, repo]) rmSync(d, { recursive: true, force: true });
 });
 
+test("loadConfig: afk.branchPrefix is any string, \"\" included, from either file, the repo's winning", () => {
+  const home = tmpRoot({ "config.json": { afk: { branchPrefix: "user/" } } });
+  const root = tmpRoot();
+  assert.equal(loadConfig(root, { home }).config.afk.branchPrefix, "user/");
+  for (const prefix of ["feat/", ""]) {
+    const repo = tmpRoot({ "config.json": { afk: { branchPrefix: prefix } } });
+    const { config, origin } = loadConfig(repo, { home });
+    assert.equal(config.afk.branchPrefix, prefix);
+    assert.equal(origin.branchPrefix, "project");
+    rmSync(repo, { recursive: true, force: true });
+  }
+  for (const bad of [3, null, true, ["feat/"]]) {
+    const r = tmpRoot({ "config.json": { afk: { branchPrefix: bad } } });
+    assert.throws(() => loadConfig(r, { home: EMPTY_HOME }), /"afk\.branchPrefix" must be a string/);
+    rmSync(r, { recursive: true, force: true });
+  }
+  for (const d of [home, root]) rmSync(d, { recursive: true, force: true });
+});
+
 test("resolveWorktreeRoot: CREW_WORKTREE_ROOT, then the file, else null (the default)", () => {
   assert.equal(resolveWorktreeRoot({ env: {} }), null);
   assert.equal(resolveWorktreeRoot({ afk: { worktreeRoot: "../wt" }, env: {} }), "../wt");

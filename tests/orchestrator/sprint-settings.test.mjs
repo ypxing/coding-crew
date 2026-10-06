@@ -193,3 +193,32 @@ test("--max-wall: past the cap nothing new is claimed, the running issue merges,
   assert.doesNotMatch(r.stdout, /STALLED:/);
   assert.deepEqual(state(root).merged_branches ?? [], ["crew/demo/alpha"]);
 });
+
+test("the feature branch is named from config.json's afk.branchPrefix and --jira", () => {
+  const branchOf = (config, extra = []) => {
+    const root = fixtureRepo();
+    // Start where a fresh sprint starts: on the default branch, no feature branch yet.
+    sh("git", ["-C", root, "checkout", "-q", "main"]);
+    sh("git", ["-C", root, "branch", "-q", "-D", "feature/demo"]);
+    addIssue(root, "01-alpha.md");
+    if (config) {
+      mkdirSync(join(root, ".coding-crew"), { recursive: true });
+      writeFileSync(join(root, ".coding-crew/config.json"), JSON.stringify({ afk: config }));
+    }
+    const r = runSprint(root, extra);
+    assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+    return readFileSync(join(root, ".scratch/demo/sprint.env"), "utf8").match(/FEATURE_BRANCH="([^"]*)"/)[1];
+  };
+  assert.equal(branchOf({ branchPrefix: "feat/" }), "feat/demo");
+  assert.equal(branchOf({ branchPrefix: "" }), "demo");
+  assert.equal(branchOf(null), "feature/demo");
+  assert.equal(branchOf(null, ["--jira", "PROJ-12"]), "feature/PROJ-12-demo");
+});
+
+test("session-init.sh's warning that --jira was ignored reaches the run's stderr", () => {
+  const root = fixtureRepo(); // already on feature/demo, no sprint.env: the branch is kept
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root, ["--jira", "PROJ-12"]);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /--jira PROJ-12 ignored/);
+});

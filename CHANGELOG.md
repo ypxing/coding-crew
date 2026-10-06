@@ -6,6 +6,16 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `write-pr`: What changes describes only what the range contains — a bullet naming a file, doc or setting needs a
+  matching path in the `--stat`, so a PRD decision the branch left out is no longer reported as done (seen once, #302).
+- `crew-afk`: `session-init.sh` no longer warns that `--jira` was ignored when the resumed or kept branch is
+  already the one `--jira` would name (#301).
+- `crew-afk`: the feature branch is named `<afk.branchPrefix><KEY>-<feature-slug>` — `afk.branchPrefix` in
+  `config.json` (default `feature/`, `""` for none) and `--jira <KEY>`, which the explicit-slug path used to ignore;
+  an invalid key or ref stops the run before any branch is made. The per-issue review prompt names the PRD on a
+  `PRD:` line, and `open-pr.sh` writes `<!-- crew-afk:slug <slug> -->` into its block, so nothing derives the slug
+  from the branch name. `feature-branch-setup.sh` is no longer installed (an `--update` removes it).
+  `address-pr-comments`: a crew-afk PR is one with the crew-afk block; its slug comes from that marker (#300).
 - `crew-afk`: the incremental feature review's prompt no longer tells the closing review that "an earlier run"
   reviewed up to its base — the base is the last feature review's tip, often from this same run (#297).
 - `crew-afk`: a red integration check that turns an open PR back into a draft now rewrites its crew-afk block's

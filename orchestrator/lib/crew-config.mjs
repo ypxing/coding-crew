@@ -16,6 +16,7 @@
  *       "timeouts": { "coder": 45 }, "maxParallel": 3, "maxWallMinutes": 120, "installDeps": true, "squashCommits": false,
  *       "openPr": false,
  *       "baselineCheck": true, "integrationCheck": true, "resumeCoderSession": false,
+ *       "branchPrefix": "feature/",
  *       "limits": { "coder": { "usd": 5 } } } }
  *
  * Every setting but runtime/models/limits has a flag that wins for one run (resolveSettings).
@@ -35,6 +36,11 @@
  * `worktreeRoot` (absolute, or relative to the repo root) is where per-issue worktrees are
  * created; unset keeps `.scratch/worktrees`. Either file may set it, and CREW_WORKTREE_ROOT
  * wins over both (resolveWorktreeRoot). No flag: it is a standing choice, not a per-run one.
+ *
+ * `branchPrefix` (any string, "" allowed; unset is session-init.sh's `feature/`) starts the name
+ * of a feature branch a run creates: `<branchPrefix>[<--jira KEY>-]<feature-slug>`. Either file
+ * may set it; no flag, for the same reason as worktreeRoot. session-init.sh validates the
+ * finished name (`git check-ref-format --branch`).
  *
  * A model string belongs to one runtime, so it's filed under it and never passed to another
  * runtime's CLI. A role that moves to another runtime therefore does not inherit the coder's
@@ -100,6 +106,7 @@ const SCALARS = {
   resumeCoderSession: (v) => (typeof v === "boolean" ? null : "must be true or false"),
   paneHost: (v) => (PANE_HOSTS.includes(v) ? null : `is ${JSON.stringify(v)} (expected ${PANE_HOSTS.join(", ")})`),
   worktreeRoot: (v) => (typeof v === "string" && v.trim() ? null : "must be a non-empty path"),
+  branchPrefix: (v) => (typeof v === "string" ? null : `must be a string ("" for none), got ${JSON.stringify(v)}`),
 };
 // Per-machine settings: accepted from ~/.coding-crew/config.json only.
 const USER_ONLY = ["paneHost"];
@@ -458,6 +465,7 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
  * so `plan` credits the right source.
  * @returns {{fixFindings, installDeps, squashCommits, openPr, baselineCheck, integrationCheck, resumeCoderSession,
  *   maxParallel: number|null,
+ *   branchPrefix: string|null,  null: session-init.sh's default
  *   timeouts: Record<string, number>,  timeouts in minutes
  *   limitsUsd: Record<string, number>}}  each capped role's dollar cap; no key, no cap
  */
@@ -484,6 +492,7 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     resumeCoderSession: pick("resumeCoderSession"),
     maxParallel: pick("maxParallel"),
     maxWallMinutes: pick("maxWallMinutes"),
+    branchPrefix: pick("branchPrefix"),
     timeouts,
     limitsUsd: Object.fromEntries(Object.entries(afk.limits ?? {}).map(([role, l]) => [role, l.usd])),
   };
