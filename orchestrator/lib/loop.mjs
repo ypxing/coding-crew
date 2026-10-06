@@ -608,10 +608,12 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
     ].join("\n") };
   }
   // A red merged branch is not shipped: the PR would ask a reviewer to merge what fails its checks.
-  // A PR an earlier, green run opened is turned into a draft, with nothing pushed to it.
+  // A PR an earlier run opened is turned into a draft, with nothing pushed to it; its block's draft
+  // marker is rewritten so it names `integration`, not just what the earlier run saw.
   if (integration?.status === "fail") {
     const notOpened = `**Not opened:** the integration check failed on ${sprint.featureBranch} — see ## Integration check above.`;
-    const r = effects.bash("open-pr.sh", ["--no-push", "--draft"], { env: sprint.childEnv() });
+    const marker = draftMarker({ exitCode: stalled ? 2 : 0, blocked: sprint.getList("blocked"), integration, capped, wallCap, unfixedFindings });
+    const r = effects.bash("open-pr.sh", ["--no-push", "--draft", "--draft-marker", marker], { env: sprint.childEnv() });
     const url = /^PR: (.*)$/m.exec(r.stdout ?? "")?.[1]?.trim();
     if (r.dryRun || r.code !== 0 || !url || url === "none") return { text: notOpened };
     const stateFailed = /^PR-STATE-FAILED: (.*)$/m.exec(r.stdout)?.[1];

@@ -257,6 +257,31 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   [ "$(git ls-remote origin refs/heads/feature/demo | cut -f1)" = "$before" ]
 }
 
+@test "open-pr --no-push --draft-marker: the block's draft marker is rewritten; the rest of the body stays" {
+  printf '**Not green:** findings\n<!-- crew-afk:draft findings -->\n' > "$TEMP_DIR/note.md"
+  bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" --draft --note-file "$TEMP_DIR/note.md"
+  jq '.body = "intro\n\n" + .body + "\n\noutro"' "$GH_PR" > "$GH_PR.n" && mv "$GH_PR.n" "$GH_PR"
+  before=$(git ls-remote origin refs/heads/feature/demo | cut -f1)
+  git commit -q --allow-empty -m "red work"
+  run bash "$OPEN_PR" --no-push --draft --draft-marker "<!-- crew-afk:draft integration,findings -->"
+  [ "$status" -eq 0 ]
+  ! pr_body | grep -qx -- '<!-- crew-afk:draft findings -->'
+  pr_body | sed -n '/crew-afk:begin/,/crew-afk:end/p' | grep -qx -- '<!-- crew-afk:draft integration,findings -->'
+  pr_body | grep -qx -- '\*\*Not green:\*\* findings'
+  pr_body | grep -qx 'Closes #1'
+  pr_body | grep -qx intro
+  pr_body | grep -qx outro
+  [ "$(git ls-remote origin refs/heads/feature/demo | cut -f1)" = "$before" ]
+}
+
+@test "open-pr --no-push --draft-marker: a block without a marker gets one" {
+  bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt"
+  run bash "$OPEN_PR" --no-push --draft --draft-marker "<!-- crew-afk:draft integration -->"
+  [ "$status" -eq 0 ]
+  pr_body | sed -n '/crew-afk:begin/,/crew-afk:end/p' | grep -qx -- '<!-- crew-afk:draft integration -->'
+  pr_body | grep -qx 'Closes #1'
+}
+
 @test "open-pr --draft: a create that fails for another reason fails the script, not a ready PR" {
   GH_CREATE_FAIL=1 run bash "$OPEN_PR" --draft
   [ "$status" -ne 0 ]
