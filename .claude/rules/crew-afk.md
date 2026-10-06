@@ -83,6 +83,8 @@ gate whose receipt already matches the branch tip (`gatesAtTip`).
 
 Soft wall-clock cap (`--max-wall <minutes>`, `afk.maxWallMinutes`, default 120, `0` = off): once elapsed `loop.mjs` claims and polls for nothing new, in-flight workers finish and merge, Phase 2 (`flush`) is skipped so fix issues stay parked, the integration check still runs; when that left an issue unclaimed or a fix issue parked, the summary names the cap and them, the run exits 2 and an `--open-pr` PR is a draft (a cap that cut nothing short is not a hit).
 
+A stalled run whose unfinished issues include `ready-for-human` ones: `wrapUp` prints `## Waiting on a person` (before the PR section), one line per such issue — `#<number>` under github, the file name under local, then its title — and `When they are done (mark-issue-done.sh), re-run: /crew-afk <feature-slug>`. `crew-summary.sh` is not involved.
+
 Idle-slot polling (`--poll-interval <seconds>`, default 30, `0` = off): while work is in flight and a slot is idle,
 `loop.mjs` lists the tracker once per interval (one listing however many slots are idle) and starts any issue made
 ready mid-run. An issue not seen before is first linted (`lintMidRunIssues`, the same `lint-issues.sh`); an `ERROR`

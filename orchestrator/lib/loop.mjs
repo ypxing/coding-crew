@@ -381,19 +381,22 @@ export async function runSprint(ctx) {
   const wallUnclaimed = unclaimedByCap().map((i) => i.slug);
   const wallCap = wallUnclaimed.length || flushSkipped ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
   // A cap hit stalls the run even when the attempt cap (CREW_MAX_ROUNDS) also ended it.
+  let unfinished = null;
+  const unfinishedIssues = () => (unfinished ??= openIssues(tracker, effects.mainRoot, sprint.featureSlug));
   const stalled =
     Boolean(wallCap) ||
     (!capped &&
       // The last drain's check, not any earlier one: a drain red at the fix-issue limit stalls
       // the run only if no later drain turned it green.
-      (integration?.fix?.verdict === "limit" ||
-        openIssues(tracker, effects.mainRoot, sprint.featureSlug).length > 0));
+      (integration?.fix?.verdict === "limit" || unfinishedIssues().length > 0));
+  // A person's work, not an agent's: the summary names it, so a stall says whom it waits on.
+  const waiting = stalled ? unfinishedIssues().filter((i) => i.status === "ready-for-human") : [];
 
   // Before the summary: drained, capped or stalled, no issue keeps a label saying it is being worked.
   for (const issue of held.values()) labelIssue(ctx, "release", issue);
   held.clear();
 
-  await wrapUp(ctx, { tracker, stalled, capped, wallCap, unlisted, integration, integrationFixes, featureReviews });
+  await wrapUp(ctx, { tracker, stalled, capped, wallCap, unlisted, waiting, integration, integrationFixes, featureReviews });
   return { stalled, capped, wallCapped: Boolean(wallCap), history };
 }
 
@@ -449,7 +452,7 @@ function flush(ctx) {
   return promoted;
 }
 
-async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, unlisted = [], integration = null, integrationFixes = [], featureReviews = [] }) {
+async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, unlisted = [], waiting = [], integration = null, integrationFixes = [], featureReviews = [] }) {
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
@@ -498,6 +501,11 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, u
     );
   }
   if (unlisted.length) ctx.out(`\n**Fix issues not implemented:**\n${unlisted.map((l) => `- ${l}`).join("\n")}\n`);
+  if (waiting.length) {
+    // An issue's file name under local, its number under github.
+    const lines = waiting.map((i) => `- ${i.file ?? `#${i.number}`} ${i.title}`);
+    ctx.out(`\n## Waiting on a person\n\n${lines.join("\n")}\n\nWhen they are done (mark-issue-done.sh), re-run: /crew-afk ${sprint.featureSlug}\n`);
+  }
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
   if (pr) ctx.out(`\n## ${pr.heading ?? "Pull Request"}\n\n${pr.text}\n`);
   ctx.out("NO MORE TASKS");
