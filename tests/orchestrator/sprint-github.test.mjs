@@ -165,7 +165,7 @@ test("github: a claimed issue is labelled in-progress before its worker is dispa
   const edits = ghLines(log).filter((l) => l.startsWith("issue edit 1 "));
   assert.deepEqual(edits, [
     "issue edit 1 --add-label in-progress",
-    "issue edit 1 --add-label awaiting-merge --remove-label ready-for-agent --remove-label in-progress",
+    "issue edit 1 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress",
   ]);
   assert.deepEqual(issueLabels(issuesFile, 1), ["awaiting-merge"]);
 });

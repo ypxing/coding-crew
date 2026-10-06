@@ -21,7 +21,8 @@
 #        file's) `## Implements` names, unless its PRD line ends in `(no slice)`; an issue another issue blocks on with no `### Exposes:` under
 #        `## Interfaces`; no `## What to build`; no `## Implements`. A `Status: ready-for-human`
 #        issue instead gets: no `## For a human` section, or that section missing one of its five
-#        `###` parts (Why a person, What changes, Steps, If skipped or done wrong, Done when); it is
+#        `###` parts (Why a person, What changes, Steps, If skipped or done wrong, Done when), or a
+#        ticked `- [x]` under `## Acceptance criteria` (one WARN each; fenced lines skipped); it is
 #        exempt from the `## What to build` / `## Implements` warnings. Two issues that name the
 #        same file (a path with a `/`, `:<line>` dropped) with neither reaching the other through
 #        `## Blocked by` (directly or via other issues in the set). Advisory: a Blocked by edge comes
@@ -186,6 +187,13 @@ for idx in "${!NAMES[@]}"; do
     else
       warn "$file" "ready-for-human issue has no ## For a human section"
     fi
+    # A person ticks each criterion as they finish it; one ticked at publish says "done" too early.
+    section "$file" "Acceptance criteria" | awk '
+      /^[ \t]*```/ { fence = !fence; next }
+      !fence && /^[ \t]*[-*][ \t]+\[[xX]\]/ { sub(/^[ \t]+/, ""); print }' |
+      while IFS= read -r ticked; do
+        warn "$file" "ready-for-human acceptance criterion is ticked before anyone did it — write it unticked (- [ ]): $ticked"
+      done
   else
     has_section "$file" "What to build" || warn "$file" "no ## What to build section"
     has_section "$file" "Implements" || warn "$file" "no ## Implements section"

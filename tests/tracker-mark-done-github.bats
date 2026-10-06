@@ -142,9 +142,51 @@ close_calls() {
   [ "$status" -eq 0 ]
   [ "$(done_calls)" -eq 1 ]
   grep -q '^label create awaiting-merge --force' "$GH_LOG"
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label in-progress$' "$GH_LOG"
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress$' "$GH_LOG"
   [ "$(close_calls)" -eq 0 ]
   [[ "$output" == *"Closes #42"* ]]
+}
+
+@test "mark-issue-done (github): a ready-for-human issue loses that label in the one edit, after it is created" {
+  stub_gh 0
+  cat > "$GH_BODY_FILE" <<'EOF'
+Status: ready-for-human
+
+## Acceptance criteria
+
+- [x] one
+- [x] two
+EOF
+
+  run bash "$MARK_DONE" 42
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^issue edit' "$GH_LOG")" -eq 1 ]
+  create=$(grep -n '^label create ready-for-human --force' "$GH_LOG" | cut -d: -f1)
+  edit=$(grep -n '^issue edit' "$GH_LOG" | cut -d: -f1)
+  [ -n "$create" ] && [ "$create" -lt "$edit" ]
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress$' "$GH_LOG"
+}
+
+@test "mark-issue-done (github): a failed ready-for-human label create only warns and leaves it alone" {
+  stub_gh 0
+  write_body_met
+  # Wrap the stub: `label create ready-for-human` fails, everything else passes through.
+  mv "$STUB/gh" "$STUB/gh-real"
+  cat > "$STUB/gh" <<EOF
+#!/usr/bin/env bash
+if [ "\$1 \$2 \$3" = "label create ready-for-human" ]; then
+  printf '%s\n' "\$*" >> "$GH_LOG"
+  echo "HTTP 403: no permission" >&2
+  exit 1
+fi
+exec "$STUB/gh-real" "\$@"
+EOF
+  chmod +x "$STUB/gh"
+
+  run bash "$MARK_DONE" 42
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARNING: gh label create ready-for-human failed"* ]]
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label in-progress$' "$GH_LOG"
 }
 
 @test "mark-issue-done (github): checks the freshly fetched body, not a stale local copy" {
@@ -234,7 +276,7 @@ close_calls() {
   [ "$status" -eq 0 ]
   [ "$(done_calls)" -eq 1 ]
   grep -q '^label create awaiting-merge --force' "$GH_LOG"
-  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label in-progress$' "$GH_LOG"
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress$' "$GH_LOG"
   [ "$(close_calls)" -eq 0 ]
 }
 

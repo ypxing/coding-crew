@@ -360,6 +360,23 @@ H106="tests/fixtures/lint-issues/human/issues/106-enable-main-ruleset.md"
   [[ "$output" == *"no ## Implements section"* ]]
 }
 
+@test "ready-for-human with a ticked criterion: one WARN naming it, exit 0; a ticked line in a fence does not count" {
+  f="$BATS_TEST_TMPDIR/h.md"
+  sed 's/^- \[ \] The four original rules are still present$/- [x] The four original rules are still present/' "$REPO_ROOT/$H106" > "$f"
+  printf '\n```markdown\n- [x] fenced example\n```\n' >> "$f"
+  run bash "$LINT" --issue "$f"
+  [ "$status" -eq 0 ]
+  [ "$output" = "WARN $f: ready-for-human acceptance criterion is ticked before anyone did it — write it unticked (- [ ]): - [x] The four original rules are still present" ]
+}
+
+@test "ready-for-agent with a ticked criterion: no ticked-criterion WARN" {
+  f="$BATS_TEST_TMPDIR/a.md"
+  printf 'Status: ready-for-agent\n\n## What to build\n\nx\n\n## Implements\n\nD1\n\n## Acceptance criteria\n\n- [x] a\n- [ ] b\n' > "$f"
+  run bash "$LINT" --issue "$f"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 # shared_issue <file> <blocked-by line> <body text> — a minimal well-formed issue naming paths in its body.
 shared_issue() {
   printf 'Status: ready-for-agent\n\n## What to build\n\n%s\n\n## Implements\n\nD1\n\n## Blocked by\n\n%s\n\n## Acceptance criteria\n\n- [ ] a\n' "$3" "$2" > "$1"
