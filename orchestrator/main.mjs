@@ -190,7 +190,7 @@ function parseArgs(argv) {
       case "--no-sync-main": o.syncMain = false; break;
       case "--reclaim": o.reclaim = true; break;
       case "--dry-run": o.dryRun = true; break;
-      case "--jira": o.passthrough.push("--jira", args.shift()); break;
+      case "--jira": o.passthrough.push("--jira", value()); break;
       case "-h": case "--help": o.command = "help"; break;
       default:
         if (a.startsWith(".scratch/")) {
@@ -679,6 +679,7 @@ async function main() {
     sprint = await Sprint.init(effects, {
       featureSlug: resolved.slug,
       fixFindings: options.fixFindings,
+      branchPrefix: options.branchPrefix,
       passthrough: options.passthrough,
       // Installed below, after command discovery has cached any install override.
       deps: false,
