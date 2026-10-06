@@ -158,7 +158,21 @@ bash "<skill-dir>/scripts/commit-changes.sh" \
   --coauthor "Claude Code <claude@anthropic.com>"
 ```
 
-Do not push — leave that to the user.
+**Push — crew-afk PRs only.** A crew-afk PR is the same test as Step 5.5: the PR body (Step 1)
+contains `<!-- crew-afk:begin -->` and the head branch is `feature/<slug>`. On one, after the commit,
+run `solve-issue`'s checks from this skill's sibling directory:
+
+```bash
+bash "<skill-dir>/../solve-issue/scripts/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)" \
+  --main-root "${MAIN_ROOT:-}" --dep-scripts "<skill-dir>/../dep-install/scripts"
+```
+
+- It prints `CHECKS: pass` — run a plain `git push`: never forced, no `--force` or
+  `--force-with-lease`. A rejected push is reported in the Summary, never retried with force.
+- Anything else — stop here, show the failing output, and do not push. Step 5.5 still records the
+  commit; the Summary says the push was not made and why.
+
+On any other PR, do not push — leave that to the user.
 
 ## Step 5.5 — Record what crew-afk missed
 
@@ -187,7 +201,7 @@ and never stops the skill.
 
 ## Step 6 — Summary
 
-Print a markdown summary with three sections, plus a fourth on a crew-afk PR (Step 5.5):
+Print a markdown summary with three sections, plus the crew-afk PR sections (Steps 5 and 5.5):
 
 ### Addressed
 
@@ -205,6 +219,22 @@ One bullet per dismissed comment with the reason.
 
 How many lines Step 5.5 appended to `.scratch/<slug>/reviews/escaped.md`, or the error if the write
 failed.
+
+### Ready (crew-afk PRs only)
+
+Only after Step 5's push succeeded, read the `<!-- crew-afk:draft <kinds> -->` marker in the PR
+body's crew-afk block (Step 1; `<kinds>` is a comma-separated list of `findings`, `blocked`,
+`stalled`, `capped`, `wall-cap`, `integration`). When the marker names `findings` and nothing else,
+and every `crew-finding:` comment fetched in Step 2 was handled this run (fixed, or a decision
+recorded in Step 3), print:
+
+```
+once CI is green: gh pr ready <n>
+```
+
+Otherwise — no push, no marker, any other kind in it, or a `crew-finding:` comment left unhandled —
+print nothing here. The skill never runs `gh pr ready` and never waits on CI: marking the PR ready
+is the developer's call once CI passes.
 
 ## Unattended mode (`--auto`)
 
@@ -224,6 +254,7 @@ confirmation or question** — nobody is there to answer. Only the differences a
   `bash "<skill-dir>/scripts/push-rework.sh" --message <msg> --files <list> [--ci-workflow <file>]`,
   which applies the round cap, protected-path and checks guards. If it refuses (non-zero exit) it
   has already commented on the PR and labelled it `needs-human`: stop, do not retry.
+  This holds on a crew-afk PR too — `push-rework.sh`, not the crew-afk push above.
 - **Reply on every thread you handled** — actionable, debatable or dismissed — with
   `bash "<skill-dir>/scripts/reply-thread.sh" <thread-id> <body>`: what changed (with the commit sha),
   or why nothing did.
