@@ -12,7 +12,7 @@
  * no machine-specific path. Codex asks git for the worktree's git dirs, so `cwd` is a real
  * linked worktree.
  *
- * Also checks orchestrator/platforms.json against install.sh's PLATFORMS and skill-dirs.mjs.
+ * Also checks orchestrator/platforms.json against install.sh's platform helper and skill-dirs.mjs.
  */
 
 import { test } from "node:test";
@@ -119,9 +119,11 @@ for (const platform of PLATFORMS) {
 }
 
 test("platforms.json has one entry per install.sh platform, each with exactly the four D1 fields", () => {
-  const line = readFileSync(join(REPO, "install.sh"), "utf8").match(/^PLATFORMS=\(([^)]*)\)/m);
-  assert.ok(line, "install.sh defines PLATFORMS=(…)");
-  assert.deepEqual([...PLATFORMS].sort(), line[1].trim().split(/\s+/).sort());
+  // install.sh's PLATFORMS comes from the helper it sources, which reads platforms.json.
+  const r = spawnSync("bash", ["-c", 'source "$SCRIPT_DIR/scripts/lib/platforms.sh" && printf "%s\\n" "${PLATFORMS[@]}"'],
+    { env: { ...process.env, SCRIPT_DIR: REPO, REPO_ROOT: REPO }, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual([...PLATFORMS].sort(), r.stdout.trim().split(/\s+/).sort());
   for (const p of PLATFORMS) {
     assert.deepEqual(Object.keys(PLATFORMS_JSON[p]).sort(), ["configDir", "configDirEnv", "projectSkills", "userSkills"], p);
     for (const v of Object.values(PLATFORMS_JSON[p])) assert.equal(typeof v, "string", p);

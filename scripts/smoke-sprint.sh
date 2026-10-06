@@ -3,7 +3,7 @@ set -uo pipefail
 
 # smoke-sprint.sh — run one real crew-afk sprint end to end on one platform, from a fresh repo.
 #
-# Usage: scripts/smoke-sprint.sh <claude|copilot|pi|codex> [--demo] [--dir <path>] [--setup-only] [-- <crew-afk run args>...]
+# Usage: scripts/smoke-sprint.sh <platform> [--demo] [--dir <path>] [--setup-only] [-- <crew-afk run args>...]
 #
 # Builds a throwaway git repo from scripts/smoke-sprint/template/ (a tiny Node project, `npm test`
 # = `node --test`) with one ready issue from scripts/smoke-sprint/feature/ (`.scratch/subtract/`:
@@ -41,14 +41,16 @@ set -uo pipefail
 #
 # Maintainer-only: ships to no consumer. A real run calls the platform's CLI and costs money.
 
-PLATFORMS=(claude copilot pi codex)
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+# <platform> is any key of orchestrator/platforms.json.
+PLATFORMS=()
+while IFS= read -r _p; do PLATFORMS+=("${_p%$'\r'}"); done < <(jq -r 'keys_unsorted[]' "$ROOT/orchestrator/platforms.json")
 FIXTURES="$SCRIPT_DIR/smoke-sprint"
 SLUG=subtract
 RECORD=0
 
-usage() { echo "usage: $0 <claude|copilot|pi|codex> [--demo] [--dir <path>] [--setup-only] [-- <crew-afk run args>...]" >&2; exit 2; }
+usage() { echo "usage: $0 <$(IFS='|'; echo "${PLATFORMS[*]}")> [--demo] [--dir <path>] [--setup-only] [-- <crew-afk run args>...]" >&2; exit 2; }
 fail() { record FAIL; echo "SMOKE: FAIL: $*"; exit 1; }
 
 # One results row for a demo run that reached the sprint: cost and dispatch time from the sprint

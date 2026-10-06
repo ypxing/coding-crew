@@ -78,11 +78,10 @@ const noVer = (e) => { const c = { ...(e || {}) }; delete c.version; return JSON
 function shipped(section, name, e) {
   const p = [];
   if (e['source-dir']) p.push(`${section === 'skills' ? 'skills' : 'agents'}/${e['source-dir']}`);
-  const as = (e.assets && e.assets.source) || (e.install && typeof e.install === 'object' && e.install.assets && e.install.assets.source);
+  const as = e.assets && e.assets.source;
   if (as) p.push(as);
   if (section === 'skills') {
     for (const s of e.scripts || []) p.push(`scripts/skill-utils/git-workflow/${s}`);
-    if (e['source-dir']) for (const list of Object.values(e['platform-files'] || {})) for (const f of list) p.push(`skills/${e['source-dir']}/${f}`);
   }
   return p;
 }

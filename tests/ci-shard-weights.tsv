@@ -6,7 +6,7 @@
 10	address-pr-comments-scripts.bats
 24	retired-agents.bats
 6	ci-test-shard.bats
-62	codex-platform.bats
+200	platform-install.bats
 2	configure-tracker-skill.bats
 17	copilot-crew-coder-env-setup.bats
 26	copilot-platform.bats
@@ -63,7 +63,6 @@
 77	orchestrator-sprint-integration.bats
 40	orchestrator-sprint-findings-triage.bats
 7	orchestrator.bats
-35	pi-platform.bats
 1	planning-skills-preamble.bats
 7	promote-findings-github.bats
 19	prompt-integrity.bats

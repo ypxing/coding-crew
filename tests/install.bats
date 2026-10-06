@@ -2,6 +2,8 @@
 
 # Tracer bullet test - verify basic install creates expected file
 
+load helpers/platforms
+
 setup() {
   export TEMP_DIR=$(mktemp -d)
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -60,7 +62,7 @@ teardown() {
 @test "to-issues installs references/ beside SKILL.md for every platform" {
   cd "$SCRIPT_DIR"
   local platform skill_md dir count=0
-  for platform in claude copilot pi codex; do
+  for platform in "${PLATFORMS[@]}"; do
     TARGET_REPO="$TEMP_DIR" ./install.sh "$platform" --skill to-issues > /dev/null
   done
   while IFS= read -r skill_md; do
@@ -70,7 +72,7 @@ teardown() {
     [ -f "$dir/references/expand-contract.md" ]
     count=$((count + 1))
   done < <(find "$TEMP_DIR" -path '*/skills/to-issues/SKILL.md')
-  [ "$count" -eq 4 ]
+  [ "$count" -eq "${#PLATFORMS[@]}" ]
 }
 
 @test "install sweeps retired files an earlier version left in the skill tree" {
@@ -359,7 +361,12 @@ teardown() {
   run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
   [ "$status" -eq 0 ]
 
-  for dir in .claude .copilot .pi .codex .agents .github; do
+  # Every top-level dir any platform installs into or keeps config in, from platforms.json.
+  local dirs=() p f
+  for p in "${PLATFORMS[@]}"; do
+    for f in projectSkills userSkills configDir; do dirs+=("$(platform_field "$p" "$f" | cut -d/ -f1)"); done
+  done
+  for dir in $(printf '%s\n' "${dirs[@]}" | sort -u); do
     if [ -d "$TEMP_DIR/$dir" ]; then
       echo "REPO_ROOT was: $TEMP_DIR"
       echo "--- uninstall output ---"

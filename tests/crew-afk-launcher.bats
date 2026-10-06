@@ -14,6 +14,7 @@
 # rather than a copy of this file.
 
 load helpers/render
+load helpers/platforms
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -36,7 +37,7 @@ launcher_body() {
 
 @test "launcher: the four platforms render from one shared body, with no per-platform SKILL.md" {
   [ -f "$AFK_DIR/SKILL.md" ]
-  for p in claude codex copilot pi; do
+  for p in "${PLATFORMS[@]}"; do
     [ ! -e "$AFK_DIR/$p.SKILL.md" ] || { echo "$p.SKILL.md still exists" >&2; return 1; }
     [ -f "$(launcher_body "$p")" ] || { echo "$p does not render" >&2; return 1; }
     ! grep -q '{{' "$(launcher_body "$p")"
@@ -177,8 +178,6 @@ launcher_body() {
 }
 
 @test "launcher: no platform ships a bash dispatcher" {
-  run jq -r '.skills["crew-afk"]["platform-files"] // {} | tostring' "$REPO_ROOT/registry.json"
-  [[ "$output" != *dispatch* ]]
   [ ! -e "$REPO_ROOT/skills/crew-afk/scripts/dispatch-agent.sh" ]
   [ ! -e "$REPO_ROOT/skills/crew-afk/scripts/dispatch-codex-agent.sh" ]
 }
