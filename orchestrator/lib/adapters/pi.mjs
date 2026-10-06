@@ -4,7 +4,6 @@
  * docs/json.md.
  */
 import { safePreview } from "./common.mjs";
-import { ROLE_ARGS } from "./role-args.mjs";
 
 /** `$ <command>` for bash, a path for read/write/edit; null for any other tool (a JSON preview instead). */
 function summarize(tool, args) {
@@ -20,20 +19,21 @@ export default {
   cmd: "pi",
   defaultParallel: 3,
   defaultModel: undefined,
-  promptVia: "argv",
+  coAuthor: "Co-authored-by: pi <noreply@earendil.works>",
   requiredFlags: ["--mode", "--append-system-prompt"],
 
-  /** The prompt is pi's positional argument; `protocol` is the role's rendered protocol (none for a plain role). */
-  argv({ model, role, protocol, prompt, label }) {
+  /** The prompt is pi's positional argument; the role's protocol goes in as `--append-system-prompt`. */
+  build({ model, policy, protocol, prompt, label }) {
     const args = ["-p", "-n", label, "--mode", "json"];
     if (model && model !== "inherit") args.push("--model", model);
-    args.push(...this.roleArgs(role));
+    if (policy) args.push(...this.policyArgs(policy));
     if (protocol) args.push("--append-system-prompt", protocol);
     args.push(prompt);
-    return args;
+    return { args };
   },
 
-  roleArgs: (role) => ROLE_ARGS.pi[role] ?? [],
+  // pi names an allowlist; it ignores tool names it does not know, so these are pi's own.
+  policyArgs: ({ readOnly }) => ["--tools", readOnly ? "read,bash" : "read,bash,edit,write"],
 
   traceLine(evt, agent) {
     if (evt.type === "tool_execution_start") {

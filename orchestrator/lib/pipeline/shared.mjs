@@ -8,6 +8,7 @@ import { dirname, join, relative, resolve } from "node:path";
 
 import { getTracker } from "../tracker.mjs";
 import { queuePaneNotice } from "../pane-host/index.mjs";
+import { ADAPTERS } from "../adapters/index.mjs";
 
 // Retention-reason tags, written by the gates and read back by resumeRoute. Defined once
 // so writer and reader cannot drift. The two verification tags carry triage's verdict.
@@ -53,10 +54,10 @@ export function taggedReason(tag, summary) {
 /**
  * The runtime and model `role` dispatches on (crew-config.mjs's resolveCrew).
  */
-export function roleBinding(ctx, role) {
+export function roleBinding(ctx, role, adapters = ADAPTERS) {
   const { runtime, model } = ctx.options.crew[role];
-  // afk.limits.<role>.usd — claude's flag, so no other runtime is handed one.
-  const maxBudgetUsd = runtime === "claude" ? (ctx.options.limitsUsd?.[role] ?? null) : null;
+  // afk.limits.<role>.usd — only a runtime whose adapter has a budget flag is handed one.
+  const maxBudgetUsd = adapters[runtime]?.budget ? (ctx.options.limitsUsd?.[role] ?? null) : null;
   return { runtime, model, maxBudgetUsd };
 }
 

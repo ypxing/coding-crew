@@ -1,20 +1,27 @@
 /**
  * skill-dirs.mjs — where each platform's installer puts a skill, as candidate dirs in lookup order.
  *
- * Project scope and user scope differ per platform (pi nests under .pi/agent/, Copilot reads
- * .github/ in a repo but ~/.copilot/ at user level), so both lists are spelled out rather than
- * derived. A platform's config-dir env var (install.sh's resolve_dest) relocates its user-level
- * dir; codex has none for skills, which it always reads from .agents/skills.
+ * Every platform's dirs come from orchestrator/platforms.json (shipped with the orchestrator, so
+ * the installed copy sits at the same relative path): `projectSkills` in a repo, `userSkills`
+ * under $HOME. At user scope a dir under `configDir` moves to `$<configDirEnv>` when that is set
+ * (install.sh's rule); any other dir stays under $HOME — codex's `.agents/skills` is not under
+ * `.codex`, so CODEX_HOME relocates no skill dir.
  */
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const PROJECT = { pi: ".pi/skills", claude: ".claude/skills", codex: ".agents/skills", copilot: ".github/skills" };
-const USER = { pi: ".pi/agent/skills", claude: ".claude/skills", codex: ".agents/skills", copilot: ".copilot/skills" };
-const CONFIG_DIR_ENV = { claude: "CLAUDE_CONFIG_DIR", copilot: "COPILOT_HOME", pi: "PI_CODING_AGENT_DIR" };
+const PLATFORM_DATA = JSON.parse(readFileSync(new URL("../platforms.json", import.meta.url), "utf8"));
 
-/** `platform`'s own entry first, then the others. */
-const ownFirst = (map, platform) => [map[platform], ...Object.entries(map).filter(([p]) => p !== platform).map(([, v]) => v)].filter(Boolean);
+/** `platform`'s own entry first, then the others, in platforms.json's order. */
+const ownFirst = (platform) => [platform, ...Object.keys(PLATFORM_DATA).filter((p) => p !== platform)].filter((p) => PLATFORM_DATA[p]);
+
+/** `p`'s user-scope skills dir relocated under its config-dir env var, or null when unset or not under its config dir. */
+function relocatedUserSkills(p, env) {
+  const { userSkills, configDir, configDirEnv } = PLATFORM_DATA[p];
+  if (!env[configDirEnv] || !userSkills.startsWith(`${configDir}/`)) return null;
+  return join(env[configDirEnv], userSkills.slice(configDir.length + 1));
+}
 
 /**
  * `<skill>`'s install dirs, best first: the project install (a pinned copy wins), the relocated
@@ -23,9 +30,10 @@ const ownFirst = (map, platform) => [map[platform], ...Object.entries(map).filte
  */
 export function skillDirCandidates(mainRoot, platform, skill, env = process.env) {
   const home = env.HOME || homedir();
+  const order = ownFirst(platform);
   return [
-    ...ownFirst(PROJECT, platform).map((d) => join(mainRoot, d, skill)),
-    ...ownFirst(CONFIG_DIR_ENV, platform).map((v) => (env[v] ? join(env[v], "skills", skill) : null)),
-    ...ownFirst(USER, platform).map((d) => join(home, d, skill)),
-  ].filter(Boolean);
+    ...order.map((p) => join(mainRoot, PLATFORM_DATA[p].projectSkills, skill)),
+    ...order.map((p) => relocatedUserSkills(p, env)).filter(Boolean).map((d) => join(d, skill)),
+    ...order.map((p) => join(home, PLATFORM_DATA[p].userSkills, skill)),
+  ];
 }

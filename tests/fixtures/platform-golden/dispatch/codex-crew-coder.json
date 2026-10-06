@@ -17,8 +17,6 @@
     "golden-model",
     "-c",
     "model_reasoning_effort=\"medium\"",
-    "--output-last-message",
-    "<TMP>/repo/.scratch/golden/dispatch/alpha.report.md",
     "-"
   ],
   "input": "<PROTOCOL crew-coder sha256:50fb747bf203aea3>\n\n---\n\n# Task\n\nImplement the alpha issue.\n",

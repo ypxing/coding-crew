@@ -3,7 +3,6 @@
  * and the cost/session/resume/budget behaviour, moved out of dispatch.mjs.
  */
 import { EMPTY_RESULT_META, formatArgs, lastEvent, safePreview } from "./common.mjs";
-import { ROLE_ARGS } from "./role-args.mjs";
 
 /** One assistant event's whole token usage: prompt, cache and output. */
 function usageTokens(u) {
@@ -14,31 +13,41 @@ export default {
   cmd: "claude",
   defaultParallel: 3,
   defaultModel: "sonnet",
-  // The CLI takes the system prompt from a file, and the prompt as its positional argument.
-  promptVia: "argv",
-  // The protocol goes in as `--append-system-prompt-file`.
-  protocolVia: "file",
+  coAuthor: "Co-authored-by: Claude Code <claude@anthropic.com>",
   // Cost arrives in the final `result` event: a dispatch killed before it has an unknown cost.
   reportsCost: true,
   // Flags the dispatch argv relies on for a full-permission headless run; `doctor` checks `--help` lists them.
   requiredFlags: ["--permission-mode", "--output-format", "--append-system-prompt-file", "--add-dir"],
+  // The one alias order this CLI knows: a reviewer/triage tier below the coder's is warned about.
+  modelTiers: { haiku: 0, sonnet: 1, opus: 2 },
+  // An alias maps through the child CLI's own env, which every dispatch inherits.
+  modelAliasEnv: {
+    haiku: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    sonnet: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    opus: "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  },
 
   /**
    * bypassPermissions removes the *prompt*, not an allowlist. stream-json requires --verbose, or
-   * claude refuses to start. `protocolFile` is the rendered role protocol (none for a plain role).
-   * The prompt sits right after `-p`: `--add-dir` and `--disallowedTools` are variadic and would
-   * swallow a prompt that followed them.
+   * claude refuses to start. The protocol goes in from its file (`--append-system-prompt-file`),
+   * the prompt as the positional argument right after `-p`: `--add-dir` and `--disallowedTools`
+   * are variadic and would swallow a prompt that followed them.
    */
-  argv({ mainRoot, model, role, protocolFile, prompt }) {
+  build({ mainRoot, model, policy, protocolFile, prompt }) {
     const args = ["-p", prompt, "--permission-mode", "bypassPermissions", "--add-dir", mainRoot];
     if (protocolFile) args.push("--append-system-prompt-file", protocolFile);
     args.push("--output-format", "stream-json", "--verbose");
     if (model) args.push("--model", model);
-    args.push(...this.roleArgs(role));
-    return args;
+    if (policy) args.push(...this.policyArgs(policy));
+    return { args };
   },
 
-  roleArgs: (role) => ROLE_ARGS.claude[role] ?? [],
+  /** Read-only removes the edit tools; no sub-agents removes Agent. */
+  policyArgs({ readOnly, subagents }) {
+    const denied = [...(readOnly ? ["Edit", "Write", "NotebookEdit"] : []), ...(subagents ? [] : ["Agent"])];
+    return denied.length ? ["--disallowedTools", ...denied] : [];
+  },
+
   // A fix round continuing the coder's own earlier session.
   resume: (id) => ["--resume", id],
   // claude ends the session with `subtype: error_max_budget_usd` (exit 1, no result).

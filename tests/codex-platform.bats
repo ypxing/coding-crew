@@ -43,10 +43,12 @@ teardown() {
   [ ! -f "$TEMP_DIR/.codex/agents/crew-coder.toml" ]
 }
 
-@test "squash-commits.sh accepts --platform codex" {
+@test "the codex adapter's co-author trailer credits Codex" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$SCRIPT_DIR"
-  run grep -n 'PLATFORM" = "codex"' skills/crew-afk/scripts/squash-commits.sh
+  run node -e 'import("./orchestrator/lib/adapters/index.mjs").then(({ ADAPTERS }) => console.log(ADAPTERS.codex.coAuthor))'
   [ "$status" -eq 0 ]
+  [ "$output" = "Co-authored-by: Codex <noreply@openai.com>" ]
 }
 
 @test "codex crew-afk skill does not reference pi paths or the pi dispatch script" {
