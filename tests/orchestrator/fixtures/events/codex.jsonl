@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"th_1"}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"bash -lc 'npm test'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"bash -lc 'npm test'","aggregated_output":"1 failing","exit_code":1,"status":"failed"}}
+{"type":"item.started","item":{"id":"item_2","type":"command_execution","command":"bash -lc 'cat src/a.js'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"command_execution","command":"bash -lc 'cat src/a.js'","aggregated_output":"x","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"One test fails; fixing it."}}
+{"type":"turn.failed","error":{"message":"stream disconnected"}}

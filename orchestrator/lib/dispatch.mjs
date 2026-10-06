@@ -29,6 +29,7 @@ import { preflightPaneHost, spawnDispatch } from "./pane-host/index.mjs";
 import { ADAPTERS } from "./adapters/index.mjs";
 import { ARGV_PROMPT_LIMIT_BYTES, EMPTY_RESULT_META, assertArgvFits } from "./adapters/common.mjs";
 import { renderRolePrompt, roleOfAgent } from "./adapters/render.mjs";
+import { formatJsonTraceLine } from "./adapters/trace.mjs";
 
 export { ARGV_PROMPT_LIMIT_BYTES, renderRolePrompt };
 
@@ -115,23 +116,6 @@ export function buildDispatch(platform, spec) {
     capture: "stdout",
     jsonEvents: platform,
   };
-}
-
-/**
- * One [TOOL]/[TOOL-ERROR] line per recognised event, null for anything else including an
- * unparseable line — observability never fails the dispatch. No timestamp or slug;
- * dispatch() adds both.
- */
-export function formatJsonTraceLine(platform, agent, line) {
-  const adapter = ADAPTERS[platform];
-  if (!adapter) return null;
-  let evt;
-  try {
-    evt = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  return adapter.traceLine(evt, agent);
 }
 
 /**

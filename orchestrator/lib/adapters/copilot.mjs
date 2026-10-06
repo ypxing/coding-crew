@@ -2,7 +2,7 @@
  * copilot adapter: `copilot -p <prompt> --output-format json`. The CLI allows the prompt only as
  * the `-p` argument, so it is the one platform whose prompt must go via argv.
  */
-import { formatArgs, lastEvent, safePreview } from "./common.mjs";
+import { lastEvent, normalized, safePreview, str } from "./common.mjs";
 import { ROLE_ARGS } from "./role-args.mjs";
 
 export default {
@@ -29,16 +29,24 @@ export default {
 
   roleArgs: (role) => ROLE_ARGS.copilot[role] ?? [],
 
-  traceLine(evt, agent) {
+  /** A tool start, a failed tool, a `session.error`, or an `assistant.message`'s text. */
+  normalize(evt) {
+    const d = evt.data ?? {};
     if (evt.type === "tool.execution_start") {
-      return `[TOOL] agent=${agent} tool=${evt.data?.toolName ?? "?"} ${formatArgs(evt.data?.arguments)}`;
+      const args = d.arguments;
+      return normalized("tool", {
+        tool: d.toolName ?? "?",
+        command: str(args?.command),
+        path: str(args?.file_path ?? args?.path),
+        args,
+        id: str(d.toolCallId),
+      });
     }
-    if (evt.type === "tool.execution_complete" && evt.data?.success === false) {
-      return `[TOOL-ERROR] agent=${agent} toolCallId=${evt.data?.toolCallId ?? "?"} error=${safePreview(evt.data?.error?.message)}`;
+    if (evt.type === "tool.execution_complete" && d.success === false) {
+      return normalized("tool-error", { id: str(d.toolCallId), detail: `toolCallId=${d.toolCallId ?? "?"} error=${safePreview(d.error?.message)}` });
     }
-    if (evt.type === "session.error") {
-      return `[AGENT-ERROR] agent=${agent} type=${evt.data?.errorType ?? "?"} error=${safePreview(evt.data?.message)}`;
-    }
+    if (evt.type === "session.error") return normalized("agent-error", { detail: `type=${d.errorType ?? "?"} error=${safePreview(d.message)}` });
+    if (evt.type === "assistant.message" && str(d.content, true)) return normalized("text", { detail: d.content });
     return null;
   },
 

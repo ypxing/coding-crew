@@ -92,7 +92,7 @@ child's pid and exit code under `<outFile>.term/`, and polls those:
 stdout goes straight to a file that crew-afk tails, so traces, heartbeats and report
 parsing are the headless path's. What the tab shows comes from a separate follower
 (`follow-output.mjs`), so a display failure can't reach the worker. It
-shows stdout's JSON stream as `[TOOL]` lines, plus claude's assistant text. The tab is a read-only view
+shows stdout's JSON stream as `[TOOL]` lines, plus the assistant's text for an adapter that declares `liveText` (claude). The tab is a read-only view
 of the headless run, not the agent's interactive UI. The worker gets exactly crew-afk's env,
 through a 0600 `env.sh` that `run.sh` deletes once sourced. It also unsets whatever the
 terminal's shell set that crew-afk doesn't have, such as a `GH_TOKEN` from a shell profile.

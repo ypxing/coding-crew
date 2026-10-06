@@ -36,10 +36,10 @@ import {
   dispatchPlain,
   extractFinalText,
   extractResultMeta,
-  formatJsonTraceLine,
   preflight,
   DEFAULT_PARALLEL,
 } from "../../orchestrator/lib/dispatch.mjs";
+import { formatJsonTraceLine } from "../../orchestrator/lib/adapters/trace.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
 const SCRIPTS = "skills/crew-afk/scripts";
@@ -179,12 +179,12 @@ test("codex's trace lines and final text match what the bash dispatcher produced
   assert.deepEqual(
     stream.map((l) => formatJsonTraceLine("codex", "crew-coder", l)).filter(Boolean),
     [
-      "[TOOL] agent=crew-coder item=command_execution $ npm test",
-      "[TOOL] agent=crew-coder item=file_change src/a.js",
-      '[TOOL] agent=crew-coder item=mcp_tool_call args={"type":"mcp_tool_call","server":"s"}',
-      "[TOOL-ERROR] agent=crew-coder item=command_execution exit=2",
-      "[TOOL-ERROR] agent=crew-coder turn.failed",
-      "[TOOL-ERROR] agent=crew-coder error",
+      "[TOOL] agent=crew-coder tool=shell $ npm test",
+      "[TOOL] agent=crew-coder tool=file_change src/a.js",
+      '[TOOL] agent=crew-coder tool=mcp_tool_call args={"type":"mcp_tool_call","server":"s"}',
+      "[TOOL-ERROR] agent=crew-coder tool=shell exit=2",
+      "[AGENT-ERROR] agent=crew-coder type=turn.failed",
+      "[AGENT-ERROR] agent=crew-coder type=error",
     ],
   );
   assert.equal(extractFinalText("codex", stream), "all done");

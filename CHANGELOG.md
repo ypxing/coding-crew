@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: each platform adapter normalizes its CLI's events to one shape (`normalize`), and the trace log, the pane view
+  and full-suite deviation detection read that shape with no per-platform code. codex's trace lines now read `tool=shell`
+  instead of `item=command_execution`, and its `turn.failed` / `error` events are logged as `[AGENT-ERROR]`; deviation
+  detection no longer counts a `command` field outside a tool call (#309).
 - installer: `install.sh`/`uninstall.sh` take the platform list and every skill destination from `orchestrator/platforms.json`
   (one shared helper, `scripts/lib/platforms.sh`); `registry.json` skill entries drop `install`/`install-<platform>`, and
   per-platform skill bodies (`<platform>.SKILL.md`, `body`, `platform-files`) are gone. Installed trees are unchanged; every

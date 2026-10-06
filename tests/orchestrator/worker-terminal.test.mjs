@@ -198,6 +198,22 @@ test("the terminal shows a claude event stream as trace lines, not raw JSON", ()
   assert.equal(lines.length, 2);
 });
 
+test("the terminal shows no assistant text for a stream whose adapter has no liveText", () => {
+  for (const platform of ["codex", "copilot", "pi"]) {
+    const { root } = fixture();
+    const out = join(root, "out");
+    const rc = join(root, "rc");
+    writeFileSync(out, readFileSync(new URL(`./fixtures/events/${platform}.jsonl`, import.meta.url), "utf8"));
+    writeFileSync(rc, "0\n");
+    const follower = new URL("../../orchestrator/lib/pane-host/follow-output.mjs", import.meta.url).pathname;
+    const r = spawnSync(process.execPath, [follower, out, rc, platform, "crew-coder"], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const lines = r.stdout.trim().split("\n");
+    assert.ok(lines.every((l) => /^\[(TOOL|TOOL-ERROR|AGENT-ERROR)\] /.test(l)), `${platform}: ${r.stdout}`);
+    assert.ok(!r.stdout.includes("fixing it"), platform);
+  }
+});
+
 // pi and codex's bash dispatchers write the raw event stream to stdout and their own
 // [TOOL] lines, plus the CLI's errors, to stderr: the terminal shows stderr for them.
 test("the terminal follows stdout for a parsed event stream, stderr for a bash dispatcher", async () => {
