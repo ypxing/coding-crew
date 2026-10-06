@@ -1,0 +1,7 @@
+HOME/.coding-crew/ /
+HOME/.coding-crew/docs/ /
+HOME/.coding-crew/docs/issue-tracker.md 40034c206cbf8cd5b5b73bfc954445a89a9acd26
+HOME/.coding-crew/docs/templates/ /
+HOME/.coding-crew/docs/templates/trackers/ /
+HOME/.coding-crew/docs/templates/trackers/github.md b7028a351979c85ebff1617e26c952df91a7193d
+HOME/.coding-crew/docs/templates/trackers/local.md 40034c206cbf8cd5b5b73bfc954445a89a9acd26
