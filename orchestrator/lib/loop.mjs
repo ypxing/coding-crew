@@ -361,6 +361,17 @@ export async function runSprint(ctx) {
     break;
   }
 
+  // The closing review: what merged after the run's first feature review (the fix issue, integration
+  // fixes) reaches the PR reviewed. Report-only — the feature keeps its one fix issue — and only when a
+  // review ran earlier in the run: featureReviewRange skips an unchanged tip, so a run where nothing
+  // merged since dispatches nothing. Past the wall-clock cap it is not run; a red last check skips it
+  // (runFeatureReview), and a skip adds no summary entry.
+  const reviewedThisRun = featureReviews.some((r) => r.report && !r.failed);
+  if (reviewedThisRun && !options.dryRun && !wallElapsed()) {
+    const review = await runFeatureReview(ctx, { integration, wallCap: null, promote: false, drain: featureReviews.length + 1 });
+    if (!review.skipped) featureReviews.push(review);
+  }
+
   // Unclaimed because of the cap: claimable issues, listed before anything releases them.
   const wallUnclaimed = unclaimedByCap().map((i) => i.slug);
   const wallCap = wallUnclaimed.length || flushSkipped ? { minutes: options.maxWallMinutes, unclaimed: wallUnclaimed } : null;
@@ -522,20 +533,33 @@ function featureReviewLine(sprint, r, n, total) {
  * attempt cap (CREW_MAX_ROUNDS), and the integration check passed or was cached. A check that
  * could not run (`skipped`) is not green; one the user switched off is not held against it.
  */
-function notGreenReasons({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true, wallCap = null, unfixedFindings = [] }) {
-  const reasons = [];
-  if (wallCap) reasons.push(`the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length ? `${wallCap.unclaimed.length} issue(s) unclaimed` : "Phase 2 fix issues stayed parked"})`);
-  else if (exitCode !== 0) reasons.push("the run stalled with issues unfinished");
-  if (blocked.length) reasons.push(`${blocked.length} issue(s) blocked`);
-  if (capped) reasons.push("the run stopped at its per-issue attempt cap");
-  if (integration?.status === "skipped") reasons.push(`the integration check was skipped (${integration.reason})`);
-  else if (!integration && integrationEnabled) reasons.push("the integration check did not run");
-  else if (integration && !["pass", "cached"].includes(integration.status)) reasons.push(`the integration check ${integration.status}`);
+function notGreenCauses({ exitCode = 0, blocked = [], integration = null, capped = false, integrationEnabled = true, wallCap = null, unfixedFindings = [] }) {
+  const causes = [];
+  const add = (kind, text) => causes.push({ kind, text });
+  if (wallCap) add("wall-cap", `the ${wallCap.minutes}-minute wall-clock cap was hit (${wallCap.unclaimed.length ? `${wallCap.unclaimed.length} issue(s) unclaimed` : "Phase 2 fix issues stayed parked"})`);
+  else if (exitCode !== 0) add("stalled", "the run stalled with issues unfinished");
+  if (blocked.length) add("blocked", `${blocked.length} issue(s) blocked`);
+  if (capped) add("capped", "the run stopped at its per-issue attempt cap");
+  if (integration?.status === "skipped") add("integration", `the integration check was skipped (${integration.reason})`);
+  else if (!integration && integrationEnabled) add("integration", "the integration check did not run");
+  else if (integration && !["pass", "cached"].includes(integration.status)) add("integration", `the integration check ${integration.status}`);
   if (unfixedFindings.length) {
     const names = unfixedFindings.slice(0, 5).map((f) => `${f.location} (${f.severity})`).join(", ");
-    reasons.push(`${unfixedFindings.length} feature review finding(s) past the promotion cap or the fix issue's limit were reported, not fixed: ${names}${unfixedFindings.length > 5 ? ", …" : ""}`);
+    add("findings", `${unfixedFindings.length} feature review finding(s) past the promotion cap or the fix issue's limit were reported, not fixed: ${names}${unfixedFindings.length > 5 ? ", …" : ""}`);
   }
-  return reasons;
+  return causes;
+}
+
+const notGreenReasons = (state) => notGreenCauses(state).map((c) => c.text);
+
+/**
+ * The PR block's machine-readable draft reason (`<!-- crew-afk:draft findings,blocked -->`), one token
+ * per kind of not-green cause, or "" when the run is green. `/address-pr-comments` reads it to tell a
+ * PR that is a draft only for its findings from one that is a draft for anything else.
+ */
+export function draftMarker(state) {
+  const kinds = [...new Set(notGreenCauses(state).map((c) => c.kind))];
+  return kinds.length ? `<!-- crew-afk:draft ${kinds.join(",")} -->` : "";
 }
 
 export const isGreen = (state) => notGreenReasons(state).length === 0;
@@ -601,7 +625,7 @@ async function pullRequest(ctx, tracker, integration, { stalled = false, capped 
   const args = ["--closes-file", closesFile];
   if (!green) {
     const note = join(sprint.env.SPRINT_DIR, "pr-note.md");
-    const lines = [`**Not green:** ${reasons.join("; ")}. This PR is a draft.`];
+    const lines = [`**Not green:** ${reasons.join("; ")}. This PR is a draft.`, draftMarker(state)];
     if (blockedSlugs.length) {
       lines.push("", "Blocked issues:", ...blockedSlugs.map((slug) => {
         // A blocked issue with a branch keeps its reason in retention; one without (a failing
