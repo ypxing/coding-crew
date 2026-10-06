@@ -121,6 +121,25 @@ branches() {
   ! git rev-parse --verify -q feature/PROJ-12-foo
 }
 
+@test "a sprint.env pinning feature/PROJ-12-foo, resumed with --jira PROJ-12, prints no warning" {
+  run session_init --feature-slug foo --jira PROJ-12
+  [ "$status" -eq 0 ]
+  git checkout -q main
+  run --separate-stderr session_init --feature-slug foo --jira PROJ-12
+  [ "$status" -eq 0 ]
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/PROJ-12-foo" ]
+  [[ "$stderr" != *"WARNING"* ]]
+}
+
+@test "local tracker on the branch --jira would name, no sprint.env, prints no warning" {
+  write_tracker_config local
+  git checkout -q -b feature/PROJ-12-foo
+  run --separate-stderr session_init --feature-slug foo --jira PROJ-12
+  [ "$status" -eq 0 ]
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/PROJ-12-foo" ]
+  [[ "$stderr" != *"WARNING"* ]]
+}
+
 @test "local tracker off the default branch with no sprint.env keeps the branch, warning that --jira was ignored" {
   write_tracker_config local
   git checkout -q -b some-other-branch

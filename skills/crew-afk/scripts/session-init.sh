@@ -70,9 +70,13 @@ feature_branch_name() {
   printf '%s\n' "$name"
 }
 
-# --jira only names a branch this run creates; a branch already chosen keeps its name.
+# --jira only names a branch this run creates; a branch already chosen keeps its name. That name
+# is only worth a warning when it is not the one --jira would have built.
 warn_jira_ignored() {
   [ -n "$JIRA_KEY" ] || return 0
+  local expected
+  expected=$(feature_branch_name "$FEATURE_SLUG" 2>/dev/null) || expected=""
+  [ "$(git rev-parse --abbrev-ref HEAD)" != "$expected" ] || return 0
   echo "WARNING: --jira $JIRA_KEY ignored: $1" >&2
 }
 
