@@ -199,8 +199,9 @@ skill lookup, capability checks, the squash trailer) is derived from those two.
    the contract: `cmd`, `defaultParallel`, `defaultModel`, `coAuthor` (the squash commit's trailer line), `requiredFlags`,
    `helpArgs?` (doctor), `build(spec) -> { args, input? }` (spec: `cwd`, `mainRoot`, `model`, `policy`, `protocol` and
    `protocolFile` — the rendered protocol as text and as `<outFile>.protocol.md` — `prompt`, `outFile`, `label`),
-   `policyArgs(policy)` (a `ROLE_POLICY` entry → flags), `finalText(lines)`, `traceLine(evt, agent)`; optional
-   capabilities `resume(id)`, `budget(usd)`, `resultMeta(lines)`, `env`, `modelTiers`, `modelAliasEnv`. A capability the
+   `policyArgs(policy)` (a `ROLE_POLICY` entry → flags), `finalText(lines)`, `normalize(evt)` (a raw event → the
+   one shape trace, pane text and deviation detection read); optional
+   capabilities `liveText`, `resume(id)`, `budget(usd)`, `resultMeta(lines)`, `env`, `modelTiers`, `modelAliasEnv`. A capability the
    adapter lacks is off for that runtime (no resume, `afk.limits` reported ignored), never a name check elsewhere.
 3. **Conformance test** — `node --test tests/orchestrator/platforms.test.mjs` fails, naming the platform, until both exist
    and the adapter has every required field; pin its `policyArgs` per role there, and add its dispatch golden

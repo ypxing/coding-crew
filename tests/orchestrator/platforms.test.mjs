@@ -26,6 +26,7 @@ const REQUIRED = {
   build: "function",
   policyArgs: "function",
   finalText: "function",
+  normalize: "function",
 };
 
 /** Every way `data` (platforms.json) and `adapters` disagree, one message per problem, each naming its platform. */
@@ -54,6 +55,12 @@ test("conformance names the platform of an entry with no adapter, an adapter wit
   assert.ok(problems.includes("gemini: adapter has no orchestrator/platforms.json entry"), problems.join("\n"));
   assert.ok(problems.includes("pi: adapter lacks build (function)"), problems.join("\n"));
   assert.equal(problems.length, 3, problems.join("\n"));
+});
+
+test("conformance reports an adapter without normalize", () => {
+  const { normalize, ...noNormalize } = ADAPTERS.claude;
+  const problems = conformanceProblems(PLATFORMS_JSON, { ...ADAPTERS, claude: noNormalize });
+  assert.deepEqual(problems, ["claude: adapter lacks normalize (function)"]);
 });
 
 test("ROLE_POLICY declares a policy for every role with a protocol", () => {
