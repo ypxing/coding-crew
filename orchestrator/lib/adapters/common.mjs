@@ -1,4 +1,4 @@
-/** Helpers shared by the adapters: trace-line formatting and the empty result-meta shape. */
+/** Helpers shared by the adapters: the normalized-event shape, a capped preview, and the empty result-meta shape. */
 
 /** A capped JSON preview that says how much it cut, so truncation is never mistaken for the whole value. */
 export function safePreview(value, max = 200) {
@@ -12,19 +12,19 @@ export function safePreview(value, max = 200) {
 }
 
 /**
- * `$ <command>` for a shell call, a bare path for a file tool; null for any other shape,
- * which formatArgs renders as a capped JSON preview instead.
+ * A normalized event (PRD D12): `{ kind, tool?, command?, path?, args?, id?, detail? }`, each
+ * adapter's `normalize(evt)` result. `kind` is "tool" | "tool-error" | "agent-error" | "text";
+ * `detail` is the trace text after the tool for an error, the assistant's text for "text".
+ * Absent fields are left out, not set to undefined.
  */
-function summarizeArgs(args) {
-  if (!args || typeof args !== "object") return null;
-  if (typeof args.command === "string") return `$ ${args.command}`;
-  const path = args.file_path ?? args.path;
-  return typeof path === "string" ? path : null;
+export function normalized(kind, fields = {}) {
+  const evt = { kind };
+  for (const [k, v] of Object.entries(fields)) if (v != null) evt[k] = v;
+  return evt;
 }
 
-export function formatArgs(args) {
-  return summarizeArgs(args) ?? `args=${safePreview(args)}`;
-}
+/** `value` when it is a string, else undefined; `nonEmpty` also drops "". */
+export const str = (value, nonEmpty = false) => (typeof value === "string" && (!nonEmpty || value) ? value : undefined);
 
 export const EMPTY_RESULT_META = {
   isError: null,
