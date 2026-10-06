@@ -1,7 +1,7 @@
 REPO/.coding-crew/ /
 REPO/.coding-crew/docs/ /
-REPO/.coding-crew/docs/issue-tracker.md 40034c206cbf8cd5b5b73bfc954445a89a9acd26
+REPO/.coding-crew/docs/issue-tracker.md exec=0
 REPO/.coding-crew/docs/templates/ /
 REPO/.coding-crew/docs/templates/trackers/ /
-REPO/.coding-crew/docs/templates/trackers/github.md b7028a351979c85ebff1617e26c952df91a7193d
-REPO/.coding-crew/docs/templates/trackers/local.md 40034c206cbf8cd5b5b73bfc954445a89a9acd26
+REPO/.coding-crew/docs/templates/trackers/github.md exec=0
+REPO/.coding-crew/docs/templates/trackers/local.md exec=0

@@ -4,10 +4,15 @@
 # For each platform in orchestrator/platforms.json, a full `install.sh <platform>` at project
 # scope, at user scope (TARGET_REPO=$HOME, a temp $HOME), and at user scope with the platform's
 # configDirEnv pointing at a temp dir; then `uninstall.sh` in the same target. Each tree is
-# recorded as one sorted line per entry — `<ROOT>/<relative path> <git blob hash>` (`/` for a
-# directory) — and compared against tests/fixtures/platform-golden/install/<platform>-<scope>.
+# recorded as one sorted line per entry — `<ROOT>/<relative path> <fact>` (`/` for a directory) —
+# and compared against tests/fixtures/platform-golden/install/<platform>-<scope>.
 # {install,uninstall}.txt. A refactor of install/uninstall must leave them unchanged; a deliberate
 # change regenerates them with `UPDATE_GOLDEN=1 bats tests/platform-golden-install.bats`.
+#
+# A file's fact is not its content hash: that would rewrite every fixture on any edit to any shipped
+# file. It is the executable bit, plus for a SKILL.md (the rendered file) the count of `{{` placeholders
+# left in it, so a changed path, scope, executable bit or a broken render still fails; the manifest,
+# which is structural, keeps its hash.
 #
 # Roots are written as REPO, HOME and CONFIG, and the manifest's per-run fields (installed_at,
 # source, source_sha) are dropped before hashing, so a fixture holds no machine-specific value.
@@ -50,7 +55,9 @@ _tree() {
               | .skills |= with_entries(.value.version = ($v[0][.key] // .value.version))' "$path" \
             | git hash-object --stdin)"
       else
-        printf '%s/%s %s\n' "$label" "$path" "$(git hash-object "$path")"
+        local fact="exec=$([[ -x "$path" ]] && echo 1 || echo 0)"
+        [[ "$(basename "$path")" == SKILL.md ]] && fact+=" unrendered=$(LC_ALL=C grep -c '{{' "$path" || true)"
+        printf '%s/%s %s\n' "$label" "$path" "$fact"
       fi
     done
   ) | LC_ALL=C sort
