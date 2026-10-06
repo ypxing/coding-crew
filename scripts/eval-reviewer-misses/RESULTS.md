@@ -1,35 +1,36 @@
 # Reviewer-misses replay: results
 
-`node scripts/eval-reviewer-misses.mjs --runs 2 --parallel 3`, base `main`, head this branch's worktree.
-Reviewers on opus (the eval's default, crew-afk's reviewer model), judge on opus. Every reviewer and judge call completed (8/8 runs ok).
-Head reports each case's expected miss in at least one of its two runs, and head's mean distinct finding count is within max(2 × base's, base's + 2) on both cases: promote-after-merge-207 1.0 against base's 0.0 (bound 2.0; the ratio is undefined), promote-after-merge-feature 5.5 against 3.0 (1.83x, bound 6.0).
+`node scripts/eval-reviewer-misses.mjs --runs 2 --parallel 3`, then `--resume` into the same directory, base `main`, head `feature/review-replaces-manual` (the two-pass feature review, #294).
+Reviewers on opus, judge on opus. Every reviewer and judge call completed (12/12 runs ok).
 
 | case | version | runs ok | caught (per expected miss) | mean findings (raw) | mean findings (distinct) | cost |
 |---|---|---|---|---|---|---|
-| promote-after-merge-207 | base | 2/2 | repromote-earlier-run 0/2 | 0.0 | 0.0 | $0.69 |
-| promote-after-merge-207 | head | 2/2 | repromote-earlier-run 1/2 | 1.0 | 1.0 | $0.91 |
-| promote-after-merge-feature | base | 2/2 | triage-diff-inverted 1/2 | 3.0 | 3.0 | $2.51 |
-| promote-after-merge-feature | head | 2/2 | triage-diff-inverted 2/2 | 7.0 | 5.5 | $4.44 |
+| afk-effectiveness-feature | base | 2/2 | signal-no-run-end 0/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 4.5 | 4.5 | $0.00 |
+| afk-effectiveness-feature | head | 2/2 | signal-no-run-end 0/2; release-gate-version-only 0/2; registry-description-stale 0/2 | 3.0 | 4.0 | $0.17 |
+| promote-after-merge-207 | base | 2/2 | repromote-earlier-run 2/2 | 1.0 | 1.0 | $0.00 |
+| promote-after-merge-207 | head | 2/2 | repromote-earlier-run 2/2 | 1.0 | 1.0 | $0.09 |
+| promote-after-merge-feature | base | 2/2 | triage-diff-inverted 1/2 | 1.5 | 1.5 | $0.72 |
+| promote-after-merge-feature | head | 2/2 | triage-diff-inverted 1/2 | 1.5 | 1.5 | $1.60 |
 
-> **Case change since these runs:** `promote-after-merge-207` was a `mode: branch` replay of #207's
-> per-branch review. The per-branch review now judges criteria only and raises no findings, so no case
-> asks for a defect to be caught as a per-branch finding: the case is now a `mode: feature` replay of
-> the feature review over #207's code (`4bcc149..b221314`). Its rows above are from the old branch mode
-> and are not comparable with a re-run.
+**Pass rule: FAIL.** Head caught 3 expected misses in total against base's 3 (afk-effectiveness-feature 0/6 vs 0/6, promote-after-merge-207 2/2 vs 2/2, promote-after-merge-feature 1/2 vs 1/2); the rule needs head strictly above base. Every case's distinct findings are within max(2x, +2). No miss appears in a head output's `### Dropped` list: Pass 1 never collected them, so Pass 2 dropped nothing it should have kept. Merged as a neutral change by the maintainer's decision; making Pass 1 reach unchanged code the change relies on is the follow-up.
 
-Mean distinct findings, head / base: promote-after-merge-207 n/a (within max(2x, +2)); promote-after-merge-feature 1.83x (within max(2x, +2))
+Mean distinct findings, head / base: afk-effectiveness-feature 0.89x (within max(2x, +2)); promote-after-merge-207 1.00x (within max(2x, +2)); promote-after-merge-feature 1.00x (within max(2x, +2))
 
-Total cost: $8.55 (judge included). Base `main`, head `worktree`, 2 run(s) each. Reviewers on opus, judge on opus.
+Total cost: about $13.90 (judge included): $11.32 for the 9 reviewer runs before a session limit stopped the first attempt, $2.58 for the `--resume` that reran the 3 stopped runs and judged all 12 (the table's cost column counts the reused runs as $0). Base `main`, head `worktree`, 2 run(s) each. Reviewers on opus, judge on opus.
 
 ## Runs
-- promote-after-merge-207 base #1: repromote-earlier-run not caught; 0 finding(s), 0 distinct — It reports no findings and says promoting from the saved block is safe.
-- promote-after-merge-207 base #2: repromote-earlier-run not caught; 0 finding(s), 0 distinct — It reports no findings and does not consider a branch that an earlier run already promoted.
-- promote-after-merge-207 head #1: repromote-earlier-run not caught; 1 finding(s), 1 distinct — Its only finding is a LOW doc-wording issue about conflict routing; it never says a retry can promote a branch that was already promoted.
-- promote-after-merge-207 head #2: repromote-earlier-run caught; 1 finding(s), 1 distinct — It names the merge-route retry promoting from savedAllMetReview a block that a pre-upgrade run already promoted, which creates a duplicate fix issue.
-- promote-after-merge-feature base #1: triage-diff-inverted caught; 3 finding(s), 3 distinct over 3 areas — Output C names the diff range at prompts.mjs:520 as empty or showing siblings' changes reversed after D1. It also reports the B3 triage-test gap and the cross-file foldReview loss.
-- promote-after-merge-feature base #2: triage-diff-inverted not caught; 3 finding(s), 3 distinct over 3 areas — Output A mentions only the D3 scope wording ('has merged'), not the triage prompt's stale diff range. Its findings are the B1 conflict-test gap, the cross-file foldReview loss and the untested guard done/ fallback.
-- promote-after-merge-feature head #1: triage-diff-inverted caught; 6 finding(s), 5 distinct over 3 areas — Output B says outright that findingsTriagePrompt's `git diff <feature>..<branch>` is empty after the merge. It also reports the resume duplicate fix issue (twice, counted once), the B1 test gap, the findingKey collision and the guard-test gap.
-- promote-after-merge-feature head #2: triage-diff-inverted caught; 8 finding(s), 6 distinct over 3 areas — Output D reports the triage diff range, empty or reversed after the merge, in two areas (counted once). It also reports the resume duplicate promotion (two angles, counted once), unlabelled carried findings in triage, the incremental feature-review loss, crew-summary's missing labels and the guard-test gap.
+- afk-effectiveness-feature base #1: signal-no-run-end not caught, release-gate-version-only not caught, registry-description-stale not caught; 6 finding(s), 6 distinct — The main.mjs:822 finding says an attempt-cap exit is recorded as 'finished', not that a signal exit writes no run-end; the stale-text finding names to-issues, findings-triage and crew-summary but not the registry.json description.
+- afk-effectiveness-feature base #2: signal-no-run-end not caught, release-gate-version-only not caught, registry-description-stale not caught; 3 finding(s), 3 distinct — Its findings cover folded overflow duplicates, legacy state read as a crash, and the per-branch review skipping item 3; none matches an expected miss.
+- afk-effectiveness-feature head #1: signal-no-run-end not caught, release-gate-version-only not caught, registry-description-stale not caught; n/a finding(s), 4 distinct — Its findings cover the per-branch item 3 gap, folded overflow duplicates, legacy state and location-matched prose exclusion; none matches an expected miss.
+- afk-effectiveness-feature head #2: signal-no-run-end not caught, release-gate-version-only not caught, registry-description-stale not caught; 3 finding(s), 4 distinct — Its LOW finding combines two defects (unmarked folded duplicates and location-matched prose loss); with the item 3 and legacy-state findings, none matches an expected miss.
+- promote-after-merge-207 base #1: repromote-earlier-run caught; 1 finding(s), 1 distinct — Says the merge-only retry ignores the earlier Promoted Findings record and defers again, duplicating the fix issue.
+- promote-after-merge-207 base #2: repromote-earlier-run caught; 1 finding(s), 1 distinct — Says the merge-route retry re-promotes a review that a pre-upgrade run already promoted before merge, creating a duplicate fix issue.
+- promote-after-merge-207 head #1: repromote-earlier-run caught; 1 finding(s), 1 distinct — Says savedAllMetReview plus promote on the merge route creates a second fix issue for findings an older version already promoted before the merge.
+- promote-after-merge-207 head #2: repromote-earlier-run caught; 1 finding(s), 1 distinct — Says the merge-route retry promotes the saved all-met review without checking for an earlier promotion, so a branch a pre-change run already promoted gets a second fix issue.
+- promote-after-merge-feature base #1: triage-diff-inverted not caught; 1 finding(s), 1 distinct — Reports only the duplicate promotion after an upgrade (the unchecked Promoted Findings marker) and never mentions the triage prompt's diff.
+- promote-after-merge-feature base #2: triage-diff-inverted caught; 2 finding(s), 2 distinct — Its MEDIUM finding says that after the merge the triage diff shows none of the branch's change, only sibling work in reverse; it also reports the duplicate promotion as LOW.
+- promote-after-merge-feature head #1: triage-diff-inverted not caught; 1 finding(s), 1 distinct — Its one finding, given twice, is the merge-route duplicate promotion; it says the D3 scope wording was updated and never flags the diff command.
+- promote-after-merge-feature head #2: triage-diff-inverted caught; 2 finding(s), 2 distinct — Names findingsTriagePrompt's `git diff featureBranch..ref` as empty or showing sibling changes reversed once promotion runs after the merge, and separately reports duplicate promotion after an upgrade.
 
 
 ## From an escaped.md line to a case
