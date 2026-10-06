@@ -18,6 +18,9 @@ setup() {
   cp -R "$REPO_ROOT/skills/_shared" "$R/skills/_shared"
   echo "PROTO-V1" >> "$R/orchestrator/roles/reviewer.md"
   git -C "$R" init -q -b main
+  # No detached auto-gc/maintenance: one still writing .git/objects races teardown's rm -r
+  git -C "$R" config gc.auto 0
+  git -C "$R" config maintenance.auto false
   git -C "$R" -c user.email=t@t -c user.name=t add -A
   git -C "$R" -c user.email=t@t -c user.name=t commit -qm one
   C1=$(git -C "$R" rev-parse HEAD)
