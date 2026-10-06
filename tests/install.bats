@@ -361,7 +361,12 @@ teardown() {
   run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
   [ "$status" -eq 0 ]
 
-  for dir in .claude .copilot .pi .codex .agents .github; do
+  # Every top-level dir any platform installs into or keeps config in, from platforms.json.
+  local dirs=() p f
+  for p in "${PLATFORMS[@]}"; do
+    for f in projectSkills userSkills configDir; do dirs+=("$(platform_field "$p" "$f" | cut -d/ -f1)"); done
+  done
+  for dir in $(printf '%s\n' "${dirs[@]}" | sort -u); do
     if [ -d "$TEMP_DIR/$dir" ]; then
       echo "REPO_ROOT was: $TEMP_DIR"
       echo "--- uninstall output ---"
