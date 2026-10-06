@@ -37,7 +37,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.22.0",
+      "version": "2.23.0",
       "source-dir": "crew-afk",
       "description": "Orchestrator that dispatches each ready-for-agent issue to a coder CLI process in its own worktree, reviews and merges every branch, turns the feature review's most severe Actionable findings (at most 8) into one fix issue for a second fix phase, and loops until all ready-for-agent issues are done.",
       "install": ".claude/skills/crew-afk",
@@ -118,7 +118,7 @@
       ]
     },
     "address-pr-comments": {
-      "version": "1.3.0",
+      "version": "1.4.0",
       "source-dir": "address-pr-comments",
       "description": "Fetch PR review comments, challenge each critically, implement sensible ones with TDD, commit and push.",
       "install": ".claude/skills/address-pr-comments",

@@ -207,6 +207,26 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   [ "$status" -eq 0 ]
 }
 
+@test "the afk-effectiveness escape case replays #250's first whole-feature review with its 3 misses" {
+  run env MOD="$REPO_ROOT/scripts/eval-reviewer-misses.mjs" F="$REPO_ROOT/scripts/eval-reviewer-misses/cases/afk-effectiveness-feature.md" node -e '
+    import(process.env.MOD).then((m) => {
+      const c = m.parseCase("afk-effectiveness-feature", require("fs").readFileSync(process.env.F, "utf8"));
+      if (c.misses.length !== 3) throw new Error(`misses: ${c.misses.length}`);
+      if (!c.reference || !c.prd) throw new Error("no reference judgement or PRD");
+    }).catch((e) => { console.error(e.message); process.exit(1); });
+  '
+  [ "$status" -eq 0 ]
+  f="$REPO_ROOT/scripts/eval-reviewer-misses/cases/afk-effectiveness-feature.md"
+  grep -qx 'mode: feature' "$f"
+  grep -qx 'base_sha: fe7022af5425' "$f"
+  grep -q '^head_sha: 09aeb80' "$f"
+  grep -qx 'via: origin/feature/afk-effectiveness' "$f"
+  for m in orchestrator/main.mjs scripts/cut-release.sh registry.json; do
+    sed -n '/^## Expected misses$/,/^## Reference judgement$/p' "$f" | grep -qF "$m"
+  done
+  grep -qF 'Origin: #182' "$f"
+}
+
 # The rendered reviewer role
 
 role() {

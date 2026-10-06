@@ -1,7 +1,7 @@
 /**
  * The feature review: one crew-reviewer in feature mode over the feature diff — the whole feature, or only
- * the commits since the last review — once per run, at the first drain that merged something (a tip the
- * last review covered dispatches nothing). A drain whose integration check is red skips it without
+ * the commits since the last review — once at the first drain that merged something, and once more as
+ * the report-only closing review before the PR (loop.mjs; a tip the last review covered dispatches nothing). A drain whose integration check is red skips it without
  * spending that one review; the next drain whose check passes retries it. It reads the whole PRD, so a requirement no merged code
  * implements is one of its findings. Each branch was
  * reviewed on its own diff, so what exists only across issues — a duplicated helper, inconsistent

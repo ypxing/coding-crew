@@ -38,3 +38,13 @@ setup() {
   grep -qi 'never runs `gh pr ready`' "$SKILL"
   grep -qi 'never waits on CI' "$SKILL"
 }
+
+@test "the docs describe the closing review and the push on crew-afk PRs" {
+  local root; root="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
+  for f in README.md docs/guide.md .claude/rules/crew-afk.md orchestrator/lib/loop.mjs; do
+    grep -qi 'closing review' "$root/$f" || { echo "$f: no closing review"; return 1; }
+  done
+  for f in README.md docs/guide.md .claude/rules/crew-afk.md; do
+    grep -q 'address-pr-comments' "$root/$f" && grep -qi 'push' "$root/$f" || { echo "$f: no push"; return 1; }
+  done
+}

@@ -35,14 +35,19 @@
  * ends the run stalled. A failure no code can fix is reported, queues nothing, and skips the
  * drain's remaining checks. A red final one keeps the PR from being opened.
  *
- * The feature review (runFeatureReview) runs once per run, at the first drain where something
+ * The feature review (runFeatureReview) runs once per drain loop, at the first drain where something
  * merged, after the integration check: crew-reviewer over the whole feature diff the first run, then
  * over the commits since the last run's review (no reviewer when there are none). Its findings are
  * parked like a branch's, so the same flush sends them into Phase 2, until one review has created the
  * feature's single fix issue (counted across runs); later runs' reviews only report, and each finding
  * the fixFindings rule would have promoted keeps the PR a draft. A red integration check skips it
  * without spending the run's review, so the next drain whose check passes runs it; the wall-clock cap
- * skips it too, and ends the run.
+ * skips it too, and ends the run. After the drain loop, before the squash and PR, a closing review
+ * (report-only, `promote: false`) covers what merged since that review — the fix issue, integration
+ * fixes — over `reviewed_tip..tip`; its findings keep the PR a draft and are posted to it. It runs only
+ * when this run's review completed, and not under --dry-run, a red check or past the wall-clock cap;
+ * an unchanged tip dispatches nothing. The PR block names a draft's reasons in a
+ * `<!-- crew-afk:draft <kinds> -->` marker (draftMarker), which `/address-pr-comments` reads.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -311,8 +316,8 @@ export async function runSprint(ctx) {
         }
       }
     }
-    // Once per run, at the first drain with something merged: a later drain's review could open no
-    // second fix issue. Reviews promote until one has created the feature's fix issue (counted per
+    // Once per drain loop, at the first drain with something merged: a later drain's review could open no
+    // second fix issue (the closing review after the loop covers what merges later). Reviews promote until one has created the feature's fix issue (counted per
     // feature in sprint-state.json, across runs); a later run's findings are reported. A red
     // integration check skips it without spending the run's one review: the next drain retries.
     if (!featureReviewed && !options.dryRun && sprint.get("merged")) {
