@@ -286,8 +286,9 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
 export const FEATURE_REVIEW = "feature";
 
 /**
- * Feature mode (crew-reviewer's protocol § Feature Mode), once per run: the whole feature diff, or
- * the commits since the last review, and the PRD (`prdPath`, null when there is none) to read whole.
+ * Feature mode (crew-reviewer's protocol § Feature Mode), the run's first review and its closing
+ * review: the whole feature diff, or the commits since the last review (`base` is its reviewed tip),
+ * and the PRD (`prdPath`, null when there is none) to read whole.
  * Same report object as a branch review, but no issue and no criteria — findings only.
  */
 export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, prdPath = null }) {
@@ -304,7 +305,7 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
     exclude
       ? `Gather the diff: git log -p --reverse ${base}..${featureBranch} --not ${exclude}`
       : `Gather the diff: git diff ${base}..${featureBranch}`,
-    ...(exclude ? ["", `An earlier run already reviewed up to ${base}; this range holds only the commits added since, without anything merged in from ${exclude}.`] : []),
+    ...(exclude ? ["", `The last feature review already reviewed up to ${base}; this range holds only the commits added since, without anything merged in from ${exclude}.`] : []),
     "",
     "Every issue's branch was already reviewed on its own diff, and the checks passed on the merged",
     "branch. Look first for what only the whole diff shows, but report a defect inside one",

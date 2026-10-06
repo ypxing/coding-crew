@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: the incremental feature review's prompt no longer tells the closing review that "an earlier run"
+  reviewed up to its base — the base is the last feature review's tip, often from this same run (#297).
 - `crew-afk`: a red integration check that turns an open PR back into a draft now rewrites its crew-afk block's
   `<!-- crew-afk:draft … -->` marker to name `integration`, so `/address-pr-comments` no longer reads a stale
   `findings`-only marker and suggests marking a red PR ready (#296).
