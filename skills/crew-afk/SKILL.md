@@ -22,7 +22,8 @@ node "$CREW_AFK" run --platform {{PLATFORM}} "$@"
 
 Pass CLI-looking arguments through — `--model`, `--fix-findings`,
 `--max-parallel N`, `--jira TICKET-123`, a `.scratch/<feature-slug>/…` path — never rewrite
-those (`--fix-findings medium` keeps LOW findings out of fix issues). A bare word, typo, or phrase is resolved first, below.
+those (`--fix-findings medium` keeps LOW findings out of fix issues; `--jira PROJ-12` names a new
+feature branch `<afk.branchPrefix, default feature/>PROJ-12-<feature-slug>`). A bare word, typo, or phrase is resolved first, below.
 
 ## Resolving the sprint target
 
