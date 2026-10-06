@@ -173,16 +173,33 @@ holds, with the same severity rubric, and Step 2 items 3–4, Step 3 and the des
 2000-line / top-10-files cap does not apply: read the whole range the line gives.
 
 The prompt's `PRD (read it whole; the feature's intent):` line, when present, names the PRD. Read it
-whole, then judge the merged code against it. Each of these is a finding:
+whole. Then answer two questions about the merged feature:
 
-- a requirement — a behaviour, a decision, or a `## Compatibility & Migration` item — that the merged
-  code does not implement at all;
-- a flow spanning several issues that the merged code does not connect end to end;
-- a cross-cutting concern the PRD asks for that no issue owned.
+1. **Coverage.** Does the merged code implement every requirement the PRD states — each behaviour,
+   each `## Decisions` entry, each `## Compatibility & Migration` item — end to end, across the
+   issues that share it? Each of these is a finding:
+   - a requirement that the merged code does not implement at all;
+   - a flow spanning several issues that the merged code does not connect end to end;
+   - a cross-cutting concern the PRD asks for that no issue owned.
 
-A requirement a later ADR, `CONTEXT.md` entry or commit deliberately replaced is not a finding. For a
-requirement that is implemented, read the whole function, prompt or document it names, and the code
-that receives what it changed, and report an input that breaks it.
+   A requirement a later ADR, `CONTEXT.md` entry or commit deliberately replaced is not a finding.
+2. **Correctness.** Where does the merged code fail on an input or state it can actually receive:
+   a wrong result, a crash, lost or corrupted data, behaviour that used to work and no longer does,
+   or a security hole? For a requirement that is implemented, read the whole function, prompt or
+   document it names, and the code that receives what it changed, and report an input that breaks it.
+
+With no PRD line, answer Correctness alone. Answer both in two passes:
+
+**Pass 1 — Collect candidates.** Walk the range file by file, and the PRD requirement by requirement.
+Write down every suspected defect against Step 3's classes, the loaded references and the design
+standard, including ones you are not yet sure of. Do not judge yet.
+
+**Pass 2 — Verify each candidate.** Read the cited code in full, its callers, what it calls, and the
+state it reads. Apply the Pre-Report Gate and Common False Positives. Keep a candidate as a finding
+only when you can state its trigger (input or state → bad outcome) and cite its `file:line` with a
+snippet. Otherwise drop it, and give the reason under `### Dropped`: in the prose after the JSON, one
+line per dropped candidate — location, suspicion, why dropped. Nothing parses that list; it shows
+whether a defect the review missed was never collected or was dropped.
 
 Write the same object to the report path with `branch` and `slug` both `"feature"`, `verdict` always
 `"all-met"`, `detail` empty. If you could not read the whole range, write no report.
@@ -202,6 +219,7 @@ their locations.
 ### Pre-Report Gate
 
 Before writing a finding, answer all four. Any "no" or "unsure" → downgrade or drop.
+In Feature Mode the gate is Pass 2's, applied to each candidate in turn — never before Pass 1 has collected every candidate.
 
 1. **Exact file and line?** "Somewhere in the auth layer" is not actionable.
 2. **Concrete failure mode?** Name the input, state, and bad outcome. No trigger means you are
@@ -217,7 +235,8 @@ CRITICAL and HIGH also name the failure scenario (input, state, outcome) and why
 types, validation, framework defaults — miss it. No snippet and no `file:line` → drop it; it is not
 locatable.
 
-**Zero Findings Is Valid.** For a small, tested diff that follows the project's patterns the correct
+**Zero Findings Is Valid** — as an outcome, after Pass 2 in Feature Mode, never a reason to stop
+collecting in Pass 1. For a small, tested diff that follows the project's patterns the correct
 output is `### Findings\nnone`. Manufactured findings, filler nits, speculative "consider using X" and
 edge cases with no trigger are the primary failure mode of LLM reviewers.
 
