@@ -198,7 +198,7 @@ HOME/.coding-crew/docs/templates/ /
 HOME/.coding-crew/docs/templates/trackers/ /
 HOME/.coding-crew/docs/templates/trackers/github.md b7028a351979c85ebff1617e26c952df91a7193d
 HOME/.coding-crew/docs/templates/trackers/local.md 40034c206cbf8cd5b5b73bfc954445a89a9acd26
-HOME/.coding-crew/manifest.json e558b553977deb204814513d60bbbc2e090c289e
+HOME/.coding-crew/manifest.json 1ed3c456134a100a8b26c3512a4a9f2c4d00dc8d
 HOME/.coding-crew/scripts/ /
 HOME/.coding-crew/scripts/mark-issue-done.sh 41a46dc656a7fc3cf1f2b289ba65fdcb01f73e35
 HOME/.coding-crew/scripts/tracker-config.sh b9162deddb1e75a18217ff268d5c534226d295ef

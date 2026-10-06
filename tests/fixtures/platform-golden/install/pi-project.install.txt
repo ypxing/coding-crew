@@ -89,7 +89,7 @@ REPO/.coding-crew/docs/templates/ /
 REPO/.coding-crew/docs/templates/trackers/ /
 REPO/.coding-crew/docs/templates/trackers/github.md b7028a351979c85ebff1617e26c952df91a7193d
 REPO/.coding-crew/docs/templates/trackers/local.md 40034c206cbf8cd5b5b73bfc954445a89a9acd26
-REPO/.coding-crew/manifest.json 723fa3b3f084094dc487b901239066d2c2cfdcdf
+REPO/.coding-crew/manifest.json 331bab88b8d14f91b174d952c0486b0c0137e27e
 REPO/.coding-crew/scripts/ /
 REPO/.coding-crew/scripts/mark-issue-done.sh 41a46dc656a7fc3cf1f2b289ba65fdcb01f73e35
 REPO/.coding-crew/scripts/tracker-config.sh b9162deddb1e75a18217ff268d5c534226d295ef
