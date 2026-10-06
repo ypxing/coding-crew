@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: `session-init.sh` no longer warns that `--jira` was ignored when the resumed or kept branch is
+  already the one `--jira` would name (#301).
 - `crew-afk`: the feature branch is named `<afk.branchPrefix><KEY>-<feature-slug>` — `afk.branchPrefix` in
   `config.json` (default `feature/`, `""` for none) and `--jira <KEY>`, which the explicit-slug path used to ignore;
   an invalid key or ref stops the run before any branch is made. The per-issue review prompt names the PRD on a
