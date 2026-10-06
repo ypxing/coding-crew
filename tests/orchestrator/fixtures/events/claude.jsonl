@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","session_id":"sess-1"}
+{"type":"assistant","message":{"id":"msg_1","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"npm test","description":"Run the tests"}}]}}
+{"type":"assistant","message":{"id":"msg_2","content":[{"type":"tool_use","id":"toolu_2","name":"Read","input":{"file_path":"/repo/src/a.js"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_1","is_error":true,"content":"Exit code 1"}]}}
+{"type":"assistant","message":{"id":"msg_3","content":[{"type":"text","text":"One test fails; fixing it."}]}}
+{"type":"result","subtype":"success","is_error":true,"result":"API Error: 500 overloaded"}

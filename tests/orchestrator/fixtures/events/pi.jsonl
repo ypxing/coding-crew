@@ -1,0 +1,6 @@
+{"type":"agent_start"}
+{"type":"tool_execution_start","toolCallId":"call_1","toolName":"bash","args":{"command":"npm test"}}
+{"type":"tool_execution_start","toolCallId":"call_2","toolName":"read","args":{"path":"/repo/src/a.js"}}
+{"type":"tool_execution_end","toolCallId":"call_1","toolName":"bash","result":{"content":[{"type":"text","text":"1 failing"}]},"isError":true}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"One test fails; fixing it."}],"stopReason":"toolUse"}}
+{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"429 rate limited"}}

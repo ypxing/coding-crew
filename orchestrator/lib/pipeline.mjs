@@ -590,7 +590,7 @@ export async function runWorker(ctx, issue, attempt) {
   const head = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
   sprint.recordDispatchCost(result, { slug: issue.slug, role: "coder", attempt, head });
 
-  flagFullSuiteRuns(ctx, { slug: dispatchStem(issue), attempt, outFile });
+  flagFullSuiteRuns(ctx, { slug: dispatchStem(issue), attempt, outFile, platform: coder.runtime });
 
   const sidecar = readSidecar(sidecarFile);
   // A worker that ran to completion (no timeout, non-empty output) but left no sidecar is

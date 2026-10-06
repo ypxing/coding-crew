@@ -3,17 +3,12 @@
  * process with the role's protocol as `--append-system-prompt`. The event stream is pi's
  * docs/json.md.
  */
-import { safePreview } from "./common.mjs";
+import { normalized, safePreview, str } from "./common.mjs";
 
-/** `$ <command>` for bash, a path for read/write/edit; null for any other tool (a JSON preview instead). */
-function summarize(tool, args) {
-  if (tool === "bash" && typeof args?.command === "string" && args.command) return `$ ${args.command}`;
-  if (["read", "write", "edit"].includes(tool)) {
-    const path = args?.path ?? args?.file_path;
-    if (typeof path === "string" && path) return path;
-  }
-  return null;
-}
+const FILE_TOOLS = ["read", "write", "edit"];
+
+/** An assistant message's text blocks, joined; "" when none. */
+const textOf = (message) => (message?.content ?? []).filter((b) => b?.type === "text").map((b) => b.text).join("");
 
 export default {
   cmd: "pi",
@@ -35,12 +30,27 @@ export default {
   // pi names an allowlist; it ignores tool names it does not know, so these are pi's own.
   policyArgs: ({ readOnly }) => ["--tools", readOnly ? "read,bash" : "read,bash,edit,write"],
 
-  traceLine(evt, agent) {
+  /**
+   * A tool start (bash's command, read/write/edit's path), a failed tool, or an assistant
+   * `message_end`: its text, or the error it stopped on.
+   */
+  normalize(evt) {
     if (evt.type === "tool_execution_start") {
       const tool = evt.toolName ?? "?";
-      return `[TOOL] agent=${agent} tool=${tool} ${summarize(tool, evt.args) ?? `args=${safePreview(evt.args)}`}`;
+      return normalized("tool", {
+        tool,
+        command: tool === "bash" ? str(evt.args?.command, true) : undefined,
+        path: FILE_TOOLS.includes(tool) ? str(evt.args?.path ?? evt.args?.file_path, true) : undefined,
+        args: evt.args,
+        id: str(evt.toolCallId),
+      });
     }
-    if (evt.type === "tool_execution_end" && evt.isError === true) return `[TOOL-ERROR] agent=${agent} tool=${evt.toolName ?? "?"}`;
+    if (evt.type === "tool_execution_end" && evt.isError === true) return normalized("tool-error", { tool: evt.toolName ?? "?", id: str(evt.toolCallId) });
+    if (evt.type === "message_end" && evt.message?.role === "assistant") {
+      if (evt.message.stopReason === "error") return normalized("agent-error", { detail: `error=${safePreview(evt.message.errorMessage)}` });
+      const text = textOf(evt.message);
+      return text ? normalized("text", { detail: text }) : null;
+    }
     return null;
   },
 
@@ -55,6 +65,6 @@ export default {
         /* skip an unparseable line */
       }
     }
-    return (last?.message?.content ?? []).filter((b) => b?.type === "text").map((b) => b.text).join("");
+    return textOf(last?.message);
   },
 };

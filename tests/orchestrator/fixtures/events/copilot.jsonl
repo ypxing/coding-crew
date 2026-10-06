@@ -1,0 +1,5 @@
+{"type":"tool.execution_start","data":{"toolCallId":"call_1","toolName":"bash","arguments":{"command":"npm test","description":"Run the tests"}}}
+{"type":"tool.execution_start","data":{"toolCallId":"call_2","toolName":"view","arguments":{"path":"/repo/src/a.js"}}}
+{"type":"tool.execution_complete","data":{"toolCallId":"call_1","success":false,"error":{"message":"exit 1"}}}
+{"type":"assistant.message","data":{"messageId":"m_1","content":"One test fails; fixing it."}}
+{"type":"session.error","data":{"errorType":"quota","message":"over quota"}}

@@ -14,3 +14,17 @@ export const PLATFORMS = Object.keys(ADAPTERS);
  * account's request rate, which the CLI does not expose; raise with `--max-parallel`.
  */
 export const DEFAULT_PARALLEL = Object.fromEntries(PLATFORMS.map((p) => [p, ADAPTERS[p].defaultParallel]));
+
+/** One raw JSONL event line, normalized by `platform`'s adapter; null for an unknown platform, an unparseable line or an event it ignores. */
+export function normalizeLine(platform, line) {
+  const adapter = ADAPTERS[platform];
+  if (!adapter) return null;
+  let evt;
+  try {
+    evt = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!evt || typeof evt !== "object") return null;
+  return adapter.normalize(evt) ?? null;
+}

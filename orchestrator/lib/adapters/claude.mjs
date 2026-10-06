@@ -2,7 +2,7 @@
  * claude adapter: `claude -p --output-format stream-json --verbose`. Today's argv, trace parsing
  * and the cost/session/resume/budget behaviour, moved out of dispatch.mjs.
  */
-import { EMPTY_RESULT_META, formatArgs, lastEvent, safePreview } from "./common.mjs";
+import { EMPTY_RESULT_META, lastEvent, normalized, safePreview, str } from "./common.mjs";
 
 /** One assistant event's whole token usage: prompt, cache and output. */
 function usageTokens(u) {
@@ -59,21 +59,36 @@ export default {
   // worktree, so a note one wrote would reach every later session unreviewed.
   env: { CLAUDE_CODE_SESSION_ID: "", CLAUDE_CODE_CHILD_SESSION: "", CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" },
 
-  traceLine(evt, agent) {
+  // A pane shows the assistant's text between tool calls (follow-output.mjs).
+  liveText: true,
+
+  /**
+   * A tool_use block (the first, when a message has several), a failed tool_result, a run-ending
+   * `result` error, or the assistant's non-blank text blocks (trimmed, one per line).
+   */
+  normalize(evt) {
+    const blocks = Array.isArray(evt.message?.content) ? evt.message.content : [];
     if (evt.type === "assistant") {
-      for (const block of evt.message?.content ?? []) {
-        if (block.type === "tool_use") return `[TOOL] agent=${agent} tool=${block.name} ${formatArgs(block.input)}`;
+      const use = blocks.find((b) => b?.type === "tool_use");
+      if (use) {
+        const input = use.input;
+        return normalized("tool", {
+          tool: use.name,
+          command: str(input?.command),
+          path: str(input?.file_path ?? input?.path),
+          args: input,
+          id: str(use.id),
+        });
       }
+      const text = blocks.filter((b) => b?.type === "text" && typeof b.text === "string" && b.text.trim()).map((b) => b.text.trim());
+      return text.length ? normalized("text", { detail: text.join("\n") }) : null;
     }
     if (evt.type === "user") {
-      for (const block of evt.message?.content ?? []) {
-        if (block.type === "tool_result" && block.is_error) {
-          return `[TOOL-ERROR] agent=${agent} tool_use_id=${block.tool_use_id ?? "?"}`;
-        }
-      }
+      const failed = blocks.find((b) => b?.type === "tool_result" && b.is_error);
+      if (failed) return normalized("tool-error", { id: str(failed.tool_use_id), detail: `tool_use_id=${failed.tool_use_id ?? "?"}` });
     }
     // A run that dies on an API error (auth, quota) says so only here.
-    if (evt.type === "result" && evt.is_error) return `[AGENT-ERROR] agent=${agent} error=${safePreview(evt.result)}`;
+    if (evt.type === "result" && evt.is_error) return normalized("agent-error", { detail: `error=${safePreview(evt.result)}` });
     return null;
   },
 

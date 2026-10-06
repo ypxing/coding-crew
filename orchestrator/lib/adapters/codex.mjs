@@ -6,7 +6,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
-import { safePreview } from "./common.mjs";
+import { normalized, safePreview, str } from "./common.mjs";
 
 /** `git rev-parse --path-format=absolute <flag>` in `dir`, or "" — made absolute against `dir` if git gave a relative one. */
 function gitPath(dir, flag) {
@@ -21,14 +21,8 @@ function sandboxFor(policy) {
   return !policy || policy.readOnly ? "read-only" : "workspace-write";
 }
 
-function summarize(itemType, item) {
-  if (itemType === "command_execution" && item?.command) return `$ ${item.command}`;
-  if (itemType === "file_change") {
-    const path = item?.path ?? item?.file;
-    if (typeof path === "string" && path) return path;
-  }
-  return null;
-}
+/** A tool item's name: `shell` for a command, else codex's item type (file_change, mcp_tool_call, …). */
+const toolOf = (item) => (item?.type === "command_execution" ? "shell" : (item?.type ?? "?"));
 
 export default {
   cmd: "codex",
@@ -79,18 +73,33 @@ export default {
   // The sandbox is set by build(); the flag here is the role's reasoning effort.
   policyArgs: ({ effort }) => ["-c", `model_reasoning_effort="${effort}"`],
 
-  traceLine(evt, agent) {
+  /**
+   * An item's start (its command or path), a command that completed with a non-zero exit, a
+   * completed `agent_message`'s text, or a `turn.failed` / `error`. One command is reported at
+   * its start and its end under the same item id.
+   */
+  normalize(evt) {
+    const item = evt.item;
     if (evt.type === "item.started") {
-      const t = evt.item?.type ?? "?";
-      if (t === "agent_message" || t === "reasoning") return null;
-      return `[TOOL] agent=${agent} item=${t} ${summarize(t, evt.item) ?? `args=${safePreview(evt.item)}`}`;
+      if (item?.type === "agent_message" || item?.type === "reasoning") return null;
+      return normalized("tool", {
+        tool: toolOf(item),
+        command: item?.type === "command_execution" ? str(item.command, true) : undefined,
+        path: item?.type === "file_change" ? str(item.path ?? item.file, true) : undefined,
+        args: item,
+        id: str(item?.id),
+      });
     }
     if (evt.type === "item.completed") {
-      const code = evt.item?.exit_code;
+      if (item?.type === "agent_message") return str(item.text, true) ? normalized("text", { detail: item.text }) : null;
+      const code = item?.exit_code;
       if (code == null || String(code) === "0") return null;
-      return `[TOOL-ERROR] agent=${agent} item=${evt.item?.type ?? "?"} exit=${code}`;
+      return normalized("tool-error", { tool: toolOf(item), command: str(item?.command, true), id: str(item?.id), detail: `exit=${code}` });
     }
-    if (evt.type === "turn.failed" || evt.type === "error") return `[TOOL-ERROR] agent=${agent} ${evt.type}`;
+    if (evt.type === "turn.failed" || evt.type === "error") {
+      const message = evt.error?.message ?? evt.message;
+      return normalized("agent-error", { detail: `type=${evt.type}${message != null ? ` error=${safePreview(message)}` : ""}` });
+    }
     return null;
   },
 
