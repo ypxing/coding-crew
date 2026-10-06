@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- installer: `install.sh`/`uninstall.sh` take the platform list and every skill destination from `orchestrator/platforms.json`
+  (one shared helper, `scripts/lib/platforms.sh`); `registry.json` skill entries drop `install`/`install-<platform>`, and
+  per-platform skill bodies (`<platform>.SKILL.md`, `body`, `platform-files`) are gone. Installed trees are unchanged; every
+  skill's version moves, so the next `install.sh --update` reinstalls each once. `bootstrap.sh` passes any platform word on
+  for `install.sh` to validate (#308).
 - `to-issues`/`upgrade-deps`: a Kind A issue's "Mark it done" Undo now says to remove `awaiting-merge` and add `ready-for-human`
   (local: move the file back to `issues/open/`); `mark-issue-done.sh` (github) no longer resets an existing `ready-for-human`
   label's colour and description; `lint-issues.sh`'s ticked-criterion WARN reads "leave criteria unticked when publishing" (#304).

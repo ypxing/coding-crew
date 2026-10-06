@@ -8,6 +8,7 @@
 # solve-issue never carry it (PRD D11).
 
 load helpers/render
+load helpers/platforms
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 STANDARD="$REPO_ROOT/skills/_shared/fragments/design-standard.md"
@@ -79,7 +80,7 @@ assert_standard_absent_from() {
 
 @test "crew-grill and crew-brainstorm render the standard, for every platform" {
   for skill in crew-grill crew-brainstorm; do
-    for p in claude copilot pi codex; do
+    for p in "${PLATFORMS[@]}"; do
       run rendered_skill "$skill" "$p"
       [ "$status" -eq 0 ]
       assert_standard_in "$output"
@@ -107,7 +108,7 @@ assert_standard_absent_from() {
 }
 
 @test "the reviewer role renders the standard, for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     assert_standard_in "$(role_prompt reviewer "$p")"
     ! grep -q '{{FRAGMENT' "$(role_prompt reviewer "$p")"
   done
@@ -123,7 +124,7 @@ assert_standard_absent_from() {
 }
 
 @test "to-issues renders the standard, for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     assert_standard_in "$output"
@@ -138,7 +139,7 @@ to_issues_step() {
 
 @test "to-issues step 3 checks each slice against the standard beside its other two checks, for every platform" {
   local step3
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     step3=$(to_issues_step "$output" 3)
@@ -151,7 +152,7 @@ to_issues_step() {
 
 @test "to-issues step 5's quiz lists design-standard failures with file:line evidence, for every platform" {
   local step5
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     step5=$(to_issues_step "$output" 5)
@@ -160,7 +161,7 @@ to_issues_step() {
 }
 
 @test "to-issues rewrites a single-slice source issue in place and keeps ## Parent for a split one, for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     grep -qF 'gh issue edit <n> --body-file' "$output"
@@ -172,7 +173,7 @@ to_issues_step() {
 }
 
 @test "to-issues' github in-place rewrite swaps the triage label for the slice's status and sets the milestone, for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     grep -qF -- '--remove-label needs-triage --add-label <status>' "$output"
@@ -182,7 +183,7 @@ to_issues_step() {
 }
 
 @test "to-issues exempts auto-promoted fix issues under both trackers, by promote-findings.sh's column-0 Source: rule, for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     line=$(grep -F 'not checked against the design standard' "$output")
@@ -194,7 +195,7 @@ to_issues_step() {
 }
 
 @test "to-issues' in-place rewrite keeps a source issue's Source: line in the same position under both trackers, for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     line=$(grep -F "rewrite that issue's body in place" "$output")
@@ -210,7 +211,7 @@ to_issues_step() {
 }
 
 @test "to-issues creates the missing <feature-slug> milestone, list first, before the github in-place edit, for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     line=$(grep -F 'gh issue edit <n> --body-file' "$output")

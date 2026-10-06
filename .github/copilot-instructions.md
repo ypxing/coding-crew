@@ -68,8 +68,7 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
 "<skill-name>": {
   "version": "1.0.0",
   "description": "...",
-  "install": ".claude/skills/<name>",
-  "install-copilot": ".copilot/skills/<name>",  // optional
+  // installs to <projectSkills|userSkills>/<name> from orchestrator/platforms.json
   "deps": ["tdd", "dep-install"],      // other skills, installed recursively
   "assets": { "source": "...", "dest": ".coding-crew/<name>" },  // runtime files (optional)
   "docs": ["issue-tracker.md"],                  // doc templates

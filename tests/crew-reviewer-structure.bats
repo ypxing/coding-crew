@@ -3,6 +3,7 @@
 # Structural tests for the crew-reviewer agent
 
 load helpers/render
+load helpers/platforms
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -52,7 +53,7 @@ setup() {
 
 @test "feature mode reads the whole PRD: unimplemented requirements, unconnected flows and unowned concerns are findings, on every platform" {
   local plat f mode
-  for plat in claude copilot pi codex; do
+  for plat in "${PLATFORMS[@]}"; do
     f="$(role_prompt reviewer "$plat")"
     mode="$(sed -n '/^## Feature Mode$/,/^## Precision$/p' "$f")"
     grep -qF 'PRD (read it whole; the feature'"'"'s intent):' <<<"$mode"
@@ -70,7 +71,7 @@ setup() {
 
 @test "feature mode reaches every platform's rendered reviewer" {
   local plat
-  for plat in claude copilot pi codex; do
+  for plat in "${PLATFORMS[@]}"; do
     grep -q '^## Feature Mode$' "$(role_prompt reviewer "$plat")"
   done
 }
@@ -98,7 +99,7 @@ setup() {
 
 @test "a per-branch review writes findings: [], and the always-on classes and design standard are Feature Mode only, on every platform" {
   local plat f
-  for plat in claude copilot pi codex; do
+  for plat in "${PLATFORMS[@]}"; do
     f="$(role_prompt reviewer "$plat")"
     grep -qF 'A per-branch review writes `findings: []`' "$f"
     grep -qF 'Step 3 (the always-on classes) and the design-standard checks apply only to a `Feature review:` dispatch' "$f"
@@ -108,7 +109,7 @@ setup() {
 
 @test "a per-branch review still reads what the change relies on (item 3) as evidence for its verdicts, on every platform" {
   local plat f
-  for plat in claude copilot pi codex; do
+  for plat in "${PLATFORMS[@]}"; do
     f="$(role_prompt reviewer "$plat")"
     grep -qF 'A per-branch review runs item 3 as evidence for its criterion verdicts' "$f"
     ! grep -qF 'A per-branch review stops after item 2' "$f"
@@ -117,7 +118,7 @@ setup() {
 
 @test "feature mode asks Coverage and Correctness in two passes: Pass 1 collects without judging, Pass 2 applies the gate, on every platform" {
   local plat f mode pass1
-  for plat in claude copilot pi codex; do
+  for plat in "${PLATFORMS[@]}"; do
     f="$(role_prompt reviewer "$plat")"
     mode="$(sed -n '/^## Feature Mode$/,/^## Precision$/p' "$f")"
     grep -qF '**Coverage.**' <<<"$mode"
@@ -136,7 +137,7 @@ setup() {
 
 @test "feature mode lists dropped candidates under ### Dropped after the JSON; the report JSON and branch mode are unchanged" {
   local plat f mode
-  for plat in claude copilot pi codex; do
+  for plat in "${PLATFORMS[@]}"; do
     f="$(role_prompt reviewer "$plat")"
     mode="$(sed -n '/^## Feature Mode$/,/^## Precision$/p' "$f")"
     grep -qF '### Dropped' <<<"$mode"
@@ -149,7 +150,7 @@ setup() {
 
 @test "the reviewer takes the PRD path from the prompt's PRD: line, never from the branch name, on every platform" {
   local plat f
-  for plat in claude copilot pi codex; do
+  for plat in "${PLATFORMS[@]}"; do
     f="$(role_prompt reviewer "$plat")"
     grep -qF 'the prompt'"'"'s `PRD: <path>` line' "$f"
     ! grep -qF "sed 's|^feature/||'" "$f"
