@@ -54,14 +54,13 @@ EOF
   echo ".scratch/$slug/issues/open/$file.md"
 }
 
-# session-init.sh calls feature-branch-setup.sh and trace.sh as siblings; that colocation
+# session-init.sh calls trace.sh as a sibling; that colocation
 # only exists after install.sh copies them into the skill's scripts/ dir. Reproduce it.
 installed_scripts() {
   local dir="$TEMP_DIR/installed-scripts"
   if [ ! -d "$dir" ]; then
     mkdir -p "$dir"
     cp "$AFK_SCRIPTS"/*.sh "$dir/"
-    cp "$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$dir/"
   fi
   echo "$dir"
 }

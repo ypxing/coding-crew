@@ -192,7 +192,7 @@ test("discover-commands.sh failing outright is surfaced and does not send a brok
 
 // Regression: a bare word that is neither a recognised flag nor a .scratch/ path used to
 // be forwarded unexamined through Sprint.init into session-init.sh, then into
-// feature-branch-setup.sh (--jira only), which died with a confusing "Unknown argument"
+// the retired feature-branch-setup.sh (--jira only), which died with a confusing "Unknown argument"
 // two hops from where the mistake was made. It must now be rejected here, immediately,
 // before any script even runs.
 test("an unrecognized bare argument fails fast with the accepted forms, not two hops down", () => {
@@ -205,7 +205,7 @@ test("an unrecognized bare argument fails fast with the accepted forms, not two 
   assert.match(r.stderr, /unrecognized argument: qa-slo-emmission/);
   assert.match(r.stderr, /Accepted forms: --feature-slug/);
   assert.doesNotMatch(r.stderr, /session-init\.sh/);
-  assert.doesNotMatch(r.stderr, /Unknown argument/); // feature-branch-setup.sh's own message
+  assert.doesNotMatch(r.stderr, /Unknown argument/); // the retired script's own message
 });
 
 test("an unrecognized argument close to an existing .scratch/<feature-slug> dir is suggested", () => {

@@ -8,7 +8,6 @@ This directory contains reusable bash scripts that are copied into skills during
 
 These scripts provide consistent git workflow operations across multiple skills:
 - Branch safety validation
-- Feature branch creation and switching
 - Standardized commit operations
 
 ## How It Works
@@ -17,14 +16,14 @@ During installation (`install.sh`), skills that declare a `scripts` field in `re
 
 ```json
 "solve-issue": {
-  "scripts": ["feature-branch-setup.sh", "commit-changes.sh"],
+  "scripts": ["commit-changes.sh"],
   ...
 }
 ```
 
 After installation, skills reference them locally:
 ```bash
-bash scripts/feature-branch-setup.sh "$ISSUE_PATH"
+bash scripts/commit-changes.sh --message "..." --files "..."
 ```
 
 ## Scripts
@@ -56,42 +55,6 @@ bash scripts/branch-safety-check.sh
 
 # Allow default branch with warning
 bash scripts/branch-safety-check.sh --allow-default
-```
-
----
-
-### `feature-branch-setup.sh`
-
-**Purpose**: Create or switch to a feature branch based on issue slug. Optionally includes JIRA ticket prefix.
-
-**Usage**:
-```bash
-bash scripts/feature-branch-setup.sh <issue-path> [--jira TICKET-123]
-```
-
-**Arguments**:
-- `issue-path`: Path to the issue markdown file
-- `--jira TICKET-123`: Optional JIRA ticket ID (validated format: `[A-Z]+-[0-9]+`)
-
-**Behavior**:
-- If on default branch: creates or switches to `feature/<slug>` or `feature/<JIRA>-<slug>`
-- If already on non-default branch: no-op (stays on current branch)
-
-**Environment variables**:
-- `PROJECT_ROOT`: Optional, defaults to current directory
-
-**Used by**:
-- `solve-issue` (Step 0)
-- `crew-afk` (for single-issue mode)
-
-**Example**:
-```bash
-# Simple feature branch
-bash scripts/feature-branch-setup.sh .scratch/auth/issues/01-add-logout.md
-
-# With JIRA ticket
-bash scripts/feature-branch-setup.sh .scratch/auth/issues/01-add-logout.md --jira PROJ-456
-# Creates: feature/PROJ-456-add-logout
 ```
 
 ---
