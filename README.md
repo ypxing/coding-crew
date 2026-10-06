@@ -19,6 +19,10 @@ checks and an independent review.
 Works with **Claude Code**, **GitHub Copilot CLI**, **OpenAI Codex CLI** and
 [**pi**](https://github.com/badlogic/pi-mono).
 
+**Platform-agnostic by design:** one skill body and one orchestrator drive every CLI. Supporting a
+new one is a single data entry plus a small adapter — nothing else in the pipeline knows which
+agent is running.
+
 ## Install
 
 ```bash
