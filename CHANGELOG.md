@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: a run that stalls with `ready-for-human` issues open prints `## Waiting on a person`, naming each one
+  (`#<number>` or its file name, then its title) and the `/crew-afk <feature-slug>` re-run once they are done (#129).
 - `write-pr`: What changes describes only what the range contains — a bullet naming a file, doc or setting needs a
   matching path in the `--stat`, so a PRD decision the branch left out is no longer reported as done (seen once, #302).
 - `crew-afk`: `session-init.sh` no longer warns that `--jira` was ignored when the resumed or kept branch is

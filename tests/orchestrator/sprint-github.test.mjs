@@ -396,3 +396,37 @@ test("github --open-pr: a run with a blocked issue opens a draft PR naming it, a
     assert.fail(`no PR was created:\n${r.stdout}\n${r.stderr}`);
   }
 });
+
+// ─── the summary's ## Waiting on a person ────────────────────────────────────
+
+test("github --open-pr: a run stalled on a ready-for-human issue names it under ## Waiting on a person, before the PR and NO MORE TASKS", () => {
+  const root = githubFixtureRepo();
+  const human = { number: 2, title: "Pick the vendor", body: "# Pick the vendor\n\n## Acceptance criteria\n\n- [ ] a vendor is picked\n", labels: [{ name: "ready-for-human" }], state: "OPEN" };
+  const prd = { number: 3, title: "PRD: demo", body: "# PRD\n", labels: [], state: "OPEN" };
+  const { stub } = stubGh(root, [GH_ALPHA, human, prd]);
+  const remote = join(root, ".scratch/remote.git");
+  sh("git", ["init", "-q", "--bare", remote]);
+  sh("git", ["-C", root, "remote", "set-url", "origin", remote]);
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--open-pr"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
+  });
+  assert.match(r.stdout, /^## Waiting on a person\n\n- #2 Pick the vendor\n\nWhen they are done \(mark-issue-done\.sh\), re-run: \/crew-afk demo$/m, `${r.stdout}\n${r.stderr}`);
+  const section = r.stdout.slice(r.stdout.indexOf("## Waiting on a person"), r.stdout.indexOf("When they are done"));
+  assert.doesNotMatch(section, /#1|#3|PRD/, "only the ready-for-human issue is listed");
+  const at = r.stdout.indexOf("## Waiting on a person");
+  assert.ok(r.stdout.indexOf("## Pull Request") > at, `## Pull Request is not after the section\n${r.stdout}`);
+  assert.ok(r.stdout.indexOf("NO MORE TASKS") > at);
+});
+
+test("github: a run that finishes without stalling prints no ## Waiting on a person", () => {
+  const root = githubFixtureRepo();
+  const prd = { number: 3, title: "PRD: demo", body: "# PRD\n", labels: [], state: "OPEN" };
+  const { stub } = stubGh(root, [GH_ALPHA, prd]);
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo"], {
+    cwd: root,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /Waiting on a person/);
+});
