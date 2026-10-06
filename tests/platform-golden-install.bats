@@ -11,6 +11,9 @@
 #
 # Roots are written as REPO, HOME and CONFIG, and the manifest's per-run fields (installed_at,
 # source, source_sha) are dropped before hashing, so a fixture holds no machine-specific value.
+# Each manifest skill version is read as the one it had when the fixtures were recorded
+# (manifest-versions.json): a version bump is registry data, not a change to what installs where,
+# and must not churn every fixture.
 
 load helpers/isolate-env
 
@@ -42,7 +45,10 @@ _tree() {
       path="${rel#./}"
       if [[ "$(basename "$path")" == manifest.json ]]; then
         printf '%s/%s %s\n' "$label" "$path" \
-          "$(jq -S 'del(.installed_at, .source, .source_sha)' "$path" | git hash-object --stdin)"
+          "$(jq -S --slurpfile v "$GOLDEN/manifest-versions.json" '
+              del(.installed_at, .source, .source_sha)
+              | .skills |= with_entries(.value.version = ($v[0][.key] // .value.version))' "$path" \
+            | git hash-object --stdin)"
       else
         printf '%s/%s %s\n' "$label" "$path" "$(git hash-object "$path")"
       fi
@@ -104,9 +110,9 @@ golden_install() {
   _compare "$platform" "$scope" uninstall "$WORK/uninstall.txt"
 }
 
-@test "platforms.json lists exactly install.sh's platforms, so the cases below cover them all" {
+@test "install.sh's platforms are platforms.json's, and the cases below cover them all" {
   local want got
-  want=$(grep -m1 '^PLATFORMS=(' "$REPO/install.sh" | sed 's/^PLATFORMS=(\(.*\))/\1/' | tr ' ' '\n' | LC_ALL=C sort)
+  want=$(SCRIPT_DIR="$REPO" REPO_ROOT="$WORK/repo" bash -c 'source "$SCRIPT_DIR/scripts/lib/platforms.sh"; printf "%s\n" "${PLATFORMS[@]}"' | LC_ALL=C sort)
   got=$(jq -r 'keys[]' "$REPO/orchestrator/platforms.json" | LC_ALL=C sort)
   [ "$want" = "$got" ]
   [ "$got" = "$(printf '%s\n' claude codex copilot pi)" ]

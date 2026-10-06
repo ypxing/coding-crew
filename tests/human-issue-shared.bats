@@ -4,6 +4,7 @@
 # inlined into to-issues and upgrade-deps. Assertions read the rendered skill bodies.
 
 load helpers/render
+load helpers/platforms
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
@@ -16,7 +17,7 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
 }
 
 @test "to-issues renders the fragment for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     grep -qF 'Kind A — the whole task is a person' "$output"
@@ -37,7 +38,10 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
 }
 
 @test "every rendered to-issues and upgrade-deps ends a Kind A issue's Steps with Mark it done" {
-  for r in "to-issues claude" "to-issues copilot" "to-issues pi" "to-issues codex" "upgrade-deps claude"; do
+  local r runs=()
+  for r in "${PLATFORMS[@]}"; do runs+=("to-issues $r"); done
+  runs+=("upgrade-deps claude")
+  for r in "${runs[@]}"; do
     # shellcheck disable=SC2086
     run rendered_skill $r
     [ "$status" -eq 0 ]

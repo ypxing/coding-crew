@@ -7,7 +7,7 @@
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 RENDER="$REPO_ROOT/scripts/render-skill.sh"
-PLATFORMS=(claude copilot pi codex)
+load helpers/platforms
 
 # The probe skill lives in a per-test copy of the render tree (render-skill.sh resolves
 # registry.json and skills/ from its own location), never under the real skills/: bats -j

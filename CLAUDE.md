@@ -10,11 +10,12 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-addr
 
 ## Layout
 
-- `skills/<skill>/SKILL.md` (or `<platform>.SKILL.md` per platform) — one skill per directory. `crew-afk`'s skill is a thin launcher; its actual logic is the `orchestrator/` program.
+- `skills/<skill>/SKILL.md` — one skill per directory, one body for every platform (`{{PLATFORM}}` is the one per-platform substitution). `crew-afk`'s skill is a thin launcher; its actual logic is the `orchestrator/` program.
 - `orchestrator/` — the crew-afk state machine (rounds, worktrees, deps → dispatch → verify → review → merge → close, receipts). One implementation, run by all four platform launchers via `orchestrator/lib/dispatch.mjs`.
 - `orchestrator/roles/` — the role protocols crew-afk dispatches (`coder.md`, `reviewer.md` + `reviewer/` checklists and scripts, `triage.md`). They ship with the orchestrator to `.coding-crew/crew-afk/roles/` (crew-afk also installs `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/` for their `{{FRAGMENT:…}}` lines) and are rendered per dispatch; no platform gets an agent file. `registry.json`'s `retired-agents` lists the agent files older installs wrote, which install and uninstall remove.
-- `registry.json` — source of truth for install paths per skill/platform, `deps`, `assets`, `retired-agents`, and doc templates.
-- `install.sh` / `uninstall.sh` — installer; `PLATFORMS=(claude copilot pi codex)`.
+- `orchestrator/platforms.json` — the platform list and where each platform keeps skills (`projectSkills`, `userSkills`, `configDir`, `configDirEnv`); a skill installs to `<projectSkills|userSkills>/<skill>`.
+- `registry.json` — source of truth for skills (`version`, `deps`, `assets`), `retired-agents`, and doc templates.
+- `install.sh` / `uninstall.sh` — installer; both source `scripts/lib/platforms.sh`, which reads the platform list and skill destinations from `orchestrator/platforms.json`.
 - `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`) and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`, `sync-pr-with-main.sh`, `smoke-sprint.sh` + `smoke-sprint/`, `eval-design-skills.mjs` + `eval-design-skills/`, `eval-reviewer-misses.mjs` + `eval-reviewer-misses/`). Skill-local runtime scripts live with their skill (e.g. `skills/crew-afk/scripts/`).
 - `tests/` — bats tests, run against **rendered/installed** output via `tests/helpers/render.bash`, not source variants.
 - `docs/` — the dev team guide (`guide.md`) and issue-tracker templates.
@@ -50,7 +51,7 @@ scripts/sync-pr-with-main.sh <branch>
 scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-smoke "<reason>"; verify, then re-run without --dry-run to tag and push
 ```
 
-- Version bump (D4): a change to any file a `skills.*` entry in `registry.json` ships (its `source-dir` tree, `assets.source` tree, `scripts[]`, `platform-files`) or to that entry's own registry fields needs that entry's `version` in `registry.json` strictly above `origin/main`'s version for it — `install.sh --update` skips an entry whose version is unchanged, and two branches bumping to the same number would collide. An entry the branch did not change (measured from the merge-base) is exempt even if main bumped it. `tests/registry-version-bump.bats` enforces it against `origin/main` (skips when it is not found) and fails the verify gate otherwise.
+- Version bump (D4): a change to any file a `skills.*` entry in `registry.json` ships (its `source-dir` tree, `assets.source` tree, `scripts[]`) or to that entry's own registry fields needs that entry's `version` in `registry.json` strictly above `origin/main`'s version for it — `install.sh --update` skips an entry whose version is unchanged, and two branches bumping to the same number would collide. An entry the branch did not change (measured from the merge-base) is exempt even if main bumped it. `tests/registry-version-bump.bats` enforces it against `origin/main` (skips when it is not found) and fails the verify gate otherwise.
   In an issue's acceptance criteria, state it as the invariant ("`<entry>`'s version is above origin/main's"), never as "version bumped": issues in one sprint run in parallel, and once a sibling has bumped the entry, the bump drops out of a later branch's diff after it syncs with the feature branch, so the reviewer finds it unmet.
 - A crew-afk mechanism change cites how many times its incident happened (from the logs or the tracker): a gate, retry or promotion rule added for one incident costs every sprint, so the count is what justifies it.
 - One writer per issue file: don't add code paths where a worker/agent edits an issue's `Status:`/checkboxes directly — that's `close-issue.sh`'s job, gated by receipts.
@@ -61,7 +62,7 @@ scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-sm
 
 The design standard (`skills/_shared/fragments/design-standard.md`, criterion 2) counts these as real axes, so a decision that varies along one belongs behind one abstraction even with a single implementation today:
 
-- platforms — `install.sh`'s `PLATFORMS` (claude, copilot, pi, codex)
+- platforms — `orchestrator/platforms.json` (claude, copilot, pi, codex)
 - trackers — local, github (`orchestrator/lib/trackers/`, `.coding-crew/docs/issue-tracker.md`)
 - crew-afk roles — `orchestrator/roles/` (`ROLE_AGENTS` in `orchestrator/lib/adapters/render.mjs`)
 - dependency-install ecosystems — `dep-install`'s detection and install scripts

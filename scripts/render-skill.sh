@@ -4,10 +4,7 @@
 # Usage: render-skill.sh <skill-name> <platform>            # prints to stdout
 #        render-skill.sh <skill-name> <platform> <outfile>
 #
-# Body resolution (first match wins):
-#   1. registry.json .skills[<skill>].body[<platform>]   — shared multi-platform body
-#   2. skills/<source-dir>/<platform>.SKILL.md           — single-platform variant
-#   3. skills/<source-dir>/SKILL.md                      — shared fallback
+# The body is skills/<source-dir>/SKILL.md, one for every platform.
 #
 # Expansion inside the body:
 #   {{FRAGMENT:<key>}}  → skills/_shared/fragments/<key>.md (whole line) — one source for text
@@ -59,14 +56,7 @@ SOURCE_DIR=$(jq -r --arg s "$SKILL" '.skills[$s]["source-dir"] // $s' "$REGISTRY
 SKILL_SRC="$SCRIPT_DIR/skills/$SOURCE_DIR"
 [[ -d "$SKILL_SRC" ]] || { echo "Error: skill source not found: skills/$SOURCE_DIR" >&2; exit 1; }
 
-BODY=$(jq -r --arg s "$SKILL" --arg p "$PLATFORM" '.skills[$s].body[$p] // empty' "$REGISTRY")
-if [[ -z "$BODY" ]]; then
-  if [[ -f "$SKILL_SRC/$PLATFORM.SKILL.md" ]]; then
-    BODY="$PLATFORM.SKILL.md"
-  else
-    BODY="SKILL.md"
-  fi
-fi
+BODY="SKILL.md"
 [[ -f "$SKILL_SRC/$BODY" ]] || { echo "Error: skill body not found: skills/$SOURCE_DIR/$BODY" >&2; exit 1; }
 
 render() {

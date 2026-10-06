@@ -23,8 +23,9 @@ while [[ $# -gt 0 ]]; do
     --skills=*) SKILLS="${1#--skills=}"; shift ;;
     --skills) SKILLS="${2:-}"; shift 2 ;;
     --update) UPDATE=1; shift ;;
-    all|claude|copilot|pi|codex) PLATFORM="$1"; shift ;;
-    *) echo "Unknown argument: $1" >&2; exit 1 ;;
+    -*) echo "Unknown argument: $1" >&2; exit 1 ;;
+    # Any other word is the platform; install.sh validates it against orchestrator/platforms.json.
+    *) PLATFORM="$1"; shift ;;
   esac
 done
 

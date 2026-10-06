@@ -70,10 +70,7 @@ There are no agents. crew-afk's three roles — coder, reviewer, triage — are 
     "<name>": {
       "version": "1.0.0",
       "description": "...",
-      "install": ".claude/skills/<name>", // destination dir in target repo
-      "install-codex": ".agents/skills/<name>", // optional per-platform override
-      // With no override, the Claude path is reused with .claude/ swapped for
-      // .<platform>/ — except codex, which resolves to .agents/skills/<name>.
+      // installs to <projectSkills|userSkills>/<name> from orchestrator/platforms.json
       "deps": ["tdd", "dep-install"], // other skills, installed recursively
       "assets": { "source": "orchestrator", "dest": ".coding-crew/crew-afk" }, // optional runtime files
     },
@@ -143,8 +140,7 @@ ls /tmp/test-install/.coding-crew/crew-afk/roles/
    ```jsonc
    "<name>": {
      "version": "1.0.0",
-     "description": "...",
-     "install": ".claude/skills/<name>"
+     "description": "..."
    }
    ```
 

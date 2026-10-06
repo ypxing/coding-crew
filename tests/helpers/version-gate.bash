@@ -9,7 +9,6 @@ _shipped_paths() {
   assets_source=$(jq -r --arg s "$section" --arg n "$name" '
     .[$s][$n] as $e
     | ($e.assets.source // empty),
-      (if ($e.install | type) == "object" then ($e.install.assets.source // empty) else empty end),
       (($e["more-assets"] // [])[] | .source)
   ' "$cur_file" | grep -v '^$')
   [ -n "$source_dir" ] && [ "$section" = "skills" ] && echo "skills/$source_dir"
@@ -19,9 +18,6 @@ _shipped_paths() {
     while IFS= read -r script; do
       [ -n "$script" ] && echo "scripts/skill-utils/git-workflow/$script"
     done < <(jq -r --arg n "$name" '.skills[$n].scripts // [] | .[]' "$cur_file")
-    while IFS= read -r pf; do
-      [ -n "$pf" ] && [ -n "$source_dir" ] && echo "skills/$source_dir/$pf"
-    done < <(jq -r --arg n "$name" '.skills[$n]["platform-files"] // {} | to_entries[] | .value[]' "$cur_file")
   fi
   return 0
 }
