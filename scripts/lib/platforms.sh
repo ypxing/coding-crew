@@ -84,13 +84,18 @@ platform_scope_path() {
 }
 
 # platform_scope_paths <platform> <path> — every path <path> may occupy in this target: this
-# scope's, then the other scope's when it differs (what an earlier install may have written).
+# scope's, then the other scope's when an earlier install wrote it here. Earlier installs wrote
+# under .<platform>/ at both scopes, so the other scope's path is a dead copy only when that
+# scope's base is .<platform> (Copilot's .copilot/ at project scope, pi's .pi/ at user scope);
+# any other is a live install of its own (a repo's .github/ under $HOME), left in place.
 platform_scope_paths() {
-  local platform="$1" path="$2" here there
+  local platform="$1" path="$2" here there other=user
   here=$(platform_scope_path "$platform" "$path")
   printf '%s\n' "$here"
-  if _platform_user_scope; then there=$(platform_scope_path "$platform" "$path" project)
-  else there=$(platform_scope_path "$platform" "$path" user); fi
+  _platform_user_scope && other=project
+  platform_skills_dir "$platform" "$other" || return 0
+  [[ "$(dirname "$_PLATFORM_SKILLS")" == ".$platform" ]] || return 0
+  there=$(platform_scope_path "$platform" "$path" "$other")
   [[ "$there" != "$here" ]] && printf '%s\n' "$there"
   return 0
 }

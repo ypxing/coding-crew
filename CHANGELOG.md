@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- installer: `uninstall.sh` again sweeps only the legacy paths an earlier install wrote (Copilot's `.copilot/` at project
+  scope, pi's `.pi/` at user scope); a user uninstall no longer removes `~/.github/skills/<skill>`, nor a project
+  uninstall `<repo>/.pi/agent/skills/<skill>` (#313).
 - `crew-afk`: each platform adapter normalizes its CLI's events to one shape (`normalize`), and the trace log, the pane view
   and full-suite deviation detection read that shape with no per-platform code. codex's trace lines now read `tool=shell`
   instead of `item=command_execution`, and its `turn.failed` / `error` events are logged as `[AGENT-ERROR]`; deviation

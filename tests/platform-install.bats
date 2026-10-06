@@ -174,6 +174,40 @@ _assert_every_skill_in() {
   _assert_every_skill_in "$TEMP_DIR/cfg/skills"
 }
 
+# --- uninstall sweeps only the legacy paths an earlier install wrote ---
+# Earlier installs wrote <platform>'s resources under .<platform>/ at both scopes: Copilot's
+# .copilot/ at project scope and pi's .pi/ at user scope are the only such dead copies. The
+# other scope's dir is otherwise a live install of its own, which a scoped uninstall leaves be.
+
+@test "a user uninstall leaves the project-scope .github/skills under \$HOME alone" {
+  cd "$SCRIPT_DIR"
+  mkdir -p "$TEMP_DIR/home/.github/skills/tdd"
+  echo "a repo's own skill" > "$TEMP_DIR/home/.github/skills/tdd/SKILL.md"
+  run env HOME="$TEMP_DIR/home" TARGET_REPO="$TEMP_DIR/home" ./uninstall.sh --user --skill tdd
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  [ -f "$TEMP_DIR/home/.github/skills/tdd/SKILL.md" ]
+}
+
+@test "a project uninstall leaves a repo's .pi/agent/skills alone" {
+  cd "$SCRIPT_DIR"
+  mkdir -p "$TEMP_DIR/repo/.pi/agent/skills/tdd"
+  echo "a repo's own skill" > "$TEMP_DIR/repo/.pi/agent/skills/tdd/SKILL.md"
+  run env TARGET_REPO="$TEMP_DIR/repo" ./uninstall.sh --skill tdd
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  [ -f "$TEMP_DIR/repo/.pi/agent/skills/tdd/SKILL.md" ]
+}
+
+@test "a user uninstall still removes pi's legacy ~/.pi/skills copy" {
+  cd "$SCRIPT_DIR"
+  mkdir -p "$TEMP_DIR/home/.pi/skills/tdd" "$TEMP_DIR/home/.pi/agent/skills/tdd"
+  echo stale > "$TEMP_DIR/home/.pi/skills/tdd/SKILL.md"
+  echo current > "$TEMP_DIR/home/.pi/agent/skills/tdd/SKILL.md"
+  run env HOME="$TEMP_DIR/home" TARGET_REPO="$TEMP_DIR/home" ./uninstall.sh --user --skill tdd
+  [ "$status" -eq 0 ] || { echo "$output" >&2; return 1; }
+  [ ! -d "$TEMP_DIR/home/.pi/skills/tdd" ]
+  [ ! -d "$TEMP_DIR/home/.pi/agent/skills/tdd" ]
+}
+
 # --- bootstrap.sh leaves platform validation to install.sh ---
 
 @test "bootstrap.sh hands any platform word to install.sh, which validates it" {
