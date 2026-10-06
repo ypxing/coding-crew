@@ -658,3 +658,19 @@ test("the branch review prompt judges criteria only: no PRD decisions block, eve
   assert.doesNotMatch(prompt, /PRD decisions/);
   assert.doesNotMatch(prompt, /Adapters/);
 });
+
+test("the branch review prompt names the PRD file on a `PRD:` line when there is one, and has no such line otherwise", () => {
+  const withPrd = fixtureRepo();
+  writeFileSync(join(withPrd, ".scratch/demo/PRD.md"), "# PRD\n");
+  addIssue(withPrd, "01-alpha.md");
+  let r = runSprint(withPrd);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const prompt = readFileSync(join(withPrd, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8");
+  assert.ok(prompt.split("\n").includes(`PRD: ${join(withPrd, ".scratch/demo/PRD.md")}`), prompt);
+
+  const without = fixtureRepo();
+  addIssue(without, "01-alpha.md");
+  r = runSprint(without);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(readFileSync(join(without, ".scratch/demo/dispatch/01-alpha/review-prompt.md"), "utf8"), /^PRD: /m);
+});

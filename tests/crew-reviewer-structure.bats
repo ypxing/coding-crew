@@ -146,3 +146,12 @@ setup() {
     grep -qF 'A per-branch review writes `findings: []`' "$f"
   done
 }
+
+@test "the reviewer takes the PRD path from the prompt's PRD: line, never from the branch name, on every platform" {
+  local plat f
+  for plat in claude copilot pi codex; do
+    f="$(role_prompt reviewer "$plat")"
+    grep -qF 'the prompt'"'"'s `PRD: <path>` line' "$f"
+    ! grep -qF "sed 's|^feature/||'" "$f"
+  done
+}
