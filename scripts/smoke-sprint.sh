@@ -114,7 +114,10 @@ fi
 
 if [[ -e "$DIR" ]]; then
   [[ -e "$DIR/.git/crew-smoke" ]] || fail "$DIR exists and is not a smoke repo — refusing to delete it"
-  rm -rf "$DIR" || fail "cannot remove the previous smoke repo at $DIR"
+  # Retried: on macOS CI a lone rm -rf has failed with "Directory not empty" under .git
+  # (2 of 3 runs on PR #297) while something still wrote there; a later pass succeeds.
+  for _ in 1 2 3 4 5; do rm -rf "$DIR" 2>/dev/null && break; sleep 1; done
+  [[ ! -e "$DIR" ]] || rm -rf "$DIR" || fail "cannot remove the previous smoke repo at $DIR"
 fi
 
 # --- build the repo -----------------------------------------------------------------------------
