@@ -183,7 +183,15 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
     echo "WARNING: gh label create in-progress failed; leaving it alone: $GH_OUT" >&2
     IN_PROGRESS_ARGS=()
   fi
-  if ! GH_OUT="$(gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --add-label awaiting-merge --remove-label ready-for-agent "${IN_PROGRESS_ARGS[@]}" 2>&1)"; then
+  # A person closing a ready-for-human issue from its own steps runs this too; the label it
+  # carried comes off in the same edit, created first like in-progress.
+  READY_FOR_HUMAN_ARGS=(--remove-label ready-for-human)
+  if ! GH_OUT="$(gh label create ready-for-human "${REPO_ARGS[@]}" --force \
+      --description "Requires human implementation" 2>&1)"; then
+    echo "WARNING: gh label create ready-for-human failed; leaving it alone: $GH_OUT" >&2
+    READY_FOR_HUMAN_ARGS=()
+  fi
+  if ! GH_OUT="$(gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --add-label awaiting-merge --remove-label ready-for-agent "${READY_FOR_HUMAN_ARGS[@]}" "${IN_PROGRESS_ARGS[@]}" 2>&1)"; then
     echo "ERROR: gh issue edit failed for #$ISSUE_NUMBER:" >&2
     echo "$GH_OUT" >&2
     exit 1
