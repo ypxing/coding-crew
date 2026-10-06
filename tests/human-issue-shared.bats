@@ -44,7 +44,7 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
     grep -qF '"Mark it done"' "$output"
     grep -qF 'bash .coding-crew/scripts/mark-issue-done.sh <n>' "$output"
     grep -qF '`Check:` the issue is labelled `awaiting-merge` (local tracker: the file is in `done/`)' "$output"
-    grep -qF '`Undo:` relabel it `ready-for-human`' "$output"
+    grep -qF '`Undo:` remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`)' "$output"
   done
 }
 
@@ -55,6 +55,7 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
   last=$(grep -E '^[0-9]+\. ' <<<"$steps" | tail -1)
   [[ "$last" == *"Mark it done"* ]]
   grep -qF 'mark-issue-done.sh' <<<"$(sed -n '/Mark it done/,$p' <<<"$steps")"
+  [[ "$last" == *'Undo: remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`).'* ]]
 }
 
 @test "the fragment's example lints with no output" {

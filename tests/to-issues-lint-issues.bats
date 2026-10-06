@@ -366,7 +366,7 @@ H106="tests/fixtures/lint-issues/human/issues/106-enable-main-ruleset.md"
   printf '\n```markdown\n- [x] fenced example\n```\n' >> "$f"
   run bash "$LINT" --issue "$f"
   [ "$status" -eq 0 ]
-  [ "$output" = "WARN $f: ready-for-human acceptance criterion is ticked before anyone did it — write it unticked (- [ ]): - [x] The four original rules are still present" ]
+  [ "$output" = "WARN $f: ready-for-human acceptance criterion is ticked — leave criteria unticked when publishing: - [x] The four original rules are still present" ]
 }
 
 @test "ready-for-agent with a ticked criterion: no ticked-criterion WARN" {

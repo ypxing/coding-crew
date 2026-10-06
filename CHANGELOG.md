@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `to-issues`/`upgrade-deps`: a Kind A issue's "Mark it done" Undo now says to remove `awaiting-merge` and add `ready-for-human`
+  (local: move the file back to `issues/open/`); `mark-issue-done.sh` (github) no longer resets an existing `ready-for-human`
+  label's colour and description; `lint-issues.sh`'s ticked-criterion WARN reads "leave criteria unticked when publishing" (#304).
 - `crew-afk`: a run that stalls with `ready-for-human` issues open prints `## Waiting on a person`, naming each one
   (`#<number>` or its file name, then its title) and the `/crew-afk <feature-slug>` re-run once they are done (#129).
 - `to-issues`/`upgrade-deps`: a Kind A `ready-for-human` issue ends `### Steps` with "Mark it done"
