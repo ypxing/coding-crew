@@ -3,22 +3,38 @@ set -euo pipefail
 
 # Session initialization and feature branch setup for afk-run
 # Usage: source this script or run it directly
-# Optional: Pass --jira TICKET-123 or --feature-slug <slug> as arguments
+# Optional: --feature-slug <slug>, --jira TICKET-123, --branch-prefix <prefix>, --fix-findings <level>
 
-# Parse --feature-slug flag (consumed here; remaining args forwarded to feature-branch-setup.sh)
-#
 # --fix-findings is the sprint's policy setting (config.json's afk fixFindings, resolved by the
 # orchestrator). It is captured here, once, and written into sprint.env — so the step that acts on
 # it reads a variable instead of the orchestrator remembering a flag for a whole sprint. --promote
 # is its old name, still accepted from a hand run. --prd-audit <value> and --coverage set the
 # retired PRD audit: accepted and ignored, with a notice.
+#
+# --jira <KEY> and --branch-prefix <prefix> (config.json's afk.branchPrefix; "" allowed) name a
+# new feature branch: see feature_branch_name below.
 FEATURE_SLUG_ARG=""
 FIX_FINDINGS_OPT="actionable"
-REMAINING_ARGS=()
+JIRA_KEY=""
+BRANCH_PREFIX="feature/"
+JIRA_KEY_FORMAT='^[A-Z][A-Z0-9]+-[0-9]+$'
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --feature-slug)
       FEATURE_SLUG_ARG="${2:?--feature-slug requires a value}"
+      shift 2
+      ;;
+    --jira)
+      JIRA_KEY="${2:-}"
+      if [[ ! "$JIRA_KEY" =~ $JIRA_KEY_FORMAT ]]; then
+        echo "ERROR: --jira '$JIRA_KEY' is not a Jira key (expected format: PROJ-123, matching $JIRA_KEY_FORMAT)" >&2
+        exit 1
+      fi
+      shift 2
+      ;;
+    --branch-prefix)
+      if [[ $# -lt 2 ]]; then echo "ERROR: --branch-prefix requires a value (\"\" for none)" >&2; exit 1; fi
+      BRANCH_PREFIX="$2"
       shift 2
       ;;
     --prd-audit|--coverage)
@@ -35,11 +51,30 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     *)
-      REMAINING_ARGS+=("$1")
-      shift
+      echo "ERROR: session-init.sh: unknown argument: $1" >&2
+      exit 1
       ;;
   esac
 done
+
+# The one place a feature branch is named: `<prefix><KEY>-<slug>`, or `<prefix><slug>` with no
+# --jira. Every path that creates, switches to or expects a feature branch calls this, so the
+# name cannot drift between them. A name git would refuse stops the run here, before any
+# checkout, naming the branch rather than leaving git's own error two steps later.
+feature_branch_name() {
+  local name="$BRANCH_PREFIX${JIRA_KEY:+$JIRA_KEY-}$1"
+  if ! git check-ref-format --branch "$name" >/dev/null 2>&1; then
+    echo "ERROR: '$name' is not a valid branch name (git check-ref-format --branch rejects it) — check --branch-prefix / afk.branchPrefix ('$BRANCH_PREFIX')." >&2
+    exit 1
+  fi
+  printf '%s\n' "$name"
+}
+
+# --jira only names a branch this run creates; a branch already chosen keeps its name.
+warn_jira_ignored() {
+  [ -n "$JIRA_KEY" ] || return 0
+  echo "WARNING: --jira $JIRA_KEY ignored: $1" >&2
+}
 
 # Resume a prior sprint onto the exact feature branch it started on, before anything
 # else runs. Without this, re-running crew-afk from wherever the shell happens to be
@@ -154,82 +189,59 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ] && [ -z "$FEATURE_SLUG_ARG" ]; then
   exit 1
 fi
 
+# The feature slug: the one given, else the directory the first ready issue lives in. The slug is
+# a property of where the issues live, never of the branch name — deriving it from the branch
+# would point sprint state, traces and the PRD lookup at a directory that holds no issues.
 if [ -n "$FEATURE_SLUG_ARG" ]; then
-  # Use the provided slug directly — bypass first-issue detection
-  if resume_feature_branch "$FEATURE_SLUG_ARG"; then
-    :
-  else
-    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
-    [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
-
-    if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
-      SUGGESTED_BRANCH="feature/$FEATURE_SLUG_ARG"
-      if git rev-parse --verify "$SUGGESTED_BRANCH" >/dev/null 2>&1; then
-        echo "Switching to existing branch: $SUGGESTED_BRANCH"
-        git checkout "$SUGGESTED_BRANCH"
-      else
-        warn_if_default_behind_origin
-        echo "Creating new feature branch: $SUGGESTED_BRANCH"
-        git checkout -b "$SUGGESTED_BRANCH"
-      fi
-    elif [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
-      # Cross-machine resume depends on the branch name being deterministic — off the
-      # default branch with no sprint.env to resume from, the only branch a github-
-      # tracked sprint may legitimately be on is feature/<slug>. Anything else is a
-      # leftover branch from something unrelated (a prior issue's own branch, a
-      # detached HEAD, a colleague's branch), not this sprint continuing.
-      EXPECTED_BRANCH="feature/$FEATURE_SLUG_ARG"
-      if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
-        echo "ERROR: tracker: github requires resuming on branch '$EXPECTED_BRANCH', but the current branch is '$CURRENT_BRANCH' and no .scratch/$FEATURE_SLUG_ARG/sprint.env exists to resume from." >&2
-        echo "Checkout '$EXPECTED_BRANCH' (or a branch that has a recorded sprint.env), or pass a different --feature-slug." >&2
-        exit 1
-      fi
-    fi
-    # local tracker (or absent config): off the default branch with no sprint.env
-    # silently keeps whatever branch is checked out — unchanged, existing behavior.
-  fi
+  FEATURE_SLUG="$FEATURE_SLUG_ARG"
 else
-  # Find first ready issue to determine branch name
   FIRST_ISSUE=$(find .scratch -path '*/issues/open/*.md' -type f | head -n 1)
 
   if [ -z "$FIRST_ISSUE" ]; then
     echo "No issues found. Create issues in .scratch/<feature-slug>/issues/open/ before running afk-run."
     exit 1
   fi
+  FEATURE_SLUG=$(printf '%s' "$FIRST_ISSUE" | sed 's|^\./||' | sed 's|^\.scratch/||' | sed 's|/.*||')
+fi
 
-  # The feature slug is a property of where the issues live, not of the branch name.
-  # Deriving it from the branch (which feature-branch-setup.sh names after the first
-  # issue) would point sprint state, traces and the PRD lookup at a directory that
-  # holds no issues.
-  DERIVED_FROM_PATH=$(printf '%s' "$FIRST_ISSUE" | sed 's|^\./||' | sed 's|^\.scratch/||' | sed 's|/.*||')
+if resume_feature_branch "$FEATURE_SLUG"; then
+  warn_jira_ignored "sprint '$FEATURE_SLUG' resumes on its recorded branch '$(git rev-parse --abbrev-ref HEAD)'."
+else
+  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH="main"
 
-  # Same resume guard as the FEATURE_SLUG_ARG branch above: a slug with a recorded
-  # session pins to its own feature branch instead of letting feature-branch-setup.sh's
-  # default-branch heuristic adopt whatever branch the shell happens to be on.
-  if resume_feature_branch "$DERIVED_FROM_PATH"; then
-    :
-  else
-    # Use shared feature branch setup script (handles branch creation/switching with JIRA support)
-    # feature-branch-setup.sh is copied into this skill's scripts/ directory during install.sh
-    BRANCHES_BEFORE=$(git for-each-ref --format='%(refname:short)' refs/heads)
-    bash "$(dirname "$0")/feature-branch-setup.sh" "$FIRST_ISSUE" "${REMAINING_ARGS[@]+"${REMAINING_ARGS[@]}"}"
-    if ! printf '%s\n' "$BRANCHES_BEFORE" | grep -qxF -- "$(git rev-parse --abbrev-ref HEAD)"; then
+  if [ "$CURRENT_BRANCH" = "$DEFAULT_BRANCH" ]; then
+    SUGGESTED_BRANCH=$(feature_branch_name "$FEATURE_SLUG")
+    if git rev-parse --verify "$SUGGESTED_BRANCH" >/dev/null 2>&1; then
+      echo "Switching to existing branch: $SUGGESTED_BRANCH"
+      git checkout "$SUGGESTED_BRANCH"
+    else
       warn_if_default_behind_origin
+      echo "Creating new feature branch: $SUGGESTED_BRANCH"
+      git checkout -b "$SUGGESTED_BRANCH"
     fi
+  elif [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+    # Cross-machine resume depends on the branch name being deterministic — off the
+    # default branch with no sprint.env to resume from, the only branch a github-
+    # tracked sprint may legitimately be on is the one feature_branch_name builds.
+    # Anything else is a leftover branch from something unrelated (a prior issue's own
+    # branch, a detached HEAD, a colleague's branch), not this sprint continuing.
+    EXPECTED_BRANCH=$(feature_branch_name "$FEATURE_SLUG")
+    if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
+      echo "ERROR: tracker: github requires resuming on branch '$EXPECTED_BRANCH', but the current branch is '$CURRENT_BRANCH' and no .scratch/$FEATURE_SLUG/sprint.env exists to resume from." >&2
+      echo "Checkout '$EXPECTED_BRANCH' (or a branch that has a recorded sprint.env), or pass a different --feature-slug." >&2
+      exit 1
+    fi
+  else
+    # local tracker (or absent config): off the default branch with no sprint.env
+    # silently keeps whatever branch is checked out.
+    warn_jira_ignored "keeping the current branch '$CURRENT_BRANCH' (off the default branch, no sprint.env to resume)."
   fi
 fi
 
 # Get current branch after setup
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-
-# Derive feature-slug: use provided value if given, otherwise use the directory the
-# issues actually live in. Never derive it from the branch name — see above.
-if [ -n "$FEATURE_SLUG_ARG" ]; then
-  FEATURE_SLUG="$FEATURE_SLUG_ARG"
-else
-  FEATURE_SLUG="$DERIVED_FROM_PATH"
-fi
 
 # Validate feature-slug is non-empty after stripping
 if [ -z "$FEATURE_SLUG" ]; then
