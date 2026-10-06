@@ -152,6 +152,38 @@ test("openPr off and nothing merged: no ## Next section", () => {
   assert.doesNotMatch(r.stdout, /^## Next$/m);
 });
 
+test("a local run stalled on a ready-for-human issue names its file and title under ## Waiting on a person", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  addIssue(root, "02-vendor.md", { status: "ready-for-human" });
+  const r = runSprint(root);
+  assert.match(r.stdout, /^## Waiting on a person\n\n- 02-vendor\.md vendor\n\nWhen they are done \(mark-issue-done\.sh\), re-run: \/crew-afk demo$/m, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /- 01-alpha\.md/);
+  assert.ok(r.stdout.indexOf("NO MORE TASKS") > r.stdout.indexOf("## Waiting on a person"));
+});
+
+test("a run stalled only by a blocked ready-for-agent issue prints no ## Waiting on a person", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  fake(root, "alpha.nocommit");
+  fake(
+    root,
+    "alpha.worker",
+    ['## Issue: alpha', 'Status: complete', '', '```json', '{"status":"complete","checks":{"test":"fail","lint":"pass","typecheck":"pass"},"progress":"tests red"}', '```'].join("\n"),
+  );
+  const r = runSprint(root);
+  assert.equal(r.code, 2, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /Waiting on a person/);
+});
+
+test("a local run that finishes without stalling prints no ## Waiting on a person", () => {
+  const root = fixtureRepo();
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /Waiting on a person/);
+});
+
 test("a run whose install is missing an asset stops before any dispatch, naming the path", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");

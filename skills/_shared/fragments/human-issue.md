@@ -6,7 +6,9 @@
 4. `### If skipped or done wrong` — what breaks, in the reader's terms.
 5. `### Done when` — the observable end state.
 
-**Kind A — the whole task is a person's.** Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue.
+Write acceptance criteria unticked (`- [ ]`): the person ticks each one as they finish it, so a box ticked at publish says "done" before anything was done.
+
+**Kind A — the whole task is a person's.** Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue. End `### Steps` with a fixed last step, "Mark it done", that runs `bash .coding-crew/scripts/mark-issue-done.sh <n>` (local tracker: the issue file path instead of `<n>`), with `Check:` the issue is labelled `awaiting-merge` (local tracker: the file is in `done/`) and `Undo:` remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`).
 
 **Kind B — agent work blocked on a person.** Keep the agent brief (`## What to build`, `## Implements`, acceptance criteria, …) below the block, and make the last step of `### Steps` relabel the issue `ready-for-agent`, so crew-afk picks it up.
 
@@ -41,6 +43,12 @@ Today the ruleset has no `required_status_checks` rule, so a PR can merge while 
 
    ```bash
    gh api -X PUT repos/OWNER/REPO/rulesets/ID --input ruleset.json
+   ```
+
+3. Mark it done, once every acceptance criterion below is ticked. Check: the issue is labelled `awaiting-merge`. Undo: remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`).
+
+   ```bash
+   bash .coding-crew/scripts/mark-issue-done.sh 42
    ```
 
 ### If skipped or done wrong

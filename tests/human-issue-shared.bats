@@ -36,10 +36,32 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
   ! grep -q '{{FRAGMENT' "$output"
 }
 
-@test "the fragment's example lints with no For a human WARN" {
+@test "every rendered to-issues and upgrade-deps ends a Kind A issue's Steps with Mark it done" {
+  for r in "to-issues claude" "to-issues copilot" "to-issues pi" "to-issues codex" "upgrade-deps claude"; do
+    # shellcheck disable=SC2086
+    run rendered_skill $r
+    [ "$status" -eq 0 ]
+    grep -qF '"Mark it done"' "$output"
+    grep -qF 'bash .coding-crew/scripts/mark-issue-done.sh <n>' "$output"
+    grep -qF '`Check:` the issue is labelled `awaiting-merge` (local tracker: the file is in `done/`)' "$output"
+    grep -qF '`Undo:` remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`)' "$output"
+  done
+}
+
+@test "the fragment says criteria are written unticked, and its example ends Steps with Mark it done" {
+  run rendered_skill to-issues claude
+  grep -qF 'Write acceptance criteria unticked (`- [ ]`)' "$output"
+  steps=$(awk '/^````markdown/{f=1;next} /^````$/{f=0} f' "$FRAG" | awk '/^### Steps/{f=1;next} /^###/{f=0} f')
+  last=$(grep -E '^[0-9]+\. ' <<<"$steps" | tail -1)
+  [[ "$last" == *"Mark it done"* ]]
+  grep -qF 'mark-issue-done.sh' <<<"$(sed -n '/Mark it done/,$p' <<<"$steps")"
+  [[ "$last" == *'Undo: remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`).'* ]]
+}
+
+@test "the fragment's example lints with no output" {
   d="$BATS_TEST_TMPDIR/issues"; mkdir -p "$d"
   awk '/^````markdown/{f=1;next} /^````$/{f=0} f' "$FRAG" > "$d/1-example.md"
   run bash "$REPO_ROOT/skills/to-issues/scripts/lint-issues.sh" --issue "$d/1-example.md"
   [ "$status" -eq 0 ]
-  ! grep -q 'For a human' <<<"$output"
+  [ -z "$output" ]
 }
