@@ -184,5 +184,26 @@ branch that moved during review fails `check ac --at-tip` as stale.
 ## Adding a new crew-afk role
 
 1. `orchestrator/roles/<role>.md` — the protocol (whole-line `{{FRAGMENT:<key>}}` and `{{PLATFORM}}` expand at dispatch).
-2. Map it in `ROLE_AGENTS` (`orchestrator/lib/adapters/render.mjs`) and give it any per-CLI args in `adapters/role-args.mjs`.
+2. Map it in `ROLE_AGENTS` (`orchestrator/lib/adapters/render.mjs`) and give it a `ROLE_POLICY` entry next to it
+   (`readOnly`, `subagents`, `effort`); each adapter's `policyArgs` turns that into its CLI's flags.
 3. Bump crew-afk's `version` in `registry.json`; `TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk` and inspect `.coding-crew/crew-afk/roles/`.
+
+## Adding a platform
+
+A platform is one data entry and one adapter; everything else (the platform list, `--platform` validation and help,
+skill lookup, capability checks, the squash trailer) is derived from those two.
+
+1. **Data entry** — add `<platform>` to `orchestrator/platforms.json`: `projectSkills`, `userSkills`, `configDir`,
+   `configDirEnv` (where the platform keeps skills; a user-scope dir under `configDir` moves to `$<configDirEnv>`).
+2. **Adapter** — `orchestrator/lib/adapters/<platform>.mjs`, registered in `adapters/index.mjs`'s `ADAPTERS`, implementing
+   the contract: `cmd`, `defaultParallel`, `defaultModel`, `coAuthor` (the squash commit's trailer line), `requiredFlags`,
+   `helpArgs?` (doctor), `build(spec) -> { args, input? }` (spec: `cwd`, `mainRoot`, `model`, `policy`, `protocol` and
+   `protocolFile` — the rendered protocol as text and as `<outFile>.protocol.md` — `prompt`, `outFile`, `label`),
+   `policyArgs(policy)` (a `ROLE_POLICY` entry → flags), `finalText(lines)`, `normalize(evt)` (a raw event → the
+   one shape trace, pane text and deviation detection read; an array when one raw event holds several tool calls); optional
+   capabilities `liveText`, `resume(id)`, `budget(usd)`, `resultMeta(lines)`, `env`, `modelTiers`, `modelAliasEnv`. A capability the
+   adapter lacks is off for that runtime (no resume, `afk.limits` reported ignored), never a name check elsewhere.
+3. **Conformance test** — `node --test tests/orchestrator/platforms.test.mjs` fails, naming the platform, until both exist
+   and the adapter has every required field; pin its `policyArgs` per role there, and add its dispatch golden
+   (`UPDATE_GOLDEN=1 node --test tests/orchestrator/platform-golden-dispatch.test.mjs`).
+4. **Smoke run** — `scripts/smoke-sprint.sh <platform>`: one real sprint on the CLI.

@@ -110,7 +110,7 @@ _installed_scripts() {
   echo x > work.txt && git add work.txt && git commit -q -m "work"
   echo y >> work.txt && git commit -q -am "more work"
 
-  run bash "$SQUASH" --platform pi add-multiply
+  run bash "$SQUASH" add-multiply
   [ "$status" -eq 0 ]
   [[ "$output" == *"Squashed"* ]]
 }
@@ -146,7 +146,7 @@ _installed_scripts() {
 
   export FEATURE_SLUG=feat-b
   export STATE_FILE="$PWD/.scratch/feat-b/sprint-state.json"
-  run bash "$SQUASH" --platform pi shared-slug
+  run bash "$SQUASH" shared-slug
   unset FEATURE_SLUG STATE_FILE
   [ "$status" -eq 0 ]
   [[ "$output" == *"Squashed"* ]]
@@ -173,7 +173,7 @@ _installed_scripts() {
   echo x > work.txt && git add work.txt && git commit -q -m "work"
   echo y >> work.txt && git commit -q -am "more work"
 
-  run bash "$SQUASH" --platform pi add-multiply
+  run bash "$SQUASH" add-multiply
   [ "$status" -eq 0 ]
   [[ "$output" == *"Squashed"* ]]
   # Falls back to the humanised slug rather than dying silently.

@@ -6,6 +6,23 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: platform facts come only from `orchestrator/platforms.json` and the adapters — each adapter has one `build()`,
+  a `coAuthor` trailer and `policyArgs` for the one `ROLE_POLICY`; resume, `afk.limits` and the model-tier warning follow the
+  runtime adapter's capabilities instead of `"claude"` checks (an ignored cap now says "not supported by <runtime>"). `--platform`
+  is required for `run`/`plan`/`doctor` (`CREW_PLATFORM` and the `pi` default are gone; `status` needs none); `squash-commits.sh --platform` is replaced by `--co-author "<trailer>"`
+  (no trailer when omitted); codex no longer passes `--output-last-message`; every protocol dispatch writes `<outFile>.protocol.md` (#310).
+- installer: `uninstall.sh` again sweeps only the legacy paths an earlier install wrote (Copilot's `.copilot/` at project
+  scope, pi's `.pi/` at user scope); a user uninstall no longer removes `~/.github/skills/<skill>`, nor a project
+  uninstall `<repo>/.pi/agent/skills/<skill>` (#313).
+- `crew-afk`: each platform adapter normalizes its CLI's events to one shape (`normalize`), and the trace log, the pane view
+  and full-suite deviation detection read that shape with no per-platform code. codex's trace lines now read `tool=shell`
+  instead of `item=command_execution`; deviation
+  detection no longer counts a `command` field outside a tool call (#309).
+- installer: `install.sh`/`uninstall.sh` take the platform list and every skill destination from `orchestrator/platforms.json`
+  (one shared helper, `scripts/lib/platforms.sh`); `registry.json` skill entries drop `install`/`install-<platform>`, and
+  per-platform skill bodies (`<platform>.SKILL.md`, `body`, `platform-files`) are gone. Installed trees are unchanged; every
+  skill's version moves, so the next `install.sh --update` reinstalls each once. `bootstrap.sh` passes any platform word on
+  for `install.sh` to validate (#308).
 - `to-issues`/`upgrade-deps`: a Kind A issue's "Mark it done" Undo now says to remove `awaiting-merge` and add `ready-for-human`
   (local: move the file back to `issues/open/`); `mark-issue-done.sh` (github) no longer resets an existing `ready-for-human`
   label's colour and description; `lint-issues.sh`'s ticked-criterion WARN reads "leave criteria unticked when publishing" (#304).

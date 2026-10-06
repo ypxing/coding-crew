@@ -1,0 +1,22 @@
+{
+  "cmd": "copilot",
+  "args": [
+    "-p",
+    "Implement the alpha issue.\n",
+    "-C",
+    "<TMP>/repo/.scratch/worktrees/alpha",
+    "--add-dir",
+    "<TMP>/repo",
+    "--allow-all-tools",
+    "--no-color",
+    "--output-format",
+    "json",
+    "--model",
+    "golden-model"
+  ],
+  "input": null,
+  "env": {
+    "MAIN_ROOT": "<TMP>/repo",
+    "CREW_ORCHESTRATED": "1"
+  }
+}

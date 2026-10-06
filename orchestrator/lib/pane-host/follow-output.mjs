@@ -2,14 +2,15 @@
 /**
  * What a worker terminal shows (worker-terminal.mjs): follows one of the child's output
  * files (see runScript for which) until its rc file lands. A JSON event stream is shown as the same `[TOOL]` lines the trace log
- * gets, plus claude's assistant text; anything else is shown as-is. Display only — the
+ * gets, plus the assistant's text when its adapter declares `liveText`; anything else is shown as-is. Display only — the
  * child never writes through this process, so it can fail without touching the dispatch.
  *
  *   follow-output.mjs <out> <rc> [<jsonEvents platform>] [<agent>]
  */
 
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
-import { formatJsonTraceLine } from "../dispatch.mjs";
+import { ADAPTERS, normalizeLine } from "../adapters/index.mjs";
+import { formatTrace } from "../adapters/trace.mjs";
 
 const [out, rc, platform = "", agent = ""] = process.argv.slice(2);
 const buf = Buffer.alloc(64 * 1024);
@@ -19,18 +20,10 @@ let partial = "";
 
 function show(line) {
   if (!platform) return console.log(line);
-  const trace = formatJsonTraceLine(platform, agent, line);
+  const evt = normalizeLine(platform, line);
+  const trace = formatTrace(agent, evt);
   if (trace) return console.log(trace);
-  if (platform !== "claude") return;
-  try {
-    const evt = JSON.parse(line);
-    if (evt.type !== "assistant") return;
-    for (const block of evt.message?.content ?? []) {
-      if (block.type === "text" && block.text.trim()) console.log(block.text.trim());
-    }
-  } catch {
-    /* not an event */
-  }
+  if (evt?.kind === "text" && ADAPTERS[platform]?.liveText) console.log(evt.detail);
 }
 
 function drain() {

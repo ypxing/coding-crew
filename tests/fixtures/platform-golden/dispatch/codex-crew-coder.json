@@ -1,0 +1,29 @@
+{
+  "cmd": "codex",
+  "args": [
+    "exec",
+    "--cd",
+    "<TMP>/repo/.scratch/worktrees/alpha",
+    "--sandbox",
+    "workspace-write",
+    "--json",
+    "-c",
+    "sandbox_workspace_write.network_access=true",
+    "-c",
+    "sandbox_workspace_write.writable_roots=[\"<TMP>/repo/.git\",\"<TMP>/repo/.git/worktrees/alpha\"]",
+    "--add-dir",
+    "<TMP>/repo",
+    "--model",
+    "golden-model",
+    "-c",
+    "model_reasoning_effort=\"medium\"",
+    "-"
+  ],
+  "input": "<PROTOCOL crew-coder sha256:50fb747bf203aea3>\n\n---\n\n# Task\n\nImplement the alpha issue.\n",
+  "env": {
+    "MAIN_ROOT": "<TMP>/repo",
+    "CREW_ORCHESTRATED": "1",
+    "CREW_DEFER_FULL_CHECKS": "1",
+    "CREW_BASE_REF": "crew/golden"
+  }
+}

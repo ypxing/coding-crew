@@ -26,12 +26,6 @@ teardown() {
   [ -n "$output" ]
 }
 
-@test "registry.json configure-tracker install path is .claude/skills/configure-tracker" {
-  run jq -r '.skills["configure-tracker"].install // empty' "$SCRIPT_DIR/registry.json"
-  [ "$status" -eq 0 ]
-  [ "$output" = ".claude/skills/configure-tracker" ]
-}
-
 # --- Installation ---
 
 @test "install.sh claude --skill configure-tracker installs SKILL.md to target repo" {

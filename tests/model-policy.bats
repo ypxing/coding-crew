@@ -4,7 +4,7 @@
 # Asserts that:
 # - coder, reviewer and triage all declare no model in Claude frontmatter — each inherits
 #   the session model unless crew-afk's own crew-config.mjs resolves and passes one
-#   explicitly (its claude coder default lives in RUNTIME_DEFAULT_MODEL, not here, so it
+#   explicitly (its claude coder default is the adapter's defaultModel, not here, so it
 #   stays visible to the reviewer/triage "never weaker than coder" check)
 # - no model: key survives in files that do not honor one (skills frontmatter)
 
@@ -25,7 +25,7 @@ frontmatter() {
 
 @test "no role protocol declares a model (crew-config.mjs resolves every role's centrally)" {
   # A default living in a protocol would be invisible to crew-config.mjs's reviewer/triage
-  # "never weaker than coder" check — see RUNTIME_DEFAULT_MODEL.
+  # "never weaker than coder" check — see the adapter's defaultModel.
   run grep -l '^model:' "$SCRIPT_DIR"/orchestrator/roles/*.md
   [ "$status" -ne 0 ]
 }

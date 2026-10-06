@@ -33,7 +33,7 @@ if [[ "${1:-}" == "--update" ]]; then
   PLATFORM="all"
   AGENT="all"
 else
-  PLATFORM="${1:-all}"    # all | claude | copilot | pi | codex
+  PLATFORM="${1:-all}"    # all | a platform in orchestrator/platforms.json
   AGENT="${2:-all}"       # all | --skill <name> | --skills a,b
 fi
 
@@ -56,7 +56,9 @@ usage() {
   echo "       ./install.sh [platform] --skills <a,b,c>"
   echo "       ./install.sh --update"
   echo ""
-  echo "  platform:  all (default), claude, copilot, pi, codex"
+  local known="a platform in orchestrator/platforms.json"
+  [[ ${#PLATFORMS[@]} -gt 0 ]] && known=$(platforms_joined ", ")
+  echo "  platform:  all (default), $known"
   echo "  --skill:   install a single skill (e.g. to-issues)"
   echo "  --skills:  install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd);"
   echo "             treated as the full desired set — any skill from a prior --skills"
@@ -71,15 +73,21 @@ usage() {
   echo "  ./install.sh --update                             # update all installed skills"
   echo ""
   echo "Available skills:"
-  echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
+  echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json" 2>/dev/null || echo "(needs jq to list)")"
   echo ""
   echo "Set TARGET_REPO to install into a different repo root."
   echo "A user-level install (TARGET_REPO=\$HOME) honors each platform's own config-dir override:"
-  echo "  CLAUDE_CONFIG_DIR (claude), COPILOT_HOME (copilot), PI_CODING_AGENT_DIR (pi), CODEX_HOME (codex)."
+  local i overrides=""
+  for i in "${!PLATFORMS[@]}"; do overrides="${overrides:+$overrides, }${_PF_ENV[$i]} (${PLATFORMS[$i]})"; done
+  echo "  ${overrides:-the configDirEnv of each entry in orchestrator/platforms.json}."
   exit 1
 }
 
+# Help needs no dependency: platforms.sh (which reads platforms.json with jq) fills in the
+# platform list when jq is there, and usage() says where the list lives when it is not.
+PLATFORMS=(); _PF_ENV=()
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  command -v jq >/dev/null 2>&1 && source "$SCRIPT_DIR/scripts/lib/platforms.sh"
   usage
 fi
 
@@ -123,6 +131,9 @@ if [[ "$_jq_probe" == *$'\r' ]]; then
   }
 fi
 
+# The platform list and every platform's skill paths, from orchestrator/platforms.json.
+source "$SCRIPT_DIR/scripts/lib/platforms.sh"
+
 # ── Input validation ───────────────────────────────────────────────────────────
 if [[ "$UPDATE_MODE" == "false" ]]; then
   if [[ "${1:-}" == "--skill" ]]; then
@@ -130,8 +141,8 @@ if [[ "$UPDATE_MODE" == "false" ]]; then
     usage
   fi
 
-  if [[ ! "$PLATFORM" =~ ^(all|claude|copilot|pi|codex)$ ]]; then
-    echo "Error: invalid platform '$PLATFORM' — must be: all, claude, copilot, pi, or codex" >&2
+  if [[ "$PLATFORM" != "all" ]] && ! platform_known "$PLATFORM"; then
+    echo "Error: invalid platform '$PLATFORM' — must be: all, $(platforms_joined ", ") (from orchestrator/platforms.json)" >&2
     usage
   fi
 fi
@@ -147,71 +158,6 @@ assert_safe_path() {
     echo "Error: unsafe $label path in registry: $path" >&2
     exit 1
   fi
-}
-
-# Every platform install.sh knows about. Order matters only for output readability.
-PLATFORMS=(claude copilot pi codex)
-
-# Registry skill paths are written Claude-style (.claude/skills/<name>). When a skill
-# declares no install-<platform> override, swap the leading directory for the one that
-# platform actually scans. Codex is the odd one out: it reads skills from .agents/skills
-# (repo scope) and $HOME/.agents/skills (user scope), not .codex/skills.
-default_skill_dest() {
-  local platform="$1" claude_dest="$2"
-  case "$platform" in
-    codex) printf '%s' "${claude_dest/.claude\//.agents/}" ;;
-    *) printf '%s' "${claude_dest/.claude\//.$platform/}" ;;
-  esac
-}
-
-# pi keeps user-level resources under ~/.pi/agent/ but project-level ones under .pi/.
-# Registry paths are written project-style; rewrite them when targeting $HOME.
-# Codex needs no adjustment: .agents/skills and .codex/agents are the same relative
-# paths at both project and user level.
-#
-# Copilot is the mirror image of pi: ~/.copilot/agents and ~/.copilot/skills are the
-# user-level locations, but at project scope Copilot scans .github/agents and
-# .github/skills — never .copilot/. Registry paths are written user-style, so rewrite
-# them when targeting a project checkout. Verified against Copilot CLI 1.0.77: an
-# agent under .copilot/agents/ is not a valid `task` agent_type, and a skill under
-# .copilot/skills/ is absent from `copilot skill list`.
-adjust_platform_path() {
-  local platform="$1" path="$2"
-  if [[ "$platform" == "pi" && "$path" == .pi/* && "$REPO_ROOT" == "$HOME" ]]; then
-    printf '.pi/agent/%s' "${path#.pi/}"
-  elif [[ "$platform" == "copilot" && "$path" == .copilot/* && "$REPO_ROOT" != "$HOME" ]]; then
-    printf '.github/%s' "${path#.copilot/}"
-  else
-    printf '%s' "$path"
-  fi
-}
-
-# Each platform's own CLI can be told to read its config from somewhere other than the
-# dot-dir default under $HOME — Claude Code via CLAUDE_CONFIG_DIR, Copilot CLI via
-# COPILOT_HOME, pi via PI_CODING_AGENT_DIR, Codex via CODEX_HOME. A user-scope install
-# that kept writing to $HOME/.claude etc regardless would land where that tool never
-# looks once the override is set. Only applies at user scope ($REPO_ROOT == $HOME) —
-# these variables move a user's home config, not a project checkout's tracked files.
-# Sets $_DEST_ROOT (absolute base dir to use in place of $REPO_ROOT) and $_DEST_REL
-# (path's remainder under that base); a caller joins them once and reuses the result,
-# rather than calling this per file, to keep the fork count down (see the jq-cache
-# comment above for why that matters on Git Bash).
-_DEST_ROOT=""; _DEST_REL=""
-resolve_dest() {
-  local platform="$1" path="$2" env_name prefix
-  _DEST_ROOT="$REPO_ROOT"; _DEST_REL="$path"
-  [[ "$REPO_ROOT" == "$HOME" ]] || return 0
-  case "$platform" in
-    claude)  env_name=CLAUDE_CONFIG_DIR;   prefix=".claude/" ;;
-    copilot) env_name=COPILOT_HOME;        prefix=".copilot/" ;;
-    pi)      env_name=PI_CODING_AGENT_DIR; prefix=".pi/agent/" ;;
-    codex)   env_name=CODEX_HOME;          prefix=".codex/" ;;
-    *) return 0 ;;
-  esac
-  local env_val="${!env_name:-}"
-  [[ -n "$env_val" && "$path" == "$prefix"* ]] || return 0
-  _DEST_ROOT="$env_val"
-  _DEST_REL="${path#$prefix}"
 }
 
 # A project install used to write Copilot resources to .copilot/, which Copilot does not
@@ -246,7 +192,7 @@ prune_retired_agents() {
       local path="${raw//\{name\}/$name}"
       assert_safe_path "$path" "$platform retired agent"
       prune_legacy_copilot_path "$platform" "$path"
-      resolve_dest "$platform" "$(adjust_platform_path "$platform" "$path")"
+      resolve_dest "$platform" "$(platform_scope_path "$platform" "$path")"
       if [[ -f "$_DEST_ROOT/$_DEST_REL" ]]; then
         rm -f "$_DEST_ROOT/$_DEST_REL"
         echo "  removed $_DEST_REL (agent files are no longer installed)"
@@ -285,13 +231,11 @@ assert_identifier() {
 # ── registry.json read cache ────────────────────────────────────────────────────
 # `install_single_skill` recurses once per platform when PLATFORM=all (four calls for
 # one skill), and most of what it reads from registry.json per skill — source-dir,
-# version, scripts, deps, assets.source/dest, the claude `install` path —
+# version, scripts, deps, assets.source/dest —
 # does not vary by platform at all. Read unconditionally, that was 4 jq spawns (one per
 # platform recursion) for a value that is the same all four times; a full default
 # install spawns ~2,400 jq processes, and this is where most of them went. Memoized here
-# by skill (+ platform, for the few fields that are genuinely platform-scoped: an
-# `install-<platform>` override, `body[<platform>]`, and `platform-files[<platform>]`),
-# so a value already read for this skill this run is a bash lookup, not a jq spawn.
+# by skill, so a value already read for this skill this run is a bash lookup, not a jq spawn.
 # Git Bash has no real fork(), so a spawn avoided here is disproportionately cheap there.
 declare -A _SKILL_META_SCALAR
 declare -A _SKILL_META_LIST
@@ -429,33 +373,18 @@ install_single_skill() {
   fi
   INSTALLED="${INSTALLED}|skill:$skill_name:$PLATFORM|"
 
-  local skill_dest
-  if [[ "$PLATFORM" != "claude" ]]; then
-    # Non-Claude platforms may declare install-<platform>; otherwise the Claude path
-    # is reused with .claude/ swapped for .<platform>/.
-    _skill_scalar "$skill_name" install-override '.skills[$s][$p] // empty' p "install-$PLATFORM"
-    skill_dest="$_SKILL_SCALAR"
-    if [[ -z "$skill_dest" ]]; then
-      local claude_dest
-      _skill_scalar "$skill_name" install '.skills[$s].install // empty'
-      claude_dest="$_SKILL_SCALAR"
-      [[ -n "$claude_dest" ]] && skill_dest=$(default_skill_dest "$PLATFORM" "$claude_dest")
-    fi
-  else
-    _skill_scalar "$skill_name" install '.skills[$s].install // empty'
-    skill_dest="$_SKILL_SCALAR"
-  fi
-  if [[ -z "$skill_dest" ]]; then
+  _skill_scalar "$skill_name" exists '.skills[$s] | if . == null then empty else "yes" end'
+  if [[ -z "$_SKILL_SCALAR" ]]; then
     echo "Error: skill '$skill_name' not found in registry.json"
     echo "Available skills: $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
     exit 1
   fi
+  resolve_skill_dest "$PLATFORM" "$skill_name"
+  local skill_dest="$_SKILL_DEST"
   assert_safe_path "$skill_dest" "skill install"
-  local skill_dest_declared="$skill_dest"
-  skill_dest=$(adjust_platform_path "$PLATFORM" "$skill_dest")
-  prune_legacy_copilot_path "$PLATFORM" "$skill_dest_declared"
-  resolve_dest "$PLATFORM" "$skill_dest"
   local skill_root="$_DEST_ROOT/$_DEST_REL"
+  platform_skills_dir "$PLATFORM" user
+  prune_legacy_copilot_path "$PLATFORM" "$_PLATFORM_SKILLS/$skill_name"
 
   # Resolve source directory: use source-dir field if present, otherwise use skill name
   local source_dir
@@ -467,56 +396,9 @@ install_single_skill() {
   [[ -L "$skill_root" ]] && rm -f "$skill_root"
   mkdir -p "$skill_root"
   
-  # Resolve which SKILL.md this platform gets BEFORE copying. The installed file is
-  # always named SKILL.md, so diffing the shared fallback against a previously
-  # installed platform variant reports the entire file as changed on every
-  # re-install. Pick the source now and copy it straight to SKILL.md.
-  #
-  # A `body` map in registry.json can point several platforms at one shared body, rendered
-  # at install time by scripts/render-skill.sh. No skill uses it now that crew-afk's last
-  # prose body is gone. Without a map entry the ordinary convention holds:
-  # <platform>.SKILL.md, else the shared SKILL.md.
-  local skill_md_source
-  _skill_scalar "$skill_name" body '.skills[$s].body[$p] // empty' p "$PLATFORM"
-  skill_md_source="$_SKILL_SCALAR"
-  if [[ -z "$skill_md_source" ]]; then
-    skill_md_source="SKILL.md"
-    [[ -f "$SCRIPT_DIR/skills/$source_dir/$PLATFORM.SKILL.md" ]] && skill_md_source="$PLATFORM.SKILL.md"
-  fi
-  [[ -f "$SCRIPT_DIR/skills/$source_dir/$skill_md_source" ]] || {
-    echo "Error: skill body not found: skills/$source_dir/$skill_md_source ($PLATFORM)" >&2; exit 1; }
-
-  # platform-files gates individual source files to a single platform, so e.g. pi's
-  # a platform's file never lands in another's install. Build two lists: paths gated to
-  # some other platform (skipped, and pruned if an older install left them behind) and
-  # paths gated to this one (copied normally).
-  local -a foreign_files=()
-  local foreign_index="|"
-  local gate_platform gate_path
-  for gate_platform in "${PLATFORMS[@]}"; do
-    [[ "$gate_platform" == "$PLATFORM" ]] && continue
-    _skill_list "$skill_name" platform-files '.skills[$s]["platform-files"][$p] // [] | .[]' p "$gate_platform"
-    while IFS= read -r gate_path; do
-      gate_path="${gate_path%$'\r'}"
-      [[ -n "$gate_path" ]] || continue
-      foreign_files+=("$gate_path")
-      foreign_index="${foreign_index}${gate_path}|"
-    done <<< "$_SKILL_LIST"
-  done
-
   # Copy files with diff output for changed files
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
-    # Every *.SKILL.md competes for one destination: SKILL.md. Copy only the variant
-    # this platform resolved to and skip the rest.
-    if [[ "$rel_path" == "SKILL.md" || "$rel_path" == *".SKILL.md" ]]; then
-      [[ "$rel_path" == "$skill_md_source" ]] || continue
-      rel_path="SKILL.md"
-    fi
-    # Skip files another platform owns
-    if [[ "$foreign_index" == *"|$rel_path|"* ]]; then
-      continue
-    fi
     local dest_file="$skill_root/$rel_path"
     local rel_dest="${dest_file#$REPO_ROOT/}"
     mkdir -p "$(dirname "$dest_file")"
@@ -540,9 +422,8 @@ install_single_skill() {
       echo "  $rel_dest"
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
-  # Drop platform variants and shared bodies left behind by older installs, which
-  # copied every variant and selected one afterwards. Also drop a fragments/ tree from
-  # an install that predates rendering.
+  # Drop per-platform bodies (<platform>.SKILL.md) an older install left behind; skills no
+  # longer have them. Also drop a fragments/ tree from an install that predates rendering.
   local stale_body
   while IFS= read -r stale_body; do
     [[ -n "$stale_body" ]] && rm -f "$stale_body"
@@ -560,12 +441,6 @@ install_single_skill() {
   esac
   for retired in "${retired_files[@]+"${retired_files[@]}"}"; do
     rm -f "$skill_root/$retired"
-  done
-  # Drop other platforms' gated files left behind by older installs, which copied
-  # every file regardless of platform.
-  local foreign_file
-  for foreign_file in "${foreign_files[@]+"${foreign_files[@]}"}"; do
-    rm -f "$skill_root/$foreign_file"
   done
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
@@ -691,14 +566,7 @@ warn_shadowing_user_installs() {
 
   local found=()
   local d
-  local pi_home="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-  local claude_home="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  local copilot_home="${COPILOT_HOME:-$HOME/.copilot}"
-  local codex_home="${CODEX_HOME:-$HOME/.codex}"
-  for d in "$pi_home/skills" "$pi_home/agents" \
-           "$claude_home/skills" "$claude_home/agents" \
-           "$copilot_home/skills" "$copilot_home/agents" \
-           "$HOME/.agents/skills" "$codex_home/agents"; do
+  while IFS= read -r d; do
     [[ -d "$d" ]] || continue
     local name
     # The retired agent names too: nothing cleans a stale user-level copy on a project install.
@@ -707,7 +575,7 @@ warn_shadowing_user_installs() {
         found+=("$d/$name")
       fi
     done
-  done
+  done < <(platform_user_dirs)
 
   [[ ${#found[@]} -eq 0 ]] && return 0
 

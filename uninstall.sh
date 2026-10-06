@@ -75,31 +75,8 @@ if [[ "$_jq_probe" == *$'\r' ]]; then
   }
 fi
 
-PLATFORMS=(claude copilot pi codex)
-
-# Registry skill paths are Claude-style; codex reads skills from .agents/skills, every
-# other platform from .<platform>/skills.
-default_skill_dest() {
-  local platform="$1" claude_dest="$2"
-  case "$platform" in
-    codex) printf '%s' "${claude_dest/.claude\//.agents/}" ;;
-    *) printf '%s' "${claude_dest/.claude\//.$platform/}" ;;
-  esac
-}
-
-# pi keeps user-level resources under ~/.pi/agent/, project-level ones under .pi/
-# Copilot is the mirror image: ~/.copilot/{agents,skills} at user level, but
-# .github/{agents,skills} at project level (Copilot never scans .copilot/ in a repo).
-adjust_platform_path() {
-  local platform="$1" path="$2"
-  if [[ "$platform" == "pi" && "$path" == .pi/* && "$REPO_ROOT" == "$HOME" ]]; then
-    printf '.pi/agent/%s' "${path#.pi/}"
-  elif [[ "$platform" == "copilot" && "$path" == .copilot/* && "$REPO_ROOT" != "$HOME" ]]; then
-    printf '.github/%s' "${path#.copilot/}"
-  else
-    printf '%s' "$path"
-  fi
-}
+# The platform list and every platform's skill paths, from orchestrator/platforms.json.
+source "$SCRIPT_DIR/scripts/lib/platforms.sh"
 
 # rmdir that tolerates Windows' lazy directory-entry removal: a child deleted a
 # moment ago can keep the parent looking non-empty for a few milliseconds, which
@@ -110,30 +87,6 @@ rmdir_if_empty() {
   [[ -d "$dir" ]] || return 0
   sleep 0.2
   rmdir "$dir" 2>/dev/null
-}
-
-# Mirrors install.sh's resolve_dest: each platform's own CLI can be told to read its
-# config from somewhere other than the dot-dir default under $HOME (CLAUDE_CONFIG_DIR,
-# COPILOT_HOME, PI_CODING_AGENT_DIR, CODEX_HOME). A user-level uninstall must remove
-# from wherever install.sh actually wrote, or a copy under an active override is left
-# behind while this script reports removing it. Sets $_DEST_ROOT/$_DEST_REL; only ever
-# differs from ($REPO_ROOT, $path) at user scope with the platform's env var set.
-_DEST_ROOT=""; _DEST_REL=""
-resolve_dest() {
-  local platform="$1" path="$2" env_name prefix
-  _DEST_ROOT="$REPO_ROOT"; _DEST_REL="$path"
-  [[ "$REPO_ROOT" == "$HOME" ]] || return 0
-  case "$platform" in
-    claude)  env_name=CLAUDE_CONFIG_DIR;   prefix=".claude/" ;;
-    copilot) env_name=COPILOT_HOME;        prefix=".copilot/" ;;
-    pi)      env_name=PI_CODING_AGENT_DIR; prefix=".pi/agent/" ;;
-    codex)   env_name=CODEX_HOME;          prefix=".codex/" ;;
-    *) return 0 ;;
-  esac
-  local env_val="${!env_name:-}"
-  [[ -n "$env_val" && "$path" == "$prefix"* ]] || return 0
-  _DEST_ROOT="$env_val"
-  _DEST_REL="${path#$prefix}"
 }
 
 # Walk up from a removed path removing now-empty directories, stopping at $root —
@@ -147,17 +100,6 @@ prune_empty_dirs() {
     echo "  removed ${dir#$root/}/"
     dir="$(dirname "$dir")"
   done
-}
-
-# Every path a platform's resource may occupy in this target: the path install.sh writes
-# now, plus any path an earlier version wrote. Copilot project installs used to land in
-# .copilot/, so uninstall sweeps both or the dead copy survives a clean uninstall.
-removal_candidates() {
-  local platform="$1" path="$2" adjusted
-  adjusted=$(adjust_platform_path "$platform" "$path")
-  printf '%s\n' "$adjusted"
-  [[ "$adjusted" != "$path" ]] && printf '%s\n' "$path"
-  return 0
 }
 
 # crew-afk's roles used to install as per-platform agent files (registry.json `retired-agents`),
@@ -183,7 +125,7 @@ remove_retired_agents() {
           echo "  removed $candidate"
           prune_empty_dirs "$_DEST_ROOT" "$_DEST_REL"
         fi
-      done < <(removal_candidates "$platform" "${raw//\{name\}/$name}")
+      done < <(platform_scope_paths "$platform" "${raw//\{name\}/$name}")
     done < <(jq -r '."retired-agents".names // [] | .[]' "$SCRIPT_DIR/registry.json")
   done
   while IFS= read -r dir; do
@@ -197,25 +139,17 @@ remove_retired_agents() {
 
 remove_skill() {
   local name="$1"
-  local claude_dest
-  claude_dest=$(jq -r --arg s "$name" '.skills[$s].install // empty' "$SCRIPT_DIR/registry.json")
-  claude_dest="${claude_dest%$'\r'}"
-  if [[ -z "$claude_dest" ]]; then
+  if [[ -z "$(jq -r --arg s "$name" '.skills[$s] | if . == null then empty else "yes" end' "$SCRIPT_DIR/registry.json")" ]]; then
     echo "  $name: not found in registry — skipping"
     return
   fi
 
+  # Both scopes' paths: an earlier install may have written the other one (Copilot project
+  # installs used to land in .copilot/), so uninstall sweeps both or the dead copy survives.
   local removed=0
-  local platform dest full candidate
+  local platform full candidate
   for platform in "${PLATFORMS[@]}"; do
-    if [[ "$platform" == "claude" ]]; then
-      dest="$claude_dest"
-    else
-      dest=$(jq -r --arg s "$name" --arg p "install-$platform" '.skills[$s][$p] // empty' "$SCRIPT_DIR/registry.json")
-      dest="${dest%$'\r'}"
-      [[ -z "$dest" ]] && dest=$(default_skill_dest "$platform" "$claude_dest")
-    fi
-    [[ -z "$dest" ]] && continue
+    platform_skills_dir "$platform"
     while IFS= read -r candidate; do
       [[ -n "$candidate" ]] || continue
       resolve_dest "$platform" "$candidate"
@@ -226,7 +160,7 @@ remove_skill() {
         prune_empty_dirs "$_DEST_ROOT" "$_DEST_REL"
         removed=1
       fi
-    done < <(removal_candidates "$platform" "$dest")
+    done < <(platform_scope_paths "$platform" "$_PLATFORM_SKILLS/$name")
   done
   if [[ "$removed" -eq 0 ]]; then echo "  $name: nothing found to remove"; fi
 

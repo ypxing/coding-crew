@@ -6,6 +6,7 @@
 # (tests/retired-agents.bats covers that migration).
 
 load helpers/render
+load helpers/platforms
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
@@ -13,7 +14,15 @@ setup() {
 }
 teardown() { rm -rf "$T"; }
 
-AGENT_DIRS=(.claude/agents .github/agents .pi/agents .codex/agents .copilot/agents)
+# Where a platform could keep agent files: beside its project and user skills dirs, and in its
+# config dir.
+AGENT_DIRS=()
+for _p in "${PLATFORMS[@]}"; do
+  AGENT_DIRS+=("$(dirname "$(platform_field "$_p" projectSkills)")/agents"
+               "$(dirname "$(platform_field "$_p" userSkills)")/agents"
+               "$(platform_field "$_p" configDir)/agents")
+done
+unset _p
 
 @test "there is no agents/ source tree: each role's protocol is orchestrator/roles/<role>.md" {
   [ ! -e "$REPO_ROOT/agents" ]
@@ -34,7 +43,7 @@ AGENT_DIRS=(.claude/agents .github/agents .pi/agents .codex/agents .copilot/agen
 }
 
 @test "installing crew-afk removes the common/ and per-platform fragment directories an older install wrote" {
-  for d in common claude copilot pi codex; do
+  for d in common "${PLATFORMS[@]}"; do
     mkdir -p "$T/.coding-crew/skills/_shared/fragments/$d"
     echo stale > "$T/.coding-crew/skills/_shared/fragments/$d/tracker-configuration.md"
   done
@@ -52,9 +61,9 @@ AGENT_DIRS=(.claude/agents .github/agents .pi/agents .codex/agents .copilot/agen
 }
 
 @test "the rendered crew-afk launchers name no agent file" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run cat "$(afk_variant "$p")"
-    if echo "$output" | grep -qE '\.claude/agents|\.github/agents|\.pi/agents|\.codex/agents|--agent|agent definition'; then
+    if echo "$output" | grep -qF -e --agent -e 'agent definition' $(printf -- '-e %s ' "${AGENT_DIRS[@]}"); then
       echo "$p launcher names an agent file"; return 1
     fi
   done

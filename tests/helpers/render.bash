@@ -82,9 +82,12 @@ coder_variant() {
   role_prompt coder "$1"
 }
 
-# The one list of platforms crew-coder is built for, read by tests/crew-coder-protocol.bats
-# and by every suite that asserts on a worker body.
-CODER_VARIANTS=(pi codex claude copilot)
+# The platform list, from orchestrator/platforms.json (helpers/platforms.bash).
+source "$(dirname "${BASH_SOURCE[0]}")/platforms.bash"
+
+# The platforms crew-coder is built for, read by tests/crew-coder-protocol.bats and by every
+# suite that asserts on a worker body: every platform.
+CODER_VARIANTS=("${PLATFORMS[@]}")
 
 # Every platform's crew-afk body is a launcher for the orchestrator program
 # (`orchestrator/`, installed to `.coding-crew/crew-afk/`), so the guarantees the prose
@@ -94,9 +97,9 @@ CODER_VARIANTS=(pi codex claude copilot)
 # deleted with the last prose body, along with the suite that policed the shared-body
 # mechanism.
 #
-# This list is the single place that says which platforms exist as launchers, read by
-# tests/crew-afk-launcher.bats and tests/orchestrator/contract.test.mjs.
-AFK_LAUNCHER_VARIANTS=(pi codex claude copilot)
+# Every platform is a launcher, read by tests/crew-afk-launcher.bats;
+# tests/orchestrator/contract.test.mjs reads the same orchestrator/platforms.json.
+AFK_LAUNCHER_VARIANTS=("${PLATFORMS[@]}")
 
 # The one word cap every launcher test asserts. It guards against the ~2,400-word pipeline
 # prose creeping back, not against a launcher gaining a real instruction — raised from 500

@@ -156,3 +156,10 @@ test("a conflict dispatch's session is recorded under its own role, so a fix rou
   const only = { readState: () => ({ dispatches: ledger.slice(1) }), lastDispatch: Sprint.prototype.lastDispatch };
   assert.match(resumableSession(only.lastDispatch("alpha", "coder"), "merged").reason, /no earlier coder session/);
 });
+
+test("a fix round resumes only on a runtime whose adapter has resume", () => {
+  const adapters = { full: { resume: (id) => ["--resume", id] }, bare: {} };
+  const base = { enabled: true, route: "fix", conflictDispatched: false };
+  assert.equal(mayResumeCoderSession({ ...base, runtime: "full" }, adapters), true);
+  assert.equal(mayResumeCoderSession({ ...base, runtime: "bare" }, adapters), false);
+});

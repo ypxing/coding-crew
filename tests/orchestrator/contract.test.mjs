@@ -9,9 +9,8 @@
  * as three `not_run` categories, which demotes a clean branch to `partial` for "tests
  * not run". So the definition states it too, and this test is what keeps the two equal.
  *
- * Which coder definitions are held to it is read from `AFK_LAUNCHER_VARIANTS` in
- * tests/helpers/render.bash — the single list of platforms whose reports this parser
- * reads. That makes the next cutover fail here until that platform's contract is
+ * Which coder definitions are held to it is read from orchestrator/platforms.json — the
+ * single list of platforms whose reports this parser reads. That makes the next cutover fail here until that platform's contract is
  * migrated, which is the point: claude's variant still declares the prose
  * orchestrator's older shape (`checks` as an array of `{command, result}`).
  */
@@ -31,10 +30,7 @@ const REPO = join(HERE, "../..");
 const WORKER_FIELDS = ["status", "branch", "working_directory", "checks", "criteria", "progress", "notes"];
 
 function launcherPlatforms() {
-  const helper = readFileSync(join(REPO, "tests/helpers/render.bash"), "utf8");
-  const m = /AFK_LAUNCHER_VARIANTS=\(([^)]*)\)/.exec(helper);
-  assert.ok(m, "AFK_LAUNCHER_VARIANTS not found in tests/helpers/render.bash");
-  return m[1].split(/\s+/).filter(Boolean);
+  return Object.keys(JSON.parse(readFileSync(join(REPO, "orchestrator/platforms.json"), "utf8")));
 }
 
 function coderDefinition() {

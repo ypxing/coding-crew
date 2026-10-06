@@ -24,6 +24,7 @@ import { issueFingerprint } from "./trackers/body-format.mjs";
 import { conflictPrompt, fixPrompt, resumeNote, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
 import { dispatch } from "./dispatch.mjs";
+import { ADAPTERS } from "./adapters/index.mjs";
 import { flagFullSuiteRuns } from "./pipeline/deviation.mjs";
 import { finishBlocked, finishRetryOrBlock } from "./pipeline/finish.mjs";
 import { mergeAndClose } from "./pipeline/merge.mjs";
@@ -589,7 +590,7 @@ export async function runWorker(ctx, issue, attempt) {
   const head = effects.gitRead(["rev-parse", `${branch}^{commit}`]).stdout.trim();
   sprint.recordDispatchCost(result, { slug: issue.slug, role: "coder", attempt, head });
 
-  flagFullSuiteRuns(ctx, { slug: dispatchStem(issue), attempt, outFile });
+  flagFullSuiteRuns(ctx, { slug: dispatchStem(issue), attempt, outFile, platform: coder.runtime });
 
   const sidecar = readSidecar(sidecarFile);
   // A worker that ran to completion (no timeout, non-empty output) but left no sidecar is
@@ -614,8 +615,8 @@ export const CONFLICT_ROLE = "conflict";
  * dispatch ran this attempt: that dispatch is recorded under CONFLICT_ROLE (its session saw
  * only the conflict), and the merge it committed moved the branch on under the coder's.
  */
-export function mayResumeCoderSession({ enabled, route, runtime, conflictDispatched }) {
-  return Boolean(enabled) && route === "fix" && runtime === "claude" && !conflictDispatched;
+export function mayResumeCoderSession({ enabled, route, runtime, conflictDispatched }, adapters = ADAPTERS) {
+  return Boolean(enabled) && route === "fix" && Boolean(adapters[runtime]?.resume) && !conflictDispatched;
 }
 
 /**

@@ -168,7 +168,7 @@ load helpers/orchestrator-suite
   command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$REPO_ROOT"
   run node -e '
-    import("./orchestrator/lib/dispatch.mjs").then(({ buildDispatch, PLATFORMS }) => {
+    Promise.all([import("./orchestrator/lib/dispatch.mjs"), import("./orchestrator/lib/adapters/index.mjs")]).then(([{ buildDispatch }, { PLATFORMS }]) => {
       const fs = require("fs"), os = require("os"), path = require("path");
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "d-"));
       const promptFile = path.join(dir, "p.md");
@@ -191,9 +191,27 @@ load helpers/orchestrator-suite
   [[ "$output" == *"copilot: copilot"* ]]
 }
 
+@test "orchestrator CLI: run with no --platform exits 1 listing the platforms, whatever CREW_PLATFORM says" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  cd "$REPO_ROOT"
+  for env in "" "CREW_PLATFORM=claude"; do
+    run env $env node orchestrator/main.mjs run
+    [ "$status" -eq 1 ] || { echo "[$env] exit $status: $output"; return 1; }
+    [[ "$output" == *"--platform is required"*"pi, codex, claude, copilot"* ]] || { echo "[$env] $output"; return 1; }
+  done
+}
+
+@test "orchestrator CLI: status needs no --platform" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  cd "$REPO_ROOT"
+  run node orchestrator/main.mjs status
+  [[ "$output" != *"--platform is required"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 0 ] || [ "$status" -eq 3 ] || { echo "exit $status: $output"; return 1; }
+}
+
 @test "orchestrator CLI: the seven retired flags are rejected as unrecognized" {
   for f in --promote --coverage --worker-timeout --review-timeout --max-rounds --merge-timeout --no-commands; do
-    run node orchestrator/main.mjs run "$f"
+    run node orchestrator/main.mjs run --platform pi "$f"
     [ "$status" -ne 0 ] || { echo "$f accepted"; return 1; }
     [[ "$output" == *"unrecognized argument"*"$f"* ]] || { echo "$f: $output"; return 1; }
   done

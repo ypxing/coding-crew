@@ -55,6 +55,7 @@ import { join } from "node:path";
 
 import { resumeRoute, runHousekeeping, runWorker } from "./pipeline.mjs";
 import { getTracker } from "./tracker.mjs";
+import { ADAPTERS } from "./adapters/index.mjs";
 import { writeLog } from "./log.mjs";
 import { labelIssue } from "./labels.mjs";
 import { checkRequires, integrationSection, lintMidRunIssues, runIntegrationCheck } from "./preflight.mjs";
@@ -456,8 +457,9 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, u
   const { sprint, effects, options } = ctx;
 
   // --- squash ---------------------------------------------------------------
-  // --platform picks the co-author trailer: the coder's runtime wrote the commits.
-  const squashArgs = ["--platform", options.crew.coder.runtime];
+  // The coder's runtime wrote the commits, so its adapter's trailer credits it.
+  const coAuthor = ADAPTERS[options.crew.coder.runtime]?.coAuthor;
+  const squashArgs = coAuthor ? ["--co-author", coAuthor] : [];
   if (!options.squashCommits) squashArgs.push("--no-squash");
   const squash = effects.bash("squash-commits.sh", squashArgs, { env: sprint.childEnv() });
   ctx.log(squash.stdout.trim());

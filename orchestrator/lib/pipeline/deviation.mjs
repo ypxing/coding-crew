@@ -10,22 +10,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-
-/**
- * Every `command` string in an event, whatever the runtime's tool-call shape, with the id of the
- * tool call it belongs to (the nearest `id` / `toolCallId` / `tool_use_id` around it), or null.
- */
-function commandsIn(node, out = [], id = null) {
-  if (Array.isArray(node)) node.forEach((n) => commandsIn(n, out, id));
-  else if (node && typeof node === "object") {
-    const own = node.id ?? node.toolCallId ?? node.tool_use_id ?? id;
-    for (const [k, v] of Object.entries(node)) {
-      if (k === "command" && typeof v === "string") out.push({ cmd: v, id: own });
-      else commandsIn(v, out, own);
-    }
-  }
-  return out;
-}
+import { normalizeEvents } from "../adapters/index.mjs";
 
 /** `VAR=value cmd …` → `cmd …`: an env prefix in the cached command is not how a coder types it. */
 const withoutEnvPrefix = (cmd) => cmd.replace(/^(\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
@@ -66,23 +51,19 @@ function runsWholeSuite(cmd, testCommand) {
   }
 }
 
-/** Commands in an events file that ran `testCommand` in full; [] when none or unreadable. */
-export function fullSuiteRuns(eventsFile, testCommand) {
+/**
+ * Commands in a `platform` events file that ran `testCommand` in full; [] when none or unreadable.
+ * The adapter's `normalize` names each tool call's command and id.
+ */
+export function fullSuiteRuns(eventsFile, testCommand, platform) {
   if (!testCommand || !existsSync(eventsFile)) return [];
   const core = withoutEnvPrefix(testCommand);
   const runs = [];
   // One tool call can appear in several events (codex's item.started and item.completed).
   const seen = new Set();
   for (const line of readFileSync(eventsFile, "utf8").split("\n")) {
-    if (!line.includes("command")) continue;
-    let evt;
-    try {
-      evt = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    for (const { cmd, id } of commandsIn(evt)) {
-      if (id != null && seen.has(id)) continue;
+    for (const { command: cmd, id } of normalizeEvents(platform, line)) {
+      if (typeof cmd !== "string" || (id != null && seen.has(id))) continue;
       if (runsWholeSuite(cmd, core) && !cmd.includes("run-checks.sh")) {
         if (id != null) seen.add(id);
         runs.push(cmd);
@@ -96,10 +77,10 @@ export function fullSuiteRuns(eventsFile, testCommand) {
  * Logs `[DEVIATION]` and records it for the summary when the coder's trace shows the full suite.
  * @returns {number} how many full-suite runs were seen
  */
-export function flagFullSuiteRuns(ctx, { slug, attempt, outFile }) {
+export function flagFullSuiteRuns(ctx, { slug, attempt, outFile, platform }) {
   const { sprint, effects } = ctx;
   const testCommand = cachedTestCommand(effects.mainRoot);
-  const runs = fullSuiteRuns(`${outFile}.events.jsonl`, testCommand);
+  const runs = fullSuiteRuns(`${outFile}.events.jsonl`, testCommand, platform);
   if (!runs.length) return 0;
   const reason = `coder ran the full test suite ${runs.length}x (\`${testCommand}\`); the verify gate owns it`;
   ctx.log(`[DEVIATION] slug=${slug} round=${attempt} ${reason}`, "warn");

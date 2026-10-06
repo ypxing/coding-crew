@@ -1,0 +1,31 @@
+{
+  "cmd": "claude",
+  "args": [
+    "-p",
+    "Implement the alpha issue.\n",
+    "--permission-mode",
+    "bypassPermissions",
+    "--add-dir",
+    "<TMP>/repo",
+    "--append-system-prompt-file",
+    "<TMP>/repo/.scratch/golden/dispatch/alpha.report.md.protocol.md",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--model",
+    "golden-model",
+    "--disallowedTools",
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "Agent"
+  ],
+  "input": null,
+  "env": {
+    "MAIN_ROOT": "<TMP>/repo",
+    "CREW_ORCHESTRATED": "1",
+    "CLAUDE_CODE_SESSION_ID": "",
+    "CLAUDE_CODE_CHILD_SESSION": "",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
+  }
+}

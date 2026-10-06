@@ -9,9 +9,9 @@
  *   claude   claude -p <prompt> --append-system-prompt-file <protocol> …   (adapters/claude.mjs)
  *   copilot  copilot -p <protocol + prompt> -C … --output-format json        (adapters/copilot.mjs)
  *
- * No platform needs an agent file or a bash dispatcher: each adapter gets the role's protocol
- * rendered from orchestrator/roles/<role>.md (adapters/render.mjs) and role settings from
- * adapters/role-args.mjs.
+ * No platform needs an agent file or a bash dispatcher: each adapter's `build()` gets the role's
+ * protocol rendered from orchestrator/roles/<role>.md (adapters/render.mjs), both as text and as
+ * `<outFile>.protocol.md`, and the role's ROLE_POLICY, which its `policyArgs()` turns into flags.
  *
  * All four emit a JSON event stream. Recognised tool calls become `[TOOL]`/`[TOOL-ERROR]`
  * lines in the trace log while the worker runs; the raw stream is kept as
@@ -28,17 +28,10 @@ import { writeLog } from "./log.mjs";
 import { preflightPaneHost, spawnDispatch } from "./pane-host/index.mjs";
 import { ADAPTERS } from "./adapters/index.mjs";
 import { ARGV_PROMPT_LIMIT_BYTES, EMPTY_RESULT_META, assertArgvFits } from "./adapters/common.mjs";
-import { renderRolePrompt, roleOfAgent } from "./adapters/render.mjs";
+import { ROLE_POLICY, renderRolePrompt, roleOfAgent } from "./adapters/render.mjs";
+import { formatJsonTraceLine } from "./adapters/trace.mjs";
 
 export { ARGV_PROMPT_LIMIT_BYTES, renderRolePrompt };
-
-export const PLATFORMS = ["pi", "codex", "claude", "copilot"];
-
-/**
- * Default parallelism per platform. Copilot's is conservative because what binds is the
- * account's request rate, which the CLI does not expose; raise with `--max-parallel`.
- */
-export const DEFAULT_PARALLEL = Object.fromEntries(PLATFORMS.map((p) => [p, ADAPTERS[p].defaultParallel]));
 
 /**
  * Build the argv for one dispatch.
@@ -86,21 +79,27 @@ export function buildDispatch(platform, spec) {
   const role = roleOfAgent(agent);
   // Rendered here, before anything spawns: a missing protocol or fragment fails the dispatch.
   const protocol = role ? renderRolePrompt(role, platform, { mainRoot, rolesDir: spec.rolesDir }) : null;
-  let prompt = readFileSync(promptFile, "utf8");
+  const prompt = readFileSync(promptFile, "utf8");
+  // Every protocol is on disk as well as in hand: the adapter places whichever its CLI takes.
   let protocolFile = null;
-  // Where the adapter takes the protocol: a system-prompt file, or prepended to the prompt; an
-  // adapter with neither places it itself (argv, stdin).
-  if (protocol && adapter.protocolVia === "file") {
+  if (protocol) {
     protocolFile = `${outFile}.protocol.md`;
     mkdirSync(dirname(protocolFile), { recursive: true });
     writeFileSync(protocolFile, protocol);
-  } else if (protocol && adapter.protocolVia === "prompt") {
-    prompt = `${protocol}\n\n---\n\n${prompt}`;
   }
   const label = basename(promptFile, ".md").replace(/\.prompt$/, "");
-  const args = adapter.argv({ cwd, mainRoot, model, role, promptFile, outFile, protocolFile, protocol: protocol ?? null, prompt, label: `${spec.agent}: ${label}` });
+  const { args, input } = adapter.build({
+    cwd,
+    mainRoot,
+    model,
+    policy: role ? ROLE_POLICY[role] : null,
+    protocol,
+    protocolFile,
+    prompt,
+    outFile,
+    label: `${spec.agent}: ${label}`,
+  });
   // A CLI that reads its prompt on stdin carries no size limit; every argv string is capped.
-  const input = adapter.promptVia === "stdin" ? adapter.stdin({ cwd, role, protocol: protocol ?? null, prompt, outFile }) : undefined;
   assertArgvFits(args, adapter.cmd);
   // A fix round continuing the coder's own earlier session (pipeline.mjs decides when).
   if (resumeSessionId && adapter.resume) args.push(...adapter.resume(resumeSessionId));
@@ -115,23 +114,6 @@ export function buildDispatch(platform, spec) {
     capture: "stdout",
     jsonEvents: platform,
   };
-}
-
-/**
- * One [TOOL]/[TOOL-ERROR] line per recognised event, null for anything else including an
- * unparseable line — observability never fails the dispatch. No timestamp or slug;
- * dispatch() adds both.
- */
-export function formatJsonTraceLine(platform, agent, line) {
-  const adapter = ADAPTERS[platform];
-  if (!adapter) return null;
-  let evt;
-  try {
-    evt = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  return adapter.traceLine(evt, agent);
 }
 
 /**
@@ -241,11 +223,6 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
     for (const line of parts) consumeLine(line);
   };
 
-  // A CLI that writes its own final message to outFile (codex `-o`): start from none, so a stale
-  // one from an earlier attempt is never read as this run's.
-  const ownsOut = !!adapter?.lastMessageFile && !!built.jsonEvents && !process.env.CREW_FAKE_DISPATCH;
-  if (ownsOut) writeFileSync(spec.outFile, "");
-
   const spawned = () =>
     spawnDispatch(effects, built.cmd, built.args, {
       cwd: built.cwd,
@@ -267,8 +244,7 @@ export async function dispatch(effects, platform, spec, { timeoutMs, onTrace } =
   if (built.jsonEvents && !r.dryRun) {
     keepPriorEvents(`${spec.outFile}.events.jsonl`);
     writeFileSync(`${spec.outFile}.events.jsonl`, lines.length ? `${lines.join("\n")}\n` : "");
-    const own = ownsOut && existsSync(spec.outFile) ? readFileSync(spec.outFile, "utf8") : "";
-    writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines) || own);
+    writeFileSync(spec.outFile, extractFinalText(built.jsonEvents, lines));
     meta = extractResultMeta(built.jsonEvents, lines);
   } else if (built.capture === "stdout" && !r.dryRun) {
     writeFileSync(spec.outFile, r.stdout ?? "");
@@ -345,12 +321,12 @@ function helpLists(text, flag) {
 /** Preflight: is this platform's CLI actually present? */
 export function preflight(effects, platform, { paneHost = null, probeFlags = false } = {}) {
   if (process.env.CREW_FAKE_DISPATCH) return [];
-  const cli = { pi: "pi", codex: "codex", claude: "claude", copilot: "copilot" }[platform];
+  const adapter = ADAPTERS[platform];
+  const cli = adapter.cmd;
   const which = effects.exec("sh", ["-c", `command -v ${cli}`], { mutating: false });
   const problems = [];
   if (which.code !== 0) problems.push(`${cli} CLI not found on PATH`);
   if (probeFlags && which.code === 0) {
-    const adapter = ADAPTERS[platform];
     const help = effects.exec(cli, adapter.helpArgs ?? ["--help"], { mutating: false });
     const text = `${help.stdout ?? ""}\n${help.stderr ?? ""}`;
     const missing = (adapter.requiredFlags ?? []).filter((f) => !helpLists(text, f));

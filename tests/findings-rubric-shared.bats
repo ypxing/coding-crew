@@ -7,6 +7,7 @@
 # each, so the two can never describe different rubrics.
 
 load helpers/render
+load helpers/platforms
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 RUBRIC="$REPO_ROOT/skills/_shared/fragments/findings-rubric.md"
@@ -41,7 +42,7 @@ assert_rubric_in() {
 }
 
 @test "/crew-address-findings renders the rubric, for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill crew-address-findings "$p"
     [ "$status" -eq 0 ]
     assert_rubric_in "$output"
@@ -50,7 +51,7 @@ assert_rubric_in() {
 }
 
 @test "crew-triage renders the same rubric, for every platform" {
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     assert_rubric_in "$(triage_variant "$p")"
     ! grep -q '{{FRAGMENT' "$(triage_variant "$p")"
   done
@@ -81,7 +82,7 @@ assert_rubric_in() {
 @test "the fourth hard rule (Necessary) makes a finding no real caller can trigger Debatable, in both rendered consumers, for every platform" {
   local rule='4. its failure needs an input or state that no current caller, user or documented contract produces (it is not Necessary).'
   grep -qF -- "$rule" "$RUBRIC"
-  for p in claude copilot pi codex; do
+  for p in "${PLATFORMS[@]}"; do
     run rendered_skill crew-address-findings "$p"
     grep -qF -- "$rule" "$output"
     grep -qF -- "$rule" "$(triage_variant "$p")"

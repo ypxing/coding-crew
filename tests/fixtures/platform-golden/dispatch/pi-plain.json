@@ -1,0 +1,18 @@
+{
+  "cmd": "pi",
+  "args": [
+    "-p",
+    "-n",
+    "plain: alpha",
+    "--mode",
+    "json",
+    "--model",
+    "golden-model",
+    "Implement the alpha issue.\n"
+  ],
+  "input": null,
+  "env": {
+    "MAIN_ROOT": "<TMP>/repo",
+    "CREW_ORCHESTRATED": "1"
+  }
+}

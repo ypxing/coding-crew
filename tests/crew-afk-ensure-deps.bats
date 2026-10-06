@@ -931,7 +931,7 @@ line two"
 @test "no launcher SKILL.md mentions the script, and every launcher is still under the word budget" {
   local repo="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   local p body words
-  for p in pi codex claude copilot; do
+  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     body="$(afk_variant "$p")"
     ! grep -q 'ensure-deps' "$body" || {
       echo "$p launcher names ensure-deps.sh" >&2; return 1; }

@@ -1,0 +1,24 @@
+{
+  "cmd": "copilot",
+  "args": [
+    "-p",
+    "<PROTOCOL crew-triage sha256:0f4205e339158b22>\n\n---\n\nImplement the alpha issue.\n",
+    "-C",
+    "<TMP>/repo/.scratch/worktrees/alpha",
+    "--add-dir",
+    "<TMP>/repo",
+    "--allow-all-tools",
+    "--no-color",
+    "--output-format",
+    "json",
+    "--model",
+    "golden-model",
+    "--deny-tool",
+    "write"
+  ],
+  "input": null,
+  "env": {
+    "MAIN_ROOT": "<TMP>/repo",
+    "CREW_ORCHESTRATED": "1"
+  }
+}

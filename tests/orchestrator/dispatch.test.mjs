@@ -36,10 +36,10 @@ import {
   dispatchPlain,
   extractFinalText,
   extractResultMeta,
-  formatJsonTraceLine,
   preflight,
-  DEFAULT_PARALLEL,
 } from "../../orchestrator/lib/dispatch.mjs";
+import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
+import { formatJsonTraceLine } from "../../orchestrator/lib/adapters/trace.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
 const SCRIPTS = "skills/crew-afk/scripts";
@@ -113,7 +113,7 @@ test("codex: the coder is workspace-write with network and the git dirs writable
   assert.deepEqual(a.slice(a.indexOf("--add-dir"), a.indexOf("--add-dir") + 2), ["--add-dir", root]);
   assert.equal(a.at(-1), "-", "codex reads the prompt from stdin");
   assert.match(b.input, /^# Coder[\s\S]*# Task\n\nprompt body$/);
-  assert.equal(a.at(a.indexOf("--output-last-message") + 1), join(root, "dispatch/alpha.report.md"));
+  assert.equal(a.includes("--output-last-message"), false, "the final message is read from the stream");
 });
 
 test("codex: a read-only role runs workspace-write rooted at its result file's directory", () => {
@@ -179,28 +179,45 @@ test("codex's trace lines and final text match what the bash dispatcher produced
   assert.deepEqual(
     stream.map((l) => formatJsonTraceLine("codex", "crew-coder", l)).filter(Boolean),
     [
-      "[TOOL] agent=crew-coder item=command_execution $ npm test",
-      "[TOOL] agent=crew-coder item=file_change src/a.js",
-      '[TOOL] agent=crew-coder item=mcp_tool_call args={"type":"mcp_tool_call","server":"s"}',
-      "[TOOL-ERROR] agent=crew-coder item=command_execution exit=2",
-      "[TOOL-ERROR] agent=crew-coder turn.failed",
-      "[TOOL-ERROR] agent=crew-coder error",
+      "[TOOL] agent=crew-coder tool=shell $ npm test",
+      "[TOOL] agent=crew-coder tool=file_change src/a.js",
+      '[TOOL] agent=crew-coder tool=mcp_tool_call args={"type":"mcp_tool_call","server":"s"}',
+      "[TOOL-ERROR] agent=crew-coder tool=shell exit=2",
+      "[TOOL-ERROR] agent=crew-coder type=turn.failed",
+      "[TOOL-ERROR] agent=crew-coder type=error",
     ],
   );
   assert.equal(extractFinalText("codex", stream), "all done");
 });
 
-test("a codex dispatch falls back to the final message codex wrote itself (-o) when the stream has none", async () => {
+test("a codex dispatch's report is the stream's final agent_message, never a stale outFile", async () => {
   const { root, promptFile } = fixture();
   const outFile = join(root, "dispatch", "alpha.report.md");
-  const fakeEffects = {
-    spawnWithTimeout: async (cmd, args) => {
-      writeFileSync(args[args.indexOf("--output-last-message") + 1], "from -o");
-      return { code: 0, stdout: "", stderr: "", timedOut: false, dryRun: false };
+  mkdirSync(join(root, "dispatch"), { recursive: true });
+  writeFileSync(outFile, "stale report from an earlier attempt");
+  const stream = `${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "from the stream" } })}\n`;
+  const effects = (onLine) => ({
+    spawnWithTimeout: async (cmd, args, opts) => {
+      opts.onLine?.(onLine);
+      return { code: 0, stdout: onLine, stderr: "", timedOut: false, dryRun: false };
     },
-  };
-  const r = await dispatch(fakeEffects, "codex", { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root }, {});
-  assert.equal(r.text, "from -o");
+  });
+  const spec = { agent: "crew-coder", cwd: root, promptFile, outFile, model: null, mainRoot: root };
+  assert.equal((await dispatch(effects(stream), "codex", spec, {})).text, "from the stream");
+  assert.equal((await dispatch(effects(""), "codex", spec, {})).text, "", "no agent_message is an empty report");
+});
+
+test("every platform's protocol dispatch writes <outFile>.protocol.md; a plain one writes none", () => {
+  const { root, promptFile } = fixture();
+  mkdirSync(join(root, "worktree"), { recursive: true });
+  for (const platform of PLATFORMS) {
+    const outFile = join(root, `dispatch/${platform}.report.md`);
+    buildDispatch(platform, spec(root, promptFile, { outFile }));
+    assert.match(readFileSync(`${outFile}.protocol.md`, "utf8"), /^# Coder/, platform);
+    const plainOut = join(root, `dispatch/${platform}.plain.md`);
+    buildDispatch(platform, spec(root, promptFile, { agent: "plain", outFile: plainOut }));
+    assert.equal(existsSync(`${plainOut}.protocol.md`), false, platform);
+  }
 });
 
 test("a missing pi or codex CLI fails the dispatch with 127 and a message naming it", async () => {
@@ -460,7 +477,7 @@ async function recordedDispatch(platform, over = {}) {
 }
 
 test("a plain role dispatches through its platform's adapter, with its prompt and no protocol", async () => {
-  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+  for (const platform of PLATFORMS) {
     const { root, rec } = await recordedDispatch(platform);
     const promptFile = join(root, "plain.md.prompt.md");
     const built = buildDispatch(platform, { agent: "plain", cwd: root, mainRoot: root, promptFile, outFile: join(root, "plain.md") });
@@ -488,13 +505,13 @@ test("claude: a plain role disables auto-memory and starts its own session; no o
   assert.equal(rec.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
   assert.equal(rec.env.CLAUDE_CODE_SESSION_ID, "");
   assert.equal(rec.env.CLAUDE_CODE_CHILD_SESSION, "");
-  for (const platform of ["pi", "codex", "copilot"]) {
+  for (const platform of PLATFORMS.filter((p) => !ADAPTERS[p].env)) {
     assert.equal("CLAUDE_CODE_DISABLE_AUTO_MEMORY" in (await recordedDispatch(platform)).rec.env, false, platform);
   }
 });
 
 test("a plain role's model comes through", async () => {
-  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+  for (const platform of PLATFORMS) {
     const { rec } = await recordedDispatch(platform, { model: "m-1" });
     assert.equal(rec.argv[rec.argv.indexOf("--model") + 1], "m-1", platform);
   }
@@ -889,7 +906,7 @@ test("extractResultMeta carries claude's budget-cap subtype", () => {
 
 test("a coder's targeted test run measures from the feature branch it was cut from", () => {
   const { root, promptFile } = fixture();
-  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+  for (const platform of PLATFORMS) {
     assert.equal(buildDispatch(platform, spec(root, promptFile, { baseRef: "feature/demo" })).env.CREW_BASE_REF, "feature/demo", platform);
     assert.equal("CREW_BASE_REF" in buildDispatch(platform, spec(root, promptFile, { agent: "crew-reviewer", baseRef: "feature/demo" })).env, false, platform);
   }
@@ -914,8 +931,7 @@ test("the flag probe reads a help text that folds a flag's variant into brackets
 });
 
 test("preflight with probeFlags reports a PROBLEM when --help omits a flag the adapter needs", async () => {
-  const { ADAPTERS } = await import("../../orchestrator/lib/adapters/index.mjs");
-  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+  for (const platform of PLATFORMS) {
     const { requiredFlags } = ADAPTERS[platform];
     assert.ok(requiredFlags.length, `${platform} declares requiredFlags`);
     const helpWith = (flags) => ({ exec: (cmd, args) => (args[0] === "-c" ? { code: 0, stdout: "/bin/x", stderr: "" } : { code: 0, stdout: flags.join("\n"), stderr: "" }) });

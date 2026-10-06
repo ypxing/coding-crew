@@ -1,0 +1,22 @@
+{
+  "cmd": "pi",
+  "args": [
+    "-p",
+    "-n",
+    "crew-reviewer: alpha",
+    "--mode",
+    "json",
+    "--model",
+    "golden-model",
+    "--tools",
+    "read,bash",
+    "--append-system-prompt",
+    "<PROTOCOL crew-reviewer sha256:ed7d4b0f883b819f>",
+    "Implement the alpha issue.\n"
+  ],
+  "input": null,
+  "env": {
+    "MAIN_ROOT": "<TMP>/repo",
+    "CREW_ORCHESTRATED": "1"
+  }
+}
