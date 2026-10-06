@@ -184,10 +184,13 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
     IN_PROGRESS_ARGS=()
   fi
   # A person closing a ready-for-human issue from its own steps runs this too; the label it
-  # carried comes off in the same edit, created first like in-progress.
+  # carried comes off in the same edit, created first like in-progress — but without --force:
+  # the label is the project's own (configure-tracker made it), so an existing one keeps its
+  # colour and description, and gh's "already exists" refusal counts as created.
   READY_FOR_HUMAN_ARGS=(--remove-label ready-for-human)
-  if ! GH_OUT="$(gh label create ready-for-human "${REPO_ARGS[@]}" --force \
-      --description "Requires human implementation" 2>&1)"; then
+  if ! GH_OUT="$(gh label create ready-for-human "${REPO_ARGS[@]}" \
+      --description "Requires human implementation" 2>&1)" \
+      && [[ "$GH_OUT" != *"already exists"* ]]; then
     echo "WARNING: gh label create ready-for-human failed; leaving it alone: $GH_OUT" >&2
     READY_FOR_HUMAN_ARGS=()
   fi

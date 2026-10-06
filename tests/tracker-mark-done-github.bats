@@ -161,9 +161,34 @@ EOF
   run bash "$MARK_DONE" 42
   [ "$status" -eq 0 ]
   [ "$(grep -c '^issue edit' "$GH_LOG")" -eq 1 ]
-  create=$(grep -n '^label create ready-for-human --force' "$GH_LOG" | cut -d: -f1)
+  create=$(grep -n '^label create ready-for-human' "$GH_LOG" | cut -d: -f1)
+  # --force would reset an existing label's colour and description.
+  ! grep -q '^label create ready-for-human.*--force' "$GH_LOG" || false
   edit=$(grep -n '^issue edit' "$GH_LOG" | cut -d: -f1)
   [ -n "$create" ] && [ "$create" -lt "$edit" ]
+  grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress$' "$GH_LOG"
+}
+
+@test "mark-issue-done (github): an existing ready-for-human label is left as is and still removed" {
+  stub_gh 0
+  write_body_met
+  # Wrap the stub: `label create ready-for-human` fails the way gh does on an existing label.
+  mv "$STUB/gh" "$STUB/gh-real"
+  cat > "$STUB/gh" <<EOF
+#!/usr/bin/env bash
+if [ "\$1 \$2 \$3" = "label create ready-for-human" ]; then
+  printf '%s\n' "\$*" >> "$GH_LOG"
+  echo 'label with name "ready-for-human" already exists; use \`--force\` to update its color and description' >&2
+  exit 1
+fi
+exec "$STUB/gh-real" "\$@"
+EOF
+  chmod +x "$STUB/gh"
+
+  run bash "$MARK_DONE" 42
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"WARNING"* ]]
+  ! grep -q '^label create ready-for-human.*--force' "$GH_LOG" || false
   grep -q '^issue edit 42 --add-label awaiting-merge --remove-label ready-for-agent --remove-label ready-for-human --remove-label in-progress$' "$GH_LOG"
 }
 

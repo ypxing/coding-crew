@@ -187,12 +187,12 @@ for idx in "${!NAMES[@]}"; do
     else
       warn "$file" "ready-for-human issue has no ## For a human section"
     fi
-    # A person ticks each criterion as they finish it; one ticked at publish says "done" too early.
+    # A person ticks each criterion as they finish it, so publish them unticked.
     section "$file" "Acceptance criteria" | awk '
       /^[ \t]*```/ { fence = !fence; next }
       !fence && /^[ \t]*[-*][ \t]+\[[xX]\]/ { sub(/^[ \t]+/, ""); print }' |
       while IFS= read -r ticked; do
-        warn "$file" "ready-for-human acceptance criterion is ticked before anyone did it — write it unticked (- [ ]): $ticked"
+        warn "$file" "ready-for-human acceptance criterion is ticked — leave criteria unticked when publishing: $ticked"
       done
   else
     has_section "$file" "What to build" || warn "$file" "no ## What to build section"
