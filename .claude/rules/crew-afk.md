@@ -103,7 +103,7 @@ that modifies the tree fails, in the baseline and every verify.
 
 At every drain of the queue (after Phase 1 and after Phase 2) the same mechanism runs once more on the merged
 feature branch under its own `_integration` stem and cache (`--no-integration-check`; `--no-baseline` does not
-turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR (a PR an earlier run opened is made a draft, nothing pushed: `open-pr.sh --no-push`). It is
+turn it off). A red result is reported in the summary and keeps `openPr` from opening the PR (a PR an earlier run opened is made a draft, nothing pushed: `open-pr.sh --no-push`, whose `--draft-marker` rewrites the block's `<!-- crew-afk:draft … -->` line so it names `integration`). It is
 first triaged (`orchestrator/lib/integration-fix.mjs`, a `crew-triage` dispatch): a fixable failure becomes one parked
 fix issue (`promote-findings.sh defer-integration`) that Phase 2 implements, after which the next drain checks again
 — at most two per run, then the run ends stalled; exit 127 or a "not fixable" verdict queues nothing and the summary

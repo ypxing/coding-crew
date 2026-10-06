@@ -4,7 +4,7 @@ set -euo pipefail
 # open-pr.sh — push the feature branch and create, or update, its pull request.
 #
 # Usage: open-pr.sh [--closes-file <file>] [--body-file <file>] [--title <title>] [--draft]
-#                   [--note-file <file>] [--no-push]
+#                   [--note-file <file>] [--no-push] [--draft-marker <line>]
 #   FEATURE_BRANCH and FEATURE_SLUG come from the environment (the orchestrator's childEnv).
 #   --closes-file holds the tracker's closing lines (`Closes #n`), one per line; absent or
 #   empty, the PR closes nothing.
@@ -19,6 +19,9 @@ set -euo pipefail
 #   --note-file holds the not-green text (blocked issues, reason) for the crew-afk block.
 #   --no-push: push nothing, create nothing and edit no body — only an open PR's draft state is
 #   set. For a red merged branch: the PR a green run opened must not stay ready.
+#   --draft-marker (with --no-push): the one body edit it makes — the open PR's block gets this
+#   `<!-- crew-afk:draft <kinds> -->` line in place of its own (or added before its end marker),
+#   so a marker an earlier run wrote (say, `findings` alone) does not outlive the red branch.
 #
 # The body's crew-afk block — between the two markers below — is the only part this writes:
 # a new PR gets just that block, and an open one has it replaced (or appended), so what a
@@ -36,6 +39,7 @@ TITLE=""
 DRAFT=0
 NOTE_FILE=""
 NO_PUSH=0
+DRAFT_MARKER=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --closes-file) CLOSES_FILE="${2:-}"; shift 2 ;;
@@ -44,6 +48,7 @@ while [ $# -gt 0 ]; do
     --draft) DRAFT=1; shift ;;
     --note-file) NOTE_FILE="${2:-}"; shift 2 ;;
     --no-push) NO_PUSH=1; shift ;;
+    --draft-marker) DRAFT_MARKER="${2:-}"; shift 2 ;;
     *) echo "open-pr.sh: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -116,8 +121,19 @@ if [ "$state" = "OPEN" ]; then
   title_args=()
   old_title=$(printf '%s' "$existing" | jq -r '.title // ""')
   if [ -n "$TITLE" ] && [ "$old_title" = "$FEATURE_SLUG" ]; then title_args=(--title "$TITLE"); fi
-  # --no-push leaves the body alone: its block holds the closing lines and summary this run did not rebuild.
-  [ "$NO_PUSH" = 1 ] || gh pr edit "$FEATURE_BRANCH" --body-file "$TMP/body.md" "${title_args[@]+"${title_args[@]}"}" >/dev/null
+  # --no-push leaves the body alone: its block holds the closing lines and summary this run did not
+  # rebuild. Only its draft marker is swapped for --draft-marker's, when the old body has a block.
+  if [ "$NO_PUSH" = 0 ]; then
+    gh pr edit "$FEATURE_BRANCH" --body-file "$TMP/body.md" "${title_args[@]+"${title_args[@]}"}" >/dev/null
+  elif [ -n "$DRAFT_MARKER" ] && grep -qxF "$BEGIN_MARK" "$TMP/old.md"; then
+    awk -v begin="$BEGIN_MARK" -v end="$END_MARK" -v marker="$DRAFT_MARKER" '
+      $0 == begin { inblock = 1; done = 0 }
+      inblock && $0 ~ /^<!-- crew-afk:draft .* -->$/ { if (!done) print marker; done = 1; next }
+      inblock && $0 == end { if (!done) print marker; inblock = 0 }
+      { print }
+    ' "$TMP/old.md" > "$TMP/marked.md"
+    cmp -s "$TMP/old.md" "$TMP/marked.md" || gh pr edit "$FEATURE_BRANCH" --body-file "$TMP/marked.md" >/dev/null
+  fi
   url=$(printf '%s' "$existing" | jq -r '.url')
   is_draft=$(printf '%s' "$existing" | jq -r '.isDraft // false')
   if [ "$DRAFT" = 1 ] && [ "$is_draft" != "true" ]; then

@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: a red integration check that turns an open PR back into a draft now rewrites its crew-afk block's
+  `<!-- crew-afk:draft … -->` marker to name `integration`, so `/address-pr-comments` no longer reads a stale
+  `findings`-only marker and suggests marking a red PR ready (#296).
 - `crew-afk`: the feature reviewer answers Coverage and Correctness in two passes — it collects every candidate defect,
   unsure ones included, then verifies each before it becomes a finding, listing dropped ones under `### Dropped`. A
   report-only closing review covers what merged after the run's feature review (the fix issue, integration fixes) before

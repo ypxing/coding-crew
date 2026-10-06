@@ -102,6 +102,8 @@ test("a red final integration check keeps --open-pr from opening the PR, and the
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   // Only the no-push call that turns an already-open PR into a draft (there is none here).
   assert.deepEqual(lines.filter((l) => /open-pr\.sh/.test(l)).map((l) => /--no-push/.test(l)), [true], "nothing was pushed");
+  // An open PR's block must not keep an earlier run's marker (`findings` alone) past a red branch.
+  assert.match(lines.find((l) => /open-pr\.sh/.test(l)), /--draft-marker '?<!-- crew-afk:draft [a-z,-]*\bintegration\b[a-z,-]* -->/);
   assert.match(r.stdout, /## Pull Request\s+\*\*Not opened:\*\* the integration check failed on feature\/demo — see ## Integration check above\./);
 });
 
