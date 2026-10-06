@@ -10,8 +10,8 @@
 #
 # The behaviour the deleted prose described is asserted against the code in
 # tests/orchestrator/*.test.mjs, not here. Every body assertion runs over
-# AFK_LAUNCHER_VARIANTS, so cutting a platform over is one edit in tests/helpers/render.bash
-# rather than a copy of this file.
+# AFK_LAUNCHER_VARIANTS (every orchestrator/platforms.json entry), so a new platform needs no edit here
+# and no copy of this file.
 
 load helpers/render
 load helpers/platforms

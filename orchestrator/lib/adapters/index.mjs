@@ -15,16 +15,26 @@ export const PLATFORMS = Object.keys(ADAPTERS);
  */
 export const DEFAULT_PARALLEL = Object.fromEntries(PLATFORMS.map((p) => [p, ADAPTERS[p].defaultParallel]));
 
-/** One raw JSONL event line, normalized by `platform`'s adapter; null for an unknown platform, an unparseable line or an event it ignores. */
-export function normalizeLine(platform, line) {
+/**
+ * Every normalized event in one raw JSONL event line, by `platform`'s adapter (whose `normalize`
+ * returns one, an array — a claude message with several tool calls — or null); [] for an unknown
+ * platform, an unparseable line or an event it ignores.
+ */
+export function normalizeEvents(platform, line) {
   const adapter = ADAPTERS[platform];
-  if (!adapter) return null;
+  if (!adapter) return [];
   let evt;
   try {
     evt = JSON.parse(line);
   } catch {
-    return null;
+    return [];
   }
-  if (!evt || typeof evt !== "object") return null;
-  return adapter.normalize(evt) ?? null;
+  if (!evt || typeof evt !== "object") return [];
+  const out = adapter.normalize(evt);
+  return (Array.isArray(out) ? out : [out]).filter(Boolean);
+}
+
+/** A line's first normalized event, or null: the one the trace line and pane show. */
+export function normalizeLine(platform, line) {
+  return normalizeEvents(platform, line)[0] ?? null;
 }

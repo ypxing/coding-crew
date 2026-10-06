@@ -201,6 +201,14 @@ load helpers/orchestrator-suite
   done
 }
 
+@test "orchestrator CLI: status needs no --platform" {
+  command -v node >/dev/null 2>&1 || skip "node not installed"
+  cd "$REPO_ROOT"
+  run node orchestrator/main.mjs status
+  [[ "$output" != *"--platform is required"* ]] || { echo "$output"; return 1; }
+  [ "$status" -eq 0 ] || [ "$status" -eq 3 ] || { echo "exit $status: $output"; return 1; }
+}
+
 @test "orchestrator CLI: the seven retired flags are rejected as unrecognized" {
   for f in --promote --coverage --worker-timeout --review-timeout --max-rounds --merge-timeout --no-commands; do
     run node orchestrator/main.mjs run --platform pi "$f"

@@ -56,7 +56,9 @@ usage() {
   echo "       ./install.sh [platform] --skills <a,b,c>"
   echo "       ./install.sh --update"
   echo ""
-  echo "  platform:  all (default), $(platforms_joined ", ")"
+  local known="a platform in orchestrator/platforms.json"
+  [[ ${#PLATFORMS[@]} -gt 0 ]] && known=$(platforms_joined ", ")
+  echo "  platform:  all (default), $known"
   echo "  --skill:   install a single skill (e.g. to-issues)"
   echo "  --skills:  install multiple skills (comma-separated, e.g. tdd,to-issues,to-prd);"
   echo "             treated as the full desired set — any skill from a prior --skills"
@@ -71,15 +73,23 @@ usage() {
   echo "  ./install.sh --update                             # update all installed skills"
   echo ""
   echo "Available skills:"
-  echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json")"
+  echo "  $(jq -r '.skills | keys | join(", ")' "$SCRIPT_DIR/registry.json" 2>/dev/null || echo "(needs jq to list)")"
   echo ""
   echo "Set TARGET_REPO to install into a different repo root."
   echo "A user-level install (TARGET_REPO=\$HOME) honors each platform's own config-dir override:"
   local i overrides=""
   for i in "${!PLATFORMS[@]}"; do overrides="${overrides:+$overrides, }${_PF_ENV[$i]} (${PLATFORMS[$i]})"; done
-  echo "  $overrides."
+  echo "  ${overrides:-the configDirEnv of each entry in orchestrator/platforms.json}."
   exit 1
 }
+
+# Help needs no dependency: platforms.sh (which reads platforms.json with jq) fills in the
+# platform list when jq is there, and usage() says where the list lives when it is not.
+PLATFORMS=(); _PF_ENV=()
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  command -v jq >/dev/null 2>&1 && source "$SCRIPT_DIR/scripts/lib/platforms.sh"
+  usage
+fi
 
 # ── Dependency checks ──────────────────────────────────────────────────────────
 _required_cmds=("jq" "git")
@@ -123,10 +133,6 @@ fi
 
 # The platform list and every platform's skill paths, from orchestrator/platforms.json.
 source "$SCRIPT_DIR/scripts/lib/platforms.sh"
-
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-fi
 
 # ── Input validation ───────────────────────────────────────────────────────────
 if [[ "$UPDATE_MODE" == "false" ]]; then

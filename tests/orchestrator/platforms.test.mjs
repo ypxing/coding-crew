@@ -38,6 +38,8 @@ function conformanceProblems(data, adapters) {
     for (const [field, type] of Object.entries(REQUIRED)) {
       if (typeof adapter[field] !== type) problems.push(`${p}: adapter lacks ${field} (${type})`);
     }
+    // Declared even when the CLI picks its own model (undefined), so the choice is explicit.
+    if (!("defaultModel" in adapter)) problems.push(`${p}: adapter lacks defaultModel`);
   }
   return problems;
 }
@@ -55,6 +57,11 @@ test("conformance names the platform of an entry with no adapter, an adapter wit
   assert.ok(problems.includes("gemini: adapter has no orchestrator/platforms.json entry"), problems.join("\n"));
   assert.ok(problems.includes("pi: adapter lacks build (function)"), problems.join("\n"));
   assert.equal(problems.length, 3, problems.join("\n"));
+});
+
+test("conformance reports an adapter that does not declare defaultModel", () => {
+  const { defaultModel, ...noDefault } = ADAPTERS.codex;
+  assert.deepEqual(conformanceProblems(PLATFORMS_JSON, { ...ADAPTERS, codex: noDefault }), ["codex: adapter lacks defaultModel"]);
 });
 
 test("conformance reports an adapter without normalize", () => {

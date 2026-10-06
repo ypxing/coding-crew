@@ -200,7 +200,7 @@ skill lookup, capability checks, the squash trailer) is derived from those two.
    `helpArgs?` (doctor), `build(spec) -> { args, input? }` (spec: `cwd`, `mainRoot`, `model`, `policy`, `protocol` and
    `protocolFile` — the rendered protocol as text and as `<outFile>.protocol.md` — `prompt`, `outFile`, `label`),
    `policyArgs(policy)` (a `ROLE_POLICY` entry → flags), `finalText(lines)`, `normalize(evt)` (a raw event → the
-   one shape trace, pane text and deviation detection read); optional
+   one shape trace, pane text and deviation detection read; an array when one raw event holds several tool calls); optional
    capabilities `liveText`, `resume(id)`, `budget(usd)`, `resultMeta(lines)`, `env`, `modelTiers`, `modelAliasEnv`. A capability the
    adapter lacks is off for that runtime (no resume, `afk.limits` reported ignored), never a name check elsewhere.
 3. **Conformance test** — `node --test tests/orchestrator/platforms.test.mjs` fails, naming the platform, until both exist

@@ -38,7 +38,7 @@ import {
   extractResultMeta,
   preflight,
 } from "../../orchestrator/lib/dispatch.mjs";
-import { DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
+import { ADAPTERS, DEFAULT_PARALLEL, PLATFORMS } from "../../orchestrator/lib/adapters/index.mjs";
 import { formatJsonTraceLine } from "../../orchestrator/lib/adapters/trace.mjs";
 import { Effects } from "../../orchestrator/lib/effects.mjs";
 
@@ -183,8 +183,8 @@ test("codex's trace lines and final text match what the bash dispatcher produced
       "[TOOL] agent=crew-coder tool=file_change src/a.js",
       '[TOOL] agent=crew-coder tool=mcp_tool_call args={"type":"mcp_tool_call","server":"s"}',
       "[TOOL-ERROR] agent=crew-coder tool=shell exit=2",
-      "[AGENT-ERROR] agent=crew-coder type=turn.failed",
-      "[AGENT-ERROR] agent=crew-coder type=error",
+      "[TOOL-ERROR] agent=crew-coder type=turn.failed",
+      "[TOOL-ERROR] agent=crew-coder type=error",
     ],
   );
   assert.equal(extractFinalText("codex", stream), "all done");
@@ -477,7 +477,7 @@ async function recordedDispatch(platform, over = {}) {
 }
 
 test("a plain role dispatches through its platform's adapter, with its prompt and no protocol", async () => {
-  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+  for (const platform of PLATFORMS) {
     const { root, rec } = await recordedDispatch(platform);
     const promptFile = join(root, "plain.md.prompt.md");
     const built = buildDispatch(platform, { agent: "plain", cwd: root, mainRoot: root, promptFile, outFile: join(root, "plain.md") });
@@ -505,13 +505,13 @@ test("claude: a plain role disables auto-memory and starts its own session; no o
   assert.equal(rec.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
   assert.equal(rec.env.CLAUDE_CODE_SESSION_ID, "");
   assert.equal(rec.env.CLAUDE_CODE_CHILD_SESSION, "");
-  for (const platform of ["pi", "codex", "copilot"]) {
+  for (const platform of PLATFORMS.filter((p) => !ADAPTERS[p].env)) {
     assert.equal("CLAUDE_CODE_DISABLE_AUTO_MEMORY" in (await recordedDispatch(platform)).rec.env, false, platform);
   }
 });
 
 test("a plain role's model comes through", async () => {
-  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+  for (const platform of PLATFORMS) {
     const { rec } = await recordedDispatch(platform, { model: "m-1" });
     assert.equal(rec.argv[rec.argv.indexOf("--model") + 1], "m-1", platform);
   }
@@ -906,7 +906,7 @@ test("extractResultMeta carries claude's budget-cap subtype", () => {
 
 test("a coder's targeted test run measures from the feature branch it was cut from", () => {
   const { root, promptFile } = fixture();
-  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+  for (const platform of PLATFORMS) {
     assert.equal(buildDispatch(platform, spec(root, promptFile, { baseRef: "feature/demo" })).env.CREW_BASE_REF, "feature/demo", platform);
     assert.equal("CREW_BASE_REF" in buildDispatch(platform, spec(root, promptFile, { agent: "crew-reviewer", baseRef: "feature/demo" })).env, false, platform);
   }
@@ -931,8 +931,7 @@ test("the flag probe reads a help text that folds a flag's variant into brackets
 });
 
 test("preflight with probeFlags reports a PROBLEM when --help omits a flag the adapter needs", async () => {
-  const { ADAPTERS } = await import("../../orchestrator/lib/adapters/index.mjs");
-  for (const platform of ["pi", "codex", "claude", "copilot"]) {
+  for (const platform of PLATFORMS) {
     const { requiredFlags } = ADAPTERS[platform];
     assert.ok(requiredFlags.length, `${platform} declares requiredFlags`);
     const helpWith = (flags) => ({ exec: (cmd, args) => (args[0] === "-c" ? { code: 0, stdout: "/bin/x", stderr: "" } : { code: 0, stdout: flags.join("\n"), stderr: "" }) });

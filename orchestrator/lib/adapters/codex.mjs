@@ -75,8 +75,10 @@ export default {
 
   /**
    * An item's start (its command or path), a command that completed with a non-zero exit, a
-   * completed `agent_message`'s text, or a `turn.failed` / `error`. One command is reported at
-   * its start and its end under the same item id.
+   * completed `agent_message`'s text, or a `turn.failed` / `error` — a tool-error, not an
+   * agent-error: codex also sends `error` for a stream it retries, so these stay warn-level
+   * `[TOOL-ERROR]` lines as they always were. One command is reported at its start and its end
+   * under the same item id.
    */
   normalize(evt) {
     const item = evt.item;
@@ -98,7 +100,7 @@ export default {
     }
     if (evt.type === "turn.failed" || evt.type === "error") {
       const message = evt.error?.message ?? evt.message;
-      return normalized("agent-error", { detail: `type=${evt.type}${message != null ? ` error=${safePreview(message)}` : ""}` });
+      return normalized("tool-error", { detail: `type=${evt.type}${message != null ? ` error=${safePreview(message)}` : ""}` });
     }
     return null;
   },

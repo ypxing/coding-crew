@@ -55,6 +55,14 @@ test("a codex command reported at its start and its (failed) end counts once", (
   assert.deepEqual(fullSuiteRuns(f, "npm test", "codex"), ["npm test", "npm test"]);
 });
 
+test("every tool call in one claude message is read, not only the first", () => {
+  const dir = mkdtempSync(join(tmpdir(), "dev-"));
+  const f = join(dir, "x.events.jsonl");
+  const use = (id, command) => ({ type: "tool_use", id, name: "Bash", input: { command } });
+  writeFileSync(f, JSON.stringify({ type: "assistant", message: { content: [use("t1", "git status"), use("t2", "npm test")] } }) + "\n");
+  assert.deepEqual(fullSuiteRuns(f, "npm test", "claude"), ["npm test"]);
+});
+
 test("a whole-suite run is found in each platform's recorded events, once per tool call", () => {
   const fixture = (p) => new URL(`./fixtures/events/${p}.jsonl`, import.meta.url).pathname;
   assert.deepEqual(fullSuiteRuns(fixture("claude"), "npm test", "claude"), ["npm test"]);

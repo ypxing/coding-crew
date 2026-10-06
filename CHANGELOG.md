@@ -9,14 +9,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - `crew-afk`: platform facts come only from `orchestrator/platforms.json` and the adapters — each adapter has one `build()`,
   a `coAuthor` trailer and `policyArgs` for the one `ROLE_POLICY`; resume, `afk.limits` and the model-tier warning follow the
   runtime adapter's capabilities instead of `"claude"` checks (an ignored cap now says "not supported by <runtime>"). `--platform`
-  is required (`CREW_PLATFORM` and the `pi` default are gone); `squash-commits.sh --platform` is replaced by `--co-author "<trailer>"`
+  is required for `run`/`plan`/`doctor` (`CREW_PLATFORM` and the `pi` default are gone; `status` needs none); `squash-commits.sh --platform` is replaced by `--co-author "<trailer>"`
   (no trailer when omitted); codex no longer passes `--output-last-message`; every protocol dispatch writes `<outFile>.protocol.md` (#310).
 - installer: `uninstall.sh` again sweeps only the legacy paths an earlier install wrote (Copilot's `.copilot/` at project
   scope, pi's `.pi/` at user scope); a user uninstall no longer removes `~/.github/skills/<skill>`, nor a project
   uninstall `<repo>/.pi/agent/skills/<skill>` (#313).
 - `crew-afk`: each platform adapter normalizes its CLI's events to one shape (`normalize`), and the trace log, the pane view
   and full-suite deviation detection read that shape with no per-platform code. codex's trace lines now read `tool=shell`
-  instead of `item=command_execution`, and its `turn.failed` / `error` events are logged as `[AGENT-ERROR]`; deviation
+  instead of `item=command_execution`; deviation
   detection no longer counts a `command` field outside a tool call (#309).
 - installer: `install.sh`/`uninstall.sh` take the platform list and every skill destination from `orchestrator/platforms.json`
   (one shared helper, `scripts/lib/platforms.sh`); `registry.json` skill entries drop `install`/`install-<platform>`, and

@@ -9,7 +9,7 @@
  *   crew-afk doctor [options]   check this platform can dispatch at all
  *
  * Options:
- *   --platform <name>                      required: one of lib/adapters/index.mjs's PLATFORMS
+ *   --platform <name>                      required (not for status): one of lib/adapters/index.mjs's PLATFORMS
  *   --pane-host <orca|herdr|auto|none>     [paneHost, ~/.coding-crew/config.json only; default
  *                                           none] or $CREW_PANE_HOST, which beats the file, as
  *                                           do the legacy $ORCA_ENV=1 / $HERDR_ENV=1 (orca
@@ -424,11 +424,12 @@ async function main() {
     );
     return 0;
   }
-  if (!options.platform) {
+  // `status` only reads the sprint's state, so it dispatches nothing and needs no platform.
+  if (!options.platform && options.command !== "status") {
     console.error(`crew-afk: --platform is required (expected ${PLATFORMS.join(", ")})`);
     return 1;
   }
-  if (!PLATFORMS.includes(options.platform)) {
+  if (options.platform && !PLATFORMS.includes(options.platform)) {
     console.error(`crew-afk: unknown --platform ${options.platform} (expected ${PLATFORMS.join(", ")})`);
     return 1;
   }

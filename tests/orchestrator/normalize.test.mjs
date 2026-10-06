@@ -49,7 +49,7 @@ test("each fixture normalizes to a shell call, a file read, a failed tool, assis
     { kind: "tool-error", tool: "shell", command: "bash -lc 'npm test'", id: "item_1", detail: "exit=1" },
     { kind: "tool", tool: "shell", command: "bash -lc 'cat src/a.js'", id: "item_2" },
     { kind: "text", detail: "One test fails; fixing it." },
-    { kind: "agent-error", detail: 'type=turn.failed error="stream disconnected"' },
+    { kind: "tool-error", detail: 'type=turn.failed error="stream disconnected"' },
   ]);
   assert.deepEqual(normalized("copilot").map(strip), [
     { kind: "tool", tool: "bash", command: "npm test", id: "call_1" },
@@ -79,7 +79,7 @@ test("one formatter turns each platform's fixture into [TOOL]/[TOOL-ERROR]/[AGEN
     "[TOOL] agent=crew-coder tool=shell $ bash -lc 'npm test'",
     "[TOOL-ERROR] agent=crew-coder tool=shell exit=1",
     "[TOOL] agent=crew-coder tool=shell $ bash -lc 'cat src/a.js'",
-    '[AGENT-ERROR] agent=crew-coder type=turn.failed error="stream disconnected"',
+    '[TOOL-ERROR] agent=crew-coder type=turn.failed error="stream disconnected"',
   ]);
   assert.deepEqual(trace("copilot"), [
     "[TOOL] agent=crew-coder tool=bash $ npm test",

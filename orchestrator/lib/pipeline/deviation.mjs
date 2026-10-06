@@ -10,7 +10,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { normalizeLine } from "../adapters/index.mjs";
+import { normalizeEvents } from "../adapters/index.mjs";
 
 /** `VAR=value cmd …` → `cmd …`: an env prefix in the cached command is not how a coder types it. */
 const withoutEnvPrefix = (cmd) => cmd.replace(/^(\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, "");
@@ -62,11 +62,12 @@ export function fullSuiteRuns(eventsFile, testCommand, platform) {
   // One tool call can appear in several events (codex's item.started and item.completed).
   const seen = new Set();
   for (const line of readFileSync(eventsFile, "utf8").split("\n")) {
-    const { command: cmd, id } = normalizeLine(platform, line) ?? {};
-    if (typeof cmd !== "string" || (id != null && seen.has(id))) continue;
-    if (runsWholeSuite(cmd, core) && !cmd.includes("run-checks.sh")) {
-      if (id != null) seen.add(id);
-      runs.push(cmd);
+    for (const { command: cmd, id } of normalizeEvents(platform, line)) {
+      if (typeof cmd !== "string" || (id != null && seen.has(id))) continue;
+      if (runsWholeSuite(cmd, core) && !cmd.includes("run-checks.sh")) {
+        if (id != null) seen.add(id);
+        runs.push(cmd);
+      }
     }
   }
   return runs;

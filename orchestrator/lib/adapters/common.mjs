@@ -13,7 +13,7 @@ export function safePreview(value, max = 200) {
 
 /**
  * A normalized event (PRD D12): `{ kind, tool?, command?, path?, args?, id?, detail? }`, each
- * adapter's `normalize(evt)` result. `kind` is "tool" | "tool-error" | "agent-error" | "text";
+ * adapter's `normalize(evt)` result (or an array of them, for a raw event holding several). `kind` is "tool" | "tool-error" | "agent-error" | "text";
  * `detail` is the trace text after the tool for an error, the assistant's text for "text".
  * Absent fields are left out, not set to undefined.
  */

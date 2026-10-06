@@ -63,23 +63,22 @@ export default {
   liveText: true,
 
   /**
-   * A tool_use block (the first, when a message has several), a failed tool_result, a run-ending
-   * `result` error, or the assistant's non-blank text blocks (trimmed, one per line).
+   * A tool_use block (an array of them when a message has several), a failed tool_result, a
+   * run-ending `result` error, or the assistant's non-blank text blocks (trimmed, one per line).
    */
   normalize(evt) {
     const blocks = Array.isArray(evt.message?.content) ? evt.message.content : [];
     if (evt.type === "assistant") {
-      const use = blocks.find((b) => b?.type === "tool_use");
-      if (use) {
-        const input = use.input;
-        return normalized("tool", {
+      const uses = blocks.filter((b) => b?.type === "tool_use").map((use) =>
+        normalized("tool", {
           tool: use.name,
-          command: str(input?.command),
-          path: str(input?.file_path ?? input?.path),
-          args: input,
+          command: str(use.input?.command),
+          path: str(use.input?.file_path ?? use.input?.path),
+          args: use.input,
           id: str(use.id),
-        });
-      }
+        }),
+      );
+      if (uses.length) return uses.length === 1 ? uses[0] : uses;
       const text = blocks.filter((b) => b?.type === "text" && typeof b.text === "string" && b.text.trim()).map((b) => b.text.trim());
       return text.length ? normalized("text", { detail: text.join("\n") }) : null;
     }

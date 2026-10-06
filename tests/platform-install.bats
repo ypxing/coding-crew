@@ -256,3 +256,12 @@ _assert_every_skill_in() {
     "$SCRIPT_DIR/install.sh" "$SCRIPT_DIR/uninstall.sh"
   [ "$status" -ne 0 ]
 }
+
+@test "install.sh --help works without jq, saying where the platform list lives" {
+  local bin="$TEMP_DIR/nojq" c
+  mkdir -p "$bin"
+  for c in bash dirname git env cat tr; do ln -s "$(command -v "$c")" "$bin/$c"; done
+  run env PATH="$bin" "$SCRIPT_DIR/install.sh" --help
+  [[ "$output" == *"platform:  all (default), a platform in orchestrator/platforms.json"* ]] || { echo "$output" >&2; return 1; }
+  [[ "$output" != *"required command"* ]]
+}
