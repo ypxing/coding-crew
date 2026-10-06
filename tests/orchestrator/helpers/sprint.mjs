@@ -32,7 +32,7 @@ export const TMPDIR = realpathSync(tmpdir());
 
 // Mirrors what install.sh actually produces for a real crew-afk install: its own
 // skills/crew-afk/scripts/ merged with the shared scripts its registry.json entry declares
-// (feature-branch-setup.sh, discover-commands.sh, write-commands-cache.sh), whose canonical
+// (discover-commands.sh, write-commands-cache.sh), whose canonical
 // source is scripts/skill-utils/git-workflow/, not skills/crew-afk/scripts/ — see that
 // directory's README. Computed once here rather than duplicating those files by hand, which
 // is exactly the drift the skill-utils mechanism exists to avoid.
@@ -46,7 +46,7 @@ export const SCRIPTS_BASE = mkdtempSync(join(REPO, ".scratch", "test-scripts-"))
 export const SCRIPTS = join(SCRIPTS_BASE, "scripts");
 mkdirSync(SCRIPTS);
 cpSync(join(REPO, "skills/crew-afk/scripts"), SCRIPTS, { recursive: true });
-for (const f of ["feature-branch-setup.sh", "discover-commands.sh", "write-commands-cache.sh"]) {
+for (const f of ["discover-commands.sh", "write-commands-cache.sh"]) {
   cpSync(join(REPO, "scripts/skill-utils/git-workflow", f), join(SCRIPTS, f));
 }
 after(() => rmSync(SCRIPTS_BASE, { recursive: true, force: true }));

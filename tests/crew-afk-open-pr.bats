@@ -307,3 +307,16 @@ Reviewer notes." '.body = $b' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR
   bash "$OPEN_PR"
   ! pr_body | grep -q -- '- 01-a'
 }
+
+@test "open-pr: the crew-afk block names the feature slug, on create and on update" {
+  in_block() { pr_body | awk '$0 == "<!-- crew-afk:begin -->" { b = 1; next } $0 == "<!-- crew-afk:end -->" { b = 0 } b'; }
+  bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" >/dev/null
+  in_block | grep -qxF '<!-- crew-afk:slug demo -->'
+
+  # An open PR whose block predates the marker gets it on the next run.
+  jq '.body = "Human text\n\n<!-- crew-afk:begin -->\nold\n<!-- crew-afk:end -->"' "$GH_PR" > "$GH_PR.new" && mv "$GH_PR.new" "$GH_PR"
+  bash "$OPEN_PR" --closes-file "$TEMP_DIR/closes.txt" >/dev/null
+  in_block | grep -qxF '<!-- crew-afk:slug demo -->'
+  [ "$(pr_body | grep -cxF '<!-- crew-afk:slug demo -->')" -eq 1 ]
+  pr_body | grep -qx 'Human text'
+}

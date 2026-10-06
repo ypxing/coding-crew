@@ -45,9 +45,9 @@ diff that touches a manifest or lockfile (`package.json`, `go.mod`, `requirement
 `Cargo.toml`, `*.lock`) — its only consumer is the multi-branch summary's `### Dependency Audit`
 block, so anywhere else it is generated and discarded.
 
-Also read, when present and not already in your context, `CLAUDE.md` (or `AGENTS.md`), and always
-`.scratch/<feature-slug>/PRD.md` (`<feature-slug>` from the
-current branch: `git rev-parse --abbrev-ref HEAD | sed 's|^feature/||' | sed -E 's/^[A-Z]+-[0-9]+-//'`).
+Also read, when present and not already in your context, `CLAUDE.md` (or `AGENTS.md`), and the PRD
+at the prompt's `PRD: <path>` line (a feature review names it on its `PRD (read it whole; …):` line).
+No such line means the feature has no PRD — never derive its path from the branch name.
 Conventions define what counts as a violation: a fix contradicting a decision recorded in either is
 downgraded or dropped.
 

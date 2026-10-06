@@ -201,7 +201,7 @@ const FINDING_SHAPE = {
   criterion: "<one verifiable fix criterion>",
 };
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext, prdPath = null }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
   // A size tells the reviewer to search the file for its figure rather than read it whole.
@@ -218,6 +218,9 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch,
     `Branch: ${branch}`,
     `Slug: ${slug}`,
     `Issue file: ${issuePath}`,
+    // Where the PRD is, stated rather than left to the reviewer: the feature branch's name
+    // (afk.branchPrefix, --jira) no longer says which .scratch/<slug>/ it belongs to.
+    ...(prdPath ? [`PRD: ${prdPath}`] : []),
     "Acceptance criteria:",
     "---",
     criteria.trim() || "(none listed in the issue)",

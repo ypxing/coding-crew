@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import { dispatch } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
+import { prdPath } from "../prd.mjs";
 import { reviewPrompt } from "../prompts.mjs";
 import { sprintReviewContext } from "../review-context.mjs";
 import { carryFindings, foldReview, parseReviewBlocks, parseReviewReport } from "../report.mjs";
@@ -86,6 +87,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       reportPath: sidecarFile,
       reviewAssets,
       reviewContext,
+      prdPath: prdPath(ctx),
     }),
   );
 

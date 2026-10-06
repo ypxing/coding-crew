@@ -8,7 +8,6 @@ load helpers/render
 load helpers/isolate-env
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-BRANCH_SETUP="$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh"
 SESSION_INIT="$REPO_ROOT/skills/crew-afk/scripts/session-init.sh"
 SQUASH="$REPO_ROOT/skills/crew-afk/scripts/squash-commits.sh"
 VERIFY="$REPO_ROOT/skills/crew-afk/scripts/verify-worktree.sh"
@@ -32,36 +31,28 @@ _frontmatter() {
   awk 'NR==1 && $0=="---"{f=1;next} f && $0=="---"{exit} f{print}' "$1"
 }
 
-# session-init.sh calls feature-branch-setup.sh as a sibling; that colocation only
-# exists after install.sh copies both into the skill's scripts/ dir. Reproduce it.
+# session-init.sh as install.sh lays it out, in the skill's scripts/ dir.
 _installed_scripts() {
   local dir="$TEMP_DIR/installed-scripts"
   mkdir -p "$dir"
   cp "$REPO_ROOT/skills/crew-afk/scripts/session-init.sh" "$dir/"
-  cp "$REPO_ROOT/scripts/skill-utils/git-workflow/feature-branch-setup.sh" "$dir/"
   echo "$dir"
 }
 
 # --- B2: no origin/HEAD must not abort branch setup ---------------------------
 
-@test "B2: feature-branch-setup succeeds in a repo with no origin remote" {
-  mkdir -p .scratch/f/issues/open
-  echo "Status: ready-for-agent" > .scratch/f/issues/open/01-do-thing.md
-
-  run bash "$BRANCH_SETUP" .scratch/f/issues/open/01-do-thing.md
-  [ "$status" -eq 0 ]
-  [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/do-thing" ]
-}
-
-@test "B2: feature-branch-setup succeeds when origin exists but origin/HEAD is unset" {
+@test "B2: session-init's branch setup succeeds when origin exists but origin/HEAD is unset" {
   git init -q --bare "$TEMP_DIR/../origin-$$.git"
   git remote add origin "$TEMP_DIR/../origin-$$.git"
+  printf '.scratch/\n' > .gitignore
+  git add .gitignore && git commit -q -m gitignore
   mkdir -p .scratch/f/issues/open
   echo "Status: ready-for-agent" > .scratch/f/issues/open/01-do-thing.md
 
-  run bash "$BRANCH_SETUP" .scratch/f/issues/open/01-do-thing.md
+  run bash "$(_installed_scripts)/session-init.sh"
   rm -rf "$TEMP_DIR/../origin-$$.git"
   [ "$status" -eq 0 ]
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/f" ]
 }
 
 @test "B2: session-init succeeds end to end in a repo with no origin remote" {

@@ -77,7 +77,13 @@ gh pr view --json number,url,title,headRefName,body
 ```
 
 Confirm the PR number with the user before proceeding if it is ambiguous. Keep `headRefName` and
-`body` for Step 5.5.
+`body` for Steps 5 and 5.5.
+
+**crew-afk PR.** A PR whose body has the crew-afk block (a `<!-- crew-afk:begin -->` line) is
+crew-afk's. Its `<slug>` is the one the block's `<!-- crew-afk:slug <slug> -->` line names. A block
+with no slug marker (a PR opened by an older crew-afk) takes `<slug>` from a `feature/<slug>` head
+branch; with any other head branch it has no `<slug>`. The head branch alone never makes a PR
+crew-afk's: the feature branch's name is configurable (`afk.branchPrefix`, `--jira`).
 
 ## Step 2 — Fetch all review comments
 
@@ -158,9 +164,8 @@ bash "<skill-dir>/scripts/commit-changes.sh" \
   --coauthor "Claude Code <claude@anthropic.com>"
 ```
 
-**Push — crew-afk PRs only.** A crew-afk PR is the same test as Step 5.5: the PR body (Step 1)
-contains `<!-- crew-afk:begin -->` and the head branch is `feature/<slug>`. On one, after the commit,
-run `solve-issue`'s checks from this skill's sibling directory:
+**Push — crew-afk PRs only** (Step 1's test). On one, after the commit, run `solve-issue`'s checks
+from this skill's sibling directory:
 
 ```bash
 bash "<skill-dir>/../solve-issue/scripts/run-checks.sh" --project-root "$(git rev-parse --show-toplevel)" \
@@ -180,9 +185,8 @@ A comment fixed on a PR crew-afk opened is a defect crew-afk's own review let th
 it can be replayed against the reviewer later (`scripts/eval-reviewer-misses/RESULTS.md` in the
 coding-crew repo).
 
-Only when **both** hold: the PR body (Step 1) contains `<!-- crew-afk:begin -->`, and the head
-branch is `feature/<slug>`. On a PR without the crew-afk block, or with any other head branch,
-nothing is written — skip to Step 6.
+Only on a crew-afk PR with a `<slug>` (both from Step 1). On a PR without the crew-afk block, or a
+crew-afk PR with no `<slug>`, nothing is written — skip to Step 6.
 
 Otherwise append one line per comment that was accepted (**Actionable**, or a **Debatable** one the
 user told you to change) and fixed in Step 5's commit to `.scratch/<slug>/reviews/escaped.md` in the
