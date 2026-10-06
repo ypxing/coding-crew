@@ -6,6 +6,10 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: each platform adapter normalizes its CLI's events to one shape (`normalize`), and the trace log, the pane view
+  and full-suite deviation detection read that shape with no per-platform code. codex's trace lines now read `tool=shell`
+  instead of `item=command_execution`, and its `turn.failed` / `error` events are logged as `[AGENT-ERROR]`; deviation
+  detection no longer counts a `command` field outside a tool call (#309).
 - `to-issues`/`upgrade-deps`: a Kind A issue's "Mark it done" Undo now says to remove `awaiting-merge` and add `ready-for-human`
   (local: move the file back to `issues/open/`); `mark-issue-done.sh` (github) no longer resets an existing `ready-for-human`
   label's colour and description; `lint-issues.sh`'s ticked-criterion WARN reads "leave criteria unticked when publishing" (#304).
