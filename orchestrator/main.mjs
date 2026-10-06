@@ -29,9 +29,6 @@
  *   --fix-findings <actionable|critical|high|medium|none>  [fixFindings, default actionable]
  *                                           what is auto-fixed in Phase 2: every finding triage
  *                                           judges Actionable, or the lowest severity
- *   --prd-audit <off|report|fix>           [PRDAudit, default fix] audit the sprint against its
- *                                           PRD.md after Phase 1; `fix` queues ✗ missing gaps
- *                                           for Phase 2
  *   --max-parallel <n>                     [maxParallel] concurrent coders (the coder runtime's default)
  *   --max-wall <minutes>                   [maxWallMinutes] default 120, 0 = off; once elapsed no new issue is
  *                                          claimed, in-flight workers finish, Phase 2 is parked, exit 2
@@ -102,6 +99,7 @@ import {
   resolvePaneHost,
   resolveSettings,
   resolveWorktreeRoot,
+  retiredNotice,
   validateFlags,
 } from "./lib/crew-config.mjs";
 import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
@@ -151,6 +149,7 @@ function parseArgs(argv) {
     dryRun: false,
     passthrough: [],
     unknown: [],
+    retired: [], // flags still accepted that no longer do anything (crew-config.mjs's retiredNotice)
   };
   const args = [...argv];
   // A setting flag with no value is "", which fails validation, rather than no flag at all.
@@ -163,7 +162,10 @@ function parseArgs(argv) {
       case "--model": o.model = args.shift(); break;
       case "--feature-slug": o.featureSlug = args.shift(); break;
       case "--fix-findings": o.cli.fixFindings = value(); break;
-      case "--prd-audit": o.cli.PRDAudit = value(); break;
+      case "--prd-audit":
+        value();
+        o.retired.push(a);
+        break;
       case "--max-parallel": o.cli.maxParallel = Number(args.shift()); break;
       case "--max-wall": o.cli.maxWallMinutes = Number(args.shift()); break;
       case "--poll-interval": o.pollInterval = Number(args.shift()); break;
@@ -396,7 +398,7 @@ async function main() {
   if (options.command === "help") {
     console.log(
       "crew-afk run|plan|status|doctor [--platform pi|codex|claude|copilot] [--model X]\n" +
-        "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none] [--prd-audit off|report|fix]\n" +
+        "  [--feature-slug S] [--fix-findings actionable|critical|high|medium|none]\n" +
         "  [--max-parallel N] [--coder-timeout MIN] [--reviewer-timeout MIN]\n" +
         "  [--max-wall MIN] [--poll-interval SEC] [--no-deps] [--squash] [--open-pr] [--no-baseline] [--no-integration-check]\n" +
         "  [--allow-dirty] [--no-sync-main] [--dry-run]\n" +
@@ -404,11 +406,11 @@ async function main() {
         "  [--resume-coder-session] [--pane-host orca|herdr|auto|none]\n" +
         "  --model sets the coder's model; every role on the same runtime matches it unless\n" +
         "  .coding-crew/config.json names one. Per role (coder, reviewer, triage,\n" +
-        "  commandFinder, prdAuditor, prWriter):\n" +
+        "  commandFinder, prWriter):\n" +
         '    { "afk": { "runtime": { "reviewer": "codex" },\n' +
         '               "models":  { "claude": { "triage": "opus" } } } }\n' +
         "  The other flags override config.json's afk settings for one run: fixFindings (actionable),\n" +
-        "  PRDAudit (fix), maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits\n" +
+        "  maxParallel, timeouts.<role|merge> (minutes), installDeps, squashCommits\n" +
         "  (false), openPr (false), baselineCheck (true), integrationCheck (true), resumeCoderSession (false),\n" +
         "  and paneHost (none; ~/.coding-crew/config.json only, and $CREW_PANE_HOST beats it).\n" +
         "  No flag: limits.<role>.usd caps one claude dispatch of that role in dollars (off).",
@@ -419,6 +421,7 @@ async function main() {
     console.error(`crew-afk: unknown --platform ${options.platform} (expected ${PLATFORMS.join(", ")})`);
     return 1;
   }
+  for (const flag of options.retired) console.error(`crew-afk: ${retiredNotice(flag)}`);
   const mainRoot = gitRoot();
   if (options.unknown.length) {
     reportUnknownArgs(options.unknown, mainRoot);
@@ -537,7 +540,6 @@ async function main() {
     console.log(`wall cap:  ${options.maxWallMinutes > 0 ? `${options.maxWallMinutes} minutes` : "off"}${tag("maxWallMinutes")}`);
     console.log(`poll:      ${options.pollInterval > 0 ? `every ${options.pollInterval}s while a slot is idle` : "off (--poll-interval 0)"}`);
     console.log(`findings:  fix ${{ none: "none", actionable: "every Actionable finding" }[options.fixFindings] ?? `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
-    console.log(`PRD audit: ${options.PRDAudit}${tag("PRDAudit")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
     const caps = Object.entries(options.limitsUsd ?? {});
     console.log(`limits:    ${caps.length ? caps.map(([r, usd]) => `${r} $${usd}${options.crew[r]?.runtime === "claude" ? "" : " (ignored: not claude)"}`).join(", ") : "none (afk.limits.<role>.usd caps one dispatch)"}`);
@@ -677,7 +679,6 @@ async function main() {
     sprint = await Sprint.init(effects, {
       featureSlug: resolved.slug,
       fixFindings: options.fixFindings,
-      PRDAudit: options.PRDAudit,
       passthrough: options.passthrough,
       // Installed below, after command discovery has cached any install override.
       deps: false,
@@ -761,6 +762,7 @@ async function main() {
         maxBudgetUsd: options.limitsUsd?.commandFinder,
         // Persisted too: this runs unattended, and a failure must outlive the scrollback.
         log: emit,
+        recordCost: (r) => sprint.recordDispatchCost(r, { slug: "commands", role: "commandFinder", attempt: 1 }),
       });
     }
 

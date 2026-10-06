@@ -22,8 +22,6 @@
 #                         later drain's feature review); counter at <slug>.review.calls.
 #   <slug>.review-sleep   the reviewer sleeps this many seconds before answering — with a
 #                         fractional --reviewer-timeout, a review dispatch that times out.
-#   feature-planner.sleep  the feature review's planner sleeps this many seconds before answering — with a
-#                         fractional --reviewer-timeout, a planner that times out.
 #   <slug>.misbehave      a reviewer/triage dispatch that breaks its read-only contract; the content
 #                         is `commit` (a commit on the crew/*/<slug> branch) or `edit` (an uncommitted
 #                         file in the main checkout). Applies to every reviewer/triage call for the slug.
@@ -60,8 +58,6 @@
 # so a fixture whose content has no fenced json at all (to exercise the fail-closed "no
 # sidecar" path on purpose) correctly leaves none written.
 #
-# `--agent prd-audit` stands in for the agent-less PRD audit (after Phase 1). Its answer is
-#   $CREW_FAKE_DIR/prd-audit.response when present, else a clean report with nothing missing.
 # `--agent commands-discovery` stands in for the agent-less one-time command-discovery
 # dispatch (see orchestrator/lib/commands.mjs) — answers with commands matching the
 # Makefile fixtureRepo() always writes (test/lint/typecheck targets), so a real
@@ -122,7 +118,7 @@ mirror_sidecar() {
 trap mirror_sidecar EXIT
 
 # --slug is the real dispatch's own slug (see dispatch.mjs's --slug forwarding), independent
-# of --out's filename convention. Only a call with no --slug at all (prd-audit,
+# of --out's filename convention. Only a call with no --slug at all (pr-writer,
 # commands-discovery — both exit before SLUG is used) falls back to deriving it from --out.
 # pipeline.mjs forwards its own dispatchStem (`<issue-number>-<slug>`, e.g. "1-alpha") here,
 # not the bare slug — stripped back to the bare form so it still matches every fixture file
@@ -130,9 +126,6 @@ trap mirror_sidecar EXIT
 SLUG="${SLUG_ARG:-$(basename "$OUT" | sed -E 's/\.(report|review)\.md$//')}"
 SLUG="$(printf '%s' "$SLUG" | sed -E 's/^[0-9]+-//')"
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
-# A feature review area reviewer (`feature-<n>`) answers from its own fixtures, else from the
-# plain `feature.*` ones, so a test that does not care about areas writes `feature.review`.
-if [[ "$SLUG" =~ ^feature-[0-9]+$ ]] && ! compgen -G "$FAKE_DIR/$SLUG.*" >/dev/null; then SLUG=feature; fi
 mkdir -p "$(dirname "$OUT")"
 
 # Stands in for a CLI's own tool-call event on stdout, so dispatch.mjs's onTrace heartbeat
@@ -158,31 +151,13 @@ if [ -f "$FAKE_DIR/$SLUG.misbehave" ] && { [ "$AGENT" = "crew-reviewer" ] || [ "
   esac
 fi
 
-# `--agent feature-planner` stands in for the feature review's planner: $CREW_FAKE_DIR/feature-planner.response
-# verbatim when present, else an answer with no json block (the one-area fallback).
-if [ "$AGENT" = "feature-planner" ]; then
-  [ -f "$FAKE_DIR/feature-planner.sleep" ] && sleep "$(cat "$FAKE_DIR/feature-planner.sleep")"
-  if [ -f "$FAKE_DIR/feature-planner.response" ]; then cat "$FAKE_DIR/feature-planner.response" > "$OUT"; else echo "No plan." > "$OUT"; fi
-  [ -f "$FAKE_DIR/feature-planner.exit" ] && exit "$(cat "$FAKE_DIR/feature-planner.exit")"
-  exit 0
-fi
-
-if [ "$AGENT" = "prd-audit" ]; then
-  if [ -f "$FAKE_DIR/prd-audit.response" ]; then
-    cat "$FAKE_DIR/prd-audit.response" > "$OUT"
-  else
-    printf '## PRD Audit\n\n✓ 1 covered · ⚠ 0 partial · ✗ 0 missing\n\n```json\n{"covered": 1, "partial": 0, "missing": []}\n```\n' > "$OUT"
-  fi
-  exit 0
-fi
-
 # `--agent pr-writer` stands in for the agent-less PR writer (openPr). Its answer is
 # $CREW_FAKE_DIR/pr-writer.response when present, else a body after a line of preamble.
 if [ "$AGENT" = "pr-writer" ]; then
   if [ -f "$FAKE_DIR/pr-writer.response" ]; then
     cat "$FAKE_DIR/pr-writer.response" > "$OUT"
   else
-    printf 'Here is the body.\n\n# Fake title for reviewers\n\n## Summary\n\nFake summary.\n\n## Evidence\n\n- **After:** checks pass\n\n## Merge Danger\n\n**Door:** two-way\n\n**Blast Radius:** local\n' > "$OUT"
+    printf 'Here is the body.\n\n# Fake title for reviewers\n\n## Why\n\nFake why.\n\n## What changes\n\n- One thing\n\n## Risk\n\nA revert fully undoes it.\n\n**Tested:** checks pass\n' > "$OUT"
   fi
   exit 0
 fi

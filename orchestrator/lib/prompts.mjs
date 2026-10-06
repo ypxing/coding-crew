@@ -8,7 +8,6 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { shellQuote } from "./pane-host/shared.mjs";
 import { renderReviewContext } from "./review-context.mjs";
 import { SEVERITY_RANK } from "./report.mjs";
 
@@ -202,7 +201,7 @@ const FINDING_SHAPE = {
   criterion: "<one verifiable fix criterion>",
 };
 
-export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
+export function reviewPrompt({ branch, slug, issuePath, criteria, featureBranch, checks, logs, logLines, notConfigured, verifyFile, testOnly, emptyDiff, reportPath, reviewAssets, reviewContext }) {
   const c = { test: "not_run", lint: "not_run", typecheck: "not_run", ...(checks ?? {}) };
   const l = logs ?? {};
   // A size tells the reviewer to search the file for its figure rather than read it whole.
@@ -223,9 +222,6 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
     "---",
     criteria.trim() || "(none listed in the issue)",
     "---",
-    ...(prdDecisions?.length
-      ? ["PRD decisions this issue implements:", "---", ...prdDecisions, "---"]
-      : []),
     "",
     `Gather the diff: git diff $(git merge-base ${featureBranch} ${branch})..${branch}`,
     ...(testOnly ? ["Diff scope: test-only — every changed file is a test, spec or fixture file."] : []),
@@ -257,7 +253,7 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
     "run lacked a precondition (a service unreachable, a credential absent, so its tests",
     "skipped): that stops the issue for a human, since no code change can help. Else `code`.",
     "",
-    // Findings come from the feature review alone (PRD D1): this gate is criteria and decisions.
+    // Findings come from the feature review alone (PRD D1): this gate is criteria.
     "A per-branch review writes `findings: []`: it is the criteria gate, and nothing more.",
     "The always-on classes and the design-standard checks apply only to a `Feature review:` dispatch.",
     "",
@@ -290,12 +286,11 @@ export function reviewPrompt({ branch, slug, issuePath, criteria, prdDecisions, 
 export const FEATURE_REVIEW = "feature";
 
 /**
- * Feature mode (crew-reviewer's protocol § Feature Mode), at every drain: the whole
- * feature diff or one area of it (its files only), or the commits since the last review. Same report
- * object as a branch review, but no issue and no criteria — findings only. `otherAreas`
- * (`[{ name, files, decisions }]`, decision lines in full) is the rest of a split review, given as reference.
+ * Feature mode (crew-reviewer's protocol § Feature Mode), once per run: the whole feature diff, or
+ * the commits since the last review, and the PRD (`prdPath`, null when there is none) to read whole.
+ * Same report object as a branch review, but no issue and no criteria — findings only.
  */
-export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, area = null, decisions = [], otherAreas = [], compatibility = null }) {
+export function featureReviewPrompt({ featureBranch, base, exclude = null, reportPath, reviewAssets, reviewContext, prdPath = null }) {
   return [
     "Feature review: review the feature diff across its issues before it ships.",
     ...(reviewAssets ? [`Review assets: ${reviewAssets}`] : []),
@@ -304,45 +299,15 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
     `Base: ${base}`,
     `Branch: ${FEATURE_REVIEW}`,
     `Slug: ${FEATURE_REVIEW}`,
+    ...(prdPath ? [`PRD (read it whole; the feature's intent): ${prdPath}`] : []),
     "",
     exclude
       ? `Gather the diff: git log -p --reverse ${base}..${featureBranch} --not ${exclude}`
-      : area && !area.whole
-        ? // Paths are repo data: shell-quoted, and literal so `[id].js` or `:x` is no glob or pathspec magic.
-          // --no-renames keeps a renamed file's old path, and so its deletion, in view.
-          `Gather the diff: git --literal-pathspecs diff --no-renames ${base}..${featureBranch} -- ${area.files.map(shellQuote).join(" ")}`
-        : `Gather the diff: git diff ${base}..${featureBranch}`,
+      : `Gather the diff: git diff ${base}..${featureBranch}`,
     ...(exclude ? ["", `An earlier run already reviewed up to ${base}; this range holds only the commits added since, without anything merged in from ${exclude}.`] : []),
-    ...(area
-      ? [
-          "",
-          "Area:",
-          `Name: ${area.name}`,
-          "Files:",
-          ...(area.files.length ? area.files.map((f) => `- ${f}`) : ["- (the whole diff)"]),
-          "Decisions:",
-          ...(decisions.length ? decisions : ["(none given for this area)"]),
-        ]
-      : []),
-    ...(area && otherAreas.length
-      ? [
-          "",
-          "Other areas (reference only: judge only this area's decisions, but report a defect in this area's files that one of these decisions exposes):",
-          ...otherAreas.flatMap((o, i) => [
-            ...(i ? [""] : []),
-            `Name: ${o.name}`,
-            "Files:",
-            ...o.files.map((f) => `- ${f}`),
-            "Decisions:",
-            ...(o.decisions.length ? o.decisions : ["(none given for this area)"]),
-          ]),
-        ]
-      : []),
-    ...(!area && decisions.length ? ["", "PRD decisions:", ...decisions] : []),
-    ...(compatibility ? ["", "PRD ## Compatibility & Migration (verbatim):", "", compatibility] : []),
     "",
     "Every issue's branch was already reviewed on its own diff, and the checks passed on the merged",
-    `branch. Look first for what only ${area && !area.whole ? "this area's diff, across its issues," : "the whole diff"} shows, but report a defect inside one`,
+    "branch. Look first for what only the whole diff shows, but report a defect inside one",
     "issue's diff too, at any severity (crew-reviewer's Feature Mode). There is no issue and no acceptance",
     "criteria: give no AC verdict, only findings.",
     "",
@@ -371,16 +336,15 @@ export function featureReviewPrompt({ featureBranch, base, exclude = null, repor
 /**
  * The PR writer (role prWriter, a plain dispatch): write-pr's own SKILL.md is the procedure, so a
  * human's /write-pr and the sprint's PR follow one text. Its final message is the `# <title>` line
- * and the body; the caller keeps the body from the first `## Summary` line and the title from the
+ * and the body; the caller keeps the body from the first `## Why` line and the title from the
  * `# ` line before it, so a preamble costs nothing.
  */
-export function prBodyPrompt({ skillFile, featureBranch, base, prd, reviewReport, checks }) {
+export function prBodyPrompt({ skillFile, featureBranch, base, prd, checks }) {
   return [
     `Write the pull request body for ${featureBranch}. Read ${skillFile} first and follow it.`,
     "",
     `Range: ${base}..${featureBranch}`,
     ...(prd ? [`PRD (the feature's intent): ${prd}`] : []),
-    ...(reviewReport ? [`Review report (the sprint's reviewer findings; Merge Danger may draw on it): ${reviewReport}`] : []),
     `Checks on the merged branch: ${checks || "not run"}`,
     "",
     "Output: print the `# <title>` line and the body as your final message — nothing before the",
@@ -572,13 +536,6 @@ export function findingsTriagePrompt({ scope, ref, change, findings, reportPath 
     ),
     "```",
   ].join("\n");
-}
-
-/** The PRD audit's missing requirements, as the fix issue's acceptance criteria. */
-export function prdGapsCriteria(missing) {
-  const lines = ["<!-- queued from the PRD audit's missing requirements -->", ""];
-  for (const m of missing) lines.push(`- [ ] ${m.requirement}${m.detail ? ` — ${m.detail}` : ""}`);
-  return `${lines.join("\n")}\n`;
 }
 
 /** Promotable findings most severe first (CRITICAL→LOW); a stable sort, so one severity keeps its input order. */

@@ -1,9 +1,9 @@
 /**
  * The PR body: the prWriter role, a plain dispatch that follows write-pr's SKILL.md (installed
  * as an asset beside crew-afk) over the PR's whole range (`prBase`), once, just before open-pr.sh. It
- * gives a human reviewer the change's shape (Summary), why to believe it (Evidence) and what a
- * bad merge breaks (Merge Danger). The checks line is written here, from the integration check's
- * own record, so the body never states a result no check produced. Advisory: a writer that
+ * gives a human reviewer a short note: Why, What changes, Risk and Tested. The checks line is
+ * built here, from the integration check's own record, and handed to the writer for its
+ * **Tested:** line, so the body never states a result no check produced. Advisory: a writer that
  * leaves no usable body never stops the PR — it opens with the checks line alone.
  */
 
@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { dispatchPlain } from "../dispatch.mjs";
 import { assetDir } from "../install-dir.mjs";
 import { INTEGRATION_STEM } from "../preflight.mjs";
+import { prdPath } from "../prd.mjs";
 import { prBodyPrompt } from "../prompts.mjs";
 import { CHECK_CATEGORIES, readVerifyRecord } from "../report.mjs";
 import { prBase, roleBinding } from "./shared.mjs";
@@ -29,15 +30,15 @@ export function checksLine(sprint, integration) {
   return ran.length ? ran.join(", ") : "pass";
 }
 
-/** The writer's answer from its first `## Summary` line, or null when it has none. */
+/** The writer's answer from its first `## Why` line, or null when it has none. */
 export function extractBody(text) {
-  const at = (text ?? "").search(/^## Summary\b/m);
+  const at = (text ?? "").search(/^## Why\b/m);
   return at < 0 ? null : `${text.slice(at).trimEnd()}\n`;
 }
 
-/** The writer's `# <title>` — the last `# ` line before its `## Summary` — or null. */
+/** The writer's `# <title>` — the last `# ` line before its `## Why` — or null. */
 export function extractTitle(text) {
-  const at = (text ?? "").search(/^## Summary\b/m);
+  const at = (text ?? "").search(/^## Why\b/m);
   if (at < 0) return null;
   const titles = [...text.slice(0, at).matchAll(/^#\s+(.+)$/gm)].map((m) => m[1].trim()).filter(Boolean);
   return titles.at(-1) ?? null;
@@ -60,10 +61,9 @@ export async function writePrBody(ctx, { integration = null } = {}) {
   const checks = checksLine(sprint, integration);
   const file = join(sprint.env.SPRINT_DIR, "pr-body.md");
   const facts = `**Checks on the merged branch:** ${checks ?? "not run"}\n`;
-  const scratch = join(effects.mainRoot, ".scratch", sprint.featureSlug);
-  const prd = ["PRD.md", "prd-issue.md"].map((f) => join(scratch, f)).find((p) => existsSync(p)) ?? null;
+  const prd = prdPath(ctx);
   const finish = (prose, failed, title = null) => {
-    writeFileSync(file, prose ? `${prose}\n${facts}` : facts);
+    writeFileSync(file, prose ?? facts);
     if (failed) ctx.log(`PR body: ${failed}`, "warn");
     return { file, title: title ?? prdTitle(prd), failed };
   };
@@ -73,15 +73,7 @@ export async function writePrBody(ctx, { integration = null } = {}) {
   const skillFile = sprint.installDir ? join(assetDir(sprint.installDir, "writePr"), "SKILL.md") : null;
   if (!skillFile || !existsSync(skillFile)) return finish(null, `write-pr's SKILL.md is not installed (${skillFile ?? "no install dir"}).`);
 
-  const reviewReport = ctx.roundReviewFile?.();
-  const prompt = prBodyPrompt({
-    skillFile,
-    featureBranch: sprint.featureBranch,
-    base,
-    prd,
-    reviewReport: reviewReport && existsSync(reviewReport) ? reviewReport : null,
-    checks,
-  });
+  const prompt = prBodyPrompt({ skillFile, featureBranch: sprint.featureBranch, base, prd, checks });
 
   const writer = roleBinding(ctx, "prWriter");
   ctx.log(`[STEP] step=pr-body model=${writer.model ?? "inherit"} runtime=${writer.runtime}`);
@@ -96,7 +88,8 @@ export async function writePrBody(ctx, { integration = null } = {}) {
     fakeAgent: "pr-writer",
   });
   if (r.dryRun) return null;
+  sprint.recordDispatchCost(r, { slug: "pr-body", role: "prWriter", attempt: 1 });
   if (r.code !== 0 || r.timedOut) return finish(null, `the writer did not complete (${r.timedOut ? "timed out" : `exit ${r.code}`}).`);
   const prose = extractBody(r.text);
-  return prose ? finish(prose, null, extractTitle(r.text)) : finish(null, "the writer's answer has no `## Summary` section.");
+  return prose ? finish(prose, null, extractTitle(r.text)) : finish(null, "the writer's answer has no `## Why` section.");
 }

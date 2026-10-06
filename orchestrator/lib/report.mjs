@@ -35,7 +35,7 @@ function normaliseCheck(value) {
  * insignificant, so this is immune to the indentation a herdr-captured pane transcript
  * sometimes adds — unlike a line-anchored regex or awk pattern, which is not.
  *
- * Callers: parsePrdAudit (one audit report), and parseReviewAggregate: the round-aggregate file is a
+ * Caller: parseReviewAggregate — the round-aggregate file is a
  * concatenation of several dispatches' sidecar contents (see pipeline/review.mjs's runReview),
  * appended as fenced json blocks so a later retry's block can be told apart from an
  * earlier one for the same branch. Per-dispatch parsing (parseWorkerReport,
@@ -606,25 +606,4 @@ export function annotateFindings(sidecar, findings) {
     return v ? { ...f, verdict: v.verdict, rationale: v.rationale, ...(v.duplicate_of !== undefined ? { duplicate_of: v.duplicate_of } : {}) } : f;
   });
   return { ...sidecar, findings: annotated };
-}
-
-/**
- * The PRD audit's closing fenced json (prd-audit.sh's prompt): `{covered, partial, missing:
- * [{requirement, detail}], superseded: [{requirement, by}]}`. The last such block wins, as the
- * prose above it may quote one. No block is `ok: false` — nothing is queued from prose. A
- * requirement listed as both missing and superseded is superseded: a later decision replaced it,
- * and queuing it would send a coder to build what was decided against.
- */
-export function parsePrdAudit(text) {
-  const last = allFencedJson(text ?? "", "missing").at(-1);
-  if (!last || !Array.isArray(last.missing)) return { ok: false, missing: [], superseded: [] };
-  const entries = (list, field) =>
-    (Array.isArray(list) ? list : [])
-      .map((m) => (typeof m === "string" ? { requirement: m } : m))
-      .filter((m) => m && typeof m.requirement === "string" && m.requirement.trim())
-      .map((m) => ({ requirement: m.requirement.trim(), [field]: typeof m[field] === "string" ? m[field].trim() : "" }));
-  const superseded = entries(last.superseded, "by");
-  const replaced = new Set(superseded.map((m) => m.requirement));
-  const missing = entries(last.missing, "detail").filter((m) => !replaced.has(m.requirement));
-  return { ok: true, missing, superseded };
 }

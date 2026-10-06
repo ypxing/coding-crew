@@ -19,7 +19,6 @@
 24	crew-afk-launcher.bats
 5	crew-afk-open-pr.bats
 3	crew-afk-post-findings.bats
-5	crew-afk-prd-audit.bats
 1	crew-afk-pre-merge-review.bats
 7	crew-afk-promotion-threshold.bats
 15	crew-afk-receipts.bats
@@ -63,7 +62,6 @@
 79	orchestrator-sprint-discovery-preflight.bats
 77	orchestrator-sprint-integration.bats
 40	orchestrator-sprint-findings-triage.bats
-40	orchestrator-sprint-feature-areas.bats
 7	orchestrator.bats
 35	pi-platform.bats
 1	planning-skills-preamble.bats

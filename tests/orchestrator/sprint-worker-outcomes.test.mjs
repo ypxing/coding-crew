@@ -411,7 +411,6 @@ test("a feature review's CRITICAL findings are promoted into a Phase 2 fix issue
       { severity: "MEDIUM", location: "src/alpha.txt:2", criterion: "Rename the variable" },
     ]),
   );
-  fake(root, "feature.review-later", featureReviewFile([]));
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   const s = state(root);

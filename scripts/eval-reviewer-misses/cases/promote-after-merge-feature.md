@@ -6,7 +6,7 @@ slug: promote-after-merge
 via: origin/feature/promote-after-merge
 ---
 Replay of the feature review of PR #208 (promote-after-merge): the whole feature diff `485c6b9..b221314`,
-split into areas by the planner, one reviewer per area. The SHAs are reachable through
+one reviewer reading the whole PRD. The SHAs are reachable through
 `origin/feature/promote-after-merge`; fetch it before running if they do not resolve.
 
 ## Expected misses

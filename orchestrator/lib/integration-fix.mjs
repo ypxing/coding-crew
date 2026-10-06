@@ -4,7 +4,7 @@
  * The check runs on the merged feature branch, which no per-branch verify saw. Red, it is
  * triaged exactly as a failed per-branch verify is — by `crew-triage`, never a coder — and a
  * fixable failure becomes one parked fix issue (promote-findings.sh `defer-integration`) that
- * loop.mjs's flush sends into Phase 2 beside the review findings' and the PRD gaps' fix issues.
+ * loop.mjs's flush sends into Phase 2 beside the review findings' fix issues.
  * The next drain's check then runs on the fixed branch. Not fixable, nothing is queued: the
  * summary says why.
  *

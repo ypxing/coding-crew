@@ -102,6 +102,16 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ "$output" = "zzz-current" ]
 }
 
+@test "session-init accepts the retired --prd-audit and --coverage, with a notice, and records no PRD audit" {
+  mkdir -p .scratch/calc/issues/open
+  echo "Status: ready-for-agent" > .scratch/calc/issues/open/01-first.md
+  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc --prd-audit fix --coverage
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'`--prd-audit` no longer does anything'* ]]
+  [[ "$output" == *'`--coverage` no longer does anything'* ]]
+  ! grep -q PRD_AUDIT .scratch/calc/sprint.env
+}
+
 @test "session-init traces the SESSION line" {
   init_sprint calc
   grep -q '\[SESSION\] feature=calc branch=' .scratch/calc/traces/orchestrator.log
@@ -435,21 +445,21 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ "$(jq -c '.dispatches[0] | [.cost_unknown, .tokens]' "$f")" = '[false,null]' ]
 }
 
-@test "crew-summary appends the timed-out dispatches to the Cost line, and only when there are some" {
+@test "crew-summary appends the stopped dispatches to the Cost line, and only when there are some" {
   init_sprint calc
   state run-start --id now >/dev/null
   state dispatch-cost --cost 0.6 --duration-ms 60000 --turns 4 --slug a --role coder --attempt 1 >/dev/null
   run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
   [[ "$output" == *'feature total $0.60'* ]]
-  [[ "$output" != *'timed-out'* ]]
+  [[ "$output" != *'cost unknown'* ]]
 
   state dispatch-cost --cost-unknown --tokens 900 --turns 2 --slug b --role coder --attempt 1 >/dev/null
   run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
-  [[ "$output" == *'feature total $0.60 + 1 timed-out dispatch, cost unknown'* ]]
+  [[ "$output" == *'feature total $0.60 + 1 stopped dispatch, cost unknown'* ]]
 
   state dispatch-cost --cost-unknown --tokens 900 --slug c --role coder --attempt 1 >/dev/null
   run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
-  [[ "$output" == *'feature total $0.60 + 2 timed-out dispatches, cost unknown'* ]]
+  [[ "$output" == *'feature total $0.60 + 2 stopped dispatches, cost unknown'* ]]
 }
 
 @test "state.sh baseline records one verdict per commit and rejects anything but pass or fail" {
@@ -473,7 +483,7 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
   [ "$status" -eq 0 ]
   [[ "$output" == *'Cost:   this run $1.00 · 3 dispatches · 3.5m agent time · 65 turns — feature total $11.00'* ]]
-  [[ "$output" == *'by role: coder $0.60 · reviewer $0.30 · triage $0.10 — first attempts $0.90 · retries $0.10'* ]]
+  [[ "$output" == *'by role: coder $0.60 · reviewer $0.30 · triage $0.10 · other $0.00 — first attempts $0.90 · retries $0.10'* ]]
 }
 
 @test "crew-summary counts a conflict-only dispatch's cost under coder, so the roles add up to the run total" {
@@ -487,6 +497,19 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ "$status" -eq 0 ]
   [[ "$output" == *'Cost:   this run $1.10 · 3 dispatches'* ]]
   [[ "$output" == *'by role: coder $0.80 · reviewer $0.30 · triage $0.00'* ]]
+}
+
+@test "crew-summary puts command discovery and the PR writer under other, so the roles sum to the run total" {
+  init_sprint calc
+  state run-start --id now >/dev/null
+  state dispatch-cost --cost 0.6 --turns 40 --slug a --role coder --attempt 1 >/dev/null
+  state dispatch-cost --cost 0.05 --turns 2 --slug commands --role commandFinder --attempt 1 >/dev/null
+  state dispatch-cost --cost 0.15 --turns 6 --slug pr-body --role prWriter --attempt 1 >/dev/null
+
+  run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'Cost:   this run $0.80 · 3 dispatches'* ]]
+  [[ "$output" == *'by role: coder $0.60 · reviewer $0.00 · triage $0.00 · other $0.20'* ]]
 }
 
 @test "crew-summary falls back to the feature total when this run has no ledger" {

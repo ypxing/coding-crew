@@ -1,55 +1,50 @@
 ---
 name: write-pr
-description: Write a pull request title and body a human reviewer can act on — Summary (the smallest diagram, diff-sketch or tree that makes the change clear), Evidence (before/after), Merge Danger (door and blast radius). Use when opening or updating a PR, or when asked to write or improve a PR description. Trigger with /write-pr.
+description: Write a short pull request title and body a human reviewer can act on — Why (2–4 sentences), What changes (3–6 high-level bullets), Risk (one line) and Tested (one line). Use when opening or updating a PR, or when asked to write or improve a PR description. Trigger with /write-pr.
 argument-hint: "Optional base ref or PR number (defaults to the current branch against the repo's default branch)"
 ---
 
 # Write PR
 
-The reader is a reviewer deciding whether to merge. They have the diff; the body tells them what
-shape the change has, why they can believe it works, and what breaks if it is wrong.
+The reader is a reviewer deciding whether to merge. They have the diff; the body tells them why
+the change exists, what it changes at a high level, and what a bad merge would cost — briefly.
 
 ## 1. Gather
 
-- **The range.** `git log --oneline <base>..HEAD` and `git diff --stat <base>..HEAD`, where
-  `<base>` is the given ref, else `git merge-base HEAD origin/<default branch>`. Read the diff
-  itself for the files that carry the change, not every file.
 - **The intent.** A PRD, issue or plan the caller names, or that the commits reference
   (`Closes #n`, an issue slug, a `.scratch/<feature>/` path) — read it. The body explains the
   change in its terms.
-- **The evidence.** Check results the caller hands you, and the tests the range adds or changes.
+- **The range.** `git log --oneline <base>..HEAD` and `git diff --stat <base>..HEAD`, where
+  `<base>` is the given ref, else `git merge-base HEAD origin/<default branch>`. Read the diff
+  itself only when there is neither a PRD nor an issue to say what the change is for.
+- **The checks.** Check results the caller hands you.
 - **The vocabulary.** `CONTEXT.md` (or `GLOSSARY.md`) at the repo root, when present: use its
   terms.
 
-Never invent evidence. A check you did not see run is not evidence.
+Never invent a result. A check you did not see run is not one.
 
 ## 2. Write
 
-Use this template. Skip preambles; keep prose brief.
+Use this template. No preamble, no section beyond these.
 
 ```markdown
 # <title>
 
-## Summary
+## Why
 
-<one or two sentences: what changes, and why>
+<2–4 sentences from the PRD or issue: the problem, and what this change does about it>
 
-<diagram, diff-sketch, or tree>
+## What changes
 
-## Evidence
+- <3–6 high-level bullets — behaviour and shape, not a file inventory>
 
-- **Before:** <output / failing test / behaviour>
-  **After:** <output / passing test / behaviour>
+<optional: at most one small diagram, when a bullet cannot carry the point>
 
-## Merge Danger
+## Risk
 
-**Door:** <one-way or two-way>
+<one line: whether a revert fully undoes it, and what breaks if it is wrong>
 
-<optional: why>
-
-**Blast Radius:** <one word>
-
-<optional: what a bad merge would break>
+**Tested:** <one line: the checks that ran and their result, or "not run">
 ```
 
 ### Title
@@ -58,34 +53,17 @@ What the change does for its user, in their terms — not the branch name, a slu
 number. Imperative, at most 72 characters: `Run the full test suite once per branch, not per issue`,
 not `single-full-check`.
 
-### Summary
+### What changes
 
-Pick the **smallest** view that makes the key point clear — usually one, rarely more than two:
+Each bullet is one thing a reviewer would notice — a behaviour, a contract, a moved
+responsibility — not one per file. A diagram earns its place only when the change is a flow or a
+shape a sentence cannot hold; keep it to the few nodes the point needs.
 
-- Logic or an algorithm → pseudocode.
-- Runtime control flow → a call tree (`caller` / indented `callee`).
-- File responsibility or a broad refactor → a shallow file tree with one-line `# roles`.
-- Interaction or data flow between components → a Mermaid `sequenceDiagram` or `flowchart`.
-- What changes in a shape that already exists → a ` ```diff ` block of that shape (call tree,
-  file tree, state machine, config) with `+`/`-` lines, not a code diff.
-- The whole block, only when most of it is new or a reader needs the exact target shape.
+### Risk
 
-Keep only the calls, files, states and boundaries the point needs. A large change is shown as its
-two or three moving parts, not as an inventory of every file.
-
-### Evidence
-
-Show a before and after. Best first: a screenshot (a visual change, when the environment can take
-one); execution — the exact test that failed before and passes now (as pseudocode when long), or
-console output; a check run, named with its result. When there is no before (a new capability),
-show the after alone. When there is no evidence, say so in one line rather than padding.
-
-### Merge Danger
-
-- **Door:** two-way when a revert fully undoes it; one-way when it migrates data, deletes,
-  publishes, changes a public contract consumers adopt, or is otherwise hard to walk back.
-- **Blast Radius:** one word — e.g. `none`, `local`, `module`, `consumers`, `everyone` — then,
-  if not obvious, what would break: consumers, installs, CI, a platform, data.
+One line. Say whether a revert fully undoes it (it does not when it migrates data, deletes,
+publishes, or changes a public contract consumers adopt), then what breaks if it is wrong:
+consumers, installs, CI, a platform, data — or `none beyond this module`.
 
 ## 3. Deliver
 

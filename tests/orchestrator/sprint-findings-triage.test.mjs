@@ -11,11 +11,8 @@ import { reportOnlyFeatureFindings } from "../../orchestrator/lib/pipeline/featu
 
 // ─── fixFindings actionable (the default): crew-triage judges each finding, whatever its severity ──
 
-// Findings come from the feature review alone; the Phase 2 drain's increment review finds nothing.
-const featureFindings = (root, findings) => {
-  fake(root, "feature.review", featureReviewFile(findings));
-  fake(root, "feature.review-later", featureReviewFile([]));
-};
+// Findings come from the feature review alone, once per run.
+const featureFindings = (root, findings) => fake(root, "feature.review", featureReviewFile(findings));
 const findingVerdicts = (list) => ["```json", JSON.stringify({ findings: list.map((f, index) => ({ index, ...f })) }), "```"].join("\n");
 const findingsTriageSpawns = (lines) => lines.filter((l) => /^SPAWN .*--agent crew-triage.* --slug \S*-findings( |$)/.test(l)).length;
 const remindOf = (root) =>
@@ -57,12 +54,11 @@ test("actionable: an Actionable LOW is fixed in Phase 2, a Debatable HIGH is not
   assert.match(report, /"verdict":"debatable","rationale":"the fix changes the public retry contract"/);
   assert.match(report, /"verdict":"actionable","rationale":"one local rename"/);
   assert.match(report, /^- feature: actionable → /m);
-  // remind: the promoted Actionable is handled; the Debatable leads what is left, carried past the
-  // Phase 2 drain's review that did not repeat it.
+  // remind: the promoted Actionable is handled; the Debatable leads what is left.
   const remind = remindOf(root);
   assert.match(remind, /^FINDINGS: open=1 \(HIGH=1\)$/m);
   assert.match(remind, /^DEBATABLE: 1 \(decide these first\)$/m);
-  assert.match(remind, /^debatable: feature \[HIGH\] src\/alpha\.txt:1 — Redesign the retry contract \(earlier review\) — why: the fix changes the public retry contract$/m);
+  assert.match(remind, /^debatable: feature \[HIGH\] src\/alpha\.txt:1 — Redesign the retry contract — why: the fix changes the public retry contract$/m);
   assert.ok(remind.indexOf("DEBATABLE:") < remind.indexOf("report:"), "Debatable leads");
   assert.match(r.stdout, /1 Debatable — decide these first/);
 });
@@ -96,7 +92,6 @@ test("a first feature review with 11 promotable findings: one fix issue with the
   const at = (severity, n) => ({ severity, location: `src/alpha.txt:${n}`, issue: `Defect ${n}`, criterion: `Fix defect ${n}` });
   const eleven = [at("LOW", 1), at("MEDIUM", 2), at("HIGH", 3), at("CRITICAL", 4), at("LOW", 5), at("MEDIUM", 6), at("HIGH", 7), at("LOW", 8), at("MEDIUM", 9), at("LOW", 10), at("CRITICAL", 11)];
   fake(root, "feature.review", featureReviewFile(eleven));
-  fake(root, "feature.review-later", featureReviewFile([]));
   fake(root, "feature-findings.triage", findingVerdicts(eleven.map(() => ({ verdict: "actionable", rationale: "a real defect" }))));
   const { r } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
@@ -110,7 +105,7 @@ test("a first feature review with 11 promotable findings: one fix issue with the
   assert.deepEqual(open.map((f) => f.criterion).sort(), ["Fix defect 10", "Fix defect 5", "Fix defect 8"]);
   // Open only because they are report_only: the fix issue's bullet covers the feature's Actionable findings.
   assert.deepEqual(reportOnlyFeatureFindings(join(root, ".scratch/demo/reviews")).map((f) => f.criterion).sort(), ["Fix defect 10", "Fix defect 5", "Fix defect 8"]);
-  assert.match(r.stdout, /Drain 1: .*11 finding\(s\); 8 Actionable went to Phase 2, 3 more report-only \(past the fix issue's limit\)/);
+  assert.match(r.stdout, /The feature was reviewed: 11 finding\(s\); 8 Actionable went to Phase 2, 3 more report-only \(past the fix issue's limit\)/);
 });
 
 test("a duplicate_of a finding past the fix issue's 8 stays open, folded into its report_only target", () => {
@@ -120,7 +115,6 @@ test("a duplicate_of a finding past the fix issue's 8 stays open, folded into it
   // 8 HIGHs fill the fix issue; LOW 9 overflows, and LOW 10 is triage's duplicate of it.
   const ten = [...Array.from({ length: 8 }, (_, i) => at("HIGH", i + 1)), at("LOW", 9), at("LOW", 10)];
   fake(root, "feature.review", featureReviewFile(ten));
-  fake(root, "feature.review-later", featureReviewFile([]));
   fake(root, "feature-findings.triage", findingVerdicts(ten.map((_, i) => (i === 9
     ? { verdict: "actionable", rationale: "same defect", duplicate_of: 8 }
     : { verdict: "actionable", rationale: "a real defect" }))));
@@ -133,17 +127,18 @@ test("a duplicate_of a finding past the fix issue's 8 stays open, folded into it
   assert.deepEqual(open.map((f) => [f.criterion, f.location]), [["Fix defect 9 (also at src/alpha.txt:10)", "src/alpha.txt:9, src/alpha.txt:10"]]);
 });
 
-test("actionable: a duplicate_of pair at a report-only feature drain leaves its target report_only, open and not green", () => {
+test("actionable: a duplicate_of pair at a report-only feature review (a later run) leaves its target report_only, open and not green", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   const target = { severity: "MEDIUM", location: "src/alpha.txt:1", issue: "Retry loop is unbounded", criterion: "Bound the retry loop" };
   const dup = { severity: "HIGH", location: "src/beta.txt:9", issue: "Beta retries forever", criterion: "Bound beta's retry" };
   fake(root, "feature.review", featureReviewFile([target, dup]));
-  fake(root, "feature.review-later", featureReviewFile([target, dup]));
   fake(root, "feature-findings.triage", findingVerdicts([
     { verdict: "actionable", rationale: "one fix" },
     { verdict: "actionable", rationale: "same defect", duplicate_of: 0 },
   ]));
+  assert.equal(commandLines(root).r.code, 0); // the feature's fix issue
+  addIssue(root, "02-beta.md");
   const { r } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(traceLog(root), /FEATURE-REVIEW: 1 finding\(s\) the rule would promote are report-only/);
@@ -153,20 +148,21 @@ test("actionable: a duplicate_of pair at a report-only feature drain leaves its 
   // reportOnlyFeatureFindings is what notGreenReasons' unfixedFindings is read from: the run is not green.
   assert.deepEqual(reportOnlyFeatureFindings(join(root, ".scratch/demo/reviews")).map((f) => [f.location, f.severity]), [["src/alpha.txt:1", "MEDIUM"]]);
   assert.match(remindOf(root), /^FINDINGS: open=1 \(HIGH=1\)$/m);
-  assert.match(r.stdout, /Drain 2: .*report-only \(past the promotion cap\)/);
+  assert.match(r.stdout, /report-only \(past the promotion cap\)/);
 });
 
-test("actionable: an actionable duplicate_of a debatable target at a report-only feature drain is report_only and not green", () => {
+test("actionable: an actionable duplicate_of a debatable target at a report-only feature review (a later run) is report_only and not green", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   const target = { severity: "MEDIUM", location: "src/alpha.txt:1", issue: "Retry contract is unclear", criterion: "Clarify the retry contract" };
   const dup = { severity: "HIGH", location: "src/beta.txt:9", issue: "Beta retries forever", criterion: "Bound beta's retry" };
   fake(root, "feature.review", featureReviewFile([target, dup]));
-  fake(root, "feature.review-later", featureReviewFile([target, dup]));
   fake(root, "feature-findings.triage", findingVerdicts([
     { verdict: "debatable", rationale: "changes the public contract" },
     { verdict: "actionable", rationale: "same area", duplicate_of: 0 },
   ]));
+  assert.equal(commandLines(root).r.code, 0); // the feature's fix issue
+  addIssue(root, "02-beta.md");
   const { r } = commandLines(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(traceLog(root), /FEATURE-REVIEW: 1 finding\(s\) the rule would promote are report-only/);
@@ -174,7 +170,7 @@ test("actionable: an actionable duplicate_of a debatable target at a report-only
   const last = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(blocks)[1]).findings;
   assert.equal(last.find((f) => f.issue === dup.issue).report_only, true);
   assert.notEqual(last.find((f) => f.issue === target.issue).report_only, true);
-  assert.match(r.stdout, /Drain 2: .*report-only \(past the promotion cap\)/);
+  assert.match(r.stdout, /report-only \(past the promotion cap\)/);
 });
 
 test("actionable: a dismiss verdict is remapped to actionable and promoted to a fix issue", () => {
@@ -223,7 +219,6 @@ test("actionable: the feature review's findings are triaged and promoted the sam
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "feature.review", featureReviewFile([crossIssue("LOW", "Name the two retry loops alike"), crossIssue("HIGH", "Merge the retry helpers into a new public module")]));
-  fake(root, "feature.review-later", featureReviewFile([])); // the Phase 2 drain's increment review
   fake(
     root,
     "feature-findings.triage",

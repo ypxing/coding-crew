@@ -18,6 +18,9 @@ setup() {
   cp -R "$REPO_ROOT/skills/_shared" "$R/skills/_shared"
   echo "PROTO-V1" >> "$R/orchestrator/roles/reviewer.md"
   git -C "$R" init -q -b main
+  # No detached auto-gc/maintenance: one still writing .git/objects races teardown's rm -r
+  git -C "$R" config gc.auto 0
+  git -C "$R" config maintenance.auto false
   git -C "$R" -c user.email=t@t -c user.name=t add -A
   git -C "$R" -c user.email=t@t -c user.name=t commit -qm one
   C1=$(git -C "$R" rev-parse HEAD)
@@ -30,7 +33,7 @@ setup() {
   write_case feature-case feature "$C1" "$C2"
 
   # Fake claude. Judge prompts (they list "Expected misses") score every output as catching m1 and
-  # save the prompt; planner prompts answer with no json; anything else is a reviewer, which prints
+  # save the prompt; anything else is a reviewer, which prints
   # a report with 2 findings. FAKE_FAIL=<text> fails a reviewer whose prompt contains <text>;
   # FAKE_JUDGE_FAIL=1 fails the judge; FAKE_FORBID=1 fails and leaves a flag when called at all.
   cat > "$T/claude" <<'EOS'
@@ -47,9 +50,6 @@ if [[ "$input" == *"## Expected misses"* ]]; then
     arr+="${arr:+,}{\"label\":\"$l\",\"caught\":{\"m1\":true},\"distinct\":$d,\"note\":\"ok\"}"
   done
   jq -n --arg r "[$arr]" '{result:$r,total_cost_usd:0.5,is_error:false}'; exit 0
-fi
-if [[ "$input" == *"Feature review planning"* ]]; then
-  jq -n '{result:"no plan",total_cost_usd:0.1,is_error:false}'; exit 0
 fi
 if [ -n "${FAKE_FAIL:-}" ] && [[ "$input" == *"$FAKE_FAIL"* ]]; then
   echo '{"result":"boom","total_cost_usd":0.1,"is_error":true}'; exit 1
@@ -81,10 +81,6 @@ Replay of a change.
 ## Issue
 
 01-thing
-
-## Implements
-
-D1
 
 ## Acceptance criteria
 
@@ -122,25 +118,31 @@ out_dir() { ls -d "$R"/.scratch/eval-reviewer-misses/*/ | tail -1; }
   [ ! -e "$T/called" ]
   d=$(out_dir)
   for f in branch-case-base.feat.prompt.md branch-case-head.feat.prompt.md \
-           feature-case-base.feature-1.prompt.md feature-case-head.feature-1.prompt.md; do
+           feature-case-base.feature.prompt.md feature-case-head.feature.prompt.md; do
     [ -s "$d/$f" ]
   done
-  grep -q 'the decision text' "$d/branch-case-head.feat.prompt.md"
+  ! grep -q 'the decision text' "$d/branch-case-head.feat.prompt.md"
+  ! grep -q 'PRD decisions' "$d/branch-case-head.feat.prompt.md"
 }
 
-@test "a feature case's prompt carries the PRD's Compatibility & Migration section verbatim" {
+@test "a feature case is one reviewer whose prompt names the case's PRD file, read whole, with no area blocks" {
   run run_eval --dry-run
   [ "$status" -eq 0 ]
   d=$(out_dir)
-  grep -q 'PRD ## Compatibility & Migration (verbatim):' "$d/feature-case-head.feature-1.prompt.md"
-  grep -q 'Old reports stay readable.' "$d/feature-case-head.feature-1.prompt.md"
+  p="$d/feature-case-head.feature.prompt.md"
+  prd=$(sed -n "s/^PRD (read it whole; the feature's intent): //p" "$p")
+  [ -n "$prd" ]
+  grep -q 'Old reports stay readable.' "$prd"
+  ! grep -qE '^Area:|Other areas|PRD ## Compatibility' "$p"
+  [ "$(ls "$d" | grep -c '^feature-case-head\..*\.prompt\.md$')" -eq 1 ]
+  ! ls "$d" | grep -q planner
 }
 
 @test "each ref's prompts carry that ref's own protocol text" {
   run run_eval --dry-run
   [ "$status" -eq 0 ]
   d=$(out_dir)
-  for c in branch-case:feat feature-case:feature-1; do
+  for c in branch-case:feat feature-case:feature; do
     n=${c%%:*}; a=${c##*:}
     grep -q 'PROTO-V1' "$d/$n-base.$a.prompt.md"
     ! grep -q 'PROTO-V2' "$d/$n-base.$a.prompt.md"
@@ -281,49 +283,4 @@ EOS
   CLAUDE_BIN="$T/flaky" run run_eval --runs 1 --case branch-case
   [ "$status" -eq 0 ]
   [ "$(cat "$T/n")" -gt 2 ]
-}
-
-@test "with 2+ planned areas each area's prompt carries the Other areas block runFeatureReview writes" {
-  printf 'a\n' > "$R/a.js"; printf 'b\n' > "$R/b.js"
-  git -C "$R" add a.js b.js
-  git -C "$R" -c user.email=t@t -c user.name=t commit -qm three
-  C3=$(git -C "$R" rev-parse HEAD)
-  in=$(jq -n --arg b "$C2" --arg t "$C3" '{mode:"feature", base:$b, tip:$t, max:3, reportPath:"r.json",
-    prdText:"- **D1** — Retries are bounded.\n- **D2** — Errors name the file.\n",
-    areas:[{name:"alpha", files:["a.js"], decisions:["D1"]}, {name:"beta", files:["b.js"], decisions:["D2"]}]}')
-  run bash -c "node '$REPO_ROOT/scripts/eval-reviewer-misses/build-prompts.mjs' '$R' <<<'$in'"
-  [ "$status" -eq 0 ]
-  p1=$(jq -r '.reviews[0].prompt' <<<"$output"); p2=$(jq -r '.reviews[1].prompt' <<<"$output")
-  grep -qF $'Other areas (reference only' <<<"$p1"
-  grep -qzF $'Name: beta\nFiles:\n- b.js\nDecisions:\n- **D2** — Errors name the file.' <<<"$p1"
-  grep -qzF $'Name: alpha\nFiles:\n- a.js\nDecisions:\n- **D1** — Retries are bounded.' <<<"$p2"
-  ! grep -qF 'Name: alpha' <<<"$(sed -n '/^Other areas/,$p' <<<"$p1")"
-}
-
-@test "a decision the planner omits goes to the area holding its issue's files, as planAreas places it" {
-  g() { git -C "$R" -c user.email=t@t -c user.name=t "$@"; }
-  g checkout -qb crew/f/one
-  printf 'a\n' > "$R/a.js"; g add a.js; g commit -qm one
-  g checkout -q main; g merge -q --no-ff -m "Merge branch 'crew/f/one'" crew/f/one
-  g checkout -qb crew/f/two
-  printf 'b\n' > "$R/b.js"; printf 'c\n' > "$R/c.js"; g add b.js c.js; g commit -qm two
-  g checkout -q main; g merge -q --no-ff -m "Merge branch 'crew/f/two'" crew/f/two
-  TIP=$(git -C "$R" rev-parse HEAD)
-  in=$(jq -n --arg b "$C2" --arg t "$TIP" '{mode:"feature", base:$b, tip:$t, max:3, reportPath:"r.json",
-    prdText:"- **D1** — Retries are bounded.\n- **D2** — Errors name the file.\n",
-    mergedIds:{"crew/f/one":["D1"], "crew/f/two":["D2"]},
-    areas:[{name:"alpha", files:["a.js"], decisions:["D1"]}, {name:"beta", files:["b.js","c.js"], decisions:[]}]}')
-  run bash -c "node '$REPO_ROOT/scripts/eval-reviewer-misses/build-prompts.mjs' '$R' <<<'$in'"
-  [ "$status" -eq 0 ]
-  [ "$(jq -c '[.areas[] | {name, decisions}]' <<<"$output")" = '[{"name":"alpha","decisions":["D1"]},{"name":"beta","decisions":["D2"]}]' ]
-  grep -qF 'crew/f/two: files b.js, c.js; implements D2' <<<"$(jq -r '.planner' <<<"$output")"
-}
-
-@test "a feature case's ## Merged issues section reaches build-prompts as per-branch IDs" {
-  run node --input-type=module -e "
-    const { parseCase } = await import('$REPO_ROOT/scripts/eval-reviewer-misses.mjs');
-    const c = parseCase('x', '---\nmode: feature\nbase_sha: a\nhead_sha: b\nslug: s\n---\n## Merged issues\n\n- crew/s/one: D2, D3\n- crew/s/two:\n\n## Expected misses\n\n- m1: x\n\n## Reference judgement\n\nr\n\n## PRD\n\np\n');
-    console.log(JSON.stringify(c.mergedIds));"
-  [ "$status" -eq 0 ]
-  [ "$output" = '{"crew/s/one":["D2","D3"],"crew/s/two":[]}' ]
 }

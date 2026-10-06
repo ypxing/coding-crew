@@ -6,6 +6,22 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-afk`: a feature review skipped because the integration check was red no longer uses up the run's one review —
+  the next drain whose integration check passes runs it (#290).
+- `crew-afk`: the feature review is one reviewer that reads the whole PRD, once per run (at the first drain that merged
+  something, not again after Phase 2): no planner, no areas. It reports a PRD requirement the merged code does not implement,
+  an unconnected multi-issue flow, or an unowned cross-cutting concern as a finding. The branch review checks acceptance
+  criteria only (no `PRD decisions this issue implements:` block). `orchestrator/lib/prd.mjs`'s `prdPath` is the one PRD
+  lookup, also used for the PR body; `eval-reviewer-misses` replays the single-reviewer prompt and drops `--max-areas` and
+  `## Merged issues` (#287).
+- `write-pr` / `crew-afk`: PR bodies are a short Why / What changes / Risk / **Tested:** note (no Evidence or Merge Danger);
+  crew-afk adds its checks line only when the writer fails. Command discovery and the PR writer now record their cost, the
+  summary's by-role line gains an `other` bucket so the roles sum to the run total, and unknown-cost dispatches read
+  "stopped dispatch(es), cost unknown" (#289).
+- `crew-afk`: the PRD audit is gone — the feature review checks PRD coverage. No audit dispatch, `prd-audit.md`, "Fix PRD
+  gaps" issue or `## PRD Audit` summary section; `prd-audit.sh` and `promote-findings.sh defer-gaps` are removed. A config
+  still setting `afk.PRDAudit`, or the old audit role under `afk.runtime`/`models`/`timeouts`/`limits`, and the
+  `--prd-audit` flag load with one notice each instead of failing (#288).
 - `eval-reviewer-misses`: a feature case's `## Merged issues` section gives each merged issue branch its `## Implements` IDs,
   so a decision the replayed planner leaves out goes to the area holding its issue's files, as in a sprint; filled in for
   `afk-effectiveness-feature` (#284).
