@@ -6,6 +6,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- registry: `crew-afk`, `dep-install`, `upgrade-deps` and `configure-tracker` descriptions say what each skill is for, not
+  how it works (no fix-issue caps, menu or batching details), so a behaviour change no longer leaves them stale (#319).
 - `crew-afk`: platform facts come only from `orchestrator/platforms.json` and the adapters — each adapter has one `build()`,
   a `coAuthor` trailer and `policyArgs` for the one `ROLE_POLICY`; resume, `afk.limits` and the model-tier warning follow the
   runtime adapter's capabilities instead of `"claude"` checks (an ignored cap now says "not supported by <runtime>"). `--platform`
