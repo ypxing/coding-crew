@@ -2,7 +2,7 @@
  * prd.mjs — where this sprint's PRD is, the one owner of that lookup.
  *
  * The local `.scratch/<slug>/PRD.md`, else — under `tracker: github` — fetched with
- * `trackers/github.mjs prd` and saved as `prd-issue.md`, whose earlier copy is used only when the
+ * `tracker/cli.mjs prd` and saved as `prd-issue.md`, whose earlier copy is used only when the
  * fetch fails (or under another tracker). Located once per sprint.
  */
 
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 import { readTrackerConfig } from "../../tracker/tracker-config.mjs";
 
-const GITHUB_CLI = fileURLToPath(new URL("./trackers/github.mjs", import.meta.url));
+const TRACKER_CLI = fileURLToPath(new URL("../../tracker/cli.mjs", import.meta.url));
 const cache = new WeakMap();
 
 /** The PRD file for this sprint's feature, null when there is none. Located at most once per sprint. */
@@ -31,7 +31,7 @@ function locate({ sprint, effects, log = () => {} }) {
   const saved = () => (existsSync(file) ? file : null);
   if (readTrackerConfig(effects.mainRoot).tracker !== "github") return saved();
 
-  const cli = process.env.CREW_GITHUB_TRACKER_CLI || GITHUB_CLI;
+  const cli = process.env.CREW_GITHUB_TRACKER_CLI || TRACKER_CLI;
   const r = effects.exec("node", [cli, "prd", "--feature-slug", sprint.featureSlug, "--main-root", effects.mainRoot], { mutating: false });
   if (r.code === 3) return null; // the milestone has no PRD issue
   if (r.code !== 0 || r.error) {

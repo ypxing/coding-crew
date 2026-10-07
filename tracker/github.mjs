@@ -30,7 +30,6 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { readTrackerConfig } from "./tracker-config.mjs";
 import {
@@ -378,17 +377,61 @@ export function writeProgress(issue, body, { heading = "Progress", mainRoot, exe
   return result;
 }
 
+/** A ref the CLI may pass to `gh`: an issue number, all digits — anything else is a usage error. */
+export function validateRef(mainRoot, ref) {
+  return /^[0-9]+$/.test(String(ref)) ? String(ref) : null;
+}
+
+/** `gh` reports an issue number with no issue behind it this way; anything else is a failure. */
+const NOT_FOUND = /could not resolve to an? (?:issue|pullrequest|pull request)/i;
+
 /**
- * CLI entry point — the shape `promote-findings.sh`'s `_defer_github` shells out to
- * (`node github.mjs create-issue --title ... --body-file ... --feature-slug ...
- * [--label ...] [--main-root ...]`), the same "bash calls a small Node CLI" pattern
- * `review-rollup.mjs` already established for `promote-findings.sh`'s `remind`. Without
- * this, the bash script would have to hand-roll its own `gh issue create` + milestone
- * bootstrap — a second implementation of `createIssue` that can (and did) drift from this
- * one. Prints the created issue's URL to stdout, matching `gh issue create`'s own stdout,
- * so callers see the exact same value either way.
+ * `{title, body, comments?}` for issue `number`, or null when it does not exist. One `gh issue
+ * view`; `comments` (with `{author, createdAt, body}` each) only when asked for.
  */
-function cliCreateIssue(argv) {
+export function fetchIssue(mainRoot, number, { comments = false, exec = shellOut } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const fields = comments ? "title,body,comments" : "title,body";
+  const r = exec("gh", ["issue", "view", String(number), ...(repo ? ["--repo", repo] : []), "--json", fields]);
+  if (r.code !== 0) {
+    if (NOT_FOUND.test(r.stderr ?? "")) return null;
+    throw new Error(`gh issue view failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  }
+  const json = JSON.parse(r.stdout || "{}");
+  const out = { title: json.title ?? "", body: json.body ?? "" };
+  if (comments) {
+    out.comments = (json.comments ?? []).map((c) => ({ author: c.author?.login ?? "", createdAt: c.createdAt ?? "", body: c.body ?? "" }));
+  }
+  return out;
+}
+
+/**
+ * The milestone's PRD issue body, headed by an HTML comment naming its number and title (prd.mjs
+ * saves it as `prd-issue.md`, so the saved copy still says which issue it came from); null when
+ * the milestone has none.
+ */
+export function readPrd(mainRoot, { featureSlug, exec = shellOut } = {}) {
+  const prd = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
+  return prd ? `<!-- PRD issue #${prd.number}: ${prd.title} -->\n${prd.text}\n` : null;
+}
+
+/** The file `known` writes for one issue: named `<n>-<slug>.md` (the lint ref), `# <title>` then the body. */
+export function knownFile(issue) {
+  return { name: `${issue.number}-${issue.slug}.md`, text: `# ${issue.title}\n\n${issue.text.replace(/\n*$/, "\n")}` };
+}
+
+/** An argv mistake in a subcommand below: the tracker CLI exits 2 for it, not 1. */
+function usage(message) {
+  return Object.assign(new Error(message), { usage: true });
+}
+
+/**
+ * `create-issue --title T --body-file F --feature-slug S [--label L]… [--main-root DIR]` — the
+ * shape `promote-findings.sh`'s `_defer_github` calls through `tracker/cli.mjs`, so the bash
+ * script never hand-rolls a second `gh issue create` + milestone bootstrap that can drift from
+ * `createIssue` (it did). Prints the created issue's URL, as `gh issue create` does.
+ */
+function cliCreateIssue(argv, { exec, out }) {
   const opts = { labels: [] };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -408,49 +451,22 @@ function cliCreateIssue(argv) {
         opts.mainRoot = argv[++i];
         break;
       default:
-        throw new Error(`create-issue: unknown argument: ${argv[i]}`);
+        throw usage(`create-issue: unknown argument: ${argv[i]}`);
     }
   }
   if (!opts.title || !opts.bodyFile || !opts.featureSlug) {
-    throw new Error("create-issue requires --title, --body-file, and --feature-slug");
+    throw usage("create-issue requires --title, --body-file, and --feature-slug");
   }
   const body = readFileSync(opts.bodyFile, "utf8");
   const { url } = createIssue(
     { title: opts.title, body, labels: opts.labels, featureSlug: opts.featureSlug },
-    { mainRoot: opts.mainRoot ?? process.cwd() },
+    { mainRoot: opts.mainRoot ?? process.cwd(), exec },
   );
-  process.stdout.write(`${url}\n`);
-}
-
-/**
- * `prd --feature-slug <slug> [--main-root <dir>]` — print the milestone's PRD issue body, for
- * prd.mjs, which has no local PRD.md under github. Exit 3 when the milestone has none.
- */
-function cliPrd(argv) {
-  const opts = {};
-  for (let i = 0; i < argv.length; i++) {
-    switch (argv[i]) {
-      case "--feature-slug":
-        opts.featureSlug = argv[++i];
-        break;
-      case "--main-root":
-        opts.mainRoot = argv[++i];
-        break;
-      default:
-        throw new Error(`prd: unknown argument: ${argv[i]}`);
-    }
-  }
-  if (!opts.featureSlug) throw new Error("prd requires --feature-slug");
-  const prd = listFeatureIssues(opts.mainRoot ?? process.cwd(), { featureSlug: opts.featureSlug }).find(isPrdIssue);
-  if (!prd) {
-    process.exitCode = 3;
-    return;
-  }
-  process.stdout.write(`<!-- PRD issue #${prd.number}: ${prd.title} -->\n${prd.text}\n`);
+  out(`${url}\n`);
 }
 
 /** `link-blockers --issue <n> [--main-root <dir>]` — always exits 0; failures warn on stderr. */
-function cliLinkBlockers(argv) {
+function cliLinkBlockers(argv, { exec, err }) {
   const opts = {};
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -461,27 +477,15 @@ function cliLinkBlockers(argv) {
         opts.mainRoot = argv[++i];
         break;
       default:
-        throw new Error(`link-blockers: unknown argument: ${argv[i]}`);
+        throw usage(`link-blockers: unknown argument: ${argv[i]}`);
     }
   }
-  if (!opts.issue) throw new Error("link-blockers requires --issue");
-  linkBlockers(opts.issue, { mainRoot: opts.mainRoot ?? process.cwd() });
+  if (!opts.issue) throw usage("link-blockers requires --issue");
+  linkBlockers(opts.issue, { mainRoot: opts.mainRoot ?? process.cwd(), exec, warn: (m) => err(`${m}\n`) });
 }
 
-function cliMain(argv) {
-  const [command, ...rest] = argv;
-  if (command === "link-blockers") return cliLinkBlockers(rest);
-  if (command === "create-issue") return cliCreateIssue(rest);
-  if (command === "prd") return cliPrd(rest);
-  throw new Error(`unknown command: ${command}`);
-}
-
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
-if (isMain) {
-  try {
-    cliMain(process.argv.slice(2));
-  } catch (err) {
-    process.stderr.write(`${err.message}\n`);
-    process.exitCode = 1;
-  }
-}
+/** This backend's own `tracker/cli.mjs` ops, beyond the ones every backend has. */
+export const cliOps = {
+  "create-issue": cliCreateIssue,
+  "link-blockers": cliLinkBlockers,
+};

@@ -17,8 +17,8 @@
  * filenames, the `Status:` line, and directory scans.
  */
 
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
   appendToSection,
@@ -210,4 +210,57 @@ export function writeIssueSection(path, heading, body, { append = false } = {}) 
   const next = append ? appendToSection(text, heading, body) : spliceSection(text, heading, body);
   writeFileSync(path, next);
   return next;
+}
+
+/** `p` with every symlink resolved, as far as it exists; the missing tail is appended as written. */
+function realpathAsFarAsExists(p) {
+  let head = p;
+  const tail = [];
+  while (!existsSync(head)) {
+    const up = dirname(head);
+    if (up === head) return p;
+    tail.unshift(basename(head));
+    head = up;
+  }
+  return join(realpathSync(head), ...tail);
+}
+
+/**
+ * The absolute issue path a CLI ref names, or null when it is not one this backend may read: a
+ * path that, symlinks resolved, sits under the main root's `.scratch/`. A relative ref resolves
+ * against `cwd` when that names an existing file, else against the main root (a worker in a
+ * worktree names `.scratch/…` paths, which live only in the main checkout). Stats, never reads.
+ */
+export function validateRef(mainRoot, ref, { cwd = process.cwd() } = {}) {
+  if (!ref) return null;
+  const candidates = isAbsolute(ref) ? [ref] : [resolve(cwd, ref), resolve(mainRoot, ref)];
+  const path = candidates.find((c) => existsSync(c)) ?? candidates.at(-1);
+  const scratch = realpathAsFarAsExists(resolve(mainRoot, ".scratch"));
+  const real = realpathAsFarAsExists(path);
+  const rel = relative(scratch, real);
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+  return real;
+}
+
+/**
+ * `{title, body}` for the issue file at `path` (already through `validateRef`), or null when there
+ * is none. The body is the file minus its `# <title>` line; a file with no such line keeps all of
+ * it and takes its slug as the title, as `parseIssue` does. Comments are already in the file.
+ */
+export function fetchIssue(mainRoot, path) {
+  if (!existsSync(path) || !statSync(path).isFile()) return null;
+  const issue = parseIssue(path);
+  const body = issue.text.replace(/^#[ \t]+.*(?:\r?\n|$)(?:[ \t]*\r?\n)*/m, "");
+  return { title: issue.title, body };
+}
+
+/** The feature's PRD, `.scratch/<slug>/PRD.md`, or null when there is none. */
+export function readPrd(mainRoot, { featureSlug } = {}) {
+  const path = join(mainRoot, ".scratch", featureSlug, "PRD.md");
+  return existsSync(path) ? readFileSync(path, "utf8") : null;
+}
+
+/** The file `known` writes for one issue: the issue file itself, under its own name (the lint ref). */
+export function knownFile(issue) {
+  return { name: issue.file, text: issue.text };
 }
