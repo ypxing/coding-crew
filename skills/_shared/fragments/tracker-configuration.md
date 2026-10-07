@@ -20,6 +20,6 @@ The tracker it talks to is set in `$(git rev-parse --show-toplevel)/.coding-crew
 if that file does not exist, invoke the `configure-tracker` skill now to set it up, then continue.
 
 Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
-2 a usage error or an invalid ref; 3 not found. On 1 or 2, report the stderr to the user and fix
-its cause (an input, auth, the network), then re-run the op — never perform the operation with the
-tracker's own tool instead.
+2 a usage error or an invalid ref; 3 not found. On 1 or 2, report the stderr to the user and
+fix its cause (an input, auth, the network), then re-run the op —
+never perform the operation with the tracker's own tool instead.

@@ -8,54 +8,37 @@
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
   export TO_ISSUES="$SCRIPT_DIR/skills/to-issues/SKILL.md"
-  export TO_ISSUES_GITHUB="$SCRIPT_DIR/skills/to-issues/references/github-publish.md"
   export TO_PRD="$SCRIPT_DIR/skills/to-prd/SKILL.md"
   export UPGRADE_DEPS="$SCRIPT_DIR/skills/upgrade-deps/SKILL.md"
   export ADDRESS_FINDINGS="$SCRIPT_DIR/skills/crew-address-findings/SKILL.md"
 }
 
-# ─── to-issues: publish under github ───────────────────────────────────────────
+# ─── to-issues: publish through the tracker CLI ────────────────────────────────
 
-@test "to-issues/references/github-publish.md describes creating a github issue via gh issue create" {
-  grep -q 'gh issue create' "$TO_ISSUES_GITHUB"
+@test "to-issues/SKILL.md publishes through the CLI's publish-issues and runs no gh" {
+  grep -qF 'node "$TRACKER" publish-issues --feature-slug <feature-slug>' "$TO_ISSUES"
+  ! grep -q 'gh issue create' "$TO_ISSUES"
+  ! grep -q -- '--milestone' "$TO_ISSUES"
 }
 
-@test "to-issues/references/github-publish.md writes ## Blocked by entries as Issue #<n> under github" {
-  grep -q 'Issue #<n>' "$TO_ISSUES_GITHUB"
-}
-
-@test "to-issues/references/github-publish.md cites the PRD issue as PRD: #<n> under github" {
-  grep -q 'PRD: #<n>' "$TO_ISSUES_GITHUB"
-}
-
-@test "to-issues/SKILL.md's github Blocked-by convention matches body-format.mjs's extractBlockedByNumbers regex" {
+@test "body-format.mjs's extractBlockedByNumbers matches the Issue #<n> ref publish-issues writes on github" {
   # extractBlockedByNumbers: /\bissue[\s-]*#?0*([0-9]+)\b/gi — confirm the literal string
-  # to-issues instructs writing ("Issue #<n>") is one this regex actually matches once <n>
-  # is a real number, so the reader issue 04 builds can parse what this issue writes.
+  # github's publish-issues writes as a blocker ref ("Issue #<n>") is one this regex matches.
+  grep -qF 'blockerRef: `Issue #${number}`' "$SCRIPT_DIR/tracker/github.mjs"
   local sample="- Issue #7"
   [[ "$sample" =~ [Ii]ssue[[:space:]-]*\#?0*([0-9]+) ]]
   [ "${BASH_REMATCH[1]}" = "7" ]
 }
 
-@test "to-issues/references/github-publish.md milestones github issues to the feature slug" {
-  grep -q -- '--milestone' "$TO_ISSUES_GITHUB"
-}
-
-@test "to-issues/SKILL.md no longer holds the github publish prose and names the reference" {
-  ! grep -q 'gh issue create' "$TO_ISSUES"
-  ! grep -q -- '--milestone' "$TO_ISSUES"
-  grep -q 'references/github-publish.md' "$TO_ISSUES"
-}
-
-@test "to-issues/SKILL.md names rerun.md and expand-contract.md, and no longer holds their text" {
-  grep -q 'references/rerun.md' "$TO_ISSUES"
+@test "to-issues/SKILL.md names expand-contract.md, no longer holds its text, and the rerun questions are the CLI's exits" {
+  ! grep -q 'references/rerun.md' "$TO_ISSUES"
+  ! grep -q 'references/github-publish.md' "$TO_ISSUES"
   grep -q 'references/expand-contract.md' "$TO_ISSUES"
-  ! grep -q 'Please reconcile manually' "$TO_ISSUES"
+  grep -q 'Please reconcile manually' "$TO_ISSUES"
   ! grep -q 'Contract.* delete the old form' "$TO_ISSUES"
 }
 
-@test "to-issues references hold the rerun and expand-contract prose" {
-  grep -q 'Please reconcile manually' "$SCRIPT_DIR/skills/to-issues/references/rerun.md"
+@test "to-issues references hold the expand-contract prose" {
   grep -q 'Contract.* delete the old form' "$SCRIPT_DIR/skills/to-issues/references/expand-contract.md"
 }
 
@@ -78,8 +61,9 @@ setup() {
   grep -q 'milestone' "$TO_PRD"
 }
 
-@test "to-prd/SKILL.md's publish step best-effort pins the PRD issue without failing publish" {
-  grep -q 'gh issue pin' "$TO_PRD"
+@test "to-prd/SKILL.md publishes through the CLI's publish-prd, a pin failure never failing it" {
+  grep -qF 'node "$TRACKER" publish-prd' "$TO_PRD"
+  ! grep -q 'gh issue' "$TO_PRD"
   grep -qi 'pin failure' "$TO_PRD"
 }
 
@@ -89,14 +73,14 @@ setup() {
 
 # ─── upgrade-deps and crew-address-findings reuse to-issues's pattern ──────────
 
-@test "upgrade-deps/SKILL.md's publish step reuses to-issues's github branch rather than inventing a second one" {
-  grep -q 'to-issues' "$UPGRADE_DEPS"
-  grep -q 'Issue #<n>' "$UPGRADE_DEPS"
+@test "upgrade-deps/SKILL.md's publish step reuses to-issues' write step rather than inventing a second one" {
+  grep -qF "\`to-issues\`' step 6 (\"Write the issues\")" "$UPGRADE_DEPS"
+  grep -q 'publish-issues' "$UPGRADE_DEPS"
 }
 
 @test "crew-address-findings/SKILL.md's promoted-fix-issue reference is backend-neutral" {
   grep -q 'fix issue reference' "$ADDRESS_FINDINGS"
-  grep -q 'to-issues' "$ADDRESS_FINDINGS"
+  grep -qF "the ref \`promote-findings.sh\` prints" "$ADDRESS_FINDINGS"
 }
 
 @test "crew-address-findings/SKILL.md's Promoted Findings line names the optional finding count after the reference" {
@@ -104,6 +88,6 @@ setup() {
   grep -q 'the text before' "$ADDRESS_FINDINGS"
 }
 
-@test "crew-address-findings/SKILL.md loads the PRD from a github issue when configured" {
-  grep -q 'PRD: <feature title>' "$ADDRESS_FINDINGS"
+@test "crew-address-findings/SKILL.md loads the PRD through the CLI's prd, whatever the tracker" {
+  grep -qF 'node "$TRACKER" prd --feature-slug <feature-slug>' "$ADDRESS_FINDINGS"
 }

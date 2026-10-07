@@ -212,8 +212,6 @@ REPO/.github/skills/to-issues/ /
 REPO/.github/skills/to-issues/SKILL.md exec=0 unrendered=0
 REPO/.github/skills/to-issues/references/ /
 REPO/.github/skills/to-issues/references/expand-contract.md exec=0
-REPO/.github/skills/to-issues/references/github-publish.md exec=0
-REPO/.github/skills/to-issues/references/rerun.md exec=0
 REPO/.github/skills/to-issues/scripts/ /
 REPO/.github/skills/to-issues/scripts/lint-issues.sh exec=1
 REPO/.github/skills/to-prd/ /

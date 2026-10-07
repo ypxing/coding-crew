@@ -61,10 +61,8 @@ If using a file, print the path so the user knows which file is being processed.
 ## Step 1.5 — Load design context
 
 Derive `<feature-slug>` from the report path (the segment between `.scratch/` and `/reviews/`).
-Under a `local` tracker, read `.scratch/<feature-slug>/PRD.md` if it exists. Under a configured
-`github` tracker, fetch it instead via that tracker's `list`/`fetch` operations: find the
-milestone's `PRD: <feature title>` issue and read its body (per `github.md`'s Workspace section —
-the PRD is identified by title convention plus milestone scope, not a local file).
+Read the feature's PRD with `node "$TRACKER" prd --feature-slug <feature-slug>` — exit 0 prints it,
+exit 3 means there is none.
 
 Use this context during Step 3 triage: a finding whose proposed fix contradicts a documented
 architectural decision (e.g. a tracker abstraction rule, a naming invariant) is **Debatable**
@@ -85,11 +83,8 @@ it from scratch.
 
 **Skip findings crew-afk already fixed.** If the report has a `## Promoted Findings` section, each
 line reads `<branch>: <severities> → <fix issue reference> (<n> finding(s))` — the trailing count is
-optional (a marker from before it ends at the reference), and the reference is the text before it: a
-local file path under a `local` tracker, or the created issue's URL under a configured `github` tracker (`promote-findings.sh`
-writes whichever `issue-tracker.md` configures; see `to-issues`'s "Write the issues" step for the
-same backend branch, reused here rather than reinvented). Those findings were auto-promoted to fix
-issues and implemented in a later round of the same sprint, so exclude every finding matching a
+optional (a marker from before it ends at the reference), and the reference is the text before it: the ref `promote-findings.sh` prints for the fix issue it created, whatever
+the tracker. Those findings were auto-promoted to fix issues and implemented in a later round of the same sprint, so exclude every finding matching a
 listed (branch, severity) pair from the triage table entirely — do not re-read, re-triage, or
 re-implement them. A line whose severities slot reads `actionable` covers that branch's findings
 whose `verdict` is `actionable` (every Actionable finding of the sprint is fixed that way, whatever

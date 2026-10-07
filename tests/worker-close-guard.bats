@@ -211,10 +211,10 @@ init_sprint() {
 
 # ─── the documents point at the mechanism instead of re-arguing it ───────────
 
-@test "tracker template delegates mark-done to the script and hardcodes no mv" {
+@test "tracker template delegates mark-done to the tracker CLI and hardcodes no mv" {
   local tpl="$REPO_ROOT/docs/templates/trackers/local.md"
-  section=$(awk '/^## Operation: mark-done/{f=1;next} /^## /{f=0} f' "$tpl")
-  echo "$section" | grep -q 'mark-issue-done.sh'
+  section=$(awk '/^## Tracker CLI/{f=1;next} /^## /{f=0} f' "$tpl")
+  echo "$section" | grep -q '^node "$TRACKER" mark-done <ref>'
   # Exit codes are the contract, so the caller can tell a refusal from a failure.
   echo "$section" | grep -q '3'
   echo "$section" | grep -q '4'
@@ -269,7 +269,7 @@ solve_issue_section() {
   # tracker operation rather than a hand-rolled mv.
   echo "$section" | grep -q -- '- \[x\]'
   echo "$section" | grep -q 'Cross-cutting Requirements'
-  echo "$section" | grep -qE 'Execute the .mark-done. operation'
+  echo "$section" | grep -qF 'node "$TRACKER" mark-done <issue-ref>'
   ! echo "$section" | grep -qE '^ *mv '
 }
 

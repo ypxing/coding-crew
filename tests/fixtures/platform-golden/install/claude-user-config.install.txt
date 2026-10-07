@@ -211,8 +211,6 @@ CONFIG/skills/to-issues/ /
 CONFIG/skills/to-issues/SKILL.md exec=0 unrendered=0
 CONFIG/skills/to-issues/references/ /
 CONFIG/skills/to-issues/references/expand-contract.md exec=0
-CONFIG/skills/to-issues/references/github-publish.md exec=0
-CONFIG/skills/to-issues/references/rerun.md exec=0
 CONFIG/skills/to-issues/scripts/ /
 CONFIG/skills/to-issues/scripts/lint-issues.sh exec=1
 CONFIG/skills/to-prd/ /

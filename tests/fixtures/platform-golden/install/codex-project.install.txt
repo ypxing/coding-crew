@@ -97,8 +97,6 @@ REPO/.agents/skills/to-issues/ /
 REPO/.agents/skills/to-issues/SKILL.md exec=0 unrendered=0
 REPO/.agents/skills/to-issues/references/ /
 REPO/.agents/skills/to-issues/references/expand-contract.md exec=0
-REPO/.agents/skills/to-issues/references/github-publish.md exec=0
-REPO/.agents/skills/to-issues/references/rerun.md exec=0
 REPO/.agents/skills/to-issues/scripts/ /
 REPO/.agents/skills/to-issues/scripts/lint-issues.sh exec=1
 REPO/.agents/skills/to-prd/ /

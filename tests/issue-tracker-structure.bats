@@ -9,12 +9,9 @@ setup() {
   export GITHUB_TEMPLATE="$SCRIPT_DIR/docs/templates/trackers/github.md"
 }
 
-@test "issue-tracker.md contains all seven required sections" {
-  grep -q '^## Operation: list'          "$ISSUE_TRACKER"
-  grep -q '^## Operation: fetch'         "$ISSUE_TRACKER"
-  grep -q '^## Operation: publish'       "$ISSUE_TRACKER"
-  grep -q '^## Operation: mark-done'     "$ISSUE_TRACKER"
-  grep -q '^## Operation: status-update' "$ISSUE_TRACKER"
+@test "issue-tracker.md contains the Tracker CLI, Labels and Workspace sections and no Operation sections" {
+  grep -q '^## Tracker CLI'              "$ISSUE_TRACKER"
+  ! grep -q '^## Operation:'             "$ISSUE_TRACKER"
   grep -q '^## Labels'                   "$ISSUE_TRACKER"
   grep -q '^## Workspace'               "$ISSUE_TRACKER"
 }
@@ -44,12 +41,9 @@ setup() {
   [ -f "$TEMPLATE" ]
 }
 
-@test "docs/templates/trackers/local.md contains all seven required sections" {
-  grep -q '^## Operation: list'          "$TEMPLATE"
-  grep -q '^## Operation: fetch'         "$TEMPLATE"
-  grep -q '^## Operation: publish'       "$TEMPLATE"
-  grep -q '^## Operation: mark-done'     "$TEMPLATE"
-  grep -q '^## Operation: status-update' "$TEMPLATE"
+@test "docs/templates/trackers/local.md contains the Tracker CLI, Labels and Workspace sections and no Operation sections" {
+  grep -q '^## Tracker CLI'              "$TEMPLATE"
+  ! grep -q '^## Operation:'             "$TEMPLATE"
   grep -q '^## Labels'                   "$TEMPLATE"
   grep -q '^## Workspace'                "$TEMPLATE"
 }
@@ -62,29 +56,30 @@ setup() {
   [ -f "$GITHUB_TEMPLATE" ]
 }
 
-@test "docs/templates/trackers/github.md contains all seven required sections" {
-  grep -q '^## Operation: list'          "$GITHUB_TEMPLATE"
-  grep -q '^## Operation: fetch'         "$GITHUB_TEMPLATE"
-  grep -q '^## Operation: publish'       "$GITHUB_TEMPLATE"
-  grep -q '^## Operation: mark-done'     "$GITHUB_TEMPLATE"
-  grep -q '^## Operation: status-update' "$GITHUB_TEMPLATE"
+@test "docs/templates/trackers/github.md contains the Tracker CLI, Labels and Workspace sections and no Operation sections" {
+  grep -q '^## Tracker CLI'              "$GITHUB_TEMPLATE"
+  ! grep -q '^## Operation:'             "$GITHUB_TEMPLATE"
   grep -q '^## Labels'                   "$GITHUB_TEMPLATE"
   grep -q '^## Workspace'                "$GITHUB_TEMPLATE"
 }
 
-@test "docs/templates/trackers/github.md operations are described in terms of gh issue/gh api" {
-  grep -q 'gh issue' "$GITHUB_TEMPLATE"
-  grep -q 'gh api'   "$GITHUB_TEMPLATE"
+@test "docs/templates/trackers/github.md's Tracker CLI section lists the CLI ops, not gh calls" {
+  local cli
+  cli=$(awk '/^## Tracker CLI/{f=1;next} /^## /{f=0} f' "$GITHUB_TEMPLATE")
+  for op in fetch prd known publish-issues publish-prd rewrite mark-done; do
+    grep -qE "^node \"\\\$TRACKER\" $op( |$)" <<<"$cli"
+  done
+  ! grep -qE '^gh (issue (create|edit|view)|api)' <<<"$cli"
 }
 
 @test "docs/templates/trackers/github.md: done is the awaiting-merge label, wontfix a close-reason" {
-  grep -q 'bash "$MD" <number>'   "$GITHUB_TEMPLATE"
+  grep -q 'node "$TRACKER" mark-done <number>' "$GITHUB_TEMPLATE"
   grep -q 'awaiting-merge'                 "$GITHUB_TEMPLATE"
   grep -q -- '--reason not-planned'        "$GITHUB_TEMPLATE"
   grep -q 'Closes #<number>'               "$GITHUB_TEMPLATE"
   # mark-done must not close: the work is only on a branch until its PR merges.
   local mark_done
-  mark_done=$(awk '/^## Operation: mark-done/{f=1;next} /^## /{f=0} f' "$GITHUB_TEMPLATE")
+  mark_done=$(awk '/^## Tracker CLI/{f=1;next} /^## /{f=0} f' "$GITHUB_TEMPLATE")
   ! echo "$mark_done" | grep -q '^gh issue close'
 }
 
