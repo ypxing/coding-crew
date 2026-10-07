@@ -116,6 +116,7 @@ test("publish-issues (github) rewrites a Blocked by entry naming a known file <n
   const d = drafts(dir, { deps: {}, files: { "01-c.md": blocked } });
   const exec = fakeGh({
     "api repos/{owner}/{repo}/milestones?state=all": { stdout: "1\topen\tfeat\n" },
+    "issue list": { stdout: JSON.stringify([{ number: 7, title: "Existing thing", body: "", labels: [], state: "OPEN" }]) },
     "issue create": creates(12),
     "api repos/{owner}/{repo}/issues/7": { stdout: "9007\n" },
     "api -X POST": {},
@@ -132,15 +133,36 @@ test("publish-issues (github) rewrites a Blocked by entry naming a known file <n
   assert.ok(link[0][0].includes("issue_id=9007"));
 });
 
-test("publish-issues (local) leaves a Blocked by entry naming a known issue file as that filename", async () => {
+test("publish-issues exits 1 and creates nothing when a Blocked by entry names neither a draft nor an issue of the feature", async () => {
+  const blocked = "# Add c\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 03-typo.md\n";
+  for (const github of [false, true]) {
+    const dir = root({ github });
+    const d = drafts(dir, { deps: {}, files: { "01-c.md": blocked } });
+    const exec = github
+      ? fakeGh({ "issue list": { stdout: JSON.stringify([{ number: 7, title: "Existing thing", body: "", labels: [], state: "OPEN" }]) } })
+      : undefined;
+    const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d], exec);
+    assert.equal(r.code, 1, `github=${github}: ${r.stderr}`);
+    assert.match(r.stderr, /03-typo\.md/);
+    if (github) assert.equal(exec.find("issue create").length, 0);
+    assert.equal(existsSync(join(dir, ".scratch/feat/issues/open")), false);
+    assert.deepEqual(readdirSync(d).sort(), ["01-c.md", "deps.json"]);
+  }
+});
+
+test("publish-issues (local) --replace exits 1 and writes nothing when a draft is blocked by an open issue it would delete", async () => {
   const dir = root();
   const issues = join(dir, ".scratch/feat/issues");
-  mkdirSync(join(issues, "done"), { recursive: true });
-  const blocked = "# Add c\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 03-old.md\n";
+  mkdirSync(join(issues, "open"), { recursive: true });
+  writeFileSync(join(issues, "open/01-old.md"), "# Old\n\nStatus: ready-for-agent\n");
+  const blocked = "# Add c\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 01-old.md\n";
   const d = drafts(dir, { deps: {}, files: { "01-c.md": blocked } });
-  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
-  assert.equal(r.code, 0, r.stderr);
-  assert.equal(readFileSync(join(issues, "open/01-c.md"), "utf8"), blocked);
+  const before = tree(dir);
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d, "--replace"]);
+  assert.equal(r.code, 1, r.stderr);
+  assert.match(r.stderr, /01-old\.md/);
+  assert.match(r.stderr, /--replace/);
+  assert.deepEqual(tree(dir), before);
 });
 
 test("publish-issues (github) deletes the drafts directory after a full publish", async () => {

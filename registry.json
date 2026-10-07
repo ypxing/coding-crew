@@ -43,7 +43,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.27.0",
+      "version": "2.27.1",
       "source-dir": "crew-afk",
       "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
       "assets": {
@@ -85,7 +85,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.13.0",
+      "version": "1.13.1",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "assets": {
@@ -102,7 +102,7 @@
       ]
     },
     "crew-address-findings": {
-      "version": "1.5.0",
+      "version": "1.5.1",
       "source-dir": "crew-address-findings",
       "description": "Triage and fix findings from a crew-afk code review report using TDD.",
       "scripts": [
@@ -129,7 +129,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.15.0",
+      "version": "1.15.1",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",
@@ -139,7 +139,7 @@
       }
     },
     "to-prd": {
-      "version": "1.6.0",
+      "version": "1.6.1",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills"
@@ -177,7 +177,7 @@
       ]
     },
     "upgrade-deps": {
-      "version": "1.3.0",
+      "version": "1.3.1",
       "source-dir": "upgrade-deps",
       "description": "Audit outdated npm/yarn/pnpm dependencies and plan safe upgrades as issues.",
       "deps": [

@@ -150,6 +150,26 @@ function readDrafts(dir) {
   return { drafts, blockersOf, order };
 }
 
+/** An issue filename in a `## Blocked by` section: a draft, or a `known` file (`<lint ref>.md`). */
+const BLOCKER_FILE = /(?<![\w.-])([0-9]+-[A-Za-z0-9][\w.-]*\.md)(?![\w.-])/g;
+
+/** `text` split around its `## Blocked by` section's body (`{head, section, tail}`), or null when it has none. */
+function blockedBySpan(text) {
+  const heading = /^#{1,6}[ \t]+Blocked by[ \t]*$/im.exec(text);
+  if (!heading) return null;
+  const start = heading.index + heading[0].length;
+  const lines = text.slice(start).split("\n");
+  let end = lines.findIndex((l, i) => i > 0 && /^#{1,6}[ \t]+/.test(l));
+  if (end === -1) end = lines.length;
+  return { head: text.slice(0, start), section: lines.slice(0, end).join("\n"), tail: lines.slice(end) };
+}
+
+/** The issue filenames `text`'s `## Blocked by` names. */
+function blockedByFiles(text) {
+  const span = blockedBySpan(text);
+  return span ? [...span.section.matchAll(BLOCKER_FILE)].map((m) => m[1]) : [];
+}
+
 /**
  * `text` with every draft filename under `## Blocked by` replaced by the ref its issue was created
  * under (`refs`: draft filename → that backend's blocker ref), and every other filename — a `known`
@@ -157,16 +177,32 @@ function readDrafts(dir) {
  * A draft not created yet is never mapped as a known file. Nothing outside the section changes.
  */
 function rewriteBlockedBy(text, refs, { drafts = new Set(), knownRef = () => null } = {}) {
-  const heading = /^#{1,6}[ \t]+Blocked by[ \t]*$/im.exec(text);
-  if (!heading) return text;
-  const start = heading.index + heading[0].length;
-  const lines = text.slice(start).split("\n");
-  let end = lines.findIndex((l, i) => i > 0 && /^#{1,6}[ \t]+/.test(l));
-  if (end === -1) end = lines.length;
-  const section = lines.slice(0, end).join("\n").replace(/(?<![\w.-])([0-9]+-[A-Za-z0-9][\w.-]*\.md)(?![\w.-])/g, (m) =>
-    refs.has(m) ? refs.get(m) : drafts.has(m) ? m : (knownRef(m) ?? m),
+  const span = blockedBySpan(text);
+  if (!span) return text;
+  const section = span.section.replace(BLOCKER_FILE, (m) => (refs.has(m) ? refs.get(m) : drafts.has(m) ? m : (knownRef(m) ?? m)));
+  return span.head + [section, ...span.tail].join("\n");
+}
+
+/**
+ * Fail unless every non-draft filename a draft's `## Blocked by` names (`existing`) is an issue of
+ * the feature, compared by the backend's blocker ref (github: the number, so a retitled issue still
+ * matches) or else by name. A typo would otherwise become a blocker that never resolves, or under
+ * github `Issue #<n>` of an unrelated issue.
+ */
+function checkExistingBlockers(existing, { tracker, mainRoot, featureSlug, exec, dir }) {
+  const key = (name) => tracker.knownBlockerRef?.(name) ?? name;
+  const known = new Set(
+    tracker
+      .listFeatureIssues(mainRoot, { featureSlug, exec })
+      .filter((i) => !tracker.isPrdIssue(i))
+      .map((i) => key(basename(tracker.knownFile(i).name))),
   );
-  return text.slice(0, start) + [section, ...lines.slice(end)].join("\n");
+  const unknown = existing.filter((m) => !known.has(key(m)));
+  if (unknown.length) {
+    throw new Error(
+      `publish-issues: ## Blocked by names ${unknown.join(", ")}, which is neither a draft in ${dir} nor an issue of feature ${featureSlug} (\`known\` lists those). Nothing was published.`,
+    );
+  }
 }
 
 /** Why an orchestrator owns this close, or null: `CREW_ORCHESTRATED`, or the sprint's `.orchestrated` marker. */
@@ -219,11 +255,13 @@ const OPS = {
     const featureSlug = args["feature-slug"];
     const dir = resolve(cwd, args.drafts);
     const { drafts, blockersOf, order } = readDrafts(dir);
-    const refused = tracker.publishGuard?.(mainRoot, { featureSlug, replace: Boolean(args.replace) });
+    const existing = [...new Set([...drafts.values()].flatMap((d) => blockedByFiles(d.text).filter((m) => !drafts.has(m))))];
+    const refused = tracker.publishGuard?.(mainRoot, { featureSlug, replace: Boolean(args.replace), blockers: existing });
     if (refused) {
       err(`${refused.message}\n`);
       return refused.code;
     }
+    if (existing.length) checkExistingBlockers(existing, { tracker, mainRoot, featureSlug, exec, dir });
     const publisher = tracker.beginPublish(mainRoot, { featureSlug, drafts: order, replace: Boolean(args.replace), exec });
     const refs = new Map();
     const created = [];

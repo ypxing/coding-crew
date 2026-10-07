@@ -153,7 +153,7 @@ It creates the issues in dependency order and prints one `<draft> <ref>` line pe
 - **Exit 4** — the feature has completed issues: stop, and tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
 - **Exit 5** — the feature already has open issues, which publishing would overwrite (stderr lists them): show them, warn they will be overwritten, and ask for confirmation. On yes, re-run the same command with `--replace`; on no, stop.
 
-On exit 1 the stderr names the issues created before the failure, and the drafts stay in place: report both, fix the cause, and ask the user before re-running — a re-run creates every draft again.
+Exit 1 before anything is created means a draft's `## Blocked by` names a file that is neither a draft nor a `known` issue, or (with `--replace`) an open issue `--replace` would delete: fix that draft's `## Blocked by` and `deps.json`, lint again and re-publish. On any other exit 1 the stderr names the issues created before the failure, and the drafts stay in place: report both, fix the cause, and ask the user before re-running — a re-run creates every draft again.
 
 **A source issue that stayed one slice** is rewritten in place instead of published (no `## Parent`): write it as a draft (title, `Status:` line and body, as above) to a file outside `.drafts/` and run
 
