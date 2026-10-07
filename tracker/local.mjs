@@ -273,10 +273,11 @@ function stateFiles(mainRoot, featureSlug, state) {
 
 /**
  * `publish-issues`' re-run rule: a feature with done issues is not re-published over (exit 4 —
- * reconcile by hand), and open issues are only overwritten with `--replace` (exit 5). Null when
- * publishing may go ahead.
+ * reconcile by hand), and open issues are only overwritten with `--replace` (exit 5) — never one a
+ * draft's `## Blocked by` names (`blockers`), which `--replace` would delete and leave that draft
+ * blocked for good (exit 1). Null when publishing may go ahead.
  */
-export function publishGuard(mainRoot, { featureSlug, replace = false } = {}) {
+export function publishGuard(mainRoot, { featureSlug, replace = false, blockers = [] } = {}) {
   const issues = `.scratch/${featureSlug}/issues`;
   if (stateFiles(mainRoot, featureSlug, "done").length) {
     return {
@@ -285,6 +286,13 @@ export function publishGuard(mainRoot, { featureSlug, replace = false } = {}) {
     };
   }
   const open = stateFiles(mainRoot, featureSlug, "open");
+  const deleted = replace ? blockers.filter((b) => open.includes(b)) : [];
+  if (deleted.length) {
+    return {
+      code: 1,
+      message: `publish-issues: a draft's ## Blocked by names ${deleted.join(", ")} in ${issues}/open/, which --replace deletes. Point it at the draft that replaces it, or drop the edge, then re-run. Nothing was published.`,
+    };
+  }
   if (open.length && !replace) {
     return {
       code: 5,

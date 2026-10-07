@@ -146,3 +146,18 @@ tracker_section() {
   done
   ! grep -qF 'Edit the right-hand column' "$REPO_ROOT/docs/templates/trackers/local.md"
 }
+
+@test "the tracker-configuration lookup, run in a linked worktree without .coding-crew/, finds the main checkout's CLI" {
+  local repo wt out f
+  repo=$(mktemp -d "$BATS_TEST_TMPDIR/repo.XXXXXX")
+  git -C "$repo" init -q
+  git -C "$repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  mkdir -p "$repo/.coding-crew/tracker"
+  cp "$REPO_ROOT/tracker/"*.mjs "$repo/.coding-crew/tracker/"
+  wt="$BATS_TEST_TMPDIR/wt"
+  git -C "$repo" worktree add -q "$wt"
+  [ ! -e "$wt/.coding-crew" ]
+  f=$(rendered_skill solve-issue claude)
+  out=$(cd "$wt" && HOME="$BATS_TEST_TMPDIR/nohome" bash -c "$(tracker_section "$f" | awk '/^```bash$/{n++;f=(n==2);next} /^```$/{f=0} f' | grep -v '^node "\$TRACKER"')")
+  [ "$out" = "$(cd "$repo" && pwd -P)/.coding-crew/tracker/cli.mjs" ]
+}

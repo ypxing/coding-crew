@@ -12,6 +12,8 @@ skill." Otherwise locate the CLI once — this prints its absolute path:
 
 ```bash
 TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
+# a linked worktree may lack .coding-crew/: the main checkout's copy
+[ -f "$TRACKER" ] || TRACKER="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.coding-crew/tracker/cli.mjs"
 [ -f "$TRACKER" ] || TRACKER="$HOME/.coding-crew/tracker/cli.mjs"   # user-level install
 echo "$TRACKER"
 ```

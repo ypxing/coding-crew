@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker: `publish-issues` exits 1, publishing nothing, when a draft's `## Blocked by` names a file that is neither a
+  draft nor an issue of the feature (a typo became a blocker that never resolves, or under github `Issue #<n>` of an
+  unrelated issue), and under local when `--replace` would delete an open issue a draft is blocked by (that draft
+  stayed blocked for good). skills: the `tracker-configuration` lookup also tries the main checkout, so it finds the
+  CLI from a linked worktree that has no `.coding-crew/` (follow-up to #332).
 - tracker: under `tracker: github`, `publish-issues` rewrites a draft's `## Blocked by` entry naming a `known` file
   `<n>-<slug>.md` to `Issue #<n>`, and so does `rewrite`, so the issue's blocker is read (and, on publish, linked
   natively) — it was left as the filename, which github never parses (#332). skills: the `tracker-configuration` fragment's lookup prints the CLI's
