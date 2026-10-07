@@ -54,6 +54,8 @@ teardown() {
 install_scripts() { # <dir>
   mkdir -p "$1"
   cp "$REPO_ROOT/scripts/tracker/tracker-config.sh" "$REPO_ROOT/scripts/tracker/mark-issue-done.sh" "$1/"
+  # mark-issue-done.sh delegates to the tracker CLI, which installs beside scripts/.
+  rm -r -f "$1/../tracker" && cp -R "$REPO_ROOT/tracker" "$1/../tracker"
 }
 
 block() { awk '/# BEGIN tracker-lookup/{f=1} f{print} /# END tracker-lookup/{f=0}' "$1"; }

@@ -1,36 +1,29 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-# mark-issue-done.sh — mechanical implementation of the tracker's `mark-done`
-# operation for the local-markdown tracker.
+# mark-issue-done.sh — the tracker's `mark-done` operation, for either tracker backend.
 #
 # Usage:
-#   mark-issue-done.sh <issue-file-path> [--force]
+#   mark-issue-done.sh <issue-file-path | github-issue-number> [--force]
 #
 # Exit codes:
-#   0  issue closed (or already in done/ — this is idempotent)
-#   1  usage error / issue file not found
+#   0  issue marked done (or already in done/ — this is idempotent)
+#   1  usage error / issue not found / the tracker write failed
 #   3  refused: an orchestrator owns the close for this sprint
 #   4  refused: acceptance criteria or cross-cutting requirements are still unchecked
 #
-# Why this exists
-#   Closing an issue from inside a worker is a work-loss bug, not a style problem. A
-#   worker that moves its issue to done/ removes it from the `ready-for-agent` list, so
-#   the orchestrator's later gates (independent checks, acceptance criteria, code review)
-#   can demote the result to `partial` with nothing left to re-dispatch — the branch is
-#   silently orphaned. Three separate prompts argued about this in prose and a fourth
-#   (solve-issue step 7) contradicted them by telling the worker to close. Prose cannot
-#   fail closed; this can.
+# A thin wrapper, kept for its callers (close-issue.sh, the ready-for-human steps, old installs'
+# issue-tracker.md): both refusals and the done write are `tracker/cli.mjs mark-done`'s, once for
+# every backend. This script only finds the CLI and maps its usage exit (2) to its own (1). A
+# refusal is the CLI's `REFUSED: <issue> …` line on stderr, saying why and how to proceed.
 #
-#   The sprint marker `.scratch/<feature-slug>/.orchestrated` (written by
-#   crew-afk's session-init.sh, removed by crew-summary.sh) is the fact this checks. The
-#   `CREW_ORCHESTRATED=1` environment variable set by the dispatchers is honoured too, so
-#   a worker dispatched into a worktree is covered even before it locates the sprint dir.
-#
-#   The criteria guard is the same idea applied to the other half of the operation: the
-#   tracker told the model to verify criteria before moving the file, so an unchecked
-#   `- [ ]` under `## Acceptance criteria` or `## Cross-cutting Requirements` now refuses
-#   the move instead of relying on the model to notice.
+# Why the refusals exist
+#   Closing an issue from inside a worker is a work-loss bug, not a style problem. A worker that
+#   closes its issue removes it from the `ready-for-agent` list, so the orchestrator's later gates
+#   can demote the result to `partial` with nothing left to re-dispatch. The sprint marker
+#   `.scratch/<feature-slug>/.orchestrated` (session-init.sh writes it, crew-summary.sh removes it)
+#   and `CREW_ORCHESTRATED=1` (set by the dispatchers) are the facts checked; an unchecked `- [ ]`
+#   under `## Acceptance criteria` or `## Cross-cutting Requirements` refuses too.
 #
 # Escape hatch
 #   --force overrides both refusals. Use it when a sprint crashed and left the marker
@@ -56,12 +49,14 @@ if [ -z "$ISSUE_PATH" ]; then
   exit 1
 fi
 
-# ─── tracker backend: local (file path) or github (issue number) ────────────
+# ─── the tracker CLI ─────────────────────────────────────────────────────────
 #
-# tracker-config.sh (issue 01) is the single source of truth for which backend the
-# whole pipeline uses, found through the shared lookup block below. Finding none of
-# its candidates is not an error — it means `tracker: local` with no front matter at
-# all, the same zero-config default tracker-config.sh itself falls back to.
+# The shared lookup finds (and loads) the tracker-config.sh reader, as in every shell caller;
+# the CLI installs beside it (.coding-crew/scripts → .coding-crew/tracker) or sits at the repo
+# root in a source checkout (scripts/tracker → tracker). Without MAIN_ROOT the CLI finds the main
+# checkout from the cwd itself.
+MAIN_ROOT_ARGS=()
+[ -n "${MAIN_ROOT:-}" ] && MAIN_ROOT_ARGS=(--main-root "$MAIN_ROOT")
 MAIN_ROOT="${MAIN_ROOT:-.}"
 # BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
 # Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
@@ -80,8 +75,6 @@ tracker_config_candidates() {
   return 0
 }
 # END tracker-lookup
-TRACKER_CONFIG_TRACKER="local"
-TRACKER_CONFIG_REPO=""
 TRACKER_CONFIG_FOUND=""
 while IFS= read -r _tc; do
   if [ -f "$_tc" ]; then TRACKER_CONFIG_FOUND="$_tc"; break; fi
@@ -92,182 +85,28 @@ if [ -n "$TRACKER_CONFIG_FOUND" ]; then
   read_tracker_config "$MAIN_ROOT"
 fi
 
-if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
-  # ─────────────────────────── github backend ────────────────────────────
-  #
-  # The argument is a GitHub issue number here, not a file path — there is no
-  # local file for a github-tracked issue. The one implementation of github's
-  # mark-done: close-issue.sh calls this too.
-  ISSUE_NUMBER="$ISSUE_PATH"
-  case "$ISSUE_NUMBER" in
-    ''|*[!0-9]*)
-      echo "ERROR: expected a GitHub issue number under tracker: github, got: $ISSUE_NUMBER" >&2
-      exit 1 ;;
-  esac
-
-  REPO_ARGS=()
-  if [ -n "$TRACKER_CONFIG_REPO" ]; then
-    REPO_ARGS=(--repo "$TRACKER_CONFIG_REPO")
-  fi
-
-  # ─── guard 1: does an orchestrator own this close? (identical semantics) ────
-  if [ "$FORCE" -eq 0 ]; then
-    reason=""
-    case "${CREW_ORCHESTRATED:-}" in
-      1|true|yes) reason="CREW_ORCHESTRATED=${CREW_ORCHESTRATED}" ;;
-    esac
-    if [ -z "$reason" ]; then
-      # No file path to derive the sprint dir from — use the env session-init.sh
-      # already exports (SPRINT_DIR, or FEATURE_SLUG to rebuild it), same as
-      # state.sh's fallback. Neither present means no sprint context to check.
-      _sprint_dir="${SPRINT_DIR:-}"
-      if [ -z "$_sprint_dir" ] && [ -n "${FEATURE_SLUG:-}" ]; then
-        _sprint_dir="$MAIN_ROOT/.scratch/$FEATURE_SLUG"
-      fi
-      if [ -n "$_sprint_dir" ] && [ -f "$_sprint_dir/.orchestrated" ]; then
-        reason="sprint marker $_sprint_dir/.orchestrated"
-      fi
-    fi
-    if [ -n "$reason" ]; then
-      echo "REFUSED: issue #$ISSUE_NUMBER is orchestrated ($reason) — the orchestrator closes it." >&2
-      echo "  It closes only after independent check verification, acceptance-criteria" >&2
-      echo "  verification and code review pass on your branch. Report your status and stop." >&2
-      echo "  If no sprint is running: remove the sprint's .orchestrated marker if it exists," >&2
-      echo "  unset CREW_ORCHESTRATED, or pass --force." >&2
-      exit 3
-    fi
-  fi
-
-  # ─── guard 2: are all criteria checked off, against a fresh fetch? ──────────
-  # Re-fetch live rather than trusting any body the caller might be holding from
-  # an earlier `listFeatureIssues` — a human may have edited the issue since.
-  if ! BODY="$(gh issue view "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --json body --jq .body 2>&1)"; then
-    echo "ERROR: gh issue view failed for #$ISSUE_NUMBER:" >&2
-    echo "$BODY" >&2
-    exit 1
-  fi
-
-  if [ "$FORCE" -eq 0 ]; then
-    UNCHECKED=$(printf '%s\n' "$BODY" | awk '
-      /^##+[ \t]*[Aa]cceptance [Cc]riteria/       { inside = 1; next }
-      /^##+[ \t]*[Cc]ross-cutting [Rr]equirements/ { inside = 1; next }
-      /^##/                                        { inside = 0 }
-      inside && /^[ \t]*[-*][ \t]+\[[ ]\]/         { print }
-    ')
-    if [ -n "$UNCHECKED" ]; then
-      echo "REFUSED: issue #$ISSUE_NUMBER still has unchecked criteria — not closing it." >&2
-      printf '%s\n' "$UNCHECKED" >&2
-      echo "  Check each one off once the code satisfies it, or record why it is descoped" >&2
-      echo "  under '## Unmet criteria' and re-run with --force." >&2
-      exit 4
-    fi
-  fi
-
-  # ─── mark done ───────────────────────────────────────────────────────────
-  # Not a close: the work is only on a branch. Swap ready-for-agent for awaiting-merge
-  # (read as done) and let the PR's `Closes #n` close the issue when it merges. crew-afk's
-  # display label `in-progress` comes off in the same edit. Both labels are created first,
-  # idempotently: --add-label and --remove-label fail on a label the repo lacks, and a repo
-  # configured before `in-progress` existed lacks it — removing it from an issue that never
-  # carried it is then still a no-op.
-  if ! GH_OUT="$(gh label create awaiting-merge "${REPO_ARGS[@]}" --force \
-      --description "Implemented on a feature branch; closes when its PR merges" 2>&1)"; then
-    echo "ERROR: gh label create awaiting-merge failed:" >&2
-    echo "$GH_OUT" >&2
-    exit 1
-  fi
-  # A display label never fails a close: without it created the edit just leaves it alone.
-  IN_PROGRESS_ARGS=(--remove-label in-progress)
-  if ! GH_OUT="$(gh label create in-progress "${REPO_ARGS[@]}" --force \
-      --description "A crew-afk run is working this issue (display only)" 2>&1)"; then
-    echo "WARNING: gh label create in-progress failed; leaving it alone: $GH_OUT" >&2
-    IN_PROGRESS_ARGS=()
-  fi
-  # A person closing a ready-for-human issue from its own steps runs this too; the label it
-  # carried comes off in the same edit, created first like in-progress — but without --force:
-  # the label is the project's own (configure-tracker made it), so an existing one keeps its
-  # colour and description, and gh's "already exists" refusal counts as created.
-  READY_FOR_HUMAN_ARGS=(--remove-label ready-for-human)
-  if ! GH_OUT="$(gh label create ready-for-human "${REPO_ARGS[@]}" \
-      --description "Requires human implementation" 2>&1)" \
-      && [[ "$GH_OUT" != *"already exists"* ]]; then
-    echo "WARNING: gh label create ready-for-human failed; leaving it alone: $GH_OUT" >&2
-    READY_FOR_HUMAN_ARGS=()
-  fi
-  if ! GH_OUT="$(gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --add-label awaiting-merge --remove-label ready-for-agent "${READY_FOR_HUMAN_ARGS[@]}" "${IN_PROGRESS_ARGS[@]}" 2>&1)"; then
-    echo "ERROR: gh issue edit failed for #$ISSUE_NUMBER:" >&2
-    echo "$GH_OUT" >&2
-    exit 1
-  fi
-
-  echo "DONE: issue #$ISSUE_NUMBER labelled awaiting-merge — put 'Closes #$ISSUE_NUMBER' in the PR body so merging it closes the issue"
-  exit 0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TRACKER_CLI=""
+for _cli in "${CREW_TRACKER_CLI:-}" \
+  "$SCRIPT_DIR/../tracker/cli.mjs" "$SCRIPT_DIR/../../tracker/cli.mjs" \
+  "${TRACKER_CONFIG_FOUND:+$(dirname "$TRACKER_CONFIG_FOUND")/../tracker/cli.mjs}" \
+  "$MAIN_ROOT/.coding-crew/tracker/cli.mjs" \
+  "${HOME:+$HOME/.coding-crew/tracker/cli.mjs}"; do
+  if [ -n "$_cli" ] && [ -f "$_cli" ]; then TRACKER_CLI="$_cli"; break; fi
+done
+if [ -z "$TRACKER_CLI" ]; then
+  echo "ERROR: tracker CLI (.coding-crew/tracker/cli.mjs) not found — re-run install.sh" >&2
+  exit 1
 fi
-
-# ─────────────────────────── local backend (byte-identical to today) ────────
-OPEN_DIR=$(dirname "$ISSUE_PATH")
-DONE_DIR="$(dirname "$OPEN_DIR")/done"
-FILENAME=$(basename "$ISSUE_PATH")
-# .scratch/<feature-slug>/issues/<state>/<file>.md → .scratch/<feature-slug>
-SPRINT_DIR=$(dirname "$(dirname "$OPEN_DIR")")
-
-if [ ! -f "$ISSUE_PATH" ]; then
-  # Already closed by an earlier run: the end state is what was asked for, so succeed.
-  if [ -f "$DONE_DIR/$FILENAME" ]; then
-    echo "DONE: $FILENAME already closed ($DONE_DIR/$FILENAME)"
-    exit 0
-  fi
-  echo "ERROR: issue file not found: $ISSUE_PATH" >&2
+if ! command -v node >/dev/null 2>&1; then
+  echo "ERROR: the tracker CLI needs Node (node not found on PATH)" >&2
   exit 1
 fi
 
-# ─── guard 1: does an orchestrator own this close? ───────────────────────────
-if [ "$FORCE" -eq 0 ]; then
-  reason=""
-  [ -f "$SPRINT_DIR/.orchestrated" ] && reason="sprint marker $SPRINT_DIR/.orchestrated"
-  case "${CREW_ORCHESTRATED:-}" in
-    1|true|yes) reason="${reason:-CREW_ORCHESTRATED=${CREW_ORCHESTRATED}}" ;;
-  esac
-  if [ -n "$reason" ]; then
-    echo "REFUSED: $FILENAME is orchestrated ($reason) — the orchestrator closes it." >&2
-    echo "  It closes only after independent check verification, acceptance-criteria" >&2
-    echo "  verification and code review pass on your branch. Report your status and stop." >&2
-    echo "  If no sprint is running: remove $SPRINT_DIR/.orchestrated if it exists, unset" >&2
-    echo "  CREW_ORCHESTRATED, or pass --force." >&2
-    exit 3
-  fi
-fi
-
-# ─── guard 2: are all criteria checked off? ──────────────────────────────────
-unchecked_criteria() {
-  awk '
-    /^##+[ \t]*[Aa]cceptance [Cc]riteria/       { inside = 1; next }
-    /^##+[ \t]*[Cc]ross-cutting [Rr]equirements/ { inside = 1; next }
-    /^##/                                        { inside = 0 }
-    inside && /^[ \t]*[-*][ \t]+\[[ ]\]/         { print }
-  ' "$1"
-}
-
-if [ "$FORCE" -eq 0 ]; then
-  UNCHECKED=$(unchecked_criteria "$ISSUE_PATH")
-  if [ -n "$UNCHECKED" ]; then
-    echo "REFUSED: $FILENAME still has unchecked criteria — not closing it." >&2
-    printf '%s\n' "$UNCHECKED" >&2
-    echo "  Check each one off once the code satisfies it, or record why it is descoped" >&2
-    echo "  under '## Unmet criteria' and re-run with --force." >&2
-    exit 4
-  fi
-fi
-
-# ─── close ───────────────────────────────────────────────────────────────────
-# Rewrite via temp file: `sed -i` is not portable (GNU takes a bare -i, BSD/macOS reads
-# the next argument as a backup suffix, and `-i''` does not help — the shell strips it).
-TMP_FILE="${ISSUE_PATH}.tmp.$$"
-sed 's/^Status: *.*/Status: done/' "$ISSUE_PATH" > "$TMP_FILE" || {
-  rm -f "$TMP_FILE"; echo "ERROR: could not rewrite Status in $ISSUE_PATH" >&2; exit 1; }
-mv "$TMP_FILE" "$ISSUE_PATH"
-
-mkdir -p "$DONE_DIR"
-mv "$ISSUE_PATH" "$DONE_DIR/$FILENAME"
-
-echo "DONE: $FILENAME → $DONE_DIR/$FILENAME"
+FORCE_ARGS=()
+[ "$FORCE" -eq 1 ] && FORCE_ARGS=(--force)
+node "$TRACKER_CLI" mark-done "$ISSUE_PATH" ${FORCE_ARGS[@]+"${FORCE_ARGS[@]}"} ${MAIN_ROOT_ARGS[@]+"${MAIN_ROOT_ARGS[@]}"}
+rc=$?
+# The CLI's usage exit (a bad argument, a ref it may not read) is this script's 1.
+[ "$rc" -eq 2 ] && exit 1
+exit "$rc"

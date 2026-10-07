@@ -33,6 +33,8 @@ EOF
   # layout so close-issue.sh's lookup relative to MAIN_ROOT actually finds it.
   cp "$REPO_ROOT/scripts/tracker/tracker-config.sh" "$MAIN_ROOT/.coding-crew/scripts/tracker-config.sh"
   cp "$REPO_ROOT/scripts/tracker/mark-issue-done.sh" "$MAIN_ROOT/.coding-crew/scripts/mark-issue-done.sh"
+  # mark-issue-done.sh delegates to the tracker CLI, installed beside the scripts.
+  cp -R "$REPO_ROOT/tracker" "$MAIN_ROOT/.coding-crew/tracker"
 
   STUB="$TEMP_DIR/.stub"
   mkdir -p "$STUB"
