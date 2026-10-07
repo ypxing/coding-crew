@@ -209,16 +209,16 @@ function milestonesPath(repo) {
 /**
  * Ensure a milestone named `featureSlug` exists, list-first so a second call for the
  * same slug makes no create request — idempotent, as `createIssue` needs since it calls
- * this on every publish, not just the feature's first.
+ * this on every publish, not just the feature's first. The list paginates: the API returns
+ * 30 per page, and a milestone past the first page read as missing made the create 422.
  */
 function ensureMilestone(featureSlug, { repo, exec }) {
   const path = milestonesPath(repo);
-  const list = exec("gh", ["api", path]);
+  const list = exec("gh", ["api", path, "--paginate", "--jq", ".[].title"]);
   if (list.code !== 0) {
     throw new Error(`gh api milestones list failed (exit ${list.code}): ${list.stderr || list.stdout}`);
   }
-  const milestones = list.stdout && list.stdout.trim() ? JSON.parse(list.stdout) : [];
-  if (milestones.some((m) => m.title === featureSlug)) return;
+  if ((list.stdout || "").split("\n").some((title) => title === featureSlug)) return;
 
   const created = exec("gh", ["api", path, "-f", `title=${featureSlug}`]);
   if (created.code !== 0) {

@@ -96,8 +96,8 @@ case "$1" in
         echo "{}"
         ;;
       *)
-        # milestone list
-        cat "$GH_MILESTONES_FILE"
+        # milestone list: --paginate --jq '.[].title' prints one title per line
+        jq -r '.[].title' "$GH_MILESTONES_FILE"
         ;;
     esac
     ;;
@@ -230,7 +230,7 @@ SH
   bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
     --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
 
-  grep -q -- 'api repos/{owner}/{repo}/milestones$' "$GH_CALLS_LOG"
+  grep -q -- 'api repos/{owner}/{repo}/milestones --paginate --jq .\[\]\.title$' "$GH_CALLS_LOG"
   ! grep -q -- '-f title=feat' "$GH_CALLS_LOG"
 }
 

@@ -254,7 +254,11 @@ function fakeGhWrite({ milestoneTitles = [], viewBody = "" } = {}) {
         milestones.add(title);
         return { code: 0, stdout: "", stderr: "" };
       }
-      return { code: 0, stdout: JSON.stringify([...milestones].map((title) => ({ title }))), stderr: "" };
+      // Like the real API: one page of 30 unless the call paginates, and `--jq '.[].title'`
+      // prints one title per line instead of the JSON array.
+      const listed = args.includes("--paginate") ? [...milestones] : [...milestones].slice(0, 30);
+      const stdout = args.includes("--jq") ? listed.map((title) => `${title}\n`).join("") : JSON.stringify(listed.map((title) => ({ title })));
+      return { code: 0, stdout, stderr: "" };
     }
     if (args[0] === "issue" && args[1] === "create") {
       return { code: 0, stdout: "https://github.com/owner/name/issues/42\n", stderr: "" };
@@ -281,6 +285,14 @@ test("createIssue's milestone bootstrap is idempotent: a second call for the sam
   createIssue({ title: "First", body: "body one", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
   createIssue({ title: "Second", body: "body two", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
   assert.equal(apiCreateCalls(exec).length, 1);
+});
+
+test("createIssue finds an existing milestone past the API's first page of 30 and makes no create request", () => {
+  const root = repo();
+  const others = Array.from({ length: 30 }, (_, i) => `other-${i}`);
+  const exec = fakeGhWrite({ milestoneTitles: [...others, "feat"] });
+  createIssue({ title: "First", body: "body", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
+  assert.equal(apiCreateCalls(exec).length, 0);
 });
 
 test("createIssue calls gh issue create with title, body-file, label and milestone; body passed through unmodified", () => {
@@ -460,7 +472,7 @@ test("createIssue links blockers for the issue it created, and a link failure do
   const root = repo();
   const inner = fakeGhWrite();
   const exec = (cmd, args) => {
-    if (args[0] === "api" && args.includes("--jq")) return { code: 1, stdout: "", stderr: "nope" };
+    if (args[0] === "api" && args.includes("--jq") && !args[1].endsWith("/milestones")) return { code: 1, stdout: "", stderr: "nope" };
     return inner(cmd, args);
   };
   const r = createIssue({ title: "T", body: "## Blocked by\n- Issue #3\n", featureSlug: "feat" }, { mainRoot: root, exec });
