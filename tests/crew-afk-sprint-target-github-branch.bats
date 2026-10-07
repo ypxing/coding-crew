@@ -1,12 +1,13 @@
 #!/usr/bin/env bats
 
 # Tests for issue 09 (github-issue-tracker feature): crew-afk's "Resolving the sprint
-# target" step gains a github-equivalent listing alongside — not replacing — the existing
-# local grep, in each of the four platform SKILL.md launcher bodies.
+# target" step keeps the existing local grep in each of the four platform SKILL.md
+# launcher bodies. Its former `gh issue list` comment was dropped by #331: skills reach
+# the tracker only through the tracker CLI.
 #
 # This is prompt text, not runtime code, so the "unit test" here is a diff-based/content
-# check: the pre-existing local-scan lines must survive byte-for-byte, and a new github
-# branch must sit alongside them, consistently across all four platforms.
+# check: the pre-existing local-scan lines must survive byte-for-byte, consistently across
+# all four platforms, with no direct gh call beside them.
 
 load helpers/render
 
@@ -49,23 +50,11 @@ sprint_target_fence() {
   done
 }
 
-@test "sprint target: each platform gains a github-tracker conditional branch, alongside the local lines" {
+@test "sprint target: the fence carries no direct gh call — skills reach the tracker only through the tracker CLI (#331)" {
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     fence="$(sprint_target_fence "$p")"
-    [[ "$fence" == *"tracker: github"* ]] || {
-      echo "$p: no mention of tracker: github" >&2; return 1; }
-  done
-}
-
-@test "sprint target: each platform's github branch runs the milestone-scoped ready-for-agent listing" {
-  for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
-    fence="$(sprint_target_fence "$p")"
-    [[ "$fence" == *"gh issue list"* ]] || {
-      echo "$p: no gh issue list invocation" >&2; return 1; }
-    [[ "$fence" == *"--milestone"* ]] || {
-      echo "$p: gh issue list is missing --milestone" >&2; return 1; }
-    [[ "$fence" == *"--label ready-for-agent"* ]] || {
-      echo "$p: gh issue list is missing --label ready-for-agent" >&2; return 1; }
+    [[ "$fence" != *"gh issue"* ]] || {
+      echo "$p: sprint-target fence still calls gh directly" >&2; return 1; }
   done
 }
 
