@@ -261,7 +261,7 @@ const OPS = {
     if (!STATUS.test(args.status)) throw new UsageError(`rewrite: invalid --status: ${args.status}`);
     const ref = tracker.validateRef(mainRoot, args._[0], { cwd });
     if (ref === null) throw new UsageError(`rewrite: invalid ref: ${args._[0]}`);
-    const body = readArgFile("rewrite", cwd, args["body-file"]);
+    const body = rewriteBlockedBy(readArgFile("rewrite", cwd, args["body-file"]), new Map(), { knownRef: (m) => tracker.knownBlockerRef?.(m) ?? null });
     const done = tracker.rewriteIssue(mainRoot, ref, { body, status: args.status, featureSlug: args["feature-slug"], exec });
     if (!done) return EXIT.NOT_FOUND;
     out(`${ref}\n`);

@@ -360,6 +360,32 @@ test("rewrite (github) given a draft takes its title and Status: lines off the b
   assert.equal(exec.bodies[i], PROMOTED_BODY);
 });
 
+test("rewrite (github) rewrites a Blocked by entry naming a known file <n>-<slug>.md to Issue #<n>", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, "body.md"), `${PROMOTED_BODY}\n## Blocked by\n\n- 7-existing-thing.md\n`);
+  const exec = fakeGh({ "api repos/{owner}/{repo}/milestones?state=all": { stdout: "5\topen\tfeat\n" }, "issue edit 12": {} });
+  const r = await cli(dir, ["rewrite", "12", "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  const [[, i]] = exec.find("issue edit 12");
+  assert.match(exec.bodies[i], /## Blocked by\n\n- Issue #7\n/);
+  assert.doesNotMatch(exec.bodies[i], /7-existing-thing\.md/);
+  const { parseIssue } = await import("../../tracker/github.mjs");
+  assert.deepEqual(parseIssue({ number: 12, title: "Fix", body: exec.bodies[i], state: "OPEN", labels: [] }).blockedBy, [7]);
+});
+
+test("rewrite (local) leaves a Blocked by entry naming a known issue file as that filename", async () => {
+  const dir = root();
+  const open = join(dir, ".scratch/feat/issues/open");
+  mkdirSync(open, { recursive: true });
+  const path = join(open, "02-x.md");
+  writeFileSync(path, "# X\n\nStatus: needs-triage\n\nold\n");
+  const body = "# X\n\nStatus: needs-triage\n\nnew\n\n## Blocked by\n\n- 01-old.md\n";
+  writeFileSync(join(dir, "body.md"), body);
+  const r = await cli(dir, ["rewrite", path, "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readFileSync(path, "utf8"), body.replace("needs-triage", "ready-for-agent"));
+});
+
 test("rewrite (github) creates the milestone when it is missing", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, "body.md"), "b\n");
