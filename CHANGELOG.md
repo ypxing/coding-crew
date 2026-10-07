@@ -6,6 +6,11 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker: under `tracker: github`, `publish-issues` rewrites a draft's `## Blocked by` entry naming a `known` file
+  `<n>-<slug>.md` to `Issue #<n>`, so the published issue's blocker is read and linked natively (it was left as the
+  filename, which github never parses). skills: the `tracker-configuration` fragment's lookup prints the CLI's
+  absolute path and says to write it in place of `$TRACKER` in every op, since a variable set in one shell is gone in
+  the next (#333).
 - skills: `to-issues`, `to-prd`, `crew-address-findings`, `upgrade-deps` and `solve-issue` reach the tracker only
   through the tracker CLI — no `gh` command and no per-tracker branch is left in any of them. The shared
   `tracker-configuration` fragment (now in `solve-issue` too) checks `node --version` first, names

@@ -51,6 +51,33 @@ tracker_section() {
   done
 }
 
+@test "the tracker-configuration fragment makes every op self-contained: the lookup prints an absolute path that replaces \$TRACKER, for every platform" {
+  local skill p f section
+  for skill in "${TRACKER_SKILLS[@]}"; do
+    for p in "${PLATFORMS[@]}"; do
+      f=$(rendered_skill "$skill" "$p")
+      section=$(tracker_section "$f")
+      # The lookup prints the path it resolved, so a later shell can use it.
+      grep -qF 'echo "$TRACKER"' <<<"$section" || { echo "$skill/$p: lookup prints no path" >&2; return 1; }
+      # Every `node "$TRACKER" <op>` runs with that absolute path in place of $TRACKER, since a
+      # variable set in one shell is gone in the next.
+      grep -qF 'fresh shell' <<<"$section" || { echo "$skill/$p: no fresh-shell warning" >&2; return 1; }
+      grep -qF 'write the absolute path it printed in place of `$TRACKER`' <<<"$section" ||
+        { echo "$skill/$p: no substitution instruction" >&2; return 1; }
+    done
+  done
+  # The instruction's lookup, run in its own shell, resolves to a CLI that exists.
+  local repo out
+  repo=$(mktemp -d "$BATS_TEST_TMPDIR/repo.XXXXXX")
+  git -C "$repo" init -q
+  mkdir -p "$repo/.coding-crew/tracker"
+  cp "$REPO_ROOT/tracker/"*.mjs "$repo/.coding-crew/tracker/"
+  f=$(rendered_skill solve-issue claude)
+  out=$(cd "$repo" && bash -c "$(tracker_section "$f" | awk '/^```bash$/{n++;f=(n==2);next} /^```$/{f=0} f' | grep -v '^node "\$TRACKER"')")
+  [ "$out" = "$(cd "$repo" && pwd -P)/.coding-crew/tracker/cli.mjs" ] || [ "$out" = "$repo/.coding-crew/tracker/cli.mjs" ]
+  [ -f "$out" ]
+}
+
 @test "solve-issue includes the fragment and fetches and marks done through the CLI" {
   grep -qF '{{FRAGMENT:tracker-configuration}}' "$REPO_ROOT/skills/solve-issue/SKILL.md"
   local p f
