@@ -66,7 +66,7 @@ gh issue pin <number> [--repo owner/name] || true
 gh issue create [--repo owner/name] --title "<title>" --body-file <body-file> \
   --label <status> --milestone <feature-slug>
 # Then mirror its `## Blocked by` as native GitHub dependencies (best-effort; never fails publish):
-node "$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/lib/trackers/github.mjs" link-blockers --issue <number-just-created> [--main-root <dir>]
+node "$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs" link-blockers --issue <number-just-created> [--main-root <dir>]
 ```
 
 After each `gh issue create` of a work issue, to-issues runs `link-blockers` with the new issue's

@@ -15,6 +15,12 @@
         "source": "scripts/tracker/tracker-config.sh",
         "dest": ".coding-crew/scripts/tracker-config.sh"
       }
+    },
+    "trees": {
+      "tracker": {
+        "source": "tracker",
+        "dest": ".coding-crew/tracker"
+      }
     }
   },
   "retired-agents": {
@@ -37,7 +43,7 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.26.0",
+      "version": "2.27.0",
       "source-dir": "crew-afk",
       "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
       "assets": {
