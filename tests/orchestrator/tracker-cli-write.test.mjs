@@ -317,6 +317,16 @@ test("rewrite (github) replaces the body as written, swaps needs-triage for the 
   assert.equal(exec.bodies[i], PROMOTED_BODY);
 });
 
+test("rewrite (github) given a draft takes its title and Status: lines off the body, Source: kept", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, "body.md"), `# Fix the thing\n\nStatus: ready-for-agent\n\n${PROMOTED_BODY}`);
+  const exec = fakeGh({ "api repos/{owner}/{repo}/milestones?state=all": { stdout: "5\topen\tfeat\n" }, "issue edit 12": {} });
+  const r = await cli(dir, ["rewrite", "12", "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"], exec);
+  assert.equal(r.code, 0, r.stderr);
+  const [[, i]] = exec.find("issue edit 12");
+  assert.equal(exec.bodies[i], PROMOTED_BODY);
+});
+
 test("rewrite (github) creates the milestone when it is missing", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, "body.md"), "b\n");
