@@ -17,7 +17,7 @@
  * filenames, the `Status:` line, and directory scans.
  */
 
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
@@ -263,4 +263,122 @@ export function readPrd(mainRoot, { featureSlug } = {}) {
 /** The file `known` writes for one issue: the issue file itself, under its own name (the lint ref). */
 export function knownFile(issue) {
   return { name: issue.file, text: issue.text };
+}
+
+/** The `.md` files in a feature's `issues/<state>/`, sorted. */
+function stateFiles(mainRoot, featureSlug, state) {
+  const d = join(mainRoot, ".scratch", featureSlug, "issues", state);
+  return existsSync(d) ? readdirSync(d).filter((f) => f.endsWith(".md")).sort() : [];
+}
+
+/**
+ * `publish-issues`' re-run rule: a feature with done issues is not re-published over (exit 4 —
+ * reconcile by hand), and open issues are only overwritten with `--replace` (exit 5). Null when
+ * publishing may go ahead.
+ */
+export function publishGuard(mainRoot, { featureSlug, replace = false } = {}) {
+  const issues = `.scratch/${featureSlug}/issues`;
+  if (stateFiles(mainRoot, featureSlug, "done").length) {
+    return {
+      code: 4,
+      message: `publish-issues: ${issues}/done/ has issues — some are already completed. Reconcile by hand (delete or archive ${issues}/) before re-running.`,
+    };
+  }
+  const open = stateFiles(mainRoot, featureSlug, "open");
+  if (open.length && !replace) {
+    return {
+      code: 5,
+      message: `publish-issues: ${issues}/open/ already has issues, which publishing would overwrite: ${open.join(", ")}. Pass --replace to overwrite them.`,
+    };
+  }
+  return null;
+}
+
+/**
+ * `publish-issues`' local side: each draft is written as-is (its `## Blocked by` already rewritten
+ * to final filenames) to `issues/open/NN-<slug>.md`, numbered from one past the feature's highest
+ * existing issue number in draft order; `--replace` first removes the open issues; `finish` writes
+ * `issues-deps.json` naming the final filenames.
+ */
+export function beginPublish(mainRoot, { featureSlug, drafts, replace = false } = {}) {
+  const issues = join(mainRoot, ".scratch", featureSlug, "issues");
+  const openDir = join(issues, "open");
+  const existing = [...stateFiles(mainRoot, featureSlug, "open"), ...stateFiles(mainRoot, featureSlug, "done")];
+  const base = Math.max(0, ...existing.map((f) => Number(issueNumber(f) ?? 0)));
+  const ordered = [...drafts].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+  const width = Math.max(2, String(base + ordered.length).length);
+  const names = new Map(ordered.map((f, i) => [f, `${String(base + i + 1).padStart(width, "0")}-${f.replace(/^[0-9]+-/, "")}`]));
+  if (replace) for (const f of stateFiles(mainRoot, featureSlug, "open")) rmSync(join(openDir, f));
+  mkdirSync(openDir, { recursive: true });
+  return {
+    create(draft) {
+      const name = names.get(draft.file);
+      const path = join(openDir, name);
+      writeFileSync(path, draft.text);
+      return { ref: path, blockerRef: name };
+    },
+    finish({ deps }) {
+      writeFileSync(join(issues, "issues-deps.json"), `${JSON.stringify(deps, null, 2)}\n`);
+    },
+  };
+}
+
+/** Write the feature's PRD to `.scratch/<slug>/PRD.md` (the title is the body's own heading); returns that path. */
+export function publishPrd(mainRoot, { featureSlug, body } = {}) {
+  const path = join(mainRoot, ".scratch", featureSlug, "PRD.md");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, body);
+  return path;
+}
+
+/** `text` with its `Status:` line set to `status`: the first one replaced, else one added under the title (or on top). */
+function withStatus(text, status) {
+  if (/^Status:.*$/m.test(text)) return text.replace(/^Status:.*$/m, `Status: ${status}`);
+  const title = /^#[ \t]+.*(?:\r?\n|$)/.exec(text);
+  if (title) return `${title[0].replace(/\r?\n?$/, "\n")}\nStatus: ${status}\n\n${text.slice(title[0].length).replace(/^(?:[ \t]*\r?\n)+/, "")}`;
+  return `Status: ${status}\n\n${text}`;
+}
+
+/**
+ * Rewrite a single-slice source issue in place: the file at `path` becomes `body` with its
+ * `Status:` set to `status`; everything else, a `Source:` line included, stays as written.
+ * Null when there is no such file.
+ */
+export function rewriteIssue(mainRoot, path, { body, status } = {}) {
+  if (!existsSync(path) || !statSync(path).isFile()) return null;
+  writeFileSync(path, withStatus(body, status));
+  return true;
+}
+
+/**
+ * What `mark-done` closes at `path`: its name, its sprint dir (`.scratch/<slug>`, where the
+ * `.orchestrated` marker lives), and whether it is already in `done/` (`alreadyDone`, a message)
+ * or exists nowhere (`missing`).
+ */
+export function doneTarget(mainRoot, path) {
+  const name = basename(path);
+  const stateDir = dirname(path);
+  const doneDir = join(dirname(stateDir), "done");
+  const sprintDir = dirname(dirname(stateDir));
+  if (basename(stateDir) === "done" && existsSync(path)) return { name, sprintDir, alreadyDone: `${name} already closed (${path})` };
+  if (!existsSync(path)) {
+    const done = join(doneDir, name);
+    return existsSync(done) ? { name, sprintDir, alreadyDone: `${name} already closed (${done})` } : { name, sprintDir, missing: true };
+  }
+  return { name, sprintDir };
+}
+
+/** The issue file's text, read now, for `mark-done`'s criteria guard. */
+export function readIssueBody(mainRoot, path) {
+  return readFileSync(path, "utf8");
+}
+
+/** Close the issue file: every `Status:` line becomes `Status: done`, then it moves to the sibling `done/`. */
+export function markDone(mainRoot, path) {
+  const doneDir = join(dirname(dirname(path)), "done");
+  const dest = join(doneDir, basename(path));
+  writeFileSync(path, readFileSync(path, "utf8").replace(/^Status: *.*$/gm, "Status: done"));
+  mkdirSync(doneDir, { recursive: true });
+  renameSync(path, dest);
+  return `DONE: ${basename(path)} → ${dest}`;
 }
