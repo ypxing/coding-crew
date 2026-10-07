@@ -37,9 +37,9 @@
   },
   "skills": {
     "crew-afk": {
-      "version": "2.25.1",
+      "version": "2.25.2",
       "source-dir": "crew-afk",
-      "description": "Orchestrator that dispatches each ready-for-agent issue to a coder CLI process in its own worktree, reviews and merges every branch, turns the feature review's most severe Actionable findings (at most 8) into one fix issue for a second fix phase, and loops until all ready-for-agent issues are done.",
+      "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
       "assets": {
         "source": "orchestrator",
         "dest": ".coding-crew/crew-afk"
@@ -70,9 +70,9 @@
       "source": "mattpocock/skills"
     },
     "dep-install": {
-      "version": "1.5.3",
+      "version": "1.5.4",
       "source-dir": "dep-install",
-      "description": "Detect install mode (host or docker) and install project dependencies once. Shared by solve-issue, crew-address-findings, and address-pr-comments.",
+      "description": "Install the project's dependencies once, on the host or in docker.",
       "assets": {
         "source": "skills/dep-install/scripts",
         "dest": ".coding-crew/dep-install/scripts"
@@ -171,17 +171,17 @@
       ]
     },
     "upgrade-deps": {
-      "version": "1.2.1",
+      "version": "1.2.2",
       "source-dir": "upgrade-deps",
-      "description": "Audit outdated npm/yarn/pnpm dependencies for exploitability, transitive conflicts, and usage, then publish issues (batched safe bumps, one per risky package or coupled group) with a safety checklist.",
+      "description": "Audit outdated npm/yarn/pnpm dependencies and plan safe upgrades as issues.",
       "deps": [
         "dep-install"
       ]
     },
     "configure-tracker": {
-      "version": "1.3.4",
+      "version": "1.3.5",
       "source-dir": "configure-tracker",
-      "description": "Select and install an issue tracker template. Presents a numbered menu of templates from docs/templates/trackers/, then writes the chosen template to the project-level config path.",
+      "description": "Choose where the project's issues live: local markdown files or GitHub Issues.",
       "scripts": [
         "configure-tracker-auto.sh"
       ]
