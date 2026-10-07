@@ -110,6 +110,12 @@ pass_line() { grep -nF -- "$(head -1 "$PASS")" "$1" | head -1 | cut -d: -f1; }
   [ "$pass" -lt "$pub" ]
 }
 
+@test "to-prd fixes a corrected fact's decisions in the written PRD before publishing, and reports the corrections to the user" {
+  local f
+  f="$(rendered_skill to-prd claude)"
+  grep -qF 'in `to-prd`, revise each such decision in the already-written PRD before publishing it, and report the corrections to the user' "$f"
+}
+
 @test "the pass re-runs the source behind each cited fact and reports corrections as said X → actually Y" {
   for claim in 'count' '`path:line`' 'list' '"nothing else reads/does X"' 're-run'; do
     grep -qF -- "$claim" "$PASS" || { echo "pass lacks: $claim" >&2; return 1; }
