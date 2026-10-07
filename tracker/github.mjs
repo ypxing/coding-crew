@@ -32,7 +32,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readTrackerConfig } from "../tracker-config.mjs";
+import { readTrackerConfig } from "./tracker-config.mjs";
 import {
   criteriaSection,
   isSourceGuarded,

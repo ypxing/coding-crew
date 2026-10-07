@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readTrackerConfig } from "./tracker-config.mjs";
+import { readTrackerConfig } from "../../tracker/tracker-config.mjs";
 
 const GITHUB_CLI = fileURLToPath(new URL("./trackers/github.mjs", import.meta.url));
 const cache = new WeakMap();

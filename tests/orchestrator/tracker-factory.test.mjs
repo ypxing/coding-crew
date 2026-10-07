@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { getTracker } from "../../orchestrator/lib/tracker.mjs";
-import * as local from "../../orchestrator/lib/trackers/local.mjs";
-import * as github from "../../orchestrator/lib/trackers/github.mjs";
+import * as local from "../../tracker/local.mjs";
+import * as github from "../../tracker/github.mjs";
 
 function writeTrackerConfig(root, contents) {
   const dir = join(root, ".coding-crew", "docs");

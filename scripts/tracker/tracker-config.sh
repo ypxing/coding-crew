@@ -21,7 +21,7 @@
 #   Or run it directly: tracker-config.sh [<main-root>]
 #     Prints "tracker=<value>" and "repo=<value>" to stdout.
 #
-# This is the bash equivalent of orchestrator/lib/tracker-config.mjs's
+# This is the bash equivalent of tracker/tracker-config.mjs's
 # readTrackerConfig(mainRoot) — keep the two in sync.
 
 read_tracker_config() {

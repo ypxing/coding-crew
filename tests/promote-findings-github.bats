@@ -30,7 +30,7 @@ setup() {
   export CREW_TRACKER_CONFIG="$REPO_ROOT/scripts/tracker/tracker-config.sh"
   # _defer_github's github path shells out to github.mjs's own create-issue CLI — point it
   # at the repo's own copy too, same reasoning.
-  export CREW_GITHUB_TRACKER_CLI="$REPO_ROOT/orchestrator/lib/trackers/github.mjs"
+  export CREW_GITHUB_TRACKER_CLI="$REPO_ROOT/tracker/github.mjs"
 
   mkdir -p .scratch/feat/issues/open .scratch/feat/reviews
   export REPORT=.scratch/feat/reviews/sprint-review-1.md
@@ -598,9 +598,9 @@ write_feature_review() {
   no_local_paths
 }
 
-# The depth bound is read by the trackers' isSourceGuarded (orchestrator/lib/trackers/body-format.mjs).
+# The depth bound is read by the trackers' isSourceGuarded (tracker/body-format.mjs).
 source_guarded() {
-  node --input-type=module -e "import { readFileSync } from 'node:fs'; import { isSourceGuarded } from '$REPO_ROOT/orchestrator/lib/trackers/body-format.mjs'; process.exit(isSourceGuarded(readFileSync('$1', 'utf8')) ? 0 : 1)"
+  node --input-type=module -e "import { readFileSync } from 'node:fs'; import { isSourceGuarded } from '$REPO_ROOT/tracker/body-format.mjs'; process.exit(isSourceGuarded(readFileSync('$1', 'utf8')) ? 0 : 1)"
 }
 
 @test "every github body promote-findings.sh writes is source-guarded" {

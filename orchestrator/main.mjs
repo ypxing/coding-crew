@@ -116,7 +116,7 @@ import { skillDirCandidates } from "./lib/skill-dirs.mjs";
 import { acquireLease, releaseLease } from "./lib/lease.mjs";
 import { sweepInProgress } from "./lib/labels.mjs";
 import { closeShipped } from "./lib/shipped.mjs";
-import { readTrackerConfig } from "./lib/tracker-config.mjs";
+import { readTrackerConfig } from "../tracker/tracker-config.mjs";
 import {
   baselineFailureMessage,
   dirtyTrackedFiles,

@@ -63,7 +63,7 @@ scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-sm
 The design standard (`skills/_shared/fragments/design-standard.md`, criterion 3) counts these as real axes, so a decision that varies along one belongs behind one abstraction even with a single implementation today:
 
 - platforms — `orchestrator/platforms.json` (claude, copilot, pi, codex)
-- trackers — local, github (`orchestrator/lib/trackers/`, `.coding-crew/docs/issue-tracker.md`)
+- trackers — local, github (`tracker/`, `.coding-crew/docs/issue-tracker.md`)
 - crew-afk roles — `orchestrator/roles/` (`ROLE_AGENTS` in `orchestrator/lib/adapters/render.mjs`)
 - dependency-install ecosystems — `dep-install`'s detection and install scripts
 - pane hosts — `orchestrator/lib/pane-host/` (herdr, orca)

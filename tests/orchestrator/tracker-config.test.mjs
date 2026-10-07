@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { readTrackerConfig } from "../../orchestrator/lib/tracker-config.mjs";
+import { readTrackerConfig } from "../../tracker/tracker-config.mjs";
 
 function repo() {
   return mkdtempSync(join(tmpdir(), "crew-tracker-config-"));
