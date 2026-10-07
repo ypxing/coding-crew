@@ -170,6 +170,42 @@ For developers who have installed the skills into their project and want to use 
 
 ### Install
 
+#### One-line install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash                             # every platform, into $HOME
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude             # one platform
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- claude --project   # this project only
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/bootstrap.sh | bash -s -- --update           # update an install
+curl -fsSL https://raw.githubusercontent.com/ypxing/coding-crew/main/unbootstrap.sh | bash                           # uninstall
+```
+
+`bootstrap.sh` takes the same arguments as `install.sh`. Needs `bash` 4+, `git`, `jq`, `curl` and `tar` (on Windows, use WSL2).
+
+| Argument                              | Effect                                              |
+| ------------------------------------- | --------------------------------------------------- |
+| `claude` / `copilot` / `pi` / `codex` | Install for that platform only (default: all)       |
+| `--project`                           | Install into the current project instead of `$HOME` |
+| `--update`                            | Apply updates to an existing install                |
+
+Where files land:
+
+| Platform    | Per project       | User level (honors)                    |
+| ----------- | ----------------- | -------------------------------------- |
+| Claude Code | `.claude/`        | `~/.claude/` (`CLAUDE_CONFIG_DIR`)     |
+| Copilot     | `.github/skills/` | `~/.copilot/` (`COPILOT_HOME`)         |
+| pi          | `.pi/`            | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`) |
+| Codex       | `.agents/skills/` | `~/.agents/skills/` (`CODEX_HOME`)     |
+
+Runtime requirements:
+
+- **Node.js on `PATH`** for the skills that touch the issue tracker — `/to-issues`, `/to-prd`, `/solve-issue`,
+  `/crew-address-findings`, `/upgrade-deps` and `/crew-afk`. They reach the tracker (local or GitHub) through
+  the tracker CLI, `.coding-crew/tracker/cli.mjs`, which every install ships.
+- **The platform's CLI on `PATH`** for `/crew-afk` (`claude`, `copilot`, `codex` or `pi`) — each coder runs
+  as its own process. `crew-afk doctor` reports anything missing.
+- **Codex and pi:** local CLI only. Hosted surfaces (Codex in ChatGPT, Codex cloud) can't run a sprint.
+
 #### Prerequisites
 
 ```bash
