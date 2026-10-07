@@ -60,7 +60,7 @@ scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-sm
 
 ## Axes of variation
 
-The design standard (`skills/_shared/fragments/design-standard.md`, criterion 2) counts these as real axes, so a decision that varies along one belongs behind one abstraction even with a single implementation today:
+The design standard (`skills/_shared/fragments/design-standard.md`, criterion 3) counts these as real axes, so a decision that varies along one belongs behind one abstraction even with a single implementation today:
 
 - platforms — `orchestrator/platforms.json` (claude, copilot, pi, codex)
 - trackers — local, github (`orchestrator/lib/trackers/`, `.coding-crew/docs/issue-tracker.md`)

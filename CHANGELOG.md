@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `crew-grill`, `crew-brainstorm`, `to-prd`: a shared verification pass runs before the summary or publish — it re-runs the
+  source behind every cited count, `path:line`, list and "nothing else reads/does X" claim, checks each decision for
+  correctness and the set for coherence, and reports each correction as "said X → actually Y (source)". The design standard
+  gains **Correct** as criterion 2 (the rest shift to 3–5; the reviewer applies 3–5 as LOW design-only findings and reports a
+  criterion-2 failure at its real severity). `to-issues` estimates each slice's peak coder context and flags slices over
+  ~200k tokens in its quiz (#324).
 - tests: the dev-commands.json `test` and CLAUDE.md run the suite with `scripts/ci-run-bats.sh tests/*.bats` (one bats
   process per file, CPU-count at a time, no GNU parallel), ~6x faster than serial `bats`; its log dir is now optional
   (`--log-dir`). The `ORCHESTRATOR_PREFETCH` node-suite prefetch, which only sped up a serial run, is removed.

@@ -96,10 +96,12 @@ If the user's invocation included "with docs" or "with documents", also invoke t
 
 Before the summary, run a **subtraction pass** over what the design contains: for each decision and component, name the part of the measured problem, or the structural property of what is built now (see the Root section), that breaks if it is removed. "Another component needs it" is not an answer — follow the chain to its root and judge the root against the problem size; when a chain's root only saves what the do-least option covers cheaply, show the chain with its total price and ask once whether to keep it, even if the user approved the root earlier. "Nothing breaks" is a claim of fact: check it like one (Gate 1) and cite it, or keep the item. If nothing breaks, propose cutting it. Show the cut list in the summary, so the user can restore anything they want back; what stays cut goes to the PRD's Out of Scope, with the reason. Alternatives never proposed are not cuts — they go straight to Out of Scope.
 
+{{FRAGMENT:verification-pass}}
+
 Then:
 
 1. Summarize all implementation decisions (not glossary terms) including the rationale for each — why that option was chosen over alternatives. Include the Silent and Notify decisions you made on the user's behalf, one compact line each, tagged `(auto)`. This is the audit point for everything you did not ask about.
-2. List the **facts you established** at Gate 1 that the design now rests on, each with its citation (`path:line`, doc, or spec). These cost real research and an implementing agent would otherwise re-derive them — or worse, re-ask them. A fact the user contradicts here is cheaper to fix now than a decision built on it later.
+2. List the **facts you established** at Gate 1 that the design now rests on — the ones the verification pass re-checked — each with its citation (`path:line`, doc, or spec). These cost real research and an implementing agent would otherwise re-derive them — or worse, re-ask them. A fact the user contradicts here is cheaper to fix now than a decision built on it later.
 3. Ask once: **"Ready to write the PRD?"** If yes, continue to Phase 2. If no, stop.
 
 ## Phase 2 — PRD

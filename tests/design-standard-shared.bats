@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# One design standard — four criteria in priority order, each with its failure signals, and the
+# One design standard — five criteria in priority order, each with its failure signals, and the
 # guard against cutting needed structure — rendered into every skill that decides a design. It
 # lives once, in skills/_shared/fragments/design-standard.md; these tests read the *rendered*
 # output, so crew-grill and crew-brainstorm can never drift into two standards again (their
@@ -33,15 +33,23 @@ assert_standard_absent_from() {
   done < "$STANDARD"
 }
 
-@test "the standard names its four criteria in priority order, with correctness after the first" {
-  local nec cor reu few say
-  nec=$(grep -n '\*\*Necessary\*\*' "$STANDARD" | head -1 | cut -d: -f1)
-  reu=$(grep -n '\*\*Reusable along real axes\*\*' "$STANDARD" | head -1 | cut -d: -f1)
-  few=$(grep -n '\*\*Fewest moving parts\*\*' "$STANDARD" | head -1 | cut -d: -f1)
-  say=$(grep -n '\*\*Says what it does\*\*' "$STANDARD" | head -1 | cut -d: -f1)
-  [ -n "$nec" ] && [ -n "$reu" ] && [ -n "$few" ] && [ -n "$say" ]
-  [ "$nec" -lt "$reu" ] && [ "$reu" -lt "$few" ] && [ "$few" -lt "$say" ]
+@test "the standard numbers its five criteria in priority order, with Correct as 2" {
+  grep -qE '^1\. \*\*Necessary\*\*' "$STANDARD"
+  grep -qE '^2\. \*\*Correct\*\*' "$STANDARD"
+  grep -qE '^3\. \*\*Reusable along real axes\*\*' "$STANDARD"
+  grep -qE '^4\. \*\*Fewest moving parts\*\*' "$STANDARD"
+  grep -qE '^5\. \*\*Says what it does\*\*' "$STANDARD"
+  grep -qF 'against five criteria' "$STANDARD"
+  ! grep -qF 'four criteria' "$STANDARD"
   grep -qF 'necessary > correct > reusable along real axes > fewest moving parts > says what it does' "$STANDARD"
+}
+
+@test "criterion 2 says what Correct means and names its failure signals" {
+  local c2; c2=$(grep -E '^2\. \*\*Correct\*\*' "$STANDARD")
+  for part in 'does what it claims against the real code' 'rationale holds' 'rationale the code contradicts' \
+    'cannot reach its target case' 'signal, retry, concurrent run, early return'; do
+    grep -qF -- "$part" <<<"$c2" || { echo "criterion 2 lacks: $part" >&2; return 1; }
+  done
 }
 
 @test "each criterion names the evidence that shows it failing" {
@@ -57,7 +65,7 @@ assert_standard_absent_from() {
   grep -qi 'never cut' "$STANDARD"
 }
 
-@test "criterion 2 takes its axes from the project's CLAUDE.md and falls back to real callers now" {
+@test "criterion 3 takes its axes from the project's CLAUDE.md and falls back to real callers now" {
   grep -qF "axes of variation the project's \`CLAUDE.md\` names" "$STANDARD"
   grep -qF 'two or more real callers or implementations now' "$STANDARD"
 }
@@ -115,12 +123,24 @@ assert_standard_absent_from() {
   grep -q '^{{FRAGMENT:design-standard}}$' "$REPO_ROOT/orchestrator/roles/reviewer.md"
 }
 
-@test "the reviewer applies criteria 2-4, at LOW with file:line and a snippet, never as an unmet criterion" {
+@test "the reviewer applies criteria 3-5, at LOW with file:line and a snippet, never as an unmet criterion" {
   local f; f="$(role_prompt reviewer claude)"
-  grep -qF 'criteria 2–4' "$f"
+  grep -qF 'criteria 3–5' "$f"
+  ! grep -qF 'criteria 2–4' "$f"
   grep -qF 'design-only finding' "$f"
   grep -qF 'at `LOW`, only with its exact `file:line` and a snippet' "$f"
   grep -qF 'never makes an acceptance criterion `unmet`' "$f"
+}
+
+@test "the reviewer reports a criterion-2 failure at its real severity, never with the design-only prefix" {
+  local s; s=$(tr '\n' ' ' <"$(role_prompt reviewer claude)" | grep -oE 'A criterion-2 failure[^.]*\.[^.]*\.')
+  grep -qF 'real severity' <<<"$s"
+  grep -qF 'Steps 2–3' <<<"$s"
+  grep -qF 'never with the `Design standard (criterion` prefix' <<<"$s"
+}
+
+@test "this repo's CLAUDE.md cites the reusability criterion as criterion 3" {
+  grep -qF '(`skills/_shared/fragments/design-standard.md`, criterion 3) counts these as real axes' "$REPO_ROOT/CLAUDE.md"
 }
 
 @test "to-issues renders the standard, for every platform" {
