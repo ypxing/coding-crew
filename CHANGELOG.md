@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tests: the dev-commands.json `test` and CLAUDE.md run the suite with `scripts/ci-run-bats.sh tests/*.bats` (one bats
+  process per file, CPU-count at a time, no GNU parallel), ~6x faster than serial `bats`; its log dir is now optional
+  (`--log-dir`). The `ORCHESTRATOR_PREFETCH` node-suite prefetch, which only sped up a serial run, is removed.
 - `crew-afk`: platform facts come only from `orchestrator/platforms.json` and the adapters — each adapter has one `build()`,
   a `coAuthor` trailer and `policyArgs` for the one `ROLE_POLICY`; resume, `afk.limits` and the model-tier warning follow the
   runtime adapter's capabilities instead of `"claude"` checks (an ignored cap now says "not supported by <runtime>"). `--platform`

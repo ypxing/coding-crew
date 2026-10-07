@@ -21,10 +21,6 @@ orchestrator_unit_tests() {
 run_node_tests() {
   command -v node >/dev/null 2>&1 || skip "node not installed"
   cd "$REPO_ROOT"
-  if [ "$#" -eq 1 ] && [ -z "${CI:-}" ] && [ "${ORCHESTRATOR_PREFETCH:-}" = 1 ] && [ -n "${BATS_RUN_TMPDIR:-}" ]; then
-    _run_node_test_prefetched "$1"
-    return
-  fi
   if [ "$*" = @unit ]; then
     local files=() f
     while IFS= read -r f; do files+=("$f"); done < <(orchestrator_unit_tests)
@@ -33,99 +29,6 @@ run_node_tests() {
   run node --test "$@"
   if [ "$status" -ne 0 ]; then
     echo "$output" >&3
-  fi
-  [ "$status" -eq 0 ]
-}
-
-# Locally bats runs files one after another, and the single-file wrappers are 245 s of the run.
-# setup_suite.bash (or else the first wrapper to ask) starts every wrapper's file at once in the
-# background (node --test per file, xargs -P); each wrapper then waits for its own result. BATS_RUN_TMPDIR is shared by the
-# whole bats invocation, so the cache dies with it. Off in CI (CI is set), where the shard split
-# runs each wrapper in a process of its own, and opt-in: only with ORCHESTRATOR_PREFETCH=1 (the
-# dev-commands.json `test`), so a run of one wrapper starts only that wrapper's file. The background
-# job stops, its node processes with it, once the bats run that started it is gone.
-
-# _kill_tree <pid> — SIGKILL a process and every descendant.
-_kill_tree() {
-  local c
-  kill -STOP "$1" 2>/dev/null || true # freeze it so it cannot start a replacement meanwhile
-  for c in $(pgrep -P "$1" 2>/dev/null); do _kill_tree "$c"; done
-  kill -9 "$1" 2>/dev/null || true
-}
-
-# _bats_main_pid — the bats process this test runs under (the nearest ancestor named bats), else empty.
-_bats_main_pid() {
-  local p=$$ args
-  while [ -n "$p" ] && [ "$p" -gt 1 ]; do
-    args=$(ps -o args= -p "$p" 2>/dev/null)
-    case "$args" in
-      bats|bats\ *|*/bats|*/bats\ *) echo "$p"; return ;;
-    esac
-    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
-  done
-}
-# orchestrator_prefetch_start — start the prefetch once per bats run (a no-op after the first call).
-orchestrator_prefetch_start() {
-  local dir="$BATS_RUN_TMPDIR/orchestrator-prefetch"
-  if mkdir "$dir" 2>/dev/null; then
-    mkdir "$dir/out"
-    local jobs
-    jobs=$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-    { ( cd "$REPO_ROOT" && grep -h '^  run_node_tests ' tests/orchestrator-*.bats tests/orchestrator.bats | awk '{print $2}' ) 2>/dev/null || true; } > "$dir/list.tmp"
-    orchestrator_unit_tests > "$dir/unit"
-    mv "$dir/list.tmp" "$dir/list"
-    local owner
-    owner=$(_bats_main_pid)
-    (
-      cd "$REPO_ROOT"
-      # @unit is orchestrator.bats' unit set, run as the one node --test it is there.
-      DIR="$dir" xargs -P "$jobs" -I{} bash -c 'k=$(printf %s "$1" | tr / _); if [ "$1" = @unit ]; then mapfile -t f < "$DIR/unit"; else f=("$1"); fi; node --test "${f[@]}" > "$DIR/out/$k.log" 2>&1; echo $? > "$DIR/out/$k.rc.tmp"; mv "$DIR/out/$k.rc.tmp" "$DIR/out/$k.rc"' _ {} < "$dir/list" &
-      runner=$!
-      # Watchdog: the bats run is over when its process is gone or its tmpdir has been removed.
-      while kill -0 "$runner" 2>/dev/null; do
-        if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then _kill_tree "$runner"; break; fi
-        if [ ! -d "$BATS_RUN_TMPDIR" ]; then _kill_tree "$runner"; break; fi
-        sleep 0.5
-      done
-      wait "$runner" 2>/dev/null
-      touch "$dir/done" 2>/dev/null
-    ) >/dev/null 2>&1 </dev/null &
-    echo $! > "$dir/pid"
-    disown 2>/dev/null || true
-  fi
-}
-
-_run_node_test_prefetched() {
-  local file="$1" dir="$BATS_RUN_TMPDIR/orchestrator-prefetch" key
-  key=$(printf '%s' "$file" | tr '/' '_')
-  orchestrator_prefetch_start
-  # The prefetch list is written by whichever caller started it; give it a moment to appear.
-  local i=0
-  while [ ! -f "$dir/list" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
-  # Bounded wait: a file the prefetch never started, or a prefetch job that is gone (or past half
-  # an hour) without a result for it, runs directly instead of waiting forever.
-  if [ -f "$dir/list" ] && grep -qxF -- "$file" "$dir/list"; then
-    local pid waited=0
-    pid=$(cat "$dir/pid" 2>/dev/null)
-    while [ ! -f "$dir/out/$key.rc" ] && [ ! -f "$dir/done" ] && [ "$waited" -lt 3600 ] \
-      && { [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null; }; do
-      sleep 0.5; waited=$((waited + 1))
-    done
-  fi
-  if [ ! -f "$dir/out/$key.rc" ]; then
-    local direct=("$file")
-    [ "$file" = @unit ] && mapfile -t direct < <(orchestrator_unit_tests)
-    run node --test "${direct[@]}"
-    if [ "$status" -ne 0 ]; then
-      echo "node --test $file failed (no prefetched result)" >&3
-      echo "$output" >&3
-    fi
-    [ "$status" -eq 0 ]
-    return
-  fi
-  status=$(cat "$dir/out/$key.rc")
-  if [ "$status" -ne 0 ]; then
-    cat "$dir/out/$key.log" >&3
   fi
   [ "$status" -eq 0 ]
 }

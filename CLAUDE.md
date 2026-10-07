@@ -16,7 +16,7 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-addr
 - `orchestrator/platforms.json` — the platform list and where each platform keeps skills (`projectSkills`, `userSkills`, `configDir`, `configDirEnv`); a skill installs to `<projectSkills|userSkills>/<skill>`.
 - `registry.json` — source of truth for skills (`version`, `deps`, `assets`), `retired-agents`, and doc templates.
 - `install.sh` / `uninstall.sh` — installer; both source `scripts/lib/platforms.sh`, which reads the platform list and skill destinations from `orchestrator/platforms.json`.
-- `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`) and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `render-skill.sh`, `cut-release.sh`, `sync-pr-with-main.sh`, `smoke-sprint.sh` + `smoke-sprint/`, `eval-design-skills.mjs` + `eval-design-skills/`, `eval-reviewer-misses.mjs` + `eval-reviewer-misses/`). Skill-local runtime scripts live with their skill (e.g. `skills/crew-afk/scripts/`).
+- `scripts/` — shared build-time scripts copied into skills (`skills/skill-utils/git-workflow/`) and maintainer-only scripts that ship to no consumer (`ci-test-shard.sh`, `ci-run-bats.sh`, `render-skill.sh`, `cut-release.sh`, `sync-pr-with-main.sh`, `smoke-sprint.sh` + `smoke-sprint/`, `eval-design-skills.mjs` + `eval-design-skills/`, `eval-reviewer-misses.mjs` + `eval-reviewer-misses/`). Skill-local runtime scripts live with their skill (e.g. `skills/crew-afk/scripts/`).
 - `tests/` — bats tests, run against **rendered/installed** output via `tests/helpers/render.bash`, not source variants.
 - `docs/` — the dev team guide (`guide.md`) and issue-tracker templates.
 - `.claude/rules/` — detail loaded only when working on matching paths: `crew-afk.md` (orchestrator and crew-afk scripts behaviour, adding a role), `to-issues-linter.md`. Update them alongside the code they describe.
@@ -30,8 +30,8 @@ TARGET_REPO=/tmp/test-repo ./install.sh claude --skill crew-afk
 # Render a skill body without a full install
 bash scripts/render-skill.sh crew-afk codex | less
 
-# Run tests
-bats tests/*.bats
+# Run tests: one bats process per file, CPU-count at a time (plain `bats tests/*.bats` runs files one by one, ~6x slower)
+bash scripts/ci-run-bats.sh tests/*.bats
 
 # After editing crew-grill/crew-brainstorm/to-issues: behavioural A/B (base ref vs worktree), judged blind; costs API money
 node scripts/eval-design-skills.mjs --skill crew-grill --runs 2 --dry-run   # drop --dry-run to run

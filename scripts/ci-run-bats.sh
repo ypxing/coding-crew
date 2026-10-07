@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# ci-run-bats.sh <log-dir> <file>... — run each bats file as its own process, several at
-# once, then print every file's output in the order given and exit non-zero if any failed.
+# ci-run-bats.sh [--log-dir <dir>] <file>... — run each bats file as its own process, several
+# at once, then print every file's output in the order given and exit non-zero if any failed.
+# Without --log-dir the per-file logs go to a temp dir removed on exit. CI and the
+# dev-commands.json `test` both run the suite through it.
 #
 # Why: bats runs one file at a time, and its own --jobs needs GNU parallel, which the
 # Windows runner lacks — so each Windows job used one of its four cores. xargs -P is in
@@ -10,8 +12,17 @@
 # BATS names the bats binary (default: bats); CI_BATS_JOBS the concurrency (default: CPUs).
 set -uo pipefail
 
-[[ $# -ge 2 ]] || { echo "Usage: ci-run-bats.sh <log-dir> <file>..." >&2; exit 2; }
-LOG_DIR="$1"; shift
+usage() { echo "Usage: ci-run-bats.sh [--log-dir <dir>] <file>..." >&2; exit 2; }
+LOG_DIR=""
+if [[ "${1:-}" == --log-dir ]]; then
+  [[ $# -ge 2 ]] || usage
+  LOG_DIR="$2"; shift 2
+fi
+[[ $# -ge 1 ]] || usage
+if [[ -z "$LOG_DIR" ]]; then
+  LOG_DIR="$(mktemp -d)"
+  trap 'rm -rf "$LOG_DIR"' EXIT
+fi
 mkdir -p "$LOG_DIR"
 
 BATS="${BATS:-bats}"

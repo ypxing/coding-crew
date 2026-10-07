@@ -82,7 +82,7 @@ jobs:
           echo "Shard $SHARD: ${#files[@]} test files"
 
           # One bats process per file, CPU-count at a time: bats alone runs files serially.
-          bash scripts/ci-run-bats.sh "$RUNNER_TEMP/bats-logs" "${files[@]}" 2>&1 | tee bats.log && exit 0
+          bash scripts/ci-run-bats.sh --log-dir "$RUNNER_TEMP/bats-logs" "${files[@]}" 2>&1 | tee bats.log && exit 0
           echo "::group::Failure summary"
           if grep -q "^not ok" bats.log; then
             grep -n -A 20 "^not ok" bats.log
