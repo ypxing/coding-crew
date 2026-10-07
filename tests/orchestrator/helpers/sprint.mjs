@@ -281,6 +281,8 @@ export function githubFixtureRepo() {
   cpSync(join(REPO, "scripts/tracker/tracker-config.sh"), join(root, ".coding-crew/scripts/tracker-config.sh"));
   // close-issue.sh's github close is mark-issue-done.sh's label swap, installed beside it.
   cpSync(join(REPO, "scripts/tracker/mark-issue-done.sh"), join(root, ".coding-crew/scripts/mark-issue-done.sh"));
+  // …which delegates to the tracker CLI, installed beside the scripts.
+  cpSync(join(REPO, "tracker"), join(root, ".coding-crew/tracker"), { recursive: true });
   git("add", "-A");
   git("commit", "-q", "-m", "init");
   git("checkout", "-q", "-b", "feature/demo");

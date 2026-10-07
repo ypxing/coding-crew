@@ -15,7 +15,7 @@ import { basename, join, resolve } from "node:path";
 import { ASSET_DIRS, assetDir } from "./install-dir.mjs";
 import { getTracker } from "./tracker.mjs";
 import { depsLine, parseRequiresFailures, readVerifyRecord } from "./report.mjs";
-import { sectionBody } from "./trackers/body-format.mjs";
+import { sectionBody } from "../../tracker/body-format.mjs";
 import { dispatchIssueDir, logVerifyOutput, REQUIRES_FAILED_TAG, taggedReason, writeTrackerSection } from "./pipeline/shared.mjs";
 import { applyWorktreeInclude, removeWorktree, worktreePath } from "./worktree.mjs";
 

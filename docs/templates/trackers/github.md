@@ -15,84 +15,52 @@ repo: owner/name        # optional override — omit to let `gh` infer it from t
 ---
 ```
 
-`configure-tracker` writes this block when you choose `github`. `orchestrator/lib/
+`configure-tracker` writes this block when you choose `github`. `tracker/
 tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and `scripts/tracker/tracker-config.sh`'s
 `read_tracker_config` are the two readers of this front matter. `repo` is a pure override: `gh`
 already infers the repo from the current directory's git remote when `--repo` is omitted, so
 leave it out unless issues are tracked in a different repo than the code.
 
-## Operation: list
+## Tracker CLI
 
-Find all open issues ready for an agent, scoped to the feature's milestone, in one call
-(never a ref-per-issue fetch):
-
-```bash
-gh issue list [--repo owner/name] --milestone <feature-slug> --state all \
-  --json number,title,body,labels,state --label ready-for-agent
-```
-
-`--state all` is deliberate even for "list ready issues": blocker resolution needs to know
-whether a referenced issue is already closed, not just which issues are open.
-
-## Operation: fetch
-
-Read one issue by number. The caller normally already has the number from `list`:
+Skills and crew-afk read and write this tracker only through the tracker CLI, which runs `gh`
+for them. To run an op by hand, from the repo root (needs Node and an authenticated `gh`):
 
 ```bash
-gh issue view <number> [--repo owner/name] --json number,title,body,labels,state
+TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
+[ -f "$TRACKER" ] || TRACKER="$HOME/.coding-crew/tracker/cli.mjs"   # user-level install
 ```
-
-## Operation: publish
-
-Create a new issue or PRD issue, both scoped to the feature's milestone (created lazily, on
-first write, if it doesn't already exist):
 
 ```bash
-# Milestone, list-first (idempotent). The list pages (30 per page) and includes closed ones:
-gh api --paginate 'repos/{owner}/{repo}/milestones?state=all' --jq '.[] | [.number, .state, .title] | @tsv'
-# missing → create it:
-gh api repos/{owner}/{repo}/milestones -f title=<feature-slug>
-# closed → reopen it (creating it again fails on the taken title):
-gh api -X PATCH repos/{owner}/{repo}/milestones/<number> -f state=open
-
-# PRD — identified by title convention plus milestone scope, not a label:
-gh issue create [--repo owner/name] --title "PRD: <feature title>" \
-  --body-file <prd-file> --milestone <feature-slug>
-# Best-effort pin — GitHub caps pinned issues at 3/repo, so a pin failure must not fail publish:
-gh issue pin <number> [--repo owner/name] || true
-
-# Work issue — the body file must itself contain the same `## Blocked by`/`Source:` prose
-# local issues use; that prose is the dependency graph for this backend (no sidecar file):
-gh issue create [--repo owner/name] --title "<title>" --body-file <body-file> \
-  --label <status> --milestone <feature-slug>
-# Then mirror its `## Blocked by` as native GitHub dependencies (best-effort; never fails publish):
-node "$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/lib/trackers/github.mjs" link-blockers --issue <number-just-created> [--main-root <dir>]
+node "$TRACKER" fetch <number> [--comments]               # print one issue (title, body; + comments)
+node "$TRACKER" prd --feature-slug <slug>                 # print the milestone's PRD: issue
+node "$TRACKER" known --feature-slug <slug> --out <dir>   # write the milestone's issues, open and closed, into <dir>
+node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
+node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
+node "$TRACKER" rewrite <number> --body-file <file> --status <status> --feature-slug <slug>
+node "$TRACKER" mark-done <number> [--force]
 ```
 
-After each `gh issue create` of a work issue, to-issues runs `link-blockers` with the new issue's
-number. It creates one native `blocked_by` relationship per `## Blocked by` number; a failed link
-warns on stderr. Dispatch still reads only the body's `## Blocked by`.
+Exit codes, every op: `0` ok, `1` the op failed (stderr carries `gh`'s own error, verbatim), `2` a
+usage error or a ref that is not an issue number, `3` not found.
 
-Revising the PRD in place: `gh issue edit <n> --body-file <prd-file>`. Work issues cite the PRD
-as `PRD: #<n>` in their body.
+`publish-issues`, `publish-prd` and `rewrite` file their issues under the milestone named for the feature slug, creating
+the milestone — or reopening a closed one — first. `publish-issues` creates one issue per draft,
+labelled by its `Status:` line, in dependency order, rewriting each draft's `## Blocked by` to
+`Issue #<n>` with the number its blocker got and mirroring those edges as native GitHub
+dependencies (best-effort: a failed link only warns; dispatch reads the body's `## Blocked by`).
+A milestone only accumulates, so it never exits `4` or `5`. `publish-prd` creates the
+`PRD: <feature title>` issue, or edits the milestone's existing one, then best-effort pins it
+(GitHub caps pinned issues at 3 a repo, so a pin failure only warns). Work issues cite it as
+`PRD: #<n>`. `rewrite` replaces a single-slice source issue's body and swaps `needs-triage` for
+`<status>`.
 
-## Operation: mark-done
+`done` means implemented and merged into the feature branch, not shipped. `mark-done` re-fetches
+the body live and refuses with exit `4` while an `- [ ]` in `## Acceptance criteria` (or
+`## Cross-cutting Requirements`) is unchecked, or exit `3` when an orchestrator owns the close —
+report your status and stop in either case. Never close the issue by hand instead.
 
-`done` means implemented and merged into the feature branch, not shipped. Delegate to the
-tracker's script — do not hand-run `gh issue edit` or `gh issue close`:
-
-```bash
-MD="$(git rev-parse --show-toplevel)/.coding-crew/scripts/mark-issue-done.sh"
-[ -f "$MD" ] || MD="$HOME/.coding-crew/scripts/mark-issue-done.sh"   # user-level install
-bash "$MD" <number>
-```
-
-Before calling it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting
-Requirements`, if present) against the implemented code and check off the ones it satisfies. The
-script re-fetches the body live and refuses with exit `4` while one is unchecked, or exit `3`
-when an orchestrator owns the close — report your status and stop in either case.
-
-On success it swaps `ready-for-agent` for `awaiting-merge` (creating that label if the repo
+On success `mark-done` swaps `ready-for-agent` for `awaiting-merge` (creating that label if the repo
 lacks it) and leaves the issue **open**. Put `Closes #<number>` in the body of the PR that
 carries the work: GitHub closes the issue when that PR merges into the default branch. With
 `afk.openPr: true` (or `--open-pr`) crew-afk pushes the feature branch and opens or updates that
@@ -110,21 +78,6 @@ the PR) every open `awaiting-merge` issue in the milestone that a closing keywor
 `PRD:` issue too. The milestone stays open. Run it by hand from the repo root to close them right
 after a merge: `bash .claude/skills/crew-afk/scripts/close-shipped.sh <feature-slug> <feature-branch>`
 (the skill's install path varies by platform). A failure only warns.
-
-## Operation: status-update
-
-Non-terminal statuses swap the label:
-
-```bash
-gh issue edit <number> [--repo owner/name] --add-label <new-status> --remove-label <old-status>
-```
-
-`done` is the `mark-done` label swap above (`awaiting-merge`, issue left open for the PR to
-close). `wontfix` closes the issue with a reason instead of setting a label:
-
-```bash
-gh issue close <number> [--repo owner/name] --reason not-planned   # wontfix
-```
 
 ## Labels
 
@@ -147,6 +100,13 @@ issues as completed on GitHub while their code exists only in a local branch. Bo
 idempotently creates the real labels (including `blocked` and `in-progress`) before first publish, since `gh issue create --label x`
 fails outright if `x` isn't already a repo label; `mark-done` also creates `awaiting-merge` and
 `in-progress` on demand, for repos configured before they existed.
+
+Statuses other than `done` are labels a person sets in GitHub; `wontfix` closes the issue with a
+reason instead of setting a label:
+
+```bash
+gh issue close <number> [--repo owner/name] --reason not-planned   # wontfix
+```
 
 ## In-progress issues
 

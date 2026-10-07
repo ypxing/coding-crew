@@ -6,6 +6,34 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker: under `tracker: github`, `publish-issues` rewrites a draft's `## Blocked by` entry naming a `known` file
+  `<n>-<slug>.md` to `Issue #<n>`, and so does `rewrite`, so the issue's blocker is read (and, on publish, linked
+  natively) — it was left as the filename, which github never parses (#332). skills: the `tracker-configuration` fragment's lookup prints the CLI's
+  absolute path and says to write it in place of `$TRACKER` in every op, since a variable set in one shell is gone in
+  the next (#333).
+- skills: `to-issues`, `to-prd`, `crew-address-findings`, `upgrade-deps` and `solve-issue` reach the tracker only
+  through the tracker CLI — no `gh` command and no per-tracker branch is left in any of them. The shared
+  `tracker-configuration` fragment (now in `solve-issue` too) checks `node --version` first, names
+  `.coding-crew/tracker/cli.mjs` with its `$HOME` fallback, and says a CLI failure is reported and fixed, never worked
+  around with the tracker's own tool. `to-issues` writes the same drafts and `deps.json` for every tracker, lints them
+  against `known`, publishes with `publish-issues` (exit 4: stop; exit 5: confirm, then `--replace`) and rewrites a
+  single-slice source with `rewrite`; its `references/rerun.md` and `references/github-publish.md` are gone. The
+  tracker templates list the CLI commands instead of `Operation:` sections, and the local label strings are fixed
+  (#331).
+- tracker: `tracker/cli.mjs` gains the write ops. `publish-issues --feature-slug S --drafts DIR [--replace]` creates
+  tracker-neutral drafts (`NN-<slug>.md` opening with `# <title>` and `Status:`, plus `deps.json`) in dependency order,
+  rewriting each `## Blocked by` draft ref to the real one (github `Issue #<n>`, local the final `NN-<slug>.md` and
+  `issues-deps.json`), prints `<draft> <ref>` lines and deletes the drafts; local exits 4 when the feature has done
+  issues and 5 when open ones exist without `--replace`. `publish-prd`, `rewrite <ref>` (a single-slice source issue:
+  body, status, milestone created or reopened) and `mark-done <ref> [--force]`, whose orchestrator (exit 3) and
+  unchecked-criteria (exit 4) guards now live once in the CLI; `mark-issue-done.sh` keeps its argv and exit codes as a
+  wrapper over it (#330).
+- tracker: the local and github tracker backends move from crew-afk's `orchestrator/lib/trackers/` to a shared
+  `tracker/` directory, installed on every install (any skill) to `.coding-crew/tracker/` and always overwritten;
+  installed crew-afk imports that one copy. New `tracker/cli.mjs` with the read ops `fetch <ref> [--comments]`,
+  `prd --feature-slug S` and `known --feature-slug S --out DIR` (exit 0 ok, 1 failed with the tool's stderr, 2 usage or
+  invalid ref, 3 not found); github's `create-issue` / `link-blockers` are reached through it, and `promote-findings.sh`
+  looks it up at `.coding-crew/tracker/cli.mjs`. Node is now a requirement of the tracker-touching skills (#329).
 - `crew-afk` (github tracker): the milestone check before creating an issue paginates and includes closed milestones, so
   a feature milestone past the API's first 30 no longer reads as missing — its create failed with HTTP 422 and the fix
   issue for a review finding was never created (#326). A closed match is reopened, so a finished feature's milestone can

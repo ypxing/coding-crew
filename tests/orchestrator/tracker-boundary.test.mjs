@@ -1,7 +1,7 @@
 /**
  * The tracker boundary: orchestrator code learns a feature's issues only from its tracker backend.
- * `.scratch/<slug>/issues/` is `trackers/local.mjs`'s storage, so no other orchestrator file may
- * build a path into it, and none outside `trackers/` may branch on which backend it got by
+ * `.scratch/<slug>/issues/` is `tracker/local.mjs`'s storage (outside `orchestrator/`), so no orchestrator file
+ * may build a path into it, and none may branch on which backend it got by
  * probing for `listOpenIssueFiles` — `listFeatureIssues` and `fixIssuesCreatedReady` are the
  * surface both backends share.
  */
@@ -50,18 +50,16 @@ function sources(dir) {
 
 const rel = (p) => relative(REPO, p).split("\\").join("/");
 
-test("no orchestrator file but trackers/local.mjs reads .scratch/<slug>/issues/", () => {
+test("no orchestrator file reads .scratch/<slug>/issues/ (only tracker/local.mjs does)", () => {
   const offenders = sources(ORCHESTRATOR)
-    .filter((p) => rel(p) !== "orchestrator/lib/trackers/local.mjs")
     .flatMap((p) => issueDirReads(readFileSync(p, "utf8")).map((l) => `${rel(p)}:${l}`));
   assert.deepEqual(offenders, [], `issue files read outside the local backend:\n${offenders.join("\n")}`);
 });
 
-test("no orchestrator file outside trackers/ branches on tracker.listOpenIssueFiles", () => {
+test("no orchestrator file branches on tracker.listOpenIssueFiles", () => {
   const offenders = sources(ORCHESTRATOR)
-    .filter((p) => !rel(p).startsWith("orchestrator/lib/trackers/"))
     .flatMap((p) => backendProbes(readFileSync(p, "utf8")).map((l) => `${rel(p)}:${l}`));
-  assert.deepEqual(offenders, [], `backend probes outside trackers/:\n${offenders.join("\n")}`);
+  assert.deepEqual(offenders, [], `backend probes in orchestrator/:\n${offenders.join("\n")}`);
 });
 
 test("the scan catches each way of naming an issue dir, and ignores comments and GitHub API paths", () => {

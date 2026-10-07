@@ -67,8 +67,8 @@ teardown() {
   done
   while IFS= read -r skill_md; do
     dir=$(dirname "$skill_md")
-    [ -f "$dir/references/github-publish.md" ]
-    [ -f "$dir/references/rerun.md" ]
+    [ ! -e "$dir/references/github-publish.md" ]
+    [ ! -e "$dir/references/rerun.md" ]
     [ -f "$dir/references/expand-contract.md" ]
     count=$((count + 1))
   done < <(find "$TEMP_DIR" -path '*/skills/to-issues/SKILL.md')
@@ -491,4 +491,65 @@ PROBE
   run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
   [ "$status" -eq 0 ]
   cmp -s "$SCRIPT_DIR/scripts/tracker/mark-issue-done.sh" "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh"
+}
+
+# ── the shared tracker CLI (.coding-crew/tracker/) ─────────────────────────────
+# Installed on every install, whichever skill, since to-issues / to-prd / solve-issue reach the
+# tracker through it without crew-afk; mechanism, so always overwritten, and removed by uninstall.
+
+@test "install of a skill without crew-afk ships the tracker CLI, which runs" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
+  [ -f "$TEMP_DIR/.coding-crew/tracker/cli.mjs" ]
+  [ ! -d "$TEMP_DIR/.coding-crew/crew-afk" ]
+  cd "$TEMP_DIR"
+  run node .coding-crew/tracker/cli.mjs prd --feature-slug x
+  [ "$status" -eq 3 ]
+}
+
+@test "re-running install overwrites the tracker tree, dropping files the source no longer has" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
+  echo "// stale" > "$TEMP_DIR/.coding-crew/tracker/cli.mjs"
+  echo "// retired" > "$TEMP_DIR/.coding-crew/tracker/retired.mjs"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
+  cmp -s "$SCRIPT_DIR/tracker/cli.mjs" "$TEMP_DIR/.coding-crew/tracker/cli.mjs"
+  [ ! -e "$TEMP_DIR/.coding-crew/tracker/retired.mjs" ]
+}
+
+@test "--update refreshes the tracker tree" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
+  echo "// stale" > "$TEMP_DIR/.coding-crew/tracker/local.mjs"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
+  [ "$status" -eq 0 ]
+  cmp -s "$SCRIPT_DIR/tracker/local.mjs" "$TEMP_DIR/.coding-crew/tracker/local.mjs"
+}
+
+@test "uninstall removes the tracker tree" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/.coding-crew/tracker" ]
+}
+
+@test "installed crew-afk imports the one shared tracker copy, and an older install's lib/trackers/ is swept" {
+  cd "$SCRIPT_DIR"
+  mkdir -p "$TEMP_DIR/.coding-crew/crew-afk/lib/trackers"
+  echo "// old" > "$TEMP_DIR/.coding-crew/crew-afk/lib/trackers/github.mjs"
+  echo "// old" > "$TEMP_DIR/.coding-crew/crew-afk/lib/tracker-config.mjs"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  [ ! -e "$TEMP_DIR/.coding-crew/crew-afk/lib/trackers" ]
+  [ ! -e "$TEMP_DIR/.coding-crew/crew-afk/lib/tracker-config.mjs" ]
+  run grep -rl "tracker" "$TEMP_DIR/.coding-crew/crew-afk/lib" --include='tracker*.mjs'
+  [ "$output" = "$TEMP_DIR/.coding-crew/crew-afk/lib/tracker.mjs" ]
+  # Its imports resolve against .coding-crew/tracker/ — the same module the CLI loads.
+  run node --input-type=module -e "
+    const a = await import('$TEMP_DIR/.coding-crew/crew-afk/lib/tracker.mjs');
+    const b = await import('$TEMP_DIR/.coding-crew/tracker/index.mjs');
+    if (a.getTracker !== b.getTracker) process.exit(1);
+    const t = await a.getTracker('$TEMP_DIR');
+    process.exit(typeof t.listFeatureIssues === 'function' ? 0 : 1);"
+  [ "$status" -eq 0 ]
 }

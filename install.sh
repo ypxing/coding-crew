@@ -331,6 +331,7 @@ install_skill_assets() {
   assert_safe_path "$src_rel" "skill assets source"
   assert_safe_path "$dest_rel" "skill assets dest"
   install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
+  local assets_dest_rel="$dest_rel"
   # `more-assets`: further trees the same way (crew-afk's role protocols render with the shared
   # fragments, which orchestrator/lib/adapters/render.mjs reads from .coding-crew/skills/_shared/).
   _skill_list "$skill_name" more_assets '.skills[$s]["more-assets"] // [] | .[] | "\(.source)\t\(.dest)"'
@@ -348,6 +349,8 @@ install_skill_assets() {
   if [[ "$skill_name" == "crew-afk" ]]; then
     local old
     for old in common "${PLATFORMS[@]}"; do rm -rf "$REPO_ROOT/.coding-crew/skills/_shared/fragments/$old"; done
+    # The tracker backends moved to the shared .coding-crew/tracker/ (install_docs): one copy, never two.
+    rm -rf "$REPO_ROOT/$assets_dest_rel/lib/trackers" "$REPO_ROOT/$assets_dest_rel/lib/tracker-config.mjs"
   fi
 }
 
@@ -539,6 +542,33 @@ install_docs() {
     cp "$ds_src" "$ds_dest"
     chmod +x "$ds_dest"
     echo "  $ds_dest_rel"
+  done
+
+  # Copy shared directory trees (the tracker CLI and its backends). Mechanism like the scripts
+  # above, installed whichever skill is, and kept an exact copy: a file the source no longer has
+  # is removed, so a stale module never shadows the one that replaced it.
+  local trees
+  trees=$(jq -r '.docs.trees // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
+  local trees_arr=()
+  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && trees_arr+=("$_line"); done <<< "$trees"
+
+  for tree in "${trees_arr[@]+"${trees_arr[@]}"}"; do
+    local tree_src_rel tree_dest_rel
+    tree_src_rel=$(jq -r --arg t "$tree" '.docs.trees[$t].source // empty' "$SCRIPT_DIR/registry.json")
+    tree_dest_rel=$(jq -r --arg t "$tree" '.docs.trees[$t].dest // empty' "$SCRIPT_DIR/registry.json")
+    [[ -z "$tree_src_rel" || -z "$tree_dest_rel" ]] && continue
+    assert_safe_path "$tree_src_rel" "doc tree source"
+    assert_safe_path "$tree_dest_rel" "doc tree dest"
+
+    [[ "$docs_header_printed" -eq 0 ]] && { echo "Docs:"; docs_header_printed=1; }
+    install_assets_tree "$SCRIPT_DIR/$tree_src_rel" "$tree_dest_rel" "doc tree"
+    local tree_file
+    while IFS= read -r -d '' tree_file; do
+      if [[ ! -f "$SCRIPT_DIR/$tree_src_rel/${tree_file#"$REPO_ROOT/$tree_dest_rel/"}" ]]; then
+        rm -f "$tree_file"
+        echo "  ${tree_file#"$REPO_ROOT/"} (removed)"
+      fi
+    done < <(find "$REPO_ROOT/$tree_dest_rel" -type f -print0)
   done
 
   # Copy tracker template files so configure-tracker can present them as options.

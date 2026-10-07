@@ -15,55 +15,45 @@ tracker: local          # or "github"
 ```
 
 Omitting the front matter entirely — as this template does — means `tracker: local` with no
-`repo`. `orchestrator/lib/tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and
+`repo`. `tracker/tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and
 `scripts/tracker/tracker-config.sh`'s `read_tracker_config` are the two readers of this front
 matter; both default to `{tracker: "local", repo: null}` when it, or this whole file, is absent,
 so existing local-tracker installs need no changes.
 
-## Operation: list
+## Tracker CLI
 
-Find all open issues ready for an agent:
-
-```bash
-grep -rl "Status: ready-for-agent" .scratch/*/issues/open/*.md 2>/dev/null
-```
-
-## Operation: fetch
-
-Read one issue file by path. The caller normally passes the path directly:
+Skills and crew-afk read and write this tracker only through the tracker CLI. To run an op by
+hand, from the repo root (needs Node):
 
 ```bash
-cat .scratch/<feature-slug>/issues/open/<NN>-<slug>.md
+TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
+[ -f "$TRACKER" ] || TRACKER="$HOME/.coding-crew/tracker/cli.mjs"   # user-level install
 ```
-
-## Operation: publish
-
-Create a new issue or PRD file under `.scratch/`:
-
-- PRD: `.scratch/<feature-slug>/PRD.md`
-- Issue: `.scratch/<feature-slug>/issues/open/<NN>-<slug>.md` (numbered from `01`)
-
-Create the directory if it does not exist. Set a `Status:` line near the top of the file.
-
-When issues come from `to-issues`, it also writes `.scratch/<feature-slug>/issues/issues-deps.json` — a flat filename → blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what the orchestrator reads to decide whether an issue is ready to dispatch.
-
-An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root — once per run, before the issue's first dispatch, under crew-afk; in `solve-issue`'s preflight on a direct run — and a failing one blocks the issue.
-
-## Operation: mark-done
-
-Delegate to the tracker's close script — do not hand-run `sed` or `mv`:
 
 ```bash
-MD="$(git rev-parse --show-toplevel)/.coding-crew/scripts/mark-issue-done.sh"
-[ -f "$MD" ] || MD="$HOME/.coding-crew/scripts/mark-issue-done.sh"   # user-level install
-bash "$MD" "<issue-path>"
+node "$TRACKER" fetch <ref> [--comments]                  # print one issue; <ref> is its path under .scratch/
+node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD.md
+node "$TRACKER" known --feature-slug <slug> --out <dir>   # copy the feature's issues, open and done, into <dir>
+node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
+node "$TRACKER" publish-prd --feature-slug <slug> --title "<feature title>" --body-file <file>
+node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slug <slug>
+node "$TRACKER" mark-done <ref> [--force]
 ```
 
-The script does not evaluate criteria for you — it only checks that you already did. Before
-calling it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting Requirements`,
-if present) against the implemented code and check off the ones the code satisfies.
+Exit codes, every op: `0` ok, `1` the op failed (stderr says why), `2` a usage error or a ref
+outside `.scratch/`, `3` not found.
 
-The script then refuses the close in two cases, and both refusals are correct:
+`publish-issues` writes each draft to `.scratch/<slug>/issues/open/<NN>-<slug>.md` (numbered from
+`01`) and the drafts' `deps.json` to `.scratch/<slug>/issues/issues-deps.json` — a flat filename
+→ blocker-filenames map. That file, not each issue's `## Blocked by` prose, is what the
+orchestrator reads to decide whether an issue is ready to dispatch. It exits `4` when the feature
+already has issues in `done/` and `5` when it has open ones and `--replace` is absent; both write
+nothing. `publish-prd` writes `.scratch/<slug>/PRD.md`.
+
+`mark-done` does not evaluate criteria for you — it only checks that you already did. Before
+running it, verify every `- [ ]` in `## Acceptance criteria` (and `## Cross-cutting Requirements`,
+if present) against the implemented code and check off the ones the code satisfies. It then
+refuses the close in two cases, and both refusals are correct:
 
 | Exit | Meaning                                                                    | What to do                                                                                                                          |
 | ---- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -71,30 +61,21 @@ The script then refuses the close in two cases, and both refusals are correct:
 | `4`  | Criteria are still unchecked                                               | Do not move the file. Add a `## Unmet criteria` section saying what is missing and why (descoped, blocked, split out), then stop.     |
 
 Pass `--force` only to override a stale marker left by a crashed sprint, or a criterion
-deliberately recorded as descoped.
-
-On success the script sets `Status: done` and moves the file to `issues/done/` (sibling of
-`issues/open/`). It is idempotent: an issue already in `done/` exits 0.
+deliberately recorded as descoped. On success it sets `Status: done` and moves the file to
+`issues/done/` (sibling of `issues/open/`); an issue already in `done/` exits 0.
 
 `done` means implemented and merged into the feature branch, not shipped — for this tracker
 there is no later state: nothing outside `.scratch/` reads it, so no PR has anything to close.
 
-## Operation: status-update
+An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root — once per run, before the issue's first dispatch, under crew-afk; in `solve-issue`'s preflight on a direct run — and a failing one blocks the issue.
 
-Update the `Status:` line in an issue file:
-
-```bash
-sed "s/^Status:.*/Status: <new-status>/" "<issue-path>" > "<issue-path>.tmp" \
-  && mv "<issue-path>.tmp" "<issue-path>"
-```
-
-Valid status strings are listed in `## Labels` below.
+## Labels` below.
 
 ## Labels
 
-The agents speak in terms of six canonical triage labels. This section maps those labels to the actual strings used in this repo's issue tracker.
+The agents speak in terms of six canonical triage labels, each the `Status:` line's value as written. The strings are fixed: the tracker CLI and crew-afk match them exactly.
 
-| Canonical label   | Default string    | Meaning                                                                              |
+| Canonical label   | `Status:` value   | Meaning                                                                              |
 | ----------------- | ----------------- | ------------------------------------------------------------------------------------ |
 | `needs-triage`    | `needs-triage`    | Maintainer needs to evaluate this issue                                              |
 | `needs-info`      | `needs-info`      | Waiting on reporter for more information                                             |
@@ -102,8 +83,6 @@ The agents speak in terms of six canonical triage labels. This section maps thos
 | `ready-for-human` | `ready-for-human` | Requires human implementation                                                        |
 | `wontfix`         | `wontfix`         | Will not be actioned                                                                 |
 | `done`            | `done`            | Issue is complete and closed (set by agents on completion, not a human triage label) |
-
-Edit the right-hand column to match whatever vocabulary your project actually uses.
 
 ## Workspace
 
@@ -113,7 +92,7 @@ Each feature slug maps to a directory under `.scratch/`:
 .scratch/<feature-slug>/
 ├── PRD.md                    ← optional product requirements doc
 └── issues/
-    ├── issues-deps.json      ← optional; filename → blocker-filenames map (written by to-issues)
+    ├── issues-deps.json      ← optional; filename → blocker-filenames map (written by publish-issues)
     ├── open/                 ← active issues
     │   ├── 01-<slug>.md      ← implementation issues, numbered from 01
     │   └── 02-<slug>.md

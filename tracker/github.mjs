@@ -18,8 +18,9 @@
  * bootstraps the feature's milestone (list-first, idempotent) and passes the caller's
  * `body` through to `gh issue create --body-file` unmodified — the producer side of the
  * `## Blocked by`/`Source:` prose flow issues 07/08 write and issue 04's `parseIssue` reads
- * back. Marking an issue done is `scripts/tracker/mark-issue-done.sh`'s alone (close-issue.sh
- * calls it too), so there is one implementation of the label swap. `writeProgress`
+ * back. Marking an issue done is `markDone`'s alone, reached through `tracker/cli.mjs mark-done`
+ * (mark-issue-done.sh and close-issue.sh call it), so there is one implementation of the label
+ * swap. `writeProgress`
  * always posts a new `gh issue comment` — a GitHub comment thread is a timeline, not an
  * in-place-edited section, so every call is a new comment, deliberately, including for a
  * `## Blocked` write (there is no `blocked` label anywhere in this module).
@@ -30,9 +31,8 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { readTrackerConfig } from "../tracker-config.mjs";
+import { readTrackerConfig } from "./tracker-config.mjs";
 import {
   criteriaSection,
   isSourceGuarded,
@@ -378,17 +378,198 @@ export function writeProgress(issue, body, { heading = "Progress", mainRoot, exe
   return result;
 }
 
+/** A ref the CLI may pass to `gh`: an issue number, all digits — anything else is a usage error. */
+export function validateRef(mainRoot, ref) {
+  return /^[0-9]+$/.test(String(ref)) ? String(ref) : null;
+}
+
+/** `gh` reports an issue number with no issue behind it this way; anything else is a failure. */
+const NOT_FOUND = /could not resolve to an? (?:issue|pullrequest|pull request)/i;
+
 /**
- * CLI entry point — the shape `promote-findings.sh`'s `_defer_github` shells out to
- * (`node github.mjs create-issue --title ... --body-file ... --feature-slug ...
- * [--label ...] [--main-root ...]`), the same "bash calls a small Node CLI" pattern
- * `review-rollup.mjs` already established for `promote-findings.sh`'s `remind`. Without
- * this, the bash script would have to hand-roll its own `gh issue create` + milestone
- * bootstrap — a second implementation of `createIssue` that can (and did) drift from this
- * one. Prints the created issue's URL to stdout, matching `gh issue create`'s own stdout,
- * so callers see the exact same value either way.
+ * `{title, body, comments?}` for issue `number`, or null when it does not exist. One `gh issue
+ * view`; `comments` (with `{author, createdAt, body}` each) only when asked for.
  */
-function cliCreateIssue(argv) {
+export function fetchIssue(mainRoot, number, { comments = false, exec = shellOut } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const fields = comments ? "title,body,comments" : "title,body";
+  const r = exec("gh", ["issue", "view", String(number), ...(repo ? ["--repo", repo] : []), "--json", fields]);
+  if (r.code !== 0) {
+    if (NOT_FOUND.test(r.stderr ?? "")) return null;
+    throw new Error(`gh issue view failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  }
+  const json = JSON.parse(r.stdout || "{}");
+  const out = { title: json.title ?? "", body: json.body ?? "" };
+  if (comments) {
+    out.comments = (json.comments ?? []).map((c) => ({ author: c.author?.login ?? "", createdAt: c.createdAt ?? "", body: c.body ?? "" }));
+  }
+  return out;
+}
+
+/**
+ * The milestone's PRD issue body, headed by an HTML comment naming its number and title (prd.mjs
+ * saves it as `prd-issue.md`, so the saved copy still says which issue it came from); null when
+ * the milestone has none.
+ */
+export function readPrd(mainRoot, { featureSlug, exec = shellOut } = {}) {
+  const prd = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
+  return prd ? `<!-- PRD issue #${prd.number}: ${prd.title} -->\n${prd.text}\n` : null;
+}
+
+/** The file `known` writes for one issue: named `<n>-<slug>.md` (the lint ref), `# <title>` then the body. */
+export function knownFile(issue) {
+  return { name: `${issue.number}-${issue.slug}.md`, text: `# ${issue.title}\n\n${issue.text.replace(/\n*$/, "\n")}` };
+}
+
+/** The `## Blocked by` ref for a `known` file's name, `<n>-<slug>.md` → `Issue #<n>`; null for any other name. */
+export function knownBlockerRef(name) {
+  const n = /^([0-9]+)-[A-Za-z0-9][\w.-]*\.md$/.exec(name)?.[1];
+  return n ? `Issue #${Number(n)}` : null;
+}
+
+/** `gh issue edit`/`view` stderr naming an issue that does not exist. */
+function notFound(r) {
+  return NOT_FOUND.test(r.stderr ?? "");
+}
+
+/** Runs `fn(path)` with `text` in a throwaway `--body-file`, removed afterwards. */
+function withBodyFile(text, fn) {
+  const bodyFile = join(tmpdir(), `crew-github-issue-${randomUUID()}.md`);
+  writeFileSync(bodyFile, text);
+  try {
+    return fn(bodyFile);
+  } finally {
+    try {
+      unlinkSync(bodyFile);
+    } catch {
+      // best-effort cleanup of a throwaway temp file — nothing depends on it surviving.
+    }
+  }
+}
+
+/** A draft's body as an issue body: its `# <title>` and `Status:` lines become the title and label. */
+function draftBody(text) {
+  return text
+    .replace(/^#[ \t]+.*(?:\r?\n|$)/m, "")
+    .replace(/^Status:.*(?:\r?\n|$)/m, "")
+    .replace(/^(?:[ \t]*\r?\n)+/, "");
+}
+
+/**
+ * `publish-issues`' github side: each draft becomes an issue through `createIssue` (milestone
+ * ensured, blockers linked), titled by its `# <title>` line and labelled by its `Status:`. A
+ * milestone only accumulates, so there is no re-run guard: github never refuses with 4 or 5.
+ */
+export function beginPublish(mainRoot, { featureSlug, exec = shellOut } = {}) {
+  return {
+    create(draft) {
+      const { number } = createIssue(
+        { title: draft.title, body: draftBody(draft.text), labels: [draft.status], featureSlug },
+        { mainRoot, exec },
+      );
+      if (number === null) throw new Error(`gh issue create printed no issue URL for ${draft.file}`);
+      return { ref: String(number), blockerRef: `Issue #${number}` };
+    },
+  };
+}
+
+/**
+ * The feature's PRD issue: the milestone's existing `PRD:` issue gets `body`, else `PRD: <title>`
+ * is created in it. Then a best-effort pin — GitHub caps pinned issues at 3 a repo, so a failed
+ * pin only warns. Returns the issue number.
+ */
+export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const repoArgs = repo ? ["--repo", repo] : [];
+  const existing = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
+  let number;
+  if (existing) {
+    number = existing.number;
+    const r = withBodyFile(body, (f) => exec("gh", ["issue", "edit", String(number), ...repoArgs, "--body-file", f]));
+    if (r.code !== 0) throw new Error(`gh issue edit failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  } else {
+    number = createIssue({ title: `PRD: ${title}`, body, featureSlug }, { mainRoot, exec }).number;
+    if (number === null) throw new Error("gh issue create printed no issue URL for the PRD");
+  }
+  const pin = exec("gh", ["issue", "pin", String(number), ...repoArgs]);
+  if (pin.code !== 0) warn(`WARNING: could not pin PRD issue #${number} (exit ${pin.code}): ${pin.stderr || pin.stdout}`);
+  return String(number);
+}
+
+/**
+ * Rewrite a single-slice source issue: `body` — a draft's `# <title>` and `Status:` lines taken
+ * off, as `publish-issues` does — replaces its body (a `Source:` line kept), `needs-triage` comes off, `status` goes on, and it moves into the feature's milestone,
+ * created — or reopened when closed — first. Null when the issue does not exist.
+ */
+export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = shellOut } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  ensureMilestone(featureSlug, { repo, exec });
+  const r = withBodyFile(draftBody(body), (f) =>
+    exec("gh", [
+      "issue", "edit", String(number), ...(repo ? ["--repo", repo] : []),
+      "--body-file", f, "--remove-label", "needs-triage", "--add-label", status, "--milestone", featureSlug,
+    ]),
+  );
+  if (r.code !== 0) {
+    if (notFound(r)) return null;
+    throw new Error(`gh issue edit failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  }
+  return true;
+}
+
+/** What `mark-done` closes: a github issue has no file, so no sprint dir of its own (the CLI falls back to the env). */
+export function doneTarget(mainRoot, number) {
+  return { name: `issue #${number}`, sprintDir: null };
+}
+
+/** Issue `number`'s body, fetched live — never a copy the caller may hold — for `mark-done`'s criteria guard. */
+export function readIssueBody(mainRoot, number, { exec = shellOut } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const r = exec("gh", ["issue", "view", String(number), ...(repo ? ["--repo", repo] : []), "--json", "body", "--jq", ".body"]);
+  if (r.code !== 0) throw new Error(`ERROR: gh issue view failed for #${number}:\n${r.stderr || r.stdout}`);
+  return r.stdout ?? "";
+}
+
+/**
+ * Mark issue `number` done — not closed: the work is only on a branch. `awaiting-merge` (read as
+ * done) replaces `ready-for-agent`, and the PR's `Closes #n` closes the issue when it merges.
+ * crew-afk's display label `in-progress` and a person's `ready-for-human` come off in the same
+ * edit. Each label is created first, idempotently: `--add-label`/`--remove-label` fail on a label
+ * the repo lacks. `ready-for-human` is the project's own (configure-tracker made it), so it is
+ * created without `--force`, keeping its colour, and gh's "already exists" refusal counts as made.
+ */
+export function markDone(mainRoot, number, { exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const repoArgs = repo ? ["--repo", repo] : [];
+  const awaiting = exec("gh", ["label", "create", AWAITING_MERGE_LABEL, ...repoArgs, "--force",
+    "--description", "Implemented on a feature branch; closes when its PR merges"]);
+  if (awaiting.code !== 0) throw new Error(`ERROR: gh label create ${AWAITING_MERGE_LABEL} failed:\n${awaiting.stderr || awaiting.stdout}`);
+  const remove = ["--remove-label", "ready-for-agent"];
+  const human = exec("gh", ["label", "create", "ready-for-human", ...repoArgs, "--description", "Requires human implementation"]);
+  if (human.code === 0 || /already exists/.test(`${human.stderr}${human.stdout}`)) remove.push("--remove-label", "ready-for-human");
+  else warn(`WARNING: gh label create ready-for-human failed; leaving it alone: ${human.stderr || human.stdout}`);
+  // A display label never fails a close: without it created the edit just leaves it alone.
+  const inProgress = exec("gh", ["label", "create", "in-progress", ...repoArgs, "--force",
+    "--description", "A crew-afk run is working this issue (display only)"]);
+  if (inProgress.code === 0) remove.push("--remove-label", "in-progress");
+  else warn(`WARNING: gh label create in-progress failed; leaving it alone: ${inProgress.stderr || inProgress.stdout}`);
+  const edit = exec("gh", ["issue", "edit", String(number), ...repoArgs, "--add-label", AWAITING_MERGE_LABEL, ...remove]);
+  if (edit.code !== 0) throw new Error(`ERROR: gh issue edit failed for #${number}:\n${edit.stderr || edit.stdout}`);
+  return `DONE: issue #${number} labelled ${AWAITING_MERGE_LABEL} — put 'Closes #${number}' in the PR body so merging it closes the issue`;
+}
+
+/** An argv mistake in a subcommand below: the tracker CLI exits 2 for it, not 1. */
+function usage(message) {
+  return Object.assign(new Error(message), { usage: true });
+}
+
+/**
+ * `create-issue --title T --body-file F --feature-slug S [--label L]… [--main-root DIR]` — the
+ * shape `promote-findings.sh`'s `_defer_github` calls through `tracker/cli.mjs`, so the bash
+ * script never hand-rolls a second `gh issue create` + milestone bootstrap that can drift from
+ * `createIssue` (it did). Prints the created issue's URL, as `gh issue create` does.
+ */
+function cliCreateIssue(argv, { exec, out }) {
   const opts = { labels: [] };
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -408,49 +589,22 @@ function cliCreateIssue(argv) {
         opts.mainRoot = argv[++i];
         break;
       default:
-        throw new Error(`create-issue: unknown argument: ${argv[i]}`);
+        throw usage(`create-issue: unknown argument: ${argv[i]}`);
     }
   }
   if (!opts.title || !opts.bodyFile || !opts.featureSlug) {
-    throw new Error("create-issue requires --title, --body-file, and --feature-slug");
+    throw usage("create-issue requires --title, --body-file, and --feature-slug");
   }
   const body = readFileSync(opts.bodyFile, "utf8");
   const { url } = createIssue(
     { title: opts.title, body, labels: opts.labels, featureSlug: opts.featureSlug },
-    { mainRoot: opts.mainRoot ?? process.cwd() },
+    { mainRoot: opts.mainRoot ?? process.cwd(), exec },
   );
-  process.stdout.write(`${url}\n`);
-}
-
-/**
- * `prd --feature-slug <slug> [--main-root <dir>]` — print the milestone's PRD issue body, for
- * prd.mjs, which has no local PRD.md under github. Exit 3 when the milestone has none.
- */
-function cliPrd(argv) {
-  const opts = {};
-  for (let i = 0; i < argv.length; i++) {
-    switch (argv[i]) {
-      case "--feature-slug":
-        opts.featureSlug = argv[++i];
-        break;
-      case "--main-root":
-        opts.mainRoot = argv[++i];
-        break;
-      default:
-        throw new Error(`prd: unknown argument: ${argv[i]}`);
-    }
-  }
-  if (!opts.featureSlug) throw new Error("prd requires --feature-slug");
-  const prd = listFeatureIssues(opts.mainRoot ?? process.cwd(), { featureSlug: opts.featureSlug }).find(isPrdIssue);
-  if (!prd) {
-    process.exitCode = 3;
-    return;
-  }
-  process.stdout.write(`<!-- PRD issue #${prd.number}: ${prd.title} -->\n${prd.text}\n`);
+  out(`${url}\n`);
 }
 
 /** `link-blockers --issue <n> [--main-root <dir>]` — always exits 0; failures warn on stderr. */
-function cliLinkBlockers(argv) {
+function cliLinkBlockers(argv, { exec, err }) {
   const opts = {};
   for (let i = 0; i < argv.length; i++) {
     switch (argv[i]) {
@@ -461,27 +615,15 @@ function cliLinkBlockers(argv) {
         opts.mainRoot = argv[++i];
         break;
       default:
-        throw new Error(`link-blockers: unknown argument: ${argv[i]}`);
+        throw usage(`link-blockers: unknown argument: ${argv[i]}`);
     }
   }
-  if (!opts.issue) throw new Error("link-blockers requires --issue");
-  linkBlockers(opts.issue, { mainRoot: opts.mainRoot ?? process.cwd() });
+  if (!opts.issue) throw usage("link-blockers requires --issue");
+  linkBlockers(opts.issue, { mainRoot: opts.mainRoot ?? process.cwd(), exec, warn: (m) => err(`${m}\n`) });
 }
 
-function cliMain(argv) {
-  const [command, ...rest] = argv;
-  if (command === "link-blockers") return cliLinkBlockers(rest);
-  if (command === "create-issue") return cliCreateIssue(rest);
-  if (command === "prd") return cliPrd(rest);
-  throw new Error(`unknown command: ${command}`);
-}
-
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
-if (isMain) {
-  try {
-    cliMain(process.argv.slice(2));
-  } catch (err) {
-    process.stderr.write(`${err.message}\n`);
-    process.exitCode = 1;
-  }
-}
+/** This backend's own `tracker/cli.mjs` ops, beyond the ones every backend has. */
+export const cliOps = {
+  "create-issue": cliCreateIssue,
+  "link-blockers": cliLinkBlockers,
+};

@@ -18,7 +18,7 @@ the user before writing the final document.
 
    Never guess the slug silently — confirm with the user if there's any ambiguity.
 
-2. **Check for an existing PRD.** If `.scratch/<feature-slug>/PRD.md` already exists, read it — it may contain a `## Decisions` section pre-seeded by `crew-grill`. Preserve and expand those decisions rather than replacing them.
+2. **Check for an existing PRD.** Run `node "$TRACKER" prd --feature-slug <feature-slug>`: exit 0 prints it — read it, it may contain a `## Decisions` section pre-seeded by `crew-grill`. Preserve and expand those decisions rather than replacing them. An opening `<!-- PRD issue #<n>: … -->` line is the CLI naming the PRD's ref, not part of the PRD: leave it out of what step 6 publishes. Exit 3 means there is none.
 
 3. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout, and respect any ADRs in the area you're touching. The decisions from the grilling session should be captured in the conversation context or in the existing PRD.
 
@@ -28,11 +28,17 @@ the user before writing the final document.
 
 {{FRAGMENT:verification-pass}}
 
-6. Then execute the `publish` operation from `issue-tracker.md`. Under `local`, this saves it to `.scratch/<feature-slug>/PRD.md` (creating the directory if needed). Under a configured `github` tracker (per `github.md`'s `Operation: publish`), this creates or updates — `gh issue create`/`gh issue edit --body-file`, keying off whether a `PRD: <feature title>` issue already exists in the feature's milestone (created lazily on first write if absent, matching the milestone's own bootstrap semantics wherever else it's created) — a PRD issue titled `PRD: <feature title>`, then best-effort pins it (`gh issue pin`); a pin failure (e.g. the repo already has 3 pinned issues) must not fail the publish itself.
+6. Then write the PRD to `.scratch/<feature-slug>/.prd-draft.md` and publish it, with that path as `<file>`:
 
-**Security**: Only write to paths under `.scratch/` within the current repo, or — under a configured `github` tracker — through that tracker's own defined operations (`gh issue`/`gh api` calls per `issue-tracker.md`). Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
+   ```bash
+   node "$TRACKER" publish-prd --feature-slug <feature-slug> --title "<feature title>" --body-file <file>
+   ```
 
-> **Never commit `PRD.md`.** (Local tracker only — under `github` the PRD is a GitHub issue, with no local file to accidentally commit.) This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
+   It creates the feature's PRD, or updates it when one exists, and prints its ref; delete the draft file once it exits 0. The PRD is titled `PRD: <feature title>` and filed under the feature's milestone where the tracker has one; a tracker that pins it treats a pin failure as a warning, never a failed publish.
+
+**Security**: Only write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `issue-tracker.md` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
+
+> **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
 
 <prd-template>
 

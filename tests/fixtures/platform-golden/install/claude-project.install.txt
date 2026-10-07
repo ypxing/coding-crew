@@ -97,8 +97,6 @@ REPO/.claude/skills/to-issues/ /
 REPO/.claude/skills/to-issues/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/to-issues/references/ /
 REPO/.claude/skills/to-issues/references/expand-contract.md exec=0
-REPO/.claude/skills/to-issues/references/github-publish.md exec=0
-REPO/.claude/skills/to-issues/references/rerun.md exec=0
 REPO/.claude/skills/to-issues/scripts/ /
 REPO/.claude/skills/to-issues/scripts/lint-issues.sh exec=1
 REPO/.claude/skills/to-prd/ /
@@ -155,12 +153,7 @@ REPO/.coding-crew/crew-afk/lib/review-context.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/shipped.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/skill-dirs.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/sprint.mjs exec=0
-REPO/.coding-crew/crew-afk/lib/tracker-config.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/tracker.mjs exec=0
-REPO/.coding-crew/crew-afk/lib/trackers/ /
-REPO/.coding-crew/crew-afk/lib/trackers/body-format.mjs exec=0
-REPO/.coding-crew/crew-afk/lib/trackers/github.mjs exec=0
-REPO/.coding-crew/crew-afk/lib/trackers/local.mjs exec=0
 REPO/.coding-crew/crew-afk/lib/worktree.mjs exec=0
 REPO/.coding-crew/crew-afk/main.mjs exec=0
 REPO/.coding-crew/crew-afk/platforms.json exec=0
@@ -218,5 +211,12 @@ REPO/.coding-crew/solve-issue/scripts/run-checks.sh exec=1
 REPO/.coding-crew/to-issues/ /
 REPO/.coding-crew/to-issues/scripts/ /
 REPO/.coding-crew/to-issues/scripts/lint-issues.sh exec=1
+REPO/.coding-crew/tracker/ /
+REPO/.coding-crew/tracker/body-format.mjs exec=0
+REPO/.coding-crew/tracker/cli.mjs exec=0
+REPO/.coding-crew/tracker/github.mjs exec=0
+REPO/.coding-crew/tracker/index.mjs exec=0
+REPO/.coding-crew/tracker/local.mjs exec=0
+REPO/.coding-crew/tracker/tracker-config.mjs exec=0
 REPO/.coding-crew/write-pr/ /
 REPO/.coding-crew/write-pr/SKILL.md exec=0 unrendered=0

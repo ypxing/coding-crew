@@ -180,46 +180,44 @@ to_issues_step() {
   done
 }
 
-@test "to-issues rewrites a single-slice source issue in place and keeps ## Parent for a split one, for every platform" {
+@test "to-issues rewrites a single-slice source issue in place through the CLI's rewrite and keeps ## Parent for a split one, for every platform" {
   for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
-    grep -qF 'gh issue edit <n> --body-file' "$output"
+    grep -qF 'node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slug <feature-slug>' "$output"
     grep -qi 'rewrit.* in place' "$output"
-    grep -qF 'under `local`, overwrite that issue file' "$output"
     grep -qF 'several slices' "$output"
     grep -qF '## Parent' "$output"
   done
 }
 
-@test "to-issues' github in-place rewrite swaps the triage label for the slice's status and sets the milestone, for every platform" {
+@test "to-issues' in-place rewrite sets the slice's status and files it under the feature, for every platform" {
   for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
-    grep -qF -- '--remove-label needs-triage --add-label <status>' "$output"
-    grep -qF -- '--milestone <feature-slug>' "$output"
+    grep -qF "\`<status>\` is the slice's status" "$output"
+    grep -qF '`rewrite` also files it under the feature' "$output"
     if grep -qF 'its body is the one edit made to it' "$output"; then false; fi
   done
 }
 
-@test "to-issues exempts auto-promoted fix issues under both trackers, by promote-findings.sh's column-0 Source: rule, for every platform" {
+@test "to-issues exempts auto-promoted fix issues by promote-findings.sh's column-0 Source: rule, both forms, for every platform" {
   for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     line=$(grep -F 'not checked against the design standard' "$output")
     [[ "$line" == *'column-0 `Source:` line outside a code fence'* ]]
-    [[ "$line" == *'`Source: review (<branch>)`'*'github'* ]]
-    [[ "$line" == *'`Source: <report> (<branch>)` after the title and `Status:` lines under `local`'* ]]
+    [[ "$line" == *'`Source: review (<branch>)`'* ]]
+    [[ "$line" == *'`Source: <report> (<branch>)`'* ]]
     grep -F 'Fails the design standard' "$output" | grep -qF 'An auto-promoted issue (a column-0 `Source:` line, step 1) is exempt.'
   done
 }
 
-@test "to-issues' in-place rewrite keeps a source issue's Source: line in the same position under both trackers, for every platform" {
+@test "to-issues' in-place rewrite keeps a source issue's title and Source: line as fetch printed them, for every platform" {
   for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
-    line=$(grep -F "rewrite that issue's body in place" "$output")
-    [[ "$line" == *'column-0 `Source:` line stays in the same position — the body'"'"'s first line under `github`, after the title and `Status:` lines under `local`'* ]]
+    grep -qF "Keep the source's title and its column-0 \`Source:\` line as \`fetch\` printed them" "$output"
   done
 }
 
@@ -228,15 +226,6 @@ to_issues_step() {
   [[ "$note" == *'column-0 `Source:` line'* ]]
   [[ "$note" == *'`Source: review (<branch>)`'* ]]
   [[ "$note" == *'`Source: <report> (<branch>)`'* ]]
-}
-
-@test "to-issues creates the missing <feature-slug> milestone, or reopens a closed one, list first, before the github in-place edit, for every platform" {
-  for p in "${PLATFORMS[@]}"; do
-    run rendered_skill to-issues "$p"
-    [ "$status" -eq 0 ]
-    line=$(grep -F 'gh issue edit <n> --body-file' "$output")
-    [[ "$line" == *"gh api --paginate 'repos/{owner}/{repo}/milestones?state=all' --jq"*'gh api repos/{owner}/{repo}/milestones -f title=<feature-slug>'*'gh api -X PATCH repos/{owner}/{repo}/milestones/<number> -f state=open'*'gh issue edit <n> --body-file'* ]]
-  done
 }
 
 @test "the guide names /to-issues <ref> as the needs-triage to ready-for-agent step" {

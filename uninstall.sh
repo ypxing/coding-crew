@@ -243,6 +243,15 @@ else
     done < <(jq -r '.docs.scripts // {} | .[].dest // empty' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
     rmdir_if_empty "$REPO_ROOT/.coding-crew/scripts" || true
   fi
+  # Shared trees (the tracker CLI) are mechanism too, installed with every skill: removed here only.
+  while IFS= read -r name; do
+    name="${name%$'\r'}"
+    [[ -n "$name" && "$name" == .coding-crew/* && "$name" != *..* ]] || continue
+    if [[ -d "$REPO_ROOT/$name" ]]; then
+      rm -rf "${REPO_ROOT:?}/$name"
+      echo "  removed $name/"
+    fi
+  done < <(jq -r '.docs.trees // {} | .[].dest // empty' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
   # Drop .coding-crew/ only when nothing is left in it — issue-tracker.md and
   # tracker templates are user-customisable and must survive an uninstall.
   if [[ -d "$REPO_ROOT/.coding-crew" ]]; then

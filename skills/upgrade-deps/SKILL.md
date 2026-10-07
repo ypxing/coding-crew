@@ -316,22 +316,16 @@ criteria / Blocked by / Interfaces where relevant).
 
 ### 8. Publish
 
-Execute the `publish` operation from `issue-tracker.md` for each issue, same as `to-issues`'s
-"Write the issues" step — including, under a configured `github` tracker, that same step's
-github branch: `## Blocked by` entries written as `Issue #<n>` citing an already-created
-blocker's number (the `Blocked by` edges from step 4's coupling analysis), milestoned to the
-feature slug, and labeled per this issue's own `Status:` decision above (`ready-for-agent` or
-`ready-for-human` — both are real, pre-created labels; see `github.md`'s Labels table).
-
-Under `local`, also write `.scratch/<slug>/issues/issues-deps.json` with the same blocker map
-so the crew-afk orchestrator can resolve dispatch order without re-parsing prose — this sidecar
-has no github equivalent, since a github issue number is already the blocker's ref (see
-`github.md`'s Workspace section).
+Write and publish the issues through `to-issues`' step 6 ("Write the issues") and its step 7
+dependency map: one draft per issue, its `Status:` line per this issue's own decision above
+(`ready-for-agent` or `ready-for-human`), its `## Blocked by` naming the blocking draft (the
+`Blocked by` edges from step 4's coupling analysis), the same edges in `deps.json`, then the lint
+and `publish-issues` exactly as that step runs them, its exit 4 and exit 5 questions included.
 
 ### 9. Summarize
 
 Print a short table: package(s), current → target, risk (low/med/high), status
-(ready-for-agent/ready-for-human), issue filename.
+(ready-for-agent/ready-for-human), the issue ref `publish-issues` printed.
 
 ## Never
 

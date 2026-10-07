@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { closingRefs, createIssue, linkBlockers, listFeatureIssues, parseIssue, selectDispatchable, writeProgress } from "../../orchestrator/lib/trackers/github.mjs";
+import { closingRefs, createIssue, linkBlockers, listFeatureIssues, parseIssue, selectDispatchable, writeProgress } from "../../tracker/github.mjs";
 
 // github.mjs's read path (issue 04): listFeatureIssues/parseIssue/selectDispatchable, all `gh`
 // calls stubbed via an injected fake exec — no real network access, no PATH stubbing.

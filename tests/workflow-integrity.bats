@@ -221,7 +221,7 @@ _installed_scripts() {
   [ -f .scratch/f/issues/open/01-t.md ]
 
   # ...and solve-issue must route its close through that operation rather than its own mv.
-  grep -qE 'Execute the .mark-done. operation' "$REPO_ROOT/skills/solve-issue/SKILL.md"
+  grep -qF 'node "$TRACKER" mark-done <issue-ref>' "$REPO_ROOT/skills/solve-issue/SKILL.md"
 }
 
 @test "B4: close-issue.sh is idempotent when the issue is already in done/" {

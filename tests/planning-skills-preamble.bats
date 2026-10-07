@@ -57,12 +57,12 @@ setup() {
 
 # --- Named operation references instead of inline logic ---
 
-@test "to-issues/SKILL.md references the publish operation by name" {
-  grep -qE 'publish.*operation|operation.*publish' "$TO_ISSUES"
+@test "to-issues/SKILL.md publishes through the tracker CLI's publish-issues op by name" {
+  grep -qF 'node "$TRACKER" publish-issues' "$TO_ISSUES"
 }
 
-@test "to-prd/SKILL.md references the publish operation by name" {
-  grep -qE 'publish.*operation|operation.*publish' "$TO_PRD"
+@test "to-prd/SKILL.md publishes through the tracker CLI's publish-prd op by name" {
+  grep -qF 'node "$TRACKER" publish-prd' "$TO_PRD"
 }
 
 # --- Feature slug concept still managed by skill ---

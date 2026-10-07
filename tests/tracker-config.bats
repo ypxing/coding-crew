@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# tracker-config.sh — the bash equivalent of orchestrator/lib/tracker-config.mjs's
+# tracker-config.sh — the bash equivalent of tracker/tracker-config.mjs's
 # readTrackerConfig(mainRoot): reads {tracker, repo} from the optional YAML front
 # matter atop .coding-crew/docs/issue-tracker.md, sourceable by other scripts.
 
