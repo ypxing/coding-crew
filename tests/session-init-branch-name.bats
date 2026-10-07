@@ -37,6 +37,8 @@ session_init() {
 write_tracker_config() {
   mkdir -p "$TEMP_DIR/.coding-crew/scripts" "$TEMP_DIR/.coding-crew/docs"
   cp "$REPO_ROOT/scripts/tracker/tracker-config.sh" "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
+  # tracker-config.sh asks the tracker CLI, installed beside the scripts.
+  [ -d "$TEMP_DIR/.coding-crew/tracker" ] || cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/.coding-crew/tracker"
   printf -- '---\ntracker: %s\n---\n\n# Issue tracker\n' "$1" > "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
 }
 

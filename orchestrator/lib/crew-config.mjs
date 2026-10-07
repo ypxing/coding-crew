@@ -7,7 +7,9 @@
  * at two levels, the same two a coding-crew install has: ~/.coding-crew/config.json (this
  * machine: e.g. a provider-specific model ID, or which runtime you have) under the repo's own
  * (team policy, committed). They merge per setting, the repo's winning; CLI flags win over both.
- * The only section today is `afk`:
+ * Sections: `afk`, below, and `tracker` (`{"kind": "local"|"github"}`), which only the repo's
+ * file may hold — which tracker a repo uses is the team's — and which tracker/tracker-config.mjs
+ * reads and validates; here it is only allowed through. `afk`:
  *
  *   { "afk": {
  *       "runtime": { "reviewer": "codex" },
@@ -69,7 +71,9 @@ export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
 export const LEGACY_REL = ".coding-crew/afk-models.json";
 
 export const ROLES = ["coder", "reviewer", "triage", "commandFinder", "prWriter"];
-const SECTIONS = ["afk"];
+const SECTIONS = ["afk", "tracker"];
+// Sections only the repo's config.json may hold (USER_ONLY's reverse).
+const REPO_ONLY_SECTIONS = ["tracker"];
 
 // What review findings are fixed automatically — `actionable`: every finding crew-triage judges
 // Actionable, whatever its severity; the others: the lowest severity.
@@ -147,6 +151,9 @@ export function validateConfig(config, label = CONFIG_REL, { userLevel = label =
   if (!isObject(config)) throw new ConfigError(`${label} must be a JSON object`);
   for (const k of Object.keys(config)) {
     if (!SECTIONS.includes(k)) problems.push(`unknown section "${k}" (expected ${oneOf(SECTIONS)})`);
+    else if (REPO_ONLY_SECTIONS.includes(k) && label === USER_CONFIG_LABEL) {
+      problems.push(`"${k}" belongs to the repo — set it in its ${CONFIG_REL}, not ${USER_CONFIG_LABEL}`);
+    }
   }
   const afk = config.afk;
   if (afk !== undefined) {

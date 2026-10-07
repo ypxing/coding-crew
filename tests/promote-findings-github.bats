@@ -62,13 +62,12 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-# configure_github [repo] — writes the front-matter tracker-config.sh reads.
+# configure_github — writes the front-matter tracker-config.sh reads.
 configure_github() {
   mkdir -p .coding-crew/docs
   {
     echo "---"
     echo "tracker: github"
-    [ -n "${1:-}" ] && echo "repo: $1"
     echo "---"
   } > .coding-crew/docs/issue-tracker.md
 }
@@ -164,16 +163,7 @@ SH
   [ -z "$(ls .scratch/feat/issues/open 2>/dev/null)" ]
 }
 
-@test "defer passes --repo through when the tracker doc overrides it" {
-  configure_github "owner/name"
-  stub_gh
-
-  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
-    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-  grep -q -- '--repo owner/name' "$GH_CALLS_LOG"
-}
-
-@test "defer omits --repo when no override is configured, letting gh infer it" {
+@test "defer never passes --repo, letting gh infer the repo from the git remote" {
   configure_github
   stub_gh
 
@@ -232,16 +222,6 @@ SH
 
   grep -q -- 'api repos/{owner}/{repo}/milestones?state=all --paginate --jq' "$GH_CALLS_LOG"
   ! grep -q -- '-f title=feat' "$GH_CALLS_LOG"
-}
-
-@test "defer's milestone bootstrap uses the repo override path when one is configured" {
-  configure_github "owner/name"
-  stub_gh "[]"
-
-  bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
-    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md >/dev/null
-
-  grep -q -- 'api repos/owner/name/milestones' "$GH_CALLS_LOG"
 }
 
 @test "defer dies without creating an issue when the milestone list call fails" {

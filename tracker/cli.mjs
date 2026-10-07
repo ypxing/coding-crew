@@ -15,6 +15,7 @@
  *   rewrite <ref> --body-file F --status ST --feature-slug S
  *                                       replace a single-slice source issue's body and set its status
  *   mark-done <ref> [--force]           mark an issue done, behind the two close guards
+ *   config                              "tracker=<kind>\nconfigured=yes|no" (tracker-config.mjs)
  *
  * Each op dispatches through `getTracker(mainRoot)` to the configured backend, so a new tracker is
  * one backend module; a backend's own extra ops (`cliOps`, e.g. github's `create-issue`) are
@@ -38,6 +39,7 @@ import { fileURLToPath } from "node:url";
 
 import { uncheckedCriteria } from "./body-format.mjs";
 import { getTracker } from "./index.mjs";
+import { readTrackerConfig } from "./tracker-config.mjs";
 
 export const EXIT = { OK: 0, FAILED: 1, USAGE: 2, NOT_FOUND: 3, DONE_EXIST: 4, OPEN_EXIST: 5, ORCHESTRATED: 3, UNCHECKED: 4 };
 
@@ -82,6 +84,7 @@ const USAGE = {
   "publish-prd": "publish-prd --feature-slug S --title T --body-file F",
   rewrite: "rewrite <ref> --body-file F --status ST --feature-slug S",
   "mark-done": "mark-done <ref> [--force]",
+  config: "config",
 };
 
 /** A draft's filename: `NN-<slug>.md`. */
@@ -378,9 +381,16 @@ export async function run(argv, io = {}) {
   const env = io.env ?? process.env;
   try {
     const [op, ...raw] = argv;
-    if (!op) throw new UsageError(`usage: cli.mjs <op> … — ops: ${Object.keys(OPS).join(", ")}`);
+    if (!op) throw new UsageError(`usage: cli.mjs <op> … — ops: ${Object.keys(OPS).join(", ")}, config`);
     const taken = takeMainRoot(raw);
     const mainRoot = resolve(cwd, taken.mainRoot ?? defaultMainRoot(cwd));
+    // Before getTracker: it answers which backend, so it needs none loaded.
+    if (op === "config") {
+      parseArgs("config", taken.argv, {});
+      const { tracker, configured } = readTrackerConfig(mainRoot);
+      out(`tracker=${tracker}\nconfigured=${configured ? "yes" : "no"}\n`);
+      return EXIT.OK;
+    }
     const tracker = await getTracker(mainRoot);
     const ctx = { tracker, mainRoot, exec: io.exec, cwd, out, err, env };
     if (Object.hasOwn(OPS, op)) return await OPS[op](taken.argv, ctx);
@@ -388,7 +398,7 @@ export async function run(argv, io = {}) {
       await tracker.cliOps[op]([...taken.argv, "--main-root", mainRoot], ctx);
       return EXIT.OK;
     }
-    throw new UsageError(`unknown op: ${op} — ops: ${[...Object.keys(OPS), ...Object.keys(tracker.cliOps ?? {})].join(", ")}`);
+    throw new UsageError(`unknown op: ${op} — ops: ${[...Object.keys(OPS), "config", ...Object.keys(tracker.cliOps ?? {})].join(", ")}`);
   } catch (e) {
     err(`${e.message}\n`);
     return e instanceof UsageError || e.usage ? EXIT.USAGE : EXIT.FAILED;

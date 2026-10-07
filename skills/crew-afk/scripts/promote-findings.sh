@@ -55,14 +55,13 @@ review_rollup() {
   fi
 }
 
-# Which backend (local|github) this repo tracks issues in, and its optional --repo
-# override — read once, the same lookup-chain shape review_rollup() uses above.
+# Which backend (local|github) this repo tracks issues in — read once, the same
+# lookup-chain shape review_rollup() uses above.
 # $CREW_TRACKER_CONFIG overrides the lookup for bats fixtures that exercise this script
 # alone, not a full install. Fails safe to local when the reader is missing entirely — an
 # in-between install state (this script updated, tracker-config.sh not yet installed)
 # must not break the local path.
 TRACKER_CONFIG_TRACKER="local"
-TRACKER_CONFIG_REPO=""
 # BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
 # Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
 # It cannot live in tracker-config.sh itself: that is the file being looked for.
@@ -87,7 +86,7 @@ done < <(tracker_config_candidates "$MAIN_ROOT")
 if [ -n "$_tracker_config_sh" ]; then
   # shellcheck disable=SC1090
   source "$_tracker_config_sh"
-  read_tracker_config "$MAIN_ROOT"
+  read_tracker_config "$MAIN_ROOT" || exit 1
 fi
 
 DEFERRED_STATUS="deferred-findings"

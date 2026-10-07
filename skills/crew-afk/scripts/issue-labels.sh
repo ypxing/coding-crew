@@ -40,7 +40,6 @@ tracker_config_candidates() {
 }
 # END tracker-lookup
 TRACKER_CONFIG_TRACKER="local"
-TRACKER_CONFIG_REPO=""
 TRACKER_CONFIG_FOUND=""
 while IFS= read -r _tc; do
   if [ -f "$_tc" ]; then TRACKER_CONFIG_FOUND="$_tc"; break; fi
@@ -48,7 +47,7 @@ done < <(tracker_config_candidates "$MAIN_ROOT")
 if [ -n "$TRACKER_CONFIG_FOUND" ]; then
   # shellcheck source=/dev/null
   . "$TRACKER_CONFIG_FOUND"
-  read_tracker_config "$MAIN_ROOT"
+  read_tracker_config "$MAIN_ROOT" || exit 1
 fi
 
 CMD="${1:-}"
@@ -67,13 +66,10 @@ esac
 
 [ "$TRACKER_CONFIG_TRACKER" = "github" ] || exit 0
 
-REPO_ARGS=()
-[ -n "$TRACKER_CONFIG_REPO" ] && REPO_ARGS=(--repo "$TRACKER_CONFIG_REPO")
-
 # The label first, idempotently: --add-label and --remove-label fail on a label the repo lacks.
 ensure_label() {
   local name="$1" description="$2" out
-  if ! out="$(gh label create "$name" "${REPO_ARGS[@]}" --force --description "$description" 2>&1)"; then
+  if ! out="$(gh label create "$name" --force --description "$description" 2>&1)"; then
     echo "issue-labels.sh: gh label create $name failed: $out" >&2
     exit 1
   fi
@@ -83,7 +79,7 @@ ensure_in_progress() { ensure_label in-progress "A crew-afk run is working this 
 
 edit() {
   local out
-  if ! out="$(gh issue edit "$1" "${REPO_ARGS[@]}" "${@:2}" 2>&1)"; then
+  if ! out="$(gh issue edit "$1" "${@:2}" 2>&1)"; then
     echo "issue-labels.sh: gh issue edit failed for #$1: $out" >&2
     exit 1
   fi
@@ -104,7 +100,7 @@ case "$CMD" in
     edit "$ARG" --add-label blocked --remove-label in-progress
     echo "LABELLED: blocked #$ARG" ;;
   sweep)
-    if ! OUT="$(gh issue list "${REPO_ARGS[@]}" --milestone "$ARG" --label in-progress --state all \
+    if ! OUT="$(gh issue list --milestone "$ARG" --label in-progress --state all \
         --json number --jq '.[].number' 2>&1)"; then
       # A milestone not created yet has no issues, and so nothing to sweep.
       if printf '%s' "$OUT" | grep -qi milestone; then echo "SWEPT: 0"; exit 0; fi
@@ -114,7 +110,7 @@ case "$CMD" in
     COUNT=0
     FAILED=0
     for N in $OUT; do
-      if OUT2="$(gh issue edit "$N" "${REPO_ARGS[@]}" --remove-label in-progress 2>&1)"; then
+      if OUT2="$(gh issue edit "$N" --remove-label in-progress 2>&1)"; then
         COUNT=$((COUNT + 1))
       else
         echo "issue-labels.sh: gh issue edit failed for #$N: $OUT2" >&2

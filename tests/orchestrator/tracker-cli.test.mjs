@@ -196,12 +196,21 @@ test("fetch (github) exits 2 for a ref that is not all digits, before any gh cal
   }
 });
 
-test("fetch (github) passes the configured repo", async () => {
-  const dir = root({ github: true });
-  writeFileSync(join(dir, ".coding-crew/docs/issue-tracker.md"), "---\ntracker: github\nrepo: o/n\n---\n");
+test("fetch (github, from config.json) lets gh infer the repo: no --repo", async () => {
+  const dir = root();
+  mkdirSync(join(dir, ".coding-crew"), { recursive: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
   const exec = fakeGh({ "issue view 12": { stdout: JSON.stringify({ title: "T", body: "b" }) } });
   await cli(dir, ["fetch", "12"], exec);
-  assert.deepEqual(exec.calls[0], ["gh", "issue", "view", "12", "--repo", "o/n", "--json", "title,body"]);
+  assert.deepEqual(exec.calls[0], ["gh", "issue", "view", "12", "--json", "title,body"]);
+});
+
+test("a legacy front matter naming repo: fails every op, exit 1, before any gh call", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".coding-crew/docs/issue-tracker.md"), "---\ntracker: github\nrepo: o/n\n---\n");
+  const r = await cli(dir, ["fetch", "12"]);
+  assert.equal(r.code, 1);
+  assert.match(r.stderr, /`repo` is no longer supported/);
 });
 
 test("a failing gh call exits 1 with gh's stderr verbatim", async () => {

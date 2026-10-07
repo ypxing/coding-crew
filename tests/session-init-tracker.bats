@@ -50,6 +50,8 @@ installed_scripts() {
 write_tracker_config() {
   mkdir -p "$TEMP_DIR/.coding-crew/scripts" "$TEMP_DIR/.coding-crew/docs"
   cp "$REPO_ROOT/scripts/tracker/tracker-config.sh" "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
+  # tracker-config.sh asks the tracker CLI, installed beside the scripts.
+  [ -d "$TEMP_DIR/.coding-crew/tracker" ] || cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/.coding-crew/tracker"
   printf -- '---\ntracker: %s\n---\n\n# Issue tracker\n' "$1" > "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
 }
 
@@ -114,6 +116,37 @@ write_tracker_config() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"tracker-config.sh"* ]]
   [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]
+}
+
+@test "config.json names github but tracker-config.sh not installed: hard error naming config.json" {
+  command -v jq >/dev/null || skip "jq not installed"
+  mkdir -p "$TEMP_DIR/.coding-crew"
+  printf '{"tracker": {"kind": "github"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
+  export HOME="$TEMP_DIR/empty-home"
+  mkdir -p "$HOME"
+  unset CREW_INSTALL_DIR
+  mkdir -p .scratch/some-slug/issues/open
+  echo "Status: ready-for-agent" > .scratch/some-slug/issues/open/01-first.md
+
+  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *".coding-crew/config.json sets tracker.kind: github"* ]]
+  [[ "$output" == *"tracker-config.sh"* ]]
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]
+}
+
+@test "config.json's local wins over a github front matter when tracker-config.sh is not installed" {
+  command -v jq >/dev/null || skip "jq not installed"
+  write_tracker_config github
+  rm "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
+  printf '{"tracker": {"kind": "local"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
+  export HOME="$TEMP_DIR/empty-home"
+  mkdir -p "$HOME"
+  unset CREW_INSTALL_DIR
+  git checkout -q -b some-other-branch
+
+  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
+  [ "$status" -eq 0 ]
 }
 
 @test "local tracker declared and tracker-config.sh not installed: still behaves like local" {

@@ -32,7 +32,6 @@ import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { readTrackerConfig } from "./tracker-config.mjs";
 import {
   criteriaSection,
   isSourceGuarded,
@@ -156,14 +155,11 @@ export function parseIssue(json) {
 /**
  * Every issue in the feature's milestone, `--state all` (open and closed — a closed or
  * `awaiting-merge` issue is how a blocker resolves), fetched and parsed via exactly one `gh issue list` call.
- * `--repo` is passed only when `readTrackerConfig` names one; omitted, `gh` infers it from
- * the git remote. A milestone that does not exist yet is an empty sprint, not an error.
+ * `gh` infers the repo from the git remote. A milestone that does not exist yet is an empty
+ * sprint, not an error.
  */
 export function listFeatureIssues(mainRoot, { featureSlug, exec = shellOut } = {}) {
-  const { repo } = readTrackerConfig(mainRoot);
-  const args = ["issue", "list"];
-  if (repo) args.push("--repo", repo);
-  args.push("--milestone", featureSlug, "--state", "all", "--json", "number,title,body,labels,state");
+  const args = ["issue", "list", "--milestone", featureSlug, "--state", "all", "--json", "number,title,body,labels,state"];
 
   const r = exec("gh", args);
   if (r.code !== 0) {
@@ -198,13 +194,8 @@ export function selectDispatchable(mainRoot, { status = READY_STATUS, featureSlu
     .filter((i) => includeBlocked || i.blockers.length === 0);
 }
 
-/** `repos/{owner}/{repo}/milestones` when `repo` is unset, letting `gh` resolve the
- * placeholder from the git remote (this `gh` version's `api` subcommand has no `--repo`
- * flag); the literal `owner/name` path otherwise, so a `readTrackerConfig` override is
- * honored the same way it is for every `gh issue ...` call in this module. */
-function milestonesPath(repo) {
-  return repo ? `repos/${repo}/milestones` : "repos/{owner}/{repo}/milestones";
-}
+/** `gh api` resolves the placeholders from the git remote, as every `gh issue ...` call here does. */
+const MILESTONES_PATH = "repos/{owner}/{repo}/milestones";
 
 /**
  * Ensure a milestone named `featureSlug` exists, list-first so a second call for the
@@ -213,9 +204,8 @@ function milestonesPath(repo) {
  * includes closed milestones: either one missed reads as missing, and its create 422s on the
  * taken title. A closed match is reopened, so a finished feature's milestone can be closed.
  */
-function ensureMilestone(featureSlug, { repo, exec }) {
-  const path = milestonesPath(repo);
-  const list = exec("gh", ["api", `${path}?state=all`, "--paginate", "--jq", ".[] | [.number, .state, .title] | @tsv"]);
+function ensureMilestone(featureSlug, { exec }) {
+  const list = exec("gh", ["api", `${MILESTONES_PATH}?state=all`, "--paginate", "--jq", ".[] | [.number, .state, .title] | @tsv"]);
   if (list.code !== 0) {
     throw new Error(`gh api milestones list failed (exit ${list.code}): ${list.stderr || list.stdout}`);
   }
@@ -226,14 +216,14 @@ function ensureMilestone(featureSlug, { repo, exec }) {
   if (match) {
     const [number, state] = match;
     if (state === "open") return;
-    const reopened = exec("gh", ["api", "-X", "PATCH", `${path}/${number}`, "-f", "state=open"]);
+    const reopened = exec("gh", ["api", "-X", "PATCH", `${MILESTONES_PATH}/${number}`, "-f", "state=open"]);
     if (reopened.code !== 0) {
       throw new Error(`gh api milestone reopen failed (exit ${reopened.code}): ${reopened.stderr || reopened.stdout}`);
     }
     return;
   }
 
-  const created = exec("gh", ["api", path, "-f", `title=${featureSlug}`]);
+  const created = exec("gh", ["api", MILESTONES_PATH, "-f", `title=${featureSlug}`]);
   if (created.code !== 0) {
     throw new Error(`gh api milestone create failed (exit ${created.code}): ${created.stderr || created.stdout}`);
   }
@@ -248,15 +238,12 @@ function ensureMilestone(featureSlug, { repo, exec }) {
  * number without a second fetch.
  */
 export function createIssue({ title, body, labels = [], featureSlug }, { mainRoot, exec = shellOut } = {}) {
-  const { repo } = readTrackerConfig(mainRoot);
-  ensureMilestone(featureSlug, { repo, exec });
+  ensureMilestone(featureSlug, { exec });
 
   const bodyFile = join(tmpdir(), `crew-github-issue-${randomUUID()}.md`);
   writeFileSync(bodyFile, body);
   try {
-    const args = ["issue", "create"];
-    if (repo) args.push("--repo", repo);
-    args.push("--title", title, "--body-file", bodyFile);
+    const args = ["issue", "create", "--title", title, "--body-file", bodyFile];
     for (const label of [].concat(labels).filter(Boolean)) args.push("--label", label);
     args.push("--milestone", featureSlug);
 
@@ -286,12 +273,10 @@ export function createIssue({ title, body, labels = [], featureSlug }, { mainRoo
  */
 export function linkBlockers(number, { mainRoot, exec = shellOut, body, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
   try {
-    const { repo } = readTrackerConfig(mainRoot ?? process.cwd());
-    const repoArgs = repo ? ["--repo", repo] : [];
-    const apiBase = repo ? `repos/${repo}` : "repos/{owner}/{repo}";
+    const apiBase = "repos/{owner}/{repo}";
     let text = body;
     if (text === undefined) {
-      const view = exec("gh", ["issue", "view", String(number), ...repoArgs, "--json", "body", "-q", ".body"]);
+      const view = exec("gh", ["issue", "view", String(number), "--json", "body", "-q", ".body"]);
       if (view.code !== 0) {
         warn(`link-blockers: could not read #${number} (exit ${view.code}): ${view.stderr || view.stdout}`);
         return 0;
@@ -328,10 +313,7 @@ export function linkBlockers(number, { mainRoot, exec = shellOut, body, warn = (
  * backend: a tracker without one has nothing for a PR to close.
  */
 export function closingRefs(mainRoot, { featureSlug, exec = shellOut } = {}) {
-  const { repo } = readTrackerConfig(mainRoot);
-  const args = ["issue", "list"];
-  if (repo) args.push("--repo", repo);
-  args.push("--milestone", featureSlug, "--state", "open", "--limit", "500", "--json", "number,title,labels");
+  const args = ["issue", "list", "--milestone", featureSlug, "--state", "open", "--limit", "500", "--json", "number,title,labels"];
   const r = exec("gh", args);
   if (r.code !== 0) throw new Error(`gh issue list failed (exit ${r.code}): ${r.stderr || r.stdout}`);
   const raw = r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : [];
@@ -342,7 +324,7 @@ export function closingRefs(mainRoot, { featureSlug, exec = shellOut } = {}) {
   const prdCloses = ships.length > 0 && ships.length === work.length ? prds : [];
   const origins = [];
   for (const prd of prdCloses) {
-    const v = exec("gh", ["issue", "view", String(prd.number), ...(repo ? ["--repo", repo] : []), "--json", "body"]);
+    const v = exec("gh", ["issue", "view", String(prd.number), "--json", "body"]);
     if (v.code !== 0) throw new Error(`gh issue view failed (exit ${v.code}): ${v.stderr || v.stdout}`);
     let body = "";
     try { body = JSON.parse(v.stdout || "{}").body || ""; } catch { body = ""; }
@@ -367,11 +349,9 @@ export function parseOrigins(body) {
  * same comment path, and there is no `blocked` label anywhere in this module.
  */
 export function writeProgress(issue, body, { heading = "Progress", mainRoot, exec = shellOut } = {}) {
-  const { repo } = readTrackerConfig(mainRoot);
-  const repoArgs = repo ? ["--repo", repo] : [];
   const commentBody = `## ${heading}\n\n${body}`;
 
-  const result = exec("gh", ["issue", "comment", String(issue.number), ...repoArgs, "--body", commentBody]);
+  const result = exec("gh", ["issue", "comment", String(issue.number), "--body", commentBody]);
   if (result.code !== 0) {
     throw new Error(`gh issue comment failed (exit ${result.code}): ${result.stderr || result.stdout}`);
   }
@@ -391,9 +371,8 @@ const NOT_FOUND = /could not resolve to an? (?:issue|pullrequest|pull request)/i
  * view`; `comments` (with `{author, createdAt, body}` each) only when asked for.
  */
 export function fetchIssue(mainRoot, number, { comments = false, exec = shellOut } = {}) {
-  const { repo } = readTrackerConfig(mainRoot);
   const fields = comments ? "title,body,comments" : "title,body";
-  const r = exec("gh", ["issue", "view", String(number), ...(repo ? ["--repo", repo] : []), "--json", fields]);
+  const r = exec("gh", ["issue", "view", String(number), "--json", fields]);
   if (r.code !== 0) {
     if (NOT_FOUND.test(r.stderr ?? "")) return null;
     throw new Error(`gh issue view failed (exit ${r.code}): ${r.stderr || r.stdout}`);
@@ -479,19 +458,17 @@ export function beginPublish(mainRoot, { featureSlug, exec = shellOut } = {}) {
  * pin only warns. Returns the issue number.
  */
 export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
-  const { repo } = readTrackerConfig(mainRoot);
-  const repoArgs = repo ? ["--repo", repo] : [];
   const existing = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
   let number;
   if (existing) {
     number = existing.number;
-    const r = withBodyFile(body, (f) => exec("gh", ["issue", "edit", String(number), ...repoArgs, "--body-file", f]));
+    const r = withBodyFile(body, (f) => exec("gh", ["issue", "edit", String(number), "--body-file", f]));
     if (r.code !== 0) throw new Error(`gh issue edit failed (exit ${r.code}): ${r.stderr || r.stdout}`);
   } else {
     number = createIssue({ title: `PRD: ${title}`, body, featureSlug }, { mainRoot, exec }).number;
     if (number === null) throw new Error("gh issue create printed no issue URL for the PRD");
   }
-  const pin = exec("gh", ["issue", "pin", String(number), ...repoArgs]);
+  const pin = exec("gh", ["issue", "pin", String(number)]);
   if (pin.code !== 0) warn(`WARNING: could not pin PRD issue #${number} (exit ${pin.code}): ${pin.stderr || pin.stdout}`);
   return String(number);
 }
@@ -502,11 +479,10 @@ export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut
  * created — or reopened when closed — first. Null when the issue does not exist.
  */
 export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = shellOut } = {}) {
-  const { repo } = readTrackerConfig(mainRoot);
-  ensureMilestone(featureSlug, { repo, exec });
+  ensureMilestone(featureSlug, { exec });
   const r = withBodyFile(draftBody(body), (f) =>
     exec("gh", [
-      "issue", "edit", String(number), ...(repo ? ["--repo", repo] : []),
+      "issue", "edit", String(number),
       "--body-file", f, "--remove-label", "needs-triage", "--add-label", status, "--milestone", featureSlug,
     ]),
   );
@@ -524,8 +500,7 @@ export function doneTarget(mainRoot, number) {
 
 /** Issue `number`'s body, fetched live — never a copy the caller may hold — for `mark-done`'s criteria guard. */
 export function readIssueBody(mainRoot, number, { exec = shellOut } = {}) {
-  const { repo } = readTrackerConfig(mainRoot);
-  const r = exec("gh", ["issue", "view", String(number), ...(repo ? ["--repo", repo] : []), "--json", "body", "--jq", ".body"]);
+  const r = exec("gh", ["issue", "view", String(number), "--json", "body", "--jq", ".body"]);
   if (r.code !== 0) throw new Error(`ERROR: gh issue view failed for #${number}:\n${r.stderr || r.stdout}`);
   return r.stdout ?? "";
 }
@@ -539,21 +514,19 @@ export function readIssueBody(mainRoot, number, { exec = shellOut } = {}) {
  * created without `--force`, keeping its colour, and gh's "already exists" refusal counts as made.
  */
 export function markDone(mainRoot, number, { exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
-  const { repo } = readTrackerConfig(mainRoot);
-  const repoArgs = repo ? ["--repo", repo] : [];
-  const awaiting = exec("gh", ["label", "create", AWAITING_MERGE_LABEL, ...repoArgs, "--force",
+  const awaiting = exec("gh", ["label", "create", AWAITING_MERGE_LABEL, "--force",
     "--description", "Implemented on a feature branch; closes when its PR merges"]);
   if (awaiting.code !== 0) throw new Error(`ERROR: gh label create ${AWAITING_MERGE_LABEL} failed:\n${awaiting.stderr || awaiting.stdout}`);
   const remove = ["--remove-label", "ready-for-agent"];
-  const human = exec("gh", ["label", "create", "ready-for-human", ...repoArgs, "--description", "Requires human implementation"]);
+  const human = exec("gh", ["label", "create", "ready-for-human", "--description", "Requires human implementation"]);
   if (human.code === 0 || /already exists/.test(`${human.stderr}${human.stdout}`)) remove.push("--remove-label", "ready-for-human");
   else warn(`WARNING: gh label create ready-for-human failed; leaving it alone: ${human.stderr || human.stdout}`);
   // A display label never fails a close: without it created the edit just leaves it alone.
-  const inProgress = exec("gh", ["label", "create", "in-progress", ...repoArgs, "--force",
+  const inProgress = exec("gh", ["label", "create", "in-progress", "--force",
     "--description", "A crew-afk run is working this issue (display only)"]);
   if (inProgress.code === 0) remove.push("--remove-label", "in-progress");
   else warn(`WARNING: gh label create in-progress failed; leaving it alone: ${inProgress.stderr || inProgress.stdout}`);
-  const edit = exec("gh", ["issue", "edit", String(number), ...repoArgs, "--add-label", AWAITING_MERGE_LABEL, ...remove]);
+  const edit = exec("gh", ["issue", "edit", String(number), "--add-label", AWAITING_MERGE_LABEL, ...remove]);
   if (edit.code !== 0) throw new Error(`ERROR: gh issue edit failed for #${number}:\n${edit.stderr || edit.stdout}`);
   return `DONE: issue #${number} labelled ${AWAITING_MERGE_LABEL} — put 'Closes #${number}' in the PR body so merging it closes the issue`;
 }
