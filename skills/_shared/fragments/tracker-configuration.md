@@ -25,8 +25,17 @@ runs an op as `node "$TRACKER" <op> …`, write the absolute path it printed in 
 node "$TRACKER" <op> …   # run as: node "/abs/path/printed/above/cli.mjs" <op> …
 ```
 
-The tracker it talks to is set in `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md`;
-if that file does not exist, invoke the `configure-tracker` skill now to set it up, then continue.
+Before the first op, ask the CLI which tracker it talks to:
+
+```bash
+node "$TRACKER" config   # prints tracker=<kind> and configured=yes|no
+```
+
+On `configured=no`, no tracker was ever chosen for this repo. On an interactive run, invoke the
+`configure-tracker` skill now to choose one, then continue. On a non-interactive run
+(`CREW_ORCHESTRATED` is set, or a headless/`-p` invocation) never ask: proceed as `local`, which
+is what the CLI already uses. How the tracker works — its refs, statuses and labels — is in
+`.coding-crew/tracker/docs/<kind>.md`, beside `cli.mjs`.
 
 Exit codes, every op: 0 ok; 1 the op failed — stderr carries the tracker's own error, verbatim;
 2 a usage error or an invalid ref; 3 not found. On 1 or 2, report the stderr to the user and

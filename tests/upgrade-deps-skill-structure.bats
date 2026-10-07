@@ -2,7 +2,7 @@
 
 # Structural tests for the upgrade-deps skill — same pattern as
 # add-tests-skill-structure.bats: this skill's only executable surface beyond prose is its
-# consumption of dep-install's install-mode detection and issue-tracker.md's publish
+# consumption of dep-install's install-mode detection and the tracker CLI's publish
 # operation, both already covered by their own suites, so it needs a structural test, not an
 # execution-behavior suite.
 
@@ -25,11 +25,12 @@ setup() {
   grep -q 'dep-install' "$SKILL"
 }
 
-@test "upgrade-deps SKILL.md references the issue-tracker.md lookup chain" {
+@test "upgrade-deps SKILL.md asks the tracker CLI for its config" {
   # The preamble now comes from the shared fragment (skills/_shared/fragments/
   # tracker-configuration.md) via {{FRAGMENT:...}}, so assert against the rendered body.
   local f="$(rendered_skill upgrade-deps claude)"
-  grep -q 'issue-tracker.md' "$f"
+  grep -qF 'node "$TRACKER" config' "$f"
+  ! grep -q 'issue-tracker.md' "$f"
   grep -q 'git rev-parse --show-toplevel' "$f"
 }
 

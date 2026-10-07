@@ -15,7 +15,7 @@ required — agents degrade gracefully — but the more you provide, the better 
 
 | What                                 | Why                                         | Degrades to                                             |
 | ------------------------------------ | ------------------------------------------- | ------------------------------------------------------- |
-| `.coding-crew/docs/issue-tracker.md` | Tells agents how to list/fetch/close issues | Install copies a default; edit it to match your tracker |
+| `.coding-crew/config.json` `tracker` | Which tracker agents list/fetch/close issues in | No section means `local`; `configure-tracker` writes it |
 | `docs/agents/triage-labels.md`       | Maps label strings to canonical roles       | Install copies a default; edit it to match your labels  |
 | `.scratch/` directory with issues    | afk-run needs issues to work on             | Agent finds nothing and exits immediately               |
 

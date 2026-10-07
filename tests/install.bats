@@ -94,7 +94,7 @@ teardown() {
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/README.md" ]
   # Tracker configuration was a step in the prose orchestrator; the program does its own
   # issue discovery (orchestrator/lib/tracker.mjs), so crew-afk shipped a script no agent
-  # ran. The configure-tracker skill still owns it.
+  # ran.
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh" ]
   # The PRD audit's script, under its old name and its last.
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/coverage-validation.sh" ]
@@ -104,13 +104,16 @@ teardown() {
   [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/verify-worktree.sh" ]
 }
 
-@test "crew-afk no longer ships the tracker-configuration script, configure-tracker still does" {
+@test "configure-tracker-auto.sh ships with no skill, and an older install's copy is removed" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
   [ ! -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/configure-tracker-auto.sh" ]
-  # Its one real caller is the configure-tracker skill.
+  # configure-tracker offers its two backends itself; an earlier version's script is swept.
+  mkdir -p "$TEMP_DIR/.claude/skills/configure-tracker/scripts"
+  echo "stale tracker setup" > "$TEMP_DIR/.claude/skills/configure-tracker/scripts/configure-tracker-auto.sh"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill configure-tracker
-  [ -f "$TEMP_DIR/.claude/skills/configure-tracker/scripts/configure-tracker-auto.sh" ]
+  [ ! -e "$TEMP_DIR/.claude/skills/configure-tracker/scripts" ]
+  [ -f "$TEMP_DIR/.claude/skills/configure-tracker/SKILL.md" ]
 }
 
 @test "solve-issue ships no feature-branch-setup.sh: its step 0 is a guard, not a branch creation" {
@@ -290,25 +293,112 @@ teardown() {
   [[ ! "$output" =~ "(updated)" ]]
 }
 
-@test "install creates .coding-crew/docs/issue-tracker.md in target repo" {
-  cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude
+# ── tracker config: legacy issue-tracker.md → config.json ──────────────────────
+# The fixtures are copies of this repo's own pre-migration files.
 
-  [ -f "$TEMP_DIR/.coding-crew/docs/issue-tracker.md" ]
+TRACKER_FIXTURES="$(cd "$(dirname "$BATS_TEST_FILENAME")" && pwd)/fixtures/tracker-config"
+
+_legacy_tracker_repo() {  # <issue-tracker.md fixture> [config.json fixture]
+  mkdir -p "$TEMP_DIR/.coding-crew/docs/templates/trackers"
+  cp "$TRACKER_FIXTURES/$1" "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
+  cp "$SCRIPT_DIR/tracker/docs/local.md" "$SCRIPT_DIR/tracker/docs/github.md" "$TEMP_DIR/.coding-crew/docs/templates/trackers/"
+  [ -z "${2:-}" ] || cp "$TRACKER_FIXTURES/$2" "$TEMP_DIR/.coding-crew/config.json"
 }
 
-@test "reinstall does not overwrite existing .coding-crew/docs/issue-tracker.md" {
+_assert_legacy_tracker_files_gone() {
+  [ ! -e "$TEMP_DIR/.coding-crew/docs/issue-tracker.md" ]
+  [ ! -e "$TEMP_DIR/.coding-crew/docs/templates/trackers" ]
+  [ ! -e "$TEMP_DIR/.coding-crew/docs" ]
+}
+
+@test "install migrates a legacy github issue-tracker.md into config.json, keeping afk, and deletes the legacy files" {
+  _legacy_tracker_repo issue-tracker-github.md config-afk-only.json
+  cd "$SCRIPT_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
+  [ "$status" -eq 0 ]
+  run jq -c --slurpfile afk "$TRACKER_FIXTURES/config-afk-only.json" \
+    '. == ($afk[0] + {tracker: {kind: "github"}})' "$TEMP_DIR/.coding-crew/config.json"
+  [ "$output" = "true" ]
+  _assert_legacy_tracker_files_gone
+}
+
+@test "install --update migrates a legacy github issue-tracker.md into config.json and deletes the legacy files" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd > /dev/null
+  _legacy_tracker_repo issue-tracker-github.md config-afk-only.json
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
+  [ "$status" -eq 0 ]
+  run jq -c --slurpfile afk "$TRACKER_FIXTURES/config-afk-only.json" \
+    '. == ($afk[0] + {tracker: {kind: "github"}})' "$TEMP_DIR/.coding-crew/config.json"
+  [ "$output" = "true" ]
+  _assert_legacy_tracker_files_gone
+}
+
+@test "install migrates a legacy issue-tracker.md without front matter to kind local" {
+  _legacy_tracker_repo issue-tracker-no-front-matter.md
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd > /dev/null
+  run jq -c . "$TEMP_DIR/.coding-crew/config.json"
+  [ "$output" = '{"tracker":{"kind":"local"}}' ]
+  _assert_legacy_tracker_files_gone
+}
+
+@test "install keeps an existing tracker section unchanged and still deletes the legacy files" {
+  _legacy_tracker_repo issue-tracker-github.md
+  printf '{"tracker": {"kind": "local"}, "afk": {}}\n' > "$TEMP_DIR/.coding-crew/config.json"
+  local before; before=$(cat "$TEMP_DIR/.coding-crew/config.json")
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd > /dev/null
+  [ "$(cat "$TEMP_DIR/.coding-crew/config.json")" = "$before" ]
+  _assert_legacy_tracker_files_gone
+}
+
+@test "install leaves a legacy front matter naming repo: in place and says repo is no longer supported" {
+  _legacy_tracker_repo issue-tracker-github.md config-afk-only.json
+  printf -- '---\ntracker: github\nrepo: owner/name\n---\n' > "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
+  local doc_before cfg_before
+  doc_before=$(cat "$TEMP_DIR/.coding-crew/docs/issue-tracker.md")
+  cfg_before=$(cat "$TEMP_DIR/.coding-crew/config.json")
+  cd "$SCRIPT_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'`repo` is no longer supported'* ]]
+  [[ "$output" == *"$TEMP_DIR/.coding-crew/docs/issue-tracker.md"* ]]
+  [ "$(cat "$TEMP_DIR/.coding-crew/docs/issue-tracker.md")" = "$doc_before" ]
+  [ "$(cat "$TEMP_DIR/.coding-crew/config.json")" = "$cfg_before" ]
+}
+
+@test "a fresh install writes no .coding-crew/docs/ and no tracker section, and installs the tracker docs" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude > /dev/null
+  [ ! -e "$TEMP_DIR/.coding-crew/docs" ]
+  if [ -f "$TEMP_DIR/.coding-crew/config.json" ]; then
+    run jq -e 'has("tracker")' "$TEMP_DIR/.coding-crew/config.json"
+    [ "$status" -ne 0 ]
+  fi
+  cmp "$SCRIPT_DIR/tracker/docs/local.md" "$TEMP_DIR/.coding-crew/tracker/docs/local.md"
+  cmp "$SCRIPT_DIR/tracker/docs/github.md" "$TEMP_DIR/.coding-crew/tracker/docs/github.md"
+}
 
-  # Modify the installed file
-  echo "custom content" > "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
+@test "install --update overwrites the tracker docs when a source doc changed" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd > /dev/null
+  echo "stale prose" > "$TEMP_DIR/.coding-crew/tracker/docs/github.md"
+  echo "stale prose" > "$TEMP_DIR/.coding-crew/tracker/docs/local.md"
+  TARGET_REPO="$TEMP_DIR" ./install.sh --update > /dev/null
+  cmp "$SCRIPT_DIR/tracker/docs/local.md" "$TEMP_DIR/.coding-crew/tracker/docs/local.md"
+  cmp "$SCRIPT_DIR/tracker/docs/github.md" "$TEMP_DIR/.coding-crew/tracker/docs/github.md"
+}
 
-  # Reinstall
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude > /dev/null
-
-  # Verify custom content was preserved (not overwritten)
-  grep -q "custom content" "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
+@test "a user-level install deletes the legacy tracker files and writes no tracker section" {
+  _legacy_tracker_repo issue-tracker-github.md
+  cd "$SCRIPT_DIR"
+  HOME="$TEMP_DIR" TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd > /dev/null
+  _assert_legacy_tracker_files_gone
+  if [ -f "$TEMP_DIR/.coding-crew/config.json" ]; then
+    run jq -e 'has("tracker")' "$TEMP_DIR/.coding-crew/config.json"
+    [ "$status" -ne 0 ]
+  fi
 }
 
 @test "install --user is rejected with an invalid platform error" {
@@ -316,12 +406,13 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
-@test "registry.json docs section registers tracker template source" {
+@test "registry.json registers no doc templates: tracker docs ship in the tracker tree" {
   cd "$SCRIPT_DIR"
 
-  run jq -r '.docs.templates["issue-tracker"].source // empty' registry.json
+  run jq -r '.docs.templates // empty' registry.json
   [ "$status" -eq 0 ]
-  [ -n "$output" ]
+  [ -z "$output" ]
+  [ "$(jq -r '.docs.trees.tracker.source' registry.json)" = "tracker" ]
 }
 
 @test "install does not create triage-labels.md in target repo" {
@@ -376,8 +467,8 @@ teardown() {
     fi
     [ ! -d "$TEMP_DIR/$dir" ]
   done
-  # .coding-crew survives only because it still holds user-customisable docs
-  [ -f "$TEMP_DIR/.coding-crew/docs/issue-tracker.md" ]
+  # Everything under .coding-crew/ is mechanism install owns, so nothing is left of it.
+  [ ! -e "$TEMP_DIR/.coding-crew/docs" ]
 }
 
 # ── Windows: jq that emits CRLF ────────────────────────────────────────────────

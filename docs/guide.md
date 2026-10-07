@@ -30,9 +30,9 @@ THIS REPO (source)
 │   ├── crew-grill/
 │   ├── _shared/fragments/  ← shared fragments ({{FRAGMENT:<key>}})
 │   └── ...
+├── tracker/                ← tracker CLI and backends; docs/{local,github}.md (refreshed on every install)
 └── docs/
     └── templates/
-        ├── trackers/       ← tracker templates (local.md copied on install)
         └── workflows/      ← optional GitHub Actions workflows
 ```
 
@@ -82,12 +82,6 @@ There are no agents. crew-afk's three roles — coder, reviewer, triage — are 
     "dirs": [".coding-crew/agents", ".coding-crew/code-review"],
   },
   "docs": {
-    "templates": {
-      "<key>": {
-        "source": "docs/templates/trackers/local.md",
-        "dest": ".coding-crew/docs/issue-tracker.md", // skipped if it already exists
-      },
-    },
     "scripts": {
       "<key>": {
         "source": "scripts/tracker/mark-issue-done.sh",
@@ -275,7 +269,8 @@ YOUR_PROJECT/
     ├── crew-afk/                   ← the orchestrator crew-afk runs
     │   └── roles/                  ← coder, reviewer, triage protocols
     ├── skills/_shared/fragments/   ← fragments the roles render with
-    ├── docs/issue-tracker.md       ← edit to match your tracker
+    ├── tracker/                    ← the tracker CLI and its docs (docs/local.md, docs/github.md)
+    ├── config.json                 ← your settings; `tracker` picks the issue tracker
     ├── scripts/                    ← tracker helper scripts
     └── manifest.json
 ```
@@ -543,9 +538,9 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 Edit these files after install — they override the defaults on the next run:
 
-| File                                 | Purpose                                   |
-| ------------------------------------ | ----------------------------------------- |
-| `.coding-crew/docs/issue-tracker.md` | Where issues live, how to list/close them |
+| File                                           | Purpose                                         |
+| ---------------------------------------------- | ----------------------------------------------- |
+| `.coding-crew/config.json` (`tracker` section) | Where issues live: `{"tracker": {"kind": "github"}}` (default `local`) |
 
 ---
 

@@ -43,7 +43,7 @@ export function issueSlug(file) {
   return basename(file).replace(/\.md$/, "").replace(/^[0-9]+[-_]?/, "");
 }
 
-/** The filename's leading digits (`NN-<slug>.md` — see docs/issue-tracker.md), or null when absent. */
+/** The filename's leading digits (`NN-<slug>.md` — see tracker/docs/local.md), or null when absent. */
 export function issueNumber(file) {
   return /^([0-9]+)/.exec(basename(file))?.[1] ?? null;
 }

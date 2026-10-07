@@ -108,7 +108,7 @@ block() { awk '/# BEGIN tracker-lookup/{f=1} f{print} /# END tracker-lookup/{f=0
   local t where lookup
   for t in github local; do
     # The section's first bash block is the lookup; the op lines follow in the next one.
-    lookup=$(awk '/^## Tracker CLI/{f=1;next} /^## /{f=0} f' "$REPO_ROOT/docs/templates/trackers/$t.md" |
+    lookup=$(awk '/^## Tracker CLI/{f=1;next} /^## /{f=0} f' "$REPO_ROOT/tracker/docs/$t.md" |
       awk '/^```bash/{b=1;next} /^```/{if(b)exit} b')
     [ -n "$lookup" ]
     for where in "$MAIN_ROOT/.coding-crew/tracker" "$HOME/.coding-crew/tracker"; do

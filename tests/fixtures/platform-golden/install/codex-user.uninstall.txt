@@ -1,7 +1,0 @@
-HOME/.coding-crew/ /
-HOME/.coding-crew/docs/ /
-HOME/.coding-crew/docs/issue-tracker.md exec=0
-HOME/.coding-crew/docs/templates/ /
-HOME/.coding-crew/docs/templates/trackers/ /
-HOME/.coding-crew/docs/templates/trackers/github.md exec=0
-HOME/.coding-crew/docs/templates/trackers/local.md exec=0

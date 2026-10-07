@@ -27,22 +27,24 @@ setup() {
   grep -q '^## Tracker Configuration' "$(rendered_skill to-prd claude)"
 }
 
-@test "to-issues/SKILL.md preamble references issue-tracker.md lookup chain" {
+@test "to-issues/SKILL.md preamble asks the tracker CLI for its config" {
   local f="$(rendered_skill to-issues claude)"
-  grep -q 'issue-tracker.md' "$f"
+  grep -qF 'node "$TRACKER" config' "$f"
+  ! grep -q 'issue-tracker.md' "$f"
   grep -q 'git rev-parse --show-toplevel' "$f"
 }
 
-@test "to-prd/SKILL.md preamble references issue-tracker.md lookup chain" {
+@test "to-prd/SKILL.md preamble asks the tracker CLI for its config" {
   local f="$(rendered_skill to-prd claude)"
-  grep -q 'issue-tracker.md' "$f"
+  grep -qF 'node "$TRACKER" config' "$f"
+  ! grep -q 'issue-tracker.md' "$f"
   grep -q 'git rev-parse --show-toplevel' "$f"
 }
 
 # --- No inline .scratch/ tracker operation logic ---
 
 @test "to-issues/SKILL.md does not contain inline triage label table" {
-  # The triage label table should now come from issue-tracker.md, not be inline
+  # The triage label table comes from the tracker's docs, not inline
   ! grep -q '| `needs-triage`' "$TO_ISSUES"
 }
 

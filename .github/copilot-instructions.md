@@ -40,9 +40,10 @@ There are no installable agents: crew-coder, crew-reviewer and crew-triage are c
 
 - **`orchestrator/`** — crew-afk's program; `orchestrator/roles/` holds its three roles' protocols: `coder.md` (implements one issue using TDD in an isolated worktree), `reviewer.md` (+ `reviewer/{references,scripts}`; reviews each branch before merge, then the whole feature) and `triage.md` (classifies verify failures, findings and integration failures)
 - **`skills/`** — Reusable skill files (tdd, solve-issue, domain-modeling, crew-grill, etc.); `skills/_shared/fragments/` holds shared fragments
-- **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and doc templates
+- **`registry.json`** — Source of truth for install paths, dependencies, skill bundles, and the shared trees and scripts under `.coding-crew/`
 - **`install.sh`** — Single installer that reads `registry.json` and copies files into target repos
-- **`docs/templates/`** — Default tracker templates (`trackers/local.md` → `.coding-crew/docs/issue-tracker.md`) and optional workflows
+- **`tracker/`** — The tracker CLI and backends, with their docs in `tracker/docs/{local,github}.md`, installed to `.coding-crew/tracker/`; the tracker choice is `.coding-crew/config.json`'s `tracker` section
+- **`docs/templates/`** — Optional workflows
 
 ### How Install Works
 
@@ -71,7 +72,6 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
   // installs to <projectSkills|userSkills>/<name> from orchestrator/platforms.json
   "deps": ["tdd", "dep-install"],      // other skills, installed recursively
   "assets": { "source": "...", "dest": ".coding-crew/<name>" },  // runtime files (optional)
-  "docs": ["issue-tracker.md"],                  // doc templates
   "source": "mattpocock/skills"                  // attribution (optional)
 }
 ```
@@ -82,7 +82,7 @@ No per-platform agent file (`.claude/agents/`, `.github/agents/`, `.pi/agents/`,
 
 Issues live in `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
 
-- **Triage state**: `Status:` line near top (see `.coding-crew/docs/issue-tracker.md`)
+- **Triage state**: `Status:` line near top (see `tracker/docs/local.md`)
 - **To close**: Move to `done/` subdirectory after verifying acceptance criteria
 - **PRDs**: `.scratch/<feature-slug>/PRD.md`
 - **Comments**: Append under `## Comments` heading

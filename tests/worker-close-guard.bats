@@ -212,7 +212,7 @@ init_sprint() {
 # ─── the documents point at the mechanism instead of re-arguing it ───────────
 
 @test "tracker template delegates mark-done to the tracker CLI and hardcodes no mv" {
-  local tpl="$REPO_ROOT/docs/templates/trackers/local.md"
+  local tpl="$REPO_ROOT/tracker/docs/local.md"
   section=$(awk '/^## Tracker CLI/{f=1;next} /^## /{f=0} f' "$tpl")
   echo "$section" | grep -q '^node "$TRACKER" mark-done <ref>'
   # Exit codes are the contract, so the caller can tell a refusal from a failure.
@@ -365,10 +365,11 @@ EOF
   grep -q 'REFUSED' "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh"
 }
 
-@test "uninstall removes the close script but keeps the tracker doc" {
+@test "uninstall removes the close script but keeps the user's config.json" {
   cd "$REPO_ROOT"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
+  printf '{"tracker": {"kind": "github"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
   TARGET_REPO="$TEMP_DIR" ./uninstall.sh >/dev/null
   [ ! -f "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh" ]
-  [ -f "$TEMP_DIR/.coding-crew/docs/issue-tracker.md" ]
+  [ -f "$TEMP_DIR/.coding-crew/config.json" ]
 }

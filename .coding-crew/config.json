@@ -1,4 +1,5 @@
 {
+  "tracker": { "kind": "github" },
   "afk": {
     "models": { "claude": { "coder": "opus", "reviewer": "opus", "triage": "opus" } }
   }

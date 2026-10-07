@@ -15,8 +15,6 @@ HOME/.claude/skills/address-pr-comments/scripts/push-rework.sh exec=1
 HOME/.claude/skills/address-pr-comments/scripts/reply-thread.sh exec=1
 HOME/.claude/skills/configure-tracker/ /
 HOME/.claude/skills/configure-tracker/SKILL.md exec=0 unrendered=0
-HOME/.claude/skills/configure-tracker/scripts/ /
-HOME/.claude/skills/configure-tracker/scripts/configure-tracker-auto.sh exec=1
 HOME/.claude/skills/crew-address-findings/ /
 HOME/.claude/skills/crew-address-findings/SKILL.md exec=0 unrendered=0
 HOME/.claude/skills/crew-address-findings/scripts/ /
@@ -185,12 +183,6 @@ HOME/.coding-crew/dep-install/scripts/manifest-fingerprint.sh exec=1
 HOME/.coding-crew/dep-install/scripts/python-install-cmd.sh exec=1
 HOME/.coding-crew/dep-install/scripts/resolve-mode.sh exec=1
 HOME/.coding-crew/dep-install/scripts/run.sh exec=1
-HOME/.coding-crew/docs/ /
-HOME/.coding-crew/docs/issue-tracker.md exec=0
-HOME/.coding-crew/docs/templates/ /
-HOME/.coding-crew/docs/templates/trackers/ /
-HOME/.coding-crew/docs/templates/trackers/github.md exec=0
-HOME/.coding-crew/docs/templates/trackers/local.md exec=0
 HOME/.coding-crew/manifest.json 9526e04fa97da539f781d96fc39f531a49a0eb50
 HOME/.coding-crew/scripts/ /
 HOME/.coding-crew/scripts/mark-issue-done.sh exec=1
@@ -214,6 +206,9 @@ HOME/.coding-crew/to-issues/scripts/lint-issues.sh exec=1
 HOME/.coding-crew/tracker/ /
 HOME/.coding-crew/tracker/body-format.mjs exec=0
 HOME/.coding-crew/tracker/cli.mjs exec=0
+HOME/.coding-crew/tracker/docs/ /
+HOME/.coding-crew/tracker/docs/github.md exec=0
+HOME/.coding-crew/tracker/docs/local.md exec=0
 HOME/.coding-crew/tracker/github.mjs exec=0
 HOME/.coding-crew/tracker/index.mjs exec=0
 HOME/.coding-crew/tracker/local.mjs exec=0
