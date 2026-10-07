@@ -6,6 +6,14 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker: `tracker/cli.mjs` gains the write ops. `publish-issues --feature-slug S --drafts DIR [--replace]` creates
+  tracker-neutral drafts (`NN-<slug>.md` opening with `# <title>` and `Status:`, plus `deps.json`) in dependency order,
+  rewriting each `## Blocked by` draft ref to the real one (github `Issue #<n>`, local the final `NN-<slug>.md` and
+  `issues-deps.json`), prints `<draft> <ref>` lines and deletes the drafts; local exits 4 when the feature has done
+  issues and 5 when open ones exist without `--replace`. `publish-prd`, `rewrite <ref>` (a single-slice source issue:
+  body, status, milestone created or reopened) and `mark-done <ref> [--force]`, whose orchestrator (exit 3) and
+  unchecked-criteria (exit 4) guards now live once in the CLI; `mark-issue-done.sh` keeps its argv and exit codes as a
+  wrapper over it (#330).
 - tracker: the local and github tracker backends move from crew-afk's `orchestrator/lib/trackers/` to a shared
   `tracker/` directory, installed on every install (any skill) to `.coding-crew/tracker/` and always overwritten;
   installed crew-afk imports that one copy. New `tracker/cli.mjs` with the read ops `fetch <ref> [--comments]`,

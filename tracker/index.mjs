@@ -10,12 +10,20 @@
  *   - `ready-for-agent`: dispatchable. `selectDispatchable` returns these, minus any whose
  *     `## Blocked by` names an issue not yet `done`.
  *   - `done`: implemented and merged into the feature branch — *not* shipped. It resolves
- *     blockers and takes the issue out of the queue. mark-issue-done.sh sets it (close-issue.sh
- *     calls it); local moves the file to done/, github labels the issue `awaiting-merge`.
+ *     blockers and takes the issue out of the queue. `cli.mjs mark-done` sets it, behind its two
+ *     guards (mark-issue-done.sh and close-issue.sh call it); local moves the file to done/,
+ *     github labels the issue `awaiting-merge`.
  *   - Shipped is a separate, optional capability: `closingRefs(mainRoot, {featureSlug})`
  *     returns the lines (`Closes #n`) that close the `done` issues when the feature PR merges.
  *     Provide it only for a tracker other people read whose host closes issues on merge;
  *     local omits it, since nobody else reads .scratch/.
+ *
+ * The CLI's write ops call, on every backend: `beginPublish(mainRoot, {featureSlug, drafts,
+ * replace, exec})` → `{create(draft) → {ref, blockerRef}, finish?({deps})}` (the CLI orders the
+ * drafts and rewrites each `## Blocked by` to the `blockerRef`s already made), the optional
+ * `publishGuard` (a re-run refusal, `{code, message}`), `publishPrd`, `rewriteIssue`, and for
+ * `mark-done` — whose guards are the CLI's, not a backend's — `doneTarget`, `readIssueBody` and
+ * `markDone`.
  */
 
 import { readTrackerConfig } from "./tracker-config.mjs";

@@ -125,15 +125,14 @@ export function isSourceGuarded(text) {
   return false;
 }
 
-/** Matches an `## Acceptance criteria` / `## Cross-cutting Requirements` heading — the
- * same two headings `scripts/tracker/mark-issue-done.sh`'s awk guard scopes to on both
- * backends. */
+/** Matches an `## Acceptance criteria` / `## Cross-cutting Requirements` heading — the two
+ * headings `cli.mjs mark-done`'s criteria guard scopes to on every backend. */
 const CRITERIA_HEADING_RE = /^#{1,6}\s+(?:Acceptance Criteria|Cross-cutting Requirements)\s*$/i;
 
 /**
  * Every still-unchecked `- [ ]` line found under either criteria heading in `text` — the
- * same close-time guard `mark-issue-done.sh`'s awk runs for both backends, shared here so
- * a Node caller does not reimplement the scan.
+ * close-time guard `cli.mjs mark-done` runs for every backend, shared here so a Node caller
+ * does not reimplement the scan.
  */
 export function uncheckedCriteria(text) {
   let inside = false;

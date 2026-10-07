@@ -18,8 +18,9 @@
  * bootstraps the feature's milestone (list-first, idempotent) and passes the caller's
  * `body` through to `gh issue create --body-file` unmodified — the producer side of the
  * `## Blocked by`/`Source:` prose flow issues 07/08 write and issue 04's `parseIssue` reads
- * back. Marking an issue done is `scripts/tracker/mark-issue-done.sh`'s alone (close-issue.sh
- * calls it too), so there is one implementation of the label swap. `writeProgress`
+ * back. Marking an issue done is `markDone`'s alone, reached through `tracker/cli.mjs mark-done`
+ * (mark-issue-done.sh and close-issue.sh call it), so there is one implementation of the label
+ * swap. `writeProgress`
  * always posts a new `gh issue comment` — a GitHub comment thread is a timeline, not an
  * in-place-edited section, so every call is a new comment, deliberately, including for a
  * `## Blocked` write (there is no `blocked` label anywhere in this module).
@@ -418,6 +419,137 @@ export function readPrd(mainRoot, { featureSlug, exec = shellOut } = {}) {
 /** The file `known` writes for one issue: named `<n>-<slug>.md` (the lint ref), `# <title>` then the body. */
 export function knownFile(issue) {
   return { name: `${issue.number}-${issue.slug}.md`, text: `# ${issue.title}\n\n${issue.text.replace(/\n*$/, "\n")}` };
+}
+
+/** `gh issue edit`/`view` stderr naming an issue that does not exist. */
+function notFound(r) {
+  return NOT_FOUND.test(r.stderr ?? "");
+}
+
+/** Runs `fn(path)` with `text` in a throwaway `--body-file`, removed afterwards. */
+function withBodyFile(text, fn) {
+  const bodyFile = join(tmpdir(), `crew-github-issue-${randomUUID()}.md`);
+  writeFileSync(bodyFile, text);
+  try {
+    return fn(bodyFile);
+  } finally {
+    try {
+      unlinkSync(bodyFile);
+    } catch {
+      // best-effort cleanup of a throwaway temp file — nothing depends on it surviving.
+    }
+  }
+}
+
+/** A draft's body as an issue body: its `# <title>` and `Status:` lines become the title and label. */
+function draftBody(text) {
+  return text
+    .replace(/^#[ \t]+.*(?:\r?\n|$)/m, "")
+    .replace(/^Status:.*(?:\r?\n|$)/m, "")
+    .replace(/^(?:[ \t]*\r?\n)+/, "");
+}
+
+/**
+ * `publish-issues`' github side: each draft becomes an issue through `createIssue` (milestone
+ * ensured, blockers linked), titled by its `# <title>` line and labelled by its `Status:`. A
+ * milestone only accumulates, so there is no re-run guard: github never refuses with 4 or 5.
+ */
+export function beginPublish(mainRoot, { featureSlug, exec = shellOut } = {}) {
+  return {
+    create(draft) {
+      const { number } = createIssue(
+        { title: draft.title, body: draftBody(draft.text), labels: [draft.status], featureSlug },
+        { mainRoot, exec },
+      );
+      if (number === null) throw new Error(`gh issue create printed no issue URL for ${draft.file}`);
+      return { ref: String(number), blockerRef: `Issue #${number}` };
+    },
+  };
+}
+
+/**
+ * The feature's PRD issue: the milestone's existing `PRD:` issue gets `body`, else `PRD: <title>`
+ * is created in it. Then a best-effort pin — GitHub caps pinned issues at 3 a repo, so a failed
+ * pin only warns. Returns the issue number.
+ */
+export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const repoArgs = repo ? ["--repo", repo] : [];
+  const existing = listFeatureIssues(mainRoot, { featureSlug, exec }).find(isPrdIssue);
+  let number;
+  if (existing) {
+    number = existing.number;
+    const r = withBodyFile(body, (f) => exec("gh", ["issue", "edit", String(number), ...repoArgs, "--body-file", f]));
+    if (r.code !== 0) throw new Error(`gh issue edit failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  } else {
+    number = createIssue({ title: `PRD: ${title}`, body, featureSlug }, { mainRoot, exec }).number;
+    if (number === null) throw new Error("gh issue create printed no issue URL for the PRD");
+  }
+  const pin = exec("gh", ["issue", "pin", String(number), ...repoArgs]);
+  if (pin.code !== 0) warn(`WARNING: could not pin PRD issue #${number} (exit ${pin.code}): ${pin.stderr || pin.stdout}`);
+  return String(number);
+}
+
+/**
+ * Rewrite a single-slice source issue: `body` replaces its body as written (a `Source:` line
+ * included), `needs-triage` comes off, `status` goes on, and it moves into the feature's milestone,
+ * created — or reopened when closed — first. Null when the issue does not exist.
+ */
+export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = shellOut } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  ensureMilestone(featureSlug, { repo, exec });
+  const r = withBodyFile(body, (f) =>
+    exec("gh", [
+      "issue", "edit", String(number), ...(repo ? ["--repo", repo] : []),
+      "--body-file", f, "--remove-label", "needs-triage", "--add-label", status, "--milestone", featureSlug,
+    ]),
+  );
+  if (r.code !== 0) {
+    if (notFound(r)) return null;
+    throw new Error(`gh issue edit failed (exit ${r.code}): ${r.stderr || r.stdout}`);
+  }
+  return true;
+}
+
+/** What `mark-done` closes: a github issue has no file, so no sprint dir of its own (the CLI falls back to the env). */
+export function doneTarget(mainRoot, number) {
+  return { name: `issue #${number}`, sprintDir: null };
+}
+
+/** Issue `number`'s body, fetched live — never a copy the caller may hold — for `mark-done`'s criteria guard. */
+export function readIssueBody(mainRoot, number, { exec = shellOut } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const r = exec("gh", ["issue", "view", String(number), ...(repo ? ["--repo", repo] : []), "--json", "body", "--jq", ".body"]);
+  if (r.code !== 0) throw new Error(`ERROR: gh issue view failed for #${number}:\n${r.stderr || r.stdout}`);
+  return r.stdout ?? "";
+}
+
+/**
+ * Mark issue `number` done — not closed: the work is only on a branch. `awaiting-merge` (read as
+ * done) replaces `ready-for-agent`, and the PR's `Closes #n` closes the issue when it merges.
+ * crew-afk's display label `in-progress` and a person's `ready-for-human` come off in the same
+ * edit. Each label is created first, idempotently: `--add-label`/`--remove-label` fail on a label
+ * the repo lacks. `ready-for-human` is the project's own (configure-tracker made it), so it is
+ * created without `--force`, keeping its colour, and gh's "already exists" refusal counts as made.
+ */
+export function markDone(mainRoot, number, { exec = shellOut, warn = (m) => process.stderr.write(`${m}\n`) } = {}) {
+  const { repo } = readTrackerConfig(mainRoot);
+  const repoArgs = repo ? ["--repo", repo] : [];
+  const awaiting = exec("gh", ["label", "create", AWAITING_MERGE_LABEL, ...repoArgs, "--force",
+    "--description", "Implemented on a feature branch; closes when its PR merges"]);
+  if (awaiting.code !== 0) throw new Error(`ERROR: gh label create ${AWAITING_MERGE_LABEL} failed:\n${awaiting.stderr || awaiting.stdout}`);
+  const remove = ["--remove-label", "ready-for-agent"];
+  const human = exec("gh", ["label", "create", "ready-for-human", ...repoArgs, "--description", "Requires human implementation"]);
+  if (human.code === 0 || /already exists/.test(`${human.stderr}${human.stdout}`)) remove.push("--remove-label", "ready-for-human");
+  else warn(`WARNING: gh label create ready-for-human failed; leaving it alone: ${human.stderr || human.stdout}`);
+  // A display label never fails a close: without it created the edit just leaves it alone.
+  const inProgress = exec("gh", ["label", "create", "in-progress", ...repoArgs, "--force",
+    "--description", "A crew-afk run is working this issue (display only)"]);
+  if (inProgress.code === 0) remove.push("--remove-label", "in-progress");
+  else warn(`WARNING: gh label create in-progress failed; leaving it alone: ${inProgress.stderr || inProgress.stdout}`);
+  const edit = exec("gh", ["issue", "edit", String(number), ...repoArgs, "--add-label", AWAITING_MERGE_LABEL, ...remove]);
+  if (edit.code !== 0) throw new Error(`ERROR: gh issue edit failed for #${number}:\n${edit.stderr || edit.stdout}`);
+  return `DONE: issue #${number} labelled ${AWAITING_MERGE_LABEL} — put 'Closes #${number}' in the PR body so merging it closes the issue`;
 }
 
 /** An argv mistake in a subcommand below: the tracker CLI exits 2 for it, not 1. */
