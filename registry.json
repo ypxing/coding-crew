@@ -133,7 +133,7 @@
       }
     },
     "to-prd": {
-      "version": "1.4.5",
+      "version": "1.4.6",
       "source-dir": "to-prd",
       "description": "Synthesize conversation context into a PRD and publish to the issue tracker.",
       "source": "mattpocock/skills"
