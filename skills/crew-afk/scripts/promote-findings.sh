@@ -190,18 +190,18 @@ _defer_local() {
   echo "$issue_path"
 }
 
-# _github_tracker_cli <args...> — shells out to orchestrator/lib/trackers/github.mjs's own
-# CLI, so `defer`'s github path calls the exact same `createIssue` (+ lazy, idempotent
-# milestone bootstrap) every other GitHub write path uses, rather than a second hand-rolled
-# `gh issue create` that can drift from it (it did: this script's own milestone bootstrap
-# used to be missing entirely). Same lookup-chain shape as review_rollup() above.
+# _github_tracker_cli <args...> — shells out to the tracker CLI (tracker/cli.mjs, installed to
+# .coding-crew/tracker/ on every install), whose github backend's `create-issue` is the exact same
+# `createIssue` (+ lazy, idempotent milestone bootstrap) every other GitHub write path uses, rather
+# than a second hand-rolled `gh issue create` that can drift from it (it did: this script's own
+# milestone bootstrap used to be missing entirely). Same lookup-chain shape as review_rollup() above.
 # $CREW_GITHUB_TRACKER_CLI overrides the lookup for bats fixtures that exercise this script
 # alone, not a full install.
 _github_tracker_cli() {
   local node_cli="${CREW_GITHUB_TRACKER_CLI:-}"
-  [ -f "$node_cli" ] || node_cli="$MAIN_ROOT/.coding-crew/crew-afk/lib/trackers/github.mjs"
-  [ -f "$node_cli" ] || node_cli="$HOME/.coding-crew/crew-afk/lib/trackers/github.mjs"
-  [ -f "$node_cli" ] || { echo "ERROR: github tracker CLI (github.mjs) not found" >&2; return 1; }
+  [ -f "$node_cli" ] || node_cli="$MAIN_ROOT/.coding-crew/tracker/cli.mjs"
+  [ -f "$node_cli" ] || node_cli="$HOME/.coding-crew/tracker/cli.mjs"
+  [ -f "$node_cli" ] || { echo "ERROR: tracker CLI (.coding-crew/tracker/cli.mjs) not found" >&2; return 1; }
   node "$node_cli" "$@"
 }
 
@@ -340,7 +340,7 @@ _tail_fenced() {
 # cmd_flush/cmd_list). The body keeps local's `Source:` line (naming the kind and branch, not
 # a local report path) so parseIssue reads both the same way, embeds the promoted
 # findings' full reviewer text, and adds a numeric `## Blocked by` reference when the caller
-# names one. Prints the created issue's URL (github.mjs's own stdout, itself `gh issue
+# names one. Prints the created issue's URL (the tracker CLI's stdout, itself `gh issue
 # create`'s stdout passed through).
 _defer_github() {
   local slug="$1" title="$2" branch="$3" report="$4" criteria_file="$5" severities="$6" blocked_by="$7"

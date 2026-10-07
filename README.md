@@ -144,6 +144,12 @@ Where files land:
 | pi          | `.pi/`                               | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`)                 |
 | Codex       | `.agents/skills/`                    | `~/.agents/skills/` (`CODEX_HOME`)                     |
 
+Requirements for the skills that touch the issue tracker — `/to-issues`, `/to-prd`, `/solve-issue`,
+`/crew-address-findings`, `/upgrade-deps` and `/crew-afk`:
+
+- **Node.js on `PATH`.** They reach the tracker (local or GitHub) through the tracker CLI,
+  `.coding-crew/tracker/cli.mjs`, which every install ships.
+
 Requirements for `/crew-afk`:
 
 - The platform's **CLI must be on `PATH`** (`claude`, `copilot`, `codex` or `pi`) — each coder runs

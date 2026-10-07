@@ -20,7 +20,7 @@ import { join } from "node:path";
 
 import { applySchemaPrefilter, depsLine, parseWorkerReport, readVerifyRecord } from "./report.mjs";
 import { getTracker } from "./tracker.mjs";
-import { issueFingerprint } from "./trackers/body-format.mjs";
+import { issueFingerprint } from "../../tracker/body-format.mjs";
 import { conflictPrompt, fixPrompt, resumeNote, workerPrompt } from "./prompts.mjs";
 import { applyWorktreeInclude, ensureWorktree, mergeFeatureBranch, removeWorktree } from "./worktree.mjs";
 import { dispatch } from "./dispatch.mjs";

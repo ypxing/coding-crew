@@ -13,6 +13,7 @@ For the end-user pipeline (crew-grill/crew-brainstorm → crew-afk → crew-addr
 - `skills/<skill>/SKILL.md` — one skill per directory, one body for every platform (`{{PLATFORM}}` is the one per-platform substitution). `crew-afk`'s skill is a thin launcher; its actual logic is the `orchestrator/` program.
 - `orchestrator/` — the crew-afk state machine (rounds, worktrees, deps → dispatch → verify → review → merge → close, receipts). One implementation, run by all four platform launchers via `orchestrator/lib/dispatch.mjs`.
 - `orchestrator/roles/` — the role protocols crew-afk dispatches (`coder.md`, `reviewer.md` + `reviewer/` checklists and scripts, `triage.md`). They ship with the orchestrator to `.coding-crew/crew-afk/roles/` (crew-afk also installs `skills/_shared/fragments/` to `.coding-crew/skills/_shared/fragments/` for their `{{FRAGMENT:…}}` lines) and are rendered per dispatch; no platform gets an agent file. `registry.json`'s `retired-agents` lists the agent files older installs wrote, which install and uninstall remove.
+- `tracker/` — the issue-tracker backends (`local.mjs`, `github.mjs`, `body-format.mjs`), `tracker-config.mjs`, `getTracker()` (`index.mjs`) and `cli.mjs`, the tracker CLI skills call. `registry.json`'s `docs.trees` installs it to `.coding-crew/tracker/` on every install, always overwritten; the orchestrator imports it relatively (`../../tracker/…`), so source and installed trees resolve alike.
 - `orchestrator/platforms.json` — the platform list and where each platform keeps skills (`projectSkills`, `userSkills`, `configDir`, `configDirEnv`); a skill installs to `<projectSkills|userSkills>/<skill>`.
 - `registry.json` — source of truth for skills (`version`, `deps`, `assets`), `retired-agents`, and doc templates.
 - `install.sh` / `uninstall.sh` — installer; both source `scripts/lib/platforms.sh`, which reads the platform list and skill destinations from `orchestrator/platforms.json`.
@@ -63,7 +64,7 @@ scripts/cut-release.sh --dry-run --demo-smoke /tmp/smoke.log   # or --no-demo-sm
 The design standard (`skills/_shared/fragments/design-standard.md`, criterion 3) counts these as real axes, so a decision that varies along one belongs behind one abstraction even with a single implementation today:
 
 - platforms — `orchestrator/platforms.json` (claude, copilot, pi, codex)
-- trackers — local, github (`orchestrator/lib/trackers/`, `.coding-crew/docs/issue-tracker.md`)
+- trackers — local, github (`tracker/`, `.coding-crew/docs/issue-tracker.md`)
 - crew-afk roles — `orchestrator/roles/` (`ROLE_AGENTS` in `orchestrator/lib/adapters/render.mjs`)
 - dependency-install ecosystems — `dep-install`'s detection and install scripts
 - pane hosts — `orchestrator/lib/pane-host/` (herdr, orca)

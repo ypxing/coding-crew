@@ -4,7 +4,7 @@
  */
 
 import { removeWorktree } from "../worktree.mjs";
-import { issueFingerprint } from "../trackers/body-format.mjs";
+import { issueFingerprint } from "../../../tracker/body-format.mjs";
 import { notifyMilestone, writeTrackerSection } from "./shared.mjs";
 
 // Every non-complete outcome spends an attempt. One retry covers "might have been

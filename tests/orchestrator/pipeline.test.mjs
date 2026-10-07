@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { issueFingerprint } from "../../orchestrator/lib/trackers/body-format.mjs";
+import { issueFingerprint } from "../../tracker/body-format.mjs";
 import { CONFLICT_ROLE, RESUME_MAX_CONTEXT_TOKENS, mayResumeCoderSession, resumableSession, resumeRoute } from "../../orchestrator/lib/pipeline.mjs";
 import { Sprint } from "../../orchestrator/lib/sprint.mjs";
 import { isTestPath } from "../../orchestrator/lib/pipeline/review.mjs";

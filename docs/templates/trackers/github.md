@@ -15,7 +15,7 @@ repo: owner/name        # optional override — omit to let `gh` infer it from t
 ---
 ```
 
-`configure-tracker` writes this block when you choose `github`. `orchestrator/lib/
+`configure-tracker` writes this block when you choose `github`. `tracker/
 tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and `scripts/tracker/tracker-config.sh`'s
 `read_tracker_config` are the two readers of this front matter. `repo` is a pure override: `gh`
 already infers the repo from the current directory's git remote when `--repo` is omitted, so
@@ -66,7 +66,7 @@ gh issue pin <number> [--repo owner/name] || true
 gh issue create [--repo owner/name] --title "<title>" --body-file <body-file> \
   --label <status> --milestone <feature-slug>
 # Then mirror its `## Blocked by` as native GitHub dependencies (best-effort; never fails publish):
-node "$(git rev-parse --show-toplevel)/.coding-crew/crew-afk/lib/trackers/github.mjs" link-blockers --issue <number-just-created> [--main-root <dir>]
+node "$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs" link-blockers --issue <number-just-created> [--main-root <dir>]
 ```
 
 After each `gh issue create` of a work issue, to-issues runs `link-blockers` with the new issue's

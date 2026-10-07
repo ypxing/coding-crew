@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker: the local and github tracker backends move from crew-afk's `orchestrator/lib/trackers/` to a shared
+  `tracker/` directory, installed on every install (any skill) to `.coding-crew/tracker/` and always overwritten;
+  installed crew-afk imports that one copy. New `tracker/cli.mjs` with the read ops `fetch <ref> [--comments]`,
+  `prd --feature-slug S` and `known --feature-slug S --out DIR` (exit 0 ok, 1 failed with the tool's stderr, 2 usage or
+  invalid ref, 3 not found); github's `create-issue` / `link-blockers` are reached through it, and `promote-findings.sh`
+  looks it up at `.coding-crew/tracker/cli.mjs`. Node is now a requirement of the tracker-touching skills (#329).
 - `crew-afk` (github tracker): the milestone check before creating an issue paginates and includes closed milestones, so
   a feature milestone past the API's first 30 no longer reads as missing — its create failed with HTTP 422 and the fix
   issue for a review finding was never created (#326). A closed match is reopened, so a finished feature's milestone can
