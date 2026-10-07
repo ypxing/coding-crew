@@ -30,9 +30,9 @@ import { readTrackerConfig } from "./tracker-config.mjs";
 import * as local from "./local.mjs";
 
 /**
- * Resolve the tracker backend for `mainRoot`: `local.mjs`'s module for `tracker: local`
- * (the default, used whenever the config doc or its front matter is absent) or, for
- * `tracker: github`, a dynamic `import()` of `./github.mjs`.
+ * Resolve the tracker backend for `mainRoot`: `local.mjs`'s module for `local` (also the
+ * default when nothing is configured) or, for `github`, a dynamic `import()` of `./github.mjs`.
+ * Throws what `readTrackerConfig` throws for an invalid config.
  */
 export async function getTracker(mainRoot) {
   const { tracker } = readTrackerConfig(mainRoot);

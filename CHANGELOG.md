@@ -6,6 +6,12 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker: the tracker choice is read from `.coding-crew/config.json`'s `tracker` section (`{"kind": "local"|"github"}`),
+  falling back to the legacy `issue-tracker.md` front matter, then `local`; a new `cli.mjs config` op prints
+  `tracker=<kind>` and `configured=yes|no`, and `tracker-config.sh` asks it instead of parsing front matter. An invalid
+  `config.json` or unknown `tracker.kind` is an error, never a silent `local`. Breaking: the `repo:` override is
+  removed — `gh` always targets the git remote, and a front matter naming `repo:` now fails with "`repo` is no longer
+  supported". crew-afk: `config.json` accepts the `tracker` section (repo file only) (#339).
 - tracker: `publish-issues` exits 1, publishing nothing, when a draft's `## Blocked by` names a file that is neither a
   draft nor an issue of the feature (a typo became a blocker that never resolves, or under github `Issue #<n>` of an
   unrelated issue), and under local when `--replace` would delete an open issue a draft is blocked by (that draft
