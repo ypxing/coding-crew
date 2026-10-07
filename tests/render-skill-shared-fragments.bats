@@ -60,29 +60,17 @@ setup() {
   [ -z "$output" ]
 }
 
-@test "to-issues, to-prd and crew-address-findings's Tracker Configuration prose is byte-identical to before the fragment consolidation" {
-  # These three skills copy-pasted the exact same preamble (unlike upgrade-deps, whose
-  # wording drifted — see .scratch/github-issue-tracker/issues/open/
-  # 08-skill-prose-github-support.md), so switching them to {{FRAGMENT:tracker-configuration}}
-  # must not change one byte of what a consuming repo receives.
+@test "every tracker-touching skill's Tracker Configuration prose is byte-identical to the shared fragment" {
+  # The skills reach the tracker only through the tracker CLI, and the fragment is the one
+  # place that says how; a skill whose rendered section differed would be saying it twice.
   local expected
-  expected=$(cat <<'EOF'
-## Tracker Configuration
-
-Before any tracker operation, locate `issue-tracker.md` using this lookup chain:
-
-1. `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md` (project-level)
-
-If it does not exist, invoke the `configure-tracker` skill now to set it up, then continue.
-
-All tracker operations in this skill use the operation definitions in that file.
-EOF
-)
-  for skill in to-issues to-prd crew-address-findings; do
+  expected=$(cat "$REPO_ROOT/skills/_shared/fragments/tracker-configuration.md")
+  for skill in to-issues to-prd crew-address-findings upgrade-deps solve-issue; do
     run bash "$RENDER" "$skill" claude
     [ "$status" -eq 0 ]
     local actual
-    actual=$(printf '%s\n' "$output" | awk '/^## Tracker Configuration$/{f=1} f{print} /^All tracker operations in this skill use the operation definitions in that file\.$/{if(f)exit}')
+    # The fragment opens the section; a skill may add its own lines after it.
+    actual=$(printf '%s\n' "$output" | awk '/^## Tracker Configuration$/{f=1} f' | head -n "$(wc -l < "$REPO_ROOT/skills/_shared/fragments/tracker-configuration.md")")
     [ "$actual" = "$expected" ] || {
       echo "$skill's rendered Tracker Configuration section changed:" >&2
       diff <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2

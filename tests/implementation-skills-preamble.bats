@@ -18,13 +18,14 @@ setup() {
 
 # --- Tracker Configuration preamble ---
 
-@test "solve-issue/SKILL.md points at issue-tracker.md without a section of its own" {
-  # The 6-line `## Tracker Configuration` section became one line under `## Inputs`.
-  # A worker only needs to know where the operations are defined; the lookup "chain"
-  # had exactly one link, and re-stating it as a section cost more than it explained.
-  ! grep -q '^## Tracker Configuration' "$SOLVE_ISSUE"
-  grep -q 'issue-tracker\.md' "$SOLVE_ISSUE"
-  grep -q 'configure-tracker' "$SOLVE_ISSUE"
+@test "solve-issue/SKILL.md takes its Tracker Configuration from the shared fragment" {
+  # solve-issue calls the tracker CLI (fetch, mark-done) like every tracker-touching skill, so
+  # the one fragment that says how — Node check, CLI path, failure rule — is its section too.
+  grep -qF '{{FRAGMENT:tracker-configuration}}' "$SOLVE_ISSUE"
+  local f="$(rendered_skill solve-issue claude)"
+  grep -q '^## Tracker Configuration' "$f"
+  grep -q 'issue-tracker\.md' "$f"
+  grep -q 'configure-tracker' "$f"
 }
 
 @test "crew-address-findings/SKILL.md contains the Tracker Configuration section" {
@@ -34,8 +35,9 @@ setup() {
 }
 
 @test "solve-issue/SKILL.md preamble references issue-tracker.md lookup chain" {
-  grep -q 'issue-tracker.md' "$SOLVE_ISSUE"
-  grep -q 'git rev-parse --show-toplevel' "$SOLVE_ISSUE"
+  local f="$(rendered_skill solve-issue claude)"
+  grep -q 'issue-tracker.md' "$f"
+  grep -q 'git rev-parse --show-toplevel' "$f"
 }
 
 @test "crew-address-findings/SKILL.md preamble references issue-tracker.md lookup chain" {

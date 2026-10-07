@@ -104,20 +104,21 @@ block() { awk '/# BEGIN tracker-lookup/{f=1} f{print} /# END tracker-lookup/{f=0
   [[ "$output" == *PROJECT-READER* ]]
 }
 
-@test "tracker templates' mark-done command works for project and user-level installs" {
-  local t where cmd
+@test "tracker templates' tracker CLI lookup works for project and user-level installs" {
+  local t where lookup
   for t in github local; do
-    cmd=$(awk '/^## Operation: mark-done/{f=1;next} /^## /{f=0} f' "$REPO_ROOT/docs/templates/trackers/$t.md" |
-      awk '/^```bash/{b=1;next} /^```/{b=0} b')
-    [ -n "$cmd" ]
-    cmd=$(printf '%s' "$cmd" | sed 's/<number>/1/; s/<issue-path>/x.md/')
-    for where in "$MAIN_ROOT/.coding-crew/scripts" "$HOME/.coding-crew/scripts"; do
-      rm -r -f "$MAIN_ROOT/.coding-crew/scripts" "$HOME/.coding-crew/scripts"
+    # The section's first bash block is the lookup; the op lines follow in the next one.
+    lookup=$(awk '/^## Tracker CLI/{f=1;next} /^## /{f=0} f' "$REPO_ROOT/docs/templates/trackers/$t.md" |
+      awk '/^```bash/{b=1;next} /^```/{if(b)exit} b')
+    [ -n "$lookup" ]
+    for where in "$MAIN_ROOT/.coding-crew/tracker" "$HOME/.coding-crew/tracker"; do
+      rm -r -f "$MAIN_ROOT/.coding-crew/tracker" "$HOME/.coding-crew/tracker"
       mkdir -p "$where"
-      printf '#!/bin/sh\necho RAN:%s\n' "$where" > "$where/mark-issue-done.sh"
-      run bash -c "cd '$MAIN_ROOT' && $cmd"
+      printf 'console.log("RAN:%s " + process.argv.slice(2).join(" "));\n' "$where" > "$where/cli.mjs"
+      run bash -c "cd '$MAIN_ROOT' && $lookup
+node \"\$TRACKER\" mark-done 1"
       [ "$status" -eq 0 ]
-      [[ "$output" == *"RAN:$where"* ]]
+      [[ "$output" == *"RAN:$where mark-done 1"* ]]
     done
   done
 }

@@ -67,8 +67,8 @@ teardown() {
   done
   while IFS= read -r skill_md; do
     dir=$(dirname "$skill_md")
-    [ -f "$dir/references/github-publish.md" ]
-    [ -f "$dir/references/rerun.md" ]
+    [ ! -e "$dir/references/github-publish.md" ]
+    [ ! -e "$dir/references/rerun.md" ]
     [ -f "$dir/references/expand-contract.md" ]
     count=$((count + 1))
   done < <(find "$TEMP_DIR" -path '*/skills/to-issues/SKILL.md')

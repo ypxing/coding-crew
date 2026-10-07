@@ -174,7 +174,7 @@ setup() {
   [ "$e" -lt "$g" ]
   ! grep -q 'Slices outside the criteria range' "$SKILL_FILE"
   ! grep -q 'Edges and merges the edge rule produced' "$SKILL_FILE"
-  grep -q 'gh issue view <n> --comments' "$SKILL_FILE"
+  grep -qF 'node "$TRACKER" fetch <ref> --comments' "$SKILL_FILE"
 }
 
 @test "to-issues: a coverage table maps every D<n>/B<n> to its slices before the quiz; skipped with no IDs" {
@@ -200,21 +200,22 @@ setup() {
   grep -qF 'returns to the quiz' "$SKILL_FILE"
   grep -qiE 'WARN.*publishing continues' "$SKILL_FILE"
   lint=$(grep -n 'lint-issues.sh' "$SKILL_FILE" | head -1 | cut -d: -f1)
-  pub=$(grep -n 'execute the `publish` operation' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  pub=$(grep -n 'node "$TRACKER" publish-issues' "$SKILL_FILE" | head -1 | cut -d: -f1)
   [ "$lint" -lt "$pub" ]
 }
 
-@test "to-issues: under github the lint run uses provisional Issue #<n> numbers and --known for existing milestone issues" {
-  grep -qF -- 'and pass it as `--known`' "$SKILL_FILE"
-  grep -qiE 'replace each `Issue #<n>` with the number `gh issue create` returned' "$SKILL_FILE"
+@test "to-issues: the lint run takes known's output as --known and drafts name blockers by filename, for every tracker" {
+  grep -qF 'node "$TRACKER" known --feature-slug <feature-slug> --out .scratch/<feature-slug>/.drafts/known' "$SKILL_FILE"
+  grep -qF 'Pass every file `known` wrote as a `--known <file>`' "$SKILL_FILE"
+  grep -qF 'The CLI turns each draft filename into the ref its issue is created under' "$SKILL_FILE"
 }
 
 @test "to-issues: the shared-file WARN is advisory, never by itself grounds for a Blocked by edge" {
   grep -qF 'The shared-file `WARN` (two issues naming the same file with no `## Blocked by` path between them) is advisory: it is never by itself grounds for a `Blocked by` edge — only the edge rule'"'"'s rows 1–2 are' "$SKILL_FILE"
 }
 
-@test "to-issues: under github, existing milestone issues' bodies are --known files whose Implements count toward coverage" {
-  grep -qF 'write its body (`gh issue view <n> --json body -q .body`) to `.scratch/<feature-slug>/.lint/known/<n>-<slug>.md`' "$SKILL_FILE"
+@test "to-issues: the feature's existing issues are --known files whose Implements count toward coverage" {
+  grep -qF 'node "$TRACKER" known --feature-slug <feature-slug>' "$SKILL_FILE"
   grep -qF 'an existing `--known` file'"'"'s `## Implements` counts toward `--prd` coverage' "$SKILL_FILE"
   run grep -qF 'never opened' "$SKILL_FILE"
   [ "$status" -ne 0 ]
@@ -236,12 +237,12 @@ setup() {
   grep -q 'per-branch verify' "$f"
 }
 
-@test "to-issues step 1 reads a referenced issue's comments via gh issue view --comments" {
-  grep -q 'gh issue view <n> --comments' "$SKILL_FILE"
+@test "to-issues step 1 reads a referenced issue's comments via the CLI's fetch --comments" {
+  grep -qF 'node "$TRACKER" fetch <ref> --comments' "$SKILL_FILE"
 }
 
-@test "github tracker fetch operation is unchanged" {
-  grep -q 'gh issue view <number> \[--repo owner/name\] --json number,title,body,labels,state$' "$SCRIPT_DIR/docs/templates/trackers/github.md"
+@test "github tracker template lists the CLI's fetch op" {
+  grep -q '^node "$TRACKER" fetch <number> \[--comments\]' "$SCRIPT_DIR/docs/templates/trackers/github.md"
 }
 
 # --- Merge by default, split reasons, edge rule, overhead, quiz items, anchored on the skill's own headings ---

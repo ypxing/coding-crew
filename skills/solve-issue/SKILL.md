@@ -45,13 +45,14 @@ The caller provides one of:
 - A **file path** — read the issue from that path.
 - **Issue content** inline — use it directly.
 
-Tracker operations named below (`fetch`, `mark-done`) are defined in
-`$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md`. If that file is missing, invoke
-the `configure-tracker` skill once to create it.
-
 `PROJECT_ROOT` (where code lives and all commands run) and `MAIN_ROOT` (the main checkout, where
 `.scratch/` and gitignored files live) are **inherited from the caller** — use the values already
 established and do not re-derive them.
+
+{{FRAGMENT:tracker-configuration}}
+
+This skill uses two ops: `fetch` (Step 1) and `mark-done` (Step 7). `<issue-ref>` below is the issue
+the caller named — a path, or the tracker's issue number.
 
 ## Steps
 
@@ -80,9 +81,9 @@ is no branch to create.
 
 ### 1. Understand the issue
 
-Execute the `fetch` operation from `issue-tracker.md` using the path the caller provides. Do **not**
-query GitHub (`gh`) or any remote issue tracker unless the caller explicitly says to. Extract the
-acceptance criteria and the files likely to change (confirmed in Step 3).
+Read the issue the caller names with `node "$TRACKER" fetch <issue-ref>` (issue content handed over
+inline needs no fetch). Read no other issue from the tracker unless the caller explicitly says to.
+Extract the acceptance criteria and the files likely to change (confirmed in Step 3).
 
 ### 1.5. Read the PRD
 
@@ -322,7 +323,7 @@ Who owns the close is a fact on disk, and `ORCHESTRATED` from Step 0 is it — t
 result and stop; the owner ticks the boxes and closes the issue after its own gates pass on your branch.
 
 **`0` — the close is yours.** Check off (`- [x]`) every criterion the code satisfies under
-`## Acceptance criteria` — and under `## Cross-cutting Requirements` if present. Then Execute the `mark-done` operation from `issue-tracker.md` with the issue path. Never hand-roll `mv` or `sed`; a refusal is an expected outcome, not something to force past.
+`## Acceptance criteria` — and under `## Cross-cutting Requirements` if present. Then run `node "$TRACKER" mark-done <issue-ref>`. Never hand-roll `mv`, `sed` or a label edit; a refusal is an expected outcome, not something to force past: exit 3 means an orchestrator owns the close (report and stop), exit 4 that a criterion is still unchecked (Step 8).
 
 ### 8. Unmet criteria
 

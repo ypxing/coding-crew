@@ -491,14 +491,14 @@ export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut
 }
 
 /**
- * Rewrite a single-slice source issue: `body` replaces its body as written (a `Source:` line
- * included), `needs-triage` comes off, `status` goes on, and it moves into the feature's milestone,
+ * Rewrite a single-slice source issue: `body` — a draft's `# <title>` and `Status:` lines taken
+ * off, as `publish-issues` does — replaces its body (a `Source:` line kept), `needs-triage` comes off, `status` goes on, and it moves into the feature's milestone,
  * created — or reopened when closed — first. Null when the issue does not exist.
  */
 export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = shellOut } = {}) {
   const { repo } = readTrackerConfig(mainRoot);
   ensureMilestone(featureSlug, { repo, exec });
-  const r = withBodyFile(body, (f) =>
+  const r = withBodyFile(draftBody(body), (f) =>
     exec("gh", [
       "issue", "edit", String(number), ...(repo ? ["--repo", repo] : []),
       "--body-file", f, "--remove-label", "needs-triage", "--add-label", status, "--milestone", featureSlug,

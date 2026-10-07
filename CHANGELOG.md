@@ -6,6 +6,15 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- skills: `to-issues`, `to-prd`, `crew-address-findings`, `upgrade-deps` and `solve-issue` reach the tracker only
+  through the tracker CLI — no `gh` command and no per-tracker branch is left in any of them. The shared
+  `tracker-configuration` fragment (now in `solve-issue` too) checks `node --version` first, names
+  `.coding-crew/tracker/cli.mjs` with its `$HOME` fallback, and says a CLI failure is reported and fixed, never worked
+  around with the tracker's own tool. `to-issues` writes the same drafts and `deps.json` for every tracker, lints them
+  against `known`, publishes with `publish-issues` (exit 4: stop; exit 5: confirm, then `--replace`) and rewrites a
+  single-slice source with `rewrite`; its `references/rerun.md` and `references/github-publish.md` are gone. The
+  tracker templates list the CLI commands instead of `Operation:` sections, and the local label strings are fixed
+  (#331).
 - tracker: `tracker/cli.mjs` gains the write ops. `publish-issues --feature-slug S --drafts DIR [--replace]` creates
   tracker-neutral drafts (`NN-<slug>.md` opening with `# <title>` and `Status:`, plus `deps.json`) in dependency order,
   rewriting each `## Blocked by` draft ref to the real one (github `Issue #<n>`, local the final `NN-<slug>.md` and

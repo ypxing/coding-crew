@@ -97,8 +97,6 @@ HOME/.agents/skills/to-issues/ /
 HOME/.agents/skills/to-issues/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/to-issues/references/ /
 HOME/.agents/skills/to-issues/references/expand-contract.md exec=0
-HOME/.agents/skills/to-issues/references/github-publish.md exec=0
-HOME/.agents/skills/to-issues/references/rerun.md exec=0
 HOME/.agents/skills/to-issues/scripts/ /
 HOME/.agents/skills/to-issues/scripts/lint-issues.sh exec=1
 HOME/.agents/skills/to-prd/ /

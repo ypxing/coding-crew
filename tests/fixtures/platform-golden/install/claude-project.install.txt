@@ -97,8 +97,6 @@ REPO/.claude/skills/to-issues/ /
 REPO/.claude/skills/to-issues/SKILL.md exec=0 unrendered=0
 REPO/.claude/skills/to-issues/references/ /
 REPO/.claude/skills/to-issues/references/expand-contract.md exec=0
-REPO/.claude/skills/to-issues/references/github-publish.md exec=0
-REPO/.claude/skills/to-issues/references/rerun.md exec=0
 REPO/.claude/skills/to-issues/scripts/ /
 REPO/.claude/skills/to-issues/scripts/lint-issues.sh exec=1
 REPO/.claude/skills/to-prd/ /

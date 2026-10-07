@@ -13,11 +13,11 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 
 ### 1. Gather context and determine feature slug
 
-Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a local file path (e.g. `.scratch/feature/issues/01-slug.md`) or an issue number within `.scratch/` — or, under a configured `github` tracker, an issue number resolved via that tracker's `fetch` operation. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker; reads and writes through the *configured* tracker's own operations (as defined in `issue-tracker.md`) are permitted.
+Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be an issue of the configured tracker: a path under `.scratch/` (e.g. `.scratch/feature/issues/open/01-slug.md`) or the tracker's issue number — the CLI refuses anything else with exit 2. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker.
 
-When the plan references an issue, read its full body and its comments, not just the title: under `github`, run `gh issue view <n> --comments` (the `fetch` operation returns no comments); under `local`, read the file.
+When the plan references an issue, read its full body and its comments, not just the title: `node "$TRACKER" fetch <ref> --comments`.
 
-**An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence was auto-promoted by crew-afk from findings already judged — `Source: review (<branch>)` as the body's first line under `github`, `Source: <report> (<branch>)` after the title and `Status:` lines under `local`, the same line `promote-findings.sh`'s guard reads: it is not checked against the design standard.
+**An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was auto-promoted by crew-afk from findings already judged — the same line `promote-findings.sh`'s guard reads: it is not checked against the design standard.
 
 Determine the **feature slug** (the directory name under `.scratch/`):
 
@@ -29,7 +29,7 @@ Never guess the slug silently — confirm with the user if there's any ambiguity
 
 ### 2. Check for a PRD
 
-Under a `local` tracker, check whether a PRD exists at `.scratch/<feature-slug>/PRD.md`. If one exists, read it and use it as the primary source material for decomposition. Under a configured `github` tracker, check instead (via that tracker's `list`/`fetch` operations) whether a `PRD: <feature title>` issue already exists in the feature's milestone; if so, fetch and read its body the same way. Either way, note the PRD's number/path — step 6 cites it in each work issue.
+Run `node "$TRACKER" prd --feature-slug <feature-slug>`. Exit 0 prints the PRD: use it as the primary source material for decomposition, and save that output to `.scratch/<feature-slug>/.drafts/PRD.md` for step 6's lint. Note the PRD's ref — step 6 cites it in each work issue: `#<n>` when the output opens with `<!-- PRD issue #<n>: … -->`, else `.scratch/<feature-slug>/PRD.md`. Exit 3 means there is none.
 
 If no PRD exists, ask the user:
 
@@ -123,20 +123,45 @@ Before writing issues, read the PRD's `## Decisions` and `## Testing Decisions` 
 
 ### 6. Write the issues
 
-**Local tracker, issues directory non-empty?** If `.scratch/<feature-slug>/issues/` already contains issue files, read `references/rerun.md` before writing anything. Otherwise proceed.
+**Drafts.** Render every approved slice as a draft in `.scratch/<feature-slug>/.drafts/` — the same files whatever the tracker is: `NN-<slug>.md`, numbered from `01` in dependency order (blockers first), opening with a `# <title>` line and a `Status:` line (`Status: ready-for-agent` unless the user specifies otherwise), then the issue body template below. `## Blocked by` names another draft by its filename, or an issue that already exists by the filename `known` gives it; beside the drafts goes `deps.json` (step 7). The CLI turns each draft filename into the ref its issue is created under.
 
-**Lint before any `publish`.** Render every issue body (the template below) first — under `local`, write them to their final `.scratch/<feature-slug>/issues/` paths; under `github`, write them as files under `.scratch/<feature-slug>/.lint/` and delete that directory afterwards — and run, from the project root:
+**Known issues.** Write the feature's existing issues beside the drafts:
 
 ```bash
-bash <skill-dir>/scripts/lint-issues.sh --issue <body-file> [--issue <body-file> …] \
-  [--deps .scratch/<feature-slug>/issues/issues-deps.json] [--prd <PRD file>]
+node "$TRACKER" known --feature-slug <feature-slug> --out .scratch/<feature-slug>/.drafts/known
 ```
 
-Add `--deps` under `local` only (write the step 7 map first, so the linter can compare it with the `## Blocked by` prose), and `--prd` only when a PRD exists (a local path; under `github` save the PRD body to a file under `.scratch/<feature-slug>/.lint/` first). Exit 1 means publish nothing: show the `ERROR` lines; the skill returns to the quiz (step 5) to fix them, then render and lint again. Exit 0 prints at most `WARN` lines: show them and continue — publishing continues. The shared-file `WARN` (two issues naming the same file with no `## Blocked by` path between them) is advisory: it is never by itself grounds for a `Blocked by` edge — only the edge rule's rows 1–2 are. Exit 2 is a usage error in how you called it: fix the call.
+One file per issue already in the feature, named by the ref a `## Blocked by` entry uses for it.
 
-**Under `github`** the blockers' issue numbers do not exist until `publish`, so for the lint run name each body file `<n>-<slug>.md` and write its `## Blocked by` refs as `Issue #<n>`, numbering the new slices from one past the repo's highest issue number (`gh issue list --state all --limit 1 --json number`); for each issue already in the milestone, write its body (`gh issue view <n> --json body -q .body`) to `.scratch/<feature-slug>/.lint/known/<n>-<slug>.md` and pass it as `--known` — never linted, but a `## Blocked by` ref resolves to it by basename, and an existing `--known` file's `## Implements` counts toward `--prd` coverage, so a PRD ID an earlier issue already implements is not reported uncovered. At `publish`, replace each `Issue #<n>` with the number `gh issue create` returned for that slice — the only edit after the lint.
+**Lint before publishing.** Run, from the project root:
 
-For each approved slice, execute the `publish` operation from `issue-tracker.md` to create a new issue file — except when the source is one existing issue that stayed one slice: rewrite that issue's body in place with the rendered template instead (no `## Parent`; a source issue's column-0 `Source:` line stays in the same position — the body's first line under `github`, after the title and `Status:` lines under `local` — so the rewritten issue stays exempt from the design standard (step 1) and `promote-findings.sh` still recognises it; under `github`, first make sure the `<feature-slug>` milestone is open, exactly as `publish` does: a list-first check (`gh api --paginate 'repos/{owner}/{repo}/milestones?state=all' --jq '.[] | [.number, .state, .title] | @tsv'`) — create it when missing (`gh api repos/{owner}/{repo}/milestones -f title=<feature-slug>`), reopen it when closed (`gh api -X PATCH repos/{owner}/{repo}/milestones/<number> -f state=open`; creating it again fails on the taken title) — then `gh issue edit <n> --body-file <body-file> --remove-label needs-triage --add-label <status> --milestone <feature-slug>`, where `<status>` is the slice's status (`ready-for-agent`, or `ready-for-human`) — the label is what crew-afk claims by, so a body rewrite alone leaves it `needs-triage` and never dispatched; under `local`, overwrite that issue file at its current path). A source that split into several slices keeps it open and gets one child issue per slice, each with `## Parent`. Use the issue body template below. Add `Status: ready-for-agent` unless the user specifies otherwise.
+```bash
+bash <skill-dir>/scripts/lint-issues.sh --issue <draft> [--issue <draft> …] \
+  [--known <file> …] --deps .scratch/<feature-slug>/.drafts/deps.json [--prd .scratch/<feature-slug>/.drafts/PRD.md]
+```
+
+Pass every file `known` wrote as a `--known <file>` (never linted, but a `## Blocked by` ref resolves to it by basename, and an existing `--known` file's `## Implements` counts toward `--prd` coverage, so a PRD ID an earlier issue already implements is not reported uncovered), and `--prd` only when step 2 found a PRD. Exit 1 means publish nothing: show the `ERROR` lines; the skill returns to the quiz (step 5) to fix them, then render and lint again. Exit 0 prints at most `WARN` lines: show them and continue — publishing continues. The shared-file `WARN` (two issues naming the same file with no `## Blocked by` path between them) is advisory: it is never by itself grounds for a `Blocked by` edge — only the edge rule's rows 1–2 are. Exit 2 is a usage error in how you called it: fix the call.
+
+**Publish.** Then, from the project root:
+
+```bash
+node "$TRACKER" publish-issues --feature-slug <feature-slug> --drafts .scratch/<feature-slug>/.drafts
+```
+
+It creates the issues in dependency order and prints one `<draft> <ref>` line per issue; the drafts directory (`known/` and `PRD.md` included) is deleted after a full publish. Two exits are questions for the user, and both write nothing:
+
+- **Exit 4** — the feature has completed issues: stop, and tell the user: "Some issues are already completed. Please reconcile manually (delete or archive the old issues directory) before re-running."
+- **Exit 5** — the feature already has open issues, which publishing would overwrite (stderr lists them): show them, warn they will be overwritten, and ask for confirmation. On yes, re-run the same command with `--replace`; on no, stop.
+
+On exit 1 the stderr names the issues created before the failure, and the drafts stay in place: report both, fix the cause, and ask the user before re-running — a re-run creates every draft again.
+
+**A source issue that stayed one slice** is rewritten in place instead of published (no `## Parent`): write it as a draft (title, `Status:` line and body, as above) to a file outside `.drafts/` and run
+
+```bash
+node "$TRACKER" rewrite <ref> --body-file <file> --status <status> --feature-slug <feature-slug>
+```
+
+where `<status>` is the slice's status (`ready-for-agent`, or `ready-for-human`) — the status is what crew-afk claims by, so a body rewrite alone would leave it `needs-triage` and never dispatched; `rewrite` also files it under the feature. Keep the source's title and its column-0 `Source:` line as `fetch` printed them, so the rewritten issue stays exempt from the design standard (step 1) and `promote-findings.sh` still recognises it. A source that split into several slices keeps it open and gets one child issue per slice, each with `## Parent`. Use the issue body template below.
 
 **`## Requires`.** When a slice's checks need a service, a credential or a tool the project's install does not guarantee (a LocalStack container, an auth token, a CLI), write one backticked shell command per requirement — exit 0 means satisfied; it runs on the host from the project root, before any coder is dispatched, and may start the service it checks. Run each one while authoring. If one fails, publish the issue as `Status: ready-for-human` instead of `ready-for-agent`, because no coder can supply what it lacks: the failing command and its output go in `### Why a person`, and the fix goes in `### Steps`. A command that can only hold once one of the issue's blockers lands (a Makefile target that blocker adds) is not run now — crew-afk probes it when the issue unblocks.
 
@@ -158,18 +183,18 @@ A slice that takes input or calls something external must carry failure-behaviou
 
 A slice that adds a parser, validator or gate for an input the repo already holds examples of (issue files, configs, fixtures, stored records) carries one criterion that it accepts them, so the new code is tested against what people actually wrote, not only against inputs written from the PRD. Find the examples now and name them in the criterion, to be copied into committed test fixtures — never read from a live or gitignored directory, whose contents differ per machine and are absent in CI. For example: `- [ ] lint-issues.sh exits 0 on fixtures copied from .scratch/add-tests/issues/`. The repo holds no such examples (a new format) → no such criterion. The PRD's `## Compatibility & Migration` names them when it exists.
 
-Write issues in dependency order (blockers first) so you can reference earlier issue numbers in the "Blocked by" field. Work the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, publish all currently unblocked issues before their dependents.
-
-**Tracker is `github`?** Read `references/github-publish.md` for how `publish` creates the issues, writes `## Blocked by` and cites the PRD; the local-only re-run handling does not apply.
+Number the drafts in dependency order (blockers first), working the **frontier**: any issue whose blockers are all done. For a linear chain that means top-to-bottom; for a DAG with multiple independent roots, number all currently unblocked issues before their dependents.
 
 <issue-template>
+# <title>
+
 Status: ready-for-agent
 
 ## Context Documents
 
 > **Optional — only include this section if a PRD exists for this feature. Omit entirely if no PRD exists.**
 
-- PRD: `.scratch/<feature-slug>/PRD.md` (local tracker; the github form is in `references/github-publish.md`)
+- PRD: <the PRD's ref from step 2 — `#<n>`, or `.scratch/<feature-slug>/PRD.md`>
 
 Read this document before implementing. It contains architecture decisions, integration constraints, and technical context essential for this issue.
 
@@ -209,7 +234,7 @@ Rules from the PRD that apply to this implementation (a few items at most):
 
 ## Blocked by
 
-- A reference to the blocking ticket (if any) — the blocker's filename under `local` (the github form is in `references/github-publish.md`)
+- The blocking draft's filename, or an existing issue's `known` filename (if any)
 
 Or "None - can start immediately" if no blockers.
 
@@ -229,9 +254,7 @@ Exact signatures, types, or contracts this issue produces for any downstream iss
 
 ### 7. Write the machine-readable dependency map
 
-**Local tracker only** — a `github`-tracked feature has no sidecar to write: a github issue number is already the blocker's ref, resolved directly from the numbers step 6's `## Blocked by` prose cites, so this step is skipped entirely under that backend.
-
-Write `.scratch/<feature-slug>/issues/issues-deps.json` before the step 6 lint run (the linter's `--deps` compares it with the `## Blocked by` prose) — a flat map from each issue's filename to the filenames of its blockers, e.g.:
+Write `.scratch/<feature-slug>/.drafts/deps.json` with the drafts, before the step 6 lint run (the linter's `--deps` compares it with the `## Blocked by` prose) — a flat map from each draft's filename to the filenames of the drafts blocking it, e.g.:
 
 ```json
 {
@@ -241,8 +264,8 @@ Write `.scratch/<feature-slug>/issues/issues-deps.json` before the step 6 lint r
 }
 ```
 
-Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. This file, not the prose, is what the orchestrator uses to decide whether an issue is ready to dispatch; the `## Blocked by` section stays in each issue purely for a human reading that file. Include every issue you are about to publish, even ones with no blockers (`[]`), so the map is authoritative for the whole feature rather than partial.
+Source it from the same blocking edges the user confirmed in the quiz step — do not re-derive it from the `## Blocked by` prose. `publish-issues` creates the issues in this map's order and records the same edges, under the issues' final refs, where the orchestrator reads them to decide whether an issue is ready to dispatch. Include every draft, even ones with no blockers (`[]`); an edge to an issue that already exists lives only in the draft's `## Blocked by`.
 
-Do NOT close or modify any parent issue. A single-slice source rewritten in place is not a parent: it gets only the in-place edit step 6 describes — its body, plus under `github` its status label and milestone.
+Do NOT close or modify any parent issue. A single-slice source rewritten in place is not a parent: it gets only the in-place `rewrite` step 6 describes — its body and its status.
 
-**Security**: Only read from and write to paths under `.scratch/` within the current repo, or — under a configured `github` tracker — through that tracker's own defined operations (`gh issue`/`gh api` calls per `issue-tracker.md`). Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside the repository root, and never target a github repo other than the one `issue-tracker.md` configures.
+**Security**: Only read from and write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's ops, which act on the tracker `issue-tracker.md` configures. Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside the repository root.

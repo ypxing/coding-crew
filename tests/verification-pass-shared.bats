@@ -104,7 +104,7 @@ pass_line() { grep -nF -- "$(head -1 "$PASS")" "$1" | head -1 | cut -d: -f1; }
   local f pass pub
   f="$(rendered_skill to-prd claude)"
   pass=$(pass_line "$f")
-  pub=$(grep -n 'execute the `publish` operation' "$f" | head -1 | cut -d: -f1)
+  pub=$(grep -n 'node "$TRACKER" publish-prd' "$f" | head -1 | cut -d: -f1)
   [ -n "$pass" ]
   [ -n "$pub" ]
   [ "$pass" -lt "$pub" ]
