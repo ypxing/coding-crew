@@ -421,6 +421,12 @@ export function knownFile(issue) {
   return { name: `${issue.number}-${issue.slug}.md`, text: `# ${issue.title}\n\n${issue.text.replace(/\n*$/, "\n")}` };
 }
 
+/** The `## Blocked by` ref for a `known` file's name, `<n>-<slug>.md` → `Issue #<n>`; null for any other name. */
+export function knownBlockerRef(name) {
+  const n = /^([0-9]+)-[A-Za-z0-9][\w.-]*\.md$/.exec(name)?.[1];
+  return n ? `Issue #${Number(n)}` : null;
+}
+
 /** `gh issue edit`/`view` stderr naming an issue that does not exist. */
 function notFound(r) {
   return NOT_FOUND.test(r.stderr ?? "");

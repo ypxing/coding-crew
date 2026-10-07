@@ -152,9 +152,11 @@ function readDrafts(dir) {
 
 /**
  * `text` with every draft filename under `## Blocked by` replaced by the ref its issue was created
- * under (`refs`: draft filename → that backend's blocker ref). Nothing outside the section changes.
+ * under (`refs`: draft filename → that backend's blocker ref), and every other filename — a `known`
+ * file, `<lint ref>.md` — by `knownRef(name)` when the backend maps it (null leaves it as written).
+ * A draft not created yet is never mapped as a known file. Nothing outside the section changes.
  */
-function rewriteBlockedBy(text, refs) {
+function rewriteBlockedBy(text, refs, { drafts = new Set(), knownRef = () => null } = {}) {
   const heading = /^#{1,6}[ \t]+Blocked by[ \t]*$/im.exec(text);
   if (!heading) return text;
   const start = heading.index + heading[0].length;
@@ -162,7 +164,7 @@ function rewriteBlockedBy(text, refs) {
   let end = lines.findIndex((l, i) => i > 0 && /^#{1,6}[ \t]+/.test(l));
   if (end === -1) end = lines.length;
   const section = lines.slice(0, end).join("\n").replace(/(?<![\w.-])([0-9]+-[A-Za-z0-9][\w.-]*\.md)(?![\w.-])/g, (m) =>
-    refs.has(m) ? refs.get(m) : m,
+    refs.has(m) ? refs.get(m) : drafts.has(m) ? m : (knownRef(m) ?? m),
   );
   return text.slice(0, start) + [section, ...lines.slice(end)].join("\n");
 }
@@ -229,7 +231,7 @@ const OPS = {
       const draft = drafts.get(file);
       let made;
       try {
-        made = publisher.create({ ...draft, text: rewriteBlockedBy(draft.text, refs) });
+        made = publisher.create({ ...draft, text: rewriteBlockedBy(draft.text, refs, { drafts, knownRef: (m) => tracker.knownBlockerRef?.(m) ?? null }) });
       } catch (e) {
         err(`${e.message}\n`);
         err(`publish-issues: stopped at ${file}; created before it: ${created.length ? created.join(", ") : "none"}. The drafts are left in ${dir}.\n`);

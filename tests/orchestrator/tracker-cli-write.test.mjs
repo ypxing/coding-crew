@@ -110,6 +110,39 @@ test("publish-issues (github) creates blockers first and rewrites the dependent'
   assert.equal(exec.find("api -X POST repos/{owner}/{repo}/issues/12/dependencies/blocked_by").length, 1);
 });
 
+test("publish-issues (github) rewrites a Blocked by entry naming a known file <n>-<slug>.md to Issue #<n> and links it", async () => {
+  const dir = root({ github: true });
+  const blocked = "# Add c\n\nStatus: ready-for-agent\n\n## Acceptance criteria\n\n- [ ] c works\n\n## Blocked by\n\n- 7-existing-thing.md\n";
+  const d = drafts(dir, { deps: {}, files: { "01-c.md": blocked } });
+  const exec = fakeGh({
+    "api repos/{owner}/{repo}/milestones?state=all": { stdout: "1\topen\tfeat\n" },
+    "issue create": creates(12),
+    "api repos/{owner}/{repo}/issues/7": { stdout: "9007\n" },
+    "api -X POST": {},
+  });
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d], exec);
+  assert.equal(r.code, 0, r.stderr);
+  const [[, ci]] = exec.find("issue create");
+  assert.match(exec.bodies[ci], /## Blocked by\n\n- Issue #7\n/);
+  assert.doesNotMatch(exec.bodies[ci], /7-existing-thing\.md/);
+  const { parseIssue } = await import("../../tracker/github.mjs");
+  assert.deepEqual(parseIssue({ number: 12, title: "Add c", body: exec.bodies[ci], state: "OPEN", labels: [] }).blockedBy, [7]);
+  const link = exec.find("api -X POST repos/{owner}/{repo}/issues/12/dependencies/blocked_by");
+  assert.equal(link.length, 1);
+  assert.ok(link[0][0].includes("issue_id=9007"));
+});
+
+test("publish-issues (local) leaves a Blocked by entry naming a known issue file as that filename", async () => {
+  const dir = root();
+  const issues = join(dir, ".scratch/feat/issues");
+  mkdirSync(join(issues, "done"), { recursive: true });
+  const blocked = "# Add c\n\nStatus: ready-for-agent\n\n## Blocked by\n\n- 03-old.md\n";
+  const d = drafts(dir, { deps: {}, files: { "01-c.md": blocked } });
+  const r = await cli(dir, ["publish-issues", "--feature-slug", "feat", "--drafts", d]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readFileSync(join(issues, "open/01-c.md"), "utf8"), blocked);
+});
+
 test("publish-issues (github) deletes the drafts directory after a full publish", async () => {
   const dir = root({ github: true });
   const d = drafts(dir);
