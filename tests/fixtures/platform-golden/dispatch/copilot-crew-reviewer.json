@@ -2,7 +2,7 @@
   "cmd": "copilot",
   "args": [
     "-p",
-    "<PROTOCOL crew-reviewer sha256:ed7d4b0f883b819f>\n\n---\n\nImplement the alpha issue.\n",
+    "<PROTOCOL crew-reviewer sha256:b5a55dc8f899d9c2>\n\n---\n\nImplement the alpha issue.\n",
     "-C",
     "<TMP>/repo/.scratch/worktrees/alpha",
     "--add-dir",

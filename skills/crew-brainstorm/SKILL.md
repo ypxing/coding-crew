@@ -96,6 +96,11 @@ digraph brainstorming {
 - Cover: architecture, components, data flow, error handling, testing
 - Be ready to go back and clarify if something doesn't make sense
 - Before asking for final approval, run a **subtraction pass**: for each component, name the part of the problem, or the structural property of what is built now, that breaks if it is removed. "Another component needs it" is not an answer: follow the chain to its root and judge the root against the problem size, showing the chain's total price. "Nothing breaks" is a claim to check and cite, not assume. If nothing breaks, propose cutting it, and show what you cut
+- After the subtraction pass and still before final approval, run the verification pass:
+
+{{FRAGMENT:verification-pass}}
+
+- Then ask for final approval of the whole design, showing what you cut and every correction the verification pass made
 
 **Design for isolation and clarity:**
 

@@ -24,7 +24,11 @@ the user before writing the final document.
 
 4. Sketch the seams at which the feature will be tested. Prefer existing seams over new ones; prefer the highest seam possible. **If decisions are already captured in the existing PRD (e.g. after `crew-grill`), skip re-confirming seams that were already settled — only present genuinely open questions.**
 
-5. Write the PRD using the template below, then execute the `publish` operation from `issue-tracker.md`. Under `local`, this saves it to `.scratch/<feature-slug>/PRD.md` (creating the directory if needed). Under a configured `github` tracker (per `github.md`'s `Operation: publish`), this creates or updates — `gh issue create`/`gh issue edit --body-file`, keying off whether a `PRD: <feature title>` issue already exists in the feature's milestone (created lazily on first write if absent, matching the milestone's own bootstrap semantics wherever else it's created) — a PRD issue titled `PRD: <feature title>`, then best-effort pins it (`gh issue pin`); a pin failure (e.g. the repo already has 3 pinned issues) must not fail the publish itself.
+5. Write the PRD using the template below.
+
+{{FRAGMENT:verification-pass}}
+
+6. Then execute the `publish` operation from `issue-tracker.md`. Under `local`, this saves it to `.scratch/<feature-slug>/PRD.md` (creating the directory if needed). Under a configured `github` tracker (per `github.md`'s `Operation: publish`), this creates or updates — `gh issue create`/`gh issue edit --body-file`, keying off whether a `PRD: <feature title>` issue already exists in the feature's milestone (created lazily on first write if absent, matching the milestone's own bootstrap semantics wherever else it's created) — a PRD issue titled `PRD: <feature title>`, then best-effort pins it (`gh issue pin`); a pin failure (e.g. the repo already has 3 pinned issues) must not fail the publish itself.
 
 **Security**: Only write to paths under `.scratch/` within the current repo, or — under a configured `github` tracker — through that tracker's own defined operations (`gh issue`/`gh api` calls per `issue-tracker.md`). Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 

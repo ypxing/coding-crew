@@ -295,8 +295,22 @@ quiz() { awk '/^### 5\. Quiz/{f=1;next} /^### /{f=0} f' "$SKILL_FILE"; }
   [ "$o" -lt "$e" ]
 }
 
-@test "to-issues D6: quiz item 5 lists slices over 10 criteria as a context-budget check" {
-  quiz | grep -q '^5\. \*\*Slices over 10 criteria\*\* — .*more than 10 acceptance criteria.*context-budget check'
+@test "to-issues D6: quiz item 5 lists slices over 10 criteria or ~200k estimated tokens as a context-budget check" {
+  quiz | grep -q '^5\. \*\*Slices over 10 criteria or ~200k tokens\*\* — .*more than 10 acceptance criteria.*context-budget check'
+  quiz | grep '^5\. ' | grep -qF '~200k tokens'
+  quiz | grep '^5\. ' | grep -qF "the coder model's window when smaller"
+  quiz | grep '^5\. ' | grep -qF 'never on its own a rule to split'
+}
+
+@test "to-issues step 4's context-budget reason gives the estimate method and compares it with the coder's window" {
+  local r1; r1=$(step4 | grep '^1\. \*\*Context budget\*\*')
+  for part in 'bytes' '÷ ~3.5' 'fixed context every coder dispatch loads' 'measured' 'margin' "coder model's context window"; do
+    grep -qF -- "$part" <<<"$r1" || { echo "context-budget reason lacks: $part" >&2; return 1; }
+  done
+}
+
+@test "to-issues step 5 shows each slice's estimated peak context" {
+  quiz | grep -qF -- '- **Estimated peak context**'
 }
 
 @test "to-issues D7/B2: quiz item 6 lists each split with its reason and each edge with its row; the seam-count item is gone" {

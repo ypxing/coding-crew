@@ -100,6 +100,7 @@ HOME/.coding-crew/skills/_shared/fragments/design-standard.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/findings-rubric.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
 HOME/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
+HOME/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 HOME/.coding-crew/solve-issue/ /
 HOME/.coding-crew/solve-issue/scripts/ /
 HOME/.coding-crew/solve-issue/scripts/check-requires.sh exec=1
