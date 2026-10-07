@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tests: the dev-commands.json `test` and CLAUDE.md run the suite with `scripts/ci-run-bats.sh tests/*.bats` (one bats
+  process per file, CPU-count at a time, no GNU parallel), ~6x faster than serial `bats`; its log dir is now optional
+  (`--log-dir`). The `ORCHESTRATOR_PREFETCH` node-suite prefetch, which only sped up a serial run, is removed.
 - registry: `crew-afk`, `dep-install`, `upgrade-deps` and `configure-tracker` descriptions say what each skill is for, not
   how it works (no fix-issue caps, menu or batching details), so a behaviour change no longer leaves them stale (#319).
 - `to-prd`: a decision that says "every", "always", "only" or "never" names the cases easy to miss (signals, thrown errors,
