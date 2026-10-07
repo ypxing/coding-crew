@@ -8,12 +8,19 @@ node --version
 ```
 
 If that fails, stop and tell the user: "the tracker CLI needs Node — install Node, then re-run this
-skill." Otherwise locate the CLI, then run each op through it:
+skill." Otherwise locate the CLI once — this prints its absolute path:
 
 ```bash
 TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
 [ -f "$TRACKER" ] || TRACKER="$HOME/.coding-crew/tracker/cli.mjs"   # user-level install
-node "$TRACKER" <op> …
+echo "$TRACKER"
+```
+
+Each shell command runs in a fresh shell, so `$TRACKER` is gone by the next one. Wherever this skill
+runs an op as `node "$TRACKER" <op> …`, write the absolute path it printed in place of `$TRACKER`:
+
+```bash
+node "$TRACKER" <op> …   # run as: node "/abs/path/printed/above/cli.mjs" <op> …
 ```
 
 The tracker it talks to is set in `$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md`;
