@@ -6,6 +6,19 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- install: `install.sh` (and `--update`) migrates a legacy `.coding-crew/docs/issue-tracker.md` into
+  `.coding-crew/config.json`'s `tracker` section (front matter `tracker:`, else `local`; an existing section wins), then
+  deletes it and `.coding-crew/docs/templates/trackers/`; a front matter naming `repo:` is left in place with "`repo` is
+  no longer supported". A fresh install writes no `.coding-crew/docs/`. The tracker docs ship as
+  `.coding-crew/tracker/docs/{local,github}.md`, refreshed by every install. configure-tracker: offers local and github
+  and writes `config.json` (no repo prompt; `configure-tracker-auto.sh` removed). skills: the `tracker-configuration`
+  section runs `cli.mjs config` and asks `configure-tracker` only on an interactive run, else proceeds as `local` (#340).
+- tracker: the tracker choice is read from `.coding-crew/config.json`'s `tracker` section (`{"kind": "local"|"github"}`),
+  falling back to the legacy `issue-tracker.md` front matter, then `local`; a new `cli.mjs config` op prints
+  `tracker=<kind>` and `configured=yes|no`, and `tracker-config.sh` asks it instead of parsing front matter. An invalid
+  `config.json` or unknown `tracker.kind` is an error, never a silent `local`. Breaking: the `repo:` override is
+  removed — `gh` always targets the git remote, and a front matter naming `repo:` now fails with "`repo` is no longer
+  supported". crew-afk: `config.json` accepts the `tracker` section (repo file only) (#339).
 - tracker: `publish-issues` exits 1, publishing nothing, when a draft's `## Blocked by` names a file that is neither a
   draft nor an issue of the feature (a typo became a blocker that never resolves, or under github `Issue #<n>` of an
   unrelated issue), and under local when `--replace` would delete an open issue a draft is blocked by (that draft

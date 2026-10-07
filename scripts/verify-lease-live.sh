@@ -56,5 +56,5 @@ step "lease is gone" 0 -- bash -c "[ \"\$(bash '$LEASE' owner --slug '$SLUG')\" 
 git push -q origin ":$NS/$SLUG" >/dev/null 2>&1 || true
 
 if [ "$fail" -eq 0 ]; then echo "PASS: origin accepts $NS/<slug> (create, CAS-reclaim, CAS-delete)"; exit 0; fi
-echo "FAIL: origin rejected or mishandled $NS/<slug> — switch lease.sh/lease.mjs to a fallback namespace (see docs/templates/trackers/github.md)"
+echo "FAIL: origin rejected or mishandled $NS/<slug> — switch lease.sh/lease.mjs to a fallback namespace (see tracker/docs/github.md)"
 exit 1

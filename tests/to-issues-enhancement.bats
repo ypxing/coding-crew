@@ -242,7 +242,7 @@ setup() {
 }
 
 @test "github tracker template lists the CLI's fetch op" {
-  grep -q '^node "$TRACKER" fetch <number> \[--comments\]' "$SCRIPT_DIR/docs/templates/trackers/github.md"
+  grep -q '^node "$TRACKER" fetch <number> \[--comments\]' "$SCRIPT_DIR/tracker/docs/github.md"
 }
 
 # --- Merge by default, split reasons, edge rule, overhead, quiz items, anchored on the skill's own headings ---

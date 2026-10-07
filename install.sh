@@ -441,10 +441,12 @@ install_single_skill() {
   case "$skill_name" in
     crew-afk) retired_files=("references/verification.md" "scripts/README.md" "scripts/configure-tracker-auto.sh" "scripts/coverage-validation.sh" "scripts/prd-audit.sh" "scripts/dispatch-agent.sh" "scripts/dispatch-codex-agent.sh" "references/test-promote-findings.sh" "references/test-session-init.sh" "references/test-sprint-state.sh" "references/test-worktree-lifecycle.sh" "references/test-worktree.sh" "scripts/feature-branch-setup.sh") ;;
     solve-issue) retired_files=("scripts/feature-branch-setup.sh") ;;
+    configure-tracker) retired_files=("scripts/configure-tracker-auto.sh") ;;
   esac
   for retired in "${retired_files[@]+"${retired_files[@]}"}"; do
     rm -f "$skill_root/$retired"
   done
+  [[ "$skill_name" == configure-tracker ]] && { rmdir "$skill_root/scripts" 2>/dev/null || true; }
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
   local scripts
@@ -486,38 +488,60 @@ install_single_skill() {
 
 }
 
-install_docs() {
-  # Copy doc templates to the target repo, skipping any that already exist.
-  # Source definitions come from registry.json .docs.templates.
-  local templates
-  templates=$(jq -r '.docs.templates // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  local templates_arr=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && templates_arr+=("$_line"); done <<< "$templates"
+# The tracker choice used to be the front matter of .coding-crew/docs/issue-tracker.md, a copy of
+# a template install never overwrote, beside per-repo template copies under
+# .coding-crew/docs/templates/trackers/ — so their prose froze at first install. The choice now
+# lives in config.json's `tracker` section and the prose in the installer-owned
+# .coding-crew/tracker/docs/. Move the choice over (an existing `tracker` section wins), then
+# delete the legacy files. At $HOME (a user-level install, no repo to configure) only the files
+# go. A front matter naming `repo:` is left alone: that override is gone, and migrating without
+# it would silently retarget the tracker.
+migrate_legacy_tracker_doc() {
+  local legacy_rel=".coding-crew/docs/issue-tracker.md"
+  local templates_rel=".coding-crew/docs/templates/trackers"
+  local legacy="$REPO_ROOT/$legacy_rel"
 
-  local docs_header_printed=0
-  for tpl in "${templates_arr[@]+"${templates_arr[@]}"}"; do
-    local src_rel dest_rel
-    src_rel=$(jq -r --arg t "$tpl" '.docs.templates[$t].source // empty' "$SCRIPT_DIR/registry.json")
-    dest_rel=$(jq -r --arg t "$tpl" '.docs.templates[$t].dest // empty' "$SCRIPT_DIR/registry.json")
-
-    [[ -z "$src_rel" || -z "$dest_rel" ]] && continue
-
-    local src="$SCRIPT_DIR/$src_rel"
-    local dest="$REPO_ROOT/$dest_rel"
-
-    [[ -f "$src" ]] || { echo "Warning: doc template source not found: $src_rel" >&2; continue; }
-
-    if [[ -f "$dest" ]]; then
-      # Already exists — skip (never overwrite user-customised docs)
-      continue
+  if [[ -f "$legacy" ]]; then
+    # The front matter: the lines between a leading `---` and the next one, as tracker-config.mjs reads it.
+    local front_matter kind
+    front_matter=$(awk 'NR == 1 { if ($0 !~ /^---[ \t]*\r?$/) exit; next } /^---[ \t]*\r?$/ { exit } { print }' "$legacy")
+    if grep -qE '^repo[[:space:]]*:' <<< "$front_matter"; then
+      echo "Warning: $legacy: \`repo\` is no longer supported — gh targets the git remote. Remove the repo: line and re-run install; this file was not migrated." >&2
+      return 0
     fi
+    kind=$(sed -nE "s/^tracker[[:space:]]*:[[:space:]]*[\"']?([A-Za-z]+).*/\1/p" <<< "$front_matter" | head -1)
+    [[ "$kind" == "github" ]] || kind="local"
 
-    [[ "$docs_header_printed" -eq 0 ]] && { echo "Docs:"; docs_header_printed=1; }
-    mkdir -p "$(dirname "$dest")"
-    cp "$src" "$dest"
-    local rel_dest="${dest#$REPO_ROOT/}"
-    echo "  $rel_dest"
-  done
+    if [[ "$REPO_ROOT" != "$HOME" ]]; then
+      local config="$REPO_ROOT/.coding-crew/config.json" tmp
+      if [[ ! -f "$config" ]]; then
+        jq -n --arg k "$kind" '{tracker: {kind: $k}}' > "$config"
+        echo "  .coding-crew/config.json (tracker: $kind, from $legacy_rel)"
+      elif ! jq -e 'type == "object"' "$config" > /dev/null 2>&1; then
+        echo "Warning: $config is not a JSON object; $legacy_rel was not migrated. Fix it and re-run install." >&2
+        return 0
+      elif ! jq -e 'has("tracker")' "$config" > /dev/null; then
+        tmp=$(mktemp "$config.XXXXXX")
+        jq --arg k "$kind" '.tracker = {kind: $k}' "$config" > "$tmp" && mv "$tmp" "$config"
+        echo "  .coding-crew/config.json (tracker: $kind, from $legacy_rel)"
+      fi
+    fi
+    rm -f "$legacy"
+    echo "  $legacy_rel (removed)"
+  fi
+  if [[ -d "$REPO_ROOT/$templates_rel" ]]; then
+    rm -rf "${REPO_ROOT:?}/$templates_rel"
+    echo "  $templates_rel/ (removed)"
+  fi
+  rmdir "$REPO_ROOT/.coding-crew/docs/templates" "$REPO_ROOT/.coding-crew/docs" 2>/dev/null || true
+}
+
+install_docs() {
+  local docs_header_printed=0
+  if [[ -f "$REPO_ROOT/.coding-crew/docs/issue-tracker.md" || -d "$REPO_ROOT/.coding-crew/docs/templates/trackers" ]]; then
+    echo "Docs:"; docs_header_printed=1
+    migrate_legacy_tracker_doc
+  fi
 
   # Copy tracker helper scripts. Unlike the docs above these are mechanism, not
   # user-customisable text, so they are always overwritten — a stale copy would be a
@@ -570,21 +594,6 @@ install_docs() {
       fi
     done < <(find "$REPO_ROOT/$tree_dest_rel" -type f -print0)
   done
-
-  # Copy tracker template files so configure-tracker can present them as options.
-  local trackers_src="$SCRIPT_DIR/docs/templates/trackers"
-  local trackers_dest="$REPO_ROOT/.coding-crew/docs/templates/trackers"
-  if [[ -d "$trackers_src" ]]; then
-    mkdir -p "$trackers_dest"
-    while IFS= read -r -d '' tpl_file; do
-      local tpl_dest="$trackers_dest/$(basename "$tpl_file")"
-      if [[ ! -f "$tpl_dest" ]]; then
-        [[ "$docs_header_printed" -eq 0 ]] && { echo "Docs:"; docs_header_printed=1; }
-        cp "$tpl_file" "$tpl_dest"
-        echo "  .coding-crew/docs/templates/trackers/$(basename "$tpl_file")"
-      fi
-    done < <(find "$trackers_src" -maxdepth 1 -name "*.md" -print0)
-  fi
 }
 
 # A user-level install of the same skill (or a retired agent file) can take precedence over the copy we
@@ -739,8 +748,8 @@ echo "Target: $REPO_ROOT"
 if [[ "$UPDATE_MODE" == "true" ]]; then
   run_update
   prune_retired_agents
-  # Docs never overwrite an existing file, but the tracker scripts always do — and they carry
-  # no version of their own, so an update that skips this keeps a stale gate forever.
+  # The tracker scripts, CLI and docs carry no version of their own, so an update that skips this
+  # keeps a stale gate forever; it also migrates a legacy issue-tracker.md into config.json.
   install_docs
   if [[ "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
     write_manifest

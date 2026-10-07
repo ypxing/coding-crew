@@ -86,10 +86,25 @@ setup() {
       [ "$status" -eq 0 ] || { echo "$skill/$p failed to render: $output" >&2; return 1; }
       [[ "$output" == *"## Tracker Configuration"* ]] || {
         echo "$skill/$p is missing the Tracker Configuration section" >&2; return 1; }
-      [[ "$output" == *"issue-tracker.md"* ]] || {
-        echo "$skill/$p is missing the issue-tracker.md reference" >&2; return 1; }
+      [[ "$output" == *'node "$TRACKER" config'* ]] || {
+        echo "$skill/$p is missing the cli.mjs config check" >&2; return 1; }
+      [[ "$output" != *"issue-tracker.md"* ]] || {
+        echo "$skill/$p still names issue-tracker.md" >&2; return 1; }
       [[ "$output" != *"{{FRAGMENT"* ]] || {
         echo "$skill/$p left an unexpanded fragment placeholder" >&2; return 1; }
     done
   done
+}
+
+@test "the tracker-configuration fragment asks configure-tracker on configured=no only interactively, else proceeds as local" {
+  local f="$REPO_ROOT/skills/_shared/fragments/tracker-configuration.md"
+  grep -qF 'node "$TRACKER" config' "$f"
+  grep -qF 'configured=no' "$f"
+  grep -qF 'configure-tracker' "$f"
+  grep -qiF 'interactive run' "$f"
+  grep -qF 'CREW_ORCHESTRATED' "$f"
+  grep -qF -- '-p' "$f"
+  grep -qF 'proceed as `local`' "$f"
+  grep -qF '.coding-crew/tracker/docs/' "$f"
+  ! grep -q 'issue-tracker.md' "$f"
 }

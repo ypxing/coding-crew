@@ -2,23 +2,19 @@
 
 Issues and PRDs for this repo live as markdown files in `.scratch/`.
 
-## Tracker config (optional front matter)
+## Tracker config
 
-This file may open with YAML front matter declaring which tracker backend the whole
-pipeline should use:
+The tracker this repo uses is the `tracker` section of `.coding-crew/config.json`:
 
-```yaml
----
-tracker: local          # or "github"
-# repo: owner/name      # optional override — omit to let `gh` infer it from the git remote
----
+```json
+{ "tracker": { "kind": "local" } }
 ```
 
-Omitting the front matter entirely — as this template does — means `tracker: local` with no
-`repo`. `tracker/tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and
-`scripts/tracker/tracker-config.sh`'s `read_tracker_config` are the two readers of this front
-matter; both default to `{tracker: "local", repo: null}` when it, or this whole file, is absent,
-so existing local-tracker installs need no changes.
+`kind` is `local` or `github`; other sections of the file (`afk`) are kept beside it. No
+`tracker` section means `local`, so this tracker needs no config at all. `configure-tracker`
+writes the section, and `node "$TRACKER" config` prints what is in effect (`tracker=<kind>`,
+`configured=yes|no`). This doc ships with the tracker CLI in `.coding-crew/tracker/docs/` and is
+refreshed by every install — edit `config.json`, not this file.
 
 ## Tracker CLI
 
@@ -68,8 +64,6 @@ deliberately recorded as descoped. On success it sets `Status: done` and moves t
 there is no later state: nothing outside `.scratch/` reads it, so no PR has anything to close.
 
 An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root — once per run, before the issue's first dispatch, under crew-afk; in `solve-issue`'s preflight on a direct run — and a failing one blocks the issue.
-
-## Labels` below.
 
 ## Labels
 

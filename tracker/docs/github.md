@@ -3,23 +3,18 @@
 Issues, PRDs, and features live as GitHub Issues and Milestones. Requires the `gh` CLI,
 authenticated (`gh auth status`), on every machine that runs a tracker-touching skill or script.
 
-## Tracker config (optional front matter)
+## Tracker config
 
-This file opens with YAML front matter declaring which tracker backend the whole pipeline
-should use, and (optionally) which repo to target:
+The tracker this repo uses is the `tracker` section of `.coding-crew/config.json`:
 
-```yaml
----
-tracker: github         # or "local"
-repo: owner/name        # optional override — omit to let `gh` infer it from the git remote
----
+```json
+{ "tracker": { "kind": "github" } }
 ```
 
-`configure-tracker` writes this block when you choose `github`. `tracker/
-tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and `scripts/tracker/tracker-config.sh`'s
-`read_tracker_config` are the two readers of this front matter. `repo` is a pure override: `gh`
-already infers the repo from the current directory's git remote when `--repo` is omitted, so
-leave it out unless issues are tracked in a different repo than the code.
+`configure-tracker` writes it when you choose `github` (other sections of the file are kept), and
+`node "$TRACKER" config` prints what is in effect. `gh` targets the repo of the current
+directory's git remote; there is no override. This doc ships with the tracker CLI in
+`.coding-crew/tracker/docs/` and is refreshed by every install — edit `config.json`, not this file.
 
 ## Tracker CLI
 
@@ -105,7 +100,7 @@ Statuses other than `done` are labels a person sets in GitHub; `wontfix` closes 
 reason instead of setting a label:
 
 ```bash
-gh issue close <number> [--repo owner/name] --reason not-planned   # wontfix
+gh issue close <number> --reason not-planned   # wontfix
 ```
 
 ## In-progress issues
@@ -149,7 +144,7 @@ A failed `## Requires` probe is not labelled; it is re-probed every run.
 To put a blocked issue back in the queue, once its cause is fixed:
 
 ```bash
-gh issue edit <number> [--repo owner/name] --remove-label blocked
+gh issue edit <number> --remove-label blocked
 ```
 
 The sprint summary prints that command for each issue blocked in the run.

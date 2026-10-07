@@ -13,7 +13,7 @@ set -uo pipefail
 #   4  refused: acceptance criteria or cross-cutting requirements are still unchecked
 #
 # A thin wrapper, kept for its callers (close-issue.sh, the ready-for-human steps, old installs'
-# issue-tracker.md): both refusals and the done write are `tracker/cli.mjs mark-done`'s, once for
+# tracker docs): both refusals and the done write are `tracker/cli.mjs mark-done`'s, once for
 # every backend. This script only finds the CLI and maps its usage exit (2) to its own (1). A
 # refusal is the CLI's `REFUSED: <issue> …` line on stderr, saying why and how to proceed.
 #
@@ -82,7 +82,7 @@ done < <(tracker_config_candidates "$MAIN_ROOT")
 if [ -n "$TRACKER_CONFIG_FOUND" ]; then
   # shellcheck source=/dev/null
   . "$TRACKER_CONFIG_FOUND"
-  read_tracker_config "$MAIN_ROOT"
+  read_tracker_config "$MAIN_ROOT" || exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

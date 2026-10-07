@@ -18,12 +18,6 @@ function repo() {
   return mkdtempSync(join(tmpdir(), "crew-tracker-github-"));
 }
 
-function writeTrackerConfig(root, contents) {
-  const dir = join(root, ".coding-crew", "docs");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "issue-tracker.md"), contents);
-}
-
 /** A fake `exec` that records every call and returns one JSON payload for `gh issue list`. */
 function fakeExec(issues) {
   const calls = [];
@@ -57,14 +51,6 @@ test("listFeatureIssues issues exactly one gh issue list call, scoped to the mil
   assert.match(argv, /--state all/);
   assert.match(argv, /--json number,title,body,labels,state/);
   assert.doesNotMatch(argv, /--repo/);
-});
-
-test("listFeatureIssues includes --repo only when readTrackerConfig names one", () => {
-  const root = repo();
-  writeTrackerConfig(root, "---\ntracker: github\nrepo: owner/name\n---\n");
-  const exec = fakeExec([]);
-  listFeatureIssues(root, { featureSlug: "my-feature", exec });
-  assert.match(exec.calls[0].join(" "), /--repo owner\/name/);
 });
 
 test("listFeatureIssues returns an empty list for a milestone that does not exist yet, not an error", () => {
@@ -346,13 +332,14 @@ test("createIssue calls gh issue create with title, label and milestone flags", 
   assert.ok(createCall.includes("--body-file"));
 });
 
-test("createIssue includes --repo only when readTrackerConfig names one", () => {
+test("createIssue never passes --repo: gh targets the git remote, milestones included", () => {
   const root = repo();
-  writeTrackerConfig(root, "---\ntracker: github\nrepo: owner/name\n---\n");
   const exec = fakeGhWrite();
-  createIssue({ title: "New work", body: "b", labels: [], featureSlug: "feat" }, { mainRoot: root, exec });
-  const createCall = exec.calls.find((c) => c[1] === "issue" && c[2] === "create");
-  assert.match(createCall.join(" "), /--repo owner\/name/);
+  createIssue({ title: "New work", body: "## Blocked by\n- Issue #3\n", labels: [], featureSlug: "feat" }, { mainRoot: root, exec });
+  for (const call of exec.calls) assert.ok(!call.includes("--repo"), call.join(" "));
+  const apiPaths = exec.calls.filter((c) => c[1] === "api").map((c) => c.find((a) => a.startsWith("repos/")));
+  assert.ok(apiPaths.length > 0);
+  for (const path of apiPaths) assert.ok(path.startsWith("repos/{owner}/{repo}/"), path);
 });
 
 test("createIssue surfaces a gh issue create failure rather than swallowing it", () => {
@@ -481,12 +468,10 @@ test("linkBlockers warns, never throws, on API error or missing blocker; already
   assert.equal(warns.length, 2);
 });
 
-test("linkBlockers honours the repo override", () => {
-  const root = repo();
-  writeTrackerConfig(root, "---\ntracker: github\nrepo: acme/widgets\n---\n");
+test("linkBlockers resolves the repo from the git remote", () => {
   const exec = fakeLink({ body: "## Blocked by\n- Issue #3\n" });
-  linkBlockers(9, { mainRoot: root, exec, warn: () => {} });
-  assert.ok(posts(exec)[0].includes("repos/acme/widgets/issues/9/dependencies/blocked_by"));
+  linkBlockers(9, { mainRoot: repo(), exec, warn: () => {} });
+  assert.ok(posts(exec)[0].includes("repos/{owner}/{repo}/issues/9/dependencies/blocked_by"));
 });
 
 test("createIssue links blockers for the issue it created, and a link failure does not fail creation", () => {

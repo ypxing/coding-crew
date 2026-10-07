@@ -36,7 +36,7 @@ the user before writing the final document.
 
    It creates the feature's PRD, or updates it when one exists, and prints its ref; delete the draft file once it exits 0. The PRD is titled `PRD: <feature title>` and filed under the feature's milestone where the tracker has one; a tracker that pins it treats a pin failure as a warning, never a failed publish.
 
-**Security**: Only write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `issue-tracker.md` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
+**Security**: Only write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's `publish-prd`, which acts on the tracker `config.json` configures. Never publish to arbitrary external APIs, an unconfigured remote tracker, or paths outside the repository root.
 
 > **Never commit `PRD.md`.** (Local tracker only — on a remote tracker the PRD is an issue, with no local file to accidentally commit.) This file lives under `.scratch/` which is gitignored. Do not run `git add -f`, `git add .scratch/`, or any command that stages files under `.scratch/`.
 

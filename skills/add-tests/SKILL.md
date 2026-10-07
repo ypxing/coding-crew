@@ -109,7 +109,7 @@ scans manifests: `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemf
 3. **Ask the user once** — if neither of the above resolves it.
 
 Cache the resolved choice per ecosystem to `.coding-crew/docs/test-conventions.md`, a lookup
-table (not an operations doc like `.coding-crew/docs/issue-tracker.md`):
+table (not an operations doc like `.coding-crew/tracker/docs/local.md`):
 
 ```markdown
 # Test Conventions

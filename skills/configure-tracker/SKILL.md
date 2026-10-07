@@ -1,103 +1,86 @@
 ---
 name: configure-tracker
 description: >
-  Select and install an issue tracker template. If only one template is available it is applied
-  automatically; otherwise presents a numbered menu. Writes the chosen template to the
-  project-level config path. Use when setting up a new project's issue tracker or switching
-  tracker backends.
+  Choose where the project's issues live — local markdown files or GitHub Issues — and write the
+  choice to the `tracker` section of the repo's .coding-crew/config.json. Use when setting up a new
+  project's issue tracker or switching tracker backends.
 ---
 
 # Configure Tracker
 
-Select an issue tracker template and write it to the project-level config path.
+Choose the project's issue tracker and record it in the repo's `.coding-crew/config.json`:
 
-## Step 1 — List available templates
+```json
+{ "tracker": { "kind": "github" } }
+```
 
-Run the shared script to find templates and auto-apply if only one exists:
+Every other section of that file (`afk`) is kept. This is an explicit (re)configuration: an
+existing `tracker` section is replaced.
+
+## Step 1 — Offer the trackers
+
+Show the current choice, if any:
 
 ```bash
-bash "<skill-dir>/scripts/configure-tracker-auto.sh"
+CONFIG="$(git rev-parse --show-toplevel)/.coding-crew/config.json"
+[ -f "$CONFIG" ] && jq -r '.tracker.kind // "none"' "$CONFIG"
 ```
 
-If the script exits 0, the tracker is configured — skip to Step 4.
-If it exits 1, stop with the error message it printed.
-If it exits 2, multiple templates exist and nothing is configured yet — ambiguous, so fall
-back to the interactive menu below instead of guessing.
-
-List the available templates for the user:
-
-```bash
-REPO_TRACKERS="$(git rev-parse --show-toplevel)/.coding-crew/docs/templates/trackers"
-USER_TRACKERS="$HOME/.coding-crew/docs/templates/trackers"
-if [ -d "$REPO_TRACKERS" ] && [ -n "$(find "$REPO_TRACKERS" -name "*.md" -print -quit 2>/dev/null)" ]; then
-  TRACKERS_DIR="$REPO_TRACKERS"
-elif [ -d "$USER_TRACKERS" ] && [ -n "$(find "$USER_TRACKERS" -name "*.md" -print -quit 2>/dev/null)" ]; then
-  TRACKERS_DIR="$USER_TRACKERS"
-fi
-[ -n "$TRACKERS_DIR" ] && find "$TRACKERS_DIR" -name "*.md" | sort
-```
-
-For each file, derive a short name (filename without `.md`) and a one-line description from
-the first `#` heading inside the file if present; otherwise use the filename.
-
-Present a numbered menu, for example:
+Then present this menu:
 
 ```
-Available tracker templates:
-(1) local — Local markdown files in .scratch/
-(2) linear — Linear.app integration
+Available trackers:
+(1) local — markdown files under .scratch/<feature-slug>/issues/
+(2) github — GitHub Issues and Milestones of this repo's git remote (needs an authenticated gh)
 ```
 
-## Step 2 — Choose a template
+## Step 2 — Choose
 
-Ask: "Which template? Enter a number."
+Ask: "Which tracker? Enter a number."
 
 Wait for the user to enter a valid number. If the input is invalid, re-prompt once; then stop.
 
-## Step 3 — Write the template
+## Step 3 — github setup
 
-The destination is always the project-level path:
-`$(git rev-parse --show-toplevel)/.coding-crew/docs/issue-tracker.md`
-
-Copy the chosen template file to the destination, **overwriting any existing file**
-(this is an explicit reconfiguration — no skip-if-exists guard here):
-
-```bash
-mkdir -p "$(dirname "<destination>")"
-cp "<chosen-template-path>" "<destination>"
-```
-
-### If the chosen template is `github`
-
-Do the following before declaring success. Do not skip any step, and do not proceed past a
-failure — surface it to the user with a clear message rather than swallowing it.
+Only when the choice is `github`. Do the following before writing anything. Do not skip any
+step, and do not proceed past a failure — surface it to the user with a clear message rather
+than swallowing it. `gh` targets the repo of the current directory's git remote.
 
 1. **Check authentication.** Run `gh auth status`. If it fails (non-zero exit), stop
    immediately with a clear error, e.g. "gh is not authenticated — run `gh auth login` first."
    Nothing below runs until this passes.
-2. **Ask which repo.** Prompt exactly: "press enter to use this repository, or enter
-   `owner/name` if issues are tracked elsewhere". A blank answer means the tracked repo is the
-   current one — omit `repo:` from the front matter entirely. A non-blank answer becomes the
-   `repo:` value below.
-3. **Create the 7 labels idempotently.** For each of `needs-triage`, `needs-info`,
-   `ready-for-agent`, `ready-for-human`, `awaiting-merge`, `blocked`, `in-progress`: check whether it already exists (`gh
-   label list [--repo owner/name]`); if missing, create it (`gh label create <name> [--repo
-   owner/name]`). Skip labels that already exist — do not error or duplicate. `awaiting-merge`
-   is `done` before the PR merges; `blocked` marks an issue crew-afk stopped on (later runs skip it until a human removes the label); `in-progress` marks an issue a crew-afk run is working (display only, never read for dispatch); `wontfix` is a close reason, not a label (see the copied
-   template's Labels table) — do not create `done` or `wontfix` as labels.
-4. **Write the tracker front matter.** Prepend this YAML block to the top of the destination
-   file, using exactly the field names `readTrackerConfig` expects:
-   ```yaml
-   ---
-   tracker: github
-   repo: owner/name   # omit this line entirely when the Step 2 answer was blank
-   ---
-   ```
+2. **Create the 7 labels idempotently.** For each of `needs-triage`, `needs-info`,
+   `ready-for-agent`, `ready-for-human`, `awaiting-merge`, `blocked`, `in-progress`: check
+   whether it already exists (`gh label list`); if missing, create it (`gh label create <name>`).
+   Skip labels that already exist — do not error or duplicate. `awaiting-merge` is `done` before
+   the PR merges; `blocked` marks an issue crew-afk stopped on (later runs skip it until a human
+   removes the label); `in-progress` marks an issue a crew-afk run is working (display only, never
+   read for dispatch); `wontfix` is a close reason, not a label — do not create `done` or
+   `wontfix` as labels.
 
-## Step 4 — Confirm
+## Step 4 — Write config.json
 
-Print a confirmation message:
+Write the chosen kind (`local` or `github`) into the `tracker` section, keeping every other
+section, then delete a legacy `issue-tracker.md` an earlier version wrote — it is no longer read
+once `config.json` has a `tracker` section:
+
+```bash
+ROOT="$(git rev-parse --show-toplevel)"
+CONFIG="$ROOT/.coding-crew/config.json"
+mkdir -p "$ROOT/.coding-crew"
+[ -f "$CONFIG" ] || echo '{}' > "$CONFIG"
+TMP="$(mktemp "$CONFIG.XXXXXX")"
+jq --arg k "<local|github>" '.tracker = {kind: $k}' "$CONFIG" > "$TMP" && mv "$TMP" "$CONFIG"
+rm -f "$ROOT/.coding-crew/docs/issue-tracker.md"
+```
+
+If `jq` fails (the existing `config.json` is not valid JSON), stop and show its error: never
+replace a file you could not parse.
+
+## Step 5 — Confirm
+
+Print a confirmation message, naming the kind chosen:
 
 ```
-Tracker configured. All tracker-touching skills will now use .coding-crew/docs/issue-tracker.md.
+Tracker configured: <kind> (.coding-crew/config.json). How it works: .coding-crew/tracker/docs/<kind>.md
 ```

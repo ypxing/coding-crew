@@ -137,14 +137,14 @@ tracker_section() {
 @test "the tracker templates have no Operation sections, list the CLI commands, and fix the label strings" {
   local t
   for t in local github; do
-    t="$REPO_ROOT/docs/templates/trackers/$t.md"
+    t="$REPO_ROOT/tracker/docs/$t.md"
     ! grep -q '^## Operation:' "$t"
     grep -q '^## Tracker CLI' "$t"
     for op in fetch prd known publish-issues publish-prd rewrite mark-done; do
       grep -qE "^node \"\\\$TRACKER\" $op( |$)" "$t" || { echo "$t lacks the $op command" >&2; return 1; }
     done
   done
-  ! grep -qF 'Edit the right-hand column' "$REPO_ROOT/docs/templates/trackers/local.md"
+  ! grep -qF 'Edit the right-hand column' "$REPO_ROOT/tracker/docs/local.md"
 }
 
 @test "the tracker-configuration lookup, run in a linked worktree without .coding-crew/, finds the main checkout's CLI" {

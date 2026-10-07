@@ -35,30 +35,51 @@ teardown() {
   [ -f "$TEMP_DIR/.claude/skills/configure-tracker/SKILL.md" ]
 }
 
-# --- Skill content: menu behaviour ---
+# --- Rendered skill: the two backends, written to config.json ---
 
-@test "configure-tracker/SKILL.md references .coding-crew/docs/templates/trackers/ directory" {
-  grep -q '\.coding-crew/docs/templates/trackers' "$SKILL_FILE"
+_rendered() { bash "$SCRIPT_DIR/scripts/render-skill.sh" configure-tracker claude; }
+
+@test "rendered configure-tracker reads no .coding-crew/docs/templates/ path and offers local and github" {
+  run _rendered
+  [ "$status" -eq 0 ]
+  [[ "$output" != *".coding-crew/docs/templates"* ]]
+  [[ "$output" == *"(1) local"* ]]
+  [[ "$output" == *"(2) github"* ]]
 }
 
-@test "configure-tracker/SKILL.md describes listing .md files from trackers directory" {
-  grep -qE '\.md|list|menu' "$SKILL_FILE"
+@test "rendered configure-tracker writes config.json's tracker section, keeping other sections" {
+  run _rendered
+  [[ "$output" == *".coding-crew/config.json"* ]]
+  [[ "$output" == *'.tracker = {kind: $k}'* ]]
+  [[ "$output" == *'{ "tracker": { "kind": "github" } }'* ]]
 }
 
-# --- Skill content: write paths ---
+@test "rendered configure-tracker has no repo prompt and no repo: front matter" {
+  run _rendered
+  [[ "$output" != *"press enter to use this repository"* ]]
+  [[ "$output" != *"repo:"* ]]
+  [[ "$output" != *"--repo"* ]]
+  [[ "$output" != *"owner/name"* ]]
+}
 
-@test "configure-tracker/SKILL.md mentions project-level path .coding-crew/docs/issue-tracker.md" {
-  grep -q '\.coding-crew/docs/issue-tracker.md' "$SKILL_FILE"
+@test "rendered configure-tracker deletes a legacy issue-tracker.md only after writing config.json" {
+  run _rendered
+  local write_line rm_line
+  write_line=$(printf '%s\n' "$output" | grep -n '.tracker = {kind: $k}' | head -1 | cut -d: -f1)
+  rm_line=$(printf '%s\n' "$output" | grep -n 'rm -f .*issue-tracker.md' | head -1 | cut -d: -f1)
+  [ -n "$write_line" ] && [ -n "$rm_line" ]
+  [ "$rm_line" -gt "$write_line" ]
+}
+
+@test "configure-tracker-auto.sh no longer ships" {
+  [ ! -e "$SCRIPT_DIR/scripts/skill-utils/git-workflow/configure-tracker-auto.sh" ]
+  run jq -r '.skills["configure-tracker"].scripts // empty' "$SCRIPT_DIR/registry.json"
+  [ -z "$output" ]
+  ! grep -q 'configure-tracker-auto' "$SKILL_FILE"
 }
 
 @test "configure-tracker/SKILL.md does not mention user-level path (project-level only)" {
   ! grep -q '~/.claude' "$SKILL_FILE"
-}
-
-# --- Auto-select behaviour ---
-
-@test "configure-tracker/SKILL.md auto-selects when exactly one template is found" {
-  grep -qE 'exactly one|one template|skip.*Step 2|automatically' "$SKILL_FILE"
 }
 
 # --- github backend setup ---
@@ -67,77 +88,9 @@ teardown() {
   grep -q 'gh auth status' "$SKILL_FILE"
 }
 
-@test "configure-tracker/SKILL.md prompts for the repo, blank meaning omit repo:" {
-  grep -q 'press enter to use this repository, or enter' "$SKILL_FILE"
-  grep -qi 'blank' "$SKILL_FILE"
-}
-
-@test "configure-tracker/SKILL.md idempotently creates the 5 github labels" {
-  grep -q 'awaiting-merge'  "$SKILL_FILE"
-  grep -q 'needs-triage'    "$SKILL_FILE"
-  grep -q 'needs-info'      "$SKILL_FILE"
-  grep -q 'ready-for-agent' "$SKILL_FILE"
-  grep -q 'ready-for-human' "$SKILL_FILE"
+@test "configure-tracker/SKILL.md idempotently creates the 7 github labels" {
+  for l in needs-triage needs-info ready-for-agent ready-for-human awaiting-merge blocked in-progress; do
+    grep -q "$l" "$SKILL_FILE"
+  done
   grep -qi 'idempotent' "$SKILL_FILE"
-}
-
-@test "configure-tracker/SKILL.md writes tracker/repo front matter using readTrackerConfig's field names" {
-  grep -q 'tracker: github' "$SKILL_FILE"
-  grep -q 'repo:' "$SKILL_FILE"
-}
-
-# --- ambiguous-template exit code (dormant-bug fix) ---
-
-@test "configure-tracker/SKILL.md Step 1 branches on exit code 2 into the interactive menu" {
-  grep -qE 'exits? 2' "$SKILL_FILE"
-}
-
-@test "configure-tracker-auto.sh exits 2 (not 0) when 2+ templates exist and nothing is configured yet" {
-  local AUTO_SCRIPT="$SCRIPT_DIR/scripts/skill-utils/git-workflow/configure-tracker-auto.sh"
-  cd "$TEMP_DIR"
-  git init -q .
-  mkdir -p .coding-crew/docs/templates/trackers
-  cp "$SCRIPT_DIR/docs/templates/trackers/local.md"  .coding-crew/docs/templates/trackers/
-  cp "$SCRIPT_DIR/docs/templates/trackers/github.md" .coding-crew/docs/templates/trackers/
-
-  run bash "$AUTO_SCRIPT"
-
-  [ "$status" -eq 2 ]
-  [ ! -f ".coding-crew/docs/issue-tracker.md" ]
-}
-
-@test "configure-tracker-auto.sh still no-ops (exit 0) when already configured, regardless of template count" {
-  local AUTO_SCRIPT="$SCRIPT_DIR/scripts/skill-utils/git-workflow/configure-tracker-auto.sh"
-  cd "$TEMP_DIR"
-  git init -q .
-  mkdir -p .coding-crew/docs/templates/trackers
-  cp "$SCRIPT_DIR/docs/templates/trackers/local.md"  .coding-crew/docs/templates/trackers/
-  cp "$SCRIPT_DIR/docs/templates/trackers/github.md" .coding-crew/docs/templates/trackers/
-  mkdir -p .coding-crew/docs
-  echo "already here" > .coding-crew/docs/issue-tracker.md
-
-  run bash "$AUTO_SCRIPT"
-
-  [ "$status" -eq 0 ]
-  grep -q "already here" .coding-crew/docs/issue-tracker.md
-}
-
-@test "configure-tracker-auto.sh still auto-applies (exit 0) when exactly one template exists" {
-  local AUTO_SCRIPT="$SCRIPT_DIR/scripts/skill-utils/git-workflow/configure-tracker-auto.sh"
-  cd "$TEMP_DIR"
-  git init -q .
-  mkdir -p .coding-crew/docs/templates/trackers
-  cp "$SCRIPT_DIR/docs/templates/trackers/local.md" .coding-crew/docs/templates/trackers/
-
-  run bash "$AUTO_SCRIPT"
-
-  [ "$status" -eq 0 ]
-  [ -f ".coding-crew/docs/issue-tracker.md" ]
-}
-
-# --- README documents the github backend ---
-
-@test "README.md mentions GitHub Issues as a supported tracker backend via configure-tracker" {
-  grep -qi 'GitHub Issues' "$SCRIPT_DIR/README.md"
-  grep -q 'configure-tracker' "$SCRIPT_DIR/README.md"
 }

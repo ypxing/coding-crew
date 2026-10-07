@@ -432,7 +432,7 @@ EOF
 }
 
 @test "tracker template documents no non-portable in-place sed" {
-  TEMPLATE="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/docs/templates/trackers/local.md"
+  TEMPLATE="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/tracker/docs/local.md"
   ! grep -vE '^\s*(#|>)' "$TEMPLATE" | grep -qE "sed +-i( |'')"
 }
 
