@@ -230,12 +230,12 @@ to_issues_step() {
   [[ "$note" == *'`Source: <report> (<branch>)`'* ]]
 }
 
-@test "to-issues creates the missing <feature-slug> milestone, list first, before the github in-place edit, for every platform" {
+@test "to-issues creates the missing <feature-slug> milestone, or reopens a closed one, list first, before the github in-place edit, for every platform" {
   for p in "${PLATFORMS[@]}"; do
     run rendered_skill to-issues "$p"
     [ "$status" -eq 0 ]
     line=$(grep -F 'gh issue edit <n> --body-file' "$output")
-    [[ "$line" == *'gh api --paginate repos/{owner}/{repo}/milestones --jq'*'gh api repos/{owner}/{repo}/milestones -f title=<feature-slug>'*'gh issue edit <n> --body-file'* ]]
+    [[ "$line" == *"gh api --paginate 'repos/{owner}/{repo}/milestones?state=all' --jq"*'gh api repos/{owner}/{repo}/milestones -f title=<feature-slug>'*'gh api -X PATCH repos/{owner}/{repo}/milestones/<number> -f state=open'*'gh issue edit <n> --body-file'* ]]
   done
 }
 

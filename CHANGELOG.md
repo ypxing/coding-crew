@@ -9,7 +9,8 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 - `crew-afk` (github tracker): the milestone check before creating an issue paginates and includes closed milestones, so
   a feature milestone past the API's first 30 no longer reads as missing — its create failed with HTTP 422 and the fix
   issue for a review finding was never created (#326). A closed match is reopened, so a finished feature's milestone can
-  be closed.
+  be closed. `to-issues` and the github tracker's `publish` operation do the same check (paged, closed included, reopen a
+  closed match).
 - `crew-grill`, `crew-brainstorm`, `to-prd`: a shared verification pass runs before the summary or publish — it re-runs the
   source behind every cited count, `path:line`, list and "nothing else reads/does X" claim, checks each decision for
   correctness and the set for coherence, and reports each correction as "said X → actually Y (source)". The design standard
