@@ -28,9 +28,9 @@ setup() {
   # Same reasoning for tracker-config.sh: point straight at the repo's own copy instead of
   # requiring a full install under .coding-crew/scripts/.
   export CREW_TRACKER_CONFIG="$REPO_ROOT/scripts/tracker/tracker-config.sh"
-  # _defer_github's github path shells out to github.mjs's own create-issue CLI — point it
+  # _defer_github's github path shells out to the tracker CLI's create-issue — point it
   # at the repo's own copy too, same reasoning.
-  export CREW_GITHUB_TRACKER_CLI="$REPO_ROOT/tracker/github.mjs"
+  export CREW_GITHUB_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
 
   mkdir -p .scratch/feat/issues/open .scratch/feat/reviews
   export REPORT=.scratch/feat/reviews/sprint-review-1.md
@@ -616,4 +616,49 @@ source_guarded() {
 
   bash "$PROMOTE" defer-integration --feature-slug feat --report .scratch/feat/verify.out --criteria-file integ.md >/dev/null
   source_guarded "$GH_LAST_BODY"
+}
+
+# ─── the tracker CLI lookup ───────────────────────────────────────────────────
+
+# defer_github_issue — runs one github defer and passes when it created the issue.
+defer_github_issue() {
+  run bash "$PROMOTE" defer --severities "actionable" --feature-slug feat --branch crew/feat/a --slug a \
+    --title "Fix review findings: a" --report "$REPORT" --criteria-file crit.md
+}
+
+@test "defer finds the tracker CLI at <main root>/.coding-crew/tracker/cli.mjs and creates the issue through it" {
+  configure_github
+  stub_gh
+  unset CREW_GITHUB_TRACKER_CLI
+  export HOME="$TEMP_DIR/home"
+  mkdir -p .coding-crew "$HOME"
+  cp -R "$REPO_ROOT/tracker" .coding-crew/tracker
+  defer_github_issue
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"https://github.com/acme/widgets/issues/42"* ]]
+  grep -q "^issue create .*--milestone feat" "$GH_CALLS_LOG"
+}
+
+@test "defer falls back to \$HOME/.coding-crew/tracker/cli.mjs" {
+  configure_github
+  stub_gh
+  unset CREW_GITHUB_TRACKER_CLI
+  export HOME="$TEMP_DIR/home"
+  mkdir -p "$HOME/.coding-crew"
+  cp -R "$REPO_ROOT/tracker" "$HOME/.coding-crew/tracker"
+  defer_github_issue
+  [ "$status" -eq 0 ]
+  grep -q "^issue create " "$GH_CALLS_LOG"
+}
+
+@test "defer names the tracker CLI when neither install has it" {
+  configure_github
+  stub_gh
+  unset CREW_GITHUB_TRACKER_CLI
+  export HOME="$TEMP_DIR/home"
+  mkdir -p "$HOME"
+  defer_github_issue
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"tracker CLI"* ]]
+  ! grep -q "^issue create " "$GH_CALLS_LOG"
 }
