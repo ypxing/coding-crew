@@ -242,19 +242,36 @@ test("selectDispatchable skips a non-ready status", () => {
  * `gh issue view --json body` returns whatever `body` was last set (defaults to
  * `initialViewBody`), independent of whatever the caller's own cached `issue.text` says.
  */
-function fakeGhWrite({ milestoneTitles = [], viewBody = "" } = {}) {
+function fakeGhWrite({ milestoneTitles = [], closedMilestoneTitles = [], viewBody = "" } = {}) {
   const calls = [];
-  const milestones = new Set(milestoneTitles);
+  const milestones = [
+    ...milestoneTitles.map((title) => ({ title, state: "open" })),
+    ...closedMilestoneTitles.map((title) => ({ title, state: "closed" })),
+  ].map((m, i) => ({ ...m, number: i + 1 }));
   const exec = (cmd, args) => {
     calls.push([cmd, ...args]);
     if (args[0] === "api") {
+      const patch = args.indexOf("PATCH");
+      if (patch !== -1) {
+        const number = Number(args[patch + 1].split("/").pop());
+        milestones.find((m) => m.number === number).state = "open";
+        return { code: 0, stdout: "", stderr: "" };
+      }
       const createMatch = args.indexOf("-f");
       if (createMatch !== -1) {
         const title = args[createMatch + 1].replace(/^title=/, "");
-        milestones.add(title);
+        milestones.push({ title, state: "open", number: milestones.length + 1 });
         return { code: 0, stdout: "", stderr: "" };
       }
-      return { code: 0, stdout: JSON.stringify([...milestones].map((title) => ({ title }))), stderr: "" };
+      // Like the real API: open milestones only unless `?state=all`, one page of 30 unless
+      // the call paginates, and `--jq` prints the tab-separated number/state/title lines.
+      const all = args[1].includes("state=all");
+      const visible = milestones.filter((m) => all || m.state === "open");
+      const listed = args.includes("--paginate") ? visible : visible.slice(0, 30);
+      const stdout = args.includes("--jq")
+        ? listed.map((m) => `${m.number}\t${m.state}\t${m.title}\n`).join("")
+        : JSON.stringify(listed);
+      return { code: 0, stdout, stderr: "" };
     }
     if (args[0] === "issue" && args[1] === "create") {
       return { code: 0, stdout: "https://github.com/owner/name/issues/42\n", stderr: "" };
@@ -281,6 +298,22 @@ test("createIssue's milestone bootstrap is idempotent: a second call for the sam
   createIssue({ title: "First", body: "body one", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
   createIssue({ title: "Second", body: "body two", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
   assert.equal(apiCreateCalls(exec).length, 1);
+});
+
+test("createIssue finds an existing milestone past the API's first page of 30 and makes no create request", () => {
+  const root = repo();
+  const others = Array.from({ length: 30 }, (_, i) => `other-${i}`);
+  const exec = fakeGhWrite({ milestoneTitles: [...others, "feat"] });
+  createIssue({ title: "First", body: "body", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
+  assert.equal(apiCreateCalls(exec).length, 0);
+});
+
+test("createIssue reopens the feature's closed milestone instead of creating a duplicate", () => {
+  const root = repo();
+  const exec = fakeGhWrite({ milestoneTitles: ["other"], closedMilestoneTitles: ["feat"] });
+  createIssue({ title: "First", body: "body", labels: ["ready-for-agent"], featureSlug: "feat" }, { mainRoot: root, exec });
+  assert.equal(apiCreateCalls(exec).filter((c) => !c.includes("PATCH")).length, 0);
+  assert.ok(exec.calls.some((c) => c.join(" ").includes("-X PATCH repos/{owner}/{repo}/milestones/2 -f state=open")));
 });
 
 test("createIssue calls gh issue create with title, body-file, label and milestone; body passed through unmodified", () => {
@@ -460,7 +493,7 @@ test("createIssue links blockers for the issue it created, and a link failure do
   const root = repo();
   const inner = fakeGhWrite();
   const exec = (cmd, args) => {
-    if (args[0] === "api" && args.includes("--jq")) return { code: 1, stdout: "", stderr: "nope" };
+    if (args[0] === "api" && args.includes("--jq") && !args[1].includes("/milestones")) return { code: 1, stdout: "", stderr: "nope" };
     return inner(cmd, args);
   };
   const r = createIssue({ title: "T", body: "## Blocked by\n- Issue #3\n", featureSlug: "feat" }, { mainRoot: root, exec });

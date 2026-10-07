@@ -209,16 +209,29 @@ function milestonesPath(repo) {
 /**
  * Ensure a milestone named `featureSlug` exists, list-first so a second call for the
  * same slug makes no create request — idempotent, as `createIssue` needs since it calls
- * this on every publish, not just the feature's first.
+ * this on every publish, not just the feature's first. The list paginates (30 per page) and
+ * includes closed milestones: either one missed reads as missing, and its create 422s on the
+ * taken title. A closed match is reopened, so a finished feature's milestone can be closed.
  */
 function ensureMilestone(featureSlug, { repo, exec }) {
   const path = milestonesPath(repo);
-  const list = exec("gh", ["api", path]);
+  const list = exec("gh", ["api", `${path}?state=all`, "--paginate", "--jq", ".[] | [.number, .state, .title] | @tsv"]);
   if (list.code !== 0) {
     throw new Error(`gh api milestones list failed (exit ${list.code}): ${list.stderr || list.stdout}`);
   }
-  const milestones = list.stdout && list.stdout.trim() ? JSON.parse(list.stdout) : [];
-  if (milestones.some((m) => m.title === featureSlug)) return;
+  const match = (list.stdout || "")
+    .split("\n")
+    .map((line) => line.split("\t"))
+    .find(([, , title]) => title === featureSlug);
+  if (match) {
+    const [number, state] = match;
+    if (state === "open") return;
+    const reopened = exec("gh", ["api", "-X", "PATCH", `${path}/${number}`, "-f", "state=open"]);
+    if (reopened.code !== 0) {
+      throw new Error(`gh api milestone reopen failed (exit ${reopened.code}): ${reopened.stderr || reopened.stdout}`);
+    }
+    return;
+  }
 
   const created = exec("gh", ["api", path, "-f", `title=${featureSlug}`]);
   if (created.code !== 0) {

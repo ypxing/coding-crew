@@ -48,8 +48,12 @@ Create a new issue or PRD issue, both scoped to the feature's milestone (created
 first write, if it doesn't already exist):
 
 ```bash
-# Milestone, created only if a list-first check shows it's missing (idempotent):
+# Milestone, list-first (idempotent). The list pages (30 per page) and includes closed ones:
+gh api --paginate 'repos/{owner}/{repo}/milestones?state=all' --jq '.[] | [.number, .state, .title] | @tsv'
+# missing → create it:
 gh api repos/{owner}/{repo}/milestones -f title=<feature-slug>
+# closed → reopen it (creating it again fails on the taken title):
+gh api -X PATCH repos/{owner}/{repo}/milestones/<number> -f state=open
 
 # PRD — identified by title convention plus milestone scope, not a label:
 gh issue create [--repo owner/name] --title "PRD: <feature title>" \

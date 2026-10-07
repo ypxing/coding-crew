@@ -15,8 +15,8 @@ set -uo pipefail
 #      its work has not reached the default branch.
 #   3. Once no open work issue is left in the milestone, its PRD issue (title `PRD: …`) is closed
 #      too — only after at least one merged PR, so a PRD whose feature has not shipped stays open.
-# The milestone itself is left open: the tracker looks milestones up among open ones only, so a
-# closed one would make the next issue created for the feature fail.
+# The milestone itself is left open (closing it is a human's call; the tracker reopens a closed
+# one when the next issue is created for the feature).
 #
 # Runs once per crew-afk run, right after the feature lease is taken, and by hand after a merge.
 # Prints `CLOSED: #<n> (PR #<p>)` per issue, `CLOSED: PRD #<n>`, then `SHIPPED: <count>`.

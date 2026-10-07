@@ -153,9 +153,11 @@ Feature Mode only, like Step 3.
 
 {{FRAGMENT:design-standard}}
 
-Apply criteria 2–4 to the code the diff adds or changes. Criterion 1 (is it necessary at all) is
-the issue's question, settled before any code was written, so it is not yours.
-A design-only finding — one whose only basis is a criterion above, with no failure Step 3 or a
+Apply criteria 3–5 to the code the diff adds or changes. Criterion 1 (is it necessary at all) is
+the issue's question, settled before any code was written, so it is not yours. A criterion-2 failure
+(the code does not do what it claims) is a defect: report it in Steps 2–3 at its real severity,
+never with the `Design standard (criterion` prefix, which marks a finding design-only and Debatable.
+A design-only finding — one whose only basis is one of criteria 3–5, with no failure Step 3 or a
 reference names — is reported at `LOW`, only with its exact `file:line` and a snippet, and only once
 it passes the Pre-Report Gate (the "concrete failure mode" question is answered by the criterion's
 failure signal and its evidence: the second place the decision is coded, the unused parameter, the
