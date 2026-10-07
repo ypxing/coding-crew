@@ -82,7 +82,7 @@ done < <(tracker_config_candidates "$MAIN_ROOT")
 if [ -n "$TRACKER_CONFIG_FOUND" ]; then
   # shellcheck source=/dev/null
   . "$TRACKER_CONFIG_FOUND"
-  read_tracker_config "$MAIN_ROOT"
+  read_tracker_config "$MAIN_ROOT" || exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

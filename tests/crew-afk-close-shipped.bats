@@ -17,6 +17,7 @@ setup() {
   mkdir -p "$MAIN_ROOT/.coding-crew/docs" "$TEMP_DIR/install/scripts"
   printf -- '---\ntracker: github\n---\n' > "$MAIN_ROOT/.coding-crew/docs/issue-tracker.md"
   cp "$REPO_ROOT/scripts/tracker/tracker-config.sh" "$TEMP_DIR/install/scripts/"
+  cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/install/tracker"
   unset CREW_TRACKER_CONFIG
   export CREW_INSTALL_DIR="$TEMP_DIR/install"
 

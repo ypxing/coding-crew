@@ -163,8 +163,8 @@ tracker_config_candidates() {
 }
 # END tracker-lookup
 TRACKER_CONFIG_TRACKER="local"
-TRACKER_CONFIG_REPO=""
 TRACKER_CONFIG_DOC="$MAIN_ROOT_FOR_TRACKER/.coding-crew/docs/issue-tracker.md"
+TRACKER_CONFIG_JSON="$MAIN_ROOT_FOR_TRACKER/.coding-crew/config.json"
 TRACKER_CONFIG_SCRIPT=""
 TRACKER_CONFIG_CHECKED=""
 while IFS= read -r _tc; do
@@ -174,13 +174,27 @@ done < <(tracker_config_candidates "$MAIN_ROOT_FOR_TRACKER")
 if [ -n "$TRACKER_CONFIG_SCRIPT" ]; then
   # shellcheck source=/dev/null
   source "$TRACKER_CONFIG_SCRIPT"
-  read_tracker_config "$MAIN_ROOT_FOR_TRACKER"
-elif [ -f "$TRACKER_CONFIG_DOC" ] &&
-  awk 'NR == 1 && $0 != "---" { exit 1 } NR > 1 && $0 == "---" { exit 1 } NR > 1 && /^tracker:[[:space:]]*["'"'"']?github/ { found = 1; exit 0 } END { exit !found }' "$TRACKER_CONFIG_DOC"; then
-  echo "ERROR: $TRACKER_CONFIG_DOC declares tracker: github, but tracker-config.sh was not found in any of:" >&2
-  printf '%s' "$TRACKER_CONFIG_CHECKED" >&2
-  echo "Install coding-crew (install.sh) into this repo or your home directory so the tracker config is honoured." >&2
-  exit 1
+  read_tracker_config "$MAIN_ROOT_FOR_TRACKER" || exit 1
+else
+  # No reader: still refuse to run as local when the repo plainly chose github. config.json's
+  # tracker section wins (checked only when jq is installed); else the legacy front matter.
+  _json_kind=""
+  if [ -f "$TRACKER_CONFIG_JSON" ] && command -v jq >/dev/null 2>&1; then
+    _json_kind="$(jq -r '.tracker.kind? // empty' "$TRACKER_CONFIG_JSON" 2>/dev/null || true)"
+  fi
+  _github_source=""
+  if [ "$_json_kind" = "github" ]; then
+    _github_source="$TRACKER_CONFIG_JSON sets tracker.kind: github"
+  elif [ -z "$_json_kind" ] && [ -f "$TRACKER_CONFIG_DOC" ] &&
+    awk 'NR == 1 && $0 != "---" { exit 1 } NR > 1 && $0 == "---" { exit 1 } NR > 1 && /^tracker:[[:space:]]*["'"'"']?github/ { found = 1; exit 0 } END { exit !found }' "$TRACKER_CONFIG_DOC"; then
+    _github_source="$TRACKER_CONFIG_DOC declares tracker: github"
+  fi
+  if [ -n "$_github_source" ]; then
+    echo "ERROR: $_github_source, but tracker-config.sh was not found in any of:" >&2
+    printf '%s' "$TRACKER_CONFIG_CHECKED" >&2
+    echo "Install coding-crew (install.sh) into this repo or your home directory so the tracker config is honoured." >&2
+    exit 1
+  fi
 fi
 
 # Under tracker: github there is nothing local to scan (issues live on GitHub, not

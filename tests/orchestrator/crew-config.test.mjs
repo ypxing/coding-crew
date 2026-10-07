@@ -475,6 +475,20 @@ test("loadConfig: the user's config may still set the PRD audit, and the notice 
   rmSync(home, { recursive: true, force: true });
 });
 
+// ─── tracker: the repo's own, read by tracker-config.mjs ─────────────────────
+
+test("loadConfig: a tracker section is accepted beside afk in the repo's config, rejected in the user's", () => {
+  const root = tmpRoot({ "config.json": { afk: { maxParallel: 2 }, tracker: { kind: "github" } } });
+  const { config } = loadConfig(root, { home: EMPTY_HOME });
+  assert.equal(config.afk.maxParallel, 2);
+  const home = tmpRoot({ "config.json": { tracker: { kind: "github" } } });
+  assert.throws(
+    () => loadConfig(tmpRoot(), { home }),
+    (e) => e instanceof ConfigError && /~\/\.coding-crew\/config\.json/.test(e.message) && /"tracker"/.test(e.message),
+  );
+  for (const d of [root, home]) rmSync(d, { recursive: true, force: true });
+});
+
 // ─── paneHost: per-machine, with an env layer ────────────────────────────────
 
 test("loadConfig: afk.paneHost is accepted from the user's config only", () => {

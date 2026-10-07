@@ -86,7 +86,6 @@ tracker_config_candidates() {
 }
 # END tracker-lookup
 TRACKER_CONFIG_TRACKER="local"
-TRACKER_CONFIG_REPO=""
 TRACKER_CONFIG_FOUND=""
 while IFS= read -r _tc; do
   if [ -f "$_tc" ]; then TRACKER_CONFIG_FOUND="$_tc"; break; fi
@@ -94,7 +93,7 @@ done < <(tracker_config_candidates "$MAIN_ROOT")
 if [ -n "$TRACKER_CONFIG_FOUND" ]; then
   # shellcheck source=/dev/null
   . "$TRACKER_CONFIG_FOUND"
-  read_tracker_config "$MAIN_ROOT"
+  read_tracker_config "$MAIN_ROOT" || exit 1
 fi
 
 if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
@@ -130,14 +129,12 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
   # Tick the criteria in the issue body, as the local backend ticks the file. Fetched
   # live, so a human's edit since listFeatureIssues is kept. A failed fetch or edit only warns:
   # the ticks are bookkeeping, and the label swap below is what marks the issue done.
-  REPO_ARGS=()
-  [ -n "$TRACKER_CONFIG_REPO" ] && REPO_ARGS=(--repo "$TRACKER_CONFIG_REPO")
-  if BODY="$(gh issue view "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --json body --jq .body)"; then
+  if BODY="$(gh issue view "$ISSUE_NUMBER" --json body --jq .body)"; then
     TICKED="$(printf '%s\n' "$BODY" | tick_criteria)"
     if [ "$TICKED" != "$BODY" ]; then
       BODY_FILE="$(mktemp)"
       printf '%s\n' "$TICKED" > "$BODY_FILE"
-      gh issue edit "$ISSUE_NUMBER" "${REPO_ARGS[@]}" --body-file "$BODY_FILE" >/dev/null \
+      gh issue edit "$ISSUE_NUMBER" --body-file "$BODY_FILE" >/dev/null \
         || echo "WARNING: could not tick the criteria on issue #$ISSUE_NUMBER" >&2
       rm -f "$BODY_FILE"
     fi
