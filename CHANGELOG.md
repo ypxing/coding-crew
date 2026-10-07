@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- `to-prd`: a decision that says "every", "always", "only" or "never" names the cases easy to miss (signals, thrown errors,
+  early returns) and whether each is included, so a reviewer stops reading an unnamed one as by design; replaying the
+  afk-effectiveness review with D14 written this way caught the missed signal-exit bug 4/4 against 0/12 (#317).
 - `crew-afk`: platform facts come only from `orchestrator/platforms.json` and the adapters — each adapter has one `build()`,
   a `coAuthor` trailer and `policyArgs` for the one `ROLE_POLICY`; resume, `afk.limits` and the model-tier warning follow the
   runtime adapter's capabilities instead of `"claude"` checks (an ignored cap now says "not supported by <runtime>"). `--platform`

@@ -87,3 +87,12 @@ Further Notes"
 @test "Decisions describes the (no slice) marker for a decision no issue implements" {
   printf '%s\n' "$TEMPLATE" | sed -n '/^## Decisions/,/^## Trust Boundaries/p' | grep -q '(no slice)'
 }
+
+@test "Decisions guidance: every/always/only/never names the easy-to-miss cases, pre-seeded ones too" {
+  local d
+  d="$(printf '%s\n' "$TEMPLATE" | sed -n '/^## Decisions/,/^## Trust Boundaries/p')"
+  [[ "$d" == *'"every", "always", "only" or "never"'* ]]
+  [[ "$d" == *'signals'* ]]
+  [[ "$d" == *'included or excluded'* ]]
+  [[ "$d" == *'pre-seeded'* ]]
+}

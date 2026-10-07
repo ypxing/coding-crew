@@ -79,6 +79,13 @@ versions left behind (saved files, records, config an earlier release wrote). Ho
 up to you; the implementer and the reviewer read these instead of rediscovering them. A claim about
 existing behaviour without a `path:line` is not a fact: cite it or leave it out.
 
+A decision that says "every", "always", "only" or "never" names the cases easy to miss for it
+(signals, thrown errors, early returns, retries, concurrent runs) and says whether each is
+included or excluded, e.g. "on every exit path, including a signal; only SIGKILL leaves no record". A
+reviewer checks the code against the cases you name and reads an unnamed one as by design. Do this
+for pre-seeded decisions too when you expand them. One clause, not a list on every line; a decision
+without such a word needs none.
+
 Module design: prefer deep modules (a small interface over substantial behaviour), give each module
 one owner, and state the dependency direction (which module depends on which, never the reverse).
 
