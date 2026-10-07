@@ -4,9 +4,9 @@
 
 setup() {
   export SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-  export ISSUE_TRACKER="$SCRIPT_DIR/docs/templates/trackers/local.md"
-  export TEMPLATE="$SCRIPT_DIR/docs/templates/trackers/local.md"
-  export GITHUB_TEMPLATE="$SCRIPT_DIR/docs/templates/trackers/github.md"
+  export ISSUE_TRACKER="$SCRIPT_DIR/tracker/docs/local.md"
+  export TEMPLATE="$SCRIPT_DIR/tracker/docs/local.md"
+  export GITHUB_TEMPLATE="$SCRIPT_DIR/tracker/docs/github.md"
 }
 
 @test "issue-tracker.md contains the Tracker CLI, Labels and Workspace sections and no Operation sections" {
@@ -33,15 +33,15 @@ setup() {
   echo "$workspace_content" | grep -qE 'slug|feature'
 }
 
-@test "docs/templates/trackers/ directory exists" {
-  [ -d "$SCRIPT_DIR/docs/templates/trackers" ]
+@test "tracker/docs/ directory exists" {
+  [ -d "$SCRIPT_DIR/tracker/docs" ]
 }
 
-@test "docs/templates/trackers/local.md exists" {
+@test "tracker/docs/local.md exists" {
   [ -f "$TEMPLATE" ]
 }
 
-@test "docs/templates/trackers/local.md contains the Tracker CLI, Labels and Workspace sections and no Operation sections" {
+@test "tracker/docs/local.md contains the Tracker CLI, Labels and Workspace sections and no Operation sections" {
   grep -q '^## Tracker CLI'              "$TEMPLATE"
   ! grep -q '^## Operation:'             "$TEMPLATE"
   grep -q '^## Labels'                   "$TEMPLATE"
@@ -52,18 +52,18 @@ setup() {
   [ ! -d "$SCRIPT_DIR/docs/agents" ]
 }
 
-@test "docs/templates/trackers/github.md exists" {
+@test "tracker/docs/github.md exists" {
   [ -f "$GITHUB_TEMPLATE" ]
 }
 
-@test "docs/templates/trackers/github.md contains the Tracker CLI, Labels and Workspace sections and no Operation sections" {
+@test "tracker/docs/github.md contains the Tracker CLI, Labels and Workspace sections and no Operation sections" {
   grep -q '^## Tracker CLI'              "$GITHUB_TEMPLATE"
   ! grep -q '^## Operation:'             "$GITHUB_TEMPLATE"
   grep -q '^## Labels'                   "$GITHUB_TEMPLATE"
   grep -q '^## Workspace'                "$GITHUB_TEMPLATE"
 }
 
-@test "docs/templates/trackers/github.md's Tracker CLI section lists the CLI ops, not gh calls" {
+@test "tracker/docs/github.md's Tracker CLI section lists the CLI ops, not gh calls" {
   local cli
   cli=$(awk '/^## Tracker CLI/{f=1;next} /^## /{f=0} f' "$GITHUB_TEMPLATE")
   for op in fetch prd known publish-issues publish-prd rewrite mark-done; do
@@ -72,7 +72,7 @@ setup() {
   ! grep -qE '^gh (issue (create|edit|view)|api)' <<<"$cli"
 }
 
-@test "docs/templates/trackers/github.md: done is the awaiting-merge label, wontfix a close-reason" {
+@test "tracker/docs/github.md: done is the awaiting-merge label, wontfix a close-reason" {
   grep -q 'node "$TRACKER" mark-done <number>' "$GITHUB_TEMPLATE"
   grep -q 'awaiting-merge'                 "$GITHUB_TEMPLATE"
   grep -q -- '--reason not-planned'        "$GITHUB_TEMPLATE"
@@ -83,7 +83,7 @@ setup() {
   ! echo "$mark_done" | grep -q '^gh issue close'
 }
 
-@test "docs/templates/trackers/github.md Labels section lists the five real GitHub labels" {
+@test "tracker/docs/github.md Labels section lists the five real GitHub labels" {
   grep -q 'awaiting-merge'  "$GITHUB_TEMPLATE"
   grep -q 'needs-triage'    "$GITHUB_TEMPLATE"
   grep -q 'needs-info'      "$GITHUB_TEMPLATE"

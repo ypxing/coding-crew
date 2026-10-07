@@ -21,7 +21,7 @@ set -uo pipefail
 # 4 the host itself refuses the ref namespace (the message names the fallback) · 1 error.
 #
 # Namespace: refs/crew-lock/<slug> by default — verified against github.com (create, CAS-reclaim,
-# CAS-delete; see docs/templates/trackers/github.md). A host that refuses it can be pointed at the
+# CAS-delete; see tracker/docs/github.md). A host that refuses it can be pointed at the
 # fallback with CREW_LEASE_NAMESPACE=refs/tags/crew-lock, which every host accepts. Set it for
 # lease.sh and the orchestrator alike (lease.mjs reads the same variable).
 # Runs in $MAIN_ROOT (default: the git toplevel).

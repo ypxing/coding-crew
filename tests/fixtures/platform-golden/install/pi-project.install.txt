@@ -78,12 +78,6 @@ REPO/.coding-crew/dep-install/scripts/manifest-fingerprint.sh exec=1
 REPO/.coding-crew/dep-install/scripts/python-install-cmd.sh exec=1
 REPO/.coding-crew/dep-install/scripts/resolve-mode.sh exec=1
 REPO/.coding-crew/dep-install/scripts/run.sh exec=1
-REPO/.coding-crew/docs/ /
-REPO/.coding-crew/docs/issue-tracker.md exec=0
-REPO/.coding-crew/docs/templates/ /
-REPO/.coding-crew/docs/templates/trackers/ /
-REPO/.coding-crew/docs/templates/trackers/github.md exec=0
-REPO/.coding-crew/docs/templates/trackers/local.md exec=0
 REPO/.coding-crew/manifest.json 331bab88b8d14f91b174d952c0486b0c0137e27e
 REPO/.coding-crew/scripts/ /
 REPO/.coding-crew/scripts/mark-issue-done.sh exec=1
@@ -107,6 +101,9 @@ REPO/.coding-crew/to-issues/scripts/lint-issues.sh exec=1
 REPO/.coding-crew/tracker/ /
 REPO/.coding-crew/tracker/body-format.mjs exec=0
 REPO/.coding-crew/tracker/cli.mjs exec=0
+REPO/.coding-crew/tracker/docs/ /
+REPO/.coding-crew/tracker/docs/github.md exec=0
+REPO/.coding-crew/tracker/docs/local.md exec=0
 REPO/.coding-crew/tracker/github.mjs exec=0
 REPO/.coding-crew/tracker/index.mjs exec=0
 REPO/.coding-crew/tracker/local.mjs exec=0
@@ -130,8 +127,6 @@ REPO/.pi/skills/address-pr-comments/scripts/push-rework.sh exec=1
 REPO/.pi/skills/address-pr-comments/scripts/reply-thread.sh exec=1
 REPO/.pi/skills/configure-tracker/ /
 REPO/.pi/skills/configure-tracker/SKILL.md exec=0 unrendered=0
-REPO/.pi/skills/configure-tracker/scripts/ /
-REPO/.pi/skills/configure-tracker/scripts/configure-tracker-auto.sh exec=1
 REPO/.pi/skills/crew-address-findings/ /
 REPO/.pi/skills/crew-address-findings/SKILL.md exec=0 unrendered=0
 REPO/.pi/skills/crew-address-findings/scripts/ /

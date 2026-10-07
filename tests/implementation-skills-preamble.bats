@@ -24,7 +24,7 @@ setup() {
   grep -qF '{{FRAGMENT:tracker-configuration}}' "$SOLVE_ISSUE"
   local f="$(rendered_skill solve-issue claude)"
   grep -q '^## Tracker Configuration' "$f"
-  grep -q 'issue-tracker\.md' "$f"
+  grep -qF 'node "$TRACKER" config' "$f"
   grep -q 'configure-tracker' "$f"
 }
 
@@ -34,15 +34,17 @@ setup() {
   grep -q '^## Tracker Configuration' "$(rendered_skill crew-address-findings claude)"
 }
 
-@test "solve-issue/SKILL.md preamble references issue-tracker.md lookup chain" {
+@test "solve-issue/SKILL.md preamble asks the tracker CLI for its config" {
   local f="$(rendered_skill solve-issue claude)"
-  grep -q 'issue-tracker.md' "$f"
+  grep -qF 'node "$TRACKER" config' "$f"
+  ! grep -q 'issue-tracker.md' "$f"
   grep -q 'git rev-parse --show-toplevel' "$f"
 }
 
-@test "crew-address-findings/SKILL.md preamble references issue-tracker.md lookup chain" {
+@test "crew-address-findings/SKILL.md preamble asks the tracker CLI for its config" {
   local f="$(rendered_skill crew-address-findings claude)"
-  grep -q 'issue-tracker.md' "$f"
+  grep -qF 'node "$TRACKER" config' "$f"
+  ! grep -q 'issue-tracker.md' "$f"
   grep -q 'git rev-parse --show-toplevel' "$f"
 }
 

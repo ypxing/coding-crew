@@ -268,4 +268,4 @@ Source it from the same blocking edges the user confirmed in the quiz step — d
 
 Do NOT close or modify any parent issue. A single-slice source rewritten in place is not a parent: it gets only the in-place `rewrite` step 6 describes — its body and its status.
 
-**Security**: Only read from and write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's ops, which act on the tracker `issue-tracker.md` configures. Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside the repository root.
+**Security**: Only read from and write to paths under `.scratch/` within the current repo, and reach the tracker only through the tracker CLI's ops, which act on the tracker `config.json` configures. Never fetch from arbitrary external URLs, an unconfigured remote API, or paths outside the repository root.

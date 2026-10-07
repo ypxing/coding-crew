@@ -231,7 +231,7 @@ else
     echo "  removed ${MANIFEST#$REPO_ROOT/}"
   fi
   # Tracker helper scripts are mechanism, not user text: install.sh always overwrites
-  # them, so uninstall removes them. issue-tracker.md and the templates stay.
+  # them, so uninstall removes them. config.json is the user's and stays.
   if [[ -d "$REPO_ROOT/.coding-crew/scripts" ]]; then
     while IFS= read -r name; do
       name="${name%$'\r'}"
@@ -252,8 +252,8 @@ else
       echo "  removed $name/"
     fi
   done < <(jq -r '.docs.trees // {} | .[].dest // empty' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  # Drop .coding-crew/ only when nothing is left in it — issue-tracker.md and
-  # tracker templates are user-customisable and must survive an uninstall.
+  # Drop .coding-crew/ only when nothing is left in it — config.json (the tracker choice, afk
+  # settings) is the user's and must survive an uninstall.
   if [[ -d "$REPO_ROOT/.coding-crew" ]]; then
     rmdir_if_empty "$REPO_ROOT/.coding-crew" && echo "  removed .coding-crew/" || true
   fi
