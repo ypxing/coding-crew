@@ -38,6 +38,11 @@ Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
   registry versions / CHANGELOG appends; any other conflict aborts cleanly and exits 1). Never bumps versions, never
   pushes; no `origin`/fetch/`origin/<default>` is a silent skip. `--dry-run` only reports
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
+- `tracker-cli.sh` — sourced, not run: `resolve_tracker_cli <main-root>` sets `TRACKER_CLI` and `TRACKER_KIND` (from
+  `cli.mjs config`) for `close-issue.sh`, `close-shipped.sh`, `issue-labels.sh`, `promote-findings.sh` and
+  `session-init.sh`. Lookup, first existing file wins: `$CREW_TRACKER_CLI`, `$CREW_INSTALL_DIR/tracker/`,
+  `<root>/.coding-crew/tracker/`, `<root>/tracker/`, `$HOME/.coding-crew/tracker/`. No CLI, no `node` or a failing
+  `config` exits the caller non-zero — never a silent `local`
 - `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
   `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
   `sweep` (clears a dead run's `in-progress` once the lease is held). A failed write only warns
