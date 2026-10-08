@@ -10,12 +10,12 @@ Help turn ideas into fully formed designs and specs through natural collaborativ
 Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval.
 
 <HARD-GATE>
-Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until the design is settled: either you presented it and the user approved it, or the source passed all four light-path checks and went to `to-issues`, whose quiz is the single review. Nothing else skips the design.
 </HARD-GATE>
 
 ## Anti-Pattern: "This Is Too Simple To Need A Design"
 
-Every project goes through this process. A todo list, a single-function utility, a config change — all of them. "Simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
+Every project goes through this process, unless the source already passes all four light-path checks (then `to-issues` is the review). A todo list, a single-function utility, a config change — "simple" is not that exemption; only the four checks are. "Simple" projects are where unexamined assumptions cause the most wasted work. Otherwise the design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
 
 ## Checklist
 
@@ -39,7 +39,11 @@ digraph brainstorming {
     "User approves design?" [shape=diamond];
     "Invoke to-issues" [shape=doublecircle];
 
-    "Explore project context" -> "Ask clarifying questions";
+    "Light path: all four checks pass?" [shape=diamond];
+
+    "Explore project context" -> "Light path: all four checks pass?";
+    "Light path: all four checks pass?" -> "Invoke to-issues" [label="yes"];
+    "Light path: all four checks pass?" -> "Ask clarifying questions" [label="no"];
     "Ask clarifying questions" -> "Propose 2-3 approaches";
     "Propose 2-3 approaches" -> "Present design sections";
     "Present design sections" -> "User approves design?";

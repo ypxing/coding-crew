@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -92,6 +92,17 @@ test("local, no PRD: the one issue with ## Decisions is the intent, in open/ or 
   assert.equal(prdPath(ctxFor(open)), join(open, ".scratch/demo/issues/open/01-a.md"));
   const done = withIssues(root(), { "done/01-a.md": DECIDED, "open/02-b.md": PLAIN });
   assert.equal(prdPath(ctxFor(done)), join(done, ".scratch/demo/issues/done/01-a.md"));
+});
+
+test("local, no PRD: the intent issue closed (open/ → done/) mid-sprint is still found, on the same sprint", () => {
+  const dir = withIssues(root(), { "open/01-a.md": DECIDED });
+  const ctx = ctxFor(dir);
+  assert.equal(prdPath(ctx), join(dir, ".scratch/demo/issues/open/01-a.md"));
+  mkdirSync(join(dir, ".scratch/demo/issues/done"), { recursive: true });
+  renameSync(join(dir, ".scratch/demo/issues/open/01-a.md"), join(dir, ".scratch/demo/issues/done/01-a.md"));
+  const moved = prdPath(ctx);
+  assert.equal(moved, join(dir, ".scratch/demo/issues/done/01-a.md"));
+  assert.equal(readFileSync(moved, "utf8"), DECIDED);
 });
 
 test("local, no PRD: no issue with ## Decisions is null and silent", () => {

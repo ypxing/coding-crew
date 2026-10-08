@@ -18,10 +18,14 @@ import { listFeatureIssues } from "./tracker.mjs";
 const TRACKER_CLI = fileURLToPath(new URL("../../tracker/cli.mjs", import.meta.url));
 const cache = new WeakMap();
 
-/** The feature's intent for this sprint: its PRD, or the one issue carrying its decisions; null when there is none. Located at most once per sprint. */
+/**
+ * The feature's intent for this sprint: its PRD, or the one issue carrying its decisions; null when there is none.
+ * Located once per sprint; re-located only when the cached file is gone (a local intent issue moves open/ → done/ when closed).
+ */
 export function prdPath(ctx) {
   const { sprint } = ctx;
-  if (!cache.has(sprint)) cache.set(sprint, locate(ctx));
+  const cached = cache.get(sprint);
+  if (cached === undefined || (cached !== null && !existsSync(cached))) cache.set(sprint, locate(ctx));
   return cache.get(sprint);
 }
 
