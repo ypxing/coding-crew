@@ -11,7 +11,7 @@
     "--tools",
     "read,bash",
     "--append-system-prompt",
-    "<PROTOCOL crew-reviewer sha256:b5a55dc8f899d9c2>",
+    "<PROTOCOL crew-reviewer sha256:3667ed18a8cf3b53>",
     "Implement the alpha issue.\n"
   ],
   "input": null,
