@@ -202,6 +202,17 @@ teardown() {
   [[ "$output" == *".coding-crew/crew-afk/lib/retired.mjs (removed)"* ]]
 }
 
+@test "installing crew-afk prunes an older install's common/ and per-platform fragment dirs" {
+  cd "$SCRIPT_DIR"
+  mkdir -p "$TEMP_DIR/.coding-crew/skills/_shared/fragments/common" "$TEMP_DIR/.coding-crew/skills/_shared/fragments/claude"
+  echo "old" > "$TEMP_DIR/.coding-crew/skills/_shared/fragments/common/a.md"
+  echo "old" > "$TEMP_DIR/.coding-crew/skills/_shared/fragments/claude/b.md"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  [ ! -e "$TEMP_DIR/.coding-crew/skills/_shared/fragments/common" ]
+  [ ! -e "$TEMP_DIR/.coding-crew/skills/_shared/fragments/claude" ]
+  [ -f "$TEMP_DIR/.coding-crew/skills/_shared/fragments/design-standard.md" ]
+}
+
 @test "the prune leaves files outside the skill root and asset dests alone" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null

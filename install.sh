@@ -373,7 +373,6 @@ install_skill_assets() {
   assert_safe_path "$src_rel" "skill assets source"
   assert_safe_path "$dest_rel" "skill assets dest"
   install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
-  local assets_dest_rel="$dest_rel"
   # `more-assets`: further trees the same way (crew-afk's role protocols render with the shared
   # fragments, which orchestrator/lib/adapters/render.mjs reads from .coding-crew/skills/_shared/).
   _skill_list "$skill_name" more_assets '.skills[$s]["more-assets"] // [] | .[] | "\(.source)\t\(.dest)"'
@@ -386,14 +385,6 @@ install_skill_assets() {
     assert_safe_path "$dest_rel" "skill assets dest"
     install_assets_tree "$SCRIPT_DIR/$src_rel" "$dest_rel" "skill"
   done <<< "$more"
-  # Older installs kept the shared fragments in common/ and per-platform subdirectories; the
-  # renderers read only skills/_shared/fragments/<key>.md now.
-  if [[ "$skill_name" == "crew-afk" ]]; then
-    local old
-    for old in common "${PLATFORMS[@]}"; do rm -rf "$REPO_ROOT/.coding-crew/skills/_shared/fragments/$old"; done
-    # The tracker backends moved to the shared .coding-crew/tracker/ (install_docs): one copy, never two.
-    rm -rf "$REPO_ROOT/$assets_dest_rel/lib/trackers" "$REPO_ROOT/$assets_dest_rel/lib/tracker-config.mjs"
-  fi
 }
 
 
