@@ -51,7 +51,8 @@ install.sh
     │     ├── install_skill_assets() — cp assets.source → assets.dest (e.g. orchestrator/ → .coding-crew/crew-afk/)
     │     └── install_single_skill(dep) — recurse for each dep
     │
-    └── install_docs()  — docs.templates (skip if exists), docs.scripts (always overwritten)
+    ├── install_docs()  — docs.templates (skip if exists), docs.trees (always an exact copy)
+    └── prune_retired_scripts() — delete retired-scripts entries, then .coding-crew/scripts/ if empty
 ```
 
 #### Roles, not agent files
@@ -81,11 +82,13 @@ There are no agents. crew-afk's three roles — coder, reviewer, triage — are 
     "paths": { "claude": ".claude/agents/{name}.md", "...": "..." },
     "dirs": [".coding-crew/agents", ".coding-crew/code-review"],
   },
+  // files older installs wrote that no longer ship; install, --update and uninstall delete each
+  "retired-scripts": ["<path an older install wrote>", "..."],
   "docs": {
-    "scripts": {
+    "trees": {
       "<key>": {
-        "source": "scripts/tracker/mark-issue-done.sh",
-        "dest": ".coding-crew/scripts/mark-issue-done.sh", // always overwritten, chmod +x
+        "source": "tracker",
+        "dest": ".coding-crew/tracker", // always an exact copy: files the source dropped are removed
       },
     },
   },
@@ -96,9 +99,8 @@ There are no agents. crew-afk's three roles — coder, reviewer, triage — are 
 
 - Paths must be relative and must not contain `..` or a leading `/` — `install.sh` rejects them.
 - `docs.templates` entries are user-customisable text and are **never** overwritten or uninstalled.
-  `docs.scripts` entries are mechanism (a tracker operation's implementation), so they are always
-  overwritten on install and removed on uninstall — a stale copy would be a gate that no longer
-  matches the operation calling it.
+  `docs.trees` entries are mechanism (the tracker CLI), so they are always overwritten on install and
+  removed on uninstall — a stale copy would be a gate that no longer matches the operation calling it.
 - Skill names must match `[a-zA-Z0-9_.-]+` — used as filesystem path components.
 - Skills listed under another skill's `deps` are installed with it. A skill no installed skill depends on is only installed by name or by a full install (`./install.sh [platform]`).
 

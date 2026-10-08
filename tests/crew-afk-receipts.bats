@@ -22,6 +22,9 @@ CLOSE_SCRIPT="$REPO_ROOT/skills/crew-afk/scripts/close-issue.sh"
 VERIFY_SCRIPT="$REPO_ROOT/skills/crew-afk/scripts/verify-worktree.sh"
 
 setup() {
+  # The crew-afk scripts ask the tracker CLI which tracker this is: this repo's own copy.
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  unset CREW_INSTALL_DIR
   TEMP_DIR=$(mktemp -d)
   # macOS mktemp hands back /var/... which is a symlink to /private/var; git
   # reports the resolved path, so receipt paths would not match without this.

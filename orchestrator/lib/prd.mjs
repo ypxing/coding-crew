@@ -31,7 +31,7 @@ function locate({ sprint, effects, log = () => {} }) {
   const saved = () => (existsSync(file) ? file : null);
   if (readTrackerConfig(effects.mainRoot).tracker !== "github") return saved();
 
-  const cli = process.env.CREW_GITHUB_TRACKER_CLI || TRACKER_CLI;
+  const cli = process.env.CREW_TRACKER_CLI || TRACKER_CLI;
   const r = effects.exec("node", [cli, "prd", "--feature-slug", sprint.featureSlug, "--main-root", effects.mainRoot], { mutating: false });
   if (r.code === 3) return null; // the milestone has no PRD issue
   if (r.code !== 0 || r.error) {

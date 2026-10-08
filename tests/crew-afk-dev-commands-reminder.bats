@@ -10,6 +10,9 @@ REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_SCRIPTS="$REPO_ROOT/skills/crew-afk/scripts"
 
 setup() {
+  # The crew-afk scripts ask the tracker CLI which tracker this is: this repo's own copy.
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  unset CREW_INSTALL_DIR
   export TEMP_DIR=$(mktemp -d)
   cd "$TEMP_DIR"
   git init -q -b main

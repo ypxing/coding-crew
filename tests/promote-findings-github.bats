@@ -25,12 +25,10 @@ setup() {
   # promote-findings.sh reads the review report through review-rollup.mjs — point it at
   # the repo's own copy, since these fixtures exercise the script alone, not a full install.
   export CREW_REVIEW_ROLLUP="$REPO_ROOT/orchestrator/review-rollup.mjs"
-  # Same reasoning for tracker-config.sh: point straight at the repo's own copy instead of
-  # requiring a full install under .coding-crew/scripts/.
-  export CREW_TRACKER_CONFIG="$REPO_ROOT/scripts/tracker/tracker-config.sh"
-  # _defer_github's github path shells out to the tracker CLI's create-issue — point it
-  # at the repo's own copy too, same reasoning.
-  export CREW_GITHUB_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  # Same reasoning for the tracker CLI (which tracker, and _defer_github's create-issue): point
+  # straight at the repo's own copy instead of requiring a full install.
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  unset CREW_INSTALL_DIR
 
   mkdir -p .scratch/feat/issues/open .scratch/feat/reviews
   export REPORT=.scratch/feat/reviews/sprint-review-1.md
@@ -62,7 +60,7 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-# configure_github — writes the front-matter tracker-config.sh reads.
+# configure_github — writes the front matter the tracker CLI's config reads.
 configure_github() {
   mkdir -p .coding-crew/docs
   {
@@ -609,7 +607,7 @@ defer_github_issue() {
 @test "defer finds the tracker CLI at <main root>/.coding-crew/tracker/cli.mjs and creates the issue through it" {
   configure_github
   stub_gh
-  unset CREW_GITHUB_TRACKER_CLI
+  unset CREW_TRACKER_CLI
   export HOME="$TEMP_DIR/home"
   mkdir -p .coding-crew "$HOME"
   cp -R "$REPO_ROOT/tracker" .coding-crew/tracker
@@ -622,7 +620,7 @@ defer_github_issue() {
 @test "defer falls back to \$HOME/.coding-crew/tracker/cli.mjs" {
   configure_github
   stub_gh
-  unset CREW_GITHUB_TRACKER_CLI
+  unset CREW_TRACKER_CLI
   export HOME="$TEMP_DIR/home"
   mkdir -p "$HOME/.coding-crew"
   cp -R "$REPO_ROOT/tracker" "$HOME/.coding-crew/tracker"
@@ -634,7 +632,7 @@ defer_github_issue() {
 @test "defer names the tracker CLI when neither install has it" {
   configure_github
   stub_gh
-  unset CREW_GITHUB_TRACKER_CLI
+  unset CREW_TRACKER_CLI
   export HOME="$TEMP_DIR/home"
   mkdir -p "$HOME"
   defer_github_issue

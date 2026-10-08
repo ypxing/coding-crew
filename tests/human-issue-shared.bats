@@ -46,7 +46,10 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
     run rendered_skill $r
     [ "$status" -eq 0 ]
     grep -qF '"Mark it done"' "$output"
-    grep -qF 'bash .coding-crew/scripts/mark-issue-done.sh <n>' "$output"
+    grep -qF 'runs `node .coding-crew/tracker/cli.mjs mark-done <n>` from the repo root when the `cli.mjs` you located under Tracker Configuration is inside this repo or its main checkout' "$output"
+    grep -qF 'else `node ~/.coding-crew/tracker/cli.mjs mark-done <n>` (local tracker: the issue file path instead of `<n>`)' "$output"
+    grep -qF 'never the absolute path you located' "$output"
+    ! grep -qE 'mark-issue-done\.sh|tracker-config\.sh' "$output"
     grep -qF '`Check:` the issue is labelled `awaiting-merge` (local tracker: the file is in `done/`)' "$output"
     grep -qF '`Undo:` remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`)' "$output"
   done
@@ -58,8 +61,17 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
   steps=$(awk '/^````markdown/{f=1;next} /^````$/{f=0} f' "$FRAG" | awk '/^### Steps/{f=1;next} /^###/{f=0} f')
   last=$(grep -E '^[0-9]+\. ' <<<"$steps" | tail -1)
   [[ "$last" == *"Mark it done"* ]]
-  grep -qF 'mark-issue-done.sh' <<<"$(sed -n '/Mark it done/,$p' <<<"$steps")"
+  grep -qF 'node .coding-crew/tracker/cli.mjs mark-done 42' <<<"$(sed -n '/Mark it done/,$p' <<<"$steps")"
   [[ "$last" == *'Undo: remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`).'* ]]
+}
+
+@test "no rendered skill body names the retired tracker wrappers" {
+  local s
+  for s in $(jq -r '.skills | keys[]' "$REPO_ROOT/registry.json"); do
+    run rendered_skill "$s" claude
+    [ "$status" -eq 0 ]
+    ! grep -qE 'mark-issue-done\.sh|tracker-config\.sh' <<<"$output" || { echo "named in $s"; return 1; }
+  done
 }
 
 @test "the fragment's example lints with no output" {

@@ -6,6 +6,13 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- tracker: `.coding-crew/scripts/tracker-config.sh` and `mark-issue-done.sh` no longer ship; `install.sh`, `--update`
+  and `uninstall.sh` delete existing copies (registry.json `retired-scripts`), then `.coding-crew/scripts/` when empty.
+  crew-afk's scripts ask `tracker/cli.mjs` through one helper (`tracker-cli.sh`) and stop with "re-run install.sh" when
+  it or `node` is missing, never running as `local`. A ready-for-human issue's last step is now
+  `node .coding-crew/tracker/cli.mjs mark-done <n>` (or `~/.coding-crew/…` for a user-level install); older issues'
+  `bash .coding-crew/scripts/mark-issue-done.sh <n>` step no longer works. `CREW_TRACKER_CLI` replaces
+  `CREW_GITHUB_TRACKER_CLI` and `CREW_TRACKER_CONFIG` (#342).
 - install: `install.sh` (and `--update`) migrates a legacy `.coding-crew/docs/issue-tracker.md` into
   `.coding-crew/config.json`'s `tracker` section (front matter `tracker:`, else `local`; an existing section wins), then
   deletes it and `.coding-crew/docs/templates/trackers/`; a front matter naming `repo:` is left in place with "`repo` is

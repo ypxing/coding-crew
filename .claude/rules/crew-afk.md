@@ -38,6 +38,11 @@ Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
   registry versions / CHANGELOG appends; any other conflict aborts cleanly and exits 1). Never bumps versions, never
   pushes; no `origin`/fetch/`origin/<default>` is a silent skip. `--dry-run` only reports
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
+- `tracker-cli.sh` — sourced, not run: `resolve_tracker_cli <main-root>` sets `TRACKER_CLI` and `TRACKER_KIND` (from
+  `cli.mjs config`) for `close-issue.sh`, `close-shipped.sh`, `issue-labels.sh`, `promote-findings.sh` and
+  `session-init.sh`. Lookup, first existing file wins: `$CREW_TRACKER_CLI`, `$CREW_INSTALL_DIR/tracker/`,
+  `<root>/.coding-crew/tracker/`, `<root>/tracker/`, `$HOME/.coding-crew/tracker/`. No CLI, no `node` or a failing
+  `config` exits the caller non-zero — never a silent `local`
 - `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
   `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
   `sweep` (clears a dead run's `in-progress` once the lease is held). A failed write only warns
@@ -83,7 +88,7 @@ gate whose receipt already matches the branch tip (`gatesAtTip`).
 
 Soft wall-clock cap (`--max-wall <minutes>`, `afk.maxWallMinutes`, default 120, `0` = off): once elapsed `loop.mjs` claims and polls for nothing new, in-flight workers finish and merge, Phase 2 (`flush`) is skipped so fix issues stay parked, the integration check still runs; when that left an issue unclaimed or a fix issue parked, the summary names the cap and them, the run exits 2 and an `--open-pr` PR is a draft (a cap that cut nothing short is not a hit).
 
-A stalled run whose unfinished issues include `ready-for-human` ones: `wrapUp` prints `## Waiting on a person` (before the PR section), one line per such issue — `#<number>` under github, the file name under local, then its title — and `When they are done (mark-issue-done.sh), re-run: /crew-afk <feature-slug>`. `crew-summary.sh` is not involved.
+A stalled run whose unfinished issues include `ready-for-human` ones: `wrapUp` prints `## Waiting on a person` (before the PR section), one line per such issue — `#<number>` under github, the file name under local, then its title — and `When they are done (cli.mjs mark-done), re-run: /crew-afk <feature-slug>`. `crew-summary.sh` is not involved.
 
 Idle-slot polling (`--poll-interval <seconds>`, default 30, `0` = off): while work is in flight and a slot is idle,
 `loop.mjs` lists the tracker once per interval (one listing however many slots are idle) and starts any issue made

@@ -4,12 +4,13 @@
 #
 # Under `tracker: github` there is nothing local to scan for a first issue, and
 # cross-machine resume depends on the feature branch name being deterministic — so
-# this repo's own copy of session-init.sh (via tracker-config.sh, from issue 01)
+# this repo's own copy of session-init.sh (asking the tracker CLI through tracker-cli.sh)
 # closes two gaps that only matter for that backend:
 #   1. omitting --feature-slug is a hard error (no local-scan fallback)
 #   2. off the default branch with no sprint.env to resume from, the current branch
 #      must equal feature/<slug> — no silent-adopt of whatever is checked out
-# `tracker: local` (or absent config) keeps every existing behavior unchanged.
+# `tracker: local` (or absent config) keeps every existing behavior unchanged. With no tracker
+# CLI to ask, session-init.sh stops instead of guessing local.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
 AFK_SCRIPTS="$REPO_ROOT/skills/crew-afk/scripts"
@@ -18,7 +19,9 @@ load helpers/isolate-env
 
 setup() {
   isolate_project_env
+  unset CREW_INSTALL_DIR CREW_TRACKER_CLI
   export TEMP_DIR=$(mktemp -d)
+  export HOME="$TEMP_DIR/empty-home"   # no user-level install to find
   cd "$TEMP_DIR"
   git init -q -b main
   git config user.email "test@test.com"
@@ -27,6 +30,7 @@ setup() {
   git add .gitignore
   git commit -q -m initial
   export MAIN_ROOT="$TEMP_DIR"
+  mkdir -p "$HOME"
 }
 
 teardown() {
@@ -34,10 +38,8 @@ teardown() {
   rm -rf "$TEMP_DIR"
 }
 
-# session-init.sh calls trace.sh and tracker-config.sh as
-# siblings/fixed-path helpers only after install.sh copies them into place. Reproduce
-# both: the skill's own scripts/ dir, and tracker-config.sh's fixed install
-# location (.coding-crew/scripts/, per registry.json's docs.scripts entry).
+# session-init.sh calls trace.sh and tracker-cli.sh as siblings, as install.sh lays them out,
+# and the tracker CLI installs to the repo's .coding-crew/tracker/.
 installed_scripts() {
   local dir="$TEMP_DIR/installed-scripts"
   if [ ! -d "$dir" ]; then
@@ -48,9 +50,7 @@ installed_scripts() {
 }
 
 write_tracker_config() {
-  mkdir -p "$TEMP_DIR/.coding-crew/scripts" "$TEMP_DIR/.coding-crew/docs"
-  cp "$REPO_ROOT/scripts/tracker/tracker-config.sh" "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
-  # tracker-config.sh asks the tracker CLI, installed beside the scripts.
+  mkdir -p "$TEMP_DIR/.coding-crew/docs"
   [ -d "$TEMP_DIR/.coding-crew/tracker" ] || cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/.coding-crew/tracker"
   printf -- '---\ntracker: %s\n---\n\n# Issue tracker\n' "$1" > "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
 }
@@ -103,63 +103,51 @@ write_tracker_config() {
   [ "$(git rev-parse --abbrev-ref HEAD)" = "some-other-branch" ]
 }
 
-@test "github tracker declared but tracker-config.sh not installed: hard error, no silent local fallback" {
+@test "github tracker declared but no tracker CLI installed: hard error, no silent local fallback" {
   write_tracker_config github
-  rm "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
-  export HOME="$TEMP_DIR/empty-home"   # no user-level install to find either
-  mkdir -p "$HOME"
-  unset CREW_INSTALL_DIR
+  rm -r "$TEMP_DIR/.coding-crew/tracker"
   mkdir -p .scratch/some-slug/issues/open
   echo "Status: ready-for-agent" > .scratch/some-slug/issues/open/01-first.md
 
   run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
   [ "$status" -ne 0 ]
-  [[ "$output" == *"tracker-config.sh"* ]]
+  [[ "$output" == *"tracker CLI (.coding-crew/tracker/cli.mjs) not found — re-run install.sh"* ]]
   [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]
 }
 
-@test "config.json names github but tracker-config.sh not installed: hard error naming config.json" {
-  command -v jq >/dev/null || skip "jq not installed"
+@test "config.json names github, no .coding-crew/scripts anywhere: behaves as github" {
   mkdir -p "$TEMP_DIR/.coding-crew"
+  cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/.coding-crew/tracker"
   printf '{"tracker": {"kind": "github"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
-  export HOME="$TEMP_DIR/empty-home"
-  mkdir -p "$HOME"
-  unset CREW_INSTALL_DIR
-  mkdir -p .scratch/some-slug/issues/open
-  echo "Status: ready-for-agent" > .scratch/some-slug/issues/open/01-first.md
+  git checkout -q -b some-other-branch
 
   run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
   [ "$status" -ne 0 ]
-  [[ "$output" == *".coding-crew/config.json sets tracker.kind: github"* ]]
-  [[ "$output" == *"tracker-config.sh"* ]]
-  [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]
-}
-
-@test "config.json's local wins over a github front matter when tracker-config.sh is not installed" {
-  command -v jq >/dev/null || skip "jq not installed"
-  write_tracker_config github
-  rm "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
-  printf '{"tracker": {"kind": "local"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
-  export HOME="$TEMP_DIR/empty-home"
-  mkdir -p "$HOME"
-  unset CREW_INSTALL_DIR
-  git checkout -q -b some-other-branch
-
-  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
-  [ "$status" -eq 0 ]
-}
-
-@test "local tracker declared and tracker-config.sh not installed: still behaves like local" {
-  write_tracker_config local
-  rm "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
-  git checkout -q -b some-other-branch
-
-  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
-  [ "$status" -eq 0 ]
+  [[ "$output" == *"feature/calc"* ]]
   [ "$(git rev-parse --abbrev-ref HEAD)" = "some-other-branch" ]
 }
 
+@test "config.json's local wins over a github front matter" {
+  write_tracker_config github
+  printf '{"tracker": {"kind": "local"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
+  git checkout -q -b some-other-branch
+
+  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
+  [ "$status" -eq 0 ]
+}
+
+@test "local tracker declared but no tracker CLI installed: exits non-zero rather than guessing" {
+  write_tracker_config local
+  rm -r "$TEMP_DIR/.coding-crew/tracker"
+  git checkout -q -b some-other-branch
+
+  run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"re-run install.sh"* ]]
+}
+
 @test "absent tracker config (no .coding-crew doc at all): behaves like local, unchanged" {
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
   git checkout -q -b some-other-branch
 
   run bash "$(installed_scripts)/session-init.sh" --feature-slug calc

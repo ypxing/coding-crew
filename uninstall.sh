@@ -137,6 +137,25 @@ remove_retired_agents() {
   done < <(jq -r '."retired-agents".dirs // [] | .[]' "$SCRIPT_DIR/registry.json")
 }
 
+# The tracker's shell wrappers used to install to .coding-crew/scripts/ (registry.json
+# `retired-scripts`). Stale on any install, so any uninstall removes them, then the directory once
+# nothing else is in it.
+REMOVED_RETIRED_SCRIPTS=0
+remove_retired_scripts() {
+  [[ "$REMOVED_RETIRED_SCRIPTS" -eq 0 ]] || return 0
+  REMOVED_RETIRED_SCRIPTS=1
+  local path
+  while IFS= read -r path; do
+    path="${path%$'\r'}"
+    [[ -n "$path" && "$path" == .coding-crew/* && "$path" != *..* ]] || continue
+    if [[ -f "$REPO_ROOT/$path" ]]; then
+      rm -f "$REPO_ROOT/$path"
+      echo "  removed $path"
+      rmdir_if_empty "$(dirname "$REPO_ROOT/$path")" || true
+    fi
+  done < <(jq -r '."retired-scripts" // [] | .[]' "$SCRIPT_DIR/registry.json")
+}
+
 remove_skill() {
   local name="$1"
   if [[ -z "$(jq -r --arg s "$name" '.skills[$s] | if . == null then empty else "yes" end' "$SCRIPT_DIR/registry.json")" ]]; then
@@ -178,6 +197,7 @@ remove_skill() {
   done < <(jq -r --arg s "$name" '.skills[$s] | (.assets.dest // empty), ((.["more-assets"] // [])[] | .dest)' "$SCRIPT_DIR/registry.json")
   # Stale on any install, so any uninstall removes them (once).
   remove_retired_agents
+  remove_retired_scripts
 }
 
 echo "Target: $REPO_ROOT ($INSTALL_LEVEL-level)"
@@ -214,6 +234,7 @@ else
   echo "---"
 
   remove_retired_agents
+  remove_retired_scripts
 
   # Collect skill names: manifest + registry, deduped via sort -u
   _skill_names=()
@@ -229,19 +250,6 @@ else
   if [[ -f "$MANIFEST" ]]; then
     rm -f "$MANIFEST"
     echo "  removed ${MANIFEST#$REPO_ROOT/}"
-  fi
-  # Tracker helper scripts are mechanism, not user text: install.sh always overwrites
-  # them, so uninstall removes them. config.json is the user's and stays.
-  if [[ -d "$REPO_ROOT/.coding-crew/scripts" ]]; then
-    while IFS= read -r name; do
-      name="${name%$'\r'}"
-      [[ -n "$name" ]] || continue
-      if [[ -f "$REPO_ROOT/$name" ]]; then
-        rm -f "$REPO_ROOT/$name"
-        echo "  removed $name"
-      fi
-    done < <(jq -r '.docs.scripts // {} | .[].dest // empty' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-    rmdir_if_empty "$REPO_ROOT/.coding-crew/scripts" || true
   fi
   # Shared trees (the tracker CLI) are mechanism too, installed with every skill: removed here only.
   while IFS= read -r name; do

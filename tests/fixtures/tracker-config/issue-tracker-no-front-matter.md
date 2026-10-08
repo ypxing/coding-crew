@@ -15,9 +15,8 @@ tracker: local          # or "github"
 ```
 
 Omitting the front matter entirely — as this template does — means `tracker: local` with no
-`repo`. `tracker/tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and
-`scripts/tracker/tracker-config.sh`'s `read_tracker_config` are the two readers of this front
-matter; both default to `{tracker: "local", repo: null}` when it, or this whole file, is absent,
+`repo`. `tracker/tracker-config.mjs`'s `readTrackerConfig(mainRoot)` is the one reader of this
+front matter (`cli.mjs config` prints its answer); it defaults to `{tracker: "local", repo: null}` when it, or this whole file, is absent,
 so existing local-tracker installs need no changes.
 
 ## Tracker CLI
