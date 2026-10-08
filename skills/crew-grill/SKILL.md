@@ -5,6 +5,8 @@ description: Full design pipeline — grill the user about a plan (lite by defau
 
 Run the full design pipeline in two phases. Pause for user feedback within each phase, but do not ask the user to manually invoke the next skill — transition automatically.
 
+{{FRAGMENT:tracker-configuration}}
+
 ## Phase 1 — Grill
 
 Interview the user relentlessly until you reach shared understanding. Map the plan as a **design tree**: every decision branches into the decisions that hang off it.

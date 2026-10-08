@@ -54,6 +54,8 @@ digraph brainstorming {
 
 **The terminal state is invoking `to-issues`.** Do NOT invoke any implementation skill. The ONLY skill you invoke after brainstorming is `to-issues`.
 
+{{FRAGMENT:tracker-configuration}}
+
 ## The Process
 
 **Understanding the idea:**

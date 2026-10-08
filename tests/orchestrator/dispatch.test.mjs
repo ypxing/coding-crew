@@ -324,14 +324,15 @@ test("claude: every role dispatches with no agent file present, protocol via --a
   assert.ok(!existsSync(join(root, ".claude/agents")));
 });
 
-test("claude: the coder denies sub-agents; reviewer and triage deny file edits and sub-agents", () => {
+test("claude: the coder denies sub-agents; reviewer and triage deny file edits but may spawn sub-agents", () => {
   const { root, promptFile } = fixture();
   const coder = buildDispatch("claude", spec(root, promptFile)).args;
   assert.equal(coder[coder.indexOf("--disallowedTools") + 1], "Agent");
   for (const agent of ["crew-reviewer", "crew-triage"]) {
     const a = buildDispatch("claude", spec(root, promptFile, { agent })).args;
-    const denied = a.slice(a.indexOf("--disallowedTools") + 1, a.indexOf("--disallowedTools") + 5);
-    assert.deepEqual(denied, ["Edit", "Write", "NotebookEdit", "Agent"], agent);
+    const denied = a.slice(a.indexOf("--disallowedTools") + 1, a.indexOf("--disallowedTools") + 4);
+    assert.deepEqual(denied, ["Edit", "Write", "NotebookEdit"], agent);
+    assert.ok(!a.includes("Agent"), agent);
   }
 });
 

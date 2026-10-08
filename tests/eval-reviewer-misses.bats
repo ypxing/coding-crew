@@ -51,6 +51,7 @@ if [[ "$input" == *"## Expected misses"* ]]; then
   done
   jq -n --arg r "[$arr]" '{result:$r,total_cost_usd:0.5,is_error:false}'; exit 0
 fi
+printf '%s\n' "$*" >> "$FAKE_DIR/reviewer-args.txt"
 if [ -n "${FAKE_FAIL:-}" ] && [[ "$input" == *"$FAKE_FAIL"* ]]; then
   echo '{"result":"boom","total_cost_usd":0.1,"is_error":true}'; exit 1
 fi
@@ -269,9 +270,30 @@ role() {
   run run_eval --runs 1
   d=$(out_dir)
   grep -q '"distinct"' "$T/judge-prompt.txt"
-  grep -q 'Reviewers on opus, judge on opus' "$d/summary.md"
+  grep -q 'Reviewers on opus (effort default, sub-agents denied), judge on opus' "$d/summary.md"
   grep -q 'mean findings (raw) | mean findings (distinct)' "$d/summary.md"
   [ "$(jq -r .model "$d/results.json")" = opus ]
+}
+
+@test "by default the reviewer gets no --effort and is denied Agent; --effort and --subagents reach its CLI and the results" {
+  run run_eval --runs 1 --case feature-case
+  [ "$status" -eq 0 ]
+  ! grep -q -- '--effort' "$T/reviewer-args.txt"
+  grep -q 'NotebookEdit,Agent' "$T/reviewer-args.txt"
+  rm "$T/reviewer-args.txt"
+  run run_eval --runs 1 --case feature-case --effort high --subagents
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- '--effort high' "$T/reviewer-args.txt")" -eq "$(wc -l < "$T/reviewer-args.txt")" ]
+  ! grep -q 'Agent' "$T/reviewer-args.txt"
+  d=$(out_dir)
+  [ "$(jq -r '"\(.effort) \(.subagents)"' "$d/results.json")" = "high true" ]
+  grep -q 'Reviewers on opus (effort high, sub-agents allowed)' "$d/summary.md"
+}
+
+@test "--effort rejects a level the CLI does not have" {
+  run run_eval --effort huge --dry-run
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--effort must be"* ]]
 }
 
 @test "a base mean of 0 against a head above 0 reports the increase, not n/a" {

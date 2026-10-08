@@ -42,10 +42,10 @@ export default {
     return { args };
   },
 
-  /** Read-only removes the edit tools; no sub-agents removes Agent. */
-  policyArgs({ readOnly, subagents }) {
+  /** The role's effort; read-only removes the edit tools; no sub-agents removes Agent. */
+  policyArgs({ readOnly, subagents, effort }) {
     const denied = [...(readOnly ? ["Edit", "Write", "NotebookEdit"] : []), ...(subagents ? [] : ["Agent"])];
-    return denied.length ? ["--disallowedTools", ...denied] : [];
+    return [...(effort ? ["--effort", effort] : []), ...(denied.length ? ["--disallowedTools", ...denied] : [])];
   },
 
   // A fix round continuing the coder's own earlier session.

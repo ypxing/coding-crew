@@ -10,8 +10,14 @@
 // editing orchestrator/roles/reviewer.md, never in CI.
 //
 // Usage: node scripts/eval-reviewer-misses.mjs [--base <git ref>] [--head <git ref>|worktree]
-//          [--case <name>]... [--runs N] [--model opus] [--judge-model opus] [--parallel 4]
+//          [--case <name>]... [--runs N] [--model opus] [--effort <level>] [--subagents]
+//          [--judge-model opus] [--parallel 4]
 //          [--dry-run] [--resume <out dir>]
+//
+// --effort passes the reviewer's `--effort` (low|medium|high|xhigh|max; omitted: the CLI's default) and
+// --subagents lets the reviewer use the Agent tool (denied otherwise), so a model, effort or sub-agent
+// setting can be compared on the same cases. crew-afk's own reviewer runs at ROLE_POLICY's
+// (orchestrator/lib/adapters/render.mjs): effort high, sub-agents allowed.
 //
 // Each ref builds its prompts from its OWN files (build-prompts.mjs runs inside that ref's checkout):
 // reviewPrompt / featureReviewPrompt and the rendered orchestrator/roles/reviewer.md. The reviewer
@@ -43,7 +49,7 @@ const EVAL_NOTE = (prdPath) =>
 
 function parseArgs(argv) {
   const o = { base: "main", head: "worktree", cases: [], runs: 2, model: "opus", judgeModel: "opus",
-    parallel: 4, dryRun: false, resume: null };
+    effort: null, subagents: false, parallel: 4, dryRun: false, resume: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], v = () => {
       if (i + 1 >= argv.length) throw new Error(`${a} needs a value`);
@@ -55,6 +61,8 @@ function parseArgs(argv) {
       case "--case": o.cases.push(v()); break;
       case "--runs": o.runs = Number(v()); break;
       case "--model": o.model = v(); break;
+      case "--effort": o.effort = v(); break;
+      case "--subagents": o.subagents = true; break;
       case "--judge-model": o.judgeModel = v(); break;
       case "--parallel": o.parallel = Number(v()); break;
       case "--dry-run": o.dryRun = true; break;
@@ -63,6 +71,7 @@ function parseArgs(argv) {
     }
   }
   if (!(o.runs >= 1) || !(o.parallel >= 1)) throw new Error("--runs and --parallel must be >= 1");
+  if (o.effort !== null && !["low", "medium", "high", "xhigh", "max"].includes(o.effort)) throw new Error("--effort must be low, medium, high, xhigh or max");
   return o;
 }
 
@@ -253,8 +262,9 @@ async function main() {
     console.log(`${plan.length} reviewer runs on ${o.model}, ${cases.length} judge calls on ${o.judgeModel}`);
     const stop = { hit: false, why: "" };
     const note = (r) => { if (!r.ok && LIMIT_RE.test(`${r.text}\n${r.err}`) && !stop.hit) { stop.hit = true; stop.why = (r.text || r.err).trim().split("\n")[0]; } };
-    const claude = (model, turns, inputText, cwd, extraDeny = "") => runClaude(["-p", "--model", model, "--output-format", "json",
-      "--max-turns", String(turns), "--disallowedTools", `${extraDeny}Edit,Write,NotebookEdit,Agent`], inputText, cwd);
+    const claude = (model, turns, inputText, cwd, extraDeny = "", { effort = null, subagents = false } = {}) => runClaude(["-p", "--model", model,
+      "--output-format", "json", "--max-turns", String(turns), ...(effort ? ["--effort", effort] : []),
+      "--disallowedTools", `${extraDeny}Edit,Write,NotebookEdit${subagents ? "" : ",Agent"}`], inputText, cwd);
 
     const runs = await pool(plan.map(({ c, v, i }) => async () => {
       const id = `${c.name}-${v}-${i}`;
@@ -266,7 +276,7 @@ async function main() {
         const prior = o.resume && fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : null;
         if (prior !== null && !prior.startsWith("RUN FAILED")) { reused = true; return prior; }
         fs.writeFileSync(path.join(outDir, `${id}.${r.name}.prompt.md`), text);
-        const res = await claude(o.model, 40, text, caseTree[c.name]);
+        const res = await claude(o.model, 40, text, caseTree[c.name], "", { effort: o.effort, subagents: o.subagents });
         cost += res.cost; note(res);
         fs.writeFileSync(outFile, res.ok ? res.text : `RUN FAILED: ${res.err}\n${res.text}`);
         if (!res.ok) failure ??= (res.err || res.text).trim().split("\n")[0];
@@ -317,12 +327,12 @@ async function main() {
       if (rows.length) rows.at(-1).cost += judgeCost;
     }
     const total = rows.reduce((a, r) => a + (r.cost || 0), 0);
-    const summary = `${summarize(rows, cases)}\n\nTotal cost: $${total.toFixed(2)} (judge included). Base \`${o.base}\`, head \`${o.head}\`, ${o.runs} run(s) each. Reviewers on ${o.model}, judge on ${o.judgeModel}.\n\n## Runs\n` +
+    const summary = `${summarize(rows, cases)}\n\nTotal cost: $${total.toFixed(2)} (judge included). Base \`${o.base}\`, head \`${o.head}\`, ${o.runs} run(s) each. Reviewers on ${o.model} (effort ${o.effort ?? "default"}, sub-agents ${o.subagents ? "allowed" : "denied"}), judge on ${o.judgeModel}.\n\n## Runs\n` +
       rows.map((r) => `- ${r.case} ${r.version} #${r.run}: ` + (r.caught
         ? `${Object.entries(r.caught).map(([k, v]) => `${k} ${v ? "caught" : "not caught"}`).join(", ")}; ${r.findings ?? "n/a"} finding(s), ${r.distinct ?? "n/a"} distinct — ${r.note ?? ""}`
         : `FAILED (${r.failure})`)).join("\n") + "\n";
     fs.writeFileSync(path.join(outDir, "summary.md"), summary);
-    fs.writeFileSync(path.join(outDir, "results.json"), JSON.stringify({ base: o.base, head: o.head, runs: o.runs, model: o.model, judgeModel: o.judgeModel, means: aggregate(rows, cases), rows }, null, 2));
+    fs.writeFileSync(path.join(outDir, "results.json"), JSON.stringify({ base: o.base, head: o.head, runs: o.runs, model: o.model, effort: o.effort, subagents: o.subagents, judgeModel: o.judgeModel, means: aggregate(rows, cases), rows }, null, 2));
     if (rows.some((r) => !r.ok)) process.exitCode ||= 1;
     console.log(`\n${summary}\nResults: ${path.relative(ROOT, outDir)}/`);
   } finally {

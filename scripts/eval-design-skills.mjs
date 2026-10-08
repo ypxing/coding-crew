@@ -34,9 +34,9 @@ const CLAUDE = process.env.CLAUDE_BIN || "claude";
 
 const STAGE_INSTRUCTIONS = {
   round1:
-    "EVAL MODE (non-interactive): do your research read-only, then output ONLY what you would send the user at your first decision point (for a grill: your first round; for a brainstorm: the approaches you would propose, stating as assumptions anything you would otherwise ask one question at a time). Then stop. No user will answer. Modify nothing.",
+    "EVAL MODE (non-interactive): do your research read-only, then output ONLY what you would send the user at your first decision point (for a grill: your first round; for a brainstorm: the approaches you would propose, stating as assumptions anything you would otherwise ask one question at a time). If your skill first judges whether the source takes a light path, put that judgement's one line first; if it takes the light path, output that line and the hand-off you would make, and nothing else. Then stop. No user will answer. Modify nothing.",
   close:
-    "EVAL MODE (non-interactive): the frontier is empty. Output exactly what you would send the user to close Phase 1 (everything up to and including the 'Ready to write the PRD?' line). Then assume the user answered 'y' with no other change, and output ONLY the '## Decisions' and '## Out of Scope' sections the PRD would get. You may read the repo to check facts, but modify nothing.",
+    "EVAL MODE (non-interactive): the frontier is empty. Output exactly what you would send the user to close Phase 1 (everything up to and including your hand-off: the 'Ready to write the PRD?' line, or the hand-off to `to-issues`). Then assume the user agreed with no other change, and output ONLY the '## Decisions' and '## Out of Scope' sections the next document would carry (the PRD, or the one issue when the work stays one slice). You may read the repo to check facts, but modify nothing.",
   slice:
     "EVAL MODE (non-interactive): the ARGUMENTS above are the feature's PRD; do not look for or fetch another. Explore the repo read-only, then output ONLY your step 5 breakdown: the numbered slices, each with its title, acceptance-criteria count (criteria count), `Blocked by`, and the split reason that produced it (none when there is one slice). Then stop. No user will answer. Modify nothing and publish nothing.",
 };

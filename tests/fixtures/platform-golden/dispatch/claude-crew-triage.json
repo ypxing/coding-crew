@@ -14,11 +14,12 @@
     "--verbose",
     "--model",
     "golden-model",
+    "--effort",
+    "high",
     "--disallowedTools",
     "Edit",
     "Write",
-    "NotebookEdit",
-    "Agent"
+    "NotebookEdit"
   ],
   "input": null,
   "env": {
