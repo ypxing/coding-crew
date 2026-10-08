@@ -1,6 +1,6 @@
 {
   "tracker": { "kind": "github" },
   "afk": {
-    "models": { "claude": { "coder": "opus", "reviewer": "opus", "triage": "opus" } }
+    "models": { "claude": { "coder": "sonnet", "reviewer": "opus", "triage": "opus" } }
   }
 }

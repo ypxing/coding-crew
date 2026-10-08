@@ -35,7 +35,7 @@ Gate and the Common False Positives list in the protocol before it becomes a fin
 
 ## Project-specific overrides
 
-`CLAUDE.md` wins over every threshold above — file size limits, immutability requirements,
+`CLAUDE.md` (or `AGENTS.md`) wins over every threshold above — file size limits, immutability requirements,
 database policies (RLS, migration patterns), error handling patterns (custom error classes, error
 boundaries), and state management conventions. When in doubt, match what the rest of the codebase
 does.

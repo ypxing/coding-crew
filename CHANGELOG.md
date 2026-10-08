@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- skills: the design standard's axes of variation, the reviewer's project overrides, solve-issue's check-command lookup
+  and to-issues' context budget now read `AGENTS.md` as well as `CLAUDE.md`, so Codex-, Copilot- and pi-only repos get
+  the same treatment.
 - install: every install leaves each installed skill directory and asset tree (`.coding-crew/crew-afk/`, the tracker
   tree, …) holding only the files that run wrote: any other file is removed and printed as `<path> (removed)`, then any
   directory left empty. Replaces the hand-kept per-skill retired-file lists, which missed to-issues'
