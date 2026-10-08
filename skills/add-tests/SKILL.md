@@ -83,6 +83,10 @@ Skip trivial files: default threshold is fewer than 10 statements, or a type/int
 with no executable logic. This default is tunable per project, not a hardcoded requirement —
 note it as configurable in whatever findings document you write in step 8.
 
+Drop a gap whose only practical test would be a bad one — mostly testing mocks or internal
+collaborators, encoding implementation details, or depending on timing or global state. List each
+dropped file and why under a `## Skipped` heading in step 8's document; no issue is cut for it.
+
 Cap total findings per run: default is the smaller of (a) the top 20 files by score, or (b)
 however many files close the top 50% of the total uncovered-statement gap. Also tunable, not
 hardcoded.
@@ -147,6 +151,17 @@ prompt for one, e.g. `add-tests-<short-topic>`).
 
 Every gap-fix finding's acceptance criteria must cite the resolved mock convention by name, so
 `crew-coder`/`solve-issue` don't each invent a different mocking style for the same issue.
+
+Each finding also carries two criteria that stop coverage work from producing tests that prove
+nothing:
+
+- **The behaviours to cover, named.** List them from the module's docs, callers and names, not from
+  its implementation, so the coder asserts what the code is meant to do. A criterion reads like
+  "`parseConfig` rejects a config with no `tracker` key" — never "cover lines 40–80". When the
+  current output looks wrong, the coder reports it as a suspected bug rather than testing it in.
+- **Each new test seen failing.** The code already exists, so the tests pass on their first run:
+  the criterion is that each new test was run against the code under test temporarily broken and
+  failed on its assertion (`tdd`'s "Testing code that already exists").
 
 Two more things per finding, each cheap here and expensive for a coder to rediscover:
 

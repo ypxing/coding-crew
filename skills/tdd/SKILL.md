@@ -50,6 +50,17 @@ satisfied and must not be waited on. Treat the issue's acceptance criteria as th
 derive the interface and behaviour list from them, record that list in your notes, and go straight
 to §2. Never ask a question nobody will read.
 
+**Bug fixes.** Skip the interface-design boxes: find the existing test closest to the broken
+codepath, and write there the smallest test that would have caught the bug, asserting the intended
+behaviour. It is your tracer bullet; §2 applies unchanged. A flaky bug needs a deterministic test —
+pin the clock, seed or ordering the flake depends on.
+
+**When no practical test exists.** Prefer no new test over a bad one — one that mostly tests mocks,
+encodes implementation details, depends on timing or global state, or needs heavy infrastructure for
+a small change. Only then, use the closest executable check instead (a reproduction command, a
+targeted script, a log assertion), run it before and after the change, and record why no test path
+exists. Being slow to write is not a reason.
+
 ### 2. Tracer Bullet
 
 Write ONE test that confirms ONE thing about the system:
@@ -60,6 +71,17 @@ GREEN: Write minimal code to pass → test passes
 ```
 
 **Before writing any source code: run the test and paste the failure output.** A test that cannot be shown to fail is not a red test. Do not touch source files until you have visible evidence of failure.
+
+It must fail **for the intended reason**: on the assertion you wrote, because the behaviour is
+absent. An import error, syntax error or broken fixture is not red yet — fix the test until the
+assertion is what fails.
+
+**Testing code that already exists** (adding coverage, characterising untested code): the test
+passes on its first run, so get the red evidence the other way round — temporarily break the code
+under test (delete the branch, invert the condition), run the test and paste the failure, then
+restore the code and watch it pass. Assert the behaviour the code is meant to have, from its docs,
+callers and names, not whatever it currently returns; when the current output looks wrong, flag it
+as a suspected bug rather than writing a test that locks it in.
 
 This is your tracer bullet - proves the path works end-to-end.
 
@@ -79,6 +101,8 @@ Rules:
 - Only enough code to pass current test
 - Don't anticipate future tests
 - Keep tests focused on observable behavior
+- Never edit a test to match a wrong implementation, and never weaken an existing assertion unless
+  the intended behaviour changed and you can say how
 
 ### 4. Refactor
 
@@ -96,6 +120,7 @@ After all tests pass, look for refactor candidates (see `references/refactoring.
 ## Checklist Per Cycle
 
 ```
+[ ] Test failed on its assertion before the code made it pass
 [ ] Test describes behavior, not implementation
 [ ] Test uses public interface only
 [ ] Test would survive internal refactor
