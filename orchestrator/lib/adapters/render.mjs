@@ -26,7 +26,7 @@ export const ROLE_AGENTS = { coder: "crew-coder", reviewer: "crew-reviewer", tri
  * role → what it may do, declared once; each adapter's `policyArgs` turns it into its CLI's flags.
  * The reviewer and triage are read-only and may spawn sub-agents (whether to is their call); the coder
  * may not, since sub-agents would edit one worktree at once. Effort: review and triage
- * are correctness judgements, the coder is steadier work. A plain role (no protocol) has none.
+ * are correctness judgements, the coder is steadier work. A plain role (no protocol: command finder, PR writer) has none, so it runs at its CLI's default.
  */
 export const ROLE_POLICY = {
   coder: { readOnly: false, subagents: false, effort: "medium" },

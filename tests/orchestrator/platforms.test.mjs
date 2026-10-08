@@ -80,8 +80,16 @@ test("ROLE_POLICY declares a policy for every role with a protocol", () => {
 const CLAUDE_READ_ONLY = ["--effort", "high", "--disallowedTools", "Edit", "Write", "NotebookEdit"];
 const EXPECTED_POLICY_ARGS = {
   claude: { coder: ["--effort", "medium", "--disallowedTools", "Agent"], reviewer: CLAUDE_READ_ONLY, triage: CLAUDE_READ_ONLY },
-  copilot: { coder: [], reviewer: ["--deny-tool", "write"], triage: ["--deny-tool", "write"] },
-  pi: { coder: ["--tools", "read,bash,edit,write"], reviewer: ["--tools", "read,bash"], triage: ["--tools", "read,bash"] },
+  copilot: {
+    coder: ["--reasoning-effort", "medium"],
+    reviewer: ["--reasoning-effort", "high", "--deny-tool", "write"],
+    triage: ["--reasoning-effort", "high", "--deny-tool", "write"],
+  },
+  pi: {
+    coder: ["--thinking", "medium", "--tools", "read,bash,edit,write"],
+    reviewer: ["--thinking", "high", "--tools", "read,bash"],
+    triage: ["--thinking", "high", "--tools", "read,bash"],
+  },
   codex: {
     coder: ["-c", 'model_reasoning_effort="medium"'],
     reviewer: ["-c", 'model_reasoning_effort="high"'],

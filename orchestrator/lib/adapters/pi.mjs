@@ -27,8 +27,8 @@ export default {
     return { args };
   },
 
-  // pi names an allowlist; it ignores tool names it does not know, so these are pi's own.
-  policyArgs: ({ readOnly }) => ["--tools", readOnly ? "read,bash" : "read,bash,edit,write"],
+  // The role's thinking level; pi names an allowlist and ignores tool names it does not know, so these are pi's own.
+  policyArgs: ({ readOnly, effort }) => [...(effort ? ["--thinking", effort] : []), "--tools", readOnly ? "read,bash" : "read,bash,edit,write"],
 
   /**
    * A tool start (bash's command, read/write/edit's path), a failed tool, or an assistant

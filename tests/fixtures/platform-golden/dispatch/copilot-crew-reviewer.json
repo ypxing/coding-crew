@@ -13,6 +13,8 @@
     "json",
     "--model",
     "golden-model",
+    "--reasoning-effort",
+    "high",
     "--deny-tool",
     "write"
   ],

@@ -6,6 +6,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-afk: on copilot and pi, each role's `effort` now reaches the CLI too (`--reasoning-effort` / `--thinking`: coder `medium`, reviewer and triage `high`), so every platform honours `ROLE_POLICY`'s effort; the command finder and PR writer still run at the CLI's default. (#355)
 - crew-afk: on claude, each role's `effort` from `ROLE_POLICY` now reaches the CLI as `--effort` (coder `medium`, reviewer and triage `high`); before, only codex read it, so claude ran every role at the CLI's default effort. (#355)
 - `eval-reviewer-misses`: `--effort <level>` and `--subagents` set the reviewer's effort and allow the Agent tool, so model, effort and sub-agent settings can be compared on the same cases; results record both. New case `lightweight-flow-feature` replays #355's first feature review and its three misses (`$TRACKER` undefined in crew-grill/crew-brainstorm, the eval harness's stale `close` stage and conflicting `round1` case). (#355)
 - crew-afk: on claude, the reviewer and triage may now spawn sub-agents (no longer `--disallowedTools Agent`); whether to is the agent's call. The coder still may not. Other platforms were never restricted. (#355)

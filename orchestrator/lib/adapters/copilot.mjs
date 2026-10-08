@@ -25,7 +25,8 @@ export default {
     return { args };
   },
 
-  policyArgs: ({ readOnly }) => (readOnly ? ["--deny-tool", "write"] : []),
+  /** The role's reasoning effort; read-only denies the write tool. */
+  policyArgs: ({ readOnly, effort }) => [...(effort ? ["--reasoning-effort", effort] : []), ...(readOnly ? ["--deny-tool", "write"] : [])],
 
   /** A tool start, a failed tool, a `session.error`, or an `assistant.message`'s text. */
   normalize(evt) {
