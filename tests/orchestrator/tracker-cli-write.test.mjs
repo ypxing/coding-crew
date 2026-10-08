@@ -9,7 +9,7 @@ import { run } from "../../tracker/cli.mjs";
 
 // tracker/cli.mjs — the write ops (`publish-issues`, `publish-prd`, `rewrite`, `mark-done`) on
 // both backends, `gh` stubbed through the injected `exec`, as tracker-cli.test.mjs does for the
-// read ops. mark-issue-done.sh's own contract is pinned by the bats suites.
+// read ops. mark-done's refusals are pinned by the bats suites (worker-close-guard, tracker-mark-done-github).
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
