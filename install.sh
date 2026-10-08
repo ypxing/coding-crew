@@ -315,7 +315,7 @@ check_dest_status() {
 
 # Assets are platform-neutral runtime files a skill or role reads or executes itself. They install
 # once, to a shared path outside any platform directory, so four platforms do not get four copies. Like
-# .coding-crew/scripts they are mechanism, not user text, so they are always overwritten: a stale
+# .coding-crew/tracker they are mechanism, not user text, so they are always overwritten: a stale
 # reference would be a checklist that no longer matches the protocol pointing at it.
 install_assets_tree() {
   local src="$1" dest_rel="$2" label="$3"
