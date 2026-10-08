@@ -181,6 +181,11 @@ A bug-fix test that passes on its first run, through the path the issue names, m
 already fixed: keep it as the regression test (Step 3's already met), not a test to rewrite until
 it fails.
 
+A test of code the issue does not ask you to change that fails on its assertion (`tdd`'s "Testing
+code that already exists") is Step 3's wrong assumption, found late: report `blocked` with the test
+and its output as the evidence — `BLOCKED: premise: <criterion> — <observed output>`. Commits
+already made stay.
+
 **Commit after every GREEN, not only once at the end.** A dispatcher-imposed timeout can kill this
 run mid-loop; only a branch that already has a commit on it is resumable next round — one with
 everything still staged, uncommitted, is indistinguishable from a run that never started. Before
