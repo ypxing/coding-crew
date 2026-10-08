@@ -143,6 +143,94 @@ teardown() {
   [ -f "$TEMP_DIR/.claude/skills/crew-afk/scripts/session-init.sh" ]
 }
 
+# ─── an installed tree is an exact copy of what the install wrote ────────────
+#
+# No hand list of retired files: whatever a skill root or asset tree holds that this
+# run did not write is removed, then any directory left empty.
+
+@test "--update prunes a file to-issues no longer ships, keeping every shipped file" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill to-issues >/dev/null
+  local dir="$TEMP_DIR/.claude/skills/to-issues"
+  echo "raw gh publish path" > "$dir/references/github-publish.md"
+  local m="$TEMP_DIR/.coding-crew/manifest.json"
+  jq '.skills["to-issues"].version = "0.0.0"' "$m" > "$m.tmp" && mv "$m.tmp" "$m"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
+  [ "$status" -eq 0 ]
+  [ ! -e "$dir/references/github-publish.md" ]
+  [ -f "$dir/SKILL.md" ]
+  [ -f "$dir/references/expand-contract.md" ]
+  [[ "$output" == *".claude/skills/to-issues/references/github-publish.md (removed)"* ]]
+}
+
+@test "a plain re-install prunes a planted file and the directory it leaves empty, never the skill root" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
+  local dir="$TEMP_DIR/.claude/skills/tdd"
+  echo stale > "$dir/stale.md"
+  mkdir -p "$dir/old/deeper"
+  echo stale > "$dir/old/deeper/gone.md"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
+  [ "$status" -eq 0 ]
+  [ ! -e "$dir/stale.md" ]
+  [ ! -e "$dir/old" ]
+  [ -f "$dir/SKILL.md" ]
+  [[ "$output" == *".claude/skills/tdd/stale.md (removed)"* ]]
+  [[ "$output" == *".claude/skills/tdd/old/deeper/gone.md (removed)"* ]]
+}
+
+@test "the prune keeps every scripts[] file a skill declares" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
+  echo stale > "$TEMP_DIR/.claude/skills/solve-issue/scripts/retired.sh"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
+  [ ! -e "$TEMP_DIR/.claude/skills/solve-issue/scripts/retired.sh" ]
+  local script
+  while IFS= read -r script; do
+    [ -x "$TEMP_DIR/.claude/skills/solve-issue/scripts/$script" ]
+  done < <(jq -r '.skills["solve-issue"].scripts[]' registry.json)
+}
+
+@test "re-installing crew-afk prunes its asset tree" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  echo "// deleted module" > "$TEMP_DIR/.coding-crew/crew-afk/lib/retired.mjs"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/.coding-crew/crew-afk/lib/retired.mjs" ]
+  [ -f "$TEMP_DIR/.coding-crew/crew-afk/lib/dispatch.mjs" ]
+  [[ "$output" == *".coding-crew/crew-afk/lib/retired.mjs (removed)"* ]]
+}
+
+@test "installing crew-afk prunes an older install's common/ and per-platform fragment dirs" {
+  cd "$SCRIPT_DIR"
+  mkdir -p "$TEMP_DIR/.coding-crew/skills/_shared/fragments/common" "$TEMP_DIR/.coding-crew/skills/_shared/fragments/claude"
+  echo "old" > "$TEMP_DIR/.coding-crew/skills/_shared/fragments/common/a.md"
+  echo "old" > "$TEMP_DIR/.coding-crew/skills/_shared/fragments/claude/b.md"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill crew-afk >/dev/null
+  [ ! -e "$TEMP_DIR/.coding-crew/skills/_shared/fragments/common" ]
+  [ ! -e "$TEMP_DIR/.coding-crew/skills/_shared/fragments/claude" ]
+  [ -f "$TEMP_DIR/.coding-crew/skills/_shared/fragments/design-standard.md" ]
+}
+
+@test "the prune leaves files outside the skill root and asset dests alone" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
+  TARGET_REPO="$TEMP_DIR" ./install.sh codex --skill tdd >/dev/null
+  echo '{"tracker":{"kind":"local"}}' > "$TEMP_DIR/.coding-crew/config.json"
+  echo keep > "$TEMP_DIR/.coding-crew/user-note.md"
+  local other
+  other=$(dirname "$(find "$TEMP_DIR" -path '*/tdd/SKILL.md' -not -path '*/.claude/*' | head -1)")
+  [ -n "$other" ]
+  echo keep > "$other/planted.md"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
+  [ -f "$TEMP_DIR/.coding-crew/config.json" ]
+  [ -f "$TEMP_DIR/.coding-crew/manifest.json" ]
+  [ -f "$TEMP_DIR/.coding-crew/user-note.md" ]
+  [ -f "$other/planted.md" ]
+}
+
+
 @test "solve-issue and crew-afk both get write-commands-cache.sh; only crew-afk gets discover-commands.sh" {
   cd "$SCRIPT_DIR"
   TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue
