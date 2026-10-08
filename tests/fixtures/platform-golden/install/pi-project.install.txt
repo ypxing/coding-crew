@@ -85,6 +85,7 @@ REPO/.coding-crew/skills/_shared/fragments/ /
 REPO/.coding-crew/skills/_shared/fragments/design-standard.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/findings-rubric.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/human-issue.md exec=0
+REPO/.coding-crew/skills/_shared/fragments/light-path.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/tracker-configuration.md exec=0
 REPO/.coding-crew/skills/_shared/fragments/verification-pass.md exec=0
 REPO/.coding-crew/solve-issue/ /

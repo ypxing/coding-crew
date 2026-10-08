@@ -6,6 +6,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-grill, crew-brainstorm, to-issues, crew-afk: a source that is already one complete change takes the light path: `/crew-grill` and `/crew-brainstorm` check it, print one `Light path:` line and hand off to `to-issues` without Q&A (a failing check runs the Q&A as before). `to-issues` alone decides on a PRD: one slice gets none and carries its own `## Decisions` (slug derived, shown in the quiz); two or more slices, or two or more origin issues, invoke `to-prd`. crew-brainstorm no longer asks for a slug. crew-afk's feature review reads the one issue with `## Decisions` as the intent when there is no PRD (`intent-issue.md` under github). (#350)
 - skills: the design standard's axes of variation, the reviewer's project overrides, solve-issue's check-command lookup
   and to-issues' context budget now read `AGENTS.md` as well as `CLAUDE.md`, so Codex-, Copilot- and pi-only repos get
   the same treatment.

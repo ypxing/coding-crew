@@ -12,12 +12,9 @@ setup() {
   [ -f "$SCRIPT_DIR/skills/crew-brainstorm/SKILL.md" ]
 }
 
-@test "crew-brainstorm SKILL.md references .scratch/ directory" {
-  grep -q '\.scratch/' "$SCRIPT_DIR/skills/crew-brainstorm/SKILL.md"
-}
-
-@test "crew-brainstorm SKILL.md contains workflow steps" {
-  grep -qi 'Step 1\|## Step' "$SCRIPT_DIR/skills/crew-brainstorm/SKILL.md"
+@test "crew-brainstorm SKILL.md hands off to to-issues and contains workflow steps" {
+  grep -q 'to-issues' "$SCRIPT_DIR/skills/crew-brainstorm/SKILL.md"
+  grep -qi '## Checklist' "$SCRIPT_DIR/skills/crew-brainstorm/SKILL.md"
 }
 
 # --- crew-grill ---
@@ -26,15 +23,13 @@ setup() {
   [ -f "$SCRIPT_DIR/skills/crew-grill/SKILL.md" ]
 }
 
-@test "crew-grill SKILL.md contains Phase 1, Phase 2, and Phase 3 headers" {
+@test "crew-grill SKILL.md contains Phase 1 and Phase 2 headers" {
   grep -q '## Phase 1' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
   grep -q '## Phase 2' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
-  grep -q '## Phase 3' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
 }
 
-@test "crew-grill SKILL.md references PRD.md as the design artifact" {
-  # design.md was consolidated into PRD.md as the single context document.
-  grep -q 'PRD\.md' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
+@test "crew-grill SKILL.md hands its summary to to-issues, which owns the PRD" {
+  grep -q 'to-issues' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
   ! grep -q 'design\.md' "$SCRIPT_DIR/skills/crew-grill/SKILL.md"
 }
 
