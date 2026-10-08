@@ -14,6 +14,9 @@ MERGE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scr
 CLOSE_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/close-issue.sh"
 
 setup() {
+  # The crew-afk scripts ask the tracker CLI which tracker this is: this repo's own copy.
+  export CREW_TRACKER_CLI="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/tracker/cli.mjs"
+  unset CREW_INSTALL_DIR
   export TEMP_DIR=$(mktemp -d)
   cd "$TEMP_DIR"
 
@@ -317,7 +320,7 @@ EOF
 }
 
 # ─── the check-off belongs to the close, not to the worker ───────────────────
-# A worker that ticks its own criteria satisfies mark-issue-done.sh's exit-4 guard
+# A worker that ticks its own criteria satisfies cli.mjs mark-done's exit-4 guard
 # by self-attestation — the exact thing the reviewer-owned AC gate exists to
 # prevent. The tick now happens here, after the receipt gate, as part of the close.
 

@@ -14,6 +14,9 @@ VERIFY="$REPO_ROOT/skills/crew-afk/scripts/verify-worktree.sh"
 
 setup() {
   isolate_project_env
+  # The crew-afk scripts ask the tracker CLI which tracker this is: this repo's own copy.
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  unset CREW_INSTALL_DIR
   export TEMP_DIR=$(mktemp -d)
   cd "$TEMP_DIR"
   git init -q -b main
@@ -31,11 +34,11 @@ _frontmatter() {
   awk 'NR==1 && $0=="---"{f=1;next} f && $0=="---"{exit} f{print}' "$1"
 }
 
-# session-init.sh as install.sh lays it out, in the skill's scripts/ dir.
+# session-init.sh as install.sh lays it out, in the skill's scripts/ dir beside tracker-cli.sh.
 _installed_scripts() {
   local dir="$TEMP_DIR/installed-scripts"
   mkdir -p "$dir"
-  cp "$REPO_ROOT/skills/crew-afk/scripts/session-init.sh" "$dir/"
+  cp "$REPO_ROOT/skills/crew-afk/scripts/session-init.sh" "$REPO_ROOT/skills/crew-afk/scripts/tracker-cli.sh" "$dir/"
   echo "$dir"
 }
 
@@ -209,14 +212,14 @@ _installed_scripts() {
   done
 }
 
-@test "B4: solve-issue's close is refused by the tracker script, not by prose" {
+@test "B4: solve-issue's close is refused by the tracker CLI, not by prose" {
   # Was a grep for the sentence that told the worker to skip mark-done. The sentence is
-  # gone; what stands in its place is a script that exits non-zero. Assert that instead.
+  # gone; what stands in its place is an op that exits non-zero. Assert that instead.
   mkdir -p .scratch/f/issues/open
   printf '# T\n\nStatus: ready-for-agent\n' > .scratch/f/issues/open/01-t.md
   touch .scratch/f/.orchestrated
 
-  run bash "$REPO_ROOT/scripts/tracker/mark-issue-done.sh" .scratch/f/issues/open/01-t.md
+  run node "$REPO_ROOT/tracker/cli.mjs" mark-done .scratch/f/issues/open/01-t.md
   [ "$status" -eq 3 ]
   [ -f .scratch/f/issues/open/01-t.md ]
 
