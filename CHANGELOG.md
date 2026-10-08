@@ -6,6 +6,9 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- skills: the design standard's axes of variation, the reviewer's project overrides, solve-issue's check-command lookup
+  and to-issues' context budget now read `AGENTS.md` as well as `CLAUDE.md`, so Codex-, Copilot- and pi-only repos get
+  the same treatment.
 - tracker: `.coding-crew/scripts/tracker-config.sh` and `mark-issue-done.sh` no longer ship; `install.sh`, `--update`
   and `uninstall.sh` delete existing copies (registry.json `retired-scripts`), then `.coding-crew/scripts/` when empty.
   crew-afk's scripts ask `tracker/cli.mjs` through one helper (`tracker-cli.sh`) and stop with "re-run install.sh" when

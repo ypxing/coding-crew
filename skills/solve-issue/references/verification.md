@@ -6,16 +6,16 @@ Run all project checks and confirm every acceptance criterion from the issue is 
 
 For each check category (tests, type check, lint), determine the command independently:
 
-1. If `CLAUDE.md` at `PROJECT_ROOT` specifies a command for that category, use it.
+1. If `CLAUDE.md` (or `AGENTS.md`) at `PROJECT_ROOT` specifies a command for that category, use it.
 2. Otherwise, check the `Makefile` for a matching target.
 3. Otherwise, use ecosystem conventions: `npm test`, `go test ./...`, `pytest`, `cargo test`, `bundle exec rspec`.
 
-A `CLAUDE.md` that defines the test command does not prevent you from looking up the lint command in the Makefile or conventions.
+A `CLAUDE.md` or `AGENTS.md` that defines the test command does not prevent you from looking up the lint command in the Makefile or conventions.
 
 **All three checks are mandatory — do not skip any.** You are discovering commands, not running
 them: `run-checks.sh` runs whatever you persist, in this order.
 
-1. **Type check** — for TypeScript: `tsc --noEmit` (or the Makefile/CLAUDE.md equivalent). For other typed languages: mypy, pyright, go vet, etc.
+1. **Type check** — for TypeScript: `tsc --noEmit` (or the Makefile/CLAUDE.md/AGENTS.md equivalent). For other typed languages: mypy, pyright, go vet, etc.
 2. **Lint** — check Makefile for an `eslint`, `lint`, or `check` target; fall back to `npx eslint .` / `golangci-lint run` / etc.
 3. **Tests** — unit tests covering changed code, plus integration tests if relevant.
 

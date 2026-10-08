@@ -65,8 +65,8 @@ assert_standard_absent_from() {
   grep -qi 'never cut' "$STANDARD"
 }
 
-@test "criterion 3 takes its axes from the project's CLAUDE.md and falls back to real callers now" {
-  grep -qF "axes of variation the project's \`CLAUDE.md\` names" "$STANDARD"
+@test "criterion 3 takes its axes from the project's CLAUDE.md or AGENTS.md and falls back to real callers now" {
+  grep -qF "axes of variation the project's \`CLAUDE.md\` (or \`AGENTS.md\`) names" "$STANDARD"
   grep -qF 'two or more real callers or implementations now' "$STANDARD"
 }
 
