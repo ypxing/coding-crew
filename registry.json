@@ -135,7 +135,7 @@
     "crew-brainstorm": {
       "version": "1.4.0",
       "source-dir": "crew-brainstorm",
-      "description": "Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to PRD and issues.",
+      "description": "Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to to-issues.",
       "deps": [
         "to-prd",
         "to-issues"
@@ -144,7 +144,7 @@
     "crew-grill": {
       "version": "1.5.0",
       "source-dir": "crew-grill",
-      "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then produce a PRD and issues.",
+      "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then hand off to to-issues.",
       "deps": [
         "domain-modeling",
         "to-prd",

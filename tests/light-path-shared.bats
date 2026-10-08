@@ -94,3 +94,36 @@ assert_light_absent_from() {
   grep -qF '## Decisions' "$f"
   grep -qF 'the slug' "$f"
 }
+
+@test "every term the light-path fragment cites is defined in each rendered skill" {
+  ! grep -qF 'Gate 2' "$LIGHT" || { echo "fragment cites Gate 2, which crew-brainstorm lacks" >&2; return 1; }
+  for skill in crew-grill crew-brainstorm; do
+    run rendered_skill "$skill" claude
+    [ "$status" -eq 0 ]
+    # the annoyed lane is stated in the fragment itself, so it is defined wherever the fragment renders
+    grep -qF 'annoyed to learn you made without asking' "$output"
+    grep -qF 'conflicting in-repo precedent' "$output"
+  done
+}
+
+@test "rendered crew-brainstorm allows the light path in its HARD-GATE, anti-pattern section and flow, and never demands a design for every project" {
+  run rendered_skill crew-brainstorm claude
+  [ "$status" -eq 0 ]
+  local hard anti flow
+  hard="$(sed -n '/<HARD-GATE>/,/<\/HARD-GATE>/p' "$output")"
+  anti="$(sed -n '/^## Anti-Pattern/,/^## Checklist/p' "$output")"
+  flow="$(sed -n '/^```dot/,/^```$/p' "$output")"
+  grep -qF 'light-path' <<<"$hard"
+  grep -qF 'light-path' <<<"$anti"
+  grep -qF 'Light path' <<<"$flow"
+  ! grep -qF 'EVERY project' "$output"
+  ! grep -qF 'Every project goes through this process.' "$output"
+}
+
+@test "registry descriptions of crew-grill and crew-brainstorm name to-issues and no unconditional PRD" {
+  for skill in crew-grill crew-brainstorm; do
+    d="$(jq -r --arg s "$skill" '.skills[$s].description' "$REPO_ROOT/registry.json")"
+    grep -qF 'to-issues' <<<"$d"
+    ! grep -qi 'PRD' <<<"$d"
+  done
+}

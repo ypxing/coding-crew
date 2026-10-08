@@ -6,6 +6,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+- crew-afk, crew-grill, crew-brainstorm: the feature review still finds the intent issue after it is closed (moved to `done/`); the light path's "no fork" check states its own topics instead of citing a gate crew-brainstorm lacks; crew-brainstorm's HARD-GATE, anti-pattern section and flow allow the light path; both skills' registry descriptions name the hand-off to `to-issues`. (#354)
 - crew-grill, crew-brainstorm, to-issues, crew-afk: a source that is already one complete change takes the light path: `/crew-grill` and `/crew-brainstorm` check it, print one `Light path:` line and hand off to `to-issues` without Q&A (a failing check runs the Q&A as before). `to-issues` alone decides on a PRD: one slice gets none and carries its own `## Decisions` (slug derived, shown in the quiz); two or more slices, or two or more origin issues, invoke `to-prd`. crew-brainstorm no longer asks for a slug. crew-afk's feature review reads the one issue with `## Decisions` as the intent when there is no PRD (`intent-issue.md` under github). (#350)
 - skills: the design standard's axes of variation, the reviewer's project overrides, solve-issue's check-command lookup
   and to-issues' context budget now read `AGENTS.md` as well as `CLAUDE.md`, so Codex-, Copilot- and pi-only repos get
