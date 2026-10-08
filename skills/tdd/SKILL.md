@@ -50,19 +50,6 @@ satisfied and must not be waited on. Treat the issue's acceptance criteria as th
 derive the interface and behaviour list from them, record that list in your notes, and go straight
 to §2. Never ask a question nobody will read.
 
-**Bug fixes.** Skip the interface-design boxes: find the existing test closest to the broken
-codepath, and write there the smallest test that would have caught the bug, asserting the intended
-behaviour. It is your tracer bullet; §2 applies unchanged. A flaky bug needs a deterministic test —
-pin the clock, seed or ordering the flake depends on. If it passes on its first run, through the path
-the bug report names, stop: that result is for your caller to act on. Don't rewrite the test until it
-fails. If it is kept as a regression test, get its red as for code that already exists (§2).
-
-**When no practical test exists.** Prefer no new test over a bad one — one that mostly tests mocks,
-encodes implementation details, or depends on timing or global state. Only then, use the closest
-executable check instead (a reproduction command, a targeted script, a log assertion), run it before
-and after the change, and record why no test path exists. Being slow to write is not a reason, and
-the fallback never replaces a test the task explicitly asks for.
-
 ### 2. Tracer Bullet
 
 Write ONE test that confirms ONE thing about the system:
@@ -79,13 +66,12 @@ absent. An import error, syntax error or broken fixture is not red yet — fix t
 assertion is what fails.
 
 **Testing code that already exists** (adding coverage, characterising untested code): the test
-passes on its first run, so get the red evidence the other way round. Temporarily break the code
-under test (delete the branch, invert the condition), run the test and paste the failure. Commit your
-changes first (the new test included, since it may share a file with the code), so the break is the
-only uncommitted change, and restore it with `git checkout -- <file>`, never by hand. Confirm `git diff --quiet -- <file>` before you watch the test pass, so the break can never be
-committed. Assert the behaviour the code is meant to have, from its docs, callers and names, not
-whatever it currently returns. When the current output contradicts that, stop, and don't write a
-test that locks it in: the mismatch is for your caller to act on.
+passes on its first run, so get the red evidence the other way round. Commit your changes first (the
+new test included, since it may share a file with the code), then temporarily break the code under
+test (delete the branch, invert the condition), run the test and paste the failure. Restore it with
+`git checkout -- <file>`, never by hand, and confirm `git diff --quiet -- <file>` before you watch
+the test pass, so the break can never be committed. Assert the behaviour the code is meant to have,
+from its docs, callers and names, not whatever it currently returns.
 
 This is your tracer bullet - proves the path works end-to-end.
 
@@ -105,8 +91,6 @@ Rules:
 - Only enough code to pass current test
 - Don't anticipate future tests
 - Keep tests focused on observable behavior
-- Never edit a test to match a wrong implementation, and never weaken an existing assertion unless
-  the intended behaviour changed and you can say how
 
 ### 4. Refactor
 

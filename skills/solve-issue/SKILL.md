@@ -181,11 +181,6 @@ A bug-fix test that passes on its first run, through the path the issue names, m
 already fixed: keep it as the regression test (Step 3's already met), not a test to rewrite until
 it fails.
 
-Existing code that contradicts a behaviour a criterion names (found by `tdd`'s "Testing code that
-already exists") is Step 3's wrong assumption, found late: report `blocked` with the test and its
-observed output as the evidence, keeping any commits already made. `tdd`'s no-test fallback goes in
-Step 6's `DETAILS`: the check you ran instead and why no test path exists.
-
 **Commit after every GREEN, not only once at the end.** A dispatcher-imposed timeout can kill this
 run mid-loop; only a branch that already has a commit on it is resumable next round — one with
 everything still staged, uncommitted, is indistinguishable from a run that never started. Before

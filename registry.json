@@ -73,7 +73,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.14.2",
+      "version": "1.14.1",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "assets": {

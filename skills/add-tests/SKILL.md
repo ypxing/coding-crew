@@ -83,13 +83,6 @@ Skip trivial files: default threshold is fewer than 10 statements, or a type/int
 with no executable logic. This default is tunable per project, not a hardcoded requirement —
 note it as configurable in whatever findings document you write in step 8.
 
-Drop a gap whose only practical test would be a bad one: it could assert only on mocks of this
-project's own modules, or could pass only by depending on real timing or shared global state.
-Mocking an external boundary is not that: step 7's mocked tier is a valid test. A coder handed such
-a gap must still write the test the issue asks for, so the drop happens here. Don't put dropped
-files in step 8's document, where `to-issues` would slice them. List each one and why in your final
-message to the user instead.
-
 Cap total findings per run: default is the smaller of (a) the top 20 files by score, or (b)
 however many files close the top 50% of the total uncovered-statement gap. Also tunable, not
 hardcoded.
