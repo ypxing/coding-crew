@@ -59,7 +59,24 @@ RED:   Write test for first behavior → test fails
 GREEN: Write minimal code to pass → test passes
 ```
 
-**Before writing any source code: run the test and paste the failure output.** A test that cannot be shown to fail is not a red test. Do not touch source files until you have visible evidence of failure.
+**Before writing any source code: run the test and paste the failure output.** A test that cannot be shown to fail is not a red test. Do not touch source files until you have visible evidence of failure; the one exception is the temporary break below, for code that already exists.
+
+It must fail **for the intended reason**: on the assertion you wrote, because the behaviour is
+absent. An import error, syntax error or broken fixture is not red yet — fix the test until the
+assertion is what fails.
+
+**Testing code that already exists** (adding coverage, characterising untested code, pinning a bug
+that is already fixed — not changing behaviour): assert the behaviour the code is meant to have, from
+its docs, callers and names, not whatever it currently returns.
+
+- It passes on its first run: get the red evidence the other way round. Stage your changes first
+  (`git add`, the new test included, since it may share a file with the code), then temporarily
+  break the code under test (delete the branch, invert the condition), run the test and paste the
+  failure. Restore it with `git checkout -- <file>`, never by hand, and confirm
+  `git diff --quiet -- <file>` before you watch the test pass, so the break can never be committed.
+- It fails on its assertion: the code contradicts its intended behaviour. Stop: don't change the
+  code, since changing behaviour is not this task, and don't write a test that locks the current
+  output in. The mismatch is for your caller to act on.
 
 This is your tracer bullet - proves the path works end-to-end.
 
@@ -96,6 +113,7 @@ After all tests pass, look for refactor candidates (see `references/refactoring.
 ## Checklist Per Cycle
 
 ```
+[ ] Test seen failing on its assertion (for existing code, under the temporary break)
 [ ] Test describes behavior, not implementation
 [ ] Test uses public interface only
 [ ] Test would survive internal refactor

@@ -58,7 +58,7 @@
       ]
     },
     "tdd": {
-      "version": "1.2.2",
+      "version": "1.2.3",
       "source-dir": "tdd",
       "description": "Test-driven development with red-green-refactor loop, vertical slices.",
       "source": "mattpocock/skills"
@@ -73,7 +73,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.14.1",
+      "version": "1.14.2",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "assets": {
@@ -152,7 +152,7 @@
       ]
     },
     "add-tests": {
-      "version": "1.1.8",
+      "version": "1.1.9",
       "source-dir": "add-tests",
       "description": "Discover the project's coverage command, rank under-covered files by risk, resolve a mocking convention per ecosystem, and hand findings to to-issues as ready-for-agent issues.",
       "scripts": [

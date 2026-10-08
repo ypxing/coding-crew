@@ -148,6 +148,18 @@ prompt for one, e.g. `add-tests-<short-topic>`).
 Every gap-fix finding's acceptance criteria must cite the resolved mock convention by name, so
 `crew-coder`/`solve-issue` don't each invent a different mocking style for the same issue.
 
+Each finding also carries two criteria that stop coverage work from producing tests that prove
+nothing:
+
+- **The behaviours to cover, named.** List them from the module's docs, callers and names, not from
+  its implementation, so the coder asserts what the code is meant to do. A criterion reads like
+  "`parseConfig` rejects a config with no `tracker` key" — never "cover lines 40–80".
+- **Each new test would fail without its behaviour.** Each new test asserts its named behaviour's
+  outcome, not only that a mock was called, so removing that behaviour from the code would fail it.
+  State it this way, as a property of the test code a reviewer can check at its `file:line`, never as
+  "each test was seen failing": the coder's temporary break (`tdd`'s "Testing code that already
+  exists") leaves no trace in the diff.
+
 Two more things per finding, each cheap here and expensive for a coder to rediscover:
 
 - **What its checks need.** When a real-tier finding needs a service, credential or tool the
