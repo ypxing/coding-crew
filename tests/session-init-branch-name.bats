@@ -13,6 +13,9 @@ load helpers/isolate-env
 
 setup() {
   isolate_project_env
+  # session-init.sh asks this repo's own tracker CLI, not a full install.
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  unset CREW_INSTALL_DIR
   export TEMP_DIR=$(mktemp -d)
   cd "$TEMP_DIR"
   git init -q -b main
@@ -35,10 +38,7 @@ session_init() {
 }
 
 write_tracker_config() {
-  mkdir -p "$TEMP_DIR/.coding-crew/scripts" "$TEMP_DIR/.coding-crew/docs"
-  cp "$REPO_ROOT/scripts/tracker/tracker-config.sh" "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh"
-  # tracker-config.sh asks the tracker CLI, installed beside the scripts.
-  [ -d "$TEMP_DIR/.coding-crew/tracker" ] || cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/.coding-crew/tracker"
+  mkdir -p "$TEMP_DIR/.coding-crew/docs"
   printf -- '---\ntracker: %s\n---\n\n# Issue tracker\n' "$1" > "$TEMP_DIR/.coding-crew/docs/issue-tracker.md"
 }
 

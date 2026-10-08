@@ -8,7 +8,7 @@
 # solve-issue step 7 told the worker to close anyway. The fact now lives on disk:
 #
 #   .scratch/<feature-slug>/.orchestrated   written by session-init.sh, removed by crew-summary.sh
-#   mark-issue-done.sh                      refuses while it exists (exit 3)
+#   cli.mjs mark-done                       refuses while it exists (exit 3)
 #
 # These assert the refusal, not the sentence. The prose tests below only require the
 # documents to point at the mechanism instead of re-arguing it.
@@ -16,7 +16,6 @@
 load helpers/render
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-MARK_DONE="$REPO_ROOT/scripts/tracker/mark-issue-done.sh"
 AFK_SCRIPTS="$REPO_ROOT/skills/crew-afk/scripts"
 
 setup() {
@@ -29,8 +28,13 @@ setup() {
   git add .gitignore
   git commit -q -m initial
   export MAIN_ROOT="$TEMP_DIR"
-  unset CREW_ORCHESTRATED
+  # The crew-afk scripts ask this repo's own tracker CLI, not a full install.
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  unset CREW_ORCHESTRATED CREW_INSTALL_DIR
 }
+
+# mark_done <args> — the tracker CLI's mark-done, the one close behind both guards.
+mark_done() { node "$REPO_ROOT/tracker/cli.mjs" mark-done "$@"; }
 
 teardown() {
   cd /
@@ -74,42 +78,42 @@ init_sprint() {
 
 # ─── the close itself ────────────────────────────────────────────────────────
 
-@test "mark-issue-done closes an issue whose criteria are all checked" {
+@test "mark-done closes an issue whose criteria are all checked" {
   issue=$(make_issue)
-  run bash "$MARK_DONE" "$issue"
+  run mark_done "$issue"
   [ "$status" -eq 0 ]
   [ ! -f "$issue" ]
   [ -f ".scratch/alpha/issues/done/01-first.md" ]
   grep -q '^Status: done' ".scratch/alpha/issues/done/01-first.md"
 }
 
-@test "mark-issue-done is idempotent when the issue is already in done/" {
+@test "mark-done is idempotent when the issue is already in done/" {
   issue=$(make_issue)
-  bash "$MARK_DONE" "$issue"
-  run bash "$MARK_DONE" "$issue"
+  mark_done "$issue"
+  run mark_done "$issue"
   [ "$status" -eq 0 ]
   [[ "$output" == *"already closed"* ]]
 }
 
-@test "mark-issue-done fails when the issue does not exist at all" {
-  run bash "$MARK_DONE" ".scratch/alpha/issues/open/99-nope.md"
+@test "mark-done fails when the issue does not exist at all" {
+  run mark_done ".scratch/alpha/issues/open/99-nope.md"
   [ "$status" -eq 1 ]
   [[ "$output" == *"not found"* ]]
 }
 
-@test "mark-issue-done reports usage when given no issue path" {
-  run bash "$MARK_DONE"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"Usage:"* ]]
+@test "mark-done reports usage when given no issue path" {
+  run mark_done
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"usage:"* ]]
 }
 
 # ─── guard 1: an orchestrator owns the close ─────────────────────────────────
 
-@test "mark-issue-done refuses while the sprint marker exists" {
+@test "mark-done refuses while the sprint marker exists" {
   issue=$(make_issue)
   touch ".scratch/alpha/.orchestrated"
 
-  run bash "$MARK_DONE" "$issue"
+  run mark_done "$issue"
   [ "$status" -eq 3 ]
   [[ "$output" == *"REFUSED"* ]]
   [[ "$output" == *"orchestrator"* ]]
@@ -119,55 +123,55 @@ init_sprint() {
   grep -q '^Status: ready-for-agent' "$issue"
 }
 
-@test "mark-issue-done refuses when CREW_ORCHESTRATED is set, with no marker present" {
+@test "mark-done refuses when CREW_ORCHESTRATED is set, with no marker present" {
   issue=$(make_issue)
-  run env CREW_ORCHESTRATED=1 bash "$MARK_DONE" "$issue"
+  CREW_ORCHESTRATED=1 run mark_done "$issue"
   [ "$status" -eq 3 ]
   [ -f "$issue" ]
 }
 
-@test "mark-issue-done --force overrides the sprint marker" {
+@test "mark-done --force overrides the sprint marker" {
   issue=$(make_issue)
   touch ".scratch/alpha/.orchestrated"
-  run bash "$MARK_DONE" "$issue" --force
+  run mark_done "$issue" --force
   [ "$status" -eq 0 ]
   [ -f ".scratch/alpha/issues/done/01-first.md" ]
 }
 
 # ─── guard 2: unchecked criteria ─────────────────────────────────────────────
 
-@test "mark-issue-done refuses an unchecked acceptance criterion" {
+@test "mark-done refuses an unchecked acceptance criterion" {
   issue=$(make_issue)
   printf -- '- [ ] three\n' >> "$issue"
 
-  run bash "$MARK_DONE" "$issue"
+  run mark_done "$issue"
   [ "$status" -eq 4 ]
   [[ "$output" == *"unchecked criteria"* ]]
   [[ "$output" == *"three"* ]]
   [ -f "$issue" ]
 }
 
-@test "mark-issue-done refuses an unchecked cross-cutting requirement" {
+@test "mark-done refuses an unchecked cross-cutting requirement" {
   issue=$(make_issue)
   printf '\n## Cross-cutting Requirements\n\n- [ ] docs updated\n' >> "$issue"
 
-  run bash "$MARK_DONE" "$issue"
+  run mark_done "$issue"
   [ "$status" -eq 4 ]
   [[ "$output" == *"docs updated"* ]]
 }
 
-@test "mark-issue-done ignores unchecked boxes outside the criteria sections" {
+@test "mark-done ignores unchecked boxes outside the criteria sections" {
   issue=$(make_issue)
   printf '\n## Notes\n\n- [ ] someone else s todo\n' >> "$issue"
 
-  run bash "$MARK_DONE" "$issue"
+  run mark_done "$issue"
   [ "$status" -eq 0 ]
 }
 
-@test "mark-issue-done --force closes despite an unchecked criterion" {
+@test "mark-done --force closes despite an unchecked criterion" {
   issue=$(make_issue)
   printf -- '- [ ] descoped\n' >> "$issue"
-  run bash "$MARK_DONE" "$issue" --force
+  run mark_done "$issue" --force
   [ "$status" -eq 0 ]
 }
 
@@ -182,7 +186,7 @@ init_sprint() {
   init_sprint alpha
   issue=$(make_issue alpha 02-second)
 
-  run bash "$MARK_DONE" "$issue"
+  run mark_done "$issue"
   [ "$status" -eq 3 ]
   [ -f "$issue" ]
 }
@@ -241,7 +245,7 @@ init_sprint() {
 # ─── one writer per issue file ───────────────────────────────────────
 # The worker was told both to write to the issue file (§7 tick + mark-done, §8 unmet
 # criteria) and never to touch it (crew-coder). Only the close was enforced. Both
-# halves now branch on the same fact mark-issue-done.sh checks, so orchestrated runs
+# halves now branch on the same fact cli.mjs mark-done checks, so orchestrated runs
 # have exactly one writer: the orchestrator.
 
 solve_issue_section() {
@@ -249,7 +253,7 @@ solve_issue_section() {
     "$REPO_ROOT/skills/solve-issue/SKILL.md"
 }
 
-@test "solve-issue section 7 branches on the same fact mark-issue-done.sh checks" {
+@test "solve-issue section 7 branches on the same fact cli.mjs mark-done checks" {
   section=$(solve_issue_section 7)
   # The capability check, not the caller's name.
   echo "$section" | grep -q 'CREW_ORCHESTRATED'
@@ -284,13 +288,13 @@ solve_issue_section() {
 }
 
 @test "a pre-ticked issue is still not closable by a worker under an orchestrator" {
-  # The bypass this issue closes: mark-issue-done.sh's exit-4 criteria guard is
+  # The bypass this issue closes: mark-done's exit-4 criteria guard is
   # satisfied by a worker ticking its own boxes. Exit 3 must fire first and
   # unconditionally, so self-attestation buys nothing.
   issue=$(make_issue alpha 05-preticked)   # make_issue writes every box as [x]
   touch ".scratch/alpha/.orchestrated"
 
-  run bash "$MARK_DONE" "$issue"
+  run mark_done "$issue"
   [ "$status" -eq 3 ]
   [ -f "$issue" ]
   [ ! -f ".scratch/alpha/issues/done/05-preticked.md" ]
@@ -333,43 +337,15 @@ EOF
     f=$(coder_variant "$p")
     section=$(awk '/^## Issue Ownership/{f=1;next} /^## /{f=0} f' "$f")
     # The agent needs two facts: report `complete`, leave the file. The procedure and
-    # its enforcement live in solve-issue §7 and mark-issue-done.sh respectively.
+    # its enforcement live in solve-issue §7 and cli.mjs mark-done respectively.
     echo "$section" | grep -q 'solve-issue' || {
       echo "$f: Issue Ownership does not point at solve-issue" >&2; return 1; }
     echo "$section" | grep -q 'complete'
     # Retired: three paragraphs of enforcement the gate already performs.
     ! echo "$section" | grep -q 'solve-issue step 7'
-    ! echo "$section" | grep -q 'mark-issue-done.sh'
     ! echo "$section" | grep -q 'exit 3'
     # One line — a pointer, not a second copy of the rule.
     [ "$(echo "$section" | grep -c '[^[:space:]]')" -eq 1 ]
     [ "$(echo "$section" | wc -w)" -lt 60 ]
   done
-}
-
-# ─── install / uninstall ─────────────────────────────────────────────────────
-
-@test "install ships the tracker close script, executable" {
-  cd "$REPO_ROOT"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
-  [ -f "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh" ]
-  [ -x "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh" ]
-}
-
-@test "install overwrites a stale close script: it is mechanism, not user text" {
-  cd "$REPO_ROOT"
-  mkdir -p "$TEMP_DIR/.coding-crew/scripts"
-  echo "stale" > "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
-  ! grep -q '^stale$' "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh"
-  grep -q 'REFUSED' "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh"
-}
-
-@test "uninstall removes the close script but keeps the user's config.json" {
-  cd "$REPO_ROOT"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
-  printf '{"tracker": {"kind": "github"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
-  TARGET_REPO="$TEMP_DIR" ./uninstall.sh >/dev/null
-  [ ! -f "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh" ]
-  [ -f "$TEMP_DIR/.coding-crew/config.json" ]
 }

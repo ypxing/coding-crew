@@ -136,72 +136,20 @@ warn_if_default_behind_origin() {
 # --- tracker config (issue 01) --------------------------------------------------
 # Read once, this early, because it changes two things below: whether omitting
 # --feature-slug is even allowed, and whether an off-default-branch resume with no
-# sprint.env may silently adopt the current branch. Sourced from its fixed install
-# location (registry.json's docs.scripts entry), not a path relative to this script,
-# since it ships independently of any one skill. An in-between install state (this
-# script updated, tracker-config.sh not yet installed) must not break the local
-# path, so a missing file falls back to the same "local" defaults the reader itself
-# returns when the doc is absent — unless the doc declares `tracker: github`, where
-# "local" would be a wrong answer, not a default: it scans .scratch/ for issues that
-# live on GitHub and blames their absence on the user.
+# sprint.env may silently adopt the current branch. The tracker CLI answers, found by
+# tracker-cli.sh beside this script; no CLI, no node or an invalid config stops here
+# rather than running as local — under github that would scan .scratch/ for issues that
+# live on GitHub and blame their absence on the user.
 MAIN_ROOT_FOR_TRACKER=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-# BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
-# Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
-# It cannot live in tracker-config.sh itself: that is the file being looked for.
-# Callers break on the first hit, closing the pipe while this may still be writing; where
-# SIGPIPE is ignored that write fails with "Broken pipe", so it stops quietly instead.
-tracker_config_candidates() {
-  local main_root="$1" c
-  for c in "${CREW_TRACKER_CONFIG:-}" \
-    "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/scripts/tracker-config.sh}" \
-    "$main_root/.coding-crew/scripts/tracker-config.sh" \
-    "$main_root/scripts/tracker/tracker-config.sh" \
-    "${HOME:+$HOME/.coding-crew/scripts/tracker-config.sh}"; do
-    if [ -n "$c" ]; then printf '%s\n' "$c" 2>/dev/null || return 0; fi
-  done
-  return 0
-}
-# END tracker-lookup
-TRACKER_CONFIG_TRACKER="local"
-TRACKER_CONFIG_DOC="$MAIN_ROOT_FOR_TRACKER/.coding-crew/docs/issue-tracker.md"
-TRACKER_CONFIG_JSON="$MAIN_ROOT_FOR_TRACKER/.coding-crew/config.json"
-TRACKER_CONFIG_SCRIPT=""
-TRACKER_CONFIG_CHECKED=""
-while IFS= read -r _tc; do
-  TRACKER_CONFIG_CHECKED="$TRACKER_CONFIG_CHECKED  $_tc"$'\n'
-  if [ -f "$_tc" ]; then TRACKER_CONFIG_SCRIPT="$_tc"; break; fi
-done < <(tracker_config_candidates "$MAIN_ROOT_FOR_TRACKER")
-if [ -n "$TRACKER_CONFIG_SCRIPT" ]; then
-  # shellcheck source=/dev/null
-  source "$TRACKER_CONFIG_SCRIPT"
-  read_tracker_config "$MAIN_ROOT_FOR_TRACKER" || exit 1
-else
-  # No reader: still refuse to run as local when the repo plainly chose github. config.json's
-  # tracker section wins (checked only when jq is installed); else the legacy front matter.
-  _json_kind=""
-  if [ -f "$TRACKER_CONFIG_JSON" ] && command -v jq >/dev/null 2>&1; then
-    _json_kind="$(jq -r '.tracker.kind? // empty' "$TRACKER_CONFIG_JSON" 2>/dev/null || true)"
-  fi
-  _github_source=""
-  if [ "$_json_kind" = "github" ]; then
-    _github_source="$TRACKER_CONFIG_JSON sets tracker.kind: github"
-  elif [ -z "$_json_kind" ] && [ -f "$TRACKER_CONFIG_DOC" ] &&
-    awk 'NR == 1 && $0 != "---" { exit 1 } NR > 1 && $0 == "---" { exit 1 } NR > 1 && /^tracker:[[:space:]]*["'"'"']?github/ { found = 1; exit 0 } END { exit !found }' "$TRACKER_CONFIG_DOC"; then
-    _github_source="$TRACKER_CONFIG_DOC declares tracker: github"
-  fi
-  if [ -n "$_github_source" ]; then
-    echo "ERROR: $_github_source, but tracker-config.sh was not found in any of:" >&2
-    printf '%s' "$TRACKER_CONFIG_CHECKED" >&2
-    echo "Install coding-crew (install.sh) into this repo or your home directory so the tracker config is honoured." >&2
-    exit 1
-  fi
-fi
+# shellcheck source=tracker-cli.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tracker-cli.sh"
+resolve_tracker_cli "$MAIN_ROOT_FOR_TRACKER" || exit 1
 
 # Under tracker: github there is nothing local to scan (issues live on GitHub, not
 # under .scratch/*/issues/open/), so the local-scan fallback below is not a fallback
 # at all there — it would silently pick whatever .scratch/ happens to contain. Require
 # the slug explicitly instead of guessing.
-if [ "$TRACKER_CONFIG_TRACKER" = "github" ] && [ -z "$FEATURE_SLUG_ARG" ]; then
+if [ "$TRACKER_KIND" = "github" ] && [ -z "$FEATURE_SLUG_ARG" ]; then
   echo "ERROR: --feature-slug is required under tracker: github (no local .scratch/ issues to scan for one)." >&2
   echo "Pass --feature-slug <slug> explicitly." >&2
   exit 1
@@ -244,7 +192,7 @@ else
       echo "Creating new feature branch: $SUGGESTED_BRANCH"
       git checkout -b "$SUGGESTED_BRANCH"
     fi
-  elif [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+  elif [ "$TRACKER_KIND" = "github" ]; then
     # Cross-machine resume depends on the branch name being deterministic — off the
     # default branch with no sprint.env to resume from, the only branch a github-
     # tracked sprint may legitimately be on is the one feature_branch_name builds.
@@ -356,7 +304,7 @@ ENV
 # The one fact that stops a worker closing its own issue. A worker that moves its issue
 # to done/ takes it out of the ready-for-agent list, so a later gate that demotes the
 # result to `partial` has nothing left to re-dispatch and the unmerged branch is
-# orphaned. `.coding-crew/scripts/mark-issue-done.sh` refuses while this file exists;
+# orphaned. The tracker CLI's `mark-done` refuses while this file exists;
 # crew-summary.sh removes it when the sprint ends.
 date -u +%Y-%m-%dT%H:%M:%SZ > "$MAIN_ROOT/.scratch/$FEATURE_SLUG/.orchestrated"
 

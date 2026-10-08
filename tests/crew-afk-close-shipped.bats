@@ -14,11 +14,10 @@ setup() {
   export HOME="$TEMP_DIR/home"
   mkdir -p "$HOME"
   export MAIN_ROOT="$TEMP_DIR/repo"
-  mkdir -p "$MAIN_ROOT/.coding-crew/docs" "$TEMP_DIR/install/scripts"
+  mkdir -p "$MAIN_ROOT/.coding-crew/docs" "$TEMP_DIR/install"
   printf -- '---\ntracker: github\n---\n' > "$MAIN_ROOT/.coding-crew/docs/issue-tracker.md"
-  cp "$REPO_ROOT/scripts/tracker/tracker-config.sh" "$TEMP_DIR/install/scripts/"
   cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/install/tracker"
-  unset CREW_TRACKER_CONFIG
+  unset CREW_TRACKER_CLI
   export CREW_INSTALL_DIR="$TEMP_DIR/install"
 
   export GH_LOG="$TEMP_DIR/gh.log" GH_PRS="$TEMP_DIR/prs.json" GH_ISSUES="$TEMP_DIR/issues.json"

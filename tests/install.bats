@@ -572,16 +572,106 @@ PROBE
   [[ "$output" == *"okrc=0"* ]]
 }
 
-@test "--update refreshes the tracker scripts even when every entry is up to date" {
-  # They are mechanism, overwritten on every install: a stale mark-issue-done.sh is a gate that
-  # no longer matches the tracker operation calling it (e.g. still closing a github issue that
-  # should only be labelled awaiting-merge).
+# ── retired tracker wrappers (.coding-crew/scripts/) ──────────────────────────
+# tracker-config.sh and mark-issue-done.sh no longer ship: every caller runs tracker/cli.mjs. A copy
+# an older install left is a second answer that can go stale, so install, --update and uninstall
+# delete each (registry.json `retired-scripts`), then the directory once nothing else is in it.
+
+# plant_retired_scripts <root> [extra-file] — the two wrappers an older install wrote.
+plant_retired_scripts() {
+  mkdir -p "$1/.coding-crew/scripts"
+  echo "# old" > "$1/.coding-crew/scripts/tracker-config.sh"
+  echo "# old" > "$1/.coding-crew/scripts/mark-issue-done.sh"
+  [ -z "${2:-}" ] || echo "mine" > "$1/.coding-crew/scripts/$2"
+}
+
+@test "registry.json ships no docs.scripts and retires both tracker wrappers" {
+  run jq -e '.docs | has("scripts") | not' "$SCRIPT_DIR/registry.json"
+  [ "$status" -eq 0 ]
+  run jq -r '."retired-scripts"[]' "$SCRIPT_DIR/registry.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".coding-crew/scripts/tracker-config.sh"* ]]
+  [[ "$output" == *".coding-crew/scripts/mark-issue-done.sh"* ]]
+}
+
+@test "a fresh install into an empty repo writes no .coding-crew/scripts/" {
   cd "$SCRIPT_DIR"
-  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill solve-issue >/dev/null
-  echo "# stale" > "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude >/dev/null
+  [ -f "$TEMP_DIR/.coding-crew/tracker/cli.mjs" ]
+  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
+}
+
+@test "install deletes the retired wrappers, then the emptied .coding-crew/scripts/" {
+  cd "$SCRIPT_DIR"
+  plant_retired_scripts "$TEMP_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removed .coding-crew/scripts/tracker-config.sh"* ]]
+  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
+}
+
+@test "install --update deletes the retired wrappers even when every entry is up to date" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
+  plant_retired_scripts "$TEMP_DIR"
   run env TARGET_REPO="$TEMP_DIR" ./install.sh --update
   [ "$status" -eq 0 ]
-  cmp -s "$SCRIPT_DIR/scripts/tracker/mark-issue-done.sh" "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh"
+  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
+}
+
+@test "uninstall deletes the retired wrappers, then the emptied .coding-crew/scripts/" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
+  printf '{"tracker": {"kind": "github"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
+  plant_retired_scripts "$TEMP_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
+  [ -f "$TEMP_DIR/.coding-crew/config.json" ]
+}
+
+@test "uninstall --skill deletes the retired wrappers too" {
+  cd "$SCRIPT_DIR"
+  TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd >/dev/null
+  plant_retired_scripts "$TEMP_DIR"
+  run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh --skill tdd
+  [ "$status" -eq 0 ]
+  [ ! -e "$TEMP_DIR/.coding-crew/scripts" ]
+}
+
+@test "install, --update and uninstall leave another file in .coding-crew/scripts/, and the directory" {
+  cd "$SCRIPT_DIR"
+  local step
+  for step in install update uninstall; do
+    plant_retired_scripts "$TEMP_DIR" notes.sh
+    case "$step" in
+      install) run env TARGET_REPO="$TEMP_DIR" ./install.sh claude --skill tdd ;;
+      update) run env TARGET_REPO="$TEMP_DIR" ./install.sh --update ;;
+      uninstall) run env TARGET_REPO="$TEMP_DIR" ./uninstall.sh ;;
+    esac
+    echo "$step: $output"
+    [ "$status" -eq 0 ]
+    [ ! -e "$TEMP_DIR/.coding-crew/scripts/tracker-config.sh" ]
+    [ ! -e "$TEMP_DIR/.coding-crew/scripts/mark-issue-done.sh" ]
+    [ "$(cat "$TEMP_DIR/.coding-crew/scripts/notes.sh")" = mine ]
+  done
+}
+
+@test "a user-level install (TARGET_REPO=\$HOME) deletes the retired wrappers there, and so do --update and uninstall" {
+  cd "$SCRIPT_DIR"
+  local home="$TEMP_DIR/home" step
+  mkdir -p "$home"
+  for step in install update uninstall; do
+    plant_retired_scripts "$home"
+    case "$step" in
+      install) run env HOME="$home" TARGET_REPO="$home" ./install.sh claude --skill tdd ;;
+      update) run env HOME="$home" TARGET_REPO="$home" ./install.sh --update ;;
+      uninstall) run env HOME="$home" TARGET_REPO="$home" ./uninstall.sh --user ;;
+    esac
+    echo "$step: $output"
+    [ "$status" -eq 0 ]
+    [ ! -e "$home/.coding-crew/scripts" ]
+  done
 }
 
 # ── the shared tracker CLI (.coding-crew/tracker/) ─────────────────────────────

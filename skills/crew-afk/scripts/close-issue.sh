@@ -21,7 +21,7 @@ set -euo pipefail
 #
 # Why the check-off lives here
 #   It used to be the worker's job (solve-issue step 7), which made it
-#   self-attestation: mark-issue-done.sh refuses to close while a `- [ ]` remains
+#   self-attestation: the tracker CLI's mark-done refuses to close while a `- [ ]` remains
 #   (exit 4), a gate any worker defeats by ticking its own boxes — the exact thing
 #   the reviewer-owned acceptance-criteria gate exists to prevent. The tick is
 #   bookkeeping *about* a close, so it belongs to whatever performs the close, and
@@ -43,7 +43,7 @@ fi
 # `## Cross-cutting Requirements` becomes `- [x]`; with a status, the `Status:` line is
 # rewritten to it too. Both backends tick through this one filter.
 #
-# Section scoping matches mark-issue-done.sh's guard exactly, so the two agree on
+# Section scoping matches the tracker CLI's mark-done guard exactly, so the two agree on
 # which boxes are criteria: only those under an acceptance-criteria or
 # cross-cutting-requirements heading. A `- [ ]` in `## What to build` or `## Notes`
 # is somebody's note, not a criterion, and is left alone.
@@ -60,43 +60,15 @@ tick_criteria() {
 
 # ─── tracker backend: local (file path) or github (issue number) ────────────
 #
-# tracker-config.sh (issue 01) is not a sibling of this script either in the
-# source tree (skills/crew-afk/scripts/) or once installed (.coding-crew/scripts/,
-# alongside mark-issue-done.sh) — it lives under the main checkout's root, so it
-# is looked up relative to MAIN_ROOT instead. Finding none of the candidates is
-# not an error: it means `tracker: local`, tracker-config.sh's own zero-config
-# default, so an in-between install state can never break the local path.
+# Which backend is the tracker CLI's answer (tracker-cli.sh, beside this script); no CLI, no
+# node or an invalid config is an error, never a silent local.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_ROOT="${MAIN_ROOT:-.}"
-# BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
-# Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
-# It cannot live in tracker-config.sh itself: that is the file being looked for.
-# Callers break on the first hit, closing the pipe while this may still be writing; where
-# SIGPIPE is ignored that write fails with "Broken pipe", so it stops quietly instead.
-tracker_config_candidates() {
-  local main_root="$1" c
-  for c in "${CREW_TRACKER_CONFIG:-}" \
-    "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/scripts/tracker-config.sh}" \
-    "$main_root/.coding-crew/scripts/tracker-config.sh" \
-    "$main_root/scripts/tracker/tracker-config.sh" \
-    "${HOME:+$HOME/.coding-crew/scripts/tracker-config.sh}"; do
-    if [ -n "$c" ]; then printf '%s\n' "$c" 2>/dev/null || return 0; fi
-  done
-  return 0
-}
-# END tracker-lookup
-TRACKER_CONFIG_TRACKER="local"
-TRACKER_CONFIG_FOUND=""
-while IFS= read -r _tc; do
-  if [ -f "$_tc" ]; then TRACKER_CONFIG_FOUND="$_tc"; break; fi
-done < <(tracker_config_candidates "$MAIN_ROOT")
-if [ -n "$TRACKER_CONFIG_FOUND" ]; then
-  # shellcheck source=/dev/null
-  . "$TRACKER_CONFIG_FOUND"
-  read_tracker_config "$MAIN_ROOT" || exit 1
-fi
+# shellcheck source=tracker-cli.sh
+. "$SCRIPT_DIR/tracker-cli.sh"
+resolve_tracker_cli "$MAIN_ROOT" || exit 1
 
-if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+if [ "$TRACKER_KIND" = "github" ]; then
   # ─────────────────────────── github backend ────────────────────────────
   #
   # The argument is a GitHub issue number here, not a file path. Who is allowed
@@ -144,10 +116,10 @@ if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
 
   # "Done" here is merged into the feature branch, not shipped, so the issue stays open,
   # labelled awaiting-merge: the feature PR's `Closes #n` closes it on merge. That label
-  # swap is mark-issue-done.sh's, installed beside tracker-config.sh; --force because
-  # criteria were already re-verified pre-merge (the receipt above is that fact) and this
-  # sprint's own .orchestrated marker would otherwise refuse it.
-  bash "$(dirname "$TRACKER_CONFIG_FOUND")/mark-issue-done.sh" "$ISSUE_NUMBER" --force >/dev/null
+  # swap is the tracker CLI's mark-done; --force because criteria were already re-verified
+  # pre-merge (the receipt above is that fact) and this sprint's own .orchestrated marker
+  # would otherwise refuse it.
+  node "$TRACKER_CLI" mark-done "$ISSUE_NUMBER" --force --main-root "$MAIN_ROOT" >/dev/null
 
   _trace CLOSE "issue=$ISSUE_NUMBER"
 

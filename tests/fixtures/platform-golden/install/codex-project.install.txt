@@ -44,6 +44,7 @@ REPO/.agents/skills/crew-afk/scripts/squash-commits.sh exec=1
 REPO/.agents/skills/crew-afk/scripts/state.sh exec=0
 REPO/.agents/skills/crew-afk/scripts/sync-feature-branch.sh exec=1
 REPO/.agents/skills/crew-afk/scripts/trace.sh exec=0
+REPO/.agents/skills/crew-afk/scripts/tracker-cli.sh exec=0
 REPO/.agents/skills/crew-afk/scripts/verify-worktree.sh exec=0
 REPO/.agents/skills/crew-afk/scripts/write-commands-cache.sh exec=1
 REPO/.agents/skills/crew-brainstorm/ /
@@ -184,9 +185,6 @@ REPO/.coding-crew/dep-install/scripts/python-install-cmd.sh exec=1
 REPO/.coding-crew/dep-install/scripts/resolve-mode.sh exec=1
 REPO/.coding-crew/dep-install/scripts/run.sh exec=1
 REPO/.coding-crew/manifest.json 1ed3c456134a100a8b26c3512a4a9f2c4d00dc8d
-REPO/.coding-crew/scripts/ /
-REPO/.coding-crew/scripts/mark-issue-done.sh exec=1
-REPO/.coding-crew/scripts/tracker-config.sh exec=1
 REPO/.coding-crew/skills/ /
 REPO/.coding-crew/skills/_shared/ /
 REPO/.coding-crew/skills/_shared/fragments/ /

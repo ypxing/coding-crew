@@ -755,7 +755,7 @@ test("github: a fixable red integration check creates the fix issue in the miles
       CREW_FAKE_DISPATCH: FAKE,
       CREW_FAKE_DIR: join(root, ".scratch/fake"),
       MAIN_ROOT: root,
-      CREW_GITHUB_TRACKER_CLI: join(REPO, "tracker/cli.mjs"),
+      CREW_TRACKER_CLI: join(REPO, "tracker/cli.mjs"),
       GH_LIST_LAG_MS: "3000",
       PATH: `${stub}:${process.env.PATH}`,
     },

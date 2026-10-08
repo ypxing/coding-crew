@@ -79,9 +79,6 @@ HOME/.coding-crew/dep-install/scripts/python-install-cmd.sh exec=1
 HOME/.coding-crew/dep-install/scripts/resolve-mode.sh exec=1
 HOME/.coding-crew/dep-install/scripts/run.sh exec=1
 HOME/.coding-crew/manifest.json 331bab88b8d14f91b174d952c0486b0c0137e27e
-HOME/.coding-crew/scripts/ /
-HOME/.coding-crew/scripts/mark-issue-done.sh exec=1
-HOME/.coding-crew/scripts/tracker-config.sh exec=1
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /
 HOME/.coding-crew/skills/_shared/fragments/ /
@@ -157,6 +154,7 @@ HOME/.pi/agent/skills/crew-afk/scripts/squash-commits.sh exec=1
 HOME/.pi/agent/skills/crew-afk/scripts/state.sh exec=0
 HOME/.pi/agent/skills/crew-afk/scripts/sync-feature-branch.sh exec=1
 HOME/.pi/agent/skills/crew-afk/scripts/trace.sh exec=0
+HOME/.pi/agent/skills/crew-afk/scripts/tracker-cli.sh exec=0
 HOME/.pi/agent/skills/crew-afk/scripts/verify-worktree.sh exec=0
 HOME/.pi/agent/skills/crew-afk/scripts/write-commands-cache.sh exec=1
 HOME/.pi/agent/skills/crew-brainstorm/ /

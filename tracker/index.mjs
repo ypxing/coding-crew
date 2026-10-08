@@ -11,7 +11,7 @@
  *     `## Blocked by` names an issue not yet `done`.
  *   - `done`: implemented and merged into the feature branch — *not* shipped. It resolves
  *     blockers and takes the issue out of the queue. `cli.mjs mark-done` sets it, behind its two
- *     guards (mark-issue-done.sh and close-issue.sh call it); local moves the file to done/,
+ *     guards (close-issue.sh and the ready-for-human steps call it); local moves the file to done/,
  *     github labels the issue `awaiting-merge`.
  *   - Shipped is a separate, optional capability: `closingRefs(mainRoot, {featureSlug})`
  *     returns the lines (`Closes #n`) that close the `done` issues when the feature PR merges.

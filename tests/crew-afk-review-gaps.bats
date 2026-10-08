@@ -16,6 +16,9 @@ SCRIPT="$REPO_ROOT/skills/crew-afk/scripts/promote-findings.sh"
 SKILL_DIR="$REPO_ROOT/skills/crew-afk"
 
 setup() {
+  # The crew-afk scripts ask the tracker CLI which tracker this is: this repo's own copy.
+  export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
+  unset CREW_INSTALL_DIR
   export TEMP_DIR=$(mktemp -d)
   cd "$TEMP_DIR"
   export SLUG="my-feature"

@@ -20,8 +20,8 @@ repo: owner/name        # optional override — omit to let `gh` infer it from t
 ```
 
 `configure-tracker` writes this block when you choose `github`. `tracker/
-tracker-config.mjs`'s `readTrackerConfig(mainRoot)` and `scripts/tracker/tracker-config.sh`'s
-`read_tracker_config` are the two readers of this front matter. `repo` is a pure override: `gh`
+tracker-config.mjs`'s `readTrackerConfig(mainRoot)` is the one reader of this front matter
+(`cli.mjs config` prints its answer). `repo` is a pure override: `gh`
 already infers the repo from the current directory's git remote when `--repo` is omitted, so
 leave it out unless issues are tracked in a different repo than the code.
 

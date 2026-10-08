@@ -58,6 +58,8 @@ cpSync(join(REPO, "skills/dep-install/scripts"), join(INSTALL_DIR, "dep-install/
 cpSync(join(REPO, "skills/solve-issue/scripts"), join(INSTALL_DIR, "solve-issue/scripts"), { recursive: true });
 cpSync(join(REPO, "skills/to-issues/scripts"), join(INSTALL_DIR, "to-issues/scripts"), { recursive: true });
 cpSync(join(REPO, "skills/write-pr"), join(INSTALL_DIR, "write-pr"), { recursive: true });
+// The tracker CLI the crew-afk scripts ask (tracker-cli.sh finds it at $CREW_INSTALL_DIR/tracker/).
+cpSync(join(REPO, "tracker"), join(INSTALL_DIR, "tracker"), { recursive: true });
 export const FAKE = join(HERE, "../fixtures/fake-dispatch.sh");
 
 
@@ -272,16 +274,8 @@ export function githubFixtureRepo() {
     join(root, ".coding-crew/docs/issue-tracker.md"),
     "---\ntracker: github\n---\n\n# Issue tracker: GitHub Issues\n",
   );
-  // close-issue.sh/promote-findings.sh look for tracker-config.sh at their own script dir,
-  // then at .coding-crew/scripts/ (the installed layout), then at scripts/tracker/ (this
-  // source tree) — none of which a bare fixture repo has, so without this copy every
-  // lookup falls through to its own "missing means local" default, silently defeating the
-  // very test this fixture exists for.
-  mkdirSync(join(root, ".coding-crew/scripts"), { recursive: true });
-  cpSync(join(REPO, "scripts/tracker/tracker-config.sh"), join(root, ".coding-crew/scripts/tracker-config.sh"));
-  // close-issue.sh's github close is mark-issue-done.sh's label swap, installed beside it.
-  cpSync(join(REPO, "scripts/tracker/mark-issue-done.sh"), join(root, ".coding-crew/scripts/mark-issue-done.sh"));
-  // …which delegates to the tracker CLI, installed beside the scripts.
+  // The tracker CLI, as a project install lays it out — the only tracker file an install ships;
+  // the crew-afk scripts ask it which tracker this is, and close-issue.sh closes through it.
   cpSync(join(REPO, "tracker"), join(root, ".coding-crew/tracker"), { recursive: true });
   git("add", "-A");
   git("commit", "-q", "-m", "init");

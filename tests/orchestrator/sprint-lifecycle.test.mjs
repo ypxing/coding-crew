@@ -157,7 +157,7 @@ test("a local run stalled on a ready-for-human issue names its file and title un
   addIssue(root, "01-alpha.md");
   addIssue(root, "02-vendor.md", { status: "ready-for-human" });
   const r = runSprint(root);
-  assert.match(r.stdout, /^## Waiting on a person\n\n- 02-vendor\.md vendor\n\nWhen they are done \(mark-issue-done\.sh\), re-run: \/crew-afk demo$/m, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /^## Waiting on a person\n\n- 02-vendor\.md vendor\n\nWhen they are done \(cli\.mjs mark-done\), re-run: \/crew-afk demo$/m, `${r.stdout}\n${r.stderr}`);
   assert.doesNotMatch(r.stdout, /- 01-alpha\.md/);
   assert.ok(r.stdout.indexOf("NO MORE TASKS") > r.stdout.indexOf("## Waiting on a person"));
 });

@@ -358,7 +358,7 @@ test("github: a feature-review fix issue, not listed yet, is still implemented",
       CREW_FAKE_DISPATCH: FAKE,
       CREW_FAKE_DIR: join(root, ".scratch/fake"),
       MAIN_ROOT: root,
-      CREW_GITHUB_TRACKER_CLI: join(REPO, "tracker/cli.mjs"),
+      CREW_TRACKER_CLI: join(REPO, "tracker/cli.mjs"),
       GH_LIST_LAG_MS: "3000",
       PATH: `${stub}:${process.env.PATH}`,
     },
@@ -411,7 +411,7 @@ test("github --open-pr: a run stalled on a ready-for-human issue names it under 
     cwd: root,
     env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: root, PATH: `${stub}:${process.env.PATH}` },
   });
-  assert.match(r.stdout, /^## Waiting on a person\n\n- #2 Pick the vendor\n\nWhen they are done \(mark-issue-done\.sh\), re-run: \/crew-afk demo$/m, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /^## Waiting on a person\n\n- #2 Pick the vendor\n\nWhen they are done \(cli\.mjs mark-done\), re-run: \/crew-afk demo$/m, `${r.stdout}\n${r.stderr}`);
   const section = r.stdout.slice(r.stdout.indexOf("## Waiting on a person"), r.stdout.indexOf("When they are done"));
   assert.doesNotMatch(section, /#1|#3|PRD/, "only the ready-for-human issue is listed");
   const at = r.stdout.indexOf("## Waiting on a person");
