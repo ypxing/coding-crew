@@ -7,7 +7,7 @@ description: Use when starting a complex or exploratory feature and you want a t
 
 Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
 
-Start by understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval.
+Start by understanding the current project context. If the source already passes the four light-path checks, hand it to `to-issues`; otherwise ask questions one at a time to refine the idea, and once you understand what you're building, present the design and get user approval.
 
 <HARD-GATE>
 Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until the design is settled: either you presented it and the user approved it, or the source passed all four light-path checks and went to `to-issues`, whose quiz is the single review. Nothing else skips the design.
@@ -120,6 +120,6 @@ Once the user approves the design, invoke `to-issues`, passing the agreed decisi
 - **One question at a time** - Don't overwhelm with multiple questions
 - **Multiple choice preferred** - Easier to answer than open-ended when possible
 - **YAGNI for needs, not for structure** - Cut anything built for a need nobody has yet; keep what the current problem, or the structure of what is built now, requires
-- **Explore alternatives** - Always propose 2-3 approaches before settling
-- **Incremental validation** - Present design, get approval before moving on
+- **Explore alternatives** - Off the light path, always propose 2-3 approaches before settling
+- **Incremental validation** - Off the light path, present design, get approval before moving on
 - **Be flexible** - Go back and clarify when something doesn't make sense
