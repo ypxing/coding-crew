@@ -149,9 +149,7 @@ behavior the issue names, find the `file:line` that confirms or contradicts it. 
   commit: that is still `complete`.
 - **Wrong assumption** — the issue's picture of the code is wrong in a way reading cannot recover:
   a named thing has no counterpart, the described bug's code path does not exist, or a criterion
-  conflicts with the PRD, an ADR or another criterion. Code that already exists and contradicts a
-  behaviour a criterion names (found by `tdd`'s "Testing code that already exists") is this case
-  too, with the observed output as the evidence. Report `blocked` before writing code, with
+  conflicts with the PRD, an ADR or another criterion. Report `blocked` before writing code, with
   the search as evidence — `BLOCKED: premise: <issue assumes> — <code/PRD shows>`. A guess would be
   reviewed against the same wrong criteria, and merged.
 
@@ -182,6 +180,11 @@ STOP. Read and invoke the `tdd` skill before writing a single line of implementa
 A bug-fix test that passes on its first run, through the path the issue names, means the bug is
 already fixed: keep it as the regression test (Step 3's already met), not a test to rewrite until
 it fails.
+
+Existing code that contradicts a behaviour a criterion names (found by `tdd`'s "Testing code that
+already exists") is Step 3's wrong assumption, found late: report `blocked` with the test and its
+observed output as the evidence, keeping any commits already made. `tdd`'s no-test fallback goes in
+Step 6's `DETAILS`: the check you ran instead and why no test path exists.
 
 **Commit after every GREEN, not only once at the end.** A dispatcher-imposed timeout can kill this
 run mid-loop; only a branch that already has a commit on it is resumable next round — one with
