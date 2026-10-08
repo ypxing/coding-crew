@@ -19,7 +19,7 @@
  * `body` through to `gh issue create --body-file` unmodified — the producer side of the
  * `## Blocked by`/`Source:` prose flow issues 07/08 write and issue 04's `parseIssue` reads
  * back. Marking an issue done is `markDone`'s alone, reached through `tracker/cli.mjs mark-done`
- * (mark-issue-done.sh and close-issue.sh call it), so there is one implementation of the label
+ * (close-issue.sh and the ready-for-human steps call it), so there is one implementation of the label
  * swap. `writeProgress`
  * always posts a new `gh issue comment` — a GitHub comment thread is a timeline, not an
  * in-place-edited section, so every call is a new comment, deliberately, including for a

@@ -22,33 +22,10 @@ set -uo pipefail
 # Exit 0 on success or when nothing applies; 1 when a gh call fails (caller warns, run goes on).
 
 MAIN_ROOT="${MAIN_ROOT:-.}"
-# BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
-# Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
-# It cannot live in tracker-config.sh itself: that is the file being looked for.
-# Callers break on the first hit, closing the pipe while this may still be writing; where
-# SIGPIPE is ignored that write fails with "Broken pipe", so it stops quietly instead.
-tracker_config_candidates() {
-  local main_root="$1" c
-  for c in "${CREW_TRACKER_CONFIG:-}" \
-    "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/scripts/tracker-config.sh}" \
-    "$main_root/.coding-crew/scripts/tracker-config.sh" \
-    "$main_root/scripts/tracker/tracker-config.sh" \
-    "${HOME:+$HOME/.coding-crew/scripts/tracker-config.sh}"; do
-    if [ -n "$c" ]; then printf '%s\n' "$c" 2>/dev/null || return 0; fi
-  done
-  return 0
-}
-# END tracker-lookup
-TRACKER_CONFIG_TRACKER="local"
-TRACKER_CONFIG_FOUND=""
-while IFS= read -r _tc; do
-  if [ -f "$_tc" ]; then TRACKER_CONFIG_FOUND="$_tc"; break; fi
-done < <(tracker_config_candidates "$MAIN_ROOT")
-if [ -n "$TRACKER_CONFIG_FOUND" ]; then
-  # shellcheck source=/dev/null
-  . "$TRACKER_CONFIG_FOUND"
-  read_tracker_config "$MAIN_ROOT" || exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tracker-cli.sh
+. "$SCRIPT_DIR/tracker-cli.sh"
+resolve_tracker_cli "$MAIN_ROOT" || exit 1
 
 CMD="${1:-}"
 ARG="${2:-}"
@@ -56,7 +33,7 @@ USAGE="Usage: issue-labels.sh claim|release|block <issue-number> | sweep <featur
 case "$CMD" in
   claim|release|block)
     case "$ARG" in
-      ''|*[!0-9]*) [ "$TRACKER_CONFIG_TRACKER" = "github" ] || exit 0
+      ''|*[!0-9]*) [ "$TRACKER_KIND" = "github" ] || exit 0
         echo "issue-labels.sh: expected a GitHub issue number, got: $ARG" >&2; exit 1 ;;
     esac ;;
   sweep)
@@ -64,7 +41,7 @@ case "$CMD" in
   *) echo "$USAGE" >&2; exit 1 ;;
 esac
 
-[ "$TRACKER_CONFIG_TRACKER" = "github" ] || exit 0
+[ "$TRACKER_KIND" = "github" ] || exit 0
 
 # The label first, idempotently: --add-label and --remove-label fail on a label the repo lacks.
 ensure_label() {

@@ -13,7 +13,7 @@
  * Never a silent `local` for a broken config: a config.json that is not JSON, an unknown
  * `tracker.kind`, or a legacy front matter naming `repo:` (removed: `gh` targets the git remote)
  * throws. Pure read — no network calls, no file writes. `cli.mjs config` prints the result, and
- * scripts/tracker/tracker-config.sh reads it from there.
+ * crew-afk's tracker-cli.sh reads it from there.
  */
 
 import { existsSync, readFileSync } from "node:fs";

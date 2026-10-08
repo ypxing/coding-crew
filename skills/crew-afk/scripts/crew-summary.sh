@@ -335,7 +335,7 @@ bash "$SCRIPT_DIR/trace.sh" --level "$([ "$(count_csv "$BLOCKED_SLUGS")" -eq 0 ]
 
 [ "$REMINDER" -eq 1 ] || exit 0
 
-# The sprint is over, so release the close gate: `mark-issue-done.sh` refuses while
+# The sprint is over, so release the close gate: `cli.mjs mark-done` refuses while
 # .orchestrated exists, and a marker left behind would block a standalone solve-issue run
 # on this feature long after the orchestrator stopped. Only on the final summary —
 # --no-reminder is the per-round rollup, and the sprint is still running then.

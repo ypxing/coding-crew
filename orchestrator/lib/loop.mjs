@@ -506,7 +506,7 @@ async function wrapUp(ctx, { tracker, stalled, capped = false, wallCap = null, u
   if (waiting.length) {
     // An issue's file name under local, its number under github.
     const lines = waiting.map((i) => `- ${i.file ?? `#${i.number}`} ${i.title}`);
-    ctx.out(`\n## Waiting on a person\n\n${lines.join("\n")}\n\nWhen they are done (mark-issue-done.sh), re-run: /crew-afk ${sprint.featureSlug}\n`);
+    ctx.out(`\n## Waiting on a person\n\n${lines.join("\n")}\n\nWhen they are done (cli.mjs mark-done), re-run: /crew-afk ${sprint.featureSlug}\n`);
   }
   if (squashFailed) ctx.out(`\n## Squash\n\n**Failed:** ${squashFailed}\n`);
   if (pr) ctx.out(`\n## ${pr.heading ?? "Pull Request"}\n\n${pr.text}\n`);

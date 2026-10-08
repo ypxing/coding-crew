@@ -210,6 +210,26 @@ prune_retired_agents() {
   done < <(jq -r '."retired-agents".dirs // [] | .[]' "$SCRIPT_DIR/registry.json")
 }
 
+# The tracker's shell wrappers (tracker-config.sh, mark-issue-done.sh) used to install to
+# .coding-crew/scripts/; every caller now runs tracker/cli.mjs itself, so a copy left behind is a
+# second answer that can go stale. Every install removes each by exact path (registry.json
+# `retired-scripts`), then the directory once nothing else is in it. Once per run.
+prune_retired_scripts() {
+  [[ "$INSTALLED" != *"|retired-scripts|"* ]] || return 0
+  INSTALLED="${INSTALLED}|retired-scripts|"
+  local path
+  while IFS= read -r path; do
+    path="${path%$'\r'}"
+    [[ -n "$path" ]] || continue
+    assert_safe_path "$path" "retired script"
+    if [[ -f "$REPO_ROOT/$path" ]]; then
+      rm -f "$REPO_ROOT/$path"
+      echo "  removed $path (callers run tracker/cli.mjs directly)"
+      rmdir "$(dirname "$REPO_ROOT/$path")" 2>/dev/null || true
+    fi
+  done < <(jq -r '."retired-scripts" // [] | .[]' "$SCRIPT_DIR/registry.json")
+}
+
 # Drop the agents/ dir an emptied legacy shim left behind (never one with anything else in it).
 prune_empty_agent_dirs() {
   local root="$1" rel="$2" d
@@ -543,33 +563,8 @@ install_docs() {
     migrate_legacy_tracker_doc
   fi
 
-  # Copy tracker helper scripts. Unlike the docs above these are mechanism, not
-  # user-customisable text, so they are always overwritten — a stale copy would be a
-  # gate that no longer matches the tracker operation that calls it.
-  local doc_scripts
-  doc_scripts=$(jq -r '.docs.scripts // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
-  local doc_scripts_arr=()
-  while IFS= read -r _line; do _line="${_line%$'\r'}"; [[ -n "$_line" ]] && doc_scripts_arr+=("$_line"); done <<< "$doc_scripts"
-
-  for ds in "${doc_scripts_arr[@]+"${doc_scripts_arr[@]}"}"; do
-    local ds_src_rel ds_dest_rel
-    ds_src_rel=$(jq -r --arg t "$ds" '.docs.scripts[$t].source // empty' "$SCRIPT_DIR/registry.json")
-    ds_dest_rel=$(jq -r --arg t "$ds" '.docs.scripts[$t].dest // empty' "$SCRIPT_DIR/registry.json")
-    [[ -z "$ds_src_rel" || -z "$ds_dest_rel" ]] && continue
-
-    local ds_src="$SCRIPT_DIR/$ds_src_rel"
-    local ds_dest="$REPO_ROOT/$ds_dest_rel"
-    [[ -f "$ds_src" ]] || { echo "Warning: doc script source not found: $ds_src_rel" >&2; continue; }
-
-    [[ "$docs_header_printed" -eq 0 ]] && { echo "Docs:"; docs_header_printed=1; }
-    mkdir -p "$(dirname "$ds_dest")"
-    cp "$ds_src" "$ds_dest"
-    chmod +x "$ds_dest"
-    echo "  $ds_dest_rel"
-  done
-
-  # Copy shared directory trees (the tracker CLI and its backends). Mechanism like the scripts
-  # above, installed whichever skill is, and kept an exact copy: a file the source no longer has
+  # Copy shared directory trees (the tracker CLI and its backends). Mechanism, not
+  # user-customisable text, installed whichever skill is, and kept an exact copy: a file the source no longer has
   # is removed, so a stale module never shadows the one that replaced it.
   local trees
   trees=$(jq -r '.docs.trees // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
@@ -748,7 +743,8 @@ echo "Target: $REPO_ROOT"
 if [[ "$UPDATE_MODE" == "true" ]]; then
   run_update
   prune_retired_agents
-  # The tracker scripts, CLI and docs carry no version of their own, so an update that skips this
+  prune_retired_scripts
+  # The tracker CLI and docs carry no version of their own, so an update that skips this
   # keeps a stale gate forever; it also migrates a legacy issue-tracker.md into config.json.
   install_docs
   if [[ "${#MANIFEST_SKILL_ENTRIES[@]}" -gt 0 ]]; then
@@ -805,6 +801,7 @@ fi
 
 install_docs
 prune_retired_agents
+prune_retired_scripts
 echo "---"
 write_manifest
 

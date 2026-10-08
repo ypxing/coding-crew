@@ -55,39 +55,12 @@ review_rollup() {
   fi
 }
 
-# Which backend (local|github) this repo tracks issues in — read once, the same
-# lookup-chain shape review_rollup() uses above.
-# $CREW_TRACKER_CONFIG overrides the lookup for bats fixtures that exercise this script
-# alone, not a full install. Fails safe to local when the reader is missing entirely — an
-# in-between install state (this script updated, tracker-config.sh not yet installed)
-# must not break the local path.
-TRACKER_CONFIG_TRACKER="local"
-# BEGIN tracker-lookup — identical in every caller; tests/tracker-lookup.bats fails if one drifts.
-# Where tracker-config.sh (and mark-issue-done.sh beside it) are looked for, first hit wins.
-# It cannot live in tracker-config.sh itself: that is the file being looked for.
-# Callers break on the first hit, closing the pipe while this may still be writing; where
-# SIGPIPE is ignored that write fails with "Broken pipe", so it stops quietly instead.
-tracker_config_candidates() {
-  local main_root="$1" c
-  for c in "${CREW_TRACKER_CONFIG:-}" \
-    "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/scripts/tracker-config.sh}" \
-    "$main_root/.coding-crew/scripts/tracker-config.sh" \
-    "$main_root/scripts/tracker/tracker-config.sh" \
-    "${HOME:+$HOME/.coding-crew/scripts/tracker-config.sh}"; do
-    if [ -n "$c" ]; then printf '%s\n' "$c" 2>/dev/null || return 0; fi
-  done
-  return 0
-}
-# END tracker-lookup
-_tracker_config_sh=""
-while IFS= read -r _tc; do
-  if [ -f "$_tc" ]; then _tracker_config_sh="$_tc"; break; fi
-done < <(tracker_config_candidates "$MAIN_ROOT")
-if [ -n "$_tracker_config_sh" ]; then
-  # shellcheck disable=SC1090
-  source "$_tracker_config_sh"
-  read_tracker_config "$MAIN_ROOT" || exit 1
-fi
+# Which backend (local|github) this repo tracks issues in, and the tracker CLI that answers —
+# read once through tracker-cli.sh, beside this script. $CREW_TRACKER_CLI overrides the lookup
+# for bats fixtures that exercise this script alone, not a full install.
+# shellcheck source=tracker-cli.sh
+. "$SCRIPT_DIR/tracker-cli.sh"
+resolve_tracker_cli "$MAIN_ROOT" || exit 1
 
 DEFERRED_STATUS="deferred-findings"
 READY_STATUS="ready-for-agent"
@@ -193,15 +166,9 @@ _defer_local() {
 # .coding-crew/tracker/ on every install), whose github backend's `create-issue` is the exact same
 # `createIssue` (+ lazy, idempotent milestone bootstrap) every other GitHub write path uses, rather
 # than a second hand-rolled `gh issue create` that can drift from it (it did: this script's own
-# milestone bootstrap used to be missing entirely). Same lookup-chain shape as review_rollup() above.
-# $CREW_GITHUB_TRACKER_CLI overrides the lookup for bats fixtures that exercise this script
-# alone, not a full install.
+# milestone bootstrap used to be missing entirely). The CLI is the one resolve_tracker_cli found.
 _github_tracker_cli() {
-  local node_cli="${CREW_GITHUB_TRACKER_CLI:-}"
-  [ -f "$node_cli" ] || node_cli="$MAIN_ROOT/.coding-crew/tracker/cli.mjs"
-  [ -f "$node_cli" ] || node_cli="$HOME/.coding-crew/tracker/cli.mjs"
-  [ -f "$node_cli" ] || { echo "ERROR: tracker CLI (.coding-crew/tracker/cli.mjs) not found" >&2; return 1; }
-  node "$node_cli" "$@"
+  node "$TRACKER_CLI" "$@"
 }
 
 # --- github bodies embed their evidence --------------------------------------
@@ -407,7 +374,7 @@ cmd_defer() {
   [ -s "$criteria_file" ] || die "criteria file is empty: $criteria_file (nothing to promote)"
 
   local ref
-  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+  if [ "$TRACKER_KIND" = "github" ]; then
     ref="$(_defer_github "$slug" "$title" "$branch" "$report" "$criteria_file" "$severities" "$blocked_by")"
   else
     ref="$(_defer_local "$slug" "$issue_slug" "$title" "$criteria_file" "$severities" "$branch")"
@@ -454,7 +421,7 @@ _defer_feature_issue() {
   local command="$1" slug="$2" report="$3" criteria_file="$4" title="$5" source_tag="$6"
   local suffix="$7" label="$8" context="$9" github_context="${10}" numbered="${11:-}" ref
 
-  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+  if [ "$TRACKER_KIND" = "github" ]; then
     local body_file evidence source_name="integration check" evidence_heading="Failing output (tail)"
     body_file="$(mktemp)"
     evidence="$(_tail_fenced "$report")"
@@ -573,7 +540,7 @@ cmd_flush() {
   # so nothing is ever queued here for github to promote. Still "works" in the sense the
   # AC asks for: no crash, and an honest zero rather than scanning a local dir that, under
   # `tracker: github`, holds no issue content at all.
-  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+  if [ "$TRACKER_KIND" = "github" ]; then
     _trace FLUSH "promoted=0"
     echo "FLUSH: none"
     return
@@ -612,7 +579,7 @@ cmd_list() {
 
   # Same reasoning as cmd_flush's github branch: defer never parks a github issue, so
   # there is never a deferred one to list.
-  if [ "$TRACKER_CONFIG_TRACKER" = "github" ]; then
+  if [ "$TRACKER_KIND" = "github" ]; then
     echo "DEFERRED: none"
     return
   fi
