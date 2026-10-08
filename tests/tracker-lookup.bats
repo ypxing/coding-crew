@@ -101,7 +101,17 @@ run_caller() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"CLI=${cands[$i]} KIND=github"* ]]
     rm -f "${cands[$i]}"
+    unset CREW_TRACKER_CLI
   done
+}
+
+@test "a set CREW_TRACKER_CLI that does not exist is an error, not a fall-through to the search" {
+  fake_cli "$MAIN_ROOT/tracker"
+  export CREW_TRACKER_CLI="$TEMP_DIR/typo/cli.mjs"
+  run resolve "$MAIN_ROOT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CREW_TRACKER_CLI=$TEMP_DIR/typo/cli.mjs does not exist"* ]]
+  [[ "$output" != *"RAN:"* ]]
 }
 
 @test "an unset CREW_TRACKER_CLI or CREW_INSTALL_DIR is skipped, not a candidate" {

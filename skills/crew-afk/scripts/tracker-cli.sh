@@ -12,14 +12,16 @@
 # `node "$TRACKER_CLI" config --main-root <main-root>`. Returns non-zero with the reason on stderr
 # when no cli.mjs is found, node is missing, or `config` fails (its stderr passes through) — never
 # a silent local. tests/tracker-lookup.bats pins the lookup order.
+#
+# A set $CREW_TRACKER_CLI is the only answer: it names the CLI a test means to run, so a path that
+# does not exist is an error rather than a fall-through to whichever copy the search finds next.
 
 # tracker_cli_candidates <main-root> — where cli.mjs is looked for, first existing file wins:
-# the override, the .coding-crew/ the orchestrator runs from, the project install, a source
-# checkout, the user-level install.
+# the .coding-crew/ the orchestrator runs from, the project install, a source checkout, the
+# user-level install.
 tracker_cli_candidates() {
   local main_root="$1" c
-  for c in "${CREW_TRACKER_CLI:-}" \
-    "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/tracker/cli.mjs}" \
+  for c in "${CREW_INSTALL_DIR:+$CREW_INSTALL_DIR/tracker/cli.mjs}" \
     "$main_root/.coding-crew/tracker/cli.mjs" \
     "$main_root/tracker/cli.mjs" \
     "${HOME:+$HOME/.coding-crew/tracker/cli.mjs}"; do
@@ -32,9 +34,17 @@ resolve_tracker_cli() {
   local main_root="${1:-.}" c out key value
   TRACKER_CLI=""
   TRACKER_KIND=""
-  while IFS= read -r c; do
-    if [ -f "$c" ]; then TRACKER_CLI="$c"; break; fi
-  done <<< "$(tracker_cli_candidates "$main_root")"
+  if [ -n "${CREW_TRACKER_CLI:-}" ]; then
+    if [ ! -f "$CREW_TRACKER_CLI" ]; then
+      echo "ERROR: CREW_TRACKER_CLI=$CREW_TRACKER_CLI does not exist" >&2
+      return 1
+    fi
+    TRACKER_CLI="$CREW_TRACKER_CLI"
+  else
+    while IFS= read -r c; do
+      if [ -f "$c" ]; then TRACKER_CLI="$c"; break; fi
+    done <<< "$(tracker_cli_candidates "$main_root")"
+  fi
   if [ -z "$TRACKER_CLI" ]; then
     echo "ERROR: tracker CLI (.coding-crew/tracker/cli.mjs) not found — re-run install.sh" >&2
     return 1

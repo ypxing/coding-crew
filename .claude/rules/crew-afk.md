@@ -40,8 +40,8 @@ Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
 - `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
 - `tracker-cli.sh` — sourced, not run: `resolve_tracker_cli <main-root>` sets `TRACKER_CLI` and `TRACKER_KIND` (from
   `cli.mjs config`) for `close-issue.sh`, `close-shipped.sh`, `issue-labels.sh`, `promote-findings.sh` and
-  `session-init.sh`. Lookup, first existing file wins: `$CREW_TRACKER_CLI`, `$CREW_INSTALL_DIR/tracker/`,
-  `<root>/.coding-crew/tracker/`, `<root>/tracker/`, `$HOME/.coding-crew/tracker/`. No CLI, no `node` or a failing
+  `session-init.sh`. A set `$CREW_TRACKER_CLI` is used as is (missing → error, no search); else, first existing file
+  wins: `$CREW_INSTALL_DIR/tracker/`, `<root>/.coding-crew/tracker/`, `<root>/tracker/`, `$HOME/.coding-crew/tracker/`. No CLI, no `node` or a failing
   `config` exits the caller non-zero — never a silent `local`
 - `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
   `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
