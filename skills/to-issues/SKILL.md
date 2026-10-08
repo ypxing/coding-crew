@@ -27,16 +27,13 @@ Determine the **feature slug** (the directory name under `.scratch/`):
 
 Never guess the slug silently — confirm with the user if there's any ambiguity.
 
+**One slice, no PRD:** the slug needs no question. Use, in order: a github issue ref's existing milestone; a local issue ref's existing `.scratch/<slug>/` directory (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices the slug is confirmed as above.
+
 ### 2. Check for a PRD
 
 Run `node "$TRACKER" prd --feature-slug <feature-slug>`. Exit 0 prints the PRD: use it as the primary source material for decomposition, and save that output to `.scratch/<feature-slug>/.drafts/PRD.md` for step 6's lint. Note the PRD's ref — step 6 cites it in each work issue: `#<n>` when the output opens with `<!-- PRD issue #<n>: … -->`, else `.scratch/<feature-slug>/PRD.md`. Exit 3 means there is none.
 
-If no PRD exists, ask the user:
-
-> "I don't see a PRD for this feature. Would you like me to run `/to-prd` first to formalize the spec, or should I work from the current conversation context?"
-
-If the user chooses to run `/to-prd`, invoke it (using the same feature slug), then continue with the resulting PRD. If the user declines, proceed with conversation context as before.
-
+With no PRD, work from the conversation context; step 4's slice count decides whether one is needed. One slice publishes without a PRD (its issue carries its own `## Decisions`). Two or more slices, or two or more origin issues named in the source, invoke `to-prd` with the feature slug (so its own slug question is never reached) before publishing, then resume with the PRD it wrote. Origin issues count because only a PRD's `Origin:` line closes them.
 
 ### 3. Explore the codebase
 
@@ -109,7 +106,7 @@ Show the coverage table from step 4.5 (when there is one), then ask only what ne
 
 1. **Contradicted assumptions** — what the plan assumes, what the code shows at `file:line`, and the slice it affects; resolve each before the rest.
 2. **Design-standard failures** — each slice that fails a criterion of the design standard (step 3): the criterion, its evidence at `file:line`, and the reshape you propose.
-3. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct.
+3. **The PRD's `## Assumptions`** — each one the slices lean on, for the user to confirm or correct. With no PRD, show instead the one slice's drafted acceptance criteria, its `## Decisions`, the assumptions you filled in beyond the source, and the slug: this is the single review on the light path.
 4. **PRD IDs no slice covers** — the empty rows of the coverage table: add a slice, fold the ID into one, or confirm it is out of scope.
 5. **Slices over 10 criteria or ~200k tokens** — any slice that would carry more than 10 acceptance criteria, or whose estimated peak context is over ~200k tokens (or the coder model's window when smaller), as a context-budget check: does it fit one coder session? Keep it, or split it for the context-budget reason — a flag, never on its own a rule to split.
 6. **Splits and edges** — one line per split naming its reason from step 4 (context budget, human boundary, parallelism worth having, expand–contract order), and one line per `Blocked by` edge naming the edge-rule row that produced it, each naming its slices, for the user to override. Don't ask whether an overlap needs an edge; the rule decided, the user overrides.
@@ -177,7 +174,7 @@ A criterion that needs a paid run, a manual measurement or a person is not an ac
 
 - one observable behaviour or consumed contract (a signature, shape or output another issue relies on), checkable from the diff plus the checks — never "tests pass";
 - for a negative ("never writes outside X"), accompanied by the mechanism that prevents it — a negative with no named mechanism cannot be checked, so the criterion names the mechanism that prevents it;
-- free of internal design choices, which stay in the PRD's Decisions where the reviewer judges them as findings — unless the choice is itself the requirement (e.g. "one batched call" as a performance bound).
+- free of internal design choices, which stay in the PRD's Decisions (or the issue's own `## Decisions` when there is no PRD) where the reviewer judges them as findings — unless the choice is itself the requirement (e.g. "one batched call" as a performance bound).
 
 A slice that takes input or calls something external must carry failure-behaviour criteria: invalid input, missing dependency, failing call — what the caller observes in each. This is how the PRD's `## Trust Boundaries & Risks` reaches the gated criteria.
 
@@ -208,9 +205,15 @@ A concise description of this vertical slice: the end-to-end behavior, not layer
 
 This section may cite grounded paths and signatures (confirmed in step 3). If a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it here and note briefly that it came from a prototype. Trim to the decision-rich parts — not the working demo, just the important bits.
 
+## Decisions
+
+> **Optional — only include this section when no PRD exists. Omit it otherwise.**
+
+- **D<n>** — <decision, reason, `path:line` facts>
+
 ## Implements
 
-The PRD IDs this issue carries (e.g. `D3, B2`), plus the seam it is verified at (the highest existing test seam that exercises it).
+The PRD IDs this issue carries (with no PRD, the IDs of its own `## Decisions`) (e.g. `D3, B2`), plus the seam it is verified at (the highest existing test seam that exercises it).
 
 ## Acceptance criteria
 
