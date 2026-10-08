@@ -83,9 +83,11 @@ Skip trivial files: default threshold is fewer than 10 statements, or a type/int
 with no executable logic. This default is tunable per project, not a hardcoded requirement —
 note it as configurable in whatever findings document you write in step 8.
 
-Drop a gap whose only practical test would be a bad one — mostly testing mocks or internal
-collaborators, encoding implementation details, or depending on timing or global state. List each
-dropped file and why under a `## Skipped` heading in step 8's document; no issue is cut for it.
+Drop a gap whose only practical test would be a bad one by `tdd`'s definition ("When no practical
+test exists"). Mocking an external boundary is not that: step 7's mocked tier is a valid test. What
+counts is a test that could assert only on mocks of this project's own modules. Don't put dropped
+files in step 8's document, where `to-issues` would slice them. List each one and why in your final
+message to the user instead.
 
 Cap total findings per run: default is the smaller of (a) the top 20 files by score, or (b)
 however many files close the top 50% of the total uncovered-statement gap. Also tunable, not
@@ -157,11 +159,12 @@ nothing:
 
 - **The behaviours to cover, named.** List them from the module's docs, callers and names, not from
   its implementation, so the coder asserts what the code is meant to do. A criterion reads like
-  "`parseConfig` rejects a config with no `tracker` key" — never "cover lines 40–80". When the
-  current output looks wrong, the coder reports it as a suspected bug rather than testing it in.
-- **Each new test seen failing.** The code already exists, so the tests pass on their first run:
-  the criterion is that each new test was run against the code under test temporarily broken and
-  failed on its assertion (`tdd`'s "Testing code that already exists").
+  "`parseConfig` rejects a config with no `tracker` key" — never "cover lines 40–80".
+- **Each new test would fail without its behaviour.** Each new test asserts its named behaviour's
+  outcome, not only that a mock was called, so removing that behaviour from the code would fail it.
+  State it this way, as a property of the test code a reviewer can check at its `file:line`, never as
+  "each test was seen failing": the coder's temporary break (`tdd`'s "Testing code that already
+  exists") leaves no trace in the diff.
 
 Two more things per finding, each cheap here and expensive for a coder to rediscover:
 

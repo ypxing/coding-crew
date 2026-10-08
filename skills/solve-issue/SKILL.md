@@ -149,7 +149,9 @@ behavior the issue names, find the `file:line` that confirms or contradicts it. 
   commit: that is still `complete`.
 - **Wrong assumption** — the issue's picture of the code is wrong in a way reading cannot recover:
   a named thing has no counterpart, the described bug's code path does not exist, or a criterion
-  conflicts with the PRD, an ADR or another criterion. Report `blocked` before writing code, with
+  conflicts with the PRD, an ADR or another criterion. Code that already exists and contradicts a
+  behaviour a criterion names (found by `tdd`'s "Testing code that already exists") is this case
+  too, with the observed output as the evidence. Report `blocked` before writing code, with
   the search as evidence — `BLOCKED: premise: <issue assumes> — <code/PRD shows>`. A guess would be
   reviewed against the same wrong criteria, and merged.
 

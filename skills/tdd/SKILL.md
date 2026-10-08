@@ -53,13 +53,15 @@ to §2. Never ask a question nobody will read.
 **Bug fixes.** Skip the interface-design boxes: find the existing test closest to the broken
 codepath, and write there the smallest test that would have caught the bug, asserting the intended
 behaviour. It is your tracer bullet; §2 applies unchanged. A flaky bug needs a deterministic test —
-pin the clock, seed or ordering the flake depends on.
+pin the clock, seed or ordering the flake depends on. If it passes on its first run, through the path
+the bug report names, stop: that result is for your caller to act on. Don't rewrite the test until it
+fails, and don't break the code to get red.
 
 **When no practical test exists.** Prefer no new test over a bad one — one that mostly tests mocks,
-encodes implementation details, depends on timing or global state, or needs heavy infrastructure for
-a small change. Only then, use the closest executable check instead (a reproduction command, a
-targeted script, a log assertion), run it before and after the change, and record why no test path
-exists. Being slow to write is not a reason.
+encodes implementation details, or depends on timing or global state. Only then, use the closest
+executable check instead (a reproduction command, a targeted script, a log assertion), run it before
+and after the change, and record why no test path exists. Being slow to write is not a reason, and
+the fallback never replaces a test the task explicitly asks for.
 
 ### 2. Tracer Bullet
 
@@ -70,18 +72,20 @@ RED:   Write test for first behavior → test fails
 GREEN: Write minimal code to pass → test passes
 ```
 
-**Before writing any source code: run the test and paste the failure output.** A test that cannot be shown to fail is not a red test. Do not touch source files until you have visible evidence of failure.
+**Before writing any source code: run the test and paste the failure output.** A test that cannot be shown to fail is not a red test. Do not change the behaviour under test until you have visible evidence of failure; the one exception is the temporary break below, for code that already exists.
 
 It must fail **for the intended reason**: on the assertion you wrote, because the behaviour is
 absent. An import error, syntax error or broken fixture is not red yet — fix the test until the
 assertion is what fails.
 
 **Testing code that already exists** (adding coverage, characterising untested code): the test
-passes on its first run, so get the red evidence the other way round — temporarily break the code
-under test (delete the branch, invert the condition), run the test and paste the failure, then
-restore the code and watch it pass. Assert the behaviour the code is meant to have, from its docs,
-callers and names, not whatever it currently returns; when the current output looks wrong, flag it
-as a suspected bug rather than writing a test that locks it in.
+passes on its first run, so get the red evidence the other way round. Temporarily break the code
+under test (delete the branch, invert the condition), run the test and paste the failure. Break only
+a file with no uncommitted changes of yours, and restore it with `git checkout -- <file>`, never by
+hand. Confirm `git diff --quiet -- <file>` before you watch the test pass, so the break can never be
+committed. Assert the behaviour the code is meant to have, from its docs, callers and names, not
+whatever it currently returns. When the current output contradicts that, stop, and don't write a
+test that locks it in: the mismatch is for your caller to act on.
 
 This is your tracer bullet - proves the path works end-to-end.
 
