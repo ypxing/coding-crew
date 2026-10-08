@@ -83,7 +83,7 @@ There are no agents. crew-afk's three roles — coder, reviewer, triage — are 
     "dirs": [".coding-crew/agents", ".coding-crew/code-review"],
   },
   // files older installs wrote that no longer ship; install, --update and uninstall delete each
-  "retired-scripts": [".coding-crew/scripts/tracker-config.sh", "..."],
+  "retired-scripts": ["<path an older install wrote>", "..."],
   "docs": {
     "trees": {
       "<key>": {
