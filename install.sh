@@ -313,15 +313,35 @@ check_dest_status() {
   return 2  # changed
 }
 
+# Paths the current copy wrote into the tree being installed; prune_unwritten removes the rest.
+declare -A _WRITTEN
+
+# Make an installed tree an exact copy of what this run wrote into it: remove every file not in
+# _WRITTEN, then every directory left empty (never $root itself). The kept set is the paths
+# written, not a re-derivation of the source, so the prune can never disagree with the copy's
+# filters. Prune after copy, never wipe-then-copy: a sprint running during an install still finds
+# every file the new version ships.
+prune_unwritten() {
+  local root="$1" f
+  while IFS= read -r -d '' f; do
+    [[ -n "${_WRITTEN[$f]+x}" ]] && continue
+    rm -f "$f"
+    echo "  ${f#"$REPO_ROOT/"} (removed)"
+  done < <(find "$root" -mindepth 1 ! -type d -print0)
+  find "$root" -mindepth 1 -depth -type d -empty -delete
+}
+
 # Assets are platform-neutral runtime files a skill or role reads or executes itself. They install
 # once, to a shared path outside any platform directory, so four platforms do not get four copies. Like
 # .coding-crew/tracker they are mechanism, not user text, so they are always overwritten: a stale
-# reference would be a checklist that no longer matches the protocol pointing at it.
+# reference would be a checklist that no longer matches the protocol pointing at it. A file the
+# source no longer has is removed, so a stale module never shadows the one that replaced it.
 install_assets_tree() {
   local src="$1" dest_rel="$2" label="$3"
   [[ -d "$src" ]] || { echo "Error: $label assets source not found: $src" >&2; exit 1; }
 
   local asset_file rel_path dest_file status
+  _WRITTEN=()
   while IFS= read -r -d '' asset_file; do
     rel_path="${asset_file#$src/}"
     dest_file="$REPO_ROOT/$dest_rel/$rel_path"
@@ -330,8 +350,10 @@ install_assets_tree() {
     check_dest_status "$asset_file" "$dest_file" || status=$?
     cp "$asset_file" "$dest_file"
     [[ "$rel_path" == *.sh ]] && chmod +x "$dest_file"
+    _WRITTEN["$dest_file"]=1
     if [[ $status -eq 0 ]]; then echo "  $dest_rel/$rel_path"; fi
   done < <(find "$src" -type f -print0)
+  prune_unwritten "$REPO_ROOT/$dest_rel"
 }
 
 # A skill's assets source is repo-root-relative,
@@ -418,7 +440,8 @@ install_single_skill() {
   # Remove a stale symlink before mkdir -p; mkdir would succeed but cp into it would fail
   [[ -L "$skill_root" ]] && rm -f "$skill_root"
   mkdir -p "$skill_root"
-  
+  _WRITTEN=()
+
   # Copy files with diff output for changed files
   while IFS= read -r -d '' src_file; do
     local rel_path="${src_file#$SCRIPT_DIR/skills/$source_dir/}"
@@ -438,6 +461,7 @@ install_single_skill() {
     local status=0
     check_dest_status "$staged" "$dest_file" || status=$?
     cp "$staged" "$dest_file"
+    _WRITTEN["$dest_file"]=1
     [[ -n "$render_tmp" ]] && rm -f "$render_tmp"
 
     # Print path for new files (status=0)
@@ -445,28 +469,6 @@ install_single_skill() {
       echo "  $rel_dest"
     fi
   done < <(find "$SCRIPT_DIR/skills/$source_dir" -type f -not -name "test-*.sh" -print0)
-  # Drop per-platform bodies (<platform>.SKILL.md) an older install left behind; skills no
-  # longer have them. Also drop a fragments/ tree from an install that predates rendering.
-  local stale_body
-  while IFS= read -r stale_body; do
-    [[ -n "$stale_body" ]] && rm -f "$stale_body"
-  done < <(find "$skill_root" -maxdepth 1 -name "*.SKILL.md" 2>/dev/null || true)
-  rm -rf "$skill_root/fragments"
-  # Files a skill installed in an earlier version and no longer ships. A stale copy is not
-  # inert: an agent that lists the skill directory reads it, so a retired reference or a
-  # developer README keeps costing tokens and can contradict the current body. Scoped per
-  # skill by name — solve-issue still ships its own references/verification.md.
-  local retired
-  local -a retired_files=()
-  case "$skill_name" in
-    crew-afk) retired_files=("references/verification.md" "scripts/README.md" "scripts/configure-tracker-auto.sh" "scripts/coverage-validation.sh" "scripts/prd-audit.sh" "scripts/dispatch-agent.sh" "scripts/dispatch-codex-agent.sh" "references/test-promote-findings.sh" "references/test-session-init.sh" "references/test-sprint-state.sh" "references/test-worktree-lifecycle.sh" "references/test-worktree.sh" "scripts/feature-branch-setup.sh") ;;
-    solve-issue) retired_files=("scripts/feature-branch-setup.sh") ;;
-    configure-tracker) retired_files=("scripts/configure-tracker-auto.sh") ;;
-  esac
-  for retired in "${retired_files[@]+"${retired_files[@]}"}"; do
-    rm -f "$skill_root/$retired"
-  done
-  [[ "$skill_name" == configure-tracker ]] && { rmdir "$skill_root/scripts" 2>/dev/null || true; }
 
   # Copy scripts from scripts/skill-utils/git-workflow/ if this skill declares any
   local scripts
@@ -484,9 +486,13 @@ install_single_skill() {
       fi
       cp "$script_src" "$skill_root/scripts/$script"
       chmod +x "$skill_root/scripts/$script"
+      _WRITTEN["$skill_root/scripts/$script"]=1
     done
     echo "  $skill_dest/scripts/ (${#scripts_arr[@]} scripts from skill-utils/git-workflow)"
   fi
+  # Whatever this run did not write is a file an earlier version shipped (or a stale per-platform
+  # body): an agent listing the skill directory would read it, so it goes.
+  prune_unwritten "$skill_root"
 
   local skill_version
   _skill_scalar "$skill_name" version '.skills[$s].version // "unknown"'
@@ -564,8 +570,7 @@ install_docs() {
   fi
 
   # Copy shared directory trees (the tracker CLI and its backends). Mechanism, not
-  # user-customisable text, installed whichever skill is, and kept an exact copy: a file the source no longer has
-  # is removed, so a stale module never shadows the one that replaced it.
+  # user-customisable text, installed whichever skill is, and kept an exact copy (install_assets_tree).
   local trees
   trees=$(jq -r '.docs.trees // {} | keys[]' "$SCRIPT_DIR/registry.json" 2>/dev/null || true)
   local trees_arr=()
@@ -581,13 +586,6 @@ install_docs() {
 
     [[ "$docs_header_printed" -eq 0 ]] && { echo "Docs:"; docs_header_printed=1; }
     install_assets_tree "$SCRIPT_DIR/$tree_src_rel" "$tree_dest_rel" "doc tree"
-    local tree_file
-    while IFS= read -r -d '' tree_file; do
-      if [[ ! -f "$SCRIPT_DIR/$tree_src_rel/${tree_file#"$REPO_ROOT/$tree_dest_rel/"}" ]]; then
-        rm -f "$tree_file"
-        echo "  ${tree_file#"$REPO_ROOT/"} (removed)"
-      fi
-    done < <(find "$REPO_ROOT/$tree_dest_rel" -type f -print0)
   done
 }
 
