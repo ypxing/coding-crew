@@ -8,6 +8,8 @@
     "json",
     "--model",
     "golden-model",
+    "--thinking",
+    "medium",
     "--tools",
     "read,bash,edit,write",
     "--append-system-prompt",

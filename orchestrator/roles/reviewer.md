@@ -140,9 +140,14 @@ Feature Mode only. Stack-agnostic, flag whenever the **diff** introduces them:
 3. **Trust boundary assumptions** — does it trust input it should not?
 4. **Architecture drift** — hidden coupling, or a deviation from the codebase's established
    patterns with no justification.
-5. **Leftover references** — for each file, flag, function, script or config key the diff deletes or
-   renames, search code, docs, tests and `registry.json` for anything still naming it; a live
-   reference is a finding. Tests asserting absence and `retired_*` lists are exempt.
+5. **Leftover references** — for each file, flag, function, script, config key, prompt step or
+   quoted phrase the diff deletes or renames, search code, docs, tests, scripts and `registry.json`
+   for anything still naming or quoting it; a live reference is a finding. Tests asserting absence
+   and `retired_*` lists are exempt.
+6. **Undefined names in shared text** — for each fragment, template or include the diff adds or
+   edits, list the variables, commands and terms it uses (`$VAR`, a gate or step name) and check
+   that every file it renders into defines each one; one that does not is a finding citing the
+   rendered file.
 
 Thresholds for size/nesting/error-handling/test-coverage live in `quality.md`; framework-specific
 classes live in the references Step 1 named.

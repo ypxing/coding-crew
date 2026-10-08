@@ -1,75 +1,71 @@
 ---
 name: crew-brainstorm
-description: Use when starting a complex or exploratory feature and you want a thorough design pipeline before implementation — explores intent, proposes approaches, builds a full technical spec, then auto-transitions to PRD and issues.
+description: Use when starting a complex or exploratory feature and you want a thorough design pipeline before implementation — explores intent, proposes approaches, builds a full technical spec, then hands off to to-issues.
 ---
 
 # Brainstorming Ideas Into Designs
 
 Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
 
-Start by capturing the feature slug and understanding the current project context, then ask questions one at a time to refine the idea. Once you understand what you're building, present the design and get user approval.
+Start by understanding the current project context. If the source already passes the four light-path checks, hand it to `to-issues`; otherwise ask questions one at a time to refine the idea, and once you understand what you're building, present the design and get user approval.
 
 <HARD-GATE>
-Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until the design is settled: either you presented it and the user approved it, or the source passed all four light-path checks and went to `to-issues`, whose quiz is the single review. Nothing else skips the design.
 </HARD-GATE>
 
 ## Anti-Pattern: "This Is Too Simple To Need A Design"
 
-Every project goes through this process. A todo list, a single-function utility, a config change — all of them. "Simple" projects are where unexamined assumptions cause the most wasted work. The design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
+Every project goes through this process, unless the source already passes all four light-path checks (then `to-issues` is the review). A todo list, a single-function utility, a config change — "simple" is not that exemption; only the four checks are. "Simple" projects are where unexamined assumptions cause the most wasted work. Otherwise the design can be short (a few sentences for truly simple projects), but you MUST present it and get approval.
 
 ## Checklist
 
 You MUST complete these items in order:
 
-1. **Capture feature slug** — get the `.scratch/<slug>/` directory name upfront
-2. **Explore project context** — check files, docs, recent commits
+1. **Explore project context** — check files, docs, recent commits
+2. **Judge the light path** — if the source is already one complete change, skip to step 6
 3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria, and size the problem first (look up how often it happens and what it costs in git history, merged PRs and the tracker; ask only what no source holds)
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation; one is always the do-least option
 5. **Present design** — in sections scaled to their complexity, get user approval after each section
-6. **Transition to to-prd** — invoke `to-prd` using the same feature slug to complete the PRD
-7. **Transition to to-issues** — invoke `to-issues` using the same feature slug
-
-## Step 1 — Capture Feature Slug
-
-Before anything else, determine the feature slug (used internally as the `.scratch/<slug>/` directory name):
-
-- If the user provided a slug or path argument, extract it from there.
-- If the user's message clearly names the feature (e.g. "brainstorm auth flow"), derive the slug from it (e.g. `auth-flow`) and confirm: "I'll track this under the name **auth-flow** — does that work?"
-- Otherwise ask: "What's a short name for this feature? (e.g. `auth-flow`, `search-v2`)"
-
-Never proceed without a confirmed slug. All paths used throughout this skill derive from it. Do not expose the `.scratch/` path to the user.
+6. **Hand off** — invoke `to-issues`, passing the agreed design (decisions, facts, cut list)
 
 ## Process Flow
 
 ```dot
 digraph brainstorming {
-    "Capture feature slug" [shape=box];
     "Explore project context" [shape=box];
     "Ask clarifying questions" [shape=box];
     "Propose 2-3 approaches" [shape=box];
     "Present design sections" [shape=box];
     "User approves design?" [shape=diamond];
-    "Invoke to-prd then to-issues" [shape=doublecircle];
+    "Invoke to-issues" [shape=doublecircle];
 
-    "Capture feature slug" -> "Explore project context";
-    "Explore project context" -> "Ask clarifying questions";
+    "Light path: all four checks pass?" [shape=diamond];
+
+    "Explore project context" -> "Light path: all four checks pass?";
+    "Light path: all four checks pass?" -> "Invoke to-issues" [label="yes"];
+    "Light path: all four checks pass?" -> "Ask clarifying questions" [label="no"];
     "Ask clarifying questions" -> "Propose 2-3 approaches";
     "Propose 2-3 approaches" -> "Present design sections";
     "Present design sections" -> "User approves design?";
     "User approves design?" -> "Present design sections" [label="no, revise"];
-    "User approves design?" -> "Invoke to-prd then to-issues" [label="yes"];
+    "User approves design?" -> "Invoke to-issues" [label="yes"];
 }
 ```
 
-**The terminal state is invoking `to-prd` then `to-issues`.** Do NOT invoke any implementation skill. The ONLY skills you invoke after brainstorming are `to-prd` and `to-issues`, in that order.
+**The terminal state is invoking `to-issues`.** Do NOT invoke any implementation skill. The ONLY skill you invoke after brainstorming is `to-issues`.
+
+{{FRAGMENT:tracker-configuration}}
 
 ## The Process
 
 **Understanding the idea:**
 
 - Check out the current project state first (files, docs, recent commits)
+
+{{FRAGMENT:light-path}}
+
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
-- If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own PRD → issues cycle.
+- If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own pass through `to-issues`.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
 - Prefer multiple choice questions when possible, but open-ended is fine too
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
@@ -117,15 +113,15 @@ digraph brainstorming {
 
 ## After the Design
 
-Once the user approves the design, invoke `to-prd` using the same feature slug captured in Step 1. Do not re-ask the slug. `to-prd` will synthesize all agreed decisions from the conversation into a full PRD.
+Once the user approves the design, invoke `to-issues`, passing the agreed decisions, facts and cut list. `to-issues` alone decides whether a PRD is written and what the slug is; do not ask the user for either.
 
-- Do NOT invoke any other skill. `to-prd` → `to-issues` is the only path forward.
+- Do NOT invoke any other skill. `to-issues` is the only path forward.
 
 ## Key Principles
 
 - **One question at a time** - Don't overwhelm with multiple questions
 - **Multiple choice preferred** - Easier to answer than open-ended when possible
 - **YAGNI for needs, not for structure** - Cut anything built for a need nobody has yet; keep what the current problem, or the structure of what is built now, requires
-- **Explore alternatives** - Always propose 2-3 approaches before settling
-- **Incremental validation** - Present design, get approval before moving on
+- **Explore alternatives** - Off the light path, always propose 2-3 approaches before settling
+- **Incremental validation** - Off the light path, present design, get approval before moving on
 - **Be flexible** - Go back and clarify when something doesn't make sense

@@ -437,3 +437,37 @@ shared_issue() {
 @test "header comment lists the shared-file WARN" {
   sed -n '1,/^set -uo/p' "$LINT" | grep -q -i 'same file'
 }
+
+@test "no --prd: a draft with ## Decisions and an Implements naming its own IDs exits 0 with no WARN" {
+  cat > "$W/decided.md" <<'MD'
+# one slice
+
+Status: ready-for-agent
+
+## What to build
+
+Build the one slice.
+
+## Decisions
+
+- **D1** — Keep the format. Reason at `src/a.sh:3`.
+
+## Implements
+
+D1
+
+## Acceptance criteria
+
+- [ ] First criterion
+- [ ] Second criterion
+- [ ] Third criterion
+
+## Blocked by
+
+None - can start immediately
+MD
+  run bash "$LINT" --issue "$W/decided.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *WARN* ]]
+  [[ "$output" != *ERROR* ]]
+}

@@ -162,9 +162,9 @@ a green PR has none. `/address-pr-comments` on a crew-afk PR (body has `<!-- cre
 `solve-issue`'s `run-checks.sh` after its fix commit and a plain `git push` (never forced) only on `CHECKS: pass`; when the
 marker names only `findings` and every `crew-finding:` comment was handled, its summary prints `once CI is green: gh pr ready <n>`.
 
-`prdPath(ctx)` (`orchestrator/lib/prd.mjs`) is the one owner of where the PRD is, located once per run: `.scratch/<slug>/PRD.md`;
+`prdPath(ctx)` (`orchestrator/lib/prd.mjs`) is the one owner of the feature's intent — its PRD, or the one issue carrying its decisions — located once per run: `.scratch/<slug>/PRD.md`;
 else under `tracker: github` fetched with `tracker/cli.mjs prd` and saved as `prd-issue.md` (the saved copy when that fetch
-fails, with a warning); else a saved `prd-issue.md`; else null. `pipeline/pr-body.mjs` gets the PR writer's PRD from it too,
+fails, with a warning); else a saved `prd-issue.md`; else the feature's one issue with a `## Decisions` heading (local: under `issues/open/` or `issues/done/`; github: found with `tracker/cli.mjs known` and saved as `intent-issue.md`, the saved copy when `known` fails, with a warning); null when none, and null plus a `[WARN]` when two or more carry it. `pipeline/pr-body.mjs` gets the PR writer's PRD from it too,
 and `pipeline/review.mjs` puts it on the per-branch review prompt's `PRD: <path>` line, which `reviewer.md` reads instead of
 deriving a path from the branch name (configurable: `afk.branchPrefix`, `--jira`).
 

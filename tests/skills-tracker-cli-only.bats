@@ -10,7 +10,7 @@ load helpers/render
 load helpers/platforms
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
-TRACKER_SKILLS=(to-issues to-prd crew-address-findings upgrade-deps solve-issue)
+TRACKER_SKILLS=(to-issues to-prd crew-address-findings upgrade-deps solve-issue crew-grill crew-brainstorm)
 
 # The `## Tracker Configuration` section of a rendered body.
 tracker_section() {
@@ -76,6 +76,20 @@ tracker_section() {
   out=$(cd "$repo" && bash -c "$(tracker_section "$f" | awk '/^```bash$/{n++;f=(n==2);next} /^```$/{f=0} f' | grep -v '^node "\$TRACKER"')")
   [ "$out" = "$(cd "$repo" && pwd -P)/.coding-crew/tracker/cli.mjs" ] || [ "$out" = "$repo/.coding-crew/tracker/cli.mjs" ]
   [ -f "$out" ]
+}
+
+@test "every rendered skill that runs a tracker op defines \$TRACKER through the tracker-configuration lookup, for every platform" {
+  local dir skill p f
+  for dir in "$REPO_ROOT"/skills/*/; do
+    skill=$(basename "$dir")
+    [ "$skill" = _shared ] && continue
+    for p in "${PLATFORMS[@]}"; do
+      f=$(rendered_skill "$skill" "$p")
+      grep -qF 'node "$TRACKER"' "$f" || continue
+      grep -qF 'TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"' "$f" ||
+        { echo "$skill/$p runs node \"\$TRACKER\" but never sets it (add {{FRAGMENT:tracker-configuration}})" >&2; return 1; }
+    done
+  done
 }
 
 @test "solve-issue includes the fragment and fetches and marks done through the CLI" {

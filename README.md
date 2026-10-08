@@ -63,13 +63,15 @@ flowchart LR
 
 | Command                  | What it does                                               |
 | ------------------------ | ---------------------------------------------------------- |
-| `/crew-grill`            | Stress-test a plan → PRD + issues                          |
-| `/crew-brainstorm`       | Shape a fuzzy idea → design → PRD + issues                 |
+| `/crew-grill`            | Stress-test a plan → issues (a PRD only when work splits)  |
+| `/crew-brainstorm`       | Shape a fuzzy idea → design → issues (PRD only if split)   |
 | `/crew-afk`              | Run the unattended sprint                                  |
 | `/address-pr-comments`   | Fix PR review comments, push once your checks pass         |
 | `/solve-issue`           | Build one issue end to end, yourself                       |
 | `/write-pr`              | Write a PR description a reviewer can act on               |
 | `/configure-tracker`     | Keep issues as local markdown or in GitHub Issues          |
+
+**Light path.** When the source you hand `/crew-grill` or `/crew-brainstorm` (an issue or your message) is already one complete change (problem with evidence, testable criteria, no open fork), they skip the Q&A, print one `Light path:` line and go straight to `/to-issues`. `/to-issues` alone decides whether a PRD is written: one slice gets none (the issue carries its own `## Decisions`), two or more slices get a PRD.
 
 ## Learn more
 

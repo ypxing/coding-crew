@@ -290,7 +290,7 @@ Other platforms get the same skills under their own skill dir (see the README's 
  ┌───────────────────────────────────────────────────────────────────┐
  │  Plan & explore (optional but recommended)                        │
  │                                                                   │
- │  /crew-grill             (interview → approaches → PRD → issues)  │
+ │  /crew-grill             (interview → approaches → issues)        │
  │  /crew-grill with docs   (crew-grill + CONTEXT.md + ADRs)         │
  └──────────────────────────┬────────────────────────────────────────┘
                             │ .scratch/.../issues/*.md
@@ -526,13 +526,15 @@ Opens the latest sprint review, shows a triage table (Actionable / Debatable / D
 
 | Goal                                               | Skill                            |
 | -------------------------------------------------- | -------------------------------- |
-| Any feature: interview → approaches → PRD → issues | `/crew-grill`                    |
+| Any feature: interview → approaches → issues       | `/crew-grill`                    |
 | crew-grill + also update CONTEXT.md and ADRs       | `/crew-grill with docs`          |
 | Update domain glossary and ADRs standalone         | `/domain-modeling`               |
 | Turn a feature idea into a PRD                     | `/to-prd`                        |
 | Break a PRD into issues                            | `/to-issues`                     |
 | Address GitHub PR review comments                  | `/address-pr-comments`           |
 | Write a PR body for human reviewers                | `/write-pr`                      |
+
+**The light path.** `/crew-grill` and `/crew-brainstorm` first judge whether the source (an issue or your message) is already one complete change: the problem is stated with its cost or evidence, one slice is likely, the acceptance criteria are testable or derivable from the code, and no open fork would annoy you if decided for you. Each check is answered with a quote or `file:line`. If all hold they print one `Light path:` line and invoke `/to-issues` with no question; if one fails they name it in one line and run the Q&A as before. `/to-issues` alone decides whether a PRD is written: one slice publishes (or rewrites the source issue in place) with its own `## Decisions` section and no PRD, its slug derived from the milestone, the `.scratch/<slug>/` directory or the title and shown in the quiz for you to override; two or more slices, or two or more origin issues, invoke `/to-prd` first. crew-afk's feature review reads a PRD-less feature's `## Decisions` issue as its intent.
 
 ---
 

@@ -1,9 +1,11 @@
 ---
 name: crew-grill
-description: Full design pipeline — grill the user about a plan (lite by default; add "with docs" to also update CONTEXT.md and ADRs via domain-modeling), produce a PRD, then break it into issues. Use when starting a new feature from scratch.
+description: Full design pipeline — grill the user about a plan (lite by default; add "with docs" to also update CONTEXT.md and ADRs via domain-modeling), then hand the result to to-issues, which writes a PRD only when the work splits. Use when starting a new feature from scratch.
 ---
 
-Run the full design pipeline in three phases. Pause for user feedback within each phase, but do not ask the user to manually invoke the next skill — transition automatically.
+Run the full design pipeline in two phases. Pause for user feedback within each phase, but do not ask the user to manually invoke the next skill — transition automatically.
+
+{{FRAGMENT:tracker-configuration}}
 
 ## Phase 1 — Grill
 
@@ -14,6 +16,8 @@ Interview the user relentlessly until you reach shared understanding. Map the pl
 The tree's root is the problem, not the solutions on offer. Before any solution node, establish the **problem size**: how often it happens, what the manual workaround costs today, and what goes wrong if nothing is done. These are mostly facts (git history, the tracker, the code), so Gate 1 applies — look them up (`git log`, merged PRs, the issue list), cite them, and ask only what no source holds. Never ask the user how often something happens when the history can count it. Candidate solutions the user brings with them are inputs to this tree, not its frontier: the smallest change that removes the cost you measured is the baseline every larger option has to beat.
 
 {{FRAGMENT:design-standard}}
+
+{{FRAGMENT:light-path}}
 
 ### Rounds and gates
 
@@ -102,16 +106,8 @@ Then:
 
 1. Summarize all implementation decisions (not glossary terms) including the rationale for each — why that option was chosen over alternatives. Include the Silent and Notify decisions you made on the user's behalf, one compact line each, tagged `(auto)`. This is the audit point for everything you did not ask about.
 2. List the **facts you established** at Gate 1 that the design now rests on — the ones the verification pass re-checked — each with its citation (`path:line`, doc, or spec). These cost real research and an implementing agent would otherwise re-derive them — or worse, re-ask them. A fact the user contradicts here is cheaper to fix now than a decision built on it later.
-3. Ask once: **"Ready to write the PRD?"** If yes, continue to Phase 2. If no, stop.
+3. Hand off: run the `to-issues` skill, passing this summary (decisions, `(auto)` lines, facts, cut list). `to-issues` alone decides whether a PRD is written, and its issues or PRD must keep what only this summary holds: carry the `(auto)` decisions through, since they were never put to the user and a reviewer can catch them only there; carry the established facts and their citations through as well; the cut list goes to Out of Scope, each item with why it was cut, so an implementer does not re-add it. Do not ask the user for the next step.
 
-## Phase 2 — PRD
+## Phase 2 — Issues
 
-Run the `to-prd` skill. Pass the decisions summary from Phase 1 as input — the PRD must include an **Decisions** section capturing each decision and its rationale, so implementation agents can read `PRD.md` as the single source of truth for both requirements and architectural choices. Carry the `(auto)` decisions through into that section too: they were never put to the user, so the PRD is the only place a reviewer can catch them. Carry the established facts and their citations through as well — that section is where paths, signatures, and external contracts belong. The Phase 1 cut list goes to Out of Scope, each item with why it was cut, so an implementer does not re-add it.
-
-At the end of writing `PRD.md`, ask once: **"Ready to break this into issues?"** If yes, continue to Phase 3. If no, stop.
-
-## Phase 3 — Issues
-
-Run the `to-issues` skill using the `PRD.md` just written as primary input. Do not re-ask the slug or whether to run `/to-prd` (it was just done).
-
-Complete the issue quiz and write all approved issues to `.scratch/<feature-slug>/issues/`.
+Run the `to-issues` skill with the Phase 1 summary as its source. Complete its issue quiz and let it publish the approved issues.

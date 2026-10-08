@@ -12,7 +12,9 @@
     "--output-format",
     "json",
     "--model",
-    "golden-model"
+    "golden-model",
+    "--reasoning-effort",
+    "medium"
   ],
   "input": null,
   "env": {

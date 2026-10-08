@@ -2,7 +2,7 @@
   "cmd": "copilot",
   "args": [
     "-p",
-    "<PROTOCOL crew-reviewer sha256:3667ed18a8cf3b53>\n\n---\n\nImplement the alpha issue.\n",
+    "<PROTOCOL crew-reviewer sha256:603aa00c709bb577>\n\n---\n\nImplement the alpha issue.\n",
     "-C",
     "<TMP>/repo/.scratch/worktrees/alpha",
     "--add-dir",
@@ -13,6 +13,8 @@
     "json",
     "--model",
     "golden-model",
+    "--reasoning-effort",
+    "high",
     "--deny-tool",
     "write"
   ],

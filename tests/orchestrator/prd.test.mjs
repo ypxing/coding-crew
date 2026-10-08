@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -75,4 +75,94 @@ test("github: a milestone with no PRD issue (exit 3) is silent and null", () => 
   const ctx = ctxFor(root({ github: true }), () => ({ code: 3, stdout: "" }));
   assert.equal(prdPath(ctx), null);
   assert.deepEqual(ctx.logs, []);
+});
+
+const DECIDED = "# One slice\n\nStatus: ready-for-agent\n\n## What to build\n\nx\n\n## Decisions\n\n- **D1** — Bounded.\n\n## Implements\n\nD1\n";
+const PLAIN = "# Other\n\nStatus: ready-for-agent\n\n## What to build\n\ny\n";
+function withIssues(dir, files) {
+  for (const [rel, text] of Object.entries(files)) {
+    mkdirSync(join(dir, ".scratch/demo/issues", rel.split("/")[0]), { recursive: true });
+    writeFileSync(join(dir, ".scratch/demo/issues", rel), text);
+  }
+  return dir;
+}
+
+test("local, no PRD: the one issue with ## Decisions is the intent, in open/ or done/", () => {
+  const open = withIssues(root(), { "open/01-a.md": DECIDED, "open/02-b.md": PLAIN });
+  assert.equal(prdPath(ctxFor(open)), join(open, ".scratch/demo/issues/open/01-a.md"));
+  const done = withIssues(root(), { "done/01-a.md": DECIDED, "open/02-b.md": PLAIN });
+  assert.equal(prdPath(ctxFor(done)), join(done, ".scratch/demo/issues/done/01-a.md"));
+});
+
+test("local, no PRD: the intent issue closed (open/ → done/) mid-sprint is still found, on the same sprint", () => {
+  const dir = withIssues(root(), { "open/01-a.md": DECIDED });
+  const ctx = ctxFor(dir);
+  assert.equal(prdPath(ctx), join(dir, ".scratch/demo/issues/open/01-a.md"));
+  mkdirSync(join(dir, ".scratch/demo/issues/done"), { recursive: true });
+  renameSync(join(dir, ".scratch/demo/issues/open/01-a.md"), join(dir, ".scratch/demo/issues/done/01-a.md"));
+  const moved = prdPath(ctx);
+  assert.equal(moved, join(dir, ".scratch/demo/issues/done/01-a.md"));
+  assert.equal(readFileSync(moved, "utf8"), DECIDED);
+});
+
+test("local, no PRD: no issue with ## Decisions is null and silent", () => {
+  const ctx = ctxFor(withIssues(root(), { "open/01-b.md": PLAIN }));
+  assert.equal(prdPath(ctx), null);
+  assert.deepEqual(ctx.logs, []);
+});
+
+test("local, no PRD: two issues with ## Decisions are null with one [WARN] naming them", () => {
+  const ctx = ctxFor(withIssues(root(), { "open/01-a.md": DECIDED, "done/02-b.md": DECIDED }));
+  assert.equal(prdPath(ctx), null);
+  const warns = ctx.logs.filter(([lvl]) => lvl === "warn");
+  assert.equal(warns.length, 1);
+  assert.match(warns[0][1], /01-a\.md/);
+  assert.match(warns[0][1], /02-b\.md/);
+});
+
+test("a local PRD.md still wins over an issue carrying ## Decisions", () => {
+  const dir = withIssues(root({ prd: PRD }), { "open/01-a.md": DECIDED });
+  assert.equal(prdPath(ctxFor(dir)), join(dir, ".scratch/demo/PRD.md"));
+});
+
+// A stub exec: `prd` exits 3 (no PRD issue); `known` writes the given files into --out.
+function knownExec(files, knownCode = 0) {
+  return (cmd, args) => {
+    if (args.includes("prd")) return { code: 3, stdout: "" };
+    if (knownCode) return { code: knownCode, stdout: "", stderr: "gh down" };
+    const out = args[args.indexOf("--out") + 1];
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(out, name), text);
+    return { code: 0, stdout: "" };
+  };
+}
+
+test("github, no PRD issue: the one known issue with ## Decisions is saved as intent-issue.md", () => {
+  const dir = root({ github: true });
+  const p = prdPath(ctxFor(dir, knownExec({ "7-one-slice.md": DECIDED, "8-other.md": PLAIN })));
+  assert.equal(p, join(dir, ".scratch/demo/intent-issue.md"));
+  assert.equal(readFileSync(p, "utf8"), DECIDED);
+});
+
+test("github: a PRD issue wins over a known issue with ## Decisions", () => {
+  const dir = root({ github: true });
+  const exec = (cmd, args) => (args.includes("prd") ? { code: 0, stdout: PRD } : knownExec({ "7-a.md": DECIDED })(cmd, args));
+  assert.equal(prdPath(ctxFor(dir, exec)), join(dir, ".scratch/demo/prd-issue.md"));
+});
+
+test("github: no known issue with ## Decisions is null; two are null with a [WARN]", () => {
+  assert.equal(prdPath(ctxFor(root({ github: true }), knownExec({ "8-other.md": PLAIN }))), null);
+  const ctx = ctxFor(root({ github: true }), knownExec({ "7-a.md": DECIDED, "9-b.md": DECIDED }));
+  assert.equal(prdPath(ctx), null);
+  assert.equal(ctx.logs.filter(([lvl]) => lvl === "warn").length, 1);
+});
+
+test("github: known failing returns a saved intent-issue.md, else null, with a [WARN] either way", () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".scratch/demo/intent-issue.md"), DECIDED);
+  const ctx = ctxFor(dir, knownExec({}, 1));
+  assert.equal(prdPath(ctx), join(dir, ".scratch/demo/intent-issue.md"));
+  assert.equal(ctx.logs.filter(([lvl]) => lvl === "warn").length, 1);
+  const bare = ctxFor(root({ github: true }), knownExec({}, 1));
+  assert.equal(prdPath(bare), null);
+  assert.equal(bare.logs.filter(([lvl]) => lvl === "warn").length, 1);
 });
