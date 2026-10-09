@@ -1,18 +1,16 @@
 #!/usr/bin/env bats
 
-# Tests for issue 09 (github-issue-tracker feature): crew-afk's "Resolving the sprint
-# target" step keeps the existing local grep in each of the four platform SKILL.md
-# launcher bodies. Its former `gh issue list` comment was dropped by #331: skills reach
-# the tracker only through the tracker CLI.
+# Tests for crew-afk's "Resolving the sprint target" step in each platform's launcher body:
+# it lists features with the tracker CLI's `features` op (#371), which answers for a github
+# milestone as well as a local `.scratch/<slug>/`, and runs no `ls`/`grep` over `.scratch/`
+# nor any direct gh call (#331: skills reach the tracker only through the tracker CLI).
 #
-# This is prompt text, not runtime code, so the "unit test" here is a diff-based/content
-# check: the pre-existing local-scan lines must survive byte-for-byte, consistently across
-# all four platforms, with no direct gh call beside them.
+# This is prompt text, not runtime code, so the "unit test" here is a content check,
+# consistent across all platforms.
 
 load helpers/render
 
-LOCAL_LS_LINE='ls -d .scratch/*/ 2>/dev/null'
-LOCAL_GREP_LINE='grep -rl "Status: ready-for-agent" .scratch/*/issues/open/*.md 2>/dev/null'
+FEATURES_LINE='node "$TRACKER" features'
 
 setup_file() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -34,19 +32,19 @@ sprint_target_fence() {
   ' "$body"
 }
 
-@test "sprint target: the existing local ls line is untouched in every platform variant" {
+@test "sprint target: the fence lists features through the tracker CLI, in every platform variant" {
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     fence="$(sprint_target_fence "$p")"
-    [[ "$fence" == *"$LOCAL_LS_LINE"* ]] || {
-      echo "$p: local ls line missing or modified" >&2; return 1; }
+    [[ "$fence" == *"$FEATURES_LINE"* ]] || {
+      echo "$p: the fence does not run features" >&2; return 1; }
   done
 }
 
-@test "sprint target: the existing local grep line is untouched, immediately after the ls line" {
+@test "sprint target: the fence runs no ls or grep over .scratch" {
   for p in "${AFK_LAUNCHER_VARIANTS[@]}"; do
     fence="$(sprint_target_fence "$p")"
-    [[ "$fence" == *"$LOCAL_LS_LINE"$'\n'"$LOCAL_GREP_LINE"* ]] || {
-      echo "$p: the two local lines are no longer adjacent/unmodified as a pair" >&2; return 1; }
+    [[ "$fence" != *".scratch"* ]] || {
+      echo "$p: the fence still scans .scratch" >&2; return 1; }
   done
 }
 

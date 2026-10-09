@@ -175,3 +175,104 @@ tracker_section() {
   out=$(cd "$wt" && HOME="$BATS_TEST_TMPDIR/nohome" bash -c "$(tracker_section "$f" | awk '/^```bash$/{n++;f=(n==2);next} /^```$/{f=0} f' | grep -v '^node "\$TRACKER"')")
   [ "$out" = "$(cd "$repo" && pwd -P)/.coding-crew/tracker/cli.mjs" ]
 }
+
+# prompt_layout_leaks <file> — prints each line of a prompt that names the local tracker's layout
+# (`issues/open`, `issues/done`) or lists features with `ls`/`find` over `.scratch/` (a `find` that
+# selects files by `-path`/`-name`, such as one for review reports, lists no features). Features are
+# listed with `node "$TRACKER" features`, which answers for every tracker. Scripts are the local
+# backend's mechanism, not prompts, and are not scanned.
+prompt_layout_leaks() {
+  grep -nE 'issues/(open|done)|\b(ls|find)\b[^|;&]*\.scratch([/ ]|$)' "$1" | grep -vE '^[0-9]+:.*\bfind\b.*-(path|name) ' || true
+}
+
+@test "no rendered skill body, role or fragment names the local issue layout or lists features with ls or find over .scratch, for every platform" {
+  local dir skill p f hits
+  for dir in "$REPO_ROOT"/skills/*/; do
+    skill=$(basename "$dir")
+    [ "$skill" = _shared ] && continue
+    for p in "${PLATFORMS[@]}"; do
+      f=$(rendered_skill "$skill" "$p")
+      hits=$(prompt_layout_leaks "$f")
+      [ -z "$hits" ] || { echo "$skill/$p names the local layout:" >&2; echo "$hits" >&2; return 1; }
+    done
+  done
+  while IFS= read -r f; do
+    hits=$(prompt_layout_leaks "$f")
+    [ -z "$hits" ] || { echo "$f names the local layout:" >&2; echo "$hits" >&2; return 1; }
+  done < <(find "$REPO_ROOT/orchestrator/roles" "$REPO_ROOT/skills/_shared/fragments" -type f -name '*.md' | sort)
+}
+
+@test "the layout check fails, for every platform, on a skill body that names issues/open or lists .scratch with ls or find" {
+  local p f
+  for p in "${PLATFORMS[@]}"; do
+    f=$(rendered_skill crew-afk "$p")
+    printf 'x\nls -d .scratch/*/\n' | cat "$f" - > "$BATS_TEST_TMPDIR/ls.md"
+    [ -n "$(prompt_layout_leaks "$BATS_TEST_TMPDIR/ls.md")" ]
+    printf 'x\nfind .scratch -maxdepth 1\n' | cat "$f" - > "$BATS_TEST_TMPDIR/find.md"
+    [ -n "$(prompt_layout_leaks "$BATS_TEST_TMPDIR/find.md")" ]
+    printf 'x\ngrep -rl ready .scratch/*/issues/open/*.md\n' | cat "$f" - > "$BATS_TEST_TMPDIR/open.md"
+    [ -n "$(prompt_layout_leaks "$BATS_TEST_TMPDIR/open.md")" ]
+    printf 'x\nmove it to issues/done/\n' | cat "$f" - > "$BATS_TEST_TMPDIR/done.md"
+    [ -n "$(prompt_layout_leaks "$BATS_TEST_TMPDIR/done.md")" ]
+  done
+}
+
+@test "crew-afk, to-issues and to-prd resolve a feature slug from the features op, for every platform" {
+  local skill p f
+  for skill in crew-afk to-issues to-prd; do
+    for p in "${PLATFORMS[@]}"; do
+      f=$(rendered_skill "$skill" "$p")
+      grep -qF 'node "$TRACKER" features' "$f" || { echo "$skill/$p does not run features" >&2; return 1; }
+    done
+  done
+}
+
+@test "to-issues asks extend-or-new before using a slug that features lists, so to-prd's exemption holds, for every platform" {
+  local p
+  for p in "${PLATFORMS[@]}"; do
+    grep -qF 'Before using a slug `features` lists, ask the user' "$(rendered_skill to-issues "$p")"
+  done
+}
+
+@test "to-prd asks the user before reusing a slug that features lists, except one to-issues handed it, for every platform" {
+  local p
+  for p in "${PLATFORMS[@]}"; do
+    grep -qF 'Before reusing a slug `features` lists, ask the user' "$(rendered_skill to-prd "$p")"
+    grep -qF 'Skip that question when a calling skill (`to-issues`) handed you the slug' "$(rendered_skill to-prd "$p")"
+  done
+}
+
+@test "add-tests writes no PRD.md and hands its findings file to to-issues; solve-issue names no .scratch PRD.md fallback, for every platform" {
+  local p f
+  for p in "${PLATFORMS[@]}"; do
+    f=$(rendered_skill add-tests "$p")
+    if grep -qF 'PRD.md' <(sed 's/write no `PRD.md`//' "$f"); then echo "forbidden text matched (line 241 of skills-tracker-cli-only.bats)" >&2; return 1; fi
+    grep -qF '.scratch/<feature-slug>/findings.md' "$f"
+    grep -qF 'with that findings file as its source' "$f"
+    if grep -qF '.scratch/<feature-slug>/PRD.md' "$(rendered_skill solve-issue "$p")"; then echo "forbidden text matched (line 244 of skills-tracker-cli-only.bats)" >&2; return 1; fi
+  done
+}
+
+@test "the ready-for-human Mark it done Undo names no tracker and points at the tracker doc beside the mark-done command's CLI, for every platform" {
+  local p f
+  for p in "${PLATFORMS[@]}"; do
+    f=$(rendered_skill to-issues "$p")
+    grep -qF 'Undo:` follow "Reopen an issue" in the tracker doc `.coding-crew/tracker/docs/<kind>.md` — `~/.coding-crew/tracker/docs/<kind>.md` when the `mark-done` command above is the `~/.coding-crew` one' "$f"
+    if grep -qF 'remove `awaiting-merge`' "$f"; then echo "forbidden text matched (line 253 of skills-tracker-cli-only.bats)" >&2; return 1; fi
+  done
+}
+
+@test "both tracker docs list the features op and have a Reopen an issue section" {
+  local t
+  for t in local github; do
+    t="$REPO_ROOT/tracker/docs/$t.md"
+    grep -qE '^node "\$TRACKER" features( |$)' "$t"
+    grep -q '^## Reopen an issue' "$t"
+  done
+}
+
+@test ".coding-crew/config.json and dev-commands.json are tracked, not ignored, and the guide says to commit them" {
+  if grep -qE '^/?\.coding-crew' "$REPO_ROOT/.gitignore"; then echo "forbidden text matched (line 267 of skills-tracker-cli-only.bats)" >&2; return 1; fi
+  git -C "$REPO_ROOT" ls-files --error-unmatch .coding-crew/config.json .coding-crew/dev-commands.json >/dev/null
+  grep -qE 'Commit `.coding-crew/config.json` and `.coding-crew/dev-commands.json`' "$REPO_ROOT/docs/guide.md"
+}

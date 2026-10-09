@@ -89,8 +89,8 @@ Extract the acceptance criteria and the files likely to change (confirmed in Ste
 
 If `PRD` is non-empty, read it and keep it in memory for the rest of the run: it holds the
 architecture decisions and constraints the issue assumes. `preflight.sh` resolved it from the
-issue's `## Context Documents` (`- PRD: <path>`, against `$MAIN_ROOT`), falling back to
-`$MAIN_ROOT/.scratch/<feature-slug>/PRD.md`. No PRD is normal — continue normally.
+issue's `## Context Documents` (`- PRD: <path>`, against `$MAIN_ROOT`) and, failing that, from the
+feature's PRD. No PRD is normal — continue normally.
 
 ### 2. Dependencies — only when something is missing
 
