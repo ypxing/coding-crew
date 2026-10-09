@@ -175,7 +175,8 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
 
 @test "the real docker is found with the shim's own dir removed from PATH" {
   # The shim dir is first on PATH; if it resolved itself this would loop forever.
-  run timeout 10 docker compose -f a.yml up
+  # no `timeout` on stock macOS: a self-resolving shim would recurse until killed, so cap it in bash
+  run bash -c 'docker compose -f a.yml up & p=$!; (sleep 10; kill $p 2>/dev/null) & w=$!; wait $p; rc=$?; kill $w 2>/dev/null; exit $rc'
   [ "$status" -eq 0 ]
   [ -f "$LOG" ]
 }
