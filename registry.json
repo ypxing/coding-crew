@@ -31,7 +31,7 @@
   ],
   "skills": {
     "crew-afk": {
-      "version": "2.33.0",
+      "version": "2.34.0",
       "source-dir": "crew-afk",
       "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
       "assets": {
@@ -64,7 +64,7 @@
       "source": "mattpocock/skills"
     },
     "dep-install": {
-      "version": "1.5.5",
+      "version": "1.6.0",
       "source-dir": "dep-install",
       "description": "Install the project's dependencies once, on the host or in docker.",
       "assets": {
@@ -73,7 +73,7 @@
       }
     },
     "solve-issue": {
-      "version": "1.14.3",
+      "version": "1.14.4",
       "source-dir": "solve-issue",
       "description": "Implement a single issue end-to-end: read, explore, install, TDD, verify, commit.",
       "assets": {

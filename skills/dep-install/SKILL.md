@@ -12,8 +12,9 @@ the project is docker-mode — not as a routine step. Do not re-litigate whether
 detect the mode, then install.
 
 Two steps: resolve the install mode, then follow the appropriate install guide. After install, run
-every project command through `scripts/run.sh --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"`:
-it runs it in the mode resolved here — inside docker with every flag the docker guide requires, or on
+every project command — an ad-hoc one, and a one-off `docker compose` call, included — through
+`scripts/run.sh --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" -- "<command>"`: it runs it in
+the mode resolved here — inside docker, with this worktree's override added by the `docker` shim, or on
 the host.
 
 ## Must
@@ -38,8 +39,8 @@ bash "<skill-dir>/scripts/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main
 
 It prints `INSTALL_MODE=docker` or `INSTALL_MODE=host`, and `DOCKER_SERVICE`. Its order: `git config
 --local agent.install-mode`, then `$MAIN_ROOT/.coding-crew/dev-commands.json`'s cached
-`"install_mode"` (written by `ensure-deps.sh`, trusted until a human clears it), then an existing
-`$MAIN_ROOT/docker-compose.override.yml`, then `detect-mode.sh`'s Makefile dry-run. Do not re-derive
+`"install_mode"` (written by `ensure-deps.sh`, trusted until a human clears it), then
+`detect-mode.sh`'s Makefile dry-run. Do not re-derive
 any of these yourself. A non-empty `DOCKER_SERVICE` is the recorded service (`agent.install-service`,
 or the cache's `detect-service.sh` verdict): use it as `<service>` throughout the docker guide
 instead of guessing.
