@@ -566,7 +566,7 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   init_sprint calc
   state blocked --slug b --branch crew/calc/b --reason "main-tree-dirty — uncommitted changes in /r would be overwritten: a.ts — commit or stash them in the main checkout, then re-run" >/dev/null
   run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
-  [[ "$output" == *"## Main Checkout Not Clean (need a human)"* ]]
+  [[ "$output" == *"## Feature Worktree Not Clean (need a human)"* ]]
   [[ "$output" == *"- crew/calc/b: uncommitted changes in /r would be overwritten: a.ts"* ]]
 }
 
@@ -598,7 +598,7 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
   [ "$status" -eq 0 ]
   [[ "$output" == *"## Merge Conflicts (need a human)"* ]]
-  [[ "$output" == *"git checkout feature/calc && git merge --no-ff <branch>"* ]]
+  [[ "$output" == *"git worktree add /tmp/crew-resolve feature/calc && cd /tmp/crew-resolve && git merge --no-ff <branch>"* ]]
   [[ "$output" == *"- crew/calc/b"* ]]
 }
 
@@ -896,4 +896,14 @@ EOF
   run state retention --slug first
   [[ "$output" == *"reason: blocked — retry limit reached"* ]]
   [[ "$output" == *"fingerprint: abc123"* ]]
+}
+
+@test "trace.sh --feature-slug from a linked worktree writes to the main checkout's log" {
+  local main="$TEMP_DIR/trace-main" linked="$TEMP_DIR/trace-linked"
+  git init -q -b main "$main"
+  git -C "$main" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  git -C "$main" worktree add -q -b side "$linked"
+  (cd "$linked" && env -u MAIN_ROOT -u TRACE_LOG -u CREW_ORCHESTRATED bash "$AFK_SCRIPTS/trace.sh" --feature-slug x MARK hello)
+  grep -q 'MARK' "$main/.scratch/x/traces/orchestrator.log"
+  [ ! -e "$linked/.scratch/x/traces/orchestrator.log" ]
 }

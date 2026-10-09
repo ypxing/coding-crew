@@ -82,7 +82,7 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -370,13 +370,30 @@ function reportUnknownArgs(unknown, mainRoot) {
   console.error(lines.join("\n"));
 }
 
+/** The main checkout, whichever worktree the run was launched from (session-init.sh derives the same). */
 function gitRoot() {
-  const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  const r = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"], { encoding: "utf8" });
   if (r.status !== 0) {
     console.error("crew-afk: not inside a git repository.");
     process.exit(1);
   }
-  return r.stdout.trim();
+  const [common, top] = r.stdout.trim().split("\n");
+  return basename(common) === ".git" ? dirname(common) : top;
+}
+
+/**
+ * A new feature branch forks from the local default branch; when that is behind origin the sprint
+ * starts from stale code. Warn only, after a best-effort fetch: no origin or any failure stays silent.
+ */
+function warnDefaultBehindOrigin(effects, defaultBranch, log) {
+  if (effects.gitRead(["remote", "get-url", "origin"]).code !== 0) return;
+  if (effects.gitRead(["rev-parse", "--verify", "-q", `refs/heads/${defaultBranch}`]).code !== 0) return;
+  if (effects.gitRead(["fetch", "-q", "origin", defaultBranch]).code !== 0) return;
+  const behind = Number(effects.gitRead(["rev-list", "--count", `refs/heads/${defaultBranch}..refs/remotes/origin/${defaultBranch}`]).stdout.trim());
+  if (behind > 0) {
+    log(`WARNING: local ${defaultBranch} is ${behind} commit(s) behind origin/${defaultBranch}`);
+    log(`The new feature branch is created from local ${defaultBranch}; update ${defaultBranch} first to start from current code.`);
+  }
 }
 
 function resolveScriptsDir(mainRoot, platform) {
@@ -733,6 +750,7 @@ async function main() {
       }
       featureWorktree = wt.path;
       effects.featureRoot = wt.path;
+      if (!wt.reusedBranch) warnDefaultBehindOrigin(effects, named.defaultBranch, (line) => console.error(line));
     }
 
     sprint = await Sprint.init(effects, {
