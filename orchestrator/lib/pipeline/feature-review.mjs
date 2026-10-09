@@ -218,6 +218,7 @@ async function reviewOnce(ctx, { reviewer, promptFile, outFile, sidecarFile }) {
       round: 1,
       reportPath: sidecarFile,
       maxBudgetUsd: reviewer.maxBudgetUsd,
+      effort: reviewer.effort,
     },
     {
       timeoutMs: options.timeoutMs.reviewer,

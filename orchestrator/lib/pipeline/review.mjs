@@ -114,6 +114,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
       round: worker.attempt,
       reportPath: sidecarFile,
       maxBudgetUsd: reviewer.maxBudgetUsd,
+      effort: reviewer.effort,
     },
     {
       timeoutMs: options.timeoutMs.reviewer,
