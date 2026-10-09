@@ -31,7 +31,7 @@
   ],
   "skills": {
     "crew-afk": {
-      "version": "2.32.0",
+      "version": "2.32.1",
       "source-dir": "crew-afk",
       "description": "Run an unattended sprint: implement, review and merge every ready-for-agent issue into one feature branch.",
       "assets": {
@@ -133,7 +133,7 @@
       "source": "mattpocock/skills"
     },
     "crew-brainstorm": {
-      "version": "1.4.0",
+      "version": "1.4.1",
       "source-dir": "crew-brainstorm",
       "description": "Collaborative design pipeline: explore intent, propose approaches, build a spec, then hand off to to-issues.",
       "deps": [
@@ -142,7 +142,7 @@
       ]
     },
     "crew-grill": {
-      "version": "1.5.0",
+      "version": "1.5.1",
       "source-dir": "crew-grill",
       "description": "Adversarial design pipeline: stress-test every assumption, capture decisions, then hand off to to-issues.",
       "deps": [
