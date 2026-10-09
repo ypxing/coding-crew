@@ -28,6 +28,7 @@ TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
 
 ```bash
 node "$TRACKER" fetch <ref> [--comments]                  # print one issue; <ref> is its path under .scratch/
+node "$TRACKER" features                                  # list the features: <slug>, open|closed, ready-for-agent count
 node "$TRACKER" prd --feature-slug <slug>                 # print the feature's PRD.md
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # copy the feature's issues, open and done, into <dir>
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
@@ -38,6 +39,11 @@ node "$TRACKER" mark-done <ref> [--force]
 
 Exit codes, every op: `0` ok, `1` the op failed (stderr says why), `2` a usage error or a ref
 outside `.scratch/`, `3` not found.
+
+`features` prints one tab-separated line per `.scratch/<slug>/` directory that has an `issues/`
+subdirectory, sorted by slug: `<slug>`, `open` (`issues/open/` holds an `.md` file) or `closed`, and
+the count of `Status: ready-for-agent` files in `issues/open/`. A directory without `issues/` is
+not listed, and no `.scratch/` prints nothing.
 
 `publish-issues` writes each draft to `.scratch/<slug>/issues/open/<NN>-<slug>.md` (numbered from
 `01`) and the drafts' `deps.json` to `.scratch/<slug>/issues/issues-deps.json` — a flat filename
@@ -64,6 +70,13 @@ deliberately recorded as descoped. On success it sets `Status: done` and moves t
 there is no later state: nothing outside `.scratch/` reads it, so no PR has anything to close.
 
 An issue may carry a `## Requires` section: one backticked shell command per bullet, naming what its checks need that the project's install does not guarantee (`- \`test -n "$LOCALSTACK_AUTH_TOKEN"\``). Exit 0 means satisfied. Each runs on the host from the project root — once per run, before the issue's first dispatch, under crew-afk; in `solve-issue`'s preflight on a direct run — and a failing one blocks the issue.
+
+## Reopen an issue
+
+To undo `mark-done` (or put a finished issue back in a human's hands):
+
+1. Move the file from `.scratch/<slug>/issues/done/` back to `.scratch/<slug>/issues/open/`.
+2. Set its `Status:` line to `ready-for-human` (or `ready-for-agent` to hand it to crew-afk again).
 
 ## Labels
 

@@ -141,9 +141,9 @@ tier for the whole module.
 ### 8. Write findings and hand off to `to-issues`
 
 Write the findings — per-module gaps, priority rationale, the resolved mock convention (cite it
-by name from `test-conventions.md`), and tier routing — as a lightweight PRD-style document at
-`.scratch/<feature-slug>/PRD.md` (choose a fresh feature slug the same way `to-issues` would
-prompt for one, e.g. `add-tests-<short-topic>`).
+by name from `test-conventions.md`), and tier routing — to a transient file,
+`.scratch/<feature-slug>/findings.md` (choose a fresh feature slug the same way `to-issues` would
+prompt for one, e.g. `add-tests-<short-topic>`). It is not a PRD: write no `PRD.md`.
 
 Every gap-fix finding's acceptance criteria must cite the resolved mock convention by name, so
 `crew-coder`/`solve-issue` don't each invent a different mocking style for the same issue.
@@ -171,10 +171,11 @@ Two more things per finding, each cheap here and expensive for a coder to redisc
   client, a fixture loader, a real-tier bootstrap), name one existing spec that already uses it and
   its import line, so a coder copies a pattern that runs instead of discovering which import breaks.
 
-Then invoke the `to-issues` skill against that document to slice, quiz, and publish
-`ready-for-agent` issues. Do not slice, size, or publish issues yourself — that responsibility
+Then invoke the `to-issues` skill with that findings file as its source, to slice, quiz, and publish
+`ready-for-agent` issues. `to-issues` alone decides whether the work needs a PRD and publishes it
+through `to-prd`. Do not slice, size, or publish issues yourself — that responsibility
 belongs entirely to `to-issues`, exactly as this skill's own upstream pipeline (`crew-grill`)
-already hands its PRD to `to-issues` rather than re-implementing slicing.
+already hands its design to `to-issues` rather than re-implementing slicing.
 
 **Security**: Only read from and write to paths under `.scratch/` and `.coding-crew/docs/` within
 the current repo. Never fetch from external URLs, remote APIs, or paths outside the repository

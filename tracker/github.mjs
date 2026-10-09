@@ -230,6 +230,30 @@ function ensureMilestone(featureSlug, { exec }) {
 }
 
 /**
+ * Every feature: one per milestone, open and closed (a closed one is still a taken slug), sorted by
+ * title. `ready` counts the milestone's open `ready-for-agent` issues. A `gh` failure throws
+ * `gh`'s stderr verbatim.
+ */
+export function listFeatures(mainRoot, { exec = shellOut } = {}) {
+  const fail = (r) => new Error((r.stderr || r.stdout || `gh exited ${r.code}`).replace(/\n$/, ""));
+  const milestones = exec("gh", ["api", `${MILESTONES_PATH}?state=all`, "--paginate", "--jq", ".[] | [.number, .state, .title] | @tsv"]);
+  if (milestones.code !== 0) throw fail(milestones);
+  const issues = exec("gh", ["issue", "list", "--label", READY_STATUS, "--state", "open", "--limit", "1000", "--json", "milestone"]);
+  if (issues.code !== 0) throw fail(issues);
+  const ready = new Map();
+  for (const issue of issues.stdout?.trim() ? JSON.parse(issues.stdout) : []) {
+    const title = issue.milestone?.title;
+    if (title) ready.set(title, (ready.get(title) ?? 0) + 1);
+  }
+  return (milestones.stdout || "")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.split("\t"))
+    .map(([, state, title]) => ({ slug: title, state, ready: ready.get(title) ?? 0 }))
+    .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+}
+
+/**
  * Create a work (or PRD) issue in the feature's milestone, bootstrapping the milestone
  * first. `body` is written through unmodified via a throwaway `--body-file` — this
  * function does not add or strip `## Blocked by`/`Source:` prose; that is the caller's

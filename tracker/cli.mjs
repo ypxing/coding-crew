@@ -6,6 +6,7 @@
  *   (fallback: $HOME/.coding-crew/tracker/cli.mjs)
  *
  *   fetch <ref> [--comments]            "# <title>\n\n<body>" (+ comments)
+ *   features                            one "<slug>\t<open|closed>\t<ready-count>" line per feature, by slug
  *   prd --feature-slug S                the feature's PRD
  *   known --feature-slug S --out DIR    one file per feature issue, open and done, named by its lint ref
  *   publish-issues --feature-slug S --drafts DIR [--replace]
@@ -78,6 +79,7 @@ function parseArgs(op, argv, { positionals = 0, values = [], flags = [], optiona
 
 const USAGE = {
   fetch: "fetch <ref> [--comments]",
+  features: "features",
   prd: "prd --feature-slug S",
   known: "known --feature-slug S --out DIR",
   "publish-issues": "publish-issues --feature-slug S --drafts DIR [--replace]",
@@ -230,6 +232,12 @@ const OPS = {
       for (const c of issue.comments) text += `\n### @${c.author} — ${c.createdAt}\n\n${c.body.replace(/\n*$/, "\n")}`;
     }
     out(text);
+    return EXIT.OK;
+  },
+
+  async features(argv, { tracker, mainRoot, exec, out }) {
+    parseArgs("features", argv, {});
+    for (const f of tracker.listFeatures(mainRoot, { exec })) out(`${f.slug}\t${f.state}\t${f.ready}\n`);
     return EXIT.OK;
   },
 

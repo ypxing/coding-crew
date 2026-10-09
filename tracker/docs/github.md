@@ -28,6 +28,7 @@ TRACKER="$(git rev-parse --show-toplevel)/.coding-crew/tracker/cli.mjs"
 
 ```bash
 node "$TRACKER" fetch <number> [--comments]               # print one issue (title, body; + comments)
+node "$TRACKER" features                                  # list the features: <slug>, open|closed, ready-for-agent count
 node "$TRACKER" prd --feature-slug <slug>                 # print the milestone's PRD: issue
 node "$TRACKER" known --feature-slug <slug> --out <dir>   # write the milestone's issues, open and closed, into <dir>
 node "$TRACKER" publish-issues --feature-slug <slug> --drafts <dir> [--replace]
@@ -38,6 +39,10 @@ node "$TRACKER" mark-done <number> [--force]
 
 Exit codes, every op: `0` ok, `1` the op failed (stderr carries `gh`'s own error, verbatim), `2` a
 usage error or a ref that is not an issue number, `3` not found.
+
+`features` prints one tab-separated line per milestone, open and closed, sorted by title: the
+milestone title (the feature slug), its state (`open` or `closed`) and the count of its open
+`ready-for-agent` issues. A failing `gh` exits `1` with `gh`'s stderr verbatim.
 
 `publish-issues`, `publish-prd` and `rewrite` file their issues under the milestone named for the feature slug, creating
 the milestone — or reopening a closed one — first. `publish-issues` creates one issue per draft,
@@ -74,6 +79,17 @@ the PR) every open `awaiting-merge` issue in the milestone that a closing keywor
 `PRD:` issue too. The milestone stays open. Run it by hand from the repo root to close them right
 after a merge: `bash .claude/skills/crew-afk/scripts/close-shipped.sh <feature-slug> <feature-branch>`
 (the skill's install path varies by platform). A failure only warns.
+
+## Reopen an issue
+
+To undo `mark-done` (or put a finished issue back in a human's hands), swap the labels:
+
+```bash
+gh issue edit <number> --remove-label awaiting-merge --add-label ready-for-human
+```
+
+Use `ready-for-agent` instead of `ready-for-human` to hand it to crew-afk again. An issue already
+closed by its merged PR is reopened first: `gh issue reopen <number>`.
 
 ## Labels
 
