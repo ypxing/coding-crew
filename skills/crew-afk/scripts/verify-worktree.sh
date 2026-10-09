@@ -111,29 +111,11 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Every signal below must resolve or this silently falls back to the existing host path —
 # a gate must never stall a whole sprint because docker introspection failed.
 
-# _main_root_of <dir> — the main worktree's root from any linked worktree. Mirrors
-# receipts.sh's helper: --git-common-dir points at the *shared* .git directory (the main
-# worktree's), not the per-worktree one, which is what makes this work from inside one.
-_main_root_of() {
-  local dir="$1" common
-  # --path-format=absolute: without it, plain `--git-common-dir` can come back cwd-relative.
-  # It still isn't enough on its own — git's own idea of "absolute" on Windows is a bare
-  # drive-letter path like "C:/Users/...", which doesn't start with "/", so the *)-branch
-  # below needs its own drive-letter case or it wrongly treats that as relative and mangles it.
-  common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
-  case "$common" in
-    /*|[A-Za-z]:*) : ;;
-    *) common="$dir/$common" ;;
-  esac
-  # Re-canonicalize through this shell's own `pwd -P` even though $common is already
-  # absolute: git's drive-letter form ("C:/Users/...") is a different string than what
-  # `pwd -P` prints for the same directory in this MSYS/git-bash shell ("/c/Users/..."),
-  # and callers compare this return value against other paths this script resolves with
-  # `pwd -P` (WORKTREE_DIR above) — leaving it in git's own form breaks that string equality
-  # on Windows even though both name the same directory.
-  common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")"
-  dirname "$common"
-}
+# _main_root_of <dir> — the main worktree's root from any linked worktree, by main-root.sh's rule
+# (also a submodule and a bare repo), as a `pwd -P` path, so it compares with WORKTREE_DIR above.
+# shellcheck source=main-root.sh
+. "$SELF_DIR/main-root.sh"
+_main_root_of() { main_root "$1"; }
 
 # _vw_find_dep_scripts <main-root> — the same candidate order ensure-deps.sh uses, so a
 # repo's dep-install scripts are found the same way regardless of which script asks.
@@ -780,9 +762,12 @@ if [ -f "$TRACE_SCRIPT" ]; then
   if [ "$OVERALL_EXIT" -eq 0 ]; then _vw_result=pass; else _vw_result=fail; fi
   _vw_gap=""
   [ "${#NOT_RUN[@]}" -gt 0 ] && _vw_gap=" not_run=${NOT_RUN[*]}"
-  # The checked worktree's sprint, not the caller's cwd's: trace.sh falls back to its cwd's repo.
+  # The checked worktree's sprint, not the caller's: a crew branch is crew/<slug>/<issue>, and
+  # TRACE_LOG (a sprint's own children inherit it) wins over that.
+  _vw_slug=""
+  case "$_vw_branch" in crew/*/*) _vw_slug="${_vw_branch#crew/}"; _vw_slug="${_vw_slug%%/*}" ;; esac
   (cd "$WORKTREE_DIR" && MAIN_ROOT="${MAIN_ROOT:-$_CACHE_MAIN_ROOT}" \
-    bash "$TRACE_SCRIPT" --level "$([ "$_vw_result" = pass ] && echo info || echo error)" VERIFY "branch=$_vw_branch result=$_vw_result$_vw_gap") 2>/dev/null || true
+    bash "$TRACE_SCRIPT" ${_vw_slug:+--feature-slug "$_vw_slug"} --level "$([ "$_vw_result" = pass ] && echo info || echo error)" VERIFY "branch=$_vw_branch result=$_vw_result$_vw_gap") 2>/dev/null || true
 fi
 
 exit "$OVERALL_EXIT"

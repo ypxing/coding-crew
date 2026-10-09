@@ -3,7 +3,7 @@ set -uo pipefail
 
 # sync-feature-branch.sh — bring origin/<default> into a resumed feature branch that lacks it.
 #
-# Usage: sync-feature-branch.sh [--dry-run] <feature-branch>     (run in the main checkout)
+# Usage: sync-feature-branch.sh [--dry-run] <feature-branch>     (run in the checkout of <feature-branch>)
 #
 # A feature branch whose earlier work was squash-merged to origin/<default> has the same tree
 # but not the squash commit in its history: version-bump checks measure from a stale merge-base
@@ -26,7 +26,7 @@ BRANCH="${1:-}"
 [ -n "$BRANCH" ] || { echo "usage: sync-feature-branch.sh [--dry-run] <feature-branch>" >&2; exit 2; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
+_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"} "$@" 2>/dev/null || true; return 0; }
 
 git remote get-url origin >/dev/null 2>&1 || exit 0
 DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || true)
@@ -43,9 +43,11 @@ if [ "$DRY" -eq 1 ]; then
   exit 0
 fi
 
+# Never switches a checkout: the sprint's crew/<slug>/_feature worktree is the one on $BRANCH.
 CURRENT=$(git rev-parse --abbrev-ref HEAD)
 if [ "$CURRENT" != "$BRANCH" ]; then
-  git checkout -q "$BRANCH" 2>&1 || { echo "SYNC: cannot switch to $BRANCH" >&2; exit 1; }
+  echo "SYNC: run this in the checkout of $BRANCH (this one is on $CURRENT)" >&2
+  exit 1
 fi
 
 MSG="Merge $UPSTREAM into $BRANCH"

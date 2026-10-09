@@ -115,7 +115,7 @@ async function runIntegrationTriage(ctx, result, attempt) {
     triage.runtime,
     {
       agent: "crew-triage",
-      cwd: effects.mainRoot,
+      cwd: effects.featureRoot,
       promptFile,
       outFile,
       model: triage.model,

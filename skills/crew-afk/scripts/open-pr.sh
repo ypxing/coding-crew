@@ -59,7 +59,7 @@ MAIN_ROOT="${MAIN_ROOT:-$(git rev-parse --show-toplevel)}"
 cd "$MAIN_ROOT"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
+_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"} "$@" 2>/dev/null || true; return 0; }
 
 BEGIN_MARK="<!-- crew-afk:begin -->"
 END_MARK="<!-- crew-afk:end -->"

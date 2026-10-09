@@ -31,9 +31,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAIN_ROOT="${MAIN_ROOT:-$PWD}"
+# Sprint files (.scratch/<slug>/…) live in the main checkout, whichever worktree this is run from.
+cd "$MAIN_ROOT" || { echo "promote-findings.sh: cannot enter MAIN_ROOT $MAIN_ROOT" >&2; exit 1; }
 # Each subcommand traces its own outcome, so promotion, the phase flip and a review gap
 # are all in the trace whether or not the orchestrator remembered to echo them.
-_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
+_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"} "$@" 2>/dev/null || true; return 0; }
 
 # review_rollup <report-file>... — the one parser of the reviewer's aggregate report
 # file(s), shared with crew-summary.sh's code_review_summary(). See

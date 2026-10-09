@@ -25,7 +25,7 @@ export const AC_RECEIPT_FAILED_TAG = "ac-receipt-failed";
 // merge-branches.sh hit a conflict: the feature branch moved on under this branch. Only a
 // coder can reconcile that; retrying the merge alone would conflict again.
 export const MERGE_CONFLICT_TAG = "merge-conflict";
-// merge-branches.sh refused because uncommitted changes in the main checkout would be
+// merge-branches.sh refused because uncommitted changes in the feature worktree would be
 // overwritten. Not the branch's fault and not fixable by any dispatch, so it blocks at once;
 // a re-run resumes at merge, since verify, review and the AC receipt already passed.
 export const MAIN_TREE_DIRTY_TAG = "main-tree-dirty";
@@ -193,6 +193,8 @@ export function readSidecar(file) {
   }
 }
 
+const UNCOMMITTED_KEY = "uncommitted changes in the feature worktree";
+
 /**
  * What a read-only dispatch (reviewer, triage) must leave untouched, as `{key: value}`: every
  * crew/<feature>/ ref, the feature branch, the main checkout's HEAD (commit and the branch it is
@@ -202,8 +204,8 @@ export function readSidecar(file) {
  */
 export function readOnlySnapshot(ctx) {
   const { sprint, effects } = ctx;
-  const git = (args, { quiet = false } = {}) => {
-    const r = effects.gitRead(args);
+  const git = (args, { quiet = false, cwd } = {}) => {
+    const r = effects.gitRead(args, { cwd });
     if (r.code !== 0 && !quiet) throw new Error(`git ${args[0]} exited ${r.code}: ${(r.stderr || "").trim().slice(0, 200)}`);
     return r.code === 0 ? r.stdout : "";
   };
@@ -212,10 +214,11 @@ export function readOnlySnapshot(ctx) {
     const [ref, sha] = line.split(" ");
     refs[ref] = sha;
   }
-  refs.HEAD = git(["rev-parse", "HEAD"]).trim();
+  const feature = effects.featureRoot;
+  refs.HEAD = git(["rev-parse", "HEAD"], { cwd: feature }).trim();
   // Detached HEAD is a state too: `symbolic-ref` exits 1 there, which is an answer, not an error.
-  refs["HEAD's branch"] = git(["symbolic-ref", "-q", "HEAD"], { quiet: true }).trim() || "(detached)";
-  refs["uncommitted changes in the main checkout"] = git(["status", "--porcelain"])
+  refs["HEAD's branch"] = git(["symbolic-ref", "-q", "HEAD"], { quiet: true, cwd: feature }).trim() || "(detached)";
+  refs[UNCOMMITTED_KEY] = git(["status", "--porcelain"], { cwd: feature })
     .split("\n")
     .filter((l) => l && !/^.. "?\.scratch\//.test(l) && !/^\?\? "?\.scratch\/?"?$/.test(l))
     .join("\n");
@@ -264,7 +267,7 @@ export async function readOnlyDispatch(ctx, { label, branches = [] }, run) {
   const own = new Set(branches.map((b) => `refs/heads/${b}`));
   const mainRefs = new Set(["HEAD", "HEAD's branch", `refs/heads/${sprint.featureBranch}`]);
   const attributable = (k) => {
-    if (own.has(k) || k === "uncommitted changes in the main checkout") return true;
+    if (own.has(k) || k === UNCOMMITTED_KEY) return true;
     if (mainRefs.has(k)) return !activity.main;
     // A crew branch: created, moved or deleted from the main checkout, or moved from its worktree.
     const wt = before.worktrees[k] ?? after.worktrees[k];

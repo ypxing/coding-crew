@@ -32,10 +32,14 @@ export async function ensureWorkspace(effects, { featureSlug, logFile }) {
     if (logFile) await openLogTab(effects, triggeringWorkspaceId, label, logFile);
     return triggeringWorkspaceId;
   }
-  const create = await paneHostExec(effects, ["workspace", "create", "--cwd", effects.mainRoot, "--label", label, "--no-focus"]);
+  // The sprint's workspace is its feature-branch worktree; with none (a dry run) the main checkout.
+  const inWorktree = Boolean(effects.featureRoot) && effects.featureRoot !== effects.mainRoot;
+  const create = inWorktree
+    ? await paneHostExec(effects, ["worktree", "open", "--path", effects.featureRoot, "--label", label, "--no-focus"])
+    : await paneHostExec(effects, ["workspace", "create", "--cwd", effects.mainRoot, "--label", label, "--no-focus"]);
   const workspaceId = paneHostJson(create)?.result?.workspace?.workspace_id;
   if (create.code !== 0 || !workspaceId) {
-    throw new Error(`herdr workspace create failed: ${failureDetail(create)}`);
+    throw new Error(`herdr ${inWorktree ? "worktree open" : "workspace create"} failed: ${failureDetail(create)}`);
   }
   if (logFile) await openLogTab(effects, workspaceId, label, logFile);
   return workspaceId;

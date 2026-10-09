@@ -37,23 +37,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-MAIN_ROOT="${MAIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-if [ -z "$FEATURE_SLUG_ARG" ] && [ -f "$MAIN_ROOT/.scratch/sprint.env" ]; then
-  # shellcheck disable=SC1091
-  . "$MAIN_ROOT/.scratch/sprint.env" 2>/dev/null || true
-fi
+# shellcheck source=main-root.sh
+. "$SCRIPT_DIR/main-root.sh"
+MAIN_ROOT="${MAIN_ROOT:-$(main_root || pwd)}"
 FEATURE_SLUG="${FEATURE_SLUG_ARG:-${FEATURE_SLUG:-}}"
+if [ -z "$FEATURE_SLUG" ]; then
+  echo "crew-summary.sh: no sprint to summarise — pass --feature-slug <slug>" >&2
+  exit 2
+fi
 
 state() { bash "$SCRIPT_DIR/state.sh" "$@" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"}; }
 
 SF=$(state get state-file) || { echo "crew-summary: no sprint state found" >&2; exit 1; }
-[ -n "$FEATURE_SLUG" ] || FEATURE_SLUG=$(state get feature-slug)
 
-# FEATURE_BRANCH (used by the merge-conflict hint below) only came along above when the
-# global pointer was sourced, which an explicit --feature-slug skips on purpose — it may
-# name a different sprint than whatever the pointer currently points at. Read it straight
-# from that sprint's own env file instead of re-deriving it from git, which would guess
-# wrong the moment the caller is not currently on that sprint's feature branch.
+# FEATURE_BRANCH (used by the merge-conflict hint below): read it straight from that sprint's
+# own env file instead of re-deriving it from git, which would guess wrong the moment the caller
+# is not currently on that sprint's feature branch.
 if [ -z "${FEATURE_BRANCH:-}" ] && [ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint.env" ]; then
   # shellcheck disable=SC1091
   . "$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint.env" 2>/dev/null || true
@@ -242,8 +241,9 @@ if [ -n "$MERGE_CONFLICTS" ]; then
   echo ""
   echo "## Merge Conflicts (need a human)"
   echo "crew-afk never resolves merge conflicts automatically. To unblock each branch below:"
-  echo "  1. git checkout ${FEATURE_BRANCH:-<feature-branch>} && git merge --no-ff <branch>"
-  echo "  2. Resolve the conflicts by hand, then: git add -A && git commit"
+  echo "  1. In a temporary worktree (the main checkout must not end up on the feature branch):"
+  echo "     git worktree add /tmp/crew-resolve ${FEATURE_BRANCH:-<feature-branch>} && cd /tmp/crew-resolve && git merge --no-ff <branch>"
+  echo "  2. Resolve the conflicts by hand, then: git add -A && git commit; then: cd - && git worktree remove /tmp/crew-resolve"
   echo "  3. Re-run crew-afk — merge-branches.sh sees the branch as already merged and closes the issue normally."
   printf '%s\n' "$MERGE_CONFLICTS" | sed 's/^/- /'
 fi
@@ -255,8 +255,8 @@ fi
 DIRTY_BLOCKED=$(jq -r '(.retention // {}) | to_entries[] | select(.value.reason | test("main-tree-dirty")) | "- \(.value.branch): \(.value.reason | sub("^.*main-tree-dirty — "; ""))"' "$SF" 2>/dev/null || true)
 if [ -n "$DIRTY_BLOCKED" ]; then
   echo ""
-  echo "## Main Checkout Not Clean (need a human)"
-  echo "These branches passed every gate; only the merge was refused. Commit or stash the files, then re-run (/crew-afk) — they resume at the merge."
+  echo "## Feature Worktree Not Clean (need a human)"
+  echo "These branches passed every gate; only the merge was refused because the feature branch's worktree had uncommitted changes. Re-run (/crew-afk) — the worktree is recreated and they resume at the merge."
   printf '%s\n' "$DIRTY_BLOCKED"
 fi
 

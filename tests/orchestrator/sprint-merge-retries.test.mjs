@@ -421,7 +421,7 @@ test("a blocked issue's branch is resumed and synced on the next run, not re-blo
   assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
   // Resumed on the blocked worker's branch: each fake worker run appends one line, so the
   // blocked attempt's line is still there alongside the resumed one's.
-  assert.equal(readFileSync(join(root, "src/alpha.txt"), "utf8"), "// alpha\n// alpha\n");
+  assert.equal(sh("git", ["-C", root, "show", "feature/demo:src/alpha.txt"]).stdout, "// alpha\n// alpha\n");
 });
 
 test("a branch refused as stale stays refused on the next run, not resumed as the issue's own", () => {
@@ -434,7 +434,7 @@ test("a branch refused as stale stays refused on the next run, not resumed as th
   writeFileSync(join(root, "leftover.txt"), "abandoned work\n");
   git("add", "-A");
   git("commit", "-q", "-m", "leftover work");
-  git("checkout", "-q", "feature/demo");
+  git("checkout", "-q", "main");
   writeFileSync(join(root, "advance.txt"), "advance\n");
   git("add", "-A");
   git("commit", "-q", "-m", "advance the feature branch");

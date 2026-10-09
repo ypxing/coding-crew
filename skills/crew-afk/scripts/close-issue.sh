@@ -82,7 +82,7 @@ if [ "$TRACKER_KIND" = "github" ]; then
   esac
 
   RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
-  _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
+  _trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"} "$@" 2>/dev/null || true; return 0; }
   # CREW_RECEIPTS=off is the same escape hatch receipts.sh's own receipts_enabled() grants
   # (see its header comment) — mirrored here, not just left to receipts.sh, because a
   # missing branch arg must not become a hard error when no check is going to run at all.
@@ -165,7 +165,7 @@ fi
 # Require this issue's own acceptance-criteria receipt before changing anything.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECEIPTS_SCRIPT="$SCRIPT_DIR/receipts.sh"
-_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
+_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"} "$@" 2>/dev/null || true; return 0; }
 if [ -f "$RECEIPTS_SCRIPT" ]; then
   bash "$RECEIPTS_SCRIPT" check ac --issue "$ISSUE_PATH"
 fi

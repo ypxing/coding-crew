@@ -34,23 +34,19 @@ const ENV_KEYS = [
   "CREW_FIX_FINDINGS",
 ];
 
-/** Parse the `export K="v"` lines session-init.sh writes. Follows the `.` pointer. */
-export function readSprintEnv(mainRoot) {
-  const pointer = join(mainRoot, ".scratch", "sprint.env");
-  if (!existsSync(pointer)) return null;
-  let file = pointer;
-  const pointerText = readFileSync(pointer, "utf8");
-  const follow = /^\s*\.\s+"?([^"\n]+)"?\s*$/m.exec(pointerText);
-  if (follow) {
-    if (!existsSync(follow[1])) return null;
-    file = follow[1];
-  }
-  const text = readFileSync(file, "utf8");
+/** Parse the `export K="v"` lines session-init.sh wrote to `file`. */
+export function parseSprintEnv(file) {
+  if (!existsSync(file)) return null;
   const env = {};
-  for (const m of text.matchAll(/^\s*export\s+(\w+)="?([^"\n]*)"?\s*$/gm)) {
+  for (const m of readFileSync(file, "utf8").matchAll(/^\s*export\s+(\w+)="?([^"\n]*)"?\s*$/gm)) {
     if (ENV_KEYS.includes(m[1])) env[m[1]] = m[2];
   }
   return Object.keys(env).length ? { ...env, sprintEnvFile: file } : null;
+}
+
+/** One sprint's env, `.scratch/<slug>/sprint.env`. There is no pointer to "the" sprint: several run in one repo. */
+export function readSprintEnv(mainRoot, slug) {
+  return slug ? parseSprintEnv(join(mainRoot, ".scratch", slug, "sprint.env")) : null;
 }
 
 export class Sprint {
@@ -88,6 +84,22 @@ export class Sprint {
     this._requiresProbed = new Set();
   }
 
+  /**
+   * Which branch and slug session-init.sh would use, before it (or anything) touches disk —
+   * what the orchestrator needs to put the feature branch in its worktree. Throws with
+   * session-init.sh's own message when it refuses (a bad `--jira`, no issues to derive a slug from).
+   */
+  static resolveBranch(effects, { featureSlug, branchPrefix = null, passthrough = [] }) {
+    const args = ["--print-branch"];
+    if (featureSlug) args.push("--feature-slug", featureSlug);
+    if (branchPrefix != null) args.push("--branch-prefix", branchPrefix);
+    args.push(...passthrough);
+    const r = effects.bash("session-init.sh", args, { mutating: false });
+    if (r.code !== 0) throw new Error(`session-init.sh failed (${r.code}): ${(r.stderr || r.stdout || "").trim()}`);
+    const out = Object.fromEntries((r.stdout ?? "").split("\n").map((l) => l.split(/=(.*)/s).slice(0, 2)).filter(([k, v]) => k && v != null));
+    return { slug: out.FEATURE_SLUG, branch: out.FEATURE_BRANCH, defaultBranch: out.DEFAULT_BRANCH };
+  }
+
   static async init(effects, { featureSlug, fixFindings, branchPrefix = null, passthrough = [], deps = true, log = () => {} }) {
     const args = [];
     if (featureSlug) args.push("--feature-slug", featureSlug);
@@ -101,8 +113,10 @@ export class Sprint {
     }
     // A run that succeeds can still have been told something worth hearing (`--jira` ignored).
     for (const line of (r.stderr ?? "").split("\n")) if (/^WARNING:/.test(line)) log(`session-init: ${line}`);
-    const env = readSprintEnv(effects.mainRoot);
-    if (!env) throw new Error("session-init.sh did not produce a readable .scratch/sprint.env");
+    const file = /^SPRINT_ENV: (.+)$/m.exec(r.stdout ?? "")?.[1];
+    // A --dry-run session-init.sh prints nothing: the env an earlier run left is the sprint's.
+    const env = (file ? parseSprintEnv(file) : null) ?? readSprintEnv(effects.mainRoot, featureSlug);
+    if (!env) throw new Error("session-init.sh did not produce a readable sprint.env");
     const sprint = new Sprint(effects, env);
 
     // Deps are provisioned by installDeps() below, not here — a caller that also wants
@@ -159,8 +173,8 @@ export class Sprint {
   }
 
   /** Attach to an already-initialised sprint (resume, status, dry-run planning). */
-  static attach(effects) {
-    const env = readSprintEnv(effects.mainRoot);
+  static attach(effects, featureSlug) {
+    const env = readSprintEnv(effects.mainRoot, featureSlug);
     return env ? new Sprint(effects, env) : null;
   }
 

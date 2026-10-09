@@ -15,6 +15,7 @@ set -uo pipefail
 #             review-not-run)
 #   --feature-slug  enables the sweep: any leftover sprint worktree for this
 #                   feature is considered, not just the ones passed in
+#                   (honours CREW_WORKTREE_ROOT, as worktree.mjs does)
 #   --dry-run report what would happen and change nothing
 #   --force   delete a swept branch even when it has commits that are not in HEAD
 #
@@ -145,13 +146,29 @@ for b in ${MERGED[@]+"${MERGED[@]}"}; do add_candidate "$b"; done
 # branches, and the runtime-managed worktrees Claude creates for
 # `isolation: worktree` agents (`worktree-agent-*`, checked out under
 # `.claude/worktrees/`). The latter are the ones that leaked historically: no
-# variant ever named them, so nothing removed them.
+# variant ever named them, so nothing removed them. Git records no owner for
+# them, so one counts as this sprint's only when it sits inside the sprint's own
+# `<worktree root>/crew/<feature-slug>/` directory (created from one of its issue
+# worktrees) — another sprint's, or the user's under the main checkout, is left alone.
+SPRINT_WT_DIR=""
+if [ -n "$FEATURE_SLUG" ]; then
+  WT_ROOT="${CREW_WORKTREE_ROOT:-.scratch/worktrees}"
+  case "$WT_ROOT" in /*) ;; *) WT_ROOT="$MAIN_ROOT/$WT_ROOT" ;; esac
+  SPRINT_WT_DIR="${WT_ROOT%/}/crew/$FEATURE_SLUG/"
+  # git may list a worktree by its symlink-resolved path (macOS /var → /private/var).
+  SPRINT_WT_DIR_REAL="$(cd "$SPRINT_WT_DIR" 2>/dev/null && pwd -P)/"
+fi
+in_sprint_dir() {
+  [ -n "$SPRINT_WT_DIR" ] || return 1
+  [[ "$1" == "$SPRINT_WT_DIR"* ]] || { [ "$SPRINT_WT_DIR_REAL" != "/" ] && [[ "$1" == "$SPRINT_WT_DIR_REAL"* ]]; }
+}
 for i in "${!WT_BRANCHES[@]}"; do
   b="${WT_BRANCHES[$i]}"
   p="${WT_PATHS[$i]}"
   if [ -n "$FEATURE_SLUG" ] && [[ "$b" == crew/"$FEATURE_SLUG"/* ]]; then
     add_candidate "$b"
-  elif [[ "$b" == worktree-agent-* ]] || [[ "$p" == */.claude/worktrees/* ]]; then
+  elif in_sprint_dir "$p" \
+       && { [[ "$b" == worktree-agent-* ]] || [[ "$p" == */.claude/worktrees/* ]]; }; then
     add_candidate "$b"
   fi
 done
@@ -198,8 +215,8 @@ for b in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   # ancestor of HEAD by then. Requiring ancestry here would keep every merged
   # branch forever, which is the leak this script exists to stop.
   if [ "$FORCE" -eq 0 ] && ! is_explicit_merged "$b" \
-     && ! git -C "$MAIN_ROOT" merge-base --is-ancestor "$b" HEAD 2>/dev/null; then
-    echo "CLEANUP: kept $b (commits not in HEAD — merge status unknown, resolve by hand)"
+     && ! git -C "$MAIN_ROOT" merge-base --is-ancestor "$b" "${FEATURE_BRANCH:-HEAD}" 2>/dev/null; then
+    echo "CLEANUP: kept $b (commits not in ${FEATURE_BRANCH:-HEAD} — merge status unknown, resolve by hand)"
     KEPT=$((KEPT + 1))
     continue
   fi
@@ -232,7 +249,7 @@ done
 [ "$DRY_RUN" -eq 1 ] || git -C "$MAIN_ROOT" worktree prune
 
 _TRACE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/trace.sh"
-[ -f "$_TRACE_SCRIPT" ] && bash "$_TRACE_SCRIPT" --level "$([ "$FAILED" -eq 0 ] && echo info || echo warn)" CLEANUP "removed=$REMOVED kept=$KEPT failed=$FAILED" 2>/dev/null
+[ -f "$_TRACE_SCRIPT" ] && bash "$_TRACE_SCRIPT" --level "$([ "$FAILED" -eq 0 ] && echo info || echo warn)" CLEANUP "removed=$REMOVED kept=$KEPT failed=$FAILED" 2>/dev/null || true
 echo "CLEANUP: removed=$REMOVED kept=$KEPT failed=$FAILED"
 
 [ "$FAILED" -eq 0 ] || exit 1

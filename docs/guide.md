@@ -446,10 +446,14 @@ guarantee under `## Requires`, one backticked command per bullet (exit 0 = satis
 once before that issue's first dispatch, and a failing one blocks that issue with the command's
 output instead of paying for its coder.
 
-**Uncommitted changes.** A run stops before any dispatch if tracked files in the main checkout have
-uncommitted changes, because git refuses a merge that would overwrite them. `--allow-dirty` skips
-that check for one run. A merge it then refuses blocks that issue as `main-tree-dirty`, and a
-re-run after you commit or stash resumes at the merge.
+**Your checkout.** A sprint never switches or merges into the main checkout. The feature branch lives in
+its own worktree, `crew/<feature-slug>/_feature` under the worktree root, which is removed when the run ends
+(the branch and its commits stay), so you can keep working in the main checkout — uncommitted changes
+included — and start one `crew-afk` per feature at the same time. The one thing it refuses is a main
+checkout sitting on `feature/<slug>` itself: switch it to another branch first. `--allow-dirty` is still
+accepted and does nothing. Several sprints write nothing shared, so there is no repo-wide `.scratch/sprint.env`:
+run `main.mjs status`, `state.sh`, `trace.sh`, `crew-summary.sh` or `ensure-deps.sh --slug` by hand with
+`--feature-slug <slug>`.
 
 **Gitignored files in worktrees.** Each coder runs in an isolated worktree, so `.env` and similar
 files aren't there by default. List them in a `.worktreeinclude` file at your repo root to carry
@@ -463,14 +467,13 @@ elsewhere, or `CREW_WORKTREE_ROOT`, which wins over both. A path outside the rep
 resolution, CLAUDE.md loading) from falling back to the main checkout. A path inside the repo isn't
 covered by the default `.scratch/` gitignore entry; `crew-afk` warns until you add it.
 
-**Feature branch name.** A run started on the default branch creates `<prefix><KEY>-<feature-slug>`:
+**Feature branch name.** A new sprint creates `<prefix><KEY>-<feature-slug>`:
 `afk.branchPrefix` in either `config.json` (any string, `""` for none; default `feature/`, the repo's
 winning) and `--jira <KEY>` (`PROJ-12`, matching `^[A-Z][A-Z0-9]+-[0-9]+$`; omitted, no `<KEY>-`).
 `--jira PROJ-12` gives `feature/PROJ-12-<feature-slug>`. A name git refuses (`git check-ref-format
 --branch`) stops the run before any branch is made. A sprint that already has a `sprint.env` resumes
-on the branch it recorded, and a local-tracker run started off the default branch keeps that branch;
-both warn that `--jira` was ignored. Under `tracker: github` a run off the default branch must be on
-the branch this name gives.
+on the branch it recorded and warns that `--jira` was ignored. A new branch forks from the default branch,
+wherever the main checkout is.
 
 ---
 
@@ -601,7 +604,7 @@ result), and `warn` hides the `[STEP]` progress lines. `CREW_VERBOSE=1` still me
 | Code review says "skipped (no commits)"           | No commits this session                          | Normal — nothing to review                                                          |
 | `dep-install` picks wrong mode                    | Makefile detection read parent project           | Run `git config --local agent.install-mode host` (or `docker`) in your project root |
 | `address-pr-comments` fails with opaque error     | `gh` CLI missing or not authenticated            | Run `gh auth login` first                                                           |
-| Sprint stalls with a branch retained `merge-conflict` | Two verified branches touch overlapping code. crew-afk's retry already gave the coder the conflicted merge to resolve (one conflict retry at a time, so siblings don't re-conflict each other), and it didn't land within the retry cap | Re-run `/crew-afk` to give the coder the conflicted merge once more. Or `git checkout <feature-branch> && git merge --no-ff <branch>`, resolve by hand, commit, then re-run `/crew-afk` — it sees the branch as already merged and closes the issue |
+| Sprint stalls with a branch retained `merge-conflict` | Two verified branches touch overlapping code. crew-afk's retry already gave the coder the conflicted merge to resolve (one conflict retry at a time, so siblings don't re-conflict each other), and it didn't land within the retry cap | Re-run `/crew-afk` to give the coder the conflicted merge once more. Or in a temporary worktree (`git worktree add <dir> <feature-branch> && cd <dir> && git merge --no-ff <branch>`; never leave the main checkout on the feature branch), resolve by hand, commit, remove the worktree, then re-run `/crew-afk` — it sees the branch as already merged and closes the issue |
 | Sprint stalls with a branch retained `merge-failed` | The merge failed for a reason other than a conflict (a missing receipt, a timeout); crew-afk retried the merge alone | Read the `[MERGE]` line in `traces/orchestrator.log` for the reason, fix it, then re-run `/crew-afk` |
 
 ---

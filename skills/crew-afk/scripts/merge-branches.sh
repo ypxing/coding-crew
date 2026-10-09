@@ -39,12 +39,14 @@ RESOLVE_SCRIPT="$SCRIPT_DIR/resolve-merge-conflicts.sh"
 
 # Each script traces its own step, so a merge that happened is always in the trace and
 # a merge that was skipped can never be traced as if it had run.
-_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null; return 0; }
+_trace() { [ -f "$SCRIPT_DIR/trace.sh" ] && bash "$SCRIPT_DIR/trace.sh" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"} "$@" 2>/dev/null || true; return 0; }
 
-# Ensure we are on the feature branch
+# Runs in the checkout of the feature branch (the sprint's crew/<slug>/_feature worktree); it
+# never switches one, so the main checkout stays on the user's branch.
 CURRENT=$(git rev-parse --abbrev-ref HEAD)
 if [ "$CURRENT" != "$FEATURE_BRANCH" ]; then
-  git checkout "$FEATURE_BRANCH" 2>&1 || { echo "ERROR: cannot switch to $FEATURE_BRANCH" >&2; exit 1; }
+  echo "ERROR: run this in the checkout of $FEATURE_BRANCH (this one is on $CURRENT)" >&2
+  exit 1
 fi
 
 # _do_merge <branch> <message> — always runs on the host. The merge commit's message is a

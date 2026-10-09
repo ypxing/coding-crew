@@ -12,6 +12,7 @@
 # dependency step must not stall a sprint, and a failed install is diagnosed by the check
 # that follows it, never by this script's exit code.
 
+bats_require_minimum_version 1.5.0
 load helpers/render
 
 SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/ensure-deps.sh"
@@ -110,6 +111,43 @@ deps_line() {
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: present" ]
   [[ "$output" != *"SHOULD NOT RUN"* ]]
+}
+
+@test "a node_modules linked from the main checkout is stale, and installs, when the worktree's lockfile differs" {
+  local main="$TEMP_DIR/main" wt="$TEMP_DIR/issue-wt"
+  mkdir -p "$main/node_modules" "$wt"
+  printf '{}\n' > "$main/package.json"; printf 'lock-A\n' > "$main/package-lock.json"
+  printf '{}\n' > "$wt/package.json";   printf 'lock-B\n' > "$wt/package-lock.json"
+  ln -s "$main/node_modules" "$wt/node_modules"
+  export MAIN_ROOT="$main"
+  stub_scripts USE_HOST 0 "Running: npm ci"
+
+  run bash "$SCRIPT" --dir "$wt"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: installed npm ci" ]
+  [ ! -L "$wt/node_modules" ]
+
+  # The same lockfile on both sides: the link is as good as an install.
+  printf 'lock-A\n' > "$wt/package-lock.json"
+  ln -s "$main/node_modules" "$wt/node_modules"
+  run bash "$SCRIPT" --dir "$wt"
+  [ "$(deps_line)" = "DEPS: present" ]
+}
+
+@test "run by hand (no MAIN_ROOT) in a linked worktree, the stale link is still found against the main checkout" {
+  local wt="$TEMP_DIR/issue-wt"
+  printf '{}\n' > "$WORK/package.json"; printf 'lock-A\n' > "$WORK/package-lock.json"
+  git -C "$WORK" add -A && git -C "$WORK" commit -q -m init
+  git -C "$WORK" worktree add -q -b issue "$wt"
+  mkdir -p "$WORK/node_modules"
+  printf 'lock-B\n' > "$wt/package-lock.json"
+  ln -s "$WORK/node_modules" "$wt/node_modules"
+  stub_scripts USE_HOST 0 "Running: npm ci"
+
+  run bash "$SCRIPT" --dir "$wt"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: installed npm ci" ]
+  [ ! -L "$wt/node_modules" ]
 }
 
 @test "the presence guard covers node_modules, .venv and vendor/bundle" {
@@ -421,7 +459,7 @@ STUBEOF
   echo "npm ci" > "$WORK/.scratch/docker-install.done"
   stub_docker_scripts 0 "SHOULD NOT RUN"
 
-  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker-present" ]
   [[ "$output" != *"SHOULD NOT RUN"* ]]
@@ -441,7 +479,7 @@ STUBEOF
   mkdir -p "$WT"
   printf '{}\n' > "$WT/package.json"
 
-  run bash "$SCRIPT" --dir "$WT" --slug widget
+  run bash "$SCRIPT" --dir "$WT" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker-present" ]
   # A real symlink where the platform allows it, or (no symlink privilege — the default on
@@ -454,12 +492,19 @@ STUBEOF
   fi
 }
 
+@test "a hand run with --slug but no sprint env and no --feature-slug exits 2 naming --feature-slug" {
+  printf '{}\n' > "$WORK/package.json"
+  run --separate-stderr bash "$SCRIPT" --dir "$WORK" --slug widget
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *"--feature-slug"* ]]
+}
+
 @test "a worktree call (--slug) with no marker yet is still DEPS: docker, deferred" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
   stub_docker_scripts 0 "SHOULD NOT RUN"
 
-  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker" ]
   [[ "$output" != *"SHOULD NOT RUN"* ]]
@@ -661,12 +706,12 @@ npm ERR! boom"
   # Two different feature sprints against the same MAIN_ROOT, distinguished only by SPRINT_DIR.
   export SPRINT_DIR="$TEMP_DIR/sprint-a"
   mkdir -p "$SPRINT_DIR/dispatch"
-  run bash "$SCRIPT" --dir "$WORK" --slug widget-a
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget-a
   [ "$(deps_line)" = "DEPS: docker-present" ]
 
   export SPRINT_DIR="$TEMP_DIR/sprint-b"
   mkdir -p "$SPRINT_DIR/dispatch"
-  run bash "$SCRIPT" --dir "$WORK" --slug widget-b
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget-b
   [ "$(deps_line)" = "DEPS: docker-present" ]
 }
 
@@ -687,7 +732,7 @@ npm ERR! boom"
   mkdir -p "$SPRINT_DIR/dispatch"
   stub_scripts USE_HOST 3 "npm ERR! boom"
 
-  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   local log="$SPRINT_DIR/dispatch/widget/deps.log"
   [ -f "$log" ]
@@ -797,13 +842,13 @@ line two"
   mkdir -p "$SPRINT_DIR/dispatch"
   stub_scripts USE_HOST 3 "boom"
 
-  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ -f "$SPRINT_DIR/dispatch/widget/deps.skip" ]
 
   # Second round: the probe is not repeated, and the cached outcome is reported.
   stub_scripts USE_HOST 0 "SHOULD NOT RUN"
-  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [[ "$(deps_line)" == "DEPS: failed"* ]]
   [[ "$output" != *"SHOULD NOT RUN"* ]]
@@ -815,7 +860,7 @@ line two"
   mkdir -p "$SPRINT_DIR/dispatch"
   stub_scripts USE_HOST 0 "Running: npm ci"
 
-  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ -f "$SPRINT_DIR/dispatch/widget/deps.ok" ]
   [ ! -f "$SPRINT_DIR/dispatch/widget/deps.skip" ]
@@ -828,7 +873,7 @@ line two"
   printf 'none\n' > "$SPRINT_DIR/dispatch/widget/deps.skip"
   mkdir -p "$WORK/node_modules"
 
-  run bash "$SCRIPT" --dir "$WORK" --slug widget
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: present" ]
 }
@@ -866,7 +911,7 @@ line two"
   mkdir -p "$live/.scratch"
   git -C "$live" init -q
   printf 'export TRACE_LOG="%s/live.log"\nexport SPRINT_DIR="%s/sprint"\n' "$TEMP_DIR" "$TEMP_DIR" > "$live/.scratch/sprint.env"
-  MAIN_ROOT="$live" CREW_ORCHESTRATED=1 run bash "$SCRIPT" --dir "$WORK" --slug widget
+  MAIN_ROOT="$live" CREW_ORCHESTRATED=1 run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ ! -e "$TEMP_DIR/live.log" ]
   [ ! -e "$TEMP_DIR/sprint" ]

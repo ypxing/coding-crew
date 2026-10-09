@@ -46,19 +46,22 @@ set -uo pipefail
 #   own, but its `docker-failed` stops the run: that volume is the only install there is.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=main-root.sh
+. "$SELF_DIR/main-root.sh"
 
 DIR=""
 SLUG=""
 STEM=""
+FEATURE_SLUG_ARG=""
 TIMEOUT=1800
 
 _usage() {
-  echo "Usage: $0 --dir <path> [--slug <issue-slug>] [--stem <n>-<slug>] [--timeout <sec>]" >&2
+  echo "Usage: $0 --dir <path> [--slug <issue-slug>] [--stem <n>-<slug>] [--feature-slug <slug>] [--timeout <sec>]" >&2
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dir|--slug|--stem|--timeout)
+    --dir|--slug|--stem|--feature-slug|--timeout)
       # Guard before reading $2: under `set -u` a bare flag would abort with an
       # unbound-variable error instead of the usage message.
       if [ $# -lt 2 ]; then echo "ERROR: $1 requires a value" >&2; _usage; exit 1; fi
@@ -66,6 +69,7 @@ while [ $# -gt 0 ]; do
         --dir) DIR="$2" ;;
         --slug) SLUG="$2" ;;
         --stem) STEM="$2" ;;
+        --feature-slug) FEATURE_SLUG_ARG="$2" ;;
         --timeout) TIMEOUT="$2" ;;
       esac
       shift 2
@@ -84,25 +88,28 @@ DIR="$(cd "$DIR" && pwd -P)"
 TRACE_SCRIPT="$SELF_DIR/trace.sh"
 
 # _sprint_dir — where this sprint's dispatch markers live, or empty outside a sprint.
-# Resolved the same way trace.sh resolves its log, so the two agree about whether a
-# sprint exists at all — including trace.sh's CREW_ORCHESTRATED=1 rule.
+# The orchestrator's children inherit SPRINT_DIR. A hand run names its sprint with
+# --feature-slug (no repo-wide pointer to a "current" sprint exists: several run in one repo),
+# and one that names neither exits 2 — except under CREW_ORCHESTRATED=1, which a dispatched
+# agent's stray call inherits and which trace.sh treats the same way.
 _sprint_dir() {
   if [ -n "${SPRINT_DIR:-}" ]; then printf '%s' "$SPRINT_DIR"; return; fi
-  [ "${CREW_ORCHESTRATED:-}" != 1 ] || return 0
-  local root="${MAIN_ROOT:-}"
-  if [ -z "$root" ]; then
-    root=$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || true)
+  if [ -n "$FEATURE_SLUG_ARG" ]; then
+    local root="${MAIN_ROOT:-$(main_root "$DIR" || true)}"
+    [ -z "$root" ] || printf '%s' "$root/.scratch/$FEATURE_SLUG_ARG"
   fi
-  [ -n "$root" ] && [ -f "$root/.scratch/sprint.env" ] || return 0
-  # shellcheck disable=SC1091
-  ( . "$root/.scratch/sprint.env" 2>/dev/null; printf '%s' "${SPRINT_DIR:-}" )
 }
 
-MARKER_DIR=""
+if [ -n "$SLUG" ] && [ -z "${SPRINT_DIR:-}" ] && [ -z "$FEATURE_SLUG_ARG" ] && [ "${CREW_ORCHESTRATED:-}" != 1 ]; then
+  echo "ERROR: ensure-deps.sh --slug needs a sprint — pass --feature-slug <slug> (or run it with SPRINT_DIR set)" >&2
+  _usage
+  exit 2
+fi
+
+MARKER_DIR="$(_sprint_dir)"
 MARKER=""
-if [ -n "$SLUG" ]; then
-  MARKER_DIR="$(_sprint_dir)"
-  [ -n "$MARKER_DIR" ] && MARKER="$MARKER_DIR/dispatch/${STEM:-$SLUG}/deps"
+if [ -n "$SLUG" ] && [ -n "$MARKER_DIR" ]; then
+  MARKER="$MARKER_DIR/dispatch/${STEM:-$SLUG}/deps"
 fi
 
 # _report <outcome-line> <marker-suffix> — the single exit point.
@@ -119,7 +126,7 @@ _report() {
     # From $DIR: trace.sh falls back to its cwd's repo, which must be the one _sprint_dir read.
     local level=info
     case "$line" in failed*|docker-failed*) level=error ;; esac
-    (cd "$DIR" && bash "$TRACE_SCRIPT" --level "$level" DEPS "dir=$DIR${SLUG:+ slug=$SLUG} $line") 2>/dev/null || true
+    (cd "$DIR" && bash "$TRACE_SCRIPT" ${MARKER_DIR:+--log "$MARKER_DIR/traces/orchestrator.log"} --level "$level" DEPS "dir=$DIR${SLUG:+ slug=$SLUG} $line") 2>/dev/null || true
   fi
   exit 0
 }
@@ -175,7 +182,9 @@ fi
 # override, fall through to the mechanical detection below unchanged.
 MAIN_ROOT_EFFECTIVE="${MAIN_ROOT:-}"
 if [ -z "$MAIN_ROOT_EFFECTIVE" ]; then
-  MAIN_ROOT_EFFECTIVE="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || echo "$DIR")"
+  # The main checkout, not $DIR's own worktree: the cache lives there, and the stale-link check
+  # below compares $DIR's manifests against it.
+  MAIN_ROOT_EFFECTIVE="$(main_root "$DIR" || echo "$DIR")"
 fi
 _cached_install_command() {
   local cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"
@@ -337,6 +346,16 @@ _ECOSYSTEMS=(
   "deps:mix.exs"
 )
 
+_manifests_differ_from_main() {
+  local m
+  [ "$MAIN_ROOT_EFFECTIVE" != "$DIR" ] || return 1
+  for m in $1; do
+    [ -e "$DIR/$m" ] || [ -e "$MAIN_ROOT_EFFECTIVE/$m" ] || continue
+    cmp -s "$DIR/$m" "$MAIN_ROOT_EFFECTIVE/$m" || return 0
+  done
+  return 1
+}
+
 HAS_MANIFEST=0
 for _row in "${_ECOSYSTEMS[@]}"; do
   _depdir="${_row%%:*}"
@@ -345,7 +364,14 @@ for _row in "${_ECOSYSTEMS[@]}"; do
     [ -e "$DIR/$_m" ] || continue
     HAS_MANIFEST=1
     if [ -d "$DIR/$_depdir" ]; then
-      _report "present" ok
+      # A dep dir linked in from the main checkout (.worktreeinclude) was installed for the
+      # branch the main checkout is on, which is no longer this sprint's feature branch: when a
+      # manifest here differs from the main checkout's, the link is stale — drop it and install.
+      if [ -L "$DIR/$_depdir" ] && _manifests_differ_from_main "$_manifests"; then
+        rm -f "$DIR/$_depdir"
+      else
+        _report "present" ok
+      fi
     fi
     break
   done

@@ -7,8 +7,8 @@
 # this repo's own copy of session-init.sh (asking the tracker CLI through tracker-cli.sh)
 # closes two gaps that only matter for that backend:
 #   1. omitting --feature-slug is a hard error (no local-scan fallback)
-#   2. off the default branch with no sprint.env to resume from, the current branch
-#      must equal feature/<slug> — no silent-adopt of whatever is checked out
+#   2. the feature branch is named from the slug alone, whichever branch the main checkout is on —
+#      it is a ref session-init.sh makes, never a checkout
 # `tracker: local` (or absent config) keeps every existing behavior unchanged. With no tracker
 # CLI to ask, session-init.sh stops instead of guessing local.
 
@@ -65,21 +65,22 @@ write_tracker_config() {
   [[ "$output" == *"--feature-slug"* ]]
 }
 
-@test "github tracker: --feature-slug on the default branch creates feature/<slug>" {
+@test "github tracker: --feature-slug creates feature/<slug> and leaves the checkout on the default branch" {
   write_tracker_config github
 
   run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
   [ "$status" -eq 0 ]
-  [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/calc" ]
+  git rev-parse --verify -q refs/heads/feature/calc
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]
 }
 
-@test "github tracker: --feature-slug on a mismatched non-default branch with no sprint.env errors" {
+@test "github tracker: --feature-slug on any other branch still names feature/<slug>, leaving the checkout alone" {
   write_tracker_config github
   git checkout -q -b some-other-branch
 
   run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"feature/calc"* ]]
+  [ "$status" -eq 0 ]
+  git rev-parse --verify -q refs/heads/feature/calc
   [ "$(git rev-parse --abbrev-ref HEAD)" = "some-other-branch" ]
 }
 
@@ -91,15 +92,16 @@ write_tracker_config() {
   run bash "$(installed_scripts)/session-init.sh"
   [ "$status" -eq 0 ]
   # The branch is named after the directory the first issue lives in.
-  [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/some-slug" ]
+  git rev-parse --verify -q refs/heads/feature/some-slug
 }
 
-@test "local tracker: --feature-slug on a mismatched non-default branch with no sprint.env still silently adopts it (unchanged)" {
+@test "local tracker: --feature-slug on another branch names feature/<slug> too, and does not adopt that branch" {
   write_tracker_config local
   git checkout -q -b some-other-branch
 
   run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
   [ "$status" -eq 0 ]
+  git rev-parse --verify -q refs/heads/feature/calc
   [ "$(git rev-parse --abbrev-ref HEAD)" = "some-other-branch" ]
 }
 
@@ -115,15 +117,15 @@ write_tracker_config() {
   [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]
 }
 
-@test "config.json names github, no .coding-crew/scripts anywhere: behaves as github" {
+@test "config.json names github, no .coding-crew/scripts anywhere: behaves as github (a slug is required)" {
   mkdir -p "$TEMP_DIR/.coding-crew"
   cp -R "$REPO_ROOT/tracker" "$TEMP_DIR/.coding-crew/tracker"
   printf '{"tracker": {"kind": "github"}}\n' > "$TEMP_DIR/.coding-crew/config.json"
   git checkout -q -b some-other-branch
 
   run bash "$(installed_scripts)/session-init.sh" --feature-slug calc
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"feature/calc"* ]]
+  [ "$status" -eq 0 ]
+  git rev-parse --verify -q refs/heads/feature/calc
   [ "$(git rev-parse --abbrev-ref HEAD)" = "some-other-branch" ]
 }
 

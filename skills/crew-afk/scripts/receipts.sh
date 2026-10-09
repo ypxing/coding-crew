@@ -70,31 +70,11 @@ receipts_enabled() {
   [ "${CREW_RECEIPTS:-on}" != "off" ]
 }
 
-# _main_root_of <dir> — the main worktree's root, from any worktree.
-#
-# --git-common-dir points at the *shared* .git directory (the main worktree's),
-# not the per-worktree one, which is what makes this work from inside a linked
-# worktree. It can be relative, so resolve it from within the directory.
-_main_root_of() {
-  local dir="$1" common
-  # --path-format=absolute: without it, plain `--git-common-dir` can come back cwd-relative.
-  # It still isn't enough on its own — git's own idea of "absolute" on Windows is a bare
-  # drive-letter path like "C:/Users/...", which doesn't start with "/", so the *)-branch
-  # below needs its own drive-letter case or it wrongly treats that as relative and mangles it.
-  common=$(cd "$dir" && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
-  case "$common" in
-    /*|[A-Za-z]:*) : ;;
-    *) common="$dir/$common" ;;
-  esac
-  # Re-canonicalize through this shell's own `pwd -P` even though $common is already
-  # absolute: git's drive-letter form ("C:/Users/...") is a different string than what
-  # `pwd -P` prints for the same directory in this MSYS/git-bash shell ("/c/Users/..."),
-  # and callers compare this return value against other `pwd -P`-resolved paths — leaving
-  # it in git's own form breaks that string equality on Windows even though both name the
-  # same directory.
-  common="$(cd "$dir" && cd "$(dirname "$common")" && pwd -P)/$(basename "$common")"
-  dirname "$common"
-}
+# _main_root_of <dir> — the main worktree's root, from any worktree (main-root.sh's rule, which
+# also covers a submodule and a bare repo), as a `pwd -P` path.
+# shellcheck source=main-root.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/main-root.sh"
+_main_root_of() { main_root "$1"; }
 
 # _split_crew_branch <branch> — echoes "<feature-slug> <issue-slug>".
 # Fails for anything that is not crew/<feature-slug>/<issue-slug>.

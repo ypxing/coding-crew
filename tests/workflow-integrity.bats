@@ -34,11 +34,12 @@ _frontmatter() {
   awk 'NR==1 && $0=="---"{f=1;next} f && $0=="---"{exit} f{print}' "$1"
 }
 
-# session-init.sh as install.sh lays it out, in the skill's scripts/ dir beside tracker-cli.sh.
+# session-init.sh as install.sh lays it out, in the skill's scripts/ dir beside the helpers it sources.
 _installed_scripts() {
   local dir="$TEMP_DIR/installed-scripts"
   mkdir -p "$dir"
-  cp "$REPO_ROOT/skills/crew-afk/scripts/session-init.sh" "$REPO_ROOT/skills/crew-afk/scripts/tracker-cli.sh" "$dir/"
+  cp "$REPO_ROOT/skills/crew-afk/scripts/session-init.sh" "$REPO_ROOT/skills/crew-afk/scripts/tracker-cli.sh" \
+    "$REPO_ROOT/skills/crew-afk/scripts/main-root.sh" "$dir/"
   echo "$dir"
 }
 
@@ -55,7 +56,8 @@ _installed_scripts() {
   run bash "$(_installed_scripts)/session-init.sh"
   rm -rf "$TEMP_DIR/../origin-$$.git"
   [ "$status" -eq 0 ]
-  [ "$(git rev-parse --abbrev-ref HEAD)" = "feature/f" ]
+  git rev-parse --verify -q refs/heads/feature/f
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]
 }
 
 @test "B2: session-init succeeds end to end in a repo with no origin remote" {
@@ -102,6 +104,7 @@ _installed_scripts() {
   mkdir -p .scratch/calc-feature/issues/open
   echo "Status: ready-for-agent" > .scratch/calc-feature/issues/open/01-add-multiply.md
   bash "$SESSION_INIT" --feature-slug calc-feature >/dev/null
+  git checkout -q feature/calc-feature   # session-init makes the branch; the sprint's worktree is on it
 
   # Branch name deliberately unrelated to the feature slug.
   git checkout -q -b release/2026-q1
@@ -113,7 +116,7 @@ _installed_scripts() {
   echo x > work.txt && git add work.txt && git commit -q -m "work"
   echo y >> work.txt && git commit -q -am "more work"
 
-  run bash "$SQUASH" add-multiply
+  run bash "$SQUASH" --feature-slug calc-feature add-multiply
   [ "$status" -eq 0 ]
   [[ "$output" == *"Squashed"* ]]
 }
@@ -169,6 +172,7 @@ _installed_scripts() {
   mkdir -p .scratch/calc/issues/open
   echo "Status: ready-for-agent" > .scratch/calc/issues/open/01-add-multiply.md
   bash "$SESSION_INIT" --feature-slug calc >/dev/null
+  git checkout -q feature/calc
 
   mkdir -p .scratch/calc/issues/done
   printf '# Add a multiply function\n\nStatus: done\n\n## Context\n\nNo build heading here.\n' \
@@ -176,7 +180,7 @@ _installed_scripts() {
   echo x > work.txt && git add work.txt && git commit -q -m "work"
   echo y >> work.txt && git commit -q -am "more work"
 
-  run bash "$SQUASH" add-multiply
+  run bash "$SQUASH" --feature-slug calc add-multiply
   [ "$status" -eq 0 ]
   [[ "$output" == *"Squashed"* ]]
   # Falls back to the humanised slug rather than dying silently.

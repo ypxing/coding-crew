@@ -45,7 +45,7 @@ test("a squash refused by a hook is reported in the summary, and the merged comm
   assert.match(r.stdout, /## Squash\n\n\*\*Failed:\*\* [\s\S]*commit-msg: rejected/);
   const git = (...args) => sh("git", ["-C", root, ...args]).stdout.trim();
   assert.equal(git("status", "--porcelain", "--untracked-files=no"), "");
-  assert.match(git("log", "--format=%s", "main..HEAD"), /Merge/);
+  assert.match(git("log", "--format=%s", "main..feature/demo"), /Merge/);
 });
 
 test("the review is written to the sprint's reviews dir, before the squash", () => {

@@ -2,13 +2,14 @@
 set -euo pipefail
 
 # Squash commits for afk-run
-# Usage: squash-commits.sh [--no-squash] [--co-author "<trailer>"] [completed_slug1 completed_slug2 ...]
+# Usage: squash-commits.sh [--no-squash] [--feature-slug <slug>] [--co-author "<trailer>"] [completed_slug1 completed_slug2 ...]
 # --co-author is the commit's trailer line verbatim (the orchestrator passes the coder runtime's);
 # without it the commit has none. Completed slugs should be passed as remaining arguments after flags
 
 # Parse arguments
 NO_SQUASH=false
 COAUTHOR_TRAILER=""
+FEATURE_SLUG_ARG=""
 COMPLETED_SLUGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -19,6 +20,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --co-author)
       COAUTHOR_TRAILER="${2:-}"
+      shift 2
+      ;;
+    --feature-slug)
+      FEATURE_SLUG_ARG="${2:?--feature-slug requires a value}"
       shift 2
       ;;
     -*)
@@ -37,44 +42,22 @@ if [ "$NO_SQUASH" = true ]; then
   exit 0
 fi
 
-# Resolve the feature slug. Explicit env wins, then the state-file glob below, matching
-# state.sh's own rule ("explicit flags win, then the environment exported by sprint.env,
-# never a glob"): loop.mjs's wrapUp() hands this script FEATURE_SLUG and STATE_FILE via
-# sprint.childEnv() on every real sprint run, already correctly resolved by session-init.sh.
-# Re-deriving them here anyway — by matching the current branch against every
-# .scratch/*/sprint-state.json — used to run unconditionally even when the caller had
-# already told it exactly which sprint it was: a coincidental branch-name collision across
-# two features' state files (or simply a different glob order) could point a real sprint's
-# squash at the wrong feature's state. Only a standalone invocation with neither var set
-# (this script run by hand, or by a bats test with no sprint.env in the environment) falls
-# through to that branch-matching lookup, same as before.
+# Resolve the sprint. Explicit --feature-slug wins, then the FEATURE_SLUG the orchestrator hands
+# every child (sprint.childEnv()); there is no glob over .scratch/*/sprint-state.json — several
+# sprints run in one repo, and this script reads only its own slug's state. It runs in the feature
+# branch's worktree, so the sprint directory is under MAIN_ROOT, not under the cwd.
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-BRANCH_DERIVED="${CURRENT_BRANCH#feature/}"
-BRANCH_DERIVED=$(echo "$BRANCH_DERIVED" | sed -E 's/^[A-Z]+-[0-9]+-//')
-
-if [ -n "${FEATURE_SLUG:-}" ] && [ -n "${STATE_FILE:-}" ] && [ -f "$STATE_FILE" ]; then
-  : # inherited from the environment — authoritative, never re-derived
-else
-  STATE_FILE=""
-  FEATURE_SLUG=""
-  for candidate in .scratch/*/sprint-state.json; do
-    [ -f "$candidate" ] || continue
-    candidate_slug=$(jq -r '.feature_slug // empty' "$candidate")
-    candidate_dir=$(basename "$(dirname "$candidate")")
-    [ -n "$candidate_slug" ] || candidate_slug="$candidate_dir"
-    # Prefer the state file that knows about the branch we are on.
-    if [ "$(jq -r --arg b "$CURRENT_BRANCH" '.branches[$b] // empty' "$candidate")" != "" ]; then
-      STATE_FILE="$candidate"
-      FEATURE_SLUG="$candidate_slug"
-      break
-    fi
-  done
-
-  if [ -z "$STATE_FILE" ]; then
-    FEATURE_SLUG="$BRANCH_DERIVED"
-    STATE_FILE=".scratch/$FEATURE_SLUG/sprint-state.json"
-  fi
+FEATURE_SLUG="${FEATURE_SLUG_ARG:-${FEATURE_SLUG:-}}"
+if [ -z "$FEATURE_SLUG" ]; then
+  echo "squash-commits.sh: no sprint to squash — pass --feature-slug <slug>" >&2
+  exit 2
+fi
+# shellcheck source=main-root.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/main-root.sh"
+MAIN_ROOT="${MAIN_ROOT:-$(main_root)}"
+if [ -z "${STATE_FILE:-}" ] || [ "$(basename "$(dirname "${STATE_FILE}")")" != "$FEATURE_SLUG" ]; then
+  STATE_FILE="$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint-state.json"
 fi
 
 if [ ! -f "$STATE_FILE" ]; then
@@ -106,7 +89,7 @@ fi
 ISSUE_BULLETS=""
 ISSUE_TITLES=()
 for slug in "${COMPLETED_SLUGS[@]}"; do
-  ISSUE_FILE=$(find ".scratch/$FEATURE_SLUG/issues/done" -name "*${slug}.md" -type f 2>/dev/null | head -n 1)
+  ISSUE_FILE=$(find "$MAIN_ROOT/.scratch/$FEATURE_SLUG/issues/done" -name "*${slug}.md" -type f 2>/dev/null | head -n 1)
   if [ -n "$ISSUE_FILE" ]; then
     # `grep -v` exits 1 when it filters everything out, which under `set -euo pipefail`
     # would kill the script before the fallback below could run. Guard the pipeline so

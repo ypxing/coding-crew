@@ -83,7 +83,7 @@ test("by default the sprint is not squashed: each issue's merge stays its own co
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.doesNotMatch(traceLog(root), /\[SQUASH\]/);
-  const log = sh("git", ["-C", root, "log", "--format=%s", "main..HEAD"]).stdout;
+  const log = sh("git", ["-C", root, "log", "--format=%s", "main..feature/demo"]).stdout;
   assert.match(log, /Merge/);
 });
 
@@ -95,7 +95,7 @@ test("a squashed sprint whose coder ran on codex credits Codex, the coder runtim
   const r = runSprint(root, ["--squash"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(traceLog(root), /\[SQUASH\]/);
-  const body = sh("git", ["-C", root, "log", "-1", "--format=%B"]).stdout;
+  const body = sh("git", ["-C", root, "log", "-1", "--format=%B", "feature/demo"]).stdout;
   assert.match(body, /^Co-authored-by: Codex <noreply@openai\.com>$/m);
   assert.doesNotMatch(body, /Claude|pi <|Copilot/);
 });
@@ -229,8 +229,9 @@ test("the feature branch is named from config.json's afk.branchPrefix and --jira
 });
 
 test("session-init.sh's warning that --jira was ignored reaches the run's stderr", () => {
-  const root = fixtureRepo(); // already on feature/demo, no sprint.env: the branch is kept
+  const root = fixtureRepo(); // a sprint.env from an earlier run pins the branch
   addIssue(root, "01-alpha.md");
+  writeFileSync(join(root, ".scratch/demo/sprint.env"), 'export FEATURE_BRANCH="feature/demo"\n');
   const r = runSprint(root, ["--jira", "PROJ-12"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /--jira PROJ-12 ignored/);

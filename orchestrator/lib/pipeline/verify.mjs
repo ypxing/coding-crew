@@ -78,7 +78,7 @@ export async function handleVerificationFailure(ctx, worker, outcome, verify) {
 
 /**
  * Dispatched to `crew-triage`, never the coder: the coder has every incentive to call its
- * own failure "environmental". cwd is mainRoot — the branch ref and check output suffice.
+ * own failure "environmental". cwd is the feature worktree — the branch ref and check output suffice.
  */
 export async function runTriage(ctx, worker, verifyStdout) {
   const { sprint, effects, options } = ctx;
@@ -115,7 +115,7 @@ export async function runTriage(ctx, worker, verifyStdout) {
     triage.runtime,
     {
       agent: "crew-triage",
-      cwd: effects.mainRoot,
+      cwd: effects.featureRoot,
       promptFile,
       outFile,
       // Defaults to the coder's model, never a cheaper one; config.json's afk.models can override.

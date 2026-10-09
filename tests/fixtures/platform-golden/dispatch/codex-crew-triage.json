@@ -17,7 +17,7 @@
     "model_reasoning_effort=\"high\"",
     "-"
   ],
-  "input": "<PROTOCOL crew-triage sha256:0f4205e339158b22>\n\n---\n\n# Task\n\nYour shell starts in <TMP>/repo/.scratch/golden/dispatch, the only writable directory, where your result file goes. The repository is <TMP>/repo/.scratch/worktrees/alpha: run your commands there (`cd <TMP>/repo/.scratch/worktrees/alpha && ...`).\n\nImplement the alpha issue.\n",
+  "input": "<PROTOCOL crew-triage sha256:5a3708e7ebecfc43>\n\n---\n\n# Task\n\nYour shell starts in <TMP>/repo/.scratch/golden/dispatch, the only writable directory, where your result file goes. The repository is <TMP>/repo/.scratch/worktrees/alpha: run your commands there (`cd <TMP>/repo/.scratch/worktrees/alpha && ...`).\n\nImplement the alpha issue.\n",
   "env": {
     "MAIN_ROOT": "<TMP>/repo",
     "CREW_ORCHESTRATED": "1"

@@ -13,11 +13,11 @@ import { MAIN_TREE_DIRTY_TAG, MERGE_CONFLICT_TAG, dispatchStem, issueRef, notify
 export async function mergeAndClose(ctx, worker, outcome) {
   // Deliberately synchronous end to end (effects.git/bash, no await): while verifies run
   // concurrently, every merge into the feature branch still runs alone, because no other
-  // worker loop gets the event loop between the checkout and the close.
+  // worker loop gets the event loop between the merge and the close. It runs in the feature
+  // branch's own worktree (merge-branches.sh's cwd), never in the main checkout.
   const { sprint, effects, options } = ctx;
   const { issue, branch } = worker;
 
-  effects.git(["checkout", sprint.featureBranch]);
   ctx.log(`[STEP] slug=${dispatchStem(issue)} round=${worker.attempt} step=merge`);
   // Bounded: effects.bash is spawnSync, so a stalled merge would freeze the whole sprint — and
   // that blocking is what keeps merges serialized.
@@ -28,12 +28,14 @@ export async function mergeAndClose(ctx, worker, outcome) {
   ctx.log(`slug=${issue.slug} round=${worker.attempt} ${merge.stdout.trim()}`, "debug"); // merge-branches.sh traced [MERGE]
   if (merge.code !== 0) {
     if (merge.code === 124) {
-      effects.git(["merge", "--abort"]);
+      effects.git(["merge", "--abort"], { cwd: effects.featureRoot });
     }
-    // A retry would re-run the same merge into the same dirty checkout: block for a human.
+    // A retry would re-run the same merge into the same dirty feature worktree: block for a human.
     const dirty = /failed \(main-tree-dirty — ([^)]*)\)/.exec(merge.stderr);
     if (dirty) {
-      const summary = `${dirty[1]} — commit or stash them in the main checkout, then re-run`;
+      // The script names the feature worktree's path, which is gone once the run ends: drop it.
+      const what = dirty[1].replace(/ in .*? would be overwritten/, " would be overwritten");
+      const summary = `${what} — the feature worktree had uncommitted changes; re-running recreates it (discarding them) and resumes at the merge`;
       return finishBlocked(ctx, worker, outcome, taggedReason(MAIN_TREE_DIRTY_TAG, summary));
     }
     // merge-branches.sh's own conflict line; it has already aborted the merge.

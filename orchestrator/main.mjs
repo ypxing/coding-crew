@@ -27,8 +27,7 @@
  *   --jira <KEY>                           e.g. PROJ-12: a feature branch this run creates is
  *                                           <afk.branchPrefix, default feature/><KEY>-<slug>.
  *                                           Ignored, with a warning, when the branch is already
- *                                           chosen (a sprint.env to resume, or a local-tracker
- *                                           run started off the default branch)
+ *                                           chosen (a sprint.env to resume)
  *
  * Each flag below overrides the config.json setting in brackets for one run (lib/crew-config.mjs):
  *   --fix-findings <actionable|critical|high|medium|none>  [fixFindings, default actionable]
@@ -69,9 +68,9 @@
  *   --no-sync-main                         skip merging origin's default branch into a resumed feature
  *                                           branch that lacks it (done once, before the baseline;
  *                                           a conflict there stops the run)
- *   --allow-dirty                          run even though tracked files in the main checkout
- *                                           have uncommitted changes (a merge that touches one
- *                                           still blocks that issue, as main-tree-dirty)
+ *   --allow-dirty                          accepted, does nothing (prints a notice): the main
+ *                                           checkout is never switched or merged into, so its
+ *                                           uncommitted changes never stop a run
  *
  * CREW_LOG_LEVEL=debug|info|warn|error|fatal sets the lowest level stderr shows (default
  * info); the trace log keeps every level either way. debug adds each dispatch's throttled
@@ -82,8 +81,8 @@
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -110,7 +109,7 @@ import {
 import { closePaneLogTab, closePaneWorkspace, drainPaneNotices, ensurePaneWorkspace, notifyTriggeringPane } from "./lib/pane-host/index.mjs";
 import { makeRoundReviewFile, runSprint } from "./lib/loop.mjs";
 import { getTracker, selectDispatchable } from "./lib/tracker.mjs";
-import { worktreeRoot } from "./lib/worktree.mjs";
+import { ensureWorktree, featureWorktreePath, removeWorktree, worktreeRoot } from "./lib/worktree.mjs";
 import { resolveInstallDir } from "./lib/install-dir.mjs";
 import { skillDirCandidates } from "./lib/skill-dirs.mjs";
 import { acquireLease, releaseLease } from "./lib/lease.mjs";
@@ -119,7 +118,6 @@ import { closeShipped } from "./lib/shipped.mjs";
 import { readTrackerConfig } from "../tracker/tracker-config.mjs";
 import {
   baselineFailureMessage,
-  dirtyTrackedFiles,
   dockerDepsFailureMessage,
   checkRequires,
   dropStaleRetained,
@@ -372,13 +370,37 @@ function reportUnknownArgs(unknown, mainRoot) {
   console.error(lines.join("\n"));
 }
 
+/**
+ * The main checkout, whichever worktree the run was launched from. From the shared git dir: its
+ * parent when it is a `.git`; its `core.worktree` when set (a submodule's `.git/modules/<name>`);
+ * else (a bare repo, no main checkout) this worktree's top level. Every script is handed it as
+ * MAIN_ROOT; scripts/main-root.sh applies the same rule to a hand run and the gates.
+ */
 function gitRoot() {
-  const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  const r = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"], { encoding: "utf8" });
   if (r.status !== 0) {
     console.error("crew-afk: not inside a git repository.");
     process.exit(1);
   }
-  return r.stdout.trim();
+  const [common, top] = r.stdout.trim().split("\n");
+  if (basename(common) === ".git") return realpathSync(dirname(common));
+  const wt = spawnSync("git", ["--git-dir", common, "config", "--get", "core.worktree"], { encoding: "utf8" }).stdout?.trim();
+  return realpathSync(wt ? resolve(common, wt) : top);
+}
+
+/**
+ * A new feature branch forks from the local default branch; when that is behind origin the sprint
+ * starts from stale code. Warn only, after a best-effort fetch: no origin or any failure stays silent.
+ */
+function warnDefaultBehindOrigin(effects, defaultBranch, log) {
+  if (effects.gitRead(["remote", "get-url", "origin"]).code !== 0) return;
+  if (effects.gitRead(["rev-parse", "--verify", "-q", `refs/heads/${defaultBranch}`]).code !== 0) return;
+  if (effects.gitRead(["fetch", "-q", "origin", defaultBranch]).code !== 0) return;
+  const behind = Number(effects.gitRead(["rev-list", "--count", `refs/heads/${defaultBranch}..refs/remotes/origin/${defaultBranch}`]).stdout.trim());
+  if (behind > 0) {
+    log(`WARNING: local ${defaultBranch} is ${behind} commit(s) behind origin/${defaultBranch}`);
+    log(`The new feature branch is created from local ${defaultBranch}; update ${defaultBranch} first to start from current code.`);
+  }
 }
 
 function resolveScriptsDir(mainRoot, platform) {
@@ -434,6 +456,9 @@ async function main() {
     return 1;
   }
   for (const flag of options.retired) console.error(`crew-afk: ${retiredNotice(flag)}`);
+  if (options.allowDirty) {
+    console.error("crew-afk: --allow-dirty no longer does anything: uncommitted changes in the main checkout never stop a run (every issue merges into the feature branch's own worktree).");
+  }
   const mainRoot = gitRoot();
   if (options.unknown.length) {
     reportUnknownArgs(options.unknown, mainRoot);
@@ -452,15 +477,23 @@ async function main() {
     scriptsDir,
     mainRoot,
     dryRun: options.dryRun,
+    // Every script, session-init.sh first (it writes sprint.env), uses this root rather than
+    // deriving its own.
+    env: { MAIN_ROOT: mainRoot },
     log: (line) => {
       logLines.push(line);
       if (shows("debug")) console.error(line);
     },
   });
   if (options.command === "status") {
-    const sprint = Sprint.attach(effects);
+    // No repo-wide pointer to "the" sprint: several run in one repo.
+    if (!options.featureSlug) {
+      console.error("crew-afk: status needs --feature-slug <slug> (several sprints can run in one repo).");
+      return 2;
+    }
+    const sprint = Sprint.attach(effects, options.featureSlug);
     if (!sprint) {
-      console.log("No sprint initialised (.scratch/sprint.env absent).");
+      console.log(`No sprint initialised (.scratch/${options.featureSlug}/sprint.env absent).`);
       return 3;
     }
     console.log(JSON.stringify({ env: sprint.env, state: sprint.readState() }, null, 2));
@@ -577,8 +610,6 @@ async function main() {
     const requiring = tracker.selectDispatchable(mainRoot, { featureSlug: resolved.slug, includeBlocked: true }).filter((i) => /^## Requires\s*$/m.test(i.text ?? ""));
     console.log(`requires:  ${requiring.length ? `${requiring.map((i) => i.slug).join(", ")} — each ## Requires runs once before that issue's first dispatch; a failing one blocks it` : "no issue declares ## Requires"}`);
     console.log(`resume:    ${options.resumeCoderSession ? "a fix round continues the coder's own session when it is small and the branch has not moved" : "fix rounds start a fresh coder session"}`);
-    const dirty = dirtyTrackedFiles(effects);
-    console.log(`main tree: ${dirty.length ? `${dirty.length} tracked file(s) with uncommitted changes — run would stop (--allow-dirty to override): ${dirty.join(", ")}` : "clean"}`);
     return issues.length ? 0 : 3;
   }
 
@@ -610,6 +641,15 @@ async function main() {
   let runStarted = false;
   let lockPath;
   let lease;
+  // The sprint's `crew/<slug>/_feature` worktree, once made. Removed on every ending; the branch stays.
+  let featureWorktree;
+  const removeFeatureWorktree = () => {
+    if (!featureWorktree) return;
+    const path = featureWorktree;
+    featureWorktree = null;
+    removeWorktree(effects, { mainRoot, path });
+    effects.git(["worktree", "prune"]);
+  };
   // Children run in their own sessions, so neither a terminal ^C nor its hangup (the terminal
   // closed, an SSH session dropped) reaches them: kill them here. Lease release is best effort:
   // SIGKILL cannot be caught, and the next run reclaims a dead pid.
@@ -624,6 +664,7 @@ async function main() {
         console.error(`crew-afk: could not record why the run ended: ${err.message}`);
       }
     }
+    removeFeatureWorktree();
     if (lease) releaseLease(effects, lease);
     process.exit(SIGNAL_EXIT[signal]);
   };
@@ -660,24 +701,7 @@ async function main() {
       lockPath = lock.lockPath;
     }
 
-    // Before anything touches disk: every issue's merge lands in this checkout, and git
-    // refuses one that would overwrite an uncommitted change — after its coder and review ran.
-    if (!options.allowDirty && !options.dryRun) {
-      const dirty = dirtyTrackedFiles(effects);
-      if (dirty.length) {
-        console.error(
-          [
-            `crew-afk: the main checkout (${mainRoot}) has uncommitted changes to tracked files. Every issue merges into this checkout, and git refuses a merge that would overwrite one — after that issue's coder and review have already run:`,
-            ...dirty.map((f) => `  ${f}`),
-            "Commit or stash them, then re-run (or --allow-dirty, if you know no issue touches them).",
-          ].join("\n"),
-        );
-        exitCode = 1;
-        return exitCode;
-      }
-    }
-
-    // Before anything touches disk, like the dirty check: a reviewer without its assets
+    // Before anything touches disk: a reviewer without its assets
     // spends turns searching for them, and a coder without dep-install cannot run a check.
     const missing = missingAssets(installDir);
     if (missing.length) {
@@ -688,11 +712,61 @@ async function main() {
 
     if (movesLegacy) console.error(`crew-afk: ${loaded.legacyMove.apply()}`);
 
-    sprint = await Sprint.init(effects, {
+    const init = {
       featureSlug: resolved.slug,
-      fixFindings: options.fixFindings,
       branchPrefix: options.branchPrefix,
       passthrough: options.passthrough,
+    };
+    // Which branch and slug session-init.sh will use, before it touches disk: the branch gets its
+    // own worktree first. The main checkout is never switched.
+    const named = Sprint.resolveBranch(effects, init);
+    const runId = new Date().toISOString();
+
+    // Before the worktree, the baseline and any dispatch: a second run on this feature would
+    // otherwise learn of the first only at push time, with its sprint stranded. Local trackers have
+    // no remote to hold a lease on, and --dry-run changes nothing.
+    if (!options.dryRun && readTrackerConfig(mainRoot).tracker === "github") {
+      const got = acquireLease(effects, {
+        slug: named.slug,
+        runId,
+        reclaim: options.reclaim,
+        log: (line) => console.error(line),
+      });
+      if (got.error) {
+        console.error(got.error);
+        exitCode = 1;
+        return exitCode;
+      }
+      lease = got.lease;
+    }
+
+    // Right after the lease, before session-init.sh: every feature-branch git operation (merge,
+    // sync, squash, the read-only dispatches' view of the code) runs here, so the main checkout
+    // keeps the user's branch. --dry-run changes nothing, so it has no worktree to make.
+    if (!options.dryRun) {
+      const base = effects.gitRead(["rev-parse", "--verify", "-q", `refs/heads/${named.defaultBranch}`]).code === 0 ? named.defaultBranch : "HEAD";
+      const wt = ensureWorktree(effects, {
+        mainRoot,
+        branch: named.branch,
+        base,
+        mode: "checkout",
+        path: featureWorktreePath(mainRoot, named.slug),
+        adopt: { title: named.slug },
+      });
+      if (wt.stale) {
+        console.error(`crew-afk: ${wt.reason}`);
+        exitCode = 1;
+        return exitCode;
+      }
+      featureWorktree = wt.path;
+      effects.featureRoot = wt.path;
+      if (!wt.reusedBranch) warnDefaultBehindOrigin(effects, named.defaultBranch, (line) => console.error(line));
+    }
+
+    sprint = await Sprint.init(effects, {
+      ...init,
+      featureSlug: named.slug,
+      fixFindings: options.fixFindings,
       // Installed below, after command discovery has cached any install override.
       deps: false,
       log: (line) => {
@@ -700,27 +774,8 @@ async function main() {
       },
     });
     sprint.setModel(options.model ?? "agent default");
-    const runId = new Date().toISOString();
 
-    // Before the baseline and any dispatch: a second run on this feature would otherwise learn
-    // of the first only at push time, with its sprint stranded. Local trackers have no remote
-    // to hold a lease on, and --dry-run changes nothing.
-    if (!options.dryRun && readTrackerConfig(mainRoot).tracker === "github") {
-      const got = acquireLease(effects, {
-        slug: sprint.featureSlug,
-        runId,
-        reclaim: options.reclaim,
-        log: (line) => {
-          console.error(line);
-          if (sprint.traceLog) writeLog(sprint.traceLog, line, "warn");
-        },
-      });
-      if (got.error) {
-        fatal(got.error);
-        exitCode = 1;
-        return exitCode;
-      }
-      lease = got.lease;
+    if (lease) {
       const leaseLog = (line, level) => {
         console.error(line);
         if (sprint.traceLog) writeLog(sprint.traceLog, line, level);
@@ -868,6 +923,7 @@ async function main() {
       const label = resolved?.slug ? `crew-afk (${resolved.slug})` : "crew-afk";
       await notifyTriggeringPane(effects, `${label}: sprint ${outcome}. Check this pane's scrollback for the summary.`);
     }
+    removeFeatureWorktree();
     if (lease) {
       const r = releaseLease(effects, lease);
       if (r.superseded) console.error(`crew-afk: feature lease ${lease.slug} is now held by another run — left alone.`);

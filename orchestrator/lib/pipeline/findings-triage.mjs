@@ -92,7 +92,7 @@ async function runFindingsTriage(ctx, { findings, scope, ref, change, dir, dispa
     triage.runtime,
     {
       agent: "crew-triage",
-      cwd: effects.mainRoot,
+      cwd: effects.featureRoot,
       promptFile,
       outFile,
       model: triage.model,

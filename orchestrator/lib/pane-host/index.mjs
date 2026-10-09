@@ -6,6 +6,8 @@
  * one tab/terminal tailing the sprint's trace log, and one best-effort outcome push into the
  * pane that launched the run. Each adapter (herdr.mjs, orca.mjs) implements the same five
  * operations for those: preflight, ensureWorkspace, closeWorkspace, closeLogTab, notify.
+ * An adapter may also have adoptWorktree (orca only): told of each worktree the orchestrator
+ * creates, so the host can show it by name under its parent. See adoptWorktree below.
  *
  * An adapter that also has openWorkerTerminal/closeWorkerTerminal (orca only) hosts each
  * headless dispatch in a terminal of its own, for watching (worker-terminal.mjs). Completion
@@ -29,6 +31,22 @@ function adapterFor(effects) {
 /** Problems that should stop the sprint at startup, before any dispatch discovers them. */
 export function preflightPaneHost(effects, paneHost) {
   return ADAPTERS[paneHost]?.preflight(effects) ?? [];
+}
+
+/**
+ * Announce a worktree the orchestrator just created (native git; the host never creates one) to
+ * a host that wants to know of it: `{title, issue, parent}` is its display name, its issue number
+ * and its parent worktree's path. Best-effort and synchronous, called from ensureWorktree: a
+ * failure is logged, never thrown, and no host (or one without the op) calls nothing.
+ */
+export function adoptWorktree(effects, path, meta) {
+  const adapter = adapterFor(effects);
+  if (!adapter?.adoptWorktree || effects.dryRun) return;
+  try {
+    adapter.adoptWorktree(effects, path, meta);
+  } catch (err) {
+    effects.log?.(`WARN pane host ${effects.paneHost}: could not adopt worktree ${path} — ${err.message}`);
+  }
 }
 
 /**

@@ -144,7 +144,7 @@ test("a retained record whose issue is open and whose branch exists is kept and 
   writeFileSync(join(root, "prior.txt"), "earlier attempt\n");
   git("add", "prior.txt");
   git("commit", "-q", "-m", "earlier attempt");
-  git("checkout", "-q", "feature/demo");
+  git("checkout", "-q", "main");
   seedState(root, retainedRecord("alpha", "partial"));
   const r = runSprint(root);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);

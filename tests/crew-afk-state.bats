@@ -25,7 +25,7 @@ setup() {
   # The crew-afk scripts ask the tracker CLI which tracker this is: this repo's own copy.
   export CREW_TRACKER_CLI="$REPO_ROOT/tracker/cli.mjs"
   unset CREW_INSTALL_DIR
-  export TEMP_DIR=$(mktemp -d)
+  export TEMP_DIR=$(cd "$(mktemp -d)" && pwd -P)
   cd "$TEMP_DIR"
   git init -q -b main
   git config user.email "test@test.com"
@@ -61,6 +61,8 @@ init_sprint() {
   mkdir -p ".scratch/$slug/issues/open"
   echo "Status: ready-for-agent" > ".scratch/$slug/issues/open/01-first.md"
   bash "$(installed_scripts)/session-init.sh" --feature-slug "$slug" >/dev/null
+  # What the orchestrator exports to every child it runs: the scripts take their sprint from it.
+  export FEATURE_SLUG="$slug"
 }
 
 state() { bash "$(installed_scripts)/state.sh" "$@"; }
@@ -81,15 +83,31 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ "$TRACE_LOG" = "$MAIN_ROOT/.scratch/calc/traces/orchestrator.log" ]
   [ "$DISPATCH_DIR" = "$MAIN_ROOT/.scratch/calc/dispatch" ]
   [ "$REVIEW_DIR" = "$MAIN_ROOT/.scratch/calc/reviews" ]
-  [ "$FEATURE_BRANCH" = "$(git rev-parse --abbrev-ref HEAD)" ]
+  # The branch exists, but the main checkout was not switched to it.
+  [ "$FEATURE_BRANCH" = "feature/calc" ]
+  git rev-parse --verify -q refs/heads/feature/calc
+  [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]
 }
 
-@test "sourcing .scratch/sprint.env is enough - no slug lookup needed" {
+@test "session-init writes no repo-wide .scratch/sprint.env pointer" {
   init_sprint calc
 
-  run bash -c 'source "$TEMP_DIR/.scratch/sprint.env" && echo "$FEATURE_SLUG"'
+  [ ! -e .scratch/sprint.env ]
+  run bash -c 'source "$TEMP_DIR/.scratch/calc/sprint.env" && echo "$FEATURE_SLUG"'
   [ "$status" -eq 0 ]
   [ "$output" = "calc" ]
+}
+
+@test "session-init --print-branch names the slug, branch and default branch and touches nothing" {
+  mkdir -p .scratch/calc/issues/open
+  echo "Status: ready-for-agent" > .scratch/calc/issues/open/01-first.md
+  run bash "$(installed_scripts)/session-init.sh" --print-branch --feature-slug calc --jira PROJ-7
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"FEATURE_SLUG=calc"* ]]
+  [[ "$output" == *"FEATURE_BRANCH=feature/PROJ-7-calc"* ]]
+  [[ "$output" == *"DEFAULT_BRANCH=main"* ]]
+  ! git rev-parse --verify -q refs/heads/feature/PROJ-7-calc
+  [ ! -e .scratch/calc/sprint.env ]
 }
 
 @test "sprint.env names the sprint the issues live in, not the alphabetically-first one" {
@@ -100,7 +118,7 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   echo '{"feature_slug":"aaa-old-sprint"}' > .scratch/aaa-old-sprint/sprint-state.json
   init_sprint zzz-current
 
-  run bash -c 'source "$TEMP_DIR/.scratch/sprint.env" && echo "$FEATURE_SLUG"'
+  run bash -c 'source "$TEMP_DIR/.scratch/zzz-current/sprint.env" && echo "$FEATURE_SLUG"'
   [ "$output" = "zzz-current" ]
 }
 
@@ -121,9 +139,10 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
 
 # ─── trace.sh ────────────────────────────────────────────────────────────────
 
-@test "trace.sh resolves the log through sprint.env with no arguments" {
+@test "trace.sh resolves the log from --feature-slug" {
   init_sprint calc
-  run bash "$AFK_SCRIPTS/trace.sh" ROUND "round=2 issues=3"
+  unset FEATURE_SLUG
+  run bash "$AFK_SCRIPTS/trace.sh" --feature-slug calc ROUND "round=2 issues=3"
   [ "$status" -eq 0 ]
   grep -q '\[ROUND\] round=2 issues=3' .scratch/calc/traces/orchestrator.log
 }
@@ -147,10 +166,11 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   [ ! -e "$TEMP_DIR/t.log" ]
 }
 
-@test "trace.sh inside a dispatched agent does not find the sprint through sprint.env" {
+@test "trace.sh inside a dispatched agent does not find the sprint on its own" {
   # A worker inherits MAIN_ROOT, so without this every trace.sh call its test suite makes
   # would land in the live sprint's orchestrator.log.
   init_sprint calc
+  unset FEATURE_SLUG
   CREW_ORCHESTRATED=1 run bash "$AFK_SCRIPTS/trace.sh" ROUND "round=9 leaked"
   [ "$status" -eq 0 ]
   ! grep -q 'leaked' .scratch/calc/traces/orchestrator.log
@@ -162,9 +182,14 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   grep -q '\[ROUND\] round=1' "$TEMP_DIR/own.log"
 }
 
-@test "trace.sh is a silent no-op when there is no sprint to trace to" {
-  # Tracing is observability: it must never fail the caller that is making progress.
+@test "trace.sh by hand with no sprint env and no --feature-slug exits 2 naming --feature-slug" {
   run bash "$AFK_SCRIPTS/trace.sh" ROUND "round=1"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--feature-slug"* ]]
+}
+
+@test "trace.sh inside a dispatched agent with no sprint to trace to stays a silent no-op" {
+  CREW_ORCHESTRATED=1 run bash "$AFK_SCRIPTS/trace.sh" ROUND "round=1"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -541,7 +566,7 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   init_sprint calc
   state blocked --slug b --branch crew/calc/b --reason "main-tree-dirty — uncommitted changes in /r would be overwritten: a.ts — commit or stash them in the main checkout, then re-run" >/dev/null
   run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
-  [[ "$output" == *"## Main Checkout Not Clean (need a human)"* ]]
+  [[ "$output" == *"## Feature Worktree Not Clean (need a human)"* ]]
   [[ "$output" == *"- crew/calc/b: uncommitted changes in /r would be overwritten: a.ts"* ]]
 }
 
@@ -573,7 +598,7 @@ state() { bash "$(installed_scripts)/state.sh" "$@"; }
   run bash "$(installed_scripts)/crew-summary.sh" --feature-slug calc
   [ "$status" -eq 0 ]
   [[ "$output" == *"## Merge Conflicts (need a human)"* ]]
-  [[ "$output" == *"git checkout feature/calc && git merge --no-ff <branch>"* ]]
+  [[ "$output" == *"git worktree add /tmp/crew-resolve feature/calc && cd /tmp/crew-resolve && git merge --no-ff <branch>"* ]]
   [[ "$output" == *"- crew/calc/b"* ]]
 }
 
@@ -871,4 +896,14 @@ EOF
   run state retention --slug first
   [[ "$output" == *"reason: blocked — retry limit reached"* ]]
   [[ "$output" == *"fingerprint: abc123"* ]]
+}
+
+@test "trace.sh --feature-slug from a linked worktree writes to the main checkout's log" {
+  local main="$TEMP_DIR/trace-main" linked="$TEMP_DIR/trace-linked"
+  git init -q -b main "$main"
+  git -C "$main" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  git -C "$main" worktree add -q -b side "$linked"
+  (cd "$linked" && env -u MAIN_ROOT -u TRACE_LOG -u CREW_ORCHESTRATED bash "$AFK_SCRIPTS/trace.sh" --feature-slug x MARK hello)
+  grep -q 'MARK' "$main/.scratch/x/traces/orchestrator.log"
+  [ ! -e "$linked/.scratch/x/traces/orchestrator.log" ]
 }

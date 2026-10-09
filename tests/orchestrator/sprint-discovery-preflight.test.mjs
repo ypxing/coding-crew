@@ -239,19 +239,17 @@ test("a legitimate --jira value is not treated as an unrecognized argument", () 
 
 // ─── preflight: a clean main checkout, and a green feature branch ─────────────────────
 
-test("uncommitted changes to a tracked file stop the run before anything is dispatched", () => {
+test("uncommitted changes to a tracked file in the main checkout do not stop a run", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   writeFileSync(join(root, "Makefile"), "test:\n\t@echo edited\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
-  const { r, lines } = commandLines(root);
-  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stderr, /the main checkout \(\S+\) has uncommitted changes to tracked files/);
-  assert.match(r.stderr, /^  Makefile$/m);
-  assert.equal(lines.filter((l) => /^SPAWN /.test(l)).length, 0);
-  assert.equal(existsSync(join(root, ".scratch/demo/sprint-state.json")), false, "stopped before session-init");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /allow-dirty/);
+  assert.equal(readFileSync(join(root, "Makefile"), "utf8").includes("edited"), true, "the user's edit is untouched");
 });
 
-test("--allow-dirty runs anyway, and crew-afk's own files never count as dirty", () => {
+test("--allow-dirty is accepted, prints one notice line, and crew-afk's own files never count as dirty", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   mkdirSync(join(root, ".coding-crew"), { recursive: true });
@@ -271,6 +269,7 @@ test("--allow-dirty runs anyway, and crew-afk's own files never count as dirty",
   writeFileSync(join(other, "README.md"), "local edit\n");
   const r = runSprint(other, ["--allow-dirty"]);
   assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.stderr.split("\n").filter((l) => /--allow-dirty no longer does anything/.test(l)).length, 1);
 });
 
 test("a run leaves no .worktreeinclude behind in a repo that had none", () => {
@@ -280,12 +279,12 @@ test("a run leaves no .worktreeinclude behind in a repo that had none", () => {
   assert.equal(existsSync(join(root, ".worktreeinclude")), false);
 });
 
-test("plan names a dirty main checkout", () => {
+test("plan no longer reports the main checkout's cleanliness", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   writeFileSync(join(root, "Makefile"), "test:\n\t@echo edited\n");
   const r = sh("node", [MAIN, "plan", "--platform", "pi", "--feature-slug", "demo"], { cwd: root, env: { ...process.env, MAIN_ROOT: root } });
-  assert.match(r.stdout, /main tree: 1 tracked file\(s\) with uncommitted changes .*Makefile/);
+  assert.doesNotMatch(r.stdout, /main tree:/);
 });
 
 test("a feature branch that fails its own checks stops the run, and no issue is verified past it", () => {
@@ -441,36 +440,6 @@ test("--no-baseline skips the baseline", () => {
 });
 
 // ─── a dirty main checkout at merge time ──────────────────────────────────────────────
-
-test("a merge refused by uncommitted changes in the main checkout blocks at once, then resumes at merge", () => {
-  const root = fixtureRepo();
-  mkdirSync(join(root, "src"), { recursive: true });
-  writeFileSync(join(root, "src/alpha.txt"), "// base\n");
-  sh("git", ["-C", root, "add", "-A"]);
-  sh("git", ["-C", root, "commit", "-q", "-m", "seed"]);
-  addIssue(root, "01-alpha.md");
-  // The fake coder appends to src/alpha.txt; the same file edited, uncommitted, here.
-  writeFileSync(join(root, "src/alpha.txt"), "// someone's local edit\n");
-
-  const first = commandLines(root, ["--allow-dirty"]);
-  assert.equal(first.r.code, 2, `${first.r.stdout}\n${first.r.stderr}`);
-  const s = state(root);
-  assert.match(s.retention.alpha.reason, /^blocked — main-tree-dirty — uncommitted changes in \S+ would be overwritten: src\/alpha\.txt — commit or stash/);
-  assert.equal(s.attempts.alpha, 1, "no retry: nothing a dispatch does can clean the checkout");
-  assert.equal(first.lines.filter((l) => /^SPAWN .*--agent crew-coder/.test(l)).length, 1);
-  assert.match(first.r.stdout, /## Main Checkout Not Clean \(need a human\)/);
-  assert.match(first.r.stdout, /- crew\/demo\/alpha: uncommitted changes in \S+ would be overwritten: src\/alpha\.txt/);
-
-  // The human stashes the edit and re-runs: straight to merge, nothing re-dispatched.
-  sh("git", ["-C", root, "checkout", "--", "src/alpha.txt"]);
-  const second = commandLines(root);
-  assert.equal(second.r.code, 0, `${second.r.stdout}\n${second.r.stderr}`);
-  assert.deepEqual(state(root).completed_slugs, ["alpha"]);
-  // Nothing of alpha's is re-dispatched; the merge it resumes at is a first drain's feature review.
-  assert.equal(second.lines.filter((l) => /^SPAWN .*--agent crew-/.test(l) && !/ --slug feature(-\d+)?( |$)/.test(l)).length, 0);
-  assert.equal(second.lines.filter((l) => /verify-worktree\.sh --dir/.test(l)).length, 0);
-  assert.match(traceLog(root), /\[SKIP-TO-MERGE\] slug=alpha reason=blocked — main-tree-dirty/);
-});
 
 // ─── the per-dispatch cost ledger ─────────────────────────────────────────────────────
 

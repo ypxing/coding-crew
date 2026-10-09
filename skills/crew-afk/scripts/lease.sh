@@ -65,9 +65,20 @@ cas_push() {
   return 1
 }
 
+# The tag points at a commit origin already has, so pushing the lease uploads nothing else: never
+# HEAD, which is the user's own branch in the main checkout and may hold commits they have not
+# pushed. origin's default branch, else any branch of origin's; HEAD only when origin has none yet.
+lease_target() {
+  local target
+  target=$(git rev-parse -q --verify "refs/remotes/origin/HEAD^{commit}" 2>/dev/null) && { echo "$target"; return 0; }
+  target=$(git for-each-ref --count=1 --format='%(objectname)' refs/remotes/origin/ 2>/dev/null)
+  [ -n "$target" ] && { echo "$target"; return 0; }
+  git rev-parse -q --verify "HEAD^{commit}" 2>/dev/null
+}
+
 make_tag() {
   local target
-  target=$(git rev-parse HEAD 2>/dev/null) || { echo "lease.sh: no commit to tag" >&2; return 1; }
+  target=$(lease_target) || { echo "lease.sh: no commit to tag" >&2; return 1; }
   printf 'object %s\ntype commit\ntag crew-lock\ntagger crew-afk <crew-afk@localhost> %s +0000\n\n%s\n' \
     "$target" "$(date +%s)" "$OWNER" | git mktag
 }

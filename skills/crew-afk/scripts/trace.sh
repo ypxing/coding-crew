@@ -20,21 +20,23 @@ set -uo pipefail
 # The log is resolved in this order:
 #   1. --log <file>
 #   2. $TRACE_LOG
-#   3. $MAIN_ROOT/.scratch/sprint.env (or the enclosing repo's) → its TRACE_LOG
+#   3. --feature-slug <slug> → $MAIN_ROOT/.scratch/<slug>/traces/orchestrator.log
 #
-# Step 3 is skipped under CREW_ORCHESTRATED=1, which every dispatched agent (and so every
-# test suite it runs) inherits along with the live sprint's MAIN_ROOT. The orchestrator
-# hands its own scripts TRACE_LOG explicitly, so only a dispatch's stray calls lose it.
-#
-# If none of those resolve, this exits 0 without writing. Tracing is observability:
-# it must never fail the caller that is trying to make progress.
+# There is no repo-wide pointer to a "current" sprint (several run in one repo). With none of
+# those, a hand run exits 2 naming --feature-slug; under CREW_ORCHESTRATED=1, which every
+# dispatched agent (and so every test suite it runs) inherits along with the live sprint's
+# MAIN_ROOT, it exits 0 without writing: the orchestrator hands its own scripts TRACE_LOG
+# explicitly, so only a dispatch's stray calls lose it. Tracing is observability — a caller
+# that is trying to make progress ignores a failure here.
 
 LOG=""
+SLUG=""
 LEVEL=info
 while [ $# -gt 0 ]; do
   case "$1" in
     --log) LOG="${2:-}"; shift 2 ;;
     --level) LEVEL="${2:-}"; shift 2 ;;
+    --feature-slug) SLUG="${2:-}"; shift 2 ;;
     *) break ;;
   esac
 done
@@ -51,13 +53,16 @@ if [ -z "$LOG" ]; then
   LOG="${TRACE_LOG:-}"
 fi
 
+if [ -z "$LOG" ] && [ -n "$SLUG" ]; then
+  # shellcheck source=main-root.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/main-root.sh"
+  root="${MAIN_ROOT:-$(main_root || true)}"
+  [ -z "$root" ] || LOG="$root/.scratch/$SLUG/traces/orchestrator.log"
+fi
+
 if [ -z "$LOG" ] && [ "${CREW_ORCHESTRATED:-}" != 1 ]; then
-  root="${MAIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
-  if [ -n "$root" ] && [ -f "$root/.scratch/sprint.env" ]; then
-    # shellcheck disable=SC1091
-    . "$root/.scratch/sprint.env" 2>/dev/null || true
-    LOG="${TRACE_LOG:-}"
-  fi
+  echo "trace.sh: no sprint to trace to — pass --feature-slug <slug> (or --log <file>)" >&2
+  exit 2
 fi
 
 [ -n "$LOG" ] || exit 0
