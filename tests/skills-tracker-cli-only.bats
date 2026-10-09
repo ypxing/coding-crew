@@ -227,6 +227,13 @@ prompt_layout_leaks() {
   done
 }
 
+@test "to-issues asks extend-or-new before using a slug that features lists, so to-prd's exemption holds, for every platform" {
+  local p
+  for p in "${PLATFORMS[@]}"; do
+    grep -qF 'Before using a slug `features` lists, ask the user' "$(rendered_skill to-issues "$p")"
+  done
+}
+
 @test "to-prd asks the user before reusing a slug that features lists, except one to-issues handed it, for every platform" {
   local p
   for p in "${PLATFORMS[@]}"; do

@@ -25,7 +25,7 @@ Determine the **feature slug** (the milestone or directory the issues are filed 
 2. Otherwise, run `node "$TRACKER" features` — one `<slug>\t<open|closed>\t<ready-count>` line per feature — and check if one slug clearly matches the topic being discussed.
 3. If no match is found, ask the user: "What feature slug should I use?"
 
-Never guess the slug silently — confirm with the user if there's any ambiguity.
+Never guess the slug silently — confirm with the user if there's any ambiguity. **Before using a slug `features` lists, ask the user** whether to extend that feature or choose a new slug; a closed feature is still a taken slug. `to-prd` relies on this question and does not ask it again.
 
 **One slice, no PRD:** the slug needs no question. Use, in order: a github issue ref's existing milestone; a local issue ref's feature (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices the slug is confirmed as above.
 
