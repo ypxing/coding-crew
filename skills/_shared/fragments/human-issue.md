@@ -8,7 +8,7 @@
 
 Write acceptance criteria unticked (`- [ ]`): the person ticks each one as they finish it, so a box ticked at publish says "done" before anything was done.
 
-**Kind A — the whole task is a person's.** Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue. End `### Steps` with a fixed last step, "Mark it done", that runs `node .coding-crew/tracker/cli.mjs mark-done <n>` from the repo root when the `cli.mjs` you located under Tracker Configuration is inside this repo or its main checkout, else `node ~/.coding-crew/tracker/cli.mjs mark-done <n>` (local tracker: the issue file path instead of `<n>`) — never the absolute path you located, which does not exist on the reader's machine — with `Check:` the issue is labelled `awaiting-merge` (local tracker: the file is in `done/`) and `Undo:` remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`).
+**Kind A — the whole task is a person's.** Drop `## Implements`, `## Interfaces` and the "Read this document before implementing" line; no agent will read this issue. End `### Steps` with a fixed last step, "Mark it done", that runs `node .coding-crew/tracker/cli.mjs mark-done <n>` from the repo root when the `cli.mjs` you located under Tracker Configuration is inside this repo or its main checkout, else `node ~/.coding-crew/tracker/cli.mjs mark-done <n>` (local tracker: the issue file path instead of `<n>`) — never the absolute path you located, which does not exist on the reader's machine — with `Check:` the command exits 0 and prints no `REFUSED` line, and `Undo:` follow "Reopen an issue" in the tracker doc `.coding-crew/tracker/docs/<kind>.md` — `~/.coding-crew/tracker/docs/<kind>.md` when the `mark-done` command above is the `~/.coding-crew` one — with `<kind>` the `tracker=` value `node .coding-crew/tracker/cli.mjs config` prints (the same path, `~/.coding-crew/…` when that is the one). Name neither the tracker nor its labels or files in the step.
 
 **Kind B — agent work blocked on a person.** Keep the agent brief (`## What to build`, `## Implements`, acceptance criteria, …) below the block, and make the last step of `### Steps` relabel the issue `ready-for-agent`, so crew-afk picks it up.
 
@@ -45,7 +45,7 @@ Today the ruleset has no `required_status_checks` rule, so a PR can merge while 
    gh api -X PUT repos/OWNER/REPO/rulesets/ID --input ruleset.json
    ```
 
-3. Mark it done, once every acceptance criterion below is ticked. Check: the issue is labelled `awaiting-merge`. Undo: remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`).
+3. Mark it done, once every acceptance criterion below is ticked. Check: the command exits 0 and prints no `REFUSED` line. Undo: follow "Reopen an issue" in `.coding-crew/tracker/docs/<kind>.md`, `<kind>` being the `tracker=` value `node .coding-crew/tracker/cli.mjs config` prints.
 
    ```bash
    node .coding-crew/tracker/cli.mjs mark-done 42

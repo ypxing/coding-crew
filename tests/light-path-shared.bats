@@ -102,7 +102,7 @@ assert_light_absent_from() {
   grep -qF 'One slice publishes without a PRD' "$f"
   grep -qF 'two or more origin issues' "$f"
   grep -qF "existing milestone" "$f"
-  grep -qF 'existing `.scratch/<slug>/` directory' "$f"
+  grep -qF "a local issue ref's feature" "$f"
   grep -qF '## Decisions' "$f"
   grep -qF 'the slug' "$f"
 }

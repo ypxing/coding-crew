@@ -103,6 +103,7 @@ AFK_LAUNCHER_VARIANTS=("${PLATFORMS[@]}")
 
 # The one word cap every launcher test asserts. It guards against the ~2,400-word pipeline
 # prose creeping back, not against a launcher gaining a real instruction — raised from 500
-# to 600 when the herdr/orca polling notes pushed every launcher past 500. The banned-name
+# to 600 when the herdr/orca polling notes pushed every launcher past 500, then to 950 when the
+# launcher gained the tracker-configuration fragment it needs to run `features`. The banned-name
 # check in tests/crew-afk-launcher.bats is the primary guard; this is the backstop.
-AFK_LAUNCHER_WORD_BUDGET=600
+AFK_LAUNCHER_WORD_BUDGET=950

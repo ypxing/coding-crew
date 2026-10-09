@@ -50,8 +50,9 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
     grep -qF 'else `node ~/.coding-crew/tracker/cli.mjs mark-done <n>` (local tracker: the issue file path instead of `<n>`)' "$output"
     grep -qF 'never the absolute path you located' "$output"
     ! grep -qE 'mark-issue-done\.sh|tracker-config\.sh' "$output"
-    grep -qF '`Check:` the issue is labelled `awaiting-merge` (local tracker: the file is in `done/`)' "$output"
-    grep -qF '`Undo:` remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`)' "$output"
+    grep -qF '`Check:` the command exits 0 and prints no `REFUSED` line' "$output"
+    grep -qF '`Undo:` follow "Reopen an issue" in the tracker doc `.coding-crew/tracker/docs/<kind>.md`' "$output"
+    if grep -qE 'awaiting-merge|issues/(open|done)' <(sed -n '/Kind A/p' "$output"); then echo "forbidden text matched (line 55 of human-issue-shared.bats)" >&2; return 1; fi
   done
 }
 
@@ -62,7 +63,8 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
   last=$(grep -E '^[0-9]+\. ' <<<"$steps" | tail -1)
   [[ "$last" == *"Mark it done"* ]]
   grep -qF 'node .coding-crew/tracker/cli.mjs mark-done 42' <<<"$(sed -n '/Mark it done/,$p' <<<"$steps")"
-  [[ "$last" == *'Undo: remove `awaiting-merge` and add `ready-for-human` (local tracker: move the file back to `issues/open/` with `Status: ready-for-human`).'* ]]
+  [[ "$last" == *'Undo: follow "Reopen an issue" in `.coding-crew/tracker/docs/<kind>.md`'* ]]
+  [[ "$last" != *awaiting-merge* && "$last" != *issues/* ]]
 }
 
 @test "no rendered skill body names the retired tracker wrappers" {

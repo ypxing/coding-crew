@@ -174,6 +174,24 @@ export function listFeatureIssues(mainRoot, { featureSlug } = {}) {
   ];
 }
 
+/**
+ * Every feature: each `.scratch/<slug>/` directory with an `issues/` subdirectory, sorted by slug.
+ * `state` is `open` while `issues/open/` holds an `.md` file, else `closed`; `ready` counts the
+ * `Status: ready-for-agent` files there. No `.scratch/` is no features.
+ */
+export function listFeatures(mainRoot) {
+  const scratch = join(mainRoot, ".scratch");
+  if (!existsSync(scratch)) return [];
+  const out = [];
+  for (const entry of readdirSync(scratch, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !existsSync(join(scratch, entry.name, "issues"))) continue;
+    const open = listOpenIssueFiles(mainRoot, { featureSlug: entry.name });
+    const ready = open.filter((p) => parseIssue(p).status === READY_STATUS).length;
+    out.push({ slug: entry.name, state: open.length ? "open" : "closed", ready });
+  }
+  return out.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+}
+
 /** The feature's `issues-deps.json` when `to-issues` wrote one, else null. */
 export function featureDepsFile(mainRoot, { featureSlug } = {}) {
   const path = join(mainRoot, ".scratch", featureSlug, "issues", "issues-deps.json");
