@@ -136,8 +136,9 @@ export class Sprint {
    * downloads of the same packages; this warms whatever cache the package manager keeps
    * so the per-worktree installs are local copies. On the host this is advisory — every
    * worktree installs again, and verify-worktree.sh is the gate — so the outcome is only
-   * logged. In docker mode it is the one install into the volume every worktree shares, so
-   * the caller stops the run on `DEPS: docker-failed`; hence the returned DEPS: line.
+   * logged. In docker mode it installs nothing either: it records the mode, and each worktree's
+   * own `--slug` call (an issue, `_baseline`, `_integration`) installs into the volumes its
+   * lockfiles name. The returned DEPS: line is for the caller's log.
    *
    * Call this after one-time command discovery (see commands.mjs), not before: discovery
    * may cache a documented install override at `.coding-crew/dev-commands.json`, and

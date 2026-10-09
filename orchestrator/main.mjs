@@ -118,7 +118,6 @@ import { closeShipped } from "./lib/shipped.mjs";
 import { readTrackerConfig } from "../tracker/tracker-config.mjs";
 import {
   baselineFailureMessage,
-  dockerDepsFailureMessage,
   checkRequires,
   dropStaleRetained,
   lintFailureMessage,
@@ -839,15 +838,9 @@ async function main() {
     // After command discovery: ensure-deps.sh reads the install command it cached.
     if (options.installDeps) {
       // Stderr only, as before: the install's own output is debug, its DEPS: outcome info.
-      const deps = await sprint.installDeps((line) => {
+      await sprint.installDeps((line) => {
         if (shows(/^DEPS:/.test(line) ? "info" : "debug")) console.error(line);
       });
-      if (/^DEPS: docker-failed\b/.test(deps ?? "")) {
-        fatal(dockerDepsFailureMessage(deps));
-        endReason = "preflight: docker dependency install failed";
-        exitCode = 1;
-        return exitCode;
-      }
     }
 
     const ctx = {
