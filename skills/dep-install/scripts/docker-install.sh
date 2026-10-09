@@ -28,10 +28,11 @@
 # lockfile table below, the same way host-install.sh's own Makefile check already takes
 # priority over its signal-file fallback on the host path. One that runs docker itself
 # (detect-docker-nesting.sh) runs on the host instead of inside the service: nesting it would
-# need a docker CLI the container does not have. Its own docker call still runs the install in
-# a container, but reaches the shared volumes only if it loads the generated override, so it is
-# refused up front when detect-compose-bypass.sh sees it would not (exit 5), and the volumes are
-# probed from the service afterwards (exit 5 again when every one is still empty).
+# need a docker CLI the container does not have. Its own `docker compose` call runs the install
+# in a container and gets this worktree's crew override from the docker shim on PATH, whatever
+# `-f`/`COMPOSE_FILE`/`-p` it uses. A `docker run`/`docker exec` call loads no compose file, so it
+# is refused up front when detect-compose-bypass.sh sees one (exit 5), and the volumes are probed
+# from the service afterwards (exit 5 again when every one is still empty).
 #
 # --credential-target is the same kind of forwarded override for dev-commands.json's
 # "credential_target" field — a full command (e.g. "make _registry"), passed straight through
@@ -48,8 +49,9 @@
 #   4  could not acquire the install lock within --lock-timeout — another install (this
 #      script or a worker's own dep-install invocation) is already in flight; the caller
 #      should treat this the same as "docker, deferred" rather than block on it
-#   5  --install-cmd runs docker itself in a way that would not reach the shared volumes the
-#      checks read — refused before running, or still empty after it ran (reasons on stderr)
+#   5  --install-cmd runs docker in a way that would not reach the shared volumes the checks
+#      read (`docker run`/`docker exec`) — refused before running, or still empty after it ran
+#      (reasons on stderr)
 
 set -uo pipefail
 
@@ -151,9 +153,9 @@ if [[ -n "$INSTALL_CMD_OVERRIDE" ]] &&
    bash "$SELF_DIR/detect-docker-nesting.sh" --dir "$PROJECT_ROOT" --cmd "$INSTALL_CMD_OVERRIDE"; then
   if BYPASS="$(bash "$SELF_DIR/detect-compose-bypass.sh" --dir "$PROJECT_ROOT" --cmd "$INSTALL_CMD_OVERRIDE")"; then
     {
-      echo "Install command '$INSTALL_CMD_OVERRIDE' runs docker itself, but not through docker-compose.override.yml — the file that mounts the shared dependency volumes the checks run against — so it would install where they never look:"
+      echo "Install command '$INSTALL_CMD_OVERRIDE' runs docker itself, but not through docker compose — which loads the crew override that mounts the shared dependency volumes the checks run against — so it would install where they never look:"
       printf '  %s\n' "$BYPASS"
-      echo "Make its docker call a plain 'docker compose' (no -f, -p, COMPOSE_FILE or COMPOSE_PROJECT_NAME), or name a container-side install command (e.g. 'pnpm install') as \"install\" in .coding-crew/dev-commands.json."
+      echo "Make its docker call a 'docker compose run', or name a container-side install command (e.g. 'pnpm install') as \"install\" in .coding-crew/dev-commands.json."
     } >&2
     exit 5
   fi
@@ -241,37 +243,28 @@ for _t in timeout gtimeout; do
   command -v "$_t" >/dev/null 2>&1 && { TIMEOUT_BIN="$_t"; break; }
 done
 
-COMPOSE_FILE=""
+_has_compose=0
 for _name in docker-compose.yml docker-compose.yaml compose.yml; do
-  if [[ -f "$PROJECT_ROOT/$_name" ]]; then
-    COMPOSE_FILE="$PROJECT_ROOT/$_name"
-    break
-  fi
+  [[ -f "$PROJECT_ROOT/$_name" ]] && { _has_compose=1; break; }
 done
-if [[ -z "$COMPOSE_FILE" ]]; then
+if [[ "$_has_compose" -eq 0 ]]; then
   echo "Error: no compose file found in $PROJECT_ROOT" >&2
   exit 2
 fi
 
-# A linked worktree's own GIT_DIR is never baked into the shared override (see
-# gen-override.sh's "Git metadata mount" header comment) — resolved fresh here, per
-# invocation, and passed as -e flags instead so a lefthook/husky postinstall hook run by
-# $CONTAINER_CMD can still resolve git without touching the shared file.
-GIT_ENV_ARGS=()
-GIT_ENV_LINES=()
-while IFS= read -r _line; do
-  [[ -n "$_line" ]] && { GIT_ENV_ARGS+=(-e "$_line"); GIT_ENV_LINES+=("$_line"); }
-done < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query git-env 2>/dev/null || true)
+# Every compose call below — ours, and a host-run install command's own — goes through the docker
+# shim, which adds this worktree's crew override (written just above) as the last -f.
+export PATH="$SELF_DIR/shim:$PATH"
+OVERRIDE="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)/crew-compose.override.yml"
+export CREW_COMPOSE_OVERRIDE="$OVERRIDE"
 
-COMPOSE_RUN=(docker compose -f "$COMPOSE_FILE" -f "$MAIN_ROOT/docker-compose.override.yml" run --rm)
+# Compose runs from PROJECT_ROOT, where the shim finds the compose file.
+COMPOSE_RUN=(bash -c 'cd "$1" && shift && exec "$@"' _ "$PROJECT_ROOT" docker compose run --rm)
 
 if [[ -n "$HOST_CMD" ]]; then
-  # Exported, not `-e` — there is no compose call of ours to attach flags to; the override's
-  # bare passthrough entries hand these to the recipe's own container (gen-override.sh's
-  # "Nested docker calls").
-  RUN_CMD=(env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$PROJECT_ROOT" "$HOST_CMD")
+  RUN_CMD=(bash -c 'cd "$1" && eval "$2"' _ "$PROJECT_ROOT" "$HOST_CMD")
 else
-  RUN_CMD=("${COMPOSE_RUN[@]}" "${GIT_ENV_ARGS[@]+"${GIT_ENV_ARGS[@]}"}" "$SERVICE" sh -c "$CONTAINER_CMD")
+  RUN_CMD=("${COMPOSE_RUN[@]}" "$SERVICE" sh -c "$CONTAINER_CMD")
 fi
 
 OUT_FILE="$(mktemp)"
@@ -318,7 +311,7 @@ if [[ -n "$HOST_CMD" ]]; then
         if [[ "$PROBE_RC" -eq 7 ]]; then
           echo "Install command '$HOST_CMD' succeeded, but the dependency volumes the checks run against are still empty, seen from service $SERVICE:"
           printf '  %s\n' "${VENDOR_PATHS[@]}"
-          echo "Its docker call installed somewhere else. Make it a plain 'docker compose' call that loads docker-compose.override.yml, or name a container-side install command (e.g. 'pnpm install') as \"install\" in .coding-crew/dev-commands.json."
+          echo "Its docker call installed somewhere else. Make it a 'docker compose run', or name a container-side install command (e.g. 'pnpm install') as \"install\" in .coding-crew/dev-commands.json."
         else
           echo "Install command '$HOST_CMD' succeeded, but checking that it reached the dependency volumes failed (exit $PROBE_RC):"
           tail -n 20 "$OUT_FILE"
