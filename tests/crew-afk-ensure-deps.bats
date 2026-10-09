@@ -77,7 +77,7 @@ stub_docker_scripts() {
 
 # stub_docker_scripts_with_real_gen_override <docker-install-exit> [stdout] — same as
 # stub_docker_scripts, but gen-override.sh is the real script rather than absent, so the
-# fast-path symlink call in ensure-deps.sh has something real to exercise.
+# override-generating calls in ensure-deps.sh have something real to exercise.
 stub_docker_scripts_with_real_gen_override() {
   local install_exit="$1" install_out="${2:-}"
   local d="$TEMP_DIR/stub-docker-scripts-real-override"
@@ -394,7 +394,29 @@ STUBEOF
   run bash "$SCRIPT" --dir "$WORK"
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker" ]
-  [ -f "$WORK/docker-compose.override.yml" ]
+  [ -f "$WORK/.git/crew-compose.override.yml" ]
+  [ ! -e "$WORK/docker-compose.override.yml" ]
+}
+
+@test "the MAIN_ROOT docker call deletes an older install's generated override and keeps a project's own" {
+  printf '{}\n' > "$WORK/package.json"
+  printf 'services:\n  app:\n    build: .\n' > "$WORK/docker-compose.yml"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts_with_real_gen_override 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+
+  # what an older gen-override.sh wrote: first line `name:`, volume keys wt_<PROJ_SLUG>_…
+  printf 'name: work\nservices:\n  app:\n    volumes:\n      - wt_work_nm_root:/app/node_modules\nvolumes:\n  wt_work_nm_root:\n' \
+    > "$WORK/docker-compose.override.yml"
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/docker-compose.override.yml" ]
+
+  own='services:\n  app:\n    environment:\n      - MINE=1\nvolumes:\n  cache:\n'
+  printf "$own" > "$WORK/docker-compose.override.yml"
+  before="$(cksum < "$WORK/docker-compose.override.yml")"
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(cksum < "$WORK/docker-compose.override.yml")" = "$before" ]
 }
 
 @test "the MAIN_ROOT call caches its docker verdict to dev-commands.json a worker's own detect-mode.sh can read" {
@@ -440,7 +462,7 @@ STUBEOF
   # A host-side node_modules can predate .worktreeinclude excluding it, or come from a
   # contributor's own local install, in a project that is otherwise docker-mode. The
   # presence guard must not read that as "nothing to do" and skip warming the docker
-  # volume — that is the only place docker-compose.override.yml gets generated.
+  # volume — that is the only place the override gets generated.
   printf '{}\n' > "$WORK/package.json"
   mkdir -p "$WORK/node_modules"
   export MAIN_ROOT="$WORK"
@@ -465,31 +487,32 @@ STUBEOF
   [[ "$output" != *"SHOULD NOT RUN"* ]]
 }
 
-@test "a worktree call (--slug) on the docker-present fast path also symlinks the worktree's own override" {
-  # docker-install.md tells a worker on this fast path to skip gen-override.sh entirely, so
-  # nothing else creates this symlink for a fresh worktree — see gen-override.sh's --link-only.
+@test "a worktree call (--slug) generates the worktree's own override in its git dir, and links nothing into the tree" {
+  # Nothing else creates it for a fresh worktree: every run.sh call and bare `docker compose`
+  # there needs it, through the shim.
   printf '{}\n' > "$WORK/package.json"
-  printf 'name: proj\n' > "$WORK/docker-compose.override.yml"
+  printf 'services:\n  app:\n    build: .\n' > "$WORK/docker-compose.yml"
+  printf 'services:\n  app:\n    environment:\n      - MINE=1\n' > "$WORK/docker-compose.override.yml"
+  git -C "$WORK" add -A
+  git -C "$WORK" commit -q -m init
+  before="$(cksum < "$WORK/docker-compose.override.yml")"
   export MAIN_ROOT="$WORK"
   mkdir -p "$WORK/.scratch"
   echo "npm ci" > "$WORK/.scratch/docker-install.done"
   stub_docker_scripts_with_real_gen_override 0 "SHOULD NOT RUN"
 
   WT="$TEMP_DIR/wt"
-  mkdir -p "$WT"
-  printf '{}\n' > "$WT/package.json"
+  git -C "$WORK" worktree add -q -b feature "$WT" HEAD
 
   run bash "$SCRIPT" --dir "$WT" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker-present" ]
-  # A real symlink where the platform allows it, or (no symlink privilege — the default on
-  # Windows without Developer Mode/elevation) an independent file with identical content —
-  # see gen-override.sh's `_link_override` fallback.
-  if [ -L "$WT/docker-compose.override.yml" ]; then
-    [ "$(readlink "$WT/docker-compose.override.yml")" = "$WORK/docker-compose.override.yml" ]
-  else
-    diff "$WT/docker-compose.override.yml" "$WORK/docker-compose.override.yml"
-  fi
+  [ -f "$WORK/.git/worktrees/wt/crew-compose.override.yml" ]
+  grep -qx '      - GIT_DIR=/git-common/worktrees/wt' "$WORK/.git/worktrees/wt/crew-compose.override.yml"
+  # the project's own committed override is the same bytes, in the main checkout and the worktree
+  [ "$(cksum < "$WORK/docker-compose.override.yml")" = "$before" ]
+  [ "$(cksum < "$WT/docker-compose.override.yml")" = "$before" ]
+  [ ! -L "$WT/docker-compose.override.yml" ]
 }
 
 @test "a hand run with --slug but no sprint env and no --feature-slug exits 2 naming --feature-slug" {

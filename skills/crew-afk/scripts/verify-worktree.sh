@@ -664,9 +664,16 @@ _run_category() {
     local via
     via="$(bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --describe -- "$cmd" 2>/dev/null | sed -n 's/^VIA=//p')"
     case "$via" in
-      nested) echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd" ;;
       docker) echo "$label: running (docker: $DOCKER_SERVICE): cd \"$DOCKER_CONTAINER_SRC\" && $cmd" ;;
-      *) via=host; echo "$label: running: $cmd" ;;
+      *)
+        # host — and a stale `nested` from an older describe, which run.sh also runs as host.
+        via=host
+        if bash "$_vw_dep_scripts/detect-docker-nesting.sh" --dir "$WORKTREE_DIR" --cmd "$cmd"; then
+          echo "$label: running on host (docker: $DOCKER_SERVICE skipped — '$cmd' recipe already manages docker itself): $cmd"
+        else
+          echo "$label: running: $cmd"
+        fi
+        ;;
     esac
     _exec_and_report "$label" bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --via "$via" -- "$cmd"
     return

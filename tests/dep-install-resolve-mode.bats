@@ -33,23 +33,18 @@ _docker_makefile() {
   [[ "$output" == *"ACTION=on-failure"* ]]
 }
 
-@test "git config agent.install-mode wins over the cache and the override file" {
+@test "git config agent.install-mode wins over the cache" {
   git -C "$WORK" config --local agent.install-mode host
   _cache '{"install_mode": "docker"}'
-  echo "services: {}" > "$WORK/docker-compose.override.yml"
   run bash "$SCRIPT" --project-root "$WORK"
   [[ "$output" == *"INSTALL_MODE=host"* ]]
 }
 
-@test "the cached install_mode wins over the override file" {
-  _cache '{"install_mode": "host"}'
+@test "a docker-compose.override.yml in the repo is no signal: the mode comes from git config and the cache" {
   echo "services: {}" > "$WORK/docker-compose.override.yml"
   run bash "$SCRIPT" --project-root "$WORK"
   [[ "$output" == *"INSTALL_MODE=host"* ]]
-}
-
-@test "an existing override file at MAIN_ROOT means docker" {
-  echo "services: {}" > "$WORK/docker-compose.override.yml"
+  _cache '{"install_mode": "docker"}'
   run bash "$SCRIPT" --project-root "$WORK"
   [[ "$output" == *"INSTALL_MODE=docker"* ]]
   [[ "$output" == *"ACTION=install"* ]]
