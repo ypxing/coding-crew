@@ -174,13 +174,13 @@ bash "<skill-dir>/scripts/promote-findings.sh" defer \
   --title "Fix review findings: <issue title>" \
   --report ".scratch/$FEATURE_SLUG/reviews/sprint-review-<TIMESTAMP>.md" \
   --criteria-file "<tmp criteria file>" --severities "actionable" # or "CRITICAL, HIGH": the list report.mjs resolves
-# → "defer: .scratch/<slug>/issues/open/<NN>-fix-findings-<issue-slug>.md"
+# → "defer: <issue ref>"
 
 # A fixable red integration check on the merged feature branch → one parked fix issue
 bash "<skill-dir>/scripts/promote-findings.sh" defer-integration \
   --feature-slug "$FEATURE_SLUG" --report ".scratch/$FEATURE_SLUG/dispatch/_integration/verify.out" \
   --criteria-file "<tmp criteria file>" --at "<failing commit>"
-# → "defer-integration: .scratch/<slug>/issues/open/<NN>-fix-integration-<k>.md"
+# → "defer-integration: <issue ref>"
 #   | "defer-integration: skip — already queued: <path>"   (one open at a time; the caller caps the run at two)
 
 # Phase 1 → Phase 2

@@ -13,21 +13,21 @@ Break a plan into independently-grabbable issues using vertical slices (tracer b
 
 ### 1. Gather context and determine feature slug
 
-Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be an issue of the configured tracker: a path under `.scratch/` (e.g. `.scratch/feature/issues/open/01-slug.md`) or the tracker's issue number — the CLI refuses anything else with exit 2. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker.
+Work from whatever is already in the conversation context. If the user passes an issue reference as an argument, it must be a ref the configured tracker accepts (how that tracker writes one is in `.coding-crew/tracker/docs/<kind>.md`, `<kind>` from `node "$TRACKER" config`) — the CLI refuses anything else with exit 2. A file the caller names as the source (`add-tests`' `.scratch/<feature-slug>/findings.md`) is the plan. Do NOT fetch from arbitrary user-supplied URLs or an unconfigured remote tracker.
 
 When the plan references an issue, read its full body and its comments, not just the title: `node "$TRACKER" fetch <ref> --comments`.
 
 **An existing issue as the source.** `/to-issues <ref>` on an existing issue is how it moves from `needs-triage` to `ready-for-agent`: it goes through steps 3–5 like any plan. If it is still one slice after step 4, step 6 rewrites that issue in place; if it splits into several slices, each becomes a new child issue with `## Parent` naming it. An issue with a column-0 `Source:` line outside a code fence (`Source: review (<branch>)` or `Source: <report> (<branch>)`, anywhere in the body) was auto-promoted by crew-afk from findings already judged — the same line `promote-findings.sh`'s guard reads: it is not checked against the design standard.
 
-Determine the **feature slug** (the directory name under `.scratch/`):
+Determine the **feature slug** (the milestone or directory the issues are filed under):
 
 1. If the user provided a path argument, extract the slug from it (e.g. `.scratch/auth-flow/...` → `auth-flow`).
-2. Otherwise, list existing directories under `.scratch/` and check if one clearly matches the topic being discussed.
-3. If no match is found, ask the user: "What feature slug should I use? (This becomes the `.scratch/<slug>/` directory name.)"
+2. Otherwise, run `node "$TRACKER" features` — one `<slug>\t<open|closed>\t<ready-count>` line per feature — and check if one slug clearly matches the topic being discussed.
+3. If no match is found, ask the user: "What feature slug should I use?"
 
 Never guess the slug silently — confirm with the user if there's any ambiguity.
 
-**One slice, no PRD:** the slug needs no question. Use, in order: a github issue ref's existing milestone; a local issue ref's existing `.scratch/<slug>/` directory (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices the slug is confirmed as above.
+**One slice, no PRD:** the slug needs no question. Use, in order: a github issue ref's existing milestone; a local issue ref's feature (`rewrite` writes in place); otherwise one derived from the title (kebab-case, short). Step 5's quiz shows it for the user to override. With two or more slices the slug is confirmed as above.
 
 ### 2. Check for a PRD
 

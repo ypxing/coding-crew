@@ -10,6 +10,8 @@ allowed-tools: Bash, shell
 
 # AFK Issue Sprint
 
+{{FRAGMENT:tracker-configuration}}
+
 The sprint is a program, not a prompt: launch it, stream its output, report what it
 printed. **You do not orchestrate, implement, review, merge or close anything
 yourself.**
@@ -29,11 +31,10 @@ those (`--fix-findings medium` keeps LOW findings out of fix issues). A bare wor
 If the trailing arguments aren't CLI syntax, look up what exists first:
 
 ```bash
-ls -d .scratch/*/ 2>/dev/null
-grep -rl "Status: ready-for-agent" .scratch/*/issues/open/*.md 2>/dev/null
+node "$TRACKER" features   # <slug>, open|closed, ready-for-agent count — one line per feature
 ```
 
-Match against those names (exact, fuzzy/typo, then issue content). One match →
+Match against those slugs (exact, fuzzy/typo, then issue content: `node "$TRACKER" known --feature-slug <slug> --out <dir>` for a candidate). One match →
 `--feature-slug <slug>`, say what you inferred, then run. No match → don't run; point at
 `crew-grill`, `crew-brainstorm`, or `to-issues`. Multiple matches → ask which. Never guess
 or create a `.scratch/<slug>` directory: a wrong resolution merges and closes real work.

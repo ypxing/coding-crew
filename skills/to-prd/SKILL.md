@@ -13,10 +13,10 @@ the user before writing the final document.
 
 1. **Determine the feature slug** before anything else:
    - If the user provided a slug or path argument, extract it from there.
-   - Otherwise, list existing directories under `.scratch/` and pick the one that clearly matches the topic.
-   - If no match is found, ask: "What feature slug should I use? (This becomes the `.scratch/<slug>/` directory.)"
+   - Otherwise, run `node "$TRACKER" features` — one `<slug>\t<open|closed>\t<ready-count>` line per feature, open and closed — and pick the slug that clearly matches the topic.
+   - If no match is found, ask: "What feature slug should I use?"
 
-   Never guess the slug silently — confirm with the user if there's any ambiguity.
+   Never guess the slug silently — confirm with the user if there's any ambiguity. **Before reusing a slug `features` lists, ask the user** whether to extend that feature (its PRD is updated in place) or choose a new slug; a closed feature is still a taken slug.
 
 2. **Check for an existing PRD.** Run `node "$TRACKER" prd --feature-slug <feature-slug>`: exit 0 prints it — read it, it may contain a `## Decisions` section pre-seeded by `crew-grill`. Preserve and expand those decisions rather than replacing them. An opening `<!-- PRD issue #<n>: … -->` line is the CLI naming the PRD's ref, not part of the PRD: leave it out of what step 6 publishes. Exit 3 means there is none.
 
