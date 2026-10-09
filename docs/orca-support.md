@@ -59,7 +59,7 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 
 | operation                         | herdr                                                        | orca                                                                        |
 | ---------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| ensure workspace + log tab         | `workspace create --cwd <mainRoot> --label <slug> --no-focus`, then `tab create --workspace <id> --cwd <mainRoot> --label <slug>-log --no-focus` + `pane run <pane> tail -f <log>` | `terminal create --worktree path:<mainRoot> --title <slug>-log --command "tail -f '<log>'" --json` (one call) |
+| ensure workspace + log tab         | `worktree open --path <_feature> --label <slug> --no-focus` (the sprint's feature worktree; `workspace create --cwd <mainRoot> …` with none), then `tab create --workspace <id> --cwd <mainRoot> --label <slug>-log --no-focus` + `pane run <pane> tail -f <log>` | `terminal create --worktree path:<mainRoot> --title <slug>-log --command "tail -f '<log>'" --json` (one call) |
 | close log tab                      | `tab close <tabId>`                                          | `terminal close --terminal <handle> --json`                                |
 | close workspace                    | `workspace close <id>` (no-op if reused)                     | no-op always — no workspace object exists                                  |
 | rename triggering tab              | `tab rename <tabId> <slug>`                                  | `terminal rename --terminal <handle> --title <slug> --json`                |
@@ -70,7 +70,7 @@ confirmed with a live spike against a running orca runtime (not just the CLI ref
 ## Worker terminals
 
 With orca as the pane host, each coder/reviewer/triage dispatch runs in its own orca terminal,
-titled `<slug> <agent>` and scoped to the main checkout, so every worker is a tab you can
+titled `<slug> <agent>` and scoped to the dispatch's own worktree (the main checkout for a dispatch with none), so every worker is a tab you can
 watch. Without it, dispatch is the plain headless spawn, unchanged. herdr keeps the plain
 spawn too: its per-worker panes (`dispatchViaHerdr`) were removed for driving an
 interactive REPL and scraping it, and this design does neither.
@@ -151,3 +151,18 @@ agent definition.
 - Orca's own orchestration layer (`orchestration run-create`/`task-create`/`worker-start`,
   worker supervision, gates) is not used; see [Worker terminals](#worker-terminals) for why.
   Worker tabs are plain terminals to orca, not supervised workers.
+
+## Worktrees the sprint creates
+
+The sprint keeps its feature branch in `crew/<slug>/_feature` and each issue in its own worktree,
+all made with native git — neither host creates one. After creating one, crew-afk names it to
+the host, best-effort (a failure is logged and the run goes on):
+
+- **orca:** `orca worktree set --worktree path:<worktree> --display-name <title> [--issue <n>]
+  [--parent-worktree path:<_feature>]` for `_feature` and every issue worktree, and a worker
+  terminal for a dispatch in an adopted worktree is created with `--worktree path:<that worktree>`
+  (any other dispatch keeps `path:<mainRoot>`). Whether an adopted worktree shows in orca's sidebar
+  is unverified: `orca worktree list` showed only the repo's main checkout.
+- **herdr:** `_feature` only, as the sprint's workspace (`herdr worktree open --path <_feature>`);
+  issue worktrees get no herdr call, since each herdr worktree is a whole workspace.
+- **none:** nothing is called.

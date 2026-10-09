@@ -198,8 +198,8 @@ for b in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   # ancestor of HEAD by then. Requiring ancestry here would keep every merged
   # branch forever, which is the leak this script exists to stop.
   if [ "$FORCE" -eq 0 ] && ! is_explicit_merged "$b" \
-     && ! git -C "$MAIN_ROOT" merge-base --is-ancestor "$b" HEAD 2>/dev/null; then
-    echo "CLEANUP: kept $b (commits not in HEAD — merge status unknown, resolve by hand)"
+     && ! git -C "$MAIN_ROOT" merge-base --is-ancestor "$b" "${FEATURE_BRANCH:-HEAD}" 2>/dev/null; then
+    echo "CLEANUP: kept $b (commits not in ${FEATURE_BRANCH:-HEAD} — merge status unknown, resolve by hand)"
     KEPT=$((KEPT + 1))
     continue
   fi
@@ -232,7 +232,7 @@ done
 [ "$DRY_RUN" -eq 1 ] || git -C "$MAIN_ROOT" worktree prune
 
 _TRACE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/trace.sh"
-[ -f "$_TRACE_SCRIPT" ] && bash "$_TRACE_SCRIPT" --level "$([ "$FAILED" -eq 0 ] && echo info || echo warn)" CLEANUP "removed=$REMOVED kept=$KEPT failed=$FAILED" 2>/dev/null
+[ -f "$_TRACE_SCRIPT" ] && bash "$_TRACE_SCRIPT" --level "$([ "$FAILED" -eq 0 ] && echo info || echo warn)" CLEANUP "removed=$REMOVED kept=$KEPT failed=$FAILED" 2>/dev/null || true
 echo "CLEANUP: removed=$REMOVED kept=$KEPT failed=$FAILED"
 
 [ "$FAILED" -eq 0 ] || exit 1

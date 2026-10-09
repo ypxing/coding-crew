@@ -1,7 +1,8 @@
 /**
  * orca (https://onorca.dev): flat — a worktree is the container, a terminal is the pane,
  * so there is no workspace object to create, reuse or close. The main checkout is already
- * an orca-managed worktree; every terminal is scoped to it by `--worktree path:<mainRoot>`.
+ * an orca-managed worktree; a terminal is scoped to it by `--worktree path:<mainRoot>`, or to the
+ * dispatch's own worktree once adoptWorktree has named that to orca.
  * Ambient ids: ORCA_WORKTREE_ID / ORCA_TAB_ID / ORCA_TERMINAL_HANDLE. See
  * docs/orca-support.md.
  */
@@ -36,6 +37,23 @@ export function preflight(effects) {
     return [`pane host orca, but orca does not manage ${effects.mainRoot} — add it as a repo in the orca app (on the host this runs on), or pick another pane host (CREW_PANE_HOST=none)`];
   }
   return [];
+}
+
+/**
+ * A worktree the orchestrator created with native git: name it, link its issue and parent, so
+ * orca lists it under the sprint. Only an adopted worktree scopes a worker terminal (below).
+ * Returns nothing and throws nothing worth stopping for — index.mjs's adoptWorktree logs a throw.
+ */
+export function adoptWorktree(effects, path, { title, issue, parent }) {
+  const args = ["worktree", "set", "--worktree", `path:${path}`, "--display-name", title];
+  if (issue != null) args.push("--issue", String(issue));
+  if (parent) args.push("--parent-worktree", `path:${parent}`);
+  const r = effects.exec("orca", args, { timeoutMs: CALL_TIMEOUT_MS });
+  if (r.code !== 0) {
+    effects.log?.(`WARN orca worktree set ${path} exit=${r.code} ${failureDetail(r)}`);
+    return;
+  }
+  (effects._paneAdopted ??= new Set()).add(path);
 }
 
 /**
@@ -129,18 +147,18 @@ export async function closeTerminals(effects) {
 }
 
 /**
- * One terminal per dispatch (worker-terminal.mjs), scoped to the main checkout like the log
- * terminal: orca accepts any git worktree path, but the main one is the only worktree
- * guaranteed to be orca's already, and it keeps every worker tab in one place. Returns
+ * One terminal per dispatch (worker-terminal.mjs), scoped to the dispatch's own worktree when
+ * adoptWorktree named it to orca, else to the main checkout (the one worktree guaranteed to be
+ * orca's already, like the log terminal). Returns
  * `{handle}` or `{failure}`, never throws.
  */
-export async function openWorkerTerminal(effects, { title, command }) {
+export async function openWorkerTerminal(effects, { title, command, worktree }) {
   try {
     const create = await paneHostExec(effects, [
       "terminal",
       "create",
       "--worktree",
-      `path:${effects.mainRoot}`,
+      `path:${worktree && effects._paneAdopted?.has(worktree) ? worktree : effects.mainRoot}`,
       "--title",
       title,
       "--command",

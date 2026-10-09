@@ -63,7 +63,7 @@ export async function spawnInWorkerTerminal(
   effects.recorded?.push({ argv: [cmd, ...args], cwd, env });
   effects.log?.(`SPAWN-TERMINAL ${title} ${[cmd, ...args].map(shellQuote).join(" ")}`);
 
-  const opened = await adapter.openWorkerTerminal(effects, { title, command: `bash ${shellQuote(f("run.sh"))}` });
+  const opened = await adapter.openWorkerTerminal(effects, { title, command: `bash ${shellQuote(f("run.sh"))}`, worktree: cwd });
   if (!opened.handle) {
     rmSync(dir, { recursive: true, force: true });
     effects.log?.(`SPAWN-TERMINAL-FALLBACK ${opened.failure} — running headless`);

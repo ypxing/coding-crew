@@ -53,6 +53,7 @@
 19	layer-ownership.bats
 1	model-policy.bats
 81	orchestrator-sprint-lifecycle.bats
+15	orchestrator-sprint-feature-worktree.bats
 65	orchestrator-sprint-merge-retries.bats
 77	orchestrator-sprint-worker-outcomes.bats
 81	orchestrator-sprint-gates-config.bats

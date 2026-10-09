@@ -70,7 +70,7 @@ export function registeredPids() {
 
 process.on("exit", () => killAllGroups());
 
-// crew-afk scripts that move a branch ref or HEAD in the main checkout.
+// crew-afk scripts that move a branch ref or HEAD in the feature branch's checkout.
 const REF_MOVING_SCRIPTS = new Set([
   "merge-branches.sh",
   "resolve-merge-conflicts.sh",
@@ -79,6 +79,10 @@ const REF_MOVING_SCRIPTS = new Set([
   "sync-feature-branch.sh",
   "session-init.sh",
 ]);
+
+// The scripts that act on the feature branch's checkout (merge, sync, squash): run in
+// `featureRoot` unless the caller names a cwd.
+const FEATURE_ROOT_SCRIPTS = new Set(["merge-branches.sh", "sync-feature-branch.sh", "squash-commits.sh"]);
 
 // git subcommands that can move the checkout's HEAD or the branch it is on; and the ones that can
 // only create, move or delete other branches. Anything else (status, worktree remove, …) moves none.
@@ -109,22 +113,26 @@ export class Effects {
   /**
    * @param {object} o
    * @param {string} o.scriptsDir  crew-afk's scripts/ dir (bash mechanism layer)
-   * @param {string} o.mainRoot    the main checkout
+   * @param {string} o.mainRoot    the main checkout, which stays on the user's branch
+   * @param {string} [o.featureRoot] the worktree the feature branch is checked out in (the sprint's
+   *   `crew/<slug>/_feature`); mainRoot until a sprint has one
    * @param {boolean} o.dryRun
    * @param {(line: string) => void} o.log
    */
-  constructor({ scriptsDir, mainRoot, dryRun = false, log = () => {}, env = {} }) {
+  constructor({ scriptsDir, mainRoot, featureRoot = null, dryRun = false, log = () => {}, env = {} }) {
     this.scriptsDir = scriptsDir;
     this.mainRoot = mainRoot;
+    this.featureRoot = featureRoot ?? mainRoot;
     this.dryRun = dryRun;
     this.log = log;
     this.env = env;
     /** @type {{argv: string[], cwd: string}[]} */
     this.recorded = [];
     // What the orchestrator's own effects may have moved, so a read-only guard can tell its
-    // dispatch's ref changes from theirs: `mainMoves` counts effects that can move the main
+    // dispatch's ref changes from theirs: `mainMoves` counts effects that can move the feature
     // checkout's HEAD or the branch it is on (a merge), `branchMoves` those that can move any
-    // branch from there (a worktree add, a branch delete, and every main move); `touched` lists,
+    // branch from the main or feature checkout (a worktree add, a branch delete, and every
+    // feature move); `touched` lists,
     // in order, the worktrees (realpath) a mutating git or a dispatch ran in; `active` counts the
     // dispatches still running in each.
     this.mainMoves = 0;
@@ -139,7 +147,7 @@ export class Effects {
 
   /** Run a crew-afk bash script. Returns { code, stdout, stderr }. */
   bash(name, args = [], opts = {}) {
-    return this.exec("bash", [this.script(name), ...args], opts);
+    return this.exec("bash", [this.script(name), ...args], this.withScriptCwd(name, opts));
   }
 
   /**
@@ -147,7 +155,11 @@ export class Effects {
    * loop keeps serving the other worker loops while the child runs. Same contract as `bash`.
    */
   bashAsync(name, args = [], opts = {}) {
-    return this.execAsync("bash", [this.script(name), ...args], opts);
+    return this.execAsync("bash", [this.script(name), ...args], this.withScriptCwd(name, opts));
+  }
+
+  withScriptCwd(name, opts) {
+    return opts.cwd === undefined && FEATURE_ROOT_SCRIPTS.has(name) ? { ...opts, cwd: this.featureRoot } : opts;
   }
 
   exec(cmd, args, { cwd = this.mainRoot, env = {}, input, mutating = true, timeoutMs } = {}) {
@@ -249,19 +261,25 @@ export class Effects {
     let branch = false;
     if (cmd === "git") {
       const { sub, next, where } = gitCall(args, cwd);
-      if (real(where) !== real(this.mainRoot)) {
+      const branchOp = GIT_BRANCH_MOVING.has(sub) && !(sub === "worktree" && next !== "add");
+      if (real(where) === real(this.featureRoot)) {
+        head = GIT_HEAD_MOVING.has(sub);
+        branch = head || branchOp;
+      } else if (real(where) === real(this.mainRoot)) {
+        // The main checkout holds no sprint branch's HEAD, but it still creates and deletes branches.
+        branch = GIT_HEAD_MOVING.has(sub) || branchOp;
+      } else {
         this.touched.push(real(where));
         return;
       }
-      head = GIT_HEAD_MOVING.has(sub);
-      branch = head || (GIT_BRANCH_MOVING.has(sub) && !(sub === "worktree" && next !== "add"));
     } else if (cmd === "bash" && REF_MOVING_SCRIPTS.has(basename(args[0] ?? ""))) {
-      // Run inside a worktree (a sync's resolve-merge-conflicts.sh), it moves only that worktree's branch.
-      if (real(cwd) !== real(this.mainRoot)) {
+      // Run inside an issue's worktree (a sync's resolve-merge-conflicts.sh), it moves only that worktree's branch.
+      if (real(cwd) === real(this.featureRoot)) head = branch = true;
+      else if (real(cwd) === real(this.mainRoot)) branch = true;
+      else {
         this.touched.push(real(cwd));
         return;
       }
-      head = branch = true;
     }
     if (head) this.mainMoves++;
     if (branch) this.branchMoves++;

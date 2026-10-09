@@ -9,6 +9,8 @@
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
+import { adoptWorktree } from "./pane-host/index.mjs";
+
 /**
  * Base directory worktrees are created under: `CREW_WORKTREE_ROOT` (absolute, or relative to
  * `mainRoot`), which main.mjs also sets from config.json's afk.worktreeRoot, else
@@ -22,6 +24,11 @@ export function worktreeRoot(mainRoot) {
 
 export function worktreePath(mainRoot, branch) {
   return join(worktreeRoot(mainRoot), branch);
+}
+
+/** The sprint's feature-branch checkout: `<worktreeRoot>/crew/<slug>/_feature`, on `feature/<slug>`. */
+export function featureWorktreePath(mainRoot, featureSlug) {
+  return worktreePath(mainRoot, `crew/${featureSlug}/_feature`);
 }
 
 /**
@@ -63,9 +70,19 @@ const COPY_ENTRIES = new Set([".env"]);
  * feature branch elsewhere — ancestry can't see that, tree equality can). The branch is
  * deleted and recreated fresh from `base`. A branch with real unique content still stalls
  * for a human.
+ *
+ * `mode: "checkout"` is for the sprint's feature branch (at `path`, which names the `_feature`
+ * worktree since the branch's own name does not): a branch with commits that must never be
+ * discarded or judged stale. It checks the existing branch out — or creates it from `base` —
+ * and recreates a worktree already at `path` (a crashed run's, possibly dirty: the commits live
+ * on the branch). The branch's other holders are released as for any worktree, so the main
+ * checkout being on it is a refusal, not a switch.
+ *
+ * A worktree this creates is announced to the pane host (`adopt`: `{title, issue, parent}`).
  */
-export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expectReuse = true }) {
-  const path = worktreePath(mainRoot, branch);
+export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expectReuse = true, mode = "issue", path: at, adopt = null }) {
+  const path = at ?? worktreePath(mainRoot, branch);
+  if (mode === "checkout") return checkoutWorktree(effects, { branch, base, path, adopt });
   const listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   if (listed.includes(`worktree ${path}\n`) && existsSync(path)) return { path, created: false, reusedBranch: true };
 
@@ -103,6 +120,25 @@ export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expec
     : ["worktree", "add", "-b", branch, path, base];
   const r = effects.git(args);
   if (r.code !== 0) throw new Error(`git worktree add failed for ${branch}: ${r.stderr.trim()}`);
+  if (adopt) adoptWorktree(effects, path, adopt);
+  return { path, created: true, reusedBranch: exists };
+}
+
+function checkoutWorktree(effects, { branch, base, path, adopt }) {
+  let listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
+  if (listed.includes(`worktree ${path}\n`) || existsSync(path)) {
+    removeWorktree(effects, { path });
+    effects.git(["worktree", "prune"]);
+    listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
+  }
+  const blocker = releaseBranch(effects, listed, branch);
+  if (blocker) return { path: null, created: false, stale: true, reason: blocker };
+
+  const exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
+  mkdirSync(dirname(path), { recursive: true });
+  const r = effects.git(exists ? ["worktree", "add", path, branch] : ["worktree", "add", "-b", branch, path, base]);
+  if (r.code !== 0) throw new Error(`git worktree add failed for ${branch}: ${r.stderr.trim()}`);
+  if (adopt) adoptWorktree(effects, path, adopt);
   return { path, created: true, reusedBranch: exists };
 }
 

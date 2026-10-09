@@ -38,22 +38,19 @@ while [ $# -gt 0 ]; do
 done
 
 MAIN_ROOT="${MAIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-if [ -z "$FEATURE_SLUG_ARG" ] && [ -f "$MAIN_ROOT/.scratch/sprint.env" ]; then
-  # shellcheck disable=SC1091
-  . "$MAIN_ROOT/.scratch/sprint.env" 2>/dev/null || true
-fi
 FEATURE_SLUG="${FEATURE_SLUG_ARG:-${FEATURE_SLUG:-}}"
+if [ -z "$FEATURE_SLUG" ]; then
+  echo "crew-summary.sh: no sprint to summarise — pass --feature-slug <slug>" >&2
+  exit 2
+fi
 
 state() { bash "$SCRIPT_DIR/state.sh" "$@" ${FEATURE_SLUG:+--feature-slug "$FEATURE_SLUG"}; }
 
 SF=$(state get state-file) || { echo "crew-summary: no sprint state found" >&2; exit 1; }
-[ -n "$FEATURE_SLUG" ] || FEATURE_SLUG=$(state get feature-slug)
 
-# FEATURE_BRANCH (used by the merge-conflict hint below) only came along above when the
-# global pointer was sourced, which an explicit --feature-slug skips on purpose — it may
-# name a different sprint than whatever the pointer currently points at. Read it straight
-# from that sprint's own env file instead of re-deriving it from git, which would guess
-# wrong the moment the caller is not currently on that sprint's feature branch.
+# FEATURE_BRANCH (used by the merge-conflict hint below): read it straight from that sprint's
+# own env file instead of re-deriving it from git, which would guess wrong the moment the caller
+# is not currently on that sprint's feature branch.
 if [ -z "${FEATURE_BRANCH:-}" ] && [ -f "$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint.env" ]; then
   # shellcheck disable=SC1091
   . "$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint.env" 2>/dev/null || true

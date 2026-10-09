@@ -2,8 +2,8 @@
  * preflight.mjs — what must hold before the first dispatch, checked once per run.
  *
  * Each check catches a problem every issue would otherwise hit only after paying for its
- * coder and review: a missing installed asset sends every reviewer and coder hunting for it, a
- * dirty main checkout refuses the merge at the very end, and a feature branch whose own checks
+ * coder and review: a missing installed asset sends every reviewer and coder hunting for it, and
+ * a feature branch whose own checks
  * already fail makes every issue's verify gate fail on code no issue wrote. An issue whose own
  * `## Requires` does not hold (a credential unset, a service that will not start) would pay for
  * a coder that can only rediscover it. None costs a token.
@@ -213,27 +213,6 @@ export function lintFailureMessage(errors) {
     ...errors.map((e) => `  ${e}`),
     "Re-run `lint-issues.sh` by hand (.coding-crew/to-issues/scripts/) to check, then re-run.",
   ].join("\n");
-}
-
-/** Files crew-afk itself writes in the main checkout; the summary already reminds about them. */
-const CREW_OWNED = new Set([".coding-crew/dev-commands.json"]);
-
-/**
- * Tracked files with uncommitted changes in the main checkout, crew-afk's own excepted.
- * Untracked files are left to the merge gate: most never collide with a branch.
- */
-export function dirtyTrackedFiles(effects) {
-  const r = effects.gitRead(["status", "--porcelain", "-z", "--untracked-files=no"]);
-  if (r.code !== 0) return [];
-  const entries = r.stdout.split("\0").filter(Boolean);
-  const files = [];
-  for (let i = 0; i < entries.length; i++) {
-    const e = entries[i];
-    files.push(e.slice(3));
-    // A rename or copy is followed by its source path, which is not a second change.
-    if (/^[RC]/.test(e)) i++;
-  }
-  return files.filter((f) => !CREW_OWNED.has(f));
 }
 
 /** The branch the baseline worktree checks out: a crew branch, so verify-worktree.sh records it. */
@@ -558,7 +537,7 @@ export function baselineFailureMessage(featureBranch, result) {
 }
 
 /**
- * Once, after the dirty-checkout check and before anything reads the feature branch: bring
+ * Once, before anything reads the feature branch: bring
  * origin/<default> into a resumed branch that lacks it (sync-feature-branch.sh does the git).
  * `--no-sync-main` skips; `--dry-run` only reports whether a merge would happen.
  *

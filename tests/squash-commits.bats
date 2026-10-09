@@ -209,3 +209,52 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"unknown flag: --platform"* ]]
 }
+
+@test "squash-commits reads only its own slug's sprint-state.json, never another sprint's" {
+  local base_sha
+  base_sha=$(git rev-parse HEAD)
+  git checkout -q -b "feature/$FEATURE_SLUG"
+  echo "change1" > work.txt && git add work.txt && git commit -q -m "work commit"
+  _write_state "feature/$FEATURE_SLUG" "$base_sha"
+  _add_slug_to_state "mine"
+  _write_issue "mine" "My issue title"
+
+  # Another feature's sprint knows this very branch, with a different base and issue — the old
+  # glob over .scratch/*/sprint-state.json could pick it up.
+  mkdir -p .scratch/aaa-other
+  echo "{}" | jq --arg b "feature/$FEATURE_SLUG" '.branches[$b] = {base_sha: "deadbeef"} | .completed_slugs = ["theirs"]' > .scratch/aaa-other/sprint-state.json
+
+  run bash "$SQUASH_SCRIPT"
+  [ "$status" -eq 0 ]
+  run git log -1 --format="%B"
+  [[ "$output" == *"My issue title"* ]]
+  [[ "$output" != *"theirs"* ]]
+}
+
+@test "squash-commits with no --feature-slug and no FEATURE_SLUG exits 2 naming --feature-slug" {
+  unset FEATURE_SLUG
+  run bash "$SQUASH_SCRIPT"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--feature-slug"* ]]
+}
+
+@test "squash-commits --feature-slug names the sprint, and works from a worktree of the feature branch" {
+  local base_sha
+  base_sha=$(git rev-parse HEAD)
+  git branch "feature/$FEATURE_SLUG"
+  git worktree add -q "$TEMP_DIR/_feature" "feature/$FEATURE_SLUG"
+  echo "change1" > "$TEMP_DIR/_feature/work.txt"
+  git -C "$TEMP_DIR/_feature" add work.txt
+  git -C "$TEMP_DIR/_feature" commit -q -m "work commit"
+  _write_state "feature/$FEATURE_SLUG" "$base_sha"
+  _add_slug_to_state "my-issue"
+  _write_issue "my-issue" "My issue title"
+  unset FEATURE_SLUG
+
+  cd "$TEMP_DIR/_feature"
+  MAIN_ROOT="$TEMP_DIR" run bash "$SQUASH_SCRIPT" --feature-slug test-feature
+  [ "$status" -eq 0 ]
+  run git -C "$TEMP_DIR/_feature" log -1 --format="%B"
+  [[ "$output" == *"My issue title"* ]]
+  [ "$(git -C "$TEMP_DIR" rev-parse --abbrev-ref HEAD)" != "feature/test-feature" ]
+}

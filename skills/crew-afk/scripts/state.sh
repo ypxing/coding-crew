@@ -46,7 +46,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 die() { echo "state.sh: $1" >&2; exit 1; }
 
-trace() { bash "$SCRIPT_DIR/trace.sh" "$@" 2>/dev/null || true; }
+# The log is this sprint's own: TRACE_LOG when the orchestrator exported it, else the one beside the
+# state file (SF, resolved below), so a hand run traces to the sprint it was pointed at.
+trace() {
+  local log="${TRACE_LOG:-}"
+  [ -n "$log" ] || [ -z "${SF:-}" ] || log="$(dirname "$SF")/traces/orchestrator.log"
+  bash "$SCRIPT_DIR/trace.sh" ${log:+--log "$log"} "$@" 2>/dev/null || true
+}
 
 usage() {
   sed -n '/^# Usage:/,/^# `retain`/p' "$0" >&2
@@ -58,10 +64,11 @@ CMD="${1:-}"
 shift
 
 # --- state file resolution ----------------------------------------------------
-# Explicit flags win, then the environment exported by sprint.env, then a lookup
-# through sprint.env itself. Never a `ls .scratch/*/sprint-state.json | head -1` glob:
-# that picks the alphabetically-first feature, which is the wrong sprint in any repo
-# that has ever run two.
+# Explicit flags win, then the environment the orchestrator exports to its children
+# (STATE_FILE, FEATURE_SLUG). There is no repo-wide pointer to a "current" sprint — several
+# sprints run in one repo — so a hand run names its sprint with --feature-slug. Never a
+# `ls .scratch/*/sprint-state.json | head -1` glob: that picks the alphabetically-first
+# feature, which is the wrong sprint in any repo that has ever run two.
 FEATURE_SLUG_ARG=""
 STATE_FILE_ARG=""
 ARGS=()
@@ -86,15 +93,13 @@ resolve_state_file() {
   if [ -n "${STATE_FILE:-}" ]; then
     printf '%s\n' "$STATE_FILE"; return 0
   fi
-  if [ -f "$MAIN_ROOT/.scratch/sprint.env" ]; then
-    # shellcheck disable=SC1091
-    . "$MAIN_ROOT/.scratch/sprint.env"
-    if [ -n "${STATE_FILE:-}" ]; then printf '%s\n' "$STATE_FILE"; return 0; fi
+  if [ -n "${FEATURE_SLUG:-}" ]; then
+    printf '%s\n' "$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint-state.json"; return 0
   fi
   return 1
 }
 
-SF=$(resolve_state_file) || die "cannot resolve the sprint state file — pass --feature-slug or source .scratch/sprint.env"
+SF=$(resolve_state_file) || { echo "state.sh: cannot resolve the sprint state file — pass --feature-slug <slug>" >&2; exit 2; }
 [ -f "$SF" ] || die "sprint state file not found: $SF (run session-init.sh first)"
 command -v jq >/dev/null 2>&1 || die "jq is required"
 
