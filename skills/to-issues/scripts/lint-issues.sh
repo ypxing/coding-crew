@@ -277,7 +277,22 @@ if [[ -n "$DEPS_FILE" ]]; then
   for idx in "${!NAMES[@]}"; do
     name="${NAMES[$idx]}"
     json_list=$(jq -r --arg k "$name" '(.[$k] // []) | map(tostring) | unique | .[]' "$DEPS_FILE" 2>/dev/null | sort -u | sed '/^$/d')
-    prose_list="${PROSE_EDGES[$idx]}"
+    # An edge to an existing (--known) issue lives only in ## Blocked by: publish refuses it in
+    # deps.json, so the comparison covers drafts only and a deps.json edge to one is its own error.
+    prose_list=""
+    while IFS= read -r blocker; do
+      [[ -n "$blocker" ]] && in_set "$blocker" && prose_list+="${prose_list:+$'\n'}$blocker"
+    done <<< "${PROSE_EDGES[$idx]}"
+    drafts_json=""
+    while IFS= read -r blocker; do
+      [[ -z "$blocker" ]] && continue
+      if in_set "$blocker" || ! is_ref "$blocker"; then
+        drafts_json+="${drafts_json:+$'\n'}$blocker"
+      else
+        err "${PATHS[$idx]}" "--deps edge to $blocker, an issue that already exists: list it only in ## Blocked by"
+      fi
+    done <<< "$json_list"
+    json_list="$drafts_json"
     if [[ "$json_list" != "$prose_list" ]]; then
       jl=$(printf '%s' "$json_list" | paste -sd, - | sed 's/,/, /g')
       pl=$(printf '%s' "$prose_list" | paste -sd, - | sed 's/,/, /g')
