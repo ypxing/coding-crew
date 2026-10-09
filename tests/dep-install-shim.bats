@@ -154,7 +154,7 @@ logged() { tr '\n' ' ' < "$LOG" | sed 's/ $//'; }
 }
 
 @test "no real docker on PATH: exit 127 with a crew-shim: message" {
-  run --separate-stderr env PATH="$SHIM_DIR:/nonexistent" "$BASH" "$SHIM_DIR/docker" compose up
+  run -127 --separate-stderr env PATH="$SHIM_DIR:/nonexistent" "$BASH" "$SHIM_DIR/docker" compose up
   [ "$status" -eq 127 ]
   [ "$stderr" = "crew-shim: no real docker on PATH" ]
 }
