@@ -90,6 +90,34 @@ _docker_ready() {
   [ ! -f "$DOCKER_LOG" ]
 }
 
+# A copy of the scripts whose resolve-mode.sh is a stub running the given body (>64KB of output = a full pipe).
+_stub_verdict() {
+  local scripts="$TEMP_DIR/scripts"
+  cp -R "$(dirname "$SCRIPT")" "$scripts"
+  printf '#!/usr/bin/env bash\n%s\n' "$1" > "$scripts/resolve-mode.sh"
+  STUBBED_SCRIPT="$scripts/run.sh"
+}
+
+@test "a docker verdict that keeps writing after INSTALL_MODE=docker still runs in docker" {
+  _docker_ready
+  _stub_verdict 'echo INSTALL_MODE=docker; yes xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | head -n 200000'
+  run bash "$STUBBED_SCRIPT" --project-root "$WORK" -- npm test
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Broken pipe"* ]]
+  [ -f "$DOCKER_LOG" ]
+  mapfile -t args < "$DOCKER_LOG"
+  [ "${args[5]}" = run ]
+}
+
+@test "a verdict without INSTALL_MODE=docker runs the command on the host" {
+  _docker_ready
+  _stub_verdict 'echo INSTALL_MODE=host; yes xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | head -n 200000'
+  run bash "$STUBBED_SCRIPT" --project-root "$WORK" -- 'echo ran-on-host'
+  [ "$status" -eq 0 ]
+  [ "$output" = ran-on-host ]
+  [ ! -f "$DOCKER_LOG" ]
+}
+
 @test "no command is a usage error" {
   run bash "$SCRIPT" --project-root "$WORK"
   [ "$status" -eq 2 ]

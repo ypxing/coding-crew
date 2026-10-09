@@ -8,6 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- dep-install: `run.sh` no longer pipes the mode verdict into `grep -q`, so a docker-mode check can't run on the host when the pipe closes early (it printed `write error: Broken pipe` and a false `TEST: pass`) (#370).
 - to-prd: the reuse-a-listed-slug question is skipped when `to-issues` handed it the slug (already confirmed); six negated greps in `skills-tracker-cli-only`, `crew-coder-context-reading` and `human-issue-shared` bats tests now actually fail their test when they match (#374).
 - tracker: a `features` op lists the tracker's features (`<slug>`, `open|closed`, ready-for-agent count; local: the `.scratch/<slug>/` directories with `issues/`, github: every milestone, open and closed), and `crew-afk`, `to-issues` and `to-prd` resolve a feature slug from it, so a github milestone is found instead of reported as having no issues; `to-prd` asks before reusing a listed slug. `add-tests` hands `to-issues` a transient `findings.md` instead of writing a `PRD.md`, no prompt names the local `issues/open` / `issues/done` layout (`tests/skills-tracker-cli-only.bats` checks it), and both tracker docs gain a "Reopen an issue" section. `.coding-crew/config.json` and `dev-commands.json` are documented as committed team state (#371).
 - docs, evals: the guide's light-path paragraph and the design-skills eval (round-one instruction, `brainstorm-vague-ask` reference judgement) now say a failing check prints nothing about the light path (#372).
