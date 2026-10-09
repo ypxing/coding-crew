@@ -6,6 +6,16 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ## [Unreleased]
 
+### Changed
+
+- crew-afk: a sprint keeps its feature branch in its own `crew/<slug>/_feature` worktree and never switches the main
+  checkout, so one `crew-afk` per feature can run at once in a repo. The worktree is removed when the run ends; the
+  branch stays. Uncommitted changes in the main checkout no longer stop a run (`--allow-dirty` is accepted and does
+  nothing); a main checkout sitting on `feature/<slug>` does, with "switch it to another branch". `.scratch/sprint.env`
+  is no longer written: hand runs of `state.sh`, `trace.sh`, `crew-summary.sh`, `ensure-deps.sh --slug` and `main.mjs
+  status` take `--feature-slug` (exit 2 without). Under orca every worktree is named to orca and its worker terminal is
+  scoped to it; under herdr `_feature` is the sprint's workspace (#359).
+
 ### Breaking
 
 - tracker: the `repo:` override is removed — `gh` always targets the git remote; a front matter naming `repo:` fails with

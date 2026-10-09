@@ -572,17 +572,15 @@ EOF2
 
 Run: `bash -c 'exit 0'`
 EOF
-  mkdir -p "$TEMP_DIR/.scratch"
-  printf 'export TRACE_LOG="%s/own.log"\n' "$TEMP_DIR" > "$TEMP_DIR/.scratch/sprint.env"
+  git checkout -qb crew/own/a
   local decoy="$TEMP_DIR/decoy"
-  mkdir -p "$decoy/.scratch"
+  mkdir -p "$decoy"
   git -C "$decoy" init -q
-  printf 'export TRACE_LOG="%s/decoy.log"\n' "$TEMP_DIR" > "$decoy/.scratch/sprint.env"
   cd "$decoy"
-  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  MAIN_ROOT="$TEMP_DIR" run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -eq 0 ]
-  [ ! -e "$TEMP_DIR/decoy.log" ]
-  grep -q '\[VERIFY\] .*result=pass' "$TEMP_DIR/own.log"
+  [ ! -e "$decoy/.scratch" ]
+  grep -q '\[VERIFY\] .*result=pass' "$TEMP_DIR/.scratch/own/traces/orchestrator.log"
 }
 
 # ─── a check must not modify the tree ────────────────────────────────────────

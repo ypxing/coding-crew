@@ -780,9 +780,12 @@ if [ -f "$TRACE_SCRIPT" ]; then
   if [ "$OVERALL_EXIT" -eq 0 ]; then _vw_result=pass; else _vw_result=fail; fi
   _vw_gap=""
   [ "${#NOT_RUN[@]}" -gt 0 ] && _vw_gap=" not_run=${NOT_RUN[*]}"
-  # The checked worktree's sprint, not the caller's cwd's: trace.sh falls back to its cwd's repo.
+  # The checked worktree's sprint, not the caller's: a crew branch is crew/<slug>/<issue>, and
+  # TRACE_LOG (a sprint's own children inherit it) wins over that.
+  _vw_slug=""
+  case "$_vw_branch" in crew/*/*) _vw_slug="${_vw_branch#crew/}"; _vw_slug="${_vw_slug%%/*}" ;; esac
   (cd "$WORKTREE_DIR" && MAIN_ROOT="${MAIN_ROOT:-$_CACHE_MAIN_ROOT}" \
-    bash "$TRACE_SCRIPT" --level "$([ "$_vw_result" = pass ] && echo info || echo error)" VERIFY "branch=$_vw_branch result=$_vw_result$_vw_gap") 2>/dev/null || true
+    bash "$TRACE_SCRIPT" ${_vw_slug:+--feature-slug "$_vw_slug"} --level "$([ "$_vw_result" = pass ] && echo info || echo error)" VERIFY "branch=$_vw_branch result=$_vw_result$_vw_gap") 2>/dev/null || true
 fi
 
 exit "$OVERALL_EXIT"

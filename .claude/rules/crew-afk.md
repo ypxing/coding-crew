@@ -15,10 +15,17 @@ How the orchestrator and its scripts behave. Loaded when working on crew-afk; th
 
 Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
 
-- `session-init.sh` — derives the feature slug **once** and writes `sprint.env`; names the feature branch
-  `<--branch-prefix><--jira KEY>-<slug>` in one function (`feature_branch_name`, validated with `git check-ref-format
-  --branch`) for create/switch, the `tracker: github` expected-branch check and the no-slug path. `main.mjs` passes
-  `afk.branchPrefix` as `--branch-prefix` only when set; `--jira` on a resume or a kept local branch only warns
+- `session-init.sh` — derives the feature slug **once** and writes the sprint's own `.scratch/<slug>/sprint.env` (no
+  repo-wide pointer: several sprints run in one repo); names the feature branch `<--branch-prefix><--jira KEY>-<slug>`
+  in one function (`feature_branch_name`, validated with `git check-ref-format --branch`), creates the ref if missing
+  and **never checks it out** (`--print-branch` prints slug, branch and default branch and stops, which `main.mjs` uses
+  to make the `_feature` worktree first). `main.mjs` passes `afk.branchPrefix` as `--branch-prefix` only when set;
+  `--jira` on a resume only warns. Scripts take their sprint from `--feature-slug` or the env the orchestrator exports
+  (`FEATURE_SLUG`, `STATE_FILE`, `TRACE_LOG`, `SPRINT_DIR`) and exit 2 naming `--feature-slug` without either (`trace.sh`
+  stays silent under `CREW_ORCHESTRATED=1`)
+- `merge-branches.sh`, `sync-feature-branch.sh`, `squash-commits.sh` — run in `FEATURE_ROOT` (`Effects.featureRoot`, the
+  `crew/<slug>/_feature` worktree `main.mjs` makes right after the lease, `ensureWorktree`'s `checkout` mode, removed in
+  `finally` and on a signal); they refuse to run anywhere but on the feature branch and never switch a checkout
 - `ensure-deps.sh` — makes a directory ready to run the project's own checks; delegates every
   install decision to `dep-install`'s `detect-mode.sh` / `host-install.sh`. It is mechanism rather
   than a worker skill read because it is the only layer that also covers `verify-worktree.sh`, which
@@ -98,12 +105,11 @@ are not re-linted. Polling stops when nothing is in flight; with `0`, a new issu
 
 Once per run, before any dispatch (`orchestrator/lib/preflight.mjs`): the resumed feature branch gets `origin/<default>`
 merged in when it lacks it (`sync-feature-branch.sh`; a conflict beyond registry versions / CHANGELOG appends stops the
-run, `--no-sync-main` skips; runs after the dirty check, before lint and the baseline); a retained-branch record whose issue
+run, `--no-sync-main` skips; runs in `_feature`, before lint and the baseline); a retained-branch record whose issue
 is closed or absent from `listFeatureIssues`, or whose branch is gone, is dropped and logged (`dropStaleRetained` →
 `state.sh drop-retained`; an open issue with its branch is kept, a failed or empty listing drops nothing); the assets under
 `CREW_INSTALL_DIR` (the `.coding-crew/` main.mjs runs from; fixed sub-paths in
-`orchestrator/lib/install-dir.mjs`) must exist, the main checkout must have no uncommitted tracked
-changes (`--allow-dirty`), the feature branch must pass its own checks in a throwaway
+`orchestrator/lib/install-dir.mjs`) must exist, the feature branch must pass its own checks in a throwaway
 `crew/<feature>/_baseline` worktree (`--no-baseline`) — started alongside dispatch (up to `maxParallel` coders begin meanwhile), no verify starts before its verdict, and a red one stops further claims, kills the dispatches already running and stops the run (exit 1, started branches kept for the next run); a git tree that already passed (a per-issue verify, an earlier baseline or integration — `sprint-state.json`'s `passing_trees`) reads `cached` for the baseline and the integration check alike, the feature's open issues must pass `to-issues`' `lint-issues.sh`
 (`preflight.mjs`'s `lintIssues`, before command discovery: an `ERROR` stops the run, `WARN` is logged, exit 2 or a
 failure to run it is logged and never stops; `--dry-run` reports only), and each ready, unblocked issue's `## Requires`
@@ -178,11 +184,11 @@ It judges the acceptance criteria only: `reviewPrompt` carries no PRD decisions,
 the orchestrator (`to-issues` and `lint-issues.sh` still use it).
 
 Reviewer, triage (verify, findings, integration) and feature-review dispatches are mechanically read-only
-(`pipeline/shared.mjs`'s `readOnlyDispatch`): every `crew/<feature>/*` ref, the feature branch, main `HEAD` (commit
-and branch) and the main checkout's uncommitted changes are snapshotted around the dispatch; any change (or a
+(`pipeline/shared.mjs`'s `readOnlyDispatch`): every `crew/<feature>/*` ref, the feature branch, `_feature`'s `HEAD` (commit
+and branch) and its uncommitted changes are snapshotted around the dispatch; any change (or a
 snapshot git cannot take) fails it closed as not-run and logs `[READONLY-VIOLATION]`, with the dispatch's cost still
 recorded. A change the orchestrator's own concurrent effects could have made is not blamed on it (`Effects`'
-`refActivityMark`/`refActivitySince`): the feature branch and `HEAD` while a merge or other main-checkout ref move
+`refActivityMark`/`refActivitySince`): the feature branch and `HEAD` while a merge or other `_feature` ref move
 ran, a crew branch while its worktree was busy (its worker dispatch, a git run there). The AC receipt is written with `receipts.sh write ac --branch <b> --sha <reviewed sha>`, so a
 branch that moved during review fails `check ac --at-tip` as stale.
 

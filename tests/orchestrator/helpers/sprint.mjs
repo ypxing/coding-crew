@@ -111,7 +111,7 @@ export function fixtureRepo() {
   writeFileSync(join(root, ".gitignore"), ".scratch/\n");
   git("add", "-A");
   git("commit", "-q", "-m", "init");
-  git("checkout", "-q", "-b", "feature/demo");
+  git("branch", "feature/demo");
   mkdirSync(join(root, ".scratch/demo/issues/open"), { recursive: true });
   mkdirSync(join(root, ".scratch/fake"), { recursive: true });
   return root;
@@ -279,7 +279,7 @@ export function githubFixtureRepo() {
   cpSync(join(REPO, "tracker"), join(root, ".coding-crew/tracker"), { recursive: true });
   git("add", "-A");
   git("commit", "-q", "-m", "init");
-  git("checkout", "-q", "-b", "feature/demo");
+  git("branch", "feature/demo");
   mkdirSync(join(root, ".scratch/fake"), { recursive: true });
   // The feature lease lives on origin, so a github run needs one.
   const origin = `${root}-origin.git`;

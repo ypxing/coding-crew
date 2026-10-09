@@ -264,8 +264,9 @@ export async function runWorker(ctx, issue, attempt) {
   const wt = ensureWorktree(effects, {
     mainRoot: effects.mainRoot,
     branch,
-    base: "HEAD",
+    base: sprint.featureBranch,
     expectReuse: issue.hasProgress || priorBranch != null,
+    adopt: { title: dispatchStem(issue), issue: issue.number, parent: effects.featureRoot },
   });
 
   if (wt.stale) {
