@@ -8,6 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- crew-afk: the feature-review fixes for concurrent sprints — `_feature` only displaces a crew-made worktree (a user's own worktree on `feature/<slug>` is a refusal); a run launched from a linked worktree resolves the main checkout; the behind-origin warning fires when the orchestrator creates the branch; `crew-summary.sh` and the guide resolve merge conflicts in a temporary worktree; `trace.sh --feature-slug` finds the main checkout from a linked worktree (#364).
 - crew-afk: a sprint keeps its feature branch in its own `crew/<slug>/_feature` worktree and never switches the main
   checkout, so one `crew-afk` per feature can run at once in a repo. The worktree is removed when the run ends; the
   branch stays. Uncommitted changes in the main checkout no longer stop a run (`--allow-dirty` is accepted and does

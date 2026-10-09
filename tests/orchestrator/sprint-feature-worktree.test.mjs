@@ -134,3 +134,51 @@ test("main.mjs status needs --feature-slug and prints that sprint", () => {
   assert.equal(some.code, 0, some.stderr);
   assert.equal(JSON.parse(some.stdout).env.FEATURE_SLUG, "demo");
 });
+
+test("a user's own worktree on feature/<slug> is never removed: the run exits 1 and the worktree and its ignored file survive", () => {
+  const root = userOnMain();
+  addIssue(root, "01-alpha.md");
+  const mine = join(root, "..", `${root.split("/").pop()}-mine`);
+  git(root, "worktree", "add", "-q", mine, "feature/demo");
+  writeFileSync(join(mine, ".gitignore"), "secret.env\n");
+  git(mine, "add", ".gitignore");
+  git(mine, "commit", "-q", "-m", "ignore");
+  writeFileSync(join(mine, "secret.env"), "keep me\n");
+  const r = runSprint(root);
+  assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /did not make|switch it to another branch/);
+  assert.equal(existsSync(mine), true, "the user's worktree still exists");
+  assert.equal(readFileSync(join(mine, "secret.env"), "utf8"), "keep me\n");
+});
+
+test("launched from a linked worktree, the run resolves the main checkout: sprint.env's MAIN_ROOT is it", () => {
+  const root = userOnMain();
+  addIssue(root, "01-alpha.md");
+  const linked = join(root, "..", `${root.split("/").pop()}-linked`);
+  git(root, "worktree", "add", "-q", "-b", "scratchpad", linked, "main");
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
+    cwd: linked,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(root, ".scratch/fake"), MAIN_ROOT: "" },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(readFileSync(join(root, ".scratch/demo/sprint.env"), "utf8"), new RegExp(`MAIN_ROOT="?${root}"?\\n`));
+});
+
+test("a new feature branch cut from a local default branch behind origin logs the WARNING", () => {
+  const root = userOnMain();
+  git(root, "branch", "-D", "feature/demo");
+  const origin = `${root}-origin.git`;
+  sh("git", ["clone", "-q", "--bare", root, origin]);
+  git(root, "remote", "add", "origin", origin);
+  const other = `${root}-other`;
+  sh("git", ["clone", "-q", origin, other]);
+  git(other, "config", "user.email", "t@test");
+  git(other, "config", "user.name", "T");
+  writeFileSync(join(other, "new.txt"), "x\n");
+  git(other, "add", "-A");
+  git(other, "commit", "-q", "-m", "ahead");
+  git(other, "push", "-q", "origin", "main");
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.match(r.stderr, /WARNING: local main is 1 commit\(s\) behind origin\/main/);
+});

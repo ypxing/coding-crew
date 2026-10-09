@@ -75,14 +75,15 @@ const COPY_ENTRIES = new Set([".env"]);
  * worktree since the branch's own name does not): a branch with commits that must never be
  * discarded or judged stale. It checks the existing branch out — or creates it from `base` —
  * and recreates a worktree already at `path` (a crashed run's, possibly dirty: the commits live
- * on the branch). The branch's other holders are released as for any worktree, so the main
- * checkout being on it is a refusal, not a switch.
+ * on the branch). The branch's other holders are released as for any worktree, but only crew-made
+ * ones (under the worktree root): the main checkout or a user's own worktree being on it is a
+ * refusal, not a switch.
  *
  * A worktree this creates is announced to the pane host (`adopt`: `{title, issue, parent}`).
  */
 export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expectReuse = true, mode = "issue", path: at, adopt = null }) {
   const path = at ?? worktreePath(mainRoot, branch);
-  if (mode === "checkout") return checkoutWorktree(effects, { branch, base, path, adopt });
+  if (mode === "checkout") return checkoutWorktree(effects, { mainRoot, branch, base, path, adopt });
   const listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   if (listed.includes(`worktree ${path}\n`) && existsSync(path)) return { path, created: false, reusedBranch: true };
 
@@ -124,14 +125,15 @@ export function ensureWorktree(effects, { mainRoot, branch, base = "HEAD", expec
   return { path, created: true, reusedBranch: exists };
 }
 
-function checkoutWorktree(effects, { branch, base, path, adopt }) {
+function checkoutWorktree(effects, { mainRoot, branch, base, path, adopt }) {
   let listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   if (listed.includes(`worktree ${path}\n`) || existsSync(path)) {
     removeWorktree(effects, { path });
     effects.git(["worktree", "prune"]);
     listed = effects.gitRead(["worktree", "list", "--porcelain"]).stdout;
   }
-  const blocker = releaseBranch(effects, listed, branch);
+  const crewRoot = join(worktreeRoot(mainRoot), "/");
+  const blocker = releaseBranch(effects, listed, branch, { onlyCrewMade: (holder) => join(holder).startsWith(crewRoot) });
   if (blocker) return { path: null, created: false, stale: true, reason: blocker };
 
   const exists = effects.gitRead(["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]).code === 0;
@@ -146,9 +148,10 @@ function checkoutWorktree(effects, { branch, base, path, adopt }) {
  * Free `branch` from any other worktree holding it, so `git worktree add` can check it out.
  * A registration whose directory is gone is pruned; a clean checkout is removed (its commits
  * live on the branch, not in the worktree). Returns a reason string when the holder must be
- * kept — the main checkout, or uncommitted changes — else null.
+ * kept — the main checkout, uncommitted changes, or (with `onlyCrewMade`) a holder that predicate
+ * rejects, such as a user's own linked worktree — else null.
  */
-function releaseBranch(effects, listed, branch) {
+function releaseBranch(effects, listed, branch, { onlyCrewMade } = {}) {
   const entries = listed.split("\n\n").map((block) => {
     const lines = block.split("\n");
     return {
@@ -164,6 +167,9 @@ function releaseBranch(effects, listed, branch) {
   if (!existsSync(holder)) {
     effects.git(["worktree", "prune"]);
     return null;
+  }
+  if (onlyCrewMade && !onlyCrewMade(holder)) {
+    return `branch '${branch}' is checked out in the worktree '${holder}', which crew-afk did not make; switch it to another branch before retrying`;
   }
   const status = effects.gitRead(["status", "--porcelain"], { cwd: holder });
   if (status.code !== 0 || status.stdout.trim()) {

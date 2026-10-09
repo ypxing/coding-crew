@@ -54,7 +54,11 @@ if [ -z "$LOG" ]; then
 fi
 
 if [ -z "$LOG" ] && [ -n "$SLUG" ]; then
-  root="${MAIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
+  root="${MAIN_ROOT:-}"
+  if [ -z "$root" ]; then
+    common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+    [ -z "$common" ] || root=$(dirname "$common")
+  fi
   [ -z "$root" ] || LOG="$root/.scratch/$SLUG/traces/orchestrator.log"
 fi
 

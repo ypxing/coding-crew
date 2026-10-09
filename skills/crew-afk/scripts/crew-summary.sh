@@ -239,8 +239,9 @@ if [ -n "$MERGE_CONFLICTS" ]; then
   echo ""
   echo "## Merge Conflicts (need a human)"
   echo "crew-afk never resolves merge conflicts automatically. To unblock each branch below:"
-  echo "  1. git checkout ${FEATURE_BRANCH:-<feature-branch>} && git merge --no-ff <branch>"
-  echo "  2. Resolve the conflicts by hand, then: git add -A && git commit"
+  echo "  1. In a temporary worktree (the main checkout must not end up on the feature branch):"
+  echo "     git worktree add /tmp/crew-resolve ${FEATURE_BRANCH:-<feature-branch>} && cd /tmp/crew-resolve && git merge --no-ff <branch>"
+  echo "  2. Resolve the conflicts by hand, then: git add -A && git commit; then: cd - && git worktree remove /tmp/crew-resolve"
   echo "  3. Re-run crew-afk — merge-branches.sh sees the branch as already merged and closes the issue normally."
   printf '%s\n' "$MERGE_CONFLICTS" | sed 's/^/- /'
 fi
@@ -252,8 +253,8 @@ fi
 DIRTY_BLOCKED=$(jq -r '(.retention // {}) | to_entries[] | select(.value.reason | test("main-tree-dirty")) | "- \(.value.branch): \(.value.reason | sub("^.*main-tree-dirty — "; ""))"' "$SF" 2>/dev/null || true)
 if [ -n "$DIRTY_BLOCKED" ]; then
   echo ""
-  echo "## Main Checkout Not Clean (need a human)"
-  echo "These branches passed every gate; only the merge was refused. Commit or stash the files, then re-run (/crew-afk) — they resume at the merge."
+  echo "## Feature Worktree Not Clean (need a human)"
+  echo "These branches passed every gate; only the merge was refused because the feature branch's worktree had uncommitted changes. Re-run (/crew-afk) — the worktree is recreated and they resume at the merge."
   printf '%s\n' "$DIRTY_BLOCKED"
 fi
 
