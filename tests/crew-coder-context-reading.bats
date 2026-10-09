@@ -38,7 +38,7 @@ setup() {
   # preflight.sh's (behaviour pinned in solve-issue-scripts.bats); the skill names no
   # tracker layout (#371), only that the PRD falls back to the feature's.
   grep -q "failing that, from the" "$SOLVE_ISSUE"
-  ! grep -qF '.scratch/<feature-slug>/PRD.md' "$SOLVE_ISSUE"
+  if grep -qF '.scratch/<feature-slug>/PRD.md' "$SOLVE_ISSUE"; then echo "forbidden text matched (line 41 of crew-coder-context-reading.bats)" >&2; return 1; fi
   grep -q 'MAIN_ROOT/\.scratch/\$FEATURE_SLUG/PRD\.md' "$SCRIPT_DIR/skills/solve-issue/scripts/preflight.sh"
 }
 

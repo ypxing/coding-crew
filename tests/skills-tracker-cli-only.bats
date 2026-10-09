@@ -227,10 +227,11 @@ prompt_layout_leaks() {
   done
 }
 
-@test "to-prd asks the user before reusing a slug that features lists, for every platform" {
+@test "to-prd asks the user before reusing a slug that features lists, except one to-issues handed it, for every platform" {
   local p
   for p in "${PLATFORMS[@]}"; do
     grep -qF 'Before reusing a slug `features` lists, ask the user' "$(rendered_skill to-prd "$p")"
+    grep -qF 'Skip that question when a calling skill (`to-issues`) handed you the slug' "$(rendered_skill to-prd "$p")"
   done
 }
 
@@ -238,10 +239,10 @@ prompt_layout_leaks() {
   local p f
   for p in "${PLATFORMS[@]}"; do
     f=$(rendered_skill add-tests "$p")
-    ! grep -qF 'PRD.md' <(sed 's/write no `PRD.md`//' "$f")
+    if grep -qF 'PRD.md' <(sed 's/write no `PRD.md`//' "$f"); then echo "forbidden text matched (line 241 of skills-tracker-cli-only.bats)" >&2; return 1; fi
     grep -qF '.scratch/<feature-slug>/findings.md' "$f"
     grep -qF 'with that findings file as its source' "$f"
-    ! grep -qF '.scratch/<feature-slug>/PRD.md' "$(rendered_skill solve-issue "$p")"
+    if grep -qF '.scratch/<feature-slug>/PRD.md' "$(rendered_skill solve-issue "$p")"; then echo "forbidden text matched (line 244 of skills-tracker-cli-only.bats)" >&2; return 1; fi
   done
 }
 
@@ -250,7 +251,7 @@ prompt_layout_leaks() {
   for p in "${PLATFORMS[@]}"; do
     f=$(rendered_skill to-issues "$p")
     grep -qF 'Undo:` follow "Reopen an issue" in the tracker doc `.coding-crew/tracker/docs/<kind>.md` — `~/.coding-crew/tracker/docs/<kind>.md` when the `mark-done` command above is the `~/.coding-crew` one' "$f"
-    ! grep -qF 'remove `awaiting-merge`' "$f"
+    if grep -qF 'remove `awaiting-merge`' "$f"; then echo "forbidden text matched (line 253 of skills-tracker-cli-only.bats)" >&2; return 1; fi
   done
 }
 
@@ -264,7 +265,7 @@ prompt_layout_leaks() {
 }
 
 @test ".coding-crew/config.json and dev-commands.json are tracked, not ignored, and the guide says to commit them" {
-  ! grep -qE '^/?\.coding-crew' "$REPO_ROOT/.gitignore"
+  if grep -qE '^/?\.coding-crew' "$REPO_ROOT/.gitignore"; then echo "forbidden text matched (line 267 of skills-tracker-cli-only.bats)" >&2; return 1; fi
   git -C "$REPO_ROOT" ls-files --error-unmatch .coding-crew/config.json .coding-crew/dev-commands.json >/dev/null
   grep -qE 'Commit `.coding-crew/config.json` and `.coding-crew/dev-commands.json`' "$REPO_ROOT/docs/guide.md"
 }
