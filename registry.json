@@ -117,7 +117,7 @@
       ]
     },
     "to-issues": {
-      "version": "1.18.0",
+      "version": "1.18.1",
       "source-dir": "to-issues",
       "description": "Break a plan or PRD into independently-grabbable issues using tracer-bullet vertical slices.",
       "source": "mattpocock/skills",

@@ -253,11 +253,29 @@ J
   mkdir -p "$W/issues/done"
   mv "$W/issues/01-store.md" "$W/issues/done/"
   printf '\n- Issue #1\n' >> "$W/issues/02-cli.md"
+  printf '{"02-cli.md": [], "03-docs.md": ["02-cli.md"]}\n' > "$W/issues/known-deps.json"
   run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md" \
-    --known "$W/issues/done/01-store.md" --deps "$W/issues/issues-deps.json"
+    --known "$W/issues/done/01-store.md" --deps "$W/issues/known-deps.json"
   [ "$status" -eq 0 ]
   [[ "$output" != *ERROR* ]]
   [[ "$output" != *01-store.md* ]]
+}
+
+@test "--known: a deps.json edge to the --known issue also lints clean" {
+  mkdir -p "$W/issues/done"
+  mv "$W/issues/01-store.md" "$W/issues/done/"
+  printf '\n- Issue #1\n' >> "$W/issues/02-cli.md"
+  run bash "$LINT" --issue "$W/issues/02-cli.md" --issue "$W/issues/03-docs.md" \
+    --known "$W/issues/done/01-store.md" --deps "$W/issues/issues-deps.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"edges differ"* ]]
+}
+
+@test "--deps: an edge between two drafts missing from deps.json is still an error" {
+  printf '{"01-store.md": [], "02-cli.md": [], "03-docs.md": ["02-cli.md"]}\n' > "$W/issues/missing.json"
+  lint_clean --deps "$W/issues/missing.json"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"--deps edges differ"* ]]
 }
 
 @test "without --known the same done-issue ref is an ERROR" {

@@ -15,7 +15,8 @@
 # no --issue, unreadable file).
 #
 # ERROR: a dependency cycle; a `## Blocked by` ref (filename, or `Issue #<n>`) matching no issue in
-#        the set; --deps edges that differ from the `## Blocked by` prose; no `## Acceptance criteria`.
+#        the set; --deps edges between issues in the set that differ from the `## Blocked by` prose (an
+#        edge to a --known issue is ignored on both sides); no `## Acceptance criteria`.
 # WARN:  more than 10 acceptance criteria (a context-budget check — does it fit one coder session?
 #        never a rule to split); a **D<n>**/**B<n>** ID in --prd that no issue's (nor --known
 #        file's) `## Implements` names, unless its PRD line ends in `(no slice)`; an issue another issue blocks on with no `### Exposes:` under
@@ -277,7 +278,21 @@ if [[ -n "$DEPS_FILE" ]]; then
   for idx in "${!NAMES[@]}"; do
     name="${NAMES[$idx]}"
     json_list=$(jq -r --arg k "$name" '(.[$k] // []) | map(tostring) | unique | .[]' "$DEPS_FILE" 2>/dev/null | sort -u | sed '/^$/d')
-    prose_list="${PROSE_EDGES[$idx]}"
+    # An edge to an existing (--known) issue lives only in ## Blocked by (publish refuses it in
+    # deps.json), yet a resumed sprint's deps.json still lists one: compare drafts only, so
+    # neither its presence nor its absence is an error.
+    prose_list=""
+    while IFS= read -r blocker; do
+      [[ -n "$blocker" ]] && in_set "$blocker" && prose_list+="${prose_list:+$'\n'}$blocker"
+    done <<< "${PROSE_EDGES[$idx]}"
+    drafts_json=""
+    while IFS= read -r blocker; do
+      [[ -z "$blocker" ]] && continue
+      if in_set "$blocker" || ! is_ref "$blocker"; then
+        drafts_json+="${drafts_json:+$'\n'}$blocker"
+      fi
+    done <<< "$json_list"
+    json_list="$drafts_json"
     if [[ "$json_list" != "$prose_list" ]]; then
       jl=$(printf '%s' "$json_list" | paste -sd, - | sed 's/,/, /g')
       pl=$(printf '%s' "$prose_list" | paste -sd, - | sed 's/,/, /g')
