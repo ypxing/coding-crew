@@ -686,7 +686,8 @@ MK
   local doc="$SCRIPTS_DIR/../references/docker-install.md"
   [ -f "$doc" ]
   grep -q 'scripts/docker-install.sh' "$doc"
-  grep -q -- '--lock-timeout' "$doc"
+  grep -q -- '--timeout' "$doc"
+  ! grep -q -- '--lock-timeout' "$doc"
   grep -qi 'do not fall back to running .docker compose. yourself' "$doc"
   # No hand-rolled docker compose run for install — only the documented recovery paths
   # (entrypoint override under "Install failures") still construct one directly.

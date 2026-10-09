@@ -29,8 +29,11 @@ Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
 - `ensure-deps.sh` — makes a directory ready to run the project's own checks; delegates every
   install decision to `dep-install`'s `detect-mode.sh` / `host-install.sh`. It is mechanism rather
   than a worker skill read because it is the only layer that also covers `verify-worktree.sh`, which
-  is a gate and cannot invoke a skill. Always exits 0
-- `verify-worktree.sh` — the checks, and the verification receipt
+  is a gate and cannot invoke a skill. Always exits 0. In docker mode every `--slug` call runs
+  `docker-install.sh` (install-if-missing into the volumes this worktree's lockfiles name, so it
+  reports `docker-present` / `docker-installed` / `failed`); the `MAIN_ROOT` call only records the mode
+- `verify-worktree.sh` — the checks, and the verification receipt; in docker mode it runs the same
+  install-if-missing first (a `deps` check), since a branch's lockfile may have changed
 - `receipts.sh` — the two gates as facts on disk
 - `lease.sh` — the feature lease (`refs/crew-lock/<slug>` under `tracker: github`): owner, acquire, reclaim, release
 - `post-findings.sh` — posts the sprint's open review findings to the feature branch's PR as one review
@@ -44,7 +47,7 @@ Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
   resumed feature branch lacks it (earlier work squash-merged), merges it in (`resolve-merge-conflicts.sh` for
   registry versions / CHANGELOG appends; any other conflict aborts cleanly and exits 1). Never bumps versions, never
   pushes; no `origin`/fetch/`origin/<default>` is a silent skip. `--dry-run` only reports
-- `squash-commits.sh`, `cleanup-worktrees.sh`, `crew-summary.sh`, `state.sh`, `trace.sh`
+- `squash-commits.sh`, `cleanup-worktrees.sh` (also removes this owner's docker dependency volumes no worktree's override names), `crew-summary.sh`, `state.sh`, `trace.sh`
 - `tracker-cli.sh` — sourced, not run: `resolve_tracker_cli <main-root>` sets `TRACKER_CLI` and `TRACKER_KIND` (from
   `cli.mjs config`) for `close-issue.sh`, `close-shipped.sh`, `issue-labels.sh`, `promote-findings.sh` and
   `session-init.sh`. A set `$CREW_TRACKER_CLI` is used as is (missing → error, no search); else, first existing file
