@@ -50,7 +50,7 @@ A dead run's feature lease needs `--reclaim`.
 ## Your part
 
 1. Resolve the target first if needed, then launch **in the background** — a dispatch can
-   run up to 45 minutes — with `--dry-run` first only if the user asked what it would do.
+   run up to 60 minutes — with `--dry-run` first only if the user asked what it would do.
    Use your tool's own background tracking (Claude Code: `run_in_background: true`), not a
    shell `&`/`disown` — that bypasses the completion notification, so no summary reaches you.
 2. **Don't poll and don't relay.** Every line you read or echo costs tokens; the human

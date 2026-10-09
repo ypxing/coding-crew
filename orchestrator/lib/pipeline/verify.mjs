@@ -128,6 +128,7 @@ export async function runTriage(ctx, worker, verifyStdout) {
       round: worker.attempt,
       reportPath: sidecarFile,
       maxBudgetUsd: triage.maxBudgetUsd,
+      effort: triage.effort,
     },
     {
       timeoutMs: options.timeoutMs.triage,

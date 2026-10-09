@@ -126,6 +126,7 @@ async function runIntegrationTriage(ctx, result, attempt) {
       round: attempt,
       reportPath: sidecarFile,
       maxBudgetUsd: triage.maxBudgetUsd,
+      effort: triage.effort,
     },
     {
       timeoutMs: options.timeoutMs.triage,

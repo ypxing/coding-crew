@@ -38,7 +38,7 @@ export { ARGV_PROMPT_LIMIT_BYTES, renderRolePrompt };
  * @returns {{cmd: string, args: string[], cwd: string, env: object, capture: "stdout"|"file"}}
  */
 export function buildDispatch(platform, spec) {
-  const { agent, cwd, promptFile, outFile, model, mainRoot, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec;
+  const { agent, cwd, promptFile, outFile, model, mainRoot, slug, reportPath, resumeSessionId, maxBudgetUsd } = spec; // spec.effort: afk.effort over ROLE_POLICY
   const shared = {
     cwd,
     env: {
@@ -92,7 +92,7 @@ export function buildDispatch(platform, spec) {
     cwd,
     mainRoot,
     model,
-    policy: role ? ROLE_POLICY[role] : null,
+    policy: role ? { ...ROLE_POLICY[role], ...(spec.effort ? { effort: spec.effort } : {}) } : null,
     protocol,
     protocolFile,
     prompt,

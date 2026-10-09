@@ -388,7 +388,7 @@ test("resolveSettings: defaults, then config.json, then flags — and a flag is 
   assert.equal(defaults.integrationCheck, true, "the integration check runs unless turned off");
   assert.equal(defaults.resumeCoderSession, false, "session resume is opt-in until measured");
   assert.equal(defaults.maxParallel, null);
-  assert.deepEqual(defaults.timeouts, { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prWriter: 10, merge: 5 });
+  assert.deepEqual(defaults.timeouts, { coder: 60, reviewer: 20, triage: 20, commandFinder: 5, prWriter: 10, merge: 5 });
 
   const origin = {};
   const s = resolveSettings({
@@ -664,4 +664,32 @@ test("ignoredLimitsNotice: a cap on a runtime whose adapter has no budget is ign
   assert.match(notice, /^afk\.limits ignored for reviewer \(bare\) — /);
   assert.match(notice, /not supported by bare/);
   assert.doesNotMatch(notice, /claude/);
+});
+
+// ─── afk.effort ──────────────────────────────────────────────────────────────
+
+test("afk.effort: defaults to high, the repo's role wins over the user's, and origin says where each came from", () => {
+  assert.deepEqual(resolveSettings({}).effort, { coder: "high", reviewer: "high", triage: "high" });
+  const root = tmpRoot({ "config.json": { afk: { effort: { coder: "medium" } } } });
+  const home = tmpRoot({ "config.json": { afk: { effort: { coder: "low", reviewer: "max" } } } });
+  const loaded = loadConfig(root, { home });
+  assert.equal(loaded.origin["effort.coder"], "project");
+  assert.equal(loaded.origin["effort.reviewer"], "user");
+  const s = resolveSettings({ afk: loaded.config.afk, origin: loaded.origin });
+  assert.deepEqual(s.effort, { coder: "medium", reviewer: "max", triage: "high" });
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+});
+
+test("afk.effort: a non-object, an unknown role or a non-string value is a config error naming the key", () => {
+  for (const [effort, pattern] of [
+    ["high", /"afk\.effort" must be an object/],
+    [{ commandFinder: "high" }, /unknown role "afk\.effort\.commandFinder"/],
+    [{ coder: "" }, /"afk\.effort\.coder" must be a non-empty string/],
+    [{ reviewer: 3 }, /"afk\.effort\.reviewer" must be a non-empty string/],
+  ]) {
+    const root = tmpRoot({ "config.json": { afk: { effort } } });
+    assert.throws(() => loadConfig(root, { home: EMPTY_HOME }), pattern);
+    rmSync(root, { recursive: true, force: true });
+  }
 });

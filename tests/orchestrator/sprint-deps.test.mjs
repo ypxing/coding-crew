@@ -514,3 +514,17 @@ test("a worktree that starts with no node_modules is verified and merged, with n
   assert.deepEqual(state(root2).completed_slugs, ["alpha"]);
   assert.deepEqual(state(root2).blocked_slugs ?? [], []);
 });
+
+test("recordDispatchCost keeps a cost-unknown dispatch's context size without a session id", () => {
+  const calls = [];
+  const sprint = new Sprint({ mainRoot: "/fake/root", script: (n) => n }, {});
+  sprint.state = (args) => calls.push(args);
+  const who = { slug: "a", role: "coder", attempt: 1 };
+  sprint.recordDispatchCost({ costUnknown: true, contextTokens: 90_000, tokens: 5 }, who);
+  assert.ok(calls[0].join(" ").includes("--context-tokens 90000"));
+  assert.ok(!calls[0].includes("--session-id"));
+  sprint.recordDispatchCost({ costUsd: 1, sessionId: "s1", contextTokens: 7 }, who);
+  assert.ok(calls[1].join(" ").includes("--session-id s1 --context-tokens 7"));
+  sprint.recordDispatchCost({ costUsd: 1, contextTokens: 7 }, who);
+  assert.ok(!calls[2].includes("--context-tokens"));
+});

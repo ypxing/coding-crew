@@ -83,6 +83,7 @@ test("a session is not resumed once the branch has moved, when it is too big, or
   assert.match(resumableSession({ session_id: "s1", head: "abc", context_tokens: RESUME_MAX_CONTEXT_TOKENS + 1 }, "abc").reason, /over 100k/);
   assert.match(resumableSession(null, "abc").reason, /no earlier coder session/);
   assert.match(resumableSession({ session_id: null, head: "abc" }, "abc").reason, /no earlier coder session/);
+  assert.match(resumableSession({ session_id: null, head: "abc", context_tokens: 40_000 }, "abc").reason, /no earlier coder session/);
 });
 
 // ─── isTestPath: what makes a diff test-only for the reviewer ─────────────────────────

@@ -425,7 +425,8 @@ and a config or flag still setting it loads with a notice:
 | Setting | Default | Flag | What it does |
 | --- | --- | --- | --- |
 | `fixFindings` | `actionable` | `--fix-findings` | What review findings are fixed automatically: `actionable` (every finding the triage role judges Actionable, whatever its severity); or the lowest severity — `critical`, `high`, `medium`; or `none` |
-| `timeouts` | coder 45, reviewer 20, triage 20, commandFinder 5, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout` | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
+| `timeouts` | coder 60, reviewer 20, triage 20, commandFinder 5, prWriter 10, merge 5 | `--coder-timeout`, `--reviewer-timeout` | Minutes, per role (at most 35791); name only the ones you change. A coder that times out after committing is retried without spending an attempt, up to 3 dispatches per issue |
+| `effort` | coder, reviewer and triage `high` | — | Reasoning effort per role, one string passed to the role's CLI as is (a value it rejects fails on the first dispatch). Only `coder`, `reviewer` and `triage` take one; the plain roles run at their CLI's default. Merged per role across user and repo, the repo winning. Example: `{"effort": {"coder": "medium"}}` |
 | `maxParallel` | the coder runtime's | `--max-parallel` | Concurrent coders — usually a machine setting, so user level |
 | `maxWallMinutes` | `120` | `--max-wall` | Soft wall-clock cap in minutes, `0` = off. Once elapsed no issue is claimed, running workers finish and merge, Phase 2 fix issues stay parked, the integration check still runs; exit 2, PR (with `--open-pr`) is a draft |
 | `installDeps` | `true` | `--no-deps` | Install dependencies in each worktree |
