@@ -15,7 +15,8 @@
 # no --issue, unreadable file).
 #
 # ERROR: a dependency cycle; a `## Blocked by` ref (filename, or `Issue #<n>`) matching no issue in
-#        the set; --deps edges that differ from the `## Blocked by` prose; no `## Acceptance criteria`.
+#        the set; --deps edges between issues in the set that differ from the `## Blocked by` prose (an
+#        edge to a --known issue is ignored on both sides); no `## Acceptance criteria`.
 # WARN:  more than 10 acceptance criteria (a context-budget check — does it fit one coder session?
 #        never a rule to split); a **D<n>**/**B<n>** ID in --prd that no issue's (nor --known
 #        file's) `## Implements` names, unless its PRD line ends in `(no slice)`; an issue another issue blocks on with no `### Exposes:` under
