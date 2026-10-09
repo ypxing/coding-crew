@@ -14,6 +14,7 @@
 
 bats_require_minimum_version 1.5.0
 load helpers/render
+load helpers/fake-docker
 
 SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/ensure-deps.sh"
 
@@ -90,7 +91,7 @@ stub_docker_scripts_with_real_gen_override() {
     fi
     printf 'exit %s\n' "$install_exit"
   } > "$d/docker-install.sh"
-  cp "$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/gen-override.sh" "$d/gen-override.sh"
+  cp "$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"/skills/dep-install/scripts/{gen-override,manifest-fingerprint}.sh "$d/"
   chmod +x "$d"/*.sh
   export CREW_DEP_INSTALL_SCRIPTS="$d"
 }
@@ -348,53 +349,59 @@ STUBEOF
   [ "$(git -C "$WORK" config --local agent.install-mode)" = "docker" ]
 }
 
-# ─── docker mechanization: the one MAIN_ROOT call warms the shared volume ─────────────────
+# ─── docker mechanization: every worktree installs into the volumes its lockfiles name ──────
 #
-# Named volumes are shared across every worktree of a MAIN_ROOT by design — that is the whole
-# point of caching deps once instead of once per worktree — so the install itself must run
-# exactly once. `--slug` is the signal: absent means "the one MAIN_ROOT call", present means
-# "a worktree, only ever check the shared marker".
+# The dependency volumes are named by a hash of the lockfiles, and docker-install.sh fills a volume
+# only when it lacks its completion stamp. So every `--slug` call (an issue, `_baseline`,
+# `_integration`) runs it and reports what it found; the one MAIN_ROOT call (no --slug) only
+# records the mode, because no worktree's lockfiles are its own.
 
-@test "the MAIN_ROOT call (no --slug) runs docker-install.sh and writes the marker" {
+# stub_install_args_check <file> — a docker-install.sh stub that records its argv and prints a
+# Running: line
+stub_install_args_check() {
+  local file="$1" d="$TEMP_DIR/stub-docker-argcheck"
+  mkdir -p "$d"
+  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
+  cat > "$d/docker-install.sh" <<STUBEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" > "$file"
+echo "Running: docker compose run --rm app sh -c 'npm ci'"
+exit 0
+STUBEOF
+  chmod +x "$d"/*.sh
+  export CREW_DEP_INSTALL_SCRIPTS="$d"
+}
+
+@test "the MAIN_ROOT call (no --slug) only records the mode: no install command, no marker, DEPS: docker" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
   stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
-
-  run bash "$SCRIPT" --dir "$WORK"
-  [ "$status" -eq 0 ]
-  [[ "$(deps_line)" == "DEPS: docker-installed"* ]] || { echo "$output" >&2; return 1; }
-  [[ "$(deps_line)" == *"npm ci"* ]]
-  [ -f "$WORK/.scratch/docker-install.done" ]
-}
-
-@test "the MAIN_ROOT call forces docker-install.sh past its manifest-fingerprint fast path" {
-  # A FRESH fingerprint proves the lockfiles are unchanged, not that the shared volume is
-  # still intact — a sprint installs once, so that one install must actually run.
-  printf '{}\n' > "$WORK/package.json"
-  export MAIN_ROOT="$WORK"
-  stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
-  printf '#!/usr/bin/env bash\necho "$@" > "%s/args"\necho "Running: npm ci"\n' "$TEMP_DIR" \
-    > "$CREW_DEP_INSTALL_SCRIPTS/docker-install.sh"
-
-  run bash "$SCRIPT" --dir "$WORK"
-  [ "$status" -eq 0 ]
-  [[ " $(cat "$TEMP_DIR/args") " == *" --force "* ]]
-}
-
-@test "the MAIN_ROOT call generates the override even when docker-install.sh exits 2 for unrelated reasons" {
-  # docker-install.sh can exit 2 for reasons that have nothing to do with whether an
-  # override CAN be generated (no lockfile it recognises in a manifest dir, an --install-cmd
-  # override that itself invokes docker) — in that case the cache still says docker, so the
-  # override must not be left missing for dep-install/SKILL.md's Step 0 fast path to find.
-  printf '{}\n' > "$WORK/package.json"
-  printf 'services:\n  app:\n    build: .\n' > "$WORK/docker-compose.yml"
-  export MAIN_ROOT="$WORK"
-  stub_docker_scripts_with_real_gen_override 2
+  printf '#!/usr/bin/env bash\ntouch "%s/install-ran"\n' "$TEMP_DIR" > "$CREW_DEP_INSTALL_SCRIPTS/docker-install.sh"
 
   run bash "$SCRIPT" --dir "$WORK"
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker" ]
-  [ -f "$WORK/.git/crew-compose.override.yml" ]
+  [ ! -e "$TEMP_DIR/install-ran" ]
+  [[ "$(cat "$WORK/.coding-crew/dev-commands.json")" == *'"install_mode": "docker"'* ]]
+  [ ! -e "$WORK/.scratch/docker-install.done" ]
+  [ ! -e "$WORK/.scratch/docker-install.fingerprint" ]
+}
+
+@test "the MAIN_ROOT call writes install_mode and docker_service to dev-commands.json, and writes no override" {
+  printf '{}\n' > "$WORK/package.json"
+  printf 'services:\n  app:\n    build: .\n' > "$WORK/docker-compose.yml"
+  printf 'deps:\n\tdocker compose run --rm app npm ci\n' > "$WORK/Makefile"
+  export MAIN_ROOT="$WORK"
+  stub_docker_scripts_with_real_gen_override 0
+  cp "$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/detect-service.sh" "$CREW_DEP_INSTALL_SCRIPTS/"
+
+  run bash "$SCRIPT" --dir "$WORK"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: docker" ]
+  cache="$(cat "$WORK/.coding-crew/dev-commands.json")"
+  [[ "$cache" == *'"install_mode": "docker"'* ]]
+  [[ "$cache" == *'"docker_service": "app"'* ]]
+  [ ! -e "$WORK/.git/crew-compose.override.yml" ]
   [ ! -e "$WORK/docker-compose.override.yml" ]
 }
 
@@ -402,7 +409,7 @@ STUBEOF
   printf '{}\n' > "$WORK/package.json"
   printf 'services:\n  app:\n    build: .\n' > "$WORK/docker-compose.yml"
   export MAIN_ROOT="$WORK"
-  stub_docker_scripts_with_real_gen_override 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+  stub_docker_scripts_with_real_gen_override 0
 
   # what an older gen-override.sh wrote: first line `name:`, volume keys wt_<PROJ_SLUG>_…
   printf 'name: work\nservices:\n  app:\n    volumes:\n      - wt_work_nm_root:/app/node_modules\nvolumes:\n  wt_work_nm_root:\n' \
@@ -427,7 +434,7 @@ STUBEOF
   # survives to the next sprint too.
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
-  stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+  stub_docker_scripts 0
 
   run bash "$SCRIPT" --dir "$WORK"
   [ "$status" -eq 0 ]
@@ -448,7 +455,7 @@ STUBEOF
   export MAIN_ROOT="$WORK"
   mkdir -p "$WORK/.coding-crew"
   printf '{"test": "npm test", "lint": null}\n' > "$WORK/.coding-crew/dev-commands.json"
-  stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+  stub_docker_scripts 0
 
   run bash "$SCRIPT" --dir "$WORK"
   [ "$status" -eq 0 ]
@@ -458,61 +465,39 @@ STUBEOF
   [[ "$cache" == *'"install_mode": "docker"'* ]]
 }
 
-@test "the MAIN_ROOT call still runs docker-install.sh when a stale host node_modules is present" {
-  # A host-side node_modules can predate .worktreeinclude excluding it, or come from a
-  # contributor's own local install, in a project that is otherwise docker-mode. The
-  # presence guard must not read that as "nothing to do" and skip warming the docker
-  # volume — that is the only place the override gets generated.
+@test "a worktree call (--slug) runs docker-install.sh without --force and reports what it ran" {
   printf '{}\n' > "$WORK/package.json"
-  mkdir -p "$WORK/node_modules"
   export MAIN_ROOT="$WORK"
-  stub_docker_scripts 0 "Running: docker compose run --rm app sh -c 'npm ci'"
+  stub_install_args_check "$TEMP_DIR/args.txt"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
-  [[ "$(deps_line)" == "DEPS: docker-installed"* ]] || { echo "$output" >&2; return 1; }
-  [ -f "$WORK/.scratch/docker-install.done" ]
+  [ "$(deps_line)" = "DEPS: docker-installed docker compose run --rm app sh -c 'npm ci'" ]
+  ! grep -qx -- "--force" "$TEMP_DIR/args.txt"
+  grep -qx -- "--project-root" "$TEMP_DIR/args.txt"
+  [ ! -e "$WORK/.scratch/docker-install.done" ]
 }
 
-@test "a worktree call (--slug) after the marker exists is DEPS: docker-present, no install" {
+@test "a worktree call (--slug) whose volumes already hold the install is DEPS: docker-present" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
-  mkdir -p "$WORK/.scratch"
-  echo "npm ci" > "$WORK/.scratch/docker-install.done"
-  stub_docker_scripts 0 "SHOULD NOT RUN"
+  stub_docker_scripts 0 "Present: /opt/app/node_modules/.crew-stamp found — the dependency volumes are already installed"
 
   run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker-present" ]
-  [[ "$output" != *"SHOULD NOT RUN"* ]]
 }
 
-@test "a worktree call (--slug) generates the worktree's own override in its git dir, and links nothing into the tree" {
-  # Nothing else creates it for a fresh worktree: every run.sh call and bare `docker compose`
-  # there needs it, through the shim.
+@test "a worktree call (--slug) still runs docker-install.sh when a stale host node_modules is present" {
+  # A host-side node_modules says nothing about the docker volumes the worktree's checks read.
   printf '{}\n' > "$WORK/package.json"
-  printf 'services:\n  app:\n    build: .\n' > "$WORK/docker-compose.yml"
-  printf 'services:\n  app:\n    environment:\n      - MINE=1\n' > "$WORK/docker-compose.override.yml"
-  git -C "$WORK" add -A
-  git -C "$WORK" commit -q -m init
-  before="$(cksum < "$WORK/docker-compose.override.yml")"
+  mkdir -p "$WORK/node_modules"
   export MAIN_ROOT="$WORK"
-  mkdir -p "$WORK/.scratch"
-  echo "npm ci" > "$WORK/.scratch/docker-install.done"
-  stub_docker_scripts_with_real_gen_override 0 "SHOULD NOT RUN"
+  stub_install_args_check "$TEMP_DIR/args.txt"
 
-  WT="$TEMP_DIR/wt"
-  git -C "$WORK" worktree add -q -b feature "$WT" HEAD
-
-  run bash "$SCRIPT" --dir "$WT" --feature-slug demo --slug widget
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
-  [ "$(deps_line)" = "DEPS: docker-present" ]
-  [ -f "$WORK/.git/worktrees/wt/crew-compose.override.yml" ]
-  grep -qx '      - GIT_DIR=/git-common/worktrees/wt' "$WORK/.git/worktrees/wt/crew-compose.override.yml"
-  # the project's own committed override is the same bytes, in the main checkout and the worktree
-  [ "$(cksum < "$WORK/docker-compose.override.yml")" = "$before" ]
-  [ "$(cksum < "$WT/docker-compose.override.yml")" = "$before" ]
-  [ ! -L "$WT/docker-compose.override.yml" ]
+  [[ "$(deps_line)" == "DEPS: docker-installed"* ]] || { echo "$output" >&2; return 1; }
 }
 
 @test "a hand run with --slug but no sprint env and no --feature-slug exits 2 naming --feature-slug" {
@@ -522,36 +507,14 @@ STUBEOF
   [[ "$stderr" == *"--feature-slug"* ]]
 }
 
-@test "a worktree call (--slug) with no marker yet is still DEPS: docker, deferred" {
-  printf '{}\n' > "$WORK/package.json"
-  export MAIN_ROOT="$WORK"
-  stub_docker_scripts 0 "SHOULD NOT RUN"
-
-  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
-  [ "$status" -eq 0 ]
-  [ "$(deps_line)" = "DEPS: docker" ]
-  [[ "$output" != *"SHOULD NOT RUN"* ]]
-  [ ! -f "$WORK/.scratch/docker-install.done" ]
-}
-
 @test "a discovered install override is forwarded to docker-install.sh via --install-cmd" {
   printf '{}\n' > "$WORK/package.json"
   mkdir -p "$WORK/.coding-crew"
   printf '{"install": "make deps"}' > "$WORK/.coding-crew/dev-commands.json"
   export MAIN_ROOT="$WORK"
-  local d="$TEMP_DIR/stub-docker-argcheck"
-  mkdir -p "$d"
-  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
-  cat > "$d/docker-install.sh" <<STUBEOF
-#!/usr/bin/env bash
-printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-args.txt"
-echo "Running: docker compose run --rm app sh -c 'make deps'"
-exit 0
-STUBEOF
-  chmod +x "$d"/*.sh
-  export CREW_DEP_INSTALL_SCRIPTS="$d"
+  stub_install_args_check "$TEMP_DIR/docker-install-args.txt"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   grep -qx -- "--install-cmd" "$TEMP_DIR/docker-install-args.txt"
   grep -qx -- "make deps" "$TEMP_DIR/docker-install-args.txt"
@@ -561,19 +524,9 @@ STUBEOF
 @test "no discovered install override omits --install-cmd from the docker-install.sh call" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
-  local d="$TEMP_DIR/stub-docker-argcheck-none"
-  mkdir -p "$d"
-  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
-  cat > "$d/docker-install.sh" <<STUBEOF
-#!/usr/bin/env bash
-printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-args-none.txt"
-echo "Running: docker compose run --rm app sh -c 'npm ci'"
-exit 0
-STUBEOF
-  chmod +x "$d"/*.sh
-  export CREW_DEP_INSTALL_SCRIPTS="$d"
+  stub_install_args_check "$TEMP_DIR/docker-install-args-none.txt"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   ! grep -qx -- "--install-cmd" "$TEMP_DIR/docker-install-args-none.txt"
 }
@@ -583,19 +536,9 @@ STUBEOF
   mkdir -p "$WORK/.coding-crew"
   printf '{"credential_target": ".npmrc"}' > "$WORK/.coding-crew/dev-commands.json"
   export MAIN_ROOT="$WORK"
-  local d="$TEMP_DIR/stub-docker-credcheck"
-  mkdir -p "$d"
-  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
-  cat > "$d/docker-install.sh" <<STUBEOF
-#!/usr/bin/env bash
-printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-cred-args.txt"
-echo "Running: docker compose run --rm app sh -c 'npm ci'"
-exit 0
-STUBEOF
-  chmod +x "$d"/*.sh
-  export CREW_DEP_INSTALL_SCRIPTS="$d"
+  stub_install_args_check "$TEMP_DIR/docker-install-cred-args.txt"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   grep -qx -- "--credential-target" "$TEMP_DIR/docker-install-cred-args.txt"
   grep -qx -- ".npmrc" "$TEMP_DIR/docker-install-cred-args.txt"
@@ -604,19 +547,9 @@ STUBEOF
 @test "no discovered credential_target omits --credential-target from the docker-install.sh call" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
-  local d="$TEMP_DIR/stub-docker-credcheck-none"
-  mkdir -p "$d"
-  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
-  cat > "$d/docker-install.sh" <<STUBEOF
-#!/usr/bin/env bash
-printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-cred-args-none.txt"
-echo "Running: docker compose run --rm app sh -c 'npm ci'"
-exit 0
-STUBEOF
-  chmod +x "$d"/*.sh
-  export CREW_DEP_INSTALL_SCRIPTS="$d"
+  stub_install_args_check "$TEMP_DIR/docker-install-cred-args-none.txt"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   ! grep -qx -- "--credential-target" "$TEMP_DIR/docker-install-cred-args-none.txt"
 }
@@ -626,82 +559,65 @@ STUBEOF
   mkdir -p "$WORK/.coding-crew"
   printf '{"credential_target": null}' > "$WORK/.coding-crew/dev-commands.json"
   export MAIN_ROOT="$WORK"
-  local d="$TEMP_DIR/stub-docker-credcheck-null"
-  mkdir -p "$d"
-  printf '#!/usr/bin/env bash\necho USE_DOCKER\n' > "$d/detect-mode.sh"
-  cat > "$d/docker-install.sh" <<STUBEOF
-#!/usr/bin/env bash
-printf '%s\n' "\$@" > "$TEMP_DIR/docker-install-cred-args-null.txt"
-echo "Running: docker compose run --rm app sh -c 'npm ci'"
-exit 0
-STUBEOF
-  chmod +x "$d"/*.sh
-  export CREW_DEP_INSTALL_SCRIPTS="$d"
+  stub_install_args_check "$TEMP_DIR/docker-install-cred-args-null.txt"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   ! grep -qx -- "--credential-target" "$TEMP_DIR/docker-install-cred-args-null.txt"
 }
 
-@test "docker-install.sh exit 2 (nothing to do) is DEPS: docker, not a new outcome" {
+@test "docker-install.sh exit 2 (nothing to do) is DEPS: docker, and the worktree still gets its override" {
   printf '{}\n' > "$WORK/package.json"
+  printf 'services:\n  app:\n    build: .\n' > "$WORK/docker-compose.yml"
   export MAIN_ROOT="$WORK"
-  stub_docker_scripts 2 "No compose file found"
+  stub_docker_scripts_with_real_gen_override 2 "No compose file found"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker" ]
-  [ ! -f "$WORK/.scratch/docker-install.done" ]
+  [ -f "$WORK/.git/crew-compose.override.yml" ]
 }
 
-@test "docker-install.sh exit 4 (lock busy) defers rather than blocks the round" {
+@test "docker-install.sh exit 5 (install cannot reach the shared volumes) is DEPS: failed with its reasons" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
-  stub_docker_scripts 4 "lock busy"
+  stub_docker_scripts 5 "not through docker compose"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
-  [ "$(deps_line)" = "DEPS: docker" ]
+  [[ "$(deps_line)" == "DEPS: failed"*"(exit 5)"* ]]
+  [[ "$output" == *"not through docker compose"* ]]
 }
 
-@test "docker-install.sh exit 5 (install cannot reach the shared volumes) is DEPS: docker-failed with its reasons, no marker" {
+@test "a failed docker install is DEPS: failed <cmd> (exit 3) (see <log>), with the tail, still exit 0" {
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
-  stub_docker_scripts 5 "\`-f docker-compose.yml\` replaces compose's file discovery"
-
-  run bash "$SCRIPT" --dir "$WORK"
-  [ "$status" -eq 0 ]
-  [[ "$(deps_line)" == "DEPS: docker-failed"*"(exit 5)"* ]]
-  [[ "$output" == *"replaces compose's file discovery"* ]]
-  [ ! -f "$WORK/.scratch/docker-install.done" ]
-}
-
-@test "a failed docker install is advisory: DEPS: docker-failed with the tail, still exit 0" {
-  printf '{}\n' > "$WORK/package.json"
-  export MAIN_ROOT="$WORK"
+  export SPRINT_DIR="$TEMP_DIR/sprint"
+  mkdir -p "$SPRINT_DIR/dispatch"
   stub_docker_scripts 3 "Running: docker compose run --rm app sh -c 'npm ci'
 npm ERR! boom"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget --stem 01-widget
   [ "$status" -eq 0 ]
-  [[ "$(deps_line)" == "DEPS: docker-failed"* ]]
-  [[ "$(deps_line)" == *"exit 3"* ]]
+  [ "$(deps_line)" = "DEPS: failed docker compose run --rm app sh -c 'npm ci' (exit 3) (see $SPRINT_DIR/docker-install-01-widget.log)" ]
   [[ "$output" == *"npm ERR! boom"* ]]
-  [ ! -f "$WORK/.scratch/docker-install.done" ]
+  [[ "$output" != *"docker-failed"* ]]
 }
 
-@test "a failed docker install persists the full output to .scratch/docker-install.log, and the line names it" {
+@test "a failed docker install saves its full output under the sprint dir, named for the stem" {
   # Only the DEPS: line survives into the orchestrator's own log (Sprint.installDeps /
   # runWorker log the line, never the stderr this script prints alongside it) — so the
-  # detail behind "docker-failed" has to live on disk, at a path the line itself names.
+  # detail behind "failed" has to live on disk, at a path the line itself names.
   printf '{}\n' > "$WORK/package.json"
   export MAIN_ROOT="$WORK"
+  export SPRINT_DIR="$TEMP_DIR/sprint"
+  mkdir -p "$SPRINT_DIR/dispatch"
   stub_docker_scripts 3 "Running: docker compose run --rm app sh -c 'npm ci'
 npm ERR! boom"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug _baseline --stem _baseline
   [ "$status" -eq 0 ]
-  local log="$WORK/.scratch/docker-install.log"
+  local log="$SPRINT_DIR/docker-install-_baseline.log"
   [ -f "$log" ]
   grep -q 'npm ERR! boom' "$log"
   [[ "$(deps_line)" == *"$log"* ]] || { echo "$output" >&2; return 1; }
@@ -713,29 +629,77 @@ npm ERR! boom"
   export CREW_DOCKER_INSTALL=off
   stub_docker_scripts 0 "SHOULD NOT RUN"
 
-  run bash "$SCRIPT" --dir "$WORK"
+  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget
   [ "$status" -eq 0 ]
   [ "$(deps_line)" = "DEPS: docker" ]
   [[ "$output" != *"SHOULD NOT RUN"* ]]
 }
 
-@test "the marker is scoped to MAIN_ROOT, not to a feature slug: reused across sprints" {
-  printf '{}\n' > "$WORK/package.json"
-  export MAIN_ROOT="$WORK"
-  mkdir -p "$WORK/.scratch"
-  echo "npm ci" > "$WORK/.scratch/docker-install.done"
-  stub_docker_scripts 0 "SHOULD NOT RUN"
+# ─── the real scripts, a fake docker that plays the volumes: B3 and B4 ────────────────────────
 
-  # Two different feature sprints against the same MAIN_ROOT, distinguished only by SPRINT_DIR.
-  export SPRINT_DIR="$TEMP_DIR/sprint-a"
-  mkdir -p "$SPRINT_DIR/dispatch"
-  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget-a
-  [ "$(deps_line)" = "DEPS: docker-present" ]
+# two_worktrees — MAIN_ROOT=$WORK, a docker-mode repo with a committed lockfile, and two worktrees
+# of it ($WT1, $WT2) that start identical.
+two_worktrees() {
+  local repo
+  repo="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)"
+  printf '{"name":"x"}\n' > "$WORK/package.json"
+  printf '{"lock":"A"}\n' > "$WORK/package-lock.json"
+  printf 'services:\n  app:\n    build: .\n    volumes:\n      - .:/opt/app\n' > "$WORK/docker-compose.yml"
+  git -C "$WORK" add -A
+  git -C "$WORK" commit -q -m init
+  git -C "$WORK" config --local agent.install-mode docker
+  WT1="$TEMP_DIR/wt1"; WT2="$TEMP_DIR/wt2"
+  git -C "$WORK" worktree add -q -b one "$WT1" HEAD
+  git -C "$WORK" worktree add -q -b two "$WT2" HEAD
+  export MAIN_ROOT="$WORK" CREW_DEP_INSTALL_SCRIPTS="$repo/skills/dep-install/scripts"
+  install_fake_docker "$TEMP_DIR/stub" "$TEMP_DIR/fake"
+  export PATH="$TEMP_DIR/stub:$PATH"
+}
 
-  export SPRINT_DIR="$TEMP_DIR/sprint-b"
+# volume_names <worktree> — the dependency volume names its override carries
+volume_names() { grep -o 'name: wt_[A-Za-z0-9_]*' "$(git -C "$1" rev-parse --path-format=absolute --git-dir)/crew-compose.override.yml" | sed 's/^name: //'; }
+
+@test "two worktrees with different lockfiles name different volumes, and each gets its own install" {
+  two_worktrees
+  printf '{"lock":"B"}\n' > "$WT2/package-lock.json"
+
+  run bash "$SCRIPT" --dir "$WT1" --feature-slug demo --slug one
+  [[ "$(deps_line)" == "DEPS: docker-installed"* ]] || { echo "$output" >&2; return 1; }
+  run bash "$SCRIPT" --dir "$WT2" --feature-slug demo --slug two
+  [[ "$(deps_line)" == "DEPS: docker-installed"* ]] || { echo "$output" >&2; return 1; }
+
+  [ -n "$(volume_names "$WT1")" ]
+  [ "$(volume_names "$WT1")" != "$(volume_names "$WT2")" ]
+  [ "$(grep -c . "$TEMP_DIR/fake/install.calls")" -eq 2 ]
+  [ "$(ls "$TEMP_DIR/fake/vols" | wc -l)" -eq 2 ]
+}
+
+@test "two worktrees with identical lockfiles name the same volumes: one install, then DEPS: docker-present" {
+  two_worktrees
+
+  run bash "$SCRIPT" --dir "$WT1" --feature-slug demo --slug one
+  [[ "$(deps_line)" == "DEPS: docker-installed"* ]] || { echo "$output" >&2; return 1; }
+  run bash "$SCRIPT" --dir "$WT2" --feature-slug demo --slug two
+  [ "$(deps_line)" = "DEPS: docker-present" ] || { echo "$output" >&2; return 1; }
+
+  [ "$(volume_names "$WT1")" = "$(volume_names "$WT2")" ]
+  [ "$(grep -c . "$TEMP_DIR/fake/install.calls")" -eq 1 ]
+  # nothing named docker-compose.override.yml in either tree, and no old-style markers
+  [ ! -e "$WT1/docker-compose.override.yml" ] && [ ! -e "$WT2/docker-compose.override.yml" ]
+  [ ! -e "$WORK/.scratch/docker-install.done" ] && [ ! -e "$WORK/.scratch/docker-install.fingerprint" ]
+}
+
+@test "a failing docker install leaves no stamp and reports DEPS: failed … (exit 3) (see <log>)" {
+  two_worktrees
+  export FAKE_NPM_RC=1
+  export SPRINT_DIR="$TEMP_DIR/sprint"
   mkdir -p "$SPRINT_DIR/dispatch"
-  run bash "$SCRIPT" --dir "$WORK" --feature-slug demo --slug widget-b
-  [ "$(deps_line)" = "DEPS: docker-present" ]
+
+  run bash "$SCRIPT" --dir "$WT1" --feature-slug demo --slug one --stem 01-one
+  [ "$status" -eq 0 ]
+  [[ "$(deps_line)" == "DEPS: failed "*"(exit 3) (see $SPRINT_DIR/docker-install-01-one.log)" ]] || { echo "$output" >&2; return 1; }
+  [ -f "$SPRINT_DIR/docker-install-01-one.log" ]
+  [ -z "$(find "$TEMP_DIR/fake/vols" -name '.crew-stamp' -o -name '.crew-lock')" ]
 }
 
 @test "a failing install is advisory: DEPS: failed with the tail, still exit 0" {
