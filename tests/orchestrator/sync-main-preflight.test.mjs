@@ -60,16 +60,16 @@ test("--no-sync-main skips without calling the script; --dry-run passes --dry-ru
   assert.deepEqual(dry.calls[0].args, ["--dry-run", "feature/demo"]);
 });
 
-test("main.mjs syncs after the dirty check and before the baseline, stopping with exit 1 on a conflict", () => {
+test("main.mjs syncs once the _feature worktree exists and before the baseline, stopping with exit 1 on a conflict", () => {
   const src = readFileSync(join(REPO, "orchestrator/main.mjs"), "utf8");
   const at = (needle) => {
     const i = src.indexOf(needle);
     assert.notEqual(i, -1, needle);
     return i;
   };
-  const dirty = at("const dirty = dirtyTrackedFiles(effects);\n      if (dirty.length)");
+  const worktree = at("ensureWorktree(effects, {");
   const sync = at("syncFeatureBranch({ sprint");
   const baseline = at("runBaselineAsync(ctx)");
-  assert.ok(dirty < sync && sync < baseline);
+  assert.ok(worktree < sync && sync < baseline);
   assert.match(src.slice(sync, baseline), /sync\.status === "conflict"[\s\S]*?exitCode = 1/);
 });

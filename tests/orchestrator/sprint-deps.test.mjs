@@ -38,6 +38,10 @@ test("deps are provisioned once per sprint and once per dispatched issue", () =>
   assert.equal(lines.filter((l) => worktreeDepsFor("beta").test(l)).length, 1);
 });
 
+// The sprint's own `_feature` worktree is made before session-init.sh, so before any warm-up; it is
+// not one of the issue worktrees these tests are about.
+const ISSUE_WORKTREE_ADD = /git .*worktree add(?!.*\/_feature)/;
+
 test("the sprint-level call precedes every worker, and the worktree call precedes both its dispatch and its verify", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
@@ -51,7 +55,7 @@ test("the sprint-level call precedes every worker, and the worktree call precede
   };
   const sprintDeps = at(SPRINT_LEVEL_DEPS);
   const worktreeDeps = at(worktreeDepsFor("alpha"));
-  const worktreeAdd = at(/git .*worktree add/);
+  const worktreeAdd = at(ISSUE_WORKTREE_ADD);
   const dispatch = at(/^SPAWN .*--agent crew-coder/);
   const verify = at(/verify-worktree\.sh --dir/);
 
@@ -110,7 +114,7 @@ test("a failed sprint-level docker install stops the run before any worktree or 
   assert.match(r.stderr, /--no-deps/);
   // The log outlives the scrollback: the stop is there too, as the one FATAL line.
   assert.match(traceLog(root), /^\S+Z FATAL \[ABORT\] .*dependencies could not be installed/m);
-  assert.equal(lines.filter((l) => /worktree add/.test(l)).length, 0, "a worktree was created");
+  assert.equal(lines.filter((l) => ISSUE_WORKTREE_ADD.test(l)).length, 0, "a worktree was created");
   assert.equal(lines.filter((l) => /^SPAWN .*--agent crew-/.test(l)).length, 0, "an agent was dispatched");
 });
 

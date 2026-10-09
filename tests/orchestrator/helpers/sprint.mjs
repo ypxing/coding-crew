@@ -96,6 +96,18 @@ export function sh(cmd, args, opts = {}) {
 export const FIXTURE_ROOTS = [];
 after(() => FIXTURE_ROOTS.forEach((d) => rmSync(d, { recursive: true, force: true })));
 
+/**
+ * The main checkout stays on `main` (a sprint never switches it), but a test that commits there
+ * means "the feature branch has this commit": a post-commit hook moves `feature/demo` along, unless
+ * a run has it checked out in its `_feature` worktree (then the move fails and is ignored).
+ */
+function featureFollowsMain(root) {
+  const hook = join(root, ".git/hooks/post-commit");
+  mkdirSync(dirname(hook), { recursive: true });
+  writeFileSync(hook, '#!/bin/sh\n[ "$(git symbolic-ref --short -q HEAD)" = main ] && git branch -f feature/demo HEAD >/dev/null 2>&1\nexit 0\n');
+  chmodSync(hook, 0o755);
+}
+
 export function fixtureRepo() {
   const root = mkdtempSync(join(TMPDIR, "crew-sprint-"));
   FIXTURE_ROOTS.push(root);
@@ -112,6 +124,7 @@ export function fixtureRepo() {
   git("add", "-A");
   git("commit", "-q", "-m", "init");
   git("branch", "feature/demo");
+  featureFollowsMain(root);
   mkdirSync(join(root, ".scratch/demo/issues/open"), { recursive: true });
   mkdirSync(join(root, ".scratch/fake"), { recursive: true });
   return root;
@@ -280,6 +293,7 @@ export function githubFixtureRepo() {
   git("add", "-A");
   git("commit", "-q", "-m", "init");
   git("branch", "feature/demo");
+  featureFollowsMain(root);
   mkdirSync(join(root, ".scratch/fake"), { recursive: true });
   // The feature lease lives on origin, so a github run needs one.
   const origin = `${root}-origin.git`;

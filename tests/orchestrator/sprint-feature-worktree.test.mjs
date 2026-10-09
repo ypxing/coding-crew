@@ -63,15 +63,10 @@ test("a run that errors still removes _feature and keeps the branch", () => {
 });
 
 test("with the main checkout on feature/<slug> the run exits 1 telling the user to switch it", () => {
-  const root = fixtureRepo(); // on feature/demo
+  const root = fixtureRepo();
+  git(root, "checkout", "-q", "feature/demo");
   addIssue(root, "01-alpha.md");
-  process.env.CREW_TEST_KEEP_CHECKOUT = "1";
-  let r;
-  try {
-    r = runSprint(root);
-  } finally {
-    delete process.env.CREW_TEST_KEEP_CHECKOUT;
-  }
+  const r = runSprint(root);
   assert.equal(r.code, 1, `${r.stdout}\n${r.stderr}`);
   assert.match(r.stderr, /checked out in the main checkout .* switch it to another branch/);
   assert.equal(git(root, "rev-parse", "--abbrev-ref", "HEAD"), "feature/demo", "and it was not switched for the user");

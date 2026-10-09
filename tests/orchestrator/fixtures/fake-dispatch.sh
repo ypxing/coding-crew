@@ -24,7 +24,7 @@
 #                         fractional --reviewer-timeout, a review dispatch that times out.
 #   <slug>.misbehave      a reviewer/triage dispatch that breaks its read-only contract; the content
 #                         is `commit` (a commit on the crew/*/<slug> branch) or `edit` (an uncommitted
-#                         file in the main checkout). Applies to every reviewer/triage call for the slug.
+#                         file in the dispatch's cwd). Applies to every reviewer/triage call for the slug.
 #   <slug>.nocommit       do not create a commit in the worktree
 #   <slug>.commit-once    commit only on this slug's first N worker calls (N is the file's
 #                         content, 1 when empty), none after: a fix round that changed nothing.
@@ -40,7 +40,7 @@
 #   <slug>.no-resolve     a worker dispatched into a merge in progress aborts it instead
 #                         of resolving it, so the branch conflicts again at the merge gate.
 #   <slug>.advance-feature  a worker dispatched into a merge in progress first commits
-#                         src/late.txt to the feature branch in the main checkout (a sibling
+#                         src/late.txt to the feature branch, in its _feature worktree (a sibling
 #                         merging while the conflict dispatch runs), then resolves the merge
 #                         of the earlier tip as usual.
 #   <slug>.exit          exit with this code instead of 0
@@ -232,7 +232,7 @@ if [ "$NOCOMMIT" -eq 0 ]; then
         exit 0
       fi
       if [ -f "$FAKE_DIR/$SLUG.advance-feature" ]; then
-        MAIN="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+        MAIN="$(git worktree list --porcelain | awk '/^worktree /{p=substr($0,10)} /^branch refs\/heads\/feature\//{print p; exit}')"
         mkdir -p "$MAIN/src"
         echo "late" > "$MAIN/src/late.txt"
         git -C "$MAIN" add src/late.txt

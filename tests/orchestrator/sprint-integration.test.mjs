@@ -717,7 +717,7 @@ test("fix issues whose merged tree differs from their verified tree stay red: th
   // feature branch moves (a sibling commit), so the fix merges to a tree its verify never saw
   // and the integration check must really run again instead of reading cached.
   const bump = [
-    "m=$$(cd $$(git rev-parse --git-common-dir)/.. && pwd)",
+    "m=$$(git worktree list --porcelain | awk '/^worktree /{p=substr($$0,10)} /^branch refs\\/heads\\/feature\\//{print p; exit}')",
     "f=$$(basename $$PWD)",
     "echo x > $$m/bump-$$f.txt",
     "git -C $$m add bump-$$f.txt",
@@ -785,23 +785,23 @@ test("a reviewer that commits to the issue branch is not-run, logged [READONLY-V
   assert.deepEqual(state(root).merged_branches ?? [], []);
 });
 
-test("a feature review that leaves an uncommitted edit in the main checkout is recorded not-run", () => {
+test("a feature review that leaves an uncommitted edit in the feature worktree is recorded not-run", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   fake(root, "feature.misbehave", "edit");
   const { r } = commandLines(root);
-  assert.match(traceLog(root), /\[READONLY-VIOLATION\] feature: changed uncommitted changes in the main checkout/, `${r.stdout}\n${r.stderr}`);
+  assert.match(traceLog(root), /\[READONLY-VIOLATION\] feature: changed uncommitted changes in the feature worktree/, `${r.stdout}\n${r.stderr}`);
   assert.match(traceLog(root), /FEATURE-REVIEW: feature not run/);
 });
 
-test("a triage that edits the main checkout is not-run with the same log line", () => {
+test("a triage that moves the issue branch is not-run with the same log line", () => {
   const root = fixtureRepo();
   addIssue(root, "01-alpha.md");
   // A real verify failure (the worker commits; the check is red) routes to triage.
   writeFileSync(join(root, "Makefile"), "test:\n\t@echo boom && exit 1\nlint:\n\t@echo ok\ntypecheck:\n\t@echo ok\n");
   sh("git", ["-C", root, "add", "-A"]);
   sh("git", ["-C", root, "commit", "-q", "-m", "make test always fail"]);
-  fake(root, "alpha.misbehave", "edit");
+  fake(root, "alpha.misbehave", "commit");
   const { r } = commandLines(root, ["--max-rounds", "1"]);
   assert.match(traceLog(root), /\[READONLY-VIOLATION\] triage alpha/, `${r.stdout}\n${r.stderr}`);
 });

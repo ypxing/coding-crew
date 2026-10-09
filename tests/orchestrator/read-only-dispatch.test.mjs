@@ -55,13 +55,30 @@ test("a reviewer that switches the main checkout's branch at the same commit is 
   assert.match(r.violation ?? "", /HEAD/);
 });
 
-test("a main-checkout edit is a violation even when another worker's effect ran meanwhile", async (t) => {
+test("a feature-worktree edit is a violation even when another worker's effect ran meanwhile", async (t) => {
   const { main, ctx, effects } = fixture(t);
   const r = await readOnlyDispatch(ctx, ALPHA, async () => {
     effects.noteRefActivity("bash", ["/x/merge-branches.sh"], main);
     writeFileSync(join(main, "file.txt"), "x");
   });
-  assert.match(r.violation ?? "", /uncommitted changes in the main checkout/);
+  assert.match(r.violation ?? "", /uncommitted changes in the feature worktree/);
+});
+
+test("with a _feature worktree, an edit to the main checkout is not a violation and a merge there is not blamed", async (t) => {
+  const { root, main, git, commit, ctx, effects } = fixture(t);
+  git(["branch", "-m", "main"]);
+  const feature = join(root, "_feature");
+  git(["worktree", "add", "-q", "-b", "feature/demo", feature]);
+  effects.featureRoot = feature;
+  const edited = await readOnlyDispatch(ctx, ALPHA, async () => writeFileSync(join(main, "file.txt"), "user edit"));
+  assert.equal(edited.violation, undefined);
+  const merged = await readOnlyDispatch(ctx, ALPHA, async () => {
+    effects.noteRefActivity("bash", ["/x/merge-branches.sh"], feature);
+    commit(feature);
+  });
+  assert.equal(merged.violation, undefined);
+  const dirtied = await readOnlyDispatch(ctx, ALPHA, async () => writeFileSync(join(feature, "file.txt"), "x"));
+  assert.match(dirtied.violation ?? "", /uncommitted changes in the feature worktree/);
 });
 
 test("a violation still hands back the dispatch's result, so its cost is recorded", async (t) => {

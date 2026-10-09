@@ -187,6 +187,19 @@ test("ensurePaneWorkspace (herdr) creates a workspace and opens a log tab that t
   assert.deepEqual(effects._calls.at(-1), ["herdr", "pane", "run", "w1:plog", "tail", "-f", logFile]);
 });
 
+test("ensurePaneWorkspace (herdr) opens the _feature worktree as the sprint workspace", async () => {
+  const { root } = fixture();
+  const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w1" } } })], { mainRoot: root });
+  effects.featureRoot = join(root, ".scratch/worktrees/crew/alpha/_feature");
+
+  assert.equal(await ensurePaneWorkspace(effects, { featureSlug: "alpha" }), "w1");
+
+  const open = effects._calls[0];
+  assert.deepEqual(open.slice(0, 4), ["herdr", "worktree", "open", "--path"]);
+  assert.equal(open[4], effects.featureRoot);
+  assert.equal(open[open.indexOf("--label") + 1], "alpha");
+});
+
 test("ensurePaneWorkspace (herdr) never opens a log tab when no logFile is given", async () => {
   const { root } = fixture();
   const effects = fakeHerdrEffects([json({ result: { workspace: { workspace_id: "w1" } } })], { mainRoot: root });
