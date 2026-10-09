@@ -70,6 +70,9 @@ HOME/.agents/skills/dep-install/scripts/manifest-fingerprint.sh exec=1
 HOME/.agents/skills/dep-install/scripts/python-install-cmd.sh exec=1
 HOME/.agents/skills/dep-install/scripts/resolve-mode.sh exec=1
 HOME/.agents/skills/dep-install/scripts/run.sh exec=0
+HOME/.agents/skills/dep-install/scripts/shim/ /
+HOME/.agents/skills/dep-install/scripts/shim/docker exec=1
+HOME/.agents/skills/dep-install/scripts/shim/docker-compose exec=1
 HOME/.agents/skills/domain-modeling/ /
 HOME/.agents/skills/domain-modeling/SKILL.md exec=0 unrendered=0
 HOME/.agents/skills/domain-modeling/references/ /
@@ -185,6 +188,9 @@ HOME/.coding-crew/dep-install/scripts/manifest-fingerprint.sh exec=1
 HOME/.coding-crew/dep-install/scripts/python-install-cmd.sh exec=1
 HOME/.coding-crew/dep-install/scripts/resolve-mode.sh exec=1
 HOME/.coding-crew/dep-install/scripts/run.sh exec=1
+HOME/.coding-crew/dep-install/scripts/shim/ /
+HOME/.coding-crew/dep-install/scripts/shim/docker exec=1
+HOME/.coding-crew/dep-install/scripts/shim/docker-compose exec=1
 HOME/.coding-crew/manifest.json 1ed3c456134a100a8b26c3512a4a9f2c4d00dc8d
 HOME/.coding-crew/skills/ /
 HOME/.coding-crew/skills/_shared/ /

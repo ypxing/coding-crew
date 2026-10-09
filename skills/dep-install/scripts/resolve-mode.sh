@@ -21,10 +21,11 @@
 # Mode, first match wins:
 #   1. git config --local agent.install-mode (docker|host) — the explicit, documented override
 #   2. $MAIN_ROOT/.coding-crew/dev-commands.json's "install_mode" — the project's cached verdict
-#   3. $MAIN_ROOT/docker-compose.override.yml exists — a docker install already ran here
-#   4. detect-mode.sh's Makefile dry-run. --no-heuristic skips it and reads as host: run.sh's
+#   3. detect-mode.sh's Makefile dry-run. --no-heuristic skips it and reads as host: run.sh's
 #      per-command caller cannot afford a `make -n` sweep each time, and by the time any check
-#      runs, a docker verdict that matters is already on disk as rung 1, 2 or 3.
+#      runs, a docker verdict that matters is already on disk as rung 1 or 2.
+# A docker-compose.override.yml in the repo is never a signal: it is usually a project's own, and
+# crew's override lives in the git dir.
 #
 # ACTION:
 #   none        --deps is an outcome ensure-deps.sh reports when the deps are already in place
@@ -95,7 +96,6 @@ _cached() {
 MODE="$(git -C "$PROJECT_ROOT" config --local agent.install-mode 2>/dev/null || true)"
 case "$MODE" in docker|host) : ;; *) MODE="$(_cached install_mode)" ;; esac
 case "$MODE" in docker|host) : ;; *) MODE="" ;; esac
-[ -n "$MODE" ] || { [ -f "$MAIN_ROOT/docker-compose.override.yml" ] && MODE=docker; }
 if [ -z "$MODE" ] && [ "$HEURISTIC" -eq 1 ] && [ -f "$SELF_DIR/detect-mode.sh" ]; then
   [ "$(MAIN_ROOT="$MAIN_ROOT" bash "$SELF_DIR/detect-mode.sh" --project-root "$PROJECT_ROOT" 2>/dev/null)" = USE_DOCKER ] && MODE=docker
 fi

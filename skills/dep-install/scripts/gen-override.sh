@@ -1,49 +1,36 @@
 #!/usr/bin/env bash
-# Generate docker-compose.override.yml deterministically from the project's manifest files.
+# Generate this worktree's crew compose override deterministically from the project's manifest files.
 #
 # Usage:
 #   bash scripts/gen-override.sh --project-root /path/to/worktree --main-root /path/to/main
 #
 # Options:
 #   --project-root   Absolute path to the worktree (where manifest files live)
-#   --main-root      Absolute path to the main checkout (where override file is written)
+#   --main-root      Absolute path to the main checkout (the project name and volume names key off it)
 #   --sandbox        Add proxy env vars + CA bundle. Default: read IS_SANDBOX env var.
 #   --dry-run        Print generated YAML to stdout instead of writing the file.
 #   --query <field>  Print one detected fact and exit, instead of writing the override.
 #                    <field> is one of: services | ecosystem | container-src | manifest-dirs |
-#                    platform | project-name | git-env | vendor-paths
+#                    platform | project-name | vendor-paths
 #                    Lets a caller that needs to *run* an install (not just generate the
 #                    override) reuse this script's own detection instead of re-parsing the
-#                    compose file and manifests a second time. `git-env` is resolved from
-#                    --project-root, every other field from the shared file's own MAIN_ROOT
-#                    content — see "Git metadata mount" below for why that one is different.
-#                    `vendor-paths` is the container path of each named dep volume, one per line
-#                    — where an install must have written for the checks to see it.
-#   --link-only      Skip detection and generation entirely; just (re)point
-#                    PROJECT_ROOT/docker-compose.override.yml at the override MAIN_ROOT
-#                    already has. For a caller that knows the shared file was already
-#                    generated elsewhere (ensure-deps.sh's docker-present fast path) and
-#                    only needs *this* worktree linked to it. Errors (exit 2) if MAIN_ROOT
-#                    has no override file yet — there is nothing to link to.
+#                    compose file and manifests a second time. `vendor-paths` is the container
+#                    path of each named dep volume, one per line — where an install must have
+#                    written for the checks to see it.
 #
-# Project name: every `docker compose` invocation in this repo passes this generated
-# override as its *last* `-f` (see docker-install.md, verify-worktree.sh, docker-install.sh),
-# and compose resolves the project name from the last `-f` file's top-level `name:` key when
-# neither `-p` nor COMPOSE_PROJECT_NAME is set. Without that key, compose falls back to the
-# basename of the *first* `-f` file's directory — the worktree's own compose file — so the
-# same volume name (wt_<slug>_...) still ends up siloed per worktree, e.g.
-# "component-with-mock_wt_myproj_nm_root" instead of a single shared "wt_myproj_nm_root".
-# Emitting `name:` here, keyed off MAIN_ROOT (not the worktree), is what actually makes the
-# named volumes shared across every worktree — the volume name prefix alone does not.
+# Where it is written: <PROJECT_ROOT's git dir>/crew-compose.override.yml, i.e.
+#   $(git -C <project-root> rev-parse --path-format=absolute --git-dir)/crew-compose.override.yml
+# A linked worktree's lands in .git/worktrees/<name>/ and goes away with the worktree; the main
+# checkout's lands in .git/. Nothing named docker-compose.override.yml is written or linked into
+# the repo, so a project's own committed one is never touched. The shim (shim/docker) adds this
+# file as the last `-f` of every `docker compose` call on PATH; nothing else needs to name it.
 #
-# Worktree symlink: when PROJECT_ROOT differs from MAIN_ROOT, the file written at MAIN_ROOT
-# is also symlinked to PROJECT_ROOT/docker-compose.override.yml (falling back to a plain
-# copy where symlink privilege is unavailable — see `_link_override` below). Every mechanical
-# caller still passes the file's absolute MAIN_ROOT path via an explicit second `-f` regardless
-# of this symlink — that stays the correct, cwd-independent way to invoke it. The symlink exists
-# only so a bare `docker compose run` typed with no `-f` at all still picks the override up
-# via compose's own same-directory discovery convention, instead of silently running without
-# it.
+# Project name: the generated file carries a top-level `name:`. Compose resolves the project name
+# from the last `-f` file's `name:` key when neither `-p` nor COMPOSE_PROJECT_NAME is set, and the
+# shim makes this file the last one. Without that key compose falls back to the basename of the
+# *first* `-f` file's directory — the worktree's own compose file — so the same volume name
+# (wt_<slug>_...) would end up siloed per worktree, e.g. "component-with-mock_wt_myproj_nm_root"
+# instead of a single shared "wt_myproj_nm_root".
 #
 # Platform: the project's own compose file (or the image it builds/pulls) may pin
 # `platform: linux/amd64`. On an arm64 host that forces every `docker compose run` — install
@@ -74,50 +61,20 @@
 # `.git/hooks` is never touched. Both dirs are created on the host first when missing: docker
 # cannot create a mount point inside a read-only mount.
 #
-# Split in two, deliberately, because this override file is generated once and *shared* across
-# every worktree of MAIN_ROOT (see "Worktree symlink" above) while the mount target a specific
-# container needs — `GIT_DIR=/git-common/worktrees/<name>` — is different for every worktree.
-# Baking one worktree's `GIT_DIR` into the shared file would be wrong for every other worktree
-# reading the same file, and racy besides: concurrent worktrees regenerating it would clobber
-# each other's value.
-#   - The mount itself (read-only `MAIN_ROOT/.git` bind + writable `hooks/`/`info/` overlays) is
-#     the same for every worktree, since it only ever depends on MAIN_ROOT — safe to bake into
-#     the shared file unconditionally.
-#   - The env vars that point a specific container at a specific worktree's subdirectory under
-#     that mount are never *valued* in the file — only their names, as bare `environment:`
-#     passthrough entries (the same convention as the env-passthrough vars below them), so nothing
-#     worktree-specific is baked into the one file every worktree shares. A caller resolves the
-#     actual values fresh, per invocation, via `--query git-env` (see below) and either passes
-#     them as `docker compose run -e KEY=VALUE` flags on a compose call it makes directly, or
-#     `export`s them into its own process env first when it can't — see "Nested docker calls"
-#     below. Cheap, stateless, and safe under concurrency since nothing is written to disk.
-#
-# `--query git-env`: prints, one `KEY=VALUE` per line, the env vars a caller should pass (or
-# export) for *this* `--project-root` — empty output when `--project-root` is not a linked
-# worktree (a plain checkout's `.git` is already a real, writable directory reachable through the
-# project's normal bind mount; pointing GIT_DIR there would only take away write access that
-# already worked), or when `CREW_GIT_MOUNT=off`:
+# The file is per worktree, so for a *linked* worktree it also carries that worktree's own
+# `environment:` values, pointing git in the container at its subdirectory under the mount:
 #   GIT_COMMON_DIR=/git-common
 #   GIT_DIR=/git-common/worktrees/<name>
+# A plain (non-worktree) checkout gets neither: its `.git` is already a real, writable directory
+# reachable through the project's normal bind mount, and pointing GIT_DIR there would only take
+# away write access that already worked.
 # Never GIT_CONFIG_COUNT/GIT_CONFIG_KEY_<n>/GIT_CONFIG_VALUE_<n>: that is a numbered list, and a
 # bare passthrough can only name a fixed set of its indices. A host shell with GIT_CONFIG_COUNT=2
 # (credential wrappers, IDE terminals and CI runners set these) would hand the container a count
 # with no matching KEY_1, and every git command in it aborts with "missing config key". The host's
 # git config points at host helpers and paths anyway, so none of it belongs in a container.
-#   CREW_GIT_MOUNT=on   (default) mount in the shared file; --query git-env resolves per-worktree
-#   CREW_GIT_MOUNT=off  never mount, and --query git-env always prints nothing
-#
-# Nested docker calls: a project's own Makefile/script recipe can invoke `docker compose run`
-# itself (detect-docker-nesting.sh exists to spot this). A caller that finds one of those runs it
-# directly on the host — nesting it inside another `docker compose run` would need a docker CLI
-# that container doesn't have — so there is no compose invocation of the caller's own to attach
-# `-e` flags to. The mount above still reaches that nested container for free, since compose
-# auto-discovers `docker-compose.override.yml` sitting next to the project's own compose file
-# (see "Worktree symlink"), but the *values* would not without the bare passthrough entries
-# emitted below: compose reads a bare `environment: - GIT_DIR` entry from whatever process
-# actually invokes `docker compose`, so a caller that `export`s the same `--query git-env` output
-# into its own shell before running the nested command is enough for the values to reach the
-# inner container too, with no `-e` flag involved at all.
+#   CREW_GIT_MOUNT=on   (default) mount, and bake the worktree's GIT_* values
+#   CREW_GIT_MOUNT=off  never mount, no GIT_* entries
 #
 # Exit codes:
 #   0  success
@@ -138,7 +95,6 @@ DOCKER_PLATFORM="${CREW_DOCKER_PLATFORM:-host}"
 GIT_MOUNT="${CREW_GIT_MOUNT:-on}"
 DRY_RUN=0
 QUERY=""
-LINK_ONLY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -147,7 +103,6 @@ while [[ $# -gt 0 ]]; do
     --sandbox)      SANDBOX=1;         shift   ;;
     --dry-run)      DRY_RUN=1;         shift   ;;
     --query)        QUERY="$2";        shift 2 ;;
-    --link-only)    LINK_ONLY=1;       shift   ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -163,9 +118,9 @@ if [[ -z "$PROJECT_ROOT" || -z "$MAIN_ROOT" ]]; then
 fi
 
 case "$QUERY" in
-  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name|git-env|vendor-paths) ;;
+  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name|vendor-paths) ;;
   *)
-    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name, git-env, vendor-paths" >&2
+    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name, vendor-paths" >&2
     exit 1
     ;;
 esac
@@ -188,61 +143,14 @@ if [[ ! -d "$MAIN_ROOT" ]]; then
   exit 1
 fi
 
-# _link_override — (re)point PROJECT_ROOT/docker-compose.override.yml at MAIN_ROOT's
-# generated file. Shared by --link-only and the normal generation path below, both of which
-# need the exact same "leave a live entry alone, clear a dangling one" rule (see the
-# "Worktree symlink" header comment) rather than two copies of it drifting apart.
-_link_override() {
-  # Compared by resolved path, not `-ef`: MSYS's NTFS emulation does not reliably support
-  # the device/inode comparison `-ef` needs, on Windows.
-  [[ "$(cd "$PROJECT_ROOT" && pwd -P)" == "$(cd "$MAIN_ROOT" && pwd -P)" ]] && return 0
-  local override_link="$PROJECT_ROOT/docker-compose.override.yml"
-  if [[ -L "$override_link" && ! -e "$override_link" ]]; then
-    rm -f "$override_link"
-  fi
-  if [[ ! -e "$override_link" ]]; then
-    ln -s "$MAIN_ROOT/docker-compose.override.yml" "$override_link" 2>/dev/null || true
-    if [[ -L "$override_link" ]]; then
-      echo "Linked: $override_link -> $MAIN_ROOT/docker-compose.override.yml"
-    else
-      # No symlink privilege (the default on Windows without Developer Mode/elevation):
-      # `ln -s` either errored, or MSYS's own undocumented fallback silently substituted a
-      # hardlink/copy. Force a clean, known-correct copy rather than trust that fallback —
-      # the same tradeoff `.env` already accepts via COPY_ENTRIES in orchestrator/lib/worktree.mjs:
-      # correct content now, just doesn't auto-follow a later MAIN_ROOT regeneration.
-      rm -f "$override_link"
-      cp "$MAIN_ROOT/docker-compose.override.yml" "$override_link"
-      echo "Copied: $override_link (from $MAIN_ROOT/docker-compose.override.yml; symlink unavailable)"
-    fi
-  fi
-}
-
-if [[ "$LINK_ONLY" -eq 1 ]]; then
-  if [[ ! -f "$MAIN_ROOT/docker-compose.override.yml" ]]; then
-    echo "Error: $MAIN_ROOT/docker-compose.override.yml does not exist yet — nothing to link" >&2
-    exit 2
-  fi
-  _link_override
-  exit 0
-fi
-
-# --query git-env — resolved from PROJECT_ROOT specifically (never MAIN_ROOT), independent of
-# the shared file's own generation/cache state below. See the "Git metadata mount" header
-# comment for why this is never written to the shared file itself.
-if [[ "$QUERY" == "git-env" ]]; then
-  if [[ "$GIT_MOUNT" == "on" ]]; then
-    _common="$(git -C "$MAIN_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-    if [[ -n "$_common" && -d "$_common" ]]; then
-      _gitdir="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
-      case "$_gitdir" in
-        "$_common"/worktrees/*)
-          echo "GIT_COMMON_DIR=/git-common"
-          echo "GIT_DIR=/git-common/${_gitdir#"$_common"/}"
-          ;;
-      esac
-    fi
-  fi
-  exit 0
+# This worktree's override path and git-env entries, resolved from PROJECT_ROOT before the
+# sparse-worktree fallback below can swap PROJECT_ROOT for MAIN_ROOT.
+GIT_DIR_ABS="$(git -C "$PROJECT_ROOT" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)"
+OVERRIDE_PATH=""
+[[ -z "$GIT_DIR_ABS" ]] || OVERRIDE_PATH="$GIT_DIR_ABS/crew-compose.override.yml"
+if [[ -z "$OVERRIDE_PATH" && -z "$QUERY" && "$DRY_RUN" -eq 0 ]]; then
+  echo "Error: $PROJECT_ROOT is not a git checkout — the override is written to its git dir" >&2
+  exit 1
 fi
 
 # ---------------------------------------------------------------------------
@@ -393,16 +301,22 @@ case "$DOCKER_PLATFORM" in
 esac
 
 # ---------------------------------------------------------------------------
-# Resolve the git-common mount for the shared file (see CREW_GIT_MOUNT in the header
-# comment) — MAIN_ROOT-only, deliberately never PROJECT_ROOT: this is baked into the one
-# file every worktree shares, so its content must be the same regardless of which
-# worktree's own gen-override.sh call happens to (re)generate it.
+# Resolve the git-common mount (see CREW_GIT_MOUNT in the header comment), and, for a linked
+# worktree, the GIT_* values pointing a container at this worktree's own git dir under it.
 # ---------------------------------------------------------------------------
 
 GIT_COMMON_DIR_ABS=""
 if [[ "$GIT_MOUNT" == "on" ]]; then
   GIT_COMMON_DIR_ABS="$(git -C "$MAIN_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
   [[ -n "$GIT_COMMON_DIR_ABS" && -d "$GIT_COMMON_DIR_ABS" ]] || GIT_COMMON_DIR_ABS=""
+fi
+GIT_ENV_LINES=()
+if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
+  case "$GIT_DIR_ABS" in
+    "$GIT_COMMON_DIR_ABS"/worktrees/*)
+      GIT_ENV_LINES=("GIT_COMMON_DIR=/git-common" "GIT_DIR=/git-common/${GIT_DIR_ABS#"$GIT_COMMON_DIR_ABS"/}")
+      ;;
+  esac
 fi
 # Mount points for the writable overlays — see "Git metadata mount".
 if [[ -n "$GIT_COMMON_DIR_ABS" && "$DRY_RUN" -eq 0 ]]; then
@@ -513,20 +427,14 @@ generate_yaml() {
     if [[ -n "$RESOLVED_PLATFORM" ]]; then
       echo "    platform: ${RESOLVED_PLATFORM}"
     fi
-    if [[ ${#ECO_ENV_PASSTHROUGH[@]} -gt 0 || -n "$GIT_COMMON_DIR_ABS" ]]; then
+    if [[ ${#ECO_ENV_PASSTHROUGH[@]} -gt 0 || ${#GIT_ENV_LINES[@]} -gt 0 ]]; then
       echo "    environment:"
       for var in "${ECO_ENV_PASSTHROUGH[@]}"; do
         echo "      - ${var}"
       done
-      if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
-        # Bare passthrough — no value here on purpose (see "Nested docker calls" above):
-        # compose reads these from whatever process actually invokes `docker compose run`,
-        # never from this file, so the same names work whether that invocation is one of
-        # this repo's own (which also still passes them as explicit `-e KEY=VALUE`) or a
-        # project's own nested one (which only gets them if its caller exported them first).
-        echo "      - GIT_COMMON_DIR"
-        echo "      - GIT_DIR"
-      fi
+      for var in "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}"; do
+        echo "      - ${var}"
+      done
     fi
     echo "    volumes:"
     for i in "${!VOL_NAMES[@]}"; do
@@ -558,39 +466,20 @@ generate_yaml() {
 if [[ "$DRY_RUN" -eq 1 ]]; then
   generate_yaml
 else
-  generate_yaml > "$MAIN_ROOT/docker-compose.override.yml"
-  echo "Written: $MAIN_ROOT/docker-compose.override.yml"
+  # Written beside the final name and renamed in: a compose call reading it never sees half a file.
+  generate_yaml > "$OVERRIDE_PATH.tmp.$$"
+  mv -f "$OVERRIDE_PATH.tmp.$$" "$OVERRIDE_PATH"
+  echo "Written: $OVERRIDE_PATH"
   echo "  project:   $PROJECT_NAME (pins the compose project name so volumes are shared across worktrees)"
   echo "  ecosystem: $ECO_NAME"
   echo "  services:  $(IFS=', '; echo "${SERVICES[*]}")"
   echo "  sandbox:   $([[ "$SANDBOX" == "1" ]] && echo true || echo false)"
   echo "  platform:  ${RESOLVED_PLATFORM:-unset, project pin unchanged}"
   if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
-    echo "  git:       MAIN_ROOT's .git mounted read-only at /git-common (hooks/ and info/ writable via wt_${PROJ_SLUG}_git_hooks and wt_${PROJ_SLUG}_git_info) — a caller in a linked worktree still needs its own 'gen-override.sh --query git-env' for the per-worktree GIT_DIR/GIT_COMMON_DIR env vars"
+    echo "  git:       MAIN_ROOT's .git mounted read-only at /git-common (hooks/ and info/ writable via wt_${PROJ_SLUG}_git_hooks and wt_${PROJ_SLUG}_git_info)${GIT_ENV_LINES[0]:+; GIT_DIR=${GIT_ENV_LINES[1]#GIT_DIR=}}"
   elif [[ "$GIT_MOUNT" == "off" ]]; then
     echo "  git:       not mounted (CREW_GIT_MOUNT=off)"
   else
     echo "  git:       not mounted (no git checkout detected at MAIN_ROOT)"
   fi
-
-  # A worktree (PROJECT_ROOT distinct from MAIN_ROOT) also gets its own symlink to this
-  # single generated file. Every mechanical caller (docker-install.sh, verify-worktree.sh)
-  # and docker-install.md's own instructions already pass this file's absolute MAIN_ROOT
-  # path via an explicit second `-f` on every command, which is correct regardless of cwd
-  # and stays that way — this symlink does not replace it. It is a safety net for the one
-  # case that contract can't cover: a bare `docker compose run` a worker types without any
-  # `-f` at all silently drops the override (env-passthrough vars, platform pin, named volumes)
-  # instead of failing loudly. Compose's own same-directory `docker-compose.override.yml`
-  # discovery convention only fires when the file actually sits next to `docker-compose.yml`
-  # in PROJECT_ROOT, so it needs a real (or symlinked) presence there, not just resolvability
-  # via some other path. `-ef` compares resolved identity, not string equality, so the one
-  # MAIN_ROOT-only call (PROJECT_ROOT == MAIN_ROOT, before any worktree exists) is a no-op
-  # here rather than linking the file to itself. Mirrors ensure-env.sh's own `.env` link,
-  # including its dangling-symlink hazard: `-e` follows symlinks and reports false for a
-  # stale one too (e.g. a worktree reused after this script last ran against a different
-  # MAIN_ROOT), so that case is cleared and relinked rather than left broken. A live
-  # entry — a real file, or a symlink that still resolves — is left alone: a project that
-  # commits its own docker-compose.override.yml at PROJECT_ROOT keeps it untouched, the same
-  # "leave a live entry" rule applyWorktreeInclude uses for `.worktreeinclude`.
-  _link_override
 fi

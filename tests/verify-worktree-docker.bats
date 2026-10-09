@@ -2,19 +2,17 @@
 
 # verify-worktree.sh — docker-mode verification.
 #
-# dep-install's docker-install.md tells a worker "every subsequent docker compose command
-# must pass both -f flags — including test, lint and type-check runs", because
 # gen-override.sh mounts a *named volume* over the ecosystem's dependency directory at a
 # container-side subpath, not a host bind-mount: content written there never exists on the
-# host filesystem, in the worktree or in MAIN_ROOT. A worker gets that instruction from the
-# skill; this gate cannot read a skill, so before this it ran every discovered command
-# directly on the host — looking at a worktree whose node_modules never existed outside
-# the container, and failing every check that needed it.
+# host filesystem, in the worktree or in MAIN_ROOT. Every check therefore has to run inside
+# `docker compose run`, with the worktree's crew override loaded — which the `docker` shim run.sh
+# puts on PATH adds to the call. This gate cannot read a skill, so it asks run.sh where each
+# command goes instead of running it directly on the host.
 #
-# `docker` is stubbed on PATH throughout: these tests pin the command construction (both
-# -f flags, the service), the fallback-to-host safety net, and the docker-in-docker guard
-# (a Makefile recipe that already manages docker itself runs on the host, unwrapped) —
-# not real docker behaviour.
+# `docker` is stubbed on PATH throughout (behind the shim): these tests pin the command
+# construction (the service, the override as the last -f), the fallback-to-host safety net, and
+# the docker-in-docker guard (a Makefile recipe that already manages docker itself runs on the
+# host, not nested) — not real docker behaviour.
 
 VERIFY_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/verify-worktree.sh"
 
@@ -95,12 +93,12 @@ YML
 JSON
   echo '{}' > "$TEMP_DIR/package-lock.json"
   git -C "$TEMP_DIR" config --local agent.install-mode docker
-  echo "services: {}" > "$TEMP_DIR/docker-compose.override.yml"
+  echo "services: {}" > "$TEMP_DIR/.git/crew-compose.override.yml"
 }
 
 # ─── routing through docker ───────────────────────────────────────────────────
 
-@test "docker mode: routes TEST through docker compose with both -f flags and the detected service" {
+@test "docker mode: routes TEST through docker compose, the shim adding the override last, with the detected service" {
   _docker_ready
   cat > "$TEMP_DIR/Makefile" <<EOF
 test:
@@ -127,7 +125,7 @@ EOF
   [ "${args[1]}" = "-f" ]
   [ "${args[2]}" = "$REAL_DIR/docker-compose.yml" ]
   [ "${args[3]}" = "-f" ]
-  [ "${args[4]}" = "$REAL_DIR/docker-compose.override.yml" ]
+  [ "${args[4]}" = "$REAL_DIR/.git/crew-compose.override.yml" ]
   [ "${args[5]}" = "run" ]
   [ "${args[6]}" = "--rm" ]
   [ "${args[7]}" = "app" ]
@@ -161,15 +159,18 @@ EOF
   [[ "$output" == *"TEST: running on host"* ]]
   [[ "$output" == *"recipe already manages docker itself"* ]]
   [[ "$output" == *"TEST: pass"* ]]
-  # the stub *did* run — make's own recipe called it — but with the recipe's own bare
-  # args, never wrapped in an outer `-f ... -f ... run --rm app sh -c "..."`.
+  # the stub *did* run — make's own recipe called it — with the recipe's own args, never wrapped
+  # in an outer `run --rm app sh -c "..."`; the shim made its compose file explicit and added
+  # the override last, so the recipe's call mounts the dependency volumes too.
   [ -f "$DOCKER_LOG" ]
   mapfile -t args < "$DOCKER_LOG"
   [ "${args[0]}" = "compose" ]
-  [ "${args[1]}" = "run" ]
-  [ "${args[2]}" = "--rm" ]
-  [ "${args[3]}" = "app" ]
-  [ "${args[4]}" = "pytest" ]
+  [ "${args[3]}" = "-f" ]
+  [ "${args[4]}" = "$(cd "$TEMP_DIR" && pwd -P)/.git/crew-compose.override.yml" ]
+  [ "${args[5]}" = "run" ]
+  [ "${args[6]}" = "--rm" ]
+  [ "${args[7]}" = "app" ]
+  [ "${args[8]}" = "pytest" ]
 }
 
 @test "docker mode: a Makefile target whose recipe invokes docker through a variable also runs on the host" {
@@ -190,10 +191,9 @@ EOF
   [ -f "$DOCKER_LOG" ]
   mapfile -t args < "$DOCKER_LOG"
   [ "${args[0]}" = "compose" ]
-  [ "${args[1]}" = "run" ]
-  [ "${args[2]}" = "--rm" ]
-  [ "${args[3]}" = "app" ]
-  [ "${args[4]}" = "pytest" ]
+  [ "${args[5]}" = "run" ]
+  [ "${args[7]}" = "app" ]
+  [ "${args[8]}" = "pytest" ]
 }
 
 @test "docker mode: a failing check inside the container is TEST: fail, exit non-zero, no receipt" {
@@ -224,7 +224,7 @@ JSON
   echo '{}' > "$TEMP_DIR/package-lock.json"
   git -C "$TEMP_DIR" config --local agent.install-mode docker
   git -C "$TEMP_DIR" config --local agent.install-service worker
-  echo "services: {}" > "$TEMP_DIR/docker-compose.override.yml"
+  echo "services: {}" > "$TEMP_DIR/.git/crew-compose.override.yml"
   cat > "$TEMP_DIR/Makefile" <<EOF
 test:
 	@true
@@ -249,7 +249,7 @@ YML
 JSON
   echo '{}' > "$TEMP_DIR/package-lock.json"
   git -C "$TEMP_DIR" config --local agent.install-mode docker
-  echo "services: {}" > "$TEMP_DIR/docker-compose.override.yml"
+  echo "services: {}" > "$TEMP_DIR/.git/crew-compose.override.yml"
   mkdir -p "$TEMP_DIR/.coding-crew"
   printf '{"docker_service": "worker"}\n' > "$TEMP_DIR/.coding-crew/dev-commands.json"
   cat > "$TEMP_DIR/Makefile" <<EOF
@@ -277,7 +277,7 @@ EOF
   [ ! -f "$DOCKER_LOG" ]
 }
 
-@test "falls back to host when docker-compose.override.yml has not been written yet" {
+@test "falls back to host when the crew compose override has not been written yet" {
   cat > "$TEMP_DIR/docker-compose.yml" <<'YML'
 services:
   app:
@@ -288,7 +288,7 @@ YML
 JSON
   echo '{}' > "$TEMP_DIR/package-lock.json"
   git -C "$TEMP_DIR" config --local agent.install-mode docker
-  # no docker-compose.override.yml written — ensure-deps.sh's MAIN_ROOT call has not run yet
+  # no crew-compose.override.yml written — ensure-deps.sh's MAIN_ROOT call has not run yet
   cat > "$TEMP_DIR/Makefile" <<EOF
 test:
 	@true

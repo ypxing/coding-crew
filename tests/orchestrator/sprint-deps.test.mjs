@@ -528,3 +528,19 @@ test("recordDispatchCost keeps a cost-unknown dispatch's context size without a 
   sprint.recordDispatchCost({ costUsd: 1, contextTokens: 7 }, who);
   assert.ok(!calls[2].includes("--context-tokens"));
 });
+
+test("childEnv() puts the dep-install shim dir first on PATH, ahead of the inherited PATH", () => {
+  const sprint = new Sprint({ mainRoot: "/fake/root", script: (n) => n }, { CREW_INSTALL_DIR: "/opt/proj/.coding-crew" });
+  const prev = process.env.PATH;
+  process.env.PATH = "/usr/local/bin:/usr/bin";
+  try {
+    assert.equal(sprint.childEnv().PATH, "/opt/proj/.coding-crew/dep-install/scripts/shim:/usr/local/bin:/usr/bin");
+  } finally {
+    process.env.PATH = prev;
+  }
+});
+
+test("childEnv() leaves PATH alone for a hand-made sprint.env with no install dir", () => {
+  const sprint = new Sprint({ mainRoot: "/fake/root", script: (n) => n }, {});
+  assert.equal("PATH" in sprint.childEnv(), false);
+});

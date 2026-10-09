@@ -313,7 +313,7 @@ fi
 # MAIN_ROOT (predating .worktreeinclude excluding it, or a contributor's own local
 # install). The presence guard below exists to say "nothing to do", which is true on the
 # host path but not here: a host-side node_modules being present says nothing about
-# whether the docker volume — and docker-compose.override.yml — have ever been generated.
+# whether the docker volume — and the crew compose override — have ever been generated.
 # Without this check, that stale host copy makes the guard return `present` and the
 # MAIN_ROOT call never reaches step 4 at all, so the override is never written and every
 # worktree this sprint is left reporting bare `docker` (deferred) instead of
@@ -471,13 +471,21 @@ if [ "$MODE" = "USE_DOCKER" ]; then
       DETECTED_SERVICE="$(bash "$DEP_SCRIPTS/detect-service.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" 2>/dev/null || true)"
     _merge_mode_cache docker "$DETECTED_SERVICE"
 
+    # Remove the shared override an older install generated at the repo root. Compose would
+    # still auto-load it for a bare call, with volume names this version no longer uses. Only a
+    # generated one goes — its volume keys are named wt_<project>_…; a project's own committed
+    # docker-compose.override.yml never has one and is left alone.
+    _proj_slug="$(basename "$MAIN_ROOT_EFFECTIVE" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')"
+    if [ -f "$MAIN_ROOT_EFFECTIVE/docker-compose.override.yml" ] &&
+       grep -Eq "^[[:space:]]+wt_${_proj_slug}_[A-Za-z0-9_]*:[[:space:]]*\$" "$MAIN_ROOT_EFFECTIVE/docker-compose.override.yml" 2>/dev/null; then
+      rm -f "$MAIN_ROOT_EFFECTIVE/docker-compose.override.yml"
+    fi
+
     # Generate the override as soon as the cache says docker, independent of whatever
     # docker-install.sh decides below — it can exit 2 for reasons that have nothing to do
     # with whether an override CAN be generated (no lockfile it recognises in a manifest
-    # dir, an --install-cmd override that itself invokes docker), which would otherwise
-    # leave the cache and Step 0's fast path (dep-install/SKILL.md) disagreeing about
-    # whether docker-compose.override.yml exists. A real compose-file/ecosystem failure
-    # (no compose file, no supported ecosystem) fails this the same way it would fail
+    # dir, an --install-cmd override that itself invokes docker). A real compose-file/ecosystem
+    # failure (no compose file, no supported ecosystem) fails this the same way it would fail
     # docker-install.sh's own attempt, so this is not a second guess — just an earlier one.
     [ -f "$DEP_SCRIPTS/gen-override.sh" ] &&
       bash "$DEP_SCRIPTS/gen-override.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" >/dev/null 2>&1 || true
@@ -489,16 +497,12 @@ if [ "$MODE" = "USE_DOCKER" ]; then
     # already shares — a branch that adds its own new dependency is exactly the
     # "trivial impact" case dep-install's own retry rule already covers reactively
     # (module-not-found → re-run install), so it is left there rather than duplicated.
+    # This worktree's own override (in its git dir) is what makes every run.sh call and every
+    # bare `docker compose` typed here mount the dependency volumes: the docker shim adds it.
+    # Nothing else generates it for a fresh worktree, installed or not, so do it here.
+    [ -f "$DEP_SCRIPTS/gen-override.sh" ] &&
+      bash "$DEP_SCRIPTS/gen-override.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" >/dev/null 2>&1 || true
     if [ -f "$DOCKER_MARKER" ]; then
-      # docker-install.md tells a worker that lands on this fast path to skip straight to
-      # "run install" — it never calls gen-override.sh for this worktree, which is the one
-      # place the worktree's own docker-compose.override.yml symlink gets created. Every
-      # mechanical caller (verify-worktree.sh, docker-install.sh) always passes
-      # $MAIN_ROOT/docker-compose.override.yml explicitly via -f and never needed that
-      # symlink, but a bare `docker compose run` a worker or human types by hand does — so
-      # create it here instead of leaving every fast-path worktree without one.
-      [ -f "$DEP_SCRIPTS/gen-override.sh" ] &&
-        bash "$DEP_SCRIPTS/gen-override.sh" --link-only --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" >/dev/null 2>&1 || true
       _report "docker-present" ok
     fi
     _report "docker"
@@ -585,31 +589,18 @@ trap 'rm -f "$OUT_FILE"' EXIT
 
 if [ -n "$CACHED_INSTALL" ]; then
   # $CACHED_INSTALL is a documented override (step 1b) — it can itself be a Makefile
-  # target whose recipe invokes `docker compose run` (this is host mode overall, so
-  # nothing here nests it inside another container, but the recipe's own nested call
-  # still needs $DIR's GIT_DIR/GIT_COMMON_DIR redirect). Exported, not `-e`,
-  # since there is no `docker compose run` of ours here to attach flags to — the shared
-  # override's bare passthrough entries pick these up from process env instead. See
-  # gen-override.sh's "Nested docker calls" header comment.
-  GIT_ENV_LINES=()
-  if [ -n "$DEP_SCRIPTS" ] && [ -f "$DEP_SCRIPTS/gen-override.sh" ]; then
-    while IFS= read -r _git_env_line; do
-      [ -n "$_git_env_line" ] && GIT_ENV_LINES+=("$_git_env_line")
-    done < <(bash "$DEP_SCRIPTS/gen-override.sh" --project-root "$DIR" --main-root "$MAIN_ROOT_EFFECTIVE" --query git-env 2>/dev/null || true)
-  fi
-
+  # target whose recipe invokes `docker compose run`. This is host mode overall, so no crew
+  # override exists and the docker shim on PATH passes such a call through unchanged.
   # Run in $DIR, not $MAIN_ROOT_EFFECTIVE — this call installs into whichever directory
   # was passed as --dir (a worktree, or the main root itself), the same target
   # host-install.sh would have used.
-  # "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}", not "${GIT_ENV_LINES[@]}": bash < 4.4
-  # (macOS's stock /bin/bash is 3.2) treats an empty array under `set -u` as unbound.
   # Streamed live via tee (see the docker path above for why) — $OUT_FILE still gets the
   # full output for the failure diagnostic below.
   if [ -n "$TIMEOUT_BIN" ]; then
-    "$TIMEOUT_BIN" "$TIMEOUT" env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
+    "$TIMEOUT_BIN" "$TIMEOUT" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" \
       2>&1 | tee "$OUT_FILE"
   else
-    env "${GIT_ENV_LINES[@]+"${GIT_ENV_LINES[@]}"}" bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" 2>&1 | tee "$OUT_FILE"
+    bash -c 'cd "$1" && eval "$2"' _ "$DIR" "$CACHED_INSTALL" 2>&1 | tee "$OUT_FILE"
   fi
   RC=${PIPESTATUS[0]}
   CMD="$CACHED_INSTALL"

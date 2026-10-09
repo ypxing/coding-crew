@@ -89,3 +89,23 @@ fresh_target() {
   [ "$status" -eq 0 ]
   [[ "$output" == "USE_HOST" || "$output" == "USE_DOCKER" ]]
 }
+
+@test "install marks the extensionless shim/docker and shim/docker-compose executable, in the neutral tree and the skill copy" {
+  local target; target=$(fresh_target target-shim)
+  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" claude --skill dep-install
+  [ "$status" -eq 0 ]
+
+  [ -x "$target/.coding-crew/dep-install/scripts/shim/docker" ]
+  [ -x "$target/.coding-crew/dep-install/scripts/shim/docker-compose" ]
+  [ -x "$target/.claude/skills/dep-install/scripts/shim/docker" ]
+  [ -x "$target/.claude/skills/dep-install/scripts/shim/docker-compose" ]
+}
+
+@test "a re-install keeps the shim executable even when the previous copy was not" {
+  local target; target=$(fresh_target target-shim-reinstall)
+  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" pi --skill dep-install
+  chmod -x "$target/.coding-crew/dep-install/scripts/shim/docker"
+  TARGET_REPO="$target" run bash "$REPO_ROOT/install.sh" pi --skill dep-install
+  [ "$status" -eq 0 ]
+  [ -x "$target/.coding-crew/dep-install/scripts/shim/docker" ]
+}
