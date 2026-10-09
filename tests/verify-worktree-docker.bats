@@ -14,6 +14,8 @@
 # the docker-in-docker guard (a Makefile recipe that already manages docker itself runs on the
 # host, not nested) — not real docker behaviour.
 
+load helpers/fake-docker
+
 VERIFY_SCRIPT="$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/crew-afk/scripts/verify-worktree.sh"
 
 setup() {
@@ -338,4 +340,98 @@ EOF
   MAIN_ROOT="$TEMP_DIR" run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
   [ "$status" -eq 0 ]
   [ -f "$DOCKER_LOG" ]
+}
+
+# ─── install-if-missing before the first check ──────────────────────────────
+#
+# The dependency volumes are named by the worktree's lockfile hash, so the checks must run against
+# volumes that were installed for the lockfiles the branch has now. `docker` here is the fake that
+# plays named volumes with temp dirs, running the container's script for real (helpers/fake-docker).
+
+# _fake_docker_ready — a docker-mode worktree with its real override, the volume-playing fake, and
+# a cached `true` as the only check, so what the checks see is the override they are handed
+_fake_docker_ready() {
+  FAKE="$TEMP_DIR/.fake"
+  export FAKE
+  printf '.fake/\n.coding-crew/\n' >> "$TEMP_DIR/.git/info/exclude"
+  install_fake_docker "$STUB" "$FAKE"
+  cat > "$TEMP_DIR/docker-compose.yml" <<'YML'
+services:
+  app:
+    build: .
+    volumes:
+      - .:/opt/app
+YML
+  echo '{"name":"fixture"}' > "$TEMP_DIR/package.json"
+  echo '{"lock":"A"}' > "$TEMP_DIR/package-lock.json"
+  git -C "$TEMP_DIR" config --local agent.install-mode docker
+  mkdir -p "$TEMP_DIR/.coding-crew"
+  printf '{"test": "true", "lint": null, "typecheck": null}\n' > "$TEMP_DIR/.coding-crew/dev-commands.json"
+  bash "$(cd "$(dirname "$BATS_TEST_DIRNAME")" && pwd)/skills/dep-install/scripts/gen-override.sh" \
+    --project-root "$TEMP_DIR" --main-root "$TEMP_DIR" >/dev/null
+}
+
+_volume_names() { grep -o 'name: wt_[A-Za-z0-9_]*' "$TEMP_DIR/.git/crew-compose.override.yml" | sed 's/^name: //'; }
+_installs() { grep -c . "$FAKE/install.calls" || true; }
+
+@test "docker mode: the first check runs only after an install-if-missing, which then costs nothing while the stamp is there" {
+  _fake_docker_ready
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  # the deps check is reported before the first check
+  [[ "$output" == *"DEPS: pass"*"TEST: pass"* ]]
+  [ "$(_installs)" -eq 1 ]
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"DEPS: pass"* ]]
+  [ "$(_installs)" -eq 1 ]
+}
+
+@test "docker mode: after the branch's lockfile changes, the checks see the new-hash volume (B5)" {
+  _fake_docker_ready
+  bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR" >/dev/null
+  before="$(_volume_names)"
+
+  echo '{"lock":"B"}' > "$TEMP_DIR/package-lock.json"
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"TEST: pass"* ]]
+  after="$(_volume_names)"
+  [ -n "$after" ] && [ "$after" != "$before" ]
+  [ "$(_installs)" -eq 2 ]
+  # the install went into the new volume, and the override the check ran with names it
+  [ -f "$FAKE/vols/$after/.crew-stamp" ]
+}
+
+@test "docker mode: an install failure fails the verify as a deps check with the install's tail" {
+  _fake_docker_ready
+  export FAKE_NPM_RC=1
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"DEPS: fail"* ]]
+  [[ "$output" == *"npm ERR! boom"* ]]
+  [[ "$output" == *"Verification: fail"* ]]
+}
+
+@test "docker mode: CREW_DEPS=off skips the install-if-missing" {
+  _fake_docker_ready
+  export CREW_DEPS=off
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"DEPS:"* ]]
+  [ "$(_installs)" -eq 0 ]
+}
+
+@test "host mode: no install-if-missing, no deps check" {
+  cat > "$TEMP_DIR/Makefile" <<MAKE
+test:
+	@true
+MAKE
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"DEPS:"* ]]
 }

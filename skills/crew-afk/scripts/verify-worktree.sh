@@ -684,6 +684,28 @@ _run_category() {
   _exec_and_report "$label" bash -c 'cd "$1" && eval "$2"' _ "$WORKTREE_DIR" "$cmd"
 }
 
+# ─── dependencies, docker mode ───────────────────────────────────────────────
+# The dependency volumes are named by a hash of this worktree's lockfiles, so a branch that changed
+# one since its deps install (a coder adding a package) would have its checks read volumes that
+# were never installed. docker-install.sh is install-if-missing: with the stamp present it costs
+# one container start; with the lockfiles changed it installs into the new-hash volumes first. It
+# also rewrites this worktree's override to name them, which the checks below pick up. A failure
+# fails the verify as a `deps` check, with the install's tail. Exit 2 means there is nothing to
+# install (no compose file or ecosystem it knows), which is not a failure.
+if [ "$DOCKER_MODE" -eq 1 ] && [ "${CREW_DEPS:-on}" != "off" ] && [ "${CREW_DOCKER_INSTALL:-on}" != "off" ] &&
+   [ -f "$_vw_dep_scripts/docker-install.sh" ]; then
+  _vw_di_args=(--project-root "$WORKTREE_DIR" --main-root "${_VW_MAIN_ROOT:-$WORKTREE_DIR}")
+  _vw_inst="$(_load_cached_command install || true)"
+  [ -z "$_vw_inst" ] || _vw_di_args+=(--install-cmd "$_vw_inst")
+  _vw_cred="$(_load_cached_command credential_target || true)"
+  [ -z "$_vw_cred" ] || _vw_di_args+=(--credential-target "$_vw_cred")
+  _VW_CMD="docker-install.sh ${_vw_di_args[*]}"
+  echo "DEPS: running (install if missing): $_VW_CMD"
+  _exec_and_report "DEPS" bash -c 'bash "$@"; rc=$?; if [ "$rc" -eq 2 ]; then echo "nothing to install"; exit 0; fi; exit "$rc"' \
+    _ "$_vw_dep_scripts/docker-install.sh" "${_vw_di_args[@]}"
+  echo ""
+fi
+
 # Order follows verification.md: type check, then lint, then tests.
 _run_category "TYPECHECK" "$(_discover_typecheck_command "$WORKTREE_DIR")" no
 echo ""
