@@ -79,19 +79,19 @@ test("ROLE_POLICY declares a policy for every role with a protocol", () => {
 // And claude passes the role's effort (`--effort`), which it used to drop.
 const CLAUDE_READ_ONLY = ["--effort", "high", "--disallowedTools", "Edit", "Write", "NotebookEdit"];
 const EXPECTED_POLICY_ARGS = {
-  claude: { coder: ["--effort", "medium", "--disallowedTools", "Agent"], reviewer: CLAUDE_READ_ONLY, triage: CLAUDE_READ_ONLY },
+  claude: { coder: ["--effort", "high", "--disallowedTools", "Agent"], reviewer: CLAUDE_READ_ONLY, triage: CLAUDE_READ_ONLY },
   copilot: {
-    coder: ["--reasoning-effort", "medium"],
+    coder: ["--reasoning-effort", "high"],
     reviewer: ["--reasoning-effort", "high", "--deny-tool", "write"],
     triage: ["--reasoning-effort", "high", "--deny-tool", "write"],
   },
   pi: {
-    coder: ["--thinking", "medium", "--tools", "read,bash,edit,write"],
+    coder: ["--thinking", "high", "--tools", "read,bash,edit,write"],
     reviewer: ["--thinking", "high", "--tools", "read,bash"],
     triage: ["--thinking", "high", "--tools", "read,bash"],
   },
   codex: {
-    coder: ["-c", 'model_reasoning_effort="medium"'],
+    coder: ["-c", 'model_reasoning_effort="high"'],
     reviewer: ["-c", 'model_reasoning_effort="high"'],
     triage: ["-c", 'model_reasoning_effort="high"'],
   },

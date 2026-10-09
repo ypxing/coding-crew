@@ -380,6 +380,8 @@ export class Sprint {
     ];
     if (slug && role) args.push("--slug", slug, "--role", role, "--attempt", String(attempt ?? 0));
     if (sessionId) args.push("--session-id", sessionId, "--context-tokens", String(contextTokens ?? 0));
+    // A cost-unknown dispatch has no session id; its context size is still worth keeping.
+    else if (costUnknown) args.push("--context-tokens", String(contextTokens ?? 0));
     if (head) args.push("--head", head);
     // A dispatch killed on timeout has no cost to add; what it spent is its tokens.
     if (costUnknown) args.push("--cost-unknown", "--tokens", String(tokens ?? 0));

@@ -40,7 +40,7 @@
  *                                           the tracker once per interval and start any issue made
  *                                           ready mid-run (linted first; an ERROR blocks it for this
  *                                           run only). 0 = claim new issues only when an attempt ends
- *   --coder-timeout <minutes>              [timeouts.coder, 45] a hung coder cannot hang the sprint
+ *   --coder-timeout <minutes>              [timeouts.coder, 60] a hung coder cannot hang the sprint
  *   --reviewer-timeout <minutes>           [timeouts.reviewer, 20]
  *   --no-deps                              [installDeps: false] skip both ensure-deps.sh call sites
  *   --squash                               [squashCommits, default false] squash the sprint's
@@ -550,6 +550,7 @@ async function main() {
     }
   }
   options.parallel = settings.maxParallel ?? DEFAULT_PARALLEL[crew.roles.coder.runtime] ?? 2;
+  options.effort = settings.effort;
   options.timeoutMs = Object.fromEntries(Object.entries(settings.timeouts).map(([k, min]) => [k, min * 60 * 1000]));
   const preflightCrew = ({ probeFlags = false } = {}) =>
     crewPreflight(effects, mainRoot, {
@@ -585,6 +586,7 @@ async function main() {
     console.log(`wall cap:  ${options.maxWallMinutes > 0 ? `${options.maxWallMinutes} minutes` : "off"}${tag("maxWallMinutes")}`);
     console.log(`poll:      ${options.pollInterval > 0 ? `every ${options.pollInterval}s while a slot is idle` : "off (--poll-interval 0)"}`);
     console.log(`findings:  fix ${{ none: "none", actionable: "every Actionable finding" }[options.fixFindings] ?? `${options.fixFindings} and above`} in Phase 2${tag("fixFindings")}`);
+    console.log(`effort:    ${Object.entries(options.effort).map(([r, e]) => `${r} ${e} [${loaded.origin[`effort.${r}`] ?? "default"}]`).join(", ")}`);
     console.log(`timeouts:  ${Object.entries(options.timeouts).map(([k, m]) => `${k} ${m}m${loaded.origin[`timeouts.${k}`] ? ` [${loaded.origin[`timeouts.${k}`]}]` : ""}`).join(", ")}`);
     const caps = Object.entries(options.limitsUsd ?? {});
     console.log(`limits:    ${caps.length ? caps.map(([r, usd]) => `${r} $${usd}${ADAPTERS[options.crew[r]?.runtime]?.budget ? "" : ` (ignored: not supported by ${options.crew[r]?.runtime})`}`).join(", ") : "none (afk.limits.<role>.usd caps one dispatch)"}`);

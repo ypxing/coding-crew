@@ -14,7 +14,7 @@
     "--model",
     "golden-model",
     "--reasoning-effort",
-    "medium"
+    "high"
   ],
   "input": null,
   "env": {

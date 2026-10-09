@@ -15,7 +15,7 @@
  *       "runtime": { "reviewer": "codex" },
  *       "models":  { "claude": { "coder": "sonnet" }, "codex": { "reviewer": "gpt-5.1-codex" } },
  *       "fixFindings": "actionable",
- *       "timeouts": { "coder": 45 }, "maxParallel": 3, "maxWallMinutes": 120, "installDeps": true, "squashCommits": false,
+ *       "timeouts": { "coder": 60 }, "maxParallel": 3, "maxWallMinutes": 120, "installDeps": true, "squashCommits": false,
  *       "openPr": false,
  *       "baselineCheck": true, "integrationCheck": true, "resumeCoderSession": false,
  *       "branchPrefix": "feature/",
@@ -65,6 +65,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { preflight } from "./dispatch.mjs";
 import { ADAPTERS, PLATFORMS } from "./adapters/index.mjs";
+import { ROLE_POLICY } from "./adapters/render.mjs";
 
 export const CONFIG_REL = ".coding-crew/config.json";
 export const USER_CONFIG_LABEL = "~/.coding-crew/config.json";
@@ -79,13 +80,15 @@ const REPO_ONLY_SECTIONS = ["tracker"];
 // Actionable, whatever its severity; the others: the lowest severity.
 export const FIX_FINDINGS = ["actionable", "critical", "high", "medium", "none"];
 /** Minutes. Every LLM role, plus the merge/close step, which blocks the event loop. */
-export const DEFAULT_TIMEOUTS = { coder: 45, reviewer: 20, triage: 20, commandFinder: 5, prWriter: 10, merge: 5 };
+export const DEFAULT_TIMEOUTS = { coder: 60, reviewer: 20, triage: 20, commandFinder: 5, prWriter: 10, merge: 5 };
 // setTimeout fires at once past 2^31-1 ms, so a longer timeout would kill every dispatch.
 export const MAX_TIMEOUT_MINUTES = Math.floor((2 ** 31 - 1) / 60_000);
 const timeoutProblem = (min) =>
   typeof min === "number" && min > 0 && min <= MAX_TIMEOUT_MINUTES
     ? null
     : `must be a positive number of minutes, at most ${MAX_TIMEOUT_MINUTES}`;
+// The roles with a ROLE_POLICY (adapters/render.mjs), so the ones afk.effort may set.
+const EFFORT_ROLES = ["coder", "reviewer", "triage"];
 export const PANE_HOSTS = ["orca", "herdr", "auto", "none"];
 export const DEFAULT_SETTINGS = {
   fixFindings: "actionable",
@@ -115,7 +118,7 @@ const SCALARS = {
 };
 // Per-machine settings: accepted from ~/.coding-crew/config.json only.
 const USER_ONLY = ["paneHost"];
-const AFK_KEYS = ["runtime", "models", "timeouts", "limits", ...Object.keys(SCALARS)];
+const AFK_KEYS = ["runtime", "models", "timeouts", "effort", "limits", ...Object.keys(SCALARS)];
 
 // afk-models.json's role names, before the plain-dispatch roles were renamed.
 const LEGACY_ROLE_NAMES = { commandsDiscovery: "commandFinder" };
@@ -188,6 +191,15 @@ export function validateConfig(config, label = CONFIG_REL, { userLevel = label =
           }
         }
       }
+      if (afk.effort !== undefined) {
+        if (!isObject(afk.effort)) problems.push(`"afk.effort" must be an object of role → effort`);
+        else {
+          for (const [role, effort] of Object.entries(afk.effort)) {
+            if (!EFFORT_ROLES.includes(role)) problems.push(`unknown role "afk.effort.${role}" (expected ${oneOf(EFFORT_ROLES)})`);
+            if (typeof effort !== "string" || !effort.trim()) problems.push(`"afk.effort.${role}" must be a non-empty string`);
+          }
+        }
+      }
       if (afk.limits !== undefined) {
         if (!isObject(afk.limits)) problems.push(`"afk.limits" must be an object of role → { "usd": <dollars> }`);
         else {
@@ -245,7 +257,7 @@ function dropRetired(config, label, notices) {
     delete afk.PRDAudit;
     named.push("afk.PRDAudit");
   }
-  for (const k of ["runtime", "timeouts", "limits"]) if (afk[k] !== undefined) afk[k] = without(afk[k], `afk.${k}`);
+  for (const k of ["runtime", "timeouts", "limits", "effort"]) if (afk[k] !== undefined) afk[k] = without(afk[k], `afk.${k}`);
   if (isObject(afk.models)) {
     afk.models = Object.fromEntries(Object.entries(afk.models).map(([rt, byRole]) => [rt, without(byRole, `afk.models.${rt}`)]));
   }
@@ -253,13 +265,14 @@ function dropRetired(config, label, notices) {
   return { ...config, afk };
 }
 
-/** Every afk leaf a file sets: "runtime.<role>", "models.<runtime>.<role>", "timeouts.<k>", "limits.<role>.usd", "<scalar>". */
+/** Every afk leaf a file sets: "runtime.<role>", "models.<runtime>.<role>", "timeouts.<k>", "effort.<role>", "limits.<role>.usd", "<scalar>". */
 function afkLeaves(afk = {}) {
   const leaves = Object.keys(afk.runtime ?? {}).map((role) => `runtime.${role}`);
   for (const [rt, byRole] of Object.entries(afk.models ?? {})) {
     for (const role of Object.keys(byRole)) leaves.push(`models.${rt}.${role}`);
   }
   for (const k of Object.keys(afk.timeouts ?? {})) leaves.push(`timeouts.${k}`);
+  for (const k of Object.keys(afk.effort ?? {})) leaves.push(`effort.${k}`);
   for (const role of Object.keys(afk.limits ?? {})) leaves.push(`limits.${role}.usd`);
   for (const k of Object.keys(SCALARS)) if (afk[k] !== undefined) leaves.push(k);
   return leaves;
@@ -270,6 +283,7 @@ function mergeAfk(base = {}, over = {}) {
   const runtime = { ...base.runtime, ...over.runtime };
   const timeouts = { ...base.timeouts, ...over.timeouts };
   const limits = { ...base.limits, ...over.limits };
+  const effort = { ...base.effort, ...over.effort };
   const models = {};
   for (const rt of new Set([...Object.keys(base.models ?? {}), ...Object.keys(over.models ?? {})])) {
     models[rt] = { ...base.models?.[rt], ...over.models?.[rt] };
@@ -283,6 +297,7 @@ function mergeAfk(base = {}, over = {}) {
     ...(Object.keys(runtime).length ? { runtime } : {}),
     ...(Object.keys(models).length ? { models } : {}),
     ...(Object.keys(timeouts).length ? { timeouts } : {}),
+    ...(Object.keys(effort).length ? { effort } : {}),
     ...(Object.keys(limits).length ? { limits } : {}),
     ...scalars,
   };
@@ -470,6 +485,7 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
  *   maxParallel: number|null,
  *   branchPrefix: string|null,  null: session-init.sh's default
  *   timeouts: Record<string, number>,  timeouts in minutes
+ *   effort: Record<string, string>,  coder/reviewer/triage → afk.effort, else ROLE_POLICY's
  *   limitsUsd: Record<string, number>}}  each capped role's dollar cap; no key, no cap
  */
 export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
@@ -485,7 +501,12 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     if (cli.timeouts?.[k] !== undefined) origin[`timeouts.${k}`] = "flag";
     timeouts[k] = cli.timeouts?.[k] ?? afk.timeouts?.[k] ?? def;
   }
+  const effort = {};
+  for (const role of EFFORT_ROLES) {
+    effort[role] = afk.effort?.[role] ?? ROLE_POLICY[role].effort;
+  }
   return {
+    effort,
     fixFindings: pick("fixFindings"),
     installDeps: pick("installDeps"),
     squashCommits: pick("squashCommits"),

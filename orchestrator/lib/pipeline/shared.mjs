@@ -58,7 +58,7 @@ export function roleBinding(ctx, role, adapters = ADAPTERS) {
   const { runtime, model } = ctx.options.crew[role];
   // afk.limits.<role>.usd — only a runtime whose adapter has a budget flag is handed one.
   const maxBudgetUsd = adapters[runtime]?.budget ? (ctx.options.limitsUsd?.[role] ?? null) : null;
-  return { runtime, model, maxBudgetUsd };
+  return { runtime, model, maxBudgetUsd, effort: ctx.options.effort?.[role] };
 }
 
 /**
