@@ -58,8 +58,20 @@ assert_light_absent_from() {
 
 @test "the fragment states the four checks, the evidence rule, and both outcomes" {
   for claim in 'Problem' 'One slice' 'Criteria' 'No fork' '"annoyed" lane' 'a quote from the source or a `file:line`' \
-    '`Light path:' 'invoke `to-issues`' 'Ask no question' 'print one line naming it' 'continue with the Q&A'; do
+    '`Light path:' 'invoke `to-issues`' 'Ask no question' 'Print nothing about it' 'continue with the Q&A'; do
     grep -qF -- "$claim" "$LIGHT" || { echo "fragment lacks: $claim" >&2; return 1; }
+  done
+}
+
+@test "crew-grill and crew-brainstorm print nothing when a light-path check fails, for every platform" {
+  for skill in crew-grill crew-brainstorm; do
+    for p in "${PLATFORMS[@]}"; do
+      run rendered_skill "$skill" "$p"
+      [ "$status" -eq 0 ]
+      ! grep -qF 'print one line naming it' "$output" || { echo "$skill/$p still prints a line on failure" >&2; return 1; }
+      grep -qF 'Print nothing about it' "$output"
+      grep -qF 'Light path: <reason per check>' "$output"
+    done
   done
 }
 
