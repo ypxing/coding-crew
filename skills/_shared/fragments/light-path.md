@@ -9,4 +9,4 @@ Before any question, judge the source — the issue (`node "$TRACKER" fetch <ref
 
 All four hold: print one line, `Light path: <reason per check>`, then invoke `to-issues` with the ref (if any) and the facts gathered. Ask no question, write no summary, run no verification pass: `to-issues` grounds every assumption.
 
-Any check fails: print one line naming it, then continue with the Q&A below. Never ask the user whether to take the light path.
+Any check fails: the light path does not apply. Print nothing about it, and continue with the Q&A below as if it did not exist. Never ask the user whether to take the light path.
