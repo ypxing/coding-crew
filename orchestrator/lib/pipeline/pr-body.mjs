@@ -79,7 +79,7 @@ export async function writePrBody(ctx, { integration = null } = {}) {
   ctx.log(`[STEP] step=pr-body model=${writer.model ?? "inherit"} runtime=${writer.runtime}`);
   const r = await dispatchPlain(effects, writer.runtime, {
     prompt,
-    cwd: effects.mainRoot,
+    cwd: effects.featureRoot,
     mainRoot: effects.mainRoot,
     model: writer.model,
     outFile: join(sprint.env.SPRINT_DIR, "pr-writer.md"),

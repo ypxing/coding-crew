@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { MAIN, SCRIPTS, FAKE, sprintEnv, sh, fixtureRepo, addIssue, runSprint, state, fake, traceLog, test } from "./helpers/sprint.mjs";
+import { MAIN, SCRIPTS, FAKE, FIXTURE_ROOTS, sprintEnv, sh, fixtureRepo, addIssue, runSprint, state, fake, traceLog, test } from "./helpers/sprint.mjs";
 
 const git = (root, ...args) => sh("git", ["-C", root, ...args]).stdout.trim();
 const featureWt = (root, slug = "demo") => join(root, ".scratch/worktrees/crew", slug, "_feature");
@@ -35,6 +35,17 @@ test("a run leaves the main checkout's branch and HEAD alone, merges onto featur
   assert.equal(git(root, "worktree", "list", "--porcelain").includes("_feature"), false, "and unregistered");
   assert.equal(existsSync(join(root, ".scratch/sprint.env")), false, "no repo-wide pointer is written");
   assert.equal(existsSync(join(root, ".scratch/demo/sprint.env")), true);
+});
+
+test("the per-issue reviewer runs in _feature, on the feature branch, not in the user's checkout", () => {
+  const root = userOnMain();
+  git(root, "checkout", "-q", "-b", "mine");
+  addIssue(root, "01-alpha.md");
+  const r = runSprint(root);
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  const dirs = readFileSync(join(root, ".scratch/fake/dispatch-dirs"), "utf8").split("\n").filter((l) => l.startsWith("crew-reviewer "));
+  assert.ok(dirs.length > 0, "a reviewer ran");
+  for (const line of dirs) assert.equal(line.slice("crew-reviewer ".length), featureWt(root), line);
 });
 
 test("a stalled run removes _feature too, and a re-run resumes the same feature branch", () => {
@@ -166,6 +177,29 @@ test("launched from a linked worktree, the run resolves the main checkout: sprin
   // The orchestrator's tracker reads the main checkout: the parked fix issue was found, promoted and closed.
   assert.deepEqual([...state(root).completed_slugs].sort(), ["alpha", "fix-findings-alpha"]);
   assert.equal(existsSync(join(root, ".scratch/demo/issues/done/02-fix-findings-alpha.md")), true);
+});
+
+test("launched inside a submodule, the run and its scripts share the submodule's checkout as MAIN_ROOT", () => {
+  const upstream = userOnMain();
+  const outer = `${upstream}-outer`;
+  FIXTURE_ROOTS.push(outer);
+  sh("git", ["init", "-q", "-b", "main", outer]);
+  for (const [k, v] of [["user.email", "t@test"], ["user.name", "T"]]) git(outer, "config", k, v);
+  assert.equal(sh("git", ["-C", outer, "-c", "protocol.file.allow=always", "submodule", "add", "-q", upstream, "sub"]).code, 0);
+  const sub = join(outer, "sub");
+  for (const [k, v] of [["user.email", "t@test"], ["user.name", "T"]]) git(sub, "config", k, v);
+  mkdirSync(join(sub, ".scratch/demo/issues/open"), { recursive: true });
+  mkdirSync(join(sub, ".scratch/fake"), { recursive: true });
+  addIssue(sub, "01-alpha.md");
+  const r = sh("node", [MAIN, "run", "--platform", "pi", "--feature-slug", "demo", "--no-baseline", "--no-integration-check"], {
+    cwd: sub,
+    env: { ...process.env, CREW_SCRIPTS: SCRIPTS, CREW_FAKE_DISPATCH: FAKE, CREW_FAKE_DIR: join(sub, ".scratch/fake"), MAIN_ROOT: "" },
+  });
+  assert.equal(r.code, 0, `${r.stdout}\n${r.stderr}`);
+  assert.match(readFileSync(join(sub, ".scratch/demo/sprint.env"), "utf8"), new RegExp(`MAIN_ROOT="?${sub}"?\\n`));
+  assert.equal(existsSync(join(outer, ".git/modules/.scratch")), false, "nothing written beside the submodule's git dir");
+  assert.deepEqual(state(sub).completed_slugs, ["alpha"]);
+  assert.equal(sh("git", ["-C", sub, "cat-file", "-e", "feature/demo:src/alpha.txt"]).code, 0);
 });
 
 test("a new feature branch cut from a local default branch behind origin logs the WARNING", () => {

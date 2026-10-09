@@ -50,6 +50,10 @@ Effects invoked by `orchestrator/lib/effects.mjs` (and runnable by hand).
   `session-init.sh`. A set `$CREW_TRACKER_CLI` is used as is (missing → error, no search); else, first existing file
   wins: `$CREW_INSTALL_DIR/tracker/`, `<root>/.coding-crew/tracker/`, `<root>/tracker/`, `$HOME/.coding-crew/tracker/`. No CLI, no `node` or a failing
   `config` exits the caller non-zero — never a silent `local`
+- `main-root.sh` — sourced, not run: `main_root [dir]`, the one rule for MAIN_ROOT outside the orchestrator (same as
+  `main.mjs`'s `gitRoot()`): the shared git dir's parent when it is `.git`, its `core.worktree` (a submodule), else the
+  worktree's top level (a bare repo). `main.mjs` passes its MAIN_ROOT to every script; the helper serves hand runs and
+  the gates (`receipts.sh`, `verify-worktree.sh`)
 - `issue-labels.sh` — the one writer of crew-afk's status labels under `tracker: github`:
   `claim`/`release` (`in-progress`, display only), `block` (`blocked`, swapped for `in-progress`),
   `sweep` (clears a dead run's `in-progress` once the lease is held). A failed write only warns

@@ -37,7 +37,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-MAIN_ROOT="${MAIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+# shellcheck source=main-root.sh
+. "$SCRIPT_DIR/main-root.sh"
+MAIN_ROOT="${MAIN_ROOT:-$(main_root || pwd)}"
 FEATURE_SLUG="${FEATURE_SLUG_ARG:-${FEATURE_SLUG:-}}"
 if [ -z "$FEATURE_SLUG" ]; then
   echo "crew-summary.sh: no sprint to summarise — pass --feature-slug <slug>" >&2

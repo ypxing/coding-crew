@@ -8,18 +8,21 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- crew-afk: the orchestrator and every script resolve the same main checkout — inside a submodule the submodule's own checkout (never `.git/modules`), in a bare repo's worktree that worktree — through one rule (`scripts/main-root.sh`, `main.mjs` passes its `MAIN_ROOT` to every script); the feature lease points at a commit origin already has, so acquiring it no longer pushes the main checkout's unpushed commits (#365).
 - crew-afk: a sprint's wrap-up cleanup sweeps only the `worktree-agent-*` / `.claude/worktrees/` worktrees inside its own `crew/<slug>/` worktree directory, so it no longer removes another sprint's or the main checkout's clean agent worktrees (#365).
 - crew-afk: the feature-review fixes for concurrent sprints — `_feature` only displaces a crew-made worktree (a user's own worktree on `feature/<slug>` is a refusal); a run launched from a linked worktree resolves the main checkout; the behind-origin warning fires when the orchestrator creates the branch; `crew-summary.sh` and the guide resolve merge conflicts in a temporary worktree; `trace.sh --feature-slug` finds the main checkout from a linked worktree (#364).
 - crew-afk: a sprint keeps its feature branch in its own `crew/<slug>/_feature` worktree and never switches the main
   checkout, so one `crew-afk` per feature can run at once in a repo. The worktree is removed when the run ends; the
   branch stays. Uncommitted changes in the main checkout no longer stop a run (`--allow-dirty` is accepted and does
-  nothing); a main checkout sitting on `feature/<slug>` does, with "switch it to another branch". `.scratch/sprint.env`
-  is no longer written: hand runs of `state.sh`, `trace.sh`, `crew-summary.sh`, `ensure-deps.sh --slug` and `main.mjs
-  status` take `--feature-slug` (exit 2 without). Under orca every worktree is named to orca and its worker terminal is
-  scoped to it; under herdr `_feature` is the sprint's workspace (#359).
+  nothing); a main checkout sitting on `feature/<slug>` does, with "switch it to another branch". The per-issue
+  reviewer, verify triage and PR writer run in `_feature`. Under orca every worktree is named to orca and its worker
+  terminal is scoped to it; under herdr `_feature` is the sprint's workspace (#359).
 
 ### Breaking
 
+- crew-afk: `.scratch/sprint.env` is no longer written, so hand runs of `state.sh`, `trace.sh`, `crew-summary.sh`,
+  `ensure-deps.sh --slug` and `main.mjs status` need `--feature-slug` (exit 2 without). A local-tracker run started off
+  the default branch no longer adopts the current branch as the feature branch; it always uses `<prefix><slug>` (#359).
 - tracker: the `repo:` override is removed — `gh` always targets the git remote; a front matter naming `repo:` fails with
   "`repo` is no longer supported" (#339, #340).
 - tracker: `.coding-crew/scripts/tracker-config.sh` and `mark-issue-done.sh` no longer ship (installs delete them). A

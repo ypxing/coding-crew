@@ -142,6 +142,7 @@ CONFIG/skills/crew-afk/scripts/discover-commands.sh exec=1
 CONFIG/skills/crew-afk/scripts/ensure-deps.sh exec=1
 CONFIG/skills/crew-afk/scripts/issue-labels.sh exec=1
 CONFIG/skills/crew-afk/scripts/lease.sh exec=1
+CONFIG/skills/crew-afk/scripts/main-root.sh exec=0
 CONFIG/skills/crew-afk/scripts/merge-branches.sh exec=0
 CONFIG/skills/crew-afk/scripts/open-pr.sh exec=0
 CONFIG/skills/crew-afk/scripts/post-findings.sh exec=0

@@ -81,7 +81,7 @@
  * Exit codes: 0 clean · 2 stalled · 3 nothing to do · 1 setup error
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -370,7 +370,12 @@ function reportUnknownArgs(unknown, mainRoot) {
   console.error(lines.join("\n"));
 }
 
-/** The main checkout, whichever worktree the run was launched from (session-init.sh derives the same). */
+/**
+ * The main checkout, whichever worktree the run was launched from. From the shared git dir: its
+ * parent when it is a `.git`; its `core.worktree` when set (a submodule's `.git/modules/<name>`);
+ * else (a bare repo, no main checkout) this worktree's top level. Every script is handed it as
+ * MAIN_ROOT; scripts/main-root.sh applies the same rule to a hand run and the gates.
+ */
 function gitRoot() {
   const r = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"], { encoding: "utf8" });
   if (r.status !== 0) {
@@ -378,7 +383,9 @@ function gitRoot() {
     process.exit(1);
   }
   const [common, top] = r.stdout.trim().split("\n");
-  return basename(common) === ".git" ? dirname(common) : top;
+  if (basename(common) === ".git") return realpathSync(dirname(common));
+  const wt = spawnSync("git", ["--git-dir", common, "config", "--get", "core.worktree"], { encoding: "utf8" }).stdout?.trim();
+  return realpathSync(wt ? resolve(common, wt) : top);
 }
 
 /**
@@ -470,6 +477,9 @@ async function main() {
     scriptsDir,
     mainRoot,
     dryRun: options.dryRun,
+    // Every script, session-init.sh first (it writes sprint.env), uses this root rather than
+    // deriving its own.
+    env: { MAIN_ROOT: mainRoot },
     log: (line) => {
       logLines.push(line);
       if (shows("debug")) console.error(line);

@@ -100,7 +100,7 @@ export async function runReview(ctx, worker, { checks, logs, notConfigured, file
     reviewer.runtime,
     {
       agent: "crew-reviewer",
-      cwd: effects.mainRoot,
+      cwd: effects.featureRoot,
       promptFile,
       outFile,
       // Defaults to the coder's model: a weaker reviewer silently lowers the bar.

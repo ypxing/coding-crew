@@ -134,6 +134,22 @@ deps_line() {
   [ "$(deps_line)" = "DEPS: present" ]
 }
 
+@test "run by hand (no MAIN_ROOT) in a linked worktree, the stale link is still found against the main checkout" {
+  local wt="$TEMP_DIR/issue-wt"
+  printf '{}\n' > "$WORK/package.json"; printf 'lock-A\n' > "$WORK/package-lock.json"
+  git -C "$WORK" add -A && git -C "$WORK" commit -q -m init
+  git -C "$WORK" worktree add -q -b issue "$wt"
+  mkdir -p "$WORK/node_modules"
+  printf 'lock-B\n' > "$wt/package-lock.json"
+  ln -s "$WORK/node_modules" "$wt/node_modules"
+  stub_scripts USE_HOST 0 "Running: npm ci"
+
+  run bash "$SCRIPT" --dir "$wt"
+  [ "$status" -eq 0 ]
+  [ "$(deps_line)" = "DEPS: installed npm ci" ]
+  [ ! -L "$wt/node_modules" ]
+}
+
 @test "the presence guard covers node_modules, .venv and vendor/bundle" {
   stub_scripts USE_HOST 0 "SHOULD NOT RUN"
   local manifest depdir

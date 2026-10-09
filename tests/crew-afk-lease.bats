@@ -72,6 +72,19 @@ teardown() { rm -rf "$TEMP_DIR"; }
   [ -z "$(git ls-remote origin refs/crew-lock/f)" ]
 }
 
+@test "the lease points at a commit origin already has: the main checkout's unpushed commits stay local" {
+  git push -q origin main
+  git fetch -q origin
+  git checkout -q -b wip
+  git commit -q --allow-empty -m "private wip"
+  wip=$(git rev-parse HEAD)
+  run bash "$LEASE" acquire --slug f --owner "run=r1 host=h pid=1 at=t"
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$TEMP_DIR/remote.git" rev-parse 'refs/crew-lock/f^{commit}')" = "$(git rev-parse origin/main)" ]
+  run git -C "$TEMP_DIR/remote.git" cat-file -e "$wip"
+  [ "$status" -ne 0 ]
+}
+
 @test "no origin is an error, not a rejection" {
   git remote remove origin
   run bash "$LEASE" acquire --slug f --owner "run=r1 host=h pid=1 at=t"

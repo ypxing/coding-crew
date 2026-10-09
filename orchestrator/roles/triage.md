@@ -100,7 +100,7 @@ fix in hand and reports it already met or a wrong premise, whereas a dismissal h
 it unseen. When unsure whether a finding is valid, answer `actionable`.
 
 Read the prompt's code with `git show <branch>:<path>` and its change with the command it gives (the
-main checkout is not on that branch), `CONTEXT.md` and `docs/adr/` when they exist. Judge by this rubric — the same one
+working directory is not on that branch), `CONTEXT.md` and `docs/adr/` when they exist. Judge by this rubric — the same one
 `/crew-address-findings` applies, so an unattended run and a human one classify alike:
 
 {{FRAGMENT:findings-rubric}}

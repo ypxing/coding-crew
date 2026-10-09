@@ -34,11 +34,12 @@ _frontmatter() {
   awk 'NR==1 && $0=="---"{f=1;next} f && $0=="---"{exit} f{print}' "$1"
 }
 
-# session-init.sh as install.sh lays it out, in the skill's scripts/ dir beside tracker-cli.sh.
+# session-init.sh as install.sh lays it out, in the skill's scripts/ dir beside the helpers it sources.
 _installed_scripts() {
   local dir="$TEMP_DIR/installed-scripts"
   mkdir -p "$dir"
-  cp "$REPO_ROOT/skills/crew-afk/scripts/session-init.sh" "$REPO_ROOT/skills/crew-afk/scripts/tracker-cli.sh" "$dir/"
+  cp "$REPO_ROOT/skills/crew-afk/scripts/session-init.sh" "$REPO_ROOT/skills/crew-afk/scripts/tracker-cli.sh" \
+    "$REPO_ROOT/skills/crew-afk/scripts/main-root.sh" "$dir/"
   echo "$dir"
 }
 

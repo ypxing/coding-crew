@@ -53,9 +53,9 @@ if [ -z "$FEATURE_SLUG" ]; then
   echo "squash-commits.sh: no sprint to squash — pass --feature-slug <slug>" >&2
   exit 2
 fi
-if [ -z "${MAIN_ROOT:-}" ]; then
-  MAIN_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-fi
+# shellcheck source=main-root.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/main-root.sh"
+MAIN_ROOT="${MAIN_ROOT:-$(main_root)}"
 if [ -z "${STATE_FILE:-}" ] || [ "$(basename "$(dirname "${STATE_FILE}")")" != "$FEATURE_SLUG" ]; then
   STATE_FILE="$MAIN_ROOT/.scratch/$FEATURE_SLUG/sprint-state.json"
 fi

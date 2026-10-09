@@ -127,6 +127,8 @@ SLUG="${SLUG_ARG:-$(basename "$OUT" | sed -E 's/\.(report|review)\.md$//')}"
 SLUG="$(printf '%s' "$SLUG" | sed -E 's/^[0-9]+-//')"
 FAKE_DIR="${CREW_FAKE_DIR:?CREW_FAKE_DIR must be set}"
 mkdir -p "$(dirname "$OUT")"
+# One "<agent> <dir>" line per dispatch, so a test can assert where each one ran.
+echo "$AGENT $DIR" >> "$FAKE_DIR/dispatch-dirs"
 
 # Stands in for a CLI's own tool-call event on stdout, so dispatch.mjs's onTrace heartbeat
 # plumbing is exercisable for zero tokens.
@@ -208,7 +210,7 @@ if [ "$AGENT" = "crew-reviewer" ]; then
   exit 0
 fi
 
-# Triage runs in the main checkout and never commits.
+# Triage runs in the feature worktree and never commits.
 if [ "$AGENT" = "crew-triage" ]; then
   if [ -f "$FAKE_DIR/$SLUG.triage" ]; then cat "$FAKE_DIR/$SLUG.triage" > "$OUT"; else : > "$OUT"; fi
   exit 0

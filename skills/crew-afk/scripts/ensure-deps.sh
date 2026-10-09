@@ -46,6 +46,8 @@ set -uo pipefail
 #   own, but its `docker-failed` stops the run: that volume is the only install there is.
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=main-root.sh
+. "$SELF_DIR/main-root.sh"
 
 DIR=""
 SLUG=""
@@ -93,12 +95,7 @@ TRACE_SCRIPT="$SELF_DIR/trace.sh"
 _sprint_dir() {
   if [ -n "${SPRINT_DIR:-}" ]; then printf '%s' "$SPRINT_DIR"; return; fi
   if [ -n "$FEATURE_SLUG_ARG" ]; then
-    local root="${MAIN_ROOT:-}"
-    if [ -z "$root" ]; then
-      local common
-      common=$(git -C "$DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
-      [ -n "$common" ] && root=$(dirname "$common")
-    fi
+    local root="${MAIN_ROOT:-$(main_root "$DIR" || true)}"
     [ -z "$root" ] || printf '%s' "$root/.scratch/$FEATURE_SLUG_ARG"
   fi
 }
@@ -185,7 +182,9 @@ fi
 # override, fall through to the mechanical detection below unchanged.
 MAIN_ROOT_EFFECTIVE="${MAIN_ROOT:-}"
 if [ -z "$MAIN_ROOT_EFFECTIVE" ]; then
-  MAIN_ROOT_EFFECTIVE="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null || echo "$DIR")"
+  # The main checkout, not $DIR's own worktree: the cache lives there, and the stale-link check
+  # below compares $DIR's manifests against it.
+  MAIN_ROOT_EFFECTIVE="$(main_root "$DIR" || echo "$DIR")"
 fi
 _cached_install_command() {
   local cache="$MAIN_ROOT_EFFECTIVE/.coding-crew/dev-commands.json"

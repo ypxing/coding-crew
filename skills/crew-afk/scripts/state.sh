@@ -81,7 +81,9 @@ while [ $# -gt 0 ]; do
 done
 set -- "${ARGS[@]+"${ARGS[@]}"}"
 
-MAIN_ROOT="${MAIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+# shellcheck source=main-root.sh
+. "$SCRIPT_DIR/main-root.sh"
+MAIN_ROOT="${MAIN_ROOT:-$(main_root || pwd)}"
 
 resolve_state_file() {
   if [ -n "$STATE_FILE_ARG" ]; then

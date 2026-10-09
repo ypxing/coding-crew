@@ -127,10 +127,10 @@ warn_if_default_behind_origin() {
 # tracker-cli.sh beside this script; no CLI, no node or an invalid config stops here
 # rather than running as local — under github that would scan .scratch/ for issues that
 # live on GitHub and blame their absence on the user.
-# The main checkout, whichever worktree this runs from.
-if [ -z "${MAIN_ROOT:-}" ]; then
-  MAIN_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" 2>/dev/null) || MAIN_ROOT=$(pwd)
-fi
+# The main checkout, whichever worktree this runs from (the orchestrator passes its own).
+# shellcheck source=main-root.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/main-root.sh"
+MAIN_ROOT="${MAIN_ROOT:-$(main_root || pwd)}"
 # shellcheck source=tracker-cli.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tracker-cli.sh"
 resolve_tracker_cli "$MAIN_ROOT" || exit 1
