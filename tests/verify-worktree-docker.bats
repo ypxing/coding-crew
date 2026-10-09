@@ -279,18 +279,14 @@ EOF
   [ ! -f "$DOCKER_LOG" ]
 }
 
-@test "falls back to host when the crew compose override has not been written yet" {
+@test "falls back to host when the crew compose override cannot be written (no supported ecosystem)" {
   cat > "$TEMP_DIR/docker-compose.yml" <<'YML'
 services:
   app:
     volumes: [".:/opt/app"]
 YML
-  cat > "$TEMP_DIR/package.json" <<'JSON'
-{"name":"fixture"}
-JSON
-  echo '{}' > "$TEMP_DIR/package-lock.json"
   git -C "$TEMP_DIR" config --local agent.install-mode docker
-  # no crew-compose.override.yml written — ensure-deps.sh's MAIN_ROOT call has not run yet
+  # no manifest: gen-override.sh cannot write crew-compose.override.yml, so there is nothing to run in docker
   cat > "$TEMP_DIR/Makefile" <<EOF
 test:
 	@true
@@ -371,7 +367,7 @@ YML
     --project-root "$TEMP_DIR" --main-root "$TEMP_DIR" >/dev/null
 }
 
-_volume_names() { grep -o 'name: wt_[A-Za-z0-9_]*' "$TEMP_DIR/.git/crew-compose.override.yml" | sed 's/^name: //'; }
+_volume_names() { grep -o 'name: wt_[A-Za-z0-9_]*' "$TEMP_DIR/.git/crew-compose.override.yml" | sed 's/^name: //' | grep -v '_state_'; }
 _installs() { grep -c . "$FAKE/install.calls" || true; }
 
 @test "docker mode: the first check runs only after an install-if-missing, which then costs nothing while the stamp is there" {
@@ -387,6 +383,23 @@ _installs() { grep -c . "$FAKE/install.calls" || true; }
   [ "$status" -eq 0 ]
   [[ "$output" == *"DEPS: pass"* ]]
   [ "$(_installs)" -eq 1 ]
+}
+
+@test "docker mode with no override yet: the install still runs before the first check, and the checks run in docker" {
+  _fake_docker_ready
+  rm -f "$TEMP_DIR/.git/crew-compose.override.yml"
+
+  run bash "$VERIFY_SCRIPT" --dir "$TEMP_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"via: docker compose run --rm app"* ]]
+  [[ "$output" == *"DEPS: pass"*"TEST: running (docker: app)"*"TEST: pass"* ]]
+  [ -f "$TEMP_DIR/.git/crew-compose.override.yml" ]
+  [ "$(_installs)" -eq 1 ]
+  # the install first, then the check, each a `docker compose run` carrying the override
+  runs="$(grep -E '^compose .* run ' "$FAKE/docker.calls")"
+  [ "$(grep -c . <<<"$runs")" -ge 2 ]
+  [[ "$(head -1 <<<"$runs")" == *"npm ci"* ]]
+  [[ "$(tail -1 <<<"$runs")" == *"crew-compose.override.yml run --rm app sh -c cd \"/opt/app\" && true"* ]]
 }
 
 @test "docker mode: after the branch's lockfile changes, the checks see the new-hash volume (B5)" {

@@ -11,14 +11,15 @@
 #   --dry-run        Print generated YAML to stdout instead of writing the file.
 #   --query <field>  Print one detected fact and exit, instead of writing the override.
 #                    <field> is one of: services | ecosystem | container-src | manifest-dirs |
-#                    platform | project-name | vendor-paths | owner-prefix
+#                    platform | project-name | vendor-paths | state-path | owner-prefix
 #                    Lets a caller that needs to *run* an install (not just generate the
 #                    override) reuse this script's own detection instead of re-parsing the
 #                    compose file and manifests a second time. `vendor-paths` is the container
 #                    path of each named dep volume, one per line — where an install must have
 #                    written for the checks to see it. `owner-prefix` is `wt_<proj>_<owner4>_`,
 #                    the prefix every dependency volume of this MAIN_ROOT on this host starts
-#                    with (it needs no compose file).
+#                    with (it needs no compose file). `state-path` is the container path
+#                    of the install lock's volume.
 #
 # Where it is written: <PROJECT_ROOT's git dir>/crew-compose.override.yml, i.e.
 #   $(git -C <project-root> rev-parse --path-format=absolute --git-dir)/crew-compose.override.yml
@@ -31,10 +32,16 @@
 #   wt_<proj>_<owner4>_<eco>_<dir>_<lock8>
 # <owner4> is a hash of this host's name and MAIN_ROOT's realpath, so another clone or sandbox
 # never matches (or removes) this one's volumes. <lock8> is a hash over every manifest and lockfile
-# manifest-fingerprint.sh finds under the project, since one install writes every volume: a
+# manifest-fingerprint.sh finds under the project (dot-directories excluded, as the manifest scan
+# below excludes them), since one install writes every volume: a
 # worktree, sprint or sandbox with the same lockfiles names the same, already populated volumes,
 # and a different lockfile names fresh ones. Being explicit, `name:` is not prefixed by compose's
 # project name, so -p / COMPOSE_PROJECT_NAME no longer rename a volume.
+#
+# Install lock: docker-install.sh serialises installs per lockfile hash with a lock directory in one
+# more named volume, wt_<proj>_<owner4>_state_<lock8>, mounted at /crew-state. It is not kept in a
+# dependency volume because an install may empty that volume's root (`npm ci` removes every entry of
+# node_modules), taking the lock with it and letting a second run install concurrently.
 #
 # Project name: the generated file carries a top-level `name:`. Compose resolves the project name
 # from the last `-f` file's `name:` key when neither `-p` nor COMPOSE_PROJECT_NAME is set, and the
@@ -129,9 +136,9 @@ if [[ -z "$PROJECT_ROOT" || -z "$MAIN_ROOT" ]]; then
 fi
 
 case "$QUERY" in
-  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name|vendor-paths|owner-prefix) ;;
+  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name|vendor-paths|state-path|owner-prefix) ;;
   *)
-    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name, vendor-paths, owner-prefix" >&2
+    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name, vendor-paths, state-path, owner-prefix" >&2
     exit 1
     ;;
 esac
@@ -252,10 +259,20 @@ ECO_DEPTH=5
 ECO_EXCLUDE=""
 ECO_ENV_PASSTHROUGH=()
 
+# Dot-directories (.output, .claude/worktrees, …) hold build output and other checkouts, never the
+# project's own manifests; manifest-fingerprint.sh (the <lock8> hash) excludes the same paths.
+# `find -path`'s `*` spans `/`, so the two patterns cover a dot-dir at any depth.
+# Set from the current PROJECT_ROOT, which the sparse-worktree fallback below may swap for MAIN_ROOT.
+DOT_EXCLUDE=()
+_set_dot_exclude() {
+  DOT_EXCLUDE=(-not -path "$PROJECT_ROOT/.*/*" -not -path "$PROJECT_ROOT/*/.*/*")
+}
+
 detect_ecosystem() {
+  _set_dot_exclude
   if find "$PROJECT_ROOT" -maxdepth 5 -name 'package.json' \
       -not -path '*/node_modules/*' \
-      -not -path "$PROJECT_ROOT/*/\.*/*" -print -quit 2>/dev/null | grep -q .; then
+      "${DOT_EXCLUDE[@]}" -print -quit 2>/dev/null | grep -q .; then
     ECO_NAME="node"; ECO_VENDOR="node_modules"; ECO_PREFIX="nm"
     ECO_DEPTH=5; ECO_EXCLUDE="node_modules"
     # NPM_TOKEN: bare name only, never a value — see "the env vars ... are never *valued*
@@ -386,11 +403,13 @@ if [[ -z "$PROJECT_NAME" ]]; then
 fi
 
 MANIFEST_DIRS=()
+_set_dot_exclude
 if [[ "$ECO_NAME" == "python" ]]; then
   mapfile -t MANIFEST_DIRS < <(
     find "$PROJECT_ROOT" -maxdepth "$ECO_DEPTH" \
       \( -name 'pyproject.toml' -o -name 'requirements.txt' \) \
       -not -path "*/${ECO_EXCLUDE}/*" \
+      "${DOT_EXCLUDE[@]}" \
       -exec dirname {} \; | sort -u
   )
 elif [[ "$ECO_NAME" == "node" ]]; then
@@ -398,8 +417,7 @@ elif [[ "$ECO_NAME" == "node" ]]; then
     find "$PROJECT_ROOT" -maxdepth "$ECO_DEPTH" \
       -name 'package.json' \
       -not -path '*/node_modules/*' \
-      -not -path "$PROJECT_ROOT/.claude/worktrees/*" \
-      -not -path "$PROJECT_ROOT/*/.*/*" \
+      "${DOT_EXCLUDE[@]}" \
       -exec dirname {} \; | sort -u
   )
 else
@@ -407,6 +425,7 @@ else
     find "$PROJECT_ROOT" -maxdepth "$ECO_DEPTH" \
       -name "$(case $ECO_NAME in ruby) echo 'Gemfile';; rust) echo 'Cargo.toml';; php) echo 'composer.json';; go) echo 'go.mod';; esac)" \
       -not -path "*/${ECO_EXCLUDE}/*" \
+      "${DOT_EXCLUDE[@]}" \
       -exec dirname {} \; | sort -u
   )
 fi
@@ -430,6 +449,12 @@ for dir in "${MANIFEST_DIRS[@]}"; do
   VOL_PATHS+=("$container_path")
 done
 
+# The install lock's volume (see "Install lock" in the header): one per lockfile hash, beside the
+# dependency volumes, mounted outside every vendor directory so an install that empties one
+# (`npm ci` deletes node_modules' entries) cannot delete the lock that guards it.
+STATE_VOL="${OWNER_PREFIX}state_${LOCK8}"
+STATE_PATH="/crew-state"
+
 # ---------------------------------------------------------------------------
 # --query short-circuit: print one detected fact, skip the override entirely
 # ---------------------------------------------------------------------------
@@ -443,6 +468,7 @@ if [[ -n "$QUERY" ]]; then
     platform)      echo "$RESOLVED_PLATFORM" ;;
     project-name)  echo "$PROJECT_NAME" ;;
     vendor-paths)  printf '%s\n' "${VOL_PATHS[@]}" ;;
+    state-path)    echo "$STATE_PATH" ;;
   esac
   exit 0
 fi
@@ -472,6 +498,7 @@ generate_yaml() {
     for i in "${!VOL_NAMES[@]}"; do
       echo "      - ${VOL_NAMES[$i]}:${VOL_PATHS[$i]}"
     done
+    echo "      - ${STATE_VOL}:${STATE_PATH}"
     if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
       echo "      - ${GIT_COMMON_DIR_ABS}:/git-common:ro"
       echo "      - wt_${PROJ_SLUG}_git_hooks:/git-common/hooks"
@@ -482,7 +509,7 @@ generate_yaml() {
     fi
   done
   echo "volumes:"
-  for vol in "${VOL_NAMES[@]}"; do
+  for vol in "${VOL_NAMES[@]}" "$STATE_VOL"; do
     echo "  ${vol}:"
     echo "    name: ${vol}"
   done

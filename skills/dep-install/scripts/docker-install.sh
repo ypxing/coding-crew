@@ -23,8 +23,10 @@
 # hash (gen-override.sh), so a stamp in them proves they hold what these lockfiles describe. In one
 # `docker compose run --rm <service> sh -c …` this script:
 #   1. exits "present" when <root vendor path>/.crew-stamp exists — no install command runs;
-#   2. otherwise takes <root vendor path>/.crew-lock (mkdir, its start epoch written inside). Waiting
-#      is bounded by --timeout: a lock older than --timeout is removed and taken over;
+#   2. otherwise takes <state path>/.crew-lock (mkdir, its start epoch written inside). The lock lives
+#      in the override's state volume, not a dependency volume: an install that empties the vendor
+#      directory (`npm ci`) must not delete the lock that guards it. Waiting is bounded by
+#      --timeout: a lock older than --timeout is removed and taken over;
 #   3. re-checks the stamp, installs, writes the stamp, and removes the lock on every exit path
 #      it can (a SIGKILL leaves the lock; step 2's stale rule recovers it).
 # The volume is shared, so nobody reinstalls into a volume another run is reading: whoever finds the stamp
@@ -213,11 +215,18 @@ if [[ -f "$ENSURE_ENV" ]]; then
 fi
 bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" >/dev/null
 
-# The stamp and the lock live in the first dependency volume (the root one when there is one): a
-# volume is only ever filled by an install that ran, so its stamp is the proof one did.
+# The stamp lives in the first dependency volume (the root one when there is one): a volume is only
+# ever filled by an install that ran, so its stamp is the proof one did. The lock lives in the state
+# volume (STATE_PATH below).
 STAMP_DIR="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query vendor-paths 2>/dev/null | head -1)"
 if [[ -z "$STAMP_DIR" ]]; then
   echo "No dependency volume to install into at $PROJECT_ROOT" >&2
+  exit 2
+fi
+
+STATE_PATH="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query state-path 2>/dev/null | head -1)"
+if [[ -z "$STATE_PATH" ]]; then
+  echo "No state volume to lock in at $PROJECT_ROOT" >&2
   exit 2
 fi
 
@@ -251,12 +260,12 @@ COMPOSE_RUN=(bash -c 'cd "$1" && shift && exec "$@"' _ "$PROJECT_ROOT" docker co
 #   unlock-fail  release the lock
 # `mkdir` is the lock primitive: atomic everywhere this runs and it needs no extra binary. The
 # start epoch inside it is what makes a lock left by a SIGKILLed holder recoverable.
-# Arguments: <mode> <stamp dir> <timeout> <force 0|1> <install command>
+# Arguments: <mode> <stamp dir> <timeout> <force 0|1> <install command> <state dir>
 CONTAINER_SCRIPT='
-mode=$1; v=$2; t=$3; force=$4; cmd=$5
-stamp="$v/.crew-stamp"; lock="$v/.crew-lock"; keep=0
+mode=$1; v=$2; t=$3; force=$4; cmd=$5; s=$6
+stamp="$v/.crew-stamp"; lock="$s/.crew-lock"; keep=0
 unlock() { rm -f "$1/started"; rmdir "$1" 2>/dev/null; }
-mkdir -p "$v" || exit 1
+mkdir -p "$v" "$s" || exit 1
 case "$mode" in
   unlock-ok) date -u +%Y-%m-%dT%H:%M:%SZ > "$stamp"; unlock "$lock"; exit 0 ;;
   unlock-fail) unlock "$lock"; exit 0 ;;
@@ -294,8 +303,8 @@ CONTAINER_ARGV=()
 _container() {
   local mode="$1" cmd="${2:-}"
   case "$mode" in
-    run) CONTAINER_ARGV=("${COMPOSE_RUN[@]}" "$SERVICE" sh -c "$CONTAINER_SCRIPT" _ run "$STAMP_DIR" "$TIMEOUT" "$FORCE" "$cmd") ;;
-    *)   CONTAINER_ARGV=("${COMPOSE_RUN[@]}" --no-deps --entrypoint sh "$SERVICE" -c "$CONTAINER_SCRIPT" _ "$mode" "$STAMP_DIR" "$TIMEOUT" "$FORCE" "$cmd") ;;
+    run) CONTAINER_ARGV=("${COMPOSE_RUN[@]}" "$SERVICE" sh -c "$CONTAINER_SCRIPT" _ run "$STAMP_DIR" "$TIMEOUT" "$FORCE" "$cmd" "$STATE_PATH") ;;
+    *)   CONTAINER_ARGV=("${COMPOSE_RUN[@]}" --no-deps --entrypoint sh "$SERVICE" -c "$CONTAINER_SCRIPT" _ "$mode" "$STAMP_DIR" "$TIMEOUT" "$FORCE" "$cmd" "$STATE_PATH") ;;
   esac
 }
 

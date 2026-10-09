@@ -167,6 +167,14 @@ _VW_RUN_ARGS=(--project-root "$WORKTREE_DIR")
 # CREW_VERIFY_DOCKER=off is the rollback lever, independent of CREW_DEPS, back to the
 # always-host behaviour this gate had before docker mode was mechanized here.
 if [ "${CREW_VERIFY_DOCKER:-on}" != "off" ] && [ -n "$RUN_SCRIPT" ]; then
+  # A docker-mode worktree whose crew override was never written (ensure-deps.sh only writes it on
+  # its own docker path) would make run.sh fall back to the host, and with it skip the install below.
+  # gen-override.sh is deterministic and also what docker-install.sh runs first, so write it now.
+  _vw_override="$(git -C "$WORKTREE_DIR" rev-parse --path-format=absolute --git-dir 2>/dev/null || true)/crew-compose.override.yml"
+  if [ ! -f "$_vw_override" ] && [ -f "$_vw_dep_scripts/gen-override.sh" ] &&
+     bash "$_vw_dep_scripts/resolve-mode.sh" "${_VW_RUN_ARGS[@]}" --no-heuristic 2>/dev/null | grep -qx 'INSTALL_MODE=docker'; then
+    bash "$_vw_dep_scripts/gen-override.sh" --project-root "$WORKTREE_DIR" --main-root "${_VW_MAIN_ROOT:-$WORKTREE_DIR}" >/dev/null 2>&1 || true
+  fi
   _vw_describe="$(bash "$RUN_SCRIPT" "${_VW_RUN_ARGS[@]}" --describe 2>/dev/null || true)"
   if printf '%s\n' "$_vw_describe" | grep -qx 'RUN=docker'; then
     DOCKER_MODE=1

@@ -11,8 +11,10 @@
 #
 # `-f <override>` goes just before the compose subcommand, after any `-f` the caller gave. With
 # no `-f` at all, the files compose would have discovered are made explicit first, because one
-# explicit `-f` turns discovery off: COMPOSE_FILE's entries, else the default compose file of the
-# --project-directory (or cwd, searched upward as compose does) and its sibling override.
+# explicit `-f` turns discovery off: COMPOSE_FILE's entries (the process env's, else the one in the
+# project directory's `.env` or the --env-file), else the default compose file of the
+# --project-directory (or cwd, searched upward as compose does) and the first of its override files
+# (compose.override.{yaml,yml}, docker-compose.override.{yaml,yml}) beside it.
 #
 # Put this directory first on PATH: `export PATH="<dep-install scripts>/shim:$PATH"`.
 
@@ -75,6 +77,7 @@ fi
 # compose's own options come before its subcommand.
 have_f=0
 pdir=""
+envfile=""
 while [ "$i" -lt "$n" ]; do
   a="${args[$i]}"
   case "$a" in
@@ -82,7 +85,9 @@ while [ "$i" -lt "$n" ]; do
     --file=* | -f?*) have_f=1; i=$((i + 1)) ;;
     --project-directory) pdir="${args[$((i + 1))]:-}"; i=$((i + 2)) ;;
     --project-directory=*) pdir="${a#*=}"; i=$((i + 1)) ;;
-    -p | --project-name | --env-file | --profile | --ansi | --progress | --parallel \
+    --env-file) envfile="${args[$((i + 1))]:-}"; i=$((i + 2)) ;;
+    --env-file=*) envfile="${a#*=}"; i=$((i + 1)) ;;
+    -p | --project-name | --profile | --ansi | --progress | --parallel \
       | -c | --context | -H | --host | --config | -l | --log-level | --tlscacert | --tlscert | --tlskey) i=$((i + 2)) ;;
     -*) i=$((i + 1)) ;;
     *) break ;;
@@ -94,10 +99,36 @@ if [ "$sub" -ge "$n" ]; then
   _pass "$@"
 fi
 
+# _dotenv <file> <key> — the last assignment of <key> in a dotenv file, in $_DOTENV_VAL. Returns 1
+# when there is none. Handles `export `, single/double quotes and a trailing ` # comment`.
+_dotenv() {
+  local line v found=1
+  [ -f "$1" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in "export "*) line="${line#export}"; line="${line#"${line%%[![:space:]]*}"}" ;; esac
+    case "$line" in "$2="*) v="${line#"$2="}" ;; *) continue ;; esac
+    case "$v" in
+      \"*\"*) v="${v#\"}"; v="${v%%\"*}" ;;
+      \'*\'*) v="${v#\'}"; v="${v%%\'*}" ;;
+      *) v="${v%%[[:space:]]#*}"; v="${v%"${v##*[![:space:]]}"}" ;;
+    esac
+    _DOTENV_VAL="$v"
+    found=0
+  done < "$1"
+  return "$found"
+}
+
 extra=()
 if [ "$have_f" -eq 0 ]; then
-  if [ -n "${COMPOSE_FILE:-}" ]; then
-    IFS="${COMPOSE_PATH_SEPARATOR:-:}" read -r -a _parts <<<"$COMPOSE_FILE"
+  # Compose reads the process env first, then the project directory's .env (or --env-file).
+  _cf="${COMPOSE_FILE:-}"
+  _sep="${COMPOSE_PATH_SEPARATOR:-}"
+  _envf="${envfile:-${pdir:-$PWD}/.env}"
+  if [ -z "$_cf" ] && _dotenv "$_envf" COMPOSE_FILE; then _cf="$_DOTENV_VAL"; fi
+  if [ -z "$_sep" ] && _dotenv "$_envf" COMPOSE_PATH_SEPARATOR; then _sep="$_DOTENV_VAL"; fi
+  if [ -n "$_cf" ]; then
+    IFS="${_sep:-:}" read -r -a _parts <<<"$_cf"
     for _p in "${_parts[@]}"; do
       [ -n "$_p" ] && extra+=(-f "$_p")
     done
@@ -114,8 +145,9 @@ if [ "$have_f" -eq 0 ]; then
     # No compose file to make explicit: let compose report that itself.
     [ -n "$_found" ] || _pass "$@"
     extra+=(-f "$_found")
-    _own="${_found%.*}.override.${_found##*.}"
-    [ -f "$_own" ] && extra+=(-f "$_own")
+    for _on in compose.override.yaml compose.override.yml docker-compose.override.yaml docker-compose.override.yml; do
+      if [ -f "${_found%/*}/$_on" ]; then extra+=(-f "${_found%/*}/$_on"); break; fi
+    done
   fi
 fi
 
