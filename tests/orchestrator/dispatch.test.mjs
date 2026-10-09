@@ -80,6 +80,25 @@ test("pi and codex dispatch their own CLI directly: no bash dispatcher, no agent
   }
 });
 
+test("every agent's dispatch env has PATH starting with the dep-install shim dir, then the inherited PATH", () => {
+  const { root, promptFile } = fixture();
+  const prev = { dir: process.env.CREW_INSTALL_DIR, path: process.env.PATH };
+  process.env.CREW_INSTALL_DIR = "/opt/proj/.coding-crew";
+  process.env.PATH = "/usr/local/bin:/usr/bin";
+  try {
+    for (const platform of ["pi", "codex", "claude", "copilot"]) {
+      for (const agent of ["crew-coder", "crew-reviewer", "crew-triage"]) {
+        const b = buildDispatch(platform, spec(root, promptFile, { agent }));
+        assert.equal(b.env.PATH, "/opt/proj/.coding-crew/dep-install/scripts/shim:/usr/local/bin:/usr/bin", `${platform} ${agent}`);
+      }
+    }
+  } finally {
+    process.env.CREW_INSTALL_DIR = prev.dir;
+    process.env.PATH = prev.path;
+    if (prev.dir === undefined) delete process.env.CREW_INSTALL_DIR;
+  }
+});
+
 test("pi carries the role's tools and its rendered protocol as the system prompt, the prompt last", () => {
   const { root, promptFile } = fixture();
   const coder = buildDispatch("pi", spec(root, promptFile)).args;

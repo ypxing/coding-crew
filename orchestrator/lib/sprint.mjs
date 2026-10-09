@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { pathWithShim } from "./install-dir.mjs";
 import { depsLine } from "./report.mjs";
 
 // review-rollup.mjs is always this module's sibling one level up (lib/sprint.mjs ->
@@ -202,13 +203,15 @@ export class Sprint {
     return this.env.CREW_FIX_FINDINGS || "actionable";
   }
 
-  /** Sprint-scoped env for every child: MAIN_ROOT + STATE_FILE + TRACE_LOG. */
+  /** Sprint-scoped env for every child: MAIN_ROOT + STATE_FILE + TRACE_LOG, and the docker shim first on PATH. */
   childEnv() {
     const { sprintEnvFile, ...rest } = this.env;
     // Only set when unset: a caller (a test, a human debugging by hand) that already
     // pins a different review-rollup.mjs is deliberately overriding it, not being
     // overridden back.
-    return { CREW_REVIEW_ROLLUP: REVIEW_ROLLUP_PATH, ...rest };
+    const env = { CREW_REVIEW_ROLLUP: REVIEW_ROLLUP_PATH, ...rest };
+    if (this.installDir) env.PATH = pathWithShim(this.installDir, rest.PATH ?? process.env.PATH);
+    return env;
   }
 
   state(args) {

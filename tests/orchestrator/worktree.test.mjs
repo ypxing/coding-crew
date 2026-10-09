@@ -225,11 +225,12 @@ test("worktreePath resolves a relative CREW_WORKTREE_ROOT override against mainR
 
 // --- applyWorktreeInclude: built-in entries, without writing a manifest ------
 //
-// docker-compose.override.yml and .env can be generated in mainRoot after round 1's worktrees
-// exist, so they are provisioned whether or not the repo lists them — but crew-afk never writes
-// a `.worktreeinclude` into the user's repo to get there.
+// .env can be generated in mainRoot after round 1's worktrees exist, so it is provisioned whether
+// or not the repo lists it — but crew-afk never writes a `.worktreeinclude` into the user's repo
+// to get there. A docker-compose.override.yml is no built-in: crew's compose override lives in each
+// worktree's git dir, and a project's own committed one is already in the checkout.
 
-test("provisions .env and docker-compose.override.yml with no .worktreeinclude at all", () => {
+test("provisions .env with no .worktreeinclude at all, and links no docker-compose.override.yml", () => {
   const mainRoot = tmpRoot();
   const worktree = tmpRoot();
   writeFileSync(join(mainRoot, ".env"), "SECRET=1\n");
@@ -237,9 +238,9 @@ test("provisions .env and docker-compose.override.yml with no .worktreeinclude a
 
   const linked = applyWorktreeInclude(mainRoot, worktree);
 
-  assert.deepEqual(linked.sort(), [".env", "docker-compose.override.yml"]);
+  assert.deepEqual(linked.sort(), [".env"]);
   assert.ok(!lstatSync(join(worktree, ".env")).isSymbolicLink());
-  assert.ok(lstatSync(join(worktree, "docker-compose.override.yml")).isSymbolicLink());
+  assert.ok(!existsSync(join(worktree, "docker-compose.override.yml")));
 });
 
 test("provisions the built-in entries alongside a repo's own .worktreeinclude entries", () => {
