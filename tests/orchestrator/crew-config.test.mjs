@@ -17,6 +17,7 @@ import {
   resolveWorktreeRoot,
   validateFlags,
 } from "../../orchestrator/lib/crew-config.mjs";
+import { ROLE_POLICY } from "../../orchestrator/lib/adapters/render.mjs";
 
 function tmpRoot(files = {}) {
   const root = mkdtempSync(join(tmpdir(), "crew-config-"));
@@ -679,6 +680,19 @@ test("afk.effort: defaults to high, the repo's role wins over the user's, and or
   assert.deepEqual(s.effort, { coder: "medium", reviewer: "max", triage: "high" });
   rmSync(root, { recursive: true, force: true });
   rmSync(home, { recursive: true, force: true });
+});
+
+test("afk.effort: the roles it accepts and resolves are ROLE_POLICY's, so a role added there is settable", () => {
+  ROLE_POLICY.planner = { readOnly: true, subagents: false, effort: "low" };
+  try {
+    assert.equal(resolveSettings({}).effort.planner, "low");
+    const root = tmpRoot({ "config.json": { afk: { effort: { planner: "medium" } } } });
+    const loaded = loadConfig(root, { home: EMPTY_HOME });
+    assert.equal(resolveSettings({ afk: loaded.config.afk, origin: loaded.origin }).effort.planner, "medium");
+    rmSync(root, { recursive: true, force: true });
+  } finally {
+    delete ROLE_POLICY.planner;
+  }
 });
 
 test("afk.effort: a non-object, an unknown role or a non-string value is a config error naming the key", () => {

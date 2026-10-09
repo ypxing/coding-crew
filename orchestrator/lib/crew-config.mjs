@@ -88,7 +88,7 @@ const timeoutProblem = (min) =>
     ? null
     : `must be a positive number of minutes, at most ${MAX_TIMEOUT_MINUTES}`;
 // The roles with a ROLE_POLICY (adapters/render.mjs), so the ones afk.effort may set.
-const EFFORT_ROLES = ["coder", "reviewer", "triage"];
+const effortRoles = () => Object.keys(ROLE_POLICY);
 export const PANE_HOSTS = ["orca", "herdr", "auto", "none"];
 export const DEFAULT_SETTINGS = {
   fixFindings: "actionable",
@@ -195,7 +195,7 @@ export function validateConfig(config, label = CONFIG_REL, { userLevel = label =
         if (!isObject(afk.effort)) problems.push(`"afk.effort" must be an object of role → effort`);
         else {
           for (const [role, effort] of Object.entries(afk.effort)) {
-            if (!EFFORT_ROLES.includes(role)) problems.push(`unknown role "afk.effort.${role}" (expected ${oneOf(EFFORT_ROLES)})`);
+            if (!effortRoles().includes(role)) problems.push(`unknown role "afk.effort.${role}" (expected ${oneOf(effortRoles())})`);
             if (typeof effort !== "string" || !effort.trim()) problems.push(`"afk.effort.${role}" must be a non-empty string`);
           }
         }
@@ -485,7 +485,7 @@ export function validateFlags(cli = {}, flagOf = {}, env = process.env) {
  *   maxParallel: number|null,
  *   branchPrefix: string|null,  null: session-init.sh's default
  *   timeouts: Record<string, number>,  timeouts in minutes
- *   effort: Record<string, string>,  coder/reviewer/triage → afk.effort, else ROLE_POLICY's
+ *   effort: Record<string, string>,  each ROLE_POLICY role → afk.effort, else ROLE_POLICY's
  *   limitsUsd: Record<string, number>}}  each capped role's dollar cap; no key, no cap
  */
 export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
@@ -502,7 +502,7 @@ export function resolveSettings({ afk = {}, cli = {}, origin = {} }) {
     timeouts[k] = cli.timeouts?.[k] ?? afk.timeouts?.[k] ?? def;
   }
   const effort = {};
-  for (const role of EFFORT_ROLES) {
+  for (const role of effortRoles()) {
     effort[role] = afk.effort?.[role] ?? ROLE_POLICY[role].effort;
   }
   return {
