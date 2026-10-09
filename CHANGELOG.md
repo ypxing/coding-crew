@@ -9,7 +9,6 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 ### Changed
 
 - to-issues: `lint-issues.sh --deps` compares `deps.json` only with the `## Blocked by` edges between drafts, so a draft blocked by an existing (`--known`) issue lints clean with `[]` in `deps.json` (the form `publish-issues` requires), and a `deps.json` that still lists such an edge (a resumed sprint's does) lints clean too (#363).
-
 - crew-afk: the coder runs at `high` effort and its default timeout is 60 minutes; `afk.effort` (role → effort, repo over user) sets coder, reviewer and triage effort, the startup print shows each with its origin; a coder killed on timeout keeps its context size in the cost ledger (#367).
 - crew-afk: the orchestrator and every script resolve the same main checkout — inside a submodule the submodule's own checkout (never `.git/modules`), in a bare repo's worktree that worktree — through one rule (`scripts/main-root.sh`, `main.mjs` passes its `MAIN_ROOT` to every script); the feature lease points at a commit origin already has, so acquiring it no longer pushes the main checkout's unpushed commits (#365).
 - crew-afk: a sprint's wrap-up cleanup sweeps only the `worktree-agent-*` / `.claude/worktrees/` worktrees inside its own `crew/<slug>/` worktree directory, so it no longer removes another sprint's or the main checkout's clean agent worktrees (#365).
