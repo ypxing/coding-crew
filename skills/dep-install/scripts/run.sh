@@ -113,7 +113,9 @@ GIT_ENV_LINES=()
 _resolve_docker() {
   local verdict name
   verdict="$(bash "$SELF_DIR/resolve-mode.sh" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --no-heuristic 2>/dev/null)"
-  printf '%s\n' "$verdict" | grep -qx 'INSTALL_MODE=docker' || return 0
+  # No pipe into grep -q: it exits at its first match, and under pipefail the writer's
+  # SIGPIPE would read as "not docker" and run a docker-mode check on the host.
+  grep -qx 'INSTALL_MODE=docker' <<< "$verdict" || return 0
 
   [ -f "$OVERRIDE_FILE" ] || { FALLBACK="no $OVERRIDE_FILE yet — dep-install has not generated it"; return 0; }
   for name in docker-compose.yml docker-compose.yaml compose.yml; do

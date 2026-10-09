@@ -8,6 +8,7 @@ Record changes under `[Unreleased]` and move them under a version heading when y
 
 ### Changed
 
+- dep-install: `run.sh` no longer pipes the mode verdict into `grep -q`, so a docker-mode check can't run on the host when the pipe closes early (it printed `write error: Broken pipe` and a false `TEST: pass`) (#370).
 - docs, evals: the guide's light-path paragraph and the design-skills eval (round-one instruction, `brainstorm-vague-ask` reference judgement) now say a failing check prints nothing about the light path (#372).
 - crew-grill, crew-brainstorm: when a light-path check does not hold, the skill goes straight to its questions and prints nothing about the light path (it used to print a line naming the failed check) (#360).
 - to-issues: `lint-issues.sh --deps` compares `deps.json` only with the `## Blocked by` edges between drafts, so a draft blocked by an existing (`--known`) issue lints clean with `[]` in `deps.json` (the form `publish-issues` requires), and a `deps.json` that still lists such an edge (a resumed sprint's does) lints clean too (#363).
