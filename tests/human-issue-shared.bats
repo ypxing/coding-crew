@@ -52,7 +52,7 @@ FRAG="$REPO_ROOT/skills/_shared/fragments/human-issue.md"
     ! grep -qE 'mark-issue-done\.sh|tracker-config\.sh' "$output"
     grep -qF '`Check:` the command exits 0 and prints no `REFUSED` line' "$output"
     grep -qF '`Undo:` follow "Reopen an issue" in the tracker doc `.coding-crew/tracker/docs/<kind>.md`' "$output"
-    ! grep -qE 'awaiting-merge|issues/(open|done)' <(sed -n '/Kind A/p' "$output")
+    if grep -qE 'awaiting-merge|issues/(open|done)' <(sed -n '/Kind A/p' "$output"); then echo "forbidden text matched (line 55 of human-issue-shared.bats)" >&2; return 1; fi
   done
 }
 
