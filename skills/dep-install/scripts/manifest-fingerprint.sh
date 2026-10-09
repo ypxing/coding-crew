@@ -84,9 +84,9 @@ PROJECT_ROOT="$(cd "$PROJECT_ROOT" && pwd -P)"
 # needed, this script only hashes content) so a new ecosystem added to either of those tables
 # should be added here too.
 _LOCKFILE_NAMES=(
-  uv.lock bun.lockb pnpm-lock.yaml package-lock.json yarn.lock poetry.lock
+  package.json uv.lock bun.lockb pnpm-lock.yaml package-lock.json yarn.lock poetry.lock
   go.sum go.mod requirements.txt requirements-dev.txt dev-requirements.txt pyproject.toml
-  Gemfile.lock Cargo.toml
+  Gemfile Gemfile.lock Cargo.toml
   composer.json pom.xml mix.exs
 )
 

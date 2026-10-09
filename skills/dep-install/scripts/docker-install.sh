@@ -17,11 +17,21 @@
 # Usage:
 #   bash scripts/docker-install.sh --project-root <path> --main-root <path> \
 #     [--service <name>] [--install-cmd <cmd>] [--credential-target <command>] \
-#     [--timeout <sec, default 1800>] [--lock-timeout <sec, default 30>] [--force]
+#     [--timeout <sec, default 1800>] [--force]
 #
-# --force skips the manifest-fingerprint fast path below (see step 0) and always reinstalls —
-# dep-install's own retry rule uses this on a module-not-found error, since a FRESH verdict
-# there would otherwise make the retry a no-op.
+# Install-if-missing. The dependency volumes this worktree's override names carry the lockfile
+# hash (gen-override.sh), so a stamp in them proves they hold what these lockfiles describe. In one
+# `docker compose run --rm <service> sh -c …` this script:
+#   1. exits "present" when <root vendor path>/.crew-stamp exists — no install command runs;
+#   2. otherwise takes <root vendor path>/.crew-lock (mkdir, its start epoch written inside). Waiting
+#      is bounded by --timeout: a lock older than --timeout is removed and taken over;
+#   3. re-checks the stamp, installs, writes the stamp, and removes the lock on every exit path
+#      it can (a SIGKILL leaves the lock; step 2's stale rule recovers it).
+# The volume is shared, so nobody reinstalls into a volume another run is reading: whoever finds the stamp
+# present is done, and a failed install writes no stamp.
+#
+# --force deletes the stamp first (under the lock), then installs: dep-install's own retry rule
+# uses it on a module-not-found error, when a present stamp would otherwise make the retry a no-op.
 #
 # --install-cmd is a documented project override (e.g. dev-commands.json's discovered
 # "install" field, forwarded by ensure-deps.sh) — it takes priority over the per-manifest
@@ -30,9 +40,10 @@
 # (detect-docker-nesting.sh) runs on the host instead of inside the service: nesting it would
 # need a docker CLI the container does not have. Its own `docker compose` call runs the install
 # in a container and gets this worktree's crew override from the docker shim on PATH, whatever
-# `-f`/`COMPOSE_FILE`/`-p` it uses. A `docker run`/`docker exec` call loads no compose file, so it
+# `-f`/`COMPOSE_FILE`/`-p` it uses. The lock is taken before it and released after it, each in a
+# container run of its own. A `docker run`/`docker exec` call loads no compose file, so it
 # is refused up front when detect-compose-bypass.sh sees one (exit 5), and the volumes are probed
-# from the service afterwards (exit 5 again when every one is still empty).
+# from the service afterwards (exit 5 again when every one is still empty, and no stamp is written).
 #
 # --credential-target is the same kind of forwarded override for dev-commands.json's
 # "credential_target" field — a full command (e.g. "make _registry"), passed straight through
@@ -41,14 +52,14 @@
 # tells a model to pass whatever it found scanning the Makefile by hand. Omitted (the default)
 # when no cache entry exists: ensure-env.sh's own template-expansion fallback still applies.
 #
+# Output: "Running: docker compose run --rm <service> sh -c '<install>'" before the run, and, when
+# the stamp was already there, a "Present: …" line after it.
+#
 # Exit codes:
-#   0  install ran successfully ("Running: docker compose run --rm <service> ..." on stdout)
+#   0  the volumes hold the install: it ran successfully, or the stamp was already present
 #   1  argument or filesystem error
 #   2  nothing to do here: no compose file, no service, or no supported ecosystem
-#   3  install command failed inside the container
-#   4  could not acquire the install lock within --lock-timeout — another install (this
-#      script or a worker's own dep-install invocation) is already in flight; the caller
-#      should treat this the same as "docker, deferred" rather than block on it
+#   3  install command failed inside the container (no stamp written, lock removed)
 #   5  --install-cmd runs docker in a way that would not reach the shared volumes the checks
 #      read (`docker run`/`docker exec`) — refused before running, or still empty after it ran
 #      (reasons on stderr)
@@ -63,7 +74,6 @@ SERVICE=""
 INSTALL_CMD_OVERRIDE=""
 CREDENTIAL_TARGET=""
 TIMEOUT=1800
-LOCK_TIMEOUT=30
 FORCE=0
 
 while [[ $# -gt 0 ]]; do
@@ -74,7 +84,6 @@ while [[ $# -gt 0 ]]; do
     --install-cmd)   INSTALL_CMD_OVERRIDE="$2"; shift 2 ;;
     --credential-target) CREDENTIAL_TARGET="$2"; shift 2 ;;
     --timeout)       TIMEOUT="$2";      shift 2 ;;
-    --lock-timeout)  LOCK_TIMEOUT="$2"; shift 2 ;;
     --force)         FORCE=1;           shift   ;;
     --help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
@@ -104,25 +113,7 @@ if [[ ! -f "$GEN_OVERRIDE" ]]; then
   exit 1
 fi
 
-# ─── 0. skip if manifests are unchanged since this shared volume's last successful install ──
-# Stamp lives at MAIN_ROOT, not PROJECT_ROOT: the named volumes this installs into are shared
-# across every worktree of MAIN_ROOT (see the lock below), so the fast path has to agree across
-# worktrees too, not just within one. The scan itself still reads PROJECT_ROOT's own manifests
-# (usually the same as MAIN_ROOT's, for the one MAIN_ROOT call ensure-deps.sh makes before any
-# worktree exists) — a worktree's own branch adding a dependency is left to the retry rule to
-# catch reactively, the same way ensure-deps.sh's own worktree fast path already treats that
-# case, rather than have every worktree call re-derive a MAIN_ROOT-wide answer here.
-# Resolved before any ecosystem/service detection below, so the common "nothing changed" case
-# pays for none of it.
-FINGERPRINT="$SELF_DIR/manifest-fingerprint.sh"
-DOCKER_STAMP="$MAIN_ROOT/.scratch/docker-install.fingerprint"
-if [[ "$FORCE" -ne 1 ]] && [[ -f "$FINGERPRINT" ]] &&
-   [[ "$(bash "$FINGERPRINT" check --project-root "$PROJECT_ROOT" --stamp "$DOCKER_STAMP" 2>/dev/null)" == "FRESH" ]]; then
-  echo "Running: (skipped — manifests unchanged since last install)"
-  exit 0
-fi
-
-# ─── 1. resolve what to run, before taking the lock ──────────────────────────
+# ─── 1. resolve what to run ──────────────────────────────────────────────────
 # All of this is read-only detection; only the install step below mutates shared state.
 
 ECO_NAME="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query ecosystem 2>/dev/null || true)"
@@ -212,31 +203,23 @@ else
   CONTAINER_CMD="$(IFS=' && '; echo "${STEPS[*]}")"
 fi
 
-# ─── 2. the lock ──────────────────────────────────────────────────────────────
-# Named volumes are shared across every worktree of this MAIN_ROOT by design (that is the
-# whole point of caching deps once) — so the one thing that must never run twice at once is
-# the install command itself. `mkdir` is the lock primitive because it is atomic on every
-# filesystem this runs on and needs no extra binary (flock ships on Linux, not on macOS).
-LOCK_DIR="$MAIN_ROOT/.scratch/.docker-install.lock"
-mkdir -p "$MAIN_ROOT/.scratch" 2>/dev/null || true
-
-_waited=0
-until mkdir "$LOCK_DIR" 2>/dev/null; do
-  _waited=$((_waited + 1))
-  if [[ "$_waited" -ge "$LOCK_TIMEOUT" ]]; then
-    echo "Could not acquire $LOCK_DIR within ${LOCK_TIMEOUT}s — another docker install is in flight" >&2
-    exit 4
-  fi
-  sleep 1
-done
-
-# ─── 3. env + override, then install ─────────────────────────────────────────
+# ─── 2. env + override ───────────────────────────────────────────────────────
+# The override names the volumes by this worktree's lockfile hash, so it is written before the
+# stamp is looked for: a changed lockfile means different volumes, and their own stamp.
 if [[ -f "$ENSURE_ENV" ]]; then
   ENV_ARGS=(--project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT")
   [[ -n "$CREDENTIAL_TARGET" ]] && ENV_ARGS+=(--credential-target "$CREDENTIAL_TARGET")
   bash "$ENSURE_ENV" "${ENV_ARGS[@]}" >/dev/null 2>&1 || true
 fi
 bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" >/dev/null
+
+# The stamp and the lock live in the first dependency volume (the root one when there is one): a
+# volume is only ever filled by an install that ran, so its stamp is the proof one did.
+STAMP_DIR="$(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query vendor-paths 2>/dev/null | head -1)"
+if [[ -z "$STAMP_DIR" ]]; then
+  echo "No dependency volume to install into at $PROJECT_ROOT" >&2
+  exit 2
+fi
 
 TIMEOUT_BIN=""
 for _t in timeout gtimeout; do
@@ -261,67 +244,171 @@ export CREW_COMPOSE_OVERRIDE="$OVERRIDE"
 # Compose runs from PROJECT_ROOT, where the shim finds the compose file.
 COMPOSE_RUN=(bash -c 'cd "$1" && shift && exec "$@"' _ "$PROJECT_ROOT" docker compose run --rm)
 
-if [[ -n "$HOST_CMD" ]]; then
-  RUN_CMD=(bash -c 'cd "$1" && eval "$2"' _ "$PROJECT_ROOT" "$HOST_CMD")
-else
-  RUN_CMD=("${COMPOSE_RUN[@]}" "$SERVICE" sh -c "$CONTAINER_CMD")
-fi
+# The container-side half: one POSIX sh script, told what to do by its first argument.
+#   run          present → done; else take the lock, re-check, install, stamp, unlock
+#   lock         present → done; else take the lock and leave it held (a host-run install follows)
+#   unlock-ok    write the stamp, then release the lock
+#   unlock-fail  release the lock
+# `mkdir` is the lock primitive: atomic everywhere this runs and it needs no extra binary. The
+# start epoch inside it is what makes a lock left by a SIGKILLed holder recoverable.
+# Arguments: <mode> <stamp dir> <timeout> <force 0|1> <install command>
+CONTAINER_SCRIPT='
+mode=$1; v=$2; t=$3; force=$4; cmd=$5
+stamp="$v/.crew-stamp"; lock="$v/.crew-lock"; keep=0
+unlock() { rm -f "$1/started"; rmdir "$1" 2>/dev/null; }
+mkdir -p "$v" || exit 1
+case "$mode" in
+  unlock-ok) date -u +%Y-%m-%dT%H:%M:%SZ > "$stamp"; unlock "$lock"; exit 0 ;;
+  unlock-fail) unlock "$lock"; exit 0 ;;
+esac
+present() { echo "crew-stamp: present"; exit 0; }
+if [ "$force" != 1 ] && [ -f "$stamp" ]; then present; fi
+waited=0
+until mkdir "$lock" 2>/dev/null; do
+  if [ "$force" != 1 ] && [ -f "$stamp" ]; then present; fi
+  started=$(cat "$lock/started" 2>/dev/null)
+  case "$started" in ""|*[!0-9]*) started="" ;; esac
+  if [ -n "$started" ]; then age=$(( $(date +%s) - started )); else age=$waited; fi
+  if [ "$age" -gt "$t" ]; then
+    echo "crew-lock: taking over a lock older than ${t}s" >&2
+    if mv "$lock" "$lock.stale.$$" 2>/dev/null; then unlock "$lock.stale.$$"; fi
+    continue
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
+trap '"'"'if [ "$keep" = 0 ]; then unlock "$lock"; fi'"'"' EXIT
+trap "exit 143" HUP INT TERM
+date +%s > "$lock/started"
+if [ "$force" != 1 ] && [ -f "$stamp" ]; then present; fi
+if [ "$mode" = lock ]; then keep=1; exit 0; fi
+rm -f "$stamp"
+( eval "$cmd" ) || exit $?
+date -u +%Y-%m-%dT%H:%M:%SZ > "$stamp"
+'
+
+# _container <mode> [install command] — sets CONTAINER_ARGV to one container run of CONTAINER_SCRIPT.
+# The lock and unlock runs skip the service's entrypoint and its dependencies: they only touch
+# the volume.
+CONTAINER_ARGV=()
+_container() {
+  local mode="$1" cmd="${2:-}"
+  case "$mode" in
+    run) CONTAINER_ARGV=("${COMPOSE_RUN[@]}" "$SERVICE" sh -c "$CONTAINER_SCRIPT" _ run "$STAMP_DIR" "$TIMEOUT" "$FORCE" "$cmd") ;;
+    *)   CONTAINER_ARGV=("${COMPOSE_RUN[@]}" --no-deps --entrypoint sh "$SERVICE" -c "$CONTAINER_SCRIPT" _ "$mode" "$STAMP_DIR" "$TIMEOUT" "$FORCE" "$cmd") ;;
+  esac
+}
 
 OUT_FILE="$(mktemp)"
-trap 'rmdir "$LOCK_DIR" 2>/dev/null || true; rm -f "$OUT_FILE"' EXIT
+LOCK_HELD=0
+_cleanup() {
+  # A host-run install holds the lock across container runs: release it on every exit path.
+  if [[ "$LOCK_HELD" -eq 1 ]]; then
+    LOCK_HELD=0
+    _container unlock-fail
+    "${CONTAINER_ARGV[@]}" >/dev/null 2>&1 || true
+  fi
+  rm -f "$OUT_FILE"
+}
+trap _cleanup EXIT
 
-if [[ -n "$HOST_CMD" ]]; then
-  echo "Running: $HOST_CMD (on the host — it runs docker itself)"
-else
-  echo "Running: docker compose run --rm $SERVICE sh -c '$CONTAINER_CMD'"
-fi
-# Streamed live via tee, not just captured to $OUT_FILE — a caller running this in the
-# foreground (a human watching a herdr pane, or ensure-deps.sh's own MAIN_ROOT call once it
-# streams through too) otherwise sees nothing at all for however long the install takes.
-# $OUT_FILE still gets the full output for the tail-on-failure diagnostic below; PIPESTATUS[0]
-# (not plain $?) is required to read the actual command's exit code through the pipe to tee.
-if [[ -n "$TIMEOUT_BIN" ]]; then
-  "$TIMEOUT_BIN" "$TIMEOUT" "${RUN_CMD[@]}" 2>&1 | tee "$OUT_FILE"
-else
-  "${RUN_CMD[@]}" 2>&1 | tee "$OUT_FILE"
-fi
-RC=${PIPESTATUS[0]}
+_present() {
+  echo "Present: $STAMP_DIR/.crew-stamp found — the dependency volumes are already installed"
+  exit 0
+}
 
-if [[ "$RC" -ne 0 ]]; then
+# _stream <cap seconds> <command...> — run it with its output streamed live (via tee, not just captured: a
+# caller in the foreground otherwise sees nothing for however long an install takes) and kept in
+# $OUT_FILE for the tail-on-failure diagnostic. PIPESTATUS[0] (not plain $?) reads the command's
+# own exit code through the pipe to tee.
+_stream() {
+  local cap="$1" rc
+  shift
+  if [[ -n "$TIMEOUT_BIN" ]]; then
+    "$TIMEOUT_BIN" "$cap" "$@" 2>&1 | tee "$OUT_FILE"
+    rc=${PIPESTATUS[0]}
+  else
+    "$@" 2>&1 | tee "$OUT_FILE"
+    rc=${PIPESTATUS[0]}
+  fi
+  return "$rc"
+}
+
+_fail_tail() {
   echo "--- docker compose output (tail) ---" >&2
   tail -n 20 "$OUT_FILE" >&2
   echo "--- end ---" >&2
+}
+
+# A container run may wait up to --timeout for another holder's lock (after which it takes the
+# lock over) and then install for up to --timeout, so its wall-clock cap is both.
+RUN_CAP=$((2 * TIMEOUT + 10))
+
+# ─── 3. install ──────────────────────────────────────────────────────────────
+if [[ -z "$HOST_CMD" ]]; then
+  echo "Running: docker compose run --rm $SERVICE sh -c '$CONTAINER_CMD'"
+  _container run "$CONTAINER_CMD"
+  _stream "$RUN_CAP" "${CONTAINER_ARGV[@]}"
+  RC=$?
+  if [[ "$RC" -ne 0 ]]; then
+    _fail_tail
+    exit 3
+  fi
+  if grep -qx 'crew-stamp: present' "$OUT_FILE"; then _present; fi
+  exit 0
+fi
+
+# A host-run install: the lock is taken before it and released after it, in container runs of
+# their own, since the command itself reaches the volumes through its own docker calls.
+_container lock
+_stream "$RUN_CAP" "${CONTAINER_ARGV[@]}"
+RC=$?
+if [[ "$RC" -ne 0 ]]; then
+  _fail_tail
+  exit 3
+fi
+if grep -qx 'crew-stamp: present' "$OUT_FILE"; then _present; fi
+LOCK_HELD=1
+
+echo "Running: $HOST_CMD (on the host — it runs docker itself)"
+_stream "$TIMEOUT" bash -c 'cd "$1" && eval "$2"' _ "$PROJECT_ROOT" "$HOST_CMD"
+RC=$?
+if [[ "$RC" -ne 0 ]]; then
+  _fail_tail
   exit 3
 fi
 
 # ─── 4. a host-run install: prove it reached the volumes ─────────────────────
 # detect-compose-bypass.sh only sees what `make -n` can expand. Whatever it missed, this looks
 # where the checks will: from the service, through the override, at each dep volume's path.
-# One non-empty volume is enough — a workspace's sub-packages may legitimately have none.
-if [[ -n "$HOST_CMD" ]]; then
-  mapfile -t VENDOR_PATHS < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query vendor-paths 2>/dev/null)
-  if ((${#VENDOR_PATHS[@]})); then
-    # Exit 7 is the probe's own "all empty", so a compose or daemon failure is not read as one.
-    "${COMPOSE_RUN[@]}" --no-deps --entrypoint sh "$SERVICE" \
-      -c 'for d in "$@"; do [ -n "$(ls -A "$d" 2>/dev/null)" ] && exit 0; done; exit 7' _ "${VENDOR_PATHS[@]}" \
-      >"$OUT_FILE" 2>&1
-    PROBE_RC=$?
-    if [[ "$PROBE_RC" -ne 0 ]]; then
-      {
-        if [[ "$PROBE_RC" -eq 7 ]]; then
-          echo "Install command '$HOST_CMD' succeeded, but the dependency volumes the checks run against are still empty, seen from service $SERVICE:"
-          printf '  %s\n' "${VENDOR_PATHS[@]}"
-          echo "Its docker call installed somewhere else. Make it a 'docker compose run', or name a container-side install command (e.g. 'pnpm install') as \"install\" in .coding-crew/dev-commands.json."
-        else
-          echo "Install command '$HOST_CMD' succeeded, but checking that it reached the dependency volumes failed (exit $PROBE_RC):"
-          tail -n 20 "$OUT_FILE"
-        fi
-      } >&2
-      exit 5
-    fi
+# One non-empty volume is enough — a workspace's sub-packages may legitimately have none. The
+# lock and stamp files in the root volume do not count as an install.
+mapfile -t VENDOR_PATHS < <(bash "$GEN_OVERRIDE" --project-root "$PROJECT_ROOT" --main-root "$MAIN_ROOT" --query vendor-paths 2>/dev/null)
+if ((${#VENDOR_PATHS[@]})); then
+  # Exit 7 is the probe's own "all empty", so a compose or daemon failure is not read as one.
+  "${COMPOSE_RUN[@]}" --no-deps --entrypoint sh "$SERVICE" \
+    -c 'for d in "$@"; do [ -n "$(ls -A "$d" 2>/dev/null | grep -v "^[.]crew-")" ] && exit 0; done; exit 7' _ "${VENDOR_PATHS[@]}" \
+    >"$OUT_FILE" 2>&1
+  PROBE_RC=$?
+  if [[ "$PROBE_RC" -ne 0 ]]; then
+    {
+      if [[ "$PROBE_RC" -eq 7 ]]; then
+        echo "Install command '$HOST_CMD' succeeded, but the dependency volumes the checks run against are still empty, seen from service $SERVICE:"
+        printf '  %s\n' "${VENDOR_PATHS[@]}"
+        echo "Its docker call installed somewhere else. Make it a 'docker compose run', or name a container-side install command (e.g. 'pnpm install') as \"install\" in .coding-crew/dev-commands.json."
+      else
+        echo "Install command '$HOST_CMD' succeeded, but checking that it reached the dependency volumes failed (exit $PROBE_RC):"
+        tail -n 20 "$OUT_FILE"
+      fi
+    } >&2
+    exit 5
   fi
 fi
 
-[[ -f "$FINGERPRINT" ]] && bash "$FINGERPRINT" write --project-root "$PROJECT_ROOT" --stamp "$DOCKER_STAMP" >/dev/null 2>&1 || true
-
+_container unlock-ok
+if ! "${CONTAINER_ARGV[@]}" >"$OUT_FILE" 2>&1; then
+  _fail_tail
+  exit 3 # the stamp was not written; the exit trap tries releasing the lock once more
+fi
+LOCK_HELD=0
 exit 0

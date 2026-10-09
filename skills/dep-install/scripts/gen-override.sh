@@ -11,12 +11,14 @@
 #   --dry-run        Print generated YAML to stdout instead of writing the file.
 #   --query <field>  Print one detected fact and exit, instead of writing the override.
 #                    <field> is one of: services | ecosystem | container-src | manifest-dirs |
-#                    platform | project-name | vendor-paths
+#                    platform | project-name | vendor-paths | owner-prefix
 #                    Lets a caller that needs to *run* an install (not just generate the
 #                    override) reuse this script's own detection instead of re-parsing the
 #                    compose file and manifests a second time. `vendor-paths` is the container
 #                    path of each named dep volume, one per line — where an install must have
-#                    written for the checks to see it.
+#                    written for the checks to see it. `owner-prefix` is `wt_<proj>_<owner4>_`,
+#                    the prefix every dependency volume of this MAIN_ROOT on this host starts
+#                    with (it needs no compose file).
 #
 # Where it is written: <PROJECT_ROOT's git dir>/crew-compose.override.yml, i.e.
 #   $(git -C <project-root> rev-parse --path-format=absolute --git-dir)/crew-compose.override.yml
@@ -24,6 +26,15 @@
 # checkout's lands in .git/. Nothing named docker-compose.override.yml is written or linked into
 # the repo, so a project's own committed one is never touched. The shim (shim/docker) adds this
 # file as the last `-f` of every `docker compose` call on PATH; nothing else needs to name it.
+#
+# Dependency volume names: every one gets an explicit top-level `name:`
+#   wt_<proj>_<owner4>_<eco>_<dir>_<lock8>
+# <owner4> is a hash of this host's name and MAIN_ROOT's realpath, so another clone or sandbox
+# never matches (or removes) this one's volumes. <lock8> is a hash over every manifest and lockfile
+# manifest-fingerprint.sh finds under the project, since one install writes every volume: a
+# worktree, sprint or sandbox with the same lockfiles names the same, already populated volumes,
+# and a different lockfile names fresh ones. Being explicit, `name:` is not prefixed by compose's
+# project name, so -p / COMPOSE_PROJECT_NAME no longer rename a volume.
 #
 # Project name: the generated file carries a top-level `name:`. Compose resolves the project name
 # from the last `-f` file's `name:` key when neither `-p` nor COMPOSE_PROJECT_NAME is set, and the
@@ -118,9 +129,9 @@ if [[ -z "$PROJECT_ROOT" || -z "$MAIN_ROOT" ]]; then
 fi
 
 case "$QUERY" in
-  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name|vendor-paths) ;;
+  ""|services|ecosystem|container-src|manifest-dirs|platform|project-name|vendor-paths|owner-prefix) ;;
   *)
-    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name, vendor-paths" >&2
+    echo "Error: --query must be one of: services, ecosystem, container-src, manifest-dirs, platform, project-name, vendor-paths, owner-prefix" >&2
     exit 1
     ;;
 esac
@@ -141,6 +152,26 @@ fi
 if [[ ! -d "$MAIN_ROOT" ]]; then
   echo "Error: --main-root does not exist: $MAIN_ROOT" >&2
   exit 1
+fi
+
+_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256
+  else
+    openssl dgst -sha256
+  fi
+}
+
+# <proj>: MAIN_ROOT's basename; <owner4>: this host + MAIN_ROOT's realpath.
+PROJ_SLUG=$(basename "$MAIN_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')
+OWNER4="$(printf '%s\n%s\n' "$(hostname 2>/dev/null || uname -n)" "$(cd "$MAIN_ROOT" && pwd -P)" | _sha256 | awk '{print substr($1, 1, 4)}')"
+OWNER_PREFIX="wt_${PROJ_SLUG}_${OWNER4}_"
+
+if [[ "$QUERY" == "owner-prefix" ]]; then
+  echo "$OWNER_PREFIX"
+  exit 0
 fi
 
 # This worktree's override path and git-env entries, resolved from PROJECT_ROOT before the
@@ -339,8 +370,6 @@ fi
 # Find manifest directories and build volume list
 # ---------------------------------------------------------------------------
 
-PROJ_SLUG=$(basename "$MAIN_ROOT" | tr -cs 'a-zA-Z0-9' '_' | sed 's/_*$//')
-
 # PROJECT_NAME — the compose top-level `name:` value (see the "Project name" header comment
 # above). It must be the name compose itself picks for the main checkout without our override,
 # or the project's own `docker compose up` and ours create two `<name>_default` networks whose
@@ -382,6 +411,9 @@ else
   )
 fi
 
+# The lock hash: one over every manifest and lockfile under the (possibly fallen-back) project root.
+LOCK8="$(bash "$(dirname "${BASH_SOURCE[0]}")/manifest-fingerprint.sh" compute --project-root "$PROJECT_ROOT" | cut -c1-8)"
+
 VOL_NAMES=()
 VOL_PATHS=()
 for dir in "${MANIFEST_DIRS[@]}"; do
@@ -394,7 +426,7 @@ for dir in "${MANIFEST_DIRS[@]}"; do
     suffix=$(echo "$rel" | tr '/.-' '___')
     container_path="${CONTAINER_SRC}/${rel}/${ECO_VENDOR}"
   fi
-  VOL_NAMES+=("wt_${PROJ_SLUG}_${ECO_PREFIX}_${suffix}")
+  VOL_NAMES+=("${OWNER_PREFIX}${ECO_PREFIX}_${suffix}_${LOCK8}")
   VOL_PATHS+=("$container_path")
 done
 
@@ -452,6 +484,7 @@ generate_yaml() {
   echo "volumes:"
   for vol in "${VOL_NAMES[@]}"; do
     echo "  ${vol}:"
+    echo "    name: ${vol}"
   done
   if [[ -n "$GIT_COMMON_DIR_ABS" ]]; then
     echo "  wt_${PROJ_SLUG}_git_hooks:"
