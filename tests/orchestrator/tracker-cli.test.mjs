@@ -366,3 +366,64 @@ test("github.mjs's create-issue and link-blockers stay reachable through the CLI
   assert.equal(links.code, 0);
   assert.equal(existsSync(join(dir, "known")), false);
 });
+
+// --- features ----------------------------------------------------------------------
+
+function writeFeatureIssue(dir, slug, state, name, status) {
+  const d = join(dir, ".scratch", slug, "issues", state);
+  mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, name), `# ${name}\n\nStatus: ${status}\n\n## Acceptance criteria\n\n- [ ] x\n`);
+}
+
+test("features (local) lists each .scratch/<slug>/ with issues/, sorted, open|closed and its ready count", async () => {
+  const dir = root();
+  writeFeatureIssue(dir, "zeta", "open", "01-a.md", "ready-for-agent");
+  writeFeatureIssue(dir, "zeta", "open", "02-b.md", "ready-for-agent");
+  writeFeatureIssue(dir, "zeta", "open", "03-c.md", "ready-for-human");
+  writeFeatureIssue(dir, "alpha", "done", "01-a.md", "done");
+  writeFeatureIssue(dir, "mid", "open", "01-a.md", "needs-triage");
+  mkdirSync(join(dir, ".scratch/no-issues"), { recursive: true });
+  writeFileSync(join(dir, ".scratch/stray-file"), "x");
+  const r = await cli(dir, ["features"]);
+  assert.equal(r.code, 0);
+  assert.equal(r.stdout, "alpha\tclosed\t0\nmid\topen\t0\nzeta\topen\t2\n");
+});
+
+test("features (local) with no .scratch/ exits 0 and prints nothing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "crew-tracker-cli-"));
+  const r = await cli(dir, ["features"]);
+  assert.deepEqual(r, { code: 0, stdout: "", stderr: "" });
+});
+
+test("features (github) lists every milestone, open and closed, with its open ready-for-agent count", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
+  const exec = fakeGh({
+    "api repos/{owner}/{repo}/milestones?state=all": { stdout: "2\topen\tzeta\n1\tclosed\talpha\n3\topen\tempty\n" },
+    "issue list": {
+      stdout: JSON.stringify([{ milestone: { title: "zeta" } }, { milestone: { title: "zeta" } }, { milestone: null }, { milestone: { title: "alpha" } }]),
+    },
+  });
+  const r = await cli(dir, ["features"], exec);
+  assert.equal(r.code, 0);
+  assert.equal(r.stdout, "alpha\tclosed\t1\nempty\topen\t0\nzeta\topen\t2\n");
+  assert.ok(exec.calls.some((c) => c.includes("--label") && c.includes("ready-for-agent") && c.includes("open")));
+});
+
+test("features (github) exits 1 with gh's stderr verbatim when gh fails", async () => {
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
+  const r = await cli(dir, ["features"], fakeGh({ "api ": { code: 4, stderr: "gh: To use GitHub CLI, run: gh auth login\n" } }));
+  assert.equal(r.code, 1);
+  assert.equal(r.stdout, "");
+  assert.equal(r.stderr, "gh: To use GitHub CLI, run: gh auth login\n");
+});
+
+test("features exits 2 on an extra argument, on both trackers", async () => {
+  const local = await cli(root(), ["features", "extra"]);
+  assert.equal(local.code, 2);
+  const dir = root({ github: true });
+  writeFileSync(join(dir, ".coding-crew/config.json"), JSON.stringify({ tracker: { kind: "github" } }));
+  const gh = await cli(dir, ["features", "extra"]);
+  assert.equal(gh.code, 2);
+});

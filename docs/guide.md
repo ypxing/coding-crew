@@ -550,6 +550,11 @@ Edit these files after install — they override the defaults on the next run:
 | ---------------------------------------------- | ----------------------------------------------- |
 | `.coding-crew/config.json` (`tracker` section) | Where issues live: `{"tracker": {"kind": "github"}}` (default `local`) |
 
+Commit `.coding-crew/config.json` and `.coding-crew/dev-commands.json`: they are team state — the
+tracker choice, the per-role models and the project's check commands — that everyone using the
+repo needs, so do not add them to `.gitignore`. The installed tooling beside them (`tracker/`,
+`crew-afk/`, `manifest.json`) is what `install.sh` writes, not team state.
+
 ---
 
 ### Triage Labels
