@@ -32,11 +32,13 @@ setup() {
   grep -q 'MAIN_ROOT' "$SOLVE_ISSUE"
 }
 
-@test "solve-issue falls back to MAIN_ROOT/.scratch/FEATURE_SLUG/PRD.md" {
+@test "solve-issue falls back to the feature's PRD, resolved by preflight.sh" {
   # The fallback is what crew-coder used to provide: an issue with no Context
   # Documents section must still find the feature's PRD. The resolution itself is
-  # preflight.sh's (behaviour pinned in solve-issue-scripts.bats); the skill names it.
-  grep -q 'MAIN_ROOT/\.scratch/<feature-slug>/PRD\.md' "$SOLVE_ISSUE"
+  # preflight.sh's (behaviour pinned in solve-issue-scripts.bats); the skill names no
+  # tracker layout (#371), only that the PRD falls back to the feature's.
+  grep -q "failing that, from the" "$SOLVE_ISSUE"
+  ! grep -qF '.scratch/<feature-slug>/PRD.md' "$SOLVE_ISSUE"
   grep -q 'MAIN_ROOT/\.scratch/\$FEATURE_SLUG/PRD\.md' "$SCRIPT_DIR/skills/solve-issue/scripts/preflight.sh"
 }
 
