@@ -103,6 +103,7 @@ async function runFindingsTriage(ctx, { findings, scope, ref, change, dir, dispa
       round,
       reportPath: sidecarFile,
       maxBudgetUsd: triage.maxBudgetUsd,
+      effort: triage.effort,
     },
     {
       timeoutMs: options.timeoutMs.triage,

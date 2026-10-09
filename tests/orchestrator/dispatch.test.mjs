@@ -91,15 +91,15 @@ test("pi carries the role's tools and its rendered protocol as the system prompt
   assert.equal(reviewer[reviewer.indexOf("--tools") + 1], "read,bash");
 });
 
-test("codex carries the role's reasoning effort from role config", () => {
+test("codex carries the role's reasoning effort from role config, and spec.effort (afk.effort) overrides it", () => {
   const { root, promptFile } = fixture();
-  const effort = (agent) => {
-    const a = buildDispatch("codex", spec(root, promptFile, { agent })).args;
-    return a[a.indexOf('model_reasoning_effort="' + "medium" + '"') - 1] === "-c" ? "medium" : a.find((x) => /^model_reasoning_effort=/.test(x));
+  const effort = (agent, extra = {}) => {
+    const a = buildDispatch("codex", spec(root, promptFile, { agent, ...extra })).args;
+    return a.find((x) => /^model_reasoning_effort=/.test(x));
   };
-  assert.equal(effort("crew-coder"), "medium");
+  for (const agent of ["crew-coder", "crew-reviewer", "crew-triage"]) assert.equal(effort(agent), 'model_reasoning_effort="high"');
+  assert.equal(effort("crew-coder", { effort: "medium" }), 'model_reasoning_effort="medium"');
   assert.equal(effort("crew-reviewer"), 'model_reasoning_effort="high"');
-  assert.equal(effort("crew-triage"), 'model_reasoning_effort="high"');
 });
 
 test("codex: the coder is workspace-write with network and the git dirs writable; protocol then prompt go on stdin", () => {

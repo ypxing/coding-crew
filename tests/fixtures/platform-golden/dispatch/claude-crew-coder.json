@@ -15,7 +15,7 @@
     "--model",
     "golden-model",
     "--effort",
-    "medium",
+    "high",
     "--disallowedTools",
     "Agent"
   ],

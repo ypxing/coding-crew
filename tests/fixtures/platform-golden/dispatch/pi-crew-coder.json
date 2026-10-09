@@ -9,7 +9,7 @@
     "--model",
     "golden-model",
     "--thinking",
-    "medium",
+    "high",
     "--tools",
     "read,bash,edit,write",
     "--append-system-prompt",

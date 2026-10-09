@@ -581,6 +581,7 @@ export async function runWorker(ctx, issue, attempt) {
       reportPath: sidecarFile,
       resumeSessionId,
       maxBudgetUsd: coder.maxBudgetUsd,
+      effort: coder.effort,
     },
     {
       timeoutMs: options.timeoutMs.coder,
@@ -666,6 +667,7 @@ async function dispatchConflict(ctx, { issue, worktree, branch, attempt, issueDi
       round: attempt,
       reportPath: sidecarFile,
       maxBudgetUsd: coder.maxBudgetUsd,
+      effort: coder.effort,
     },
     {
       timeoutMs: options.timeoutMs.coder,
