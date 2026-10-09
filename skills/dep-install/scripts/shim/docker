@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# docker — a PATH shim that adds this worktree's crew compose override to every
+# `docker compose …` call, whatever form the call takes, then runs the real docker.
+# docker-compose (beside this file) is the same shim for the standalone binary.
+#
+# The override is $CREW_COMPOSE_OVERRIDE when set, else <git dir of the cwd>/crew-compose.override.yml
+# (written by gen-override.sh). Neither exists (host mode, or not a git repo) → the call passes
+# through unchanged. Every other docker command passes through untouched, and so does any call
+# whose shape this cannot parse: argv is never dropped or reordered, only extended, and nothing
+# is eval'd — the real binary is exec'd with an argv array.
+#
+# `-f <override>` goes just before the compose subcommand, after any `-f` the caller gave. With
+# no `-f` at all, the files compose would have discovered are made explicit first, because one
+# explicit `-f` turns discovery off: COMPOSE_FILE's entries, else the default compose file of the
+# --project-directory (or cwd, searched upward as compose does) and its sibling override.
+#
+# Put this directory first on PATH: `export PATH="<dep-install scripts>/shim:$PATH"`.
+
+NAME="${CREW_SHIM_NAME:-docker}"
+unset CREW_SHIM_NAME
+# Pure bash, no dirname: this runs with whatever PATH the caller has, and a wrong SELF_DIR would
+# make the PATH search below find this shim again.
+_src="${BASH_SOURCE[0]}"
+case "$_src" in */*) _srcdir="${_src%/*}" ;; *) _srcdir=. ;; esac
+SELF_DIR="$(cd "$_srcdir" 2>/dev/null && pwd -P)" || SELF_DIR=""
+if [ -z "$SELF_DIR" ]; then
+  echo "crew-shim: cannot resolve its own directory ($_src)" >&2
+  exit 127
+fi
+
+# The real binary: PATH with this directory removed.
+REAL=""
+_old_ifs="$IFS"
+IFS=:
+set -f
+for _d in $PATH; do
+  [ -n "$_d" ] || _d=.
+  _dp="$(cd "$_d" 2>/dev/null && pwd -P)" || continue
+  [ "$_dp" = "$SELF_DIR" ] && continue
+  if [ -f "$_d/$NAME" ] && [ -x "$_d/$NAME" ]; then REAL="$_d/$NAME"; break; fi
+done
+set +f
+IFS="$_old_ifs"
+if [ -z "$REAL" ]; then
+  echo "crew-shim: no real $NAME on PATH" >&2
+  exit 127
+fi
+
+_pass() { exec "$REAL" "$@"; }
+
+OVERRIDE="${CREW_COMPOSE_OVERRIDE:-}"
+if [ -z "$OVERRIDE" ]; then
+  _gitdir="$(git rev-parse --path-format=absolute --git-dir 2>/dev/null)" || _pass "$@"
+  OVERRIDE="$_gitdir/crew-compose.override.yml"
+  [ -f "$OVERRIDE" ] || _pass "$@"
+fi
+
+args=("$@")
+n=$#
+i=0
+
+# docker's own options come before `compose`; only that one subcommand is wrapped.
+if [ "$NAME" = docker ]; then
+  while [ "$i" -lt "$n" ]; do
+    case "${args[$i]}" in
+      -c | --context | -H | --host | --config | -l | --log-level | --tlscacert | --tlscert | --tlskey) i=$((i + 2)) ;;
+      -*) i=$((i + 1)) ;;
+      *) break ;;
+    esac
+  done
+  if [ "$i" -ge "$n" ] || [ "${args[$i]}" != compose ]; then _pass "$@"; fi
+  i=$((i + 1))
+fi
+
+# compose's own options come before its subcommand.
+have_f=0
+pdir=""
+while [ "$i" -lt "$n" ]; do
+  a="${args[$i]}"
+  case "$a" in
+    -f | --file) have_f=1; i=$((i + 2)) ;;
+    --file=* | -f?*) have_f=1; i=$((i + 1)) ;;
+    --project-directory) pdir="${args[$((i + 1))]:-}"; i=$((i + 2)) ;;
+    --project-directory=*) pdir="${a#*=}"; i=$((i + 1)) ;;
+    -p | --project-name | --env-file | --profile | --ansi | --progress | --parallel \
+      | -c | --context | -H | --host | --config | -l | --log-level | --tlscacert | --tlscert | --tlskey) i=$((i + 2)) ;;
+    -*) i=$((i + 1)) ;;
+    *) break ;;
+  esac
+done
+sub=$i
+if [ "$sub" -ge "$n" ]; then
+  echo "crew-shim: no compose subcommand found, passing the call through unchanged" >&2
+  _pass "$@"
+fi
+
+extra=()
+if [ "$have_f" -eq 0 ]; then
+  if [ -n "${COMPOSE_FILE:-}" ]; then
+    IFS="${COMPOSE_PATH_SEPARATOR:-:}" read -r -a _parts <<<"$COMPOSE_FILE"
+    for _p in "${_parts[@]}"; do
+      [ -n "$_p" ] && extra+=(-f "$_p")
+    done
+  else
+    _dir="${pdir:-$PWD}"
+    _found=""
+    while :; do
+      for _nm in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
+        if [ -f "$_dir/$_nm" ]; then _found="$_dir/$_nm"; break; fi
+      done
+      if [ -n "$_found" ] || [ -n "$pdir" ] || [ "$_dir" = / ]; then break; fi
+      _dir="$(dirname "$_dir")"
+    done
+    # No compose file to make explicit: let compose report that itself.
+    [ -n "$_found" ] || _pass "$@"
+    extra+=(-f "$_found")
+    _own="${_found%.*}.override.${_found##*.}"
+    [ -f "$_own" ] && extra+=(-f "$_own")
+  fi
+fi
+
+exec "$REAL" "${args[@]:0:$sub}" "${extra[@]}" -f "$OVERRIDE" "${args[@]:$sub}"
