@@ -15,6 +15,7 @@ set -uo pipefail
 #             review-not-run)
 #   --feature-slug  enables the sweep: any leftover sprint worktree for this
 #                   feature is considered, not just the ones passed in
+#                   (honours CREW_WORKTREE_ROOT, as worktree.mjs does)
 #   --dry-run report what would happen and change nothing
 #   --force   delete a swept branch even when it has commits that are not in HEAD
 #
@@ -145,13 +146,29 @@ for b in ${MERGED[@]+"${MERGED[@]}"}; do add_candidate "$b"; done
 # branches, and the runtime-managed worktrees Claude creates for
 # `isolation: worktree` agents (`worktree-agent-*`, checked out under
 # `.claude/worktrees/`). The latter are the ones that leaked historically: no
-# variant ever named them, so nothing removed them.
+# variant ever named them, so nothing removed them. Git records no owner for
+# them, so one counts as this sprint's only when it sits inside the sprint's own
+# `<worktree root>/crew/<feature-slug>/` directory (created from one of its issue
+# worktrees) — another sprint's, or the user's under the main checkout, is left alone.
+SPRINT_WT_DIR=""
+if [ -n "$FEATURE_SLUG" ]; then
+  WT_ROOT="${CREW_WORKTREE_ROOT:-.scratch/worktrees}"
+  case "$WT_ROOT" in /*) ;; *) WT_ROOT="$MAIN_ROOT/$WT_ROOT" ;; esac
+  SPRINT_WT_DIR="${WT_ROOT%/}/crew/$FEATURE_SLUG/"
+  # git may list a worktree by its symlink-resolved path (macOS /var → /private/var).
+  SPRINT_WT_DIR_REAL="$(cd "$SPRINT_WT_DIR" 2>/dev/null && pwd -P)/"
+fi
+in_sprint_dir() {
+  [ -n "$SPRINT_WT_DIR" ] || return 1
+  [[ "$1" == "$SPRINT_WT_DIR"* ]] || { [ "$SPRINT_WT_DIR_REAL" != "/" ] && [[ "$1" == "$SPRINT_WT_DIR_REAL"* ]]; }
+}
 for i in "${!WT_BRANCHES[@]}"; do
   b="${WT_BRANCHES[$i]}"
   p="${WT_PATHS[$i]}"
   if [ -n "$FEATURE_SLUG" ] && [[ "$b" == crew/"$FEATURE_SLUG"/* ]]; then
     add_candidate "$b"
-  elif [[ "$b" == worktree-agent-* ]] || [[ "$p" == */.claude/worktrees/* ]]; then
+  elif in_sprint_dir "$p" \
+       && { [[ "$b" == worktree-agent-* ]] || [[ "$p" == */.claude/worktrees/* ]]; }; then
     add_candidate "$b"
   fi
 done

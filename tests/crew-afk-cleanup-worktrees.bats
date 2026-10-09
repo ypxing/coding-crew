@@ -167,15 +167,38 @@ make_unmerged_worktree() {
   git -C "$TEMP_DIR" rev-parse --verify --quiet "refs/heads/crew/other/01-a"
 }
 
-@test "cleanup: sweeps runtime-managed worktree-agent-* worktrees" {
-  local path="$TEMP_DIR/.claude/worktrees/agent-deadbeef"
+@test "cleanup: sweeps runtime-managed worktree-agent-* worktrees inside its own sprint's directory" {
+  local path="$TEMP_DIR/.scratch/worktrees/crew/feat/01-a/.claude/worktrees/agent-deadbeef"
   git worktree add -q -b "worktree-agent-deadbeef" "$path" HEAD
 
-  run bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR"
+  run bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR" --feature-slug feat
   [ "$status" -eq 0 ]
   [[ "$output" == *"removed worktree-agent-deadbeef"* ]]
   ! git -C "$TEMP_DIR" rev-parse --verify --quiet "refs/heads/worktree-agent-deadbeef"
   [ ! -d "$path" ]
+}
+
+@test "cleanup: leaves clean agent worktrees of another sprint or the main checkout alone" {
+  local mine="$TEMP_DIR/.claude/worktrees/agent-user"
+  local other="$TEMP_DIR/.scratch/worktrees/crew/other/01-a/.claude/worktrees/agent-x"
+  git worktree add -q -b "worktree-agent-user" "$mine" HEAD
+  git worktree add -q -b "worktree-agent-x" "$other" HEAD
+
+  run bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR" --feature-slug feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removed=0"* ]]
+  [ -d "$mine" ] && [ -d "$other" ]
+  git -C "$TEMP_DIR" rev-parse --verify --quiet "refs/heads/worktree-agent-user"
+  git -C "$TEMP_DIR" rev-parse --verify --quiet "refs/heads/worktree-agent-x"
+}
+
+@test "cleanup: honours CREW_WORKTREE_ROOT when matching its own sprint's agent worktrees" {
+  local path="$TEMP_DIR/wt/crew/feat/01-a/.claude/worktrees/agent-cafe"
+  git worktree add -q -b "worktree-agent-cafe" "$path" HEAD
+
+  CREW_WORKTREE_ROOT=wt run bash "$CLEANUP_SCRIPT" --main-root "$TEMP_DIR" --feature-slug feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removed worktree-agent-cafe"* ]]
 }
 
 @test "cleanup: is idempotent - a second run is a clean no-op" {
