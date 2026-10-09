@@ -358,6 +358,7 @@ test("rewrite (github) replaces the body as written, swaps needs-triage for the 
   const exec = fakeGh({
     "api repos/{owner}/{repo}/milestones?state=all": { stdout: "5\tclosed\tfeat\n" },
     "api -X PATCH repos/{owner}/{repo}/milestones/5": {},
+    "issue view 12": { stdout: "needs-triage\nbug\n" },
     "issue edit 12": {},
   });
   const r = await cli(dir, ["rewrite", "12", "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"], exec);
@@ -375,7 +376,7 @@ test("rewrite (github) replaces the body as written, swaps needs-triage for the 
 test("rewrite (github) given a draft takes its title and Status: lines off the body, Source: kept", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, "body.md"), `# Fix the thing\n\nStatus: ready-for-agent\n\n${PROMOTED_BODY}`);
-  const exec = fakeGh({ "api repos/{owner}/{repo}/milestones?state=all": { stdout: "5\topen\tfeat\n" }, "issue edit 12": {} });
+  const exec = fakeGh({ "api repos/{owner}/{repo}/milestones?state=all": { stdout: "5\topen\tfeat\n" }, "issue view 12": { stdout: "needs-triage\nbug\n" }, "issue edit 12": {} });
   const r = await cli(dir, ["rewrite", "12", "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"], exec);
   assert.equal(r.code, 0, r.stderr);
   const [[, i]] = exec.find("issue edit 12");
@@ -385,7 +386,7 @@ test("rewrite (github) given a draft takes its title and Status: lines off the b
 test("rewrite (github) rewrites a Blocked by entry naming a known file <n>-<slug>.md to Issue #<n>", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, "body.md"), `${PROMOTED_BODY}\n## Blocked by\n\n- 7-existing-thing.md\n`);
-  const exec = fakeGh({ "api repos/{owner}/{repo}/milestones?state=all": { stdout: "5\topen\tfeat\n" }, "issue edit 12": {} });
+  const exec = fakeGh({ "api repos/{owner}/{repo}/milestones?state=all": { stdout: "5\topen\tfeat\n" }, "issue view 12": { stdout: "needs-triage\nbug\n" }, "issue edit 12": {} });
   const r = await cli(dir, ["rewrite", "12", "--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"], exec);
   assert.equal(r.code, 0, r.stderr);
   const [[, i]] = exec.find("issue edit 12");
@@ -411,7 +412,7 @@ test("rewrite (local) leaves a Blocked by entry naming a known issue file as tha
 test("rewrite (github) creates the milestone when it is missing", async () => {
   const dir = root({ github: true });
   writeFileSync(join(dir, "body.md"), "b\n");
-  const exec = fakeGh({ "api repos/{owner}/{repo}/milestones?state=all": { stdout: "" }, "api repos/{owner}/{repo}/milestones": {}, "issue edit": {} });
+  const exec = fakeGh({ "api repos/{owner}/{repo}/milestones?state=all": { stdout: "" }, "api repos/{owner}/{repo}/milestones": {}, "issue view": { stdout: "needs-triage\n" }, "issue edit": {} });
   const r = await cli(dir, ["rewrite", "12", "--body-file", join(dir, "body.md"), "--status", "ready-for-human", "--feature-slug", "feat"], exec);
   assert.equal(r.code, 0, r.stderr);
   assert.ok(exec.calls.some((c) => c.includes("title=feat")));
@@ -422,7 +423,7 @@ test("rewrite (github) exits 3 for an issue that does not exist, 2 for a non-num
   writeFileSync(join(dir, "body.md"), "b\n");
   const exec = fakeGh({
     "api repos": { stdout: "1\topen\tfeat\n" },
-    "issue edit": { code: 1, stderr: "GraphQL: Could not resolve to an issue or pull request with the number of 999.\n" },
+    "issue view": { code: 1, stderr: "GraphQL: Could not resolve to an issue or pull request with the number of 999.\n" },
   });
   const argv = ["--body-file", join(dir, "body.md"), "--status", "ready-for-agent", "--feature-slug", "feat"];
   assert.equal((await cli(dir, ["rewrite", "999", ...argv], exec)).code, 3);

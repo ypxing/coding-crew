@@ -52,8 +52,9 @@ dependencies (best-effort: a failed link only warns; dispatch reads the body's `
 A milestone only accumulates, so it never exits `4` or `5`. `publish-prd` creates the
 `PRD: <feature title>` issue, or edits the milestone's existing one, then best-effort pins it
 (GitHub caps pinned issues at 3 a repo, so a pin failure only warns). Work issues cite it as
-`PRD: #<n>`. `rewrite` replaces a single-slice source issue's body and swaps `needs-triage` for
-`<status>`.
+`PRD: #<n>`. `rewrite` replaces a single-slice source issue's body and sets `<status>` as its only triage
+label: it replaces any other triage label the issue carries (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`), not just `needs-triage`.
 
 `done` means implemented and merged into the feature branch, not shipped. `mark-done` re-fetches
 the body live and refuses with exit `4` while an `- [ ]` in `## Acceptance criteria` (or

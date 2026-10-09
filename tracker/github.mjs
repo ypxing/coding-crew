@@ -499,16 +499,24 @@ export function publishPrd(mainRoot, { featureSlug, title, body, exec = shellOut
 
 /**
  * Rewrite a single-slice source issue: `body` — a draft's `# <title>` and `Status:` lines taken
- * off, as `publish-issues` does — replaces its body (a `Source:` line kept), `needs-triage` comes off, `status` goes on, and it moves into the feature's milestone,
- * created — or reopened when closed — first. Null when the issue does not exist.
+ * off, as `publish-issues` does — replaces its body (a `Source:` line kept), `status` goes on as
+ * its only triage label (every other triage label the issue carries comes off in the same edit;
+ * `--remove-label` fails on a label the issue lacks, so only carried ones are named), and it moves
+ * into the feature's milestone, created — or reopened when closed — first. Null when the issue
+ * does not exist.
  */
 export function rewriteIssue(mainRoot, number, { body, status, featureSlug, exec = shellOut } = {}) {
+  const read = exec("gh", ["issue", "view", String(number), "--json", "labels", "--jq", ".labels[].name"]);
+  if (read.code !== 0) {
+    if (notFound(read)) return null;
+    throw new Error(`gh issue view failed (exit ${read.code}): ${read.stderr || read.stdout}`);
+  }
+  const carried = new Set((read.stdout ?? "").split("\n").map((l) => l.trim()).filter(Boolean));
+  const remove = TRIAGE_LABELS.filter((name) => name !== status && carried.has(name))
+    .flatMap((name) => ["--remove-label", name]);
   ensureMilestone(featureSlug, { exec });
   const r = withBodyFile(draftBody(body), (f) =>
-    exec("gh", [
-      "issue", "edit", String(number),
-      "--body-file", f, "--remove-label", "needs-triage", "--add-label", status, "--milestone", featureSlug,
-    ]),
+    exec("gh", ["issue", "edit", String(number), "--body-file", f, ...remove, "--add-label", status, "--milestone", featureSlug]),
   );
   if (r.code !== 0) {
     if (notFound(r)) return null;
